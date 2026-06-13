@@ -1,0 +1,15 @@
+<Project>
+  <Target
+    Name="VSTest"
+    Condition="'$(MSBuildProjectName)' == 'Kermaria.ApiInternal.SmokeTests'"
+    DependsOnTargets="Build"
+  >
+    <PropertyGroup>
+      <ApiInternalAssembly>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\..\..\apps\api-internal\bin\$(Configuration)\net10.0\Kermaria.ApiInternal.dll'))</ApiInternalAssembly>
+    </PropertyGroup>
+
+    <Exec
+      Command="dotnet &quot;$(TargetPath)&quot; &quot;$(ApiInternalAssembly)&quot;"
+    />
+  </Target>
+</Project>

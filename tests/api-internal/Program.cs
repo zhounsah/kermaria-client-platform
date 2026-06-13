@@ -1,0 +1,1207 @@
+using System.Diagnostics;
+using System.Data.Common;
+using System.Net;
+using System.Net.Http.Json;
+using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+
+const string correlationHeader = "X-Correlation-Id";
+const string dataSourceHeader = "X-Data-Source";
+const string sessionHeader = "X-Portal-Session";
+const string testCorrelationId = "v0.7-smoke-test";
+const string mockBaseUrl = "http://127.0.0.1:5088";
+const string mockEmail = "portal.test@example.invalid";
+const string mockPassword = "NOT_A_REAL_PASSWORD_V07";
+
+if (args.Length is < 1 or > 2)
+{
+    Console.Error.WriteLine(
+        "Usage: smoke-tests [dotnet-executable] <api-internal-dll>");
+    return 2;
+}
+
+var dotnetExecutable = args.Length == 2
+    ? Path.GetFullPath(args[0])
+    : "dotnet";
+var apiAssembly = Path.GetFullPath(args[^1]);
+
+if ((args.Length == 2 && !File.Exists(dotnetExecutable))
+    || !File.Exists(apiAssembly))
+{
+    Console.Error.WriteLine("Le runtime .NET ou l'assembly API est introuvable.");
+    return 2;
+}
+
+VerifyIdentifierMapping();
+await RunMockTestsAsync();
+await RunDisabledAccountTestAsync();
+await RunExpiredSessionTestAsync();
+
+if (IsMariaDbTestRequested())
+{
+    await RunMariaDbReadTestsAsync();
+}
+
+Console.WriteLine("Smoke tests API-INTERNAL V0.7 réussis.");
+return 0;
+
+async Task RunMockTestsAsync()
+{
+    using var api = StartApi(
+        mockBaseUrl,
+        startInfo =>
+        {
+            startInfo.Environment["ASPNETCORE_ENVIRONMENT"] = "Development";
+            startInfo.Environment["DOTNET_ENVIRONMENT"] = "Development";
+            startInfo.Environment["AD_INTEGRATION_MODE"] = "disabled";
+            startInfo.Environment["DEMO_PORTAL_EMAIL"] = mockEmail;
+            startInfo.Environment["DEMO_PORTAL_PASSWORD"] = mockPassword;
+            startInfo.Environment["DEMO_PORTAL_STATUS"] = "active";
+            startInfo.Environment["SESSION_DURATION_MINUTES"] = "60";
+            foreach (var variable in new[]
+            {
+                "SQL_PROVIDER",
+                "SQL_HOST",
+                "SQL_PORT",
+                "SQL_DATABASE",
+                "SQL_USERNAME",
+                "SQL_PASSWORD"
+            })
+            {
+                startInfo.Environment.Remove(variable);
+            }
+        });
+    using var handler = new HttpClientHandler { UseProxy = false };
+    using var client = new HttpClient(handler);
+
+    try
+    {
+        using var healthResponse = await WaitForHealthAsync(
+            client,
+            api.Process,
+            mockBaseUrl,
+            api.Logs);
+
+        Ensure(
+            healthResponse.IsSuccessStatusCode,
+            "Le health check de l'API n'a pas répondu avec succès.");
+        Ensure(
+            healthResponse.Headers.Contains(correlationHeader),
+            "Le health check ne génère pas de X-Correlation-Id.");
+
+        using var unauthenticatedResponse = await client.GetAsync(
+            $"{mockBaseUrl}/internal/portal/services");
+        Ensure(
+            unauthenticatedResponse.StatusCode == HttpStatusCode.Unauthorized,
+            "Une lecture portail sans session devait être refusée.");
+
+        using var invalidSessionRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mockBaseUrl}/internal/auth/session",
+            "invalid-session-token");
+        using var invalidSessionResponse = await client.SendAsync(
+            invalidSessionRequest);
+        Ensure(
+            invalidSessionResponse.StatusCode == HttpStatusCode.Unauthorized,
+            "Une session inconnue devait être refusée.");
+
+        const string invalidLoginPassword =
+            "NOT_A_REAL_INVALID_PASSWORD_SENTINEL";
+        using var invalidLoginRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"{mockBaseUrl}/internal/auth/sessions")
+        {
+            Content = JsonContent.Create(new
+            {
+                email = mockEmail,
+                password = invalidLoginPassword
+            })
+        };
+        using var invalidLoginResponse = await client.SendAsync(
+            invalidLoginRequest);
+        using var invalidLoginPayload = JsonDocument.Parse(
+            await invalidLoginResponse.Content.ReadAsStringAsync());
+        Ensure(
+            invalidLoginResponse.StatusCode == HttpStatusCode.Unauthorized,
+            "Un login invalide devait retourner HTTP 401.");
+        Ensure(
+            invalidLoginPayload.RootElement.GetProperty("code").GetString()
+                == "INVALID_CREDENTIALS",
+            "Le login invalide ne retourne pas un message générique.");
+
+        using var loginRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"{mockBaseUrl}/internal/auth/sessions")
+        {
+            Content = JsonContent.Create(new
+            {
+                email = mockEmail,
+                password = mockPassword
+            })
+        };
+        loginRequest.Headers.Add(correlationHeader, testCorrelationId);
+        using var loginResponse = await client.SendAsync(loginRequest);
+        using var loginPayload = JsonDocument.Parse(
+            await loginResponse.Content.ReadAsStringAsync());
+        Ensure(
+            loginResponse.StatusCode == HttpStatusCode.OK,
+            "Le login mock valide devait retourner HTTP 200.");
+        var sessionToken = loginPayload.RootElement
+            .GetProperty("sessionToken")
+            .GetString();
+        Ensure(
+            !string.IsNullOrWhiteSpace(sessionToken),
+            "Le login mock ne retourne pas de token interne.");
+
+        using var sessionRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mockBaseUrl}/internal/auth/session",
+            sessionToken!);
+        using var sessionResponse = await client.SendAsync(sessionRequest);
+        using var sessionPayload = JsonDocument.Parse(
+            await sessionResponse.Content.ReadAsStringAsync());
+        Ensure(
+            sessionResponse.StatusCode == HttpStatusCode.OK,
+            "La session créée ne peut pas être relue.");
+        Ensure(
+            sessionPayload.RootElement
+                .GetProperty("user")
+                .GetProperty("customerReference")
+                .GetString() == MockCustomerReference(),
+            "La session ne contient pas la référence client attendue.");
+
+        using var servicesRequest = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"{mockBaseUrl}/internal/portal/services");
+        servicesRequest.Headers.Add(correlationHeader, testCorrelationId);
+        servicesRequest.Headers.Add(sessionHeader, sessionToken);
+        using var servicesResponse = await client.SendAsync(servicesRequest);
+        using var servicesPayload = JsonDocument.Parse(
+            await servicesResponse.Content.ReadAsStringAsync());
+
+        Ensure(
+            servicesResponse.StatusCode == HttpStatusCode.OK,
+            "La liste mock des services ne répond pas avec HTTP 200.");
+        Ensure(
+            servicesResponse.Headers.GetValues(correlationHeader).Single()
+                == testCorrelationId,
+            "La liste mock des services ne propage pas X-Correlation-Id.");
+        Ensure(
+            servicesResponse.Headers.GetValues(dataSourceHeader).Single()
+                == "mock",
+            "Le fallback de développement n'est pas signalé comme mock.");
+        Ensure(
+            servicesPayload.RootElement.GetArrayLength() == 5,
+            "La liste mock des services ne contient pas les cinq services attendus.");
+        Ensure(
+            servicesPayload.RootElement[0].GetProperty("name").GetString()
+                == "Hébergement dossier personnel",
+            "Le catalogue client mock n'est pas aligné avec l'activité attendue.");
+
+        using var summaryRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mockBaseUrl}/internal/portal/summary",
+            sessionToken!);
+        using var summaryResponse = await client.SendAsync(summaryRequest);
+        using var summaryPayload = JsonDocument.Parse(
+            await summaryResponse.Content.ReadAsStringAsync());
+        Ensure(
+            summaryResponse.StatusCode == HttpStatusCode.OK,
+            "Le résumé portail mock ne répond pas avec HTTP 200.");
+        Ensure(
+            summaryPayload.RootElement
+                .GetProperty("activeServiceCount")
+                .GetInt32() == 3,
+            "Le résumé portail mock ne contient pas le bon nombre de services actifs.");
+
+        using var catalogRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mockBaseUrl}/internal/portal/service-catalog",
+            sessionToken!);
+        using var catalogResponse = await client.SendAsync(catalogRequest);
+        using var catalogPayload = JsonDocument.Parse(
+            await catalogResponse.Content.ReadAsStringAsync());
+        Ensure(
+            catalogResponse.StatusCode == HttpStatusCode.OK,
+            "Le catalogue mock ne répond pas avec HTTP 200.");
+        Ensure(
+            catalogResponse.Headers.GetValues(dataSourceHeader).Single()
+                == "mock",
+            "Le catalogue mock n'indique pas sa source.");
+        Ensure(
+            catalogPayload.RootElement.GetArrayLength() == 8,
+            "Le catalogue mock ne contient pas les huit services attendus.");
+
+        using var supportRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"{mockBaseUrl}/internal/portal/support-requests")
+        {
+            Content = JsonContent.Create(new
+            {
+                serviceId = "svc-backup-001",
+                priority = "normal",
+                subject = "Vérification mock",
+                description = "Demande de test sans donnée sensible."
+            })
+        };
+        supportRequest.Headers.Add(correlationHeader, testCorrelationId);
+        supportRequest.Headers.Add(sessionHeader, sessionToken);
+        using var supportResponse = await client.SendAsync(supportRequest);
+        using var supportPayload = JsonDocument.Parse(
+            await supportResponse.Content.ReadAsStringAsync());
+
+        Ensure(
+            supportResponse.StatusCode == HttpStatusCode.Accepted,
+            "La création mock d'une demande support devait retourner HTTP 202.");
+        Ensure(
+            supportPayload.RootElement.GetProperty("status").GetString()
+                == "mock_received",
+            "La demande support mock ne renvoie pas le statut attendu.");
+        Ensure(
+            !supportPayload.RootElement.GetProperty("persisted").GetBoolean(),
+            "La demande support mock ne doit pas être persistée.");
+        Ensure(
+            supportPayload.RootElement.GetProperty("correlation_id").GetString()
+                == testCorrelationId,
+            "La demande support mock ne propage pas le correlation_id.");
+
+        using var serviceRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"{mockBaseUrl}/internal/portal/service-requests")
+        {
+            Content = JsonContent.Create(new
+            {
+                catalogItemId = "catalog-vpn",
+                subject = "Demande de service",
+                description = "Qualification mock sans donnée sensible."
+            })
+        };
+        serviceRequest.Headers.Add(correlationHeader, testCorrelationId);
+        serviceRequest.Headers.Add(sessionHeader, sessionToken);
+        using var serviceResponse = await client.SendAsync(serviceRequest);
+        using var servicePayload = JsonDocument.Parse(
+            await serviceResponse.Content.ReadAsStringAsync());
+
+        Ensure(
+            serviceResponse.StatusCode == HttpStatusCode.Accepted,
+            "La création mock d'une demande de service devait retourner HTTP 202.");
+        Ensure(
+            !servicePayload.RootElement.GetProperty("persisted").GetBoolean(),
+            "La demande de service mock ne doit pas être persistée.");
+        Ensure(
+            servicePayload.RootElement.GetProperty("correlation_id").GetString()
+                == testCorrelationId,
+            "La demande de service mock ne propage pas le correlation_id.");
+
+        using var invalidServiceRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"{mockBaseUrl}/internal/portal/service-requests")
+        {
+            Content = JsonContent.Create(new
+            {
+                catalogItemId = "catalog-vpn",
+                subject = "Description absente"
+            })
+        };
+        invalidServiceRequest.Headers.Add(sessionHeader, sessionToken);
+        using var invalidServiceResponse = await client.SendAsync(
+            invalidServiceRequest);
+        using var invalidServicePayload = JsonDocument.Parse(
+            await invalidServiceResponse.Content.ReadAsStringAsync());
+        Ensure(
+            invalidServiceResponse.StatusCode == HttpStatusCode.BadRequest,
+            "Une demande de service incomplète devait retourner HTTP 400.");
+        Ensure(
+            invalidServicePayload.RootElement.GetProperty("code").GetString()
+                == "INVALID_REQUEST",
+            "La demande de service incomplète ne retourne pas INVALID_REQUEST.");
+
+        using var inaccessibleServiceRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"{mockBaseUrl}/internal/portal/support-requests")
+        {
+            Content = JsonContent.Create(new
+            {
+                serviceId = "service-owned-by-another-customer",
+                priority = "normal",
+                subject = "Tentative inter-client",
+                description = "Cette demande doit être refusée."
+            })
+        };
+        inaccessibleServiceRequest.Headers.Add(
+            sessionHeader,
+            sessionToken);
+        using var inaccessibleServiceResponse = await client.SendAsync(
+            inaccessibleServiceRequest);
+        Ensure(
+            inaccessibleServiceResponse.StatusCode == HttpStatusCode.Forbidden,
+            "Un service hors client devait être refusé avec HTTP 403.");
+
+        using var invalidCatalogRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"{mockBaseUrl}/internal/portal/service-requests")
+        {
+            Content = JsonContent.Create(new
+            {
+                catalogItemId = "catalog-inconnu",
+                subject = "Catalogue invalide",
+                description = "Cette demande doit être refusée."
+            })
+        };
+        invalidCatalogRequest.Headers.Add(sessionHeader, sessionToken);
+        using var invalidCatalogResponse = await client.SendAsync(
+            invalidCatalogRequest);
+        Ensure(
+            invalidCatalogResponse.StatusCode == HttpStatusCode.BadRequest,
+            "Un élément de catalogue invalide devait retourner HTTP 400.");
+
+        using var invalidRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"{mockBaseUrl}/internal/portal/support-requests")
+        {
+            Content = JsonContent.Create(new { })
+        };
+        invalidRequest.Headers.Add(correlationHeader, testCorrelationId);
+        invalidRequest.Headers.Add(sessionHeader, sessionToken);
+        using var invalidResponse = await client.SendAsync(invalidRequest);
+        using var invalidPayload = JsonDocument.Parse(
+            await invalidResponse.Content.ReadAsStringAsync());
+
+        Ensure(
+            invalidResponse.StatusCode == HttpStatusCode.BadRequest,
+            "Une demande mock invalide devait retourner HTTP 400.");
+        Ensure(
+            invalidPayload.RootElement.GetProperty("code").GetString()
+                == "INVALID_REQUEST",
+            "L'erreur invalide n'est pas structurée avec le code attendu.");
+        Ensure(
+            invalidPayload.RootElement
+                .GetProperty("correlation_id")
+                .GetString() == testCorrelationId,
+            "L'erreur structurée ne propage pas le correlation_id.");
+
+        using var adHealthResponse = await client.GetAsync(
+            $"{mockBaseUrl}/internal/ad/health");
+        var adHealthText = await adHealthResponse.Content.ReadAsStringAsync();
+        using var adHealthPayload = JsonDocument.Parse(adHealthText);
+
+        Ensure(
+            adHealthResponse.StatusCode == HttpStatusCode.OK,
+            "Le diagnostic AD interne ne répond pas avec HTTP 200.");
+        Ensure(
+            adHealthPayload.RootElement.GetProperty("mode").GetString()
+                == "disabled",
+            "Le mode AD doit être disabled par défaut dans les tests.");
+        Ensure(
+            !adHealthText.Contains("password", StringComparison.OrdinalIgnoreCase)
+            && !adHealthText.Contains("username", StringComparison.OrdinalIgnoreCase)
+            && !adHealthText.Contains("distinguished", StringComparison.OrdinalIgnoreCase),
+            "Le diagnostic AD expose une information de configuration interdite.");
+
+        const string passwordLogSentinel =
+            "NOT_A_REAL_PASSWORD_LOG_SENTINEL";
+        using var adRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"{mockBaseUrl}/internal/ad/change-password")
+        {
+            Content = JsonContent.Create(new
+            {
+                targetDistinguishedName =
+                    "CN=demo,OU=TEST_SITE_WEB,DC=home,DC=bzh",
+                currentPassword = passwordLogSentinel,
+                newPassword = $"{passwordLogSentinel}_NEW"
+            })
+        };
+        adRequest.Headers.Add(correlationHeader, testCorrelationId);
+        using var adResponse = await client.SendAsync(adRequest);
+        using var adPayload = JsonDocument.Parse(
+            await adResponse.Content.ReadAsStringAsync());
+
+        Ensure(
+            adResponse.StatusCode == HttpStatusCode.NotImplemented,
+            "La route AD disabled devait retourner HTTP 501.");
+        Ensure(
+            adPayload.RootElement.GetProperty("code").GetString()
+                == "AD_INTEGRATION_DISABLED",
+            "La route AD disabled ne renvoie pas le code attendu.");
+        Ensure(
+            adPayload.RootElement.GetProperty("correlation_id").GetString()
+                == testCorrelationId,
+            "La route AD disabled ne propage pas le correlation_id.");
+
+        using var logoutRequest = CreateSessionRequest(
+            HttpMethod.Delete,
+            $"{mockBaseUrl}/internal/auth/sessions/current",
+            sessionToken!);
+        using var logoutResponse = await client.SendAsync(logoutRequest);
+        Ensure(
+            logoutResponse.StatusCode == HttpStatusCode.NoContent,
+            "Le logout devait retourner HTTP 204.");
+
+        using var revokedSessionRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mockBaseUrl}/internal/auth/session",
+            sessionToken!);
+        using var revokedSessionResponse = await client.SendAsync(
+            revokedSessionRequest);
+        Ensure(
+            revokedSessionResponse.StatusCode == HttpStatusCode.Unauthorized,
+            "Une session révoquée devait être refusée.");
+
+        await Task.Delay(100);
+        Ensure(
+            !api.Logs.ToString().Contains(
+                passwordLogSentinel,
+                StringComparison.Ordinal),
+            "Un mot de passe de test a été écrit dans les logs.");
+        Ensure(
+            !api.Logs.ToString().Contains(
+                invalidLoginPassword,
+                StringComparison.Ordinal)
+            && !api.Logs.ToString().Contains(
+                mockPassword,
+                StringComparison.Ordinal)
+            && !api.Logs.ToString().Contains(
+                sessionToken!,
+                StringComparison.Ordinal),
+            "Un mot de passe ou token de session a été écrit dans les logs.");
+    }
+    finally
+    {
+        await api.StopAsync();
+    }
+}
+
+async Task RunDisabledAccountTestAsync()
+{
+    const string baseUrl = "http://127.0.0.1:5090";
+    using var api = StartApi(
+        baseUrl,
+        startInfo =>
+        {
+            ConfigureMockAuthentication(startInfo, "disabled", "60");
+        });
+    using var handler = new HttpClientHandler { UseProxy = false };
+    using var client = new HttpClient(handler);
+
+    try
+    {
+        using var healthResponse = await WaitForHealthAsync(
+            client,
+            api.Process,
+            baseUrl,
+            api.Logs);
+        Ensure(healthResponse.IsSuccessStatusCode, "Health disabled invalide.");
+
+        using var loginResponse = await client.PostAsJsonAsync(
+            $"{baseUrl}/internal/auth/sessions",
+            new { email = mockEmail, password = mockPassword });
+        using var payload = JsonDocument.Parse(
+            await loginResponse.Content.ReadAsStringAsync());
+        Ensure(
+            loginResponse.StatusCode == HttpStatusCode.Unauthorized,
+            "Un compte désactivé ne doit pas pouvoir se connecter.");
+        Ensure(
+            payload.RootElement.GetProperty("code").GetString()
+                == "INVALID_CREDENTIALS",
+            "Un compte désactivé doit recevoir le message générique.");
+    }
+    finally
+    {
+        await api.StopAsync();
+    }
+}
+
+async Task RunExpiredSessionTestAsync()
+{
+    const string baseUrl = "http://127.0.0.1:5091";
+    using var api = StartApi(
+        baseUrl,
+        startInfo =>
+        {
+            ConfigureMockAuthentication(startInfo, "active", "0");
+        });
+    using var handler = new HttpClientHandler { UseProxy = false };
+    using var client = new HttpClient(handler);
+
+    try
+    {
+        using var healthResponse = await WaitForHealthAsync(
+            client,
+            api.Process,
+            baseUrl,
+            api.Logs);
+        Ensure(healthResponse.IsSuccessStatusCode, "Health expiration invalide.");
+
+        using var loginResponse = await client.PostAsJsonAsync(
+            $"{baseUrl}/internal/auth/sessions",
+            new { email = mockEmail, password = mockPassword });
+        using var loginPayload = JsonDocument.Parse(
+            await loginResponse.Content.ReadAsStringAsync());
+        Ensure(
+            loginResponse.StatusCode == HttpStatusCode.OK,
+            "La session d'expiration n'a pas pu être créée.");
+        var token = loginPayload.RootElement
+            .GetProperty("sessionToken")
+            .GetString()
+            ?? throw new InvalidOperationException(
+                "Token de session d'expiration absent.");
+
+        using var sessionRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{baseUrl}/internal/auth/session",
+            token);
+        using var sessionResponse = await client.SendAsync(sessionRequest);
+        using var sessionPayload = JsonDocument.Parse(
+            await sessionResponse.Content.ReadAsStringAsync());
+        Ensure(
+            sessionResponse.StatusCode == HttpStatusCode.Unauthorized,
+            "Une session expirée devait être refusée.");
+        Ensure(
+            sessionPayload.RootElement.GetProperty("code").GetString()
+                == "SESSION_EXPIRED",
+            "Une session expirée ne retourne pas SESSION_EXPIRED.");
+    }
+    finally
+    {
+        await api.StopAsync();
+    }
+}
+
+async Task RunMariaDbReadTestsAsync()
+{
+    var requiredVariables = new[]
+    {
+        "SQL_PROVIDER",
+        "SQL_HOST",
+        "SQL_PORT",
+        "SQL_DATABASE",
+        "SQL_USERNAME",
+        "SQL_PASSWORD",
+        "DEMO_PORTAL_EMAIL",
+        "DEMO_PORTAL_PASSWORD"
+    };
+    var missing = requiredVariables
+        .Where(name => string.IsNullOrWhiteSpace(
+            Environment.GetEnvironmentVariable(name)))
+        .ToArray();
+
+    Ensure(
+        missing.Length == 0,
+        "RUN_MARIADB_TESTS=true exige toutes les variables SQL.");
+
+    const string mariaDbBaseUrl = "http://127.0.0.1:5089";
+    using var api = StartApi(
+        mariaDbBaseUrl,
+        startInfo =>
+        {
+            startInfo.Environment["ASPNETCORE_ENVIRONMENT"] = "Development";
+            startInfo.Environment["DOTNET_ENVIRONMENT"] = "Development";
+            startInfo.Environment["AD_INTEGRATION_MODE"] = "disabled";
+        });
+    using var handler = new HttpClientHandler { UseProxy = false };
+    using var client = new HttpClient(handler);
+    const string isolationCustomerId =
+        "90000000-0000-0000-0000-000000000071";
+    const string isolationServiceId =
+        "90000000-0000-0000-0000-000000000072";
+
+    try
+    {
+        using var healthResponse = await WaitForHealthAsync(
+            client,
+            api.Process,
+            mariaDbBaseUrl,
+            api.Logs);
+        Ensure(healthResponse.IsSuccessStatusCode, "Health MariaDB invalide.");
+
+        using var loginResponse = await client.PostAsJsonAsync(
+            $"{mariaDbBaseUrl}/internal/auth/sessions",
+            new
+            {
+                email = Environment.GetEnvironmentVariable(
+                    "DEMO_PORTAL_EMAIL"),
+                password = Environment.GetEnvironmentVariable(
+                    "DEMO_PORTAL_PASSWORD")
+            });
+        using var loginPayload = JsonDocument.Parse(
+            await loginResponse.Content.ReadAsStringAsync());
+        Ensure(
+            loginResponse.StatusCode == HttpStatusCode.OK,
+            "Le login MariaDB conditionnel a échoué.");
+        var sessionToken = loginPayload.RootElement
+            .GetProperty("sessionToken")
+            .GetString()
+            ?? throw new InvalidOperationException(
+                "Le login MariaDB ne retourne aucun token.");
+        await VerifyPersistedSessionHashAsync(sessionToken);
+        await PrepareIsolationFixtureAsync(
+            isolationCustomerId,
+            isolationServiceId);
+
+        using var summaryRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mariaDbBaseUrl}/internal/portal/summary",
+            sessionToken);
+        using var summaryResponse = await client.SendAsync(summaryRequest);
+        Ensure(
+            summaryResponse.StatusCode == HttpStatusCode.OK,
+            "Le test MariaDB conditionnel n'a pas pu lire le résumé.");
+        Ensure(
+            summaryResponse.Headers.GetValues(dataSourceHeader).Single()
+                == "mariadb",
+            "Le test conditionnel n'utilise pas MariaDB.");
+
+        foreach (var endpoint in new[]
+        {
+            "/internal/portal/services",
+            "/internal/portal/invoices",
+            "/internal/portal/service-catalog"
+        })
+        {
+            using var request = CreateSessionRequest(
+                HttpMethod.Get,
+                $"{mariaDbBaseUrl}{endpoint}",
+                sessionToken);
+            using var response = await client.SendAsync(request);
+            var responseText = await response.Content.ReadAsStringAsync();
+
+            Ensure(
+                response.StatusCode == HttpStatusCode.OK,
+                $"Le test MariaDB conditionnel a échoué pour {endpoint}. Réponse publique : {responseText}");
+            Ensure(
+                response.Headers.GetValues(dataSourceHeader).Single()
+                    == "mariadb",
+                $"Le endpoint {endpoint} n'utilise pas MariaDB.");
+
+            using var payload = JsonDocument.Parse(responseText);
+            Ensure(
+                payload.RootElement.ValueKind == JsonValueKind.Array,
+                $"Le endpoint {endpoint} ne retourne pas une liste JSON.");
+        }
+
+        using var catalogForWriteRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mariaDbBaseUrl}/internal/portal/service-catalog",
+            sessionToken);
+        using var catalogForWriteResponse = await client.SendAsync(
+            catalogForWriteRequest);
+        using var catalogForWritePayload = JsonDocument.Parse(
+            await catalogForWriteResponse.Content.ReadAsStringAsync());
+        var catalogItemId = catalogForWritePayload.RootElement[0]
+            .GetProperty("id")
+            .GetString()
+            ?? throw new InvalidOperationException(
+                "Le catalogue MariaDB ne contient aucun identifiant.");
+
+        using var serviceWriteRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"{mariaDbBaseUrl}/internal/portal/service-requests")
+        {
+            Content = JsonContent.Create(new
+            {
+                catalogItemId,
+                subject = "Demande de service conditionnelle",
+                description =
+                    "Écriture MariaDB opt-in sans donnée sensible."
+            })
+        };
+        serviceWriteRequest.Headers.Add(
+            correlationHeader,
+            "v0.7-mariadb-service-write");
+        serviceWriteRequest.Headers.Add(sessionHeader, sessionToken);
+        using var serviceWriteResponse = await client.SendAsync(
+            serviceWriteRequest);
+        using var serviceWritePayload = JsonDocument.Parse(
+            await serviceWriteResponse.Content.ReadAsStringAsync());
+        Ensure(
+            serviceWriteResponse.StatusCode == HttpStatusCode.Accepted,
+            "L'écriture MariaDB d'une demande de service devait retourner HTTP 202.");
+        Ensure(
+            serviceWritePayload.RootElement.GetProperty("persisted").GetBoolean(),
+            "La demande de service MariaDB doit retourner persisted:true.");
+        Ensure(
+            !string.IsNullOrWhiteSpace(
+                serviceWritePayload.RootElement
+                    .GetProperty("reference")
+                    .GetString()),
+            "La demande de service MariaDB ne retourne pas de référence.");
+        Ensure(
+            serviceWritePayload.RootElement
+                .GetProperty("correlation_id")
+                .GetString() == "v0.7-mariadb-service-write",
+            "La demande de service MariaDB ne propage pas le correlation_id.");
+
+        using var invalidCatalogRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"{mariaDbBaseUrl}/internal/portal/service-requests")
+        {
+            Content = JsonContent.Create(new
+            {
+                catalogItemId = "catalog-inexistant-v07",
+                subject = "Catalogue invalide",
+                description = "Cette demande opt-in doit être refusée."
+            })
+        };
+        invalidCatalogRequest.Headers.Add(sessionHeader, sessionToken);
+        using var invalidCatalogResponse = await client.SendAsync(
+            invalidCatalogRequest);
+        Ensure(
+            invalidCatalogResponse.StatusCode == HttpStatusCode.BadRequest,
+            "Un catalogue MariaDB invalide devait retourner HTTP 400.");
+
+        using var servicesForWriteRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mariaDbBaseUrl}/internal/portal/services",
+            sessionToken);
+        using var servicesForWriteResponse = await client.SendAsync(
+            servicesForWriteRequest);
+        using var servicesForWritePayload = JsonDocument.Parse(
+            await servicesForWriteResponse.Content.ReadAsStringAsync());
+        var serviceId = servicesForWritePayload.RootElement[0]
+            .GetProperty("id")
+            .GetString()
+            ?? throw new InvalidOperationException(
+                "Les services MariaDB ne contiennent aucun identifiant.");
+
+        using var supportWriteRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"{mariaDbBaseUrl}/internal/portal/support-requests")
+        {
+            Content = JsonContent.Create(new
+            {
+                serviceId,
+                priority = "normal",
+                subject = "Demande support conditionnelle",
+                description =
+                    "Écriture MariaDB opt-in sans donnée sensible."
+            })
+        };
+        supportWriteRequest.Headers.Add(
+            correlationHeader,
+            "v0.7-mariadb-support-write");
+        supportWriteRequest.Headers.Add(sessionHeader, sessionToken);
+        using var supportWriteResponse = await client.SendAsync(
+            supportWriteRequest);
+        using var supportWritePayload = JsonDocument.Parse(
+            await supportWriteResponse.Content.ReadAsStringAsync());
+        Ensure(
+            supportWriteResponse.StatusCode == HttpStatusCode.Accepted,
+            "L'écriture MariaDB d'une demande support devait retourner HTTP 202.");
+        Ensure(
+            supportWritePayload.RootElement.GetProperty("persisted").GetBoolean(),
+            "La demande support MariaDB doit retourner persisted:true.");
+
+        using var isolationRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"{mariaDbBaseUrl}/internal/portal/support-requests")
+        {
+            Content = JsonContent.Create(new
+            {
+                serviceId = isolationServiceId,
+                priority = "normal",
+                subject = "Test isolation client",
+                description = "Cette demande opt-in doit être refusée."
+            })
+        };
+        isolationRequest.Headers.Add(sessionHeader, sessionToken);
+        using var isolationResponse = await client.SendAsync(isolationRequest);
+        Ensure(
+            isolationResponse.StatusCode == HttpStatusCode.Forbidden,
+            "Un service MariaDB d'un autre client devait être refusé.");
+
+        using var adHealthResponse = await client.GetAsync(
+            $"{mariaDbBaseUrl}/internal/ad/health");
+        using var adHealthPayload = JsonDocument.Parse(
+            await adHealthResponse.Content.ReadAsStringAsync());
+        Ensure(
+            adHealthResponse.StatusCode == HttpStatusCode.OK,
+            "Le diagnostic AD conditionnel ne répond pas avec HTTP 200.");
+        Ensure(
+            adHealthPayload.RootElement.GetProperty("mode").GetString()
+                == "disabled",
+            "Le test MariaDB ne doit pas activer Active Directory.");
+    }
+    finally
+    {
+        await CleanupIsolationFixtureAsync(
+            isolationCustomerId,
+            isolationServiceId);
+        await api.StopAsync();
+    }
+}
+
+async Task VerifyPersistedSessionHashAsync(string sessionToken)
+{
+    await using var connection = CreateMariaDbTestConnection();
+    await connection.OpenAsync();
+    await using var command = connection.CreateCommand();
+    command.CommandText =
+        """
+        SELECT session_token_hash
+        FROM portal_sessions
+        ORDER BY created_at DESC
+        LIMIT 1;
+        """;
+    var storedHash = Convert.ToString(await command.ExecuteScalarAsync());
+    var expectedHash = Convert.ToHexString(
+        SHA256.HashData(Encoding.UTF8.GetBytes(sessionToken)))
+        .ToLowerInvariant();
+
+    Ensure(
+        !string.IsNullOrWhiteSpace(storedHash),
+        "Le hash de session MariaDB est absent.");
+    Ensure(
+        !string.Equals(storedHash, sessionToken, StringComparison.Ordinal),
+        "Le token brut ne doit jamais être stocké dans MariaDB.");
+    Ensure(
+        string.Equals(storedHash, expectedHash, StringComparison.Ordinal),
+        "Le hash de session MariaDB ne correspond pas au token créé.");
+}
+
+async Task PrepareIsolationFixtureAsync(
+    string customerId,
+    string serviceId)
+{
+    await CleanupIsolationFixtureAsync(customerId, serviceId);
+    await using var connection = CreateMariaDbTestConnection();
+    await connection.OpenAsync();
+    await using var transaction = await connection.BeginTransactionAsync();
+
+    await using (var customerCommand = connection.CreateCommand())
+    {
+        customerCommand.Transaction = transaction;
+        customerCommand.CommandText =
+            """
+            INSERT INTO customers (
+                id,
+                external_reference,
+                display_name,
+                status,
+                created_at,
+                updated_at
+            ) VALUES (
+                @id,
+                'CLI-ISOLATION-V07',
+                'Client isolation V0.7',
+                'active',
+                @now,
+                @now
+            );
+            """;
+        AddDbParameter(customerCommand, "@id", customerId);
+        AddDbParameter(customerCommand, "@now", DateTime.UtcNow);
+        await customerCommand.ExecuteNonQueryAsync();
+    }
+
+    await using (var serviceCommand = connection.CreateCommand())
+    {
+        serviceCommand.Transaction = transaction;
+        serviceCommand.CommandText =
+            """
+            INSERT INTO customer_services (
+                id,
+                customer_id,
+                external_reference,
+                service_type,
+                name,
+                status,
+                description,
+                scope,
+                commercial_terms,
+                created_at,
+                updated_at
+            ) VALUES (
+                @id,
+                @customer_id,
+                'SVC-ISOLATION-V07',
+                'support',
+                'Service isolation V0.7',
+                'active',
+                'Donnée fictive de test opt-in.',
+                'Test automatisé',
+                'Selon devis',
+                @now,
+                @now
+            );
+            """;
+        AddDbParameter(serviceCommand, "@id", serviceId);
+        AddDbParameter(serviceCommand, "@customer_id", customerId);
+        AddDbParameter(serviceCommand, "@now", DateTime.UtcNow);
+        await serviceCommand.ExecuteNonQueryAsync();
+    }
+
+    await transaction.CommitAsync();
+}
+
+async Task CleanupIsolationFixtureAsync(
+    string customerId,
+    string serviceId)
+{
+    if (!IsMariaDbTestRequested())
+    {
+        return;
+    }
+
+    await using var connection = CreateMariaDbTestConnection();
+    await connection.OpenAsync();
+    await using var transaction = await connection.BeginTransactionAsync();
+
+    await using (var serviceCommand = connection.CreateCommand())
+    {
+        serviceCommand.Transaction = transaction;
+        serviceCommand.CommandText =
+            "DELETE FROM customer_services WHERE id = @id;";
+        AddDbParameter(serviceCommand, "@id", serviceId);
+        await serviceCommand.ExecuteNonQueryAsync();
+    }
+
+    await using (var customerCommand = connection.CreateCommand())
+    {
+        customerCommand.Transaction = transaction;
+        customerCommand.CommandText =
+            "DELETE FROM customers WHERE id = @id;";
+        AddDbParameter(customerCommand, "@id", customerId);
+        await customerCommand.ExecuteNonQueryAsync();
+    }
+
+    await transaction.CommitAsync();
+}
+
+DbConnection CreateMariaDbTestConnection()
+{
+    var builder = new DbConnectionStringBuilder
+    {
+        ["Server"] = Environment.GetEnvironmentVariable("SQL_HOST"),
+        ["Port"] = Environment.GetEnvironmentVariable("SQL_PORT"),
+        ["Database"] = Environment.GetEnvironmentVariable("SQL_DATABASE"),
+        ["User ID"] = Environment.GetEnvironmentVariable("SQL_USERNAME"),
+        ["Password"] = Environment.GetEnvironmentVariable("SQL_PASSWORD"),
+        ["Character Set"] = "utf8mb4",
+        ["SSL Mode"] = "Preferred"
+    };
+    var connectorPath = Path.Combine(
+        Path.GetDirectoryName(apiAssembly)!,
+        "MySqlConnector.dll");
+    var connectorAssembly = Assembly.LoadFrom(connectorPath);
+    var connectionType = connectorAssembly.GetType(
+        "MySqlConnector.MySqlConnection",
+        throwOnError: true)!;
+
+    return Activator.CreateInstance(
+            connectionType,
+            builder.ConnectionString) as DbConnection
+        ?? throw new InvalidOperationException(
+            "Impossible de créer la connexion MariaDB des tests opt-in.");
+}
+
+static void AddDbParameter(
+    DbCommand command,
+    string name,
+    object value)
+{
+    var parameter = command.CreateParameter();
+    parameter.ParameterName = name;
+    parameter.Value = value;
+    command.Parameters.Add(parameter);
+}
+
+void VerifyIdentifierMapping()
+{
+    var apiAssemblyForMapping = Assembly.LoadFrom(apiAssembly);
+    var readerType = apiAssemblyForMapping.GetType(
+        "Kermaria.ApiInternal.Data.Repositories.MariaDbIdentifierReader",
+        throwOnError: true)!;
+    var requiredMethod = readerType.GetMethod(
+        "ConvertRequiredValue",
+        BindingFlags.Static | BindingFlags.NonPublic)
+        ?? throw new InvalidOperationException(
+            "Le helper MariaDB d'identifiant requis est introuvable.");
+    var nullableMethod = readerType.GetMethod(
+        "ConvertNullableValue",
+        BindingFlags.Static | BindingFlags.NonPublic)
+        ?? throw new InvalidOperationException(
+            "Le helper MariaDB d'identifiant nullable est introuvable.");
+    var guid = Guid.NewGuid();
+
+    Ensure(
+        InvokeIdentifier(requiredMethod, guid, "test.id")
+            == guid.ToString("D"),
+        "Le mapping MariaDB Guid vers string est invalide.");
+    Ensure(
+        InvokeIdentifier(requiredMethod, "catalog-vpn", "test.id")
+            == "catalog-vpn",
+        "Le mapping MariaDB string est invalide.");
+    Ensure(
+        InvokeIdentifier(requiredMethod, guid.ToByteArray(), "test.id")
+            == guid.ToString("D"),
+        "Le mapping MariaDB BINARY(16) vers GUID est invalide.");
+    Ensure(
+        nullableMethod.Invoke(
+            null,
+            [DBNull.Value, "test.nullable_id"]) is null,
+        "Le mapping MariaDB nullable ne gère pas DBNull.");
+}
+
+static string InvokeIdentifier(
+    MethodInfo method,
+    object value,
+    string columnName)
+{
+    return method.Invoke(null, [value, columnName]) as string
+        ?? throw new InvalidOperationException(
+            $"Le mapping de l'identifiant {columnName} n'a pas retourné de chaîne.");
+}
+
+HttpRequestMessage CreateSessionRequest(
+    HttpMethod method,
+    string url,
+    string sessionToken)
+{
+    var request = new HttpRequestMessage(method, url);
+    request.Headers.Add(sessionHeader, sessionToken);
+    return request;
+}
+
+static string MockCustomerReference() => "CLI-DEMO-0042";
+
+void ConfigureMockAuthentication(
+    ProcessStartInfo startInfo,
+    string status,
+    string durationMinutes)
+{
+    startInfo.Environment["ASPNETCORE_ENVIRONMENT"] = "Development";
+    startInfo.Environment["DOTNET_ENVIRONMENT"] = "Development";
+    startInfo.Environment["AD_INTEGRATION_MODE"] = "disabled";
+    startInfo.Environment["DEMO_PORTAL_EMAIL"] = mockEmail;
+    startInfo.Environment["DEMO_PORTAL_PASSWORD"] = mockPassword;
+    startInfo.Environment["DEMO_PORTAL_STATUS"] = status;
+    startInfo.Environment["SESSION_DURATION_MINUTES"] = durationMinutes;
+    foreach (var variable in new[]
+    {
+        "SQL_PROVIDER",
+        "SQL_HOST",
+        "SQL_PORT",
+        "SQL_DATABASE",
+        "SQL_USERNAME",
+        "SQL_PASSWORD"
+    })
+    {
+        startInfo.Environment.Remove(variable);
+    }
+}
+
+RunningApi StartApi(
+    string baseUrl,
+    Action<ProcessStartInfo> configure)
+{
+    var startInfo = new ProcessStartInfo
+    {
+        FileName = dotnetExecutable,
+        WorkingDirectory = Path.GetDirectoryName(apiAssembly)!,
+        UseShellExecute = false,
+        CreateNoWindow = true,
+        RedirectStandardOutput = true,
+        RedirectStandardError = true
+    };
+    startInfo.ArgumentList.Add(apiAssembly);
+    startInfo.ArgumentList.Add("--urls");
+    startInfo.ArgumentList.Add(baseUrl);
+    configure(startInfo);
+
+    var logs = new StringBuilder();
+    var process = new Process { StartInfo = startInfo };
+    process.OutputDataReceived += (_, eventArgs) =>
+    {
+        if (eventArgs.Data is not null)
+        {
+            logs.AppendLine(eventArgs.Data);
+        }
+    };
+    process.ErrorDataReceived += (_, eventArgs) =>
+    {
+        if (eventArgs.Data is not null)
+        {
+            logs.AppendLine(eventArgs.Data);
+        }
+    };
+
+    if (!process.Start())
+    {
+        throw new InvalidOperationException("Impossible de démarrer API-INTERNAL.");
+    }
+
+    process.BeginOutputReadLine();
+    process.BeginErrorReadLine();
+    return new RunningApi(process, logs);
+}
+
+bool IsMariaDbTestRequested()
+    => string.Equals(
+        Environment.GetEnvironmentVariable("RUN_MARIADB_TESTS"),
+        "true",
+        StringComparison.OrdinalIgnoreCase);
+
+static async Task<HttpResponseMessage> WaitForHealthAsync(
+    HttpClient client,
+    Process apiProcess,
+    string baseUrl,
+    StringBuilder logs)
+{
+    for (var attempt = 0; attempt < 40; attempt++)
+    {
+        if (apiProcess.HasExited)
+        {
+            throw new InvalidOperationException(
+                $"API-INTERNAL s'est arrêtée prématurément. {logs}");
+        }
+
+        try
+        {
+            return await client.GetAsync($"{baseUrl}/health");
+        }
+        catch (HttpRequestException)
+        {
+            await Task.Delay(250);
+        }
+    }
+
+    throw new InvalidOperationException(
+        "Le health check de l'API n'a pas répondu dans le délai prévu.");
+}
+
+static void Ensure(bool condition, string message)
+{
+    if (!condition)
+    {
+        throw new InvalidOperationException(message);
+    }
+}
+
+sealed class RunningApi : IDisposable
+{
+    public RunningApi(Process process, StringBuilder logs)
+    {
+        Process = process;
+        Logs = logs;
+    }
+
+    public Process Process { get; }
+    public StringBuilder Logs { get; }
+
+    public async Task StopAsync()
+    {
+        if (!Process.HasExited)
+        {
+            Process.Kill(entireProcessTree: true);
+            await Process.WaitForExitAsync();
+        }
+    }
+
+    public void Dispose()
+    {
+        Process.Dispose();
+    }
+}

@@ -1,0 +1,52 @@
+# Node.js / Next.js
+node_modules/
+dist/
+build/
+.next/
+out/
+.npm-cache/
+*.tsbuildinfo
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# .NET
+bin/
+obj/
+TestResults/
+*.user
+*.suo
+.vs/
+.dotnet-home/
+.dotnet-sdk/
+.nuget/
+.nuget-local/
+.app-data/
+.local-app-data/
+.user-profile/
+
+# Editor settings
+.vscode/settings.json
+
+# Logs and test output
+logs/
+*.log
+coverage/
+
+# Operating systems
+.DS_Store
+Thumbs.db
+
+# Local tool/runtime caches
+.dotnet-sdk/
+.dotnet-home/
+.app-data/
+.local-app-data/
+.user-profile/
+Microsoft/
+
+# Local tree/debug exports
+test.csv
+*.tree.txt

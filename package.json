@@ -1,0 +1,26 @@
+{
+  "name": "kermaria-client-platform",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/webportal",
+    "packages/shared"
+  ],
+  "scripts": {
+    "dev:web": "npm --prefix apps/webportal run dev",
+    "build:web": "npm --prefix apps/webportal run build",
+    "lint:web": "npm --prefix apps/webportal run lint",
+    "build:api": "dotnet build apps/api-internal/Kermaria.ApiInternal.csproj",
+    "test:api": "dotnet test tests/api-internal/Kermaria.ApiInternal.SmokeTests.csproj",
+    "build": "npm run build:web && npm run build:api && npm run test:api",
+    "dev:webportal": "npm run dev --workspace @kermaria/webportal",
+    "build:webportal": "npm run build --workspace @kermaria/webportal",
+    "lint:webportal": "npm run lint --workspace @kermaria/webportal",
+    "typecheck:webportal": "npm run typecheck --workspace @kermaria/webportal",
+    "typecheck:shared": "npm run typecheck --workspace @kermaria/shared",
+    "check:web": "npm run typecheck:shared && npm run lint:webportal && npm run typecheck:webportal && npm run build:webportal"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

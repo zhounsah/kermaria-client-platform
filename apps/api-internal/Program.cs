@@ -1,0 +1,574 @@
+using System.Text.Json;
+using Kermaria.ApiInternal;
+using Kermaria.ApiInternal.Contracts;
+using Kermaria.ApiInternal.Data.Configuration;
+using Kermaria.ApiInternal.Data.Migration;
+using Kermaria.ApiInternal.Data.Repositories;
+using Kermaria.ApiInternal.Infrastructure;
+using Kermaria.ApiInternal.Services;
+using Kermaria.ApiInternal.Services.ActiveDirectory;
+using Microsoft.AspNetCore.Diagnostics;
+using MySqlConnector;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Logging.ClearProviders();
+builder.Logging.AddJsonConsole(options =>
+{
+    options.IncludeScopes = true;
+    options.TimestampFormat = "yyyy-MM-ddTHH:mm:ss.fffZ";
+    options.UseUtcTimestamp = true;
+});
+
+if (Enum.TryParse<LogLevel>(
+        builder.Configuration["LOG_LEVEL"],
+        ignoreCase: true,
+        out var configuredLogLevel))
+{
+    builder.Logging.SetMinimumLevel(configuredLogLevel);
+}
+
+var sqlConfiguration = SqlConfigurationResolver.Resolve(
+    builder.Configuration,
+    builder.Environment);
+var adConfiguration = AdConfigurationResolver.Resolve(builder.Configuration);
+var authConfiguration = AuthConfigurationResolver.Resolve(
+    builder.Configuration,
+    builder.Environment);
+
+builder.Services.AddSingleton(sqlConfiguration);
+builder.Services.AddSingleton(adConfiguration);
+builder.Services.AddSingleton(authConfiguration);
+builder.Services.AddSingleton<IPortalPasswordService, PortalPasswordService>();
+builder.Services.AddSingleton<ISessionTokenService, SessionTokenService>();
+builder.Services.AddSingleton<MockAuthenticationStore>();
+builder.Services.AddScoped<IPortalRepository>(
+    _ => sqlConfiguration.IsPersistent
+        ? new MariaDbPortalRepository(sqlConfiguration)
+        : new MockPortalRepository());
+builder.Services.AddScoped<IAuthenticationRepository>(
+    serviceProvider => sqlConfiguration.IsPersistent
+        ? new MariaDbAuthenticationRepository(sqlConfiguration)
+        : new MockAuthenticationRepository(
+            serviceProvider.GetRequiredService<MockAuthenticationStore>()));
+builder.Services.AddScoped<IPortalService, PortalService>();
+builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
+builder.Services.AddScoped<IAuditService, AuditService>();
+builder.Services.AddTransient<MariaDbMigrationRunner>();
+builder.Services.AddSingleton<IActiveDirectoryService>(_ =>
+    adConfiguration.Mode switch
+    {
+        AdIntegrationMode.Mock =>
+            new MockActiveDirectoryService(adConfiguration),
+        AdIntegrationMode.Test or AdIntegrationMode.Enabled =>
+            new ControlledActiveDirectoryService(adConfiguration),
+        _ => new DisabledActiveDirectoryService(adConfiguration)
+    });
+
+var app = builder.Build();
+
+if (!sqlConfiguration.IsPersistent)
+{
+    app.Logger.LogWarning(
+        "MariaDB is not configured; Development mock persistence is active");
+}
+else
+{
+    app.Logger.LogInformation("MariaDB persistence is configured");
+}
+
+app.Logger.LogInformation(
+    "Active Directory integration mode is {AdMode}; operations_enabled false",
+    adConfiguration.ModeName);
+
+if (args.Contains("--seed-demo-data", StringComparer.OrdinalIgnoreCase)
+    && !args.Contains("--apply-migrations", StringComparer.OrdinalIgnoreCase))
+{
+    throw new InvalidOperationException(
+        "--seed-demo-data requires --apply-migrations.");
+}
+
+if (args.Contains("--apply-migrations", StringComparer.OrdinalIgnoreCase))
+{
+    if (!app.Environment.IsDevelopment())
+    {
+        throw new InvalidOperationException(
+            "MariaDB migrations can only be run by this command in Development.");
+    }
+
+    await using var scope = app.Services.CreateAsyncScope();
+    var migrationRunner =
+        scope.ServiceProvider.GetRequiredService<MariaDbMigrationRunner>();
+    await migrationRunner.ApplyAsync(
+        args.Contains("--seed-demo-data", StringComparer.OrdinalIgnoreCase));
+    return;
+}
+
+app.UseMiddleware<CorrelationIdMiddleware>();
+
+app.UseExceptionHandler(exceptionHandler =>
+{
+    exceptionHandler.Run(async context =>
+    {
+        var correlationId = context.GetCorrelationId();
+        var exception = context.Features
+            .Get<IExceptionHandlerFeature>()?
+            .Error;
+        var (statusCode, code, message) = exception switch
+        {
+            InvalidCredentialsException => (
+                StatusCodes.Status401Unauthorized,
+                "INVALID_CREDENTIALS",
+                "Identifiants invalides."),
+            SessionRequiredException => (
+                StatusCodes.Status401Unauthorized,
+                "SESSION_REQUIRED",
+                "Une session valide est requise."),
+            SessionExpiredException => (
+                StatusCodes.Status401Unauthorized,
+                "SESSION_EXPIRED",
+                "La session a expiré."),
+            SessionRevokedException => (
+                StatusCodes.Status401Unauthorized,
+                "SESSION_REVOKED",
+                "La session n'est plus valide."),
+            SessionInvalidException => (
+                StatusCodes.Status401Unauthorized,
+                "SESSION_INVALID",
+                "La session n'est pas valide."),
+            PortalAccessDeniedException => (
+                StatusCodes.Status403Forbidden,
+                "ACCESS_DENIED",
+                "L'accès à cette ressource est refusé."),
+            PortalValidationException => (
+                StatusCodes.Status400BadRequest,
+                "INVALID_REQUEST",
+                "La demande est incomplète ou invalide."),
+            PortalDataNotFoundException => (
+                StatusCodes.Status404NotFound,
+                "PORTAL_DATA_NOT_FOUND",
+                "La ressource demandée est introuvable."),
+            MySqlException => (
+                StatusCodes.Status503ServiceUnavailable,
+                "SQL_UNAVAILABLE",
+                "Le service de données est temporairement indisponible."),
+            _ => (
+                StatusCodes.Status500InternalServerError,
+                "INTERNAL_ERROR",
+                "Une erreur interne est survenue.")
+        };
+
+        app.Logger.LogError(
+            "Controlled request failure code {ErrorCode} correlation_id {CorrelationId}",
+            code,
+            correlationId);
+
+        var auditService =
+            context.RequestServices.GetRequiredService<IAuditService>();
+        var session = context.Items.TryGetValue(
+                "PortalSessionContext",
+                out var sessionValue)
+            ? sessionValue as PortalSessionContext
+            : null;
+        await auditService.RecordAsync(
+            new AuditEvent(
+                correlationId,
+                "request.error",
+                "refused",
+                code,
+                CustomerId: session?.CustomerId,
+                ActorUserId: session?.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+
+        context.Response.StatusCode = statusCode;
+        await context.Response.WriteAsJsonAsync(
+            new ApiError(code, message, correlationId));
+    });
+});
+
+app.MapGet("/health", () =>
+    Results.Ok(new HealthResponse("ok", ServiceNames.ApiInternal)));
+
+app.MapPost(
+    "/internal/auth/sessions",
+    CreatePortalSession);
+app.MapGet(
+    "/internal/auth/session",
+    GetPortalSession);
+app.MapDelete(
+    "/internal/auth/sessions/current",
+    RevokePortalSession);
+
+app.MapGet(
+    "/internal/portal/summary",
+    async (
+        HttpContext context,
+        IPortalService service,
+        IAuthenticationService authenticationService) =>
+    {
+        var session = await ResolvePortalSessionAsync(
+            context,
+            authenticationService);
+        return PortalOk(
+            context,
+            service,
+            await service.GetSummaryAsync(
+                session,
+                context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/portal/profile",
+    async (
+        HttpContext context,
+        IPortalService service,
+        IAuthenticationService authenticationService) =>
+    {
+        var session = await ResolvePortalSessionAsync(
+            context,
+            authenticationService);
+        return PortalOk(
+            context,
+            service,
+            await service.GetProfileAsync(
+                session,
+                context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/portal/services",
+    async (
+        HttpContext context,
+        IPortalService service,
+        IAuthenticationService authenticationService) =>
+    {
+        var session = await ResolvePortalSessionAsync(
+            context,
+            authenticationService);
+        return PortalOk(
+            context,
+            service,
+            await service.GetServicesAsync(
+                session,
+                context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/portal/invoices",
+    async (
+        HttpContext context,
+        IPortalService service,
+        IAuthenticationService authenticationService) =>
+    {
+        var session = await ResolvePortalSessionAsync(
+            context,
+            authenticationService);
+        return PortalOk(
+            context,
+            service,
+            await service.GetInvoicesAsync(
+                session,
+                context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/portal/service-catalog",
+    async (
+        HttpContext context,
+        IPortalService service,
+        IAuthenticationService authenticationService) =>
+    {
+        _ = await ResolvePortalSessionAsync(
+            context,
+            authenticationService);
+        return PortalOk(
+            context,
+            service,
+            await service.GetServiceCatalogAsync(context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/portal/support-requests",
+    async (
+        HttpContext context,
+        IPortalService service,
+        IAuthenticationService authenticationService) =>
+    {
+        var session = await ResolvePortalSessionAsync(
+            context,
+            authenticationService);
+        return PortalOk(
+            context,
+            service,
+            await service.GetSupportRequestsAsync(
+                session,
+                context.RequestAborted));
+    });
+app.MapPost(
+    "/internal/portal/support-requests",
+    CreateSupportRequest);
+app.MapPost(
+    "/internal/portal/service-requests",
+    CreateServiceRequest);
+
+app.MapGet(
+    "/internal/ad/health",
+    (IActiveDirectoryService service) => Results.Ok(service.GetHealth()));
+app.MapPost(
+    "/internal/ad/change-password",
+    async (
+        HttpContext context,
+        IActiveDirectoryService service,
+        IAuditService auditService) =>
+    {
+        var request = ShouldReadAdPayload(service)
+            ? await ReadPayload<ChangePasswordRequest>(context)
+            : null;
+        return await CompleteAdOperation(
+            context,
+            auditService,
+            "ad.change_password",
+            service.GetHealth().Mode,
+            service.ChangePassword(request));
+    });
+app.MapPost(
+    "/internal/ad/create-user",
+    async (
+        HttpContext context,
+        IActiveDirectoryService service,
+        IAuditService auditService) =>
+    {
+        var request = ShouldReadAdPayload(service)
+            ? await ReadPayload<CreateUserRequest>(context)
+            : null;
+        return await CompleteAdOperation(
+            context,
+            auditService,
+            "ad.create_user",
+            service.GetHealth().Mode,
+            service.CreateUser(request));
+    });
+app.MapPost(
+    "/internal/ad/add-user-to-group",
+    async (
+        HttpContext context,
+        IActiveDirectoryService service,
+        IAuditService auditService) =>
+    {
+        var request = ShouldReadAdPayload(service)
+            ? await ReadPayload<GroupMembershipRequest>(context)
+            : null;
+        return await CompleteAdOperation(
+            context,
+            auditService,
+            "ad.add_user_to_group",
+            service.GetHealth().Mode,
+            service.AddUserToGroup(request));
+    });
+app.MapPost(
+    "/internal/ad/remove-user-from-group",
+    async (
+        HttpContext context,
+        IActiveDirectoryService service,
+        IAuditService auditService) =>
+    {
+        var request = ShouldReadAdPayload(service)
+            ? await ReadPayload<GroupMembershipRequest>(context)
+            : null;
+        return await CompleteAdOperation(
+            context,
+            auditService,
+            "ad.remove_user_from_group",
+            service.GetHealth().Mode,
+            service.RemoveUserFromGroup(request));
+    });
+
+app.MapFallback((HttpContext context) =>
+    Results.Json(
+        new ApiError(
+            "ROUTE_NOT_FOUND",
+            "La ressource demandée est introuvable.",
+            context.GetCorrelationId()),
+        statusCode: StatusCodes.Status404NotFound));
+
+app.Run();
+
+static IResult PortalOk<T>(
+    HttpContext context,
+    IPortalService service,
+    T data)
+{
+    context.Response.Headers["X-Data-Source"] =
+        service.IsPersistent ? "mariadb" : "mock";
+    return Results.Ok(data);
+}
+
+static async Task<IResult> CreateSupportRequest(
+    HttpContext context,
+    IPortalService service,
+    IAuthenticationService authenticationService)
+{
+    var session = await ResolvePortalSessionAsync(
+        context,
+        authenticationService);
+    var payload = await ReadPayload<SupportRequestPayload>(context)
+        ?? throw new PortalValidationException();
+    var result = await service.CreateSupportRequestAsync(
+        session,
+        payload,
+        context.GetCorrelationId(),
+        context.Connection.RemoteIpAddress?.ToString(),
+        context.RequestAborted);
+
+    return Results.Json(
+        new MockSubmissionResponse(
+            result.Reference,
+            result.Status,
+            result.Persisted,
+            result.Message,
+            result.CorrelationId),
+        statusCode: StatusCodes.Status202Accepted);
+}
+
+static async Task<IResult> CreateServiceRequest(
+    HttpContext context,
+    IPortalService service,
+    IAuthenticationService authenticationService)
+{
+    var session = await ResolvePortalSessionAsync(
+        context,
+        authenticationService);
+    var payload = await ReadPayload<ServiceRequestPayload>(context)
+        ?? throw new PortalValidationException();
+    var result = await service.CreateServiceRequestAsync(
+        session,
+        payload,
+        context.GetCorrelationId(),
+        context.Connection.RemoteIpAddress?.ToString(),
+        context.RequestAborted);
+
+    return Results.Json(
+        new MockSubmissionResponse(
+            result.Reference,
+            result.Status,
+            result.Persisted,
+            result.Message,
+            result.CorrelationId),
+        statusCode: StatusCodes.Status202Accepted);
+}
+
+static async Task<IResult> CreatePortalSession(
+    HttpContext context,
+    IAuthenticationService authenticationService)
+{
+    var request = await ReadPayload<LoginRequest>(context)
+        ?? throw new InvalidCredentialsException();
+    var result = await authenticationService.CreateSessionAsync(
+        request,
+        context.GetCorrelationId(),
+        context.Connection.RemoteIpAddress?.ToString(),
+        context.Request.Headers["User-Agent"].ToString(),
+        context.RequestAborted);
+
+    return Results.Ok(new InternalSessionCreatedResponse(
+        result.SessionToken,
+        result.User,
+        ToUtcIso(result.ExpiresAtUtc)));
+}
+
+static async Task<IResult> GetPortalSession(
+    HttpContext context,
+    IAuthenticationService authenticationService)
+{
+    var session = await ResolvePortalSessionAsync(
+        context,
+        authenticationService);
+    return Results.Ok(new InternalSessionResponse(
+        ToPublicUser(session),
+        ToUtcIso(session.ExpiresAtUtc)));
+}
+
+static async Task<IResult> RevokePortalSession(
+    HttpContext context,
+    IAuthenticationService authenticationService)
+{
+    await authenticationService.RevokeSessionAsync(
+        GetPortalSessionToken(context),
+        context.GetCorrelationId(),
+        context.Connection.RemoteIpAddress?.ToString(),
+        context.RequestAborted);
+    return Results.NoContent();
+}
+
+static async Task<PortalSessionContext> ResolvePortalSessionAsync(
+    HttpContext context,
+    IAuthenticationService authenticationService)
+{
+    var session = await authenticationService.ResolveSessionAsync(
+        GetPortalSessionToken(context),
+        context.GetCorrelationId(),
+        context.Connection.RemoteIpAddress?.ToString(),
+        context.RequestAborted);
+    context.Items["PortalSessionContext"] = session;
+    return session;
+}
+
+static string? GetPortalSessionToken(HttpContext context)
+    => context.Request.Headers[
+        AuthenticationHeaders.PortalSession].FirstOrDefault();
+
+static AuthenticatedPortalUser ToPublicUser(PortalSessionContext session)
+    => new(
+        session.DisplayName,
+        session.Email,
+        session.CustomerReference,
+        session.UserStatus);
+
+static string ToUtcIso(DateTime value)
+    => DateTime.SpecifyKind(value, DateTimeKind.Utc).ToString("O");
+
+static bool ShouldReadAdPayload(IActiveDirectoryService service)
+    => service.GetHealth().Mode is "test" or "enabled";
+
+static async Task<IResult> CompleteAdOperation(
+    HttpContext context,
+    IAuditService auditService,
+    string action,
+    string mode,
+    AdOperationResult result)
+{
+    await auditService.RecordAsync(
+        new AuditEvent(
+            context.GetCorrelationId(),
+            action,
+            result.StatusCode < 400 ? "simulated" : "refused",
+            result.Code,
+            "active_directory",
+            mode,
+            SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+        context.RequestAborted);
+
+    return Results.Json(
+        new AdOperationResponse(
+            result.Code,
+            result.Message,
+            mode,
+            context.GetCorrelationId()),
+        statusCode: result.StatusCode);
+}
+
+static async Task<T?> ReadPayload<T>(HttpContext context)
+{
+    try
+    {
+        return await context.Request.ReadFromJsonAsync<T>();
+    }
+    catch (JsonException)
+    {
+        return default;
+    }
+    catch (NotSupportedException)
+    {
+        return default;
+    }
+}
+
+public partial class Program
+{
+}
