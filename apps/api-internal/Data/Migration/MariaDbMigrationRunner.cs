@@ -108,27 +108,16 @@ public sealed class MariaDbMigrationRunner
                 connection,
                 migrationDirectory,
                 cancellationToken);
-            await SeedDemoPortalUserAsync(connection, cancellationToken);
+            await SeedDemoPortalUsersAsync(connection, cancellationToken);
         }
     }
 
-    private async Task SeedDemoPortalUserAsync(
+    private async Task SeedDemoPortalUsersAsync(
         MySqlConnection connection,
         CancellationToken cancellationToken)
     {
         if (!_environment.IsDevelopment())
         {
-            return;
-        }
-
-        var email = _applicationConfiguration["DEMO_PORTAL_EMAIL"]?.Trim();
-        var password = _applicationConfiguration["DEMO_PORTAL_PASSWORD"];
-
-        if (string.IsNullOrWhiteSpace(email)
-            || string.IsNullOrWhiteSpace(password))
-        {
-            _logger.LogWarning(
-                "Development portal user seed skipped because demo credentials are not configured");
             return;
         }
 
@@ -145,15 +134,74 @@ public sealed class MariaDbMigrationRunner
                 "A development customer is required before seeding a portal user.");
         }
 
+        var clientEmail =
+            _applicationConfiguration["DEMO_PORTAL_EMAIL"]?.Trim();
+        var adminEmail =
+            _applicationConfiguration["DEMO_INTERNAL_ADMIN_EMAIL"]?.Trim();
+        if (!string.IsNullOrWhiteSpace(clientEmail)
+            && !string.IsNullOrWhiteSpace(adminEmail)
+            && string.Equals(
+                clientEmail,
+                adminEmail,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                "Development demo user emails must be distinct.");
+        }
+
+        await SeedDevelopmentUserAsync(
+            connection,
+            customerId,
+            "DEMO_PORTAL_EMAIL",
+            "DEMO_PORTAL_PASSWORD",
+            "Client démo",
+            Contracts.PortalRoles.ClientUser,
+            cancellationToken);
+        await SeedDevelopmentUserAsync(
+            connection,
+            customerId,
+            "DEMO_INTERNAL_ADMIN_EMAIL",
+            "DEMO_INTERNAL_ADMIN_PASSWORD",
+            "Administrateur interne de démonstration",
+            Contracts.PortalRoles.InternalAdmin,
+            cancellationToken);
+    }
+
+    private async Task SeedDevelopmentUserAsync(
+        MySqlConnection connection,
+        string customerId,
+        string emailVariable,
+        string passwordVariable,
+        string displayName,
+        string role,
+        CancellationToken cancellationToken)
+    {
+        var email = _applicationConfiguration[emailVariable]?.Trim();
+        var password = _applicationConfiguration[passwordVariable];
+
+        if (string.IsNullOrWhiteSpace(email)
+            || string.IsNullOrWhiteSpace(password))
+        {
+            _logger.LogWarning(
+                "Development user seed skipped for role {Role} because credentials are not configured",
+                role);
+            return;
+        }
+
         await using var userLookup = connection.CreateCommand();
         userLookup.CommandText =
             """
             SELECT id
             FROM portal_users
-            WHERE customer_id = @customer_id
+            WHERE LOWER(email) = @email
+               OR (role = @role AND customer_id = @customer_id)
             ORDER BY created_at
             LIMIT 1;
             """;
+        userLookup.Parameters.AddWithValue(
+            "@email",
+            email.ToLowerInvariant());
+        userLookup.Parameters.AddWithValue("@role", role);
         userLookup.Parameters.AddWithValue("@customer_id", customerId);
         var existingUserId = (
             await userLookup.ExecuteScalarAsync(cancellationToken))?.ToString();
@@ -176,6 +224,7 @@ public sealed class MariaDbMigrationRunner
                     password_hash,
                     display_name,
                     status,
+                    role,
                     created_at,
                     updated_at
                 ) VALUES (
@@ -184,8 +233,9 @@ public sealed class MariaDbMigrationRunner
                     @identity_provider_subject,
                     @email,
                     @password_hash,
-                    'Client démo',
+                    @display_name,
                     'active',
+                    @role,
                     @created_at,
                     @updated_at
                 );
@@ -203,7 +253,12 @@ public sealed class MariaDbMigrationRunner
                 UPDATE portal_users
                 SET email = @email,
                     password_hash = @password_hash,
+                    display_name = @display_name,
                     status = 'active',
+                    role = @role,
+                    failed_login_count = 0,
+                    last_failed_login_at = NULL,
+                    locked_until = NULL,
                     updated_at = @updated_at
                 WHERE id = @id;
                 """;
@@ -212,11 +267,14 @@ public sealed class MariaDbMigrationRunner
         command.Parameters.AddWithValue("@id", userId);
         command.Parameters.AddWithValue("@email", email.ToLowerInvariant());
         command.Parameters.AddWithValue("@password_hash", passwordHash);
+        command.Parameters.AddWithValue("@display_name", displayName);
+        command.Parameters.AddWithValue("@role", role);
         command.Parameters.AddWithValue("@updated_at", now);
         await command.ExecuteNonQueryAsync(cancellationToken);
 
         _logger.LogInformation(
-            "Development portal user credentials configured without logging credential values");
+            "Development portal user configured for role {Role} without logging credential values",
+            role);
     }
 
     private static async Task EnsureMigrationTableAsync(

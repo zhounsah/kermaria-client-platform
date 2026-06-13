@@ -1,11 +1,14 @@
 import Link from "next/link";
 
 import { EmptyState } from "@/components/EmptyState";
+import { LogoutButton } from "@/components/LogoutButton";
 import { MockNotice } from "@/components/MockNotice";
 import { PageHeader } from "@/components/PageHeader";
+import { RevokeOtherSessionsButton } from "@/components/RevokeOtherSessionsButton";
 import { SectionHeading } from "@/components/SectionHeading";
 import { StatusBadge } from "@/components/StatusBadge";
-import { requirePortalSession } from "@/lib/auth";
+import { requireClientSession } from "@/lib/auth";
+import { formatDateTime } from "@/lib/formatters";
 import { getClientProfile } from "@/lib/internal-api";
 
 export const metadata = {
@@ -15,7 +18,7 @@ export const metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function ProfilePage() {
-  await requirePortalSession();
+  const session = await requireClientSession();
   const result = await getClientProfile();
   const profile = result.data;
 
@@ -84,6 +87,29 @@ export default async function ProfilePage() {
             </div>
             <div className="security-item">
               <div>
+                <strong>Statut du compte</strong>
+                <span>{session.user.status}</span>
+              </div>
+              <StatusBadge label={session.user.role} tone="info" />
+            </div>
+            <div className="security-item">
+              <div>
+                <strong>Dernière connexion</strong>
+                <span>
+                  {session.user.lastLoginAt
+                    ? formatDateTime(session.user.lastLoginAt)
+                    : "Non disponible"}
+                </span>
+              </div>
+            </div>
+            <div className="security-item">
+              <div>
+                <strong>Expiration de la session</strong>
+                <span>{formatDateTime(session.expiresAt)}</span>
+              </div>
+            </div>
+            <div className="security-item">
+              <div>
                 <strong>Authentification multifacteur</strong>
                 <span>Fournisseur à choisir ultérieurement</span>
               </div>
@@ -95,6 +121,10 @@ export default async function ProfilePage() {
                 <span>Intégration Active Directory désactivée</span>
               </div>
               <Link href="/password">Voir le parcours</Link>
+            </div>
+            <RevokeOtherSessionsButton />
+            <div className="profile-logout">
+              <LogoutButton />
             </div>
           </aside>
         </div>

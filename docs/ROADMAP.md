@@ -24,13 +24,14 @@ Statut : **complétée**.
 
 ## 3. Portail client sans AD réel
 
-Statut : **V0.7 authentifiée complétée côté interface**.
+Statut : **V0.8 sécurisée complétée côté interface**.
 
 - Navigation responsive et pages principales disponibles.
 - Services, factures, support, profil et catalogue fictifs.
 - États vides, indisponibles, suspendus et désactivés.
 - Formulaires via routes BFF avec indication `persisted: true|false`.
 - Branding visible aligné avec Zachary HOUNSA-HOUNKPA EI.
+- Zone `/admin` interne en lecture seule.
 
 Restent à faire avant production : accessibilité approfondie, revue UX,
 durcissement proxy/rate limiting et validation d'exploitation.
@@ -50,13 +51,17 @@ rate limiting et stratégie d'audit complète.
 
 ## 5. Authentification
 
-Statut : **V0.7 locale implémentée**.
+Statut : **V0.8 locale durcie implémentée**.
 
 - Connexion locale par mot de passe hashé avec message d'échec générique.
 - Token aléatoire conservé uniquement dans un cookie `HttpOnly`.
 - Hash du token stocké dans `portal_sessions`, avec expiration et révocation.
 - Pages privées protégées et données filtrées par `customer_id` de session.
 - Audit minimal des connexions, refus et déconnexions.
+- Rôles `client_user` et `internal_admin` sans RBAC complexe.
+- Verrouillage temporaire configurable après plusieurs échecs.
+- Révocation des autres sessions du même utilisateur.
+- Vues admin globales protégées côté BFF et API-INTERNAL.
 
 Restent à faire : fournisseur standard compatible MFA, SSO éventuel,
 rate limiting renforcé, protections CSRF complémentaires et revue de sécurité
@@ -64,13 +69,14 @@ avant production.
 
 ## 6. Connexion SQL
 
-Statut : **V0.7 implémentée, validation MariaDB réelle opt-in disponible**.
+Statut : **V0.8 implémentée, validation MariaDB réelle opt-in disponible**.
 
 - Moteur MariaDB confirmé pour l'environnement de test.
 - Configuration construite en mémoire à partir de variables séparées.
 - Dépôt MariaDB, transactions, audits et migrations versionnées ajoutés.
 - Seed fictif contrôlé disponible uniquement en développement.
 - Tests MariaDB conditionnels derrière `RUN_MARIADB_TESTS=true`.
+- Migration `003_admin_and_auth_hardening.sql` additive.
 
 Restent à faire : injecter les secrets localement, exécuter les migrations sur
 `TEST_WEB`, valider les sauvegardes et réduire précisément les privilèges SQL.
@@ -85,7 +91,7 @@ Statut : **non commencée**.
 - Garantir l'isolation des données du client authentifié.
 - Définir un téléchargement contrôlé des documents si nécessaire.
 
-Aucun paiement n'est prévu dans la V0.7.
+Aucun paiement n'est prévu dans la V0.8.
 
 ## 8. Changement de mot de passe AD
 

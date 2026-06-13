@@ -4,7 +4,7 @@ import { DisabledActionNotice } from "@/components/DisabledActionNotice";
 import { MockNotice } from "@/components/MockNotice";
 import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
-import { requirePortalSession } from "@/lib/auth";
+import { requireClientSession } from "@/lib/auth";
 import { getAdHealth } from "@/lib/internal-api";
 
 export const metadata = {
@@ -14,7 +14,7 @@ export const metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function PasswordPage() {
-  await requirePortalSession();
+  await requireClientSession();
   const adHealth = await getAdHealth();
   const modeLabel = `Mode AD : ${adHealth.data.mode}`;
 

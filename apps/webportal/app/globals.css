@@ -181,6 +181,14 @@ h3 {
   white-space: nowrap;
 }
 
+.nav-role {
+  flex: 0 0 auto;
+  color: var(--primary);
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
 .logout-button {
   padding: 8px 10px;
   border: 1px solid var(--border);
@@ -565,6 +573,10 @@ button:disabled {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.admin-metrics {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
 .metric-card {
   position: relative;
   min-height: 156px;
@@ -651,6 +663,20 @@ button:disabled {
   border-radius: 14px;
   background: var(--surface);
   box-shadow: var(--shadow-sm);
+}
+
+.admin-safety-panel {
+  display: flex;
+  margin-bottom: 28px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.admin-safety-panel p {
+  max-width: 760px;
+  margin-bottom: 0;
+  color: var(--muted);
 }
 
 .content-panel,
@@ -879,6 +905,25 @@ button:disabled {
 table {
   width: 100%;
   border-collapse: collapse;
+}
+
+.admin-table {
+  margin-bottom: 28px;
+}
+
+.admin-table td {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-table code {
+  color: #34435b;
+  font-size: 0.78rem;
+}
+
+.admin-table small {
+  color: var(--muted);
 }
 
 th,
@@ -1138,6 +1183,25 @@ td {
   align-self: start;
 }
 
+.session-action {
+  display: grid;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+  gap: 10px;
+}
+
+.session-action .button {
+  width: 100%;
+}
+
+.profile-logout {
+  padding-top: 12px;
+}
+
+.profile-logout .logout-button {
+  width: 100%;
+}
+
 .security-item {
   display: flex;
   padding: 16px 0;
@@ -1265,6 +1329,22 @@ td {
   margin-top: 18px;
 }
 
+.access-denied {
+  max-width: 680px;
+  margin-inline: auto;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .demo-notice-error {
   border-color: #efc1c1;
   color: var(--danger);
@@ -1286,6 +1366,11 @@ td {
   .password-layout,
   .request-layout {
     grid-template-columns: 1fr;
+  }
+
+  .admin-safety-panel {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .landing {
@@ -1325,6 +1410,10 @@ td {
   }
 
   .nav-user {
+    display: none;
+  }
+
+  .nav-role {
     display: none;
   }
 

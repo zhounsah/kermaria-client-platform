@@ -3,17 +3,21 @@
 Plateforme technique de l'espace client **Zachary HOUNSA-HOUNKPA EI** pour
 `clients.zacharyhounsa.ovh`. Ce dépôt reste séparé du site vitrine Astro.
 
-## État V0.7
+## État V0.8
 
-La V0.7 fournit :
+La V0.8 fournit :
 
 - un portail Next.js responsive et ses routes BFF ;
 - une API ASP.NET Core privée ;
 - une persistance MariaDB activable uniquement dans `API-INTERNAL` ;
 - une connexion locale par e-mail et mot de passe hashé ;
+- deux rôles simples : `client_user` et `internal_admin` ;
+- un verrouillage temporaire après plusieurs échecs consécutifs ;
 - des sessions persistées sous forme de hash et un cookie `HttpOnly` ;
+- la révocation de la session courante et des autres sessions de l'utilisateur ;
 - une isolation des lectures et écritures par le client issu de la session ;
 - une page `/login`, une déconnexion et la protection des pages privées ;
+- une interface `/admin` en lecture seule pour les comptes internes ;
 - un fallback mock explicite lorsque SQL est absent en développement ;
 - des migrations SQL versionnées et un seed fictif déclenchés manuellement ;
 - une abstraction Active Directory en modes `disabled`, `mock`, `test` et
@@ -88,15 +92,18 @@ un refus de démarrage `SQL_CONFIG_MISSING`; aucun fallback silencieux n'existe.
 - `mock` : réponses simulées, aucun accès réseau AD ;
 - `test` : validation de configuration et de périmètre, aucune mutation réelle ;
 - `enabled` : validation supplémentaire obligatoire, opérations encore
-  désactivées dans cette V0.7.
+  désactivées dans cette V0.8.
 
 Variables d'authentification :
 
 - `SESSION_COOKIE_NAME` côté `WEBPORTAL` ;
 - `SESSION_COOKIE_SECURE=true` en production ;
 - `SESSION_DURATION_MINUTES` côté `API-INTERNAL` ;
+- `LOGIN_MAX_FAILURES` et `LOGIN_LOCKOUT_MINUTES` côté `API-INTERNAL` ;
 - `DEMO_PORTAL_EMAIL` et `DEMO_PORTAL_PASSWORD` uniquement pour le seed manuel
-  en `Development`.
+  client en `Development` ;
+- `DEMO_INTERNAL_ADMIN_EMAIL` et `DEMO_INTERNAL_ADMIN_PASSWORD` uniquement
+  pour le seed interne en `Development`.
 
 ## Développement
 
@@ -107,6 +114,8 @@ $env:ASPNETCORE_ENVIRONMENT="Development"
 $env:AD_INTEGRATION_MODE="disabled"
 $env:DEMO_PORTAL_EMAIL="demo.user@example.invalid"
 $env:DEMO_PORTAL_PASSWORD="**INJECTER_LOCALEMENT**"
+$env:DEMO_INTERNAL_ADMIN_EMAIL="demo.admin@example.invalid"
+$env:DEMO_INTERNAL_ADMIN_PASSWORD="**INJECTER_LOCALEMENT**"
 dotnet run --project apps/api-internal/Kermaria.ApiInternal.csproj --urls http://localhost:5000
 ```
 
@@ -132,9 +141,10 @@ dotnet run --project apps/api-internal/Kermaria.ApiInternal.csproj -- --apply-mi
 Ces commandes exigent toutes les variables `SQL_*`. Le démarrage normal
 n'applique jamais automatiquement une migration.
 
-`--seed-demo-data` configure un utilisateur local seulement si
-`DEMO_PORTAL_EMAIL` et `DEMO_PORTAL_PASSWORD` sont injectées. Le mot de passe
-n'est ni affiché ni écrit en clair.
+`--seed-demo-data` configure les comptes client et interne uniquement si leurs
+variables `DEMO_*` sont injectées. Les mots de passe ne sont ni affichés ni
+écrits en clair. La migration `003_admin_and_auth_hardening.sql` ajoute le
+rôle et l'état de verrouillage sans supprimer les données existantes.
 
 Les tests MariaDB sont opt-in. Ils créent des sessions et demandes fictives,
 ainsi qu'un client d'isolation temporaire supprimé en fin de test :
@@ -156,6 +166,7 @@ npm run test:api
 npm run build
 npm --prefix apps/webportal run test:forms
 npm --prefix apps/webportal run test:auth
+npm --prefix apps/webportal run test:admin
 ```
 
 ## Routes
@@ -165,14 +176,25 @@ Pages publiques : `/` et `/login`.
 Pages privées : `/dashboard`, `/services`, `/invoices`, `/support`,
 `/request-service`, `/profile` et `/password`.
 
+Pages internes, réservées à `internal_admin` : `/admin`,
+`/admin/customers`, `/admin/support-requests`, `/admin/service-requests`,
+`/admin/sessions` et `/admin/audit-logs`.
+
 Routes BFF :
 
 - `GET /api/health`
 - `POST /api/auth/login`
 - `POST /api/auth/logout`
+- `POST /api/auth/revoke-other-sessions`
 - `GET /api/auth/me`
 - `POST /api/support-requests`
 - `POST /api/service-requests`
+- `GET /api/admin/overview`
+- `GET /api/admin/customers`
+- `GET /api/admin/support-requests`
+- `GET /api/admin/service-requests`
+- `GET /api/admin/sessions`
+- `GET /api/admin/audit-logs`
 
 Les routes `GET|POST /internal/portal/*` et `GET|POST /internal/ad/*` sont
 strictement privées. Voir [le contrat d'API](docs/API_CONTRACT.md).
@@ -184,7 +206,12 @@ strictement privées. Voir [le contrat d'API](docs/API_CONTRACT.md).
 - Les secrets proviennent uniquement de l'environnement.
 - Les mots de passe bruts, tokens et chaînes de connexion ne sont pas loggés.
 - Aucun token de session brut n'est stocké dans MariaDB.
+- Aucun token ni hash de session n'est exposé dans les vues admin.
 - Le `customer_id` vient uniquement de la session validée par API-INTERNAL.
+- `client_user` est refusé sur les routes admin ; `internal_admin` est refusé
+  sur les vues métier client pour éviter toute confusion de contexte.
+- Les headers `nosniff`, `DENY`, `Referrer-Policy` et une CSP limitée aux
+  protections de cadrage, base et formulaires sont appliqués par WEBPORTAL.
 - L'OU de test autorisée est `OU=TEST_SITE_WEB,DC=home,DC=bzh`.
 - L'OU de production `KoXoAdm` est hors périmètre et explicitement refusée.
 - Aucun paiement ni aucune facturation réelle n'est ajouté.

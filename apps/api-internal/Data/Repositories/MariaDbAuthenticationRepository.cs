@@ -29,7 +29,12 @@ public sealed class MariaDbAuthenticationRepository : IAuthenticationRepository
                 u.email,
                 u.display_name,
                 u.status,
-                u.password_hash
+                u.role,
+                u.password_hash,
+                u.last_login_at,
+                u.failed_login_count,
+                u.last_failed_login_at,
+                u.locked_until
             FROM portal_users u
             INNER JOIN customers c ON c.id = u.customer_id
             WHERE LOWER(u.email) = @email
@@ -51,9 +56,14 @@ public sealed class MariaDbAuthenticationRepository : IAuthenticationRepository
             reader.GetString("email"),
             reader.GetString("display_name"),
             reader.GetString("status"),
+            reader.GetString("role"),
             reader.IsDBNull(reader.GetOrdinal("password_hash"))
                 ? null
-                : reader.GetString("password_hash"));
+                : reader.GetString("password_hash"),
+            ReadNullableUtc(reader, "last_login_at"),
+            reader.GetInt32("failed_login_count"),
+            ReadNullableUtc(reader, "last_failed_login_at"),
+            ReadNullableUtc(reader, "locked_until"));
     }
 
     public async Task CreateSessionAsync(
@@ -121,6 +131,8 @@ public sealed class MariaDbAuthenticationRepository : IAuthenticationRepository
                 u.email,
                 u.display_name,
                 u.status,
+                u.role,
+                u.last_login_at,
                 s.expires_at,
                 s.revoked_at,
                 s.last_seen_at
@@ -147,6 +159,8 @@ public sealed class MariaDbAuthenticationRepository : IAuthenticationRepository
             reader.GetString("email"),
             reader.GetString("display_name"),
             reader.GetString("status"),
+            reader.GetString("role"),
+            ReadNullableUtc(reader, "last_login_at"),
             AsUtc(reader.GetDateTime("expires_at")),
             reader.IsDBNull(reader.GetOrdinal("revoked_at"))
                 ? null
@@ -189,6 +203,128 @@ public sealed class MariaDbAuthenticationRepository : IAuthenticationRepository
             """;
         command.Parameters.AddWithValue("@revoked_at", revokedAtUtc);
         command.Parameters.AddWithValue("@id", sessionId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task<int> RevokeOtherSessionsAsync(
+        string userId,
+        string currentSessionId,
+        DateTime revokedAtUtc,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            UPDATE portal_sessions
+            SET revoked_at = @revoked_at
+            WHERE user_id = @user_id
+              AND id <> @current_session_id
+              AND revoked_at IS NULL
+              AND expires_at > @revoked_at;
+            """;
+        command.Parameters.AddWithValue("@revoked_at", revokedAtUtc);
+        command.Parameters.AddWithValue("@user_id", userId);
+        command.Parameters.AddWithValue(
+            "@current_session_id",
+            currentSessionId);
+        return await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task<LoginFailureState> RecordFailedLoginAsync(
+        string userId,
+        DateTime failedAtUtc,
+        DateTime failureWindowStartUtc,
+        int maximumFailures,
+        DateTime lockedUntilUtc,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(
+            cancellationToken);
+        var failedLoginCount = 0;
+        DateTime? lastFailedAtUtc = null;
+
+        await using (var readCommand = connection.CreateCommand())
+        {
+            readCommand.Transaction = transaction;
+            readCommand.CommandText =
+                """
+                SELECT failed_login_count, last_failed_login_at
+                FROM portal_users
+                WHERE id = @id
+                FOR UPDATE;
+                """;
+            readCommand.Parameters.AddWithValue("@id", userId);
+            await using var reader = await readCommand.ExecuteReaderAsync(
+                cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                throw new InvalidOperationException(
+                    "Portal user is unavailable.");
+            }
+
+            failedLoginCount = reader.GetInt32("failed_login_count");
+            lastFailedAtUtc = ReadNullableUtc(reader, "last_failed_login_at");
+        }
+
+        var nextCount = lastFailedAtUtc is null
+            || lastFailedAtUtc < failureWindowStartUtc
+                ? 1
+                : failedLoginCount + 1;
+        DateTime? nextLockedUntil = nextCount >= maximumFailures
+            ? lockedUntilUtc
+            : null;
+
+        await using (var updateCommand = connection.CreateCommand())
+        {
+            updateCommand.Transaction = transaction;
+            updateCommand.CommandText =
+                """
+                UPDATE portal_users
+                SET failed_login_count = @failed_login_count,
+                    last_failed_login_at = @last_failed_login_at,
+                    locked_until = @locked_until,
+                    updated_at = @updated_at
+                WHERE id = @id;
+                """;
+            updateCommand.Parameters.AddWithValue(
+                "@failed_login_count",
+                nextCount);
+            updateCommand.Parameters.AddWithValue(
+                "@last_failed_login_at",
+                failedAtUtc);
+            updateCommand.Parameters.AddWithValue(
+                "@locked_until",
+                nextLockedUntil is null
+                    ? DBNull.Value
+                    : nextLockedUntil.Value);
+            updateCommand.Parameters.AddWithValue("@updated_at", failedAtUtc);
+            updateCommand.Parameters.AddWithValue("@id", userId);
+            await updateCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return new LoginFailureState(nextCount, nextLockedUntil);
+    }
+
+    public async Task ResetLoginFailuresAsync(
+        string userId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            UPDATE portal_users
+            SET failed_login_count = 0,
+                last_failed_login_at = NULL,
+                locked_until = NULL,
+                updated_at = @updated_at
+            WHERE id = @id;
+            """;
+        command.Parameters.AddWithValue("@updated_at", DateTime.UtcNow);
+        command.Parameters.AddWithValue("@id", userId);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -245,4 +381,11 @@ public sealed class MariaDbAuthenticationRepository : IAuthenticationRepository
 
     private static DateTime AsUtc(DateTime value)
         => DateTime.SpecifyKind(value, DateTimeKind.Utc);
+
+    private static DateTime? ReadNullableUtc(
+        MySqlDataReader reader,
+        string columnName)
+        => reader.IsDBNull(reader.GetOrdinal(columnName))
+            ? null
+            : AsUtc(reader.GetDateTime(columnName));
 }

@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "test:forms": "node scripts/verify-form-submissions.mjs",
     "test:auth": "node scripts/verify-auth-contract.mjs",
+    "test:admin": "node scripts/verify-admin-contract.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

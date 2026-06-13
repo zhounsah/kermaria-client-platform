@@ -5,7 +5,7 @@
 | Composant | Cible | Exposition |
 |---|---|---|
 | `WEBPORTAL` | Ubuntu Server LTS | Reverse proxy HTTPS uniquement |
-| `API-INTERNAL` | Local en V0.7, future VM Windows Server Core | Privée |
+| `API-INTERNAL` | Local en V0.8, future VM Windows Server Core | Privée |
 | MariaDB `TEST_WEB` | Serveur existant | `API-INTERNAL` uniquement |
 | Active Directory | Infrastructure existante | `API-INTERNAL` uniquement |
 
@@ -38,8 +38,12 @@ Commun :
 - `SERVICE_AUTH_TOKEN`
 - `LOG_LEVEL`
 - `SESSION_DURATION_MINUTES`
+- `LOGIN_MAX_FAILURES`
+- `LOGIN_LOCKOUT_MINUTES`
 - `DEMO_PORTAL_EMAIL` en développement uniquement
 - `DEMO_PORTAL_PASSWORD` en développement uniquement
+- `DEMO_INTERNAL_ADMIN_EMAIL` en développement uniquement
+- `DEMO_INTERNAL_ADMIN_PASSWORD` en développement uniquement
 
 `INTERNAL_API_URL` appartient à `WEBPORTAL` côté serveur. Aucun secret ou URL
 interne ne doit être incorporé au bundle navigateur.
@@ -59,9 +63,13 @@ La base de test est `TEST_WEB` et le compte SQL de test est `TEST_WEB`. Le mot
 de passe est injecté hors dépôt. La chaîne est construite en mémoire par
 `API-INTERNAL` et n'est jamais loggée.
 
-La migration V0.7 ajoute `portal_sessions` et `portal_users.password_hash`.
-Les tokens bruts ne sont jamais stockés. Le seed de l'utilisateur démo exige
-les variables `DEMO_PORTAL_*` et la commande explicite
+Les migrations V0.7 ajoutent `portal_sessions` et
+`portal_users.password_hash`. La migration V0.8
+`003_admin_and_auth_hardening.sql` ajoute le rôle, le compteur d'échecs et le
+verrouillage temporaire. Les tokens bruts ne sont jamais stockés.
+
+Le seed des comptes démo exige les variables `DEMO_PORTAL_*` et
+`DEMO_INTERNAL_ADMIN_*`, ainsi que la commande explicite
 `--apply-migrations --seed-demo-data`.
 
 Migrations en développement :
@@ -119,5 +127,7 @@ service-à-service avant production.
 5. Conserver `AD_INTEGRATION_MODE=disabled`.
 6. Vérifier les attributs `Secure`, `HttpOnly` et `SameSite=Lax` du cookie.
 7. Tester expiration, révocation et isolation entre deux clients fictifs.
-8. Créer une OU AD dédiée de test et revoir les délégations avant tout essai.
-9. Repasser immédiatement en `disabled` en cas de doute.
+8. Tester le lockout, le reset après succès et les refus croisés de rôle.
+9. Vérifier que les vues `/admin` restent strictement en lecture seule.
+10. Créer une OU AD dédiée de test et revoir les délégations avant tout essai.
+11. Repasser immédiatement en `disabled` en cas de doute.

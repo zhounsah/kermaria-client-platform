@@ -167,7 +167,7 @@ export function ServiceRequestForm({
 
       <div className="form-footer">
         <p className="form-helper">
-          Cette V0.7 ne crée ni commande, ni contrat, ni paiement.
+          Cette V0.8 ne crée ni commande, ni contrat, ni paiement.
         </p>
         <button
           className="button"

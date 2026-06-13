@@ -51,8 +51,14 @@ builder.Services.AddScoped<IAuthenticationRepository>(
         ? new MariaDbAuthenticationRepository(sqlConfiguration)
         : new MockAuthenticationRepository(
             serviceProvider.GetRequiredService<MockAuthenticationStore>()));
+builder.Services.AddScoped<IAdminRepository>(
+    serviceProvider => sqlConfiguration.IsPersistent
+        ? new MariaDbAdminRepository(sqlConfiguration)
+        : new MockAdminRepository(
+            serviceProvider.GetRequiredService<MockAuthenticationStore>()));
 builder.Services.AddScoped<IPortalService, PortalService>();
 builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
+builder.Services.AddScoped<IAdminService, AdminService>();
 builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddTransient<MariaDbMigrationRunner>();
 builder.Services.AddSingleton<IActiveDirectoryService>(_ =>
@@ -120,6 +126,10 @@ app.UseExceptionHandler(exceptionHandler =>
                 StatusCodes.Status401Unauthorized,
                 "INVALID_CREDENTIALS",
                 "Identifiants invalides."),
+            AccountLockedException => (
+                StatusCodes.Status429TooManyRequests,
+                "ACCOUNT_LOCKED",
+                "Identifiants invalides ou connexion temporairement indisponible."),
             SessionRequiredException => (
                 StatusCodes.Status401Unauthorized,
                 "SESSION_REQUIRED",
@@ -173,7 +183,9 @@ app.UseExceptionHandler(exceptionHandler =>
         await auditService.RecordAsync(
             new AuditEvent(
                 correlationId,
-                "request.error",
+                exception is PortalAccessDeniedException
+                    ? "security.access_denied"
+                    : "request.error",
                 "refused",
                 code,
                 CustomerId: session?.CustomerId,
@@ -199,6 +211,9 @@ app.MapGet(
 app.MapDelete(
     "/internal/auth/sessions/current",
     RevokePortalSession);
+app.MapPost(
+    "/internal/auth/sessions/revoke-others",
+    RevokeOtherPortalSessions);
 
 app.MapGet(
     "/internal/portal/summary",
@@ -207,9 +222,10 @@ app.MapGet(
         IPortalService service,
         IAuthenticationService authenticationService) =>
     {
-        var session = await ResolvePortalSessionAsync(
+        var session = await ResolveClientSessionAsync(
             context,
-            authenticationService);
+            authenticationService,
+            context.RequestServices.GetRequiredService<IAuditService>());
         return PortalOk(
             context,
             service,
@@ -224,9 +240,10 @@ app.MapGet(
         IPortalService service,
         IAuthenticationService authenticationService) =>
     {
-        var session = await ResolvePortalSessionAsync(
+        var session = await ResolveClientSessionAsync(
             context,
-            authenticationService);
+            authenticationService,
+            context.RequestServices.GetRequiredService<IAuditService>());
         return PortalOk(
             context,
             service,
@@ -241,9 +258,10 @@ app.MapGet(
         IPortalService service,
         IAuthenticationService authenticationService) =>
     {
-        var session = await ResolvePortalSessionAsync(
+        var session = await ResolveClientSessionAsync(
             context,
-            authenticationService);
+            authenticationService,
+            context.RequestServices.GetRequiredService<IAuditService>());
         return PortalOk(
             context,
             service,
@@ -258,9 +276,10 @@ app.MapGet(
         IPortalService service,
         IAuthenticationService authenticationService) =>
     {
-        var session = await ResolvePortalSessionAsync(
+        var session = await ResolveClientSessionAsync(
             context,
-            authenticationService);
+            authenticationService,
+            context.RequestServices.GetRequiredService<IAuditService>());
         return PortalOk(
             context,
             service,
@@ -275,9 +294,10 @@ app.MapGet(
         IPortalService service,
         IAuthenticationService authenticationService) =>
     {
-        _ = await ResolvePortalSessionAsync(
+        _ = await ResolveClientSessionAsync(
             context,
-            authenticationService);
+            authenticationService,
+            context.RequestServices.GetRequiredService<IAuditService>());
         return PortalOk(
             context,
             service,
@@ -290,9 +310,10 @@ app.MapGet(
         IPortalService service,
         IAuthenticationService authenticationService) =>
     {
-        var session = await ResolvePortalSessionAsync(
+        var session = await ResolveClientSessionAsync(
             context,
-            authenticationService);
+            authenticationService,
+            context.RequestServices.GetRequiredService<IAuditService>());
         return PortalOk(
             context,
             service,
@@ -306,6 +327,117 @@ app.MapPost(
 app.MapPost(
     "/internal/portal/service-requests",
     CreateServiceRequest);
+
+app.MapGet(
+    "/internal/admin/overview",
+    async (
+        HttpContext context,
+        IAdminService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.overview.read");
+        return AdminOk(
+            context,
+            service,
+            await service.GetOverviewAsync(
+                adConfiguration.ModeName,
+                context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/admin/customers",
+    async (
+        HttpContext context,
+        IAdminService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.customers.read");
+        return AdminOk(
+            context,
+            service,
+            await service.GetCustomersAsync(context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/admin/support-requests",
+    async (
+        HttpContext context,
+        IAdminService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.support_requests.read");
+        return AdminOk(
+            context,
+            service,
+            await service.GetSupportRequestsAsync(context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/admin/service-requests",
+    async (
+        HttpContext context,
+        IAdminService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.service_requests.read");
+        return AdminOk(
+            context,
+            service,
+            await service.GetServiceRequestsAsync(context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/admin/sessions",
+    async (
+        HttpContext context,
+        IAdminService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.sessions.read");
+        return AdminOk(
+            context,
+            service,
+            await service.GetSessionsAsync(context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/admin/audit-logs",
+    async (
+        HttpContext context,
+        IAdminService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.audit_logs.read");
+        return AdminOk(
+            context,
+            service,
+            await service.GetAuditLogsAsync(context.RequestAborted));
+    });
 
 app.MapGet(
     "/internal/ad/health",
@@ -399,14 +531,25 @@ static IResult PortalOk<T>(
     return Results.Ok(data);
 }
 
+static IResult AdminOk<T>(
+    HttpContext context,
+    IAdminService service,
+    T data)
+{
+    context.Response.Headers["X-Data-Source"] =
+        service.IsPersistent ? "mariadb" : "mock";
+    return Results.Ok(data);
+}
+
 static async Task<IResult> CreateSupportRequest(
     HttpContext context,
     IPortalService service,
     IAuthenticationService authenticationService)
 {
-    var session = await ResolvePortalSessionAsync(
+    var session = await ResolveClientSessionAsync(
         context,
-        authenticationService);
+        authenticationService,
+        context.RequestServices.GetRequiredService<IAuditService>());
     var payload = await ReadPayload<SupportRequestPayload>(context)
         ?? throw new PortalValidationException();
     var result = await service.CreateSupportRequestAsync(
@@ -431,9 +574,10 @@ static async Task<IResult> CreateServiceRequest(
     IPortalService service,
     IAuthenticationService authenticationService)
 {
-    var session = await ResolvePortalSessionAsync(
+    var session = await ResolveClientSessionAsync(
         context,
-        authenticationService);
+        authenticationService,
+        context.RequestServices.GetRequiredService<IAuditService>());
     var payload = await ReadPayload<ServiceRequestPayload>(context)
         ?? throw new PortalValidationException();
     var result = await service.CreateServiceRequestAsync(
@@ -496,6 +640,18 @@ static async Task<IResult> RevokePortalSession(
     return Results.NoContent();
 }
 
+static async Task<IResult> RevokeOtherPortalSessions(
+    HttpContext context,
+    IAuthenticationService authenticationService)
+{
+    var revokedCount = await authenticationService.RevokeOtherSessionsAsync(
+        GetPortalSessionToken(context),
+        context.GetCorrelationId(),
+        context.Connection.RemoteIpAddress?.ToString(),
+        context.RequestAborted);
+    return Results.Ok(new RevokeOtherSessionsResponse(revokedCount));
+}
+
 static async Task<PortalSessionContext> ResolvePortalSessionAsync(
     HttpContext context,
     IAuthenticationService authenticationService)
@@ -509,6 +665,68 @@ static async Task<PortalSessionContext> ResolvePortalSessionAsync(
     return session;
 }
 
+static async Task<PortalSessionContext> ResolveClientSessionAsync(
+    HttpContext context,
+    IAuthenticationService authenticationService,
+    IAuditService auditService)
+{
+    var session = await ResolvePortalSessionAsync(
+        context,
+        authenticationService);
+    if (session.UserRole == PortalRoles.ClientUser)
+    {
+        return session;
+    }
+
+    await auditService.RecordAsync(
+        new AuditEvent(
+            context.GetCorrelationId(),
+            "portal.access",
+            "refused",
+            "role_insufficient",
+            CustomerId: session.CustomerId,
+            ActorUserId: session.UserId,
+            SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+        context.RequestAborted);
+    throw new PortalAccessDeniedException();
+}
+
+static async Task<PortalSessionContext> ResolveAdminSessionAsync(
+    HttpContext context,
+    IAuthenticationService authenticationService,
+    IAuditService auditService,
+    string action)
+{
+    var session = await ResolvePortalSessionAsync(
+        context,
+        authenticationService);
+    if (session.UserRole != PortalRoles.InternalAdmin)
+    {
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "admin.access",
+                "refused",
+                "role_insufficient",
+                CustomerId: session.CustomerId,
+                ActorUserId: session.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        throw new PortalAccessDeniedException();
+    }
+
+    await auditService.RecordAsync(
+        new AuditEvent(
+            context.GetCorrelationId(),
+            action,
+            "success",
+            TargetType: "admin_view",
+            ActorUserId: session.UserId,
+            SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+        context.RequestAborted);
+    return session;
+}
+
 static string? GetPortalSessionToken(HttpContext context)
     => context.Request.Headers[
         AuthenticationHeaders.PortalSession].FirstOrDefault();
@@ -517,11 +735,18 @@ static AuthenticatedPortalUser ToPublicUser(PortalSessionContext session)
     => new(
         session.DisplayName,
         session.Email,
-        session.CustomerReference,
-        session.UserStatus);
+        session.UserRole == PortalRoles.ClientUser
+            ? session.CustomerReference
+            : null,
+        session.UserStatus,
+        session.UserRole,
+        ToNullableUtcIso(session.LastLoginAtUtc));
 
 static string ToUtcIso(DateTime value)
     => DateTime.SpecifyKind(value, DateTimeKind.Utc).ToString("O");
+
+static string? ToNullableUtcIso(DateTime? value)
+    => value is null ? null : ToUtcIso(value.Value);
 
 static bool ShouldReadAdPayload(IActiveDirectoryService service)
     => service.GetHealth().Mode is "test" or "enabled";

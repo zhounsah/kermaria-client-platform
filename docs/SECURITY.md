@@ -53,7 +53,7 @@ La barrière principale est la séparation entre `WEBPORTAL`, public, et
 
 `AD_INTEGRATION_MODE=disabled` est la valeur par défaut et la procédure de
 rollback immédiate. Les modes `test` et `enabled` ne réalisent encore aucune
-mutation dans la V0.7.
+mutation dans la V0.8.
 
 Garde-fous :
 
@@ -68,7 +68,7 @@ Garde-fous :
 - aucun mot de passe persisté ou loggé dans aucun mode.
 
 L'OU `OU=KoXoAdm,DC=home,DC=bzh` appartient à la production et est hors
-périmètre. Elle est explicitement refusée par la configuration V0.7.
+périmètre. Elle est explicitement refusée par la configuration V0.8.
 
 L'OU de test actuelle est `OU=TEST_SITE_WEB,DC=home,DC=bzh`. Avant tout essai
 AD réel, une OU encore plus isolée est recommandée, par exemple
@@ -101,7 +101,7 @@ Les erreurs publiques contiennent uniquement `code`, `message` et
 
 ## Authentification et sessions
 
-La V0.7 utilise une authentification locale contrôlée :
+La V0.8 utilise une authentification locale contrôlée :
 
 - mot de passe hashé par le `PasswordHasher` ASP.NET Core, fondé sur PBKDF2
   avec sel et paramètres versionnés ;
@@ -112,6 +112,10 @@ La V0.7 utilise une authentification locale contrôlée :
 - cookie `SameSite=Lax`, `Secure` en production, chemin `/` ;
 - SHA-256 du token stocké dans `portal_sessions`, jamais le token brut ;
 - expiration et révocation vérifiées à chaque appel ;
+- rôle `client_user` ou `internal_admin` porté par la session validée ;
+- verrouillage temporaire après un seuil configurable d'échecs consécutifs ;
+- compteur de connexion remis à zéro après une authentification réussie ;
+- révocation optionnelle des autres sessions du même utilisateur ;
 - `last_seen_at` mis à jour périodiquement, pas à chaque requête ;
 - aucun token dans `localStorage`, `sessionStorage`, les logs ou les réponses
   publiques du BFF.
@@ -128,6 +132,30 @@ cookie HttpOnly -> BFF -> session API-INTERNAL -> user_id -> customer_id
 API-INTERNAL filtre les services, factures, demandes et profils par ce
 `customer_id`. Aucun `customerId` fourni dans un payload navigateur n'est
 accepté comme autorité.
+
+## Autorisation interne
+
+- `client_user` accède uniquement aux routes métier du client issu de sa
+  session.
+- `internal_admin` accède uniquement aux vues globales en lecture seule.
+- Le contrôle du rôle est exécuté dans le BFF et répété dans API-INTERNAL.
+- L'interface admin ne permet ni changement de rôle, ni création/suppression
+  de compte, ni mutation métier.
+- Les sessions admin n'exposent ni référence client, ni token, ni hash.
+- Les adresses réseau sont masquées et les User-Agent tronqués dans les vues.
+- Les accès admin autorisés et refusés sont audités.
+
+La protection anti-brute-force V0.8 est volontairement simple et centrée sur
+le compte : `LOGIN_MAX_FAILURES` définit le seuil et
+`LOGIN_LOCKOUT_MINUTES` la durée du verrouillage. Elle ne remplace pas un
+rate limiting réseau au reverse proxy.
+
+## Headers WEBPORTAL
+
+WEBPORTAL ajoute `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+une `Referrer-Policy` restrictive et une CSP limitée à `frame-ancestors`,
+`base-uri` et `form-action`. Cette CSP évite de bloquer les scripts Next.js
+tout en empêchant le cadrage et les formulaires vers une origine tierce.
 
 Avant production restent requis : fournisseur compatible MFA, rate limiting,
 protection CSRF complémentaire selon les flux, identité service-à-service entre

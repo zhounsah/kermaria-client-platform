@@ -32,3 +32,25 @@ export async function requirePortalSession() {
 
   return session;
 }
+
+export const requireAuth = requirePortalSession;
+
+export async function requireClientSession() {
+  const session = await requirePortalSession();
+
+  if (session.user.role !== "client_user") {
+    redirect("/admin");
+  }
+
+  return session;
+}
+
+export async function requireAdminSession() {
+  const session = await requirePortalSession();
+
+  if (session.user.role !== "internal_admin") {
+    redirect("/access-denied");
+  }
+
+  return session;
+}

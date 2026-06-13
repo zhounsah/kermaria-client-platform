@@ -21,7 +21,7 @@ import {
   getSupportRequests,
   resolveDataSource,
 } from "@/lib/internal-api";
-import { requirePortalSession } from "@/lib/auth";
+import { requireClientSession } from "@/lib/auth";
 
 export const metadata = {
   title: "Tableau de bord",
@@ -30,7 +30,7 @@ export const metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
-  await requirePortalSession();
+  await requireClientSession();
   const [summaryResult, profileResult, servicesResult, invoicesResult, supportResult] =
     await Promise.all([
       getPortalSummary(),

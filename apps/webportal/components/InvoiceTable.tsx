@@ -27,7 +27,7 @@ export function InvoiceTable({ invoices }: InvoiceTableProps) {
       <div className="table-heading">
         <div>
           <h2>Historique des factures</h2>
-          <p>Les téléchargements sont désactivés dans cette V0.7.</p>
+          <p>Les téléchargements sont désactivés dans cette V0.8.</p>
         </div>
       </div>
       <div className="table-scroll">

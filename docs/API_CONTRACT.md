@@ -7,9 +7,16 @@ Le navigateur accède uniquement à `WEBPORTAL` :
 - `GET /api/health`
 - `POST /api/auth/login`
 - `POST /api/auth/logout`
+- `POST /api/auth/revoke-other-sessions`
 - `GET /api/auth/me`
 - `POST /api/support-requests`
 - `POST /api/service-requests`
+- `GET /api/admin/overview`
+- `GET /api/admin/customers`
+- `GET /api/admin/support-requests`
+- `GET /api/admin/service-requests`
+- `GET /api/admin/sessions`
+- `GET /api/admin/audit-logs`
 
 Les routes suivantes appartiennent à `API-INTERNAL`. Elles sont privées, non
 publiées par le reverse proxy et jamais appelées directement par le navigateur :
@@ -18,6 +25,13 @@ publiées par le reverse proxy et jamais appelées directement par le navigateur
 - `POST /internal/auth/sessions`
 - `GET /internal/auth/session`
 - `DELETE /internal/auth/sessions/current`
+- `POST /internal/auth/sessions/revoke-others`
+- `GET /internal/admin/overview`
+- `GET /internal/admin/customers`
+- `GET /internal/admin/support-requests`
+- `GET /internal/admin/service-requests`
+- `GET /internal/admin/sessions`
+- `GET /internal/admin/audit-logs`
 - `GET /internal/portal/summary`
 - `GET /internal/portal/profile`
 - `GET /internal/portal/services`
@@ -53,7 +67,7 @@ Format d'erreur :
 }
 ```
 
-## Authentification V0.7
+## Authentification V0.8
 
 `POST /api/auth/login` accepte :
 
@@ -76,7 +90,9 @@ production. La réponse navigateur ne contient jamais le token.
     "displayName": "Client démo",
     "email": "demo.user@example.invalid",
     "customerReference": "CLI-DEMO-0060",
-    "status": "active"
+    "status": "active",
+    "role": "client_user",
+    "lastLoginAt": "2026-06-13T11:00:00.0000000Z"
   },
   "expiresAt": "2026-06-13T12:00:00.0000000Z"
 }
@@ -88,11 +104,38 @@ informations minimales ci-dessus. Il ne retourne ni token, ni hash, ni secret.
 `POST /api/auth/logout` révoque la session dans API-INTERNAL puis supprime le
 cookie. La suppression locale reste effectuée si l'API est indisponible.
 
+`POST /api/auth/revoke-other-sessions` conserve la session courante et révoque
+les autres sessions non expirées du même utilisateur. La réponse contient
+uniquement `revokedCount`.
+
+Après `LOGIN_MAX_FAILURES` échecs consécutifs dans la fenêtre configurée, le
+compte est verrouillé pendant `LOGIN_LOCKOUT_MINUTES`. Le code public est
+`ACCOUNT_LOCKED` et le message ne confirme pas l'existence du compte.
+
 Les endpoints internes sont réservés à `WEBPORTAL` :
 
 - `POST /internal/auth/sessions` crée une session ;
 - `GET /internal/auth/session` valide `X-Portal-Session` ;
 - `DELETE /internal/auth/sessions/current` révoque la session courante.
+- `POST /internal/auth/sessions/revoke-others` révoque les autres sessions.
+
+## Administration V0.8
+
+Les routes `/api/admin/*` et `/internal/admin/*` exigent une session valide avec
+le rôle `internal_admin`. Le BFF vérifie le rôle, puis API-INTERNAL effectue le
+même contrôle. Un `client_user` reçoit `ACCESS_DENIED`.
+
+Les vues sont limitées à 100 lignes, ou 10 audits dans l'overview :
+
+- `overview` : compteurs globaux, derniers audits et état AD ;
+- `customers` : références, statuts et compteurs ;
+- `support-requests` : demandes support en lecture seule ;
+- `service-requests` : demandes de service en lecture seule ;
+- `sessions` : métadonnées prudentes, sans token ni hash ;
+- `audit-logs` : événements récents sans payload sensible.
+
+L'adresse source est masquée et le User-Agent est tronqué. Aucune route admin
+ne crée, modifie ou supprime un client, une facture, une demande ou un rôle.
 
 ## Endpoints portail
 
@@ -175,8 +218,8 @@ Comportement des modes :
 |---|---|---|
 | `disabled` | Non | Non, `AD_INTEGRATION_DISABLED` |
 | `mock` | Non | Non; changement de mot de passe refusé, autres actions simulées |
-| `test` | Non dans cette V0.7 | Non, `AD_REAL_CHANGE_NOT_ENABLED` |
-| `enabled` | Non dans cette V0.7 | Non, validation supplémentaire requise |
+| `test` | Non dans cette V0.8 | Non, `AD_REAL_CHANGE_NOT_ENABLED` |
+| `enabled` | Non dans cette V0.8 | Non, validation supplémentaire requise |
 
 Le contrat de changement de mot de passe exige `targetDistinguishedName`,
 `currentPassword` et `newPassword`. Ces deux mots de passe ne doivent jamais
@@ -190,6 +233,7 @@ modifications de groupe restent non opérationnelles.
 
 - `INVALID_REQUEST` : JSON ou champs invalides ;
 - `INVALID_CREDENTIALS` : identifiants invalides, sans indiquer si le compte existe ;
+- `ACCOUNT_LOCKED` : connexion temporairement bloquée après plusieurs échecs ;
 - `SESSION_REQUIRED` : session absente ;
 - `SESSION_INVALID` : token inconnu ou invalide ;
 - `SESSION_EXPIRED` : session expirée ;

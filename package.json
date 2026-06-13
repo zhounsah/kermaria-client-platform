@@ -12,6 +12,7 @@
     "lint:web": "npm --prefix apps/webportal run lint",
     "build:api": "dotnet build apps/api-internal/Kermaria.ApiInternal.csproj",
     "test:api": "dotnet test tests/api-internal/Kermaria.ApiInternal.SmokeTests.csproj",
+    "test:admin": "npm --prefix apps/webportal run test:admin",
     "build": "npm run build:web && npm run build:api && npm run test:api",
     "dev:webportal": "npm run dev --workspace @kermaria/webportal",
     "build:webportal": "npm run build --workspace @kermaria/webportal",

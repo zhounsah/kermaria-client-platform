@@ -27,7 +27,11 @@ public sealed class PortalUser : UtcEntity
     public string? PasswordHash { get; set; }
     public string DisplayName { get; set; } = string.Empty;
     public string Status { get; set; } = "active";
+    public string Role { get; set; } = "client_user";
     public DateTime? LastLoginAtUtc { get; set; }
+    public int FailedLoginCount { get; set; }
+    public DateTime? LastFailedLoginAtUtc { get; set; }
+    public DateTime? LockedUntilUtc { get; set; }
 }
 
 public sealed class PortalSession

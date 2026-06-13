@@ -2,6 +2,12 @@ import "server-only";
 
 import type {
   AdHealthStatus,
+  AdminAuditLogEntry,
+  AdminCustomerSummary,
+  AdminOverview,
+  AdminServiceRequestSummary,
+  AdminSessionSummary,
+  AdminSupportRequestSummary,
   ApiError,
   ClientProfile,
   CorrelationId,
@@ -366,6 +372,142 @@ export async function revokeInternalSession(
       },
     },
     correlationId,
+  );
+}
+
+export async function revokeOtherInternalSessions(
+  sessionToken: string,
+  correlationId: CorrelationId,
+) {
+  return requestInternalAuth<{ revokedCount: number }>(
+    "/internal/auth/sessions/revoke-others",
+    {
+      method: "POST",
+      headers: {
+        [PORTAL_SESSION_HEADER]: sessionToken,
+      },
+    },
+    correlationId,
+  );
+}
+
+export async function getInternalAdminData<T>(
+  path: string,
+  sessionToken: string,
+  correlationId = resolveCorrelationId(null),
+) {
+  return requestInternalAuth<T>(
+    path,
+    {
+      method: "GET",
+      headers: {
+        [PORTAL_SESSION_HEADER]: sessionToken,
+      },
+    },
+    correlationId,
+  );
+}
+
+async function getAdminData<T>(
+  path: string,
+  unavailableValue: T,
+): Promise<PortalDataResult<T>> {
+  const correlationId = resolveCorrelationId(null);
+  const sessionToken = await readPortalSessionToken();
+
+  if (!sessionToken) {
+    return {
+      data: unavailableValue,
+      source: "unavailable",
+      correlationId,
+      error: {
+        code: "SESSION_REQUIRED",
+        message: "Une session administrateur valide est requise.",
+        correlation_id: correlationId,
+      },
+    };
+  }
+
+  try {
+    if (!internalApiUrl) {
+      throw new InternalApiError(unavailableError(correlationId), 503);
+    }
+
+    const response = await fetch(`${internalApiUrl}${path}`, {
+      cache: "no-store",
+      headers: {
+        Accept: "application/json",
+        [CORRELATION_HEADER]: correlationId,
+        [PORTAL_SESSION_HEADER]: sessionToken,
+      },
+    });
+
+    if (!response.ok) {
+      throw await toInternalApiError(response, correlationId);
+    }
+
+    return {
+      data: (await response.json()) as T,
+      source:
+        response.headers.get("X-Data-Source") === "mariadb"
+          ? "api-internal-persistent"
+          : "api-internal-mock",
+      correlationId: resolveCorrelationId(
+        response.headers.get(CORRELATION_HEADER),
+      ),
+    };
+  } catch (error) {
+    return {
+      data: unavailableValue,
+      source: "unavailable",
+      correlationId,
+      error:
+        error instanceof InternalApiError
+          ? error.apiError
+          : unavailableError(correlationId),
+    };
+  }
+}
+
+export function getAdminOverview() {
+  return getAdminData<AdminOverview | null>(
+    "/internal/admin/overview",
+    null,
+  );
+}
+
+export function getAdminCustomers() {
+  return getAdminData<AdminCustomerSummary[]>(
+    "/internal/admin/customers",
+    [],
+  );
+}
+
+export function getAdminSupportRequests() {
+  return getAdminData<AdminSupportRequestSummary[]>(
+    "/internal/admin/support-requests",
+    [],
+  );
+}
+
+export function getAdminServiceRequests() {
+  return getAdminData<AdminServiceRequestSummary[]>(
+    "/internal/admin/service-requests",
+    [],
+  );
+}
+
+export function getAdminSessions() {
+  return getAdminData<AdminSessionSummary[]>(
+    "/internal/admin/sessions",
+    [],
+  );
+}
+
+export function getAdminAuditLogs() {
+  return getAdminData<AdminAuditLogEntry[]>(
+    "/internal/admin/audit-logs",
+    [],
   );
 }
 

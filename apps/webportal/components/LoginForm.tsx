@@ -1,6 +1,10 @@
 "use client";
 
-import type { ApiError, LoginPayload } from "@kermaria/shared";
+import type {
+  ApiError,
+  AuthMeResponse,
+  LoginPayload,
+} from "@kermaria/shared";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -37,8 +41,13 @@ export function LoginForm() {
         return;
       }
 
+      const result = (await response.json()) as AuthMeResponse;
       setPayload({ email: "", password: "" });
-      router.replace("/dashboard");
+      router.replace(
+        result.authenticated && result.user.role === "internal_admin"
+          ? "/admin"
+          : "/dashboard",
+      );
       router.refresh();
     } catch {
       setState({

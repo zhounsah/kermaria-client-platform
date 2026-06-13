@@ -48,7 +48,11 @@ Représente l'identité applicative d'un utilisateur du portail.
 | `password_hash` | text, nullable | Hash PBKDF2 du mot de passe local |
 | `display_name` | text | Nom affiché |
 | `status` | text | État métier contrôlé |
+| `role` | text | `client_user` ou `internal_admin` |
 | `last_login_at` | timestamp, nullable | Dernière connexion réussie |
+| `failed_login_count` | integer | Échecs consécutifs dans la fenêtre active |
+| `last_failed_login_at` | timestamp, nullable | Dernier échec de connexion |
+| `locked_until` | timestamp, nullable | Fin du verrouillage temporaire |
 | `created_at` | timestamp | Date de création |
 | `updated_at` | timestamp | Dernière modification |
 
@@ -57,6 +61,11 @@ pas être utilisée seule comme preuve d'identité.
 
 Le mot de passe brut n'est jamais stocké. `password_hash` est renseigné
 uniquement par le seed contrôlé de développement ou un futur workflow interne.
+
+Le rôle par défaut est `client_user`. Le rôle `internal_admin` permet seulement
+les vues globales en lecture seule de la V0.8. Le rattachement `customer_id`
+reste présent pour compatibilité du schéma, mais il n'est jamais utilisé comme
+autorité métier pour un administrateur interne.
 
 ## portal_sessions
 
@@ -218,11 +227,11 @@ La couche de persistance devra :
 Le choix final du moteur dépend du serveur SQL existant et sera confirmé avant
 les migrations de production.
 
-## Adaptation MariaDB V0.7
+## Adaptation MariaDB V0.8
 
-La V0.7 matérialise ce modèle dans l'adaptateur MariaDB avec les noms suivants :
+La V0.8 matérialise ce modèle dans l'adaptateur MariaDB avec les noms suivants :
 
-| Modèle conceptuel | Table MariaDB V0.7 |
+| Modèle conceptuel | Table MariaDB V0.8 |
 |---|---|
 | `customers` | `customers` |
 | `users` | `portal_users` |
@@ -248,3 +257,8 @@ contrats métier restent indépendants du moteur.
 La migration `002_portal_authentication.sql` ajoute `password_hash`, l'unicité
 de l'e-mail et `portal_sessions`. Elle ne modifie pas les données métier
 existantes.
+
+La migration `003_admin_and_auth_hardening.sql` ajoute `role`,
+`failed_login_count`, `last_failed_login_at` et `locked_until`, ainsi que les
+index nécessaires aux vues de rôle et de sessions actives. Elle ne supprime
+aucune table et conserve `client_user` comme valeur par défaut.

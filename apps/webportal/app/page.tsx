@@ -16,7 +16,7 @@ export default function HomePage() {
           </Link>
         </div>
         <p className="landing-note">
-          V0.7 avec session serveur locale. Aucune action Active Directory
+          V0.8 avec sessions renforcées et administration en lecture seule. Aucune action Active Directory
           réelle, facturation réelle ni paiement.
         </p>
       </div>

@@ -10,10 +10,12 @@ using System.Text.Json;
 const string correlationHeader = "X-Correlation-Id";
 const string dataSourceHeader = "X-Data-Source";
 const string sessionHeader = "X-Portal-Session";
-const string testCorrelationId = "v0.7-smoke-test";
+const string testCorrelationId = "v0.8-smoke-test";
 const string mockBaseUrl = "http://127.0.0.1:5088";
 const string mockEmail = "portal.test@example.invalid";
 const string mockPassword = "NOT_A_REAL_PASSWORD_V07";
+const string mockAdminEmail = "admin.test@example.invalid";
+const string mockAdminPassword = "NOT_A_REAL_ADMIN_PASSWORD_V08";
 
 if (args.Length is < 1 or > 2)
 {
@@ -38,13 +40,14 @@ VerifyIdentifierMapping();
 await RunMockTestsAsync();
 await RunDisabledAccountTestAsync();
 await RunExpiredSessionTestAsync();
+await RunLockoutResetTestAsync();
 
 if (IsMariaDbTestRequested())
 {
     await RunMariaDbReadTestsAsync();
 }
 
-Console.WriteLine("Smoke tests API-INTERNAL V0.7 réussis.");
+Console.WriteLine("Smoke tests API-INTERNAL V0.8 réussis.");
 return 0;
 
 async Task RunMockTestsAsync()
@@ -59,7 +62,13 @@ async Task RunMockTestsAsync()
             startInfo.Environment["DEMO_PORTAL_EMAIL"] = mockEmail;
             startInfo.Environment["DEMO_PORTAL_PASSWORD"] = mockPassword;
             startInfo.Environment["DEMO_PORTAL_STATUS"] = "active";
+            startInfo.Environment["DEMO_INTERNAL_ADMIN_EMAIL"] =
+                mockAdminEmail;
+            startInfo.Environment["DEMO_INTERNAL_ADMIN_PASSWORD"] =
+                mockAdminPassword;
             startInfo.Environment["SESSION_DURATION_MINUTES"] = "60";
+            startInfo.Environment["LOGIN_MAX_FAILURES"] = "5";
+            startInfo.Environment["LOGIN_LOCKOUT_MINUTES"] = "10";
             foreach (var variable in new[]
             {
                 "SQL_PROVIDER",
@@ -96,6 +105,13 @@ async Task RunMockTestsAsync()
         Ensure(
             unauthenticatedResponse.StatusCode == HttpStatusCode.Unauthorized,
             "Une lecture portail sans session devait être refusée.");
+
+        using var unauthenticatedAdminResponse = await client.GetAsync(
+            $"{mockBaseUrl}/internal/admin/overview");
+        Ensure(
+            unauthenticatedAdminResponse.StatusCode
+                == HttpStatusCode.Unauthorized,
+            "Une lecture admin sans session devait être refusée.");
 
         using var invalidSessionRequest = CreateSessionRequest(
             HttpMethod.Get,
@@ -171,6 +187,92 @@ async Task RunMockTestsAsync()
                 .GetProperty("customerReference")
                 .GetString() == MockCustomerReference(),
             "La session ne contient pas la référence client attendue.");
+        Ensure(
+            sessionPayload.RootElement
+                .GetProperty("user")
+                .GetProperty("role")
+                .GetString() == "client_user",
+            "La session client ne contient pas le rôle attendu.");
+
+        using var clientAdminRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mockBaseUrl}/internal/admin/overview",
+            sessionToken!);
+        using var clientAdminResponse = await client.SendAsync(
+            clientAdminRequest);
+        Ensure(
+            clientAdminResponse.StatusCode == HttpStatusCode.Forbidden,
+            "Un client_user ne doit pas accéder aux routes admin.");
+
+        using var adminLoginResponse = await client.PostAsJsonAsync(
+            $"{mockBaseUrl}/internal/auth/sessions",
+            new
+            {
+                email = mockAdminEmail,
+                password = mockAdminPassword
+            });
+        using var adminLoginPayload = JsonDocument.Parse(
+            await adminLoginResponse.Content.ReadAsStringAsync());
+        Ensure(
+            adminLoginResponse.StatusCode == HttpStatusCode.OK,
+            "Le login internal_admin mock devait réussir.");
+        Ensure(
+            adminLoginPayload.RootElement
+                .GetProperty("user")
+                .GetProperty("role")
+                .GetString() == "internal_admin",
+            "Le compte admin ne retourne pas le rôle attendu.");
+        Ensure(
+            adminLoginPayload.RootElement
+                .GetProperty("user")
+                .GetProperty("customerReference")
+                .ValueKind == JsonValueKind.Null,
+            "Une session admin ne doit pas exposer de référence client.");
+        var adminSessionToken = adminLoginPayload.RootElement
+            .GetProperty("sessionToken")
+            .GetString()
+            ?? throw new InvalidOperationException(
+                "Le login admin ne retourne aucun token interne.");
+
+        foreach (var endpoint in new[]
+        {
+            "/internal/admin/overview",
+            "/internal/admin/customers",
+            "/internal/admin/support-requests",
+            "/internal/admin/service-requests",
+            "/internal/admin/sessions",
+            "/internal/admin/audit-logs"
+        })
+        {
+            using var adminRequest = CreateSessionRequest(
+                HttpMethod.Get,
+                $"{mockBaseUrl}{endpoint}",
+                adminSessionToken);
+            using var adminResponse = await client.SendAsync(adminRequest);
+            var adminResponseText =
+                await adminResponse.Content.ReadAsStringAsync();
+            Ensure(
+                adminResponse.StatusCode == HttpStatusCode.OK,
+                $"La route admin {endpoint} devait répondre HTTP 200.");
+            Ensure(
+                !adminResponseText.Contains(
+                    "sessionToken",
+                    StringComparison.OrdinalIgnoreCase)
+                && !adminResponseText.Contains(
+                    "passwordHash",
+                    StringComparison.OrdinalIgnoreCase),
+                $"La route admin {endpoint} expose une donnée d'authentification.");
+        }
+
+        using var adminPortalRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mockBaseUrl}/internal/portal/services",
+            adminSessionToken);
+        using var adminPortalResponse = await client.SendAsync(
+            adminPortalRequest);
+        Ensure(
+            adminPortalResponse.StatusCode == HttpStatusCode.Forbidden,
+            "Un internal_admin ne doit pas utiliser les vues client.");
 
         using var servicesRequest = new HttpRequestMessage(
             HttpMethod.Get,
@@ -431,6 +533,53 @@ async Task RunMockTestsAsync()
                 == testCorrelationId,
             "La route AD disabled ne propage pas le correlation_id.");
 
+        using var secondLoginResponse = await client.PostAsJsonAsync(
+            $"{mockBaseUrl}/internal/auth/sessions",
+            new { email = mockEmail, password = mockPassword });
+        using var secondLoginPayload = JsonDocument.Parse(
+            await secondLoginResponse.Content.ReadAsStringAsync());
+        var secondSessionToken = secondLoginPayload.RootElement
+            .GetProperty("sessionToken")
+            .GetString()
+            ?? throw new InvalidOperationException(
+                "La seconde session client est absente.");
+        using var revokeOthersRequest = CreateSessionRequest(
+            HttpMethod.Post,
+            $"{mockBaseUrl}/internal/auth/sessions/revoke-others",
+            sessionToken!);
+        using var revokeOthersResponse = await client.SendAsync(
+            revokeOthersRequest);
+        using var revokeOthersPayload = JsonDocument.Parse(
+            await revokeOthersResponse.Content.ReadAsStringAsync());
+        Ensure(
+            revokeOthersResponse.StatusCode == HttpStatusCode.OK,
+            "La révocation des autres sessions devait réussir.");
+        Ensure(
+            revokeOthersPayload.RootElement
+                .GetProperty("revokedCount")
+                .GetInt32() >= 1,
+            "La seconde session client n'a pas été révoquée.");
+
+        using var revokedOtherRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mockBaseUrl}/internal/auth/session",
+            secondSessionToken);
+        using var revokedOtherResponse = await client.SendAsync(
+            revokedOtherRequest);
+        Ensure(
+            revokedOtherResponse.StatusCode == HttpStatusCode.Unauthorized,
+            "Une autre session révoquée devait être refusée.");
+
+        using var currentSessionRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mockBaseUrl}/internal/auth/session",
+            sessionToken!);
+        using var currentSessionResponse = await client.SendAsync(
+            currentSessionRequest);
+        Ensure(
+            currentSessionResponse.StatusCode == HttpStatusCode.OK,
+            "La session courante ne doit pas être révoquée avec les autres.");
+
         using var logoutRequest = CreateSessionRequest(
             HttpMethod.Delete,
             $"{mockBaseUrl}/internal/auth/sessions/current",
@@ -467,6 +616,14 @@ async Task RunMockTestsAsync()
                 sessionToken!,
                 StringComparison.Ordinal),
             "Un mot de passe ou token de session a été écrit dans les logs.");
+        Ensure(
+            !api.Logs.ToString().Contains(
+                mockAdminPassword,
+                StringComparison.Ordinal)
+            && !api.Logs.ToString().Contains(
+                adminSessionToken,
+                StringComparison.Ordinal),
+            "Un mot de passe ou token admin a été écrit dans les logs.");
     }
     finally
     {
@@ -570,6 +727,83 @@ async Task RunExpiredSessionTestAsync()
     }
 }
 
+async Task RunLockoutResetTestAsync()
+{
+    const string baseUrl = "http://127.0.0.1:5092";
+    using var api = StartApi(
+        baseUrl,
+        startInfo =>
+        {
+            ConfigureMockAuthentication(startInfo, "active", "60");
+            startInfo.Environment["LOGIN_MAX_FAILURES"] = "3";
+            startInfo.Environment["LOGIN_LOCKOUT_MINUTES"] = "10";
+        });
+    using var handler = new HttpClientHandler { UseProxy = false };
+    using var client = new HttpClient(handler);
+
+    try
+    {
+        using var healthResponse = await WaitForHealthAsync(
+            client,
+            api.Process,
+            baseUrl,
+            api.Logs);
+        Ensure(healthResponse.IsSuccessStatusCode, "Health lockout invalide.");
+
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            using var failure = await client.PostAsJsonAsync(
+                $"{baseUrl}/internal/auth/sessions",
+                new { email = mockEmail, password = "INVALID_BEFORE_SUCCESS" });
+            Ensure(
+                failure.StatusCode == HttpStatusCode.Unauthorized,
+                "Les premiers échecs doivent rester génériques.");
+        }
+
+        using var success = await client.PostAsJsonAsync(
+            $"{baseUrl}/internal/auth/sessions",
+            new { email = mockEmail, password = mockPassword });
+        Ensure(
+            success.StatusCode == HttpStatusCode.OK,
+            "Un login réussi doit remettre le compteur à zéro.");
+
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            using var failure = await client.PostAsJsonAsync(
+                $"{baseUrl}/internal/auth/sessions",
+                new { email = mockEmail, password = "INVALID_AFTER_SUCCESS" });
+            Ensure(
+                failure.StatusCode == HttpStatusCode.Unauthorized,
+                "Le compteur n'a pas été remis à zéro après succès.");
+        }
+
+        using var lockedResponse = await client.PostAsJsonAsync(
+            $"{baseUrl}/internal/auth/sessions",
+            new { email = mockEmail, password = "INVALID_LOCKING_ATTEMPT" });
+        using var lockedPayload = JsonDocument.Parse(
+            await lockedResponse.Content.ReadAsStringAsync());
+        Ensure(
+            lockedResponse.StatusCode == HttpStatusCode.TooManyRequests,
+            "Le compte devait être temporairement verrouillé.");
+        Ensure(
+            lockedPayload.RootElement.GetProperty("code").GetString()
+                == "ACCOUNT_LOCKED",
+            "Le verrouillage ne retourne pas ACCOUNT_LOCKED.");
+
+        using var validWhileLockedResponse = await client.PostAsJsonAsync(
+            $"{baseUrl}/internal/auth/sessions",
+            new { email = mockEmail, password = mockPassword });
+        Ensure(
+            validWhileLockedResponse.StatusCode
+                == HttpStatusCode.TooManyRequests,
+            "Un compte verrouillé ne doit pas accepter le bon mot de passe.");
+    }
+    finally
+    {
+        await api.StopAsync();
+    }
+}
+
 async Task RunMariaDbReadTestsAsync()
 {
     var requiredVariables = new[]
@@ -581,7 +815,9 @@ async Task RunMariaDbReadTestsAsync()
         "SQL_USERNAME",
         "SQL_PASSWORD",
         "DEMO_PORTAL_EMAIL",
-        "DEMO_PORTAL_PASSWORD"
+        "DEMO_PORTAL_PASSWORD",
+        "DEMO_INTERNAL_ADMIN_EMAIL",
+        "DEMO_INTERNAL_ADMIN_PASSWORD"
     };
     var missing = requiredVariables
         .Where(name => string.IsNullOrWhiteSpace(
@@ -600,6 +836,8 @@ async Task RunMariaDbReadTestsAsync()
             startInfo.Environment["ASPNETCORE_ENVIRONMENT"] = "Development";
             startInfo.Environment["DOTNET_ENVIRONMENT"] = "Development";
             startInfo.Environment["AD_INTEGRATION_MODE"] = "disabled";
+            startInfo.Environment["LOGIN_MAX_FAILURES"] = "3";
+            startInfo.Environment["LOGIN_LOCKOUT_MINUTES"] = "10";
         });
     using var handler = new HttpClientHandler { UseProxy = false };
     using var client = new HttpClient(handler);
@@ -640,6 +878,100 @@ async Task RunMariaDbReadTestsAsync()
         await PrepareIsolationFixtureAsync(
             isolationCustomerId,
             isolationServiceId);
+
+        using var clientAdminRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mariaDbBaseUrl}/internal/admin/overview",
+            sessionToken);
+        using var clientAdminResponse = await client.SendAsync(
+            clientAdminRequest);
+        Ensure(
+            clientAdminResponse.StatusCode == HttpStatusCode.Forbidden,
+            "Le client MariaDB ne doit pas accéder à l'administration.");
+
+        using var adminLoginResponse = await client.PostAsJsonAsync(
+            $"{mariaDbBaseUrl}/internal/auth/sessions",
+            new
+            {
+                email = Environment.GetEnvironmentVariable(
+                    "DEMO_INTERNAL_ADMIN_EMAIL"),
+                password = Environment.GetEnvironmentVariable(
+                    "DEMO_INTERNAL_ADMIN_PASSWORD")
+            });
+        using var adminLoginPayload = JsonDocument.Parse(
+            await adminLoginResponse.Content.ReadAsStringAsync());
+        Ensure(
+            adminLoginResponse.StatusCode == HttpStatusCode.OK,
+            "Le login admin MariaDB conditionnel a échoué.");
+        Ensure(
+            adminLoginPayload.RootElement
+                .GetProperty("user")
+                .GetProperty("role")
+                .GetString() == "internal_admin",
+            "Le seed admin MariaDB n'a pas le rôle attendu.");
+        var adminSessionToken = adminLoginPayload.RootElement
+            .GetProperty("sessionToken")
+            .GetString()
+            ?? throw new InvalidOperationException(
+                "Le login admin MariaDB ne retourne aucun token.");
+        await VerifyPersistedSessionHashAsync(adminSessionToken);
+
+        foreach (var endpoint in new[]
+        {
+            "/internal/admin/overview",
+            "/internal/admin/customers",
+            "/internal/admin/support-requests",
+            "/internal/admin/service-requests",
+            "/internal/admin/sessions",
+            "/internal/admin/audit-logs"
+        })
+        {
+            using var request = CreateSessionRequest(
+                HttpMethod.Get,
+                $"{mariaDbBaseUrl}{endpoint}",
+                adminSessionToken);
+            using var response = await client.SendAsync(request);
+            Ensure(
+                response.StatusCode == HttpStatusCode.OK,
+                $"La route admin MariaDB {endpoint} devait répondre HTTP 200.");
+            Ensure(
+                response.Headers.GetValues(dataSourceHeader).Single()
+                    == "mariadb",
+                $"La route admin {endpoint} n'utilise pas MariaDB.");
+        }
+
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            using var failure = await client.PostAsJsonAsync(
+                $"{mariaDbBaseUrl}/internal/auth/sessions",
+                new
+                {
+                    email = Environment.GetEnvironmentVariable(
+                        "DEMO_INTERNAL_ADMIN_EMAIL"),
+                    password = "INVALID_MARIADB_ADMIN_PASSWORD"
+                });
+            Ensure(
+                attempt < 2
+                    ? failure.StatusCode == HttpStatusCode.Unauthorized
+                    : failure.StatusCode == HttpStatusCode.TooManyRequests,
+                "Le verrouillage MariaDB admin ne suit pas le seuil configuré.");
+        }
+
+        await ResetLoginFailureFixtureAsync(
+            Environment.GetEnvironmentVariable(
+                "DEMO_INTERNAL_ADMIN_EMAIL")!);
+        using var adminLoginAfterReset = await client.PostAsJsonAsync(
+            $"{mariaDbBaseUrl}/internal/auth/sessions",
+            new
+            {
+                email = Environment.GetEnvironmentVariable(
+                    "DEMO_INTERNAL_ADMIN_EMAIL"),
+                password = Environment.GetEnvironmentVariable(
+                    "DEMO_INTERNAL_ADMIN_PASSWORD")
+            });
+        Ensure(
+            adminLoginAfterReset.StatusCode == HttpStatusCode.OK,
+            "Le reset du verrouillage MariaDB devait restaurer le login.");
 
         using var summaryRequest = CreateSessionRequest(
             HttpMethod.Get,
@@ -826,6 +1158,12 @@ async Task RunMariaDbReadTestsAsync()
     }
     finally
     {
+        var adminEmail = Environment.GetEnvironmentVariable(
+            "DEMO_INTERNAL_ADMIN_EMAIL");
+        if (!string.IsNullOrWhiteSpace(adminEmail))
+        {
+            await ResetLoginFailureFixtureAsync(adminEmail);
+        }
         await CleanupIsolationFixtureAsync(
             isolationCustomerId,
             isolationServiceId);
@@ -970,6 +1308,30 @@ async Task CleanupIsolationFixtureAsync(
     await transaction.CommitAsync();
 }
 
+async Task ResetLoginFailureFixtureAsync(string email)
+{
+    if (!IsMariaDbTestRequested())
+    {
+        return;
+    }
+
+    await using var connection = CreateMariaDbTestConnection();
+    await connection.OpenAsync();
+    await using var command = connection.CreateCommand();
+    command.CommandText =
+        """
+        UPDATE portal_users
+        SET failed_login_count = 0,
+            last_failed_login_at = NULL,
+            locked_until = NULL,
+            updated_at = @updated_at
+        WHERE LOWER(email) = @email;
+        """;
+    AddDbParameter(command, "@updated_at", DateTime.UtcNow);
+    AddDbParameter(command, "@email", email.Trim().ToLowerInvariant());
+    await command.ExecuteNonQueryAsync();
+}
+
 DbConnection CreateMariaDbTestConnection()
 {
     var builder = new DbConnectionStringBuilder
@@ -1078,7 +1440,12 @@ void ConfigureMockAuthentication(
     startInfo.Environment["DEMO_PORTAL_EMAIL"] = mockEmail;
     startInfo.Environment["DEMO_PORTAL_PASSWORD"] = mockPassword;
     startInfo.Environment["DEMO_PORTAL_STATUS"] = status;
+    startInfo.Environment["DEMO_INTERNAL_ADMIN_EMAIL"] = mockAdminEmail;
+    startInfo.Environment["DEMO_INTERNAL_ADMIN_PASSWORD"] =
+        mockAdminPassword;
     startInfo.Environment["SESSION_DURATION_MINUTES"] = durationMinutes;
+    startInfo.Environment["LOGIN_MAX_FAILURES"] = "5";
+    startInfo.Environment["LOGIN_LOCKOUT_MINUTES"] = "10";
     foreach (var variable in new[]
     {
         "SQL_PROVIDER",

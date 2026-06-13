@@ -7,7 +7,12 @@ public sealed record PortalUserCredential(
     string Email,
     string DisplayName,
     string Status,
-    string? PasswordHash);
+    string Role,
+    string? PasswordHash,
+    DateTime? LastLoginAtUtc,
+    int FailedLoginCount,
+    DateTime? LastFailedLoginAtUtc,
+    DateTime? LockedUntilUtc);
 
 public sealed record PortalSessionRecord(
     string Id,
@@ -17,6 +22,8 @@ public sealed record PortalSessionRecord(
     string Email,
     string DisplayName,
     string UserStatus,
+    string UserRole,
+    DateTime? LastLoginAtUtc,
     DateTime ExpiresAtUtc,
     DateTime? RevokedAtUtc,
     DateTime? LastSeenAtUtc);
@@ -29,7 +36,13 @@ public sealed record PortalSessionContext(
     string Email,
     string DisplayName,
     string UserStatus,
+    string UserRole,
+    DateTime? LastLoginAtUtc,
     DateTime ExpiresAtUtc);
+
+public sealed record LoginFailureState(
+    int FailedLoginCount,
+    DateTime? LockedUntilUtc);
 
 public interface IAuthenticationRepository
 {
@@ -55,6 +68,21 @@ public interface IAuthenticationRepository
     Task RevokeSessionAsync(
         string sessionId,
         DateTime revokedAtUtc,
+        CancellationToken cancellationToken);
+    Task<int> RevokeOtherSessionsAsync(
+        string userId,
+        string currentSessionId,
+        DateTime revokedAtUtc,
+        CancellationToken cancellationToken);
+    Task<LoginFailureState> RecordFailedLoginAsync(
+        string userId,
+        DateTime failedAtUtc,
+        DateTime failureWindowStartUtc,
+        int maximumFailures,
+        DateTime lockedUntilUtc,
+        CancellationToken cancellationToken);
+    Task ResetLoginFailuresAsync(
+        string userId,
         CancellationToken cancellationToken);
     Task UpdateLastLoginAsync(
         string userId,

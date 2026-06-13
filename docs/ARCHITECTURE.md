@@ -24,6 +24,7 @@ déjà et ne fait pas partie des VM à créer.
 - l'interface web destinée aux clients ;
 - le backend public de type Backend for Frontend (BFF) ;
 - les routes BFF d'authentification et le cookie de session `HttpOnly` ;
+- les routes BFF d'administration en lecture seule ;
 - les contrôles de validation, de rate limiting et de protection web ;
 - les routes publiques du contrat d'API.
 
@@ -43,13 +44,15 @@ aux outils de facturation internes.
 - les logs d'audit des opérations sensibles ;
 - la vérification des mots de passe et la création/révocation des sessions ;
 - la résolution de `user_id` et `customer_id` avant tout accès métier ;
+- le contrôle des rôles `client_user` et `internal_admin` ;
+- les lectures globales admin limitées et auditables ;
 - les mocks des intégrations tant que les systèmes réels ne sont pas activés.
 
 Elle n'expose aucune interface directement sur Internet. Son pare-feu n'accepte
 les appels applicatifs que depuis les sources privées autorisées, en priorité
 `WEBPORTAL`.
 
-## Flux d'authentification V0.7
+## Flux d'authentification V0.8
 
 ```mermaid
 sequenceDiagram
@@ -73,6 +76,37 @@ sequenceDiagram
 Le navigateur ne reçoit jamais le token dans un corps JSON et ne peut pas lire
 le cookie depuis JavaScript. Le BFF ne choisit pas le client : API-INTERNAL le
 résout depuis la session persistée.
+
+Après plusieurs échecs consécutifs, API-INTERNAL enregistre un verrouillage
+temporaire du compte. Un succès remet le compteur à zéro. La session courante
+peut révoquer les autres sessions du même utilisateur sans exposer leurs
+tokens.
+
+## Flux d'administration V0.8
+
+```mermaid
+sequenceDiagram
+    participant N as Navigateur interne
+    participant W as WEBPORTAL / BFF
+    participant A as API-INTERNAL
+    participant M as MariaDB
+
+    N->>W: GET /admin/*
+    W->>A: Valider la session
+    A->>M: Session + rôle utilisateur
+    A-->>W: rôle internal_admin
+    W->>A: GET /internal/admin/*
+    A->>M: Revalider session et rôle
+    A->>M: Lecture globale limitée
+    A->>M: Audit de la lecture
+    A-->>W: Données filtrées sans secret
+```
+
+Le préfixe UI retenu est `/admin`. Il distingue clairement l'interface humaine
+des endpoints privés `/internal/*`. Les pages et endpoints admin sont en
+lecture seule. Un utilisateur client est refusé côté BFF et côté API-INTERNAL.
+Un administrateur interne n'utilise pas les vues client afin d'éviter toute
+confusion ou impersonation implicite.
 
 ## Flux réseau autorisés
 
@@ -117,7 +151,7 @@ La base de données reste hébergée sur le serveur SQL existant. Seule
 Le portail obtient ses données par l'API privée et ne connaît jamais les
 coordonnées de connexion SQL.
 
-En V0.7, toutes les lectures et écritures portail sont filtrées par le
+En V0.8, toutes les lectures et écritures portail sont filtrées par le
 `customer_id` de la session. Les demandes support vérifient en plus que le
 service ciblé appartient à ce même client.
 

@@ -13,7 +13,11 @@ export default async function LoginPage() {
   const session = await getCurrentPortalSession();
 
   if (session) {
-    redirect("/dashboard");
+    redirect(
+      session.user.role === "internal_admin"
+        ? "/admin"
+        : "/dashboard",
+    );
   }
 
   return (
@@ -27,7 +31,7 @@ export default async function LoginPage() {
         </p>
         <ul className="check-list">
           <li>Session conservée dans un cookie HttpOnly.</li>
-          <li>Données limitées au client associé au compte.</li>
+          <li>Données client isolées ou vues internes selon le rôle.</li>
           <li>Aucun paiement ni changement de mot de passe AD.</li>
         </ul>
       </div>

@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { SupportRequestForm } from "@/components/SupportRequestForm";
 import { formatDate, supportStatus } from "@/lib/formatters";
-import { requirePortalSession } from "@/lib/auth";
+import { requireClientSession } from "@/lib/auth";
 import {
   getServices,
   getSupportRequests,
@@ -25,7 +25,7 @@ const priorityLabels = {
 };
 
 export default async function SupportPage() {
-  await requirePortalSession();
+  await requireClientSession();
   const [requestsResult, servicesResult] = await Promise.all([
     getSupportRequests(),
     getServices(),
@@ -38,7 +38,7 @@ export default async function SupportPage() {
   return (
     <>
       <PageHeader
-        action={<StatusBadge label="V0.7 authentifiée" tone="info" />}
+        action={<StatusBadge label="V0.8 authentifiée" tone="info" />}
         description="Le formulaire passe par le BFF puis API-INTERNAL. Il écrit dans MariaDB uniquement lorsque la configuration serveur est complète."
         eyebrow="Assistance"
         title="Demandes de support"

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { AdminNavigation } from "@/components/AdminNavigation";
 import { PortalNavigation } from "@/components/PortalNavigation";
 import { getCurrentPortalSession } from "@/lib/auth";
 
@@ -24,17 +25,20 @@ export async function AppShell({ children }: AppShellProps) {
               <small>Espace client</small>
             </span>
           </Link>
-          <div className="demo-chip">V0.7 authentifiée</div>
+          <div className="demo-chip">V0.8 sécurisée</div>
         </div>
       </header>
-      {session ? (
+      {session?.user.role === "client_user" ? (
         <PortalNavigation displayName={session.user.displayName} />
+      ) : null}
+      {session?.user.role === "internal_admin" ? (
+        <AdminNavigation displayName={session.user.displayName} />
       ) : null}
       <main className="main-content">{children}</main>
       <footer className="site-footer">
         <div>
           <strong>Zachary HOUNSA-HOUNKPA EI</strong>
-          <p>Espace client authentifié, données de démonstration.</p>
+          <p>Portail authentifié et administration interne minimale.</p>
         </div>
         <p>Aucun AD réel, paiement ou facturation réelle.</p>
       </footer>

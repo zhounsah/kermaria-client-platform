@@ -4,7 +4,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { MockNotice } from "@/components/MockNotice";
 import { PageHeader } from "@/components/PageHeader";
 import { ServiceCard } from "@/components/ServiceCard";
-import { requirePortalSession } from "@/lib/auth";
+import { requireClientSession } from "@/lib/auth";
 import { getServices } from "@/lib/internal-api";
 
 export const metadata = {
@@ -14,7 +14,7 @@ export const metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function ServicesPage() {
-  await requirePortalSession();
+  await requireClientSession();
   const result = await getServices();
 
   return (

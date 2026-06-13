@@ -8,12 +8,18 @@ export interface ApiError {
   correlation_id: CorrelationId;
 }
 
-export interface PortalUser {
+export type UserRole = "client_user" | "internal_admin";
+
+export interface AuthenticatedUser {
   displayName: string;
   email: string;
-  customerReference: string;
+  customerReference: string | null;
   status: "active" | "disabled" | "pending";
+  role: UserRole;
+  lastLoginAt: string | null;
 }
+
+export type PortalUser = AuthenticatedUser;
 
 export interface LoginPayload {
   email: string;
@@ -40,6 +46,77 @@ export type AuthState =
   | {
       authenticated: false;
     };
+
+export type AuthMeResponse = AuthState;
+
+export interface AdminAuditLogEntry {
+  occurredAt: string;
+  actor: string;
+  action: string;
+  outcome: string;
+  reasonCode: string | null;
+  customerReference: string | null;
+  correlationId: string;
+  sourceAddress: string | null;
+}
+
+export interface AdminOverview {
+  customerCount: number;
+  activeUserCount: number;
+  activeSessionCount: number;
+  openSupportRequestCount: number;
+  recentServiceRequestCount: number;
+  recentAudits: AdminAuditLogEntry[];
+  adMode: "disabled" | "mock" | "test" | "enabled";
+  adOperationsEnabled: false;
+}
+
+export interface AdminCustomerSummary {
+  customerReference: string;
+  displayName: string;
+  status: string;
+  serviceCount: number;
+  openSupportRequestCount: number;
+  createdAt: string;
+  lastActivityAt: string;
+}
+
+export interface AdminSupportRequestSummary {
+  reference: string;
+  customerReference: string;
+  customerName: string;
+  serviceName: string;
+  priority: string;
+  status: string;
+  subject: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminServiceRequestSummary {
+  reference: string;
+  customerReference: string;
+  customerName: string;
+  catalogItemName: string;
+  subject: string;
+  descriptionPreview: string;
+  status: string;
+  persisted: boolean;
+  createdAt: string;
+}
+
+export interface AdminSessionSummary {
+  userDisplayName: string;
+  userEmail: string;
+  role: UserRole;
+  customerReference: string | null;
+  createdAt: string;
+  expiresAt: string;
+  lastSeenAt: string | null;
+  sourceAddress: string | null;
+  userAgent: string | null;
+  status: "active" | "revoked" | "expired";
+}
 
 export const SERVICE_NAMES = {
   webportal: "WEBPORTAL",

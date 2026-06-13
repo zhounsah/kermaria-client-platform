@@ -28,6 +28,11 @@ public interface IAuthenticationService
         string correlationId,
         string? sourceAddress,
         CancellationToken cancellationToken);
+    Task<int> RevokeOtherSessionsAsync(
+        string? sessionToken,
+        string correlationId,
+        string? sourceAddress,
+        CancellationToken cancellationToken);
 }
 
 public sealed class AuthenticationService : IAuthenticationService
@@ -83,19 +88,53 @@ public sealed class AuthenticationService : IAuthenticationService
             user?.Id ?? "authentication-dummy",
             passwordHash,
             request.Password);
+        var now = DateTime.UtcNow;
+
+        if (user?.LockedUntilUtc is not null
+            && user.LockedUntilUtc > now)
+        {
+            await RecordLoginFailureAsync(
+                correlationId,
+                sourceAddress,
+                "account_locked",
+                cancellationToken,
+                user);
+            throw new AccountLockedException();
+        }
 
         if (user is null
             || user.Status != "active"
             || verification == PasswordVerificationResult.Failed)
         {
+            LoginFailureState? failureState = null;
+            if (user is not null
+                && user.Status == "active"
+                && verification == PasswordVerificationResult.Failed)
+            {
+                failureState = await _repository.RecordFailedLoginAsync(
+                    user.Id,
+                    now,
+                    now.Subtract(_configuration.LoginLockoutDuration),
+                    _configuration.LoginMaxFailures,
+                    now.Add(_configuration.LoginLockoutDuration),
+                    cancellationToken);
+            }
+
             await RecordLoginFailureAsync(
                 correlationId,
                 sourceAddress,
-                user?.Status == "disabled"
+                failureState?.LockedUntilUtc > now
+                    ? "account_locked"
+                    : user?.Status == "disabled"
                     ? "account_disabled"
                     : "invalid_credentials",
                 cancellationToken,
                 user);
+            if (failureState?.LockedUntilUtc > now)
+            {
+                throw new AccountLockedException();
+            }
+
             throw new InvalidCredentialsException();
         }
 
@@ -107,7 +146,9 @@ public sealed class AuthenticationService : IAuthenticationService
                 cancellationToken);
         }
 
-        var now = DateTime.UtcNow;
+        await _repository.ResetLoginFailuresAsync(
+            user.Id,
+            cancellationToken);
         var expiresAt = now.Add(_configuration.SessionDuration);
         var token = _tokenService.Generate();
         var tokenHash = _tokenService.Hash(token);
@@ -215,6 +256,8 @@ public sealed class AuthenticationService : IAuthenticationService
             session.Email,
             session.DisplayName,
             session.UserStatus,
+            session.UserRole,
+            session.LastLoginAtUtc,
             session.ExpiresAtUtc);
     }
 
@@ -244,6 +287,36 @@ public sealed class AuthenticationService : IAuthenticationService
                 ActorUserId: session.UserId,
                 SourceAddress: sourceAddress),
             cancellationToken);
+    }
+
+    public async Task<int> RevokeOtherSessionsAsync(
+        string? sessionToken,
+        string correlationId,
+        string? sourceAddress,
+        CancellationToken cancellationToken)
+    {
+        var session = await ResolveSessionAsync(
+            sessionToken,
+            correlationId,
+            sourceAddress,
+            cancellationToken);
+        var revokedCount = await _repository.RevokeOtherSessionsAsync(
+            session.UserId,
+            session.SessionId,
+            DateTime.UtcNow,
+            cancellationToken);
+        await _auditService.RecordAsync(
+            new AuditEvent(
+                correlationId,
+                "auth.sessions.revoke_others",
+                "success",
+                TargetType: "portal_session",
+                TargetReference: revokedCount.ToString(),
+                CustomerId: session.CustomerId,
+                ActorUserId: session.UserId,
+                SourceAddress: sourceAddress),
+            cancellationToken);
+        return revokedCount;
     }
 
     private async Task RecordLoginFailureAsync(
@@ -292,8 +365,19 @@ public sealed class AuthenticationService : IAuthenticationService
         => new(
             user.DisplayName,
             user.Email,
-            user.CustomerReference,
-            user.Status);
+            user.Role == PortalRoles.ClientUser
+                ? user.CustomerReference
+                : null,
+            user.Status,
+            user.Role,
+            ToUtcIso(user.LastLoginAtUtc));
+
+    private static string? ToUtcIso(DateTime? value)
+        => value is null
+            ? null
+            : DateTime.SpecifyKind(
+                value.Value,
+                DateTimeKind.Utc).ToString("O");
 
     private static string? NormalizeUserAgent(string? userAgent)
         => string.IsNullOrWhiteSpace(userAgent)
@@ -302,6 +386,7 @@ public sealed class AuthenticationService : IAuthenticationService
 }
 
 public sealed class InvalidCredentialsException : Exception;
+public sealed class AccountLockedException : Exception;
 public sealed class SessionRequiredException : Exception;
 public sealed class SessionInvalidException : Exception;
 public sealed class SessionExpiredException : Exception;
