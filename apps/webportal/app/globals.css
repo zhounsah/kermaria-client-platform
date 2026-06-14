@@ -1293,6 +1293,85 @@ td {
   margin-top: 36px;
 }
 
+.notification-center {
+  display: grid;
+  gap: 16px;
+}
+
+.notification-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.notification-toolbar p {
+  margin: 0;
+}
+
+.notification-list {
+  display: grid;
+  gap: 12px;
+}
+
+.notification-card {
+  display: flex;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  background: var(--surface-muted);
+}
+
+.notification-card-unread {
+  border-color: #9ab8e8;
+  background: #f4f8ff;
+  box-shadow: inset 4px 0 0 #3568ad;
+}
+
+.notification-card-main {
+  display: grid;
+  gap: 6px;
+}
+
+.notification-card-main p,
+.notification-card-main time {
+  margin: 0;
+}
+
+.notification-card-main time {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.notification-card-heading,
+.notification-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.notification-state {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.notification-actions {
+  flex-shrink: 0;
+  justify-content: flex-end;
+}
+
+.notification-summary-unread {
+  box-shadow: inset 3px 0 0 #3568ad;
+}
+
 .ticket-list {
   display: grid;
   gap: 12px;
@@ -1798,6 +1877,15 @@ td {
   .demo-notice {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .notification-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .notification-actions {
+    justify-content: flex-start;
   }
 
   .table-card {

@@ -13,6 +13,9 @@ Le navigateur accède uniquement à `WEBPORTAL` :
 - `GET /api/auth/me`
 - `POST /api/support-requests`
 - `POST /api/service-requests`
+- `GET /api/notifications`
+- `POST /api/notifications/{id}/read`
+- `POST /api/notifications/read-all`
 - `GET /api/admin/overview`
 - `GET /api/admin/customers`
 - `GET /api/admin/support-requests`
@@ -61,6 +64,9 @@ publiées par le reverse proxy et jamais appelées directement par le navigateur
 - `GET /internal/portal/support-requests/{id}`
 - `GET /internal/portal/service-requests`
 - `GET /internal/portal/service-requests/{id}`
+- `GET /internal/portal/notifications`
+- `POST /internal/portal/notifications/{id}/read`
+- `POST /internal/portal/notifications/read-all`
 - `POST /internal/portal/support-requests`
 - `POST /internal/portal/service-requests`
 - `GET /internal/ad/health`
@@ -252,6 +258,59 @@ Les détails client exposent uniquement les événements `created` et
 `status_changed`, ainsi que les messages publics. Les détails admin ajoutent
 les notes internes. Toutes les mutations exigent une session `internal_admin`
 validée par le BFF puis par API-INTERNAL.
+
+## Notifications portail V0.12
+
+Les notifications sont internes au portail. Elles sont créées dans la même
+transaction MariaDB que l'événement visible qui les déclenche :
+
+- changement réel de statut d'une demande support ;
+- changement réel de statut d'une demande de service ;
+- ajout d'un message public support ;
+- ajout d'un message public service.
+
+Un statut inchangé et une note interne ne créent aucune notification.
+
+Contrat de lecture :
+
+```json
+[
+  {
+    "id": "identifiant",
+    "notificationType": "support_status_changed",
+    "title": "Mise à jour de votre demande support",
+    "message": "Votre demande support est en attente de votre retour.",
+    "linkUrl": "/support/identifiant-demande",
+    "isRead": false,
+    "readAt": null,
+    "createdAt": "2026-06-14T12:00:00Z"
+  }
+]
+```
+
+Types autorisés :
+
+- `support_status_changed` ;
+- `service_status_changed` ;
+- `support_public_message` ;
+- `service_public_message`.
+
+Les textes sont synthétiques : le contenu complet d'un message public et les
+notes internes ne sont pas recopiés dans la notification.
+
+Réponse de marquage :
+
+```json
+{
+  "updatedCount": 1,
+  "correlation_id": "identifiant-de-correlation"
+}
+```
+
+API-INTERNAL résout le `customer_id` depuis `X-Portal-Session`. Une notification
+absente du client courant retourne une erreur non distinctive
+`PORTAL_DATA_NOT_FOUND`. Un `internal_admin` ne peut pas utiliser ces routes
+portail.
 
 ## Endpoints portail
 

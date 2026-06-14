@@ -217,6 +217,27 @@ Messages append-only écrits par un administrateur et visibles du client.
 | `message_text` | text | Texte brut de 3 à 2 000 caractères |
 | `created_at` | timestamp | Date UTC |
 
+## portal_notifications
+
+Centre d'activité interne au portail, isolé par client.
+
+| Champ | Type logique | Description |
+|---|---|---|
+| `id` | identifier | Clé interne |
+| `customer_id` | identifier | Client propriétaire |
+| `request_type` | text, nullable | `support` ou `service` |
+| `request_id` | identifier, nullable | Demande liée |
+| `notification_type` | text | Type contrôlé |
+| `title` | text | Titre court non sensible |
+| `message` | text | Message synthétique non sensible |
+| `link_url` | text, nullable | Chemin interne autorisé |
+| `read_at` | timestamp, nullable | Date de lecture |
+| `created_at` | timestamp | Date UTC de création |
+
+Les notifications ne contiennent ni note interne, ni message public complet,
+ni donnée d'authentification. Elles sont créées uniquement pour un événement
+visible du client.
+
 ## audit_logs
 
 Journal append-only des événements de sécurité et actions sensibles.
@@ -314,6 +335,7 @@ La V0.8 matérialise ce modèle dans l'adaptateur MariaDB avec les noms suivants
 | historique des demandes | `request_events` |
 | notes internes | `request_internal_notes` |
 | messages publics | `request_public_messages` |
+| notifications portail | `portal_notifications` |
 | `audit_logs` | `audit_logs` |
 | `ad_actions` | `ad_actions` |
 
@@ -339,3 +361,7 @@ aucune table et conserve `client_user` comme valeur par défaut.
 La migration `004_request_workflow.sql` est additive. Elle crée les trois
 tables append-only du workflow et initialise un événement `created` pour les
 demandes existantes, sans modifier leurs statuts.
+
+La migration `005_portal_notifications.sql` ajoute `portal_notifications` et
+ses index de consultation par client, date et état de lecture. Elle ne
+backfille aucune notification et ne modifie aucune demande existante.

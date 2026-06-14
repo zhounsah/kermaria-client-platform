@@ -79,10 +79,14 @@ public sealed class MockRequestWorkflowRepository
     : IRequestWorkflowRepository
 {
     private readonly MockRequestWorkflowStore _store;
+    private readonly MockPortalNotificationStore _notificationStore;
 
-    public MockRequestWorkflowRepository(MockRequestWorkflowStore store)
+    public MockRequestWorkflowRepository(
+        MockRequestWorkflowStore store,
+        MockPortalNotificationStore notificationStore)
     {
         _store = store;
+        _notificationStore = notificationStore;
     }
 
     public bool IsPersistent => false;
@@ -332,12 +336,20 @@ public sealed class MockRequestWorkflowRepository
             }
 
             var previousStatus = target.Status;
-            target.SetStatus(status, DateTime.UtcNow.ToString("O"));
+            var now = DateTime.UtcNow.ToString("O");
+            target.SetStatus(status, now);
             EventsFor(requestType, requestId).Add(new MockEvent(
                 "status_changed",
                 previousStatus,
                 status,
-                DateTime.UtcNow.ToString("O")));
+                now));
+            AddNotification(
+                target,
+                PortalNotificationFactory.ForStatus(
+                    requestType,
+                    requestId,
+                    status),
+                now);
 
             return Task.FromResult(new RequestMutationResponse(
                 requestId,
@@ -402,6 +414,12 @@ public sealed class MockRequestWorkflowRepository
                 null,
                 null,
                 DateTime.UtcNow.ToString("O")));
+            AddNotification(
+                target,
+                PortalNotificationFactory.ForPublicMessage(
+                    requestType,
+                    requestId),
+                DateTime.UtcNow.ToString("O"));
 
             return Task.FromResult(new RequestMutationResponse(
                 requestId,
@@ -431,6 +449,26 @@ public sealed class MockRequestWorkflowRepository
             .Where(item =>
                 item.EventType is "created" or "status_changed")
             .ToArray();
+
+    private void AddNotification(
+        IRequestTarget target,
+        PortalNotificationContent content,
+        string createdAt)
+    {
+        lock (_notificationStore.SyncRoot)
+        {
+            _notificationStore.Notifications.Add(new MockPortalNotification
+            {
+                Id = Guid.NewGuid().ToString("D"),
+                CustomerReference = target.CustomerReference,
+                NotificationType = content.NotificationType,
+                Title = content.Title,
+                Message = content.Message,
+                LinkUrl = content.LinkUrl,
+                CreatedAt = createdAt
+            });
+        }
+    }
 
     private IReadOnlyList<RequestEventSummary> Events(
         string requestType,
@@ -523,6 +561,7 @@ public interface IRequestTarget
 {
     string Id { get; }
     string Reference { get; }
+    string CustomerReference { get; }
     string Status { get; }
     string CreatedAt { get; }
     string UpdatedAt { get; }

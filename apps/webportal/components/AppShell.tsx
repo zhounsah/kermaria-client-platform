@@ -38,7 +38,7 @@ export async function AppShell({ children }: AppShellProps) {
       <footer className="site-footer">
         <div>
           <strong>Zachary HOUNSA-HOUNKPA EI</strong>
-          <p>Portail client authentifié et administration interne en lecture seule.</p>
+          <p>Portail client authentifié et administration interne contrôlée.</p>
         </div>
         <p>Aucun AD réel, paiement ou facturation réelle.</p>
       </footer>

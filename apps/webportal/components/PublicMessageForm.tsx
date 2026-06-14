@@ -77,7 +77,8 @@ export function PublicMessageForm({
         />
         <span className="field-hint">
           Ce texte sera visible par le client sous le libellé « Équipe
-          Kermaria ». Aucun e-mail ne sera envoyé.
+          Kermaria » et créera une notification dans son portail. Aucun e-mail
+          ne sera envoyé.
         </span>
       </div>
       {message ? (

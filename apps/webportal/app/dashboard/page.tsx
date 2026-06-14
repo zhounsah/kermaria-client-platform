@@ -19,6 +19,7 @@ import {
 import {
   getClientProfile,
   getInvoices,
+  getNotifications,
   getPortalSummary,
   getServices,
   getServiceRequests,
@@ -42,6 +43,7 @@ export default async function DashboardPage() {
     invoicesResult,
     supportResult,
     serviceRequestsResult,
+    notificationsResult,
   ] = await Promise.all([
       getPortalSummary(),
       getClientProfile(),
@@ -49,6 +51,7 @@ export default async function DashboardPage() {
       getInvoices(),
       getSupportRequests(),
       getServiceRequests(),
+      getNotifications(),
     ]);
 
   const summary = summaryResult.data;
@@ -57,6 +60,10 @@ export default async function DashboardPage() {
   const invoices = invoicesResult.data;
   const supportRequests = supportResult.data;
   const serviceRequests = serviceRequestsResult.data;
+  const notifications = notificationsResult.data;
+  const unreadNotificationCount = notifications.filter(
+    (item) => !item.isRead,
+  ).length;
   const source = resolveDataSource([
     summaryResult.source,
     profileResult.source,
@@ -64,6 +71,7 @@ export default async function DashboardPage() {
     invoicesResult.source,
     supportResult.source,
     serviceRequestsResult.source,
+    notificationsResult.source,
   ]);
   const partialError = [
     summaryResult,
@@ -72,6 +80,7 @@ export default async function DashboardPage() {
     invoicesResult,
     supportResult,
     serviceRequestsResult,
+    notificationsResult,
   ].find((result) => result.error);
 
   return (
@@ -191,6 +200,14 @@ export default async function DashboardPage() {
             <span>Consulter mon profil</span>
             <small>Consulter les informations du compte</small>
           </Link>
+          <Link className="quick-action" href="/notifications">
+            <span>Consulter les notifications</span>
+            <small>
+              {unreadNotificationCount > 0
+                ? `${unreadNotificationCount} nouvelle(s) activité(s)`
+                : "Aucune nouvelle activité"}
+            </small>
+          </Link>
         </aside>
       </div>
 
@@ -297,6 +314,50 @@ export default async function DashboardPage() {
         </SectionCard>
       </div>
 
+      <SectionCard ariaLabel="Activité récente du compte">
+        <SectionHeading
+          action={<Link href="/notifications">Toutes les notifications</Link>}
+          description="Changements de statut et messages récemment publiés sur vos demandes."
+          title="Activité récente"
+        />
+        {notificationsResult.error ? (
+          <ErrorState
+            compact
+            description="Impossible de charger l'activité récente pour le moment."
+            reference={notificationsResult.correlationId}
+            title="Activité indisponible"
+          />
+        ) : notifications.length === 0 ? (
+          <EmptyState
+            description="Aucune activité récente n'est disponible."
+            title="Aucune notification"
+          />
+        ) : (
+          <div className="stack-list">
+            {notifications.slice(0, 3).map((notification) => (
+              <Link
+                className={
+                  notification.isRead
+                    ? "stack-row"
+                    : "stack-row notification-summary-unread"
+                }
+                href={safeNotificationLink(notification.linkUrl)}
+                key={notification.id}
+              >
+                <div className="stack-row-main">
+                  <strong>{notification.title}</strong>
+                  <span>{notification.message}</span>
+                </div>
+                <StatusBadge
+                  label={notification.isRead ? "Lue" : "Nouvelle"}
+                  tone={notification.isRead ? "neutral" : "warning"}
+                />
+              </Link>
+            ))}
+          </div>
+        )}
+      </SectionCard>
+
       {source !== "unavailable" ? (
         <MockNotice
           correlationId={summaryResult.correlationId}
@@ -305,4 +366,15 @@ export default async function DashboardPage() {
       ) : null}
     </>
   );
+}
+
+function safeNotificationLink(value: string | null) {
+  if (
+    value?.startsWith("/support/")
+    || value?.startsWith("/request-service/")
+  ) {
+    return value;
+  }
+
+  return "/notifications";
 }

@@ -241,6 +241,28 @@ export interface PublicRequestMessage {
   createdAt: string;
 }
 
+export type PortalNotificationType =
+  | "support_status_changed"
+  | "service_status_changed"
+  | "support_public_message"
+  | "service_public_message";
+
+export interface PortalNotificationSummary {
+  id: string;
+  notificationType: PortalNotificationType;
+  title: string;
+  message: string;
+  linkUrl: string | null;
+  isRead: boolean;
+  readAt: string | null;
+  createdAt: string;
+}
+
+export interface NotificationReadResponse {
+  updatedCount: number;
+  correlation_id: CorrelationId;
+}
+
 export interface InternalRequestNote {
   id: string;
   note: string;

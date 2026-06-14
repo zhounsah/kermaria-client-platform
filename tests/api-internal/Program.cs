@@ -469,6 +469,94 @@ async Task RunMockTestsAsync()
             serviceStatusResponse.StatusCode == HttpStatusCode.OK,
             "Un admin doit pouvoir changer le statut d'une demande de service.");
 
+        using var serviceMessageRequest = CreateSessionRequest(
+            HttpMethod.Post,
+            $"{mockBaseUrl}/internal/admin/service-requests/{workflowServiceId}/messages",
+            adminSessionToken);
+        serviceMessageRequest.Content = JsonContent.Create(
+            new { text = "Message public de suivi de service." });
+        using var serviceMessageResponse = await client.SendAsync(
+            serviceMessageRequest);
+        Ensure(
+            serviceMessageResponse.StatusCode == HttpStatusCode.OK,
+            "L'ajout d'un message public de service mock devait réussir.");
+
+        using var notificationsRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mockBaseUrl}/internal/portal/notifications",
+            sessionToken!);
+        using var notificationsResponse = await client.SendAsync(
+            notificationsRequest);
+        using var notificationsPayload = JsonDocument.Parse(
+            await notificationsResponse.Content.ReadAsStringAsync());
+        Ensure(
+            notificationsResponse.StatusCode == HttpStatusCode.OK
+            && notificationsPayload.RootElement.GetArrayLength() == 4,
+            "Les quatre événements visibles devaient créer quatre notifications.");
+        var notificationsText = notificationsPayload.RootElement.GetRawText();
+        Ensure(
+            !notificationsText.Contains(
+                privateNote,
+                StringComparison.Ordinal)
+            && !notificationsText.Contains(
+                publicMessage,
+                StringComparison.Ordinal),
+            "Une notification ne doit contenir ni note interne ni message complet.");
+
+        var notificationId = notificationsPayload.RootElement[0]
+            .GetProperty("id")
+            .GetString()
+            ?? throw new InvalidOperationException(
+                "La notification mock ne retourne aucun identifiant.");
+        using var readNotificationRequest = CreateSessionRequest(
+            HttpMethod.Post,
+            $"{mockBaseUrl}/internal/portal/notifications/{notificationId}/read",
+            sessionToken!);
+        using var readNotificationResponse = await client.SendAsync(
+            readNotificationRequest);
+        using var readNotificationPayload = JsonDocument.Parse(
+            await readNotificationResponse.Content.ReadAsStringAsync());
+        Ensure(
+            readNotificationResponse.StatusCode == HttpStatusCode.OK
+            && readNotificationPayload.RootElement
+                .GetProperty("updatedCount")
+                .GetInt32() == 1,
+            "Le marquage individuel d'une notification devait réussir.");
+
+        using var foreignNotificationRequest = CreateSessionRequest(
+            HttpMethod.Post,
+            $"{mockBaseUrl}/internal/portal/notifications/notification-other-customer/read",
+            sessionToken!);
+        using var foreignNotificationResponse = await client.SendAsync(
+            foreignNotificationRequest);
+        Ensure(
+            foreignNotificationResponse.StatusCode == HttpStatusCode.NotFound,
+            "Une notification absente du client devait rester inaccessible.");
+
+        using var readAllNotificationsRequest = CreateSessionRequest(
+            HttpMethod.Post,
+            $"{mockBaseUrl}/internal/portal/notifications/read-all",
+            sessionToken!);
+        using var readAllNotificationsResponse = await client.SendAsync(
+            readAllNotificationsRequest);
+        Ensure(
+            readAllNotificationsResponse.StatusCode == HttpStatusCode.OK,
+            "Le marquage global des notifications devait réussir.");
+
+        using var notificationsAfterReadRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mockBaseUrl}/internal/portal/notifications",
+            sessionToken!);
+        using var notificationsAfterReadResponse = await client.SendAsync(
+            notificationsAfterReadRequest);
+        using var notificationsAfterReadPayload = JsonDocument.Parse(
+            await notificationsAfterReadResponse.Content.ReadAsStringAsync());
+        Ensure(
+            notificationsAfterReadPayload.RootElement
+                .EnumerateArray()
+                .All(item => item.GetProperty("isRead").GetBoolean()),
+            "Toutes les notifications mock devaient être marquées comme lues.");
+
         using var adminPortalRequest = CreateSessionRequest(
             HttpMethod.Get,
             $"{mockBaseUrl}/internal/portal/services",
@@ -1191,6 +1279,8 @@ async Task RunMariaDbReadTestsAsync()
         "90000000-0000-0000-0000-000000000071";
     const string isolationServiceId =
         "90000000-0000-0000-0000-000000000072";
+    const string isolationNotificationId =
+        "90000000-0000-0000-0000-000000000073";
     string? workflowSupportRequestId = null;
     string? workflowServiceRequestId = null;
 
@@ -1212,6 +1302,7 @@ async Task RunMariaDbReadTestsAsync()
             && readyPayload.RootElement.GetProperty("checks")
                 .GetProperty("mariadb").GetString() == "healthy",
             "La readiness MariaDB conditionnelle est invalide.");
+        await VerifyNotificationMigrationAsync();
 
         using var loginResponse = await client.PostAsJsonAsync(
             $"{mariaDbBaseUrl}/internal/auth/sessions",
@@ -1554,6 +1645,88 @@ async Task RunMariaDbReadTestsAsync()
             mariaMessageResponse.StatusCode == HttpStatusCode.OK,
             "L'ajout de message public MariaDB devait réussir.");
 
+        using var mariaServiceMessageRequest = CreateSessionRequest(
+            HttpMethod.Post,
+            $"{mariaDbBaseUrl}/internal/admin/service-requests/{workflowServiceRequestId}/messages",
+            adminSessionToken);
+        mariaServiceMessageRequest.Content = JsonContent.Create(
+            new { text = "Message public MariaDB de service V0.12." });
+        using var mariaServiceMessageResponse = await client.SendAsync(
+            mariaServiceMessageRequest);
+        Ensure(
+            mariaServiceMessageResponse.StatusCode == HttpStatusCode.OK,
+            "L'ajout de message public service MariaDB devait réussir.");
+
+        using var mariaNotificationsRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mariaDbBaseUrl}/internal/portal/notifications",
+            sessionToken);
+        using var mariaNotificationsResponse = await client.SendAsync(
+            mariaNotificationsRequest);
+        using var mariaNotificationsPayload = JsonDocument.Parse(
+            await mariaNotificationsResponse.Content.ReadAsStringAsync());
+        Ensure(
+            mariaNotificationsResponse.StatusCode == HttpStatusCode.OK,
+            "La lecture des notifications MariaDB devait réussir.");
+        var workflowNotifications = mariaNotificationsPayload.RootElement
+            .EnumerateArray()
+            .Where(item =>
+                item.GetProperty("linkUrl").GetString()?.Contains(
+                    workflowSupportRequestId,
+                    StringComparison.Ordinal) == true
+                || item.GetProperty("linkUrl").GetString()?.Contains(
+                    workflowServiceRequestId,
+                    StringComparison.Ordinal) == true)
+            .ToArray();
+        Ensure(
+            workflowNotifications.Length == 4,
+            "Les événements visibles MariaDB devaient créer quatre notifications.");
+        Ensure(
+            workflowNotifications.All(item =>
+                !item.GetRawText().Contains(
+                    mariaPrivateNote,
+                    StringComparison.Ordinal)
+                && !item.GetRawText().Contains(
+                    mariaPublicMessage,
+                    StringComparison.Ordinal)),
+            "Les notifications ne doivent contenir ni note interne ni message complet.");
+
+        var mariaNotificationId = workflowNotifications[0]
+            .GetProperty("id")
+            .GetString()
+            ?? throw new InvalidOperationException(
+                "La notification MariaDB ne retourne aucun identifiant.");
+        using var mariaReadNotificationRequest = CreateSessionRequest(
+            HttpMethod.Post,
+            $"{mariaDbBaseUrl}/internal/portal/notifications/{mariaNotificationId}/read",
+            sessionToken);
+        using var mariaReadNotificationResponse = await client.SendAsync(
+            mariaReadNotificationRequest);
+        Ensure(
+            mariaReadNotificationResponse.StatusCode == HttpStatusCode.OK,
+            "Le marquage individuel MariaDB devait réussir.");
+
+        using var mariaForeignNotificationRequest = CreateSessionRequest(
+            HttpMethod.Post,
+            $"{mariaDbBaseUrl}/internal/portal/notifications/{isolationNotificationId}/read",
+            sessionToken);
+        using var mariaForeignNotificationResponse = await client.SendAsync(
+            mariaForeignNotificationRequest);
+        Ensure(
+            mariaForeignNotificationResponse.StatusCode
+                == HttpStatusCode.NotFound,
+            "Un client ne doit pas marquer la notification d'un autre client.");
+
+        using var mariaReadAllRequest = CreateSessionRequest(
+            HttpMethod.Post,
+            $"{mariaDbBaseUrl}/internal/portal/notifications/read-all",
+            sessionToken);
+        using var mariaReadAllResponse = await client.SendAsync(
+            mariaReadAllRequest);
+        Ensure(
+            mariaReadAllResponse.StatusCode == HttpStatusCode.OK,
+            "Le marquage global MariaDB devait réussir.");
+
         using var mariaClientDetailRequest = CreateSessionRequest(
             HttpMethod.Get,
             $"{mariaDbBaseUrl}/internal/portal/support-requests/{workflowSupportRequestId}",
@@ -1672,7 +1845,13 @@ async Task VerifyWorkflowPersistenceAsync(
                 AS note_count,
             (SELECT COUNT(*) FROM request_public_messages
              WHERE request_type = 'support' AND request_id = @support_id)
-                AS message_count;
+                AS message_count,
+            (SELECT COUNT(*) FROM portal_notifications
+             WHERE request_type = 'support' AND request_id = @support_id)
+                AS support_notification_count,
+            (SELECT COUNT(*) FROM portal_notifications
+             WHERE request_type = 'service' AND request_id = @service_id)
+                AS service_notification_count;
         """;
     AddDbParameter(command, "@support_id", supportRequestId);
     AddDbParameter(command, "@service_id", serviceRequestId);
@@ -1682,7 +1861,9 @@ async Task VerifyWorkflowPersistenceAsync(
         Convert.ToInt32(reader["support_event_count"]) >= 2
         && Convert.ToInt32(reader["service_event_count"]) >= 2
         && Convert.ToInt32(reader["note_count"]) == 1
-        && Convert.ToInt32(reader["message_count"]) == 1,
+        && Convert.ToInt32(reader["message_count"]) == 1
+        && Convert.ToInt32(reader["support_notification_count"]) == 2
+        && Convert.ToInt32(reader["service_notification_count"]) == 2,
         "Les événements ou notes du workflow MariaDB sont incomplets.");
 }
 
@@ -1700,6 +1881,7 @@ async Task CleanupWorkflowFixtureAsync(
     await using var transaction = await connection.BeginTransactionAsync();
     foreach (var table in new[]
     {
+        "portal_notifications",
         "request_internal_notes",
         "request_public_messages",
         "request_events"
@@ -1769,6 +1951,23 @@ async Task VerifyPersistedSessionHashAsync(string sessionToken)
     Ensure(
         string.Equals(storedHash, expectedHash, StringComparison.Ordinal),
         "Le hash de session MariaDB ne correspond pas au token créé.");
+}
+
+async Task VerifyNotificationMigrationAsync()
+{
+    await using var connection = CreateMariaDbTestConnection();
+    await connection.OpenAsync();
+    await using var command = connection.CreateCommand();
+    command.CommandText =
+        """
+        SELECT COUNT(*)
+        FROM schema_migrations
+        WHERE migration_id = '005_portal_notifications';
+        """;
+    var count = Convert.ToInt32(await command.ExecuteScalarAsync());
+    Ensure(
+        count == 1,
+        "La migration 005_portal_notifications doit être appliquée avant les tests opt-in.");
 }
 
 async Task PrepareIsolationFixtureAsync(
@@ -1843,6 +2042,43 @@ async Task PrepareIsolationFixtureAsync(
         await serviceCommand.ExecuteNonQueryAsync();
     }
 
+    await using (var notificationCommand = connection.CreateCommand())
+    {
+        notificationCommand.Transaction = transaction;
+        notificationCommand.CommandText =
+            """
+            INSERT INTO portal_notifications (
+                id,
+                customer_id,
+                request_type,
+                request_id,
+                notification_type,
+                title,
+                message,
+                link_url,
+                read_at,
+                created_at
+            ) VALUES (
+                '90000000-0000-0000-0000-000000000073',
+                @customer_id,
+                NULL,
+                NULL,
+                'support_status_changed',
+                'Notification isolation',
+                'Donnée fictive de test.',
+                NULL,
+                NULL,
+                @now
+            );
+            """;
+        AddDbParameter(
+            notificationCommand,
+            "@customer_id",
+            customerId);
+        AddDbParameter(notificationCommand, "@now", DateTime.UtcNow);
+        await notificationCommand.ExecuteNonQueryAsync();
+    }
+
     await transaction.CommitAsync();
 }
 
@@ -1858,6 +2094,15 @@ async Task CleanupIsolationFixtureAsync(
     await using var connection = CreateMariaDbTestConnection();
     await connection.OpenAsync();
     await using var transaction = await connection.BeginTransactionAsync();
+
+    await using (var notificationCommand = connection.CreateCommand())
+    {
+        notificationCommand.Transaction = transaction;
+        notificationCommand.CommandText =
+            "DELETE FROM portal_notifications WHERE customer_id = @customer_id;";
+        AddDbParameter(notificationCommand, "@customer_id", customerId);
+        await notificationCommand.ExecuteNonQueryAsync();
+    }
 
     await using (var serviceCommand = connection.CreateCommand())
     {

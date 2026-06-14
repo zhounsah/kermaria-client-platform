@@ -524,6 +524,7 @@ public sealed class MariaDbRequestWorkflowRepository
                 correlationId);
         }
 
+        var now = DateTime.UtcNow;
         await using (var update = connection.CreateCommand())
         {
             update.Transaction = transaction;
@@ -546,7 +547,7 @@ public sealed class MariaDbRequestWorkflowRepository
                   WHERE id = @request_id;
                   """;
             update.Parameters.AddWithValue("@status", status);
-            update.Parameters.AddWithValue("@updated_at", DateTime.UtcNow);
+            update.Parameters.AddWithValue("@updated_at", now);
             update.Parameters.AddWithValue("@request_id", requestId);
             await update.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -561,6 +562,18 @@ public sealed class MariaDbRequestWorkflowRepository
             current.Status,
             status,
             correlationId,
+            cancellationToken);
+        await InsertNotificationAsync(
+            connection,
+            transaction,
+            current.CustomerId,
+            requestType,
+            requestId,
+            PortalNotificationFactory.ForStatus(
+                requestType,
+                requestId,
+                status),
+            now,
             cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
@@ -671,6 +684,20 @@ public sealed class MariaDbRequestWorkflowRepository
             null,
             correlationId,
             cancellationToken);
+        if (eventType == "public_message_added")
+        {
+            await InsertNotificationAsync(
+                connection,
+                transaction,
+                current.CustomerId,
+                requestType,
+                requestId,
+                PortalNotificationFactory.ForPublicMessage(
+                    requestType,
+                    requestId),
+                now,
+                cancellationToken);
+        }
         await transaction.CommitAsync(cancellationToken);
 
         return new RequestMutationResponse(
@@ -692,13 +719,13 @@ public sealed class MariaDbRequestWorkflowRepository
         command.Transaction = transaction;
         command.CommandText = requestType == RequestTypes.Support
             ? """
-              SELECT reference, status
+              SELECT customer_id, reference, status
               FROM support_requests
               WHERE id = @request_id
               FOR UPDATE;
               """
             : """
-              SELECT reference, status
+              SELECT customer_id, reference, status
               FROM service_requests
               WHERE id = @request_id
               FOR UPDATE;
@@ -713,8 +740,61 @@ public sealed class MariaDbRequestWorkflowRepository
         }
 
         return new RequestTarget(
+            MariaDbIdentifierReader.ReadRequired(reader, "customer_id"),
             reader.GetString("reference"),
             reader.GetString("status"));
+    }
+
+    private static async Task InsertNotificationAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        string customerId,
+        string requestType,
+        string requestId,
+        PortalNotificationContent content,
+        DateTime createdAt,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            INSERT INTO portal_notifications (
+                id,
+                customer_id,
+                request_type,
+                request_id,
+                notification_type,
+                title,
+                message,
+                link_url,
+                read_at,
+                created_at
+            ) VALUES (
+                @id,
+                @customer_id,
+                @request_type,
+                @request_id,
+                @notification_type,
+                @title,
+                @message,
+                @link_url,
+                NULL,
+                @created_at
+            );
+            """;
+        command.Parameters.AddWithValue("@id", Guid.NewGuid().ToString("D"));
+        command.Parameters.AddWithValue("@customer_id", customerId);
+        command.Parameters.AddWithValue("@request_type", requestType);
+        command.Parameters.AddWithValue("@request_id", requestId);
+        command.Parameters.AddWithValue(
+            "@notification_type",
+            content.NotificationType);
+        command.Parameters.AddWithValue("@title", content.Title);
+        command.Parameters.AddWithValue("@message", content.Message);
+        command.Parameters.AddWithValue("@link_url", content.LinkUrl);
+        command.Parameters.AddWithValue("@created_at", createdAt);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task InsertEventAsync(
@@ -936,5 +1016,8 @@ public sealed class MariaDbRequestWorkflowRepository
     private static object DbValue(string? value)
         => value is null ? DBNull.Value : value;
 
-    private sealed record RequestTarget(string Reference, string Status);
+    private sealed record RequestTarget(
+        string CustomerId,
+        string Reference,
+        string Status);
 }

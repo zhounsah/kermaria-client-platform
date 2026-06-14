@@ -19,7 +19,9 @@ import type {
   InternalSessionCreated,
   LoginPayload,
   MockSubmissionResponse,
+  NotificationReadResponse,
   PortalSummary,
+  PortalNotificationSummary,
   PortalServiceRequestDetail,
   PortalSupportRequestDetail,
   RequestMutationResponse,
@@ -316,6 +318,14 @@ export function getServiceRequests() {
   );
 }
 
+export function getNotifications() {
+  return getPortalData<PortalNotificationSummary[]>(
+    "/internal/portal/notifications",
+    [],
+    [],
+  );
+}
+
 export function getSupportRequest(id: string) {
   return getPortalData<PortalSupportRequestDetail | null>(
     `/internal/portal/support-requests/${encodeURIComponent(id)}`,
@@ -449,6 +459,40 @@ export async function getInternalAdminData<T>(
     path,
     {
       method: "GET",
+      headers: {
+        [PORTAL_SESSION_HEADER]: sessionToken,
+      },
+    },
+    correlationId,
+  );
+}
+
+export async function getInternalPortalData<T>(
+  path: string,
+  sessionToken: string,
+  correlationId = resolveCorrelationId(null),
+) {
+  return requestInternalAuth<T>(
+    path,
+    {
+      method: "GET",
+      headers: {
+        [PORTAL_SESSION_HEADER]: sessionToken,
+      },
+    },
+    correlationId,
+  );
+}
+
+export async function mutateInternalPortalData(
+  path: string,
+  sessionToken: string,
+  correlationId = resolveCorrelationId(null),
+) {
+  return requestInternalAuth<NotificationReadResponse>(
+    path,
+    {
+      method: "POST",
       headers: {
         [PORTAL_SESSION_HEADER]: sessionToken,
       },

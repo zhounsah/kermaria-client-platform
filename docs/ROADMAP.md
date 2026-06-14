@@ -3,9 +3,24 @@
 Chaque phase conserve les contraintes de `AGENTS.md` et `docs/SECURITY.md`.
 L'avancement d'une phase n'autorise jamais implicitement une intégration réelle.
 
-## Jalon V0.11 workflow demandes
+## Jalon V0.12 notifications portail
 
 Statut : **implémenté, validation utilisateur à réaliser avant commit**.
+
+- Notifications créées lors des changements réels de statut.
+- Notifications créées lors des messages publics admin.
+- Aucune notification pour les notes internes.
+- Centre d'activité `/notifications` isolé par client.
+- Marquage individuel et global comme lu.
+- Activité récente ajoutée au dashboard.
+- Contrat BFF et tests MariaDB opt-in étendus.
+
+La V0.12 n'ajoute aucun e-mail, SMS, push, worker, file de messages,
+provisioning, AD, paiement ou facturation réelle.
+
+## Jalon V0.11 workflow demandes
+
+Statut : **validé, commité et tagué `v0.11`**.
 
 - Statuts contrôlés pour les demandes support et de service.
 - Historique append-only des créations et changements de statut.

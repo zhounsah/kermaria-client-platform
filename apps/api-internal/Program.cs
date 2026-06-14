@@ -47,6 +47,7 @@ builder.Services.AddSingleton<IPortalPasswordService, PortalPasswordService>();
 builder.Services.AddSingleton<ISessionTokenService, SessionTokenService>();
 builder.Services.AddSingleton<MockAuthenticationStore>();
 builder.Services.AddSingleton<MockRequestWorkflowStore>();
+builder.Services.AddSingleton<MockPortalNotificationStore>();
 builder.Services.AddScoped<IPortalRepository>(
     _ => sqlConfiguration.IsPersistent
         ? new MariaDbPortalRepository(sqlConfiguration)
@@ -65,11 +66,20 @@ builder.Services.AddScoped<IRequestWorkflowRepository>(
     serviceProvider => sqlConfiguration.IsPersistent
         ? new MariaDbRequestWorkflowRepository(sqlConfiguration)
         : new MockRequestWorkflowRepository(
-            serviceProvider.GetRequiredService<MockRequestWorkflowStore>()));
+            serviceProvider.GetRequiredService<MockRequestWorkflowStore>(),
+            serviceProvider.GetRequiredService<MockPortalNotificationStore>()));
+builder.Services.AddScoped<IPortalNotificationRepository>(
+    serviceProvider => sqlConfiguration.IsPersistent
+        ? new MariaDbPortalNotificationRepository(sqlConfiguration)
+        : new MockPortalNotificationRepository(
+            serviceProvider.GetRequiredService<MockPortalNotificationStore>()));
 builder.Services.AddScoped<IPortalService, PortalService>();
 builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
 builder.Services.AddScoped<IAdminService, AdminService>();
 builder.Services.AddScoped<IRequestWorkflowService, RequestWorkflowService>();
+builder.Services.AddScoped<
+    IPortalNotificationService,
+    PortalNotificationService>();
 builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddTransient<MariaDbMigrationRunner>();
 builder.Services.AddSingleton<OperationalReadinessService>();
@@ -423,6 +433,60 @@ app.MapGet(
                 session,
                 id,
                 context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/portal/notifications",
+    async (
+        HttpContext context,
+        IPortalNotificationService service,
+        IAuthenticationService authenticationService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            context.RequestServices.GetRequiredService<IAuditService>());
+        return NotificationOk(
+            context,
+            service,
+            await service.GetNotificationsAsync(
+                session,
+                context.RequestAborted));
+    });
+app.MapPost(
+    "/internal/portal/notifications/read-all",
+    async (
+        HttpContext context,
+        IPortalNotificationService service,
+        IAuthenticationService authenticationService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            context.RequestServices.GetRequiredService<IAuditService>());
+        var result = await service.MarkAllAsReadAsync(
+            session,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        return NotificationOk(context, service, result);
+    });
+app.MapPost(
+    "/internal/portal/notifications/{id}/read",
+    async (
+        string id,
+        HttpContext context,
+        IPortalNotificationService service,
+        IAuthenticationService authenticationService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            context.RequestServices.GetRequiredService<IAuditService>());
+        var result = await service.MarkAsReadAsync(
+            session,
+            id,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        return NotificationOk(context, service, result);
     });
 app.MapPost(
     "/internal/portal/support-requests",
@@ -787,6 +851,16 @@ static IResult AdminOk<T>(
 static IResult WorkflowOk<T>(
     HttpContext context,
     IRequestWorkflowService service,
+    T data)
+{
+    context.Response.Headers["X-Data-Source"] =
+        service.IsPersistent ? "mariadb" : "mock";
+    return Results.Ok(data);
+}
+
+static IResult NotificationOk<T>(
+    HttpContext context,
+    IPortalNotificationService service,
     T data)
 {
     context.Response.Headers["X-Data-Source"] =

@@ -136,6 +136,20 @@ public sealed class RequestPublicMessage
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
+public sealed class PortalNotification
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("D");
+    public string CustomerId { get; set; } = string.Empty;
+    public string? RequestType { get; set; }
+    public string? RequestId { get; set; }
+    public string NotificationType { get; set; } = string.Empty;
+    public string Title { get; set; } = string.Empty;
+    public string Message { get; set; } = string.Empty;
+    public string? LinkUrl { get; set; }
+    public DateTime? ReadAtUtc { get; set; }
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
 public sealed class AuditLog
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("D");

@@ -101,6 +101,20 @@ public sealed record PublicRequestMessage(
     string AuthorLabel,
     string CreatedAt);
 
+public sealed record PortalNotificationSummary(
+    string Id,
+    string NotificationType,
+    string Title,
+    string Message,
+    string? LinkUrl,
+    bool IsRead,
+    string? ReadAt,
+    string CreatedAt);
+
+public sealed record NotificationReadResponse(
+    int UpdatedCount,
+    [property: JsonPropertyName("correlation_id")] string CorrelationId);
+
 public sealed record ServiceCatalogItem(
     string Id,
     string Name,

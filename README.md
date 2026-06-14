@@ -3,10 +3,10 @@
 Plateforme technique de l'espace client **Zachary HOUNSA-HOUNKPA EI** pour
 `clients.zacharyhounsa.ovh`. Ce dépôt reste séparé du site vitrine Astro.
 
-## État V0.11
+## État V0.12
 
-La V0.11 conserve le durcissement V0.9 et l'UX V0.10, puis ajoute un workflow
-limité aux demandes support et aux demandes de service :
+La V0.12 conserve le workflow V0.11 et ajoute un centre d'activité client
+strictement interne au portail :
 
 - un portail Next.js responsive et ses routes BFF ;
 - une API ASP.NET Core privée ;
@@ -18,7 +18,7 @@ limité aux demandes support et aux demandes de service :
 - la révocation de la session courante et des autres sessions de l'utilisateur ;
 - une isolation des lectures et écritures par le client issu de la session ;
 - une page `/login`, une déconnexion et la protection des pages privées ;
-- une interface `/admin` en lecture seule pour les comptes internes ;
+- une interface `/admin` avec suivi contrôlé des demandes pour les comptes internes ;
 - un fallback mock explicite lorsque SQL est absent en développement ;
 - des migrations SQL versionnées et un seed fictif déclenchés manuellement ;
 - une abstraction Active Directory en modes `disabled`, `mock`, `test` et
@@ -40,7 +40,12 @@ limité aux demandes support et aux demandes de service :
 - des pages de détail client sans donnée interne ;
 - des pages de détail admin avec historique, note interne et message public ;
 - des mutations admin limitées au statut et aux messages append-only ;
-- une séparation persistée entre notes internes et messages visibles du client.
+- une séparation persistée entre notes internes et messages visibles du client ;
+- des notifications lors d'un changement réel de statut ;
+- des notifications lors de la publication d'un message client ;
+- une page `/notifications` avec états lu/non lu ;
+- le marquage individuel ou global des notifications ;
+- un aperçu de l'activité récente sur le dashboard.
 
 Le SSO, le MFA, la récupération automatisée de mot de passe, les actions AD,
 le paiement, la facturation réelle et les intégrations NAS/RDS/VPN ne sont pas
@@ -173,6 +178,8 @@ rôle et l'état de verrouillage sans supprimer les données existantes.
 La migration `004_request_workflow.sql` ajoute les événements, notes internes
 et messages publics, puis initialise un événement `created` pour les demandes
 existantes.
+La migration `005_portal_notifications.sql` ajoute une table de notifications
+isolée par client. Elle n'ajoute aucune notification externe ou tâche de fond.
 
 Les tests MariaDB sont opt-in. Ils créent des sessions et demandes fictives,
 ainsi qu'un client d'isolation temporaire supprimé en fin de test :
@@ -210,8 +217,8 @@ serveur sans exposer son URL.
 Pages publiques : `/` et `/login`.
 
 Pages privées : `/dashboard`, `/services`, `/invoices`, `/support`,
-`/support/[id]`, `/request-service`, `/request-service/[id]`, `/profile` et
-`/password`.
+`/support/[id]`, `/request-service`, `/request-service/[id]`,
+`/notifications`, `/profile` et `/password`.
 
 Pages internes, réservées à `internal_admin` : `/admin`,
 `/admin/customers`, `/admin/support-requests`, `/admin/service-requests`,
@@ -228,6 +235,9 @@ Routes BFF :
 - `GET /api/auth/me`
 - `POST /api/support-requests`
 - `POST /api/service-requests`
+- `GET /api/notifications`
+- `POST /api/notifications/[id]/read`
+- `POST /api/notifications/read-all`
 - `GET /api/admin/overview`
 - `GET /api/admin/customers`
 - `GET /api/admin/support-requests`
@@ -257,6 +267,8 @@ Les routes `GET|POST /internal/*` sont strictement privées et exigent
 - Aucun token ni hash de session n'est exposé dans les vues admin.
 - Les notes internes ne sont jamais incluses dans les contrats client.
 - Les messages de demande sont rendus comme texte brut, jamais comme HTML.
+- Les notifications contiennent uniquement des textes courts et non sensibles.
+- Une notification est toujours filtrée par le client issu de la session.
 - Le `customer_id` vient uniquement de la session validée par API-INTERNAL.
 - `client_user` est refusé sur les routes admin ; `internal_admin` est refusé
   sur les vues métier client pour éviter toute confusion de contexte.
@@ -285,4 +297,5 @@ Les routes `GET|POST /internal/*` sont strictement privées et exigent
 - [Rotation des secrets](docs/SECRET_ROTATION.md)
 - [UX client V0.10](docs/V0.10_UX_CLIENT.md)
 - [Workflow demandes V0.11](docs/V0.11_REQUEST_WORKFLOW.md)
+- [Notifications portail V0.12](docs/V0.12_PORTAL_NOTIFICATIONS.md)
 - [Règles permanentes](AGENTS.md)

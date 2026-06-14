@@ -59,3 +59,10 @@ Microsoft/
 # Local tree/debug exports
 test.csv
 *.tree.txt
+
+# Local secrets
+.env
+.env.*
+*.local.ps1
+*.secrets.ps1
+local.env.ps1

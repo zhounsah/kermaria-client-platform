@@ -187,6 +187,23 @@ Un changement de statut ne déclenche aucune action externe. Il ne provisionne
 pas de service, ne contacte pas AD, n'envoie pas d'e-mail et ne lance ni
 facturation ni paiement.
 
+## Notifications portail
+
+Les notifications V0.12 restent dans MariaDB et ne quittent jamais le flux
+`Navigateur -> BFF -> API-INTERNAL -> MariaDB`.
+
+- le `customer_id` vient exclusivement de la session validée ;
+- lecture et marquage appliquent toujours ce filtre côté API-INTERNAL ;
+- une notification étrangère est traitée comme introuvable ;
+- les notes internes ne déclenchent aucune notification ;
+- le contenu complet des messages publics n'est pas dupliqué ;
+- les liens sont des chemins internes support/service et sont à nouveau
+  filtrés avant rendu par WEBPORTAL ;
+- aucun e-mail, SMS, push, WebSocket ou worker n'est utilisé.
+
+Le navigateur ne reçoit jamais `INTERNAL_API_URL`, `SERVICE_AUTH_TOKEN`, le
+token de session ou une information d'administration dans ces contrats.
+
 La protection anti-brute-force V0.9 est volontairement simple et centrée sur
 le compte : `LOGIN_MAX_FAILURES` définit le seuil et
 `LOGIN_LOCKOUT_MINUTES` la durée du verrouillage. Elle ne remplace pas un

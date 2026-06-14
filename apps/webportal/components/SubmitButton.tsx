@@ -2,7 +2,7 @@ import type { ButtonHTMLAttributes } from "react";
 
 type SubmitButtonProps = Omit<
   ButtonHTMLAttributes<HTMLButtonElement>,
-  "children" | "type"
+  "children"
 > & {
   idleLabel: string;
   submittingLabel: string;
@@ -15,6 +15,7 @@ export function SubmitButton({
   isSubmitting,
   className = "button",
   disabled,
+  type = "submit",
   ...buttonProps
 }: SubmitButtonProps) {
   return (
@@ -23,7 +24,7 @@ export function SubmitButton({
       aria-busy={isSubmitting}
       className={className}
       disabled={disabled || isSubmitting}
-      type="submit"
+      type={type}
     >
       {isSubmitting ? (
         <span aria-hidden="true" className="button-spinner" />

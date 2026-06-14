@@ -13,6 +13,7 @@
     "test:operations": "node scripts/verify-operations-contract.mjs",
     "test:ux": "node scripts/verify-client-ux-contract.mjs",
     "test:workflow": "node scripts/verify-request-workflow-contract.mjs",
+    "test:notifications": "node scripts/verify-notifications-contract.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

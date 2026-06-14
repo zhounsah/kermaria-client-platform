@@ -11,6 +11,7 @@ const navigationItems = [
   { href: "/invoices", label: "Factures" },
   { href: "/support", label: "Support" },
   { href: "/request-service", label: "Nouvelle demande" },
+  { href: "/notifications", label: "Notifications" },
   { href: "/profile", label: "Profil" },
 ];
 
@@ -26,7 +27,9 @@ export function PortalNavigation({ displayName }: PortalNavigationProps) {
       <div className="portal-nav-inner">
         <div className="portal-nav-links">
           {navigationItems.map((item) => {
-            const isActive = pathname === item.href;
+            const isActive =
+              pathname === item.href
+              || pathname.startsWith(`${item.href}/`);
 
             return (
               <Link
