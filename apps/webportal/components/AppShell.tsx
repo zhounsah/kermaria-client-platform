@@ -25,7 +25,7 @@ export async function AppShell({ children }: AppShellProps) {
               <small>Espace client</small>
             </span>
           </Link>
-          <div className="demo-chip">V0.8 sécurisée</div>
+          <div className="demo-chip">Espace sécurisé</div>
         </div>
       </header>
       {session?.user.role === "client_user" ? (
@@ -38,7 +38,7 @@ export async function AppShell({ children }: AppShellProps) {
       <footer className="site-footer">
         <div>
           <strong>Zachary HOUNSA-HOUNKPA EI</strong>
-          <p>Portail authentifié et administration interne minimale.</p>
+          <p>Portail client authentifié et administration interne en lecture seule.</p>
         </div>
         <p>Aucun AD réel, paiement ou facturation réelle.</p>
       </footer>

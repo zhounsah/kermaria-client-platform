@@ -15,6 +15,14 @@ const serviceSymbols: Record<ServiceSummary["type"], string> = {
   support: "SUP",
 };
 
+const statusGuidance: Record<ServiceSummary["status"], string> = {
+  active: "Service disponible selon le périmètre actuellement convenu.",
+  pending:
+    "La demande est en attente d’étude ou de validation. Aucune activation automatique n’est lancée.",
+  suspended:
+    "Ce service est temporairement indisponible. Contactez le support si vous avez besoin de précisions.",
+};
+
 export function ServiceCard({ service }: ServiceCardProps) {
   const status = serviceStatus[service.status];
 
@@ -45,6 +53,9 @@ export function ServiceCard({ service }: ServiceCardProps) {
         <strong>Périmètre</strong>
         <span>{service.scope}</span>
       </div>
+      <p className={`service-status-note service-status-${service.status}`}>
+        {statusGuidance[service.status]}
+      </p>
       {service.nextStep ? (
         <p className="service-next-step">{service.nextStep}</p>
       ) : null}

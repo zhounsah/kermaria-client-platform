@@ -1,6 +1,7 @@
-import type { ApiError, ServiceRequestPayload } from "@kermaria/shared";
+import type { ApiError } from "@kermaria/shared";
 import { NextRequest, NextResponse } from "next/server";
 
+import { parseServiceRequestPayload } from "@/lib/bff-payloads";
 import { CORRELATION_HEADER, resolveCorrelationId } from "@/lib/correlation";
 import {
   createServiceRequest,
@@ -22,15 +23,16 @@ export async function POST(request: NextRequest) {
     return sessionRequired(correlationId);
   }
 
-  let payload: ServiceRequestPayload;
+  let candidate: unknown;
 
   try {
-    payload = (await request.json()) as ServiceRequestPayload;
+    candidate = await request.json();
   } catch {
     return invalidRequest(correlationId);
   }
 
-  if (!isValidServiceRequestPayload(payload)) {
+  const payload = parseServiceRequestPayload(candidate);
+  if (!payload) {
     return invalidRequest(correlationId);
   }
 
@@ -69,27 +71,6 @@ function sessionRequired(correlationId: ApiError["correlation_id"]) {
   const response = NextResponse.json(error, { status: 401 });
   response.headers.set(CORRELATION_HEADER, correlationId);
   return response;
-}
-
-function isValidServiceRequestPayload(
-  payload: unknown,
-): payload is ServiceRequestPayload {
-  if (!payload || typeof payload !== "object") {
-    return false;
-  }
-
-  const candidate = payload as Partial<ServiceRequestPayload>;
-
-  return (
-    typeof candidate.catalogItemId === "string"
-    && candidate.catalogItemId.trim().length > 0
-    && typeof candidate.subject === "string"
-    && candidate.subject.trim().length > 0
-    && candidate.subject.length <= 160
-    && typeof candidate.description === "string"
-    && candidate.description.trim().length > 0
-    && candidate.description.length <= 4000
-  );
 }
 
 function invalidRequest(correlationId: ApiError["correlation_id"]) {

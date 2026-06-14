@@ -1,6 +1,8 @@
 import Link from "next/link";
 
+import { DisabledActionNotice } from "@/components/DisabledActionNotice";
 import { EmptyState } from "@/components/EmptyState";
+import { ErrorState } from "@/components/ErrorState";
 import { LogoutButton } from "@/components/LogoutButton";
 import { MockNotice } from "@/components/MockNotice";
 import { PageHeader } from "@/components/PageHeader";
@@ -17,6 +19,10 @@ export const metadata = {
 
 export const dynamic = "force-dynamic";
 
+function displayValue(value: string | null | undefined) {
+  return value?.trim() || "Non renseigné";
+}
+
 export default async function ProfilePage() {
   const session = await requireClientSession();
   const result = await getClientProfile();
@@ -31,7 +37,13 @@ export default async function ProfilePage() {
         title="Mon profil"
       />
 
-      {profile ? (
+      {result.error ? (
+        <ErrorState
+          description="Impossible de charger les informations du profil pour le moment."
+          reference={result.correlationId}
+          title="Profil indisponible"
+        />
+      ) : profile ? (
         <div className="profile-layout">
           <section className="content-panel">
             <SectionHeading
@@ -41,36 +53,60 @@ export default async function ProfilePage() {
             <dl className="profile-details">
               <div>
                 <dt>Organisation</dt>
-                <dd>{profile.companyName}</dd>
+                <dd>{displayValue(profile.companyName)}</dd>
               </div>
               <div>
                 <dt>Référence client</dt>
-                <dd>{profile.customerReference}</dd>
+                <dd>{displayValue(profile.customerReference)}</dd>
               </div>
               <div>
                 <dt>Contact principal</dt>
-                <dd>{profile.contactName}</dd>
+                <dd>{displayValue(profile.contactName)}</dd>
               </div>
               <div>
                 <dt>Adresse e-mail</dt>
-                <dd>{profile.email}</dd>
+                <dd>{displayValue(profile.email)}</dd>
               </div>
               <div>
                 <dt>Téléphone</dt>
-                <dd>{profile.phone}</dd>
+                <dd>{displayValue(profile.phone)}</dd>
               </div>
               <div>
                 <dt>Adresse</dt>
                 <dd>
-                  {profile.address}
-                  <br />
-                  {profile.city}, {profile.country}
+                  {displayValue(profile.address)}
+                  {profile.city || profile.country ? (
+                    <>
+                      <br />
+                      {[profile.city, profile.country]
+                        .filter(Boolean)
+                        .join(", ")}
+                    </>
+                  ) : null}
+                </dd>
+              </div>
+              <div>
+                <dt>Statut client</dt>
+                <dd>
+                  <StatusBadge
+                    label={
+                      profile.accountStatus === "active"
+                        ? "Actif"
+                        : "En attente"
+                    }
+                    tone={
+                      profile.accountStatus === "active"
+                        ? "success"
+                        : "warning"
+                    }
+                  />
                 </dd>
               </div>
             </dl>
-            <button className="button button-secondary" disabled type="button">
-              Modification désactivée
-            </button>
+            <DisabledActionNotice
+              description="Les informations du profil sont consultables uniquement. Toute correction doit être vérifiée avant d’être appliquée."
+              title="Modification en ligne indisponible"
+            />
           </section>
 
           <aside className="content-panel security-panel">
@@ -88,7 +124,11 @@ export default async function ProfilePage() {
             <div className="security-item">
               <div>
                 <strong>Statut du compte</strong>
-                <span>{session.user.status}</span>
+                <span>
+                  {session.user.status === "active"
+                    ? "Compte actif"
+                    : "Compte non actif"}
+                </span>
               </div>
               <StatusBadge label={session.user.role} tone="info" />
             </div>
@@ -118,7 +158,7 @@ export default async function ProfilePage() {
             <div className="security-item">
               <div>
                 <strong>Mot de passe</strong>
-                <span>Intégration Active Directory désactivée</span>
+                <span>Changement indisponible dans cette version</span>
               </div>
               <Link href="/password">Voir le parcours</Link>
             </div>
@@ -135,10 +175,12 @@ export default async function ProfilePage() {
         />
       )}
 
-      <MockNotice
-        correlationId={result.correlationId}
-        source={result.source}
-      />
+      {result.source !== "unavailable" ? (
+        <MockNotice
+          correlationId={result.correlationId}
+          source={result.source}
+        />
+      ) : null}
     </>
   );
 }

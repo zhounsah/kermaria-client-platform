@@ -3,6 +3,22 @@
 Chaque phase conserve les contraintes de `AGENTS.md` et `docs/SECURITY.md`.
 L'avancement d'une phase n'autorise jamais implicitement une intégration réelle.
 
+## Jalon V0.10 UX client
+
+Statut : **implémenté, validation utilisateur à réaliser avant commit**.
+
+- États loading, erreur et vide standardisés.
+- Formulaires client validés et protégés contre les doubles soumissions.
+- Appels BFF navigateur avec timeout et parsing JSON contrôlé.
+- Réponses API internes illisibles transformées en erreurs non sensibles.
+- Dashboard, services, support, demandes, profil et facturation informative
+  clarifiés.
+- Factures rendues lisibles sur mobile.
+- Navigation et accessibilité basique renforcées.
+
+La V0.10 n'ajoute aucune migration, fonction de paiement, facturation réelle,
+action AD, provisioning ou écriture admin.
+
 ## Jalon V0.9 exploitation
 
 Statut : **implémenté, validation pré-production à exécuter sur l'hôte cible**.

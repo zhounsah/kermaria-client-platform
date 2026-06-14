@@ -58,6 +58,15 @@ button {
   cursor: pointer;
 }
 
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid rgb(36 89 169 / 24%);
+  outline-offset: 2px;
+}
+
 h1,
 h2,
 h3,
@@ -522,6 +531,16 @@ button:disabled {
   opacity: 0.52;
 }
 
+.button-spinner {
+  width: 15px;
+  height: 15px;
+  margin-right: 9px;
+  border: 2px solid rgb(255 255 255 / 42%);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: button-spin 700ms linear infinite;
+}
+
 .button-ghost:disabled {
   border-color: var(--border-strong);
   color: var(--muted);
@@ -682,6 +701,10 @@ button:disabled {
 .content-panel,
 .process-card {
   padding: 24px;
+}
+
+.section-card {
+  min-width: 0;
 }
 
 .section-heading {
@@ -860,6 +883,31 @@ button:disabled {
   font-weight: 650;
 }
 
+.service-status-note {
+  margin: -8px 0 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  color: var(--muted);
+  background: var(--surface-muted);
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.service-status-active {
+  color: var(--success);
+  background: var(--success-light);
+}
+
+.service-status-pending {
+  color: var(--warning);
+  background: var(--warning-light);
+}
+
+.service-status-suspended {
+  color: var(--danger);
+  background: var(--danger-light);
+}
+
 .service-scope {
   display: grid;
   padding: 12px 14px;
@@ -960,6 +1008,25 @@ td {
   font-weight: 750;
 }
 
+.field-hint,
+.field-error {
+  font-size: 0.75rem;
+  font-weight: 550;
+}
+
+.field-hint {
+  color: var(--muted);
+}
+
+.field-error {
+  color: var(--danger);
+}
+
+.form-card [aria-invalid="true"] {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px rgb(163 58 58 / 10%);
+}
+
 .form-card input,
 .form-card select,
 .form-card textarea {
@@ -1036,6 +1103,41 @@ td {
 
 .feedback-error strong {
   color: var(--danger);
+}
+
+.form-message {
+  display: grid;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  gap: 3px;
+  font-size: 0.82rem;
+}
+
+.form-message strong {
+  color: inherit;
+}
+
+.form-message p {
+  margin: 0;
+}
+
+.form-message-success {
+  border-color: #bfe2cf;
+  color: var(--success);
+  background: var(--success-light);
+}
+
+.form-message-error {
+  border-color: #efc1c1;
+  color: var(--danger);
+  background: var(--danger-light);
+}
+
+.form-message-info {
+  border-color: #c8dff0;
+  color: var(--info);
+  background: var(--info-light);
 }
 
 .ticket-list {
@@ -1329,6 +1431,77 @@ td {
   margin-top: 18px;
 }
 
+.loading-state,
+.error-state {
+  display: flex;
+  min-height: 230px;
+  padding: 30px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.loading-state-compact,
+.error-state-compact {
+  min-height: 0;
+  margin-bottom: 22px;
+  padding: 18px 20px;
+  justify-content: flex-start;
+}
+
+.loading-state p,
+.error-state p {
+  max-width: 620px;
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.loading-indicator {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  border: 3px solid var(--primary-light);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: button-spin 800ms linear infinite;
+}
+
+.error-state {
+  border-color: #efc1c1;
+  background: var(--danger-light);
+}
+
+.error-state-mark {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  place-items: center;
+  color: white;
+  background: var(--danger);
+  font-weight: 900;
+}
+
+.error-state-content h2 {
+  margin-bottom: 4px;
+  color: var(--danger);
+}
+
+.error-reference {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+
+.error-state-action {
+  margin-top: 16px;
+}
+
 .access-denied {
   max-width: 680px;
   margin-inline: auto;
@@ -1349,6 +1522,12 @@ td {
   border-color: #efc1c1;
   color: var(--danger);
   background: var(--danger-light);
+}
+
+@keyframes button-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @media (max-width: 1020px) {
@@ -1457,6 +1636,71 @@ td {
     align-items: stretch;
     flex-direction: column;
   }
+
+  .table-card {
+    border: 0;
+    overflow: visible;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .table-heading {
+    padding-inline: 0;
+  }
+
+  .table-scroll {
+    overflow: visible;
+  }
+
+  .invoice-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+  }
+
+  .invoice-table,
+  .invoice-table tbody,
+  .invoice-table tr,
+  .invoice-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .invoice-table tbody {
+    display: grid;
+    gap: 14px;
+  }
+
+  .invoice-table tr {
+    padding: 10px 18px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .invoice-table td {
+    display: flex;
+    padding: 9px 0;
+    border: 0;
+    justify-content: space-between;
+    gap: 18px;
+    white-space: normal;
+    text-align: right;
+  }
+
+  .invoice-table td::before {
+    flex: 0 0 auto;
+    color: var(--muted);
+    content: attr(data-label);
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-align: left;
+    text-transform: uppercase;
+  }
 }
 
 @media (max-width: 520px) {
@@ -1542,5 +1786,16 @@ td {
 
   .actions {
     flex-direction: column;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
   }
 }

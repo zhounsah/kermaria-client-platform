@@ -26,8 +26,8 @@ export default async function LoginPage() {
         <p className="eyebrow">Espace client</p>
         <h1>Connexion à votre espace</h1>
         <p className="lead">
-          Utilisez les identifiants de démonstration configurés localement.
-          Aucun compte Active Directory n&apos;est utilisé.
+          Utilisez les identifiants qui vous ont été communiqués pour accéder à
+          votre espace. Aucun compte Active Directory n&apos;est utilisé.
         </p>
         <ul className="check-list">
           <li>Session conservée dans un cookie HttpOnly.</li>

@@ -10,6 +10,7 @@ const navigationItems = [
   { href: "/services", label: "Services" },
   { href: "/invoices", label: "Factures" },
   { href: "/support", label: "Support" },
+  { href: "/request-service", label: "Nouvelle demande" },
   { href: "/profile", label: "Profil" },
 ];
 
@@ -39,9 +40,6 @@ export function PortalNavigation({ displayName }: PortalNavigationProps) {
             );
           })}
         </div>
-        <Link className="button button-small" href="/request-service">
-          Demander un service
-        </Link>
         <span className="nav-user" title={displayName}>
           {displayName}
         </span>

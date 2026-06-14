@@ -1,6 +1,7 @@
-import type { ApiError, SupportRequestPayload } from "@kermaria/shared";
+import type { ApiError } from "@kermaria/shared";
 import { NextRequest, NextResponse } from "next/server";
 
+import { parseSupportRequestPayload } from "@/lib/bff-payloads";
 import { CORRELATION_HEADER, resolveCorrelationId } from "@/lib/correlation";
 import {
   createSupportRequest,
@@ -22,22 +23,16 @@ export async function POST(request: NextRequest) {
     return sessionRequired(correlationId);
   }
 
-  let payload: SupportRequestPayload;
+  let candidate: unknown;
 
   try {
-    payload = (await request.json()) as SupportRequestPayload;
+    candidate = await request.json();
   } catch {
     return invalidRequest(correlationId);
   }
 
-  if (
-    !payload.serviceId
-    || !payload.subject
-    || !payload.description
-    || payload.subject.length > 160
-    || payload.description.length > 4000
-    || !["low", "normal", "high"].includes(payload.priority)
-  ) {
+  const payload = parseSupportRequestPayload(candidate);
+  if (!payload) {
     return invalidRequest(correlationId);
   }
 

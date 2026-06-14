@@ -1,9 +1,11 @@
 import Link from "next/link";
 
 import { EmptyState } from "@/components/EmptyState";
+import { ErrorState } from "@/components/ErrorState";
 import { MetricCard } from "@/components/MetricCard";
 import { MockNotice } from "@/components/MockNotice";
 import { PageHeader } from "@/components/PageHeader";
+import { SectionCard } from "@/components/SectionCard";
 import { SectionHeading } from "@/components/SectionHeading";
 import { StatusBadge } from "@/components/StatusBadge";
 import {
@@ -31,8 +33,13 @@ export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   await requireClientSession();
-  const [summaryResult, profileResult, servicesResult, invoicesResult, supportResult] =
-    await Promise.all([
+  const [
+    summaryResult,
+    profileResult,
+    servicesResult,
+    invoicesResult,
+    supportResult,
+  ] = await Promise.all([
       getPortalSummary(),
       getClientProfile(),
       getServices(),
@@ -52,23 +59,39 @@ export default async function DashboardPage() {
     invoicesResult.source,
     supportResult.source,
   ]);
+  const partialError = [
+    summaryResult,
+    profileResult,
+    servicesResult,
+    invoicesResult,
+    supportResult,
+  ].find((result) => result.error);
 
   return (
     <>
       <PageHeader
-        action={<StatusBadge label="Démonstration" tone="info" />}
+        action={<StatusBadge label="Espace authentifié" tone="success" />}
         description={
           summary
-            ? `Référence ${summary.customerReference} - synthèse fictive de vos services et demandes.`
-            : "La synthèse mock est temporairement indisponible."
+            ? `Référence ${summary.customerReference} - informations actuellement disponibles pour vos services et demandes.`
+            : "Votre espace client regroupe les informations actuellement disponibles pour vos services Kermaria."
         }
         eyebrow="Vue d'ensemble"
-        title={`Bonjour ${profile?.contactName.split(" ")[0] ?? "Client"}`}
+        title={`Bonjour ${profile?.contactName?.split(" ")[0] ?? "Client"}`}
       />
+
+      {partialError ? (
+        <ErrorState
+          compact
+          description="Une partie du tableau de bord n’a pas pu être chargée. Les autres informations disponibles restent affichées."
+          reference={partialError.correlationId}
+          title="Chargement partiel"
+        />
+      ) : null}
 
       <section className="metrics-grid" aria-label="Indicateurs du compte">
         <MetricCard
-          detail="Selon le périmètre fictif"
+          detail="Selon le périmètre convenu"
           label="Services actifs"
           tone="green"
           value={String(summary?.activeServiceCount ?? 0)}
@@ -76,15 +99,15 @@ export default async function DashboardPage() {
         <MetricCard
           detail={
             summary?.pendingInvoiceCount
-              ? formatCurrency(summary.pendingInvoiceTotal)
-              : "Aucune facture en attente"
+              ? `${formatCurrency(summary.pendingInvoiceTotal)} à vérifier`
+              : "Aucun document en attente"
           }
-          label="Factures fictives à régler"
+          label="Documents en attente"
           tone="amber"
           value={String(summary?.pendingInvoiceCount ?? 0)}
         />
         <MetricCard
-          detail="Aucune demande réelle transmise"
+          detail="Demandes rattachées à votre compte"
           label="Demandes ouvertes"
           tone="blue"
           value={String(summary?.openSupportRequestCount ?? 0)}
@@ -93,7 +116,7 @@ export default async function DashboardPage() {
           detail={
             summary
               ? `Mis à jour le ${formatDate(summary.lastUpdatedAt)}`
-              : "Source mock indisponible"
+              : "Mise à jour indisponible"
           }
           label="État du compte"
           tone="slate"
@@ -102,15 +125,22 @@ export default async function DashboardPage() {
       </section>
 
       <div className="dashboard-layout">
-        <section className="content-panel">
+        <SectionCard ariaLabel="Aperçu des services">
           <SectionHeading
             action={<Link href="/services">Voir tous les services</Link>}
             description="Services fictifs actuellement associés au compte."
             title="Vos services"
           />
-          {services.length === 0 ? (
+          {servicesResult.error ? (
+            <ErrorState
+              compact
+              description="Impossible de charger vos services pour le moment."
+              reference={servicesResult.correlationId}
+              title="Services indisponibles"
+            />
+          ) : services.length === 0 ? (
             <EmptyState
-              description="Aucun service mock n'est disponible actuellement."
+              description="Aucun service n’est actuellement associé à ce compte."
               title="Aucun service"
             />
           ) : (
@@ -135,38 +165,45 @@ export default async function DashboardPage() {
               })}
             </div>
           )}
-        </section>
+        </SectionCard>
 
-        <aside className="content-panel quick-actions">
+        <aside className="content-panel quick-actions" aria-label="Actions rapides">
           <SectionHeading
-            description="Accédez directement aux parcours de démonstration."
+            description="Accédez directement aux principales démarches."
             title="Actions rapides"
           />
           <Link className="quick-action" href="/support">
-            <span>Créer une demande mock</span>
-            <small>Aucun ticket ou e-mail réel</small>
+            <span>Créer une demande support</span>
+            <small>Décrire un besoin lié à un service</small>
           </Link>
           <Link className="quick-action" href="/request-service">
             <span>Demander un service</span>
-            <small>Préparer une demande sans engagement</small>
+            <small>Demande étudiée avant toute activation</small>
           </Link>
           <Link className="quick-action" href="/profile">
             <span>Consulter mon profil</span>
-            <small>Vérifier les informations fictives</small>
+            <small>Consulter les informations du compte</small>
           </Link>
         </aside>
       </div>
 
       <div className="dashboard-layout">
-        <section className="content-panel">
+        <SectionCard ariaLabel="Aperçu de la facturation">
           <SectionHeading
             action={<Link href="/invoices">Toutes les factures</Link>}
-            title="Factures fictives récentes"
+            title="Informations de facturation récentes"
           />
-          {invoices.length === 0 ? (
+          {invoicesResult.error ? (
+            <ErrorState
+              compact
+              description="Impossible de charger les informations de facturation."
+              reference={invoicesResult.correlationId}
+              title="Facturation indisponible"
+            />
+          ) : invoices.length === 0 ? (
             <EmptyState
-              description="Aucun document fictif n'est disponible."
-              title="Aucune facture"
+              description="Aucun document informatif n’est disponible pour le moment."
+              title="Aucun document"
             />
           ) : (
             <div className="stack-list">
@@ -188,16 +225,23 @@ export default async function DashboardPage() {
               })}
             </div>
           )}
-        </section>
+        </SectionCard>
 
-        <section className="content-panel">
+        <SectionCard ariaLabel="Demandes support récentes">
           <SectionHeading
             action={<Link href="/support">Ouvrir le support</Link>}
-            title="Support mock récent"
+            title="Demandes support récentes"
           />
-          {supportRequests.length === 0 ? (
+          {supportResult.error ? (
+            <ErrorState
+              compact
+              description="Impossible de charger les demandes support."
+              reference={supportResult.correlationId}
+              title="Support indisponible"
+            />
+          ) : supportRequests.length === 0 ? (
             <EmptyState
-              description="Aucune demande support fictive n'est disponible."
+              description="Aucune demande support n’est ouverte pour le moment."
               title="Aucune demande"
             />
           ) : (
@@ -219,13 +263,15 @@ export default async function DashboardPage() {
               })}
             </div>
           )}
-        </section>
+        </SectionCard>
       </div>
 
-      <MockNotice
-        correlationId={summaryResult.correlationId}
-        source={source}
-      />
+      {source !== "unavailable" ? (
+        <MockNotice
+          correlationId={summaryResult.correlationId}
+          source={source}
+        />
+      ) : null}
     </>
   );
 }

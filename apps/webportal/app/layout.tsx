@@ -10,7 +10,7 @@ export const metadata: Metadata = {
     template: "%s | Zachary HOUNSA-HOUNKPA EI",
   },
   description:
-    "V0.8 sécurisée de l'espace client Zachary HOUNSA-HOUNKPA EI.",
+    "Espace client sécurisé de Zachary HOUNSA-HOUNKPA EI.",
 };
 
 export default function RootLayout({

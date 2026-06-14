@@ -1,6 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+
+import { FormMessage } from "@/components/FormMessage";
+import { requestBffJson } from "@/lib/client-api";
 
 type State =
   | { status: "idle" | "submitting" }
@@ -8,33 +11,37 @@ type State =
   | { status: "error"; message: string };
 
 export function RevokeOtherSessionsButton() {
+  const isSubmittingRef = useRef(false);
   const [state, setState] = useState<State>({ status: "idle" });
 
   async function revoke() {
+    if (isSubmittingRef.current) {
+      return;
+    }
+
+    isSubmittingRef.current = true;
     setState({ status: "submitting" });
 
     try {
-      const response = await fetch("/api/auth/revoke-other-sessions", {
-        method: "POST",
-      });
+      const response = await requestBffJson<{ revokedCount: number }>(
+        "/api/auth/revoke-other-sessions",
+        { method: "POST" },
+      );
+
       if (!response.ok) {
         setState({
           status: "error",
-          message: "La révocation n'a pas pu être effectuée.",
+          message: response.error.message,
         });
         return;
       }
 
-      const result = (await response.json()) as { revokedCount: number };
       setState({
         status: "success",
-        revokedCount: result.revokedCount,
+        revokedCount: response.data.revokedCount,
       });
-    } catch {
-      setState({
-        status: "error",
-        message: "Le service est temporairement indisponible.",
-      });
+    } finally {
+      isSubmittingRef.current = false;
     }
   }
 
@@ -51,14 +58,14 @@ export function RevokeOtherSessionsButton() {
           : "Déconnecter mes autres sessions"}
       </button>
       {state.status === "success" ? (
-        <p className="form-helper" role="status">
-          {state.revokedCount} autre(s) session(s) révoquée(s).
-        </p>
+        <FormMessage title="Sessions mises à jour" tone="success">
+          <p>{state.revokedCount} autre(s) session(s) révoquée(s).</p>
+        </FormMessage>
       ) : null}
       {state.status === "error" ? (
-        <p className="form-helper feedback-error" role="alert">
-          {state.message}
-        </p>
+        <FormMessage title="Révocation impossible" tone="error">
+          <p>{state.message}</p>
+        </FormMessage>
       ) : null}
     </div>
   );

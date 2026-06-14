@@ -15,13 +15,17 @@ const revokeOthersRoute = await read(
 const sessionConfig = await read("lib/session-config.ts");
 const internalApi = await read("lib/internal-api.ts");
 const runtimeConfig = await read("lib/runtime-config.ts");
+const clientApi = await read("lib/client-api.ts");
 const authHelper = await read("lib/auth.ts");
 
 assert.match(loginForm, /event\.preventDefault\(\)/);
-assert.match(loginForm, /fetch\("\/api\/auth\/login"/);
+assert.match(loginForm, /requestBffJson<AuthMeResponse>/);
+assert.match(loginForm, /"\/api\/auth\/login"/);
 assert.match(loginForm, /method:\s*"POST"/);
 assert.match(loginForm, /"Content-Type":\s*"application\/json"/);
-assert.match(loginForm, /JSON\.stringify\(payload\)/);
+assert.match(loginForm, /JSON\.stringify\(validation\.payload\)/);
+assert.match(loginForm, /isSubmittingRef\.current/);
+assert.match(loginForm, /aria-invalid/);
 assert.doesNotMatch(
   loginForm,
   /FormData|URLSearchParams|method="get"|localStorage|sessionStorage/i,
@@ -58,6 +62,12 @@ assert.match(internalApi, /getInternalApiUrl/);
 assert.doesNotMatch(internalApi, /NEXT_PUBLIC_INTERNAL_API_URL/);
 assert.match(runtimeConfig, /process\.env\.INTERNAL_API_URL/);
 assert.doesNotMatch(runtimeConfig, /NEXT_PUBLIC_INTERNAL_API_URL/);
+assert.match(clientApi, /path:\s*`\/api\/\$\{string\}`/);
+assert.match(clientApi, /AbortController/);
+assert.doesNotMatch(
+  clientApi,
+  /INTERNAL_API_URL|SERVICE_AUTH_TOKEN|localStorage|sessionStorage/,
+);
 
 assert.match(authHelper, /redirect\("\/login"\)/);
 assert.match(authHelper, /requireAdminSession/);

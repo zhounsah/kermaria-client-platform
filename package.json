@@ -22,7 +22,8 @@
     "check:web": "npm run typecheck:shared && npm run lint:webportal && npm run typecheck:webportal && npm run build:webportal",
     "check:secrets": "node scripts/check-secrets.mjs",
     "test:operations": "npm --prefix apps/webportal run test:operations",
-    "validate": "npm run check:secrets && npm run lint:web && npm run typecheck:shared && npm run typecheck:webportal && npm run build:web && npm run build:api && npm run test:api && npm --prefix apps/webportal run test:forms && npm --prefix apps/webportal run test:auth && npm --prefix apps/webportal run test:admin && npm run test:operations",
+    "test:ux": "npm --prefix apps/webportal run test:ux",
+    "validate": "npm run check:secrets && npm run lint:web && npm run typecheck:shared && npm run typecheck:webportal && npm run build:web && npm run build:api && npm run test:api && npm --prefix apps/webportal run test:forms && npm --prefix apps/webportal run test:auth && npm --prefix apps/webportal run test:admin && npm run test:operations && npm run test:ux",
     "validate:mariadb": "node scripts/validate-mariadb.mjs"
   },
   "engines": {

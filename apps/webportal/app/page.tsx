@@ -7,7 +7,7 @@ export default function HomePage() {
         <p className="eyebrow">Zachary HOUNSA-HOUNKPA EI</p>
         <h1>Vos services et demandes réunis dans un espace client clair.</h1>
         <p className="lead">
-          Consultez les services, factures fictives et demandes
+          Consultez les services, informations de facturation et demandes
           d&apos;assistance rattachés à votre compte client.
         </p>
         <div className="actions">
@@ -16,16 +16,16 @@ export default function HomePage() {
           </Link>
         </div>
         <p className="landing-note">
-          V0.8 avec sessions renforcées et administration en lecture seule. Aucune action Active Directory
-          réelle, facturation réelle ni paiement.
+          Espace authentifié avec administration interne en lecture seule.
+          Aucune action Active Directory réelle, facturation réelle ni paiement.
         </p>
       </div>
 
       <aside className="landing-preview" aria-label="Aperçu de l'espace client">
         <div className="preview-header">
           <div>
-            <span className="preview-kicker">Espace client</span>
-            <strong>Zachary HOUNSA-HOUNKPA EI - Client démo</strong>
+            <span className="preview-kicker">Aperçu illustratif</span>
+            <strong>Exemple d&apos;espace client</strong>
           </div>
           <span className="status-badge status-success">
             Session serveur requise
@@ -41,7 +41,7 @@ export default function HomePage() {
             <strong>2</strong>
           </div>
           <div>
-            <span>Facture fictive</span>
+            <span>Document informatif</span>
             <strong>1</strong>
           </div>
         </div>

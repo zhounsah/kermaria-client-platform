@@ -1,17 +1,28 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
+
+import { requestBffJson } from "@/lib/client-api";
 
 export function LogoutButton() {
   const router = useRouter();
+  const isSubmittingRef = useRef(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   async function logout() {
+    if (isSubmittingRef.current) {
+      return;
+    }
+
+    isSubmittingRef.current = true;
     setIsSubmitting(true);
 
     try {
-      await fetch("/api/auth/logout", { method: "POST" });
+      await requestBffJson<{ authenticated: false }>(
+        "/api/auth/logout",
+        { method: "POST" },
+      );
     } finally {
       router.replace("/login");
       router.refresh();

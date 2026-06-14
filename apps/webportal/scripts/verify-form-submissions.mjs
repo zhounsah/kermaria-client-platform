@@ -29,13 +29,18 @@ for (const testCase of cases) {
   assert.match(component, /method="post"/);
   assert.match(
     component,
-    new RegExp(`fetch\\("${testCase.route.replaceAll("/", "\\/")}"`),
+    new RegExp(`"${testCase.route.replaceAll("/", "\\/")}"`),
   );
+  assert.match(component, /requestBffJson/);
   assert.match(component, /method:\s*"POST"/);
-  assert.match(component, /persisted:\s*\{String\(submission\.result\.persisted\)\}/);
   assert.match(component, /submission\.result\.reference/);
+  assert.match(component, /isSubmittingRef\.current/);
+  assert.match(component, /aria-invalid/);
+  assert.match(component, /SubmitButton/);
+  assert.match(component, /FormMessage/);
   assert.doesNotMatch(component, /URLSearchParams|FormData|method="get"/i);
   assert.match(route, /export async function POST\(/);
+  assert.match(route, /parse(?:Support|Service)RequestPayload/);
 }
 
 const serviceRequestForm = await readFile(
@@ -49,10 +54,6 @@ const serviceRequestRoute = await readFile(
 
 for (const field of ["catalogItemId", "subject", "description"]) {
   assert.match(serviceRequestForm, new RegExp(`${field}:`));
-  assert.match(
-    serviceRequestRoute,
-    new RegExp(`(?:payload|candidate)\\.${field}`),
-  );
 }
 
 for (const legacyField of ["serviceId", "timeline", "context"]) {

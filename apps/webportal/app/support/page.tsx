@@ -1,4 +1,5 @@
 import { EmptyState } from "@/components/EmptyState";
+import { ErrorState } from "@/components/ErrorState";
 import { FormSection } from "@/components/FormSection";
 import { MockNotice } from "@/components/MockNotice";
 import { PageHeader } from "@/components/PageHeader";
@@ -38,18 +39,27 @@ export default async function SupportPage() {
   return (
     <>
       <PageHeader
-        action={<StatusBadge label="V0.8 authentifiée" tone="info" />}
-        description="Le formulaire passe par le BFF puis API-INTERNAL. Il écrit dans MariaDB uniquement lorsque la configuration serveur est complète."
+        action={<StatusBadge label="Espace authentifié" tone="success" />}
+        description="Décrivez votre besoin et sélectionnez le service concerné. La demande sera examinée avant toute intervention."
         eyebrow="Assistance"
         title="Demandes de support"
       />
 
       <div className="support-layout">
         <FormSection
-          description="Aucun e-mail ni service externe n'est appelé. Le résultat indique clairement si la demande a été persistée."
+          description="Ne saisissez aucun mot de passe, identifiant ou contenu confidentiel."
           title="Nouvelle demande"
         >
-          <SupportRequestForm services={servicesResult.data} />
+          {servicesResult.error ? (
+            <ErrorState
+              compact
+              description="Le formulaire ne peut pas vérifier les services de votre compte pour le moment."
+              reference={servicesResult.correlationId}
+              title="Formulaire temporairement indisponible"
+            />
+          ) : (
+            <SupportRequestForm services={servicesResult.data} />
+          )}
         </FormSection>
 
         <section>
@@ -59,9 +69,16 @@ export default async function SupportPage() {
               <p>Historique rattaché au client connecté.</p>
             </div>
           </div>
-          {requestsResult.data.length === 0 ? (
+          {requestsResult.error ? (
+            <ErrorState
+              compact
+              description="Impossible de charger l’historique des demandes support."
+              reference={requestsResult.correlationId}
+              title="Historique indisponible"
+            />
+          ) : requestsResult.data.length === 0 ? (
             <EmptyState
-              description="Aucune demande support mock n'est disponible."
+              description="Aucune demande support n’est disponible pour le moment."
               title="Aucune demande"
             />
           ) : (
@@ -89,10 +106,12 @@ export default async function SupportPage() {
         </section>
       </div>
 
-      <MockNotice
-        correlationId={requestsResult.correlationId}
-        source={source}
-      />
+      {source !== "unavailable" ? (
+        <MockNotice
+          correlationId={requestsResult.correlationId}
+          source={source}
+        />
+      ) : null}
     </>
   );
 }

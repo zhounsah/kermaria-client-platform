@@ -57,6 +57,7 @@ class InternalApiError extends Error {
 }
 
 const PORTAL_SESSION_HEADER = "X-Portal-Session";
+const INTERNAL_API_TIMEOUT_MS = 10000;
 
 function isDevelopmentFallbackAllowed() {
   return process.env.NODE_ENV !== "production";
@@ -125,6 +126,7 @@ async function getPortalData<T>(
   try {
     const response = await fetch(`${internalApiUrl}${path}`, {
       cache: "no-store",
+      signal: AbortSignal.timeout(INTERNAL_API_TIMEOUT_MS),
       headers: {
         Accept: "application/json",
         ...getInternalServiceHeaders(),
@@ -138,7 +140,7 @@ async function getPortalData<T>(
     }
 
     return {
-      data: (await response.json()) as T,
+      data: await readInternalJson<T>(response, correlationId),
       source:
         response.headers.get("X-Data-Source") === "mariadb"
           ? "api-internal-persistent"
@@ -194,6 +196,7 @@ async function postPortalData<TPayload>(
     response = await fetch(`${internalApiUrl}${path}`, {
       method: "POST",
       cache: "no-store",
+      signal: AbortSignal.timeout(INTERNAL_API_TIMEOUT_MS),
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
@@ -211,7 +214,10 @@ async function postPortalData<TPayload>(
     throw await toInternalApiError(response, correlationId);
   }
 
-  return (await response.json()) as MockSubmissionResponse;
+  return readInternalJson<MockSubmissionResponse>(
+    response,
+    correlationId,
+  );
 }
 
 async function toInternalApiError(
@@ -460,6 +466,7 @@ async function getAdminData<T>(
 
     const response = await fetch(`${internalApiUrl}${path}`, {
       cache: "no-store",
+      signal: AbortSignal.timeout(INTERNAL_API_TIMEOUT_MS),
       headers: {
         Accept: "application/json",
         ...getInternalServiceHeaders(),
@@ -473,7 +480,7 @@ async function getAdminData<T>(
     }
 
     return {
-      data: (await response.json()) as T,
+      data: await readInternalJson<T>(response, correlationId),
       source:
         response.headers.get("X-Data-Source") === "mariadb"
           ? "api-internal-persistent"
@@ -554,6 +561,7 @@ async function requestInternalAuth<T>(
     response = await fetch(`${internalApiUrl}${path}`, {
       ...init,
       cache: "no-store",
+      signal: init.signal ?? AbortSignal.timeout(INTERNAL_API_TIMEOUT_MS),
       headers: {
         Accept: "application/json",
         ...getInternalServiceHeaders(),
@@ -573,7 +581,34 @@ async function requestInternalAuth<T>(
     return undefined as T;
   }
 
-  return (await response.json()) as T;
+  return readInternalJson<T>(response, correlationId);
+}
+
+async function readInternalJson<T>(
+  response: Response,
+  correlationId: CorrelationId,
+): Promise<T> {
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.toLowerCase().includes("application/json")) {
+    throw invalidInternalResponse(correlationId);
+  }
+
+  try {
+    return (await response.json()) as T;
+  } catch {
+    throw invalidInternalResponse(correlationId);
+  }
+}
+
+function invalidInternalResponse(correlationId: CorrelationId) {
+  return new InternalApiError(
+    {
+      code: "INVALID_INTERNAL_RESPONSE",
+      message: "Le service interne a retourné une réponse inutilisable.",
+      correlation_id: correlationId,
+    },
+    502,
+  );
 }
 
 export async function checkInternalApiReadiness(

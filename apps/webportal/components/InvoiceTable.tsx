@@ -27,11 +27,17 @@ export function InvoiceTable({ invoices }: InvoiceTableProps) {
       <div className="table-heading">
         <div>
           <h2>Historique des factures</h2>
-          <p>Les téléchargements sont désactivés dans cette V0.8.</p>
+          <p>
+            Informations indicatives. Les documents officiels et téléchargements
+            ne sont pas activés.
+          </p>
         </div>
       </div>
       <div className="table-scroll">
-        <table>
+        <table className="invoice-table">
+          <caption className="sr-only">
+            Liste des informations de facturation disponibles
+          </caption>
           <thead>
             <tr>
               <th>Facture</th>
@@ -49,26 +55,26 @@ export function InvoiceTable({ invoices }: InvoiceTableProps) {
 
               return (
                 <tr key={invoice.id}>
-                  <td>
+                  <td data-label="Facture">
                     <strong>{invoice.number}</strong>
                   </td>
-                  <td>{invoice.period}</td>
-                  <td>{formatDate(invoice.issuedAt)}</td>
-                  <td>{formatDate(invoice.dueAt)}</td>
-                  <td>
+                  <td data-label="Période">{invoice.period}</td>
+                  <td data-label="Émission">{formatDate(invoice.issuedAt)}</td>
+                  <td data-label="Échéance">{formatDate(invoice.dueAt)}</td>
+                  <td data-label="Montant">
                     <strong>{formatCurrency(invoice.totalAmount)}</strong>
                   </td>
-                  <td>
+                  <td data-label="Statut">
                     <StatusBadge label={status.label} tone={status.tone} />
                   </td>
-                  <td>
+                  <td data-label="Document">
                     <button
                       className="button button-ghost button-compact"
                       disabled
-                      title="Téléchargement indisponible dans la démonstration"
+                      title="Téléchargement non disponible dans cette version"
                       type="button"
                     >
-                      Télécharger
+                      Indisponible
                     </button>
                   </td>
                 </tr>

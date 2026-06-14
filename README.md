@@ -3,9 +3,10 @@
 Plateforme technique de l'espace client **Zachary HOUNSA-HOUNKPA EI** pour
 `clients.zacharyhounsa.ovh`. Ce dépôt reste séparé du site vitrine Astro.
 
-## État V0.9
+## État V0.10
 
-La V0.9 conserve les fonctions V0.8 et ajoute leur exploitation contrôlée :
+La V0.10 conserve le durcissement V0.9 et améliore la robustesse du portail
+client :
 
 - un portail Next.js responsive et ses routes BFF ;
 - une API ASP.NET Core privée ;
@@ -29,7 +30,12 @@ La V0.9 conserve les fonctions V0.8 et ajoute leur exploitation contrôlée :
   Production ;
 - une commande `npm run validate`, un garde-fou secrets et des runbooks de
   déploiement, sauvegarde, restauration et rotation ;
-- un portail privé marqué `noindex, nofollow`.
+- un portail privé marqué `noindex, nofollow` ;
+- des états de chargement, d'erreur et d'absence de données distincts ;
+- des formulaires avec validation visible, timeout et anti-double soumission ;
+- un parsing JSON contrôlé côté navigateur et côté BFF ;
+- une présentation responsive renforcée, notamment pour les factures ;
+- des messages moins techniques et plus adaptés à un espace client.
 
 Le SSO, le MFA, la récupération automatisée de mot de passe, les actions AD,
 le paiement, la facturation réelle et les intégrations NAS/RDS/VPN ne sont pas
@@ -179,7 +185,8 @@ npm run validate
 ```
 
 Cette commande exécute le scan de secrets, lint, typechecks, builds, smoke tests
-API et contrats BFF. Les tests MariaDB réels restent volontairement séparés.
+API et contrats BFF, administration, exploitation et UX client. Les tests
+MariaDB réels restent volontairement séparés.
 
 Health checks :
 
@@ -257,4 +264,5 @@ Les routes `GET|POST /internal/*` sont strictement privées et exigent
 - [Exploitation](docs/OPERATIONS.md)
 - [Sauvegarde et restauration](docs/BACKUP_RESTORE.md)
 - [Rotation des secrets](docs/SECRET_ROTATION.md)
+- [UX client V0.10](docs/V0.10_UX_CLIENT.md)
 - [Règles permanentes](AGENTS.md)
