@@ -12,7 +12,9 @@ Le navigateur accède uniquement à `WEBPORTAL` :
 - `POST /api/auth/revoke-other-sessions`
 - `GET /api/auth/me`
 - `POST /api/support-requests`
+- `POST /api/support-requests/{id}/messages`
 - `POST /api/service-requests`
+- `POST /api/service-requests/{id}/messages`
 - `GET /api/notifications`
 - `POST /api/notifications/{id}/read`
 - `POST /api/notifications/read-all`
@@ -62,8 +64,10 @@ publiées par le reverse proxy et jamais appelées directement par le navigateur
 - `GET /internal/portal/service-catalog`
 - `GET /internal/portal/support-requests`
 - `GET /internal/portal/support-requests/{id}`
+- `POST /internal/portal/support-requests/{id}/messages`
 - `GET /internal/portal/service-requests`
 - `GET /internal/portal/service-requests/{id}`
+- `POST /internal/portal/service-requests/{id}/messages`
 - `GET /internal/portal/notifications`
 - `POST /internal/portal/notifications/{id}/read`
 - `POST /internal/portal/notifications/read-all`
@@ -180,8 +184,8 @@ Les vues sont limitées à 100 lignes, ou 10 audits dans l'overview :
 
 - `overview` : compteurs globaux, derniers audits et état AD ;
 - `customers` : références, statuts et compteurs ;
-- `support-requests` : demandes support en lecture seule ;
-- `service-requests` : demandes de service en lecture seule ;
+- `support-requests` : suivi des demandes et mutations workflow bornées ;
+- `service-requests` : suivi des demandes et mutations workflow bornées ;
 - `sessions` : métadonnées prudentes, sans token ni hash ;
 - `audit-logs` : événements récents sans payload sensible.
 
@@ -256,8 +260,52 @@ de changement et le `correlation_id`, sans contenu de note :
 
 Les détails client exposent uniquement les événements `created` et
 `status_changed`, ainsi que les messages publics. Les détails admin ajoutent
-les notes internes. Toutes les mutations exigent une session `internal_admin`
-validée par le BFF puis par API-INTERNAL.
+les notes internes. Les mutations admin exigent une session `internal_admin`;
+les réponses client V0.13 exigent une session `client_user` propriétaire de la
+demande. Ces contrôles sont effectués par le BFF puis par API-INTERNAL.
+
+## Réponses client V0.13
+
+Le client peut ajouter un message public à une demande lui appartenant :
+
+- `POST /api/support-requests/{id}/messages` ;
+- `POST /api/service-requests/{id}/messages`.
+
+Le BFF transmet ensuite vers la route privée `/internal/portal/*`. Le
+`customer_id` ne figure jamais dans le payload et provient exclusivement de la
+session validée par API-INTERNAL.
+
+Payload :
+
+```json
+{
+  "text": "Voici les informations complémentaires demandées."
+}
+```
+
+Le texte, après trim, contient entre 3 et 2 000 caractères. Il est stocké dans
+`request_public_messages` et rendu comme texte brut. Une demande appartenant à
+un autre client est retournée comme introuvable.
+
+Chaque message public expose un auteur contrôlé :
+
+```json
+{
+  "id": "identifiant",
+  "message": "Message public",
+  "authorLabel": "Vous",
+  "authorType": "client",
+  "createdAt": "2026-06-14T20:00:00Z"
+}
+```
+
+`authorType` vaut `admin` ou `client`. Dans la vue client, ses propres réponses
+portent le libellé `Vous`; les messages internes autorisés portent le libellé
+`Équipe Kermaria`. La vue admin peut afficher le nom du client auteur.
+
+Une réponse client crée un événement et un audit sans recopier son contenu.
+Elle ne crée pas de notification pour le client qui vient de répondre. Aucun
+e-mail, temps réel, pièce jointe ou action automatique n'est déclenché.
 
 ## Notifications portail V0.12
 

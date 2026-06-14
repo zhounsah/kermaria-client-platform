@@ -1197,8 +1197,7 @@ td {
 }
 
 .request-description,
-.internal-note p,
-.timeline-message p {
+.internal-note p {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -1206,6 +1205,102 @@ td {
 .workflow-form {
   display: grid;
   gap: 16px;
+}
+
+.workflow-form .field {
+  display: grid;
+  min-width: 0;
+  margin: 0;
+  gap: 8px;
+}
+
+.workflow-form .field label {
+  display: block;
+  color: var(--text);
+  font-size: 0.84rem;
+  font-weight: 750;
+}
+
+.workflow-form .field textarea {
+  width: 100%;
+  min-height: 150px;
+  padding: 12px 13px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-sizing: border-box;
+  outline: none;
+  color: var(--text);
+  background: white;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.workflow-form .field textarea:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgb(36 89 169 / 12%);
+}
+
+.workflow-form .field-hint {
+  display: block;
+  max-width: 72ch;
+  line-height: 1.5;
+}
+
+.workflow-form > .button {
+  justify-self: start;
+}
+
+.client-reply-form {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.public-conversation {
+  display: grid;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+  gap: 14px;
+}
+
+.conversation-message {
+  max-width: 88%;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+
+.conversation-message-admin {
+  border-left: 4px solid var(--primary);
+}
+
+.conversation-message-client {
+  margin-left: auto;
+  border-right: 4px solid var(--success);
+  background: var(--success-light);
+}
+
+.conversation-message header {
+  display: flex;
+  margin-bottom: 10px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.conversation-message header span,
+.conversation-message time {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.conversation-message p {
+  margin: 0 0 10px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .request-timeline {
@@ -1882,6 +1977,10 @@ td {
   .notification-card {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .conversation-message {
+    max-width: 100%;
   }
 
   .notification-actions {

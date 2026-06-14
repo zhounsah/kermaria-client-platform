@@ -175,6 +175,8 @@ public sealed class MariaDbRequestWorkflowRepository
                 connection,
                 RequestTypes.Support,
                 requestId,
+                session.UserId,
+                adminView: false,
                 cancellationToken)
         };
     }
@@ -239,6 +241,8 @@ public sealed class MariaDbRequestWorkflowRepository
                 connection,
                 RequestTypes.Service,
                 requestId,
+                session.UserId,
+                adminView: false,
                 cancellationToken)
         };
     }
@@ -419,6 +423,8 @@ public sealed class MariaDbRequestWorkflowRepository
                 connection,
                 RequestTypes.Support,
                 requestId,
+                viewerUserId: null,
+                adminView: true,
                 cancellationToken)
         };
     }
@@ -491,6 +497,8 @@ public sealed class MariaDbRequestWorkflowRepository
                 connection,
                 RequestTypes.Service,
                 requestId,
+                viewerUserId: null,
+                adminView: true,
                 cancellationToken)
         };
     }
@@ -601,6 +609,8 @@ public sealed class MariaDbRequestWorkflowRepository
             "request_internal_notes",
             "note_text",
             "internal_note_added",
+            requiredCustomerId: null,
+            createClientNotification: false,
             cancellationToken);
 
     public Task<RequestMutationResponse> AddPublicMessageAsync(
@@ -619,6 +629,28 @@ public sealed class MariaDbRequestWorkflowRepository
             "request_public_messages",
             "message_text",
             "public_message_added",
+            requiredCustomerId: null,
+            createClientNotification: true,
+            cancellationToken);
+
+    public Task<RequestMutationResponse> AddClientPublicMessageAsync(
+        PortalSessionContext actor,
+        string requestType,
+        string requestId,
+        string message,
+        string correlationId,
+        CancellationToken cancellationToken)
+        => AddTextAsync(
+            actor,
+            requestType,
+            requestId,
+            message,
+            correlationId,
+            "request_public_messages",
+            "message_text",
+            "public_message_added",
+            requiredCustomerId: actor.CustomerId,
+            createClientNotification: false,
             cancellationToken);
 
     private async Task<RequestMutationResponse> AddTextAsync(
@@ -630,6 +662,8 @@ public sealed class MariaDbRequestWorkflowRepository
         string tableName,
         string textColumn,
         string eventType,
+        string? requiredCustomerId,
+        bool createClientNotification,
         CancellationToken cancellationToken)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
@@ -641,7 +675,23 @@ public sealed class MariaDbRequestWorkflowRepository
             requestType,
             requestId,
             cancellationToken);
+        if (requiredCustomerId is not null
+            && !string.Equals(
+                current.CustomerId,
+                requiredCustomerId,
+                StringComparison.Ordinal))
+        {
+            throw new PortalDataNotFoundException();
+        }
+
         var now = DateTime.UtcNow;
+        await TouchRequestAsync(
+            connection,
+            transaction,
+            requestType,
+            requestId,
+            now,
+            cancellationToken);
 
         await using (var insert = connection.CreateCommand())
         {
@@ -684,7 +734,7 @@ public sealed class MariaDbRequestWorkflowRepository
             null,
             correlationId,
             cancellationToken);
-        if (eventType == "public_message_added")
+        if (eventType == "public_message_added" && createClientNotification)
         {
             await InsertNotificationAsync(
                 connection,
@@ -743,6 +793,32 @@ public sealed class MariaDbRequestWorkflowRepository
             MariaDbIdentifierReader.ReadRequired(reader, "customer_id"),
             reader.GetString("reference"),
             reader.GetString("status"));
+    }
+
+    private static async Task TouchRequestAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        string requestType,
+        string requestId,
+        DateTime updatedAt,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = requestType == RequestTypes.Support
+            ? """
+              UPDATE support_requests
+              SET updated_at = @updated_at
+              WHERE id = @request_id;
+              """
+            : """
+              UPDATE service_requests
+              SET updated_at = @updated_at
+              WHERE id = @request_id;
+              """;
+        command.Parameters.AddWithValue("@updated_at", updatedAt);
+        command.Parameters.AddWithValue("@request_id", requestId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task InsertNotificationAsync(
@@ -933,17 +1009,27 @@ public sealed class MariaDbRequestWorkflowRepository
             MySqlConnection connection,
             string requestType,
             string requestId,
+            string? viewerUserId,
+            bool adminView,
             CancellationToken cancellationToken)
     {
         var messages = new List<PublicRequestMessage>();
         await using var command = connection.CreateCommand();
         command.CommandText =
             """
-            SELECT id, message_text, created_at
-            FROM request_public_messages
-            WHERE request_type = @request_type
-              AND request_id = @request_id
-            ORDER BY created_at, id;
+            SELECT
+                message.id,
+                message.message_text,
+                message.author_user_id,
+                author.display_name,
+                author.role,
+                message.created_at
+            FROM request_public_messages message
+            INNER JOIN portal_users author
+                ON author.id = message.author_user_id
+            WHERE message.request_type = @request_type
+              AND message.request_id = @request_id
+            ORDER BY message.created_at, message.id;
             """;
         command.Parameters.AddWithValue("@request_type", requestType);
         command.Parameters.AddWithValue("@request_id", requestId);
@@ -952,10 +1038,27 @@ public sealed class MariaDbRequestWorkflowRepository
             cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
+            var authorUserId = MariaDbIdentifierReader.ReadRequired(
+                reader,
+                "author_user_id");
+            var authorType = reader.GetString("role") == PortalRoles.InternalAdmin
+                ? "admin"
+                : "client";
+            var authorLabel = authorType == "admin"
+                ? "Équipe Kermaria"
+                : adminView
+                    ? reader.GetString("display_name")
+                    : string.Equals(
+                        authorUserId,
+                        viewerUserId,
+                        StringComparison.Ordinal)
+                        ? "Vous"
+                        : "Votre organisation";
             messages.Add(new PublicRequestMessage(
                 MariaDbIdentifierReader.ReadRequired(reader, "id"),
                 reader.GetString("message_text"),
-                "Équipe Kermaria",
+                authorLabel,
+                authorType,
                 ToUtcIso(reader.GetDateTime("created_at"))));
         }
 

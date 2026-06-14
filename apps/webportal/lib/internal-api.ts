@@ -501,6 +501,26 @@ export async function mutateInternalPortalData(
   );
 }
 
+export async function mutateInternalPortalPayload<TPayload>(
+  path: string,
+  payload: TPayload,
+  sessionToken: string,
+  correlationId = resolveCorrelationId(null),
+) {
+  return requestInternalAuth<RequestMutationResponse>(
+    path,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        [PORTAL_SESSION_HEADER]: sessionToken,
+      },
+      body: JSON.stringify(payload),
+    },
+    correlationId,
+  );
+}
+
 export async function mutateInternalAdminData<TPayload>(
   path: string,
   method: "PATCH" | "POST",

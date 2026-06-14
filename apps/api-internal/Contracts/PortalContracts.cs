@@ -99,6 +99,7 @@ public sealed record PublicRequestMessage(
     string Id,
     string Message,
     string AuthorLabel,
+    string AuthorType,
     string CreatedAt);
 
 public sealed record PortalNotificationSummary(

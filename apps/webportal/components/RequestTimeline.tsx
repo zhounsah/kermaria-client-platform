@@ -1,5 +1,4 @@
 import type {
-  PublicRequestMessage,
   RequestEventSummary,
   RequestType,
 } from "@kermaria/shared";
@@ -12,7 +11,6 @@ import {
 
 type RequestTimelineProps = {
   events: RequestEventSummary[];
-  messages?: PublicRequestMessage[];
   requestType: RequestType;
 };
 
@@ -20,32 +18,20 @@ type TimelineItem = {
   id: string;
   occurredAt: string;
   title: string;
-  description?: string;
-  kind: "event" | "message";
 };
 
 export function RequestTimeline({
   events,
-  messages = [],
   requestType,
 }: RequestTimelineProps) {
-  const items: TimelineItem[] = [
-    ...events
-      .filter((event) => event.eventType !== "public_message_added")
-      .map((event, index) => ({
+  const items: TimelineItem[] = events
+    .filter((event) => event.eventType !== "public_message_added")
+    .map((event, index) => ({
       id: `event-${event.occurredAt}-${index}`,
       occurredAt: event.occurredAt,
       title: eventTitle(requestType, event),
-      kind: "event" as const,
-      })),
-    ...messages.map((message) => ({
-      id: message.id,
-      occurredAt: message.createdAt,
-      title: message.authorLabel,
-      description: message.message,
-      kind: "message" as const,
-    })),
-  ].sort(
+    }))
+    .sort(
     (left, right) =>
       new Date(left.occurredAt).getTime()
       - new Date(right.occurredAt).getTime(),
@@ -54,11 +40,10 @@ export function RequestTimeline({
   return (
     <ol className="request-timeline">
       {items.map((item) => (
-        <li className={`timeline-item timeline-${item.kind}`} key={item.id}>
+        <li className="timeline-item timeline-event" key={item.id}>
           <div className="timeline-marker" aria-hidden="true" />
           <div>
             <strong>{item.title}</strong>
-            {item.description ? <p>{item.description}</p> : null}
             <time dateTime={item.occurredAt}>
               {formatDateTime(item.occurredAt)}
             </time>

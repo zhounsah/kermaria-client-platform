@@ -408,6 +408,64 @@ async Task RunMockTestsAsync()
             messageResponse.StatusCode == HttpStatusCode.OK,
             "L'ajout d'un message public mock devait réussir.");
 
+        foreach (var invalidReply in new[]
+        {
+            "",
+            "ab",
+            new string('x', 2001)
+        })
+        {
+            using var invalidReplyRequest = CreateSessionRequest(
+                HttpMethod.Post,
+                $"{mockBaseUrl}/internal/portal/support-requests/{workflowSupportId}/messages",
+                sessionToken!);
+            invalidReplyRequest.Content = JsonContent.Create(
+                new { text = invalidReply });
+            using var invalidReplyResponse = await client.SendAsync(
+                invalidReplyRequest);
+            Ensure(
+                invalidReplyResponse.StatusCode == HttpStatusCode.BadRequest,
+                "Une réponse client invalide devait être refusée.");
+        }
+
+        const string clientSupportReply =
+            "Voici le complément demandé pour cette intervention.";
+        using var clientSupportReplyRequest = CreateSessionRequest(
+            HttpMethod.Post,
+            $"{mockBaseUrl}/internal/portal/support-requests/{workflowSupportId}/messages",
+            sessionToken!);
+        clientSupportReplyRequest.Content = JsonContent.Create(
+            new { text = clientSupportReply });
+        using var clientSupportReplyResponse = await client.SendAsync(
+            clientSupportReplyRequest);
+        Ensure(
+            clientSupportReplyResponse.StatusCode == HttpStatusCode.OK,
+            "Le client devait pouvoir répondre à sa demande support.");
+
+        using var foreignSupportReplyRequest = CreateSessionRequest(
+            HttpMethod.Post,
+            $"{mockBaseUrl}/internal/portal/support-requests/support-other-customer/messages",
+            sessionToken!);
+        foreignSupportReplyRequest.Content = JsonContent.Create(
+            new { text = "Réponse interdite sur une autre demande." });
+        using var foreignSupportReplyResponse = await client.SendAsync(
+            foreignSupportReplyRequest);
+        Ensure(
+            foreignSupportReplyResponse.StatusCode == HttpStatusCode.NotFound,
+            "Une demande support étrangère devait rester inaccessible.");
+
+        using var adminPortalReplyRequest = CreateSessionRequest(
+            HttpMethod.Post,
+            $"{mockBaseUrl}/internal/portal/support-requests/{workflowSupportId}/messages",
+            adminSessionToken);
+        adminPortalReplyRequest.Content = JsonContent.Create(
+            new { text = "Un admin ne doit pas utiliser la route client." });
+        using var adminPortalReplyResponse = await client.SendAsync(
+            adminPortalReplyRequest);
+        Ensure(
+            adminPortalReplyResponse.StatusCode == HttpStatusCode.Forbidden,
+            "Un admin ne doit pas utiliser une route de réponse client.");
+
         using var adminSupportDetailRequest = CreateSessionRequest(
             HttpMethod.Get,
             $"{mockBaseUrl}/internal/admin/support-requests/{workflowSupportId}",
@@ -420,6 +478,12 @@ async Task RunMockTestsAsync()
             adminSupportDetailText.Contains(privateNote, StringComparison.Ordinal)
             && adminSupportDetailText.Contains(
                 publicMessage,
+                StringComparison.Ordinal)
+            && adminSupportDetailText.Contains(
+                clientSupportReply,
+                StringComparison.Ordinal)
+            && adminSupportDetailText.Contains(
+                "\"authorType\":\"client\"",
                 StringComparison.Ordinal),
             "Le détail admin doit distinguer notes internes et messages publics.");
 
@@ -435,6 +499,12 @@ async Task RunMockTestsAsync()
             clientSupportDetailResponse.StatusCode == HttpStatusCode.OK
             && clientSupportDetailText.Contains(
                 publicMessage,
+                StringComparison.Ordinal)
+            && clientSupportDetailText.Contains(
+                clientSupportReply,
+                StringComparison.Ordinal)
+            && clientSupportDetailText.Contains(
+                "\"authorLabel\":\"Vous\"",
                 StringComparison.Ordinal)
             && !clientSupportDetailText.Contains(
                 privateNote,
@@ -480,6 +550,59 @@ async Task RunMockTestsAsync()
         Ensure(
             serviceMessageResponse.StatusCode == HttpStatusCode.OK,
             "L'ajout d'un message public de service mock devait réussir.");
+
+        const string clientServiceReply =
+            "Je confirme le périmètre de la demande de service.";
+        using var clientServiceReplyRequest = CreateSessionRequest(
+            HttpMethod.Post,
+            $"{mockBaseUrl}/internal/portal/service-requests/{workflowServiceId}/messages",
+            sessionToken!);
+        clientServiceReplyRequest.Content = JsonContent.Create(
+            new { text = clientServiceReply });
+        using var clientServiceReplyResponse = await client.SendAsync(
+            clientServiceReplyRequest);
+        Ensure(
+            clientServiceReplyResponse.StatusCode == HttpStatusCode.OK,
+            "Le client devait pouvoir répondre à sa demande de service.");
+
+        using var adminServiceDetailRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mockBaseUrl}/internal/admin/service-requests/{workflowServiceId}",
+            adminSessionToken);
+        using var adminServiceDetailResponse = await client.SendAsync(
+            adminServiceDetailRequest);
+        var adminServiceDetailText =
+            await adminServiceDetailResponse.Content.ReadAsStringAsync();
+        Ensure(
+            adminServiceDetailResponse.StatusCode == HttpStatusCode.OK
+            && adminServiceDetailText.Contains(
+                clientServiceReply,
+                StringComparison.Ordinal)
+            && adminServiceDetailText.Contains(
+                "\"authorType\":\"client\"",
+                StringComparison.Ordinal),
+            "La réponse client service devait être visible par l'admin.");
+
+        using var clientServiceDetailRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mockBaseUrl}/internal/portal/service-requests/{workflowServiceId}",
+            sessionToken!);
+        using var clientServiceDetailResponse = await client.SendAsync(
+            clientServiceDetailRequest);
+        var clientServiceDetailText =
+            await clientServiceDetailResponse.Content.ReadAsStringAsync();
+        Ensure(
+            clientServiceDetailResponse.StatusCode == HttpStatusCode.OK
+            && clientServiceDetailText.Contains(
+                clientServiceReply,
+                StringComparison.Ordinal)
+            && clientServiceDetailText.Contains(
+                "\"authorLabel\":\"Vous\"",
+                StringComparison.Ordinal)
+            && !clientServiceDetailText.Contains(
+                "internalNotes",
+                StringComparison.OrdinalIgnoreCase),
+            "La conversation service client devait rester publique uniquement.");
 
         using var notificationsRequest = CreateSessionRequest(
             HttpMethod.Get,
@@ -1281,6 +1404,8 @@ async Task RunMariaDbReadTestsAsync()
         "90000000-0000-0000-0000-000000000072";
     const string isolationNotificationId =
         "90000000-0000-0000-0000-000000000073";
+    const string isolationSupportRequestId =
+        "90000000-0000-0000-0000-000000000074";
     string? workflowSupportRequestId = null;
     string? workflowServiceRequestId = null;
 
@@ -1326,7 +1451,8 @@ async Task RunMariaDbReadTestsAsync()
         await VerifyPersistedSessionHashAsync(sessionToken);
         await PrepareIsolationFixtureAsync(
             isolationCustomerId,
-            isolationServiceId);
+            isolationServiceId,
+            isolationSupportRequestId);
 
         using var clientAdminRequest = CreateSessionRequest(
             HttpMethod.Get,
@@ -1657,6 +1783,46 @@ async Task RunMariaDbReadTestsAsync()
             mariaServiceMessageResponse.StatusCode == HttpStatusCode.OK,
             "L'ajout de message public service MariaDB devait réussir.");
 
+        const string mariaClientSupportReply =
+            "Réponse client MariaDB support V0.13.";
+        using var mariaClientSupportReplyRequest = CreateSessionRequest(
+            HttpMethod.Post,
+            $"{mariaDbBaseUrl}/internal/portal/support-requests/{workflowSupportRequestId}/messages",
+            sessionToken);
+        mariaClientSupportReplyRequest.Content = JsonContent.Create(
+            new { text = mariaClientSupportReply });
+        using var mariaClientSupportReplyResponse = await client.SendAsync(
+            mariaClientSupportReplyRequest);
+        Ensure(
+            mariaClientSupportReplyResponse.StatusCode == HttpStatusCode.OK,
+            "La réponse client support MariaDB devait réussir.");
+
+        const string mariaClientServiceReply =
+            "Réponse client MariaDB service V0.13.";
+        using var mariaClientServiceReplyRequest = CreateSessionRequest(
+            HttpMethod.Post,
+            $"{mariaDbBaseUrl}/internal/portal/service-requests/{workflowServiceRequestId}/messages",
+            sessionToken);
+        mariaClientServiceReplyRequest.Content = JsonContent.Create(
+            new { text = mariaClientServiceReply });
+        using var mariaClientServiceReplyResponse = await client.SendAsync(
+            mariaClientServiceReplyRequest);
+        Ensure(
+            mariaClientServiceReplyResponse.StatusCode == HttpStatusCode.OK,
+            "La réponse client service MariaDB devait réussir.");
+
+        using var mariaForeignReplyRequest = CreateSessionRequest(
+            HttpMethod.Post,
+            $"{mariaDbBaseUrl}/internal/portal/support-requests/{isolationSupportRequestId}/messages",
+            sessionToken);
+        mariaForeignReplyRequest.Content = JsonContent.Create(
+            new { text = "Cette réponse doit être refusée." });
+        using var mariaForeignReplyResponse = await client.SendAsync(
+            mariaForeignReplyRequest);
+        Ensure(
+            mariaForeignReplyResponse.StatusCode == HttpStatusCode.NotFound,
+            "Un client ne doit pas répondre à la demande d'un autre client.");
+
         using var mariaNotificationsRequest = CreateSessionRequest(
             HttpMethod.Get,
             $"{mariaDbBaseUrl}/internal/portal/notifications",
@@ -1740,6 +1906,12 @@ async Task RunMariaDbReadTestsAsync()
             && mariaClientDetailText.Contains(
                 mariaPublicMessage,
                 StringComparison.Ordinal)
+            && mariaClientDetailText.Contains(
+                mariaClientSupportReply,
+                StringComparison.Ordinal)
+            && mariaClientDetailText.Contains(
+                "\"authorLabel\":\"Vous\"",
+                StringComparison.Ordinal)
             && !mariaClientDetailText.Contains(
                 mariaPrivateNote,
                 StringComparison.Ordinal)
@@ -1747,6 +1919,42 @@ async Task RunMariaDbReadTestsAsync()
                 "internalNotes",
                 StringComparison.OrdinalIgnoreCase),
             "La séparation note interne/message public MariaDB est invalide.");
+
+        using var mariaAdminSupportDetailRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mariaDbBaseUrl}/internal/admin/support-requests/{workflowSupportRequestId}",
+            adminSessionToken);
+        using var mariaAdminSupportDetailResponse = await client.SendAsync(
+            mariaAdminSupportDetailRequest);
+        var mariaAdminSupportDetailText =
+            await mariaAdminSupportDetailResponse.Content.ReadAsStringAsync();
+        Ensure(
+            mariaAdminSupportDetailResponse.StatusCode == HttpStatusCode.OK
+            && mariaAdminSupportDetailText.Contains(
+                mariaClientSupportReply,
+                StringComparison.Ordinal)
+            && mariaAdminSupportDetailText.Contains(
+                "\"authorType\":\"client\"",
+                StringComparison.Ordinal),
+            "La réponse client support MariaDB devait être visible par l'admin.");
+
+        using var mariaClientServiceDetailRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mariaDbBaseUrl}/internal/portal/service-requests/{workflowServiceRequestId}",
+            sessionToken);
+        using var mariaClientServiceDetailResponse = await client.SendAsync(
+            mariaClientServiceDetailRequest);
+        var mariaClientServiceDetailText =
+            await mariaClientServiceDetailResponse.Content.ReadAsStringAsync();
+        Ensure(
+            mariaClientServiceDetailResponse.StatusCode == HttpStatusCode.OK
+            && mariaClientServiceDetailText.Contains(
+                mariaClientServiceReply,
+                StringComparison.Ordinal)
+            && !mariaClientServiceDetailText.Contains(
+                "internalNotes",
+                StringComparison.OrdinalIgnoreCase),
+            "La conversation service MariaDB devait rester publique.");
 
         await VerifyWorkflowPersistenceAsync(
             workflowSupportRequestId,
@@ -1792,7 +2000,8 @@ async Task RunMariaDbReadTestsAsync()
         }
         await CleanupIsolationFixtureAsync(
             isolationCustomerId,
-            isolationServiceId);
+            isolationServiceId,
+            isolationSupportRequestId);
         await CleanupWorkflowFixtureAsync(
             workflowSupportRequestId,
             workflowServiceRequestId);
@@ -1845,7 +2054,10 @@ async Task VerifyWorkflowPersistenceAsync(
                 AS note_count,
             (SELECT COUNT(*) FROM request_public_messages
              WHERE request_type = 'support' AND request_id = @support_id)
-                AS message_count,
+                AS support_message_count,
+            (SELECT COUNT(*) FROM request_public_messages
+             WHERE request_type = 'service' AND request_id = @service_id)
+                AS service_message_count,
             (SELECT COUNT(*) FROM portal_notifications
              WHERE request_type = 'support' AND request_id = @support_id)
                 AS support_notification_count,
@@ -1858,10 +2070,11 @@ async Task VerifyWorkflowPersistenceAsync(
     await using var reader = await command.ExecuteReaderAsync();
     Ensure(await reader.ReadAsync(), "Le workflow MariaDB est illisible.");
     Ensure(
-        Convert.ToInt32(reader["support_event_count"]) >= 2
-        && Convert.ToInt32(reader["service_event_count"]) >= 2
+        Convert.ToInt32(reader["support_event_count"]) >= 3
+        && Convert.ToInt32(reader["service_event_count"]) >= 3
         && Convert.ToInt32(reader["note_count"]) == 1
-        && Convert.ToInt32(reader["message_count"]) == 1
+        && Convert.ToInt32(reader["support_message_count"]) == 2
+        && Convert.ToInt32(reader["service_message_count"]) == 2
         && Convert.ToInt32(reader["support_notification_count"]) == 2
         && Convert.ToInt32(reader["service_notification_count"]) == 2,
         "Les événements ou notes du workflow MariaDB sont incomplets.");
@@ -1972,9 +2185,13 @@ async Task VerifyNotificationMigrationAsync()
 
 async Task PrepareIsolationFixtureAsync(
     string customerId,
-    string serviceId)
+    string serviceId,
+    string supportRequestId)
 {
-    await CleanupIsolationFixtureAsync(customerId, serviceId);
+    await CleanupIsolationFixtureAsync(
+        customerId,
+        serviceId,
+        supportRequestId);
     await using var connection = CreateMariaDbTestConnection();
     await connection.OpenAsync();
     await using var transaction = await connection.BeginTransactionAsync();
@@ -2079,12 +2296,58 @@ async Task PrepareIsolationFixtureAsync(
         await notificationCommand.ExecuteNonQueryAsync();
     }
 
+    await using (var supportRequestCommand = connection.CreateCommand())
+    {
+        supportRequestCommand.Transaction = transaction;
+        supportRequestCommand.CommandText =
+            """
+            INSERT INTO support_requests (
+                id,
+                customer_id,
+                created_by_user_id,
+                service_id,
+                reference,
+                subject,
+                description,
+                priority,
+                category,
+                status,
+                closed_at,
+                created_at,
+                updated_at
+            ) VALUES (
+                @id,
+                @customer_id,
+                NULL,
+                @service_id,
+                'SUP-ISOLATION-V013',
+                'Demande isolation V0.13',
+                'Donnée fictive de test opt-in.',
+                'normal',
+                'support',
+                'open',
+                NULL,
+                @now,
+                @now
+            );
+            """;
+        AddDbParameter(supportRequestCommand, "@id", supportRequestId);
+        AddDbParameter(
+            supportRequestCommand,
+            "@customer_id",
+            customerId);
+        AddDbParameter(supportRequestCommand, "@service_id", serviceId);
+        AddDbParameter(supportRequestCommand, "@now", DateTime.UtcNow);
+        await supportRequestCommand.ExecuteNonQueryAsync();
+    }
+
     await transaction.CommitAsync();
 }
 
 async Task CleanupIsolationFixtureAsync(
     string customerId,
-    string serviceId)
+    string serviceId,
+    string supportRequestId)
 {
     if (!IsMariaDbTestRequested())
     {
@@ -2095,6 +2358,23 @@ async Task CleanupIsolationFixtureAsync(
     await connection.OpenAsync();
     await using var transaction = await connection.BeginTransactionAsync();
 
+    foreach (var table in new[]
+    {
+        "request_public_messages",
+        "request_events"
+    })
+    {
+        await using var requestDataCommand = connection.CreateCommand();
+        requestDataCommand.Transaction = transaction;
+        requestDataCommand.CommandText =
+            $"DELETE FROM {table} WHERE request_type = 'support' AND request_id = @request_id;";
+        AddDbParameter(
+            requestDataCommand,
+            "@request_id",
+            supportRequestId);
+        await requestDataCommand.ExecuteNonQueryAsync();
+    }
+
     await using (var notificationCommand = connection.CreateCommand())
     {
         notificationCommand.Transaction = transaction;
@@ -2102,6 +2382,18 @@ async Task CleanupIsolationFixtureAsync(
             "DELETE FROM portal_notifications WHERE customer_id = @customer_id;";
         AddDbParameter(notificationCommand, "@customer_id", customerId);
         await notificationCommand.ExecuteNonQueryAsync();
+    }
+
+    await using (var supportRequestCommand = connection.CreateCommand())
+    {
+        supportRequestCommand.Transaction = transaction;
+        supportRequestCommand.CommandText =
+            "DELETE FROM support_requests WHERE id = @id;";
+        AddDbParameter(
+            supportRequestCommand,
+            "@id",
+            supportRequestId);
+        await supportRequestCommand.ExecuteNonQueryAsync();
     }
 
     await using (var serviceCommand = connection.CreateCommand())

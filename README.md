@@ -3,10 +3,10 @@
 Plateforme technique de l'espace client **Zachary HOUNSA-HOUNKPA EI** pour
 `clients.zacharyhounsa.ovh`. Ce dépôt reste séparé du site vitrine Astro.
 
-## État V0.12
+## État V0.13
 
-La V0.12 conserve le workflow V0.11 et ajoute un centre d'activité client
-strictement interne au portail :
+La V0.13 complète le workflow et les notifications avec une conversation
+publique bidirectionnelle dans le portail :
 
 - un portail Next.js responsive et ses routes BFF ;
 - une API ASP.NET Core privée ;
@@ -45,7 +45,11 @@ strictement interne au portail :
 - des notifications lors de la publication d'un message client ;
 - une page `/notifications` avec états lu/non lu ;
 - le marquage individuel ou global des notifications ;
-- un aperçu de l'activité récente sur le dashboard.
+- un aperçu de l'activité récente sur le dashboard ;
+- des réponses client sur les demandes support et de service ;
+- une conversation publique distinguant messages Kermaria et réponses client ;
+- une validation 3 à 2 000 caractères et un anti-double envoi ;
+- une séparation inchangée entre conversation publique et notes internes.
 
 Le SSO, le MFA, la récupération automatisée de mot de passe, les actions AD,
 le paiement, la facturation réelle et les intégrations NAS/RDS/VPN ne sont pas
@@ -63,7 +67,7 @@ flowchart LR
 ```
 
 Le navigateur ne contacte jamais `API-INTERNAL`, MariaDB ou AD. Les formulaires
-utilisent `/api/support-requests` et `/api/service-requests`; ces routes BFF
+et conversations utilisent uniquement les routes `/api/*` du BFF, qui
 appellent `API-INTERNAL` côté serveur.
 
 Le token de session est généré par `API-INTERNAL`, renvoyé une seule fois au
@@ -180,6 +184,8 @@ et messages publics, puis initialise un événement `created` pour les demandes
 existantes.
 La migration `005_portal_notifications.sql` ajoute une table de notifications
 isolée par client. Elle n'ajoute aucune notification externe ou tâche de fond.
+La V0.13 ne nécessite aucune migration : `request_public_messages` possède déjà
+un `author_user_id` permettant de distinguer administrateur et client.
 
 Les tests MariaDB sont opt-in. Ils créent des sessions et demandes fictives,
 ainsi qu'un client d'isolation temporaire supprimé en fin de test :
@@ -234,7 +240,9 @@ Routes BFF :
 - `POST /api/auth/revoke-other-sessions`
 - `GET /api/auth/me`
 - `POST /api/support-requests`
+- `POST /api/support-requests/[id]/messages`
 - `POST /api/service-requests`
+- `POST /api/service-requests/[id]/messages`
 - `GET /api/notifications`
 - `POST /api/notifications/[id]/read`
 - `POST /api/notifications/read-all`
@@ -266,7 +274,10 @@ Les routes `GET|POST /internal/*` sont strictement privées et exigent
 - Aucun token de session brut n'est stocké dans MariaDB.
 - Aucun token ni hash de session n'est exposé dans les vues admin.
 - Les notes internes ne sont jamais incluses dans les contrats client.
-- Les messages de demande sont rendus comme texte brut, jamais comme HTML.
+- Les messages admin et réponses client sont rendus comme texte brut, jamais
+  comme HTML ou Markdown interprété.
+- Une réponse client est autorisée uniquement lorsque la demande appartient au
+  `customer_id` issu de sa session.
 - Les notifications contiennent uniquement des textes courts et non sensibles.
 - Une notification est toujours filtrée par le client issu de la session.
 - Le `customer_id` vient uniquement de la session validée par API-INTERNAL.
@@ -298,4 +309,5 @@ Les routes `GET|POST /internal/*` sont strictement privées et exigent
 - [UX client V0.10](docs/V0.10_UX_CLIENT.md)
 - [Workflow demandes V0.11](docs/V0.11_REQUEST_WORKFLOW.md)
 - [Notifications portail V0.12](docs/V0.12_PORTAL_NOTIFICATIONS.md)
+- [Réponses client V0.13](docs/V0.13_CLIENT_REPLIES.md)
 - [Règles permanentes](AGENTS.md)

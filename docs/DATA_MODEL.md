@@ -206,16 +206,22 @@ retournées par une route client.
 
 ## request_public_messages
 
-Messages append-only écrits par un administrateur et visibles du client.
+Conversation publique append-only écrite par un administrateur ou un
+utilisateur client autorisé, visible des deux côtés.
 
 | Champ | Type logique | Description |
 |---|---|---|
 | `id` | identifier | Clé interne |
 | `request_type` | text | `support` ou `service` |
 | `request_id` | identifier | Demande concernée |
-| `author_user_id` | identifier | Administrateur auteur |
+| `author_user_id` | identifier | Utilisateur portail auteur |
 | `message_text` | text | Texte brut de 3 à 2 000 caractères |
 | `created_at` | timestamp | Date UTC |
+
+Le rôle de l'auteur est résolu par jointure avec `portal_users`. Il n'est pas
+dupliqué dans la table. Les lectures client traduisent l'auteur en `Vous`,
+`Votre organisation` ou `Équipe Kermaria`; les lectures admin peuvent afficher
+le nom du client. Les notes internes restent dans une table distincte.
 
 ## portal_notifications
 
@@ -365,3 +371,6 @@ demandes existantes, sans modifier leurs statuts.
 La migration `005_portal_notifications.sql` ajoute `portal_notifications` et
 ses index de consultation par client, date et état de lecture. Elle ne
 backfille aucune notification et ne modifie aucune demande existante.
+
+La V0.13 ne crée pas de migration. `request_public_messages.author_user_id`
+permet déjà de distinguer les réponses client des messages administrateur.

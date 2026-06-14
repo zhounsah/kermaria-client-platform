@@ -55,4 +55,11 @@ public interface IRequestWorkflowRepository
         string message,
         string correlationId,
         CancellationToken cancellationToken);
+    Task<RequestMutationResponse> AddClientPublicMessageAsync(
+        PortalSessionContext actor,
+        string requestType,
+        string requestId,
+        string message,
+        string correlationId,
+        CancellationToken cancellationToken);
 }

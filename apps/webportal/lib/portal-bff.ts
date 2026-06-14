@@ -9,6 +9,7 @@ import {
   getInternalPortalData,
   getInternalSession,
   mutateInternalPortalData,
+  mutateInternalPortalPayload,
 } from "@/lib/internal-api";
 import { getSessionCookieName } from "@/lib/session-config";
 
@@ -47,6 +48,31 @@ export async function handlePortalMutation(
   try {
     const data = await mutateInternalPortalData(
       internalPath,
+      context.sessionToken,
+      context.correlationId,
+    );
+    const response = NextResponse.json(data);
+    response.headers.set(CORRELATION_HEADER, data.correlation_id);
+    return response;
+  } catch (error) {
+    return portalFailure(error);
+  }
+}
+
+export async function handlePortalPayloadMutation<TPayload>(
+  request: NextRequest,
+  internalPath: string,
+  payload: TPayload,
+) {
+  const context = await resolveClientContext(request);
+  if (context instanceof NextResponse) {
+    return context;
+  }
+
+  try {
+    const data = await mutateInternalPortalPayload(
+      internalPath,
+      payload,
       context.sessionToken,
       context.correlationId,
     );
@@ -105,7 +131,7 @@ function portalFailure(error: unknown) {
   return response;
 }
 
-function controlledPortalError(
+export function controlledPortalError(
   status: number,
   code: string,
   message: string,

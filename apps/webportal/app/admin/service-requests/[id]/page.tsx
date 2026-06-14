@@ -6,6 +6,7 @@ import { InternalNoteForm } from "@/components/InternalNoteForm";
 import { InternalNoteList } from "@/components/InternalNoteList";
 import { PageHeader } from "@/components/PageHeader";
 import { PublicMessageForm } from "@/components/PublicMessageForm";
+import { PublicConversation } from "@/components/PublicConversation";
 import { RequestStatusBadge } from "@/components/RequestStatusBadge";
 import { RequestTimeline } from "@/components/RequestTimeline";
 import { SectionCard } from "@/components/SectionCard";
@@ -91,19 +92,22 @@ export default async function AdminServiceRequestDetailPage({
       </div>
 
       <div className="request-detail-layout">
-        <SectionCard ariaLabel="Historique de la demande">
-          <h2>Historique</h2>
-          <RequestTimeline
-            events={request.events}
-            messages={request.publicMessages}
-            requestType="service"
-          />
+        <SectionCard ariaLabel="Conversation publique de la demande">
+          <h2>Conversation publique</h2>
+          <PublicConversation messages={request.publicMessages} />
         </SectionCard>
         <SectionCard ariaLabel="Notes internes existantes">
           <h2>Notes internes</h2>
           <InternalNoteList notes={request.internalNotes} />
         </SectionCard>
       </div>
+      <SectionCard
+        ariaLabel="Historique de la demande"
+        className="request-history-section"
+      >
+        <h2>Historique</h2>
+        <RequestTimeline events={request.events} requestType="service" />
+      </SectionCard>
     </>
   );
 }

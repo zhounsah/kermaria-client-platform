@@ -2,7 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { ErrorState } from "@/components/ErrorState";
+import { ClientReplyForm } from "@/components/ClientReplyForm";
 import { PageHeader } from "@/components/PageHeader";
+import { PublicConversation } from "@/components/PublicConversation";
 import { RequestStatusBadge } from "@/components/RequestStatusBadge";
 import { RequestTimeline } from "@/components/RequestTimeline";
 import { SectionCard } from "@/components/SectionCard";
@@ -62,15 +64,19 @@ export default async function SupportRequestDetailPage({ params }: PageProps) {
           <h3>Description transmise</h3>
           <p className="request-description">{request.description}</p>
         </SectionCard>
-        <SectionCard ariaLabel="Historique public de la demande">
-          <h2>Suivi</h2>
-          <RequestTimeline
-            events={request.events}
-            messages={request.publicMessages}
-            requestType="support"
-          />
+        <SectionCard ariaLabel="Conversation publique de la demande">
+          <h2>Conversation</h2>
+          <PublicConversation messages={request.publicMessages} />
+          <ClientReplyForm requestId={request.id} requestType="support" />
         </SectionCard>
       </div>
+      <SectionCard
+        ariaLabel="Historique des statuts de la demande"
+        className="request-history-section"
+      >
+        <h2>Historique des statuts</h2>
+        <RequestTimeline events={request.events} requestType="support" />
+      </SectionCard>
     </>
   );
 }

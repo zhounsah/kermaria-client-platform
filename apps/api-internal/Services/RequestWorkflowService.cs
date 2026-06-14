@@ -93,6 +93,13 @@ public interface IRequestWorkflowService
         RequestTextPayload payload,
         string correlationId,
         CancellationToken cancellationToken);
+    Task<RequestMutationResponse> AddClientPublicMessageAsync(
+        PortalSessionContext actor,
+        string requestType,
+        string requestId,
+        RequestTextPayload payload,
+        string correlationId,
+        CancellationToken cancellationToken);
 }
 
 public sealed class RequestWorkflowService : IRequestWorkflowService
@@ -223,6 +230,21 @@ public sealed class RequestWorkflowService : IRequestWorkflowService
         string correlationId,
         CancellationToken cancellationToken)
         => _repository.AddPublicMessageAsync(
+            actor,
+            ValidateRequestType(requestType),
+            ValidateIdentifier(requestId),
+            ValidateText(payload.Text),
+            correlationId,
+            cancellationToken);
+
+    public Task<RequestMutationResponse> AddClientPublicMessageAsync(
+        PortalSessionContext actor,
+        string requestType,
+        string requestId,
+        RequestTextPayload payload,
+        string correlationId,
+        CancellationToken cancellationToken)
+        => _repository.AddClientPublicMessageAsync(
             actor,
             ValidateRequestType(requestType),
             ValidateIdentifier(requestId),

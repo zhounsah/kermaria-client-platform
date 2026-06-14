@@ -237,7 +237,8 @@ export interface RequestEventSummary {
 export interface PublicRequestMessage {
   id: string;
   message: string;
-  authorLabel: "Équipe Kermaria";
+  authorLabel: string;
+  authorType: "admin" | "client";
   createdAt: string;
 }
 

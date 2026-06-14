@@ -3,9 +3,23 @@
 Chaque phase conserve les contraintes de `AGENTS.md` et `docs/SECURITY.md`.
 L'avancement d'une phase n'autorise jamais implicitement une intégration réelle.
 
-## Jalon V0.12 notifications portail
+## Jalon V0.13 réponses client
 
 Statut : **implémenté, validation utilisateur à réaliser avant commit**.
+
+- Réponse client sur une demande support ou de service lui appartenant.
+- Conversation publique distinguant `admin` et `client`.
+- Affichage chronologique partagé entre les vues client et admin.
+- Validation serveur et BFF de 3 à 2 000 caractères.
+- Audit de l'ajout sans journalisation du contenu.
+- Aucun changement de schéma : `author_user_id` existant est réutilisé.
+
+La V0.13 n'ajoute aucun temps réel, e-mail, pièce jointe, AD, provisioning,
+paiement ou facturation réelle.
+
+## Jalon V0.12 notifications portail
+
+Statut : **validé, commité et tagué `v0.12.1`**.
 
 - Notifications créées lors des changements réels de statut.
 - Notifications créées lors des messages publics admin.
@@ -98,7 +112,8 @@ Statut : **V0.9 exploitable côté interface**.
 - États vides, indisponibles, suspendus et désactivés.
 - Formulaires via routes BFF avec indication `persisted: true|false`.
 - Branding visible aligné avec Zachary HOUNSA-HOUNKPA EI.
-- Zone `/admin` interne en lecture seule.
+- Zone `/admin` interne avec vues globales en lecture seule et mutations de
+  workflow strictement bornées.
 
 Restent à faire avant production : accessibilité approfondie, revue UX,
 durcissement proxy/rate limiting et validation d'exploitation.

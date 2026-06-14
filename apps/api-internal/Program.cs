@@ -434,6 +434,36 @@ app.MapGet(
                 id,
                 context.RequestAborted));
     });
+app.MapPost(
+    "/internal/portal/support-requests/{id}/messages",
+    (
+        string id,
+        HttpContext context,
+        IRequestWorkflowService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+        AddClientRequestMessage(
+            id,
+            RequestTypes.Support,
+            context,
+            service,
+            authenticationService,
+            auditService));
+app.MapPost(
+    "/internal/portal/service-requests/{id}/messages",
+    (
+        string id,
+        HttpContext context,
+        IRequestWorkflowService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+        AddClientRequestMessage(
+            id,
+            RequestTypes.Service,
+            context,
+            service,
+            authenticationService,
+            auditService));
 app.MapGet(
     "/internal/portal/notifications",
     async (
@@ -949,6 +979,43 @@ static async Task<IResult> AddRequestText(
             context.GetCorrelationId(),
             $"{requestType}_request.{action}.add",
             "success",
+            TargetType: $"{requestType}_request",
+            TargetReference: result.Reference,
+            ActorUserId: actor.UserId,
+            SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+        context.RequestAborted);
+
+    return Results.Ok(result);
+}
+
+static async Task<IResult> AddClientRequestMessage(
+    string requestId,
+    string requestType,
+    HttpContext context,
+    IRequestWorkflowService service,
+    IAuthenticationService authenticationService,
+    IAuditService auditService)
+{
+    var actor = await ResolveClientSessionAsync(
+        context,
+        authenticationService,
+        auditService);
+    var payload = await ReadPayload<RequestTextPayload>(context)
+        ?? throw new PortalValidationException();
+    var result = await service.AddClientPublicMessageAsync(
+        actor,
+        requestType,
+        requestId,
+        payload,
+        context.GetCorrelationId(),
+        context.RequestAborted);
+
+    await auditService.RecordAsync(
+        new AuditEvent(
+            context.GetCorrelationId(),
+            $"{requestType}_request.client_reply.add",
+            "success",
+            CustomerId: actor.CustomerId,
             TargetType: $"{requestType}_request",
             TargetReference: result.Reference,
             ActorUserId: actor.UserId,

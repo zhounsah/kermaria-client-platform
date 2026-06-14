@@ -204,6 +204,19 @@ Les notifications V0.12 restent dans MariaDB et ne quittent jamais le flux
 Le navigateur ne reçoit jamais `INTERNAL_API_URL`, `SERVICE_AUTH_TOKEN`, le
 token de session ou une information d'administration dans ces contrats.
 
+## Conversation publique V0.13
+
+- une réponse client passe uniquement par le BFF puis API-INTERNAL ;
+- le client propriétaire est résolu depuis la session, jamais depuis le JSON ;
+- l'écriture vérifie la correspondance avec le `customer_id` de la demande ;
+- une demande étrangère est traitée comme introuvable ;
+- les messages sont limités à 2 000 caractères et rendus comme texte brut ;
+- aucune balise HTML ou syntaxe Markdown n'est interprétée ;
+- les notes internes utilisent une table et un DTO distincts ;
+- l'audit conserve l'action, l'acteur et la référence, jamais le message ;
+- une réponse client ne génère ni e-mail, ni notification externe, ni
+  automatisation métier.
+
 La protection anti-brute-force V0.9 est volontairement simple et centrée sur
 le compte : `LOGIN_MAX_FAILURES` définit le seuil et
 `LOGIN_LOCKOUT_MINUTES` la durée du verrouillage. Elle ne remplace pas un

@@ -41,7 +41,7 @@ public sealed class MockRequestWorkflowStore
     public Dictionary<string, List<MockEvent>> Events { get; } = new();
     public Dictionary<string, List<InternalRequestNote>> InternalNotes { get; } =
         new();
-    public Dictionary<string, List<PublicRequestMessage>> PublicMessages
+    public Dictionary<string, List<MockPublicMessage>> PublicMessages
         { get; } = new();
 
     public MockRequestWorkflowStore()
@@ -156,7 +156,11 @@ public sealed class MockRequestWorkflowRepository
                         request.CreatedAt,
                         request.UpdatedAt,
                         ClientEvents(RequestTypes.Support, request.Id),
-                        PublicMessages(RequestTypes.Support, request.Id)));
+                        PublicMessages(
+                            RequestTypes.Support,
+                            request.Id,
+                            session,
+                            adminView: false)));
         }
     }
 
@@ -183,7 +187,11 @@ public sealed class MockRequestWorkflowRepository
                         request.CreatedAt,
                         request.UpdatedAt,
                         ClientEvents(RequestTypes.Service, request.Id),
-                        PublicMessages(RequestTypes.Service, request.Id)));
+                        PublicMessages(
+                            RequestTypes.Service,
+                            request.Id,
+                            session,
+                            adminView: false)));
         }
     }
 
@@ -281,7 +289,11 @@ public sealed class MockRequestWorkflowRepository
                         request.UpdatedAt,
                         Events(RequestTypes.Support, request.Id),
                         InternalNotes(RequestTypes.Support, request.Id),
-                        PublicMessages(RequestTypes.Support, request.Id)));
+                        PublicMessages(
+                            RequestTypes.Support,
+                            request.Id,
+                            viewer: null,
+                            adminView: true)));
         }
     }
 
@@ -310,7 +322,11 @@ public sealed class MockRequestWorkflowRepository
                         request.UpdatedAt,
                         Events(RequestTypes.Service, request.Id),
                         InternalNotes(RequestTypes.Service, request.Id),
-                        PublicMessages(RequestTypes.Service, request.Id)));
+                        PublicMessages(
+                            RequestTypes.Service,
+                            request.Id,
+                            viewer: null,
+                            adminView: true)));
         }
     }
 
@@ -371,17 +387,19 @@ public sealed class MockRequestWorkflowRepository
         lock (_store.SyncRoot)
         {
             var target = FindTarget(requestType, requestId);
+            var now = DateTime.UtcNow.ToString("O");
+            target.SetStatus(target.Status, now);
             var notes = InternalNotesFor(requestType, requestId);
             notes.Add(new InternalRequestNote(
                 Guid.NewGuid().ToString("D"),
                 note,
                 actor.DisplayName,
-                DateTime.UtcNow.ToString("O")));
+                now));
             EventsFor(requestType, requestId).Add(new MockEvent(
                 "internal_note_added",
                 null,
                 null,
-                DateTime.UtcNow.ToString("O")));
+                now));
 
             return Task.FromResult(new RequestMutationResponse(
                 requestId,
@@ -403,23 +421,68 @@ public sealed class MockRequestWorkflowRepository
         lock (_store.SyncRoot)
         {
             var target = FindTarget(requestType, requestId);
+            var now = DateTime.UtcNow.ToString("O");
+            target.SetStatus(target.Status, now);
             var messages = PublicMessagesFor(requestType, requestId);
-            messages.Add(new PublicRequestMessage(
+            messages.Add(new MockPublicMessage(
                 Guid.NewGuid().ToString("D"),
                 message,
-                "Équipe Kermaria",
-                DateTime.UtcNow.ToString("O")));
+                actor.UserId,
+                actor.DisplayName,
+                "admin",
+                now));
             EventsFor(requestType, requestId).Add(new MockEvent(
                 "public_message_added",
                 null,
                 null,
-                DateTime.UtcNow.ToString("O")));
+                now));
             AddNotification(
                 target,
                 PortalNotificationFactory.ForPublicMessage(
                     requestType,
                     requestId),
-                DateTime.UtcNow.ToString("O"));
+                now);
+
+            return Task.FromResult(new RequestMutationResponse(
+                requestId,
+                target.Reference,
+                target.Status,
+                true,
+                correlationId));
+        }
+    }
+
+    public Task<RequestMutationResponse> AddClientPublicMessageAsync(
+        PortalSessionContext actor,
+        string requestType,
+        string requestId,
+        string message,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
+        lock (_store.SyncRoot)
+        {
+            var target = FindTarget(requestType, requestId);
+            if (target.CustomerReference != actor.CustomerReference)
+            {
+                throw new PortalDataNotFoundException();
+            }
+
+            var now = DateTime.UtcNow.ToString("O");
+            target.SetStatus(target.Status, now);
+            PublicMessagesFor(requestType, requestId).Add(
+                new MockPublicMessage(
+                    Guid.NewGuid().ToString("D"),
+                    message,
+                    actor.UserId,
+                    actor.DisplayName,
+                    "client",
+                    now));
+            EventsFor(requestType, requestId).Add(new MockEvent(
+                "public_message_added",
+                null,
+                null,
+                now));
 
             return Task.FromResult(new RequestMutationResponse(
                 requestId,
@@ -488,8 +551,23 @@ public sealed class MockRequestWorkflowRepository
 
     private IReadOnlyList<PublicRequestMessage> PublicMessages(
         string requestType,
-        string requestId)
-        => PublicMessagesFor(requestType, requestId).ToArray();
+        string requestId,
+        PortalSessionContext? viewer,
+        bool adminView)
+        => PublicMessagesFor(requestType, requestId)
+            .Select(message => new PublicRequestMessage(
+                message.Id,
+                message.Message,
+                message.AuthorType == "admin"
+                    ? "Équipe Kermaria"
+                    : adminView
+                        ? message.AuthorDisplayName
+                        : message.AuthorUserId == viewer?.UserId
+                            ? "Vous"
+                            : "Votre organisation",
+                message.AuthorType,
+                message.CreatedAt))
+            .ToArray();
 
     private List<MockEvent> EventsFor(string requestType, string requestId)
     {
@@ -517,7 +595,7 @@ public sealed class MockRequestWorkflowRepository
         return notes;
     }
 
-    private List<PublicRequestMessage> PublicMessagesFor(
+    private List<MockPublicMessage> PublicMessagesFor(
         string requestType,
         string requestId)
     {
@@ -618,3 +696,11 @@ public sealed record MockEvent(
     string? OldStatus,
     string? NewStatus,
     string OccurredAt);
+
+public sealed record MockPublicMessage(
+    string Id,
+    string Message,
+    string AuthorUserId,
+    string AuthorDisplayName,
+    string AuthorType,
+    string CreatedAt);
