@@ -81,3 +81,13 @@ WHERE NOT EXISTS (
       AND event.request_id = request.id
       AND event.event_type = 'created'
 );
+
+-- statement-break
+
+INSERT INTO schema_migrations (migration_id, applied_at)
+SELECT '004_request_workflow', NOW(6)
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM schema_migrations
+    WHERE migration_id = '004_request_workflow'
+);
