@@ -6,6 +6,10 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Kermaria.ApiInternal.Data.Configuration;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
 
 const string correlationHeader = "X-Correlation-Id";
 const string dataSourceHeader = "X-Data-Source";
@@ -38,6 +42,8 @@ if ((args.Length == 2 && !File.Exists(dotnetExecutable))
 
 VerifyIdentifierMapping();
 await RunMockTestsAsync();
+await RunUnavailableReadinessTestAsync();
+await RunProductionConfigurationValidationTestsAsync();
 await RunDisabledAccountTestAsync();
 await RunExpiredSessionTestAsync();
 await RunLockoutResetTestAsync();
@@ -47,7 +53,7 @@ if (IsMariaDbTestRequested())
     await RunMariaDbReadTestsAsync();
 }
 
-Console.WriteLine("Smoke tests API-INTERNAL V0.8 réussis.");
+Console.WriteLine("Smoke tests API-INTERNAL V0.9 réussis.");
 return 0;
 
 async Task RunMockTestsAsync()
@@ -99,6 +105,36 @@ async Task RunMockTestsAsync()
         Ensure(
             healthResponse.Headers.Contains(correlationHeader),
             "Le health check ne génère pas de X-Correlation-Id.");
+
+        using var liveResponse = await client.GetAsync(
+            $"{mockBaseUrl}/health/live");
+        using var livePayload = JsonDocument.Parse(
+            await liveResponse.Content.ReadAsStringAsync());
+        Ensure(
+            liveResponse.StatusCode == HttpStatusCode.OK
+            && livePayload.RootElement.GetProperty("status").GetString()
+                == "healthy"
+            && livePayload.RootElement.GetProperty("check").GetString()
+                == "live",
+            "Le health check live mock est invalide.");
+
+        using var readyResponse = await client.GetAsync(
+            $"{mockBaseUrl}/health/ready");
+        var readyBody = await readyResponse.Content.ReadAsStringAsync();
+        using var readyPayload = JsonDocument.Parse(readyBody);
+        Ensure(
+            readyResponse.StatusCode == HttpStatusCode.OK
+            && readyPayload.RootElement.GetProperty("checks")
+                .GetProperty("mariadb").GetString() == "not_configured"
+            && readyPayload.RootElement.GetProperty("checks")
+                .GetProperty("ad").GetString() == "disabled",
+            "Le health check ready mock est invalide.");
+        Ensure(
+            !readyBody.Contains(mockPassword, StringComparison.Ordinal)
+            && !readyBody.Contains(
+                mockAdminPassword,
+                StringComparison.Ordinal),
+            "Le health check ready ne doit contenir aucun secret.");
 
         using var unauthenticatedResponse = await client.GetAsync(
             $"{mockBaseUrl}/internal/portal/services");
@@ -804,6 +840,141 @@ async Task RunLockoutResetTestAsync()
     }
 }
 
+async Task RunUnavailableReadinessTestAsync()
+{
+    const string baseUrl = "http://127.0.0.1:5092";
+    const string sqlPasswordSentinel =
+        "NOT_A_REAL_SQL_PASSWORD_V09";
+    using var api = StartApi(
+        baseUrl,
+        startInfo =>
+        {
+            startInfo.Environment["ASPNETCORE_ENVIRONMENT"] = "Development";
+            startInfo.Environment["DOTNET_ENVIRONMENT"] = "Development";
+            startInfo.Environment["SQL_PROVIDER"] = "mariadb";
+            startInfo.Environment["SQL_HOST"] = "127.0.0.1";
+            startInfo.Environment["SQL_PORT"] = "1";
+            startInfo.Environment["SQL_DATABASE"] = "unavailable";
+            startInfo.Environment["SQL_USERNAME"] = "unavailable";
+            startInfo.Environment["SQL_PASSWORD"] = sqlPasswordSentinel;
+            startInfo.Environment["AD_INTEGRATION_MODE"] = "disabled";
+        });
+    using var handler = new HttpClientHandler { UseProxy = false };
+    using var client = new HttpClient(handler);
+
+    try
+    {
+        using var liveResponse = await WaitForEndpointAsync(
+            client,
+            api.Process,
+            $"{baseUrl}/health/live",
+            api.Logs);
+        Ensure(
+            liveResponse.StatusCode == HttpStatusCode.OK,
+            "Le health live doit répondre sans MariaDB.");
+
+        using var readyResponse = await client.GetAsync(
+            $"{baseUrl}/health/ready");
+        var readyBody = await readyResponse.Content.ReadAsStringAsync();
+        Ensure(
+            readyResponse.StatusCode
+                == HttpStatusCode.ServiceUnavailable,
+            "Le health ready doit refuser une MariaDB indisponible.");
+        Ensure(
+            !readyBody.Contains(
+                sqlPasswordSentinel,
+                StringComparison.Ordinal)
+            && !api.Logs.ToString().Contains(
+                sqlPasswordSentinel,
+                StringComparison.Ordinal),
+            "La readiness ne doit divulguer aucun mot de passe SQL.");
+    }
+    finally
+    {
+        await api.StopAsync();
+    }
+}
+
+async Task RunProductionConfigurationValidationTestsAsync()
+{
+    VerifyRejectedProductionConfiguration(
+        "SQL_PASSWORD",
+        configuration =>
+        {
+            configuration.Remove("SQL_PASSWORD");
+            configuration["SERVICE_AUTH_TOKEN"] =
+                "NOT_A_REAL_SERVICE_AUTH_VALUE_V09";
+        });
+
+    VerifyRejectedProductionConfiguration(
+        "SERVICE_AUTH_TOKEN",
+        configuration =>
+        {
+            configuration["SQL_PASSWORD"] =
+                "NOT_A_REAL_PRODUCTION_SQL_VALUE_V09";
+            configuration["SERVICE_AUTH_TOKEN"] =
+                "**REPLACE_WITH_SECURE_VALUE**";
+        });
+
+    RuntimeConfigurationValidator.Validate(
+        new ConfigurationBuilder().Build(),
+        new TestHostEnvironment("Development"));
+
+    await Task.CompletedTask;
+}
+
+void VerifyRejectedProductionConfiguration(
+    string expectedVariable,
+    Action<Dictionary<string, string?>> configure)
+{
+    var configuration = CreateProductionConfiguration();
+    configure(configuration);
+
+    try
+    {
+        RuntimeConfigurationValidator.Validate(
+            new ConfigurationBuilder()
+                .AddInMemoryCollection(configuration)
+                .Build(),
+            new TestHostEnvironment("Production"));
+        throw new InvalidOperationException(
+            "Une configuration Production invalide a été acceptée.");
+    }
+    catch (RuntimeConfigurationException exception)
+    {
+        Ensure(
+            exception.Variables.Contains(expectedVariable),
+            $"Le refus doit nommer {expectedVariable} sans afficher sa valeur.");
+        Ensure(
+            !exception.Message.Contains(
+                "NOT_A_REAL_PRODUCTION_SQL_VALUE_V09",
+                StringComparison.Ordinal)
+            && !exception.Message.Contains(
+                "NOT_A_REAL_SERVICE_AUTH_VALUE_V09",
+                StringComparison.Ordinal)
+            && !exception.Message.Contains(
+                "**REPLACE_WITH_SECURE_VALUE**",
+                StringComparison.Ordinal),
+            "Le message de configuration ne doit contenir aucune valeur secrète.");
+    }
+}
+
+Dictionary<string, string?> CreateProductionConfiguration()
+{
+    return new Dictionary<string, string?>
+    {
+        ["SQL_PROVIDER"] = "mariadb",
+        ["SQL_HOST"] = "127.0.0.1",
+        ["SQL_PORT"] = "3306",
+        ["SQL_DATABASE"] = "production-validation",
+        ["SQL_USERNAME"] = "production-validation",
+        ["SQL_PASSWORD"] = "NOT_A_REAL_PRODUCTION_SQL_VALUE_V09",
+        ["SERVICE_AUTH_TOKEN"] = "NOT_A_REAL_SERVICE_AUTH_VALUE_V09",
+        ["SESSION_COOKIE_SECURE"] = "true",
+        ["AD_INTEGRATION_MODE"] = "disabled"
+    };
+}
+
 async Task RunMariaDbReadTestsAsync()
 {
     var requiredVariables = new[]
@@ -854,6 +1025,16 @@ async Task RunMariaDbReadTestsAsync()
             mariaDbBaseUrl,
             api.Logs);
         Ensure(healthResponse.IsSuccessStatusCode, "Health MariaDB invalide.");
+
+        using var readyResponse = await client.GetAsync(
+            $"{mariaDbBaseUrl}/health/ready");
+        using var readyPayload = JsonDocument.Parse(
+            await readyResponse.Content.ReadAsStringAsync());
+        Ensure(
+            readyResponse.StatusCode == HttpStatusCode.OK
+            && readyPayload.RootElement.GetProperty("checks")
+                .GetProperty("mariadb").GetString() == "healthy",
+            "La readiness MariaDB conditionnelle est invalide.");
 
         using var loginResponse = await client.PostAsJsonAsync(
             $"{mariaDbBaseUrl}/internal/auth/sessions",
@@ -1539,6 +1720,34 @@ static async Task<HttpResponseMessage> WaitForHealthAsync(
         "Le health check de l'API n'a pas répondu dans le délai prévu.");
 }
 
+static async Task<HttpResponseMessage> WaitForEndpointAsync(
+    HttpClient client,
+    Process apiProcess,
+    string endpoint,
+    StringBuilder logs)
+{
+    for (var attempt = 0; attempt < 40; attempt++)
+    {
+        if (apiProcess.HasExited)
+        {
+            throw new InvalidOperationException(
+                $"API-INTERNAL s'est arrêtée prématurément. {logs}");
+        }
+
+        try
+        {
+            return await client.GetAsync(endpoint);
+        }
+        catch (HttpRequestException)
+        {
+            await Task.Delay(250);
+        }
+    }
+
+    throw new InvalidOperationException(
+        "L'endpoint attendu n'a pas répondu dans le délai prévu.");
+}
+
 static void Ensure(bool condition, string message)
 {
     if (!condition)
@@ -1571,4 +1780,18 @@ sealed class RunningApi : IDisposable
     {
         Process.Dispose();
     }
+}
+
+sealed class TestHostEnvironment : IHostEnvironment
+{
+    public TestHostEnvironment(string environmentName)
+    {
+        EnvironmentName = environmentName;
+    }
+
+    public string EnvironmentName { get; set; }
+    public string ApplicationName { get; set; } = "SmokeTests";
+    public string ContentRootPath { get; set; } = Directory.GetCurrentDirectory();
+    public IFileProvider ContentRootFileProvider { get; set; } =
+        new NullFileProvider();
 }

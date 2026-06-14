@@ -3,9 +3,9 @@
 Plateforme technique de l'espace client **Zachary HOUNSA-HOUNKPA EI** pour
 `clients.zacharyhounsa.ovh`. Ce dépôt reste séparé du site vitrine Astro.
 
-## État V0.8
+## État V0.9
 
-La V0.8 fournit :
+La V0.9 conserve les fonctions V0.8 et ajoute leur exploitation contrôlée :
 
 - un portail Next.js responsive et ses routes BFF ;
 - une API ASP.NET Core privée ;
@@ -22,7 +22,14 @@ La V0.8 fournit :
 - des migrations SQL versionnées et un seed fictif déclenchés manuellement ;
 - une abstraction Active Directory en modes `disabled`, `mock`, `test` et
   `enabled`, sans opération réelle activée ;
-- une corrélation `X-Correlation-Id`, des erreurs contrôlées et des audits.
+- une corrélation `X-Correlation-Id`, des erreurs contrôlées et des audits ;
+- des health checks `live` et `ready` pour les deux applications ;
+- une validation stricte des configurations Production ;
+- une identité interservice par `SERVICE_AUTH_TOKEN` sur `/internal/*` en
+  Production ;
+- une commande `npm run validate`, un garde-fou secrets et des runbooks de
+  déploiement, sauvegarde, restauration et rotation ;
+- un portail privé marqué `noindex, nofollow`.
 
 Le SSO, le MFA, la récupération automatisée de mot de passe, les actions AD,
 le paiement, la facturation réelle et les intégrations NAS/RDS/VPN ne sont pas
@@ -48,8 +55,8 @@ BFF, puis placé dans un cookie `HttpOnly`, `SameSite=Lax`. Seul son hash
 SHA-256 est stocké dans `portal_sessions`. Les mots de passe utilisent le
 `PasswordHasher` ASP.NET Core, fondé sur PBKDF2 avec sel.
 
-`INTERNAL_API_URL` est strictement serveur et ne doit recevoir aucun préfixe
-public Next.js.
+`INTERNAL_API_URL` et `SERVICE_AUTH_TOKEN` sont strictement serveur et ne
+doivent recevoir aucun préfixe public Next.js.
 
 ## Structure
 
@@ -61,6 +68,7 @@ apps/api-internal/Migrations/   Schéma MariaDB et seed fictif
 apps/api-internal/Services/     Services métier et abstraction AD
 packages/shared/                Contrats TypeScript non sensibles
 tests/api-internal/             Smoke tests HTTP
+scripts/                        Validation globale et garde-fous
 docs/                           Architecture et exploitation
 ```
 
@@ -86,13 +94,18 @@ En `Development`, une configuration SQL absente active le dépôt mock avec un
 warning sans secret. Hors `Development`, une configuration SQL absente provoque
 un refus de démarrage `SQL_CONFIG_MISSING`; aucun fallback silencieux n'existe.
 
+En Production, API-INTERNAL refuse également un mot de passe ou token absent,
+un placeholder évident, `SESSION_COOKIE_SECURE=false`, un seed démo ou
+`AD_INTEGRATION_MODE=enabled`. WEBPORTAL refuse ses appels internes si
+`INTERNAL_API_URL` est invalide ou locale sans dérogation explicite.
+
 `AD_INTEGRATION_MODE` vaut `disabled` par défaut :
 
 - `disabled` : toutes les actions refusées ;
 - `mock` : réponses simulées, aucun accès réseau AD ;
 - `test` : validation de configuration et de périmètre, aucune mutation réelle ;
 - `enabled` : validation supplémentaire obligatoire, opérations encore
-  désactivées dans cette V0.8.
+  désactivées dans cette V0.9.
 
 Variables d'authentification :
 
@@ -123,6 +136,7 @@ Démarrer WEBPORTAL :
 
 ```powershell
 $env:INTERNAL_API_URL="http://localhost:5000"
+$env:ALLOW_LOCAL_INTERNAL_API_URL="true"
 npm run dev:web
 ```
 
@@ -155,19 +169,26 @@ npm run test:api
 ```
 
 Ils sont ignorés si `RUN_MARIADB_TESTS` n'est pas explicitement activé.
+La commande portable `npm run validate:mariadb` active ce mode après avoir
+vérifié que les variables requises sont présentes.
 
 ## Vérifications
 
 ```powershell
-npm run lint:web
-npm run build:web
-npm run build:api
-npm run test:api
-npm run build
-npm --prefix apps/webportal run test:forms
-npm --prefix apps/webportal run test:auth
-npm --prefix apps/webportal run test:admin
+npm run validate
 ```
+
+Cette commande exécute le scan de secrets, lint, typechecks, builds, smoke tests
+API et contrats BFF. Les tests MariaDB réels restent volontairement séparés.
+
+Health checks :
+
+- API : `/health/live`, `/health/ready` et `/health` pour compatibilité ;
+- WEBPORTAL : `/api/health/live`, `/api/health/ready` et `/api/health`.
+
+Une readiness en échec retourne HTTP 503. La readiness API exécute `SELECT 1`
+si MariaDB est configurée ; la readiness WEBPORTAL vérifie API-INTERNAL côté
+serveur sans exposer son URL.
 
 ## Routes
 
@@ -183,6 +204,8 @@ Pages internes, réservées à `internal_admin` : `/admin`,
 Routes BFF :
 
 - `GET /api/health`
+- `GET /api/health/live`
+- `GET /api/health/ready`
 - `POST /api/auth/login`
 - `POST /api/auth/logout`
 - `POST /api/auth/revoke-other-sessions`
@@ -196,8 +219,9 @@ Routes BFF :
 - `GET /api/admin/sessions`
 - `GET /api/admin/audit-logs`
 
-Les routes `GET|POST /internal/portal/*` et `GET|POST /internal/ad/*` sont
-strictement privées. Voir [le contrat d'API](docs/API_CONTRACT.md).
+Les routes `GET|POST /internal/*` sont strictement privées et exigent
+`X-Service-Auth` en Production. Voir
+[le contrat d'API](docs/API_CONTRACT.md).
 
 ## Sécurité
 
@@ -212,6 +236,10 @@ strictement privées. Voir [le contrat d'API](docs/API_CONTRACT.md).
   sur les vues métier client pour éviter toute confusion de contexte.
 - Les headers `nosniff`, `DENY`, `Referrer-Policy` et une CSP limitée aux
   protections de cadrage, base et formulaires sont appliqués par WEBPORTAL.
+- `X-Robots-Tag: noindex, nofollow` et `robots.txt` bloquent l'indexation du
+  portail privé.
+- Les secrets de développement précédemment exposés doivent être tournés selon
+  la procédure documentée avant toute pré-production.
 - L'OU de test autorisée est `OU=TEST_SITE_WEB,DC=home,DC=bzh`.
 - L'OU de production `KoXoAdm` est hors périmètre et explicitement refusée.
 - Aucun paiement ni aucune facturation réelle n'est ajouté.
@@ -226,4 +254,7 @@ strictement privées. Voir [le contrat d'API](docs/API_CONTRACT.md).
 - [Contrat d'API](docs/API_CONTRACT.md)
 - [Modèle de données](docs/DATA_MODEL.md)
 - [Déploiement](docs/DEPLOYMENT.md)
+- [Exploitation](docs/OPERATIONS.md)
+- [Sauvegarde et restauration](docs/BACKUP_RESTORE.md)
+- [Rotation des secrets](docs/SECRET_ROTATION.md)
 - [Règles permanentes](AGENTS.md)

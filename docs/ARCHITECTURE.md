@@ -27,6 +27,7 @@ déjà et ne fait pas partie des VM à créer.
 - les routes BFF d'administration en lecture seule ;
 - les contrôles de validation, de rate limiting et de protection web ;
 - les routes publiques du contrat d'API.
+- les health checks publics du portail, sans détail interne.
 
 `WEBPORTAL` est le seul composant applicatif accessible depuis Internet, et
 uniquement au travers de Cloudflare ou du reverse proxy HTTPS. Il ne possède
@@ -46,13 +47,14 @@ aux outils de facturation internes.
 - la résolution de `user_id` et `customer_id` avant tout accès métier ;
 - le contrôle des rôles `client_user` et `internal_admin` ;
 - les lectures globales admin limitées et auditables ;
+- la validation stricte de configuration et la readiness MariaDB ;
 - les mocks des intégrations tant que les systèmes réels ne sont pas activés.
 
 Elle n'expose aucune interface directement sur Internet. Son pare-feu n'accepte
 les appels applicatifs que depuis les sources privées autorisées, en priorité
 `WEBPORTAL`.
 
-## Flux d'authentification V0.8
+## Flux d'authentification V0.9
 
 ```mermaid
 sequenceDiagram
@@ -82,7 +84,7 @@ temporaire du compte. Un succès remet le compteur à zéro. La session courante
 peut révoquer les autres sessions du même utilisateur sans exposer leurs
 tokens.
 
-## Flux d'administration V0.8
+## Flux d'administration V0.9
 
 ```mermaid
 sequenceDiagram
@@ -114,7 +116,7 @@ confusion ou impersonation implicite.
 |---|---|---|---|
 | Client Internet | Cloudflare / reverse proxy | Accès HTTPS au portail | TLS, filtrage, protections anti-abus |
 | Cloudflare / reverse proxy | `WEBPORTAL` | Transmission des requêtes du portail | HTTPS, origine restreinte si possible |
-| `WEBPORTAL` | `API-INTERNAL` | Appels métier et sensibles | Réseau privé, TLS, identité service-à-service |
+| `WEBPORTAL` | `API-INTERNAL` | Appels métier et sensibles | Réseau privé, TLS, `X-Service-Auth` en Production |
 | `API-INTERNAL` | SQL existant | Lecture et écriture applicatives | Compte SQL dédié et droits minimaux |
 | `API-INTERNAL` | AD | Actions AD futures contrôlées | Réseau privé, compte de service limité à l'OU Clients |
 | `API-INTERNAL` | NAS, RDS, VPN, facturation | Intégrations futures | Flux explicites, authentifiés et minimaux |
@@ -151,9 +153,33 @@ La base de données reste hébergée sur le serveur SQL existant. Seule
 Le portail obtient ses données par l'API privée et ne connaît jamais les
 coordonnées de connexion SQL.
 
-En V0.8, toutes les lectures et écritures portail sont filtrées par le
+En V0.9, toutes les lectures et écritures portail sont filtrées par le
 `customer_id` de la session. Les demandes support vérifient en plus que le
 service ciblé appartient à ce même client.
+
+## Exploitation V0.9
+
+```mermaid
+flowchart LR
+    S["Supervision privée"] --> AL["API /health/live"]
+    S --> AR["API /health/ready"]
+    S --> WL["WEB /api/health/live"]
+    S --> WR["WEB /api/health/ready"]
+    AR -->|"SELECT 1"| DB["MariaDB"]
+    WR -->|"appel serveur"| AR
+```
+
+La liveness répond tant que le processus fonctionne. La readiness vérifie la
+configuration et les dépendances nécessaires avant mise en trafic. Elle ne
+retourne aucune coordonnée SQL, URL interne ou valeur secrète.
+
+Les configurations Production sont refusées si MariaDB, le token interservice
+ou les paramètres de cookie ne respectent pas les exigences minimales. Le
+fallback mock reste uniquement un comportement Development explicite.
+
+Les sauvegardes et restaurations sont des opérations MariaDB externes au
+runtime applicatif. Elles ne sont ni déclenchées par le portail ni stockées
+dans le dépôt.
 
 ## Intégrations futures
 

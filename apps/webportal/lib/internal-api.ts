@@ -26,6 +26,10 @@ import type {
 } from "@kermaria/shared";
 
 import { CORRELATION_HEADER, resolveCorrelationId } from "@/lib/correlation";
+import {
+  getInternalApiUrl,
+  getInternalServiceHeaders,
+} from "@/lib/runtime-config";
 import { readPortalSessionToken } from "@/lib/session-cookie";
 import {
   mockCustomer,
@@ -52,14 +56,7 @@ class InternalApiError extends Error {
   }
 }
 
-const internalApiUrl = process.env.INTERNAL_API_URL?.replace(/\/+$/, "");
 const PORTAL_SESSION_HEADER = "X-Portal-Session";
-
-if (!internalApiUrl && process.env.NODE_ENV !== "production") {
-  console.warn(
-    "INTERNAL_API_URL absente : fallback mock local réservé au développement.",
-  );
-}
 
 function isDevelopmentFallbackAllowed() {
   return process.env.NODE_ENV !== "production";
@@ -94,6 +91,18 @@ async function getPortalData<T>(
     };
   }
 
+  let internalApiUrl: string | undefined;
+  try {
+    internalApiUrl = getInternalApiUrl();
+  } catch {
+    return {
+      data: unavailableValue,
+      source: "unavailable",
+      correlationId,
+      error: unavailableError(correlationId),
+    };
+  }
+
   // Le fallback local est réservé au développement lorsque l'URL interne
   // n'est pas configurée. Il ne doit pas masquer une panne d'API configurée.
   if (!internalApiUrl) {
@@ -118,6 +127,7 @@ async function getPortalData<T>(
       cache: "no-store",
       headers: {
         Accept: "application/json",
+        ...getInternalServiceHeaders(),
         [CORRELATION_HEADER]: correlationId,
         [PORTAL_SESSION_HEADER]: sessionToken,
       },
@@ -158,6 +168,8 @@ async function postPortalData<TPayload>(
   correlationId: CorrelationId,
   sessionToken: string,
 ): Promise<MockSubmissionResponse> {
+  const internalApiUrl = getInternalApiUrl();
+
   if (!internalApiUrl) {
     if (!isDevelopmentFallbackAllowed()) {
       throw new InternalApiError(
@@ -185,6 +197,7 @@ async function postPortalData<TPayload>(
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
+        ...getInternalServiceHeaders(),
         [CORRELATION_HEADER]: correlationId,
         [PORTAL_SESSION_HEADER]: sessionToken,
       },
@@ -428,6 +441,18 @@ async function getAdminData<T>(
     };
   }
 
+  let internalApiUrl: string | undefined;
+  try {
+    internalApiUrl = getInternalApiUrl();
+  } catch {
+    return {
+      data: unavailableValue,
+      source: "unavailable",
+      correlationId,
+      error: unavailableError(correlationId),
+    };
+  }
+
   try {
     if (!internalApiUrl) {
       throw new InternalApiError(unavailableError(correlationId), 503);
@@ -437,6 +462,7 @@ async function getAdminData<T>(
       cache: "no-store",
       headers: {
         Accept: "application/json",
+        ...getInternalServiceHeaders(),
         [CORRELATION_HEADER]: correlationId,
         [PORTAL_SESSION_HEADER]: sessionToken,
       },
@@ -516,6 +542,8 @@ async function requestInternalAuth<T>(
   init: RequestInit,
   correlationId: CorrelationId,
 ): Promise<T> {
+  const internalApiUrl = getInternalApiUrl();
+
   if (!internalApiUrl) {
     throw new InternalApiError(unavailableError(correlationId), 503);
   }
@@ -528,6 +556,7 @@ async function requestInternalAuth<T>(
       cache: "no-store",
       headers: {
         Accept: "application/json",
+        ...getInternalServiceHeaders(),
         [CORRELATION_HEADER]: correlationId,
         ...init.headers,
       },
@@ -545,6 +574,32 @@ async function requestInternalAuth<T>(
   }
 
   return (await response.json()) as T;
+}
+
+export async function checkInternalApiReadiness(
+  correlationId: CorrelationId,
+) {
+  const internalApiUrl = getInternalApiUrl();
+
+  if (!internalApiUrl) {
+    return false;
+  }
+
+  try {
+    const response = await fetch(`${internalApiUrl}/health/ready`, {
+      cache: "no-store",
+      headers: {
+        Accept: "application/json",
+        ...getInternalServiceHeaders(),
+        [CORRELATION_HEADER]: correlationId,
+      },
+      signal: AbortSignal.timeout(5000),
+    });
+
+    return response.ok;
+  } catch {
+    return false;
+  }
 }
 
 export function getInternalApiError(error: unknown) {

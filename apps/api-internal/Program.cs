@@ -28,6 +28,10 @@ if (Enum.TryParse<LogLevel>(
     builder.Logging.SetMinimumLevel(configuredLogLevel);
 }
 
+RuntimeConfigurationValidator.Validate(
+    builder.Configuration,
+    builder.Environment);
+
 var sqlConfiguration = SqlConfigurationResolver.Resolve(
     builder.Configuration,
     builder.Environment);
@@ -61,6 +65,7 @@ builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
 builder.Services.AddScoped<IAdminService, AdminService>();
 builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddTransient<MariaDbMigrationRunner>();
+builder.Services.AddSingleton<OperationalReadinessService>();
 builder.Services.AddSingleton<IActiveDirectoryService>(_ =>
     adConfiguration.Mode switch
     {
@@ -84,7 +89,9 @@ else
 }
 
 app.Logger.LogInformation(
-    "Active Directory integration mode is {AdMode}; operations_enabled false",
+    "API-INTERNAL started in environment {Environment}; persistence {PersistenceMode}; Active Directory mode {AdMode}; operations_enabled false",
+    app.Environment.EnvironmentName,
+    sqlConfiguration.IsPersistent ? "mariadb" : "mock",
     adConfiguration.ModeName);
 
 if (args.Contains("--seed-demo-data", StringComparer.OrdinalIgnoreCase)
@@ -199,8 +206,39 @@ app.UseExceptionHandler(exceptionHandler =>
     });
 });
 
+app.UseMiddleware<ServiceAuthenticationMiddleware>();
+
 app.MapGet("/health", () =>
     Results.Ok(new HealthResponse("ok", ServiceNames.ApiInternal)));
+app.MapGet(
+    "/health/live",
+    () => Results.Ok(
+        new OperationalHealthResponse(
+            "healthy",
+            "api-internal",
+            "live",
+            DateTime.UtcNow)));
+app.MapGet(
+    "/health/ready",
+    async (
+        OperationalReadinessService readinessService,
+        HttpContext context) =>
+    {
+        var readiness = await readinessService.CheckAsync(
+            context.RequestAborted);
+        var payload = new OperationalHealthResponse(
+            readiness.IsHealthy ? "healthy" : "unhealthy",
+            "api-internal",
+            "ready",
+            DateTime.UtcNow,
+            readiness.Checks);
+
+        return readiness.IsHealthy
+            ? Results.Ok(payload)
+            : Results.Json(
+                payload,
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+    });
 
 app.MapPost(
     "/internal/auth/sessions",

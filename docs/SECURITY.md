@@ -36,8 +36,22 @@ La barrière principale est la séparation entre `WEBPORTAL`, public, et
 - Aucun secret dans Git, les exemples, les images, les logs ou les erreurs.
 - La chaîne MariaDB est assemblée en mémoire à partir des variables `SQL_*`.
 - La chaîne de connexion et les mots de passe ne sont jamais journalisés.
-- Rotation et révocation doivent être prévues avant production.
+- Les erreurs de configuration nomment uniquement les variables concernées,
+  jamais leur valeur.
+- La rotation suit [SECRET_ROTATION.md](SECRET_ROTATION.md).
 - Aucun compte `Domain Admin` n'est autorisé.
+
+En Production, API-INTERNAL refuse :
+
+- une configuration MariaDB incomplète ;
+- `SQL_PASSWORD` ou `SERVICE_AUTH_TOKEN` absent ou manifestement factice ;
+- `SESSION_COOKIE_SECURE=false` ;
+- des variables de mot de passe `DEMO_*` ;
+- `AD_INTEGRATION_MODE=enabled`.
+
+WEBPORTAL refuse ses appels internes si `INTERNAL_API_URL` est absente,
+invalide ou locale sans dérogation explicite. Aucun nom de variable interne
+n'utilise `NEXT_PUBLIC_*`.
 
 ## MariaDB
 
@@ -53,7 +67,7 @@ La barrière principale est la séparation entre `WEBPORTAL`, public, et
 
 `AD_INTEGRATION_MODE=disabled` est la valeur par défaut et la procédure de
 rollback immédiate. Les modes `test` et `enabled` ne réalisent encore aucune
-mutation dans la V0.8.
+mutation dans la V0.9.
 
 Garde-fous :
 
@@ -68,7 +82,7 @@ Garde-fous :
 - aucun mot de passe persisté ou loggé dans aucun mode.
 
 L'OU `OU=KoXoAdm,DC=home,DC=bzh` appartient à la production et est hors
-périmètre. Elle est explicitement refusée par la configuration V0.8.
+périmètre. Elle est explicitement refusée par la configuration V0.9.
 
 L'OU de test actuelle est `OU=TEST_SITE_WEB,DC=home,DC=bzh`. Avant tout essai
 AD réel, une OU encore plus isolée est recommandée, par exemple
@@ -84,8 +98,8 @@ Rollback AD :
 
 ## Audit et erreurs
 
-Les connexions, déconnexions, créations de demandes, tentatives AD, refus et
-erreurs contrôlées portent :
+Les connexions, déconnexions, créations de demandes, tentatives AD, refus
+interservice et erreurs contrôlées portent :
 
 - `correlation_id` ;
 - action et résultat ;
@@ -99,9 +113,13 @@ documents, descriptions complètes et secrets.
 Les erreurs publiques contiennent uniquement `code`, `message` et
 `correlation_id`. Les traces et détails SQL/AD restent internes.
 
+Les logs applicatifs ne doivent pas contenir les headers ou payloads complets.
+Le script `npm run check:secrets` détecte quelques motifs évidents avant
+validation. Ce garde-fou ne remplace pas un scanner de secrets côté forge.
+
 ## Authentification et sessions
 
-La V0.8 utilise une authentification locale contrôlée :
+La V0.9 conserve l'authentification locale contrôlée de V0.8 :
 
 - mot de passe hashé par le `PasswordHasher` ASP.NET Core, fondé sur PBKDF2
   avec sel et paramètres versionnés ;
@@ -122,6 +140,12 @@ La V0.8 utilise une authentification locale contrôlée :
 
 Le BFF transmet le token à API-INTERNAL avec `X-Portal-Session` sur le réseau
 privé. Ce header n'est jamais construit par le JavaScript navigateur.
+
+En Production, le BFF ajoute aussi `X-Service-Auth` depuis
+`SERVICE_AUTH_TOKEN`. API-INTERNAL compare cette identité avant toute route
+`/internal/*`. Les endpoints health restent disponibles au réseau privé pour
+la supervision. Cette protection complète le pare-feu et HTTPS ; elle ne les
+remplace pas.
 
 L'isolation suit exclusivement :
 
@@ -145,7 +169,7 @@ accepté comme autorité.
 - Les adresses réseau sont masquées et les User-Agent tronqués dans les vues.
 - Les accès admin autorisés et refusés sont audités.
 
-La protection anti-brute-force V0.8 est volontairement simple et centrée sur
+La protection anti-brute-force V0.9 est volontairement simple et centrée sur
 le compte : `LOGIN_MAX_FAILURES` définit le seuil et
 `LOGIN_LOCKOUT_MINUTES` la durée du verrouillage. Elle ne remplace pas un
 rate limiting réseau au reverse proxy.
@@ -157,9 +181,29 @@ une `Referrer-Policy` restrictive et une CSP limitée à `frame-ancestors`,
 `base-uri` et `form-action`. Cette CSP évite de bloquer les scripts Next.js
 tout en empêchant le cadrage et les formulaires vers une origine tierce.
 
+Le portail privé ajoute `X-Robots-Tag: noindex, nofollow` et un `robots.txt`
+interdisant toute exploration. Ces directives limitent l'indexation mais ne
+constituent pas un contrôle d'accès.
+
 Avant production restent requis : fournisseur compatible MFA, rate limiting,
-protection CSRF complémentaire selon les flux, identité service-à-service entre
-VM, rotation opérationnelle et revue de sécurité.
+protection CSRF complémentaire selon les flux, gestionnaire de secrets et
+revue de sécurité.
+
+## Health checks
+
+- `/health/live` et `/api/health/live` n'accèdent à aucun secret ni système
+  interne.
+- `/health/ready` vérifie la configuration et MariaDB par `SELECT 1`.
+- `/api/health/ready` appelle la readiness API côté serveur.
+- Les réponses n'affichent ni URL, ni host SQL, ni token, ni stacktrace.
+- HTTP 503 doit retirer l'instance du trafic sans la redémarrer en boucle si
+  la dépendance est simplement indisponible.
+
+## Sauvegardes
+
+Les dumps peuvent contenir des données personnelles et des hashes. Ils doivent
+être chiffrés, stockés hors Git, soumis à rétention et testés par restauration.
+Voir [BACKUP_RESTORE.md](BACKUP_RESTORE.md).
 
 ## Données de démonstration
 

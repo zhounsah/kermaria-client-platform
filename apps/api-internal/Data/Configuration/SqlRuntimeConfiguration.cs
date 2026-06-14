@@ -12,7 +12,8 @@ public sealed record SqlRuntimeConfiguration(
     PortalPersistenceMode Mode,
     string Provider,
     string? ConnectionString,
-    string StatusReason)
+    string StatusReason,
+    bool ConfigurationValid)
 {
     public bool IsPersistent => Mode == PortalPersistenceMode.MariaDb;
 }
@@ -49,7 +50,8 @@ public static class SqlConfigurationResolver
         {
             return ResolveMissing(
                 environment,
-                "SQL_PROVIDER is not configured");
+                "SQL_PROVIDER is not configured",
+                providerWasRequested: false);
         }
 
         if (provider != "mariadb")
@@ -67,7 +69,8 @@ public static class SqlConfigurationResolver
         {
             return ResolveMissing(
                 environment,
-                "MariaDB configuration is incomplete");
+                "MariaDB configuration is incomplete",
+                providerWasRequested: true);
         }
 
         if (!uint.TryParse(configuration["SQL_PORT"], out var port)
@@ -95,12 +98,14 @@ public static class SqlConfigurationResolver
             PortalPersistenceMode.MariaDb,
             provider,
             connectionString,
-            "mariadb-configured");
+            "mariadb-configured",
+            ConfigurationValid: true);
     }
 
     private static SqlRuntimeConfiguration ResolveMissing(
         IHostEnvironment environment,
-        string statusReason)
+        string statusReason,
+        bool providerWasRequested)
     {
         if (!environment.IsDevelopment())
         {
@@ -111,8 +116,9 @@ public static class SqlConfigurationResolver
 
         return new SqlRuntimeConfiguration(
             PortalPersistenceMode.Mock,
-            "mock",
+            providerWasRequested ? "mariadb" : "mock",
             null,
-            statusReason);
+            statusReason,
+            ConfigurationValid: !providerWasRequested);
     }
 }

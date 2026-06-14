@@ -4,6 +4,7 @@ dist/
 build/
 .next/
 out/
+.astro/
 .npm-cache/
 *.tsbuildinfo
 
@@ -34,6 +35,14 @@ TestResults/
 logs/
 *.log
 coverage/
+test-api-debug.log
+*.tmp
+
+# Backups et exports locaux. Les migrations SQL restent versionnées.
+/backups/
+*.dump
+*.bak
+*.backup.sql
 
 # Operating systems
 .DS_Store

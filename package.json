@@ -10,8 +10,8 @@
     "dev:web": "npm --prefix apps/webportal run dev",
     "build:web": "npm --prefix apps/webportal run build",
     "lint:web": "npm --prefix apps/webportal run lint",
-    "build:api": "dotnet build apps/api-internal/Kermaria.ApiInternal.csproj",
-    "test:api": "dotnet test tests/api-internal/Kermaria.ApiInternal.SmokeTests.csproj",
+    "build:api": "dotnet build apps/api-internal/Kermaria.ApiInternal.csproj -c Release",
+    "test:api": "dotnet test tests/api-internal/Kermaria.ApiInternal.SmokeTests.csproj -c Release",
     "test:admin": "npm --prefix apps/webportal run test:admin",
     "build": "npm run build:web && npm run build:api && npm run test:api",
     "dev:webportal": "npm run dev --workspace @kermaria/webportal",
@@ -19,7 +19,11 @@
     "lint:webportal": "npm run lint --workspace @kermaria/webportal",
     "typecheck:webportal": "npm run typecheck --workspace @kermaria/webportal",
     "typecheck:shared": "npm run typecheck --workspace @kermaria/shared",
-    "check:web": "npm run typecheck:shared && npm run lint:webportal && npm run typecheck:webportal && npm run build:webportal"
+    "check:web": "npm run typecheck:shared && npm run lint:webportal && npm run typecheck:webportal && npm run build:webportal",
+    "check:secrets": "node scripts/check-secrets.mjs",
+    "test:operations": "npm --prefix apps/webportal run test:operations",
+    "validate": "npm run check:secrets && npm run lint:web && npm run typecheck:shared && npm run typecheck:webportal && npm run build:web && npm run build:api && npm run test:api && npm --prefix apps/webportal run test:forms && npm --prefix apps/webportal run test:auth && npm --prefix apps/webportal run test:admin && npm run test:operations",
+    "validate:mariadb": "node scripts/validate-mariadb.mjs"
   },
   "engines": {
     "node": ">=24"

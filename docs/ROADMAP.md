@@ -3,6 +3,23 @@
 Chaque phase conserve les contraintes de `AGENTS.md` et `docs/SECURITY.md`.
 L'avancement d'une phase n'autorise jamais implicitement une intégration réelle.
 
+## Jalon V0.9 exploitation
+
+Statut : **implémenté, validation pré-production à exécuter sur l'hôte cible**.
+
+- Health checks live/ready API-INTERNAL et WEBPORTAL.
+- Readiness MariaDB réelle et statut AD sans activation.
+- Validation stricte des variables en Production.
+- Authentification interservice minimale sur `/internal/*` en Production.
+- Commande globale `npm run validate` et garde-fou secrets.
+- Règles `.gitattributes` et exclusions de dumps/backups.
+- Runbooks déploiement, opérations, sauvegarde/restauration et rotation.
+- Portail privé marqué `noindex, nofollow`.
+
+Restent à valider sur l'infrastructure : supervision, services système,
+certificats, restauration réelle de test, pare-feu et rotation effective des
+secrets précédemment exposés.
+
 ## 1. Documentation et architecture
 
 Statut : **complétée pour le périmètre initial**.
@@ -11,20 +28,22 @@ Statut : **complétée pour le périmètre initial**.
 - Flux, sécurité, contrats et modèle de données documentés.
 - Choix de déploiement initial décrits.
 
-Une validation d'exploitation restera requise avant la production.
+Les procédures V0.9 sont disponibles ; leur exécution sur la pré-production
+reste requise avant la production.
 
 ## 2. Squelette technique
 
 Statut : **complétée**.
 
 - Monorepo créé avec `apps/webportal`, `apps/api-internal` et `packages/shared`.
-- Health checks, `correlation_id`, erreurs structurées et tests minimaux ajoutés.
+- Health checks live/ready, `correlation_id`, erreurs structurées et tests
+  minimaux ajoutés.
 - Scripts racine de build et validation opérationnels.
 - Aucune dépendance à SQL ou Active Directory pour compiler et tester.
 
 ## 3. Portail client sans AD réel
 
-Statut : **V0.8 sécurisée complétée côté interface**.
+Statut : **V0.9 exploitable côté interface**.
 
 - Navigation responsive et pages principales disponibles.
 - Services, factures, support, profil et catalogue fictifs.
@@ -51,7 +70,7 @@ rate limiting et stratégie d'audit complète.
 
 ## 5. Authentification
 
-Statut : **V0.8 locale durcie implémentée**.
+Statut : **V0.9 locale durcie et préparée pour pré-production**.
 
 - Connexion locale par mot de passe hashé avec message d'échec générique.
 - Token aléatoire conservé uniquement dans un cookie `HttpOnly`.
@@ -69,7 +88,7 @@ avant production.
 
 ## 6. Connexion SQL
 
-Statut : **V0.8 implémentée, validation MariaDB réelle opt-in disponible**.
+Statut : **V0.9 implémentée, readiness et validation MariaDB opt-in disponibles**.
 
 - Moteur MariaDB confirmé pour l'environnement de test.
 - Configuration construite en mémoire à partir de variables séparées.
@@ -78,8 +97,8 @@ Statut : **V0.8 implémentée, validation MariaDB réelle opt-in disponible**.
 - Tests MariaDB conditionnels derrière `RUN_MARIADB_TESTS=true`.
 - Migration `003_admin_and_auth_hardening.sql` additive.
 
-Restent à faire : injecter les secrets localement, exécuter les migrations sur
-`TEST_WEB`, valider les sauvegardes et réduire précisément les privilèges SQL.
+Restent à faire : tourner puis injecter les secrets localement, tester une
+restauration sur une base distincte et réduire précisément les privilèges SQL.
 
 `WEBPORTAL` ne devra jamais accéder directement à SQL.
 
@@ -91,7 +110,7 @@ Statut : **non commencée**.
 - Garantir l'isolation des données du client authentifié.
 - Définir un téléchargement contrôlé des documents si nécessaire.
 
-Aucun paiement n'est prévu dans la V0.8.
+Aucun paiement n'est prévu dans la V0.9.
 
 ## 8. Changement de mot de passe AD
 

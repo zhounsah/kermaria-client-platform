@@ -9,7 +9,15 @@ export function getSessionCookieName() {
 }
 
 export function isSessionCookieSecure() {
-  const configuredValue = process.env.SESSION_COOKIE_SECURE?.trim().toLowerCase();
+  const configuredValue = process.env.SESSION_COOKIE_SECURE
+    ?.trim()
+    .toLowerCase();
+
+  if (process.env.NODE_ENV === "production" && configuredValue === "false") {
+    throw new Error(
+      "Configuration serveur invalide : SESSION_COOKIE_SECURE.",
+    );
+  }
 
   if (configuredValue === "true") {
     return true;

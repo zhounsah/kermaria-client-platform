@@ -5,6 +5,8 @@
 Le navigateur accède uniquement à `WEBPORTAL` :
 
 - `GET /api/health`
+- `GET /api/health/live`
+- `GET /api/health/ready`
 - `POST /api/auth/login`
 - `POST /api/auth/logout`
 - `POST /api/auth/revoke-other-sessions`
@@ -22,6 +24,8 @@ Les routes suivantes appartiennent à `API-INTERNAL`. Elles sont privées, non
 publiées par le reverse proxy et jamais appelées directement par le navigateur :
 
 - `GET /health`
+- `GET /health/live`
+- `GET /health/ready`
 - `POST /internal/auth/sessions`
 - `GET /internal/auth/session`
 - `DELETE /internal/auth/sessions/current`
@@ -54,8 +58,10 @@ publiées par le reverse proxy et jamais appelées directement par le navigateur
 - `X-Data-Source: mariadb|mock` sur les lectures portail.
 - `X-Portal-Session` est ajouté uniquement par le BFF vers `API-INTERNAL`.
 - Le navigateur ne lit et ne construit jamais `X-Portal-Session`.
+- `X-Service-Auth` est ajouté par le BFF et exigé sur `/internal/*` en
+  Production. Il n'est jamais transmis au navigateur.
 - Erreurs sans trace, secret, topologie SQL ou détail AD.
-- Identité service-à-service obligatoire avant production.
+- Les health checks n'affichent ni URL, ni host SQL, ni valeur de configuration.
 
 Format d'erreur :
 
@@ -67,7 +73,27 @@ Format d'erreur :
 }
 ```
 
-## Authentification V0.8
+## Health checks V0.9
+
+`GET /health/live` et `GET /api/health/live` retournent HTTP 200 si le
+processus correspondant répond. Ils ne vérifient ni MariaDB ni AD.
+
+`GET /health/ready` retourne :
+
+- HTTP 200 si la configuration est valide et MariaDB répond lorsque
+  `SQL_PROVIDER=mariadb` ;
+- HTTP 503 si la configuration Development demande MariaDB sans être complète
+  ou si MariaDB est indisponible.
+
+Le champ `checks.ad` expose uniquement le mode (`disabled` par défaut).
+
+`GET /api/health/ready` appelle la readiness API depuis le serveur Next.js. Il
+retourne HTTP 503 si la configuration WEBPORTAL est invalide ou API-INTERNAL
+injoignable. `INTERNAL_API_URL` n'apparaît jamais dans la réponse.
+
+`GET /health` et `GET /api/health` restent conservés pour compatibilité.
+
+## Authentification V0.9
 
 `POST /api/auth/login` accepte :
 

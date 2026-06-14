@@ -14,6 +14,7 @@ const revokeOthersRoute = await read(
 );
 const sessionConfig = await read("lib/session-config.ts");
 const internalApi = await read("lib/internal-api.ts");
+const runtimeConfig = await read("lib/runtime-config.ts");
 const authHelper = await read("lib/auth.ts");
 
 assert.match(loginForm, /event\.preventDefault\(\)/);
@@ -53,8 +54,10 @@ assert.doesNotMatch(sessionConfig, /NEXT_PUBLIC_|PUBLIC_INTERNAL_API_URL/);
 
 assert.match(internalApi, /import "server-only"/);
 assert.match(internalApi, /X-Portal-Session/);
-assert.match(internalApi, /process\.env\.INTERNAL_API_URL/);
+assert.match(internalApi, /getInternalApiUrl/);
 assert.doesNotMatch(internalApi, /NEXT_PUBLIC_INTERNAL_API_URL/);
+assert.match(runtimeConfig, /process\.env\.INTERNAL_API_URL/);
+assert.doesNotMatch(runtimeConfig, /NEXT_PUBLIC_INTERNAL_API_URL/);
 
 assert.match(authHelper, /redirect\("\/login"\)/);
 assert.match(authHelper, /requireAdminSession/);
