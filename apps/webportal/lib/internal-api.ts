@@ -5,8 +5,10 @@ import type {
   AdminAuditLogEntry,
   AdminCustomerSummary,
   AdminOverview,
+  AdminServiceRequestDetail,
   AdminServiceRequestSummary,
   AdminSessionSummary,
+  AdminSupportRequestDetail,
   AdminSupportRequestSummary,
   ApiError,
   ClientProfile,
@@ -18,8 +20,12 @@ import type {
   LoginPayload,
   MockSubmissionResponse,
   PortalSummary,
+  PortalServiceRequestDetail,
+  PortalSupportRequestDetail,
+  RequestMutationResponse,
   ServiceCatalogItem,
   ServiceRequestPayload,
+  ServiceRequestSummary,
   ServiceSummary,
   SupportRequestPayload,
   SupportRequestSummary,
@@ -302,6 +308,30 @@ export function getSupportRequests() {
   );
 }
 
+export function getServiceRequests() {
+  return getPortalData<ServiceRequestSummary[]>(
+    "/internal/portal/service-requests",
+    [],
+    [],
+  );
+}
+
+export function getSupportRequest(id: string) {
+  return getPortalData<PortalSupportRequestDetail | null>(
+    `/internal/portal/support-requests/${encodeURIComponent(id)}`,
+    null,
+    null,
+  );
+}
+
+export function getServiceRequest(id: string) {
+  return getPortalData<PortalServiceRequestDetail | null>(
+    `/internal/portal/service-requests/${encodeURIComponent(id)}`,
+    null,
+    null,
+  );
+}
+
 export function getAdHealth() {
   const fallback: AdHealthStatus = {
     mode: "disabled",
@@ -427,6 +457,27 @@ export async function getInternalAdminData<T>(
   );
 }
 
+export async function mutateInternalAdminData<TPayload>(
+  path: string,
+  method: "PATCH" | "POST",
+  payload: TPayload,
+  sessionToken: string,
+  correlationId = resolveCorrelationId(null),
+) {
+  return requestInternalAuth<RequestMutationResponse>(
+    path,
+    {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        [PORTAL_SESSION_HEADER]: sessionToken,
+      },
+      body: JSON.stringify(payload),
+    },
+    correlationId,
+  );
+}
+
 async function getAdminData<T>(
   path: string,
   unavailableValue: T,
@@ -523,10 +574,38 @@ export function getAdminSupportRequests() {
   );
 }
 
+export function getAdminSupportRequestsFiltered(query: string) {
+  return getAdminData<AdminSupportRequestSummary[]>(
+    `/internal/admin/support-requests${query}`,
+    [],
+  );
+}
+
 export function getAdminServiceRequests() {
   return getAdminData<AdminServiceRequestSummary[]>(
     "/internal/admin/service-requests",
     [],
+  );
+}
+
+export function getAdminServiceRequestsFiltered(query: string) {
+  return getAdminData<AdminServiceRequestSummary[]>(
+    `/internal/admin/service-requests${query}`,
+    [],
+  );
+}
+
+export function getAdminSupportRequest(id: string) {
+  return getAdminData<AdminSupportRequestDetail | null>(
+    `/internal/admin/support-requests/${encodeURIComponent(id)}`,
+    null,
+  );
+}
+
+export function getAdminServiceRequest(id: string) {
+  return getAdminData<AdminServiceRequestDetail | null>(
+    `/internal/admin/service-requests/${encodeURIComponent(id)}`,
+    null,
   );
 }
 

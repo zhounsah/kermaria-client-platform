@@ -150,6 +150,73 @@ Représente une demande de support créée depuis le portail.
 | `updated_at` | timestamp | Dernière modification |
 | `closed_at` | timestamp, nullable | Date de clôture |
 
+Statuts V0.11 : `open`, `in_progress`, `waiting_for_customer`, `resolved`,
+`closed`, `cancelled`.
+
+## service_requests
+
+Représente une demande commerciale à traiter manuellement.
+
+| Champ | Type logique | Description |
+|---|---|---|
+| `id` | identifier | Clé interne |
+| `customer_id` | identifier | Client demandeur |
+| `created_by_user_id` | identifier | Utilisateur à l'origine |
+| `catalog_item_id` | identifier | Élément de catalogue demandé |
+| `reference` | text | Référence affichée |
+| `subject` | text | Sujet validé |
+| `description` | text | Description validée |
+| `status` | text | État du traitement manuel |
+| `created_at` | timestamp | Date de création |
+| `updated_at` | timestamp | Dernière modification |
+
+Statuts V0.11 : `received`, `under_review`, `accepted`, `rejected`,
+`cancelled`, `completed`. `accepted` ne signifie jamais qu'un service a été
+provisionné.
+
+## request_events
+
+Historique append-only des créations et changements de statut.
+
+| Champ | Type logique | Description |
+|---|---|---|
+| `id` | identifier | Clé interne |
+| `request_type` | text | `support` ou `service` |
+| `request_id` | identifier | Demande concernée |
+| `actor_user_id` | identifier, nullable | Auteur de l'action |
+| `event_type` | text | `created` ou `status_changed` |
+| `old_status` | text, nullable | Statut précédent |
+| `new_status` | text, nullable | Nouveau statut |
+| `correlation_id` | text | Corrélation de l'opération |
+| `created_at` | timestamp | Date UTC |
+
+## request_internal_notes
+
+Notes append-only réservées aux administrateurs. Elles ne sont jamais
+retournées par une route client.
+
+| Champ | Type logique | Description |
+|---|---|---|
+| `id` | identifier | Clé interne |
+| `request_type` | text | `support` ou `service` |
+| `request_id` | identifier | Demande concernée |
+| `author_user_id` | identifier | Administrateur auteur |
+| `note_text` | text | Texte brut de 3 à 2 000 caractères |
+| `created_at` | timestamp | Date UTC |
+
+## request_public_messages
+
+Messages append-only écrits par un administrateur et visibles du client.
+
+| Champ | Type logique | Description |
+|---|---|---|
+| `id` | identifier | Clé interne |
+| `request_type` | text | `support` ou `service` |
+| `request_id` | identifier | Demande concernée |
+| `author_user_id` | identifier | Administrateur auteur |
+| `message_text` | text | Texte brut de 3 à 2 000 caractères |
+| `created_at` | timestamp | Date UTC |
+
 ## audit_logs
 
 Journal append-only des événements de sécurité et actions sensibles.
@@ -207,6 +274,9 @@ erDiagram
     CUSTOMERS ||--o{ SUPPORT_REQUESTS : ouvre
     USERS ||--o{ SUPPORT_REQUESTS : crée
     SERVICES o|--o{ SUPPORT_REQUESTS : concerne
+    CUSTOMERS ||--o{ SERVICE_REQUESTS : demande
+    SUPPORT_REQUESTS ||--o{ REQUEST_EVENTS : historise
+    SERVICE_REQUESTS ||--o{ REQUEST_EVENTS : historise
     CUSTOMERS ||--o{ AD_ACTIONS : concerne
     USERS o|--o{ AD_ACTIONS : demande
     CUSTOMERS o|--o{ AUDIT_LOGS : contextualise
@@ -241,6 +311,9 @@ La V0.8 matérialise ce modèle dans l'adaptateur MariaDB avec les noms suivants
 | catalogue de services | `service_catalog` |
 | `support_requests` | `support_requests` |
 | demandes commerciales | `service_requests` |
+| historique des demandes | `request_events` |
+| notes internes | `request_internal_notes` |
+| messages publics | `request_public_messages` |
 | `audit_logs` | `audit_logs` |
 | `ad_actions` | `ad_actions` |
 
@@ -262,3 +335,7 @@ La migration `003_admin_and_auth_hardening.sql` ajoute `role`,
 `failed_login_count`, `last_failed_login_at` et `locked_until`, ainsi que les
 index nécessaires aux vues de rôle et de sessions actives. Elle ne supprime
 aucune table et conserve `client_user` comme valeur par défaut.
+
+La migration `004_request_workflow.sql` est additive. Elle crée les trois
+tables append-only du workflow et initialise un événement `created` pour les
+demandes existantes, sans modifier leurs statuts.

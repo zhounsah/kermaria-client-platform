@@ -82,27 +82,30 @@ export interface AdminCustomerSummary {
 }
 
 export interface AdminSupportRequestSummary {
+  id: string;
   reference: string;
   customerReference: string;
   customerName: string;
   serviceName: string;
   priority: string;
-  status: string;
+  status: SupportRequestStatus;
   subject: string;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface AdminServiceRequestSummary {
+  id: string;
   reference: string;
   customerReference: string;
   customerName: string;
   catalogItemName: string;
   subject: string;
   descriptionPreview: string;
-  status: string;
+  status: ServiceRequestStatus;
   persisted: boolean;
   createdAt: string;
+  updatedAt: string;
 }
 
 export interface AdminSessionSummary {
@@ -148,6 +151,7 @@ export interface PortalSummary {
   pendingInvoiceCount: number;
   pendingInvoiceTotal: number;
   openSupportRequestCount: number;
+  activeServiceRequestCount: number;
   lastUpdatedAt: string;
 }
 
@@ -184,11 +188,117 @@ export interface SupportRequestSummary {
   id: string;
   reference: string;
   subject: string;
-  status: "open" | "in_progress" | "closed";
+  status: SupportRequestStatus;
   priority: "low" | "normal" | "high";
   serviceName: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export type SupportRequestStatus =
+  | "open"
+  | "in_progress"
+  | "waiting_for_customer"
+  | "resolved"
+  | "closed"
+  | "cancelled";
+
+export type ServiceRequestStatus =
+  | "received"
+  | "under_review"
+  | "accepted"
+  | "rejected"
+  | "cancelled"
+  | "completed";
+
+export type RequestType = "support" | "service";
+
+export interface ServiceRequestSummary {
+  id: string;
+  reference: string;
+  catalogItemName: string;
+  subject: string;
+  status: ServiceRequestStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RequestEventSummary {
+  eventType:
+    | "created"
+    | "status_changed"
+    | "internal_note_added"
+    | "public_message_added";
+  oldStatus: string | null;
+  newStatus: string | null;
+  occurredAt: string;
+}
+
+export interface PublicRequestMessage {
+  id: string;
+  message: string;
+  authorLabel: "Équipe Kermaria";
+  createdAt: string;
+}
+
+export interface InternalRequestNote {
+  id: string;
+  note: string;
+  authorDisplayName: string;
+  createdAt: string;
+}
+
+export interface PortalSupportRequestDetail extends SupportRequestSummary {
+  description: string;
+  events: RequestEventSummary[];
+  publicMessages: PublicRequestMessage[];
+}
+
+export interface PortalServiceRequestDetail extends ServiceRequestSummary {
+  description: string;
+  events: RequestEventSummary[];
+  publicMessages: PublicRequestMessage[];
+}
+
+export interface AdminSupportRequestDetail
+  extends AdminSupportRequestSummary {
+  description: string;
+  events: RequestEventSummary[];
+  internalNotes: InternalRequestNote[];
+  publicMessages: PublicRequestMessage[];
+}
+
+export interface AdminServiceRequestDetail {
+  id: string;
+  reference: string;
+  customerReference: string;
+  customerName: string;
+  catalogItemName: string;
+  subject: string;
+  description: string;
+  status: ServiceRequestStatus;
+  persisted: boolean;
+  createdAt: string;
+  updatedAt: string;
+  events: RequestEventSummary[];
+  internalNotes: InternalRequestNote[];
+  publicMessages: PublicRequestMessage[];
+}
+
+export interface RequestStatusPayload {
+  status: SupportRequestStatus | ServiceRequestStatus;
+}
+
+export interface RequestTextPayload {
+  text: string;
+}
+
+export interface RequestMutationResponse {
+  id: string;
+  reference: string;
+  status: string;
+  changed: boolean;
+  correlation_id: CorrelationId;
 }
 
 export interface ServiceCatalogItem {

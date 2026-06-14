@@ -1140,6 +1140,159 @@ td {
   background: var(--info-light);
 }
 
+.admin-filters {
+  display: grid;
+  margin-bottom: 24px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  align-items: end;
+  gap: 16px;
+}
+
+.admin-filters .field {
+  margin: 0;
+}
+
+.table-action,
+.text-link {
+  color: var(--primary);
+  font-weight: 750;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.request-detail-layout {
+  display: grid;
+  margin-bottom: 24px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 24px;
+}
+
+.request-details {
+  display: grid;
+  margin: 18px 0 24px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 24px;
+}
+
+.request-details div {
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.request-details dt {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.request-details dd {
+  margin: 5px 0 0;
+  font-weight: 650;
+}
+
+.request-description,
+.internal-note p,
+.timeline-message p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.workflow-form {
+  display: grid;
+  gap: 16px;
+}
+
+.request-timeline {
+  display: grid;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+  gap: 0;
+}
+
+.timeline-item {
+  position: relative;
+  display: grid;
+  min-height: 72px;
+  padding: 0 0 20px 30px;
+  grid-template-columns: 1fr;
+}
+
+.timeline-item::before {
+  position: absolute;
+  top: 12px;
+  bottom: -4px;
+  left: 7px;
+  width: 2px;
+  content: "";
+  background: var(--border);
+}
+
+.timeline-item:last-child::before {
+  display: none;
+}
+
+.timeline-marker {
+  position: absolute;
+  top: 5px;
+  left: 0;
+  width: 16px;
+  height: 16px;
+  border: 4px solid var(--surface);
+  border-radius: 50%;
+  background: var(--primary);
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.timeline-message .timeline-marker {
+  background: var(--success);
+}
+
+.timeline-item p {
+  margin: 7px 0;
+  color: var(--text);
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.timeline-item time,
+.internal-note footer {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.internal-note-list {
+  display: grid;
+  gap: 12px;
+}
+
+.internal-note {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+
+.internal-note p {
+  margin: 0 0 10px;
+  line-height: 1.6;
+}
+
+.status-description {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.request-history-section {
+  margin-top: 36px;
+}
+
 .ticket-list {
   display: grid;
   gap: 12px;
@@ -1572,6 +1725,16 @@ td {
 }
 
 @media (max-width: 760px) {
+  .admin-filters,
+  .request-detail-layout,
+  .request-details {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-filters .button {
+    width: 100%;
+  }
+
   .site-header-inner,
   .portal-nav-inner,
   .main-content,

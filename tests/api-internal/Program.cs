@@ -300,6 +300,175 @@ async Task RunMockTestsAsync()
                 $"La route admin {endpoint} expose une donnée d'authentification.");
         }
 
+        using var adminSupportListRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mockBaseUrl}/internal/admin/support-requests",
+            adminSessionToken);
+        using var adminSupportListResponse = await client.SendAsync(
+            adminSupportListRequest);
+        using var adminSupportListPayload = JsonDocument.Parse(
+            await adminSupportListResponse.Content.ReadAsStringAsync());
+        var workflowSupportId = adminSupportListPayload.RootElement[0]
+            .GetProperty("id")
+            .GetString()
+            ?? throw new InvalidOperationException(
+                "Le workflow support mock ne retourne aucun identifiant.");
+
+        using var supportStatusRequest = CreateSessionRequest(
+            HttpMethod.Patch,
+            $"{mockBaseUrl}/internal/admin/support-requests/{workflowSupportId}/status",
+            adminSessionToken);
+        supportStatusRequest.Content = JsonContent.Create(
+            new { status = "waiting_for_customer" });
+        using var supportStatusResponse = await client.SendAsync(
+            supportStatusRequest);
+        using var supportStatusPayload = JsonDocument.Parse(
+            await supportStatusResponse.Content.ReadAsStringAsync());
+        Ensure(
+            supportStatusResponse.StatusCode == HttpStatusCode.OK
+            && supportStatusPayload.RootElement
+                .GetProperty("changed")
+                .GetBoolean(),
+            "Un admin doit pouvoir changer le statut support.");
+
+        using var supportNoOpRequest = CreateSessionRequest(
+            HttpMethod.Patch,
+            $"{mockBaseUrl}/internal/admin/support-requests/{workflowSupportId}/status",
+            adminSessionToken);
+        supportNoOpRequest.Content = JsonContent.Create(
+            new { status = "waiting_for_customer" });
+        using var supportNoOpResponse = await client.SendAsync(
+            supportNoOpRequest);
+        using var supportNoOpPayload = JsonDocument.Parse(
+            await supportNoOpResponse.Content.ReadAsStringAsync());
+        Ensure(
+            !supportNoOpPayload.RootElement.GetProperty("changed").GetBoolean(),
+            "Un statut identique doit être traité comme un no-op.");
+
+        using var invalidStatusRequest = CreateSessionRequest(
+            HttpMethod.Patch,
+            $"{mockBaseUrl}/internal/admin/support-requests/{workflowSupportId}/status",
+            adminSessionToken);
+        invalidStatusRequest.Content = JsonContent.Create(
+            new { status = "provisioned" });
+        using var invalidStatusResponse = await client.SendAsync(
+            invalidStatusRequest);
+        Ensure(
+            invalidStatusResponse.StatusCode == HttpStatusCode.BadRequest,
+            "Un statut support invalide devait être refusé.");
+
+        using var clientStatusRequest = CreateSessionRequest(
+            HttpMethod.Patch,
+            $"{mockBaseUrl}/internal/admin/support-requests/{workflowSupportId}/status",
+            sessionToken!);
+        clientStatusRequest.Content = JsonContent.Create(
+            new { status = "resolved" });
+        using var clientStatusResponse = await client.SendAsync(
+            clientStatusRequest);
+        Ensure(
+            clientStatusResponse.StatusCode == HttpStatusCode.Forbidden,
+            "Un client ne doit pas modifier le statut d'une demande.");
+
+        foreach (var invalidText in new[] { "", new string('x', 2001) })
+        {
+            using var invalidNoteRequest = CreateSessionRequest(
+                HttpMethod.Post,
+                $"{mockBaseUrl}/internal/admin/support-requests/{workflowSupportId}/notes",
+                adminSessionToken);
+            invalidNoteRequest.Content = JsonContent.Create(
+                new { text = invalidText });
+            using var invalidNoteResponse = await client.SendAsync(
+                invalidNoteRequest);
+            Ensure(
+                invalidNoteResponse.StatusCode == HttpStatusCode.BadRequest,
+                "Une note interne vide ou trop longue devait être refusée.");
+        }
+
+        const string privateNote = "Note opérationnelle interne V0.11.";
+        using var noteRequest = CreateSessionRequest(
+            HttpMethod.Post,
+            $"{mockBaseUrl}/internal/admin/support-requests/{workflowSupportId}/notes",
+            adminSessionToken);
+        noteRequest.Content = JsonContent.Create(new { text = privateNote });
+        using var noteResponse = await client.SendAsync(noteRequest);
+        Ensure(
+            noteResponse.StatusCode == HttpStatusCode.OK,
+            "L'ajout d'une note interne mock devait réussir.");
+
+        const string publicMessage =
+            "Un retour complémentaire est attendu pour poursuivre.";
+        using var messageRequest = CreateSessionRequest(
+            HttpMethod.Post,
+            $"{mockBaseUrl}/internal/admin/support-requests/{workflowSupportId}/messages",
+            adminSessionToken);
+        messageRequest.Content = JsonContent.Create(
+            new { text = publicMessage });
+        using var messageResponse = await client.SendAsync(messageRequest);
+        Ensure(
+            messageResponse.StatusCode == HttpStatusCode.OK,
+            "L'ajout d'un message public mock devait réussir.");
+
+        using var adminSupportDetailRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mockBaseUrl}/internal/admin/support-requests/{workflowSupportId}",
+            adminSessionToken);
+        using var adminSupportDetailResponse = await client.SendAsync(
+            adminSupportDetailRequest);
+        var adminSupportDetailText =
+            await adminSupportDetailResponse.Content.ReadAsStringAsync();
+        Ensure(
+            adminSupportDetailText.Contains(privateNote, StringComparison.Ordinal)
+            && adminSupportDetailText.Contains(
+                publicMessage,
+                StringComparison.Ordinal),
+            "Le détail admin doit distinguer notes internes et messages publics.");
+
+        using var clientSupportDetailRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mockBaseUrl}/internal/portal/support-requests/{workflowSupportId}",
+            sessionToken!);
+        using var clientSupportDetailResponse = await client.SendAsync(
+            clientSupportDetailRequest);
+        var clientSupportDetailText =
+            await clientSupportDetailResponse.Content.ReadAsStringAsync();
+        Ensure(
+            clientSupportDetailResponse.StatusCode == HttpStatusCode.OK
+            && clientSupportDetailText.Contains(
+                publicMessage,
+                StringComparison.Ordinal)
+            && !clientSupportDetailText.Contains(
+                privateNote,
+                StringComparison.Ordinal)
+            && !clientSupportDetailText.Contains(
+                "internalNotes",
+                StringComparison.OrdinalIgnoreCase),
+            "Une note interne ne doit jamais être exposée au client.");
+
+        using var adminServiceListRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mockBaseUrl}/internal/admin/service-requests",
+            adminSessionToken);
+        using var adminServiceListResponse = await client.SendAsync(
+            adminServiceListRequest);
+        using var adminServiceListPayload = JsonDocument.Parse(
+            await adminServiceListResponse.Content.ReadAsStringAsync());
+        var workflowServiceId = adminServiceListPayload.RootElement[0]
+            .GetProperty("id")
+            .GetString()
+            ?? throw new InvalidOperationException(
+                "Le workflow service mock ne retourne aucun identifiant.");
+        using var serviceStatusRequest = CreateSessionRequest(
+            HttpMethod.Patch,
+            $"{mockBaseUrl}/internal/admin/service-requests/{workflowServiceId}/status",
+            adminSessionToken);
+        serviceStatusRequest.Content = JsonContent.Create(
+            new { status = "under_review" });
+        using var serviceStatusResponse = await client.SendAsync(
+            serviceStatusRequest);
+        Ensure(
+            serviceStatusResponse.StatusCode == HttpStatusCode.OK,
+            "Un admin doit pouvoir changer le statut d'une demande de service.");
+
         using var adminPortalRequest = CreateSessionRequest(
             HttpMethod.Get,
             $"{mockBaseUrl}/internal/portal/services",
@@ -660,6 +829,12 @@ async Task RunMockTestsAsync()
                 adminSessionToken,
                 StringComparison.Ordinal),
             "Un mot de passe ou token admin a été écrit dans les logs.");
+        Ensure(
+            !api.Logs.ToString().Contains(privateNote, StringComparison.Ordinal)
+            && !api.Logs.ToString().Contains(
+                publicMessage,
+                StringComparison.Ordinal),
+            "Le contenu d'une note ou d'un message a été écrit dans les logs.");
     }
     finally
     {
@@ -1016,6 +1191,8 @@ async Task RunMariaDbReadTestsAsync()
         "90000000-0000-0000-0000-000000000071";
     const string isolationServiceId =
         "90000000-0000-0000-0000-000000000072";
+    string? workflowSupportRequestId = null;
+    string? workflowServiceRequestId = null;
 
     try
     {
@@ -1171,7 +1348,8 @@ async Task RunMariaDbReadTestsAsync()
         {
             "/internal/portal/services",
             "/internal/portal/invoices",
-            "/internal/portal/service-catalog"
+            "/internal/portal/service-catalog",
+            "/internal/portal/service-requests"
         })
         {
             using var request = CreateSessionRequest(
@@ -1246,6 +1424,9 @@ async Task RunMariaDbReadTestsAsync()
                 .GetProperty("correlation_id")
                 .GetString() == "v0.7-mariadb-service-write",
             "La demande de service MariaDB ne propage pas le correlation_id.");
+        var workflowServiceReference = serviceWritePayload.RootElement
+            .GetProperty("reference")
+            .GetString()!;
 
         using var invalidCatalogRequest = new HttpRequestMessage(
             HttpMethod.Post,
@@ -1306,6 +1487,97 @@ async Task RunMariaDbReadTestsAsync()
         Ensure(
             supportWritePayload.RootElement.GetProperty("persisted").GetBoolean(),
             "La demande support MariaDB doit retourner persisted:true.");
+        var workflowSupportReference = supportWritePayload.RootElement
+            .GetProperty("reference")
+            .GetString()!;
+
+        workflowSupportRequestId = await FindRequestIdAsync(
+            client,
+            mariaDbBaseUrl,
+            "/internal/portal/support-requests",
+            sessionToken,
+            workflowSupportReference);
+        workflowServiceRequestId = await FindRequestIdAsync(
+            client,
+            mariaDbBaseUrl,
+            "/internal/portal/service-requests",
+            sessionToken,
+            workflowServiceReference);
+
+        using var mariaSupportStatusRequest = CreateSessionRequest(
+            HttpMethod.Patch,
+            $"{mariaDbBaseUrl}/internal/admin/support-requests/{workflowSupportRequestId}/status",
+            adminSessionToken);
+        mariaSupportStatusRequest.Content = JsonContent.Create(
+            new { status = "in_progress" });
+        using var mariaSupportStatusResponse = await client.SendAsync(
+            mariaSupportStatusRequest);
+        Ensure(
+            mariaSupportStatusResponse.StatusCode == HttpStatusCode.OK,
+            "Le changement de statut support MariaDB devait réussir.");
+
+        using var mariaServiceStatusRequest = CreateSessionRequest(
+            HttpMethod.Patch,
+            $"{mariaDbBaseUrl}/internal/admin/service-requests/{workflowServiceRequestId}/status",
+            adminSessionToken);
+        mariaServiceStatusRequest.Content = JsonContent.Create(
+            new { status = "under_review" });
+        using var mariaServiceStatusResponse = await client.SendAsync(
+            mariaServiceStatusRequest);
+        Ensure(
+            mariaServiceStatusResponse.StatusCode == HttpStatusCode.OK,
+            "Le changement de statut service MariaDB devait réussir.");
+
+        const string mariaPrivateNote = "Note interne MariaDB V0.11.";
+        using var mariaNoteRequest = CreateSessionRequest(
+            HttpMethod.Post,
+            $"{mariaDbBaseUrl}/internal/admin/support-requests/{workflowSupportRequestId}/notes",
+            adminSessionToken);
+        mariaNoteRequest.Content = JsonContent.Create(
+            new { text = mariaPrivateNote });
+        using var mariaNoteResponse = await client.SendAsync(mariaNoteRequest);
+        Ensure(
+            mariaNoteResponse.StatusCode == HttpStatusCode.OK,
+            "L'ajout de note interne MariaDB devait réussir.");
+
+        const string mariaPublicMessage =
+            "Message public MariaDB de suivi V0.11.";
+        using var mariaMessageRequest = CreateSessionRequest(
+            HttpMethod.Post,
+            $"{mariaDbBaseUrl}/internal/admin/support-requests/{workflowSupportRequestId}/messages",
+            adminSessionToken);
+        mariaMessageRequest.Content = JsonContent.Create(
+            new { text = mariaPublicMessage });
+        using var mariaMessageResponse = await client.SendAsync(
+            mariaMessageRequest);
+        Ensure(
+            mariaMessageResponse.StatusCode == HttpStatusCode.OK,
+            "L'ajout de message public MariaDB devait réussir.");
+
+        using var mariaClientDetailRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mariaDbBaseUrl}/internal/portal/support-requests/{workflowSupportRequestId}",
+            sessionToken);
+        using var mariaClientDetailResponse = await client.SendAsync(
+            mariaClientDetailRequest);
+        var mariaClientDetailText =
+            await mariaClientDetailResponse.Content.ReadAsStringAsync();
+        Ensure(
+            mariaClientDetailResponse.StatusCode == HttpStatusCode.OK
+            && mariaClientDetailText.Contains(
+                mariaPublicMessage,
+                StringComparison.Ordinal)
+            && !mariaClientDetailText.Contains(
+                mariaPrivateNote,
+                StringComparison.Ordinal)
+            && !mariaClientDetailText.Contains(
+                "internalNotes",
+                StringComparison.OrdinalIgnoreCase),
+            "La séparation note interne/message public MariaDB est invalide.");
+
+        await VerifyWorkflowPersistenceAsync(
+            workflowSupportRequestId,
+            workflowServiceRequestId);
 
         using var isolationRequest = new HttpRequestMessage(
             HttpMethod.Post,
@@ -1348,8 +1620,127 @@ async Task RunMariaDbReadTestsAsync()
         await CleanupIsolationFixtureAsync(
             isolationCustomerId,
             isolationServiceId);
+        await CleanupWorkflowFixtureAsync(
+            workflowSupportRequestId,
+            workflowServiceRequestId);
         await api.StopAsync();
     }
+}
+
+async Task<string> FindRequestIdAsync(
+    HttpClient client,
+    string baseUrl,
+    string path,
+    string sessionToken,
+    string reference)
+{
+    using var request = CreateSessionRequest(
+        HttpMethod.Get,
+        $"{baseUrl}{path}",
+        sessionToken);
+    using var response = await client.SendAsync(request);
+    using var payload = JsonDocument.Parse(
+        await response.Content.ReadAsStringAsync());
+    return payload.RootElement
+        .EnumerateArray()
+        .First(item =>
+            item.GetProperty("reference").GetString() == reference)
+        .GetProperty("id")
+        .GetString()
+        ?? throw new InvalidOperationException(
+            "La demande MariaDB créée ne retourne aucun identifiant.");
+}
+
+async Task VerifyWorkflowPersistenceAsync(
+    string supportRequestId,
+    string serviceRequestId)
+{
+    await using var connection = CreateMariaDbTestConnection();
+    await connection.OpenAsync();
+    await using var command = connection.CreateCommand();
+    command.CommandText =
+        """
+        SELECT
+            (SELECT COUNT(*) FROM request_events
+             WHERE request_type = 'support' AND request_id = @support_id)
+                AS support_event_count,
+            (SELECT COUNT(*) FROM request_events
+             WHERE request_type = 'service' AND request_id = @service_id)
+                AS service_event_count,
+            (SELECT COUNT(*) FROM request_internal_notes
+             WHERE request_type = 'support' AND request_id = @support_id)
+                AS note_count,
+            (SELECT COUNT(*) FROM request_public_messages
+             WHERE request_type = 'support' AND request_id = @support_id)
+                AS message_count;
+        """;
+    AddDbParameter(command, "@support_id", supportRequestId);
+    AddDbParameter(command, "@service_id", serviceRequestId);
+    await using var reader = await command.ExecuteReaderAsync();
+    Ensure(await reader.ReadAsync(), "Le workflow MariaDB est illisible.");
+    Ensure(
+        Convert.ToInt32(reader["support_event_count"]) >= 2
+        && Convert.ToInt32(reader["service_event_count"]) >= 2
+        && Convert.ToInt32(reader["note_count"]) == 1
+        && Convert.ToInt32(reader["message_count"]) == 1,
+        "Les événements ou notes du workflow MariaDB sont incomplets.");
+}
+
+async Task CleanupWorkflowFixtureAsync(
+    string? supportRequestId,
+    string? serviceRequestId)
+{
+    if (supportRequestId is null && serviceRequestId is null)
+    {
+        return;
+    }
+
+    await using var connection = CreateMariaDbTestConnection();
+    await connection.OpenAsync();
+    await using var transaction = await connection.BeginTransactionAsync();
+    foreach (var table in new[]
+    {
+        "request_internal_notes",
+        "request_public_messages",
+        "request_events"
+    })
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            $"DELETE FROM {table} WHERE request_id IN (@support_id, @service_id);";
+        AddDbParameter(
+            command,
+            "@support_id",
+            supportRequestId ?? string.Empty);
+        AddDbParameter(
+            command,
+            "@service_id",
+            serviceRequestId ?? string.Empty);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    if (supportRequestId is not null)
+    {
+        await using var supportCommand = connection.CreateCommand();
+        supportCommand.Transaction = transaction;
+        supportCommand.CommandText =
+            "DELETE FROM support_requests WHERE id = @id;";
+        AddDbParameter(supportCommand, "@id", supportRequestId);
+        await supportCommand.ExecuteNonQueryAsync();
+    }
+
+    if (serviceRequestId is not null)
+    {
+        await using var serviceCommand = connection.CreateCommand();
+        serviceCommand.Transaction = transaction;
+        serviceCommand.CommandText =
+            "DELETE FROM service_requests WHERE id = @id;";
+        AddDbParameter(serviceCommand, "@id", serviceRequestId);
+        await serviceCommand.ExecuteNonQueryAsync();
+    }
+
+    await transaction.CommitAsync();
 }
 
 async Task VerifyPersistedSessionHashAsync(string sessionToken)

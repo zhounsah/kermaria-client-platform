@@ -3,9 +3,26 @@
 Chaque phase conserve les contraintes de `AGENTS.md` et `docs/SECURITY.md`.
 L'avancement d'une phase n'autorise jamais implicitement une intégration réelle.
 
-## Jalon V0.10 UX client
+## Jalon V0.11 workflow demandes
 
 Statut : **implémenté, validation utilisateur à réaliser avant commit**.
+
+- Statuts contrôlés pour les demandes support et de service.
+- Historique append-only des créations et changements de statut.
+- Notes internes réservées aux administrateurs.
+- Messages publics séparés, visibles par le client dans le portail.
+- Détails client isolés par la session et sans note interne.
+- Détails admin avec changement de statut et formulaires distincts.
+- Filtres simples par statut, priorité et ordre.
+- Audit des mutations sans contenu de note ou de message.
+
+La V0.11 ne déclenche aucun provisioning, AD, e-mail, paiement ou facturation.
+Elle ne permet aucune suppression ni modification sensible d'un client ou d'un
+service actif.
+
+## Jalon V0.10 UX client
+
+Statut : **validé, commité et tagué `v0.10`**.
 
 - États loading, erreur et vide standardisés.
 - Formulaires client validés et protégés contre les doubles soumissions.

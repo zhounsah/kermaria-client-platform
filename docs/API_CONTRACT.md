@@ -17,6 +17,14 @@ Le navigateur accède uniquement à `WEBPORTAL` :
 - `GET /api/admin/customers`
 - `GET /api/admin/support-requests`
 - `GET /api/admin/service-requests`
+- `GET /api/admin/support-requests/{id}`
+- `PATCH /api/admin/support-requests/{id}/status`
+- `POST /api/admin/support-requests/{id}/notes`
+- `POST /api/admin/support-requests/{id}/messages`
+- `GET /api/admin/service-requests/{id}`
+- `PATCH /api/admin/service-requests/{id}/status`
+- `POST /api/admin/service-requests/{id}/notes`
+- `POST /api/admin/service-requests/{id}/messages`
 - `GET /api/admin/sessions`
 - `GET /api/admin/audit-logs`
 
@@ -34,6 +42,14 @@ publiées par le reverse proxy et jamais appelées directement par le navigateur
 - `GET /internal/admin/customers`
 - `GET /internal/admin/support-requests`
 - `GET /internal/admin/service-requests`
+- `GET /internal/admin/support-requests/{id}`
+- `PATCH /internal/admin/support-requests/{id}/status`
+- `POST /internal/admin/support-requests/{id}/notes`
+- `POST /internal/admin/support-requests/{id}/messages`
+- `GET /internal/admin/service-requests/{id}`
+- `PATCH /internal/admin/service-requests/{id}/status`
+- `POST /internal/admin/service-requests/{id}/notes`
+- `POST /internal/admin/service-requests/{id}/messages`
 - `GET /internal/admin/sessions`
 - `GET /internal/admin/audit-logs`
 - `GET /internal/portal/summary`
@@ -42,6 +58,9 @@ publiées par le reverse proxy et jamais appelées directement par le navigateur
 - `GET /internal/portal/invoices`
 - `GET /internal/portal/service-catalog`
 - `GET /internal/portal/support-requests`
+- `GET /internal/portal/support-requests/{id}`
+- `GET /internal/portal/service-requests`
+- `GET /internal/portal/service-requests/{id}`
 - `POST /internal/portal/support-requests`
 - `POST /internal/portal/service-requests`
 - `GET /internal/ad/health`
@@ -161,7 +180,78 @@ Les vues sont limitées à 100 lignes, ou 10 audits dans l'overview :
 - `audit-logs` : événements récents sans payload sensible.
 
 L'adresse source est masquée et le User-Agent est tronqué. Aucune route admin
-ne crée, modifie ou supprime un client, une facture, une demande ou un rôle.
+ne crée, modifie ou supprime un client, une facture ou un rôle. Les seules
+mutations de demande sont celles décrites dans le workflow V0.11 ci-dessous.
+
+## Workflow des demandes V0.11
+
+La V0.11 autorise trois mutations admin bornées : changer un statut, ajouter
+une note interne et ajouter un message visible du client. Elle ne permet ni
+suppression, ni provisioning, ni modification du client ou du service.
+
+Statuts support :
+
+`open`, `in_progress`, `waiting_for_customer`, `resolved`, `closed`,
+`cancelled`.
+
+Statuts demande de service :
+
+`received`, `under_review`, `accepted`, `rejected`, `cancelled`, `completed`.
+
+Tous les passages entre statuts valides sont permis. Demander le statut déjà
+présent retourne un succès sans ajouter un second événement. Pour le support,
+`closed_at` est renseigné pour `closed` et `cancelled`, puis remis à `NULL`
+après réouverture.
+
+Payload de changement de statut :
+
+```json
+{
+  "status": "in_progress"
+}
+```
+
+Payload de note interne :
+
+```json
+{
+  "text": "Note opérationnelle sans secret."
+}
+```
+
+Payload de message public :
+
+```json
+{
+  "text": "Votre demande est en cours de traitement."
+}
+```
+
+Les notes et messages contiennent entre 3 et 2 000 caractères. Ils sont
+append-only et rendus comme texte brut. Les notes internes ne figurent jamais
+dans les DTO client. Les messages publics sont affichés côté client sous
+l'identité générique « Équipe Kermaria ».
+
+Les listes admin acceptent les filtres `status`, `priority` pour le support et
+`order=asc|desc`. La limite reste fixée à 100 éléments.
+
+Une réponse de mutation contient la référence, le statut courant, l'indication
+de changement et le `correlation_id`, sans contenu de note :
+
+```json
+{
+  "id": "identifiant",
+  "reference": "SUP-20260614-EXEMPLE",
+  "status": "in_progress",
+  "changed": true,
+  "correlation_id": "identifiant-de-correlation"
+}
+```
+
+Les détails client exposent uniquement les événements `created` et
+`status_changed`, ainsi que les messages publics. Les détails admin ajoutent
+les notes internes. Toutes les mutations exigent une session `internal_admin`
+validée par le BFF puis par API-INTERNAL.
 
 ## Endpoints portail
 

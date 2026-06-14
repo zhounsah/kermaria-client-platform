@@ -161,13 +161,31 @@ accepté comme autorité.
 
 - `client_user` accède uniquement aux routes métier du client issu de sa
   session.
-- `internal_admin` accède uniquement aux vues globales en lecture seule.
+- `internal_admin` accède aux vues globales et aux seules mutations de workflow
+  V0.11 : statut, note interne et message public d'une demande.
 - Le contrôle du rôle est exécuté dans le BFF et répété dans API-INTERNAL.
 - L'interface admin ne permet ni changement de rôle, ni création/suppression
-  de compte, ni mutation métier.
+  de compte, ni mutation de client, service, facture ou intégration.
 - Les sessions admin n'exposent ni référence client, ni token, ni hash.
 - Les adresses réseau sont masquées et les User-Agent tronqués dans les vues.
 - Les accès admin autorisés et refusés sont audités.
+
+## Notes et messages des demandes
+
+Les notes internes et les messages publics utilisent des tables, contrats et
+formulaires séparés. Cette séparation est une frontière de confidentialité :
+
+- une note interne n'est jamais incluse dans une réponse client ;
+- un message public n'affiche pas l'identité technique de son auteur ;
+- les contenus sont limités à 2 000 caractères et rendus comme texte brut ;
+- aucun HTML ou Markdown interprété n'est accepté ;
+- aucune édition ou suppression silencieuse n'est prévue ;
+- l'audit conserve l'action et l'identifiant de demande, pas le contenu ;
+- l'interface rappelle de ne jamais saisir mot de passe, token ou secret.
+
+Un changement de statut ne déclenche aucune action externe. Il ne provisionne
+pas de service, ne contacte pas AD, n'envoie pas d'e-mail et ne lance ni
+facturation ni paiement.
 
 La protection anti-brute-force V0.9 est volontairement simple et centrée sur
 le compte : `LOGIN_MAX_FAILURES` définit le seuil et

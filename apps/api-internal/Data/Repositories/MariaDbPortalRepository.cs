@@ -50,6 +50,16 @@ public sealed class MariaDbPortalRepository : IPortalRepository
                     FROM support_requests sr
                     WHERE sr.customer_id = c.id AND sr.status <> 'closed'
                 ) AS open_support_count,
+                (
+                    SELECT COUNT(*)
+                    FROM service_requests request
+                    WHERE request.customer_id = c.id
+                      AND request.status NOT IN (
+                          'rejected',
+                          'cancelled',
+                          'completed'
+                      )
+                ) AS active_service_request_count,
                 GREATEST(
                     c.updated_at,
                     COALESCE((SELECT MAX(s.updated_at) FROM customer_services s WHERE s.customer_id = c.id), c.updated_at),
@@ -79,6 +89,7 @@ public sealed class MariaDbPortalRepository : IPortalRepository
             reader.GetInt32("pending_invoice_count"),
             reader.GetDecimal("pending_invoice_total"),
             reader.GetInt32("open_support_count"),
+            reader.GetInt32("active_service_request_count"),
             ToUtcIso(reader.GetDateTime("last_updated_at")));
     }
 
@@ -378,6 +389,16 @@ public sealed class MariaDbPortalRepository : IPortalRepository
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
 
+        await InsertRequestCreatedEventAsync(
+            connection,
+            transaction,
+            RequestTypes.Support,
+            id,
+            session.UserId,
+            "open",
+            correlationId,
+            now,
+            cancellationToken);
         await InsertAuditAsync(
             connection,
             transaction,
@@ -468,6 +489,16 @@ public sealed class MariaDbPortalRepository : IPortalRepository
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
 
+        await InsertRequestCreatedEventAsync(
+            connection,
+            transaction,
+            RequestTypes.Service,
+            id,
+            session.UserId,
+            "received",
+            correlationId,
+            now,
+            cancellationToken);
         await InsertAuditAsync(
             connection,
             transaction,
@@ -626,6 +657,53 @@ public sealed class MariaDbPortalRepository : IPortalRepository
         command.Parameters.AddWithValue(
             "@source_address",
             DbValue(auditEvent.SourceAddress));
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task InsertRequestCreatedEventAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        string requestType,
+        string requestId,
+        string actorUserId,
+        string status,
+        string correlationId,
+        DateTime createdAtUtc,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            INSERT INTO request_events (
+                id,
+                request_type,
+                request_id,
+                actor_user_id,
+                event_type,
+                old_status,
+                new_status,
+                correlation_id,
+                created_at
+            ) VALUES (
+                @id,
+                @request_type,
+                @request_id,
+                @actor_user_id,
+                'created',
+                NULL,
+                @new_status,
+                @correlation_id,
+                @created_at
+            );
+            """;
+        command.Parameters.AddWithValue("@id", Guid.NewGuid().ToString("D"));
+        command.Parameters.AddWithValue("@request_type", requestType);
+        command.Parameters.AddWithValue("@request_id", requestId);
+        command.Parameters.AddWithValue("@actor_user_id", actorUserId);
+        command.Parameters.AddWithValue("@new_status", status);
+        command.Parameters.AddWithValue("@correlation_id", correlationId);
+        command.Parameters.AddWithValue("@created_at", createdAtUtc);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 

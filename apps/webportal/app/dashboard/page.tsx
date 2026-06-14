@@ -5,6 +5,7 @@ import { ErrorState } from "@/components/ErrorState";
 import { MetricCard } from "@/components/MetricCard";
 import { MockNotice } from "@/components/MockNotice";
 import { PageHeader } from "@/components/PageHeader";
+import { RequestStatusBadge } from "@/components/RequestStatusBadge";
 import { SectionCard } from "@/components/SectionCard";
 import { SectionHeading } from "@/components/SectionHeading";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -12,14 +13,15 @@ import {
   formatCurrency,
   formatDate,
   invoiceStatus,
+  serviceRequestStatus,
   serviceStatus,
-  supportStatus,
 } from "@/lib/formatters";
 import {
   getClientProfile,
   getInvoices,
   getPortalSummary,
   getServices,
+  getServiceRequests,
   getSupportRequests,
   resolveDataSource,
 } from "@/lib/internal-api";
@@ -39,12 +41,14 @@ export default async function DashboardPage() {
     servicesResult,
     invoicesResult,
     supportResult,
+    serviceRequestsResult,
   ] = await Promise.all([
       getPortalSummary(),
       getClientProfile(),
       getServices(),
       getInvoices(),
       getSupportRequests(),
+      getServiceRequests(),
     ]);
 
   const summary = summaryResult.data;
@@ -52,12 +56,14 @@ export default async function DashboardPage() {
   const services = servicesResult.data;
   const invoices = invoicesResult.data;
   const supportRequests = supportResult.data;
+  const serviceRequests = serviceRequestsResult.data;
   const source = resolveDataSource([
     summaryResult.source,
     profileResult.source,
     servicesResult.source,
     invoicesResult.source,
     supportResult.source,
+    serviceRequestsResult.source,
   ]);
   const partialError = [
     summaryResult,
@@ -65,6 +71,7 @@ export default async function DashboardPage() {
     servicesResult,
     invoicesResult,
     supportResult,
+    serviceRequestsResult,
   ].find((result) => result.error);
 
   return (
@@ -107,8 +114,8 @@ export default async function DashboardPage() {
           value={String(summary?.pendingInvoiceCount ?? 0)}
         />
         <MetricCard
-          detail="Demandes rattachées à votre compte"
-          label="Demandes ouvertes"
+          detail={`${summary?.activeServiceRequestCount ?? 0} demande(s) de service en suivi`}
+          label="Support ouvert"
           tone="blue"
           value={String(summary?.openSupportRequestCount ?? 0)}
         />
@@ -227,38 +234,62 @@ export default async function DashboardPage() {
           )}
         </SectionCard>
 
-        <SectionCard ariaLabel="Demandes support récentes">
+        <SectionCard ariaLabel="Demandes récentes">
           <SectionHeading
-            action={<Link href="/support">Ouvrir le support</Link>}
-            title="Demandes support récentes"
+            action={<Link href="/support">Voir le support</Link>}
+            title="Demandes récentes"
           />
-          {supportResult.error ? (
+          {supportResult.error || serviceRequestsResult.error ? (
             <ErrorState
               compact
-              description="Impossible de charger les demandes support."
-              reference={supportResult.correlationId}
-              title="Support indisponible"
+              description="Impossible de charger toutes les demandes récentes."
+              reference={
+                supportResult.error
+                  ? supportResult.correlationId
+                  : serviceRequestsResult.correlationId
+              }
+              title="Suivi indisponible"
             />
-          ) : supportRequests.length === 0 ? (
+          ) : supportRequests.length === 0 && serviceRequests.length === 0 ? (
             <EmptyState
-              description="Aucune demande support n’est ouverte pour le moment."
+              description="Aucune demande n’est disponible pour le moment."
               title="Aucune demande"
             />
           ) : (
             <div className="stack-list">
-              {supportRequests.slice(0, 2).map((request) => {
-                const status = supportStatus[request.status];
-
+              {supportRequests.slice(0, 1).map((request) => (
+                <Link
+                  className="stack-row"
+                  href={`/support/${encodeURIComponent(request.id)}`}
+                  key={request.id}
+                >
+                  <div className="stack-row-main">
+                    <strong>{request.subject}</strong>
+                    <span>{request.reference} · Support</span>
+                  </div>
+                  <RequestStatusBadge
+                    requestType="support"
+                    status={request.status}
+                  />
+                </Link>
+              ))}
+              {serviceRequests.slice(0, 1).map((request) => {
+                const status = serviceRequestStatus[request.status];
                 return (
-                  <article className="stack-row" key={request.id}>
+                  <Link
+                    className="stack-row"
+                    href={`/request-service/${encodeURIComponent(request.id)}`}
+                    key={request.id}
+                  >
                     <div className="stack-row-main">
                       <strong>{request.subject}</strong>
-                      <span>
-                        {request.reference} - {request.serviceName}
-                      </span>
+                      <span>{request.reference} · {status.description}</span>
                     </div>
-                    <StatusBadge label={status.label} tone={status.tone} />
-                  </article>
+                    <RequestStatusBadge
+                      requestType="service"
+                      status={request.status}
+                    />
+                  </Link>
                 );
               })}
             </div>

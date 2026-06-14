@@ -6,6 +6,6 @@ import { handleAdminGet } from "@/lib/admin-bff";
 export function GET(request: NextRequest) {
   return handleAdminGet<AdminServiceRequestSummary[]>(
     request,
-    "/internal/admin/service-requests",
+    `/internal/admin/service-requests${request.nextUrl.search}`,
   );
 }

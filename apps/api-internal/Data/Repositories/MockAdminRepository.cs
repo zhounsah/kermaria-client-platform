@@ -50,6 +50,7 @@ public sealed class MockAdminRepository : IAdminRepository
         => Task.FromResult<IReadOnlyList<AdminSupportRequestSummary>>(
             MockPortalData.SupportRequests.Select(request =>
                 new AdminSupportRequestSummary(
+                    request.Id,
                     request.Reference,
                     MockPortalData.Profile.CustomerReference,
                     MockPortalData.Profile.CompanyName,
@@ -65,6 +66,7 @@ public sealed class MockAdminRepository : IAdminRepository
         => Task.FromResult<IReadOnlyList<AdminServiceRequestSummary>>(
         [
             new(
+                "service-request-mock-001",
                 "SRV-MOCK-ADMIN-001",
                 MockPortalData.Profile.CustomerReference,
                 MockPortalData.Profile.CompanyName,
@@ -73,6 +75,7 @@ public sealed class MockAdminRepository : IAdminRepository
                 "Demande fictive en lecture seule.",
                 "received",
                 false,
+                "2026-06-12T10:00:00Z",
                 "2026-06-12T10:00:00Z")
         ]);
 

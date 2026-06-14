@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { FormSection } from "@/components/FormSection";
@@ -5,6 +7,7 @@ import { MockNotice } from "@/components/MockNotice";
 import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { SupportRequestForm } from "@/components/SupportRequestForm";
+import { RequestStatusBadge } from "@/components/RequestStatusBadge";
 import { formatDate, supportStatus } from "@/lib/formatters";
 import { requireClientSession } from "@/lib/auth";
 import {
@@ -90,14 +93,24 @@ export default async function SupportPage() {
                   <article className="ticket-card" key={request.id}>
                     <div className="ticket-card-header">
                       <span className="card-kicker">{request.reference}</span>
-                      <StatusBadge label={status.label} tone={status.tone} />
+                      <RequestStatusBadge
+                        requestType="support"
+                        status={request.status}
+                      />
                     </div>
                     <h3>{request.subject}</h3>
                     <p>{request.serviceName}</p>
+                    <p className="status-description">{status.description}</p>
                     <div className="ticket-meta">
                       <span>Priorité {priorityLabels[request.priority]}</span>
                       <span>Mis à jour le {formatDate(request.updatedAt)}</span>
                     </div>
+                    <Link
+                      className="text-link"
+                      href={`/support/${encodeURIComponent(request.id)}`}
+                    >
+                      Consulter le suivi
+                    </Link>
                   </article>
                 );
               })}

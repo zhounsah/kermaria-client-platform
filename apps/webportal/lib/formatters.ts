@@ -11,9 +11,70 @@ export const invoiceStatus = {
 } as const;
 
 export const supportStatus = {
-  open: { label: "Ouverte", tone: "info" },
-  in_progress: { label: "En cours", tone: "warning" },
-  closed: { label: "Clôturée", tone: "neutral" },
+  open: {
+    label: "Ouverte",
+    tone: "info",
+    description: "Votre demande a été reçue.",
+  },
+  in_progress: {
+    label: "En cours",
+    tone: "warning",
+    description: "Votre demande est en cours de traitement.",
+  },
+  waiting_for_customer: {
+    label: "En attente client",
+    tone: "warning",
+    description: "Votre demande est en attente d’un retour de votre part.",
+  },
+  resolved: {
+    label: "Résolue",
+    tone: "success",
+    description: "Votre demande a été résolue.",
+  },
+  closed: {
+    label: "Clôturée",
+    tone: "neutral",
+    description: "Le suivi de cette demande est clôturé.",
+  },
+  cancelled: {
+    label: "Annulée",
+    tone: "neutral",
+    description: "Cette demande a été annulée.",
+  },
+} as const;
+
+export const serviceRequestStatus = {
+  received: {
+    label: "Reçue",
+    tone: "info",
+    description: "Votre demande a été reçue.",
+  },
+  under_review: {
+    label: "En étude",
+    tone: "warning",
+    description: "Votre demande de service est en cours d’étude.",
+  },
+  accepted: {
+    label: "Acceptée",
+    tone: "success",
+    description:
+      "Votre demande a été acceptée. Elle sera traitée manuellement.",
+  },
+  rejected: {
+    label: "Refusée",
+    tone: "danger",
+    description: "Votre demande ne peut pas être retenue dans ce périmètre.",
+  },
+  cancelled: {
+    label: "Annulée",
+    tone: "neutral",
+    description: "Cette demande a été annulée.",
+  },
+  completed: {
+    label: "Terminée",
+    tone: "success",
+    description: "Le traitement manuel de cette demande est terminé.",
+  },
 } as const;
 
 export function formatDate(value: string) {

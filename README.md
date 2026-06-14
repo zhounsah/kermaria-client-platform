@@ -3,10 +3,10 @@
 Plateforme technique de l'espace client **Zachary HOUNSA-HOUNKPA EI** pour
 `clients.zacharyhounsa.ovh`. Ce dépôt reste séparé du site vitrine Astro.
 
-## État V0.10
+## État V0.11
 
-La V0.10 conserve le durcissement V0.9 et améliore la robustesse du portail
-client :
+La V0.11 conserve le durcissement V0.9 et l'UX V0.10, puis ajoute un workflow
+limité aux demandes support et aux demandes de service :
 
 - un portail Next.js responsive et ses routes BFF ;
 - une API ASP.NET Core privée ;
@@ -35,7 +35,12 @@ client :
 - des formulaires avec validation visible, timeout et anti-double soumission ;
 - un parsing JSON contrôlé côté navigateur et côté BFF ;
 - une présentation responsive renforcée, notamment pour les factures ;
-- des messages moins techniques et plus adaptés à un espace client.
+- des messages moins techniques et plus adaptés à un espace client ;
+- des statuts contrôlés et compréhensibles pour les deux types de demandes ;
+- des pages de détail client sans donnée interne ;
+- des pages de détail admin avec historique, note interne et message public ;
+- des mutations admin limitées au statut et aux messages append-only ;
+- une séparation persistée entre notes internes et messages visibles du client.
 
 Le SSO, le MFA, la récupération automatisée de mot de passe, les actions AD,
 le paiement, la facturation réelle et les intégrations NAS/RDS/VPN ne sont pas
@@ -165,6 +170,9 @@ n'applique jamais automatiquement une migration.
 variables `DEMO_*` sont injectées. Les mots de passe ne sont ni affichés ni
 écrits en clair. La migration `003_admin_and_auth_hardening.sql` ajoute le
 rôle et l'état de verrouillage sans supprimer les données existantes.
+La migration `004_request_workflow.sql` ajoute les événements, notes internes
+et messages publics, puis initialise un événement `created` pour les demandes
+existantes.
 
 Les tests MariaDB sont opt-in. Ils créent des sessions et demandes fictives,
 ainsi qu'un client d'isolation temporaire supprimé en fin de test :
@@ -202,11 +210,12 @@ serveur sans exposer son URL.
 Pages publiques : `/` et `/login`.
 
 Pages privées : `/dashboard`, `/services`, `/invoices`, `/support`,
-`/request-service`, `/profile` et `/password`.
+`/support/[id]`, `/request-service`, `/request-service/[id]`, `/profile` et
+`/password`.
 
 Pages internes, réservées à `internal_admin` : `/admin`,
 `/admin/customers`, `/admin/support-requests`, `/admin/service-requests`,
-`/admin/sessions` et `/admin/audit-logs`.
+leurs pages de détail, `/admin/sessions` et `/admin/audit-logs`.
 
 Routes BFF :
 
@@ -223,6 +232,14 @@ Routes BFF :
 - `GET /api/admin/customers`
 - `GET /api/admin/support-requests`
 - `GET /api/admin/service-requests`
+- `GET /api/admin/support-requests/[id]`
+- `PATCH /api/admin/support-requests/[id]/status`
+- `POST /api/admin/support-requests/[id]/notes`
+- `POST /api/admin/support-requests/[id]/messages`
+- `GET /api/admin/service-requests/[id]`
+- `PATCH /api/admin/service-requests/[id]/status`
+- `POST /api/admin/service-requests/[id]/notes`
+- `POST /api/admin/service-requests/[id]/messages`
 - `GET /api/admin/sessions`
 - `GET /api/admin/audit-logs`
 
@@ -238,6 +255,8 @@ Les routes `GET|POST /internal/*` sont strictement privées et exigent
 - Les mots de passe bruts, tokens et chaînes de connexion ne sont pas loggés.
 - Aucun token de session brut n'est stocké dans MariaDB.
 - Aucun token ni hash de session n'est exposé dans les vues admin.
+- Les notes internes ne sont jamais incluses dans les contrats client.
+- Les messages de demande sont rendus comme texte brut, jamais comme HTML.
 - Le `customer_id` vient uniquement de la session validée par API-INTERNAL.
 - `client_user` est refusé sur les routes admin ; `internal_admin` est refusé
   sur les vues métier client pour éviter toute confusion de contexte.
@@ -265,4 +284,5 @@ Les routes `GET|POST /internal/*` sont strictement privées et exigent
 - [Sauvegarde et restauration](docs/BACKUP_RESTORE.md)
 - [Rotation des secrets](docs/SECRET_ROTATION.md)
 - [UX client V0.10](docs/V0.10_UX_CLIENT.md)
+- [Workflow demandes V0.11](docs/V0.11_REQUEST_WORKFLOW.md)
 - [Règles permanentes](AGENTS.md)

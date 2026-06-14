@@ -103,6 +103,39 @@ public sealed class ServiceRequest : UtcEntity
     public string Status { get; set; } = "received";
 }
 
+public sealed class RequestEvent
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("D");
+    public string RequestType { get; set; } = string.Empty;
+    public string RequestId { get; set; } = string.Empty;
+    public string? ActorUserId { get; set; }
+    public string EventType { get; set; } = string.Empty;
+    public string? OldStatus { get; set; }
+    public string? NewStatus { get; set; }
+    public string CorrelationId { get; set; } = string.Empty;
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
+public sealed class RequestInternalNote
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("D");
+    public string RequestType { get; set; } = string.Empty;
+    public string RequestId { get; set; } = string.Empty;
+    public string AuthorUserId { get; set; } = string.Empty;
+    public string Note { get; set; } = string.Empty;
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
+public sealed class RequestPublicMessage
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("D");
+    public string RequestType { get; set; } = string.Empty;
+    public string RequestId { get; set; } = string.Empty;
+    public string AuthorUserId { get; set; } = string.Empty;
+    public string Message { get; set; } = string.Empty;
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
 public sealed class AuditLog
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("D");

@@ -239,5 +239,6 @@ export const mockPortalSummary: PortalSummary = {
   openSupportRequestCount: mockSupportRequests.filter(
     (request) => request.status !== "closed",
   ).length,
+  activeServiceRequestCount: 1,
   lastUpdatedAt: "2026-06-11T08:45:00Z",
 };

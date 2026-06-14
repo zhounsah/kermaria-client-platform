@@ -1,26 +1,47 @@
+import Link from "next/link";
+
 import { AdminDataTable } from "@/components/AdminDataTable";
+import { AdminRequestFilters } from "@/components/AdminRequestFilters";
 import { EmptyState } from "@/components/EmptyState";
 import { MockNotice } from "@/components/MockNotice";
 import { PageHeader } from "@/components/PageHeader";
+import { RequestStatusBadge } from "@/components/RequestStatusBadge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { requireAdminSession } from "@/lib/auth";
 import { formatDateTime } from "@/lib/formatters";
-import { getAdminServiceRequests } from "@/lib/internal-api";
+import { getAdminServiceRequestsFiltered } from "@/lib/internal-api";
 
 export const metadata = { title: "Demandes service - Administration" };
 export const dynamic = "force-dynamic";
 
-export default async function AdminServiceRequestsPage() {
+type PageProps = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
+
+export default async function AdminServiceRequestsPage({
+  searchParams,
+}: PageProps) {
   await requireAdminSession();
-  const result = await getAdminServiceRequests();
+  const filters = await searchParams;
+  const status = first(filters.status);
+  const order = first(filters.order) ?? "newest";
+  const query = new URLSearchParams();
+  if (status) query.set("status", status);
+  query.set("order", order);
+  const result = await getAdminServiceRequestsFiltered(`?${query}`);
 
   return (
     <>
       <PageHeader
-        action={<StatusBadge label="Lecture seule" tone="info" />}
-        description="Cette vue ne génère aucun devis, contrat, facture ou paiement."
+        action={<StatusBadge label="Traitement manuel" tone="info" />}
+        description="Le workflow suit l’étude de la demande sans créer de devis, facture, paiement ou service automatiquement."
         eyebrow="Administration interne"
         title="Demandes de service"
+      />
+      <AdminRequestFilters
+        order={order}
+        requestType="service"
+        status={status}
       />
       {result.data.length > 0 ? (
         <AdminDataTable
@@ -30,27 +51,33 @@ export default async function AdminServiceRequestsPage() {
             "Client",
             "Catalogue",
             "Sujet",
-            "Description",
             "Statut",
-            "Persistée",
-            "Création",
+            "Mise à jour",
+            "Détail",
           ]}
           rows={result.data.map((request) => [
-            <code key={`${request.reference}-reference`}>
-              {request.reference}
-            </code>,
+            <code key={`${request.id}-reference`}>{request.reference}</code>,
             `${request.customerName} (${request.customerReference})`,
             request.catalogItemName,
             request.subject,
-            request.descriptionPreview || "Non renseignée",
-            request.status,
-            request.persisted ? "Oui" : "Non",
-            formatDateTime(request.createdAt),
+            <RequestStatusBadge
+              key={`${request.id}-status`}
+              requestType="service"
+              status={request.status}
+            />,
+            formatDateTime(request.updatedAt),
+            <Link
+              className="table-action"
+              href={`/admin/service-requests/${encodeURIComponent(request.id)}`}
+              key={`${request.id}-detail`}
+            >
+              Consulter
+            </Link>,
           ])}
         />
       ) : (
         <EmptyState
-          description="Aucune demande de service n'est disponible."
+          description="Aucune demande de service ne correspond aux filtres."
           title="Aucune demande"
         />
       )}
@@ -60,4 +87,8 @@ export default async function AdminServiceRequestsPage() {
       />
     </>
   );
+}
+
+function first(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
 }

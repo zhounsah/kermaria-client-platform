@@ -46,6 +46,7 @@ builder.Services.AddSingleton(authConfiguration);
 builder.Services.AddSingleton<IPortalPasswordService, PortalPasswordService>();
 builder.Services.AddSingleton<ISessionTokenService, SessionTokenService>();
 builder.Services.AddSingleton<MockAuthenticationStore>();
+builder.Services.AddSingleton<MockRequestWorkflowStore>();
 builder.Services.AddScoped<IPortalRepository>(
     _ => sqlConfiguration.IsPersistent
         ? new MariaDbPortalRepository(sqlConfiguration)
@@ -60,9 +61,15 @@ builder.Services.AddScoped<IAdminRepository>(
         ? new MariaDbAdminRepository(sqlConfiguration)
         : new MockAdminRepository(
             serviceProvider.GetRequiredService<MockAuthenticationStore>()));
+builder.Services.AddScoped<IRequestWorkflowRepository>(
+    serviceProvider => sqlConfiguration.IsPersistent
+        ? new MariaDbRequestWorkflowRepository(sqlConfiguration)
+        : new MockRequestWorkflowRepository(
+            serviceProvider.GetRequiredService<MockRequestWorkflowStore>()));
 builder.Services.AddScoped<IPortalService, PortalService>();
 builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
 builder.Services.AddScoped<IAdminService, AdminService>();
+builder.Services.AddScoped<IRequestWorkflowService, RequestWorkflowService>();
 builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddTransient<MariaDbMigrationRunner>();
 builder.Services.AddSingleton<OperationalReadinessService>();
@@ -345,18 +352,76 @@ app.MapGet(
     "/internal/portal/support-requests",
     async (
         HttpContext context,
-        IPortalService service,
+        IRequestWorkflowService service,
         IAuthenticationService authenticationService) =>
     {
         var session = await ResolveClientSessionAsync(
             context,
             authenticationService,
             context.RequestServices.GetRequiredService<IAuditService>());
-        return PortalOk(
+        return WorkflowOk(
             context,
             service,
-            await service.GetSupportRequestsAsync(
+            await service.GetClientSupportRequestsAsync(
                 session,
+                context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/portal/service-requests",
+    async (
+        HttpContext context,
+        IRequestWorkflowService service,
+        IAuthenticationService authenticationService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            context.RequestServices.GetRequiredService<IAuditService>());
+        return WorkflowOk(
+            context,
+            service,
+            await service.GetClientServiceRequestsAsync(
+                session,
+                context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/portal/support-requests/{id}",
+    async (
+        string id,
+        HttpContext context,
+        IRequestWorkflowService service,
+        IAuthenticationService authenticationService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            context.RequestServices.GetRequiredService<IAuditService>());
+        return WorkflowOk(
+            context,
+            service,
+            await service.GetClientSupportRequestAsync(
+                session,
+                id,
+                context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/portal/service-requests/{id}",
+    async (
+        string id,
+        HttpContext context,
+        IRequestWorkflowService service,
+        IAuthenticationService authenticationService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            context.RequestServices.GetRequiredService<IAuditService>());
+        return WorkflowOk(
+            context,
+            service,
+            await service.GetClientServiceRequestAsync(
+                session,
+                id,
                 context.RequestAborted));
     });
 app.MapPost(
@@ -408,7 +473,7 @@ app.MapGet(
     "/internal/admin/support-requests",
     async (
         HttpContext context,
-        IAdminService service,
+        IRequestWorkflowService service,
         IAuthenticationService authenticationService,
         IAuditService auditService) =>
     {
@@ -417,16 +482,18 @@ app.MapGet(
             authenticationService,
             auditService,
             "admin.support_requests.read");
-        return AdminOk(
+        return WorkflowOk(
             context,
             service,
-            await service.GetSupportRequestsAsync(context.RequestAborted));
+            await service.GetAdminSupportRequestsAsync(
+                ReadAdminRequestListQuery(context),
+                context.RequestAborted));
     });
 app.MapGet(
     "/internal/admin/service-requests",
     async (
         HttpContext context,
-        IAdminService service,
+        IRequestWorkflowService service,
         IAuthenticationService authenticationService,
         IAuditService auditService) =>
     {
@@ -435,11 +502,149 @@ app.MapGet(
             authenticationService,
             auditService,
             "admin.service_requests.read");
-        return AdminOk(
+        return WorkflowOk(
             context,
             service,
-            await service.GetServiceRequestsAsync(context.RequestAborted));
+            await service.GetAdminServiceRequestsAsync(
+                ReadAdminRequestListQuery(context),
+                context.RequestAborted));
     });
+app.MapGet(
+    "/internal/admin/support-requests/{id}",
+    async (
+        string id,
+        HttpContext context,
+        IRequestWorkflowService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.support_request.read");
+        return WorkflowOk(
+            context,
+            service,
+            await service.GetAdminSupportRequestAsync(
+                id,
+                context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/admin/service-requests/{id}",
+    async (
+        string id,
+        HttpContext context,
+        IRequestWorkflowService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.service_request.read");
+        return WorkflowOk(
+            context,
+            service,
+            await service.GetAdminServiceRequestAsync(
+                id,
+                context.RequestAborted));
+    });
+app.MapPatch(
+    "/internal/admin/support-requests/{id}/status",
+    (
+        string id,
+        HttpContext context,
+        IRequestWorkflowService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+        UpdateRequestStatus(
+            id,
+            RequestTypes.Support,
+            context,
+            service,
+            authenticationService,
+            auditService));
+app.MapPatch(
+    "/internal/admin/service-requests/{id}/status",
+    (
+        string id,
+        HttpContext context,
+        IRequestWorkflowService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+        UpdateRequestStatus(
+            id,
+            RequestTypes.Service,
+            context,
+            service,
+            authenticationService,
+            auditService));
+app.MapPost(
+    "/internal/admin/support-requests/{id}/notes",
+    (
+        string id,
+        HttpContext context,
+        IRequestWorkflowService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+        AddRequestText(
+            id,
+            RequestTypes.Support,
+            isPublic: false,
+            context,
+            service,
+            authenticationService,
+            auditService));
+app.MapPost(
+    "/internal/admin/service-requests/{id}/notes",
+    (
+        string id,
+        HttpContext context,
+        IRequestWorkflowService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+        AddRequestText(
+            id,
+            RequestTypes.Service,
+            isPublic: false,
+            context,
+            service,
+            authenticationService,
+            auditService));
+app.MapPost(
+    "/internal/admin/support-requests/{id}/messages",
+    (
+        string id,
+        HttpContext context,
+        IRequestWorkflowService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+        AddRequestText(
+            id,
+            RequestTypes.Support,
+            isPublic: true,
+            context,
+            service,
+            authenticationService,
+            auditService));
+app.MapPost(
+    "/internal/admin/service-requests/{id}/messages",
+    (
+        string id,
+        HttpContext context,
+        IRequestWorkflowService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+        AddRequestText(
+            id,
+            RequestTypes.Service,
+            isPublic: true,
+            context,
+            service,
+            authenticationService,
+            auditService));
 app.MapGet(
     "/internal/admin/sessions",
     async (
@@ -577,6 +782,106 @@ static IResult AdminOk<T>(
     context.Response.Headers["X-Data-Source"] =
         service.IsPersistent ? "mariadb" : "mock";
     return Results.Ok(data);
+}
+
+static IResult WorkflowOk<T>(
+    HttpContext context,
+    IRequestWorkflowService service,
+    T data)
+{
+    context.Response.Headers["X-Data-Source"] =
+        service.IsPersistent ? "mariadb" : "mock";
+    return Results.Ok(data);
+}
+
+static AdminRequestListQuery ReadAdminRequestListQuery(HttpContext context)
+    => new(
+        context.Request.Query["status"].FirstOrDefault(),
+        context.Request.Query["priority"].FirstOrDefault(),
+        context.Request.Query["order"].FirstOrDefault() ?? "newest");
+
+static async Task<IResult> UpdateRequestStatus(
+    string requestId,
+    string requestType,
+    HttpContext context,
+    IRequestWorkflowService service,
+    IAuthenticationService authenticationService,
+    IAuditService auditService)
+{
+    var actor = await ResolveAdminSessionAsync(
+        context,
+        authenticationService,
+        auditService,
+        $"admin.{requestType}_request.status.write");
+    var payload = await ReadPayload<RequestStatusPayload>(context)
+        ?? throw new PortalValidationException();
+    var result = await service.UpdateStatusAsync(
+        actor,
+        requestType,
+        requestId,
+        payload,
+        context.GetCorrelationId(),
+        context.RequestAborted);
+
+    await auditService.RecordAsync(
+        new AuditEvent(
+            context.GetCorrelationId(),
+            $"{requestType}_request.status.change",
+            result.Changed ? "success" : "unchanged",
+            TargetType: $"{requestType}_request",
+            TargetReference: result.Reference,
+            ActorUserId: actor.UserId,
+            SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+        context.RequestAborted);
+
+    return Results.Ok(result);
+}
+
+static async Task<IResult> AddRequestText(
+    string requestId,
+    string requestType,
+    bool isPublic,
+    HttpContext context,
+    IRequestWorkflowService service,
+    IAuthenticationService authenticationService,
+    IAuditService auditService)
+{
+    var action = isPublic ? "public_message" : "internal_note";
+    var actor = await ResolveAdminSessionAsync(
+        context,
+        authenticationService,
+        auditService,
+        $"admin.{requestType}_request.{action}.write");
+    var payload = await ReadPayload<RequestTextPayload>(context)
+        ?? throw new PortalValidationException();
+    var result = isPublic
+        ? await service.AddPublicMessageAsync(
+            actor,
+            requestType,
+            requestId,
+            payload,
+            context.GetCorrelationId(),
+            context.RequestAborted)
+        : await service.AddInternalNoteAsync(
+            actor,
+            requestType,
+            requestId,
+            payload,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+
+    await auditService.RecordAsync(
+        new AuditEvent(
+            context.GetCorrelationId(),
+            $"{requestType}_request.{action}.add",
+            "success",
+            TargetType: $"{requestType}_request",
+            TargetReference: result.Reference,
+            ActorUserId: actor.UserId,
+            SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+        context.RequestAborted);
+
+    return Results.Ok(result);
 }
 
 static async Task<IResult> CreateSupportRequest(

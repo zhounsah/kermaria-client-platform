@@ -20,6 +20,7 @@ public sealed record PortalSummary(
     int PendingInvoiceCount,
     decimal PendingInvoiceTotal,
     int OpenSupportRequestCount,
+    int ActiveServiceRequestCount,
     string LastUpdatedAt);
 
 public sealed record ServiceSummary(
@@ -54,6 +55,52 @@ public sealed record SupportRequestSummary(
     string CreatedAt,
     string UpdatedAt);
 
+public sealed record ServiceRequestSummary(
+    string Id,
+    string Reference,
+    string CatalogItemName,
+    string Subject,
+    string Status,
+    string CreatedAt,
+    string UpdatedAt);
+
+public sealed record PortalSupportRequestDetail(
+    string Id,
+    string Reference,
+    string Subject,
+    string Description,
+    string Status,
+    string Priority,
+    string ServiceName,
+    string CreatedAt,
+    string UpdatedAt,
+    IReadOnlyList<RequestEventSummary> Events,
+    IReadOnlyList<PublicRequestMessage> PublicMessages);
+
+public sealed record PortalServiceRequestDetail(
+    string Id,
+    string Reference,
+    string CatalogItemName,
+    string Subject,
+    string Description,
+    string Status,
+    string CreatedAt,
+    string UpdatedAt,
+    IReadOnlyList<RequestEventSummary> Events,
+    IReadOnlyList<PublicRequestMessage> PublicMessages);
+
+public sealed record RequestEventSummary(
+    string EventType,
+    string? OldStatus,
+    string? NewStatus,
+    string OccurredAt);
+
+public sealed record PublicRequestMessage(
+    string Id,
+    string Message,
+    string AuthorLabel,
+    string CreatedAt);
+
 public sealed record ServiceCatalogItem(
     string Id,
     string Name,
@@ -72,6 +119,17 @@ public sealed record ServiceRequestPayload(
     string? CatalogItemId,
     string? Subject,
     string? Description);
+
+public sealed record RequestStatusPayload(string? Status);
+
+public sealed record RequestTextPayload(string? Text);
+
+public sealed record RequestMutationResponse(
+    string Id,
+    string Reference,
+    string Status,
+    bool Changed,
+    [property: JsonPropertyName("correlation_id")] string CorrelationId);
 
 public sealed record MockSubmissionResponse(
     string Reference,

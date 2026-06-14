@@ -146,6 +146,7 @@ public sealed class MariaDbAdminRepository : IAdminRepository
         command.CommandText =
             """
             SELECT
+                sr.id,
                 sr.reference,
                 c.external_reference AS customer_reference,
                 c.display_name AS customer_name,
@@ -169,6 +170,7 @@ public sealed class MariaDbAdminRepository : IAdminRepository
         while (await reader.ReadAsync(cancellationToken))
         {
             requests.Add(new AdminSupportRequestSummary(
+                MariaDbIdentifierReader.ReadRequired(reader, "id"),
                 reader.GetString("reference"),
                 reader.GetString("customer_reference"),
                 reader.GetString("customer_name"),
@@ -192,6 +194,7 @@ public sealed class MariaDbAdminRepository : IAdminRepository
         command.CommandText =
             """
             SELECT
+                r.id,
                 r.reference,
                 c.external_reference AS customer_reference,
                 c.display_name AS customer_name,
@@ -213,6 +216,7 @@ public sealed class MariaDbAdminRepository : IAdminRepository
         {
             var context = reader.GetString("context");
             requests.Add(new AdminServiceRequestSummary(
+                MariaDbIdentifierReader.ReadRequired(reader, "id"),
                 reader.GetString("reference"),
                 reader.GetString("customer_reference"),
                 reader.GetString("customer_name"),
@@ -221,6 +225,7 @@ public sealed class MariaDbAdminRepository : IAdminRepository
                 Truncate(ExtractDescription(context), 240) ?? string.Empty,
                 reader.GetString("status"),
                 true,
+                ToUtcIso(reader.GetDateTime("created_at")),
                 ToUtcIso(reader.GetDateTime("created_at"))));
         }
 

@@ -202,5 +202,6 @@ public static class MockPortalData
             .Where(invoice => invoice.Status == "pending")
             .Sum(invoice => invoice.TotalAmount),
         SupportRequests.Count(request => request.Status != "closed"),
+        1,
         "2026-06-11T08:45:00Z");
 }
