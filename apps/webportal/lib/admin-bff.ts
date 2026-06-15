@@ -1,6 +1,9 @@
 import "server-only";
 
-import type { ApiError } from "@kermaria/shared";
+import type {
+  ApiError,
+  RequestMutationResponse,
+} from "@kermaria/shared";
 import { NextRequest, NextResponse } from "next/server";
 
 import { CORRELATION_HEADER, resolveCorrelationId } from "@/lib/correlation";
@@ -84,7 +87,10 @@ export async function handleAdminGet<T>(
   }
 }
 
-export async function handleAdminMutation<TPayload>(
+export async function handleAdminMutation<
+  TPayload,
+  TResponse = RequestMutationResponse,
+>(
   request: NextRequest,
   internalPath: string,
   method: "PATCH" | "POST",
@@ -121,9 +127,16 @@ export async function handleAdminMutation<TPayload>(
       payload,
       sessionToken,
       correlationId,
-    );
+    ) as TResponse;
     const response = NextResponse.json(data);
-    response.headers.set(CORRELATION_HEADER, data.correlation_id);
+    const responseCorrelationId =
+      typeof data === "object"
+      && data !== null
+      && "correlation_id" in data
+      && typeof data.correlation_id === "string"
+        ? data.correlation_id
+        : correlationId;
+    response.headers.set(CORRELATION_HEADER, responseCorrelationId);
     return response;
   } catch (error) {
     const failure = getInternalApiError(error);

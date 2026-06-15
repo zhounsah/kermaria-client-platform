@@ -1,4 +1,7 @@
 import type {
+  CommercialDocumentLinePayload,
+  CommercialDocumentPayload,
+  CommercialOfferPayload,
   ServiceRequestPayload,
   SupportRequestPayload,
 } from "@kermaria/shared";
@@ -64,6 +67,186 @@ export function parseServiceRequestPayload(
     && payload.subject.length <= 160
     && payload.description.length >= 10
     && payload.description.length <= 4000
+    ? payload
+    : null;
+}
+
+export function parseCommercialOfferPayload(
+  value: unknown,
+): CommercialOfferPayload | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Partial<CommercialOfferPayload>;
+  if (
+    typeof candidate.name !== "string"
+    || typeof candidate.description !== "string"
+    || typeof candidate.category !== "string"
+    || typeof candidate.unitLabel !== "string"
+    || typeof candidate.priceAmountCents !== "number"
+    || typeof candidate.status !== "string"
+    || typeof candidate.displayOrder !== "number"
+  ) {
+    return null;
+  }
+
+  const payload: CommercialOfferPayload = {
+    name: candidate.name.trim(),
+    description: candidate.description.trim(),
+    category: candidate.category.trim(),
+    unitLabel: candidate.unitLabel.trim(),
+    priceAmountCents: Math.trunc(candidate.priceAmountCents),
+    status: candidate.status as CommercialOfferPayload["status"],
+    displayOrder: Math.trunc(candidate.displayOrder),
+  };
+
+  return payload.name.length >= 3
+    && payload.name.length <= 200
+    && payload.description.length >= 3
+    && payload.description.length <= 1000
+    && payload.category.length >= 2
+    && payload.category.length <= 100
+    && payload.unitLabel.length >= 1
+    && payload.unitLabel.length <= 40
+    && Number.isInteger(payload.priceAmountCents)
+    && payload.priceAmountCents >= 0
+    && payload.priceAmountCents <= 100000000
+    && ["active", "inactive"].includes(payload.status)
+    && Number.isInteger(payload.displayOrder)
+    && payload.displayOrder >= 0
+    && payload.displayOrder <= 100000
+    ? payload
+    : null;
+}
+
+export function parseCommercialDocumentPayload(
+  value: unknown,
+): CommercialDocumentPayload | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Partial<CommercialDocumentPayload>;
+  if (
+    typeof candidate.customerReference !== "string"
+    || typeof candidate.documentType !== "string"
+    || typeof candidate.title !== "string"
+    || typeof candidate.currency !== "string"
+    || typeof candidate.disclaimer !== "string"
+    || !(
+      typeof candidate.serviceRequestId === "string"
+      || candidate.serviceRequestId === null
+      || candidate.serviceRequestId === undefined
+    )
+    || !(
+      typeof candidate.status === "string"
+      || candidate.status === undefined
+    )
+  ) {
+    return null;
+  }
+
+  const payload: CommercialDocumentPayload = {
+    customerReference: candidate.customerReference.trim(),
+    documentType:
+      candidate.documentType as CommercialDocumentPayload["documentType"],
+    title: candidate.title.trim(),
+    currency: candidate.currency.trim().toUpperCase() as "EUR",
+    serviceRequestId:
+      typeof candidate.serviceRequestId === "string"
+        ? candidate.serviceRequestId.trim() || null
+        : null,
+    disclaimer: candidate.disclaimer.trim(),
+    ...(typeof candidate.status === "string"
+      ? { status: candidate.status.trim() as CommercialDocumentPayload["status"] }
+      : {}),
+  };
+
+  return /^[A-Za-z0-9-]{1,100}$/.test(payload.customerReference)
+    && ["quote_draft", "billing_draft", "informational_invoice"].includes(
+      payload.documentType,
+    )
+    && payload.title.length >= 3
+    && payload.title.length <= 200
+    && payload.currency === "EUR"
+    && payload.disclaimer.length >= 10
+    && payload.disclaimer.length <= 500
+    && (payload.serviceRequestId === null
+      || /^[A-Za-z0-9-]{1,100}$/.test(payload.serviceRequestId))
+    && (!payload.status
+      || ["draft", "pending_review"].includes(payload.status))
+    ? payload
+    : null;
+}
+
+export function parseCommercialDocumentLinePayload(
+  value: unknown,
+): CommercialDocumentLinePayload | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Partial<CommercialDocumentLinePayload>;
+  if (
+    !(
+      typeof candidate.offerId === "string"
+      || candidate.offerId === null
+      || candidate.offerId === undefined
+    )
+    || typeof candidate.label !== "string"
+    || typeof candidate.description !== "string"
+    || typeof candidate.quantity !== "number"
+    || typeof candidate.unitLabel !== "string"
+    || typeof candidate.unitPriceCents !== "number"
+    || !(
+      typeof candidate.taxRateBasisPoints === "number"
+      || candidate.taxRateBasisPoints === null
+      || candidate.taxRateBasisPoints === undefined
+    )
+    || typeof candidate.sortOrder !== "number"
+  ) {
+    return null;
+  }
+
+  const quantity = Number(candidate.quantity);
+  const payload: CommercialDocumentLinePayload = {
+    offerId:
+      typeof candidate.offerId === "string"
+        ? candidate.offerId.trim() || null
+        : null,
+    label: candidate.label.trim(),
+    description: candidate.description.trim(),
+    quantity,
+    unitLabel: candidate.unitLabel.trim(),
+    unitPriceCents: Math.trunc(candidate.unitPriceCents),
+    taxRateBasisPoints:
+      typeof candidate.taxRateBasisPoints === "number"
+        ? Math.trunc(candidate.taxRateBasisPoints)
+        : null,
+    sortOrder: Math.trunc(candidate.sortOrder),
+  };
+
+  return Number.isFinite(quantity)
+    && quantity > 0
+    && Math.round(quantity * 100) === quantity * 100
+    && quantity <= 1000000
+    && (payload.offerId === null
+      || /^[A-Za-z0-9-]{1,100}$/.test(payload.offerId))
+    && (payload.label.length === 0
+      || (payload.label.length >= 2 && payload.label.length <= 200))
+    && payload.description.length <= 1000
+    && payload.unitLabel.length <= 40
+    && Number.isInteger(payload.unitPriceCents)
+    && payload.unitPriceCents >= 0
+    && payload.unitPriceCents <= 100000000
+    && (payload.taxRateBasisPoints === null
+      || (Number.isInteger(payload.taxRateBasisPoints)
+        && payload.taxRateBasisPoints >= 0
+        && payload.taxRateBasisPoints <= 10000))
+    && Number.isInteger(payload.sortOrder)
+    && payload.sortOrder >= 0
+    && payload.sortOrder <= 100000
     ? payload
     : null;
 }

@@ -736,6 +736,15 @@ button:disabled {
   display: grid;
 }
 
+.stack-panels {
+  display: grid;
+  gap: 20px;
+}
+
+.stack-panel {
+  margin-top: 0;
+}
+
 .stack-row {
   display: flex;
   min-width: 0;
@@ -1053,6 +1062,10 @@ td {
 .form-card textarea {
   min-height: 140px;
   resize: vertical;
+}
+
+.compact-form-card textarea {
+  min-height: 110px;
 }
 
 .form-card input:disabled {

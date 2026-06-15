@@ -2,6 +2,8 @@ import "server-only";
 
 import type {
   AdHealthStatus,
+  AdminCommercialDocumentDetail,
+  AdminCommercialDocumentSummary,
   AdminActivityOverview,
   AdminAuditLogEntry,
   AdminCustomerSummary,
@@ -13,6 +15,9 @@ import type {
   AdminSupportRequestSummary,
   ApiError,
   ClientProfile,
+  CommercialDocumentDetail,
+  CommercialDocumentSummary,
+  CommercialOfferSummary,
   CorrelationId,
   DataSource,
   InvoiceSummary,
@@ -41,6 +46,9 @@ import {
 } from "@/lib/runtime-config";
 import { readPortalSessionToken } from "@/lib/session-cookie";
 import {
+  mockCommercialDocumentDetails,
+  mockCommercialDocuments,
+  mockCommercialOffers,
   mockCustomer,
   mockInvoices,
   mockPortalSummary,
@@ -303,6 +311,30 @@ export function getServiceCatalog() {
   );
 }
 
+export function getCommercialCatalog() {
+  return getPortalData<CommercialOfferSummary[]>(
+    "/internal/portal/catalog",
+    mockCommercialOffers,
+    [],
+  );
+}
+
+export function getCommercialDocuments() {
+  return getPortalData<CommercialDocumentSummary[]>(
+    "/internal/portal/commercial-documents",
+    mockCommercialDocuments,
+    [],
+  );
+}
+
+export function getCommercialDocument(id: string) {
+  return getPortalData<CommercialDocumentDetail | null>(
+    `/internal/portal/commercial-documents/${encodeURIComponent(id)}`,
+    mockCommercialDocumentDetails[id] ?? null,
+    null,
+  );
+}
+
 export function getSupportRequests() {
   return getPortalData<SupportRequestSummary[]>(
     "/internal/portal/support-requests",
@@ -522,14 +554,17 @@ export async function mutateInternalPortalPayload<TPayload>(
   );
 }
 
-export async function mutateInternalAdminData<TPayload>(
+export async function mutateInternalAdminData<
+  TResponse = RequestMutationResponse,
+  TPayload = unknown,
+>(
   path: string,
   method: "PATCH" | "POST",
   payload: TPayload,
   sessionToken: string,
   correlationId = resolveCorrelationId(null),
 ) {
-  return requestInternalAuth<RequestMutationResponse>(
+  return requestInternalAuth<TResponse>(
     path,
     {
       method,
@@ -636,6 +671,27 @@ export function getAdminCustomers() {
   return getAdminData<AdminCustomerSummary[]>(
     "/internal/admin/customers",
     [],
+  );
+}
+
+export function getAdminCatalog() {
+  return getAdminData<CommercialOfferSummary[]>(
+    "/internal/admin/catalog",
+    [],
+  );
+}
+
+export function getAdminCommercialDocuments() {
+  return getAdminData<AdminCommercialDocumentSummary[]>(
+    "/internal/admin/commercial-documents",
+    [],
+  );
+}
+
+export function getAdminCommercialDocument(id: string) {
+  return getAdminData<AdminCommercialDocumentDetail | null>(
+    `/internal/admin/commercial-documents/${encodeURIComponent(id)}`,
+    null,
   );
 }
 

@@ -154,3 +154,209 @@ INSERT INTO support_requests (
     '2026-06-10 09:30:00',
     '2026-06-10 11:15:00'
 );
+-- statement-break
+
+INSERT INTO service_requests (
+    id,
+    customer_id,
+    created_by_user_id,
+    catalog_item_id,
+    reference,
+    timeline,
+    context,
+    status,
+    created_at,
+    updated_at
+) VALUES (
+    '50000000-0000-0000-0000-000000000001',
+    '10000000-0000-0000-0000-000000000001',
+    '11000000-0000-0000-0000-000000000001',
+    'catalog-vpn',
+    'SRV-DEMO-2026-011',
+    'exploration',
+    'Sujet : Qualification VPN
+
+Demande informative de qualification.',
+    'under_review',
+    '2026-06-11 08:00:00',
+    '2026-06-12 09:30:00'
+);
+-- statement-break
+
+INSERT INTO commercial_offers (
+    id,
+    name,
+    description,
+    category,
+    unit_label,
+    price_kind,
+    price_amount_cents,
+    currency,
+    status,
+    display_order,
+    created_at,
+    updated_at
+) VALUES
+(
+    '60000000-0000-0000-0000-000000000001',
+    'Audit poste de travail',
+    'Revue informative d''un poste ou environnement ciblé.',
+    'Audit',
+    'forfait',
+    'ht',
+    12000,
+    'EUR',
+    'active',
+    10,
+    UTC_TIMESTAMP(6),
+    UTC_TIMESTAMP(6)
+),
+(
+    '60000000-0000-0000-0000-000000000002',
+    'Intervention ponctuelle',
+    'Intervention technique préparée selon le périmètre validé.',
+    'Assistance',
+    'heure',
+    'ht',
+    8500,
+    'EUR',
+    'active',
+    20,
+    UTC_TIMESTAMP(6),
+    UTC_TIMESTAMP(6)
+),
+(
+    '60000000-0000-0000-0000-000000000003',
+    'Sauvegarde additionnelle',
+    'Option informative de sauvegarde supplémentaire.',
+    'Continuité',
+    'mois',
+    'ht',
+    2400,
+    'EUR',
+    'active',
+    30,
+    UTC_TIMESTAMP(6),
+    UTC_TIMESTAMP(6)
+);
+-- statement-break
+
+INSERT INTO commercial_documents (
+    id,
+    customer_id,
+    service_request_id,
+    document_type,
+    status,
+    title,
+    internal_reference,
+    currency,
+    subtotal_amount_cents,
+    tax_amount_cents,
+    total_amount_cents,
+    disclaimer,
+    created_by_user_id,
+    created_at,
+    updated_at,
+    shared_at,
+    cancelled_at
+) VALUES
+(
+    '70000000-0000-0000-0000-000000000001',
+    '10000000-0000-0000-0000-000000000001',
+    '50000000-0000-0000-0000-000000000001',
+    'quote_draft',
+    'shared_with_customer',
+    'Proposition d''accompagnement VPN',
+    'COM-DEMO-2026-0001',
+    'EUR',
+    19400,
+    3880,
+    23280,
+    'Document informatif — ne constitue pas une facture officielle.',
+    '11000000-0000-0000-0000-000000000001',
+    '2026-06-12 10:00:00',
+    '2026-06-12 10:30:00',
+    '2026-06-12 10:30:00',
+    NULL
+),
+(
+    '70000000-0000-0000-0000-000000000002',
+    '10000000-0000-0000-0000-000000000001',
+    NULL,
+    'billing_draft',
+    'draft',
+    'Préparation de document de suivi',
+    'COM-DEMO-2026-0002',
+    'EUR',
+    4500,
+    0,
+    4500,
+    'Document informatif — ne constitue pas une facture officielle.',
+    '11000000-0000-0000-0000-000000000001',
+    '2026-06-13 08:45:00',
+    '2026-06-13 08:45:00',
+    NULL,
+    NULL
+);
+-- statement-break
+
+INSERT INTO commercial_document_lines (
+    id,
+    document_id,
+    offer_id,
+    label,
+    description,
+    quantity,
+    unit_label,
+    unit_price_cents,
+    tax_rate_basis_points,
+    line_total_cents,
+    sort_order,
+    created_at,
+    updated_at
+) VALUES
+(
+    '80000000-0000-0000-0000-000000000001',
+    '70000000-0000-0000-0000-000000000001',
+    '60000000-0000-0000-0000-000000000002',
+    'Intervention ponctuelle',
+    'Qualification informative de l''accès VPN envisagé.',
+    2.00,
+    'heure',
+    8500,
+    2000,
+    17000,
+    10,
+    '2026-06-12 10:00:00',
+    '2026-06-12 10:00:00'
+),
+(
+    '80000000-0000-0000-0000-000000000002',
+    '70000000-0000-0000-0000-000000000001',
+    '60000000-0000-0000-0000-000000000003',
+    'Sauvegarde additionnelle',
+    'Option informative associée à la proposition.',
+    1.00,
+    'mois',
+    2400,
+    2000,
+    2400,
+    20,
+    '2026-06-12 10:05:00',
+    '2026-06-12 10:05:00'
+),
+(
+    '80000000-0000-0000-0000-000000000003',
+    '70000000-0000-0000-0000-000000000002',
+    NULL,
+    'Accompagnement initial',
+    'Brouillon de ligne informative interne.',
+    1.00,
+    'forfait',
+    4500,
+    NULL,
+    4500,
+    10,
+    '2026-06-13 08:45:00',
+    '2026-06-13 08:45:00'
+);

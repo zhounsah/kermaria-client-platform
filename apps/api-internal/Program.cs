@@ -48,6 +48,7 @@ builder.Services.AddSingleton<ISessionTokenService, SessionTokenService>();
 builder.Services.AddSingleton<MockAuthenticationStore>();
 builder.Services.AddSingleton<MockRequestWorkflowStore>();
 builder.Services.AddSingleton<MockPortalNotificationStore>();
+builder.Services.AddSingleton<MockCommercialStore>();
 builder.Services.AddScoped<IPortalRepository>(
     _ => sqlConfiguration.IsPersistent
         ? new MariaDbPortalRepository(sqlConfiguration)
@@ -73,6 +74,11 @@ builder.Services.AddScoped<IPortalNotificationRepository>(
         ? new MariaDbPortalNotificationRepository(sqlConfiguration)
         : new MockPortalNotificationRepository(
             serviceProvider.GetRequiredService<MockPortalNotificationStore>()));
+builder.Services.AddScoped<ICommercialRepository>(
+    serviceProvider => sqlConfiguration.IsPersistent
+        ? new MariaDbCommercialRepository(sqlConfiguration)
+        : new MockCommercialRepository(
+            serviceProvider.GetRequiredService<MockCommercialStore>()));
 builder.Services.AddScoped<IPortalService, PortalService>();
 builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
 builder.Services.AddScoped<IAdminService, AdminService>();
@@ -80,6 +86,7 @@ builder.Services.AddScoped<IRequestWorkflowService, RequestWorkflowService>();
 builder.Services.AddScoped<
     IPortalNotificationService,
     PortalNotificationService>();
+builder.Services.AddScoped<ICommercialService, CommercialService>();
 builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddTransient<MariaDbMigrationRunner>();
 builder.Services.AddSingleton<OperationalReadinessService>();
@@ -94,6 +101,13 @@ builder.Services.AddSingleton<IActiveDirectoryService>(_ =>
     });
 
 var app = builder.Build();
+var exposeDebugExceptionDetails =
+    app.Environment.IsDevelopment()
+    || string.Equals(
+        builder.Configuration["RUN_MARIADB_TESTS"],
+        "true",
+        StringComparison.OrdinalIgnoreCase);
+var diagnosticSecretValues = GetDiagnosticSecretValues(builder.Configuration);
 
 if (!sqlConfiguration.IsPersistent)
 {
@@ -193,9 +207,11 @@ app.UseExceptionHandler(exceptionHandler =>
         };
 
         app.Logger.LogError(
-            "Controlled request failure code {ErrorCode} correlation_id {CorrelationId}",
+            exception,
+            "Controlled request failure code {ErrorCode} correlation_id {CorrelationId} exception_type {ExceptionType}",
             code,
-            correlationId);
+            correlationId,
+            exception?.GetType().FullName ?? "<none>");
 
         var auditService =
             context.RequestServices.GetRequiredService<IAuditService>();
@@ -218,8 +234,40 @@ app.UseExceptionHandler(exceptionHandler =>
             context.RequestAborted);
 
         context.Response.StatusCode = statusCode;
-        await context.Response.WriteAsJsonAsync(
-            new ApiError(code, message, correlationId));
+        var apiError = new ApiError(code, message, correlationId);
+        if (exposeDebugExceptionDetails && exception is not null)
+        {
+            var exceptionType = exception.GetType().FullName ?? "<none>";
+            var exceptionMessage = SanitizeDiagnosticValue(
+                exception.Message,
+                diagnosticSecretValues);
+            var stackTrace = SanitizeDiagnosticValue(
+                exception.StackTrace,
+                diagnosticSecretValues,
+                6000);
+            context.Response.Headers["X-Debug-Exception-Type"] =
+                exceptionType;
+            context.Response.Headers["X-Debug-Exception-Message"] =
+                exceptionMessage ?? "<none>";
+            context.Response.Headers["X-Debug-Correlation-Id"] =
+                correlationId;
+            await context.Response.WriteAsJsonAsync(
+                new
+                {
+                    code = apiError.Code,
+                    message = apiError.Message,
+                    correlation_id = apiError.CorrelationId,
+                    debug = new
+                    {
+                        exception_type = exceptionType,
+                        exception_message = exceptionMessage,
+                        stack_trace = stackTrace
+                    }
+                });
+            return;
+        }
+
+        await context.Response.WriteAsJsonAsync(apiError);
     });
 });
 
@@ -357,6 +405,63 @@ app.MapGet(
             context,
             service,
             await service.GetServiceCatalogAsync(context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/portal/catalog",
+    async (
+        HttpContext context,
+        ICommercialService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        _ = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            auditService);
+        return CommercialOk(
+            context,
+            service,
+            await service.GetClientCatalogAsync(context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/portal/commercial-documents",
+    async (
+        HttpContext context,
+        ICommercialService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            auditService);
+        return CommercialOk(
+            context,
+            service,
+            await service.GetClientDocumentsAsync(
+                session,
+                context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/portal/commercial-documents/{id}",
+    async (
+        string id,
+        HttpContext context,
+        ICommercialService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            auditService);
+        return CommercialOk(
+            context,
+            service,
+            await service.GetClientDocumentAsync(
+                session,
+                id,
+                context.RequestAborted));
     });
 app.MapGet(
     "/internal/portal/support-requests",
@@ -793,6 +898,323 @@ app.MapGet(
             service,
             await service.GetAuditLogsAsync(context.RequestAborted));
     });
+app.MapGet(
+    "/internal/admin/catalog",
+    async (
+        HttpContext context,
+        ICommercialService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.catalog.read");
+        return CommercialOk(
+            context,
+            service,
+            await service.GetAdminCatalogAsync(context.RequestAborted));
+    });
+app.MapPost(
+    "/internal/admin/catalog",
+    async (
+        HttpContext context,
+        ICommercialService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.catalog.write");
+        var payload = await ReadPayload<CommercialOfferPayload>(context)
+            ?? throw new PortalValidationException();
+        var result = await service.CreateOfferAsync(
+            payload,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "commercial_offer.create",
+                "success",
+                TargetType: "commercial_offer",
+                TargetReference: result.Id,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return CommercialOk(context, service, result);
+    });
+app.MapPatch(
+    "/internal/admin/catalog/{id}",
+    async (
+        string id,
+        HttpContext context,
+        ICommercialService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.catalog.write");
+        var payload = await ReadPayload<CommercialOfferPayload>(context)
+            ?? throw new PortalValidationException();
+        var result = await service.UpdateOfferAsync(
+            id,
+            payload,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "commercial_offer.update",
+                result.Changed ? "success" : "unchanged",
+                TargetType: "commercial_offer",
+                TargetReference: result.Id,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return CommercialOk(context, service, result);
+    });
+app.MapGet(
+    "/internal/admin/commercial-documents",
+    async (
+        HttpContext context,
+        ICommercialService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.commercial_documents.read");
+        return CommercialOk(
+            context,
+            service,
+            await service.GetAdminDocumentsAsync(context.RequestAborted));
+    });
+app.MapPost(
+    "/internal/admin/commercial-documents",
+    async (
+        HttpContext context,
+        ICommercialService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.commercial_documents.write");
+        var payload = await ReadPayload<CommercialDocumentPayload>(context)
+            ?? throw new PortalValidationException();
+        var result = await service.CreateDocumentAsync(
+            actor,
+            payload,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "commercial_document.create",
+                "success",
+                TargetType: "commercial_document",
+                TargetReference: result.InternalReference,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return CommercialOk(context, service, result);
+    });
+app.MapGet(
+    "/internal/admin/commercial-documents/{id}",
+    async (
+        string id,
+        HttpContext context,
+        ICommercialService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.commercial_documents.read");
+        return CommercialOk(
+            context,
+            service,
+            await service.GetAdminDocumentAsync(id, context.RequestAborted));
+    });
+app.MapPatch(
+    "/internal/admin/commercial-documents/{id}",
+    async (
+        string id,
+        HttpContext context,
+        ICommercialService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.commercial_documents.write");
+        var payload = await ReadPayload<CommercialDocumentPayload>(context)
+            ?? throw new PortalValidationException();
+        var result = await service.UpdateDocumentAsync(
+            actor,
+            id,
+            payload,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "commercial_document.update",
+                result.Changed ? "success" : "unchanged",
+                TargetType: "commercial_document",
+                TargetReference: result.InternalReference,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return CommercialOk(context, service, result);
+    });
+app.MapPost(
+    "/internal/admin/commercial-documents/{id}/lines",
+    async (
+        string id,
+        HttpContext context,
+        ICommercialService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.commercial_documents.write");
+        var payload = await ReadPayload<CommercialDocumentLinePayload>(context)
+            ?? throw new PortalValidationException();
+        var result = await service.AddLineAsync(
+            actor,
+            id,
+            payload,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "commercial_document.line.create",
+                "success",
+                TargetType: "commercial_document",
+                TargetReference: result.DocumentId,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return CommercialOk(context, service, result);
+    });
+app.MapPatch(
+    "/internal/admin/commercial-documents/{id}/lines/{lineId}",
+    async (
+        string id,
+        string lineId,
+        HttpContext context,
+        ICommercialService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.commercial_documents.write");
+        var payload = await ReadPayload<CommercialDocumentLinePayload>(context)
+            ?? throw new PortalValidationException();
+        var result = await service.UpdateLineAsync(
+            actor,
+            id,
+            lineId,
+            payload,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "commercial_document.line.update",
+                result.Changed ? "success" : "unchanged",
+                TargetType: "commercial_document",
+                TargetReference: result.DocumentId,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return CommercialOk(context, service, result);
+    });
+app.MapPost(
+    "/internal/admin/commercial-documents/{id}/share",
+    async (
+        string id,
+        HttpContext context,
+        ICommercialService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.commercial_documents.write");
+        var result = await service.ShareDocumentAsync(
+            actor,
+            id,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "commercial_document.share",
+                result.Changed ? "success" : "unchanged",
+                TargetType: "commercial_document",
+                TargetReference: result.InternalReference,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return CommercialOk(context, service, result);
+    });
+app.MapPost(
+    "/internal/admin/commercial-documents/{id}/cancel",
+    async (
+        string id,
+        HttpContext context,
+        ICommercialService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.commercial_documents.write");
+        var result = await service.CancelDocumentAsync(
+            actor,
+            id,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "commercial_document.cancel",
+                result.Changed ? "success" : "unchanged",
+                TargetType: "commercial_document",
+                TargetReference: result.InternalReference,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return CommercialOk(context, service, result);
+    });
 
 app.MapGet(
     "/internal/ad/health",
@@ -909,6 +1331,16 @@ static IResult WorkflowOk<T>(
 static IResult NotificationOk<T>(
     HttpContext context,
     IPortalNotificationService service,
+    T data)
+{
+    context.Response.Headers["X-Data-Source"] =
+        service.IsPersistent ? "mariadb" : "mock";
+    return Results.Ok(data);
+}
+
+static IResult CommercialOk<T>(
+    HttpContext context,
+    ICommercialService service,
     T data)
 {
     context.Response.Headers["X-Data-Source"] =
@@ -1295,6 +1727,49 @@ static async Task<T?> ReadPayload<T>(HttpContext context)
     {
         return default;
     }
+}
+
+static string[] GetDiagnosticSecretValues(IConfiguration configuration)
+    => new[]
+        {
+            configuration["SERVICE_AUTH_TOKEN"],
+            configuration["SQL_PASSWORD"],
+            configuration["DEMO_PORTAL_PASSWORD"],
+            configuration["DEMO_INTERNAL_ADMIN_PASSWORD"],
+            configuration.GetConnectionString("DefaultConnection"),
+            configuration.GetConnectionString("MariaDb")
+        }
+        .Where(value => !string.IsNullOrWhiteSpace(value))
+        .Distinct(StringComparer.Ordinal)
+        .ToArray()!;
+
+static string? SanitizeDiagnosticValue(
+    string? value,
+    IReadOnlyCollection<string> secretValues,
+    int maxLength = 512)
+{
+    if (string.IsNullOrWhiteSpace(value))
+    {
+        return value;
+    }
+
+    var sanitized = value;
+    foreach (var secretValue in secretValues)
+    {
+        sanitized = sanitized.Replace(
+            secretValue,
+            "<redacted>",
+            StringComparison.Ordinal);
+    }
+
+    sanitized = sanitized
+        .Replace("\r", " ", StringComparison.Ordinal)
+        .Replace("\n", " ", StringComparison.Ordinal)
+        .Trim();
+
+    return sanitized.Length <= maxLength
+        ? sanitized
+        : sanitized[..maxLength] + "...";
 }
 
 public partial class Program

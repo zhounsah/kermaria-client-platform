@@ -9,16 +9,18 @@ import { RequestStatusBadge } from "@/components/RequestStatusBadge";
 import { SectionCard } from "@/components/SectionCard";
 import { SectionHeading } from "@/components/SectionHeading";
 import { StatusBadge } from "@/components/StatusBadge";
+import { requireClientSession } from "@/lib/auth";
 import {
+  commercialDocumentStatus,
   formatCurrency,
+  formatCurrencyFromCents,
   formatDate,
-  invoiceStatus,
   serviceRequestStatus,
   serviceStatus,
 } from "@/lib/formatters";
 import {
   getClientProfile,
-  getInvoices,
+  getCommercialDocuments,
   getNotifications,
   getPortalSummary,
   getServices,
@@ -26,7 +28,6 @@ import {
   getSupportRequests,
   resolveDataSource,
 } from "@/lib/internal-api";
-import { requireClientSession } from "@/lib/auth";
 
 export const metadata = {
   title: "Tableau de bord",
@@ -40,24 +41,24 @@ export default async function DashboardPage() {
     summaryResult,
     profileResult,
     servicesResult,
-    invoicesResult,
+    documentsResult,
     supportResult,
     serviceRequestsResult,
     notificationsResult,
   ] = await Promise.all([
-      getPortalSummary(),
-      getClientProfile(),
-      getServices(),
-      getInvoices(),
-      getSupportRequests(),
-      getServiceRequests(),
-      getNotifications(),
-    ]);
+    getPortalSummary(),
+    getClientProfile(),
+    getServices(),
+    getCommercialDocuments(),
+    getSupportRequests(),
+    getServiceRequests(),
+    getNotifications(),
+  ]);
 
   const summary = summaryResult.data;
   const profile = profileResult.data;
   const services = servicesResult.data;
-  const invoices = invoicesResult.data;
+  const documents = documentsResult.data;
   const supportRequests = supportResult.data;
   const serviceRequests = serviceRequestsResult.data;
   const notifications = notificationsResult.data;
@@ -68,7 +69,7 @@ export default async function DashboardPage() {
     summaryResult.source,
     profileResult.source,
     servicesResult.source,
-    invoicesResult.source,
+    documentsResult.source,
     supportResult.source,
     serviceRequestsResult.source,
     notificationsResult.source,
@@ -77,7 +78,7 @@ export default async function DashboardPage() {
     summaryResult,
     profileResult,
     servicesResult,
-    invoicesResult,
+    documentsResult,
     supportResult,
     serviceRequestsResult,
     notificationsResult,
@@ -89,7 +90,7 @@ export default async function DashboardPage() {
         action={<StatusBadge label="Espace authentifié" tone="success" />}
         description={
           summary
-            ? `Référence ${summary.customerReference} - informations actuellement disponibles pour vos services et demandes.`
+            ? `Référence ${summary.customerReference} - informations actuellement disponibles pour vos services, demandes et documents commerciaux.`
             : "Votre espace client regroupe les informations actuellement disponibles pour vos services Kermaria."
         }
         eyebrow="Vue d'ensemble"
@@ -99,7 +100,7 @@ export default async function DashboardPage() {
       {partialError ? (
         <ErrorState
           compact
-          description="Une partie du tableau de bord n’a pas pu être chargée. Les autres informations disponibles restent affichées."
+          description="Une partie du tableau de bord n'a pas pu être chargée. Les autres informations disponibles restent affichées."
           reference={partialError.correlationId}
           title="Chargement partiel"
         />
@@ -156,7 +157,7 @@ export default async function DashboardPage() {
             />
           ) : services.length === 0 ? (
             <EmptyState
-              description="Aucun service n’est actuellement associé à ce compte."
+              description="Aucun service n'est actuellement associé à ce compte."
               title="Aucun service"
             />
           ) : (
@@ -196,9 +197,9 @@ export default async function DashboardPage() {
             <span>Demander un service</span>
             <small>Demande étudiée avant toute activation</small>
           </Link>
-          <Link className="quick-action" href="/profile">
-            <span>Consulter mon profil</span>
-            <small>Consulter les informations du compte</small>
+          <Link className="quick-action" href="/invoices">
+            <span>Consulter les documents</span>
+            <small>Aucun paiement ni facture officielle</small>
           </Link>
           <Link className="quick-action" href="/notifications">
             <span>Consulter les notifications</span>
@@ -212,37 +213,37 @@ export default async function DashboardPage() {
       </div>
 
       <div className="dashboard-layout">
-        <SectionCard ariaLabel="Aperçu de la facturation">
+        <SectionCard ariaLabel="Aperçu des documents commerciaux">
           <SectionHeading
-            action={<Link href="/invoices">Toutes les factures</Link>}
-            title="Informations de facturation récentes"
+            action={<Link href="/invoices">Tous les documents</Link>}
+            title="Documents commerciaux récents"
           />
-          {invoicesResult.error ? (
+          {documentsResult.error ? (
             <ErrorState
               compact
-              description="Impossible de charger les informations de facturation."
-              reference={invoicesResult.correlationId}
-              title="Facturation indisponible"
+              description="Impossible de charger les documents commerciaux informatifs."
+              reference={documentsResult.correlationId}
+              title="Documents indisponibles"
             />
-          ) : invoices.length === 0 ? (
+          ) : documents.length === 0 ? (
             <EmptyState
-              description="Aucun document informatif n’est disponible pour le moment."
+              description="Aucun document informatif n'est disponible pour le moment."
               title="Aucun document"
             />
           ) : (
             <div className="stack-list">
-              {invoices.slice(0, 3).map((invoice) => {
-                const status = invoiceStatus[invoice.status];
+              {documents.slice(0, 3).map((document) => {
+                const status = commercialDocumentStatus[document.status];
 
                 return (
-                  <article className="stack-row" key={invoice.id}>
+                  <article className="stack-row" key={document.id}>
                     <div className="stack-row-main">
-                      <strong>{invoice.number}</strong>
+                      <strong>{document.internalReference}</strong>
                       <span>
-                        {invoice.period} - émise le {formatDate(invoice.issuedAt)}
+                        {document.title} - créé le {formatDate(document.createdAt)}
                       </span>
                     </div>
-                    <strong>{formatCurrency(invoice.totalAmount)}</strong>
+                    <strong>{formatCurrencyFromCents(document.totalAmountCents)}</strong>
                     <StatusBadge label={status.label} tone={status.tone} />
                   </article>
                 );
@@ -269,7 +270,7 @@ export default async function DashboardPage() {
             />
           ) : supportRequests.length === 0 && serviceRequests.length === 0 ? (
             <EmptyState
-              description="Aucune demande n’est disponible pour le moment."
+              description="Aucune demande n'est disponible pour le moment."
               title="Aucune demande"
             />
           ) : (

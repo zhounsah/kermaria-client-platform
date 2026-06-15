@@ -58,6 +58,19 @@ export default async function AdminServiceRequestDetailPage({
         title={request.subject}
       />
 
+      <div className="demo-notice">
+        <strong>Préparation commerciale</strong>
+        <span>
+          Depuis cette demande, vous pouvez préparer un brouillon commercial
+          informatif sans générer de facture officielle ni de paiement.{" "}
+          <Link
+            href={`/admin/commercial-documents?customerReference=${encodeURIComponent(request.customerReference)}&serviceRequestId=${encodeURIComponent(request.id)}`}
+          >
+            Préparer un brouillon
+          </Link>
+        </span>
+      </div>
+
       <div className="request-detail-layout">
         <SectionCard ariaLabel="Informations de la demande de service">
           <h2>Demande</h2>

@@ -10,6 +10,24 @@ export const invoiceStatus = {
   overdue: { label: "En retard", tone: "danger" },
 } as const;
 
+export const commercialDocumentStatus = {
+  draft: { label: "Brouillon", tone: "neutral" },
+  pending_review: { label: "À vérifier", tone: "warning" },
+  shared_with_customer: { label: "Partagé au client", tone: "success" },
+  cancelled: { label: "Annulé", tone: "neutral" },
+} as const;
+
+export const commercialDocumentType = {
+  quote_draft: "Devis / proposition",
+  billing_draft: "Brouillon de suivi",
+  informational_invoice: "Document de facturation informatif",
+} as const;
+
+export const commercialOfferStatus = {
+  active: { label: "Active", tone: "success" },
+  inactive: { label: "Inactive", tone: "neutral" },
+} as const;
+
 export const supportStatus = {
   open: {
     label: "Ouverte",
@@ -24,7 +42,7 @@ export const supportStatus = {
   waiting_for_customer: {
     label: "En attente client",
     tone: "warning",
-    description: "Votre demande est en attente d’un retour de votre part.",
+    description: "Votre demande est en attente d'un retour de votre part.",
   },
   resolved: {
     label: "Résolue",
@@ -52,7 +70,7 @@ export const serviceRequestStatus = {
   under_review: {
     label: "En étude",
     tone: "warning",
-    description: "Votre demande de service est en cours d’étude.",
+    description: "Votre demande de service est en cours d'étude.",
   },
   accepted: {
     label: "Acceptée",
@@ -100,4 +118,8 @@ export function formatCurrency(value: number) {
     style: "currency",
     currency: "EUR",
   }).format(value);
+}
+
+export function formatCurrencyFromCents(value: number) {
+  return formatCurrency(value / 100);
 }

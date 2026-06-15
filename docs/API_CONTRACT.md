@@ -18,11 +18,25 @@ Le navigateur accède uniquement à `WEBPORTAL` :
 - `GET /api/notifications`
 - `POST /api/notifications/{id}/read`
 - `POST /api/notifications/read-all`
+- `GET /api/catalog`
+- `GET /api/commercial-documents`
+- `GET /api/commercial-documents/{id}`
 - `GET /api/admin/overview`
 - `GET /api/admin/activity`
 - `GET /api/admin/customers`
 - `GET /api/admin/support-requests`
 - `GET /api/admin/service-requests`
+- `GET /api/admin/catalog`
+- `POST /api/admin/catalog`
+- `PATCH /api/admin/catalog/{id}`
+- `GET /api/admin/commercial-documents`
+- `POST /api/admin/commercial-documents`
+- `GET /api/admin/commercial-documents/{id}`
+- `PATCH /api/admin/commercial-documents/{id}`
+- `POST /api/admin/commercial-documents/{id}/lines`
+- `PATCH /api/admin/commercial-documents/{id}/lines/{lineId}`
+- `POST /api/admin/commercial-documents/{id}/share`
+- `POST /api/admin/commercial-documents/{id}/cancel`
 - `GET /api/admin/support-requests/{id}`
 - `PATCH /api/admin/support-requests/{id}/status`
 - `POST /api/admin/support-requests/{id}/notes`
@@ -49,6 +63,17 @@ publiées par le reverse proxy et jamais appelées directement par le navigateur
 - `GET /internal/admin/customers`
 - `GET /internal/admin/support-requests`
 - `GET /internal/admin/service-requests`
+- `GET /internal/admin/catalog`
+- `POST /internal/admin/catalog`
+- `PATCH /internal/admin/catalog/{id}`
+- `GET /internal/admin/commercial-documents`
+- `POST /internal/admin/commercial-documents`
+- `GET /internal/admin/commercial-documents/{id}`
+- `PATCH /internal/admin/commercial-documents/{id}`
+- `POST /internal/admin/commercial-documents/{id}/lines`
+- `PATCH /internal/admin/commercial-documents/{id}/lines/{lineId}`
+- `POST /internal/admin/commercial-documents/{id}/share`
+- `POST /internal/admin/commercial-documents/{id}/cancel`
 - `GET /internal/admin/support-requests/{id}`
 - `PATCH /internal/admin/support-requests/{id}/status`
 - `POST /internal/admin/support-requests/{id}/notes`
@@ -64,12 +89,15 @@ publiées par le reverse proxy et jamais appelées directement par le navigateur
 - `GET /internal/portal/services`
 - `GET /internal/portal/invoices`
 - `GET /internal/portal/service-catalog`
+- `GET /internal/portal/catalog`
 - `GET /internal/portal/support-requests`
 - `GET /internal/portal/support-requests/{id}`
 - `POST /internal/portal/support-requests/{id}/messages`
 - `GET /internal/portal/service-requests`
 - `GET /internal/portal/service-requests/{id}`
 - `POST /internal/portal/service-requests/{id}/messages`
+- `GET /internal/portal/commercial-documents`
+- `GET /internal/portal/commercial-documents/{id}`
 - `GET /internal/portal/notifications`
 - `POST /internal/portal/notifications/{id}/read`
 - `POST /internal/portal/notifications/read-all`
@@ -80,6 +108,31 @@ publiées par le reverse proxy et jamais appelées directement par le navigateur
 - `POST /internal/ad/create-user`
 - `POST /internal/ad/add-user-to-group`
 - `POST /internal/ad/remove-user-from-group`
+
+## Socle commercial V0.15
+
+Les routes commerciales restent strictement dans le flux
+`Navigateur -> WEBPORTAL/BFF -> API-INTERNAL -> MariaDB`.
+
+Contraintes :
+
+- `GET /api/catalog` et `GET /internal/portal/catalog` exposent uniquement des
+  offres non sensibles et administrables.
+- `GET /api/commercial-documents` et `GET /api/commercial-documents/{id}`
+  retournent seulement les documents du client de la session et uniquement
+  lorsqu'ils ont été partagés.
+- Les mutations `/api/admin/catalog*` et `/api/admin/commercial-documents*`
+  exigent toujours `internal_admin`.
+- Les montants commerciaux sont validés et stockés en centimes entiers.
+- `document_type` est borné à `quote_draft`, `billing_draft` ou
+  `informational_invoice`.
+- `status` est borné à `draft`, `pending_review`, `shared_with_customer` ou
+  `cancelled`.
+- `shared_with_customer` ne signifie jamais facture officielle.
+- Le disclaimer par défaut est
+  `Document informatif - ne constitue pas une facture officielle.`
+- Aucune route ne génère de PDF légal, paiement, e-mail réel ou numérotation
+  fiscale définitive.
 
 ## Conventions
 

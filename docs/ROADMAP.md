@@ -1,5 +1,22 @@
 # Feuille de route
 
+## Jalon V0.15 socle commercial informatif
+
+Statut : **implémenté et validé pour publication `v0.15`**.
+
+- Catalogue d'offres administrable côté admin.
+- Documents commerciaux informatifs avec statuts `draft`,
+  `pending_review`, `shared_with_customer` et `cancelled`.
+- Lignes de document et calcul des montants en centimes côté API-INTERNAL.
+- Affichage client des documents sur `/invoices` et `/commercial-documents/[id]`.
+- Pages admin `/admin/catalog` et `/admin/commercial-documents`.
+- Contrat BFF/webportal vérifié par `test:commercial`.
+- Migration additive `006_commercial_foundation.sql`.
+
+La V0.15 n'ajoute aucune facture officielle, aucune numérotation fiscale
+définitive, aucun paiement, aucun PDF légal, aucun e-mail réel, aucune TVA
+automatisée validée, aucune action AD et aucun provisioning.
+
 Chaque phase conserve les contraintes de `AGENTS.md` et `docs/SECURITY.md`.
 L'avancement d'une phase n'autorise jamais implicitement une intégration réelle.
 

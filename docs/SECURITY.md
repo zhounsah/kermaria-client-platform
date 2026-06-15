@@ -157,6 +157,25 @@ API-INTERNAL filtre les services, factures, demandes et profils par ce
 `customer_id`. Aucun `customerId` fourni dans un payload navigateur n'est
 accepté comme autorité.
 
+## Socle commercial V0.15
+
+Les documents commerciaux V0.15 restent strictement informatifs :
+
+- aucun paiement, bouton payer, Stripe ou PayPal ;
+- aucune facture officielle, aucun PDF légal et aucune numérotation fiscale
+  définitive ;
+- aucun e-mail réel, aucune signature électronique et aucune automatisation TVA
+  non validée ;
+- aucune action AD, aucun provisioning et aucune mutation irréversible.
+
+Les lectures client passent uniquement par `/api/commercial-documents` et
+`/api/commercial-documents/{id}`. Le client ne peut jamais créer, modifier,
+partager ou annuler un document commercial.
+
+Les mutations de catalogue et de document commercial sont réservées aux routes
+admin et au rôle `internal_admin`. Les montants restent validés côté serveur et
+persistés en centimes entiers.
+
 ## Autorisation interne
 
 - `client_user` accède uniquement aux routes métier du client issu de sa
@@ -169,6 +188,9 @@ accepté comme autorité.
 - Les sessions admin n'exposent ni référence client, ni token, ni hash.
 - Les adresses réseau sont masquées et les User-Agent tronqués dans les vues.
 - Les accès admin autorisés et refusés sont audités.
+
+- Les mutations commerciales V0.15 se limitent à créer un brouillon, ajuster
+  ses lignes, le partager au client puis l'annuler si nécessaire.
 
 ## Notes et messages des demandes
 

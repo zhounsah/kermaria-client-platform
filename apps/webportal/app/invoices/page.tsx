@@ -6,33 +6,47 @@ import { MetricCard } from "@/components/MetricCard";
 import { MockNotice } from "@/components/MockNotice";
 import { PageHeader } from "@/components/PageHeader";
 import { requireClientSession } from "@/lib/auth";
-import { formatCurrency } from "@/lib/formatters";
-import { getInvoices } from "@/lib/internal-api";
+import { formatCurrencyFromCents } from "@/lib/formatters";
+import { getCommercialDocuments } from "@/lib/internal-api";
 
 export const metadata = {
-  title: "Factures",
+  title: "Documents commerciaux",
 };
 
 export const dynamic = "force-dynamic";
 
 export default async function InvoicesPage() {
   await requireClientSession();
-  const result = await getInvoices();
-  const pendingInvoices = result.data.filter(
-    (invoice) => invoice.status === "pending",
-  );
-  const pendingTotal = pendingInvoices.reduce(
-    (total, invoice) => total + invoice.totalAmount,
+  const result = await getCommercialDocuments();
+  const sharedCount = result.data.length;
+  const cancelledCount = result.data.filter(
+    (document) => document.status === "cancelled",
+  ).length;
+  const totalAmount = result.data.reduce(
+    (total, document) => total + document.totalAmountCents,
     0,
   );
 
   return (
     <>
       <PageHeader
-        description="La facturation affichée dans cet espace reste informative tant que le module de facturation réel n’est pas activé."
-        eyebrow="Informations de facturation"
-        title="Mes documents"
+        description="Les documents affichés dans cet espace sont informatifs tant que la facturation réelle n’est pas activée."
+        eyebrow="Documents commerciaux"
+        title="Mes documents informatifs"
       />
+
+      <div className="security-warning">
+        <span className="warning-symbol" aria-hidden="true">
+          !
+        </span>
+        <div>
+          <strong>Document informatif - ne constitue pas une facture officielle.</strong>
+          <p>
+            La facturation réelle n&apos;est pas encore activée. Aucun paiement
+            n&apos;est possible depuis cet espace.
+          </p>
+        </div>
+      </div>
 
       {result.error ? (
         <ErrorState
@@ -41,37 +55,33 @@ export default async function InvoicesPage() {
               Réessayer
             </Link>
           }
-          description="Impossible de charger les informations de facturation pour le moment."
+          description="Impossible de charger les documents commerciaux informatifs pour le moment."
           reference={result.correlationId}
-          title="Informations indisponibles"
+          title="Documents indisponibles"
         />
       ) : (
         <>
           <section
-            aria-label="Synthèse des informations de facturation"
+            aria-label="Synthèse des documents commerciaux"
             className="metrics-grid metrics-grid-three"
           >
             <MetricCard
-              detail="Sur la période affichée"
+              detail="Documents partagés dans le portail"
               label="Documents disponibles"
               tone="slate"
-              value={String(result.data.length)}
+              value={String(sharedCount)}
             />
             <MetricCard
-              detail={
-                pendingInvoices.length
-                  ? "Montant informatif"
-                  : "Aucun montant en attente"
-              }
-              label="Montant en attente"
+              detail="Montant total purement informatif"
+              label="Total affiché"
               tone="amber"
-              value={formatCurrency(pendingTotal)}
+              value={formatCurrencyFromCents(totalAmount)}
             />
             <MetricCard
-              detail="Aucun paiement disponible dans le portail"
-              label="Situation affichée"
+              detail="Annulés mais conservés au suivi"
+              label="Documents annulés"
               tone="green"
-              value={pendingInvoices.length ? "À vérifier" : "À jour"}
+              value={String(cancelledCount)}
             />
           </section>
 

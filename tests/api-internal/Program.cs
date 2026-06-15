@@ -566,6 +566,15 @@ async Task RunMockTestsAsync()
             clientServiceReplyResponse.StatusCode == HttpStatusCode.OK,
             "Le client devait pouvoir répondre à sa demande de service.");
 
+        await VerifyCommercialFoundationAsync(
+            client,
+            mockBaseUrl,
+            sessionToken!,
+            adminSessionToken,
+            MockCustomerReference(),
+            workflowServiceId,
+            persistent: false);
+
         using var adminActivityRequest = CreateSessionRequest(
             HttpMethod.Get,
             $"{mockBaseUrl}/internal/admin/activity",
@@ -1510,6 +1519,7 @@ async Task RunMariaDbReadTestsAsync()
                 .GetProperty("mariadb").GetString() == "healthy",
             "La readiness MariaDB conditionnelle est invalide.");
         await VerifyNotificationMigrationAsync();
+        await VerifyCommercialMigrationAsync();
 
         using var loginResponse = await client.PostAsJsonAsync(
             $"{mariaDbBaseUrl}/internal/auth/sessions",
@@ -1802,6 +1812,16 @@ async Task RunMariaDbReadTestsAsync()
             "/internal/portal/service-requests",
             sessionToken,
             workflowServiceReference);
+
+        await VerifyCommercialFoundationAsync(
+            client,
+            mariaDbBaseUrl,
+            sessionToken,
+            adminSessionToken,
+            "CLI-DEMO-0060",
+            workflowServiceRequestId,
+            persistent: true,
+            foreignCustomerId: isolationCustomerId);
 
         using var mariaSupportStatusRequest = CreateSessionRequest(
             HttpMethod.Patch,
@@ -2239,6 +2259,7 @@ async Task CleanupWorkflowFixtureAsync(
     await using var connection = CreateMariaDbTestConnection();
     await connection.OpenAsync();
     await using var transaction = await connection.BeginTransactionAsync();
+
     foreach (var table in new[]
     {
         "portal_notifications",
@@ -2251,14 +2272,8 @@ async Task CleanupWorkflowFixtureAsync(
         command.Transaction = transaction;
         command.CommandText =
             $"DELETE FROM {table} WHERE request_id IN (@support_id, @service_id);";
-        AddDbParameter(
-            command,
-            "@support_id",
-            supportRequestId ?? string.Empty);
-        AddDbParameter(
-            command,
-            "@service_id",
-            serviceRequestId ?? string.Empty);
+        AddDbParameter(command, "@support_id", supportRequestId ?? string.Empty);
+        AddDbParameter(command, "@service_id", serviceRequestId ?? string.Empty);
         await command.ExecuteNonQueryAsync();
     }
 
@@ -2274,6 +2289,30 @@ async Task CleanupWorkflowFixtureAsync(
 
     if (serviceRequestId is not null)
     {
+        await using (var commercialLinesCommand = connection.CreateCommand())
+        {
+            commercialLinesCommand.Transaction = transaction;
+            commercialLinesCommand.CommandText =
+                """
+                DELETE line
+                FROM commercial_document_lines line
+                INNER JOIN commercial_documents document
+                    ON document.id = line.document_id
+                WHERE document.service_request_id = @service_id;
+                """;
+            AddDbParameter(commercialLinesCommand, "@service_id", serviceRequestId);
+            await commercialLinesCommand.ExecuteNonQueryAsync();
+        }
+
+        await using (var commercialDocumentsCommand = connection.CreateCommand())
+        {
+            commercialDocumentsCommand.Transaction = transaction;
+            commercialDocumentsCommand.CommandText =
+                "DELETE FROM commercial_documents WHERE service_request_id = @service_id;";
+            AddDbParameter(commercialDocumentsCommand, "@service_id", serviceRequestId);
+            await commercialDocumentsCommand.ExecuteNonQueryAsync();
+        }
+
         await using var serviceCommand = connection.CreateCommand();
         serviceCommand.Transaction = transaction;
         serviceCommand.CommandText =
@@ -2284,7 +2323,6 @@ async Task CleanupWorkflowFixtureAsync(
 
     await transaction.CommitAsync();
 }
-
 async Task VerifyPersistedSessionHashAsync(string sessionToken)
 {
     await using var connection = CreateMariaDbTestConnection();
@@ -2328,6 +2366,617 @@ async Task VerifyNotificationMigrationAsync()
     Ensure(
         count == 1,
         "La migration 005_portal_notifications doit être appliquée avant les tests opt-in.");
+}
+
+async Task VerifyCommercialMigrationAsync()
+{
+    await using var connection = CreateMariaDbTestConnection();
+    await connection.OpenAsync();
+    await using var command = connection.CreateCommand();
+    command.CommandText =
+        """
+        SELECT COUNT(*)
+        FROM schema_migrations
+        WHERE migration_id = '006_commercial_foundation';
+        """;
+    var count = Convert.ToInt32(await command.ExecuteScalarAsync());
+    Ensure(
+        count == 1,
+        "La migration 006_commercial_foundation doit être appliquée avant les tests opt-in.");
+}
+
+async Task VerifyCommercialFoundationAsync(
+    HttpClient client,
+    string baseUrl,
+    string clientSessionToken,
+    string adminSessionToken,
+    string customerReference,
+    string? serviceRequestId,
+    bool persistent,
+    string? foreignCustomerId = null)
+{
+    var expectedDataSource = persistent ? "mariadb" : "mock";
+
+    using var clientCatalogRequest = CreateSessionRequest(
+        HttpMethod.Get,
+        $"{baseUrl}/internal/portal/catalog",
+        clientSessionToken);
+    using var clientCatalogResponse = await client.SendAsync(
+        clientCatalogRequest);
+    using var clientCatalogPayload = JsonDocument.Parse(
+        await clientCatalogResponse.Content.ReadAsStringAsync());
+    Ensure(
+        clientCatalogResponse.StatusCode == HttpStatusCode.OK
+        && clientCatalogResponse.Headers.GetValues(dataSourceHeader).Single()
+            == expectedDataSource
+        && clientCatalogPayload.RootElement.GetArrayLength() >= 1,
+        "Le catalogue commercial client doit être accessible.");
+
+    using var adminCatalogRequest = CreateSessionRequest(
+        HttpMethod.Get,
+        $"{baseUrl}/internal/admin/catalog",
+        adminSessionToken);
+    using var adminCatalogResponse = await client.SendAsync(
+        adminCatalogRequest);
+    using var adminCatalogPayload = JsonDocument.Parse(
+        await adminCatalogResponse.Content.ReadAsStringAsync());
+    Ensure(
+        adminCatalogResponse.StatusCode == HttpStatusCode.OK
+        && adminCatalogResponse.Headers.GetValues(dataSourceHeader).Single()
+            == expectedDataSource
+        && adminCatalogPayload.RootElement.GetArrayLength() >= 1,
+        "Le catalogue commercial admin doit être accessible.");
+
+    using var clientDocumentsRequest = CreateSessionRequest(
+        HttpMethod.Get,
+        $"{baseUrl}/internal/portal/commercial-documents",
+        clientSessionToken);
+    using var clientDocumentsResponse = await client.SendAsync(
+        clientDocumentsRequest);
+    using var initialClientDocumentsPayload = JsonDocument.Parse(
+        await clientDocumentsResponse.Content.ReadAsStringAsync());
+    Ensure(
+        clientDocumentsResponse.StatusCode == HttpStatusCode.OK
+        && clientDocumentsResponse.Headers.GetValues(dataSourceHeader).Single()
+            == expectedDataSource,
+        "La liste client des documents commerciaux doit être accessible.");
+    var initialSharedDocumentCount =
+        initialClientDocumentsPayload.RootElement.GetArrayLength();
+
+    using var adminDocumentsRequest = CreateSessionRequest(
+        HttpMethod.Get,
+        $"{baseUrl}/internal/admin/commercial-documents",
+        adminSessionToken);
+    using var adminDocumentsResponse = await client.SendAsync(
+        adminDocumentsRequest);
+    var adminDocumentsBody =
+        await adminDocumentsResponse.Content.ReadAsStringAsync();
+    var adminDocumentsDataSource =
+        adminDocumentsResponse.Headers.TryGetValues(
+            dataSourceHeader,
+            out var adminDocumentsDataSourceValues)
+            ? adminDocumentsDataSourceValues.SingleOrDefault() ?? "<missing>"
+            : "<missing>";
+    var adminDocumentsDebugExceptionType =
+        adminDocumentsResponse.Headers.TryGetValues(
+            "X-Debug-Exception-Type",
+            out var adminDocumentsDebugExceptionTypeValues)
+            ? adminDocumentsDebugExceptionTypeValues.SingleOrDefault()
+                ?? "<missing>"
+            : "<missing>";
+    var adminDocumentsDebugExceptionMessage =
+        adminDocumentsResponse.Headers.TryGetValues(
+            "X-Debug-Exception-Message",
+            out var adminDocumentsDebugExceptionMessageValues)
+            ? adminDocumentsDebugExceptionMessageValues.SingleOrDefault()
+                ?? "<missing>"
+            : "<missing>";
+    var adminDocumentsDebugCorrelationId =
+        adminDocumentsResponse.Headers.TryGetValues(
+            "X-Debug-Correlation-Id",
+            out var adminDocumentsDebugCorrelationIdValues)
+            ? adminDocumentsDebugCorrelationIdValues.SingleOrDefault()
+                ?? "<missing>"
+            : "<missing>";
+    string adminDocumentsValueKind;
+    var adminDocumentsCount = -1;
+    try
+    {
+        using var adminDocumentsPayload = JsonDocument.Parse(adminDocumentsBody);
+        adminDocumentsValueKind =
+            adminDocumentsPayload.RootElement.ValueKind.ToString();
+        if (adminDocumentsPayload.RootElement.ValueKind == JsonValueKind.Array)
+        {
+            adminDocumentsCount =
+                adminDocumentsPayload.RootElement.GetArrayLength();
+        }
+    }
+    catch (JsonException)
+    {
+        adminDocumentsValueKind = "<invalid-json>";
+    }
+    if (!(adminDocumentsResponse.StatusCode == HttpStatusCode.OK
+        && adminDocumentsDataSource == expectedDataSource
+        && adminDocumentsCount >= 1))
+    {
+        throw new InvalidOperationException(
+            "La liste admin des documents commerciaux doit être accessible. "
+            + $"Status={adminDocumentsResponse.StatusCode}; "
+            + $"DataSource={adminDocumentsDataSource}; "
+            + $"ValueKind={adminDocumentsValueKind}; "
+            + $"Count={adminDocumentsCount}; "
+            + $"Body={adminDocumentsBody.Replace('\r', ' ').Replace('\n', ' ').Trim()}; "
+            + $"DebugExceptionType={adminDocumentsDebugExceptionType}; "
+            + $"DebugExceptionMessage={adminDocumentsDebugExceptionMessage}; "
+            + $"DebugCorrelationId={adminDocumentsDebugCorrelationId}");
+    }
+    Ensure(
+        adminDocumentsResponse.StatusCode == HttpStatusCode.OK
+        && adminDocumentsDataSource == expectedDataSource
+        && adminDocumentsCount >= 1,
+        "La liste admin des documents commerciaux doit être accessible.");
+
+    using var forbiddenCreateRequest = CreateSessionRequest(
+        HttpMethod.Post,
+        $"{baseUrl}/internal/admin/commercial-documents",
+        clientSessionToken);
+    forbiddenCreateRequest.Content = JsonContent.Create(new
+    {
+        customerReference,
+        documentType = "quote_draft",
+        title = "Tentative client interdite",
+        currency = "EUR",
+        serviceRequestId,
+        disclaimer = "Document informatif — ne constitue pas une facture officielle.",
+        status = "draft"
+    });
+    using var forbiddenCreateResponse = await client.SendAsync(
+        forbiddenCreateRequest);
+    Ensure(
+        forbiddenCreateResponse.StatusCode == HttpStatusCode.Forbidden,
+        "Un client ne doit pas pouvoir créer un document commercial.");
+
+    using var createOfferRequest = CreateSessionRequest(
+        HttpMethod.Post,
+        $"{baseUrl}/internal/admin/catalog",
+        adminSessionToken);
+    createOfferRequest.Content = JsonContent.Create(new
+    {
+        name = "Offre test V0.15",
+        description = "Offre informative créée par les smoke tests.",
+        category = "Tests",
+        unitLabel = "forfait",
+        priceAmountCents = 12345,
+        status = "active",
+        displayOrder = 999
+    });
+    using var createOfferResponse = await client.SendAsync(createOfferRequest);
+    using var createOfferPayload = JsonDocument.Parse(
+        await createOfferResponse.Content.ReadAsStringAsync());
+    Ensure(
+        createOfferResponse.StatusCode == HttpStatusCode.OK
+        && createOfferPayload.RootElement.GetProperty("changed").GetBoolean(),
+        "L'admin doit pouvoir créer une offre commerciale.");
+    var createdOfferId = createOfferPayload.RootElement
+        .GetProperty("id")
+        .GetString()
+        ?? throw new InvalidOperationException(
+            "La création d'offre commerciale ne retourne aucun identifiant.");
+
+    using var updateOfferRequest = CreateSessionRequest(
+        HttpMethod.Patch,
+        $"{baseUrl}/internal/admin/catalog/{createdOfferId}",
+        adminSessionToken);
+    updateOfferRequest.Content = JsonContent.Create(new
+    {
+        name = "Offre test V0.15 modifiée",
+        description = "Offre informative modifiée par les smoke tests.",
+        category = "Tests",
+        unitLabel = "heure",
+        priceAmountCents = 13000,
+        status = "inactive",
+        displayOrder = 1001
+    });
+    using var updateOfferResponse = await client.SendAsync(updateOfferRequest);
+    using var updateOfferPayload = JsonDocument.Parse(
+        await updateOfferResponse.Content.ReadAsStringAsync());
+    Ensure(
+        updateOfferResponse.StatusCode == HttpStatusCode.OK
+        && updateOfferPayload.RootElement.GetProperty("status").GetString()
+            == "inactive",
+        "L'admin doit pouvoir modifier une offre commerciale.");
+
+    using var createDocumentRequest = CreateSessionRequest(
+        HttpMethod.Post,
+        $"{baseUrl}/internal/admin/commercial-documents",
+        adminSessionToken);
+    createDocumentRequest.Content = JsonContent.Create(new
+    {
+        customerReference,
+        documentType = "quote_draft",
+        title = "Brouillon commercial V0.15",
+        currency = "EUR",
+        serviceRequestId,
+        disclaimer = "Document informatif — ne constitue pas une facture officielle.",
+        status = "draft"
+    });
+    using var createDocumentResponse = await client.SendAsync(
+        createDocumentRequest);
+    using var createDocumentPayload = JsonDocument.Parse(
+        await createDocumentResponse.Content.ReadAsStringAsync());
+    Ensure(
+        createDocumentResponse.StatusCode == HttpStatusCode.OK
+        && createDocumentPayload.RootElement.GetProperty("status").GetString()
+            == "draft",
+        "L'admin doit pouvoir créer un document commercial brouillon.");
+    var createdDocumentId = createDocumentPayload.RootElement
+        .GetProperty("id")
+        .GetString()
+        ?? throw new InvalidOperationException(
+            "La création du document commercial ne retourne aucun identifiant.");
+
+    using var preShareClientDetailRequest = CreateSessionRequest(
+        HttpMethod.Get,
+        $"{baseUrl}/internal/portal/commercial-documents/{createdDocumentId}",
+        clientSessionToken);
+    using var preShareClientDetailResponse = await client.SendAsync(
+        preShareClientDetailRequest);
+    Ensure(
+        preShareClientDetailResponse.StatusCode == HttpStatusCode.NotFound,
+        "Un document non partagé ne doit pas être visible côté client.");
+
+    using var invalidLineRequest = CreateSessionRequest(
+        HttpMethod.Post,
+        $"{baseUrl}/internal/admin/commercial-documents/{createdDocumentId}/lines",
+        adminSessionToken);
+    invalidLineRequest.Content = JsonContent.Create(new
+    {
+        label = "Ligne invalide",
+        description = "Cette ligne doit être refusée.",
+        quantity = 1,
+        unitLabel = "forfait",
+        unitPriceCents = -10,
+        sortOrder = 10
+    });
+    using var invalidLineResponse = await client.SendAsync(invalidLineRequest);
+    Ensure(
+        invalidLineResponse.StatusCode == HttpStatusCode.BadRequest,
+        "Les montants invalides doivent être refusés.");
+
+    using var addLineRequest = CreateSessionRequest(
+        HttpMethod.Post,
+        $"{baseUrl}/internal/admin/commercial-documents/{createdDocumentId}/lines",
+        adminSessionToken);
+    addLineRequest.Content = JsonContent.Create(new
+    {
+        offerId = createdOfferId,
+        description = "Ligne informative ajoutée par les smoke tests.",
+        quantity = 2,
+        taxRateBasisPoints = 2000,
+        sortOrder = 10
+    });
+    using var addLineResponse = await client.SendAsync(addLineRequest);
+    using var addLinePayload = JsonDocument.Parse(
+        await addLineResponse.Content.ReadAsStringAsync());
+    Ensure(
+        addLineResponse.StatusCode == HttpStatusCode.OK
+        && addLinePayload.RootElement.GetProperty("changed").GetBoolean(),
+        "L'admin doit pouvoir ajouter une ligne de document.");
+    var createdLineId = addLinePayload.RootElement
+        .GetProperty("id")
+        .GetString()
+        ?? throw new InvalidOperationException(
+            "La création de ligne commerciale ne retourne aucun identifiant.");
+
+    using var updateLineRequest = CreateSessionRequest(
+        HttpMethod.Patch,
+        $"{baseUrl}/internal/admin/commercial-documents/{createdDocumentId}/lines/{createdLineId}",
+        adminSessionToken);
+    updateLineRequest.Content = JsonContent.Create(new
+    {
+        offerId = createdOfferId,
+        description = "Ligne informative modifiée par les smoke tests.",
+        quantity = 3,
+        taxRateBasisPoints = 2000,
+        sortOrder = 20
+    });
+    using var updateLineResponse = await client.SendAsync(updateLineRequest);
+    using var updateLinePayload = JsonDocument.Parse(
+        await updateLineResponse.Content.ReadAsStringAsync());
+    Ensure(
+        updateLineResponse.StatusCode == HttpStatusCode.OK
+        && updateLinePayload.RootElement.GetProperty("changed").GetBoolean(),
+        "L'admin doit pouvoir modifier une ligne de document.");
+
+    using var invalidStatusRequest = CreateSessionRequest(
+        HttpMethod.Patch,
+        $"{baseUrl}/internal/admin/commercial-documents/{createdDocumentId}",
+        adminSessionToken);
+    invalidStatusRequest.Content = JsonContent.Create(new
+    {
+        customerReference,
+        documentType = "quote_draft",
+        title = "Brouillon commercial V0.15",
+        currency = "EUR",
+        serviceRequestId,
+        disclaimer = "Document informatif — ne constitue pas une facture officielle.",
+        status = "shared_with_customer"
+    });
+    using var invalidStatusResponse = await client.SendAsync(
+        invalidStatusRequest);
+    Ensure(
+        invalidStatusResponse.StatusCode == HttpStatusCode.BadRequest,
+        "Un statut commercial invalide doit être refusé.");
+
+    using var updateDocumentRequest = CreateSessionRequest(
+        HttpMethod.Patch,
+        $"{baseUrl}/internal/admin/commercial-documents/{createdDocumentId}",
+        adminSessionToken);
+    updateDocumentRequest.Content = JsonContent.Create(new
+    {
+        customerReference,
+        documentType = "quote_draft",
+        title = "Brouillon commercial V0.15 à vérifier",
+        currency = "EUR",
+        serviceRequestId,
+        disclaimer = "Document informatif — ne constitue pas une facture officielle.",
+        status = "pending_review"
+    });
+    using var updateDocumentResponse = await client.SendAsync(
+        updateDocumentRequest);
+    using var updateDocumentPayload = JsonDocument.Parse(
+        await updateDocumentResponse.Content.ReadAsStringAsync());
+    Ensure(
+        updateDocumentResponse.StatusCode == HttpStatusCode.OK
+        && updateDocumentPayload.RootElement.GetProperty("status").GetString()
+            == "pending_review",
+        "L'admin doit pouvoir mettre un document commercial en attente de vérification.");
+
+    using var shareRequest = CreateSessionRequest(
+        HttpMethod.Post,
+        $"{baseUrl}/internal/admin/commercial-documents/{createdDocumentId}/share",
+        adminSessionToken);
+    using var shareResponse = await client.SendAsync(shareRequest);
+    using var sharePayload = JsonDocument.Parse(
+        await shareResponse.Content.ReadAsStringAsync());
+    Ensure(
+        shareResponse.StatusCode == HttpStatusCode.OK
+        && sharePayload.RootElement.GetProperty("status").GetString()
+            == "shared_with_customer",
+        "L'admin doit pouvoir partager un document commercial au client.");
+
+    using var sharedClientListRequest = CreateSessionRequest(
+        HttpMethod.Get,
+        $"{baseUrl}/internal/portal/commercial-documents",
+        clientSessionToken);
+    using var sharedClientListResponse = await client.SendAsync(
+        sharedClientListRequest);
+    using var sharedClientListPayload = JsonDocument.Parse(
+        await sharedClientListResponse.Content.ReadAsStringAsync());
+    Ensure(
+        sharedClientListResponse.StatusCode == HttpStatusCode.OK
+        && sharedClientListPayload.RootElement.GetArrayLength()
+            >= initialSharedDocumentCount + 1
+        && sharedClientListPayload.RootElement
+            .EnumerateArray()
+            .Any(item => item.GetProperty("id").GetString() == createdDocumentId),
+        "Le document partagé doit devenir visible côté client.");
+
+    using var clientDetailRequest = CreateSessionRequest(
+        HttpMethod.Get,
+        $"{baseUrl}/internal/portal/commercial-documents/{createdDocumentId}",
+        clientSessionToken);
+    using var clientDetailResponse = await client.SendAsync(clientDetailRequest);
+    var clientDetailText = await clientDetailResponse.Content.ReadAsStringAsync();
+    using var clientDetailPayload = JsonDocument.Parse(clientDetailText);
+    Ensure(
+        clientDetailResponse.StatusCode == HttpStatusCode.OK
+        && clientDetailPayload.RootElement.GetProperty("status").GetString()
+            == "shared_with_customer"
+        && clientDetailPayload.RootElement.GetProperty("lines").GetArrayLength()
+            == 1
+        && clientDetailPayload.RootElement.GetProperty("disclaimer").GetString()
+            == "Document informatif — ne constitue pas une facture officielle."
+        && clientDetailPayload.RootElement.GetProperty("totalAmountCents")
+            .GetInt32() > 0,
+        "Le détail client du document partagé doit être cohérent.");
+    if (serviceRequestId is not null)
+    {
+        Ensure(
+            clientDetailPayload.RootElement.GetProperty("serviceRequestId")
+                .GetString() == serviceRequestId,
+            "Le document commercial partagé doit conserver la demande liée.");
+    }
+    Ensure(
+        !clientDetailText.Contains("PayPal", StringComparison.OrdinalIgnoreCase)
+        && !clientDetailText.Contains("Stripe", StringComparison.OrdinalIgnoreCase),
+        "Aucune fonctionnalité de paiement ne doit être exposée.");
+
+    if (persistent && foreignCustomerId is not null)
+    {
+        var foreignDocumentId = await InsertForeignCommercialDocumentAsync(
+            foreignCustomerId);
+        try
+        {
+            using var foreignDetailRequest = CreateSessionRequest(
+                HttpMethod.Get,
+                $"{baseUrl}/internal/portal/commercial-documents/{foreignDocumentId}",
+                clientSessionToken);
+            using var foreignDetailResponse = await client.SendAsync(
+                foreignDetailRequest);
+            Ensure(
+                foreignDetailResponse.StatusCode == HttpStatusCode.NotFound,
+                "Un client ne doit jamais voir le document commercial d'un autre client.");
+        }
+        finally
+        {
+            await DeleteCommercialDocumentAsync(foreignDocumentId);
+        }
+    }
+
+    using var cancelRequest = CreateSessionRequest(
+        HttpMethod.Post,
+        $"{baseUrl}/internal/admin/commercial-documents/{createdDocumentId}/cancel",
+        adminSessionToken);
+    using var cancelResponse = await client.SendAsync(cancelRequest);
+    using var cancelPayload = JsonDocument.Parse(
+        await cancelResponse.Content.ReadAsStringAsync());
+    Ensure(
+        cancelResponse.StatusCode == HttpStatusCode.OK
+        && cancelPayload.RootElement.GetProperty("status").GetString()
+            == "cancelled",
+        "L'annulation d'un document commercial doit être possible.");
+
+    using var cancelledClientDetailRequest = CreateSessionRequest(
+        HttpMethod.Get,
+        $"{baseUrl}/internal/portal/commercial-documents/{createdDocumentId}",
+        clientSessionToken);
+    using var cancelledClientDetailResponse = await client.SendAsync(
+        cancelledClientDetailRequest);
+    using var cancelledClientDetailPayload = JsonDocument.Parse(
+        await cancelledClientDetailResponse.Content.ReadAsStringAsync());
+    Ensure(
+        cancelledClientDetailResponse.StatusCode == HttpStatusCode.OK
+        && cancelledClientDetailPayload.RootElement.GetProperty("status")
+            .GetString() == "cancelled",
+        "Un document annulé déjà partagé doit rester lisible côté client.");
+
+    using var adminDetailRequest = CreateSessionRequest(
+        HttpMethod.Get,
+        $"{baseUrl}/internal/admin/commercial-documents/{createdDocumentId}",
+        adminSessionToken);
+    using var adminDetailResponse = await client.SendAsync(adminDetailRequest);
+    using var adminDetailPayload = JsonDocument.Parse(
+        await adminDetailResponse.Content.ReadAsStringAsync());
+    Ensure(
+        adminDetailResponse.StatusCode == HttpStatusCode.OK
+        && adminDetailPayload.RootElement.GetProperty("status").GetString()
+            == "cancelled",
+        "Le document annulé doit rester lisible côté admin.");
+}
+
+async Task<string> InsertForeignCommercialDocumentAsync(string customerId)
+{
+    await using var connection = CreateMariaDbTestConnection();
+    await connection.OpenAsync();
+    await using var command = connection.CreateCommand();
+    var adminUserId = await FindInternalAdminUserIdAsync();
+    var id = Guid.NewGuid().ToString("D");
+    var reference = $"COM-ISO-{Guid.NewGuid():N}"[..16].ToUpperInvariant();
+    var now = DateTime.UtcNow;
+    command.CommandText =
+        """
+        INSERT INTO commercial_documents (
+            id,
+            customer_id,
+            service_request_id,
+            document_type,
+            status,
+            title,
+            internal_reference,
+            currency,
+            subtotal_amount_cents,
+            tax_amount_cents,
+            total_amount_cents,
+            disclaimer,
+            created_by_user_id,
+            created_at,
+            updated_at,
+            shared_at,
+            cancelled_at
+        ) VALUES (
+            @id,
+            @customer_id,
+            NULL,
+            'quote_draft',
+            'shared_with_customer',
+            'Document isolation test',
+            @reference,
+            'EUR',
+            1000,
+            0,
+            1000,
+            'Document informatif — ne constitue pas une facture officielle.',
+            @created_by_user_id,
+            @now,
+            @now,
+            @now,
+            NULL
+        );
+        """;
+    AddDbParameter(command, "@id", id);
+    AddDbParameter(command, "@customer_id", customerId);
+    AddDbParameter(command, "@created_by_user_id", adminUserId);
+    AddDbParameter(command, "@reference", reference);
+    AddDbParameter(command, "@now", now);
+    await command.ExecuteNonQueryAsync();
+    return id;
+}
+
+async Task<string> FindInternalAdminUserIdAsync()
+{
+    await using var connection = CreateMariaDbTestConnection();
+    await connection.OpenAsync();
+
+    await using var command = connection.CreateCommand();
+    command.CommandText =
+        """
+        SELECT id
+        FROM portal_users
+        WHERE email = @email
+          AND role = 'internal_admin'
+        LIMIT 1;
+        """;
+
+    AddDbParameter(
+        command,
+        "@email",
+        Environment.GetEnvironmentVariable("DEMO_INTERNAL_ADMIN_EMAIL")
+            ?? string.Empty);
+
+    var value = await command.ExecuteScalarAsync();
+
+    var adminUserId = value switch
+    {
+        null => null,
+        DBNull => null,
+        Guid guidValue => guidValue.ToString("D"),
+        string stringValue => stringValue,
+        _ => value.ToString()
+    };
+
+    Ensure(
+        !string.IsNullOrWhiteSpace(adminUserId),
+        "L'utilisateur admin démo MariaDB requis pour les documents commerciaux est introuvable.");
+
+    return adminUserId!;
+}
+
+async Task DeleteCommercialDocumentAsync(string documentId)
+{
+    await using var connection = CreateMariaDbTestConnection();
+    await connection.OpenAsync();
+    await using var transaction = await connection.BeginTransactionAsync();
+
+    await using (var linesCommand = connection.CreateCommand())
+    {
+        linesCommand.Transaction = transaction;
+        linesCommand.CommandText =
+            "DELETE FROM commercial_document_lines WHERE document_id = @document_id;";
+        AddDbParameter(linesCommand, "@document_id", documentId);
+        await linesCommand.ExecuteNonQueryAsync();
+    }
+
+    await using (var documentCommand = connection.CreateCommand())
+    {
+        documentCommand.Transaction = transaction;
+        documentCommand.CommandText =
+            "DELETE FROM commercial_documents WHERE id = @document_id;";
+        AddDbParameter(documentCommand, "@document_id", documentId);
+        await documentCommand.ExecuteNonQueryAsync();
+    }
+
+    await transaction.CommitAsync();
 }
 
 async Task PrepareIsolationFixtureAsync(
@@ -2520,6 +3169,36 @@ async Task CleanupIsolationFixtureAsync(
             "@request_id",
             supportRequestId);
         await requestDataCommand.ExecuteNonQueryAsync();
+    }
+
+    await using (var commercialLinesCommand = connection.CreateCommand())
+    {
+        commercialLinesCommand.Transaction = transaction;
+        commercialLinesCommand.CommandText =
+            """
+            DELETE line
+            FROM commercial_document_lines line
+            INNER JOIN commercial_documents document
+                ON document.id = line.document_id
+            WHERE document.customer_id = @customer_id;
+            """;
+        AddDbParameter(
+            commercialLinesCommand,
+            "@customer_id",
+            customerId);
+        await commercialLinesCommand.ExecuteNonQueryAsync();
+    }
+
+    await using (var commercialDocumentsCommand = connection.CreateCommand())
+    {
+        commercialDocumentsCommand.Transaction = transaction;
+        commercialDocumentsCommand.CommandText =
+            "DELETE FROM commercial_documents WHERE customer_id = @customer_id;";
+        AddDbParameter(
+            commercialDocumentsCommand,
+            "@customer_id",
+            customerId);
+        await commercialDocumentsCommand.ExecuteNonQueryAsync();
     }
 
     await using (var notificationCommand = connection.CreateCommand())

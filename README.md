@@ -60,6 +60,23 @@ Le SSO, le MFA, la récupération automatisée de mot de passe, les actions AD,
 le paiement, la facturation réelle et les intégrations NAS/RDS/VPN ne sont pas
 implémentés.
 
+## État V0.15
+
+La V0.15 ajoute un socle commercial prudent et strictement informatif :
+
+- un catalogue d'offres administrable sans suppression définitive ;
+- des documents commerciaux `draft`, `pending_review`,
+  `shared_with_customer` ou `cancelled` ;
+- des lignes de document calculées en centimes côté API-INTERNAL ;
+- un affichage client sur `/invoices` et `/commercial-documents/[id]` ;
+- des écrans admin `/admin/catalog` et `/admin/commercial-documents` ;
+- un disclaimer explicite : `Document informatif - ne constitue pas une facture officielle.` ;
+- l'absence de paiement, PDF légal, numérotation fiscale définitive,
+  e-mail réel, provisioning ou action AD.
+
+Les documents affichés dans cet espace restent informatifs tant que la
+facturation réelle n'est pas activée.
+
 ## Architecture
 
 ```mermaid
@@ -218,6 +235,9 @@ Cette commande exécute le scan de secrets, lint, typechecks, builds, smoke test
 API et contrats BFF, administration, exploitation et UX client. Les tests
 MariaDB réels restent volontairement séparés.
 
+Cette commande exécute aussi le contrat web V0.15 du socle commercial
+informatif en plus des contrats BFF, administration, exploitation et UX client.
+
 Health checks :
 
 - API : `/health/live`, `/health/ready` et `/health` pour compatibilité ;
@@ -226,6 +246,10 @@ Health checks :
 Une readiness en échec retourne HTTP 503. La readiness API exécute `SELECT 1`
 si MariaDB est configurée ; la readiness WEBPORTAL vérifie API-INTERNAL côté
 serveur sans exposer son URL.
+
+La migration `006_commercial_foundation.sql` ajoute `commercial_offers`,
+`commercial_documents` et `commercial_document_lines` sans activer de
+facturation légale ni de paiement.
 
 ## Routes
 
@@ -238,6 +262,10 @@ Pages privées : `/dashboard`, `/services`, `/invoices`, `/support`,
 Pages internes, réservées à `internal_admin` : `/admin`,
 `/admin/customers`, `/admin/support-requests`, `/admin/service-requests`,
 leurs pages de détail, `/admin/sessions` et `/admin/audit-logs`.
+
+V0.15 ajoute les pages `/commercial-documents/[id]`, `/admin/catalog`,
+`/admin/commercial-documents` et `/admin/commercial-documents/[id]` pour le
+catalogue d'offres et les documents commerciaux informatifs.
 
 Routes BFF :
 

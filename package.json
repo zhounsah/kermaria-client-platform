@@ -27,7 +27,8 @@
     "test:notifications": "npm --prefix apps/webportal run test:notifications",
     "test:replies": "npm --prefix apps/webportal run test:replies",
     "test:activity": "npm --prefix apps/webportal run test:activity",
-    "validate": "npm run check:secrets && npm run lint:web && npm run typecheck:shared && npm run typecheck:webportal && npm run build:web && npm run build:api && npm run test:api && npm --prefix apps/webportal run test:forms && npm --prefix apps/webportal run test:auth && npm --prefix apps/webportal run test:admin && npm run test:operations && npm run test:ux && npm run test:workflow && npm run test:notifications && npm run test:replies && npm run test:activity",
+    "test:commercial": "npm --prefix apps/webportal run test:commercial",
+    "validate": "npm run check:secrets && npm run lint:web && npm run typecheck:shared && npm run typecheck:webportal && npm run build:web && npm run build:api && npm run test:api && npm --prefix apps/webportal run test:forms && npm --prefix apps/webportal run test:auth && npm --prefix apps/webportal run test:admin && npm run test:operations && npm run test:ux && npm run test:workflow && npm run test:notifications && npm run test:replies && npm run test:activity && npm run test:commercial",
     "validate:mariadb": "node scripts/validate-mariadb.mjs"
   },
   "engines": {

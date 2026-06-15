@@ -16,6 +16,7 @@
     "test:notifications": "node scripts/verify-notifications-contract.mjs",
     "test:replies": "node scripts/verify-client-replies-contract.mjs",
     "test:activity": "node scripts/verify-admin-activity-contract.mjs",
+    "test:commercial": "node scripts/verify-commercial-foundation-contract.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

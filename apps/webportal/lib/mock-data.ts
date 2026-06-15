@@ -1,5 +1,8 @@
 import type {
   ClientProfile,
+  CommercialDocumentDetail,
+  CommercialDocumentSummary,
+  CommercialOfferSummary,
   InvoiceSummary,
   PortalSummary,
   ServiceCatalogItem,
@@ -116,6 +119,109 @@ export const mockInvoices: InvoiceSummary[] = [
     currency: "EUR",
   },
 ];
+
+export const mockCommercialOffers: CommercialOfferSummary[] = [
+  {
+    id: "offer-admin-001",
+    name: "Audit poste de travail",
+    description: "Revue informative d'un poste ou environnement ciblé.",
+    category: "Audit",
+    unitLabel: "forfait",
+    priceKind: "ht",
+    priceAmountCents: 12000,
+    currency: "EUR",
+    status: "active",
+    displayOrder: 10,
+    createdAt: "2026-06-01T09:00:00Z",
+    updatedAt: "2026-06-01T09:00:00Z",
+  },
+  {
+    id: "offer-admin-002",
+    name: "Intervention ponctuelle",
+    description:
+      "Intervention technique préparée selon le périmètre validé.",
+    category: "Assistance",
+    unitLabel: "heure",
+    priceKind: "ht",
+    priceAmountCents: 8500,
+    currency: "EUR",
+    status: "active",
+    displayOrder: 20,
+    createdAt: "2026-06-01T09:05:00Z",
+    updatedAt: "2026-06-01T09:05:00Z",
+  },
+  {
+    id: "offer-admin-003",
+    name: "Sauvegarde additionnelle",
+    description: "Option informative de sauvegarde supplémentaire.",
+    category: "Continuité",
+    unitLabel: "mois",
+    priceKind: "ht",
+    priceAmountCents: 2400,
+    currency: "EUR",
+    status: "active",
+    displayOrder: 30,
+    createdAt: "2026-06-01T09:10:00Z",
+    updatedAt: "2026-06-01T09:10:00Z",
+  },
+];
+
+export const mockCommercialDocuments: CommercialDocumentSummary[] = [
+  {
+    id: "commercial-doc-mock-001",
+    documentType: "quote_draft",
+    status: "shared_with_customer",
+    title: "Proposition d'accompagnement VPN",
+    internalReference: "COM-20260612-0001",
+    currency: "EUR",
+    subtotalAmountCents: 19400,
+    taxAmountCents: 3880,
+    totalAmountCents: 23280,
+    disclaimer: "Document informatif — ne constitue pas une facture officielle.",
+    createdAt: "2026-06-12T10:00:00Z",
+    updatedAt: "2026-06-12T10:30:00Z",
+    sharedAt: "2026-06-12T10:30:00Z",
+    serviceRequestId: "service-request-mock-001",
+    serviceRequestReference: "SRV-MOCK-ADMIN-001",
+  },
+];
+
+export const mockCommercialDocumentDetails: Record<string, CommercialDocumentDetail> =
+  {
+    "commercial-doc-mock-001": {
+      ...mockCommercialDocuments[0],
+      lines: [
+        {
+          id: "commercial-line-mock-001",
+          offerId: "offer-admin-002",
+          label: "Intervention ponctuelle",
+          description: "Qualification informative de l'accès VPN envisagé.",
+          quantity: 2,
+          unitLabel: "heure",
+          unitPriceCents: 8500,
+          taxRateBasisPoints: 2000,
+          lineTotalCents: 17000,
+          sortOrder: 10,
+          createdAt: "2026-06-12T10:00:00Z",
+          updatedAt: "2026-06-12T10:00:00Z",
+        },
+        {
+          id: "commercial-line-mock-002",
+          offerId: "offer-admin-003",
+          label: "Sauvegarde additionnelle",
+          description: "Option informative associée à la proposition.",
+          quantity: 1,
+          unitLabel: "mois",
+          unitPriceCents: 2400,
+          taxRateBasisPoints: 2000,
+          lineTotalCents: 2400,
+          sortOrder: 20,
+          createdAt: "2026-06-12T10:05:00Z",
+          updatedAt: "2026-06-12T10:05:00Z",
+        },
+      ],
+    },
+  };
 
 export const mockSupportRequests: SupportRequestSummary[] = [
   {

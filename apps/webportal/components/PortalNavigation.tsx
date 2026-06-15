@@ -8,7 +8,7 @@ import { LogoutButton } from "@/components/LogoutButton";
 const navigationItems = [
   { href: "/dashboard", label: "Vue d'ensemble" },
   { href: "/services", label: "Services" },
-  { href: "/invoices", label: "Factures" },
+  { href: "/invoices", label: "Documents" },
   { href: "/support", label: "Support" },
   { href: "/request-service", label: "Nouvelle demande" },
   { href: "/notifications", label: "Notifications" },

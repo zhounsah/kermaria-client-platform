@@ -210,6 +210,136 @@ export interface InvoiceSummary {
   currency: "EUR";
 }
 
+export type CommercialOfferStatus = "active" | "inactive";
+
+export interface CommercialOfferSummary {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  unitLabel: string;
+  priceKind: "ht";
+  priceAmountCents: number;
+  currency: "EUR";
+  status: CommercialOfferStatus;
+  displayOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CommercialOfferPayload {
+  name: string;
+  description: string;
+  category: string;
+  unitLabel: string;
+  priceAmountCents: number;
+  status: CommercialOfferStatus;
+  displayOrder: number;
+}
+
+export type CommercialDocumentType =
+  | "quote_draft"
+  | "billing_draft"
+  | "informational_invoice";
+
+export type CommercialDocumentStatus =
+  | "draft"
+  | "pending_review"
+  | "shared_with_customer"
+  | "cancelled";
+
+export interface CommercialDocumentLine {
+  id: string;
+  offerId: string | null;
+  label: string;
+  description: string;
+  quantity: number;
+  unitLabel: string;
+  unitPriceCents: number;
+  taxRateBasisPoints: number | null;
+  lineTotalCents: number;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CommercialDocumentSummary {
+  id: string;
+  documentType: CommercialDocumentType;
+  status: CommercialDocumentStatus;
+  title: string;
+  internalReference: string;
+  currency: "EUR";
+  subtotalAmountCents: number;
+  taxAmountCents: number;
+  totalAmountCents: number;
+  disclaimer: string;
+  createdAt: string;
+  updatedAt: string;
+  sharedAt: string | null;
+  serviceRequestId: string | null;
+  serviceRequestReference: string | null;
+}
+
+export interface CommercialDocumentDetail extends CommercialDocumentSummary {
+  lines: CommercialDocumentLine[];
+}
+
+export interface AdminCommercialDocumentSummary
+  extends CommercialDocumentSummary {
+  customerReference: string;
+  customerName: string;
+}
+
+export interface AdminCommercialDocumentDetail
+  extends AdminCommercialDocumentSummary {
+  createdByDisplayName: string;
+  lines: CommercialDocumentLine[];
+}
+
+export interface CommercialDocumentPayload {
+  customerReference: string;
+  documentType: CommercialDocumentType;
+  title: string;
+  currency: "EUR";
+  serviceRequestId: string | null;
+  disclaimer: string;
+  status?: Extract<CommercialDocumentStatus, "draft" | "pending_review">;
+}
+
+export interface CommercialDocumentLinePayload {
+  offerId: string | null;
+  label: string;
+  description: string;
+  quantity: number;
+  unitLabel: string;
+  unitPriceCents: number;
+  taxRateBasisPoints: number | null;
+  sortOrder: number;
+}
+
+export interface CommercialOfferMutationResponse {
+  id: string;
+  status: CommercialOfferStatus;
+  changed: boolean;
+  correlation_id: CorrelationId;
+}
+
+export interface CommercialDocumentMutationResponse {
+  id: string;
+  internalReference: string;
+  status: CommercialDocumentStatus;
+  changed: boolean;
+  correlation_id: CorrelationId;
+}
+
+export interface CommercialDocumentLineMutationResponse {
+  id: string;
+  documentId: string;
+  changed: boolean;
+  correlation_id: CorrelationId;
+}
+
 export interface SupportRequestSummary {
   id: string;
   reference: string;

@@ -131,6 +131,78 @@ Représente les métadonnées d'une facture.
 Contraintes : référence externe unique dans son système source et montants
 cohérents selon les règles métier.
 
+## commercial_offers
+
+Catalogue commercial administrable de V0.15.
+
+| Champ | Type logique | Description |
+|---|---|---|
+| `id` | identifier | Clé interne |
+| `name` | text | Nom de l'offre |
+| `description` | text | Description informative |
+| `category` | text | Catégorie d'affichage |
+| `unit_label` | text | `mois`, `heure`, `forfait`, `prestation`, etc. |
+| `price_kind` | text | `ht` dans cette version |
+| `price_amount_cents` | integer | Prix indicatif en centimes |
+| `currency` | text | Devise, `EUR` dans cette version |
+| `status` | text | `active` ou `inactive` |
+| `display_order` | integer | Ordre d'affichage |
+| `created_at` | timestamp | Date de création |
+| `updated_at` | timestamp | Dernière modification |
+
+Aucune suppression définitive n'est requise en V0.15. Une offre inactive peut
+rester référencée par des documents existants.
+
+## commercial_documents
+
+Document commercial informatif visible par l'admin puis, après partage, par le
+client.
+
+| Champ | Type logique | Description |
+|---|---|---|
+| `id` | identifier | Clé interne |
+| `customer_id` | identifier | Client concerné |
+| `service_request_id` | identifier, nullable | Demande de service liée |
+| `document_type` | text | `quote_draft`, `billing_draft`, `informational_invoice` |
+| `status` | text | `draft`, `pending_review`, `shared_with_customer`, `cancelled` |
+| `title` | text | Titre affiché |
+| `internal_reference` | text | Référence interne non fiscale |
+| `currency` | text | Devise |
+| `subtotal_amount_cents` | integer | Sous-total informatif en centimes |
+| `tax_amount_cents` | integer | Taxes informatives en centimes |
+| `total_amount_cents` | integer | Total informatif en centimes |
+| `disclaimer` | text | Mention informative obligatoire |
+| `created_by_user_id` | identifier, nullable | Auteur admin |
+| `created_at` | timestamp | Date de création |
+| `updated_at` | timestamp | Dernière modification |
+| `shared_at` | timestamp, nullable | Date de partage au client |
+| `cancelled_at` | timestamp, nullable | Date d'annulation |
+
+Le document ne constitue jamais une facture officielle. `shared_with_customer`
+signifie uniquement que le client peut voir le document dans son portail.
+
+## commercial_document_lines
+
+Lignes modifiables tant que le document reste en brouillon.
+
+| Champ | Type logique | Description |
+|---|---|---|
+| `id` | identifier | Clé interne |
+| `document_id` | identifier | Document parent |
+| `offer_id` | identifier, nullable | Offre source si applicable |
+| `label` | text | Libellé de ligne |
+| `description` | text | Description informative |
+| `quantity` | decimal | Quantité validée côté API |
+| `unit_label` | text | Unité affichée |
+| `unit_price_cents` | integer | Prix unitaire en centimes |
+| `tax_rate_basis_points` | integer, nullable | Taux indicatif en basis points |
+| `line_total_cents` | integer | Total de ligne en centimes |
+| `sort_order` | integer | Ordre d'affichage |
+| `created_at` | timestamp | Date de création |
+
+La V0.15 ne cherche pas à couvrir toutes les subtilités comptables ou TVA.
+Les montants restent informatifs, validés côté serveur et stockés en centimes.
+
 ## support_requests
 
 Représente une demande de support créée depuis le portail.
