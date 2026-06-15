@@ -1,5 +1,10 @@
 # Déploiement
 
+La procédure V0.16 de préproduction technique est détaillée dans
+[V0.16_PREPRODUCTION_TECHNIQUE.md](V0.16_PREPRODUCTION_TECHNIQUE.md). Ce
+document complète ce runbook pour la validation pré-déploiement, les scripts
+PowerShell et le diagnostic d'incident.
+
 ## Topologie
 
 | Composant | Cible | Exposition |
@@ -58,6 +63,14 @@ Variables `WEBPORTAL` :
 
 En production, `SESSION_COOKIE_SECURE=true` est obligatoire. Le cookie est
 toujours `HttpOnly` et `SameSite=Lax`.
+
+En préproduction V0.16 :
+
+- `NODE_ENV=production` ;
+- `ASPNETCORE_ENVIRONMENT=Production` ;
+- `DOTNET_ENVIRONMENT=Production` ;
+- `AD_INTEGRATION_MODE=disabled` ;
+- les variables `DEMO_*` doivent rester absentes.
 
 `SERVICE_AUTH_TOKEN` doit être identique sur les deux applications. WEBPORTAL
 l'ajoute uniquement aux appels serveur ; API-INTERNAL le vérifie sur
@@ -134,6 +147,8 @@ le token ne rend pas API-INTERNAL publiable.
 - Surveiller `/health/live`, `/health/ready`, disponibilité, latence, erreurs
   SQL contrôlées, refus interservice/AD, certificats, espace disque et
   sauvegardes.
+- Surveiller aussi `GET /ready` et les headers `X-Correlation-Id` /
+  `X-Request-Id`.
 - Ne jamais exporter un secret dans la télémétrie.
 
 ## Mise en service
@@ -142,17 +157,20 @@ le token ne rend pas API-INTERNAL publiable.
 2. Tourner les secrets exposés selon
    [SECRET_ROTATION.md](SECRET_ROTATION.md).
 3. Exécuter `npm run validate`.
-4. Valider réseau privé, HTTPS, identité de service et supervision.
-5. Sauvegarder puis appliquer les migrations de façon contrôlée.
-6. Exécuter les tests MariaDB opt-in.
-7. Exiger HTTP 200 sur les quatre health checks live/ready.
-8. Conserver `AD_INTEGRATION_MODE=disabled`.
-9. Vérifier les attributs `Secure`, `HttpOnly` et `SameSite=Lax` du cookie.
-10. Tester expiration, révocation et isolation entre deux clients fictifs.
-11. Tester le lockout, le reset après succès et les refus croisés de rôle.
-12. Vérifier que les vues `/admin` restent strictement en lecture seule.
-13. Vérifier `X-Robots-Tag: noindex, nofollow`.
-14. Tester une restauration sur une base distincte.
+4. Exécuter `npm run validate:preprod`.
+5. Exécuter `npm run check:health` sur les URLs visées.
+6. Valider réseau privé, HTTPS, identité de service et supervision.
+7. Sauvegarder puis appliquer les migrations de façon contrôlée.
+8. Exécuter les tests MariaDB opt-in.
+9. Exiger HTTP 200 sur les quatre health checks live/ready ainsi que sur
+   `GET /ready`.
+10. Conserver `AD_INTEGRATION_MODE=disabled`.
+11. Vérifier les attributs `Secure`, `HttpOnly` et `SameSite=Lax` du cookie.
+12. Tester expiration, révocation et isolation entre deux clients fictifs.
+13. Tester le lockout, le reset après succès et les refus croisés de rôle.
+14. Vérifier que les vues `/admin` restent strictement en lecture seule.
+15. Vérifier `X-Robots-Tag: noindex, nofollow`.
+16. Tester une restauration sur une base distincte.
 
 Les commandes détaillées Windows et Linux sont dans
 [OPERATIONS.md](OPERATIONS.md).

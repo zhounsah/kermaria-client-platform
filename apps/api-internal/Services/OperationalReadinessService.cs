@@ -33,12 +33,23 @@ public sealed class OperationalReadinessService
                 && _adConfiguration.ConfigurationValid
                     ? "healthy"
                     : "unhealthy",
+            ["persistence"] = _sqlConfiguration.IsPersistent
+                ? "mariadb"
+                : "mock",
             ["mariadb"] = await CheckMariaDbAsync(cancellationToken),
             ["ad"] = _adConfiguration.ModeName
         };
 
         var isHealthy = checks["configuration"] == "healthy"
             && checks["mariadb"] != "unhealthy";
+
+        _logger.LogInformation(
+            "Readiness evaluated configuration {ConfigurationStatus} persistence {PersistenceStatus} mariadb {MariaDbStatus} ad {AdStatus} healthy {IsHealthy}",
+            checks["configuration"],
+            checks["persistence"],
+            checks["mariadb"],
+            checks["ad"],
+            isHealthy);
 
         return new OperationalReadinessResult(isHealthy, checks);
     }
@@ -70,7 +81,8 @@ public sealed class OperationalReadinessService
                 or InvalidOperationException)
         {
             _logger.LogWarning(
-                "Readiness check failed for MariaDB without exposing connection details");
+                "Readiness check failed for MariaDB without exposing connection details exception_type {ExceptionType}",
+                exception.GetType().Name);
             return "unhealthy";
         }
     }

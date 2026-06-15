@@ -275,6 +275,7 @@ revue de sécurité.
 
 - `/health/live` et `/api/health/live` n'accèdent à aucun secret ni système
   interne.
+- `/ready` est un alias de readiness pour la supervision privée.
 - `/health/ready` vérifie la configuration et MariaDB par `SELECT 1`.
 - `/api/health/ready` appelle la readiness API côté serveur.
 - Les réponses n'affichent ni URL, ni host SQL, ni token, ni stacktrace.

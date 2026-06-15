@@ -53,7 +53,7 @@ if (IsMariaDbTestRequested())
     await RunMariaDbReadTestsAsync();
 }
 
-Console.WriteLine("Smoke tests API-INTERNAL V0.9 réussis.");
+Console.WriteLine("Smoke tests API-INTERNAL V0.16 reussis.");
 return 0;
 
 async Task RunMockTestsAsync()
@@ -135,6 +135,16 @@ async Task RunMockTestsAsync()
                 mockAdminPassword,
                 StringComparison.Ordinal),
             "Le health check ready ne doit contenir aucun secret.");
+
+        using var readyAliasResponse = await client.GetAsync(
+            $"{mockBaseUrl}/ready");
+        using var readyAliasPayload = JsonDocument.Parse(
+            await readyAliasResponse.Content.ReadAsStringAsync());
+        Ensure(
+            readyAliasResponse.StatusCode == HttpStatusCode.OK
+            && readyAliasPayload.RootElement.GetProperty("check").GetString()
+                == "ready",
+            "L'alias /ready mock est invalide.");
 
         using var unauthenticatedResponse = await client.GetAsync(
             $"{mockBaseUrl}/internal/portal/services");
@@ -1365,6 +1375,13 @@ async Task RunUnavailableReadinessTestAsync()
                 sqlPasswordSentinel,
                 StringComparison.Ordinal),
             "La readiness ne doit divulguer aucun mot de passe SQL.");
+
+        using var readyAliasResponse = await client.GetAsync(
+            $"{baseUrl}/ready");
+        Ensure(
+            readyAliasResponse.StatusCode
+                == HttpStatusCode.ServiceUnavailable,
+            "L'alias /ready doit refuser une MariaDB indisponible.");
     }
     finally
     {
@@ -1518,6 +1535,16 @@ async Task RunMariaDbReadTestsAsync()
             && readyPayload.RootElement.GetProperty("checks")
                 .GetProperty("mariadb").GetString() == "healthy",
             "La readiness MariaDB conditionnelle est invalide.");
+
+        using var readyAliasResponse = await client.GetAsync(
+            $"{mariaDbBaseUrl}/ready");
+        using var readyAliasPayload = JsonDocument.Parse(
+            await readyAliasResponse.Content.ReadAsStringAsync());
+        Ensure(
+            readyAliasResponse.StatusCode == HttpStatusCode.OK
+            && readyAliasPayload.RootElement.GetProperty("checks")
+                .GetProperty("mariadb").GetString() == "healthy",
+            "L'alias /ready MariaDB conditionnelle est invalide.");
         await VerifyNotificationMigrationAsync();
         await VerifyCommercialMigrationAsync();
 

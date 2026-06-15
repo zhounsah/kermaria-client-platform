@@ -53,6 +53,7 @@ publiées par le reverse proxy et jamais appelées directement par le navigateur
 
 - `GET /health`
 - `GET /health/live`
+- `GET /ready`
 - `GET /health/ready`
 - `POST /internal/auth/sessions`
 - `GET /internal/auth/session`
@@ -157,10 +158,12 @@ Format d'erreur :
 }
 ```
 
-## Health checks V0.9
+## Health checks V0.16
 
 `GET /health/live` et `GET /api/health/live` retournent HTTP 200 si le
 processus correspondant répond. Ils ne vérifient ni MariaDB ni AD.
+
+`GET /ready` est un alias court de `GET /health/ready` pour la supervision.
 
 `GET /health/ready` retourne :
 
@@ -170,6 +173,9 @@ processus correspondant répond. Ils ne vérifient ni MariaDB ni AD.
   ou si MariaDB est indisponible.
 
 Le champ `checks.ad` expose uniquement le mode (`disabled` par défaut).
+
+Les réponses API exposent `X-Correlation-Id` et `X-Request-Id` sans inclure de
+secret ou de détail de connexion.
 
 `GET /api/health/ready` appelle la readiness API depuis le serveur Next.js. Il
 retourne HTTP 503 si la configuration WEBPORTAL est invalide ou API-INTERNAL

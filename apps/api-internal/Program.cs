@@ -208,8 +208,11 @@ app.UseExceptionHandler(exceptionHandler =>
 
         app.Logger.LogError(
             exception,
-            "Controlled request failure code {ErrorCode} correlation_id {CorrelationId} exception_type {ExceptionType}",
+            "Controlled request failure code {ErrorCode} status_code {StatusCode} method {Method} path {Path} correlation_id {CorrelationId} exception_type {ExceptionType}",
             code,
+            statusCode,
+            context.Request.Method,
+            context.Request.Path,
             correlationId,
             exception?.GetType().FullName ?? "<none>");
 
@@ -283,6 +286,27 @@ app.MapGet(
             "api-internal",
             "live",
             DateTime.UtcNow)));
+app.MapGet(
+    "/ready",
+    async (
+        OperationalReadinessService readinessService,
+        HttpContext context) =>
+    {
+        var readiness = await readinessService.CheckAsync(
+            context.RequestAborted);
+        var payload = new OperationalHealthResponse(
+            readiness.IsHealthy ? "healthy" : "unhealthy",
+            "api-internal",
+            "ready",
+            DateTime.UtcNow,
+            readiness.Checks);
+
+        return readiness.IsHealthy
+            ? Results.Ok(payload)
+            : Results.Json(
+                payload,
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+    });
 app.MapGet(
     "/health/ready",
     async (

@@ -20,7 +20,10 @@
     "typecheck:webportal": "npm run typecheck --workspace @kermaria/webportal",
     "typecheck:shared": "npm run typecheck --workspace @kermaria/shared",
     "check:web": "npm run typecheck:shared && npm run lint:webportal && npm run typecheck:webportal && npm run build:webportal",
+    "check:health": "node scripts/check-health.mjs",
     "check:secrets": "node scripts/check-secrets.mjs",
+    "backup:mariadb": "powershell -ExecutionPolicy Bypass -File .\\scripts\\backup-mariadb.ps1",
+    "restore:mariadb": "powershell -ExecutionPolicy Bypass -File .\\scripts\\restore-mariadb.ps1",
     "test:operations": "npm --prefix apps/webportal run test:operations",
     "test:ux": "npm --prefix apps/webportal run test:ux",
     "test:workflow": "npm --prefix apps/webportal run test:workflow",
@@ -29,7 +32,8 @@
     "test:activity": "npm --prefix apps/webportal run test:activity",
     "test:commercial": "npm --prefix apps/webportal run test:commercial",
     "validate": "npm run check:secrets && npm run lint:web && npm run typecheck:shared && npm run typecheck:webportal && npm run build:web && npm run build:api && npm run test:api && npm --prefix apps/webportal run test:forms && npm --prefix apps/webportal run test:auth && npm --prefix apps/webportal run test:admin && npm run test:operations && npm run test:ux && npm run test:workflow && npm run test:notifications && npm run test:replies && npm run test:activity && npm run test:commercial",
-    "validate:mariadb": "node scripts/validate-mariadb.mjs"
+    "validate:mariadb": "node scripts/validate-mariadb.mjs",
+    "validate:preprod": "node scripts/validate-preprod.mjs"
   },
   "engines": {
     "node": ">=24"

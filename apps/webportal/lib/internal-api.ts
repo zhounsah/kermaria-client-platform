@@ -44,6 +44,7 @@ import {
   getInternalApiUrl,
   getInternalServiceHeaders,
 } from "@/lib/runtime-config";
+import { logBffFailure } from "@/lib/bff-observability";
 import { readPortalSessionToken } from "@/lib/session-cookie";
 import {
   mockCommercialDocumentDetails,
@@ -846,18 +847,32 @@ export async function checkInternalApiReadiness(
 
 export function getInternalApiError(error: unknown) {
   if (error instanceof InternalApiError) {
-    return {
+    const failure = {
       error: error.apiError,
       status: error.status,
     };
+    logInternalApiFailure(
+      error,
+      failure.status,
+      failure.error.code,
+      failure.error.correlation_id,
+    );
+    return failure;
   }
 
   const correlationId = resolveCorrelationId(null);
-
-  return {
+  const failure = {
     error: unavailableError(correlationId),
     status: 503,
   };
+  logInternalApiFailure(
+    error,
+    failure.status,
+    failure.error.code,
+    failure.error.correlation_id,
+  );
+
+  return failure;
 }
 
 export function resolveDataSource(sources: DataSource[]): DataSource {
@@ -874,4 +889,31 @@ export function resolveDataSource(sources: DataSource[]): DataSource {
   }
 
   return "local-fallback";
+}
+
+function logInternalApiFailure(
+  error: unknown,
+  status: number,
+  code: string,
+  correlationId: CorrelationId,
+) {
+  if (
+    status < 500
+    && code !== "INTERNAL_API_UNAVAILABLE"
+    && code !== "INVALID_INTERNAL_RESPONSE"
+  ) {
+    return;
+  }
+
+  logBffFailure({
+    category:
+      error instanceof InternalApiError
+        ? "internal_api_response"
+        : "internal_api_transport",
+    code,
+    correlation_id: correlationId,
+    operation: "internal-api.request",
+    status,
+    surface: "webportal-bff",
+  });
 }

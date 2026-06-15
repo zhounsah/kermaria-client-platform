@@ -15,6 +15,7 @@ const excludedDirectories = new Set([
 ]);
 const excludedFiles = new Set([
   path.normalize("scripts/check-secrets.mjs"),
+  path.normalize("scripts/validate-preprod.mjs"),
   path.normalize("apps/api-internal/Data/Configuration/RuntimeConfigurationValidator.cs"),
   path.normalize("apps/webportal/lib/runtime-config.ts"),
 ]);
@@ -89,7 +90,7 @@ async function listFiles(directory) {
 }
 
 function isTextFile(fileName) {
-  return /\.(?:cs|csproj|css|env|example|js|json|md|mjs|props|sql|targets|ts|tsx|txt|xml|ya?ml)$/i.test(
+  return /\.(?:cs|csproj|css|env|example|js|json|md|mjs|props|ps1|sql|targets|ts|tsx|txt|xml|ya?ml)$/i.test(
     fileName,
   );
 }

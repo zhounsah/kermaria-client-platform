@@ -1,5 +1,21 @@
 # Feuille de route
 
+## Jalon V0.16 preproduction technique
+
+Statut : **implémenté dans le dépôt, validation hôte cible encore requise**.
+
+- documentation dédiée `docs/V0.16_PREPRODUCTION_TECHNIQUE.md` ;
+- checklist de prédéploiement et diagnostic d'incident ;
+- script `validate:preprod` pour les variables et garde-fous d'architecture ;
+- script `check:health` pour WEBPORTAL et API-INTERNAL ;
+- alias API `GET /ready` ;
+- logs de requête et de readiness renforcés avec corrélation exploitable ;
+- scripts PowerShell `backup:mariadb` et `restore:mariadb`.
+
+La V0.16 n'ajoute aucune intégration AD réelle, aucun paiement, aucune
+facturation légale, aucun e-mail, aucun SMS, aucun push, aucun WebSocket,
+aucun provisioning et aucune action admin destructive.
+
 ## Jalon V0.15 socle commercial informatif
 
 Statut : **implémenté et validé pour publication `v0.15`**.

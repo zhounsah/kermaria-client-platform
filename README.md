@@ -77,6 +77,25 @@ La V0.15 ajoute un socle commercial prudent et strictement informatif :
 Les documents affichés dans cet espace restent informatifs tant que la
 facturation réelle n'est pas activée.
 
+## Etat V0.16
+
+La V0.16 borne le projet a une preproduction technique, sans changer
+l'architecture ni ouvrir de nouvelles integrations sensibles :
+
+- documentation dediee au deploiement preproduction et a l'observabilite ;
+- checklist de predeploiement et diagnostic des incidents frequents ;
+- validation `npm run validate:preprod` des variables, garde-fous BFF/API et
+  scan de secrets ;
+- verification active `npm run check:health` des endpoints WEBPORTAL et
+  API-INTERNAL ;
+- endpoint API `GET /ready` en plus des routes `/health/*` existantes ;
+- logs de requete et de readiness plus exploitables avec correlation ID ;
+- scripts PowerShell `backup:mariadb` et `restore:mariadb` sans secret dans le
+  depot.
+
+La V0.16 n'active toujours ni AD reelle, ni paiement, ni facturation legale,
+ni e-mail, ni SMS, ni push, ni provisioning, ni action admin destructive.
+
 ## Architecture
 
 ```mermaid
@@ -240,12 +259,33 @@ informatif en plus des contrats BFF, administration, exploitation et UX client.
 
 Health checks :
 
-- API : `/health/live`, `/health/ready` et `/health` pour compatibilité ;
+- API : `/health/live`, `/health/ready`, `/ready` et `/health` ;
 - WEBPORTAL : `/api/health/live`, `/api/health/ready` et `/api/health`.
 
 Une readiness en échec retourne HTTP 503. La readiness API exécute `SELECT 1`
 si MariaDB est configurée ; la readiness WEBPORTAL vérifie API-INTERNAL côté
 serveur sans exposer son URL.
+
+Validation preproduction :
+
+```powershell
+npm run validate:preprod
+npm run check:health
+```
+
+`validate:preprod` controle la coherence des variables de preproduction, la
+visibilite strictement serveur de `INTERNAL_API_URL`, l'absence de stockage de
+session navigateur dans le code web et le garde-fou secrets.
+
+`check:health` interroge API-INTERNAL et WEBPORTAL sur leurs endpoints live et
+ready, verifie `X-Correlation-Id` et refuse un payload non JSON ou sensible.
+
+Sauvegardes MariaDB sous Windows PowerShell :
+
+```powershell
+npm run backup:mariadb
+npm run restore:mariadb -- -DumpPath C:\Backups\Kermaria\kermaria_mariadb_<DATE>.sql -VerifySchema
+```
 
 La migration `006_commercial_foundation.sql` ajoute `commercial_offers`,
 `commercial_documents` et `commercial_document_lines` sans activer de
@@ -343,6 +383,7 @@ Les routes `GET|POST /internal/*` sont strictement privées et exigent
 - [Déploiement](docs/DEPLOYMENT.md)
 - [Exploitation](docs/OPERATIONS.md)
 - [Sauvegarde et restauration](docs/BACKUP_RESTORE.md)
+- [Preproduction technique V0.16](docs/V0.16_PREPRODUCTION_TECHNIQUE.md)
 - [Rotation des secrets](docs/SECRET_ROTATION.md)
 - [UX client V0.10](docs/V0.10_UX_CLIENT.md)
 - [Workflow demandes V0.11](docs/V0.11_REQUEST_WORKFLOW.md)

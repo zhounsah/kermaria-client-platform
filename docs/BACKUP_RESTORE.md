@@ -15,6 +15,20 @@ Ne jamais :
 
 ## Sauvegarde
 
+Commande PowerShell V0.16 recommandée :
+
+```powershell
+npm run backup:mariadb
+```
+
+Le script :
+
+- lit `SQL_HOST`, `SQL_PORT`, `SQL_DATABASE` et `SQL_USERNAME` ;
+- demande `SQL_PASSWORD` localement si besoin ;
+- génère un dump horodaté ;
+- calcule un hash SHA-256 ;
+- n'écrit jamais le mot de passe dans le dépôt.
+
 Linux :
 
 ```bash
@@ -60,6 +74,14 @@ sha256sum /var/backups/kermaria/backup_<DATE>.sql
 
 ## Restauration de test
 
+Commande PowerShell V0.16 recommandée :
+
+```powershell
+npm run restore:mariadb -- -DumpPath C:\Backups\Kermaria\kermaria_mariadb_<DATE>.sql -TargetDatabase TEST_WEB_RESTORE -VerifySchema
+```
+
+`-VerifySchema` relit `schema_migrations` après restauration.
+
 Restaurer d'abord vers une base vide dédiée, jamais par-dessus la source.
 
 Linux :
@@ -94,7 +116,15 @@ ORDER BY applied_at;
 
 Comparer les volumes avec la source au moment de la sauvegarde. Démarrer une
 instance API pointant vers la base restaurée, puis vérifier `/health/ready`,
-login, lectures client/admin et isolation.
+`/ready`, login, lectures client/admin et isolation.
+
+Checklist rapide de test :
+
+1. restaurer vers une base distincte ;
+2. vérifier le hash du dump ;
+3. vérifier `schema_migrations` ;
+4. vérifier `/health/ready` et `/ready` ;
+5. vérifier login client/admin et refus `/admin` pour `client_user`.
 
 ## Avant et après migration
 
@@ -132,3 +162,5 @@ Conserver plusieurs générations selon la politique de l'organisation, avec au
 moins une copie hors hôte. Tester régulièrement une restauration complète. La
 suppression des anciennes générations doit être automatisée par
 l'infrastructure, jamais par un script applicatif non revu.
+
+Voir aussi [V0.16_PREPRODUCTION_TECHNIQUE.md](V0.16_PREPRODUCTION_TECHNIQUE.md).

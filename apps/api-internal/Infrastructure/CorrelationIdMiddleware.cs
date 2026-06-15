@@ -1,8 +1,11 @@
+using System.Diagnostics;
+
 namespace Kermaria.ApiInternal.Infrastructure;
 
 public sealed class CorrelationIdMiddleware
 {
     public const string HeaderName = "X-Correlation-Id";
+    public const string RequestIdHeaderName = "X-Request-Id";
     public const string ItemKey = "CorrelationId";
 
     private readonly RequestDelegate _next;
@@ -20,9 +23,12 @@ public sealed class CorrelationIdMiddleware
     {
         var correlationId = CorrelationIdProvider.Resolve(
             context.Request.Headers[HeaderName].FirstOrDefault());
+        var stopwatch = Stopwatch.StartNew();
 
         context.Items[ItemKey] = correlationId;
+        context.TraceIdentifier = correlationId;
         context.Response.Headers[HeaderName] = correlationId;
+        context.Response.Headers[RequestIdHeaderName] = correlationId;
 
         using (_logger.BeginScope(new Dictionary<string, object?>
         {
@@ -30,11 +36,24 @@ public sealed class CorrelationIdMiddleware
         }))
         {
             _logger.LogInformation(
-                "Handling {Method} {Path}",
+                "Request started method {Method} path {Path}",
                 context.Request.Method,
                 context.Request.Path);
 
-            await _next(context);
+            try
+            {
+                await _next(context);
+            }
+            finally
+            {
+                stopwatch.Stop();
+                _logger.LogInformation(
+                    "Request completed method {Method} path {Path} status_code {StatusCode} duration_ms {DurationMs}",
+                    context.Request.Method,
+                    context.Request.Path,
+                    context.Response.StatusCode,
+                    stopwatch.ElapsedMilliseconds);
+            }
         }
     }
 }

@@ -1,4 +1,4 @@
-# Exploitation V0.9
+# Exploitation V0.16
 
 ## Objectif
 
@@ -139,6 +139,18 @@ curl --fail http://localhost:3000/api/health/ready
 pour API-INTERNAL, `SELECT 1` sur MariaDB. La readiness WEBPORTAL appelle la
 readiness API par le réseau serveur. HTTP 503 interdit la mise en trafic.
 
+V0.16 ajoute aussi l'alias API :
+
+```powershell
+Invoke-RestMethod http://localhost:5000/ready
+```
+
+Validation active de bout en bout :
+
+```powershell
+npm.cmd run check:health
+```
+
 ## Validation MariaDB opt-in
 
 PowerShell :
@@ -174,6 +186,8 @@ Surveiller au minimum :
 - lockouts et échecs de connexion ;
 - refus d'accès admin et d'identité interservice ;
 - échecs de persistance d'audit ;
+- début/fin de requête avec `correlation_id`, code HTTP et durée ;
+- logs BFF structurés `webportal-bff` lors des erreurs internes ;
 - espace disque et état des sauvegardes.
 
 ## Rollback
@@ -192,15 +206,19 @@ Surveiller au minimum :
 1. `git status` ne montre aucun fichier sensible ou généré.
 2. Secrets injectés hors Git et tournés si exposés.
 3. `npm run validate` réussit.
-4. Sauvegarde MariaDB réalisée avant migration.
-5. Migration appliquée explicitement.
-6. Tests MariaDB opt-in réussis.
-7. Les quatre health checks répondent 200.
-8. Login client et admin validés.
-9. `/admin` est refusé à `client_user`.
-10. Demandes support/service retournent `persisted:true`.
-11. Logs inspectés sans secret.
-12. Headers HTTP et `X-Robots-Tag` vérifiés.
-13. Restauration testée sur une base de test.
-14. AD reste `disabled`.
-15. Paiement et facturation réelle restent absents.
+4. `npm run validate:preprod` réussit.
+5. Sauvegarde MariaDB réalisée avant migration.
+6. Migration appliquée explicitement.
+7. Tests MariaDB opt-in réussis.
+8. `npm run check:health` réussit.
+9. Les quatre health checks live/ready et `GET /ready` répondent 200.
+10. Login client et admin validés.
+11. `/admin` est refusé à `client_user`.
+12. Demandes support/service retournent `persisted:true`.
+13. Logs inspectés sans secret.
+14. Headers HTTP et `X-Robots-Tag` vérifiés.
+15. Restauration testée sur une base de test.
+16. AD reste `disabled`.
+17. Paiement et facturation réelle restent absents.
+
+Voir aussi [V0.16_PREPRODUCTION_TECHNIQUE.md](V0.16_PREPRODUCTION_TECHNIQUE.md).
