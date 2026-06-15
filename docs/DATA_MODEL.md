@@ -374,3 +374,9 @@ backfille aucune notification et ne modifie aucune demande existante.
 
 La V0.13 ne crée pas de migration. `request_public_messages.author_user_id`
 permet déjà de distinguer les réponses client des messages administrateur.
+
+La V0.14 ne crée pas non plus de migration. Le centre d'activité admin est une
+projection de lecture calculée à partir de `support_requests`,
+`service_requests`, `request_public_messages` et `portal_users`. Le dernier
+auteur public détermine l'indicateur `hasRecentClientReply`; aucune note
+interne et aucun contenu de message n'est dupliqué.

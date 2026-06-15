@@ -3,10 +3,10 @@
 Plateforme technique de l'espace client **Zachary HOUNSA-HOUNKPA EI** pour
 `clients.zacharyhounsa.ovh`. Ce dépôt reste séparé du site vitrine Astro.
 
-## État V0.13
+## État V0.14
 
-La V0.13 complète le workflow et les notifications avec une conversation
-publique bidirectionnelle dans le portail :
+La V0.14 complète la conversation publique avec un centre d'activité
+administrateur orienté suivi :
 
 - un portail Next.js responsive et ses routes BFF ;
 - une API ASP.NET Core privée ;
@@ -49,7 +49,12 @@ publique bidirectionnelle dans le portail :
 - des réponses client sur les demandes support et de service ;
 - une conversation publique distinguant messages Kermaria et réponses client ;
 - une validation 3 à 2 000 caractères et un anti-double envoi ;
-- une séparation inchangée entre conversation publique et notes internes.
+- une séparation inchangée entre conversation publique et notes internes ;
+- un centre d'activité admin sans contenu de message ;
+- des compteurs de demandes à traiter et en attente client ;
+- une détection du dernier message public envoyé par un client ;
+- des filtres « À traiter » et « Réponse client » sur les listes admin ;
+- des indicateurs de suivi et un rappel de confidentialité sur les détails.
 
 Le SSO, le MFA, la récupération automatisée de mot de passe, les actions AD,
 le paiement, la facturation réelle et les intégrations NAS/RDS/VPN ne sont pas
@@ -77,6 +82,10 @@ SHA-256 est stocké dans `portal_sessions`. Les mots de passe utilisent le
 
 `INTERNAL_API_URL` et `SERVICE_AUTH_TOKEN` sont strictement serveur et ne
 doivent recevoir aucun préfixe public Next.js.
+
+Le centre d'activité V0.14 est calculé à partir des demandes et messages
+publics existants. Il ne copie ni le texte des messages, ni les notes internes,
+et ne change jamais automatiquement le statut d'une demande.
 
 ## Structure
 
@@ -247,6 +256,7 @@ Routes BFF :
 - `POST /api/notifications/[id]/read`
 - `POST /api/notifications/read-all`
 - `GET /api/admin/overview`
+- `GET /api/admin/activity`
 - `GET /api/admin/customers`
 - `GET /api/admin/support-requests`
 - `GET /api/admin/service-requests`
@@ -310,4 +320,5 @@ Les routes `GET|POST /internal/*` sont strictement privées et exigent
 - [Workflow demandes V0.11](docs/V0.11_REQUEST_WORKFLOW.md)
 - [Notifications portail V0.12](docs/V0.12_PORTAL_NOTIFICATIONS.md)
 - [Réponses client V0.13](docs/V0.13_CLIENT_REPLIES.md)
+- [Centre d'activité admin V0.14](docs/V0.14_ADMIN_ACTIVITY.md)
 - [Règles permanentes](AGENTS.md)

@@ -247,6 +247,205 @@ public sealed class MariaDbRequestWorkflowRepository
         };
     }
 
+    public async Task<AdminActivityOverview> GetAdminActivityAsync(
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+
+        var supportToHandleCount = await ExecuteCountAsync(
+            connection,
+            """
+            SELECT COUNT(*)
+            FROM support_requests request
+            WHERE request.status IN ('open', 'in_progress')
+               OR (
+                    SELECT author.role
+                    FROM request_public_messages message
+                    INNER JOIN portal_users author
+                        ON author.id = message.author_user_id
+                    WHERE message.request_type = 'support'
+                      AND message.request_id = request.id
+                    ORDER BY message.created_at DESC, message.id DESC
+                    LIMIT 1
+                ) = 'client_user';
+            """,
+            cancellationToken);
+        var serviceToHandleCount = await ExecuteCountAsync(
+            connection,
+            """
+            SELECT COUNT(*)
+            FROM service_requests request
+            WHERE request.status IN ('received', 'under_review')
+               OR (
+                    SELECT author.role
+                    FROM request_public_messages message
+                    INNER JOIN portal_users author
+                        ON author.id = message.author_user_id
+                    WHERE message.request_type = 'service'
+                      AND message.request_id = request.id
+                    ORDER BY message.created_at DESC, message.id DESC
+                    LIMIT 1
+                ) = 'client_user';
+            """,
+            cancellationToken);
+        var recentClientReplyCount = await ExecuteCountAsync(
+            connection,
+            """
+            SELECT
+                (
+                    SELECT COUNT(*)
+                    FROM support_requests request
+                    WHERE (
+                        SELECT author.role
+                        FROM request_public_messages message
+                        INNER JOIN portal_users author
+                            ON author.id = message.author_user_id
+                        WHERE message.request_type = 'support'
+                          AND message.request_id = request.id
+                        ORDER BY message.created_at DESC, message.id DESC
+                        LIMIT 1
+                    ) = 'client_user'
+                )
+                +
+                (
+                    SELECT COUNT(*)
+                    FROM service_requests request
+                    WHERE (
+                        SELECT author.role
+                        FROM request_public_messages message
+                        INNER JOIN portal_users author
+                            ON author.id = message.author_user_id
+                        WHERE message.request_type = 'service'
+                          AND message.request_id = request.id
+                        ORDER BY message.created_at DESC, message.id DESC
+                        LIMIT 1
+                    ) = 'client_user'
+                );
+            """,
+            cancellationToken);
+        var waitingForCustomerCount = await ExecuteCountAsync(
+            connection,
+            """
+            SELECT COUNT(*)
+            FROM support_requests
+            WHERE status = 'waiting_for_customer';
+            """,
+            cancellationToken);
+        var activeRequestCount = await ExecuteCountAsync(
+            connection,
+            """
+            SELECT
+                (
+                    SELECT COUNT(*)
+                    FROM support_requests
+                    WHERE status IN (
+                        'open',
+                        'in_progress',
+                        'waiting_for_customer'
+                    )
+                )
+                +
+                (
+                    SELECT COUNT(*)
+                    FROM service_requests
+                    WHERE status IN (
+                        'received',
+                        'under_review',
+                        'accepted'
+                    )
+                );
+            """,
+            cancellationToken);
+
+        var activities = new List<AdminActivityItem>();
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT *
+            FROM (
+                SELECT
+                    message.id AS message_id,
+                    'support' AS request_type,
+                    support.id AS request_id,
+                    support.reference,
+                    customer.external_reference AS customer_reference,
+                    customer.display_name AS customer_name,
+                    support.subject AS subject_source,
+                    support.status,
+                    author.role AS author_role,
+                    author.display_name AS author_display_name,
+                    message.created_at AS occurred_at
+                FROM request_public_messages message
+                INNER JOIN portal_users author
+                    ON author.id = message.author_user_id
+                INNER JOIN support_requests support
+                    ON message.request_type = 'support'
+                    AND support.id = message.request_id
+                INNER JOIN customers customer
+                    ON customer.id = support.customer_id
+
+                UNION ALL
+
+                SELECT
+                    message.id AS message_id,
+                    'service' AS request_type,
+                    service.id AS request_id,
+                    service.reference,
+                    customer.external_reference AS customer_reference,
+                    customer.display_name AS customer_name,
+                    service.context AS subject_source,
+                    service.status,
+                    author.role AS author_role,
+                    author.display_name AS author_display_name,
+                    message.created_at AS occurred_at
+                FROM request_public_messages message
+                INNER JOIN portal_users author
+                    ON author.id = message.author_user_id
+                INNER JOIN service_requests service
+                    ON message.request_type = 'service'
+                    AND service.id = message.request_id
+                INNER JOIN customers customer
+                    ON customer.id = service.customer_id
+            ) activity
+            ORDER BY occurred_at DESC, message_id DESC
+            LIMIT 10;
+            """;
+
+        await using var reader = await command.ExecuteReaderAsync(
+            cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var requestType = reader.GetString("request_type");
+            var authorType =
+                reader.GetString("author_role") == PortalRoles.InternalAdmin
+                    ? "admin"
+                    : "client";
+            activities.Add(new AdminActivityItem(
+                requestType,
+                MariaDbIdentifierReader.ReadRequired(reader, "request_id"),
+                reader.GetString("reference"),
+                reader.GetString("customer_reference"),
+                reader.GetString("customer_name"),
+                requestType == RequestTypes.Service
+                    ? ExtractSubject(reader.GetString("subject_source"))
+                    : reader.GetString("subject_source"),
+                reader.GetString("status"),
+                authorType,
+                authorType == "admin"
+                    ? "Équipe Kermaria"
+                    : reader.GetString("author_display_name"),
+                ToUtcIso(reader.GetDateTime("occurred_at"))));
+        }
+
+        return new AdminActivityOverview(
+            supportToHandleCount,
+            serviceToHandleCount,
+            recentClientReplyCount,
+            waitingForCustomerCount,
+            activeRequestCount,
+            activities);
+    }
+
     public async Task<IReadOnlyList<AdminSupportRequestSummary>>
         GetAdminSupportRequestsAsync(
             AdminRequestListQuery query,
@@ -267,24 +466,53 @@ public sealed class MariaDbRequestWorkflowRepository
                 sr.status,
                 sr.subject,
                 sr.created_at,
-                sr.updated_at
+                sr.updated_at,
+                IF(latest_author.role = 'client_user', 1, 0)
+                    AS has_recent_client_reply
             FROM support_requests sr
             INNER JOIN customers customer ON customer.id = sr.customer_id
             LEFT JOIN customer_services service
                 ON service.id = sr.service_id
                 AND service.customer_id = sr.customer_id
+            LEFT JOIN portal_users latest_author
+                ON latest_author.id = (
+                    SELECT message.author_user_id
+                    FROM request_public_messages message
+                    WHERE message.request_type = 'support'
+                      AND message.request_id = sr.id
+                    ORDER BY message.created_at DESC, message.id DESC
+                    LIMIT 1
+                )
             WHERE (@status IS NULL OR sr.status = @status)
               AND (@priority IS NULL OR sr.priority = @priority)
+              AND (
+                    @attention IS NULL
+                    OR (
+                        @attention = 'client_reply'
+                        AND latest_author.role = 'client_user'
+                    )
+                    OR (
+                        @attention = 'to_handle'
+                        AND (
+                            sr.status IN ('open', 'in_progress')
+                            OR latest_author.role = 'client_user'
+                        )
+                    )
+                )
             ORDER BY {OrderClause(query.Order, "sr")}
             LIMIT {DefaultLimit};
             """;
         command.Parameters.AddWithValue("@status", DbValue(query.Status));
         command.Parameters.AddWithValue("@priority", DbValue(query.Priority));
+        command.Parameters.AddWithValue("@attention", DbValue(query.Attention));
 
         await using var reader = await command.ExecuteReaderAsync(
             cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
+            var hasRecentClientReply =
+                reader.GetBoolean("has_recent_client_reply");
+            var status = reader.GetString("status");
             requests.Add(new AdminSupportRequestSummary(
                 MariaDbIdentifierReader.ReadRequired(reader, "id"),
                 reader.GetString("reference"),
@@ -292,10 +520,13 @@ public sealed class MariaDbRequestWorkflowRepository
                 reader.GetString("customer_name"),
                 reader.GetString("service_name"),
                 reader.GetString("priority"),
-                reader.GetString("status"),
+                status,
                 reader.GetString("subject"),
                 ToUtcIso(reader.GetDateTime("created_at")),
-                ToUtcIso(reader.GetDateTime("updated_at"))));
+                ToUtcIso(reader.GetDateTime("updated_at")),
+                hasRecentClientReply,
+                hasRecentClientReply
+                    || status is "open" or "in_progress"));
         }
 
         return requests;
@@ -320,22 +551,51 @@ public sealed class MariaDbRequestWorkflowRepository
                 request.context,
                 request.status,
                 request.created_at,
-                request.updated_at
+                request.updated_at,
+                IF(latest_author.role = 'client_user', 1, 0)
+                    AS has_recent_client_reply
             FROM service_requests request
             INNER JOIN customers customer ON customer.id = request.customer_id
             INNER JOIN service_catalog catalog
                 ON catalog.id = request.catalog_item_id
+            LEFT JOIN portal_users latest_author
+                ON latest_author.id = (
+                    SELECT message.author_user_id
+                    FROM request_public_messages message
+                    WHERE message.request_type = 'service'
+                      AND message.request_id = request.id
+                    ORDER BY message.created_at DESC, message.id DESC
+                    LIMIT 1
+                )
             WHERE (@status IS NULL OR request.status = @status)
+              AND (
+                    @attention IS NULL
+                    OR (
+                        @attention = 'client_reply'
+                        AND latest_author.role = 'client_user'
+                    )
+                    OR (
+                        @attention = 'to_handle'
+                        AND (
+                            request.status IN ('received', 'under_review')
+                            OR latest_author.role = 'client_user'
+                        )
+                    )
+                )
             ORDER BY {OrderClause(query.Order, "request")}
             LIMIT {DefaultLimit};
             """;
         command.Parameters.AddWithValue("@status", DbValue(query.Status));
+        command.Parameters.AddWithValue("@attention", DbValue(query.Attention));
 
         await using var reader = await command.ExecuteReaderAsync(
             cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
             var context = reader.GetString("context");
+            var hasRecentClientReply =
+                reader.GetBoolean("has_recent_client_reply");
+            var status = reader.GetString("status");
             requests.Add(new AdminServiceRequestSummary(
                 MariaDbIdentifierReader.ReadRequired(reader, "id"),
                 reader.GetString("reference"),
@@ -344,10 +604,13 @@ public sealed class MariaDbRequestWorkflowRepository
                 reader.GetString("catalog_item_name"),
                 ExtractSubject(context),
                 Truncate(ExtractDescription(context), 240),
-                reader.GetString("status"),
+                status,
                 true,
                 ToUtcIso(reader.GetDateTime("created_at")),
-                ToUtcIso(reader.GetDateTime("updated_at"))));
+                ToUtcIso(reader.GetDateTime("updated_at")),
+                hasRecentClientReply,
+                hasRecentClientReply
+                    || status is "received" or "under_review"));
         }
 
         return requests;
@@ -1071,6 +1334,17 @@ public sealed class MariaDbRequestWorkflowRepository
         var connection = new MySqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         return connection;
+    }
+
+    private static async Task<int> ExecuteCountAsync(
+        MySqlConnection connection,
+        string commandText,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = commandText;
+        var value = await command.ExecuteScalarAsync(cancellationToken);
+        return Convert.ToInt32(value, System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private static string OrderClause(string order, string alias)

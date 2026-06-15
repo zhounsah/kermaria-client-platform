@@ -3,9 +3,24 @@
 Chaque phase conserve les contraintes de `AGENTS.md` et `docs/SECURITY.md`.
 L'avancement d'une phase n'autorise jamais implicitement une intégration réelle.
 
+## Jalon V0.14 centre d'activité admin
+
+Statut : **implémenté et validé pour publication `v0.14`**.
+
+- Compteurs support et service à traiter.
+- Mise en avant des demandes dont le dernier message vient du client.
+- Liste limitée aux dix dernières activités publiques.
+- Filtres admin `to_handle` et `client_reply`.
+- Indicateurs de suivi sur les listes et détails.
+- Aucun contenu de message ou note interne dans le contrat d'activité.
+- Aucun changement de schéma MariaDB.
+
+La V0.14 ne change aucun statut automatiquement et n'ajoute ni e-mail,
+WebSocket, worker, pièce jointe, AD, provisioning, paiement ou facturation.
+
 ## Jalon V0.13 réponses client
 
-Statut : **implémenté, validation utilisateur à réaliser avant commit**.
+Statut : **validé, commité et tagué `v0.13`**.
 
 - Réponse client sur une demande support ou de service lui appartenant.
 - Conversation publique distinguant `admin` et `client`.

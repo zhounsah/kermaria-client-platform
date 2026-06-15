@@ -21,6 +21,8 @@ public interface IRequestWorkflowRepository
         string requestId,
         CancellationToken cancellationToken);
 
+    Task<AdminActivityOverview> GetAdminActivityAsync(
+        CancellationToken cancellationToken);
     Task<IReadOnlyList<AdminSupportRequestSummary>> GetAdminSupportRequestsAsync(
         AdminRequestListQuery query,
         CancellationToken cancellationToken);

@@ -273,6 +273,7 @@ async Task RunMockTestsAsync()
         foreach (var endpoint in new[]
         {
             "/internal/admin/overview",
+            "/internal/admin/activity",
             "/internal/admin/customers",
             "/internal/admin/support-requests",
             "/internal/admin/service-requests",
@@ -564,6 +565,87 @@ async Task RunMockTestsAsync()
         Ensure(
             clientServiceReplyResponse.StatusCode == HttpStatusCode.OK,
             "Le client devait pouvoir répondre à sa demande de service.");
+
+        using var adminActivityRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mockBaseUrl}/internal/admin/activity",
+            adminSessionToken);
+        using var adminActivityResponse = await client.SendAsync(
+            adminActivityRequest);
+        var adminActivityText =
+            await adminActivityResponse.Content.ReadAsStringAsync();
+        using var adminActivityPayload = JsonDocument.Parse(adminActivityText);
+        var recentActivities = adminActivityPayload.RootElement
+            .GetProperty("recentActivities")
+            .EnumerateArray()
+            .ToArray();
+        Ensure(
+            adminActivityResponse.StatusCode == HttpStatusCode.OK
+            && adminActivityPayload.RootElement
+                .GetProperty("recentClientReplyCount")
+                .GetInt32() >= 2
+            && recentActivities.Any(item =>
+                item.GetProperty("requestId").GetString() == workflowSupportId
+                && item.GetProperty("authorType").GetString() == "client")
+            && recentActivities.Any(item =>
+                item.GetProperty("requestId").GetString() == workflowServiceId
+                && item.GetProperty("authorType").GetString() == "client"),
+            "Le centre d'activité mock doit identifier les réponses client.");
+        Ensure(
+            !adminActivityText.Contains(privateNote, StringComparison.Ordinal)
+            && !adminActivityText.Contains(
+                clientSupportReply,
+                StringComparison.Ordinal)
+            && !adminActivityText.Contains(
+                clientServiceReply,
+                StringComparison.Ordinal),
+            "Le centre d'activité ne doit exposer aucun contenu de message.");
+
+        using var clientActivityRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mockBaseUrl}/internal/admin/activity",
+            sessionToken!);
+        using var clientActivityResponse = await client.SendAsync(
+            clientActivityRequest);
+        Ensure(
+            clientActivityResponse.StatusCode == HttpStatusCode.Forbidden,
+            "Un client ne doit pas accéder au centre d'activité admin.");
+
+        foreach (var (resource, expectedId) in new[]
+        {
+            ("support-requests", workflowSupportId),
+            ("service-requests", workflowServiceId)
+        })
+        {
+            using var filteredRequest = CreateSessionRequest(
+                HttpMethod.Get,
+                $"{mockBaseUrl}/internal/admin/{resource}?attention=client_reply",
+                adminSessionToken);
+            using var filteredResponse = await client.SendAsync(
+                filteredRequest);
+            var filteredText =
+                await filteredResponse.Content.ReadAsStringAsync();
+            Ensure(
+                filteredResponse.StatusCode == HttpStatusCode.OK
+                && filteredText.Contains(expectedId, StringComparison.Ordinal)
+                && filteredText.Contains(
+                    "\"hasRecentClientReply\":true",
+                    StringComparison.Ordinal)
+                && filteredText.Contains(
+                    "\"requiresAttention\":true",
+                    StringComparison.Ordinal),
+                $"Le filtre réponse client {resource} est invalide.");
+        }
+
+        using var invalidAttentionRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mockBaseUrl}/internal/admin/support-requests?attention=automatic",
+            adminSessionToken);
+        using var invalidAttentionResponse = await client.SendAsync(
+            invalidAttentionRequest);
+        Ensure(
+            invalidAttentionResponse.StatusCode == HttpStatusCode.BadRequest,
+            "Un filtre d'attention inconnu devait être refusé.");
 
         using var adminServiceDetailRequest = CreateSessionRequest(
             HttpMethod.Get,
@@ -1810,6 +1892,71 @@ async Task RunMariaDbReadTestsAsync()
         Ensure(
             mariaClientServiceReplyResponse.StatusCode == HttpStatusCode.OK,
             "La réponse client service MariaDB devait réussir.");
+
+        using var mariaAdminActivityRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mariaDbBaseUrl}/internal/admin/activity",
+            adminSessionToken);
+        using var mariaAdminActivityResponse = await client.SendAsync(
+            mariaAdminActivityRequest);
+        var mariaAdminActivityText =
+            await mariaAdminActivityResponse.Content.ReadAsStringAsync();
+        using var mariaAdminActivityPayload = JsonDocument.Parse(
+            mariaAdminActivityText);
+        var mariaRecentActivities = mariaAdminActivityPayload.RootElement
+            .GetProperty("recentActivities")
+            .EnumerateArray()
+            .ToArray();
+        Ensure(
+            mariaAdminActivityResponse.StatusCode == HttpStatusCode.OK
+            && mariaAdminActivityPayload.RootElement
+                .GetProperty("recentClientReplyCount")
+                .GetInt32() >= 2
+            && mariaRecentActivities.Any(item =>
+                item.GetProperty("requestId").GetString()
+                    == workflowSupportRequestId
+                && item.GetProperty("authorType").GetString() == "client")
+            && mariaRecentActivities.Any(item =>
+                item.GetProperty("requestId").GetString()
+                    == workflowServiceRequestId
+                && item.GetProperty("authorType").GetString() == "client"),
+            "Le centre d'activité MariaDB doit identifier les réponses client.");
+        Ensure(
+            !mariaAdminActivityText.Contains(
+                mariaPrivateNote,
+                StringComparison.Ordinal)
+            && !mariaAdminActivityText.Contains(
+                mariaClientSupportReply,
+                StringComparison.Ordinal)
+            && !mariaAdminActivityText.Contains(
+                mariaClientServiceReply,
+                StringComparison.Ordinal),
+            "L'activité MariaDB ne doit exposer aucun contenu sensible.");
+
+        foreach (var (resource, expectedId) in new[]
+        {
+            ("support-requests", workflowSupportRequestId),
+            ("service-requests", workflowServiceRequestId)
+        })
+        {
+            using var mariaFilteredRequest = CreateSessionRequest(
+                HttpMethod.Get,
+                $"{mariaDbBaseUrl}/internal/admin/{resource}?attention=client_reply",
+                adminSessionToken);
+            using var mariaFilteredResponse = await client.SendAsync(
+                mariaFilteredRequest);
+            var mariaFilteredText =
+                await mariaFilteredResponse.Content.ReadAsStringAsync();
+            Ensure(
+                mariaFilteredResponse.StatusCode == HttpStatusCode.OK
+                && mariaFilteredText.Contains(
+                    expectedId,
+                    StringComparison.Ordinal)
+                && mariaFilteredText.Contains(
+                    "\"hasRecentClientReply\":true",
+                    StringComparison.Ordinal),
+                $"Le filtre MariaDB réponse client {resource} est invalide.");
+        }
 
         using var mariaForeignReplyRequest = CreateSessionRequest(
             HttpMethod.Post,

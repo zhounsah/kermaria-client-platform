@@ -179,7 +179,9 @@ public sealed class MariaDbAdminRepository : IAdminRepository
                 reader.GetString("status"),
                 reader.GetString("subject"),
                 ToUtcIso(reader.GetDateTime("created_at")),
-                ToUtcIso(reader.GetDateTime("updated_at"))));
+                ToUtcIso(reader.GetDateTime("updated_at")),
+                false,
+                false));
         }
 
         return requests;
@@ -226,7 +228,9 @@ public sealed class MariaDbAdminRepository : IAdminRepository
                 reader.GetString("status"),
                 true,
                 ToUtcIso(reader.GetDateTime("created_at")),
-                ToUtcIso(reader.GetDateTime("created_at"))));
+                ToUtcIso(reader.GetDateTime("created_at")),
+                false,
+                false));
         }
 
         return requests;

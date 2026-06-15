@@ -6,6 +6,7 @@ import {
 } from "@/lib/formatters";
 
 type AdminRequestFiltersProps = {
+  attention?: string;
   order?: string;
   priority?: string;
   requestType: RequestType;
@@ -13,6 +14,7 @@ type AdminRequestFiltersProps = {
 };
 
 export function AdminRequestFilters({
+  attention,
   order = "newest",
   priority,
   requestType,
@@ -50,6 +52,18 @@ export function AdminRequestFilters({
           </select>
         </div>
       ) : null}
+      <div className="field">
+        <label htmlFor="attention-filter">Suivi</label>
+        <select
+          defaultValue={attention ?? ""}
+          id="attention-filter"
+          name="attention"
+        >
+          <option value="">Toutes les demandes</option>
+          <option value="to_handle">À traiter</option>
+          <option value="client_reply">Réponse client</option>
+        </select>
+      </div>
       <div className="field">
         <label htmlFor="order-filter">Tri</label>
         <select defaultValue={order} id="order-filter" name="order">

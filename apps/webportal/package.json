@@ -15,6 +15,7 @@
     "test:workflow": "node scripts/verify-request-workflow-contract.mjs",
     "test:notifications": "node scripts/verify-notifications-contract.mjs",
     "test:replies": "node scripts/verify-client-replies-contract.mjs",
+    "test:activity": "node scripts/verify-admin-activity-contract.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

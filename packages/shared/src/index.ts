@@ -71,6 +71,28 @@ export interface AdminOverview {
   adOperationsEnabled: false;
 }
 
+export interface AdminActivityOverview {
+  supportToHandleCount: number;
+  serviceToHandleCount: number;
+  recentClientReplyCount: number;
+  waitingForCustomerCount: number;
+  activeRequestCount: number;
+  recentActivities: AdminActivityItem[];
+}
+
+export interface AdminActivityItem {
+  requestType: RequestType;
+  requestId: string;
+  reference: string;
+  customerReference: string;
+  customerName: string;
+  subject: string;
+  status: SupportRequestStatus | ServiceRequestStatus;
+  authorType: "admin" | "client";
+  authorLabel: string;
+  occurredAt: string;
+}
+
 export interface AdminCustomerSummary {
   customerReference: string;
   displayName: string;
@@ -92,6 +114,8 @@ export interface AdminSupportRequestSummary {
   subject: string;
   createdAt: string;
   updatedAt: string;
+  hasRecentClientReply: boolean;
+  requiresAttention: boolean;
 }
 
 export interface AdminServiceRequestSummary {
@@ -106,6 +130,8 @@ export interface AdminServiceRequestSummary {
   persisted: boolean;
   createdAt: string;
   updatedAt: string;
+  hasRecentClientReply: boolean;
+  requiresAttention: boolean;
 }
 
 export interface AdminSessionSummary {

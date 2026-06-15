@@ -60,6 +60,8 @@ public interface IRequestWorkflowService
         PortalSessionContext session,
         string requestId,
         CancellationToken cancellationToken);
+    Task<AdminActivityOverview> GetAdminActivityAsync(
+        CancellationToken cancellationToken);
     Task<IReadOnlyList<AdminSupportRequestSummary>> GetAdminSupportRequestsAsync(
         AdminRequestListQuery query,
         CancellationToken cancellationToken);
@@ -150,6 +152,10 @@ public sealed class RequestWorkflowService : IRequestWorkflowService
                 ValidateIdentifier(requestId),
                 cancellationToken)
             ?? throw new PortalDataNotFoundException();
+
+    public Task<AdminActivityOverview> GetAdminActivityAsync(
+        CancellationToken cancellationToken)
+        => _repository.GetAdminActivityAsync(cancellationToken);
 
     public Task<IReadOnlyList<AdminSupportRequestSummary>>
         GetAdminSupportRequestsAsync(
@@ -310,6 +316,15 @@ public sealed class RequestWorkflowService : IRequestWorkflowService
             throw new PortalValidationException();
         }
 
-        return new AdminRequestListQuery(status, priority, order);
+        var attention = string.IsNullOrWhiteSpace(query.Attention)
+            ? null
+            : query.Attention.Trim().ToLowerInvariant();
+        if (attention is not null
+            && attention is not ("to_handle" or "client_reply"))
+        {
+            throw new PortalValidationException();
+        }
+
+        return new AdminRequestListQuery(status, priority, order, attention);
     }
 }

@@ -584,6 +584,24 @@ app.MapGet(
                 context.RequestAborted));
     });
 app.MapGet(
+    "/internal/admin/activity",
+    async (
+        HttpContext context,
+        IRequestWorkflowService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.activity.read");
+        return WorkflowOk(
+            context,
+            service,
+            await service.GetAdminActivityAsync(context.RequestAborted));
+    });
+app.MapGet(
     "/internal/admin/service-requests",
     async (
         HttpContext context,
@@ -902,7 +920,8 @@ static AdminRequestListQuery ReadAdminRequestListQuery(HttpContext context)
     => new(
         context.Request.Query["status"].FirstOrDefault(),
         context.Request.Query["priority"].FirstOrDefault(),
-        context.Request.Query["order"].FirstOrDefault() ?? "newest");
+        context.Request.Query["order"].FirstOrDefault() ?? "newest",
+        context.Request.Query["attention"].FirstOrDefault());
 
 static async Task<IResult> UpdateRequestStatus(
     string requestId,

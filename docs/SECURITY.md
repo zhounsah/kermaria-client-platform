@@ -217,6 +217,18 @@ token de session ou une information d'administration dans ces contrats.
 - une réponse client ne génère ni e-mail, ni notification externe, ni
   automatisation métier.
 
+## Centre d'activité admin V0.14
+
+- les routes d'activité exigent `internal_admin` côté BFF et API-INTERNAL ;
+- les réponses contiennent uniquement des métadonnées de suivi ;
+- le contenu des messages publics et des notes internes est exclu ;
+- les filtres sont validés par allowlist dans le BFF puis dans API-INTERNAL ;
+- le dernier auteur est résolu depuis `portal_users`, jamais depuis le
+  navigateur ;
+- aucune lecture n'entraîne de changement de statut ou d'action externe ;
+- aucune URL interne, identité interservice ou session n'est exposée au
+  JavaScript navigateur.
+
 La protection anti-brute-force V0.9 est volontairement simple et centrée sur
 le compte : `LOGIN_MAX_FAILURES` définit le seuil et
 `LOGIN_LOCKOUT_MINUTES` la durée du verrouillage. Elle ne remplace pas un

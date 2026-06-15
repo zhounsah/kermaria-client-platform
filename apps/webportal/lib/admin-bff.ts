@@ -12,6 +12,28 @@ import {
 } from "@/lib/internal-api";
 import { getSessionCookieName } from "@/lib/session-config";
 
+const supportStatuses = new Set([
+  "open",
+  "in_progress",
+  "waiting_for_customer",
+  "resolved",
+  "closed",
+  "cancelled",
+]);
+const serviceStatuses = new Set([
+  "received",
+  "under_review",
+  "accepted",
+  "rejected",
+  "cancelled",
+  "completed",
+]);
+const priorities = new Set(["low", "normal", "high"]);
+const orders = new Set(["newest", "oldest", "status"]);
+const attentionFilters = new Set(["to_handle", "client_reply"]);
+
+type AdminRequestType = "support" | "service";
+
 export async function handleAdminGet<T>(
   request: NextRequest,
   internalPath: string,
@@ -132,4 +154,76 @@ export function controlledAdminError(
   );
   response.headers.set(CORRELATION_HEADER, correlationId);
   return response;
+}
+
+export function buildAdminRequestListPath(
+  request: NextRequest,
+  requestType: AdminRequestType,
+) {
+  const correlationId = resolveCorrelationId(
+    request.headers.get(CORRELATION_HEADER),
+  );
+  const statuses =
+    requestType === "support" ? supportStatuses : serviceStatuses;
+  const normalized = new URLSearchParams();
+  const allowedKeys = new Set(["status", "priority", "order", "attention"]);
+
+  for (const key of request.nextUrl.searchParams.keys()) {
+    if (!allowedKeys.has(key)) {
+      return {
+        response: controlledAdminError(
+          400,
+          "INVALID_REQUEST",
+          "Les filtres demandés sont invalides.",
+          correlationId,
+        ),
+      };
+    }
+  }
+
+  const status = request.nextUrl.searchParams.get("status")?.trim();
+  if (status && !statuses.has(status)) {
+    return invalidAdminFilter(correlationId);
+  }
+  if (status) normalized.set("status", status);
+
+  const priority = request.nextUrl.searchParams.get("priority")?.trim();
+  if (
+    priority
+    && (requestType !== "support" || !priorities.has(priority))
+  ) {
+    return invalidAdminFilter(correlationId);
+  }
+  if (priority) normalized.set("priority", priority);
+
+  const order =
+    request.nextUrl.searchParams.get("order")?.trim() || "newest";
+  if (!orders.has(order)) {
+    return invalidAdminFilter(correlationId);
+  }
+  normalized.set("order", order);
+
+  const attention = request.nextUrl.searchParams.get("attention")?.trim();
+  if (attention && !attentionFilters.has(attention)) {
+    return invalidAdminFilter(correlationId);
+  }
+  if (attention) normalized.set("attention", attention);
+
+  const resource = requestType === "support"
+    ? "support-requests"
+    : "service-requests";
+  return {
+    path: `/internal/admin/${resource}?${normalized.toString()}`,
+  };
+}
+
+function invalidAdminFilter(correlationId: ApiError["correlation_id"]) {
+  return {
+    response: controlledAdminError(
+      400,
+      "INVALID_REQUEST",
+      "Les filtres demandés sont invalides.",
+      correlationId,
+    ),
+  };
 }

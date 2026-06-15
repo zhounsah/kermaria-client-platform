@@ -6,6 +6,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { MockNotice } from "@/components/MockNotice";
 import { PageHeader } from "@/components/PageHeader";
 import { RequestStatusBadge } from "@/components/RequestStatusBadge";
+import { RequestAttentionBadge } from "@/components/RequestAttentionBadge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { requireAdminSession } from "@/lib/auth";
 import { formatDateTime } from "@/lib/formatters";
@@ -24,9 +25,11 @@ export default async function AdminServiceRequestsPage({
   await requireAdminSession();
   const filters = await searchParams;
   const status = first(filters.status);
+  const attention = first(filters.attention);
   const order = first(filters.order) ?? "newest";
   const query = new URLSearchParams();
   if (status) query.set("status", status);
+  if (attention) query.set("attention", attention);
   query.set("order", order);
   const result = await getAdminServiceRequestsFiltered(`?${query}`);
 
@@ -39,6 +42,7 @@ export default async function AdminServiceRequestsPage({
         title="Demandes de service"
       />
       <AdminRequestFilters
+        attention={attention}
         order={order}
         requestType="service"
         status={status}
@@ -52,6 +56,7 @@ export default async function AdminServiceRequestsPage({
             "Catalogue",
             "Sujet",
             "Statut",
+            "Suivi",
             "Mise à jour",
             "Détail",
           ]}
@@ -64,6 +69,11 @@ export default async function AdminServiceRequestsPage({
               key={`${request.id}-status`}
               requestType="service"
               status={request.status}
+            />,
+            <RequestAttentionBadge
+              hasRecentClientReply={request.hasRecentClientReply}
+              key={`${request.id}-attention`}
+              requiresAttention={request.requiresAttention}
             />,
             formatDateTime(request.updatedAt),
             <Link

@@ -10,6 +10,26 @@ public sealed record AdminOverview(
     string AdMode,
     bool AdOperationsEnabled);
 
+public sealed record AdminActivityOverview(
+    int SupportToHandleCount,
+    int ServiceToHandleCount,
+    int RecentClientReplyCount,
+    int WaitingForCustomerCount,
+    int ActiveRequestCount,
+    IReadOnlyList<AdminActivityItem> RecentActivities);
+
+public sealed record AdminActivityItem(
+    string RequestType,
+    string RequestId,
+    string Reference,
+    string CustomerReference,
+    string CustomerName,
+    string Subject,
+    string Status,
+    string AuthorType,
+    string AuthorLabel,
+    string OccurredAt);
+
 public sealed record AdminCustomerSummary(
     string CustomerReference,
     string DisplayName,
@@ -29,7 +49,9 @@ public sealed record AdminSupportRequestSummary(
     string Status,
     string Subject,
     string CreatedAt,
-    string UpdatedAt);
+    string UpdatedAt,
+    bool HasRecentClientReply,
+    bool RequiresAttention);
 
 public sealed record AdminServiceRequestSummary(
     string Id,
@@ -42,7 +64,9 @@ public sealed record AdminServiceRequestSummary(
     string Status,
     bool Persisted,
     string CreatedAt,
-    string UpdatedAt);
+    string UpdatedAt,
+    bool HasRecentClientReply,
+    bool RequiresAttention);
 
 public sealed record AdminSupportRequestDetail(
     string Id,
@@ -85,7 +109,8 @@ public sealed record InternalRequestNote(
 public sealed record AdminRequestListQuery(
     string? Status,
     string? Priority,
-    string Order = "newest");
+    string Order = "newest",
+    string? Attention = null);
 
 public sealed record AdminSessionSummary(
     string UserDisplayName,

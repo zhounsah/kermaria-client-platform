@@ -6,6 +6,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { MockNotice } from "@/components/MockNotice";
 import { PageHeader } from "@/components/PageHeader";
 import { RequestStatusBadge } from "@/components/RequestStatusBadge";
+import { RequestAttentionBadge } from "@/components/RequestAttentionBadge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { requireAdminSession } from "@/lib/auth";
 import { formatDateTime } from "@/lib/formatters";
@@ -25,10 +26,12 @@ export default async function AdminSupportRequestsPage({
   const filters = await searchParams;
   const status = first(filters.status);
   const priority = first(filters.priority);
+  const attention = first(filters.attention);
   const order = first(filters.order) ?? "newest";
   const query = new URLSearchParams();
   if (status) query.set("status", status);
   if (priority) query.set("priority", priority);
+  if (attention) query.set("attention", attention);
   query.set("order", order);
   const result = await getAdminSupportRequestsFiltered(`?${query}`);
 
@@ -41,6 +44,7 @@ export default async function AdminSupportRequestsPage({
         title="Demandes support"
       />
       <AdminRequestFilters
+        attention={attention}
         order={order}
         priority={priority}
         requestType="support"
@@ -55,6 +59,7 @@ export default async function AdminSupportRequestsPage({
             "Service",
             "Priorité",
             "Statut",
+            "Suivi",
             "Sujet",
             "Mise à jour",
             "Détail",
@@ -68,6 +73,11 @@ export default async function AdminSupportRequestsPage({
               key={`${request.id}-status`}
               requestType="support"
               status={request.status}
+            />,
+            <RequestAttentionBadge
+              hasRecentClientReply={request.hasRecentClientReply}
+              key={`${request.id}-attention`}
+              requiresAttention={request.requiresAttention}
             />,
             request.subject,
             formatDateTime(request.updatedAt),

@@ -59,7 +59,9 @@ public sealed class MockAdminRepository : IAdminRepository
                     request.Status,
                     request.Subject,
                     request.CreatedAt,
-                    request.UpdatedAt)).ToArray());
+                    request.UpdatedAt,
+                    false,
+                    request.Status is "open" or "in_progress")).ToArray());
 
     public Task<IReadOnlyList<AdminServiceRequestSummary>>
         GetServiceRequestsAsync(CancellationToken cancellationToken)
@@ -76,7 +78,9 @@ public sealed class MockAdminRepository : IAdminRepository
                 "received",
                 false,
                 "2026-06-12T10:00:00Z",
-                "2026-06-12T10:00:00Z")
+                "2026-06-12T10:00:00Z",
+                false,
+                true)
         ]);
 
     public Task<IReadOnlyList<AdminSessionSummary>> GetSessionsAsync(

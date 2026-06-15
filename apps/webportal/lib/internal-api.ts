@@ -2,6 +2,7 @@ import "server-only";
 
 import type {
   AdHealthStatus,
+  AdminActivityOverview,
   AdminAuditLogEntry,
   AdminCustomerSummary,
   AdminOverview,
@@ -620,6 +621,13 @@ async function getAdminData<T>(
 export function getAdminOverview() {
   return getAdminData<AdminOverview | null>(
     "/internal/admin/overview",
+    null,
+  );
+}
+
+export function getAdminActivity() {
+  return getAdminData<AdminActivityOverview | null>(
+    "/internal/admin/activity",
     null,
   );
 }

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { ErrorState } from "@/components/ErrorState";
+import { AdminRequestFollowUp } from "@/components/AdminRequestFollowUp";
 import { InternalNoteForm } from "@/components/InternalNoteForm";
 import { InternalNoteList } from "@/components/InternalNoteList";
 import { PageHeader } from "@/components/PageHeader";
@@ -79,6 +80,13 @@ export default async function AdminServiceRequestDetailPage({
           />
         </SectionCard>
       </div>
+
+      <AdminRequestFollowUp
+        messages={request.publicMessages}
+        requiresAttention={
+          request.status === "received" || request.status === "under_review"
+        }
+      />
 
       <div className="request-detail-layout">
         <SectionCard ariaLabel="Note interne">

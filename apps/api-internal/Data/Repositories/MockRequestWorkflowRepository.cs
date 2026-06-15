@@ -195,6 +195,53 @@ public sealed class MockRequestWorkflowRepository
         }
     }
 
+    public Task<AdminActivityOverview> GetAdminActivityAsync(
+        CancellationToken cancellationToken)
+    {
+        lock (_store.SyncRoot)
+        {
+            var supportToHandleCount = _store.SupportRequests.Count(request =>
+                RequiresAttention(RequestTypes.Support, request));
+            var serviceToHandleCount = _store.ServiceRequests.Count(request =>
+                RequiresAttention(RequestTypes.Service, request));
+            var recentClientReplyCount =
+                _store.SupportRequests.Count(request =>
+                    HasRecentClientReply(RequestTypes.Support, request.Id))
+                + _store.ServiceRequests.Count(request =>
+                    HasRecentClientReply(RequestTypes.Service, request.Id));
+            var waitingForCustomerCount = _store.SupportRequests.Count(
+                request => request.Status == "waiting_for_customer");
+            var activeRequestCount =
+                _store.SupportRequests.Count(request =>
+                    request.Status is
+                        "open" or "in_progress" or "waiting_for_customer")
+                + _store.ServiceRequests.Count(request =>
+                    request.Status is
+                        "received" or "under_review" or "accepted");
+
+            var activities = _store.SupportRequests
+                .SelectMany(request => ActivityFor(
+                    RequestTypes.Support,
+                    request,
+                    request.Subject))
+                .Concat(_store.ServiceRequests.SelectMany(request => ActivityFor(
+                    RequestTypes.Service,
+                    request,
+                    request.Subject)))
+                .OrderByDescending(activity => activity.OccurredAt)
+                .Take(10)
+                .ToArray();
+
+            return Task.FromResult(new AdminActivityOverview(
+                supportToHandleCount,
+                serviceToHandleCount,
+                recentClientReplyCount,
+                waitingForCustomerCount,
+                activeRequestCount,
+                activities));
+        }
+    }
+
     public Task<IReadOnlyList<AdminSupportRequestSummary>>
         GetAdminSupportRequestsAsync(
             AdminRequestListQuery query,
@@ -215,19 +262,31 @@ public sealed class MockRequestWorkflowRepository
                     request.Priority == query.Priority);
             }
 
+            requests = ApplyAttentionFilter(
+                requests,
+                RequestTypes.Support,
+                query.Attention);
             requests = Order(requests, query.Order);
             return Task.FromResult<IReadOnlyList<AdminSupportRequestSummary>>(
-                requests.Select(request => new AdminSupportRequestSummary(
-                    request.Id,
-                    request.Reference,
-                    request.CustomerReference,
-                    request.CustomerName,
-                    request.ServiceName,
-                    request.Priority,
-                    request.Status,
-                    request.Subject,
-                    request.CreatedAt,
-                    request.UpdatedAt)).ToArray());
+                requests.Select(request =>
+                {
+                    var hasRecentClientReply = HasRecentClientReply(
+                        RequestTypes.Support,
+                        request.Id);
+                    return new AdminSupportRequestSummary(
+                        request.Id,
+                        request.Reference,
+                        request.CustomerReference,
+                        request.CustomerName,
+                        request.ServiceName,
+                        request.Priority,
+                        request.Status,
+                        request.Subject,
+                        request.CreatedAt,
+                        request.UpdatedAt,
+                        hasRecentClientReply,
+                        RequiresAttention(RequestTypes.Support, request));
+                }).ToArray());
         }
     }
 
@@ -245,22 +304,34 @@ public sealed class MockRequestWorkflowRepository
                     request.Status == query.Status);
             }
 
+            requests = ApplyAttentionFilter(
+                requests,
+                RequestTypes.Service,
+                query.Attention);
             requests = Order(requests, query.Order);
             return Task.FromResult<IReadOnlyList<AdminServiceRequestSummary>>(
-                requests.Select(request => new AdminServiceRequestSummary(
-                    request.Id,
-                    request.Reference,
-                    request.CustomerReference,
-                    request.CustomerName,
-                    request.CatalogItemName,
-                    request.Subject,
-                    request.Description[..Math.Min(
-                        request.Description.Length,
-                        240)],
-                    request.Status,
-                    false,
-                    request.CreatedAt,
-                    request.UpdatedAt)).ToArray());
+                requests.Select(request =>
+                {
+                    var hasRecentClientReply = HasRecentClientReply(
+                        RequestTypes.Service,
+                        request.Id);
+                    return new AdminServiceRequestSummary(
+                        request.Id,
+                        request.Reference,
+                        request.CustomerReference,
+                        request.CustomerName,
+                        request.CatalogItemName,
+                        request.Subject,
+                        request.Description[..Math.Min(
+                            request.Description.Length,
+                            240)],
+                        request.Status,
+                        false,
+                        request.CreatedAt,
+                        request.UpdatedAt,
+                        hasRecentClientReply,
+                        RequiresAttention(RequestTypes.Service, request));
+                }).ToArray());
         }
     }
 
@@ -568,6 +639,63 @@ public sealed class MockRequestWorkflowRepository
                 message.AuthorType,
                 message.CreatedAt))
             .ToArray();
+
+    private IEnumerable<AdminActivityItem> ActivityFor(
+        string requestType,
+        IRequestTarget request,
+        string subject)
+        => PublicMessagesFor(requestType, request.Id)
+            .Select(message => new AdminActivityItem(
+                requestType,
+                request.Id,
+                request.Reference,
+                request.CustomerReference,
+                request is MockSupportRequest support
+                    ? support.CustomerName
+                    : ((MockServiceRequest)request).CustomerName,
+                subject,
+                request.Status,
+                message.AuthorType,
+                message.AuthorType == "admin"
+                    ? "Équipe Kermaria"
+                    : message.AuthorDisplayName,
+                message.CreatedAt));
+
+    private IEnumerable<T> ApplyAttentionFilter<T>(
+        IEnumerable<T> requests,
+        string requestType,
+        string? attention)
+        where T : IRequestTarget
+        => attention switch
+        {
+            "client_reply" => requests.Where(request =>
+                HasRecentClientReply(requestType, request.Id)),
+            "to_handle" => requests.Where(request =>
+                RequiresAttention(requestType, request)),
+            _ => requests
+        };
+
+    private bool RequiresAttention(
+        string requestType,
+        IRequestTarget request)
+        => HasRecentClientReply(requestType, request.Id)
+            || requestType switch
+            {
+                RequestTypes.Support =>
+                    request.Status is "open" or "in_progress",
+                RequestTypes.Service =>
+                    request.Status is "received" or "under_review",
+                _ => false
+            };
+
+    private bool HasRecentClientReply(
+        string requestType,
+        string requestId)
+        => PublicMessagesFor(requestType, requestId)
+            .OrderByDescending(message => message.CreatedAt)
+            .ThenByDescending(message => message.Id)
+            .FirstOrDefault()
+            ?.AuthorType == "client";
 
     private List<MockEvent> EventsFor(string requestType, string requestId)
     {

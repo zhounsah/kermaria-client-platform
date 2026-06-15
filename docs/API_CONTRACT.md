@@ -19,6 +19,7 @@ Le navigateur accède uniquement à `WEBPORTAL` :
 - `POST /api/notifications/{id}/read`
 - `POST /api/notifications/read-all`
 - `GET /api/admin/overview`
+- `GET /api/admin/activity`
 - `GET /api/admin/customers`
 - `GET /api/admin/support-requests`
 - `GET /api/admin/service-requests`
@@ -44,6 +45,7 @@ publiées par le reverse proxy et jamais appelées directement par le navigateur
 - `DELETE /internal/auth/sessions/current`
 - `POST /internal/auth/sessions/revoke-others`
 - `GET /internal/admin/overview`
+- `GET /internal/admin/activity`
 - `GET /internal/admin/customers`
 - `GET /internal/admin/support-requests`
 - `GET /internal/admin/service-requests`
@@ -183,6 +185,8 @@ même contrôle. Un `client_user` reçoit `ACCESS_DENIED`.
 Les vues sont limitées à 100 lignes, ou 10 audits dans l'overview :
 
 - `overview` : compteurs globaux, derniers audits et état AD ;
+- `activity` : compteurs de suivi et dix dernières activités publiques, sans
+  contenu de message ni note interne ;
 - `customers` : références, statuts et compteurs ;
 - `support-requests` : suivi des demandes et mutations workflow bornées ;
 - `service-requests` : suivi des demandes et mutations workflow bornées ;
@@ -242,8 +246,38 @@ append-only et rendus comme texte brut. Les notes internes ne figurent jamais
 dans les DTO client. Les messages publics sont affichés côté client sous
 l'identité générique « Équipe Kermaria ».
 
-Les listes admin acceptent les filtres `status`, `priority` pour le support et
-`order=asc|desc`. La limite reste fixée à 100 éléments.
+Les listes admin acceptent les filtres `status`, `priority` pour le support,
+`order=newest|oldest|status` et
+`attention=to_handle|client_reply`. La limite reste fixée à 100 éléments.
+
+`to_handle` sélectionne les demandes dans un statut de traitement initial ou
+dont le dernier message public provient du client. `client_reply` sélectionne
+uniquement les demandes dont le dernier message public provient du client.
+Une valeur inconnue retourne `400 INVALID_REQUEST`.
+
+## Centre d'activité admin V0.14
+
+`GET /internal/admin/activity` exige une session `internal_admin` et retourne :
+
+```json
+{
+  "supportToHandleCount": 2,
+  "serviceToHandleCount": 1,
+  "recentClientReplyCount": 2,
+  "waitingForCustomerCount": 1,
+  "activeRequestCount": 4,
+  "recentActivities": []
+}
+```
+
+Les dix activités sont des métadonnées de messages publics : type et référence
+de demande, client, sujet, statut, type d'auteur et date. Le texte du message,
+les notes internes, tokens et secrets sont exclus du contrat.
+
+Une demande support est « à traiter » si elle est `open`, `in_progress` ou si
+son dernier message public vient du client. Une demande de service est « à
+traiter » si elle est `received`, `under_review` ou si son dernier message
+public vient du client. Aucun statut n'est modifié automatiquement.
 
 Une réponse de mutation contient la référence, le statut courant, l'indication
 de changement et le `correlation_id`, sans contenu de note :
