@@ -57,7 +57,10 @@ async Task<int> RunAsync(string[] arguments)
     try
     {
         VerifyIdentifierMapping();
+        VerifyActiveDirectoryPathScope();
         await RunMockTestsAsync();
+        await RunMockActiveDirectoryModeTestsAsync();
+        await RunReadOnlyActiveDirectoryModeTestsAsync();
         await RunUnavailableReadinessTestAsync();
         await RunProductionConfigurationValidationTestsAsync();
         await RunDisabledAccountTestAsync();
@@ -69,15 +72,57 @@ async Task<int> RunAsync(string[] arguments)
             await RunMariaDbReadTestsAsync();
         }
 
-        Console.WriteLine("Smoke tests API-INTERNAL V0.17 reussis.");
+        Console.WriteLine("Smoke tests API-INTERNAL V0.18 reussis.");
         return 0;
     }
     catch (Exception exception)
     {
-        Console.Error.WriteLine("Smoke tests API-INTERNAL V0.17 en echec.");
+        Console.Error.WriteLine("Smoke tests API-INTERNAL V0.18 en echec.");
         Console.Error.WriteLine(exception.ToString());
         return 1;
     }
+}
+
+void VerifyActiveDirectoryPathScope()
+{
+    var scopeType = Assembly.LoadFrom(apiAssembly).GetType(
+        "Kermaria.ApiInternal.Services.ActiveDirectory.ActiveDirectoryPathScope")
+        ?? throw new InvalidOperationException(
+            "Le type ActiveDirectoryPathScope est introuvable.");
+    var scope = Activator.CreateInstance(
+            scopeType,
+            "OU=TEST_SITE_WEB,DC=home,DC=bzh")
+        ?? throw new InvalidOperationException(
+            "Le scope Active Directory ne peut pas etre instancie.");
+    var extractCustomerReference = scopeType.GetMethod(
+            "ExtractCustomerReference")
+        ?? throw new InvalidOperationException(
+            "La methode ExtractCustomerReference est introuvable.");
+
+    var userCustomerReference = extractCustomerReference.Invoke(
+        scope,
+        ["CN=test2,OU=Users,OU=CLI-DEMO-0060,OU=10_Customers,OU=TEST_SITE_WEB,DC=home,DC=bzh"]) as string;
+    var groupCustomerReference = extractCustomerReference.Invoke(
+        scope,
+        ["CN=testgroupe1,OU=Groups,OU=CLI-DEMO-0060,OU=10_Customers,OU=TEST_SITE_WEB,DC=home,DC=bzh"]) as string;
+    var disabledCustomerReference = extractCustomerReference.Invoke(
+        scope,
+        ["CN=test3,OU=Disabled,OU=CLI-DEMO-0060,OU=10_Customers,OU=TEST_SITE_WEB,DC=home,DC=bzh"]) as string;
+
+    Ensure(
+        string.Equals(
+            userCustomerReference,
+            "CLI-DEMO-0060",
+            StringComparison.Ordinal)
+        && string.Equals(
+            groupCustomerReference,
+            "CLI-DEMO-0060",
+            StringComparison.Ordinal)
+        && string.Equals(
+            disabledCustomerReference,
+            "CLI-DEMO-0060",
+            StringComparison.Ordinal),
+        "Le scope AD doit extraire la reference client reelle plutot que l'OU 10_Customers.");
 }
 
 async Task RunMockTestsAsync()
@@ -1047,16 +1092,21 @@ async Task RunMockTestsAsync()
                 .GetString() == testCorrelationId,
             "L'erreur structurée ne propage pas le correlation_id.");
 
+        await VerifyDisabledActiveDirectoryAdminRoutesAsync(
+            client,
+            mockBaseUrl,
+            adminSessionToken);
+        /*
         using var adHealthResponse = await client.GetAsync(
             $"{mockBaseUrl}/internal/ad/health");
         var adHealthText = await adHealthResponse.Content.ReadAsStringAsync();
         using var adHealthPayload = JsonDocument.Parse(adHealthText);
 
         Ensure(
-            adHealthResponse.StatusCode == HttpStatusCode.OK,
+            adStatusResponse.StatusCode == HttpStatusCode.OK,
             "Le diagnostic AD interne ne répond pas avec HTTP 200.");
         Ensure(
-            adHealthPayload.RootElement.GetProperty("mode").GetString()
+            adStatusPayload.RootElement.GetProperty("mode").GetString()
                 == "disabled",
             "Le mode AD doit être disabled par défaut dans les tests.");
         Ensure(
@@ -1095,6 +1145,7 @@ async Task RunMockTestsAsync()
             adPayload.RootElement.GetProperty("correlation_id").GetString()
                 == testCorrelationId,
             "La route AD disabled ne propage pas le correlation_id.");
+        */
 
         using var secondLoginResponse = await client.PostAsJsonAsync(
             $"{mockBaseUrl}/internal/auth/sessions",
@@ -1164,32 +1215,32 @@ async Task RunMockTestsAsync()
 
         await Task.Delay(100);
         Ensure(
-            !api.Logs.ToString().Contains(
-                passwordLogSentinel,
+            !SnapshotLogs(api.Logs).Contains(
+                "NOT_A_REAL_PASSWORD_LOG_SENTINEL",
                 StringComparison.Ordinal),
             "Un mot de passe de test a été écrit dans les logs.");
         Ensure(
-            !api.Logs.ToString().Contains(
+            !SnapshotLogs(api.Logs).Contains(
                 invalidLoginPassword,
                 StringComparison.Ordinal)
-            && !api.Logs.ToString().Contains(
+            && !SnapshotLogs(api.Logs).Contains(
                 mockPassword,
                 StringComparison.Ordinal)
-            && !api.Logs.ToString().Contains(
+            && !SnapshotLogs(api.Logs).Contains(
                 sessionToken!,
                 StringComparison.Ordinal),
             "Un mot de passe ou token de session a été écrit dans les logs.");
         Ensure(
-            !api.Logs.ToString().Contains(
+            !SnapshotLogs(api.Logs).Contains(
                 mockAdminPassword,
                 StringComparison.Ordinal)
-            && !api.Logs.ToString().Contains(
+            && !SnapshotLogs(api.Logs).Contains(
                 adminSessionToken,
                 StringComparison.Ordinal),
             "Un mot de passe ou token admin a été écrit dans les logs.");
         Ensure(
-            !api.Logs.ToString().Contains(privateNote, StringComparison.Ordinal)
-            && !api.Logs.ToString().Contains(
+            !SnapshotLogs(api.Logs).Contains(privateNote, StringComparison.Ordinal)
+            && !SnapshotLogs(api.Logs).Contains(
                 publicMessage,
                 StringComparison.Ordinal),
             "Le contenu d'une note ou d'un message a été écrit dans les logs.");
@@ -1417,7 +1468,7 @@ async Task RunUnavailableReadinessTestAsync()
             !readyBody.Contains(
                 sqlPasswordSentinel,
                 StringComparison.Ordinal)
-            && !api.Logs.ToString().Contains(
+            && !SnapshotLogs(api.Logs).Contains(
                 sqlPasswordSentinel,
                 StringComparison.Ordinal),
             "La readiness ne doit divulguer aucun mot de passe SQL.");
@@ -1568,6 +1619,7 @@ async Task RunMariaDbReadTestsAsync()
         "90000000-0000-0000-0000-000000000074";
     string? workflowSupportRequestId = null;
     string? workflowServiceRequestId = null;
+    string? adLinkFixtureId = null;
 
     try
     {
@@ -1959,6 +2011,47 @@ async Task RunMariaDbReadTestsAsync()
             persistent: true,
             foreignCustomerId: isolationCustomerId);
 
+        adLinkFixtureId = await InsertCustomerAdLinkAsync("CLI-DEMO-0060");
+        using var adLinksRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mariaDbBaseUrl}/internal/admin/customers/CLI-DEMO-0060/ad-links",
+            adminSessionToken);
+        using var adLinksResponse = await client.SendAsync(adLinksRequest);
+        using var adLinksPayload = JsonDocument.Parse(
+            await adLinksResponse.Content.ReadAsStringAsync());
+        Ensure(
+            adLinksResponse.StatusCode == HttpStatusCode.OK
+            && adLinksPayload.RootElement.EnumerateArray().Any(item =>
+                item.GetProperty("id").GetString() == adLinkFixtureId
+                && item.GetProperty("customerReference").GetString()
+                    == "CLI-DEMO-0060"
+                && !string.IsNullOrWhiteSpace(
+                    item.GetProperty("objectGuid").GetString())),
+            "La lecture MariaDB des liens AD doit rester lisible aprÃ¨s insertion d'un lien.");
+
+        using var refreshedAdminCustomerDetailRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mariaDbBaseUrl}/internal/admin/customers/CLI-DEMO-0060",
+            adminSessionToken);
+        using var refreshedAdminCustomerDetailResponse = await client.SendAsync(
+            refreshedAdminCustomerDetailRequest);
+        var refreshedAdminCustomerDetailText =
+            await refreshedAdminCustomerDetailResponse.Content.ReadAsStringAsync();
+        using var refreshedAdminCustomerDetailPayload = JsonDocument.Parse(
+            refreshedAdminCustomerDetailText);
+        Ensure(
+            refreshedAdminCustomerDetailResponse.StatusCode
+                == HttpStatusCode.OK,
+            "La fiche client admin CLI-DEMO-0060 doit rester lisible aprÃ¨s ajout d'un document commercial liÃ©.");
+        Ensure(
+            refreshedAdminCustomerDetailPayload.RootElement
+                .GetProperty("commercialDocuments")
+                .EnumerateArray()
+                .Any(item =>
+                    item.GetProperty("serviceRequestId").GetString()
+                        == workflowServiceRequestId),
+            "La fiche client admin MariaDB doit exposer le serviceRequestId du document commercial liÃ©.");
+
         using var mariaSupportStatusRequest = CreateSessionRequest(
             HttpMethod.Patch,
             $"{mariaDbBaseUrl}/internal/admin/support-requests/{workflowSupportRequestId}/status",
@@ -2281,15 +2374,18 @@ async Task RunMariaDbReadTestsAsync()
             isolationResponse.StatusCode == HttpStatusCode.Forbidden,
             "Un service MariaDB d'un autre client devait être refusé.");
 
-        using var adHealthResponse = await client.GetAsync(
-            $"{mariaDbBaseUrl}/internal/ad/health");
-        using var adHealthPayload = JsonDocument.Parse(
-            await adHealthResponse.Content.ReadAsStringAsync());
+        using var adStatusRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mariaDbBaseUrl}/internal/admin/ad/status",
+            adminSessionToken);
+        using var adStatusResponse = await client.SendAsync(adStatusRequest);
+        using var adStatusPayload = JsonDocument.Parse(
+            await adStatusResponse.Content.ReadAsStringAsync());
         Ensure(
-            adHealthResponse.StatusCode == HttpStatusCode.OK,
+            adStatusResponse.StatusCode == HttpStatusCode.OK,
             "Le diagnostic AD conditionnel ne répond pas avec HTTP 200.");
         Ensure(
-            adHealthPayload.RootElement.GetProperty("mode").GetString()
+            adStatusPayload.RootElement.GetProperty("mode").GetString()
                 == "disabled",
             "Le test MariaDB ne doit pas activer Active Directory.");
     }
@@ -2301,6 +2397,10 @@ async Task RunMariaDbReadTestsAsync()
         {
             await ResetLoginFailureFixtureAsync(adminEmail);
         }
+        if (adLinkFixtureId is not null)
+        {
+            await DeleteCustomerAdLinkAsync(adLinkFixtureId);
+        }
         await CleanupIsolationFixtureAsync(
             isolationCustomerId,
             isolationServiceId,
@@ -2310,6 +2410,557 @@ async Task RunMariaDbReadTestsAsync()
             workflowServiceRequestId);
         await api.StopAsync();
     }
+}
+
+async Task RunMockActiveDirectoryModeTestsAsync()
+{
+    var mockBaseUrl = SmokeTestRuntimeHelpers.CreateLoopbackBaseUrl();
+    using var api = StartApi(
+        mockBaseUrl,
+        startInfo =>
+        {
+            ConfigureMockAuthentication(startInfo, "active", "60");
+            startInfo.Environment["AD_INTEGRATION_MODE"] = "mock";
+            startInfo.Environment["AD_DOMAIN"] = "home.bzh";
+            startInfo.Environment["AD_CLIENTS_OU_DN"] =
+                "OU=TEST_SITE_WEB,DC=home,DC=bzh";
+            startInfo.Environment["AD_CONNECT_TIMEOUT_MS"] = "3000";
+            startInfo.Environment["AD_QUERY_TIMEOUT_MS"] = "5000";
+            startInfo.Environment["AD_MAX_RESULTS"] = "25";
+            startInfo.Environment.Remove("AD_SERVICE_ACCOUNT_USERNAME");
+            startInfo.Environment.Remove("AD_SERVICE_ACCOUNT_PASSWORD");
+        });
+    using var handler = new HttpClientHandler { UseProxy = false };
+    using var client = new HttpClient(handler);
+
+    try
+    {
+        using var healthResponse = await WaitForHealthAsync(
+            client,
+            api.Process,
+            mockBaseUrl,
+            api.Logs);
+        Ensure(
+            healthResponse.IsSuccessStatusCode,
+            "Le health check mock AD ne rÃ©pond pas correctement.");
+
+        var adminSessionToken = await LoginAsAdminAsync(client, mockBaseUrl);
+        await VerifyMockActiveDirectoryAdminRoutesAsync(
+            client,
+            mockBaseUrl,
+            adminSessionToken);
+
+        var logs = SnapshotLogs(api.Logs);
+        Ensure(
+            logs.Contains(
+                "admin.customers.ad_users.write",
+                StringComparison.Ordinal)
+            && logs.Contains(
+                "admin.customers.ad_group_members.write",
+                StringComparison.Ordinal)
+            && logs.Contains(
+                "admin.customers.ad_users.move_to_disabled",
+                StringComparison.Ordinal),
+            "Les actions AD mock doivent Ãªtre journalisÃ©es sans exposer de secrets.");
+    }
+    finally
+    {
+        await api.StopAsync();
+    }
+}
+
+async Task RunReadOnlyActiveDirectoryModeTestsAsync()
+{
+    var mockBaseUrl = SmokeTestRuntimeHelpers.CreateLoopbackBaseUrl();
+    const string adPasswordSentinel = "NOT_A_REAL_AD_SERVICE_PASSWORD_V018";
+    using var api = StartApi(
+        mockBaseUrl,
+        startInfo =>
+        {
+            ConfigureMockAuthentication(startInfo, "active", "60");
+            startInfo.Environment["AD_INTEGRATION_MODE"] = "read_only";
+            startInfo.Environment["AD_DOMAIN"] = "home.bzh";
+            startInfo.Environment["AD_CLIENTS_OU_DN"] =
+                "OU=TEST_SITE_WEB,DC=home,DC=bzh";
+            startInfo.Environment["AD_SERVICE_ACCOUNT_USERNAME"] =
+                @"HOME\svc_api_portal_ad";
+            startInfo.Environment["AD_SERVICE_ACCOUNT_PASSWORD"] =
+                adPasswordSentinel;
+            startInfo.Environment["AD_CONNECT_TIMEOUT_MS"] = "3000";
+            startInfo.Environment["AD_QUERY_TIMEOUT_MS"] = "5000";
+            startInfo.Environment["AD_MAX_RESULTS"] = "25";
+        });
+    using var handler = new HttpClientHandler { UseProxy = false };
+    using var client = new HttpClient(handler);
+
+    try
+    {
+        using var healthResponse = await WaitForHealthAsync(
+            client,
+            api.Process,
+            mockBaseUrl,
+            api.Logs);
+        Ensure(
+            healthResponse.IsSuccessStatusCode,
+            "Le health check read_only ne rÃ©pond pas correctement.");
+
+        var adminSessionToken = await LoginAsAdminAsync(client, mockBaseUrl);
+
+        using var statusRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mockBaseUrl}/internal/admin/ad/status",
+            adminSessionToken);
+        using var statusResponse = await client.SendAsync(statusRequest);
+        var statusText = await statusResponse.Content.ReadAsStringAsync();
+        using var statusPayload = JsonDocument.Parse(statusText);
+        Ensure(
+            statusResponse.StatusCode == HttpStatusCode.OK
+            && statusPayload.RootElement.GetProperty("mode").GetString()
+                == "read_only"
+            && statusPayload.RootElement
+                .GetProperty("configurationValid")
+                .GetBoolean()
+            && !statusPayload.RootElement
+                .GetProperty("writesEnabled")
+                .GetBoolean(),
+            "Le statut AD read_only est invalide.");
+
+        using var createUserRequest = CreateSessionRequest(
+            HttpMethod.Post,
+            $"{mockBaseUrl}/internal/admin/customers/{MockCustomerReference()}/ad/users",
+            adminSessionToken);
+        createUserRequest.Content = JsonContent.Create(new
+        {
+            samAccountName = "test.web.0042.readonly",
+            displayName = "Read Only User"
+        });
+        using var createUserResponse = await client.SendAsync(createUserRequest);
+        var createUserText =
+            await createUserResponse.Content.ReadAsStringAsync();
+        using var createUserPayload = JsonDocument.Parse(createUserText);
+        Ensure(
+            createUserResponse.StatusCode == HttpStatusCode.Forbidden
+            && createUserPayload.RootElement.GetProperty("code").GetString()
+                == "AD_READ_ONLY",
+            "Les Ã©critures AD doivent Ãªtre refusÃ©es en mode read_only.");
+        Ensure(
+            !statusText.Contains(adPasswordSentinel, StringComparison.Ordinal)
+            && !createUserText.Contains(
+                adPasswordSentinel,
+                StringComparison.Ordinal)
+            && !SnapshotLogs(api.Logs).Contains(
+                adPasswordSentinel,
+                StringComparison.Ordinal),
+            "Le secret du compte de service AD ne doit apparaÃ®tre ni dans les rÃ©ponses ni dans les logs.");
+    }
+    finally
+    {
+        await api.StopAsync();
+    }
+}
+
+async Task<string> LoginAsAdminAsync(HttpClient client, string baseUrl)
+{
+    using var adminLoginResponse = await client.PostAsJsonAsync(
+        $"{baseUrl}/internal/auth/sessions",
+        new
+        {
+            email = mockAdminEmail,
+            password = mockAdminPassword
+        });
+    using var adminLoginPayload = JsonDocument.Parse(
+        await adminLoginResponse.Content.ReadAsStringAsync());
+    Ensure(
+        adminLoginResponse.StatusCode == HttpStatusCode.OK,
+        "Le login internal_admin requis pour les tests AD doit rÃ©ussir.");
+
+    return adminLoginPayload.RootElement
+        .GetProperty("sessionToken")
+        .GetString()
+        ?? throw new InvalidOperationException(
+            "Le login admin AD ne retourne aucun token interne.");
+}
+
+async Task VerifyDisabledActiveDirectoryAdminRoutesAsync(
+    HttpClient client,
+    string baseUrl,
+    string adminSessionToken)
+{
+    using var statusRequest = CreateSessionRequest(
+        HttpMethod.Get,
+        $"{baseUrl}/internal/admin/ad/status",
+        adminSessionToken);
+    using var statusResponse = await client.SendAsync(statusRequest);
+    var statusText = await statusResponse.Content.ReadAsStringAsync();
+    using var statusPayload = JsonDocument.Parse(statusText);
+    Ensure(
+        statusResponse.StatusCode == HttpStatusCode.OK
+        && statusPayload.RootElement.GetProperty("mode").GetString()
+            == "disabled"
+        && statusPayload.RootElement.GetProperty("status").GetString()
+            == "disabled"
+        && !statusPayload.RootElement.GetProperty("readsEnabled").GetBoolean()
+        && !statusPayload.RootElement.GetProperty("writesEnabled").GetBoolean(),
+        "Le statut AD disabled exposÃ© Ã  l'admin est invalide.");
+    Ensure(
+        !statusText.Contains("password", StringComparison.OrdinalIgnoreCase)
+        && !statusText.Contains("username", StringComparison.OrdinalIgnoreCase),
+        "Le statut AD disabled ne doit exposer aucune information sensible.");
+
+    using var searchUsersRequest = CreateSessionRequest(
+        HttpMethod.Get,
+        $"{baseUrl}/internal/admin/ad/users?query=0042",
+        adminSessionToken);
+    using var searchUsersResponse = await client.SendAsync(searchUsersRequest);
+    using var searchUsersPayload = JsonDocument.Parse(
+        await searchUsersResponse.Content.ReadAsStringAsync());
+    Ensure(
+        searchUsersResponse.StatusCode == HttpStatusCode.NotImplemented
+        && searchUsersPayload.RootElement.GetProperty("code").GetString()
+            == "AD_INTEGRATION_DISABLED",
+        "La recherche AD doit Ãªtre refusÃ©e en mode disabled.");
+
+    const string logSentinel = "NOT_A_REAL_AD_SECRET_LOG_SENTINEL";
+    using var createUserRequest = CreateSessionRequest(
+        HttpMethod.Post,
+        $"{baseUrl}/internal/admin/customers/{MockCustomerReference()}/ad/users",
+        adminSessionToken);
+    createUserRequest.Content = JsonContent.Create(new
+    {
+        samAccountName = "test.web.0042.disabled",
+        displayName = logSentinel
+    });
+    using var createUserResponse = await client.SendAsync(createUserRequest);
+    var createUserText =
+        await createUserResponse.Content.ReadAsStringAsync();
+    using var createUserPayload = JsonDocument.Parse(createUserText);
+    Ensure(
+        createUserResponse.StatusCode == HttpStatusCode.NotImplemented
+        && createUserPayload.RootElement.GetProperty("code").GetString()
+            == "AD_INTEGRATION_DISABLED",
+        "Les Ã©critures AD doivent Ãªtre refusÃ©es en mode disabled.");
+    Ensure(
+        !createUserText.Contains(logSentinel, StringComparison.Ordinal),
+        "Une rÃ©ponse AD refusÃ©e ne doit pas rejouer le payload d'entrÃ©e.");
+
+    using var hardDeleteRequest = CreateSessionRequest(
+        HttpMethod.Delete,
+        $"{baseUrl}/internal/admin/customers/{MockCustomerReference()}/ad/users/test.web.0042.user",
+        adminSessionToken);
+    using var hardDeleteResponse = await client.SendAsync(hardDeleteRequest);
+    Ensure(
+        hardDeleteResponse.StatusCode == HttpStatusCode.NotFound
+        || hardDeleteResponse.StatusCode == HttpStatusCode.MethodNotAllowed,
+        "Aucune suppression dÃ©finitive AD ne doit Ãªtre exposÃ©e.");
+}
+
+async Task VerifyMockActiveDirectoryAdminRoutesAsync(
+    HttpClient client,
+    string baseUrl,
+    string adminSessionToken)
+{
+    using var statusRequest = CreateSessionRequest(
+        HttpMethod.Get,
+        $"{baseUrl}/internal/admin/ad/status",
+        adminSessionToken);
+    using var statusResponse = await client.SendAsync(statusRequest);
+    using var statusPayload = JsonDocument.Parse(
+        await statusResponse.Content.ReadAsStringAsync());
+    Ensure(
+        statusResponse.StatusCode == HttpStatusCode.OK
+        && statusPayload.RootElement.GetProperty("mode").GetString()
+            == "mock"
+        && statusPayload.RootElement.GetProperty("status").GetString()
+            == "mock"
+        && statusPayload.RootElement.GetProperty("readsEnabled").GetBoolean()
+        && statusPayload.RootElement.GetProperty("writesEnabled").GetBoolean(),
+        "Le statut AD mock est invalide.");
+
+    using var searchUsersRequest = CreateSessionRequest(
+        HttpMethod.Get,
+        $"{baseUrl}/internal/admin/ad/users?query=0042&customerReference=CLI-DEMO-0042",
+        adminSessionToken);
+    using var searchUsersResponse = await client.SendAsync(searchUsersRequest);
+    using var searchUsersPayload = JsonDocument.Parse(
+        await searchUsersResponse.Content.ReadAsStringAsync());
+    Ensure(
+        searchUsersResponse.StatusCode == HttpStatusCode.OK
+        && searchUsersPayload.RootElement.EnumerateArray().Any(item =>
+            item.GetProperty("samAccountName").GetString()
+                == "test.web.0042.user"
+            && item.GetProperty("customerReference").GetString()
+                == "CLI-DEMO-0042"),
+        "La recherche des utilisateurs AD mock doit retourner les utilisateurs 0042.");
+
+    using var searchGroupsRequest = CreateSessionRequest(
+        HttpMethod.Get,
+        $"{baseUrl}/internal/admin/ad/groups?query=PORTAL&customerReference=CLI-DEMO-0042",
+        adminSessionToken);
+    using var searchGroupsResponse = await client.SendAsync(searchGroupsRequest);
+    using var searchGroupsPayload = JsonDocument.Parse(
+        await searchGroupsResponse.Content.ReadAsStringAsync());
+    Ensure(
+        searchGroupsResponse.StatusCode == HttpStatusCode.OK
+        && searchGroupsPayload.RootElement.EnumerateArray().Any(item =>
+            item.GetProperty("samAccountName").GetString()
+                == "KERMARIA_CLI-DEMO-0042_PORTAL_USERS"
+            && item.GetProperty("customerReference").GetString()
+                == "CLI-DEMO-0042"),
+        "La recherche des groupes AD mock doit retourner les groupes 0042.");
+    var linkCandidateGroup = searchGroupsPayload.RootElement
+        .EnumerateArray()
+        .First(item =>
+            item.GetProperty("samAccountName").GetString()
+                == "KERMARIA_CLI-DEMO-0042_PORTAL_USERS");
+    var linkCandidateGroupSam = linkCandidateGroup
+        .GetProperty("samAccountName")
+        .GetString()
+        ?? throw new InvalidOperationException(
+            "Le groupe AD mock candidat pour la liaison est introuvable.");
+    var linkCandidateGroupDn = linkCandidateGroup
+        .GetProperty("distinguishedName")
+        .GetString()
+        ?? throw new InvalidOperationException(
+            "Le DN du groupe AD mock candidat pour la liaison est introuvable.");
+
+    const string createdUserSamAccountName = "test.web.0042.v018";
+    using var createUserRequest = CreateSessionRequest(
+        HttpMethod.Post,
+        $"{baseUrl}/internal/admin/customers/CLI-DEMO-0042/ad/users",
+        adminSessionToken);
+    createUserRequest.Content = JsonContent.Create(new
+    {
+        samAccountName = createdUserSamAccountName,
+        displayName = "Test Web 0042 V018",
+        givenName = "Test",
+        surname = "V018",
+        description = "Compte de test V0.18"
+    });
+    using var createUserResponse = await client.SendAsync(createUserRequest);
+    using var createUserPayload = JsonDocument.Parse(
+        await createUserResponse.Content.ReadAsStringAsync());
+    Ensure(
+        createUserResponse.StatusCode == HttpStatusCode.Created
+        && createUserPayload.RootElement.GetProperty("code").GetString()
+            == "AD_USER_CREATED"
+        && createUserPayload.RootElement.GetProperty("changed").GetBoolean(),
+        "La crÃ©ation d'un utilisateur AD mock doit rÃ©ussir.");
+    var createdUserDn = createUserPayload.RootElement
+        .GetProperty("object")
+        .GetProperty("distinguishedName")
+        .GetString()
+        ?? throw new InvalidOperationException(
+            "La crÃ©ation AD mock de l'utilisateur ne retourne pas de DN.");
+    Ensure(
+        createdUserDn.Contains(
+            "OU=Users,OU=CLI-DEMO-0042,OU=10_Customers,OU=TEST_SITE_WEB,DC=home,DC=bzh",
+            StringComparison.Ordinal),
+        "Le DN utilisateur mock doit rester bornÃ© Ã  l'OU autorisÃ©e.");
+
+    const string createdGroupSamAccountName =
+        "KERMARIA_CLI-DEMO-0042_V018_USERS";
+    using var createGroupRequest = CreateSessionRequest(
+        HttpMethod.Post,
+        $"{baseUrl}/internal/admin/customers/CLI-DEMO-0042/ad/groups",
+        adminSessionToken);
+    createGroupRequest.Content = JsonContent.Create(new
+    {
+        samAccountName = createdGroupSamAccountName,
+        displayName = "Kermaria CLI-DEMO-0042 V018 Users",
+        description = "Groupe de test V0.18"
+    });
+    using var createGroupResponse = await client.SendAsync(createGroupRequest);
+    using var createGroupPayload = JsonDocument.Parse(
+        await createGroupResponse.Content.ReadAsStringAsync());
+    Ensure(
+        createGroupResponse.StatusCode == HttpStatusCode.Created
+        && createGroupPayload.RootElement.GetProperty("code").GetString()
+            == "AD_GROUP_CREATED"
+        && createGroupPayload.RootElement.GetProperty("changed").GetBoolean(),
+        "La crÃ©ation d'un groupe AD mock doit rÃ©ussir.");
+    var createdGroupDn = createGroupPayload.RootElement
+        .GetProperty("object")
+        .GetProperty("distinguishedName")
+        .GetString()
+        ?? throw new InvalidOperationException(
+            "La crÃ©ation AD mock du groupe ne retourne pas de DN.");
+
+    using var addMemberRequest = CreateSessionRequest(
+        HttpMethod.Post,
+        $"{baseUrl}/internal/admin/customers/CLI-DEMO-0042/ad/groups/{createdGroupSamAccountName}/members",
+        adminSessionToken);
+    addMemberRequest.Content = JsonContent.Create(new
+    {
+        userSamAccountName = createdUserSamAccountName
+    });
+    using var addMemberResponse = await client.SendAsync(addMemberRequest);
+    using var addMemberPayload = JsonDocument.Parse(
+        await addMemberResponse.Content.ReadAsStringAsync());
+    Ensure(
+        addMemberResponse.StatusCode == HttpStatusCode.OK
+        && addMemberPayload.RootElement.GetProperty("code").GetString()
+            == "AD_GROUP_MEMBER_ADDED"
+        && addMemberPayload.RootElement.GetProperty("changed").GetBoolean(),
+        "L'ajout d'un membre AD mock doit rÃ©ussir.");
+
+    using var removeMemberRequest = CreateSessionRequest(
+        HttpMethod.Delete,
+        $"{baseUrl}/internal/admin/customers/CLI-DEMO-0042/ad/groups/{createdGroupSamAccountName}/members/{createdUserSamAccountName}",
+        adminSessionToken);
+    using var removeMemberResponse = await client.SendAsync(removeMemberRequest);
+    using var removeMemberPayload = JsonDocument.Parse(
+        await removeMemberResponse.Content.ReadAsStringAsync());
+    Ensure(
+        removeMemberResponse.StatusCode == HttpStatusCode.OK
+        && removeMemberPayload.RootElement.GetProperty("code").GetString()
+            == "AD_GROUP_MEMBER_REMOVED"
+        && removeMemberPayload.RootElement.GetProperty("changed").GetBoolean(),
+        "Le retrait d'un membre AD mock doit rÃ©ussir.");
+
+    using var disableUserRequest = CreateSessionRequest(
+        HttpMethod.Post,
+        $"{baseUrl}/internal/admin/customers/CLI-DEMO-0042/ad/users/{createdUserSamAccountName}/disable",
+        adminSessionToken);
+    using var disableUserResponse = await client.SendAsync(disableUserRequest);
+    using var disableUserPayload = JsonDocument.Parse(
+        await disableUserResponse.Content.ReadAsStringAsync());
+    Ensure(
+        disableUserResponse.StatusCode == HttpStatusCode.OK
+        && disableUserPayload.RootElement.GetProperty("code").GetString()
+            == "AD_USER_ALREADY_DISABLED",
+        "La dÃ©sactivation AD mock doit rÃ©pondre proprement pour un compte dÃ©jÃ  dÃ©sactivÃ©.");
+
+    using var moveUserRequest = CreateSessionRequest(
+        HttpMethod.Post,
+        $"{baseUrl}/internal/admin/customers/CLI-DEMO-0042/ad/users/{createdUserSamAccountName}/move-to-disabled",
+        adminSessionToken);
+    using var moveUserResponse = await client.SendAsync(moveUserRequest);
+    using var moveUserPayload = JsonDocument.Parse(
+        await moveUserResponse.Content.ReadAsStringAsync());
+    Ensure(
+        moveUserResponse.StatusCode == HttpStatusCode.OK
+        && moveUserPayload.RootElement.GetProperty("code").GetString()
+            == "AD_USER_MOVED_TO_DISABLED"
+        && moveUserPayload.RootElement.GetProperty("changed").GetBoolean()
+        && moveUserPayload.RootElement
+            .GetProperty("object")
+            .GetProperty("distinguishedName")
+            .GetString()!
+            .Contains(
+                "OU=Disabled,OU=CLI-DEMO-0042,OU=10_Customers,OU=TEST_SITE_WEB,DC=home,DC=bzh",
+                StringComparison.Ordinal),
+        "Le dÃ©placement mock vers l'OU Disabled doit rester dans l'OU autorisÃ©e.");
+
+    using var createLinkRequest = CreateSessionRequest(
+        HttpMethod.Post,
+        $"{baseUrl}/internal/admin/customers/CLI-DEMO-0042/ad-links",
+        adminSessionToken);
+    createLinkRequest.Content = JsonContent.Create(new
+    {
+        distinguishedName = linkCandidateGroupDn
+    });
+    using var createLinkResponse = await client.SendAsync(createLinkRequest);
+    using var createLinkPayload = JsonDocument.Parse(
+        await createLinkResponse.Content.ReadAsStringAsync());
+    Ensure(
+        createLinkResponse.StatusCode == HttpStatusCode.Created
+        && createLinkPayload.RootElement.GetProperty("code").GetString()
+            == "AD_LINK_CREATED"
+        && createLinkPayload.RootElement.GetProperty("changed").GetBoolean(),
+        "La crÃ©ation d'un lien AD client doit rÃ©ussir.");
+    var createdLinkId = createLinkPayload.RootElement
+        .GetProperty("id")
+        .GetString()
+        ?? throw new InvalidOperationException(
+            "La liaison AD mock ne retourne pas d'identifiant.");
+
+    using var listLinksRequest = CreateSessionRequest(
+        HttpMethod.Get,
+        $"{baseUrl}/internal/admin/customers/CLI-DEMO-0042/ad-links",
+        adminSessionToken);
+    using var listLinksResponse = await client.SendAsync(listLinksRequest);
+    using var listLinksPayload = JsonDocument.Parse(
+        await listLinksResponse.Content.ReadAsStringAsync());
+    Ensure(
+        listLinksResponse.StatusCode == HttpStatusCode.OK
+        && listLinksPayload.RootElement.EnumerateArray().Any(item =>
+            item.GetProperty("id").GetString() == createdLinkId
+            && item.GetProperty("samAccountName").GetString()
+                == linkCandidateGroupSam),
+        "La liste des liaisons AD doit reflÃ©ter l'objet liÃ©.");
+
+    using var deleteLinkRequest = CreateSessionRequest(
+        HttpMethod.Delete,
+        $"{baseUrl}/internal/admin/customers/CLI-DEMO-0042/ad-links/{createdLinkId}",
+        adminSessionToken);
+    using var deleteLinkResponse = await client.SendAsync(deleteLinkRequest);
+    using var deleteLinkPayload = JsonDocument.Parse(
+        await deleteLinkResponse.Content.ReadAsStringAsync());
+    Ensure(
+        deleteLinkResponse.StatusCode == HttpStatusCode.OK
+        && deleteLinkPayload.RootElement.GetProperty("code").GetString()
+            == "AD_LINK_DELETED",
+        "La suppression d'un lien AD doit rÃ©ussir.");
+
+    using var invalidDnLinkRequest = CreateSessionRequest(
+        HttpMethod.Post,
+        $"{baseUrl}/internal/admin/customers/CLI-DEMO-0042/ad-links",
+        adminSessionToken);
+    invalidDnLinkRequest.Content = JsonContent.Create(new
+    {
+        distinguishedName = "CN=forbidden,CN=Users,DC=home,DC=bzh"
+    });
+    using var invalidDnLinkResponse = await client.SendAsync(invalidDnLinkRequest);
+    using var invalidDnLinkPayload = JsonDocument.Parse(
+        await invalidDnLinkResponse.Content.ReadAsStringAsync());
+    Ensure(
+        invalidDnLinkResponse.StatusCode == HttpStatusCode.Forbidden
+        && invalidDnLinkPayload.RootElement.GetProperty("code").GetString()
+            == "AD_TARGET_OUTSIDE_ALLOWED_OU",
+        "Un DN hors de l'OU autorisÃ©e doit Ãªtre refusÃ©.");
+
+    using var missingCustomerRequest = CreateSessionRequest(
+        HttpMethod.Post,
+        $"{baseUrl}/internal/admin/customers/CLI-DEMO-9999/ad/users",
+        adminSessionToken);
+    missingCustomerRequest.Content = JsonContent.Create(new
+    {
+        samAccountName = "test.web.9999.user",
+        displayName = "Missing Customer"
+    });
+    using var missingCustomerResponse = await client.SendAsync(
+        missingCustomerRequest);
+    Ensure(
+        missingCustomerResponse.StatusCode == HttpStatusCode.NotFound,
+        "Un client inexistant doit Ãªtre refusÃ© pour les actions AD.");
+
+    using var crossCustomerRequest = CreateSessionRequest(
+        HttpMethod.Post,
+        $"{baseUrl}/internal/admin/customers/CLI-DEMO-0100/ad/groups/KERMARIA_CLI-DEMO-0100_PORTAL_USERS/members",
+        adminSessionToken);
+    crossCustomerRequest.Content = JsonContent.Create(new
+    {
+        userSamAccountName = "test.web.0042.user"
+    });
+    using var crossCustomerResponse = await client.SendAsync(
+        crossCustomerRequest);
+    using var crossCustomerPayload = JsonDocument.Parse(
+        await crossCustomerResponse.Content.ReadAsStringAsync());
+    Ensure(
+        crossCustomerResponse.StatusCode == HttpStatusCode.Forbidden
+        && crossCustomerPayload.RootElement.GetProperty("code").GetString()
+            == "AD_CROSS_CUSTOMER_FORBIDDEN",
+        "L'ajout d'un utilisateur 0042 dans un groupe 0100 doit Ãªtre refusÃ©.");
+
+    using var hardDeleteRequest = CreateSessionRequest(
+        HttpMethod.Delete,
+        $"{baseUrl}/internal/admin/customers/CLI-DEMO-0042/ad/users/{createdUserSamAccountName}",
+        adminSessionToken);
+    using var hardDeleteResponse = await client.SendAsync(hardDeleteRequest);
+    Ensure(
+        hardDeleteResponse.StatusCode == HttpStatusCode.NotFound
+        || hardDeleteResponse.StatusCode == HttpStatusCode.MethodNotAllowed,
+        "Aucune suppression dÃ©finitive AD ne doit Ãªtre exposÃ©e.");
 }
 
 async Task<string> FindRequestIdAsync(
@@ -3088,6 +3739,107 @@ async Task<string> FindInternalAdminUserIdAsync()
     return adminUserId!;
 }
 
+async Task<string> FindCustomerIdAsync(string customerReference)
+{
+    await using var connection = CreateMariaDbTestConnection();
+    await connection.OpenAsync();
+
+    await using var command = connection.CreateCommand();
+    command.CommandText =
+        """
+        SELECT id
+        FROM customers
+        WHERE external_reference = @customer_reference
+        LIMIT 1;
+        """;
+
+    AddDbParameter(command, "@customer_reference", customerReference);
+
+    var value = await command.ExecuteScalarAsync();
+    var customerId = value switch
+    {
+        null => null,
+        DBNull => null,
+        Guid guidValue => guidValue.ToString("D"),
+        string stringValue => stringValue,
+        _ => value.ToString()
+    };
+
+    Ensure(
+        !string.IsNullOrWhiteSpace(customerId),
+        $"Le client MariaDB {customerReference} requis pour les liens AD est introuvable.");
+
+    return customerId!;
+}
+
+async Task<string> InsertCustomerAdLinkAsync(string customerReference)
+{
+    await using var connection = CreateMariaDbTestConnection();
+    await connection.OpenAsync();
+    await using var command = connection.CreateCommand();
+
+    var id = Guid.NewGuid().ToString("D");
+    var objectGuid = Guid.NewGuid().ToString("D");
+    var customerId = await FindCustomerIdAsync(customerReference);
+    var adminUserId = await FindInternalAdminUserIdAsync();
+    var samAccountName = $"KERMARIA_{customerReference}_AD_LINK_TEST";
+    var distinguishedName =
+        $"CN={samAccountName},OU=Groups,OU={customerReference},OU=10_Customers,OU=TEST_SITE_WEB,DC=home,DC=bzh";
+
+    command.CommandText =
+        """
+        INSERT INTO customer_ad_links (
+            id,
+            customer_id,
+            object_guid,
+            object_sid,
+            object_type,
+            sam_account_name,
+            user_principal_name,
+            display_name,
+            distinguished_name,
+            linked_at,
+            linked_by_user_id
+        ) VALUES (
+            @id,
+            @customer_id,
+            @object_guid,
+            @object_sid,
+            'group',
+            @sam_account_name,
+            NULL,
+            @display_name,
+            @distinguished_name,
+            @linked_at,
+            @linked_by_user_id
+        );
+        """;
+
+    AddDbParameter(command, "@id", id);
+    AddDbParameter(command, "@customer_id", customerId);
+    AddDbParameter(command, "@object_guid", objectGuid);
+    AddDbParameter(command, "@object_sid", $"S-1-5-21-{Guid.NewGuid():N}");
+    AddDbParameter(command, "@sam_account_name", samAccountName);
+    AddDbParameter(command, "@display_name", $"AD Link Test {customerReference}");
+    AddDbParameter(command, "@distinguished_name", distinguishedName);
+    AddDbParameter(command, "@linked_at", DateTime.UtcNow);
+    AddDbParameter(command, "@linked_by_user_id", adminUserId);
+    await command.ExecuteNonQueryAsync();
+
+    return id;
+}
+
+async Task DeleteCustomerAdLinkAsync(string linkId)
+{
+    await using var connection = CreateMariaDbTestConnection();
+    await connection.OpenAsync();
+    await using var command = connection.CreateCommand();
+    command.CommandText =
+        "DELETE FROM customer_ad_links WHERE id = @id;";
+    AddDbParameter(command, "@id", linkId);
+    await command.ExecuteNonQueryAsync();
+}
+
 async Task DeleteCommercialDocumentAsync(string documentId)
 {
     await using var connection = CreateMariaDbTestConnection();
@@ -3557,14 +4309,20 @@ RunningApi StartApi(
     {
         if (eventArgs.Data is not null)
         {
-            logs.AppendLine(eventArgs.Data);
+            lock (logs)
+            {
+                logs.AppendLine(eventArgs.Data);
+            }
         }
     };
     process.ErrorDataReceived += (_, eventArgs) =>
     {
         if (eventArgs.Data is not null)
         {
-            logs.AppendLine(eventArgs.Data);
+            lock (logs)
+            {
+                logs.AppendLine(eventArgs.Data);
+            }
         }
     };
 
@@ -3630,7 +4388,7 @@ static async Task<HttpResponseMessage> WaitForHealthAsync(
         if (apiProcess.HasExited)
         {
             throw new InvalidOperationException(
-                $"API-INTERNAL s'est arrêtée prématurément. {logs}");
+                $"API-INTERNAL s'est arrêtée prématurément. {SnapshotLogs(logs)}");
         }
 
         try
@@ -3659,7 +4417,7 @@ static async Task<HttpResponseMessage> WaitForEndpointAsync(
         if (apiProcess.HasExited)
         {
             throw new InvalidOperationException(
-                $"API-INTERNAL s'est arrêtée prématurément. {logs}");
+                $"API-INTERNAL s'est arrêtée prématurément. {SnapshotLogs(logs)}");
         }
 
         try
@@ -3681,6 +4439,14 @@ static void Ensure(bool condition, string message)
     if (!condition)
     {
         throw new InvalidOperationException(message);
+    }
+}
+
+static string SnapshotLogs(StringBuilder logs)
+{
+    lock (logs)
+    {
+        return logs.ToString();
     }
 }
 

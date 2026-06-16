@@ -79,12 +79,33 @@ public static class RuntimeConfigurationValidator
             invalidVariables.Add("SESSION_COOKIE_SECURE");
         }
 
+        var adMode = configuration["AD_INTEGRATION_MODE"]?.Trim();
         if (string.Equals(
-                configuration["AD_INTEGRATION_MODE"]?.Trim(),
-                "enabled",
+                adMode,
+                "read_only",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                adMode,
+                "controlled_write",
                 StringComparison.OrdinalIgnoreCase))
         {
-            invalidVariables.Add("AD_INTEGRATION_MODE");
+            foreach (var variable in new[]
+            {
+                "AD_DOMAIN",
+                "AD_CLIENTS_OU_DN",
+                "AD_SERVICE_ACCOUNT_USERNAME"
+            })
+            {
+                if (string.IsNullOrWhiteSpace(configuration[variable]))
+                {
+                    invalidVariables.Add(variable);
+                }
+            }
+
+            ValidateSecret(
+                configuration,
+                "AD_SERVICE_ACCOUNT_PASSWORD",
+                invalidVariables);
         }
 
         foreach (var variable in DevelopmentSeedPasswordVariables)

@@ -4,8 +4,8 @@ public enum AdIntegrationMode
 {
     Disabled,
     Mock,
-    Test,
-    Enabled
+    ReadOnly,
+    ControlledWrite
 }
 
 public sealed record AdRuntimeConfiguration(
@@ -14,29 +14,26 @@ public sealed record AdRuntimeConfiguration(
     string? ClientsOuDn,
     string? ServiceAccountUsername,
     string? ServiceAccountPassword,
-    IReadOnlySet<string> AllowedGroups,
+    int ConnectTimeoutMs,
+    int QueryTimeoutMs,
+    int MaxResults,
     bool ConfigurationValid)
 {
-    public string ModeName => Mode.ToString().ToLowerInvariant();
-
-    public bool IsTargetInAllowedOu(string? distinguishedName)
+    public string ModeName => Mode switch
     {
-        if (string.IsNullOrWhiteSpace(distinguishedName)
-            || string.IsNullOrWhiteSpace(ClientsOuDn))
-        {
-            return false;
-        }
+        AdIntegrationMode.ReadOnly => "read_only",
+        AdIntegrationMode.ControlledWrite => "controlled_write",
+        _ => Mode.ToString().ToLowerInvariant()
+    };
 
-        return distinguishedName.EndsWith(
-            $",{ClientsOuDn}",
-            StringComparison.OrdinalIgnoreCase);
-    }
+    public bool ReadsEnabled => Mode is
+        AdIntegrationMode.Mock
+        or AdIntegrationMode.ReadOnly
+        or AdIntegrationMode.ControlledWrite;
 
-    public bool IsGroupAllowed(string? groupName)
-    {
-        return !string.IsNullOrWhiteSpace(groupName)
-            && AllowedGroups.Contains(groupName);
-    }
+    public bool WritesEnabled => Mode is
+        AdIntegrationMode.Mock
+        or AdIntegrationMode.ControlledWrite;
 }
 
 public static class AdConfigurationResolver
@@ -47,34 +44,43 @@ public static class AdConfigurationResolver
     public static AdRuntimeConfiguration Resolve(IConfiguration configuration)
     {
         var mode = ParseMode(configuration["AD_INTEGRATION_MODE"]);
-        var requiresConfiguration = mode is
-            AdIntegrationMode.Test or AdIntegrationMode.Enabled;
+        var requiresDirectoryConfiguration = mode is
+            AdIntegrationMode.ReadOnly
+            or AdIntegrationMode.ControlledWrite;
         var domain = NullIfWhiteSpace(configuration["AD_DOMAIN"]);
-        var clientsOuDn = NullIfWhiteSpace(configuration["AD_CLIENTS_OU_DN"]);
-        var serviceAccountUsername = requiresConfiguration
+        var clientsOuDn = NormalizeDn(configuration["AD_CLIENTS_OU_DN"]);
+        var serviceAccountUsername = requiresDirectoryConfiguration
             ? NullIfWhiteSpace(configuration["AD_SERVICE_ACCOUNT_USERNAME"])
             : null;
-        var serviceAccountPassword = requiresConfiguration
+        var serviceAccountPassword = requiresDirectoryConfiguration
             ? NullIfWhiteSpace(configuration["AD_SERVICE_ACCOUNT_PASSWORD"])
             : null;
-        var allowedGroups = (configuration["AD_ALLOWED_GROUPS"] ?? string.Empty)
-            .Split(
-                ',',
-                StringSplitOptions.RemoveEmptyEntries
-                | StringSplitOptions.TrimEntries)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var connectTimeoutMs = ParseMilliseconds(
+            configuration["AD_CONNECT_TIMEOUT_MS"],
+            3000,
+            minimum: 500,
+            maximum: 10000);
+        var queryTimeoutMs = ParseMilliseconds(
+            configuration["AD_QUERY_TIMEOUT_MS"],
+            5000,
+            minimum: 500,
+            maximum: 30000);
+        var maxResults = ParseMilliseconds(
+            configuration["AD_MAX_RESULTS"],
+            25,
+            minimum: 1,
+            maximum: 100);
 
-        var configurationValid = !requiresConfiguration
+        var configurationValid = !requiresDirectoryConfiguration
             || (
                 domain is not null
                 && clientsOuDn is not null
-                && IsInTestOuTree(clientsOuDn)
-                && !clientsOuDn.Equals(
-                    "OU=KoXoAdm,DC=home,DC=bzh",
+                && string.Equals(
+                    clientsOuDn,
+                    RequiredTestOuRoot,
                     StringComparison.OrdinalIgnoreCase)
                 && serviceAccountUsername is not null
                 && serviceAccountPassword is not null
-                && allowedGroups.Count > 0
             );
 
         return new AdRuntimeConfiguration(
@@ -83,7 +89,9 @@ public static class AdConfigurationResolver
             clientsOuDn,
             serviceAccountUsername,
             serviceAccountPassword,
-            allowedGroups,
+            connectTimeoutMs,
+            queryTimeoutMs,
+            maxResults,
             configurationValid);
     }
 
@@ -93,8 +101,8 @@ public static class AdConfigurationResolver
         {
             null or "" or "disabled" => AdIntegrationMode.Disabled,
             "mock" => AdIntegrationMode.Mock,
-            "test" => AdIntegrationMode.Test,
-            "enabled" => AdIntegrationMode.Enabled,
+            "read_only" => AdIntegrationMode.ReadOnly,
+            "controlled_write" => AdIntegrationMode.ControlledWrite,
             _ => AdIntegrationMode.Disabled
         };
     }
@@ -102,13 +110,35 @@ public static class AdConfigurationResolver
     private static string? NullIfWhiteSpace(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
-    private static bool IsInTestOuTree(string clientsOuDn)
+    private static int ParseMilliseconds(
+        string? value,
+        int fallback,
+        int minimum,
+        int maximum)
     {
-        return clientsOuDn.Equals(
-                RequiredTestOuRoot,
-                StringComparison.OrdinalIgnoreCase)
-            || clientsOuDn.EndsWith(
-                $",{RequiredTestOuRoot}",
-                StringComparison.OrdinalIgnoreCase);
+        if (!int.TryParse(value, out var parsed))
+        {
+            return fallback;
+        }
+
+        return Math.Clamp(parsed, minimum, maximum);
+    }
+
+    private static string? NormalizeDn(string? distinguishedName)
+    {
+        if (string.IsNullOrWhiteSpace(distinguishedName))
+        {
+            return null;
+        }
+
+        var parts = distinguishedName
+            .Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(part => part.Trim())
+            .Where(part => part.Length > 0)
+            .ToArray();
+
+        return parts.Length == 0
+            ? null
+            : string.Join(",", parts);
     }
 }

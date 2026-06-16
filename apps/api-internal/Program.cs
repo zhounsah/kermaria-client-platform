@@ -79,6 +79,10 @@ builder.Services.AddScoped<ICommercialRepository>(
         ? new MariaDbCommercialRepository(sqlConfiguration)
         : new MockCommercialRepository(
             serviceProvider.GetRequiredService<MockCommercialStore>()));
+builder.Services.AddScoped<IActiveDirectoryLinkRepository>(
+    _ => sqlConfiguration.IsPersistent
+        ? new MariaDbActiveDirectoryLinkRepository(sqlConfiguration)
+        : new MockActiveDirectoryLinkRepository());
 builder.Services.AddScoped<IPortalService, PortalService>();
 builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
 builder.Services.AddScoped<IAdminService, AdminService>();
@@ -90,13 +94,16 @@ builder.Services.AddScoped<ICommercialService, CommercialService>();
 builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddTransient<MariaDbMigrationRunner>();
 builder.Services.AddSingleton<OperationalReadinessService>();
-builder.Services.AddSingleton<IActiveDirectoryService>(_ =>
+builder.Services.AddSingleton<IActiveDirectoryService>(serviceProvider =>
     adConfiguration.Mode switch
     {
         AdIntegrationMode.Mock =>
             new MockActiveDirectoryService(adConfiguration),
-        AdIntegrationMode.Test or AdIntegrationMode.Enabled =>
-            new ControlledActiveDirectoryService(adConfiguration),
+        AdIntegrationMode.ReadOnly or AdIntegrationMode.ControlledWrite =>
+            new LdapActiveDirectoryService(
+                adConfiguration,
+                serviceProvider.GetRequiredService<
+                    ILogger<LdapActiveDirectoryService>>()),
         _ => new DisabledActiveDirectoryService(adConfiguration)
     });
 
@@ -120,10 +127,11 @@ else
 }
 
 app.Logger.LogInformation(
-    "API-INTERNAL started in environment {Environment}; persistence {PersistenceMode}; Active Directory mode {AdMode}; operations_enabled false",
+    "API-INTERNAL started in environment {Environment}; persistence {PersistenceMode}; Active Directory mode {AdMode}; operations_enabled {OperationsEnabled}",
     app.Environment.EnvironmentName,
     sqlConfiguration.IsPersistent ? "mariadb" : "mock",
-    adConfiguration.ModeName);
+    adConfiguration.ModeName,
+    adConfiguration.WritesEnabled);
 
 if (args.Contains("--seed-demo-data", StringComparer.OrdinalIgnoreCase)
     && !args.Contains("--apply-migrations", StringComparer.OrdinalIgnoreCase))
@@ -672,6 +680,7 @@ app.MapGet(
             service,
             await service.GetOverviewAsync(
                 adConfiguration.ModeName,
+                adConfiguration.WritesEnabled,
                 context.RequestAborted));
     });
 app.MapGet(
@@ -712,6 +721,451 @@ app.MapGet(
             await service.GetCustomerAsync(
                 customerReference,
                 context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/admin/ad/status",
+    async (
+        HttpContext context,
+        IActiveDirectoryService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.ad.status.read");
+        var status = await service.GetStatusAsync(context.RequestAborted);
+        await RecordAdAuditAsync(
+            context,
+            auditService,
+            "admin.ad.status.read",
+            "success",
+            status.Status,
+            "active_directory",
+            status.Mode,
+            actor.UserId,
+            null);
+        return Results.Ok(status);
+    });
+app.MapGet(
+    "/internal/admin/ad/users",
+    async (
+        HttpContext context,
+        IActiveDirectoryService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.ad.users.search");
+        var result = await service.SearchUsersAsync(
+            context.Request.Query["query"].FirstOrDefault(),
+            context.Request.Query["customerReference"].FirstOrDefault(),
+            context.RequestAborted);
+        return await CompleteAdQueryAsync(
+            context,
+            auditService,
+            "admin.ad.users.search",
+            actor.UserId,
+            null,
+            result);
+    });
+app.MapGet(
+    "/internal/admin/ad/groups",
+    async (
+        HttpContext context,
+        IActiveDirectoryService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.ad.groups.search");
+        var result = await service.SearchGroupsAsync(
+            context.Request.Query["query"].FirstOrDefault(),
+            context.Request.Query["customerReference"].FirstOrDefault(),
+            context.RequestAborted);
+        return await CompleteAdQueryAsync(
+            context,
+            auditService,
+            "admin.ad.groups.search",
+            actor.UserId,
+            null,
+            result);
+    });
+app.MapGet(
+    "/internal/admin/customers/{customerReference}/ad-links",
+    async (
+        string customerReference,
+        HttpContext context,
+        IActiveDirectoryLinkRepository repository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.customers.ad_links.read");
+        var customer = await ResolveAdCustomerContextAsync(
+            repository,
+            customerReference,
+            context.RequestAborted);
+        var links = await repository.GetCustomerLinksAsync(
+            customer.CustomerReference,
+            context.RequestAborted);
+        await RecordAdAuditAsync(
+            context,
+            auditService,
+            "admin.customers.ad_links.read",
+            "success",
+            "AD_LINKS_FOUND",
+            "customer_ad_link",
+            customer.CustomerReference,
+            actor.UserId,
+            customer.CustomerId);
+        return Results.Ok(links);
+    });
+app.MapPost(
+    "/internal/admin/customers/{customerReference}/ad-links",
+    async (
+        string customerReference,
+        HttpContext context,
+        IActiveDirectoryService service,
+        IActiveDirectoryLinkRepository repository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.customers.ad_links.write");
+        var customer = await ResolveAdCustomerContextAsync(
+            repository,
+            customerReference,
+            context.RequestAborted);
+        var request = await ReadPayload<CreateCustomerAdLinkRequest>(context);
+        var result = await service.ResolveObjectForLinkAsync(
+            customer.CustomerReference,
+            request?.DistinguishedName,
+            context.RequestAborted);
+        if (result.StatusCode >= 400 || result.Value is null)
+        {
+            return await CompleteAdMutationAsync(
+                context,
+                auditService,
+                "admin.customers.ad_links.write",
+                actor.UserId,
+                customer.CustomerId,
+                service.ModeName,
+                result);
+        }
+
+        var linkResult = await repository.UpsertCustomerLinkAsync(
+            customer.CustomerReference,
+            actor.UserId,
+            result.Value,
+            context.RequestAborted);
+        await RecordAdAuditAsync(
+            context,
+            auditService,
+            "admin.customers.ad_links.write",
+            linkResult.Changed ? "success" : "unchanged",
+            linkResult.Changed
+                ? "AD_LINK_CREATED"
+                : "AD_LINK_ALREADY_PRESENT",
+            "customer_ad_link",
+            customer.CustomerReference,
+            actor.UserId,
+            customer.CustomerId);
+        return Results.Json(
+            new AdLinkMutationResponse(
+                linkResult.Id,
+                linkResult.Changed
+                    ? "AD_LINK_CREATED"
+                    : "AD_LINK_ALREADY_PRESENT",
+                linkResult.Changed
+                    ? "Active Directory object linked to the customer."
+                    : "Active Directory object was already linked to the customer.",
+                linkResult.Changed,
+                context.GetCorrelationId(),
+                result.Value),
+            statusCode: linkResult.Changed
+                ? StatusCodes.Status201Created
+                : StatusCodes.Status200OK);
+    });
+app.MapDelete(
+    "/internal/admin/customers/{customerReference}/ad-links/{linkId}",
+    async (
+        string customerReference,
+        string linkId,
+        HttpContext context,
+        IActiveDirectoryLinkRepository repository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.customers.ad_links.delete");
+        var customer = await ResolveAdCustomerContextAsync(
+            repository,
+            customerReference,
+            context.RequestAborted);
+        var deleted = await repository.DeleteCustomerLinkAsync(
+            customer.CustomerReference,
+            NormalizeGuidIdentifier(linkId),
+            context.RequestAborted);
+        await RecordAdAuditAsync(
+            context,
+            auditService,
+            "admin.customers.ad_links.delete",
+            deleted ? "success" : "refused",
+            deleted ? "AD_LINK_DELETED" : "AD_LINK_NOT_FOUND",
+            "customer_ad_link",
+            customer.CustomerReference,
+            actor.UserId,
+            customer.CustomerId);
+        return deleted
+            ? Results.Ok(new AdLinkMutationResponse(
+                NormalizeGuidIdentifier(linkId),
+                "AD_LINK_DELETED",
+                "Active Directory link removed from the customer.",
+                true,
+                context.GetCorrelationId()))
+            : Results.Json(
+                new ApiError(
+                    "AD_LINK_NOT_FOUND",
+                    "The requested Active Directory link was not found.",
+                    context.GetCorrelationId()),
+                statusCode: StatusCodes.Status404NotFound);
+    });
+app.MapPost(
+    "/internal/admin/customers/{customerReference}/ad/users",
+    async (
+        string customerReference,
+        HttpContext context,
+        IActiveDirectoryService service,
+        IActiveDirectoryLinkRepository repository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.customers.ad_users.write");
+        var customer = await ResolveAdCustomerContextAsync(
+            repository,
+            customerReference,
+            context.RequestAborted);
+        var request = await ReadPayload<CreateAdUserRequest>(context);
+        var result = await service.CreateUserAsync(
+            customer.CustomerReference,
+            request,
+            context.RequestAborted);
+        if (result.StatusCode < 400 && result.Value is not null)
+        {
+            await repository.UpsertCustomerLinkAsync(
+                customer.CustomerReference,
+                actor.UserId,
+                result.Value,
+                context.RequestAborted);
+        }
+
+        return await CompleteAdMutationAsync(
+            context,
+            auditService,
+            "admin.customers.ad_users.write",
+            actor.UserId,
+            customer.CustomerId,
+            service.ModeName,
+            result);
+    });
+app.MapPost(
+    "/internal/admin/customers/{customerReference}/ad/groups",
+    async (
+        string customerReference,
+        HttpContext context,
+        IActiveDirectoryService service,
+        IActiveDirectoryLinkRepository repository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.customers.ad_groups.write");
+        var customer = await ResolveAdCustomerContextAsync(
+            repository,
+            customerReference,
+            context.RequestAborted);
+        var request = await ReadPayload<CreateAdGroupRequest>(context);
+        var result = await service.CreateGroupAsync(
+            customer.CustomerReference,
+            request,
+            context.RequestAborted);
+        if (result.StatusCode < 400 && result.Value is not null)
+        {
+            await repository.UpsertCustomerLinkAsync(
+                customer.CustomerReference,
+                actor.UserId,
+                result.Value,
+                context.RequestAborted);
+        }
+
+        return await CompleteAdMutationAsync(
+            context,
+            auditService,
+            "admin.customers.ad_groups.write",
+            actor.UserId,
+            customer.CustomerId,
+            service.ModeName,
+            result);
+    });
+app.MapPost(
+    "/internal/admin/customers/{customerReference}/ad/groups/{groupSamAccountName}/members",
+    async (
+        string customerReference,
+        string groupSamAccountName,
+        HttpContext context,
+        IActiveDirectoryService service,
+        IActiveDirectoryLinkRepository repository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.customers.ad_group_members.write");
+        var customer = await ResolveAdCustomerContextAsync(
+            repository,
+            customerReference,
+            context.RequestAborted);
+        var request = await ReadPayload<AdGroupMemberRequest>(context);
+        var result = await service.AddGroupMemberAsync(
+            customer.CustomerReference,
+            NormalizeSamIdentifier(groupSamAccountName),
+            request?.UserSamAccountName,
+            context.RequestAborted);
+        return await CompleteAdMutationAsync(
+            context,
+            auditService,
+            "admin.customers.ad_group_members.write",
+            actor.UserId,
+            customer.CustomerId,
+            service.ModeName,
+            result);
+    });
+app.MapDelete(
+    "/internal/admin/customers/{customerReference}/ad/groups/{groupSamAccountName}/members/{userSamAccountName}",
+    async (
+        string customerReference,
+        string groupSamAccountName,
+        string userSamAccountName,
+        HttpContext context,
+        IActiveDirectoryService service,
+        IActiveDirectoryLinkRepository repository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.customers.ad_group_members.delete");
+        var customer = await ResolveAdCustomerContextAsync(
+            repository,
+            customerReference,
+            context.RequestAborted);
+        var result = await service.RemoveGroupMemberAsync(
+            customer.CustomerReference,
+            NormalizeSamIdentifier(groupSamAccountName),
+            NormalizeSamIdentifier(userSamAccountName),
+            context.RequestAborted);
+        return await CompleteAdMutationAsync(
+            context,
+            auditService,
+            "admin.customers.ad_group_members.delete",
+            actor.UserId,
+            customer.CustomerId,
+            service.ModeName,
+            result);
+    });
+app.MapPost(
+    "/internal/admin/customers/{customerReference}/ad/users/{samAccountName}/disable",
+    async (
+        string customerReference,
+        string samAccountName,
+        HttpContext context,
+        IActiveDirectoryService service,
+        IActiveDirectoryLinkRepository repository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.customers.ad_users.disable");
+        var customer = await ResolveAdCustomerContextAsync(
+            repository,
+            customerReference,
+            context.RequestAborted);
+        var result = await service.DisableUserAsync(
+            customer.CustomerReference,
+            NormalizeSamIdentifier(samAccountName),
+            context.RequestAborted);
+        return await CompleteAdMutationAsync(
+            context,
+            auditService,
+            "admin.customers.ad_users.disable",
+            actor.UserId,
+            customer.CustomerId,
+            service.ModeName,
+            result);
+    });
+app.MapPost(
+    "/internal/admin/customers/{customerReference}/ad/users/{samAccountName}/move-to-disabled",
+    async (
+        string customerReference,
+        string samAccountName,
+        HttpContext context,
+        IActiveDirectoryService service,
+        IActiveDirectoryLinkRepository repository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.customers.ad_users.move_to_disabled");
+        var customer = await ResolveAdCustomerContextAsync(
+            repository,
+            customerReference,
+            context.RequestAborted);
+        var result = await service.MoveUserToDisabledAsync(
+            customer.CustomerReference,
+            NormalizeSamIdentifier(samAccountName),
+            context.RequestAborted);
+        return await CompleteAdMutationAsync(
+            context,
+            auditService,
+            "admin.customers.ad_users.move_to_disabled",
+            actor.UserId,
+            customer.CustomerId,
+            service.ModeName,
+            result);
     });
 app.MapGet(
     "/internal/admin/support-requests",
@@ -1261,78 +1715,6 @@ app.MapPost(
         return CommercialOk(context, service, result);
     });
 
-app.MapGet(
-    "/internal/ad/health",
-    (IActiveDirectoryService service) => Results.Ok(service.GetHealth()));
-app.MapPost(
-    "/internal/ad/change-password",
-    async (
-        HttpContext context,
-        IActiveDirectoryService service,
-        IAuditService auditService) =>
-    {
-        var request = ShouldReadAdPayload(service)
-            ? await ReadPayload<ChangePasswordRequest>(context)
-            : null;
-        return await CompleteAdOperation(
-            context,
-            auditService,
-            "ad.change_password",
-            service.GetHealth().Mode,
-            service.ChangePassword(request));
-    });
-app.MapPost(
-    "/internal/ad/create-user",
-    async (
-        HttpContext context,
-        IActiveDirectoryService service,
-        IAuditService auditService) =>
-    {
-        var request = ShouldReadAdPayload(service)
-            ? await ReadPayload<CreateUserRequest>(context)
-            : null;
-        return await CompleteAdOperation(
-            context,
-            auditService,
-            "ad.create_user",
-            service.GetHealth().Mode,
-            service.CreateUser(request));
-    });
-app.MapPost(
-    "/internal/ad/add-user-to-group",
-    async (
-        HttpContext context,
-        IActiveDirectoryService service,
-        IAuditService auditService) =>
-    {
-        var request = ShouldReadAdPayload(service)
-            ? await ReadPayload<GroupMembershipRequest>(context)
-            : null;
-        return await CompleteAdOperation(
-            context,
-            auditService,
-            "ad.add_user_to_group",
-            service.GetHealth().Mode,
-            service.AddUserToGroup(request));
-    });
-app.MapPost(
-    "/internal/ad/remove-user-from-group",
-    async (
-        HttpContext context,
-        IActiveDirectoryService service,
-        IAuditService auditService) =>
-    {
-        var request = ShouldReadAdPayload(service)
-            ? await ReadPayload<GroupMembershipRequest>(context)
-            : null;
-        return await CompleteAdOperation(
-            context,
-            auditService,
-            "ad.remove_user_from_group",
-            service.GetHealth().Mode,
-            service.RemoveUserFromGroup(request));
-    });
-
 app.MapFallback((HttpContext context) =>
     Results.Json(
         new ApiError(
@@ -1728,34 +2110,135 @@ static string ToUtcIso(DateTime value)
 static string? ToNullableUtcIso(DateTime? value)
     => value is null ? null : ToUtcIso(value.Value);
 
-static bool ShouldReadAdPayload(IActiveDirectoryService service)
-    => service.GetHealth().Mode is "test" or "enabled";
+static async Task<AdCustomerContext> ResolveAdCustomerContextAsync(
+    IActiveDirectoryLinkRepository repository,
+    string customerReference,
+    CancellationToken cancellationToken)
+{
+    var normalizedCustomerReference =
+        ActiveDirectoryInputValidator.NormalizeCustomerReference(
+            customerReference)
+        ?? throw new PortalValidationException();
+    return await repository.GetCustomerContextAsync(
+            normalizedCustomerReference,
+            cancellationToken)
+        ?? throw new PortalDataNotFoundException();
+}
 
-static async Task<IResult> CompleteAdOperation(
+static string NormalizeSamIdentifier(string value)
+{
+    return ActiveDirectoryInputValidator.NormalizeSamAccountName(value)
+        ?? throw new PortalValidationException();
+}
+
+static string NormalizeGuidIdentifier(string value)
+{
+    var normalized = value.Trim();
+    return Guid.TryParse(normalized, out var parsed)
+        ? parsed.ToString("D")
+        : throw new PortalValidationException();
+}
+
+static async Task<IResult> CompleteAdQueryAsync<T>(
     HttpContext context,
     IAuditService auditService,
     string action,
+    string actorUserId,
+    string? customerId,
+    AdServiceResult<T> result)
+{
+    await RecordAdAuditAsync(
+        context,
+        auditService,
+        action,
+        result.StatusCode < 400 ? "success" : "refused",
+        result.Code,
+        "active_directory",
+        null,
+        actorUserId,
+        customerId);
+
+    if (result.StatusCode >= 400)
+    {
+        return Results.Json(
+            new ApiError(
+                result.Code,
+                result.Message,
+                context.GetCorrelationId()),
+            statusCode: result.StatusCode);
+    }
+
+    return Results.Ok(result.Value);
+}
+
+static async Task<IResult> CompleteAdMutationAsync(
+    HttpContext context,
+    IAuditService auditService,
+    string action,
+    string actorUserId,
+    string? customerId,
     string mode,
-    AdOperationResult result)
+    AdServiceResult<AdDirectoryObjectSummary> result)
+{
+    await RecordAdAuditAsync(
+        context,
+        auditService,
+        action,
+        result.StatusCode >= 400
+            ? "refused"
+            : result.Changed
+                ? "success"
+                : "unchanged",
+        result.Code,
+        "active_directory",
+        result.Value?.SamAccountName,
+        actorUserId,
+        customerId);
+
+    if (result.StatusCode >= 400)
+    {
+        return Results.Json(
+            new ApiError(
+                result.Code,
+                result.Message,
+                context.GetCorrelationId()),
+            statusCode: result.StatusCode);
+    }
+
+    return Results.Json(
+        new AdMutationResponse(
+            result.Code,
+            result.Message,
+            mode,
+            result.Changed,
+            context.GetCorrelationId(),
+            result.Value),
+        statusCode: result.StatusCode);
+}
+
+static async Task RecordAdAuditAsync(
+    HttpContext context,
+    IAuditService auditService,
+    string action,
+    string outcome,
+    string? reasonCode,
+    string? targetType,
+    string? targetReference,
+    string? actorUserId,
+    string? customerId)
 {
     await auditService.RecordAsync(
         new AuditEvent(
             context.GetCorrelationId(),
             action,
-            result.StatusCode < 400 ? "simulated" : "refused",
-            result.Code,
-            "active_directory",
-            mode,
-            SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            outcome,
+            reasonCode,
+            targetType,
+            targetReference,
+            customerId,
+            actorUserId,
+            context.Connection.RemoteIpAddress?.ToString()),
         context.RequestAborted);
-
-    return Results.Json(
-        new AdOperationResponse(
-            result.Code,
-            result.Message,
-            mode,
-            context.GetCorrelationId()),
-        statusCode: result.StatusCode);
 }
 
 static async Task<T?> ReadPayload<T>(HttpContext context)

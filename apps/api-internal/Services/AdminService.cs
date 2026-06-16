@@ -8,6 +8,7 @@ public interface IAdminService
     bool IsPersistent { get; }
     Task<AdminOverview> GetOverviewAsync(
         string adMode,
+        bool adOperationsEnabled,
         CancellationToken cancellationToken);
     Task<IReadOnlyList<AdminCustomerSummary>> GetCustomersAsync(
         CancellationToken cancellationToken);
@@ -37,8 +38,12 @@ public sealed class AdminService : IAdminService
 
     public Task<AdminOverview> GetOverviewAsync(
         string adMode,
+        bool adOperationsEnabled,
         CancellationToken cancellationToken)
-        => _repository.GetOverviewAsync(adMode, cancellationToken);
+        => _repository.GetOverviewAsync(
+            adMode,
+            adOperationsEnabled,
+            cancellationToken);
 
     public Task<IReadOnlyList<AdminCustomerSummary>> GetCustomersAsync(
         CancellationToken cancellationToken)

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { AdminDataTable } from "@/components/AdminDataTable";
+import { AdminCustomerAdManager } from "@/components/AdminCustomerAdManager";
 import { AuditEventBadge } from "@/components/AuditEventBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
@@ -21,7 +22,11 @@ import {
   invoiceStatus,
   serviceStatus,
 } from "@/lib/formatters";
-import { getAdminCustomer } from "@/lib/internal-api";
+import {
+  getAdminAdStatus,
+  getAdminCustomer,
+  getAdminCustomerAdLinks,
+} from "@/lib/internal-api";
 
 export const metadata = { title: "Fiche client - Administration" };
 export const dynamic = "force-dynamic";
@@ -33,7 +38,11 @@ export default async function AdminCustomerDetailPage({
 }: PageProps) {
   await requireAdminSession();
   const { customerReference } = await params;
-  const result = await getAdminCustomer(customerReference);
+  const [result, adStatusResult, adLinksResult] = await Promise.all([
+    getAdminCustomer(customerReference),
+    getAdminAdStatus(),
+    getAdminCustomerAdLinks(customerReference),
+  ]);
 
   if (result.error) {
     return (
@@ -437,6 +446,14 @@ export default async function AdminCustomerDetailPage({
           />
         )}
       </SectionCard>
+
+      <AdminCustomerAdManager
+        customerReference={identity.customerReference}
+        initialLinks={adLinksResult.data}
+        initialStatus={adStatusResult.data}
+        linksError={adLinksResult.error?.message ?? null}
+        statusError={adStatusResult.error?.message ?? null}
+      />
 
       <MockNotice
         correlationId={result.correlationId}

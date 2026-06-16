@@ -12,28 +12,88 @@ public sealed class DisabledActiveDirectoryService : IActiveDirectoryService
         _configuration = configuration;
     }
 
-    public AdHealthResponse GetHealth()
-        => new(
+    public string ModeName => _configuration.ModeName;
+
+    public Task<AdStatusResponse> GetStatusAsync(
+        CancellationToken cancellationToken)
+        => Task.FromResult(new AdStatusResponse(
             _configuration.ModeName,
             "disabled",
             true,
-            false);
+            false,
+            false,
+            null,
+            null,
+            _configuration.ConnectTimeoutMs,
+            _configuration.QueryTimeoutMs,
+            _configuration.MaxResults));
 
-    public AdOperationResult ChangePassword(ChangePasswordRequest? request)
-        => Disabled();
+    public Task<AdServiceResult<IReadOnlyList<AdDirectoryObjectSummary>>> SearchUsersAsync(
+        string? query,
+        string? customerReference,
+        CancellationToken cancellationToken)
+        => Task.FromResult(DisabledListResult());
 
-    public AdOperationResult CreateUser(CreateUserRequest? request)
-        => Disabled();
+    public Task<AdServiceResult<IReadOnlyList<AdDirectoryObjectSummary>>> SearchGroupsAsync(
+        string? query,
+        string? customerReference,
+        CancellationToken cancellationToken)
+        => Task.FromResult(DisabledListResult());
 
-    public AdOperationResult AddUserToGroup(GroupMembershipRequest? request)
-        => Disabled();
+    public Task<AdServiceResult<AdDirectoryObjectSummary>> ResolveObjectForLinkAsync(
+        string customerReference,
+        string? distinguishedName,
+        CancellationToken cancellationToken)
+        => Task.FromResult(DisabledObjectResult());
 
-    public AdOperationResult RemoveUserFromGroup(GroupMembershipRequest? request)
-        => Disabled();
+    public Task<AdServiceResult<AdDirectoryObjectSummary>> CreateUserAsync(
+        string customerReference,
+        CreateAdUserRequest? request,
+        CancellationToken cancellationToken)
+        => Task.FromResult(DisabledObjectResult());
 
-    private static AdOperationResult Disabled()
+    public Task<AdServiceResult<AdDirectoryObjectSummary>> CreateGroupAsync(
+        string customerReference,
+        CreateAdGroupRequest? request,
+        CancellationToken cancellationToken)
+        => Task.FromResult(DisabledObjectResult());
+
+    public Task<AdServiceResult<AdDirectoryObjectSummary>> AddGroupMemberAsync(
+        string customerReference,
+        string? groupSamAccountName,
+        string? userSamAccountName,
+        CancellationToken cancellationToken)
+        => Task.FromResult(DisabledObjectResult());
+
+    public Task<AdServiceResult<AdDirectoryObjectSummary>> RemoveGroupMemberAsync(
+        string customerReference,
+        string? groupSamAccountName,
+        string? userSamAccountName,
+        CancellationToken cancellationToken)
+        => Task.FromResult(DisabledObjectResult());
+
+    public Task<AdServiceResult<AdDirectoryObjectSummary>> DisableUserAsync(
+        string customerReference,
+        string? samAccountName,
+        CancellationToken cancellationToken)
+        => Task.FromResult(DisabledObjectResult());
+
+    public Task<AdServiceResult<AdDirectoryObjectSummary>> MoveUserToDisabledAsync(
+        string customerReference,
+        string? samAccountName,
+        CancellationToken cancellationToken)
+        => Task.FromResult(DisabledObjectResult());
+
+    private static AdServiceResult<IReadOnlyList<AdDirectoryObjectSummary>> DisabledListResult()
         => new(
             StatusCodes.Status501NotImplemented,
             "AD_INTEGRATION_DISABLED",
-            "L'intégration Active Directory n'est pas activée.");
+            "Active Directory integration is disabled.",
+            Array.Empty<AdDirectoryObjectSummary>());
+
+    private static AdServiceResult<AdDirectoryObjectSummary> DisabledObjectResult()
+        => new(
+            StatusCodes.Status501NotImplemented,
+            "AD_INTEGRATION_DISABLED",
+            "Active Directory integration is disabled.");
 }

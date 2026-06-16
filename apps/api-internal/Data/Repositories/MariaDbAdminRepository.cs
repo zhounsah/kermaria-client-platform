@@ -34,6 +34,7 @@ public sealed class MariaDbAdminRepository : IAdminRepository
 
     public async Task<AdminOverview> GetOverviewAsync(
         string adMode,
+        bool adOperationsEnabled,
         CancellationToken cancellationToken)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
@@ -89,7 +90,7 @@ public sealed class MariaDbAdminRepository : IAdminRepository
             recentServiceRequestCount,
             await GetAuditLogsAsync(10, cancellationToken),
             adMode,
-            false);
+            adOperationsEnabled);
     }
 
     public async Task<IReadOnlyList<AdminCustomerSummary>> GetCustomersAsync(
@@ -878,7 +879,7 @@ public sealed class MariaDbAdminRepository : IAdminRepository
                 ToUtcIso(reader.GetDateTime("created_at")),
                 ToUtcIso(reader.GetDateTime("updated_at")),
                 ToUtcIso(ReadNullableUtc(reader, "shared_at")),
-                ReadNullableString(reader, "service_request_id"),
+                ReadNullableIdentifier(reader, "service_request_id"),
                 ReadNullableString(reader, "service_request_reference"),
                 customerReference,
                 customerName));
@@ -1056,6 +1057,11 @@ public sealed class MariaDbAdminRepository : IAdminRepository
         => reader.IsDBNull(reader.GetOrdinal(columnName))
             ? null
             : reader.GetString(columnName);
+
+    private static string? ReadNullableIdentifier(
+        MySqlDataReader reader,
+        string columnName)
+        => MariaDbIdentifierReader.ReadNullable(reader, columnName);
 
     private static DateTime? ReadNullableUtc(
         MySqlDataReader reader,

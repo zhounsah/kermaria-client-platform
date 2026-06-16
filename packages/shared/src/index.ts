@@ -67,8 +67,8 @@ export interface AdminOverview {
   openSupportRequestCount: number;
   recentServiceRequestCount: number;
   recentAudits: AdminAuditLogEntry[];
-  adMode: "disabled" | "mock" | "test" | "enabled";
-  adOperationsEnabled: false;
+  adMode: "disabled" | "mock" | "read_only" | "controlled_write";
+  adOperationsEnabled: boolean;
 }
 
 export interface AdminActivityOverview {
@@ -501,6 +501,100 @@ export interface RequestMutationResponse {
   correlation_id: CorrelationId;
 }
 
+export type AdMode =
+  | "disabled"
+  | "mock"
+  | "read_only"
+  | "controlled_write";
+
+export type AdObjectType = "user" | "group";
+
+export interface AdminAdStatus {
+  mode: AdMode;
+  status:
+    | "disabled"
+    | "mock"
+    | "ready"
+    | "configuration_invalid"
+    | "unreachable";
+  configurationValid: boolean;
+  readsEnabled: boolean;
+  writesEnabled: boolean;
+  domain: string | null;
+  clientsOuDn: string | null;
+  connectTimeoutMs: number;
+  queryTimeoutMs: number;
+  maxResults: number;
+}
+
+export interface AdDirectoryObjectSummary {
+  objectGuid: string;
+  objectSid: string;
+  objectType: AdObjectType;
+  samAccountName: string;
+  userPrincipalName: string | null;
+  displayName: string;
+  distinguishedName: string;
+  customerReference: string;
+  isDisabled: boolean;
+}
+
+export interface CustomerAdLinkSummary {
+  id: string;
+  customerReference: string;
+  objectGuid: string;
+  objectSid: string;
+  objectType: AdObjectType;
+  samAccountName: string;
+  userPrincipalName: string | null;
+  displayName: string;
+  distinguishedName: string;
+  linkedAt: string;
+  linkedBy: string | null;
+}
+
+export interface CustomerAdLinkPayload {
+  distinguishedName: string;
+}
+
+export interface AdUserCreatePayload {
+  samAccountName: string;
+  displayName: string;
+  givenName: string | null;
+  surname: string | null;
+  userPrincipalName: string | null;
+  description: string | null;
+}
+
+export interface AdGroupCreatePayload {
+  samAccountName: string;
+  displayName: string;
+  description: string | null;
+}
+
+export interface AdGroupMemberPayload {
+  userSamAccountName: string;
+}
+
+export interface AdMutationResponse {
+  code: string;
+  message: string;
+  mode: AdMode;
+  changed: boolean;
+  correlation_id: CorrelationId;
+  object: AdDirectoryObjectSummary | null;
+  link_id?: string | null;
+}
+
+export interface AdLinkMutationResponse {
+  id: string;
+  code: string;
+  message: string;
+  changed: boolean;
+  correlation_id: CorrelationId;
+  object: AdDirectoryObjectSummary | null;
+}
+
 export interface ServiceCatalogItem {
   id: string;
   name: string;
@@ -529,16 +623,4 @@ export interface MockSubmissionResponse {
   persisted: boolean;
   message: string;
   correlation_id: CorrelationId;
-}
-
-export interface AdHealthStatus {
-  mode: "disabled" | "mock" | "test" | "enabled";
-  status:
-    | "disabled"
-    | "mock"
-    | "configuration_valid"
-    | "configuration_invalid"
-    | "validation_required";
-  configurationValid: boolean;
-  operationsEnabled: false;
 }

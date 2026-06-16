@@ -1079,6 +1079,58 @@ td {
   gap: 16px;
 }
 
+.ad-status-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.ad-button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.ad-selected-summary {
+  display: grid;
+  margin-top: 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  gap: 10px;
+  background: var(--surface-muted);
+}
+
+.ad-selection-summary-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ad-selection-meta {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.ad-selection-card-selected {
+  margin-inline: -12px;
+  padding-inline: 12px;
+  border-radius: 12px;
+  background: var(--primary-light);
+}
+
+.checkbox-inline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+}
+
+.checkbox-inline input {
+  width: auto;
+  margin: 0;
+}
+
 .form-footer {
   display: flex;
   padding-top: 2px;

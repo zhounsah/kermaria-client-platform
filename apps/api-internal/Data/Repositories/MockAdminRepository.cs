@@ -15,6 +15,7 @@ public sealed class MockAdminRepository : IAdminRepository
 
     public async Task<AdminOverview> GetOverviewAsync(
         string adMode,
+        bool adOperationsEnabled,
         CancellationToken cancellationToken)
         => new(
             1,
@@ -28,7 +29,7 @@ public sealed class MockAdminRepository : IAdminRepository
             1,
             await GetAuditLogsAsync(10, cancellationToken),
             adMode,
-            false);
+            adOperationsEnabled);
 
     public Task<IReadOnlyList<AdminCustomerSummary>> GetCustomersAsync(
         CancellationToken cancellationToken)

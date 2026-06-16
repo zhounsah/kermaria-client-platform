@@ -1,7 +1,7 @@
 import "server-only";
 
 import type {
-  AdHealthStatus,
+  AdminAdStatus,
   AdminCommercialDocumentDetail,
   AdminCommercialDocumentSummary,
   AdminActivityOverview,
@@ -20,6 +20,7 @@ import type {
   CommercialDocumentSummary,
   CommercialOfferSummary,
   CorrelationId,
+  CustomerAdLinkSummary,
   DataSource,
   InvoiceSummary,
   InternalSession,
@@ -377,21 +378,6 @@ export function getServiceRequest(id: string) {
   );
 }
 
-export function getAdHealth() {
-  const fallback: AdHealthStatus = {
-    mode: "disabled",
-    status: "disabled",
-    configurationValid: true,
-    operationsEnabled: false,
-  };
-
-  return getPortalData<AdHealthStatus>(
-    "/internal/ad/health",
-    fallback,
-    fallback,
-  );
-}
-
 export function createSupportRequest(
   payload: SupportRequestPayload,
   correlationId: CorrelationId,
@@ -561,8 +547,8 @@ export async function mutateInternalAdminData<
   TPayload = unknown,
 >(
   path: string,
-  method: "PATCH" | "POST",
-  payload: TPayload,
+  method: "PATCH" | "POST" | "DELETE",
+  payload: TPayload | undefined,
   sessionToken: string,
   correlationId = resolveCorrelationId(null),
 ) {
@@ -571,10 +557,14 @@ export async function mutateInternalAdminData<
     {
       method,
       headers: {
-        "Content-Type": "application/json",
         [PORTAL_SESSION_HEADER]: sessionToken,
+        ...(payload === undefined
+          ? {}
+          : { "Content-Type": "application/json" }),
       },
-      body: JSON.stringify(payload),
+      ...(payload === undefined
+        ? {}
+        : { body: JSON.stringify(payload) }),
     },
     correlationId,
   );
@@ -680,6 +670,20 @@ export function getAdminCustomer(customerReference: string) {
   return getAdminData<AdminCustomerDetail | null>(
     `/internal/admin/customers/${encodeURIComponent(customerReference)}`,
     null,
+  );
+}
+
+export function getAdminAdStatus() {
+  return getAdminData<AdminAdStatus | null>(
+    "/internal/admin/ad/status",
+    null,
+  );
+}
+
+export function getAdminCustomerAdLinks(customerReference: string) {
+  return getAdminData<CustomerAdLinkSummary[]>(
+    `/internal/admin/customers/${encodeURIComponent(customerReference)}/ad-links`,
+    [],
   );
 }
 

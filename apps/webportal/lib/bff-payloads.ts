@@ -1,7 +1,11 @@
 import type {
+  AdGroupCreatePayload,
+  AdGroupMemberPayload,
+  AdUserCreatePayload,
   CommercialDocumentLinePayload,
   CommercialDocumentPayload,
   CommercialOfferPayload,
+  CustomerAdLinkPayload,
   ServiceRequestPayload,
   SupportRequestPayload,
 } from "@kermaria/shared";
@@ -247,6 +251,129 @@ export function parseCommercialDocumentLinePayload(
     && Number.isInteger(payload.sortOrder)
     && payload.sortOrder >= 0
     && payload.sortOrder <= 100000
+    ? payload
+    : null;
+}
+
+export function parseCustomerAdLinkPayload(
+  value: unknown,
+): CustomerAdLinkPayload | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Partial<CustomerAdLinkPayload>;
+  if (typeof candidate.distinguishedName !== "string") {
+    return null;
+  }
+
+  const payload: CustomerAdLinkPayload = {
+    distinguishedName: candidate.distinguishedName.trim(),
+  };
+
+  return payload.distinguishedName.length >= 10
+    && payload.distinguishedName.length <= 1000
+    ? payload
+    : null;
+}
+
+export function parseAdUserCreatePayload(
+  value: unknown,
+): AdUserCreatePayload | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Partial<AdUserCreatePayload>;
+  if (
+    typeof candidate.samAccountName !== "string"
+    || typeof candidate.displayName !== "string"
+  ) {
+    return null;
+  }
+
+  const payload: AdUserCreatePayload = {
+    samAccountName: candidate.samAccountName.trim(),
+    displayName: candidate.displayName.trim(),
+    givenName:
+      typeof candidate.givenName === "string"
+        ? candidate.givenName.trim() || null
+        : null,
+    surname:
+      typeof candidate.surname === "string"
+        ? candidate.surname.trim() || null
+        : null,
+    userPrincipalName:
+      typeof candidate.userPrincipalName === "string"
+        ? candidate.userPrincipalName.trim() || null
+        : null,
+    description:
+      typeof candidate.description === "string"
+        ? candidate.description.trim() || null
+        : null,
+  };
+
+  return /^[A-Za-z0-9._-]{1,64}$/.test(payload.samAccountName)
+    && payload.displayName.length >= 3
+    && payload.displayName.length <= 200
+    && (payload.givenName === null || payload.givenName.length <= 120)
+    && (payload.surname === null || payload.surname.length <= 120)
+    && (payload.userPrincipalName === null
+      || payload.userPrincipalName.length <= 255)
+    && (payload.description === null || payload.description.length <= 255)
+    ? payload
+    : null;
+}
+
+export function parseAdGroupCreatePayload(
+  value: unknown,
+): AdGroupCreatePayload | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Partial<AdGroupCreatePayload>;
+  if (
+    typeof candidate.samAccountName !== "string"
+    || typeof candidate.displayName !== "string"
+  ) {
+    return null;
+  }
+
+  const payload: AdGroupCreatePayload = {
+    samAccountName: candidate.samAccountName.trim(),
+    displayName: candidate.displayName.trim(),
+    description:
+      typeof candidate.description === "string"
+        ? candidate.description.trim() || null
+        : null,
+  };
+
+  return /^[A-Za-z0-9._-]{1,64}$/.test(payload.samAccountName)
+    && payload.displayName.length >= 3
+    && payload.displayName.length <= 200
+    && (payload.description === null || payload.description.length <= 255)
+    ? payload
+    : null;
+}
+
+export function parseAdGroupMemberPayload(
+  value: unknown,
+): AdGroupMemberPayload | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Partial<AdGroupMemberPayload>;
+  if (typeof candidate.userSamAccountName !== "string") {
+    return null;
+  }
+
+  const payload: AdGroupMemberPayload = {
+    userSamAccountName: candidate.userSamAccountName.trim(),
+  };
+
+  return /^[A-Za-z0-9._-]{1,64}$/.test(payload.userSamAccountName)
     ? payload
     : null;
 }

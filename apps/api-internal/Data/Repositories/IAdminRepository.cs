@@ -8,6 +8,7 @@ public interface IAdminRepository
 
     Task<AdminOverview> GetOverviewAsync(
         string adMode,
+        bool adOperationsEnabled,
         CancellationToken cancellationToken);
     Task<IReadOnlyList<AdminCustomerSummary>> GetCustomersAsync(
         CancellationToken cancellationToken);
