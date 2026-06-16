@@ -1,5 +1,28 @@
 # Feuille de route
 
+## Jalon V0.17 consolidation client, staging et recette
+
+Statut : **implémenté dans le dépôt, recette préproduction à exécuter**.
+
+- fiche client admin consolidée avec identité, statut, services, demandes,
+  documents commerciaux, factures, activité récente et audits associés ;
+- nouveau contrat admin `customer detail` et route dédiée
+  `/internal/admin/customers/{customerReference}` ;
+- contrôles d'identifiants renforcés côté BFF et API pour limiter les accès
+  croisés ou invalides ;
+- headers WEBPORTAL complétés (`Permissions-Policy`,
+  `Cross-Origin-Opener-Policy`, `Cross-Origin-Resource-Policy`) ;
+- validation dédiée `npm run validate:staging` pour distinguer staging et
+  production ;
+- readiness WEBPORTAL étendue à la validation de la configuration cookie
+  serveur ;
+- document de recette dédié `docs/V0.17_RECETTE_PREPRODUCTION.md`.
+
+La V0.17 ne change pas l'architecture `browser -> WEBPORTAL/BFF ->
+API-INTERNAL -> MariaDB`, n'ajoute aucune connexion SQL directe dans
+`WEBPORTAL`, n'active pas l'AD réelle, n'ajoute aucun paiement, e-mail, SMS,
+push, WebSocket, provisioning ou suppression client destructive.
+
 ## Jalon V0.16 preproduction technique
 
 Statut : **implémenté dans le dépôt, validation hôte cible encore requise**.

@@ -6,6 +6,7 @@ import type {
   AdminCommercialDocumentSummary,
   AdminActivityOverview,
   AdminAuditLogEntry,
+  AdminCustomerDetail,
   AdminCustomerSummary,
   AdminOverview,
   AdminServiceRequestDetail,
@@ -672,6 +673,13 @@ export function getAdminCustomers() {
   return getAdminData<AdminCustomerSummary[]>(
     "/internal/admin/customers",
     [],
+  );
+}
+
+export function getAdminCustomer(customerReference: string) {
+  return getAdminData<AdminCustomerDetail | null>(
+    `/internal/admin/customers/${encodeURIComponent(customerReference)}`,
+    null,
   );
 }
 

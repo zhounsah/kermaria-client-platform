@@ -144,6 +144,7 @@ public sealed class PortalService : IPortalService
         if (string.IsNullOrWhiteSpace(payload.ServiceId)
             || string.IsNullOrWhiteSpace(payload.Subject)
             || string.IsNullOrWhiteSpace(payload.Description)
+            || !IsValidScopedIdentifier(payload.ServiceId, allowAccountAlias: true)
             || payload.Subject.Length > 160
             || payload.Description.Length > 4000
             || payload.Priority is not ("low" or "normal" or "high"))
@@ -157,11 +158,47 @@ public sealed class PortalService : IPortalService
         if (string.IsNullOrWhiteSpace(payload.CatalogItemId)
             || string.IsNullOrWhiteSpace(payload.Subject)
             || string.IsNullOrWhiteSpace(payload.Description)
+            || !IsValidScopedIdentifier(payload.CatalogItemId)
             || payload.Subject.Length > 160
             || payload.Description.Length > 4000)
         {
             throw new PortalValidationException();
         }
+    }
+
+    private static bool IsValidScopedIdentifier(
+        string? value,
+        bool allowAccountAlias = false)
+    {
+        var normalized = value?.Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return false;
+        }
+
+        if (allowAccountAlias
+            && string.Equals(
+                normalized,
+                "account",
+                StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        if (normalized.Length is < 1 or > 100)
+        {
+            return false;
+        }
+
+        foreach (var character in normalized)
+        {
+            if (!char.IsAsciiLetterOrDigit(character) && character != '-')
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 }
 

@@ -18,6 +18,7 @@ assert.match(liveRoute, /timestamp_utc/);
 assert.doesNotMatch(liveRoute, /INTERNAL_API_URL|SERVICE_AUTH_TOKEN/);
 
 assert.match(readyRoute, /checkInternalApiReadiness/);
+assert.match(readyRoute, /validateSessionCookieConfiguration/);
 assert.match(readyRoute, /status:\s*ready \? "healthy" : "unhealthy"/);
 assert.match(readyRoute, /status:\s*ready \? 200 : 503/);
 assert.doesNotMatch(readyRoute, /process\.env|INTERNAL_API_URL|SERVICE_AUTH_TOKEN/);
@@ -39,6 +40,9 @@ assert.match(nextConfig, /X-Content-Type-Options/);
 assert.match(nextConfig, /X-Frame-Options/);
 assert.match(nextConfig, /Content-Security-Policy/);
 assert.match(nextConfig, /Referrer-Policy/);
+assert.match(nextConfig, /Permissions-Policy/);
+assert.match(nextConfig, /Cross-Origin-Opener-Policy/);
+assert.match(nextConfig, /Cross-Origin-Resource-Policy/);
 assert.match(nextConfig, /X-Robots-Tag/);
 assert.match(nextConfig, /noindex, nofollow/);
 

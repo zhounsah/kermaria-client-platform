@@ -103,6 +103,27 @@ export interface AdminCustomerSummary {
   lastActivityAt: string;
 }
 
+export interface AdminCustomerDetail {
+  identity: ClientProfile;
+  createdAt: string;
+  lastActivityAt: string;
+  portalUserCount: number;
+  activePortalUserCount: number;
+  activeSessionCount: number;
+  activeServiceCount: number;
+  pendingInvoiceCount: number;
+  openSupportRequestCount: number;
+  activeServiceRequestCount: number;
+  sharedCommercialDocumentCount: number;
+  services: ServiceSummary[];
+  invoices: InvoiceSummary[];
+  supportRequests: AdminSupportRequestSummary[];
+  serviceRequests: AdminServiceRequestSummary[];
+  commercialDocuments: AdminCommercialDocumentSummary[];
+  recentActivity: AdminActivityItem[];
+  recentAuditLogs: AdminAuditLogEntry[];
+}
+
 export interface AdminSupportRequestSummary {
   id: string;
   reference: string;

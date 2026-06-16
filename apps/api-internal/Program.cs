@@ -693,6 +693,27 @@ app.MapGet(
             await service.GetCustomersAsync(context.RequestAborted));
     });
 app.MapGet(
+    "/internal/admin/customers/{customerReference}",
+    async (
+        string customerReference,
+        HttpContext context,
+        IAdminService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.customers.detail.read");
+        return AdminOk(
+            context,
+            service,
+            await service.GetCustomerAsync(
+                customerReference,
+                context.RequestAborted));
+    });
+app.MapGet(
     "/internal/admin/support-requests",
     async (
         HttpContext context,

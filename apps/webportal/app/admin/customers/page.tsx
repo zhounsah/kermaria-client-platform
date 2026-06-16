@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { AdminDataTable } from "@/components/AdminDataTable";
 import { EmptyState } from "@/components/EmptyState";
 import { MockNotice } from "@/components/MockNotice";
@@ -33,17 +35,31 @@ export default async function AdminCustomersPage() {
             "Support ouvert",
             "Création",
             "Dernière activité",
+            "Détail",
           ]}
           rows={result.data.map((customer) => [
             <code key={`${customer.customerReference}-reference`}>
               {customer.customerReference}
             </code>,
-            customer.displayName,
+            <Link
+              className="table-action"
+              href={`/admin/customers/${encodeURIComponent(customer.customerReference)}`}
+              key={`${customer.customerReference}-detail-link`}
+            >
+              {customer.displayName}
+            </Link>,
             customer.status,
             String(customer.serviceCount),
             String(customer.openSupportRequestCount),
             formatDate(customer.createdAt),
             formatDate(customer.lastActivityAt),
+            <Link
+              className="table-action"
+              href={`/admin/customers/${encodeURIComponent(customer.customerReference)}`}
+              key={`${customer.customerReference}-detail`}
+            >
+              Consulter
+            </Link>,
           ])}
         />
       ) : (

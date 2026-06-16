@@ -51,8 +51,10 @@ assert.doesNotMatch(
 
 assert.match(sessionConfig, /process\.env\.SESSION_COOKIE_NAME/);
 assert.match(sessionConfig, /process\.env\.SESSION_COOKIE_SECURE/);
+assert.match(sessionConfig, /process\.env\.SESSION_COOKIE_SAME_SITE/);
 assert.match(sessionConfig, /httpOnly:\s*true/);
-assert.match(sessionConfig, /sameSite:\s*"lax"/);
+assert.match(sessionConfig, /sameSite:\s*getSessionCookieSameSite\(\)/);
+assert.match(sessionConfig, /return "lax" as const/);
 assert.match(sessionConfig, /path:\s*"\/"/);
 assert.doesNotMatch(sessionConfig, /NEXT_PUBLIC_|PUBLIC_INTERNAL_API_URL/);
 

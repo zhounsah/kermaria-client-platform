@@ -39,6 +39,26 @@ public sealed record AdminCustomerSummary(
     string CreatedAt,
     string LastActivityAt);
 
+public sealed record AdminCustomerDetail(
+    ClientProfile Identity,
+    string CreatedAt,
+    string LastActivityAt,
+    int PortalUserCount,
+    int ActivePortalUserCount,
+    int ActiveSessionCount,
+    int ActiveServiceCount,
+    int PendingInvoiceCount,
+    int OpenSupportRequestCount,
+    int ActiveServiceRequestCount,
+    int SharedCommercialDocumentCount,
+    IReadOnlyList<ServiceSummary> Services,
+    IReadOnlyList<InvoiceSummary> Invoices,
+    IReadOnlyList<AdminSupportRequestSummary> SupportRequests,
+    IReadOnlyList<AdminServiceRequestSummary> ServiceRequests,
+    IReadOnlyList<AdminCommercialDocumentSummary> CommercialDocuments,
+    IReadOnlyList<AdminActivityItem> RecentActivity,
+    IReadOnlyList<AdminAuditLogEntry> RecentAuditLogs);
+
 public sealed record AdminSupportRequestSummary(
     string Id,
     string Reference,

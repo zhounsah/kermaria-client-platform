@@ -87,7 +87,7 @@ try {
   }
 
   process.stdout.write(
-    "Verification des health checks V0.16 reussie.\n",
+    "Verification des health checks V0.17 reussie.\n",
   );
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);

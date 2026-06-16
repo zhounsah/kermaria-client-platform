@@ -2,11 +2,11 @@ using System.Diagnostics;
 using System.Data.Common;
 using System.Net;
 using System.Net.Http.Json;
+using System.Net.Sockets;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using Kermaria.ApiInternal.Data.Configuration;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
@@ -15,49 +15,74 @@ const string correlationHeader = "X-Correlation-Id";
 const string dataSourceHeader = "X-Data-Source";
 const string sessionHeader = "X-Portal-Session";
 const string testCorrelationId = "v0.8-smoke-test";
-const string mockBaseUrl = "http://127.0.0.1:5088";
 const string mockEmail = "portal.test@example.invalid";
 const string mockPassword = "NOT_A_REAL_PASSWORD_V07";
 const string mockAdminEmail = "admin.test@example.invalid";
 const string mockAdminPassword = "NOT_A_REAL_ADMIN_PASSWORD_V08";
 
-if (args.Length is < 1 or > 2)
+var dotnetExecutable = "dotnet";
+var apiAssembly = string.Empty;
+RuntimeConfigurationContracts? runtimeConfiguration = null;
+
+return await RunAsync(args);
+
+async Task<int> RunAsync(string[] arguments)
 {
-    Console.Error.WriteLine(
-        "Usage: smoke-tests [dotnet-executable] <api-internal-dll>");
-    return 2;
+    if (arguments.Length is < 1 or > 2)
+    {
+        Console.Error.WriteLine(
+            "Usage: smoke-tests [dotnet-executable] <api-internal-dll>");
+        return 2;
+    }
+
+    dotnetExecutable = arguments.Length == 2
+        ? Path.GetFullPath(arguments[0])
+        : "dotnet";
+    var sourceApiAssembly = Path.GetFullPath(arguments[^1]);
+
+    if ((arguments.Length == 2 && !File.Exists(dotnetExecutable))
+        || !File.Exists(sourceApiAssembly))
+    {
+        Console.Error.WriteLine(
+            "Le runtime .NET ou l'assembly API est introuvable.");
+        return 2;
+    }
+
+    using var apiRuntime = SmokeTestRuntimeHelpers.CreateIsolatedApiRuntime(
+        sourceApiAssembly);
+    apiAssembly = apiRuntime.AssemblyPath;
+    runtimeConfiguration =
+        SmokeTestRuntimeHelpers.LoadRuntimeConfigurationContracts(apiAssembly);
+
+    try
+    {
+        VerifyIdentifierMapping();
+        await RunMockTestsAsync();
+        await RunUnavailableReadinessTestAsync();
+        await RunProductionConfigurationValidationTestsAsync();
+        await RunDisabledAccountTestAsync();
+        await RunExpiredSessionTestAsync();
+        await RunLockoutResetTestAsync();
+
+        if (IsMariaDbTestRequested())
+        {
+            await RunMariaDbReadTestsAsync();
+        }
+
+        Console.WriteLine("Smoke tests API-INTERNAL V0.17 reussis.");
+        return 0;
+    }
+    catch (Exception exception)
+    {
+        Console.Error.WriteLine("Smoke tests API-INTERNAL V0.17 en echec.");
+        Console.Error.WriteLine(exception.ToString());
+        return 1;
+    }
 }
-
-var dotnetExecutable = args.Length == 2
-    ? Path.GetFullPath(args[0])
-    : "dotnet";
-var apiAssembly = Path.GetFullPath(args[^1]);
-
-if ((args.Length == 2 && !File.Exists(dotnetExecutable))
-    || !File.Exists(apiAssembly))
-{
-    Console.Error.WriteLine("Le runtime .NET ou l'assembly API est introuvable.");
-    return 2;
-}
-
-VerifyIdentifierMapping();
-await RunMockTestsAsync();
-await RunUnavailableReadinessTestAsync();
-await RunProductionConfigurationValidationTestsAsync();
-await RunDisabledAccountTestAsync();
-await RunExpiredSessionTestAsync();
-await RunLockoutResetTestAsync();
-
-if (IsMariaDbTestRequested())
-{
-    await RunMariaDbReadTestsAsync();
-}
-
-Console.WriteLine("Smoke tests API-INTERNAL V0.16 reussis.");
-return 0;
 
 async Task RunMockTestsAsync()
 {
+    var mockBaseUrl = SmokeTestRuntimeHelpers.CreateLoopbackBaseUrl();
     using var api = StartApi(
         mockBaseUrl,
         startInfo =>
@@ -285,6 +310,7 @@ async Task RunMockTestsAsync()
             "/internal/admin/overview",
             "/internal/admin/activity",
             "/internal/admin/customers",
+            $"/internal/admin/customers/{MockCustomerReference()}",
             "/internal/admin/support-requests",
             "/internal/admin/service-requests",
             "/internal/admin/sessions",
@@ -310,6 +336,26 @@ async Task RunMockTestsAsync()
                     StringComparison.OrdinalIgnoreCase),
                 $"La route admin {endpoint} expose une donnée d'authentification.");
         }
+
+        using var adminCustomerDetailRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mockBaseUrl}/internal/admin/customers/{MockCustomerReference()}",
+            adminSessionToken);
+        using var adminCustomerDetailResponse = await client.SendAsync(
+            adminCustomerDetailRequest);
+        var adminCustomerDetailText =
+            await adminCustomerDetailResponse.Content.ReadAsStringAsync();
+        Ensure(
+            adminCustomerDetailResponse.StatusCode == HttpStatusCode.OK,
+            "La fiche client admin mock devait répondre HTTP 200.");
+        Ensure(
+            adminCustomerDetailText.Contains(
+                "commercialDocuments",
+                StringComparison.Ordinal)
+            && adminCustomerDetailText.Contains(
+                "recentAuditLogs",
+                StringComparison.Ordinal),
+            "La fiche client admin mock ne contient pas les sections attendues.");
 
         using var adminSupportListRequest = CreateSessionRequest(
             HttpMethod.Get,
@@ -1156,7 +1202,7 @@ async Task RunMockTestsAsync()
 
 async Task RunDisabledAccountTestAsync()
 {
-    const string baseUrl = "http://127.0.0.1:5090";
+    var baseUrl = SmokeTestRuntimeHelpers.CreateLoopbackBaseUrl();
     using var api = StartApi(
         baseUrl,
         startInfo =>
@@ -1196,7 +1242,7 @@ async Task RunDisabledAccountTestAsync()
 
 async Task RunExpiredSessionTestAsync()
 {
-    const string baseUrl = "http://127.0.0.1:5091";
+    var baseUrl = SmokeTestRuntimeHelpers.CreateLoopbackBaseUrl();
     using var api = StartApi(
         baseUrl,
         startInfo =>
@@ -1252,7 +1298,7 @@ async Task RunExpiredSessionTestAsync()
 
 async Task RunLockoutResetTestAsync()
 {
-    const string baseUrl = "http://127.0.0.1:5092";
+    var baseUrl = SmokeTestRuntimeHelpers.CreateLoopbackBaseUrl();
     using var api = StartApi(
         baseUrl,
         startInfo =>
@@ -1329,7 +1375,7 @@ async Task RunLockoutResetTestAsync()
 
 async Task RunUnavailableReadinessTestAsync()
 {
-    const string baseUrl = "http://127.0.0.1:5092";
+    var baseUrl = SmokeTestRuntimeHelpers.CreateLoopbackBaseUrl();
     const string sqlPasswordSentinel =
         "NOT_A_REAL_SQL_PASSWORD_V09";
     using var api = StartApi(
@@ -1410,9 +1456,9 @@ async Task RunProductionConfigurationValidationTestsAsync()
                 "**REPLACE_WITH_SECURE_VALUE**";
         });
 
-    RuntimeConfigurationValidator.Validate(
+    ValidateRuntimeConfiguration(
         new ConfigurationBuilder().Build(),
-        new TestHostEnvironment("Development"));
+        "Development");
 
     await Task.CompletedTask;
 }
@@ -1426,27 +1472,33 @@ void VerifyRejectedProductionConfiguration(
 
     try
     {
-        RuntimeConfigurationValidator.Validate(
+        ValidateRuntimeConfiguration(
             new ConfigurationBuilder()
                 .AddInMemoryCollection(configuration)
                 .Build(),
-            new TestHostEnvironment("Production"));
+            "Production");
         throw new InvalidOperationException(
             "Une configuration Production invalide a été acceptée.");
     }
-    catch (RuntimeConfigurationException exception)
+    catch (TargetInvocationException exception)
+        when (TryGetRuntimeConfigurationException(
+            exception,
+            out var runtimeException))
     {
+        var configurationContracts = GetRuntimeConfigurationContracts();
+        var variables = configurationContracts.GetVariables(runtimeException);
+
         Ensure(
-            exception.Variables.Contains(expectedVariable),
+            variables.Contains(expectedVariable),
             $"Le refus doit nommer {expectedVariable} sans afficher sa valeur.");
         Ensure(
-            !exception.Message.Contains(
+            !runtimeException.Message.Contains(
                 "NOT_A_REAL_PRODUCTION_SQL_VALUE_V09",
                 StringComparison.Ordinal)
-            && !exception.Message.Contains(
+            && !runtimeException.Message.Contains(
                 "NOT_A_REAL_SERVICE_AUTH_VALUE_V09",
                 StringComparison.Ordinal)
-            && !exception.Message.Contains(
+            && !runtimeException.Message.Contains(
                 "**REPLACE_WITH_SECURE_VALUE**",
                 StringComparison.Ordinal),
             "Le message de configuration ne doit contenir aucune valeur secrète.");
@@ -1493,7 +1545,7 @@ async Task RunMariaDbReadTestsAsync()
         missing.Length == 0,
         "RUN_MARIADB_TESTS=true exige toutes les variables SQL.");
 
-    const string mariaDbBaseUrl = "http://127.0.0.1:5089";
+    var mariaDbBaseUrl = SmokeTestRuntimeHelpers.CreateLoopbackBaseUrl();
     using var api = StartApi(
         mariaDbBaseUrl,
         startInfo =>
@@ -1610,6 +1662,39 @@ async Task RunMariaDbReadTestsAsync()
                 "Le login admin MariaDB ne retourne aucun token.");
         await VerifyPersistedSessionHashAsync(adminSessionToken);
 
+        using var adminCustomerListRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mariaDbBaseUrl}/internal/admin/customers",
+            adminSessionToken);
+        using var adminCustomerListResponse = await client.SendAsync(
+            adminCustomerListRequest);
+        var adminCustomerListText = await adminCustomerListResponse.Content
+            .ReadAsStringAsync();
+        using var adminCustomerListPayload = JsonDocument.Parse(
+            adminCustomerListText);
+        Ensure(
+            adminCustomerListResponse.StatusCode == HttpStatusCode.OK,
+            "La liste clients admin MariaDB devait répondre HTTP 200.");
+        Ensure(
+            adminCustomerListResponse.Headers.GetValues(dataSourceHeader).Single()
+                == "mariadb",
+            "La liste clients admin n'utilise pas MariaDB.");
+        Ensure(
+            adminCustomerListPayload.RootElement.ValueKind == JsonValueKind.Array
+            && adminCustomerListPayload.RootElement.GetArrayLength() > 0,
+            "Aucun client MariaDB disponible pour tester la fiche admin");
+        var mariaDbCustomerReference = adminCustomerListPayload.RootElement
+            .EnumerateArray()
+            .Select(element => element.TryGetProperty(
+                    "customerReference",
+                    out var customerReferenceProperty)
+                ? customerReferenceProperty.GetString()
+                : null)
+            .FirstOrDefault(customerReference =>
+                !string.IsNullOrWhiteSpace(customerReference))
+            ?? throw new InvalidOperationException(
+                "Aucun client MariaDB disponible pour tester la fiche admin");
+
         foreach (var endpoint in new[]
         {
             "/internal/admin/overview",
@@ -1633,6 +1718,30 @@ async Task RunMariaDbReadTestsAsync()
                     == "mariadb",
                 $"La route admin {endpoint} n'utilise pas MariaDB.");
         }
+
+        using var adminCustomerDetailRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mariaDbBaseUrl}/internal/admin/customers/{mariaDbCustomerReference}",
+            adminSessionToken);
+        using var adminCustomerDetailResponse = await client.SendAsync(
+            adminCustomerDetailRequest);
+        var adminCustomerDetailText =
+            await adminCustomerDetailResponse.Content.ReadAsStringAsync();
+        Ensure(
+            adminCustomerDetailResponse.StatusCode == HttpStatusCode.OK,
+            "La fiche client admin MariaDB devait répondre HTTP 200.");
+        Ensure(
+            adminCustomerDetailResponse.Headers.GetValues(dataSourceHeader).Single()
+                == "mariadb",
+            "La fiche client admin n'utilise pas MariaDB.");
+        Ensure(
+            adminCustomerDetailText.Contains(
+                "supportRequests",
+                StringComparison.Ordinal)
+            && adminCustomerDetailText.Contains(
+                "commercialDocuments",
+                StringComparison.Ordinal),
+            "La fiche client admin MariaDB ne contient pas les sections attendues.");
 
         for (var attempt = 0; attempt < 3; attempt++)
         {
@@ -3309,7 +3418,8 @@ DbConnection CreateMariaDbTestConnection()
     var connectorPath = Path.Combine(
         Path.GetDirectoryName(apiAssembly)!,
         "MySqlConnector.dll");
-    var connectorAssembly = Assembly.LoadFrom(connectorPath);
+    var connectorAssembly = SmokeTestRuntimeHelpers.LoadAssemblyWithoutLock(
+        connectorPath);
     var connectionType = connectorAssembly.GetType(
         "MySqlConnector.MySqlConnection",
         throwOnError: true)!;
@@ -3334,7 +3444,8 @@ static void AddDbParameter(
 
 void VerifyIdentifierMapping()
 {
-    var apiAssemblyForMapping = Assembly.LoadFrom(apiAssembly);
+    var apiAssemblyForMapping = SmokeTestRuntimeHelpers.LoadAssemblyWithoutLock(
+        apiAssembly);
     var readerType = apiAssemblyForMapping.GetType(
         "Kermaria.ApiInternal.Data.Repositories.MariaDbIdentifierReader",
         throwOnError: true)!;
@@ -3467,6 +3578,40 @@ RunningApi StartApi(
     return new RunningApi(process, logs);
 }
 
+void ValidateRuntimeConfiguration(
+    IConfiguration configuration,
+    string environmentName)
+{
+    var configurationContracts = GetRuntimeConfigurationContracts();
+    configurationContracts.ValidateMethod.Invoke(
+        null,
+        [configuration, new TestHostEnvironment(environmentName)]);
+}
+
+bool TryGetRuntimeConfigurationException(
+    TargetInvocationException invocationException,
+    out Exception runtimeException)
+{
+    var configurationContracts = GetRuntimeConfigurationContracts();
+    if (invocationException.InnerException is not null
+        && configurationContracts.ExceptionType.IsInstanceOfType(
+            invocationException.InnerException))
+    {
+        runtimeException = invocationException.InnerException;
+        return true;
+    }
+
+    runtimeException = invocationException;
+    return false;
+}
+
+RuntimeConfigurationContracts GetRuntimeConfigurationContracts()
+{
+    return runtimeConfiguration
+        ?? throw new InvalidOperationException(
+            "Les contrats de configuration runtime ne sont pas initialises.");
+}
+
 bool IsMariaDbTestRequested()
     => string.Equals(
         Environment.GetEnvironmentVariable("RUN_MARIADB_TESTS"),
@@ -3479,6 +3624,7 @@ static async Task<HttpResponseMessage> WaitForHealthAsync(
     string baseUrl,
     StringBuilder logs)
 {
+    HttpRequestException? lastException = null;
     for (var attempt = 0; attempt < 40; attempt++)
     {
         if (apiProcess.HasExited)
@@ -3491,8 +3637,9 @@ static async Task<HttpResponseMessage> WaitForHealthAsync(
         {
             return await client.GetAsync($"{baseUrl}/health");
         }
-        catch (HttpRequestException)
+        catch (HttpRequestException exception)
         {
+            lastException = exception;
             await Task.Delay(250);
         }
     }
@@ -3575,4 +3722,146 @@ sealed class TestHostEnvironment : IHostEnvironment
     public string ContentRootPath { get; set; } = Directory.GetCurrentDirectory();
     public IFileProvider ContentRootFileProvider { get; set; } =
         new NullFileProvider();
+}
+
+sealed class ApiRuntime : IDisposable
+{
+    public ApiRuntime(string workingDirectory, string assemblyPath)
+    {
+        WorkingDirectory = workingDirectory;
+        AssemblyPath = assemblyPath;
+    }
+
+    public string WorkingDirectory { get; }
+    public string AssemblyPath { get; }
+
+    public void Dispose()
+    {
+        try
+        {
+            if (Directory.Exists(WorkingDirectory))
+            {
+                Directory.Delete(WorkingDirectory, recursive: true);
+            }
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+    }
+}
+
+sealed class RuntimeConfigurationContracts
+{
+    public RuntimeConfigurationContracts(
+        Type exceptionType,
+        MethodInfo validateMethod,
+        PropertyInfo variablesProperty)
+    {
+        ExceptionType = exceptionType;
+        ValidateMethod = validateMethod;
+        VariablesProperty = variablesProperty;
+    }
+
+    public Type ExceptionType { get; }
+    public MethodInfo ValidateMethod { get; }
+    public PropertyInfo VariablesProperty { get; }
+
+    public IReadOnlyCollection<string> GetVariables(Exception exception)
+    {
+        return VariablesProperty.GetValue(exception)
+            as IReadOnlyCollection<string>
+            ?? throw new InvalidOperationException(
+                "La liste des variables invalides est introuvable.");
+    }
+}
+
+static class SmokeTestRuntimeHelpers
+{
+    public static string CreateLoopbackBaseUrl()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+        return $"http://127.0.0.1:{port}";
+    }
+
+    public static ApiRuntime CreateIsolatedApiRuntime(string sourceApiAssembly)
+    {
+        var sourceDirectory = Path.GetDirectoryName(sourceApiAssembly)
+            ?? throw new InvalidOperationException(
+                "Le repertoire de build API-INTERNAL est introuvable.");
+        var runtimeDirectory = Path.Combine(
+            Path.GetTempPath(),
+            "kermaria-api-internal-smoketests",
+            Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(runtimeDirectory);
+        CopyDirectoryContents(sourceDirectory, runtimeDirectory);
+
+        return new ApiRuntime(
+            runtimeDirectory,
+            Path.Combine(runtimeDirectory, Path.GetFileName(sourceApiAssembly)));
+    }
+
+    public static RuntimeConfigurationContracts LoadRuntimeConfigurationContracts(
+        string apiAssemblyPath)
+    {
+        var loadedAssembly = LoadAssemblyWithoutLock(apiAssemblyPath);
+        var exceptionType = loadedAssembly.GetType(
+            "Kermaria.ApiInternal.Data.Configuration.RuntimeConfigurationException",
+            throwOnError: true)!;
+        var validatorType = loadedAssembly.GetType(
+            "Kermaria.ApiInternal.Data.Configuration.RuntimeConfigurationValidator",
+            throwOnError: true)!;
+        var validateMethod = validatorType.GetMethod(
+            "Validate",
+            BindingFlags.Public | BindingFlags.Static)
+            ?? throw new InvalidOperationException(
+                "Le validateur de configuration runtime est introuvable.");
+        var variablesProperty = exceptionType.GetProperty("Variables")
+            ?? throw new InvalidOperationException(
+                "La liste des variables invalides est introuvable.");
+
+        return new RuntimeConfigurationContracts(
+            exceptionType,
+            validateMethod,
+            variablesProperty);
+    }
+
+    public static Assembly LoadAssemblyWithoutLock(string assemblyPath)
+    {
+        return Assembly.Load(File.ReadAllBytes(assemblyPath));
+    }
+
+    private static void CopyDirectoryContents(
+        string sourceDirectory,
+        string destinationDirectory)
+    {
+        foreach (var directory in Directory.EnumerateDirectories(
+            sourceDirectory,
+            "*",
+            SearchOption.AllDirectories))
+        {
+            var relativePath = Path.GetRelativePath(sourceDirectory, directory);
+            Directory.CreateDirectory(
+                Path.Combine(destinationDirectory, relativePath));
+        }
+
+        foreach (var file in Directory.EnumerateFiles(
+            sourceDirectory,
+            "*",
+            SearchOption.AllDirectories))
+        {
+            var relativePath = Path.GetRelativePath(sourceDirectory, file);
+            var destinationPath = Path.Combine(destinationDirectory, relativePath);
+            Directory.CreateDirectory(
+                Path.GetDirectoryName(destinationPath)
+                ?? destinationDirectory);
+            File.Copy(file, destinationPath, overwrite: true);
+        }
+    }
 }

@@ -266,6 +266,14 @@ public sealed class RequestWorkflowService : IRequestWorkflowService
             throw new PortalValidationException();
         }
 
+        foreach (var character in identifier)
+        {
+            if (!char.IsAsciiLetterOrDigit(character) && character != '-')
+            {
+                throw new PortalValidationException();
+            }
+        }
+
         return identifier;
     }
 

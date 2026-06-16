@@ -10,6 +10,9 @@
 
     <Exec
       Command="dotnet &quot;$(TargetPath)&quot; &quot;$(ApiInternalAssembly)&quot;"
+      ConsoleToMsBuild="true"
+      StandardOutputImportance="High"
+      StandardErrorImportance="High"
     />
   </Target>
 </Project>

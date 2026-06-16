@@ -11,6 +11,9 @@ public interface IAdminService
         CancellationToken cancellationToken);
     Task<IReadOnlyList<AdminCustomerSummary>> GetCustomersAsync(
         CancellationToken cancellationToken);
+    Task<AdminCustomerDetail> GetCustomerAsync(
+        string customerReference,
+        CancellationToken cancellationToken);
     Task<IReadOnlyList<AdminSupportRequestSummary>> GetSupportRequestsAsync(
         CancellationToken cancellationToken);
     Task<IReadOnlyList<AdminServiceRequestSummary>> GetServiceRequestsAsync(
@@ -41,6 +44,14 @@ public sealed class AdminService : IAdminService
         CancellationToken cancellationToken)
         => _repository.GetCustomersAsync(cancellationToken);
 
+    public async Task<AdminCustomerDetail> GetCustomerAsync(
+        string customerReference,
+        CancellationToken cancellationToken)
+        => await _repository.GetCustomerAsync(
+                ValidateCustomerReference(customerReference),
+                cancellationToken)
+            ?? throw new PortalDataNotFoundException();
+
     public Task<IReadOnlyList<AdminSupportRequestSummary>>
         GetSupportRequestsAsync(CancellationToken cancellationToken)
         => _repository.GetSupportRequestsAsync(cancellationToken);
@@ -56,4 +67,23 @@ public sealed class AdminService : IAdminService
     public Task<IReadOnlyList<AdminAuditLogEntry>> GetAuditLogsAsync(
         CancellationToken cancellationToken)
         => _repository.GetAuditLogsAsync(100, cancellationToken);
+
+    private static string ValidateCustomerReference(string value)
+    {
+        var normalized = value.Trim();
+        if (normalized.Length is < 1 or > 100)
+        {
+            throw new PortalValidationException();
+        }
+
+        foreach (var character in normalized)
+        {
+            if (!char.IsAsciiLetterOrDigit(character) && character != '-')
+            {
+                throw new PortalValidationException();
+            }
+        }
+
+        return normalized;
+    }
 }

@@ -19,6 +19,18 @@ const nextConfig: NextConfig = {
             key: "Referrer-Policy",
             value: "strict-origin-when-cross-origin",
           },
+          {
+            key: "Permissions-Policy",
+            value: "camera=(), geolocation=(), microphone=()",
+          },
+          {
+            key: "Cross-Origin-Opener-Policy",
+            value: "same-origin",
+          },
+          {
+            key: "Cross-Origin-Resource-Policy",
+            value: "same-site",
+          },
           { key: "X-Robots-Tag", value: "noindex, nofollow" },
         ],
       },

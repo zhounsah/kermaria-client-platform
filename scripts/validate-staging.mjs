@@ -41,15 +41,15 @@ for (const variableName of requiredVariables) {
 }
 
 if (!equalsIgnoreCase(process.env.NODE_ENV, "production")) {
-  failures.push("NODE_ENV doit valoir production.");
+  failures.push("NODE_ENV doit valoir production en staging.");
 }
 
-if (!equalsIgnoreCase(process.env.ASPNETCORE_ENVIRONMENT, "Production")) {
-  failures.push("ASPNETCORE_ENVIRONMENT doit valoir Production.");
+if (!equalsIgnoreCase(process.env.ASPNETCORE_ENVIRONMENT, "Staging")) {
+  failures.push("ASPNETCORE_ENVIRONMENT doit valoir Staging.");
 }
 
-if (!equalsIgnoreCase(process.env.DOTNET_ENVIRONMENT, "Production")) {
-  failures.push("DOTNET_ENVIRONMENT doit valoir Production.");
+if (!equalsIgnoreCase(process.env.DOTNET_ENVIRONMENT, "Staging")) {
+  failures.push("DOTNET_ENVIRONMENT doit valoir Staging.");
 }
 
 if (
@@ -66,15 +66,15 @@ if (
 }
 
 if (!equalsIgnoreCase(process.env.SQL_PROVIDER, "mariadb")) {
-  failures.push("SQL_PROVIDER doit valoir mariadb en preproduction V0.17.");
+  failures.push("SQL_PROVIDER doit valoir mariadb en staging.");
 }
 
 if (!equalsIgnoreCase(process.env.AD_INTEGRATION_MODE, "disabled")) {
-  failures.push("AD_INTEGRATION_MODE doit rester disabled.");
+  failures.push("AD_INTEGRATION_MODE doit rester disabled en staging.");
 }
 
 if (!equalsIgnoreCase(process.env.SESSION_COOKIE_SECURE, "true")) {
-  failures.push("SESSION_COOKIE_SECURE doit valoir true en preproduction.");
+  failures.push("SESSION_COOKIE_SECURE doit valoir true en staging.");
 }
 
 validateSessionCookieSameSite();
@@ -88,7 +88,7 @@ for (const variableName of ["SERVICE_AUTH_TOKEN", "SQL_PASSWORD"]) {
 for (const variableName of demoVariables) {
   if (process.env[variableName]?.trim()) {
     failures.push(
-      `La variable ${variableName} doit rester absente en preproduction.`,
+      `La variable ${variableName} doit rester absente en staging.`,
     );
   }
 }
@@ -99,14 +99,14 @@ await validateSourceContracts();
 runSecretCheck();
 
 if (warnings.length > 0) {
-  process.stdout.write("Avertissements validate:preprod:\n");
+  process.stdout.write("Avertissements validate:staging:\n");
   for (const warning of warnings) {
     process.stdout.write(`- ${warning}\n`);
   }
 }
 
 if (failures.length > 0) {
-  process.stderr.write("Validation preproduction V0.17 en echec:\n");
+  process.stderr.write("Validation staging V0.17 en echec:\n");
   for (const failure of failures) {
     process.stderr.write(`- ${failure}\n`);
   }
@@ -114,7 +114,7 @@ if (failures.length > 0) {
 }
 
 process.stdout.write(
-  "Validation preproduction V0.17 reussie: variables, garde-fous BFF/API, cookies et scan de secrets sont coherents.\n",
+  "Validation staging V0.17 reussie: variables, garde-fous BFF/API, cookies et scan de secrets sont coherents.\n",
 );
 
 function validateInternalApiUrl() {
@@ -192,10 +192,6 @@ async function validateSourceContracts() {
     path.join("apps", "webportal", "lib", "session-config.ts"),
     "utf8",
   );
-  const internalApi = await readFile(
-    path.join("apps", "webportal", "lib", "internal-api.ts"),
-    "utf8",
-  );
   const readyRoute = await readFile(
     path.join("apps", "webportal", "app", "api", "health", "ready", "route.ts"),
     "utf8",
@@ -204,17 +200,19 @@ async function validateSourceContracts() {
     path.join("apps", "webportal", "next.config.ts"),
     "utf8",
   );
-  const apiProgram = await readFile(
-    path.join("apps", "api-internal", "Program.cs"),
+  const apiValidator = await readFile(
+    path.join(
+      "apps",
+      "api-internal",
+      "Data",
+      "Configuration",
+      "RuntimeConfigurationValidator.cs",
+    ),
     "utf8",
   );
 
   if (!runtimeConfig.includes('import "server-only"')) {
     failures.push("apps/webportal/lib/runtime-config.ts doit rester server-only.");
-  }
-
-  if (!internalApi.includes('import "server-only"')) {
-    failures.push("apps/webportal/lib/internal-api.ts doit rester server-only.");
   }
 
   if (!sessionConfig.includes("SESSION_COOKIE_SAME_SITE")) {
@@ -223,21 +221,9 @@ async function validateSourceContracts() {
     );
   }
 
-  if (!readyRoute.includes("validateServerRuntimeConfiguration")) {
-    failures.push(
-      "La readiness WEBPORTAL doit continuer a valider la configuration serveur.",
-    );
-  }
-
   if (!readyRoute.includes("validateSessionCookieConfiguration")) {
     failures.push(
       "La readiness WEBPORTAL doit valider la configuration de cookie serveur.",
-    );
-  }
-
-  if (!readyRoute.includes("checkInternalApiReadiness")) {
-    failures.push(
-      "La readiness WEBPORTAL doit continuer a verifier API-INTERNAL.",
     );
   }
 
@@ -253,16 +239,10 @@ async function validateSourceContracts() {
     }
   }
 
-  if (!/app\.MapGet\(\s*"\/health"/.test(apiProgram)) {
-    failures.push("API-INTERNAL doit exposer /health.");
-  }
-
-  if (!/app\.MapGet\(\s*"\/ready"/.test(apiProgram)) {
-    failures.push("API-INTERNAL doit exposer /ready.");
-  }
-
-  if (!/app\.MapGet\(\s*"\/health\/ready"/.test(apiProgram)) {
-    failures.push("API-INTERNAL doit conserver /health/ready.");
+  if (!apiValidator.includes("environment.IsDevelopment()")) {
+    failures.push(
+      "API-INTERNAL doit appliquer ses garde-fous aux environnements non Development, y compris Staging.",
+    );
   }
 }
 

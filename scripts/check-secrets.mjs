@@ -16,6 +16,7 @@ const excludedDirectories = new Set([
 const excludedFiles = new Set([
   path.normalize("scripts/check-secrets.mjs"),
   path.normalize("scripts/validate-preprod.mjs"),
+  path.normalize("scripts/validate-staging.mjs"),
   path.normalize("apps/api-internal/Data/Configuration/RuntimeConfigurationValidator.cs"),
   path.normalize("apps/webportal/lib/runtime-config.ts"),
 ]);

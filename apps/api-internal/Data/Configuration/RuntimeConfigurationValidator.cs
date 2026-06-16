@@ -38,7 +38,7 @@ public static class RuntimeConfigurationValidator
 
         ValidateEnvironmentNames(invalidVariables);
 
-        if (!environment.IsProduction())
+        if (environment.IsDevelopment())
         {
             return;
         }

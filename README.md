@@ -1,203 +1,113 @@
 # Kermaria Client Platform
 
 Plateforme technique de l'espace client **Zachary HOUNSA-HOUNKPA EI** pour
-`clients.zacharyhounsa.ovh`. Ce dépôt reste séparé du site vitrine Astro.
+`clients.zacharyhounsa.ovh`.
 
-## État V0.14
+Ce depot reste separe du site vitrine Astro et conserve une architecture
+obligatoire :
 
-La V0.14 complète la conversation publique avec un centre d'activité
-administrateur orienté suivi :
+```text
+browser -> WEBPORTAL / BFF -> API-INTERNAL -> MariaDB
+```
 
-- un portail Next.js responsive et ses routes BFF ;
-- une API ASP.NET Core privée ;
-- une persistance MariaDB activable uniquement dans `API-INTERNAL` ;
-- une connexion locale par e-mail et mot de passe hashé ;
-- deux rôles simples : `client_user` et `internal_admin` ;
-- un verrouillage temporaire après plusieurs échecs consécutifs ;
-- des sessions persistées sous forme de hash et un cookie `HttpOnly` ;
-- la révocation de la session courante et des autres sessions de l'utilisateur ;
-- une isolation des lectures et écritures par le client issu de la session ;
-- une page `/login`, une déconnexion et la protection des pages privées ;
-- une interface `/admin` avec suivi contrôlé des demandes pour les comptes internes ;
-- un fallback mock explicite lorsque SQL est absent en développement ;
-- des migrations SQL versionnées et un seed fictif déclenchés manuellement ;
-- une abstraction Active Directory en modes `disabled`, `mock`, `test` et
-  `enabled`, sans opération réelle activée ;
-- une corrélation `X-Correlation-Id`, des erreurs contrôlées et des audits ;
-- des health checks `live` et `ready` pour les deux applications ;
-- une validation stricte des configurations Production ;
-- une identité interservice par `SERVICE_AUTH_TOKEN` sur `/internal/*` en
-  Production ;
-- une commande `npm run validate`, un garde-fou secrets et des runbooks de
-  déploiement, sauvegarde, restauration et rotation ;
-- un portail privé marqué `noindex, nofollow` ;
-- des états de chargement, d'erreur et d'absence de données distincts ;
-- des formulaires avec validation visible, timeout et anti-double soumission ;
-- un parsing JSON contrôlé côté navigateur et côté BFF ;
-- une présentation responsive renforcée, notamment pour les factures ;
-- des messages moins techniques et plus adaptés à un espace client ;
-- des statuts contrôlés et compréhensibles pour les deux types de demandes ;
-- des pages de détail client sans donnée interne ;
-- des pages de détail admin avec historique, note interne et message public ;
-- des mutations admin limitées au statut et aux messages append-only ;
-- une séparation persistée entre notes internes et messages visibles du client ;
-- des notifications lors d'un changement réel de statut ;
-- des notifications lors de la publication d'un message client ;
-- une page `/notifications` avec états lu/non lu ;
-- le marquage individuel ou global des notifications ;
-- un aperçu de l'activité récente sur le dashboard ;
-- des réponses client sur les demandes support et de service ;
-- une conversation publique distinguant messages Kermaria et réponses client ;
-- une validation 3 à 2 000 caractères et un anti-double envoi ;
-- une séparation inchangée entre conversation publique et notes internes ;
-- un centre d'activité admin sans contenu de message ;
-- des compteurs de demandes à traiter et en attente client ;
-- une détection du dernier message public envoyé par un client ;
-- des filtres « À traiter » et « Réponse client » sur les listes admin ;
-- des indicateurs de suivi et un rappel de confidentialité sur les détails.
+`WEBPORTAL` ne doit jamais acceder directement a MariaDB.
 
-Le SSO, le MFA, la récupération automatisée de mot de passe, les actions AD,
-le paiement, la facturation réelle et les intégrations NAS/RDS/VPN ne sont pas
-implémentés.
+## Etat V0.17
 
-## État V0.15
+La V0.17 consolide la preparation d'une vraie recette preproduction sans
+ouvrir de nouvelles integrations sensibles :
 
-La V0.15 ajoute un socle commercial prudent et strictement informatif :
+- fiche client admin consolidee avec identite, statut, services, demandes,
+  documents commerciaux, factures, activite recente et audits ;
+- isolation `customer_id` renforcee par des validations d'identifiants cote
+  BFF et API ;
+- durcissement pre-prod des cookies, de la readiness et des headers
+  WEBPORTAL ;
+- validation dediee `npm run validate:staging` pour distinguer staging et
+  production ;
+- documentation de staging et document de recette
+  `docs/V0.17_RECETTE_PREPRODUCTION.md`.
 
-- un catalogue d'offres administrable sans suppression définitive ;
-- des documents commerciaux `draft`, `pending_review`,
-  `shared_with_customer` ou `cancelled` ;
-- des lignes de document calculées en centimes côté API-INTERNAL ;
-- un affichage client sur `/invoices` et `/commercial-documents/[id]` ;
-- des écrans admin `/admin/catalog` et `/admin/commercial-documents` ;
-- un disclaimer explicite : `Document informatif - ne constitue pas une facture officielle.` ;
-- l'absence de paiement, PDF légal, numérotation fiscale définitive,
-  e-mail réel, provisioning ou action AD.
-
-Les documents affichés dans cet espace restent informatifs tant que la
-facturation réelle n'est pas activée.
-
-## Etat V0.16
-
-La V0.16 borne le projet a une preproduction technique, sans changer
-l'architecture ni ouvrir de nouvelles integrations sensibles :
-
-- documentation dediee au deploiement preproduction et a l'observabilite ;
-- checklist de predeploiement et diagnostic des incidents frequents ;
-- validation `npm run validate:preprod` des variables, garde-fous BFF/API et
-  scan de secrets ;
-- verification active `npm run check:health` des endpoints WEBPORTAL et
-  API-INTERNAL ;
-- endpoint API `GET /ready` en plus des routes `/health/*` existantes ;
-- logs de requete et de readiness plus exploitables avec correlation ID ;
-- scripts PowerShell `backup:mariadb` et `restore:mariadb` sans secret dans le
-  depot.
-
-La V0.16 n'active toujours ni AD reelle, ni paiement, ni facturation legale,
-ni e-mail, ni SMS, ni push, ni provisioning, ni action admin destructive.
+La V0.17 n'ajoute toujours ni AD reelle, ni paiement, ni facturation fiscale
+reelle, ni e-mail automatique, ni SMS, ni push, ni WebSocket, ni provisioning,
+ni suppression client destructive.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    U["Navigateur"] --> RP["Cloudflare / reverse proxy HTTPS"]
-    RP --> WP["WEBPORTAL / BFF<br/>Next.js"]
-    WP -->|"HTTPS privé + session interne"| API["API-INTERNAL<br/>ASP.NET Core"]
-    API -->|"3306 privé si configuré"| DB["MariaDB existante"]
-    API -.->|"Désactivé par défaut"| AD["Active Directory"]
+    U["Navigateur"] --> WP["WEBPORTAL / BFF"]
+    WP --> API["API-INTERNAL"]
+    API --> DB["MariaDB"]
+    API -.-> AD["Active Directory (desactivee)"]
 ```
 
-Le navigateur ne contacte jamais `API-INTERNAL`, MariaDB ou AD. Les formulaires
-et conversations utilisent uniquement les routes `/api/*` du BFF, qui
-appellent `API-INTERNAL` côté serveur.
+Rappels importants :
 
-Le token de session est généré par `API-INTERNAL`, renvoyé une seule fois au
-BFF, puis placé dans un cookie `HttpOnly`, `SameSite=Lax`. Seul son hash
-SHA-256 est stocké dans `portal_sessions`. Les mots de passe utilisent le
-`PasswordHasher` ASP.NET Core, fondé sur PBKDF2 avec sel.
-
-`INTERNAL_API_URL` et `SERVICE_AUTH_TOKEN` sont strictement serveur et ne
-doivent recevoir aucun préfixe public Next.js.
-
-Le centre d'activité V0.14 est calculé à partir des demandes et messages
-publics existants. Il ne copie ni le texte des messages, ni les notes internes,
-et ne change jamais automatiquement le statut d'une demande.
+- le navigateur parle uniquement a `WEBPORTAL` ;
+- `INTERNAL_API_URL` et `SERVICE_AUTH_TOKEN` restent server-only ;
+- les sessions sont portées par un cookie `HttpOnly` ;
+- aucun token de session ne doit etre stocke en `localStorage` ou
+  `sessionStorage`.
 
 ## Structure
 
 ```text
-apps/webportal/                 Portail public et BFF Next.js
-apps/api-internal/              API privée ASP.NET Core
-apps/api-internal/Data/         Configuration, entités et dépôts
-apps/api-internal/Migrations/   Schéma MariaDB et seed fictif
-apps/api-internal/Services/     Services métier et abstraction AD
+apps/webportal/                 Portail Next.js et routes BFF
+apps/api-internal/              API ASP.NET Core privee
 packages/shared/                Contrats TypeScript non sensibles
 tests/api-internal/             Smoke tests HTTP
 scripts/                        Validation globale et garde-fous
-docs/                           Architecture et exploitation
+docs/                           Architecture, securite et exploitation
 ```
 
-## Prérequis
+## Prerequis
 
-- Node.js 24 LTS ou version compatible avec `package.json` ;
+- Node.js 24 LTS ou compatible ;
 - npm ;
-- SDK .NET 10, fixé par `global.json` ;
-- MariaDB uniquement pour les tests persistants optionnels.
+- SDK .NET 10 ;
+- MariaDB uniquement pour les tests persistants opt-in.
 
 Ne pas utiliser `npm audit fix --force`.
 
 ## Configuration
 
 Copier uniquement les noms utiles de `.env.example` vers des variables
-d'environnement locales. Ne jamais saisir un secret dans un fichier suivi.
+d'environnement locales. Ne jamais stocker de vrai secret dans un fichier
+suivi.
 
-MariaDB est construite en mémoire à partir de `SQL_HOST`, `SQL_PORT`,
-`SQL_DATABASE`, `SQL_USERNAME` et `SQL_PASSWORD`. Aucune chaîne complète n'est
-attendue ni journalisée.
+Variables critiques WEBPORTAL :
 
-En `Development`, une configuration SQL absente active le dépôt mock avec un
-warning sans secret. Hors `Development`, une configuration SQL absente provoque
-un refus de démarrage `SQL_CONFIG_MISSING`; aucun fallback silencieux n'existe.
+- `INTERNAL_API_URL`
+- `SERVICE_AUTH_TOKEN`
+- `SESSION_COOKIE_NAME`
+- `SESSION_COOKIE_SECURE`
+- `SESSION_COOKIE_SAME_SITE`
 
-En Production, API-INTERNAL refuse également un mot de passe ou token absent,
-un placeholder évident, `SESSION_COOKIE_SECURE=false`, un seed démo ou
-`AD_INTEGRATION_MODE=enabled`. WEBPORTAL refuse ses appels internes si
-`INTERNAL_API_URL` est invalide ou locale sans dérogation explicite.
+Variables critiques API-INTERNAL :
 
-`AD_INTEGRATION_MODE` vaut `disabled` par défaut :
+- `ASPNETCORE_ENVIRONMENT`
+- `DOTNET_ENVIRONMENT`
+- `SQL_PROVIDER`, `SQL_HOST`, `SQL_PORT`, `SQL_DATABASE`, `SQL_USERNAME`,
+  `SQL_PASSWORD`
+- `SERVICE_AUTH_TOKEN`
+- `SESSION_DURATION_MINUTES`
+- `LOGIN_MAX_FAILURES`
+- `LOGIN_LOCKOUT_MINUTES`
+- `AD_INTEGRATION_MODE=disabled`
 
-- `disabled` : toutes les actions refusées ;
-- `mock` : réponses simulées, aucun accès réseau AD ;
-- `test` : validation de configuration et de périmètre, aucune mutation réelle ;
-- `enabled` : validation supplémentaire obligatoire, opérations encore
-  désactivées dans cette V0.9.
+## Developpement local
 
-Variables d'authentification :
-
-- `SESSION_COOKIE_NAME` côté `WEBPORTAL` ;
-- `SESSION_COOKIE_SECURE=true` en production ;
-- `SESSION_DURATION_MINUTES` côté `API-INTERNAL` ;
-- `LOGIN_MAX_FAILURES` et `LOGIN_LOCKOUT_MINUTES` côté `API-INTERNAL` ;
-- `DEMO_PORTAL_EMAIL` et `DEMO_PORTAL_PASSWORD` uniquement pour le seed manuel
-  client en `Development` ;
-- `DEMO_INTERNAL_ADMIN_EMAIL` et `DEMO_INTERNAL_ADMIN_PASSWORD` uniquement
-  pour le seed interne en `Development`.
-
-## Développement
-
-Démarrer API-INTERNAL en fallback mock :
+API-INTERNAL :
 
 ```powershell
 $env:ASPNETCORE_ENVIRONMENT="Development"
+$env:DOTNET_ENVIRONMENT="Development"
 $env:AD_INTEGRATION_MODE="disabled"
-$env:DEMO_PORTAL_EMAIL="demo.user@example.invalid"
-$env:DEMO_PORTAL_PASSWORD="**INJECTER_LOCALEMENT**"
-$env:DEMO_INTERNAL_ADMIN_EMAIL="demo.admin@example.invalid"
-$env:DEMO_INTERNAL_ADMIN_PASSWORD="**INJECTER_LOCALEMENT**"
 dotnet run --project apps/api-internal/Kermaria.ApiInternal.csproj --urls http://localhost:5000
 ```
 
-Démarrer WEBPORTAL :
+WEBPORTAL :
 
 ```powershell
 $env:INTERNAL_API_URL="http://localhost:5000"
@@ -205,189 +115,61 @@ $env:ALLOW_LOCAL_INTERNAL_API_URL="true"
 npm run dev:web
 ```
 
-Sous PowerShell restrictif, remplacer `npm` par `npm.cmd`.
+Sous PowerShell restrictif, utiliser `npm.cmd`.
 
-## MariaDB
+## Verification
 
-Installer le schéma et, facultativement, les données fictives uniquement par
-commande explicite en développement :
-
-```powershell
-dotnet run --project apps/api-internal/Kermaria.ApiInternal.csproj -- --apply-migrations
-dotnet run --project apps/api-internal/Kermaria.ApiInternal.csproj -- --apply-migrations --seed-demo-data
-```
-
-Ces commandes exigent toutes les variables `SQL_*`. Le démarrage normal
-n'applique jamais automatiquement une migration.
-
-`--seed-demo-data` configure les comptes client et interne uniquement si leurs
-variables `DEMO_*` sont injectées. Les mots de passe ne sont ni affichés ni
-écrits en clair. La migration `003_admin_and_auth_hardening.sql` ajoute le
-rôle et l'état de verrouillage sans supprimer les données existantes.
-La migration `004_request_workflow.sql` ajoute les événements, notes internes
-et messages publics, puis initialise un événement `created` pour les demandes
-existantes.
-La migration `005_portal_notifications.sql` ajoute une table de notifications
-isolée par client. Elle n'ajoute aucune notification externe ou tâche de fond.
-La V0.13 ne nécessite aucune migration : `request_public_messages` possède déjà
-un `author_user_id` permettant de distinguer administrateur et client.
-
-Les tests MariaDB sont opt-in. Ils créent des sessions et demandes fictives,
-ainsi qu'un client d'isolation temporaire supprimé en fin de test :
-
-```powershell
-$env:RUN_MARIADB_TESTS="true"
-npm run test:api
-```
-
-Ils sont ignorés si `RUN_MARIADB_TESTS` n'est pas explicitement activé.
-La commande portable `npm run validate:mariadb` active ce mode après avoir
-vérifié que les variables requises sont présentes.
-
-## Vérifications
+Validation globale :
 
 ```powershell
 npm run validate
 ```
 
-Cette commande exécute le scan de secrets, lint, typechecks, builds, smoke tests
-API et contrats BFF, administration, exploitation et UX client. Les tests
-MariaDB réels restent volontairement séparés.
+Validation staging :
 
-Cette commande exécute aussi le contrat web V0.15 du socle commercial
-informatif en plus des contrats BFF, administration, exploitation et UX client.
-
-Health checks :
-
-- API : `/health/live`, `/health/ready`, `/ready` et `/health` ;
-- WEBPORTAL : `/api/health/live`, `/api/health/ready` et `/api/health`.
-
-Une readiness en échec retourne HTTP 503. La readiness API exécute `SELECT 1`
-si MariaDB est configurée ; la readiness WEBPORTAL vérifie API-INTERNAL côté
-serveur sans exposer son URL.
+```powershell
+npm run validate:staging
+```
 
 Validation preproduction :
 
 ```powershell
 npm run validate:preprod
+```
+
+Validation MariaDB opt-in :
+
+```powershell
+npm run validate:mariadb
+```
+
+Health checks :
+
+```powershell
 npm run check:health
 ```
 
-`validate:preprod` controle la coherence des variables de preproduction, la
-visibilite strictement serveur de `INTERNAL_API_URL`, l'absence de stockage de
-session navigateur dans le code web et le garde-fou secrets.
+## Contraintes permanentes
 
-`check:health` interroge API-INTERNAL et WEBPORTAL sur leurs endpoints live et
-ready, verifie `X-Correlation-Id` et refuse un payload non JSON ou sensible.
-
-Sauvegardes MariaDB sous Windows PowerShell :
-
-```powershell
-npm run backup:mariadb
-npm run restore:mariadb -- -DumpPath C:\Backups\Kermaria\kermaria_mariadb_<DATE>.sql -VerifySchema
-```
-
-La migration `006_commercial_foundation.sql` ajoute `commercial_offers`,
-`commercial_documents` et `commercial_document_lines` sans activer de
-facturation légale ni de paiement.
-
-## Routes
-
-Pages publiques : `/` et `/login`.
-
-Pages privées : `/dashboard`, `/services`, `/invoices`, `/support`,
-`/support/[id]`, `/request-service`, `/request-service/[id]`,
-`/notifications`, `/profile` et `/password`.
-
-Pages internes, réservées à `internal_admin` : `/admin`,
-`/admin/customers`, `/admin/support-requests`, `/admin/service-requests`,
-leurs pages de détail, `/admin/sessions` et `/admin/audit-logs`.
-
-V0.15 ajoute les pages `/commercial-documents/[id]`, `/admin/catalog`,
-`/admin/commercial-documents` et `/admin/commercial-documents/[id]` pour le
-catalogue d'offres et les documents commerciaux informatifs.
-
-Routes BFF :
-
-- `GET /api/health`
-- `GET /api/health/live`
-- `GET /api/health/ready`
-- `POST /api/auth/login`
-- `POST /api/auth/logout`
-- `POST /api/auth/revoke-other-sessions`
-- `GET /api/auth/me`
-- `POST /api/support-requests`
-- `POST /api/support-requests/[id]/messages`
-- `POST /api/service-requests`
-- `POST /api/service-requests/[id]/messages`
-- `GET /api/notifications`
-- `POST /api/notifications/[id]/read`
-- `POST /api/notifications/read-all`
-- `GET /api/admin/overview`
-- `GET /api/admin/activity`
-- `GET /api/admin/customers`
-- `GET /api/admin/support-requests`
-- `GET /api/admin/service-requests`
-- `GET /api/admin/support-requests/[id]`
-- `PATCH /api/admin/support-requests/[id]/status`
-- `POST /api/admin/support-requests/[id]/notes`
-- `POST /api/admin/support-requests/[id]/messages`
-- `GET /api/admin/service-requests/[id]`
-- `PATCH /api/admin/service-requests/[id]/status`
-- `POST /api/admin/service-requests/[id]/notes`
-- `POST /api/admin/service-requests/[id]/messages`
-- `GET /api/admin/sessions`
-- `GET /api/admin/audit-logs`
-
-Les routes `GET|POST /internal/*` sont strictement privées et exigent
-`X-Service-Auth` en Production. Voir
-[le contrat d'API](docs/API_CONTRACT.md).
-
-## Sécurité
-
-- `API-INTERNAL` ne doit jamais être publiée sur Internet.
-- MariaDB et AD sont accessibles uniquement depuis `API-INTERNAL`.
-- Les secrets proviennent uniquement de l'environnement.
-- Les mots de passe bruts, tokens et chaînes de connexion ne sont pas loggés.
-- Aucun token de session brut n'est stocké dans MariaDB.
-- Aucun token ni hash de session n'est exposé dans les vues admin.
-- Les notes internes ne sont jamais incluses dans les contrats client.
-- Les messages admin et réponses client sont rendus comme texte brut, jamais
-  comme HTML ou Markdown interprété.
-- Une réponse client est autorisée uniquement lorsque la demande appartient au
-  `customer_id` issu de sa session.
-- Les notifications contiennent uniquement des textes courts et non sensibles.
-- Une notification est toujours filtrée par le client issu de la session.
-- Le `customer_id` vient uniquement de la session validée par API-INTERNAL.
-- `client_user` est refusé sur les routes admin ; `internal_admin` est refusé
-  sur les vues métier client pour éviter toute confusion de contexte.
-- Les headers `nosniff`, `DENY`, `Referrer-Policy` et une CSP limitée aux
-  protections de cadrage, base et formulaires sont appliqués par WEBPORTAL.
-- `X-Robots-Tag: noindex, nofollow` et `robots.txt` bloquent l'indexation du
-  portail privé.
-- Les secrets de développement précédemment exposés doivent être tournés selon
-  la procédure documentée avant toute pré-production.
-- L'OU de test autorisée est `OU=TEST_SITE_WEB,DC=home,DC=bzh`.
-- L'OU de production `KoXoAdm` est hors périmètre et explicitement refusée.
-- Aucun paiement ni aucune facturation réelle n'est ajouté.
+- ne pas changer l'architecture ;
+- ne pas connecter `WEBPORTAL` directement a MariaDB ;
+- ne pas activer l'AD reelle ;
+- ne pas ajouter paiement reel, facturation fiscale reelle, e-mail automatique,
+  SMS, push, WebSocket ou provisioning ;
+- ne pas logger tokens, cookies, mots de passe, chaines de connexion ou
+  secrets.
 
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md)
-- [Sécurité](docs/SECURITY.md)
-- [Stack technique](docs/TECH_STACK.md)
-- [Règles réseau](docs/NETWORK_RULES.md)
-- [Feuille de route](docs/ROADMAP.md)
-- [Contrat d'API](docs/API_CONTRACT.md)
-- [Modèle de données](docs/DATA_MODEL.md)
-- [Déploiement](docs/DEPLOYMENT.md)
-- [Exploitation](docs/OPERATIONS.md)
-- [Sauvegarde et restauration](docs/BACKUP_RESTORE.md)
+- [API contract](docs/API_CONTRACT.md)
+- [Data model](docs/DATA_MODEL.md)
+- [Security](docs/SECURITY.md)
+- [Deployment](docs/DEPLOYMENT.md)
+- [Operations](docs/OPERATIONS.md)
+- [Backup and restore](docs/BACKUP_RESTORE.md)
+- [Roadmap](docs/ROADMAP.md)
 - [Preproduction technique V0.16](docs/V0.16_PREPRODUCTION_TECHNIQUE.md)
-- [Rotation des secrets](docs/SECRET_ROTATION.md)
-- [UX client V0.10](docs/V0.10_UX_CLIENT.md)
-- [Workflow demandes V0.11](docs/V0.11_REQUEST_WORKFLOW.md)
-- [Notifications portail V0.12](docs/V0.12_PORTAL_NOTIFICATIONS.md)
-- [Réponses client V0.13](docs/V0.13_CLIENT_REPLIES.md)
-- [Centre d'activité admin V0.14](docs/V0.14_ADMIN_ACTIVITY.md)
-- [Règles permanentes](AGENTS.md)
+- [Recette preproduction V0.17](docs/V0.17_RECETTE_PREPRODUCTION.md)
+- [Secret rotation](docs/SECRET_ROTATION.md)
+- [Permanent rules](AGENTS.md)

@@ -8,8 +8,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\apps\api-internal\Kermaria.ApiInternal.csproj" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference
+      Include="..\..\apps\api-internal\Kermaria.ApiInternal.csproj"
+      ReferenceOutputAssembly="false"
+    />
     <PackageReference Include="MySqlConnector" Version="2.6.0" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
   </ItemGroup>
 </Project>

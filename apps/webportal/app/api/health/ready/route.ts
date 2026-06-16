@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { CORRELATION_HEADER, resolveCorrelationId } from "@/lib/correlation";
 import { checkInternalApiReadiness } from "@/lib/internal-api";
 import { validateServerRuntimeConfiguration } from "@/lib/runtime-config";
+import { validateSessionCookieConfiguration } from "@/lib/session-config";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,7 @@ export async function GET(request: NextRequest) {
 
   try {
     validateServerRuntimeConfiguration();
+    validateSessionCookieConfiguration();
     apiInternalHealthy = await checkInternalApiReadiness(correlationId);
   } catch {
     configurationHealthy = false;
