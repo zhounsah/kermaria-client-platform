@@ -24,7 +24,7 @@ déjà et ne fait pas partie des VM à créer.
 - l'interface web destinée aux clients ;
 - le backend public de type Backend for Frontend (BFF) ;
 - les routes BFF d'authentification et le cookie de session `HttpOnly` ;
-- les routes BFF d'administration en lecture seule ;
+- les routes BFF d'administration et leurs mutations bornees ;
 - les contrôles de validation, de rate limiting et de protection web ;
 - les routes publiques du contrat d'API.
 - les health checks publics du portail, sans détail interne.
@@ -48,7 +48,8 @@ aux outils de facturation internes.
 - le contrôle des rôles `client_user` et `internal_admin` ;
 - les lectures globales admin limitées et auditables ;
 - la validation stricte de configuration et la readiness MariaDB ;
-- les mocks des intégrations tant que les systèmes réels ne sont pas activés.
+- les mocks des integrations tant que les systemes reels ne sont pas actives ;
+- l'unique point d'acces autorise a MariaDB et Active Directory.
 
 Elle n'expose aucune interface directement sur Internet. Son pare-feu n'accepte
 les appels applicatifs que depuis les sources privées autorisées, en priorité
@@ -105,10 +106,11 @@ sequenceDiagram
 ```
 
 Le préfixe UI retenu est `/admin`. Il distingue clairement l'interface humaine
-des endpoints privés `/internal/*`. Les pages et endpoints admin sont en
-lecture seule. Un utilisateur client est refusé côté BFF et côté API-INTERNAL.
-Un administrateur interne n'utilise pas les vues client afin d'éviter toute
-confusion ou impersonation implicite.
+des endpoints privés `/internal/*`. Les pages et endpoints admin declenchent
+uniquement des actions bornees via le BFF, avec controle de role, validation
+des identifiants et CSRF sur les mutations sensibles. Un utilisateur client est
+refusé côté BFF et côté API-INTERNAL. Un administrateur interne n'utilise pas
+les vues client afin d'éviter toute confusion ou impersonation implicite.
 
 ## Flux réseau autorisés
 
@@ -116,7 +118,7 @@ confusion ou impersonation implicite.
 |---|---|---|---|
 | Client Internet | Cloudflare / reverse proxy | Accès HTTPS au portail | TLS, filtrage, protections anti-abus |
 | Cloudflare / reverse proxy | `WEBPORTAL` | Transmission des requêtes du portail | HTTPS, origine restreinte si possible |
-| `WEBPORTAL` | `API-INTERNAL` | Appels métier et sensibles | Réseau privé, TLS, `X-Service-Auth` en Production |
+| `WEBPORTAL` | `API-INTERNAL` | Appels métier et sensibles | Réseau privé, TLS, `X-Service-Auth` en tout environnement non `Development` |
 | `API-INTERNAL` | SQL existant | Lecture et écriture applicatives | Compte SQL dédié et droits minimaux |
 | `API-INTERNAL` | AD | Actions AD futures contrôlées | Réseau privé, compte de service limité à l'OU Clients |
 | `API-INTERNAL` | NAS, RDS, VPN, facturation | Intégrations futures | Flux explicites, authentifiés et minimaux |
@@ -185,10 +187,11 @@ dans le dépôt.
 
 ### Active Directory
 
-Les actions AD seront implémentées exclusivement dans `API-INTERNAL`. Un compte
-de service dédié sera limité à l'OU Clients et aux opérations strictement
-requises. Le changement de mot de passe exigera l'ancien mot de passe selon le
-contrat prévu. Les mots de passe ne seront ni conservés ni journalisés.
+Les actions AD sont implémentees exclusivement dans `API-INTERNAL`. Le compte
+de service dedie est borne a l'OU de test
+`OU=TEST_SITE_WEB,DC=home,DC=bzh` et aux operations strictement requises par
+la V0.18. Aucun hard delete AD, reset de mot de passe ou extension vers une OU
+de production n'est expose.
 
 ### NAS
 

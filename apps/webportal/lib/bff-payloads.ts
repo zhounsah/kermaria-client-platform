@@ -10,6 +10,8 @@ import type {
   SupportRequestPayload,
 } from "@kermaria/shared";
 
+const adUserPrincipalNamePattern = /^[^\s@]+@[^\s@]+$/;
+
 export function parseSupportRequestPayload(
   value: unknown,
 ): SupportRequestPayload | null {
@@ -319,7 +321,7 @@ export function parseAdUserCreatePayload(
     && (payload.givenName === null || payload.givenName.length <= 120)
     && (payload.surname === null || payload.surname.length <= 120)
     && (payload.userPrincipalName === null
-      || payload.userPrincipalName.length <= 255)
+      || isValidAdUserPrincipalName(payload.userPrincipalName))
     && (payload.description === null || payload.description.length <= 255)
     ? payload
     : null;
@@ -376,4 +378,37 @@ export function parseAdGroupMemberPayload(
   return /^[A-Za-z0-9._-]{1,64}$/.test(payload.userSamAccountName)
     ? payload
     : null;
+}
+
+function isValidAdUserPrincipalName(value: string) {
+  if (value.length > 255) {
+    return false;
+  }
+
+  if (/[\p{Cc}]/u.test(value) || /\s/u.test(value)) {
+    return false;
+  }
+
+  if (!adUserPrincipalNamePattern.test(value)) {
+    return false;
+  }
+
+  const [, domainPart = ""] = value.split("@", 2);
+  return getAllowedAdUserPrincipalNameDomains().includes(
+    domainPart.toLowerCase(),
+  );
+}
+
+function getAllowedAdUserPrincipalNameDomains() {
+  const configuredDomains = process.env.AD_ALLOWED_UPN_DOMAINS
+    ?.split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (configuredDomains && configuredDomains.length > 0) {
+    return configuredDomains;
+  }
+
+  const configuredDomain = process.env.AD_DOMAIN?.trim().toLowerCase();
+  return [configuredDomain || "home.bzh"];
 }

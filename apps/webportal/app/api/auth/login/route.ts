@@ -2,6 +2,7 @@ import type { ApiError, LoginPayload } from "@kermaria/shared";
 import { NextRequest, NextResponse } from "next/server";
 
 import { CORRELATION_HEADER, resolveCorrelationId } from "@/lib/correlation";
+import { ensureCsrfCookie } from "@/lib/csrf-server";
 import {
   createInternalSession,
   getInternalApiError,
@@ -45,6 +46,7 @@ export async function POST(request: NextRequest) {
       ...getSessionCookieOptions(),
       expires: new Date(session.expiresAt),
     });
+    ensureCsrfCookie(request, response);
     response.headers.set(CORRELATION_HEADER, correlationId);
     return response;
   } catch (error) {

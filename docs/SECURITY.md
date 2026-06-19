@@ -40,18 +40,22 @@ navigateur -> WEBPORTAL / BFF -> API-INTERNAL -> MariaDB
   `API-INTERNAL` lorsqu'un mode de test controle est explicitement prepare.
 - Tout flux non documente est refuse par defaut.
 
-## Durcissement V0.17
+## Durcissement V0.18
 
-La V0.17 renforce la preparation preproduction et staging sans changer
-l'architecture :
+La V0.18 conserve l'architecture et ajoute des garde-fous supplementaires :
 
 - la fiche client admin consolide identite, statut, services, demandes,
   documents commerciaux, factures, activite recente et audits via
   `API-INTERNAL` uniquement ;
 - les routes admin de detail refusent les identifiants invalides avant l'appel
   interne ;
-- `API-INTERNAL` applique ses garde-fous a tous les environnements non
-  `Development`, y compris `Staging` ;
+- `API-INTERNAL` applique `X-Service-Auth` sur `/internal/*` dans tout
+  environnement non `Development` ;
+- `RUN_MARIADB_TESTS=true` est refuse hors `Development` ;
+- les mutations BFF admin sensibles exigent un jeton CSRF sans stockage en
+  `localStorage` ou `sessionStorage` ;
+- `controlled_write` reste strictement borne a l'OU de test
+  `OU=TEST_SITE_WEB,DC=home,DC=bzh` ;
 - la readiness WEBPORTAL valide aussi la configuration du cookie de session ;
 - `Permissions-Policy`, `Cross-Origin-Opener-Policy` et
   `Cross-Origin-Resource-Policy` completent les headers existants.
@@ -75,6 +79,7 @@ API-INTERNAL refuse tout environnement non `Development` si :
 - `SQL_PASSWORD` ou `SERVICE_AUTH_TOKEN` est absent ou manifestement factice ;
 - `SESSION_COOKIE_SECURE=false` ;
 - une variable `DEMO_*` reste definie ;
+- `RUN_MARIADB_TESTS=true` ;
 - `AD_INTEGRATION_MODE=enabled`.
 
 WEBPORTAL refuse ses appels internes si `INTERNAL_API_URL` est absente,
@@ -93,7 +98,7 @@ invalide ou locale sans derogation explicite `ALLOW_LOCAL_INTERNAL_API_URL=true`
 - Aucun token, cookie, mot de passe, chaine de connexion ou secret dans les
   logs, audits ou vues admin.
 
-Politique cookie V0.17 :
+Politique cookie V0.18 :
 
 - `HttpOnly` obligatoire ;
 - `Secure` obligatoire hors developpement local ;
@@ -117,8 +122,8 @@ cookie HttpOnly -> BFF -> session API-INTERNAL -> user_id -> customer_id
 - Les validations BFF/API refusent les identifiants mal formes avant
   interpretation metier.
 - Les tests MariaDB opt-in couvrent deja des cas d'isolation support,
-  notification et document commercial ; la V0.17 etend la surface admin avec la
-  fiche client consolidee.
+  notification et document commercial ; la V0.18 etend la surface admin avec la
+  fiche client et les flux AD controles.
 
 ## Autorisation
 
@@ -126,9 +131,12 @@ cookie HttpOnly -> BFF -> session API-INTERNAL -> user_id -> customer_id
 - `internal_admin` accede aux vues globales et aux mutations deja bornees du
   workflow.
 - Le controle de role est execute cote BFF puis repete dans API-INTERNAL.
-- La fiche client admin reste en lecture seule.
-- Aucune suppression client destructive, aucun provisioning, aucune action AD
-  reelle, aucun paiement, e-mail, SMS, push ou WebSocket n'est introduit.
+- Les mutations admin restent bornees et auditees.
+- Les actions AD reelles ne sont autorisees qu'en `controlled_write` dans l'OU
+  de test validee.
+- Aucune suppression client destructive, aucun hard delete AD, aucun
+  provisioning complet, aucun paiement, e-mail, SMS, push ou WebSocket n'est
+  introduit.
 
 ## Logs, audits et erreurs
 
@@ -187,12 +195,16 @@ WEBPORTAL applique :
 
 ## Active Directory
 
-- `AD_INTEGRATION_MODE=disabled` reste le mode normal.
-- Les modes `mock` et `test` ne doivent realiser aucune mutation reelle.
-- L'integration AD reelle reste hors perimetre V0.17.
-- L'OU de production `KoXoAdm` est hors perimetre et explicitement refusee.
+- `AD_INTEGRATION_MODE=disabled` reste le mode le plus restrictif.
+- `mock` reste reserve aux tests et ne doit realiser aucune mutation reelle.
+- `read_only` autorise uniquement les lectures AD.
+- `controlled_write` n'autorise que des actions bornees a
+  `OU=TEST_SITE_WEB,DC=home,DC=bzh`.
+- Aucun hard delete AD, reset de mot de passe ou authentification portail
+  contre AD n'est expose.
+- Toute OU de production reste hors perimetre et explicitement refusee.
 
-## Recette securite V0.17
+## Recette securite V0.18
 
 Verifier au minimum :
 

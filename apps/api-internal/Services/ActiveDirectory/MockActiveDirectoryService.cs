@@ -92,6 +92,14 @@ public sealed class MockActiveDirectoryService : IActiveDirectoryService
             return Task.FromResult(InvalidObject("INVALID_REQUEST"));
         }
 
+        if (!ActiveDirectoryInputValidator.TryNormalizeUserPrincipalName(
+                request!.UserPrincipalName,
+                _configuration.Domain ?? "home.bzh",
+                out var normalizedUserPrincipalName))
+        {
+            return Task.FromResult(InvalidObject("INVALID_REQUEST"));
+        }
+
         lock (_syncRoot)
         {
             var userDn = _scope.BuildUserDn(
@@ -111,10 +119,8 @@ public sealed class MockActiveDirectoryService : IActiveDirectoryService
                 samAccountName: samAccountName,
                 distinguishedName: userDn,
                 displayName: displayName,
-                userPrincipalName: string.IsNullOrWhiteSpace(
-                    request!.UserPrincipalName)
-                    ? $"{samAccountName}@{_configuration.Domain ?? "home.bzh"}"
-                    : request.UserPrincipalName.Trim(),
+                userPrincipalName: normalizedUserPrincipalName
+                    ?? $"{samAccountName}@{_configuration.Domain ?? "home.bzh"}",
                 isDisabled: true);
             _objectsByDn[userDn] = user;
 

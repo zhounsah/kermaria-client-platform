@@ -1,6 +1,6 @@
 # Deploiement
 
-Ce runbook V0.17 couvre la mise en place de `Development`, `Staging` et
+Ce runbook V0.18 couvre la mise en place de `Development`, `Staging` et
 `Production` en conservant strictement l'architecture :
 
 ```text
@@ -16,7 +16,7 @@ browser -> WEBPORTAL / BFF -> API-INTERNAL -> MariaDB
 | `WEBPORTAL` | Ubuntu Server LTS | Reverse proxy HTTPS uniquement |
 | `API-INTERNAL` | VM Windows Server Core ou hote interne dedie | Reseau prive uniquement |
 | MariaDB | Serveur existant | `API-INTERNAL` uniquement |
-| Active Directory | Infrastructure existante | Desactivee en V0.17 |
+| Active Directory | Infrastructure existante | Bornee a l'OU de test en V0.18 |
 
 ## Variables API-INTERNAL
 
@@ -159,10 +159,10 @@ Sont interdits :
 9. Executer la recette de
    [V0.17](V0.17_RECETTE_PREPRODUCTION.md).
 
-## Garde-fous V0.17
+## Garde-fous V0.18
 
 - aucune connexion SQL directe depuis `WEBPORTAL` ;
-- aucune AD reelle ;
+- aucune AD hors de l'OU de test validee ;
 - aucun paiement, e-mail, SMS, push, WebSocket ou provisioning ;
 - aucune suppression client destructive ;
 - aucune confusion volontaire staging -> production.

@@ -1,4 +1,8 @@
 import type { ApiError } from "@kermaria/shared";
+import {
+  CSRF_HEADER_NAME,
+  readCsrfTokenFromDocumentCookie,
+} from "@/lib/csrf";
 
 type BffSuccess<T> = {
   ok: true;
@@ -29,9 +33,18 @@ export async function requestBffJson<T>(
   const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
 
   try {
+    const headers = new Headers(init.headers);
+    const csrfToken = shouldAttachCsrfToken(path, init.method)
+      ? await ensureCsrfToken()
+      : null;
+    if (csrfToken) {
+      headers.set(CSRF_HEADER_NAME, csrfToken);
+    }
+
     const response = await fetch(path, {
       ...init,
       cache: "no-store",
+      headers,
       signal: controller.signal,
     });
     const payload = await parseJsonSafely(response);
@@ -84,6 +97,34 @@ export async function requestBffJson<T>(
   }
 }
 
+async function ensureCsrfToken() {
+  const existingToken = readCsrfTokenFromDocumentCookie();
+  if (existingToken) {
+    return existingToken;
+  }
+
+  await fetch("/api/auth/me", {
+    cache: "no-store",
+    credentials: "same-origin",
+    method: "GET",
+  });
+
+  return readCsrfTokenFromDocumentCookie();
+}
+
+function shouldAttachCsrfToken(
+  path: `/api/${string}`,
+  method: string | undefined,
+) {
+  if (!method || !path.startsWith("/api/admin/")) {
+    return false;
+  }
+
+  return ["POST", "PATCH", "PUT", "DELETE"].includes(
+    method.toUpperCase(),
+  );
+}
+
 async function parseJsonSafely(response: Response): Promise<unknown | null> {
   const contentType = response.headers.get("content-type") ?? "";
   if (!contentType.toLowerCase().includes("application/json")) {
@@ -130,6 +171,10 @@ function userMessageFor(status: number, code?: string) {
   }
 
   if (code === "ACCESS_DENIED" || status === 403) {
+    if (code === "CSRF_FORBIDDEN") {
+      return "La session doit confirmer cette action avant de continuer.";
+    }
+
     return "Vous n’êtes pas autorisé à effectuer cette action.";
   }
 

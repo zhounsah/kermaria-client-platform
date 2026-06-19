@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { CORRELATION_HEADER, resolveCorrelationId } from "@/lib/correlation";
+import { clearCsrfCookie } from "@/lib/csrf-server";
 import { revokeInternalSession } from "@/lib/internal-api";
 import {
   getSessionCookieName,
@@ -29,6 +30,7 @@ export async function POST(request: NextRequest) {
     ...getSessionCookieOptions(),
     expires: new Date(0),
   });
+  clearCsrfCookie(response);
   response.headers.set(CORRELATION_HEADER, correlationId);
   return response;
 }

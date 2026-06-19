@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { CORRELATION_HEADER, resolveCorrelationId } from "@/lib/correlation";
 import {
+  clearCsrfCookie,
+  ensureCsrfCookie,
+} from "@/lib/csrf-server";
+import {
   getInternalApiError,
   getInternalSession,
 } from "@/lib/internal-api";
@@ -28,6 +32,7 @@ export async function GET(request: NextRequest) {
       user: session.user,
       expiresAt: session.expiresAt,
     });
+    ensureCsrfCookie(request, response);
     response.headers.set(CORRELATION_HEADER, correlationId);
     return response;
   } catch (error) {
@@ -53,6 +58,7 @@ export async function GET(request: NextRequest) {
       ...getSessionCookieOptions(),
       expires: new Date(0),
     });
+    clearCsrfCookie(response);
     return response;
   }
 }

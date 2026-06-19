@@ -14,8 +14,9 @@ export function GET(request: NextRequest) {
     request.nextUrl.searchParams.get("customerReference")?.trim() ?? null;
 
   if (
-    query.length > 100
-    || (customerReference !== null && !isValidPortalIdentifier(customerReference))
+    !customerReference
+    || query.length > 100
+    || !isValidPortalIdentifier(customerReference)
   ) {
     return controlledAdminError(
       400,
@@ -27,9 +28,7 @@ export function GET(request: NextRequest) {
 
   const params = new URLSearchParams();
   params.set("query", query);
-  if (customerReference) {
-    params.set("customerReference", customerReference);
-  }
+  params.set("customerReference", customerReference);
 
   return handleAdminGet<AdDirectoryObjectSummary[]>(
     request,

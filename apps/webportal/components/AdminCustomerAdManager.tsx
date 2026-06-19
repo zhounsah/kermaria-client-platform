@@ -145,6 +145,27 @@ function statusTone(status: AdminAdStatus["status"] | "unknown") {
   }
 }
 
+function describeAdMode(status: AdminAdStatus | null) {
+  if (!status) {
+    return "Le statut Active Directory n'est pas disponible.";
+  }
+
+  switch (status.mode) {
+    case "disabled":
+      return "Aucune connexion Active Directory ni action AD n'est autorisee.";
+    case "mock":
+      return "Les actions AD restent simulees pour les tests et n'ecrivent rien dans l'annuaire.";
+    case "read_only":
+      return "Les recherches AD sont autorisees mais toutes les ecritures sont refusees.";
+    case "controlled_write":
+      return status.writesEnabled
+        ? "Les ecritures AD reelles sont strictement bornees a l'OU de test OU=TEST_SITE_WEB,DC=home,DC=bzh."
+        : "Le mode controlled_write est configure sans disponibilite d'ecriture.";
+    default:
+      return "Le mode AD n'est pas reconnu par l'interface.";
+  }
+}
+
 export function AdminCustomerAdManager({
   customerReference,
   initialStatus,
@@ -304,11 +325,13 @@ export function AdminCustomerAdManager({
     linkedObjects,
   );
 
-  async function submitMutation<TPayload>(
+async function submitMutation<TPayload>(
     path: `/api/${string}`,
     method: "POST" | "DELETE",
     payload: TPayload | undefined,
-    successText: string,
+    successText:
+      | string
+      | ((data: AdMutationResponse | AdLinkMutationResponse) => string),
     onSuccess?: (data: AdMutationResponse | AdLinkMutationResponse) => void,
   ) {
     if (busyRef.current) {
@@ -334,7 +357,12 @@ export function AdminCustomerAdManager({
 
     if (result.ok) {
       onSuccess?.(result.data);
-      setMessage({ tone: "success", text: successText });
+      setMessage({
+        tone: "success",
+        text: typeof successText === "function"
+          ? successText(result.data)
+          : successText,
+      });
       if ("id" in result.data && typeof result.data.id === "string" && method === "DELETE") {
         const deletedId = result.data.id;
         setRemovedLinkIds((current) => (
@@ -485,7 +513,9 @@ export function AdminCustomerAdManager({
       {
         userSamAccountName: membership.userSamAccountName.trim(),
       } satisfies AdGroupMemberPayload,
-      "Membre ajoute au groupe.",
+      (data) => data.code === "AD_GROUP_MEMBER_ALREADY_PRESENT"
+        ? "L'utilisateur etait deja membre du groupe."
+        : "Membre ajoute au groupe.",
     );
   }
 
@@ -502,7 +532,9 @@ export function AdminCustomerAdManager({
       `/api/admin/customers/${encodeURIComponent(customerReference)}/ad/groups/${encodeURIComponent(membershipGroupSam.trim())}/members/${encodeURIComponent(membership.userSamAccountName.trim())}`,
       "DELETE",
       undefined,
-      "Membre retire du groupe.",
+      (data) => data.code === "AD_GROUP_MEMBER_ALREADY_ABSENT"
+        ? "L'utilisateur n'etait pas membre du groupe."
+        : "Membre retire du groupe.",
     );
   }
 
@@ -520,7 +552,9 @@ export function AdminCustomerAdManager({
       `/api/admin/customers/${encodeURIComponent(customerReference)}/ad/users/${encodeURIComponent(lifecycleSam.trim())}/disable`,
       "POST",
       {},
-      "Utilisateur desactive.",
+      (data) => data.code === "AD_USER_ALREADY_DISABLED"
+        ? "L'utilisateur etait deja desactive."
+        : "Utilisateur desactive.",
     );
   }
 
@@ -537,7 +571,9 @@ export function AdminCustomerAdManager({
       `/api/admin/customers/${encodeURIComponent(customerReference)}/ad/users/${encodeURIComponent(lifecycleSam.trim())}/move-to-disabled`,
       "POST",
       {},
-      "Utilisateur deplace vers l'OU Disabled.",
+      (data) => data.code === "AD_USER_ALREADY_IN_DISABLED_OU"
+        ? "L'utilisateur etait deja dans l'OU Disabled."
+        : "Utilisateur deplace vers l'OU Disabled.",
     );
   }
 
@@ -556,7 +592,10 @@ export function AdminCustomerAdManager({
         <div className="section-heading">
           <div>
             <h2>Administration Active Directory</h2>
-            <p>Scope strictement borne a l&apos;OU de test pour {customerReference}.</p>
+            <p>
+              {describeAdMode(status)} Client cible : {customerReference}. Aucun
+              hard delete AD n&apos;est expose.
+            </p>
           </div>
           <StatusBadge
             label={status ? status.status : "indisponible"}
@@ -570,8 +609,16 @@ export function AdminCustomerAdManager({
               <span>{status?.mode ?? "indisponible"}</span>
             </div>
             <StatusBadge
-              label={status?.writesEnabled ? "Ecriture bornee" : "Lecture seule"}
-              tone={status?.writesEnabled ? "warning" : "info"}
+              label={status?.writesEnabled
+                ? "Ecriture bornee"
+                : status?.readsEnabled
+                  ? "Lecture sans ecriture"
+                  : "AD desactivee"}
+              tone={status?.writesEnabled
+                ? "warning"
+                : status?.readsEnabled
+                  ? "info"
+                  : "neutral"}
             />
           </div>
           <div className="security-item">

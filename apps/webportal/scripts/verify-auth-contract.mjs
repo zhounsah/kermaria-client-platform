@@ -12,6 +12,8 @@ const meRoute = await read("app/api/auth/me/route.ts");
 const revokeOthersRoute = await read(
   "app/api/auth/revoke-other-sessions/route.ts",
 );
+const csrfHelper = await read("lib/csrf.ts");
+const csrfServerHelper = await read("lib/csrf-server.ts");
 const sessionConfig = await read("lib/session-config.ts");
 const internalApi = await read("lib/internal-api.ts");
 const runtimeConfig = await read("lib/runtime-config.ts");
@@ -33,21 +35,31 @@ assert.doesNotMatch(
 
 assert.match(loginRoute, /export async function POST\(/);
 assert.match(loginRoute, /getSessionCookieOptions\(\)/);
+assert.match(loginRoute, /ensureCsrfCookie/);
 assert.doesNotMatch(loginRoute, /sessionToken\s*[:,]\s*session\.sessionToken/);
 
 assert.match(logoutRoute, /export async function POST\(/);
 assert.match(logoutRoute, /revokeInternalSession/);
+assert.match(logoutRoute, /clearCsrfCookie/);
 assert.match(logoutRoute, /expires:\s*new Date\(0\)/);
 
 assert.match(meRoute, /export async function GET\(/);
 assert.match(meRoute, /authenticated:\s*false/);
 assert.match(meRoute, /authenticated:\s*true/);
+assert.match(meRoute, /ensureCsrfCookie/);
 assert.match(revokeOthersRoute, /export async function POST\(/);
 assert.match(revokeOthersRoute, /revokeOtherInternalSessions/);
 assert.doesNotMatch(
   revokeOthersRoute,
   /URLSearchParams|localStorage|sessionStorage/i,
 );
+
+assert.match(csrfHelper, /CSRF_COOKIE_NAME/);
+assert.match(csrfHelper, /CSRF_HEADER_NAME/);
+assert.match(csrfHelper, /X-CSRF-Token/);
+assert.match(csrfServerHelper, /timingSafeEqual/);
+assert.match(csrfServerHelper, /httpOnly:\s*false/);
+assert.doesNotMatch(csrfServerHelper, /localStorage|sessionStorage/);
 
 assert.match(sessionConfig, /process\.env\.SESSION_COOKIE_NAME/);
 assert.match(sessionConfig, /process\.env\.SESSION_COOKIE_SECURE/);
@@ -66,6 +78,8 @@ assert.match(runtimeConfig, /process\.env\.INTERNAL_API_URL/);
 assert.doesNotMatch(runtimeConfig, /NEXT_PUBLIC_INTERNAL_API_URL/);
 assert.match(clientApi, /path:\s*`\/api\/\$\{string\}`/);
 assert.match(clientApi, /AbortController/);
+assert.match(clientApi, /CSRF_HEADER_NAME/);
+assert.match(clientApi, /readCsrfTokenFromDocumentCookie/);
 assert.doesNotMatch(
   clientApi,
   /INTERNAL_API_URL|SERVICE_AUTH_TOKEN|localStorage|sessionStorage/,

@@ -145,10 +145,17 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
         var distinguishedName = _scope.BuildUserDn(
             normalizedCustomerReference,
             samAccountName);
-        var userPrincipalName = string.IsNullOrWhiteSpace(
-                request!.UserPrincipalName)
-            ? $"{samAccountName}@{_configuration.Domain}"
-            : request.UserPrincipalName.Trim();
+        var defaultUserPrincipalName = $"{samAccountName}@{_configuration.Domain}";
+        if (!ActiveDirectoryInputValidator.TryNormalizeUserPrincipalName(
+                request!.UserPrincipalName,
+                _configuration.Domain,
+                out var normalizedUserPrincipalName))
+        {
+            return Task.FromResult(InvalidObject());
+        }
+
+        var userPrincipalName = normalizedUserPrincipalName
+            ?? defaultUserPrincipalName;
 
         return Task.FromResult(ExecuteWrite(() =>
         {
@@ -642,29 +649,51 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
                     memberDn,
                     StringComparison.OrdinalIgnoreCase));
 
-            if (shouldAdd && !alreadyPresent)
+            if (shouldAdd && alreadyPresent)
+            {
+                group.RefreshCache();
+                return new AdServiceResult<AdDirectoryObjectSummary>(
+                    StatusCodes.Status200OK,
+                    "AD_GROUP_MEMBER_ALREADY_PRESENT",
+                    "Active Directory group membership is already present.",
+                    MapEntry(group),
+                    false);
+            }
+
+            if (!shouldAdd && !alreadyPresent)
+            {
+                group.RefreshCache();
+                return new AdServiceResult<AdDirectoryObjectSummary>(
+                    StatusCodes.Status200OK,
+                    "AD_GROUP_MEMBER_ALREADY_ABSENT",
+                    "Active Directory group membership is already absent.",
+                    MapEntry(group),
+                    false);
+            }
+
+            if (shouldAdd)
             {
                 members.Add(memberDn);
                 group.CommitChanges();
             }
-            else if (!shouldAdd && alreadyPresent)
+            else
             {
                 members.Remove(memberDn);
                 group.CommitChanges();
             }
 
             group.RefreshCache();
-            return MapEntry(group);
-        },
-        successCode,
-        successMessage);
+            return new AdServiceResult<AdDirectoryObjectSummary>(
+                StatusCodes.Status200OK,
+                successCode,
+                successMessage,
+                MapEntry(group),
+                true);
+        });
     }
 
     private AdServiceResult<AdDirectoryObjectSummary> ExecuteWrite(
-        Func<AdDirectoryObjectSummary> writeAction,
-        string successCode,
-        string successMessage,
-        int successStatusCode = StatusCodes.Status200OK)
+        Func<AdServiceResult<AdDirectoryObjectSummary>> writeAction)
     {
         var readinessFailure = ValidateReadiness();
         if (readinessFailure is not null)
@@ -674,12 +703,7 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
 
         try
         {
-            return new AdServiceResult<AdDirectoryObjectSummary>(
-                successStatusCode,
-                successCode,
-                successMessage,
-                writeAction(),
-                true);
+            return writeAction();
         }
         catch (DirectoryServicesCOMException exception)
             when (IsAlreadyExists(exception))
@@ -715,6 +739,20 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
                 "AD_UNAVAILABLE",
                 "Active Directory is temporarily unavailable.");
         }
+    }
+
+    private AdServiceResult<AdDirectoryObjectSummary> ExecuteWrite(
+        Func<AdDirectoryObjectSummary> writeAction,
+        string successCode,
+        string successMessage,
+        int successStatusCode = StatusCodes.Status200OK)
+    {
+        return ExecuteWrite(() => new AdServiceResult<AdDirectoryObjectSummary>(
+                successStatusCode,
+                successCode,
+                successMessage,
+                writeAction(),
+                true));
     }
 
     private AdServiceResult<AdDirectoryObjectSummary>? ValidateReadiness()

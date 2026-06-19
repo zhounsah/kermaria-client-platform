@@ -62,6 +62,14 @@ public static class RuntimeConfigurationValidator
             }
         }
 
+        if (string.Equals(
+                configuration["RUN_MARIADB_TESTS"]?.Trim(),
+                "true",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            invalidVariables.Add("RUN_MARIADB_TESTS");
+        }
+
         ValidateSecret(
             configuration,
             "SQL_PASSWORD",

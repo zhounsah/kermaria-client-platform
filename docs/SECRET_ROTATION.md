@@ -61,7 +61,8 @@ Ne jamais utiliser ce seed en Production.
 
 ## Token interservice
 
-`SERVICE_AUTH_TOKEN` protège les routes `/internal/*` en Production.
+`SERVICE_AUTH_TOKEN` protège les routes `/internal/*` dans tout environnement
+non `Development`.
 
 1. Générer une nouvelle valeur forte hors dépôt.
 2. Mettre à jour le secret API-INTERNAL.

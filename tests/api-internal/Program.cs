@@ -14,6 +14,7 @@ using Microsoft.Extensions.Hosting;
 const string correlationHeader = "X-Correlation-Id";
 const string dataSourceHeader = "X-Data-Source";
 const string sessionHeader = "X-Portal-Session";
+const string serviceAuthHeader = "X-Service-Auth";
 const string testCorrelationId = "v0.8-smoke-test";
 const string mockEmail = "portal.test@example.invalid";
 const string mockPassword = "NOT_A_REAL_PASSWORD_V07";
@@ -58,11 +59,13 @@ async Task<int> RunAsync(string[] arguments)
     {
         VerifyIdentifierMapping();
         VerifyActiveDirectoryPathScope();
+        VerifyChildProcessEnvironmentGuardrails();
         await RunMockTestsAsync();
         await RunMockActiveDirectoryModeTestsAsync();
         await RunReadOnlyActiveDirectoryModeTestsAsync();
         await RunUnavailableReadinessTestAsync();
         await RunProductionConfigurationValidationTestsAsync();
+        await RunServiceAuthenticationGuardTestsAsync();
         await RunDisabledAccountTestAsync();
         await RunExpiredSessionTestAsync();
         await RunLockoutResetTestAsync();
@@ -1507,11 +1510,110 @@ async Task RunProductionConfigurationValidationTestsAsync()
                 "**REPLACE_WITH_SECURE_VALUE**";
         });
 
+    VerifyRejectedProductionConfiguration(
+        "RUN_MARIADB_TESTS",
+        configuration =>
+        {
+            configuration["RUN_MARIADB_TESTS"] = "true";
+        });
+
     ValidateRuntimeConfiguration(
         new ConfigurationBuilder().Build(),
         "Development");
 
     await Task.CompletedTask;
+}
+
+async Task RunServiceAuthenticationGuardTestsAsync()
+{
+    var baseUrl = SmokeTestRuntimeHelpers.CreateLoopbackBaseUrl();
+    const string serviceAuthToken = "NOT_A_REAL_SERVICE_AUTH_GUARD_VALUE_V019";
+    using var api = StartApi(
+        baseUrl,
+        startInfo =>
+        {
+            startInfo.Environment["ASPNETCORE_ENVIRONMENT"] = "Staging";
+            startInfo.Environment["DOTNET_ENVIRONMENT"] = "Staging";
+            startInfo.Environment["SQL_PROVIDER"] = "mariadb";
+            startInfo.Environment["SQL_HOST"] = "127.0.0.1";
+            startInfo.Environment["SQL_PORT"] = "3306";
+            startInfo.Environment["SQL_DATABASE"] = "service-auth-guard";
+            startInfo.Environment["SQL_USERNAME"] = "service-auth-guard";
+            startInfo.Environment["SQL_PASSWORD"] =
+                "NOT_A_REAL_SQL_GUARD_VALUE_V019";
+            startInfo.Environment["SERVICE_AUTH_TOKEN"] = serviceAuthToken;
+            startInfo.Environment["SESSION_COOKIE_SECURE"] = "true";
+            startInfo.Environment["AD_INTEGRATION_MODE"] = "disabled";
+            foreach (var variable in new[]
+            {
+                "DEMO_PORTAL_EMAIL",
+                "DEMO_PORTAL_PASSWORD",
+                "DEMO_PORTAL_STATUS",
+                "DEMO_INTERNAL_ADMIN_EMAIL",
+                "DEMO_INTERNAL_ADMIN_PASSWORD"
+            })
+            {
+                startInfo.Environment.Remove(variable);
+            }
+        });
+    using var handler = new HttpClientHandler { UseProxy = false };
+    using var client = new HttpClient(handler);
+
+    try
+    {
+        using var healthResponse = await WaitForHealthAsync(
+            client,
+            api.Process,
+            baseUrl,
+            api.Logs);
+        Ensure(
+            healthResponse.IsSuccessStatusCode,
+            "Le health check staging doit repondre pour tester X-Service-Auth.");
+
+        using var missingHeaderResponse = await client.GetAsync(
+            $"{baseUrl}/internal/admin/ad/status");
+        using var missingHeaderPayload = JsonDocument.Parse(
+            await missingHeaderResponse.Content.ReadAsStringAsync());
+        Ensure(
+            missingHeaderResponse.StatusCode == HttpStatusCode.Unauthorized
+            && missingHeaderPayload.RootElement.GetProperty("code").GetString()
+                == "SERVICE_AUTH_REQUIRED",
+            "Les routes /internal/* doivent exiger X-Service-Auth hors Development.");
+
+        using var invalidHeaderRequest = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"{baseUrl}/internal/admin/ad/status");
+        invalidHeaderRequest.Headers.Add(
+            serviceAuthHeader,
+            "NOT_A_REAL_INVALID_SERVICE_AUTH_V019");
+        using var invalidHeaderResponse = await client.SendAsync(
+            invalidHeaderRequest);
+        using var invalidHeaderPayload = JsonDocument.Parse(
+            await invalidHeaderResponse.Content.ReadAsStringAsync());
+        Ensure(
+            invalidHeaderResponse.StatusCode == HttpStatusCode.Unauthorized
+            && invalidHeaderPayload.RootElement.GetProperty("code").GetString()
+                == "SERVICE_AUTH_REQUIRED",
+            "Un X-Service-Auth invalide doit etre refuse hors Development.");
+
+        using var validHeaderRequest = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"{baseUrl}/internal/admin/ad/status");
+        validHeaderRequest.Headers.Add(serviceAuthHeader, serviceAuthToken);
+        using var validHeaderResponse = await client.SendAsync(
+            validHeaderRequest);
+        var validHeaderText =
+            await validHeaderResponse.Content.ReadAsStringAsync();
+        Ensure(
+            !validHeaderText.Contains(
+                "SERVICE_AUTH_REQUIRED",
+                StringComparison.Ordinal),
+            "Un X-Service-Auth valide ne doit pas etre rejete par le middleware.");
+    }
+    finally
+    {
+        await api.StopAsync();
+    }
 }
 
 void VerifyRejectedProductionConfiguration(
@@ -2803,6 +2905,26 @@ async Task VerifyMockActiveDirectoryAdminRoutesAsync(
         && addMemberPayload.RootElement.GetProperty("changed").GetBoolean(),
         "L'ajout d'un membre AD mock doit rÃ©ussir.");
 
+    using var addMemberAgainRequest = CreateSessionRequest(
+        HttpMethod.Post,
+        $"{baseUrl}/internal/admin/customers/CLI-DEMO-0042/ad/groups/{createdGroupSamAccountName}/members",
+        adminSessionToken);
+    addMemberAgainRequest.Content = JsonContent.Create(new
+    {
+        userSamAccountName = createdUserSamAccountName
+    });
+    using var addMemberAgainResponse = await client.SendAsync(
+        addMemberAgainRequest);
+    using var addMemberAgainPayload = JsonDocument.Parse(
+        await addMemberAgainResponse.Content.ReadAsStringAsync());
+    Ensure(
+        addMemberAgainResponse.StatusCode == HttpStatusCode.OK
+        && addMemberAgainPayload.RootElement.GetProperty("code").GetString()
+            == "AD_GROUP_MEMBER_ALREADY_PRESENT"
+        && !addMemberAgainPayload.RootElement.GetProperty("changed")
+            .GetBoolean(),
+        "Ajouter un membre deja present doit repondre unchanged.");
+
     using var removeMemberRequest = CreateSessionRequest(
         HttpMethod.Delete,
         $"{baseUrl}/internal/admin/customers/CLI-DEMO-0042/ad/groups/{createdGroupSamAccountName}/members/{createdUserSamAccountName}",
@@ -2816,6 +2938,22 @@ async Task VerifyMockActiveDirectoryAdminRoutesAsync(
             == "AD_GROUP_MEMBER_REMOVED"
         && removeMemberPayload.RootElement.GetProperty("changed").GetBoolean(),
         "Le retrait d'un membre AD mock doit rÃ©ussir.");
+
+    using var removeMemberAgainRequest = CreateSessionRequest(
+        HttpMethod.Delete,
+        $"{baseUrl}/internal/admin/customers/CLI-DEMO-0042/ad/groups/{createdGroupSamAccountName}/members/{createdUserSamAccountName}",
+        adminSessionToken);
+    using var removeMemberAgainResponse = await client.SendAsync(
+        removeMemberAgainRequest);
+    using var removeMemberAgainPayload = JsonDocument.Parse(
+        await removeMemberAgainResponse.Content.ReadAsStringAsync());
+    Ensure(
+        removeMemberAgainResponse.StatusCode == HttpStatusCode.OK
+        && removeMemberAgainPayload.RootElement.GetProperty("code")
+            .GetString() == "AD_GROUP_MEMBER_ALREADY_ABSENT"
+        && !removeMemberAgainPayload.RootElement.GetProperty("changed")
+            .GetBoolean(),
+        "Retirer un membre absent doit repondre unchanged.");
 
     using var disableUserRequest = CreateSessionRequest(
         HttpMethod.Post,
@@ -2918,6 +3056,45 @@ async Task VerifyMockActiveDirectoryAdminRoutesAsync(
         && invalidDnLinkPayload.RootElement.GetProperty("code").GetString()
             == "AD_TARGET_OUTSIDE_ALLOWED_OU",
         "Un DN hors de l'OU autorisÃ©e doit Ãªtre refusÃ©.");
+
+    using var invalidSamCreateUserRequest = CreateSessionRequest(
+        HttpMethod.Post,
+        $"{baseUrl}/internal/admin/customers/CLI-DEMO-0042/ad/users",
+        adminSessionToken);
+    invalidSamCreateUserRequest.Content = JsonContent.Create(new
+    {
+        samAccountName = "sam invalide",
+        displayName = "Invalid Sam"
+    });
+    using var invalidSamCreateUserResponse = await client.SendAsync(
+        invalidSamCreateUserRequest);
+    using var invalidSamCreateUserPayload = JsonDocument.Parse(
+        await invalidSamCreateUserResponse.Content.ReadAsStringAsync());
+    Ensure(
+        invalidSamCreateUserResponse.StatusCode == HttpStatusCode.BadRequest
+        && invalidSamCreateUserPayload.RootElement.GetProperty("code")
+            .GetString() == "INVALID_REQUEST",
+        "Un sAMAccountName invalide doit etre refuse.");
+
+    using var invalidUpnCreateUserRequest = CreateSessionRequest(
+        HttpMethod.Post,
+        $"{baseUrl}/internal/admin/customers/CLI-DEMO-0042/ad/users",
+        adminSessionToken);
+    invalidUpnCreateUserRequest.Content = JsonContent.Create(new
+    {
+        samAccountName = "test.web.0042.invalidupn",
+        displayName = "Invalid Upn",
+        userPrincipalName = "bad upn@example.invalid"
+    });
+    using var invalidUpnCreateUserResponse = await client.SendAsync(
+        invalidUpnCreateUserRequest);
+    using var invalidUpnCreateUserPayload = JsonDocument.Parse(
+        await invalidUpnCreateUserResponse.Content.ReadAsStringAsync());
+    Ensure(
+        invalidUpnCreateUserResponse.StatusCode == HttpStatusCode.BadRequest
+        && invalidUpnCreateUserPayload.RootElement.GetProperty("code")
+            .GetString() == "INVALID_REQUEST",
+        "Un userPrincipalName invalide doit etre refuse.");
 
     using var missingCustomerRequest = CreateSessionRequest(
         HttpMethod.Post,
@@ -4302,6 +4479,7 @@ RunningApi StartApi(
     startInfo.ArgumentList.Add("--urls");
     startInfo.ArgumentList.Add(baseUrl);
     configure(startInfo);
+    ApplyChildProcessEnvironmentGuardrails(startInfo);
 
     var logs = new StringBuilder();
     var process = new Process { StartInfo = startInfo };
@@ -4334,6 +4512,62 @@ RunningApi StartApi(
     process.BeginOutputReadLine();
     process.BeginErrorReadLine();
     return new RunningApi(process, logs);
+}
+
+void VerifyChildProcessEnvironmentGuardrails()
+{
+    var nonDevelopmentStartInfo = new ProcessStartInfo();
+    nonDevelopmentStartInfo.Environment["ASPNETCORE_ENVIRONMENT"] = "Staging";
+    nonDevelopmentStartInfo.Environment["DOTNET_ENVIRONMENT"] = "Staging";
+    nonDevelopmentStartInfo.Environment["RUN_MARIADB_TESTS"] = "true";
+    ApplyChildProcessEnvironmentGuardrails(nonDevelopmentStartInfo);
+    Ensure(
+        !string.Equals(
+            nonDevelopmentStartInfo.Environment["RUN_MARIADB_TESTS"],
+            "true",
+            StringComparison.OrdinalIgnoreCase),
+        "Un process enfant non Development ne doit pas heriter de RUN_MARIADB_TESTS=true.");
+
+    var developmentStartInfo = new ProcessStartInfo();
+    developmentStartInfo.Environment["ASPNETCORE_ENVIRONMENT"] = "Development";
+    developmentStartInfo.Environment["DOTNET_ENVIRONMENT"] = "Development";
+    developmentStartInfo.Environment["RUN_MARIADB_TESTS"] = "true";
+    ApplyChildProcessEnvironmentGuardrails(developmentStartInfo);
+    Ensure(
+        string.Equals(
+            developmentStartInfo.Environment["RUN_MARIADB_TESTS"],
+            "true",
+            StringComparison.OrdinalIgnoreCase),
+        "Un process enfant Development doit conserver RUN_MARIADB_TESTS=true.");
+}
+
+void ApplyChildProcessEnvironmentGuardrails(ProcessStartInfo startInfo)
+{
+    if (IsDevelopmentEnvironment(startInfo.Environment))
+    {
+        return;
+    }
+
+    startInfo.Environment["RUN_MARIADB_TESTS"] = "false";
+}
+
+bool IsDevelopmentEnvironment(
+    IDictionary<string, string?> environment)
+{
+    environment.TryGetValue(
+        "ASPNETCORE_ENVIRONMENT",
+        out var aspNetEnvironment);
+    environment.TryGetValue(
+        "DOTNET_ENVIRONMENT",
+        out var dotNetEnvironment);
+    return string.Equals(
+               aspNetEnvironment,
+               "Development",
+               StringComparison.OrdinalIgnoreCase)
+        || string.Equals(
+               dotNetEnvironment,
+               "Development",
+               StringComparison.OrdinalIgnoreCase);
 }
 
 void ValidateRuntimeConfiguration(

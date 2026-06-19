@@ -143,8 +143,8 @@ Contraintes :
 - `X-Data-Source: mariadb|mock` sur les lectures portail.
 - `X-Portal-Session` est ajouté uniquement par le BFF vers `API-INTERNAL`.
 - Le navigateur ne lit et ne construit jamais `X-Portal-Session`.
-- `X-Service-Auth` est ajouté par le BFF et exigé sur `/internal/*` en
-  Production. Il n'est jamais transmis au navigateur.
+- `X-Service-Auth` est ajouté par le BFF et exigé sur `/internal/*` dans tout
+  environnement non `Development`. Il n'est jamais transmis au navigateur.
 - Erreurs sans trace, secret, topologie SQL ou détail AD.
 - Les health checks n'affichent ni URL, ni host SQL, ni valeur de configuration.
 
@@ -515,35 +515,34 @@ d'un autre client retourne `ACCESS_DENIED`. Une demande de service écrit le
 
 ## Active Directory
 
-`GET /internal/ad/health` retourne uniquement :
+`GET /internal/admin/ad/status` retourne le mode actif, l'etat de preparation,
+les capacites lecture/ecriture et le scope autorise, sans jamais exposer de
+mot de passe ni de details de bind.
 
-```json
-{
-  "mode": "disabled",
-  "status": "disabled",
-  "configurationValid": true,
-  "operationsEnabled": false
-}
-```
-
-Il ne retourne jamais domaine, OU, compte de service, mot de passe ou topologie.
+Les recherches et mutations AD passent uniquement par `API-INTERNAL`, via les
+endpoints admin `/internal/admin/ad/*` et
+`/internal/admin/customers/{customerReference}/ad/*`.
 
 Comportement des modes :
 
 | Mode | Réseau AD | Mutation réelle |
 |---|---|---|
 | `disabled` | Non | Non, `AD_INTEGRATION_DISABLED` |
-| `mock` | Non | Non; changement de mot de passe refusé, autres actions simulées |
-| `test` | Non dans cette V0.8 | Non, `AD_REAL_CHANGE_NOT_ENABLED` |
-| `enabled` | Non dans cette V0.8 | Non, validation supplémentaire requise |
+| `mock` | Non | Non, mutations simulées et auditables |
+| `read_only` | Oui | Non, `AD_READ_ONLY` |
+| `controlled_write` | Oui | Oui, strictement bornée à `OU=TEST_SITE_WEB,DC=home,DC=bzh` |
 
-Le contrat de changement de mot de passe exige `targetDistinguishedName`,
-`currentPassword` et `newPassword`. Ces deux mots de passe ne doivent jamais
-être persistés ou journalisés. Toute cible hors `AD_CLIENTS_OU_DN` est refusée.
+Les écritures V0.18 autorisées sont limitées à :
 
-Les opérations de groupe appliquent `AD_ALLOWED_GROUPS` comme allowlist stricte
-et refusent les groupes administratifs. La création utilisateur et les
-modifications de groupe restent non opérationnelles.
+- création d'utilisateur de test dans `OU=Users,OU=<CUSTOMER_REFERENCE>,OU=10_Customers,...` ;
+- création de groupe dans `OU=Groups,OU=<CUSTOMER_REFERENCE>,OU=10_Customers,...` ;
+- ajout / retrait de membre dans le même `customerReference` ;
+- désactivation d'utilisateur ;
+- déplacement d'un utilisateur désactivé vers `OU=Disabled,OU=<CUSTOMER_REFERENCE>,OU=10_Customers,...` ;
+- création / suppression d'un lien MariaDB `customer_ad_links`.
+
+Aucun hard delete AD, reset de mot de passe ou activation d'une OU de
+production n'est exposé.
 
 ## Codes d'erreur
 
@@ -559,8 +558,11 @@ modifications de groupe restent non opérationnelles.
 - `SQL_CONFIG_MISSING` : configuration SQL absente hors développement ;
 - `SQL_UNAVAILABLE` : MariaDB configurée mais indisponible ;
 - `AD_INTEGRATION_DISABLED` : mode AD désactivé ;
-- `AD_REAL_CHANGE_NOT_ENABLED` : opération AD réelle non validée ;
+- `AD_READ_ONLY` : écriture AD refusée en mode lecture seule ;
 - `AD_TARGET_OUTSIDE_ALLOWED_OU` : cible hors OU autorisée ;
+- `AD_CROSS_CUSTOMER_FORBIDDEN` : opération AD entre deux clients différents ;
+- `AD_GROUP_MEMBER_ALREADY_PRESENT` : membership déjà présent, sans changement ;
+- `AD_GROUP_MEMBER_ALREADY_ABSENT` : membership déjà absent, sans changement ;
 - `AD_SCOPE_NOT_ALLOWED` : cible ou groupe non autorisé ;
 - `AD_CONFIGURATION_INVALID` : configuration de test incomplète ;
 - `ROUTE_NOT_FOUND` : route inconnue ;

@@ -6,6 +6,11 @@ async function read(path) {
 }
 
 const adminBff = await read("lib/admin-bff.ts");
+const adUsersRoute = await read("app/api/admin/ad/users/route.ts");
+const adGroupsRoute = await read("app/api/admin/ad/groups/route.ts");
+const adCreateUserRoute = await read(
+  "app/api/admin/customers/[customerReference]/ad/users/route.ts",
+);
 const internalApi = await read("lib/internal-api.ts");
 const appShell = await read("components/AppShell.tsx");
 
@@ -13,10 +18,19 @@ assert.match(adminBff, /getInternalSession/);
 assert.match(adminBff, /session\.user\.role !== "internal_admin"/);
 assert.match(adminBff, /getInternalAdminData/);
 assert.match(adminBff, /ACCESS_DENIED/);
+assert.match(adminBff, /hasValidCsrfToken/);
+assert.match(adminBff, /CSRF_FORBIDDEN/);
 assert.doesNotMatch(
   adminBff,
   /localStorage|sessionStorage|NEXT_PUBLIC_INTERNAL_API_URL/i,
 );
+
+assert.match(adUsersRoute, /!customerReference/);
+assert.match(adUsersRoute, /isValidPortalIdentifier/);
+assert.match(adGroupsRoute, /!customerReference/);
+assert.match(adGroupsRoute, /isValidPortalIdentifier/);
+assert.match(adCreateUserRoute, /parseAdUserCreatePayload/);
+assert.match(adCreateUserRoute, /INVALID_REQUEST/);
 
 assert.match(internalApi, /import "server-only"/);
 assert.match(internalApi, /\/internal\/admin\//);
@@ -71,5 +85,7 @@ assert.match(customerDetailPage, /getAdminCustomer/);
 assert.match(customerDetailPage, /Isolation métier/);
 assert.match(customerDetailPage, /Documents commerciaux associés/);
 assert.match(customerDetailPage, /Audits récents du client/);
+assert.match(customerDetailPage, /Active Directory V0\.18/);
+assert.match(customerDetailPage, /controlled_write/);
 
 console.log("Vérification du contrat d'administration BFF réussie.");

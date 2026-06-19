@@ -31,7 +31,7 @@ public sealed class ServiceAuthenticationMiddleware
 
     public async Task InvokeAsync(HttpContext context)
     {
-        if (!_environment.IsProduction()
+        if (_environment.IsDevelopment()
             || !context.Request.Path.StartsWithSegments(
                 "/internal",
                 StringComparison.OrdinalIgnoreCase))

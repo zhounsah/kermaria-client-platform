@@ -61,6 +61,11 @@ export default async function AdminCustomerDetailPage({
 
   const customer = result.data;
   const identity = customer.identity;
+  const adMode = adStatusResult.data?.mode ?? "indisponible";
+  const adModeLabel = describeAdMode(
+    adStatusResult.data?.mode,
+    adStatusResult.data?.writesEnabled ?? false,
+  );
 
   return (
     <>
@@ -180,10 +185,19 @@ export default async function AdminCustomerDetailPage({
           </div>
           <div className="security-item">
             <div>
-              <strong>Actions réelles désactivées</strong>
-              <span>Aucun provisioning, AD réel, paiement, e-mail ou suppression client.</span>
+              <strong>Active Directory V0.18</strong>
+              <span>
+                Mode courant : {adMode}. {adModeLabel} Aucun hard delete AD
+                n&apos;est exposé et aucun flux n&apos;est autorisé hors de l&apos;OU
+                de test.
+              </span>
             </div>
-            <StatusBadge label="Borné V0.17" tone="warning" />
+            <StatusBadge
+              label={adStatusResult.data?.writesEnabled
+                ? "Controlled write borné"
+                : "Sans écriture réelle"}
+              tone={adStatusResult.data?.writesEnabled ? "warning" : "info"}
+            />
           </div>
         </SectionCard>
       </div>
@@ -461,4 +475,21 @@ export default async function AdminCustomerDetailPage({
       />
     </>
   );
+}
+
+function describeAdMode(mode: string | undefined, writesEnabled: boolean) {
+  switch (mode) {
+    case "disabled":
+      return "Aucune connexion AD ni action AD n'est autorisée.";
+    case "mock":
+      return "Les résultats et mutations AD restent simulés.";
+    case "read_only":
+      return "Les lectures AD sont autorisées mais toutes les écritures sont refusées.";
+    case "controlled_write":
+      return writesEnabled
+        ? "Les écritures AD réelles sont strictement bornées à OU=TEST_SITE_WEB,DC=home,DC=bzh."
+        : "Le mode controlled_write est configuré sans écriture disponible.";
+    default:
+      return "Le statut AD n'est pas disponible.";
+  }
 }

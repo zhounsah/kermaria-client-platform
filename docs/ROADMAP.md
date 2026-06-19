@@ -1,5 +1,22 @@
 # Feuille de route
 
+## Jalon V0.18 Active Directory controlled_write borne
+
+Statut : **implémente dans le dépôt, borné à l'OU de test validée**.
+
+- modes `disabled`, `mock`, `read_only` et `controlled_write` ;
+- endpoints admin AD via `WEBPORTAL / BFF -> API-INTERNAL` ;
+- liaisons `customer_ad_links` en MariaDB ;
+- recherche, création, membership, désactivation et déplacement bornés au
+  scope client sous `OU=TEST_SITE_WEB,DC=home,DC=bzh` ;
+- aucune suppression AD définitive exposée ;
+- aucun périmètre AD de production activé.
+
+La V0.18 ne change pas l'architecture `browser -> WEBPORTAL/BFF ->
+API-INTERNAL -> MariaDB`, n'ajoute aucune connexion SQL/AD directe dans
+`WEBPORTAL`, n'ajoute aucun paiement, e-mail, SMS, push, WebSocket,
+provisioning complet ou suppression destructive.
+
 ## Jalon V0.17 consolidation client, staging et recette
 
 Statut : **implémenté dans le dépôt, recette préproduction à exécuter**.

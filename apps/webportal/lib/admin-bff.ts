@@ -13,6 +13,7 @@ import {
   getInternalSession,
   mutateInternalAdminData,
 } from "@/lib/internal-api";
+import { hasValidCsrfToken } from "@/lib/csrf-server";
 import { getSessionCookieName } from "@/lib/session-config";
 
 const supportStatuses = new Set([
@@ -51,6 +52,15 @@ export async function handleAdminGet<T>(
       401,
       "UNAUTHORIZED",
       "Une session valide est requise.",
+      correlationId,
+    );
+  }
+
+  if (!hasValidCsrfToken(request)) {
+    return controlledAdminError(
+      403,
+      "CSRF_FORBIDDEN",
+      "La requete d'administration doit etre confirmee par un jeton CSRF valide.",
       correlationId,
     );
   }

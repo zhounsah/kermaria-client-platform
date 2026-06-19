@@ -12,25 +12,23 @@ browser -> WEBPORTAL / BFF -> API-INTERNAL -> MariaDB
 
 `WEBPORTAL` ne doit jamais acceder directement a MariaDB.
 
-## Etat V0.17
+## Etat V0.18
 
-La V0.17 consolide la preparation d'une vraie recette preproduction sans
-ouvrir de nouvelles integrations sensibles :
+La V0.18 introduit une integration Active Directory reelle mais strictement
+controlee, sans changer l'architecture ni ouvrir de nouveau perimetre metier :
 
-- fiche client admin consolidee avec identite, statut, services, demandes,
-  documents commerciaux, factures, activite recente et audits ;
-- isolation `customer_id` renforcee par des validations d'identifiants cote
-  BFF et API ;
-- durcissement pre-prod des cookies, de la readiness et des headers
-  WEBPORTAL ;
-- validation dediee `npm run validate:staging` pour distinguer staging et
-  production ;
-- documentation de staging et document de recette
-  `docs/V0.17_RECETTE_PREPRODUCTION.md`.
+- modes AD `disabled`, `mock`, `read_only` et `controlled_write` ;
+- recherches AD et actions d'administration bornees a l'OU de test
+  `OU=TEST_SITE_WEB,DC=home,DC=bzh` ;
+- liaisons `customer_ad_links` stockees dans MariaDB via `API-INTERNAL`
+  uniquement ;
+- fiche client admin et manager AD alignes sur le statut AD reel ;
+- durcissement BFF/API sur les validations, les cookies, l'interservice et les
+  audits.
 
-La V0.17 n'ajoute toujours ni AD reelle, ni paiement, ni facturation fiscale
-reelle, ni e-mail automatique, ni SMS, ni push, ni WebSocket, ni provisioning,
-ni suppression client destructive.
+La V0.18 n'ajoute toujours aucun paiement reel, aucune facturation fiscale
+reelle, aucun e-mail automatique, SMS, push, WebSocket, provisioning complet
+ou suppression client/AD destructive. L'AD de production reste hors perimetre.
 
 ## Architecture
 
@@ -39,7 +37,7 @@ flowchart LR
     U["Navigateur"] --> WP["WEBPORTAL / BFF"]
     WP --> API["API-INTERNAL"]
     API --> DB["MariaDB"]
-    API -.-> AD["Active Directory (desactivee)"]
+    API -.-> AD["Active Directory (bornee a l'OU de test)"]
 ```
 
 Rappels importants :
@@ -94,7 +92,11 @@ Variables critiques API-INTERNAL :
 - `SESSION_DURATION_MINUTES`
 - `LOGIN_MAX_FAILURES`
 - `LOGIN_LOCKOUT_MINUTES`
-- `AD_INTEGRATION_MODE=disabled`
+- `AD_INTEGRATION_MODE=disabled|mock|read_only|controlled_write`
+- `AD_DOMAIN`
+- `AD_CLIENTS_OU_DN`
+- `AD_SERVICE_ACCOUNT_USERNAME`
+- `AD_SERVICE_ACCOUNT_PASSWORD`
 
 ## Developpement local
 
@@ -153,7 +155,8 @@ npm run check:health
 
 - ne pas changer l'architecture ;
 - ne pas connecter `WEBPORTAL` directement a MariaDB ;
-- ne pas activer l'AD reelle ;
+- ne pas activer l'AD hors de l'OU de test validee ;
+- ne pas exposer de hard delete AD ;
 - ne pas ajouter paiement reel, facturation fiscale reelle, e-mail automatique,
   SMS, push, WebSocket ou provisioning ;
 - ne pas logger tokens, cookies, mots de passe, chaines de connexion ou
@@ -169,6 +172,7 @@ npm run check:health
 - [Operations](docs/OPERATIONS.md)
 - [Backup and restore](docs/BACKUP_RESTORE.md)
 - [Roadmap](docs/ROADMAP.md)
+- [Active Directory controlled write V0.18](docs/V0.18_ACTIVE_DIRECTORY_CONTROLLED_WRITE.md)
 - [Preproduction technique V0.16](docs/V0.16_PREPRODUCTION_TECHNIQUE.md)
 - [Recette preproduction V0.17](docs/V0.17_RECETTE_PREPRODUCTION.md)
 - [Secret rotation](docs/SECRET_ROTATION.md)

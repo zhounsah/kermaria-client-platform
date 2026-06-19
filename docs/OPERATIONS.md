@@ -1,4 +1,4 @@
-# Exploitation V0.17
+# Exploitation V0.18
 
 ## Objectif
 
@@ -156,10 +156,10 @@ Surveiller au minimum :
 3. `npm run validate:staging` reussit.
 4. `npm run check:health` reussit sur les URLs de staging.
 5. Les cookies sont `HttpOnly`, `Secure` et `SameSite` conformes.
-6. Les headers de securite V0.17 sont servis.
+6. Les headers de securite V0.18 sont servis.
 7. `AD_INTEGRATION_MODE=disabled`.
 8. Les secrets restent hors Git.
-9. La checklist de recette V0.17 est planifiee.
+9. La checklist de recette V0.18 est planifiee.
 
 ## Checklist preproduction
 
