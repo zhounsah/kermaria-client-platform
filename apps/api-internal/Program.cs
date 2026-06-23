@@ -30,6 +30,35 @@ if (Enum.TryParse<LogLevel>(
     builder.Logging.SetMinimumLevel(configuredLogLevel);
 }
 
+var logDirectory = builder.Configuration["LOG_FILE_DIRECTORY"]?.Trim();
+if (!string.IsNullOrWhiteSpace(logDirectory))
+{
+    if (!Enum.TryParse<LogLevel>(
+            builder.Configuration["LOG_FILE_LEVEL"],
+            ignoreCase: true,
+            out var fileLogLevel))
+    {
+        fileLogLevel = configuredLogLevel != default
+            ? configuredLogLevel
+            : LogLevel.Information;
+    }
+
+    if (!int.TryParse(
+            builder.Configuration["LOG_FILE_RETENTION_DAYS"],
+            out var retentionDays)
+        || retentionDays <= 0)
+    {
+        retentionDays = 30;
+    }
+
+    builder.Logging.AddProvider(new FileLoggerProvider(new FileLoggerOptions
+    {
+        Directory = logDirectory,
+        RetentionDays = retentionDays,
+        MinimumLevel = fileLogLevel
+    }));
+}
+
 var isBpceCli = args.Contains(
     "--verify-bpce-sender",
     StringComparer.OrdinalIgnoreCase);
