@@ -75,12 +75,12 @@ async Task<int> RunAsync(string[] arguments)
             await RunMariaDbReadTestsAsync();
         }
 
-        Console.WriteLine("Smoke tests API-INTERNAL V0.18 reussis.");
+        Console.WriteLine("Smoke tests API-INTERNAL V0.20 reussis.");
         return 0;
     }
     catch (Exception exception)
     {
-        Console.Error.WriteLine("Smoke tests API-INTERNAL V0.18 en echec.");
+        Console.Error.WriteLine("Smoke tests API-INTERNAL V0.20 en echec.");
         Console.Error.WriteLine(exception.ToString());
         return 1;
     }
@@ -2870,7 +2870,7 @@ async Task VerifyMockActiveDirectoryAdminRoutesAsync(
         displayName = "Test Web 0042 V018",
         givenName = "Test",
         surname = "V018",
-        description = "Compte de test V0.18"
+        description = "Compte de test V0.20"
     });
     using var createUserResponse = await client.SendAsync(createUserRequest);
     using var createUserPayload = JsonDocument.Parse(
@@ -2903,7 +2903,7 @@ async Task VerifyMockActiveDirectoryAdminRoutesAsync(
     {
         samAccountName = createdGroupSamAccountName,
         displayName = "Kermaria CLI-DEMO-0042 V018 Users",
-        description = "Groupe de test V0.18"
+        description = "Groupe de test V0.20"
     });
     using var createGroupResponse = await client.SendAsync(createGroupRequest);
     using var createGroupPayload = JsonDocument.Parse(

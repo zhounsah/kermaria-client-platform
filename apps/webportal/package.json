@@ -17,6 +17,8 @@
     "test:replies": "node scripts/verify-client-replies-contract.mjs",
     "test:activity": "node scripts/verify-admin-activity-contract.mjs",
     "test:commercial": "node scripts/verify-commercial-foundation-contract.mjs",
+    "test:ad-security": "node scripts/verify-ad-security-contract.mjs",
+    "test:bpce": "node scripts/verify-bpce-invoicing-contract.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
