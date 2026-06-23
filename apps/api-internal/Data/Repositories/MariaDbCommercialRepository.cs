@@ -1487,8 +1487,8 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
 
         var doc = new
         {
-            DocumentId = reader.GetString("document_id"),
-            CustomerId = reader.GetString("customer_id"),
+            DocumentId = MariaDbIdentifierReader.ReadRequired(reader, "document_id"),
+            CustomerId = MariaDbIdentifierReader.ReadRequired(reader, "customer_id"),
             CustomerExternalReference = reader.GetString("external_reference"),
             CustomerDisplayName = reader.GetString("display_name"),
             CustomerBillingEmail = ReadNullableString(reader, "billing_email"),
