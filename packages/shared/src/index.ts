@@ -267,7 +267,8 @@ export type CommercialDocumentStatus =
   | "draft"
   | "pending_review"
   | "shared_with_customer"
-  | "cancelled";
+  | "cancelled"
+  | "issued";
 
 export interface CommercialDocumentLine {
   id: string;

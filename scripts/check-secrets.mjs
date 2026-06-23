@@ -8,6 +8,7 @@ const excludedDirectories = new Set([
   ".nuget",
   ".nuget-local",
   ".app-data",
+  ".claude",
   "bin",
   "node_modules",
   "obj",

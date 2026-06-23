@@ -42,10 +42,18 @@ export async function GET(request: NextRequest, context: RouteContext) {
     );
   }
 
-  let internalApiUrl: string;
+  let internalApiUrl: string | undefined;
   try {
     internalApiUrl = getInternalApiUrl();
   } catch {
+    return controlledAdminError(
+      503,
+      "INTERNAL_API_UNAVAILABLE",
+      "L'API interne est indisponible.",
+      correlationId,
+    );
+  }
+  if (!internalApiUrl) {
     return controlledAdminError(
       503,
       "INTERNAL_API_UNAVAILABLE",
