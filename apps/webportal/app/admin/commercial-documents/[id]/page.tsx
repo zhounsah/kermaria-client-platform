@@ -20,6 +20,7 @@ import {
 import {
   getAdminCatalog,
   getAdminCommercialDocument,
+  getAdminCommercialDocumentInvoice,
   getAdminServiceRequests,
 } from "@/lib/internal-api";
 
@@ -36,11 +37,12 @@ export default async function AdminCommercialDocumentDetailPage({
 }: PageProps) {
   await requireAdminSession();
   const { id } = await params;
-  const [documentResult, catalogResult, serviceRequestsResult] =
+  const [documentResult, catalogResult, serviceRequestsResult, invoiceResult] =
     await Promise.all([
       getAdminCommercialDocument(id),
       getAdminCatalog(),
       getAdminServiceRequests(),
+      getAdminCommercialDocumentInvoice(id),
     ]);
 
   if (documentResult.error) {
@@ -165,6 +167,7 @@ export default async function AdminCommercialDocumentDetailPage({
           <h2>Émission</h2>
           <AdminInvoiceIssuingSection
             documentId={document.id}
+            existingInvoice={invoiceResult.data ?? null}
             issuable={canIssue}
           />
         </SectionCard>

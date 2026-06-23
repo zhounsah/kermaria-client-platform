@@ -1942,6 +1942,42 @@ app.MapPost(
     });
 
 app.MapGet(
+    "/internal/admin/commercial-documents/{id}/invoice",
+    async (
+        string id,
+        HttpContext context,
+        IInvoiceIssuingService issuingService,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.commercial_documents.invoice.read");
+        var record = await issuingService.GetInvoiceRecordAsync(
+            id, context.RequestAborted);
+        if (record is null)
+        {
+            return Results.Json(
+                new ApiError(
+                    "INVOICE_NOT_FOUND",
+                    "No issued invoice found for this document.",
+                    context.GetCorrelationId()),
+                statusCode: StatusCodes.Status404NotFound);
+        }
+
+        return Results.Ok(new BpceIssuedInvoiceInfo(
+            record.BpceInvoiceId,
+            record.FiscalNumber,
+            record.Status,
+            record.IssueDate,
+            record.TotalAmountCents,
+            record.Currency,
+            record.PdfHash is not null));
+    });
+
+app.MapGet(
     "/internal/admin/commercial-documents/{id}/invoice/pdf",
     async (
         string id,

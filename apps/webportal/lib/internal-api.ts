@@ -708,6 +708,23 @@ export function getAdminCommercialDocument(id: string) {
   );
 }
 
+export type BpceIssuedInvoiceInfo = {
+  bpceInvoiceId: string;
+  fiscalNumber: string | null;
+  status: string;
+  issueDate: string;
+  totalAmountCents: number;
+  currency: string;
+  pdfAvailable: boolean;
+};
+
+export function getAdminCommercialDocumentInvoice(id: string) {
+  return getAdminData<BpceIssuedInvoiceInfo | null>(
+    `/internal/admin/commercial-documents/${encodeURIComponent(id)}/invoice`,
+    null,
+  );
+}
+
 export function getAdminSupportRequests() {
   return getAdminData<AdminSupportRequestSummary[]>(
     "/internal/admin/support-requests",
