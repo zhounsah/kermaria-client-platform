@@ -114,10 +114,11 @@ builder.Services.AddScoped<IPortalNotificationRepository>(
         ? new MariaDbPortalNotificationRepository(sqlConfiguration)
         : new MockPortalNotificationRepository(
             serviceProvider.GetRequiredService<MockPortalNotificationStore>()));
+builder.Services.AddSingleton<MockBpceInvoicingRepository>();
 builder.Services.AddScoped<IBpceInvoicingRepository>(
-    _ => sqlConfiguration.IsPersistent
-        ? new MariaDbBpceInvoicingRepository(sqlConfiguration)
-        : new MockBpceInvoicingRepository());
+    serviceProvider => sqlConfiguration.IsPersistent
+        ? (IBpceInvoicingRepository)new MariaDbBpceInvoicingRepository(sqlConfiguration)
+        : serviceProvider.GetRequiredService<MockBpceInvoicingRepository>());
 builder.Services.AddScoped<IInvoiceIssuingService, InvoiceIssuingService>();
 builder.Services.AddScoped<ICommercialRepository>(
     serviceProvider => sqlConfiguration.IsPersistent

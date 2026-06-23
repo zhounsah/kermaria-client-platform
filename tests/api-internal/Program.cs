@@ -62,6 +62,7 @@ async Task<int> RunAsync(string[] arguments)
         VerifyChildProcessEnvironmentGuardrails();
         await RunMockTestsAsync();
         await RunMockActiveDirectoryModeTestsAsync();
+        await RunMockBpceIssuingTestsAsync();
         await RunReadOnlyActiveDirectoryModeTestsAsync();
         await RunUnavailableReadinessTestAsync();
         await RunProductionConfigurationValidationTestsAsync();
@@ -1613,6 +1614,30 @@ async Task RunServiceAuthenticationGuardTestsAsync()
                 "SERVICE_AUTH_REQUIRED",
                 StringComparison.Ordinal),
             "Un X-Service-Auth valide ne doit pas etre rejete par le middleware.");
+
+        // V0.19 : le statut BPCE est egalement protege par X-Service-Auth
+        using var bpceMissingAuthResponse = await client.GetAsync(
+            $"{baseUrl}/internal/admin/bpce/status");
+        using var bpceMissingAuthPayload = JsonDocument.Parse(
+            await bpceMissingAuthResponse.Content.ReadAsStringAsync());
+        Ensure(
+            bpceMissingAuthResponse.StatusCode == HttpStatusCode.Unauthorized
+            && bpceMissingAuthPayload.RootElement.GetProperty("code").GetString()
+                == "SERVICE_AUTH_REQUIRED",
+            "L'endpoint BPCE/status doit exiger X-Service-Auth hors Development.");
+
+        using var bpceValidAuthRequest = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"{baseUrl}/internal/admin/bpce/status");
+        bpceValidAuthRequest.Headers.Add(serviceAuthHeader, serviceAuthToken);
+        using var bpceValidAuthResponse = await client.SendAsync(bpceValidAuthRequest);
+        var bpceValidAuthText =
+            await bpceValidAuthResponse.Content.ReadAsStringAsync();
+        Ensure(
+            !bpceValidAuthText.Contains(
+                "SERVICE_AUTH_REQUIRED",
+                StringComparison.Ordinal),
+            "Un X-Service-Auth valide ne doit pas etre rejete sur l'endpoint BPCE.");
     }
     finally
     {
@@ -2568,6 +2593,216 @@ async Task RunMockActiveDirectoryModeTestsAsync()
                 "admin.customers.ad_users.move_to_disabled",
                 StringComparison.Ordinal),
             "Les actions AD mock doivent Ãªtre journalisÃ©es sans exposer de secrets.");
+    }
+    finally
+    {
+        await api.StopAsync();
+    }
+}
+
+async Task RunMockBpceIssuingTestsAsync()
+{
+    var mockBaseUrl = SmokeTestRuntimeHelpers.CreateLoopbackBaseUrl();
+    using var api = StartApi(
+        mockBaseUrl,
+        startInfo =>
+        {
+            startInfo.Environment["ASPNETCORE_ENVIRONMENT"] = "Development";
+            startInfo.Environment["DOTNET_ENVIRONMENT"] = "Development";
+            startInfo.Environment["BPCE_INTEGRATION_MODE"] = "mock";
+            startInfo.Environment["AD_INTEGRATION_MODE"] = "disabled";
+            startInfo.Environment["DEMO_PORTAL_EMAIL"] = mockEmail;
+            startInfo.Environment["DEMO_PORTAL_PASSWORD"] = mockPassword;
+            startInfo.Environment["DEMO_PORTAL_STATUS"] = "active";
+            startInfo.Environment["DEMO_INTERNAL_ADMIN_EMAIL"] = mockAdminEmail;
+            startInfo.Environment["DEMO_INTERNAL_ADMIN_PASSWORD"] =
+                mockAdminPassword;
+            startInfo.Environment["SESSION_DURATION_MINUTES"] = "60";
+            startInfo.Environment["LOGIN_MAX_FAILURES"] = "5";
+            startInfo.Environment["LOGIN_LOCKOUT_MINUTES"] = "10";
+            foreach (var variable in new[]
+            {
+                "SQL_PROVIDER", "SQL_HOST", "SQL_PORT",
+                "SQL_DATABASE", "SQL_USERNAME", "SQL_PASSWORD"
+            })
+            {
+                startInfo.Environment.Remove(variable);
+            }
+        });
+    using var handler = new HttpClientHandler { UseProxy = false };
+    using var client = new HttpClient(handler);
+
+    try
+    {
+        using var healthResponse = await WaitForHealthAsync(
+            client, api.Process, mockBaseUrl, api.Logs);
+        Ensure(
+            healthResponse.IsSuccessStatusCode,
+            "Le health check BPCE mock doit répondre.");
+
+        var adminSessionToken = await LoginAsAdminAsync(client, mockBaseUrl);
+
+        // V0.20-1 : le mode BPCE mock est bien actif
+        using var bpceStatusRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mockBaseUrl}/internal/admin/bpce/status",
+            adminSessionToken);
+        using var bpceStatusResponse = await client.SendAsync(bpceStatusRequest);
+        using var bpceStatusPayload = JsonDocument.Parse(
+            await bpceStatusResponse.Content.ReadAsStringAsync());
+        Ensure(
+            bpceStatusResponse.StatusCode == HttpStatusCode.OK
+            && bpceStatusPayload.RootElement.GetProperty("mode").GetString()
+                == "mock"
+            && bpceStatusPayload.RootElement.GetProperty("status").GetString()
+                == "mock",
+            "Le statut BPCE doit être mock dans cet environnement de test.");
+
+        // V0.20-2 : création d'un document commercial
+        using var createDocRequest = CreateSessionRequest(
+            HttpMethod.Post,
+            $"{mockBaseUrl}/internal/admin/commercial-documents",
+            adminSessionToken);
+        createDocRequest.Content = JsonContent.Create(new
+        {
+            customerReference = MockCustomerReference(),
+            documentType = "quote_draft",
+            title = "Facture test V0.20",
+            currency = "EUR",
+            disclaimer = "Document de test smoke V0.20."
+        });
+        using var createDocResponse = await client.SendAsync(createDocRequest);
+        using var createDocPayload = JsonDocument.Parse(
+            await createDocResponse.Content.ReadAsStringAsync());
+        Ensure(
+            createDocResponse.StatusCode == HttpStatusCode.OK,
+            "La création du document commercial doit réussir.");
+        var documentId =
+            createDocPayload.RootElement.GetProperty("id").GetString()
+            ?? throw new InvalidOperationException(
+                "ID manquant après création du document commercial.");
+
+        // V0.20-3 : ajout d'une ligne (montant non nul)
+        using var addLineRequest = CreateSessionRequest(
+            HttpMethod.Post,
+            $"{mockBaseUrl}/internal/admin/commercial-documents/{documentId}/lines",
+            adminSessionToken);
+        addLineRequest.Content = JsonContent.Create(new
+        {
+            label = "Service test BPCE",
+            description = "Ligne de test pour émission BPCE mock.",
+            quantity = 1m,
+            unitLabel = "unité",
+            unitPriceCents = 10000,
+            taxRateBasisPoints = 2000,
+            sortOrder = 10
+        });
+        using var addLineResponse = await client.SendAsync(addLineRequest);
+        Ensure(
+            addLineResponse.StatusCode == HttpStatusCode.OK,
+            "L'ajout de ligne doit réussir.");
+
+        // V0.20-4 : partage du document (statut → shared_with_customer)
+        using var shareRequest = CreateSessionRequest(
+            HttpMethod.Post,
+            $"{mockBaseUrl}/internal/admin/commercial-documents/{documentId}/share",
+            adminSessionToken);
+        shareRequest.Content = JsonContent.Create(new { });
+        using var shareResponse = await client.SendAsync(shareRequest);
+        using var sharePayload = JsonDocument.Parse(
+            await shareResponse.Content.ReadAsStringAsync());
+        Ensure(
+            shareResponse.StatusCode == HttpStatusCode.OK
+            && sharePayload.RootElement.GetProperty("status").GetString()
+                == "shared_with_customer",
+            "Le partage doit passer le document en shared_with_customer.");
+
+        // V0.20-5 : émission de la facture en mode BPCE mock
+        using var issueRequest = CreateSessionRequest(
+            HttpMethod.Post,
+            $"{mockBaseUrl}/internal/admin/commercial-documents/{documentId}/issue",
+            adminSessionToken);
+        issueRequest.Content = JsonContent.Create(new { sendEmail = false });
+        using var issueResponse = await client.SendAsync(issueRequest);
+        var issueText = await issueResponse.Content.ReadAsStringAsync();
+        using var issuePayload = JsonDocument.Parse(issueText);
+        Ensure(
+            issueResponse.StatusCode == HttpStatusCode.OK,
+            "L'émission BPCE mock doit réussir avec HTTP 200.");
+        Ensure(
+            issuePayload.RootElement.TryGetProperty("invoice", out var invoiceEl)
+            && invoiceEl.ValueKind != JsonValueKind.Null,
+            "La réponse d'émission doit contenir les données de la facture.");
+        Ensure(
+            invoiceEl.TryGetProperty("fiscalNumber", out var fiscalEl)
+            && !string.IsNullOrEmpty(fiscalEl.GetString()),
+            "La facture mock doit avoir un numéro fiscal non vide.");
+        Ensure(
+            invoiceEl.TryGetProperty("status", out var invoiceStatusEl)
+            && invoiceStatusEl.GetString() == "validated",
+            "La facture mock doit avoir le statut validated.");
+        Ensure(
+            invoiceEl.TryGetProperty("pdfAvailable", out var pdfAvailableEl)
+            && pdfAvailableEl.GetBoolean(),
+            "Le PDF mock doit être disponible immédiatement après émission.");
+
+        // V0.20-6 : relecture de l'enregistrement de facture
+        using var getInvoiceRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mockBaseUrl}/internal/admin/commercial-documents/{documentId}/invoice",
+            adminSessionToken);
+        using var getInvoiceResponse = await client.SendAsync(getInvoiceRequest);
+        using var getInvoicePayload = JsonDocument.Parse(
+            await getInvoiceResponse.Content.ReadAsStringAsync());
+        Ensure(
+            getInvoiceResponse.StatusCode == HttpStatusCode.OK,
+            "La lecture de la facture émise doit réussir (GET /invoice).");
+        Ensure(
+            getInvoicePayload.RootElement.GetProperty("pdfAvailable").GetBoolean(),
+            "Le PDF doit être disponible lors de la relecture.");
+
+        // V0.20-7 : une seconde tentative d'émission doit être refusée
+        using var issueAgainRequest = CreateSessionRequest(
+            HttpMethod.Post,
+            $"{mockBaseUrl}/internal/admin/commercial-documents/{documentId}/issue",
+            adminSessionToken);
+        issueAgainRequest.Content = JsonContent.Create(new { sendEmail = false });
+        using var issueAgainResponse = await client.SendAsync(issueAgainRequest);
+        using var issueAgainPayload = JsonDocument.Parse(
+            await issueAgainResponse.Content.ReadAsStringAsync());
+        Ensure(
+            issueAgainResponse.StatusCode == HttpStatusCode.Conflict,
+            "Une double émission doit être refusée avec HTTP 409.");
+        Ensure(
+            issueAgainPayload.RootElement.GetProperty("code").GetString()
+                == "INVOICE_ALREADY_ISSUED",
+            "Le code de refus doit être INVOICE_ALREADY_ISSUED.");
+
+        // V0.20-8 : récupération du PDF mis en cache
+        using var getPdfRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{mockBaseUrl}/internal/admin/commercial-documents/{documentId}/invoice/pdf",
+            adminSessionToken);
+        using var getPdfResponse = await client.SendAsync(getPdfRequest);
+        var pdfBytes = await getPdfResponse.Content.ReadAsByteArrayAsync();
+        Ensure(
+            getPdfResponse.StatusCode == HttpStatusCode.OK,
+            "La récupération du PDF mock doit réussir.");
+        Ensure(
+            getPdfResponse.Content.Headers.ContentType?.MediaType == "application/pdf",
+            "Le PDF doit être retourné avec Content-Type application/pdf.");
+        Ensure(
+            pdfBytes.Length > 0
+            && Encoding.ASCII.GetString(
+                pdfBytes, 0, Math.Min(5, pdfBytes.Length)) == "%PDF-",
+            "Le contenu du PDF mock doit commencer par %PDF-.");
+
+        // V0.20-9 : sans invoice, GET /invoice doit retourner 404
+        var logs = SnapshotLogs(api.Logs);
+        Ensure(
+            logs.Contains("admin.commercial_documents.invoice.read",
+                StringComparison.Ordinal),
+            "L'audit de lecture de facture doit etre journalise.");
     }
     finally
     {
