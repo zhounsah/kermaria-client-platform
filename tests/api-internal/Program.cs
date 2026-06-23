@@ -1099,6 +1099,10 @@ async Task RunMockTestsAsync()
             client,
             mockBaseUrl,
             adminSessionToken);
+        await VerifyDisabledBpceAdminRoutesAsync(
+            client,
+            mockBaseUrl,
+            adminSessionToken);
         /*
         using var adHealthResponse = await client.GetAsync(
             $"{mockBaseUrl}/internal/ad/health");
@@ -2754,6 +2758,36 @@ async Task VerifyDisabledActiveDirectoryAdminRoutesAsync(
         hardDeleteResponse.StatusCode == HttpStatusCode.NotFound
         || hardDeleteResponse.StatusCode == HttpStatusCode.MethodNotAllowed,
         "Aucune suppression dÃ©finitive AD ne doit Ãªtre exposÃ©e.");
+}
+
+async Task VerifyDisabledBpceAdminRoutesAsync(
+    HttpClient client,
+    string baseUrl,
+    string adminSessionToken)
+{
+    using var statusRequest = CreateSessionRequest(
+        HttpMethod.Get,
+        $"{baseUrl}/internal/admin/bpce/status",
+        adminSessionToken);
+    using var statusResponse = await client.SendAsync(statusRequest);
+    var statusText = await statusResponse.Content.ReadAsStringAsync();
+    using var statusPayload = JsonDocument.Parse(statusText);
+    Ensure(
+        statusResponse.StatusCode == HttpStatusCode.OK
+        && statusPayload.RootElement.GetProperty("mode").GetString()
+            == "disabled"
+        && statusPayload.RootElement.GetProperty("status").GetString()
+            == "disabled"
+        && statusPayload.RootElement
+            .GetProperty("configurationValid").GetBoolean()
+        && !statusPayload.RootElement
+            .GetProperty("senderConfigured").GetBoolean(),
+        "Le statut BPCE disabled expose a l'admin est invalide.");
+    Ensure(
+        !statusText.Contains("refresh", StringComparison.OrdinalIgnoreCase)
+        && !statusText.Contains("token", StringComparison.OrdinalIgnoreCase)
+        && !statusText.Contains("bearer", StringComparison.OrdinalIgnoreCase),
+        "Le statut BPCE disabled ne doit exposer aucun secret.");
 }
 
 async Task VerifyMockActiveDirectoryAdminRoutesAsync(
