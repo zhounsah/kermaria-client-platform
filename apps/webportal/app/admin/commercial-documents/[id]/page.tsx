@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { AdminCommercialDocumentActionButton } from "@/components/AdminCommercialDocumentActionButton";
 import { AdminCommercialDocumentEditForm } from "@/components/AdminCommercialDocumentEditForm";
 import { AdminCommercialDocumentLineForm } from "@/components/AdminCommercialDocumentLineForm";
+import { AdminInvoiceIssuingSection } from "@/components/AdminInvoiceIssuingSection";
 import { CommercialDocumentLineTable } from "@/components/CommercialDocumentLineTable";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
@@ -62,10 +63,15 @@ export default async function AdminCommercialDocumentDetailPage({
   }
 
   const document = documentResult.data;
-  const status = commercialDocumentStatus[document.status];
+  const status = commercialDocumentStatus[document.status] ?? {
+    label: document.status,
+    tone: "slate",
+  };
   const isDraft = document.status === "draft";
   const canShare = document.status === "draft" || document.status === "pending_review";
-  const canCancel = document.status !== "cancelled";
+  const canCancel = document.status !== "cancelled" && document.status !== "issued";
+  const canIssue = document.status === "shared_with_customer";
+  const isIssued = document.status === "issued";
 
   return (
     <>
@@ -76,18 +82,33 @@ export default async function AdminCommercialDocumentDetailPage({
         title={document.title}
       />
 
-      <section className="content-panel admin-safety-panel">
-        <div>
-          <span className="card-kicker">Avertissement</span>
-          <h2>Document strictement informatif</h2>
-          <p>
-            Ce document sert au suivi commercial interne et à l&apos;information du
-            client. Aucun PDF légal, paiement ou facture officielle n&apos;est
-            généré dans cette version.
-          </p>
-        </div>
-        <StatusBadge label="Aucun paiement possible" tone="warning" />
-      </section>
+      {!isIssued ? (
+        <section className="content-panel admin-safety-panel">
+          <div>
+            <span className="card-kicker">Phase de tests</span>
+            <h2>Document commercial informatif</h2>
+            <p>
+              Ce document sert au suivi commercial interne et à l&apos;information
+              du client. Il peut être émis en facture officielle via BPCE depuis la
+              section « Émission » ci-dessous, uniquement lorsque son statut est
+              « Partagé avec le client ».
+            </p>
+          </div>
+          <StatusBadge label="Aucun paiement depuis ce portail" tone="warning" />
+        </section>
+      ) : (
+        <section className="content-panel admin-safety-panel">
+          <div>
+            <span className="card-kicker">Facture officielle</span>
+            <h2>Facture émise chez BPCE</h2>
+            <p>
+              Ce document a été émis en facture officielle. Il est numéroté, archivé
+              côté banque et ne peut plus être modifié.
+            </p>
+          </div>
+          <StatusBadge label="Facture émise" tone="success" />
+        </section>
+      )}
 
       <div className="request-detail-layout">
         <SectionCard ariaLabel="Informations générales du document">
@@ -138,6 +159,14 @@ export default async function AdminCommercialDocumentDetailPage({
               documentId={document.id}
             />
           </div>
+        </SectionCard>
+
+        <SectionCard ariaLabel="Émission de la facture BPCE">
+          <h2>Émission</h2>
+          <AdminInvoiceIssuingSection
+            documentId={document.id}
+            issuable={canIssue}
+          />
         </SectionCard>
 
         <SectionCard ariaLabel="Ajout de ligne">

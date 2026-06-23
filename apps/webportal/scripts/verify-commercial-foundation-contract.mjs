@@ -72,11 +72,7 @@ assert.match(payloads, /parseCommercialDocumentLinePayload/);
 
 assert.match(
   invoicesPage,
-  /Les documents affichés dans cet espace sont informatifs tant que la facturation réelle n’est pas activée\./,
-);
-assert.match(
-  invoicesPage,
-  /Document informatif [-—] ne constitue pas une facture officielle\./,
+  /Vos documents commerciaux et factures émises\./,
 );
 assert.doesNotMatch(invoicesPage, /Payer|PayPal|Stripe/);
 
@@ -88,11 +84,8 @@ assert.match(
   catalogPage,
   /Aucune numérotation fiscale définitive n(?:'|&apos;)est générée\s+dans cette version\./,
 );
-assert.match(
-  documentsPage,
-  /Aucun paiement n(?:'|&apos;)est possible depuis le portail\./,
-);
-assert.match(documentDetailPage, /Aucun paiement n&apos;est possible depuis le portail\./);
+assert.doesNotMatch(documentsPage, /Payer|paiement en ligne|PayPal|Stripe/);
+assert.doesNotMatch(documentDetailPage, /Payer|paiement en ligne|PayPal|Stripe/);
 assert.match(servicesPage, /Catalogue informatif/);
 assert.match(invoiceTable, /Informations indicatives/);
 assert.doesNotMatch(

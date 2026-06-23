@@ -50,35 +50,39 @@ export default async function CommercialDocumentDetailPage({
   }
 
   const document = result.data;
-  const status = commercialDocumentStatus[document.status];
+  const status = commercialDocumentStatus[document.status] ?? {
+    label: document.status,
+    tone: "slate" as const,
+  };
+  const isIssued = document.status === "issued";
 
   return (
     <>
       <PageHeader
         action={<StatusBadge label={status.label} tone={status.tone} />}
-        description={commercialDocumentType[document.documentType]}
+        description={commercialDocumentType[document.documentType] ?? document.documentType}
         eyebrow={document.internalReference}
         title={document.title}
       />
 
-      <div className="security-warning">
-        <span className="warning-symbol" aria-hidden="true">
-          !
-        </span>
-        <div>
-          <strong>Document informatif - ne constitue pas une facture officielle.</strong>
-          <p>
-            Ce document sert au suivi commercial interne et à l&apos;information
-            du client. Aucun paiement n&apos;est possible depuis le portail.
-          </p>
+      {!isIssued ? (
+        <div className="security-warning">
+          <span className="warning-symbol" aria-hidden="true">!</span>
+          <div>
+            <strong>Document commercial — ne constitue pas encore une facture.</strong>
+            <p>
+              Ce document est partagé à titre informatif. Votre prestataire
+              vous contactera pour la suite.
+            </p>
+          </div>
         </div>
-      </div>
+      ) : null}
 
       <div className="request-detail-layout">
         <SectionCard ariaLabel="Informations du document commercial">
           <h2>Informations générales</h2>
           <dl className="request-details">
-            <div><dt>Type</dt><dd>{commercialDocumentType[document.documentType]}</dd></div>
+            <div><dt>Type</dt><dd>{commercialDocumentType[document.documentType] ?? document.documentType}</dd></div>
             <div><dt>Statut</dt><dd>{status.label}</dd></div>
             <div><dt>Créé le</dt><dd>{formatDateTime(document.createdAt)}</dd></div>
             <div><dt>Mise à jour</dt><dd>{formatDateTime(document.updatedAt)}</dd></div>
@@ -87,15 +91,17 @@ export default async function CommercialDocumentDetailPage({
           </dl>
         </SectionCard>
 
-        <SectionCard ariaLabel="Synthèse financière informative">
-          <h2>Synthèse informative</h2>
+        <SectionCard ariaLabel="Synthèse financière">
+          <h2>{isIssued ? "Montants facturés" : "Synthèse indicative"}</h2>
           <dl className="request-details">
             <div><dt>Sous-total HT</dt><dd>{formatCurrencyFromCents(document.subtotalAmountCents)}</dd></div>
-            <div><dt>Taxes indicatives</dt><dd>{formatCurrencyFromCents(document.taxAmountCents)}</dd></div>
-            <div><dt>Total informatif</dt><dd>{formatCurrencyFromCents(document.totalAmountCents)}</dd></div>
+            <div><dt>Taxes</dt><dd>{formatCurrencyFromCents(document.taxAmountCents)}</dd></div>
+            <div><dt>Total {isIssued ? "facturé" : "indicatif"}</dt><dd>{formatCurrencyFromCents(document.totalAmountCents)}</dd></div>
             <div><dt>Devise</dt><dd>{document.currency}</dd></div>
           </dl>
-          <p className="request-description">{document.disclaimer}</p>
+          {!isIssued ? (
+            <p className="request-description">{document.disclaimer}</p>
+          ) : null}
         </SectionCard>
       </div>
 

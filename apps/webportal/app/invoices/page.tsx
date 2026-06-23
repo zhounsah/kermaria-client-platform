@@ -30,23 +30,10 @@ export default async function InvoicesPage() {
   return (
     <>
       <PageHeader
-        description="Les documents affichés dans cet espace sont informatifs tant que la facturation réelle n’est pas activée."
-        eyebrow="Documents commerciaux"
-        title="Mes documents informatifs"
+        description="Vos documents commerciaux et factures émises."
+        eyebrow="Facturation"
+        title="Mes documents et factures"
       />
-
-      <div className="security-warning">
-        <span className="warning-symbol" aria-hidden="true">
-          !
-        </span>
-        <div>
-          <strong>Document informatif - ne constitue pas une facture officielle.</strong>
-          <p>
-            La facturation réelle n&apos;est pas encore activée. Aucun paiement
-            n&apos;est possible depuis cet espace.
-          </p>
-        </div>
-      </div>
 
       {result.error ? (
         <ErrorState
