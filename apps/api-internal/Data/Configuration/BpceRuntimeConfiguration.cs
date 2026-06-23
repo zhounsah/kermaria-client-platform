@@ -46,8 +46,7 @@ public static class BpceConfigurationResolver
 
         var configurationValid = mode switch
         {
-            BpceIntegrationMode.Live =>
-                refreshToken is not null && senderId is not null,
+            BpceIntegrationMode.Live => refreshToken is not null,
             _ => true
         };
 
