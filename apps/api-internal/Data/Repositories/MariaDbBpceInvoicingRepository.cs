@@ -43,7 +43,8 @@ public sealed class MariaDbBpceInvoicingRepository : IBpceInvoicingRepository
             MariaDbIdentifierReader.ReadRequired(reader, "customer_id"),
             reader.GetString("bpce_customer_id"),
             reader.GetString("bpce_external_id"),
-            reader.GetString("synced_at"));
+            reader.GetDateTime("synced_at")
+                .ToString("yyyy-MM-ddTHH:mm:ss.fffZ"));
     }
 
     public async Task UpsertCustomerLinkAsync(
@@ -114,16 +115,18 @@ public sealed class MariaDbBpceInvoicingRepository : IBpceInvoicingRepository
             reader.IsDBNull(reader.GetOrdinal("fiscal_number"))
                 ? null
                 : reader.GetString("fiscal_number"),
-            reader.GetString("issue_date"),
+            reader.GetDateTime("issue_date").ToString("yyyy-MM-dd"),
             reader.GetInt32("total_amount_cents"),
             reader.GetString("currency"),
             reader.IsDBNull(reader.GetOrdinal("pdf_hash"))
                 ? null
                 : reader.GetString("pdf_hash"),
-            reader.GetString("created_at"),
+            reader.GetDateTime("created_at")
+                .ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
             reader.IsDBNull(reader.GetOrdinal("validated_at"))
                 ? null
-                : reader.GetString("validated_at"));
+                : reader.GetDateTime("validated_at")
+                    .ToString("yyyy-MM-ddTHH:mm:ss.fffZ"));
     }
 
     public async Task CreateInvoiceRecordAsync(
