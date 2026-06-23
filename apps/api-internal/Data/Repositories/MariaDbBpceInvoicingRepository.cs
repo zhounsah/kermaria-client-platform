@@ -40,7 +40,7 @@ public sealed class MariaDbBpceInvoicingRepository : IBpceInvoicingRepository
         }
 
         return new BpceCustomerLink(
-            reader.GetString("customer_id"),
+            MariaDbIdentifierReader.ReadRequired(reader, "customer_id"),
             reader.GetString("bpce_customer_id"),
             reader.GetString("bpce_external_id"),
             reader.GetString("synced_at"));
@@ -107,7 +107,7 @@ public sealed class MariaDbBpceInvoicingRepository : IBpceInvoicingRepository
         }
 
         return new BpceInvoiceRecord(
-            reader.GetString("commercial_document_id"),
+            MariaDbIdentifierReader.ReadRequired(reader, "commercial_document_id"),
             reader.GetString("bpce_invoice_id"),
             reader.GetString("bpce_customer_id"),
             reader.GetString("status"),
