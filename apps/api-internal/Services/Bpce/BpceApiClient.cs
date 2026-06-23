@@ -108,7 +108,7 @@ public sealed class BpceApiClient : IBpceApiClient
         return await client.SendAsync(request, cancellationToken);
     }
 
-    private static async Task<T?> DeserializeJsonAsync<T>(
+    private async Task<T?> DeserializeJsonAsync<T>(
         HttpResponseMessage response,
         CancellationToken cancellationToken)
     {
@@ -117,7 +117,19 @@ public sealed class BpceApiClient : IBpceApiClient
             return default;
         }
 
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(
+                cancellationToken);
+            _logger.LogWarning(
+                "BPCE API error {StatusCode} on {Method} {Uri}: {Body}",
+                (int)response.StatusCode,
+                response.RequestMessage?.Method,
+                response.RequestMessage?.RequestUri,
+                errorBody);
+            response.EnsureSuccessStatusCode();
+        }
+
         return await response.Content.ReadFromJsonAsync<T>(cancellationToken);
     }
 
