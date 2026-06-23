@@ -34,12 +34,3 @@ CREATE TABLE IF NOT EXISTS bpce_invoices (
         FOREIGN KEY (commercial_document_id) REFERENCES commercial_documents (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- statement-break
-
-INSERT INTO schema_migrations (migration_id, applied_at)
-SELECT '008_bpce_invoicing', NOW(6)
-WHERE NOT EXISTS (
-    SELECT 1
-    FROM schema_migrations
-    WHERE migration_id = '008_bpce_invoicing'
-);
