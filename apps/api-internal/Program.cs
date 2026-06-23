@@ -109,11 +109,25 @@ builder.Services.AddSingleton<IActiveDirectoryService>(serviceProvider =>
                     ILogger<LdapActiveDirectoryService>>()),
         _ => new DisabledActiveDirectoryService(adConfiguration)
     });
-builder.Services.AddSingleton<IBpceInvoicingService>(_ =>
+builder.Services.AddHttpClient(
+    BpceTokenCache.HttpClientName,
+    client =>
+    {
+        client.Timeout =
+            TimeSpan.FromMilliseconds(bpceConfiguration.RequestTimeoutMs);
+    });
+builder.Services.AddSingleton<IBpceTokenCache, BpceTokenCache>();
+builder.Services.AddSingleton<IBpceInvoicingService>(serviceProvider =>
     bpceConfiguration.Mode switch
     {
         BpceIntegrationMode.Mock =>
             new MockBpceInvoicingService(bpceConfiguration),
+        BpceIntegrationMode.Live =>
+            new LiveBpceInvoicingService(
+                bpceConfiguration,
+                serviceProvider.GetRequiredService<IBpceTokenCache>(),
+                serviceProvider.GetRequiredService<
+                    ILogger<LiveBpceInvoicingService>>()),
         _ => new DisabledBpceInvoicingService(bpceConfiguration)
     });
 
