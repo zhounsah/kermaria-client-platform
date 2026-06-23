@@ -6,6 +6,7 @@ using Kermaria.ApiInternal.Data.Migration;
 using Kermaria.ApiInternal.Data.Repositories;
 using Kermaria.ApiInternal.Infrastructure;
 using Kermaria.ApiInternal.Services;
+using Kermaria.ApiInternal.Data.Repositories;
 using Kermaria.ApiInternal.Services.ActiveDirectory;
 using Kermaria.ApiInternal.Services.Bpce;
 using Microsoft.AspNetCore.Diagnostics;
@@ -84,6 +85,11 @@ builder.Services.AddScoped<IPortalNotificationRepository>(
         ? new MariaDbPortalNotificationRepository(sqlConfiguration)
         : new MockPortalNotificationRepository(
             serviceProvider.GetRequiredService<MockPortalNotificationStore>()));
+builder.Services.AddScoped<IBpceInvoicingRepository>(
+    _ => sqlConfiguration.IsPersistent
+        ? new MariaDbBpceInvoicingRepository(sqlConfiguration)
+        : new MockBpceInvoicingRepository());
+builder.Services.AddScoped<IInvoiceIssuingService, InvoiceIssuingService>();
 builder.Services.AddScoped<ICommercialRepository>(
     serviceProvider => sqlConfiguration.IsPersistent
         ? new MariaDbCommercialRepository(sqlConfiguration)
@@ -1851,6 +1857,101 @@ app.MapPost(
                 SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
             context.RequestAborted);
         return CommercialOk(context, service, result);
+    });
+
+app.MapPost(
+    "/internal/admin/commercial-documents/{id}/issue",
+    async (
+        string id,
+        HttpContext context,
+        IInvoiceIssuingService issuingService,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.commercial_documents.issue");
+        var request = await ReadPayload<BpceIssueInvoiceRequest>(context);
+        var result = await issuingService.IssueInvoiceAsync(
+            id,
+            request?.SendEmail ?? false,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "commercial_document.issue",
+                result.Succeeded ? "success" : "refused",
+                ReasonCode: result.Code,
+                TargetType: "commercial_document",
+                TargetReference: id,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+
+        if (!result.Succeeded)
+        {
+            var statusCode = result.Code == "DOCUMENT_NOT_FOUND"
+                ? StatusCodes.Status404NotFound
+                : result.Code == "INVOICE_ALREADY_ISSUED"
+                    ? StatusCodes.Status409Conflict
+                    : StatusCodes.Status400BadRequest;
+            return Results.Json(
+                new ApiError(result.Code, result.Message, context.GetCorrelationId()),
+                statusCode: statusCode);
+        }
+
+        return Results.Ok(new
+        {
+            code = result.Code,
+            message = result.Message,
+            invoice = result.Invoice,
+            correlation_id = context.GetCorrelationId()
+        });
+    });
+
+app.MapGet(
+    "/internal/admin/commercial-documents/{id}/invoice/pdf",
+    async (
+        string id,
+        HttpContext context,
+        IInvoiceIssuingService issuingService,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.commercial_documents.invoice.pdf");
+        var record = await issuingService.GetInvoiceRecordAsync(
+            id, context.RequestAborted);
+        if (record is null)
+        {
+            return Results.Json(
+                new ApiError(
+                    "INVOICE_NOT_FOUND",
+                    "No issued invoice found for this document.",
+                    context.GetCorrelationId()),
+                statusCode: StatusCodes.Status404NotFound);
+        }
+
+        var pdf = await issuingService.GetCachedInvoicePdfAsync(
+            id, context.RequestAborted);
+        if (pdf is null)
+        {
+            return Results.Json(
+                new ApiError(
+                    "PDF_NOT_AVAILABLE",
+                    "The invoice PDF is not yet available.",
+                    context.GetCorrelationId()),
+                statusCode: StatusCodes.Status404NotFound);
+        }
+
+        var filename = $"facture-{record.FiscalNumber ?? record.BpceInvoiceId}.pdf";
+        return Results.File(pdf, "application/pdf", filename);
     });
 
 app.MapFallback((HttpContext context) =>

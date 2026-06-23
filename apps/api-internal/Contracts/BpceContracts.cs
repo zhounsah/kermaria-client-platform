@@ -14,6 +14,18 @@ public sealed record BpceServiceResult<T>(
     string Message,
     T? Value = default);
 
+public sealed record BpceIssueInvoiceRequest(
+    bool SendEmail = false);
+
+public sealed record BpceIssuedInvoiceInfo(
+    string BpceInvoiceId,
+    string? FiscalNumber,
+    string Status,
+    string IssueDate,
+    int TotalAmountCents,
+    string Currency,
+    bool PdfAvailable);
+
 public sealed record BpceSenderInfo(
     string Id,
     string? Name,

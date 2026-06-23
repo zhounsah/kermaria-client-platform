@@ -1449,4 +1449,96 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
         int? TaxRateBasisPoints,
         int LineTotalCents,
         int SortOrder);
+
+    public async Task<DocumentForIssuing?> GetDocumentForIssuingAsync(
+        string documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT
+                d.id            AS document_id,
+                d.title,
+                d.internal_reference,
+                d.currency,
+                d.total_amount_cents,
+                d.status,
+                c.id            AS customer_id,
+                c.external_reference,
+                c.display_name,
+                c.billing_email,
+                c.address,
+                c.city,
+                c.country
+            FROM commercial_documents d
+            JOIN customers c ON c.id = d.customer_id
+            WHERE d.id = @documentId
+            """;
+        cmd.Parameters.AddWithValue("documentId", documentId);
+
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var doc = new
+        {
+            DocumentId = reader.GetString("document_id"),
+            CustomerId = reader.GetString("customer_id"),
+            CustomerExternalReference = reader.GetString("external_reference"),
+            CustomerDisplayName = reader.GetString("display_name"),
+            CustomerBillingEmail = ReadNullableString(reader, "billing_email"),
+            CustomerAddress = ReadNullableString(reader, "address"),
+            CustomerCity = ReadNullableString(reader, "city"),
+            CustomerCountry = ReadNullableString(reader, "country"),
+            DocumentTitle = reader.GetString("title"),
+            InternalReference = reader.GetString("internal_reference"),
+            Currency = reader.GetString("currency"),
+            TotalAmountCents = reader.GetInt32("total_amount_cents"),
+            Status = reader.GetString("status")
+        };
+        await reader.CloseAsync();
+
+        var lines = await GetLinesAsync(
+            connection, documentId, cancellationToken);
+
+        return new DocumentForIssuing(
+            doc.DocumentId,
+            doc.CustomerId,
+            doc.CustomerExternalReference,
+            doc.CustomerDisplayName,
+            doc.CustomerBillingEmail,
+            doc.CustomerAddress,
+            doc.CustomerCity,
+            doc.CustomerCountry,
+            doc.DocumentTitle,
+            doc.InternalReference,
+            doc.Currency,
+            doc.TotalAmountCents,
+            doc.Status,
+            lines);
+    }
+
+    public async Task MarkDocumentIssuedAsync(
+        string documentId,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            UPDATE commercial_documents SET
+                status = 'issued',
+                updated_at = NOW(6)
+            WHERE id = @documentId
+            """;
+        cmd.Parameters.AddWithValue("documentId", documentId);
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
+    }
 }

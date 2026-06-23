@@ -580,6 +580,72 @@ public sealed class MockCommercialRepository : ICommercialRepository
         }
     }
 
+    public Task<DocumentForIssuing?> GetDocumentForIssuingAsync(
+        string documentId,
+        CancellationToken cancellationToken)
+    {
+        lock (_store.SyncRoot)
+        {
+            var doc = _store.Documents.FirstOrDefault(
+                d => d.Id == documentId);
+            if (doc is null)
+            {
+                return Task.FromResult<DocumentForIssuing?>(null);
+            }
+
+            var lines = LinesFor(documentId)
+                .OrderBy(l => l.SortOrder)
+                .Select(l => new CommercialDocumentLine(
+                    l.Id,
+                    l.OfferId,
+                    l.Label,
+                    l.Description,
+                    l.Quantity,
+                    l.UnitLabel,
+                    l.UnitPriceCents,
+                    l.TaxRateBasisPoints,
+                    l.LineTotalCents,
+                    l.SortOrder,
+                    l.CreatedAt,
+                    l.UpdatedAt))
+                .ToArray();
+
+            return Task.FromResult<DocumentForIssuing?>(new DocumentForIssuing(
+                doc.Id,
+                doc.CustomerReference,
+                doc.CustomerReference,
+                doc.CustomerName,
+                null,
+                null,
+                null,
+                "FR",
+                doc.Title,
+                doc.InternalReference,
+                doc.Currency,
+                doc.TotalAmountCents,
+                doc.Status,
+                lines));
+        }
+    }
+
+    public Task MarkDocumentIssuedAsync(
+        string documentId,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
+        lock (_store.SyncRoot)
+        {
+            var doc = _store.Documents.FirstOrDefault(d => d.Id == documentId);
+            if (doc is not null)
+            {
+                doc.Status = "issued";
+                doc.UpdatedAt = DateTime.UtcNow.ToString("O");
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
     private MockCommercialDocument FindDocument(string documentId)
         => _store.Documents.FirstOrDefault(document => document.Id == documentId)
             ?? throw new PortalDataNotFoundException();

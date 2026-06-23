@@ -1,4 +1,3 @@
-using System.Net.Http;
 using System.Text.Json.Serialization;
 using Kermaria.ApiInternal.Contracts;
 using Kermaria.ApiInternal.Data.Configuration;
@@ -8,6 +7,9 @@ namespace Kermaria.ApiInternal.Services.Bpce;
 public sealed class LiveBpceInvoicingService : IBpceInvoicingService
 {
     private const string SendersPath = "/inv/api/v5/senders/";
+    private const string CustomersPath = "/inv/api/v5/customers/";
+    private const string InvoicesPath = "/inv/api/v5/invoices/";
+    private const string InvoiceItemsPath = "/inv/api/v5/invoicesimpleitems/";
 
     private readonly BpceRuntimeConfiguration _configuration;
     private readonly IBpceTokenCache _tokenCache;
@@ -76,16 +78,14 @@ public sealed class LiveBpceInvoicingService : IBpceInvoicingService
     {
         if (!_configuration.ConfigurationValid)
         {
-            return UnconfiguredList();
+            return UnconfiguredList<BpceSenderInfo>();
         }
 
         try
         {
             var payload = await _apiClient.GetJsonAsync<BpceSenderListPayload>(
-                SendersPath,
-                cancellationToken);
-            var rawSenders = payload?.Results ?? Array.Empty<BpceSenderApiDto>();
-            var senders = rawSenders
+                SendersPath, cancellationToken);
+            var senders = (payload?.Results ?? Array.Empty<BpceSenderApiDto>())
                 .Select(MapToSenderInfo)
                 .ToArray();
             return new BpceServiceResult<IReadOnlyList<BpceSenderInfo>>(
@@ -94,14 +94,12 @@ public sealed class LiveBpceInvoicingService : IBpceInvoicingService
                 "BPCE senders returned.",
                 senders);
         }
-        catch (Exception exception)
-            when (exception is BpceAuthenticationException
+        catch (Exception ex)
+            when (ex is BpceAuthenticationException
                 or HttpRequestException
                 or TaskCanceledException)
         {
-            _logger.LogWarning(
-                exception,
-                "BPCE sender list could not be retrieved");
+            _logger.LogWarning(ex, "BPCE sender list could not be retrieved");
             return new BpceServiceResult<IReadOnlyList<BpceSenderInfo>>(
                 StatusCodes.Status503ServiceUnavailable,
                 "BPCE_UNREACHABLE",
@@ -133,8 +131,7 @@ public sealed class LiveBpceInvoicingService : IBpceInvoicingService
         try
         {
             var payload = await _apiClient.GetJsonAsync<BpceSenderApiDto>(
-                $"{SendersPath}{senderId.Trim()}/",
-                cancellationToken);
+                $"{SendersPath}{senderId.Trim()}/", cancellationToken);
             if (payload is null)
             {
                 return new BpceServiceResult<BpceSenderInfo>(
@@ -149,15 +146,12 @@ public sealed class LiveBpceInvoicingService : IBpceInvoicingService
                 "BPCE sender returned.",
                 MapToSenderInfo(payload));
         }
-        catch (Exception exception)
-            when (exception is BpceAuthenticationException
+        catch (Exception ex)
+            when (ex is BpceAuthenticationException
                 or HttpRequestException
                 or TaskCanceledException)
         {
-            _logger.LogWarning(
-                exception,
-                "BPCE sender {SenderId} could not be retrieved",
-                senderId);
+            _logger.LogWarning(ex, "BPCE sender {SenderId} could not be retrieved", senderId);
             return new BpceServiceResult<BpceSenderInfo>(
                 StatusCodes.Status503ServiceUnavailable,
                 "BPCE_UNREACHABLE",
@@ -165,16 +159,299 @@ public sealed class LiveBpceInvoicingService : IBpceInvoicingService
         }
     }
 
-    private static BpceServiceResult<IReadOnlyList<BpceSenderInfo>> UnconfiguredList()
+    public async Task<BpceServiceResult<string>> UpsertCustomerAsync(
+        string externalReference,
+        string displayName,
+        string? email,
+        string? address,
+        string? city,
+        string? country,
+        CancellationToken cancellationToken)
+    {
+        if (!_configuration.ConfigurationValid)
+        {
+            return new BpceServiceResult<string>(
+                StatusCodes.Status503ServiceUnavailable,
+                "BPCE_UNCONFIGURED",
+                "BPCE invoicing API is not configured.");
+        }
+
+        try
+        {
+            var existingId = await GetCustomerByExternalIdAsync(
+                externalReference, cancellationToken);
+            if (existingId is not null)
+            {
+                return new BpceServiceResult<string>(
+                    StatusCodes.Status200OK,
+                    "BPCE_CUSTOMER_FOUND",
+                    "BPCE customer already exists.",
+                    existingId);
+            }
+
+            var payload = new
+            {
+                external_id = externalReference,
+                name = displayName,
+                email,
+                address,
+                city,
+                country = string.IsNullOrWhiteSpace(country) ? "FR" : country,
+                is_legal_entity = true
+            };
+
+            var created = await _apiClient.PostJsonAsync<BpceCustomerApiDto>(
+                CustomersPath, payload, cancellationToken);
+
+            if (created is null)
+            {
+                return new BpceServiceResult<string>(
+                    StatusCodes.Status503ServiceUnavailable,
+                    "BPCE_CUSTOMER_CREATE_FAILED",
+                    "Failed to create BPCE customer.");
+            }
+
+            return new BpceServiceResult<string>(
+                StatusCodes.Status201Created,
+                "BPCE_CUSTOMER_CREATED",
+                "BPCE customer created.",
+                created.Id.ToString(
+                    System.Globalization.CultureInfo.InvariantCulture));
+        }
+        catch (Exception ex)
+            when (ex is BpceAuthenticationException
+                or HttpRequestException
+                or TaskCanceledException)
+        {
+            _logger.LogWarning(ex, "BPCE customer upsert failed");
+            return new BpceServiceResult<string>(
+                StatusCodes.Status503ServiceUnavailable,
+                "BPCE_UNREACHABLE",
+                "BPCE invoicing API could not be reached.");
+        }
+    }
+
+    public async Task<BpceServiceResult<string>> CreateDraftInvoiceAsync(
+        string bpceCustomerId,
+        string externalReference,
+        string title,
+        string issueDate,
+        IReadOnlyList<BpceInvoiceLineInput> lines,
+        CancellationToken cancellationToken)
+    {
+        if (!_configuration.ConfigurationValid
+            || _configuration.SenderId is null)
+        {
+            return new BpceServiceResult<string>(
+                StatusCodes.Status503ServiceUnavailable,
+                "BPCE_UNCONFIGURED",
+                "BPCE sender ID is not configured.");
+        }
+
+        if (!int.TryParse(_configuration.SenderId, out var senderId)
+            || !int.TryParse(bpceCustomerId, out var customerId))
+        {
+            return new BpceServiceResult<string>(
+                StatusCodes.Status400BadRequest,
+                "INVALID_BPCE_ID",
+                "Sender or customer ID is not a valid BPCE integer.");
+        }
+
+        try
+        {
+            var invoicePayload = new
+            {
+                type = "invoice",
+                sender = senderId,
+                customer = customerId,
+                external_id = externalReference,
+                issue_date = issueDate,
+                title,
+                duedate_method = "DUEDATE_30_DAYS"
+            };
+
+            var created = await _apiClient.PostJsonAsync<BpceInvoiceApiDto>(
+                InvoicesPath, invoicePayload, cancellationToken);
+
+            if (created is null)
+            {
+                return new BpceServiceResult<string>(
+                    StatusCodes.Status503ServiceUnavailable,
+                    "BPCE_INVOICE_CREATE_FAILED",
+                    "Failed to create BPCE draft invoice.");
+            }
+
+            var invoiceId = created.Id.ToString(
+                System.Globalization.CultureInfo.InvariantCulture);
+
+            foreach (var line in lines.OrderBy(l => l.SortOrder))
+            {
+                var linePayload = new
+                {
+                    invoice = created.Id,
+                    label = line.Label,
+                    description = line.Description,
+                    quantity = line.Quantity,
+                    unit = line.UnitLabel,
+                    unit_price = line.UnitPriceEuros,
+                    vat_rate = line.TaxRatePercent ?? 0m
+                };
+
+                await _apiClient.PostJsonAsync<object>(
+                    InvoiceItemsPath, linePayload, cancellationToken);
+            }
+
+            return new BpceServiceResult<string>(
+                StatusCodes.Status201Created,
+                "BPCE_INVOICE_DRAFT_CREATED",
+                "BPCE draft invoice created.",
+                invoiceId);
+        }
+        catch (Exception ex)
+            when (ex is BpceAuthenticationException
+                or HttpRequestException
+                or TaskCanceledException)
+        {
+            _logger.LogWarning(ex, "BPCE draft invoice creation failed");
+            return new BpceServiceResult<string>(
+                StatusCodes.Status503ServiceUnavailable,
+                "BPCE_UNREACHABLE",
+                "BPCE invoicing API could not be reached.");
+        }
+    }
+
+    public async Task<BpceServiceResult<(string? FiscalNumber, string Status)>> ValidateInvoiceAsync(
+        string bpceInvoiceId,
+        bool sendEmail,
+        CancellationToken cancellationToken)
+    {
+        if (!_configuration.ConfigurationValid)
+        {
+            return new BpceServiceResult<(string?, string)>(
+                StatusCodes.Status503ServiceUnavailable,
+                "BPCE_UNCONFIGURED",
+                "BPCE invoicing API is not configured.");
+        }
+
+        try
+        {
+            var payload = new
+            {
+                send_email = sendEmail,
+                no_auto_email_reminder = !sendEmail
+            };
+
+            var result = await _apiClient.PostJsonAsync<BpceInvoiceApiDto>(
+                $"{InvoicesPath}{bpceInvoiceId}/validate/",
+                payload,
+                cancellationToken);
+
+            if (result is null)
+            {
+                return new BpceServiceResult<(string?, string)>(
+                    StatusCodes.Status503ServiceUnavailable,
+                    "BPCE_VALIDATE_FAILED",
+                    "BPCE invoice validation failed.");
+            }
+
+            return new BpceServiceResult<(string?, string)>(
+                StatusCodes.Status200OK,
+                "BPCE_INVOICE_VALIDATED",
+                "BPCE invoice validated.",
+                (result.InvoiceNumber, result.Status ?? "validated"));
+        }
+        catch (Exception ex)
+            when (ex is BpceAuthenticationException
+                or HttpRequestException
+                or TaskCanceledException)
+        {
+            _logger.LogWarning(
+                ex,
+                "BPCE invoice {InvoiceId} validation failed",
+                bpceInvoiceId);
+            return new BpceServiceResult<(string?, string)>(
+                StatusCodes.Status503ServiceUnavailable,
+                "BPCE_UNREACHABLE",
+                "BPCE invoicing API could not be reached.");
+        }
+    }
+
+    public async Task<BpceServiceResult<byte[]>> GetInvoicePdfAsync(
+        string bpceInvoiceId,
+        CancellationToken cancellationToken)
+    {
+        if (!_configuration.ConfigurationValid)
+        {
+            return new BpceServiceResult<byte[]>(
+                StatusCodes.Status503ServiceUnavailable,
+                "BPCE_UNCONFIGURED",
+                "BPCE invoicing API is not configured.");
+        }
+
+        try
+        {
+            var pdf = await _apiClient.GetBinaryAsync(
+                $"{InvoicesPath}{bpceInvoiceId}/pdf/",
+                cancellationToken);
+
+            if (pdf is null || pdf.Length == 0)
+            {
+                return new BpceServiceResult<byte[]>(
+                    StatusCodes.Status404NotFound,
+                    "BPCE_PDF_NOT_FOUND",
+                    "BPCE PDF not available yet.");
+            }
+
+            return new BpceServiceResult<byte[]>(
+                StatusCodes.Status200OK,
+                "BPCE_PDF_RETRIEVED",
+                "BPCE PDF retrieved.",
+                pdf);
+        }
+        catch (Exception ex)
+            when (ex is BpceAuthenticationException
+                or HttpRequestException
+                or TaskCanceledException)
+        {
+            _logger.LogWarning(
+                ex,
+                "BPCE PDF for invoice {InvoiceId} failed",
+                bpceInvoiceId);
+            return new BpceServiceResult<byte[]>(
+                StatusCodes.Status503ServiceUnavailable,
+                "BPCE_UNREACHABLE",
+                "BPCE invoicing API could not be reached.");
+        }
+    }
+
+    private async Task<string?> GetCustomerByExternalIdAsync(
+        string externalReference,
+        CancellationToken cancellationToken)
+    {
+        var payload = await _apiClient.GetJsonAsync<BpceCustomerListPayload>(
+            $"{CustomersPath}search_list/?external_id={Uri.EscapeDataString(externalReference)}",
+            cancellationToken);
+        var results = payload?.Results;
+        if (results is null || results.Count == 0)
+        {
+            return null;
+        }
+
+        return results[0].Id.ToString(
+            System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private static BpceServiceResult<IReadOnlyList<T>> UnconfiguredList<T>()
         => new(
             StatusCodes.Status503ServiceUnavailable,
             "BPCE_UNCONFIGURED",
             "BPCE invoicing API is not configured.",
-            Array.Empty<BpceSenderInfo>());
+            Array.Empty<T>());
 
     private static BpceSenderInfo MapToSenderInfo(BpceSenderApiDto dto)
         => new(
-            Id: dto.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            Id: dto.Id.ToString(
+                System.Globalization.CultureInfo.InvariantCulture),
             Name: dto.Name,
             ProfileName: dto.ProfileName,
             Siren: dto.Siren,
@@ -187,8 +464,6 @@ public sealed class LiveBpceInvoicingService : IBpceInvoicingService
 
     private sealed record BpceSenderListPayload(
         [property: JsonPropertyName("count")] int? Count,
-        [property: JsonPropertyName("next")] string? Next,
-        [property: JsonPropertyName("previous")] string? Previous,
         [property: JsonPropertyName("results")]
             IReadOnlyList<BpceSenderApiDto>? Results);
 
@@ -203,4 +478,20 @@ public sealed class LiveBpceInvoicingService : IBpceInvoicingService
         [property: JsonPropertyName("locale")] string? Locale,
         [property: JsonPropertyName("is_default")] bool IsDefault,
         [property: JsonPropertyName("is_archived")] bool IsArchived);
+
+    private sealed record BpceCustomerListPayload(
+        [property: JsonPropertyName("count")] int? Count,
+        [property: JsonPropertyName("results")]
+            IReadOnlyList<BpceCustomerApiDto>? Results);
+
+    private sealed record BpceCustomerApiDto(
+        [property: JsonPropertyName("id")] int Id,
+        [property: JsonPropertyName("name")] string? Name,
+        [property: JsonPropertyName("external_id")] string? ExternalId);
+
+    private sealed record BpceInvoiceApiDto(
+        [property: JsonPropertyName("id")] int Id,
+        [property: JsonPropertyName("invoice_number")] string? InvoiceNumber,
+        [property: JsonPropertyName("status")] string? Status,
+        [property: JsonPropertyName("draft")] bool? Draft);
 }

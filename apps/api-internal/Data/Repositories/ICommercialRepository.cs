@@ -66,4 +66,29 @@ public interface ICommercialRepository
         string documentId,
         string correlationId,
         CancellationToken cancellationToken);
+
+    Task<DocumentForIssuing?> GetDocumentForIssuingAsync(
+        string documentId,
+        CancellationToken cancellationToken);
+
+    Task MarkDocumentIssuedAsync(
+        string documentId,
+        string correlationId,
+        CancellationToken cancellationToken);
 }
+
+public sealed record DocumentForIssuing(
+    string DocumentId,
+    string CustomerId,
+    string CustomerExternalReference,
+    string CustomerDisplayName,
+    string? CustomerBillingEmail,
+    string? CustomerAddress,
+    string? CustomerCity,
+    string? CustomerCountry,
+    string DocumentTitle,
+    string InternalReference,
+    string Currency,
+    int TotalAmountCents,
+    string Status,
+    IReadOnlyList<CommercialDocumentLine> Lines);
