@@ -116,6 +116,30 @@ public static class RuntimeConfigurationValidator
                 invalidVariables);
         }
 
+        var bpceMode = configuration["BPCE_INTEGRATION_MODE"]?.Trim();
+        if (string.Equals(
+                bpceMode,
+                "live",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (var variable in new[]
+            {
+                "BPCE_BASE_URL",
+                "BPCE_SENDER_ID"
+            })
+            {
+                if (string.IsNullOrWhiteSpace(configuration[variable]))
+                {
+                    invalidVariables.Add(variable);
+                }
+            }
+
+            ValidateSecret(
+                configuration,
+                "BPCE_REFRESH_TOKEN",
+                invalidVariables);
+        }
+
         foreach (var variable in DevelopmentSeedPasswordVariables)
         {
             if (!string.IsNullOrWhiteSpace(configuration[variable]))

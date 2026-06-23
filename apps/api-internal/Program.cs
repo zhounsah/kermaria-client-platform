@@ -7,6 +7,7 @@ using Kermaria.ApiInternal.Data.Repositories;
 using Kermaria.ApiInternal.Infrastructure;
 using Kermaria.ApiInternal.Services;
 using Kermaria.ApiInternal.Services.ActiveDirectory;
+using Kermaria.ApiInternal.Services.Bpce;
 using Microsoft.AspNetCore.Diagnostics;
 using MySqlConnector;
 
@@ -36,12 +37,14 @@ var sqlConfiguration = SqlConfigurationResolver.Resolve(
     builder.Configuration,
     builder.Environment);
 var adConfiguration = AdConfigurationResolver.Resolve(builder.Configuration);
+var bpceConfiguration = BpceConfigurationResolver.Resolve(builder.Configuration);
 var authConfiguration = AuthConfigurationResolver.Resolve(
     builder.Configuration,
     builder.Environment);
 
 builder.Services.AddSingleton(sqlConfiguration);
 builder.Services.AddSingleton(adConfiguration);
+builder.Services.AddSingleton(bpceConfiguration);
 builder.Services.AddSingleton(authConfiguration);
 builder.Services.AddSingleton<IPortalPasswordService, PortalPasswordService>();
 builder.Services.AddSingleton<ISessionTokenService, SessionTokenService>();
@@ -106,6 +109,13 @@ builder.Services.AddSingleton<IActiveDirectoryService>(serviceProvider =>
                     ILogger<LdapActiveDirectoryService>>()),
         _ => new DisabledActiveDirectoryService(adConfiguration)
     });
+builder.Services.AddSingleton<IBpceInvoicingService>(_ =>
+    bpceConfiguration.Mode switch
+    {
+        BpceIntegrationMode.Mock =>
+            new MockBpceInvoicingService(bpceConfiguration),
+        _ => new DisabledBpceInvoicingService(bpceConfiguration)
+    });
 
 var app = builder.Build();
 var exposeDebugExceptionDetails =
@@ -127,11 +137,12 @@ else
 }
 
 app.Logger.LogInformation(
-    "API-INTERNAL started in environment {Environment}; persistence {PersistenceMode}; Active Directory mode {AdMode}; operations_enabled {OperationsEnabled}",
+    "API-INTERNAL started in environment {Environment}; persistence {PersistenceMode}; Active Directory mode {AdMode}; operations_enabled {OperationsEnabled}; BPCE mode {BpceMode}",
     app.Environment.EnvironmentName,
     sqlConfiguration.IsPersistent ? "mariadb" : "mock",
     adConfiguration.ModeName,
-    adConfiguration.WritesEnabled);
+    adConfiguration.WritesEnabled,
+    bpceConfiguration.ModeName);
 
 if (args.Contains("--seed-demo-data", StringComparer.OrdinalIgnoreCase)
     && !args.Contains("--apply-migrations", StringComparer.OrdinalIgnoreCase))
@@ -746,6 +757,32 @@ app.MapGet(
             status.Mode,
             actor.UserId,
             null);
+        return Results.Ok(status);
+    });
+app.MapGet(
+    "/internal/admin/bpce/status",
+    async (
+        HttpContext context,
+        IBpceInvoicingService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.bpce.status.read");
+        var status = await service.GetStatusAsync(context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "admin.bpce.status.read",
+                "success",
+                TargetType: "bpce_invoicing",
+                TargetReference: status.Mode,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
         return Results.Ok(status);
     });
 app.MapGet(
