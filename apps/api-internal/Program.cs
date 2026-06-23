@@ -29,9 +29,16 @@ if (Enum.TryParse<LogLevel>(
     builder.Logging.SetMinimumLevel(configuredLogLevel);
 }
 
-RuntimeConfigurationValidator.Validate(
-    builder.Configuration,
-    builder.Environment);
+var isBpceCli = args.Contains(
+    "--verify-bpce-sender",
+    StringComparer.OrdinalIgnoreCase);
+
+if (!isBpceCli)
+{
+    RuntimeConfigurationValidator.Validate(
+        builder.Configuration,
+        builder.Environment);
+}
 
 var sqlConfiguration = SqlConfigurationResolver.Resolve(
     builder.Configuration,
