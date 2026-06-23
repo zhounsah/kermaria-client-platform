@@ -75,16 +75,15 @@ public sealed class BpceTokenCache : IBpceTokenCache, IDisposable
 
             var payload = await response.Content.ReadFromJsonAsync<BpceTokenResponse>(
                 cancellationToken);
-            if (payload is null
-                || string.IsNullOrWhiteSpace(payload.Access)
-                || payload.AccessExpiresAt == default)
+            if (payload is null || string.IsNullOrWhiteSpace(payload.Access))
             {
                 throw new BpceAuthenticationException(
-                    "BPCE refresh response is missing the access token or its expiry.");
+                    "BPCE refresh response is missing the access token.");
             }
 
             _accessToken = payload.Access;
-            _expiresAt = payload.AccessExpiresAt;
+            _expiresAt = payload.AccessExpiresAt
+                ?? DateTimeOffset.UtcNow.AddMinutes(5);
             return _accessToken;
         }
         finally
@@ -112,8 +111,8 @@ public sealed class BpceTokenCache : IBpceTokenCache, IDisposable
         [property: JsonPropertyName("refresh")] string Refresh);
 
     private sealed record BpceTokenResponse(
-        [property: JsonPropertyName("access")] string Access,
-        [property: JsonPropertyName("access_expires_at")] DateTimeOffset AccessExpiresAt);
+        [property: JsonPropertyName("access")] string? Access,
+        [property: JsonPropertyName("access_expires_at")] DateTimeOffset? AccessExpiresAt);
 }
 
 public sealed class BpceAuthenticationException : Exception
