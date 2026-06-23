@@ -117,6 +117,7 @@ builder.Services.AddHttpClient(
             TimeSpan.FromMilliseconds(bpceConfiguration.RequestTimeoutMs);
     });
 builder.Services.AddSingleton<IBpceTokenCache, BpceTokenCache>();
+builder.Services.AddSingleton<IBpceApiClient, BpceApiClient>();
 builder.Services.AddSingleton<IBpceInvoicingService>(serviceProvider =>
     bpceConfiguration.Mode switch
     {
@@ -126,6 +127,7 @@ builder.Services.AddSingleton<IBpceInvoicingService>(serviceProvider =>
             new LiveBpceInvoicingService(
                 bpceConfiguration,
                 serviceProvider.GetRequiredService<IBpceTokenCache>(),
+                serviceProvider.GetRequiredService<IBpceApiClient>(),
                 serviceProvider.GetRequiredService<
                     ILogger<LiveBpceInvoicingService>>()),
         _ => new DisabledBpceInvoicingService(bpceConfiguration)
@@ -178,6 +180,84 @@ if (args.Contains("--apply-migrations", StringComparer.OrdinalIgnoreCase))
         scope.ServiceProvider.GetRequiredService<MariaDbMigrationRunner>();
     await migrationRunner.ApplyAsync(
         args.Contains("--seed-demo-data", StringComparer.OrdinalIgnoreCase));
+    return;
+}
+
+if (args.Contains("--verify-bpce-sender", StringComparer.OrdinalIgnoreCase))
+{
+    await using var scope = app.Services.CreateAsyncScope();
+    var bpceService =
+        scope.ServiceProvider.GetRequiredService<IBpceInvoicingService>();
+    var cts = new CancellationTokenSource(
+        TimeSpan.FromSeconds(30));
+
+    app.Logger.LogInformation(
+        "BPCE sender verification — mode {Mode}",
+        bpceService.ModeName);
+
+    var listResult = await bpceService.ListSendersAsync(cts.Token);
+    if (listResult.StatusCode >= 400)
+    {
+        app.Logger.LogError(
+            "BPCE sender list failed: [{Code}] {Message}",
+            listResult.Code,
+            listResult.Message);
+        return;
+    }
+
+    var senders = listResult.Value ?? Array.Empty<BpceSenderInfo>();
+    if (senders.Count == 0)
+    {
+        app.Logger.LogWarning(
+            "BPCE: no sender profiles found. Create one on {Url}",
+            $"{bpceConfiguration.BaseUrl}/organisation/senders/");
+        return;
+    }
+
+    foreach (var sender in senders)
+    {
+        app.Logger.LogInformation(
+            "BPCE sender — id={Id} name={Name} siret={Siret} default={IsDefault} archived={IsArchived}",
+            sender.Id,
+            sender.Name ?? "(none)",
+            sender.Siret ?? "(none)",
+            sender.IsDefault,
+            sender.IsArchived);
+    }
+
+    var configuredSenderId = bpceConfiguration.SenderId;
+    if (configuredSenderId is not null)
+    {
+        var getResult = await bpceService.GetSenderAsync(
+            configuredSenderId,
+            cts.Token);
+        if (getResult.StatusCode >= 400)
+        {
+            app.Logger.LogWarning(
+                "BPCE_SENDER_ID={SenderId} is set but the sender was not found: [{Code}] {Message}",
+                configuredSenderId,
+                getResult.Code,
+                getResult.Message);
+        }
+        else
+        {
+            app.Logger.LogInformation(
+                "BPCE_SENDER_ID={SenderId} is valid — name={Name} siret={Siret}",
+                configuredSenderId,
+                getResult.Value?.Name ?? "(none)",
+                getResult.Value?.Siret ?? "(none)");
+        }
+    }
+    else
+    {
+        var defaultSender = senders.FirstOrDefault(s => s.IsDefault)
+            ?? senders[0];
+        app.Logger.LogInformation(
+            "BPCE_SENDER_ID is not set. Suggested value: {Id} ({Name})",
+            defaultSender.Id,
+            defaultSender.Name ?? "(none)");
+    }
+
     return;
 }
 
