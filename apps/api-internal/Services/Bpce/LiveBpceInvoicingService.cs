@@ -189,16 +189,8 @@ public sealed class LiveBpceInvoicingService : IBpceInvoicingService
                     existingId);
             }
 
-            var payload = new
-            {
-                external_id = externalReference,
-                name = displayName,
-                email,
-                address,
-                city,
-                country = string.IsNullOrWhiteSpace(country) ? "FR" : country,
-                is_legal_entity = true
-            };
+            var payload = BuildCustomerPayload(
+                externalReference, displayName, email, address, city, country);
 
             var created = await _apiClient.PostJsonAsync<BpceCustomerApiDto>(
                 CustomersPath, payload, cancellationToken);
@@ -422,6 +414,40 @@ public sealed class LiveBpceInvoicingService : IBpceInvoicingService
                 "BPCE_UNREACHABLE",
                 "BPCE invoicing API could not be reached.");
         }
+    }
+
+    private static Dictionary<string, object?> BuildCustomerPayload(
+        string externalReference,
+        string displayName,
+        string? email,
+        string? address,
+        string? city,
+        string? country)
+    {
+        var payload = new Dictionary<string, object?>
+        {
+            ["external_id"] = externalReference,
+            ["name"] = displayName,
+            ["is_legal_entity"] = true,
+            ["country"] = "FR"
+        };
+
+        if (!string.IsNullOrWhiteSpace(email))
+        {
+            payload["email"] = email;
+        }
+
+        if (!string.IsNullOrWhiteSpace(address))
+        {
+            payload["address"] = address;
+        }
+
+        if (!string.IsNullOrWhiteSpace(city))
+        {
+            payload["city"] = city;
+        }
+
+        return payload;
     }
 
     private async Task<string?> GetCustomerByExternalIdAsync(
