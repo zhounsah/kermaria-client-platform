@@ -1,5 +1,109 @@
 # Feuille de route
 
+## Phase de tests : principe
+
+Tant que le serveur cible **R740xd** n'est pas livre, le projet reste en
+**phase de tests** sur les hotes existants **SRV-01** et **SRV-02**. Aucune
+preprod jetable ne sera deployee sur l'infra actuelle.
+
+Pendant cette phase :
+
+- aucune mutation AD hors `OU=TEST_SITE_WEB,DC=home,DC=bzh` ;
+- aucun e-mail effectivement envoye a un destinataire externe ;
+- aucune numerotation fiscale revendiquee comme legale ;
+- aucun client reel integre.
+
+Les jalons fonctionnels (V0.20, V0.21) avancent en respectant ces bornes.
+Les jalons d'exploitation finale (V0.22b, V1.0) sont **bloques par la
+livraison du R740xd**.
+
+## Jalon V0.20 facturation reelle controlee
+
+Statut : **a faire, en phase de tests uniquement**.
+
+- numerotation fiscale sequentielle stable, par entite legale et exercice ;
+- mentions legales obligatoires EI (SIRET, TVA non applicable
+  art. 293 B CGI, etc.) ;
+- workflow `draft -> issued -> cancelled` sans modification apres emission ;
+- avoir comme seul moyen de corriger une facture emise ;
+- generation PDF immuable archivable, hash conserve ;
+- separation explicite devis (V0.15) vs facture emise ;
+- contrat admin pour emettre une facture a partir d'un document commercial
+  accepte.
+
+La V0.20 ne sort pas du depot : aucune emission externe, aucune transmission
+fiscale, aucun envoi e-mail, aucune action AD reelle, aucun paiement.
+
+## Jalon V0.21 suivi paiement manuel et premier canal e-mail
+
+Statut : **a faire, e-mail desactive par defaut**.
+
+- statut paiement `unpaid`, `partial`, `paid`, `overdue` ;
+- enregistrement manuel admin d'un encaissement ;
+- relances depuis l'admin avec notifications portail (s'appuie sur V0.12) ;
+- canal e-mail transactionnel sortant, **premier vrai canal externe**, via
+  SMTP configurable mais non cable sur un SMTP de production ;
+- templates minimaux : facture emise, relance, confirmation encaissement ;
+- journal d'envoi e-mail isole.
+
+La V0.21 n'ajoute aucun paiement en ligne, aucun prelevement SEPA, aucun
+rapprochement bancaire, aucun SMS, aucun push, aucun WebSocket. Le SMTP
+reel reste branchable uniquement en preprod cible.
+
+## Jalon V0.22a stabilisation testable sur SRV-01 et SRV-02
+
+Statut : **a faire, faisable sans la cible R740xd**.
+
+- recette complete executee sur le staging interne (couvre V0.16 et V0.17) ;
+- restauration MariaDB testee sur instance distincte ;
+- revue accessibilite WCAG AA des parcours client critiques ;
+- audit securite interne : dependances, secrets, headers, rate limiting ;
+- documentation utilisateur admin et client ;
+- procedure formelle de mise en production redigee, **non executee** ;
+- plan de continuite minimal documente.
+
+La V0.22a n'ajoute aucune fonctionnalite metier et ne s'execute pas sur
+l'infrastructure definitive.
+
+## Jalon V0.22b validation cible R740xd
+
+Statut : **bloque, declenche a la livraison du R740xd**.
+
+- bascule des services sur l'hote cible ;
+- execution de la procedure de mise en production redigee en V0.22a ;
+- restauration MariaDB testee sur la cible reelle ;
+- supervision, sauvegardes et alertes cables sur l'infrastructure
+  definitive ;
+- rotation effective des secrets precedemment exposes ;
+- certificats et regles pare-feu actifs sur la cible.
+
+La V0.22b n'ajoute aucune fonctionnalite metier.
+
+## Jalon V1.0 produit commercialisable minimal
+
+Statut : **bloque, materiel**. Prerequis : V0.22b realisee sur le R740xd.
+
+- deploiement sur l'infrastructure cible avec domaine, TLS et supervision
+  actifs ;
+- CGV, mentions legales et politique de confidentialite publiees ;
+- tarification publique alignee avec le catalogue V0.15 ;
+- premier client reel integre, **sortie de `OU=TEST_SITE_WEB`** vers une OU
+  de production validee ;
+- SLA documente et procedure d'incident formelle.
+
+La V1.0 ne marque pas la fin du produit. Toute fonctionnalite supplementaire
+identifiee pendant V0.22 est isolee en V0.23 ou plus tard, jamais ajoutee
+en derniere minute a V1.0.
+
+## Hors sequence
+
+Reserves, non programmes :
+
+- changement de mot de passe AD cote client (prepare mais desactive depuis V0.9) ;
+- provisioning AD etendu hors OU de test ;
+- paiement en ligne, prelevement SEPA, integration comptable ;
+- automatisation NAS, RDS, VPN.
+
 ## Jalon V0.19 durcissement securite et coherence AD
 
 Statut : **implemente dans le depot, prolonge le jalon V0.18**.
