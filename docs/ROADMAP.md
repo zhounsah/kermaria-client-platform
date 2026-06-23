@@ -17,22 +17,36 @@ Les jalons fonctionnels (V0.20, V0.21) avancent en respectant ces bornes.
 Les jalons d'exploitation finale (V0.22b, V1.0) sont **bloques par la
 livraison du R740xd**.
 
-## Jalon V0.20 facturation reelle controlee
+## Jalon V0.20 facturation reelle BPCE controlee
 
-Statut : **a faire, en phase de tests uniquement**.
+Statut : **implemente dans le depot, en phase de tests (mode live non active
+par defaut)**.
 
-- numerotation fiscale sequentielle stable, par entite legale et exercice ;
-- mentions legales obligatoires EI (SIRET, TVA non applicable
-  art. 293 B CGI, etc.) ;
-- workflow `draft -> issued -> cancelled` sans modification apres emission ;
-- avoir comme seul moyen de corriger une facture emise ;
-- generation PDF immuable archivable, hash conserve ;
-- separation explicite devis (V0.15) vs facture emise ;
-- contrat admin pour emettre une facture a partir d'un document commercial
-  accepte.
+Integration avec l'API de gestion de factures de la Banque Populaire
+(https://www.gestion-factures.banquepopulaire.fr/inv/api/v5) :
 
-La V0.20 ne sort pas du depot : aucune emission externe, aucune transmission
-fiscale, aucun envoi e-mail, aucune action AD reelle, aucun paiement.
+- `BPCE_INTEGRATION_MODE` : `disabled` (defaut) | `mock` | `live` ;
+  le mode `live` emet de vraies factures cote banque, ne l'activer qu'apres
+  validation explicite ;
+- `--verify-bpce-sender` : commande CLI pour verifier la connexion JWT et
+  lister les profils de facturation BPCE (lecture seule, aucune ecriture) ;
+- synchronisation client BPCE (`/customers/`) via `external_id` = reference
+  externe client, idempotente ;
+- creation de brouillon et validation (`/invoices/` + `validate/`) :
+  numerotation fiscale allouee par BPCE, facture immuable apres validation ;
+- generation PDF archivee cote `API-INTERNAL` en LONGBLOB avec hash SHA-256 ;
+- tables `bpce_customers` et `bpce_invoices` (migration `008_bpce_invoicing`)
+  pour la double persistance locale independamment de la disponibilite BPCE ;
+- endpoint admin `POST .../issue` et `GET .../invoice/pdf` servi depuis le
+  cache local (jamais d'acces BPCE direct depuis le navigateur) ;
+- interface admin : bouton d'emission avec confirmation, affichage numero
+  fiscal, lien PDF ;
+- portail client : affichage du statut `issued` sans texte "informatif" ;
+  telechargement PDF client prevu en V0.21 (necessite endpoint portail dedie).
+
+La V0.20 ne declenche aucun envoi e-mail, aucune action AD, aucun paiement
+en ligne. Le mode `live` est desactive par defaut, conforme au principe
+phase-de-tests (R740xd non encore livre).
 
 ## Jalon V0.21 suivi paiement manuel et premier canal e-mail
 
