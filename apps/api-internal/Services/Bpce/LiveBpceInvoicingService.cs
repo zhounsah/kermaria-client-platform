@@ -258,7 +258,7 @@ public sealed class LiveBpceInvoicingService : IBpceInvoicingService
                 customer = customerId,
                 external_id = externalReference,
                 issue_date = issueDate,
-                title,
+                title = title.Length > 30 ? title[..30] : title,
                 duedate_method = "DUEDATE_30_DAYS"
             };
 
