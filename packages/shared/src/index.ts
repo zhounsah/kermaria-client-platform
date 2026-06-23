@@ -242,6 +242,8 @@ export interface CommercialOfferSummary {
   priceKind: "ht";
   priceAmountCents: number;
   currency: "EUR";
+  taxRateBasisPoints: number | null;
+  externalReference: string | null;
   status: CommercialOfferStatus;
   displayOrder: number;
   createdAt: string;

@@ -779,6 +779,8 @@ public sealed class MockCommercialRepository : ICommercialRepository
             offer.PriceKind,
             offer.PriceAmountCents,
             offer.Currency,
+            null,
+            null,
             offer.Status,
             offer.DisplayOrder,
             offer.CreatedAt,

@@ -11,6 +11,8 @@ public sealed record CommercialOfferSummary(
     string PriceKind,
     int PriceAmountCents,
     string Currency,
+    int? TaxRateBasisPoints,
+    string? ExternalReference,
     string Status,
     int DisplayOrder,
     string CreatedAt,

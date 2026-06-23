@@ -127,13 +127,30 @@ export function AdminCommercialDocumentLineForm({
           Offre liée
           <select
             disabled={disabled}
-            onChange={(event) => setOfferId(event.target.value)}
+            onChange={(event) => {
+              const selectedId = event.target.value;
+              setOfferId(selectedId);
+              if (selectedId) {
+                const offer = offers.find((o) => o.id === selectedId);
+                if (offer) {
+                  setLabel(offer.name);
+                  setDescription(offer.description);
+                  setUnitLabel(offer.unitLabel);
+                  setUnitPriceCents(String(offer.priceAmountCents));
+                  if (offer.taxRateBasisPoints != null) {
+                    setTaxRateBasisPoints(String(offer.taxRateBasisPoints));
+                  }
+                }
+              }
+            }}
             value={offerId}
           >
             <option value="">Aucune</option>
             {offers.map((offer) => (
               <option key={offer.id} value={offer.id}>
-                {offer.name}
+                {offer.externalReference
+                  ? `[${offer.externalReference}] ${offer.name}`
+                  : offer.name}
               </option>
             ))}
           </select>

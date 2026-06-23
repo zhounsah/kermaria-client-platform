@@ -37,6 +37,8 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 price_kind,
                 price_amount_cents,
                 currency,
+                tax_rate_basis_points,
+                external_reference,
                 status,
                 display_order,
                 created_at,
@@ -72,6 +74,8 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 price_kind,
                 price_amount_cents,
                 currency,
+                tax_rate_basis_points,
+                external_reference,
                 status,
                 display_order,
                 created_at,
@@ -923,6 +927,12 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
             reader.GetString("price_kind"),
             reader.GetInt32("price_amount_cents"),
             reader.GetString("currency"),
+            reader.IsDBNull(reader.GetOrdinal("tax_rate_basis_points"))
+                ? null
+                : reader.GetInt32("tax_rate_basis_points"),
+            reader.IsDBNull(reader.GetOrdinal("external_reference"))
+                ? null
+                : reader.GetString("external_reference"),
             reader.GetString("status"),
             reader.GetInt32("display_order"),
             ToUtcIso(reader.GetDateTime("created_at")),
