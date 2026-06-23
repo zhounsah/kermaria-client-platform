@@ -12,21 +12,35 @@ browser -> WEBPORTAL / BFF -> API-INTERNAL -> MariaDB
 
 `WEBPORTAL` ne doit jamais acceder directement a MariaDB.
 
-## Etat V0.18
+## Etat V0.19
 
-La V0.18 introduit une integration Active Directory reelle mais strictement
-controlee, sans changer l'architecture ni ouvrir de nouveau perimetre metier :
+La V0.19 prolonge l'integration Active Directory controlee de la V0.18 et
+durcit la securite des flux admin, sans changer l'architecture ni ouvrir
+de nouveau perimetre metier.
+
+Acquis V0.18 toujours actifs :
 
 - modes AD `disabled`, `mock`, `read_only` et `controlled_write` ;
 - recherches AD et actions d'administration bornees a l'OU de test
   `OU=TEST_SITE_WEB,DC=home,DC=bzh` ;
 - liaisons `customer_ad_links` stockees dans MariaDB via `API-INTERNAL`
   uniquement ;
-- fiche client admin et manager AD alignes sur le statut AD reel ;
-- durcissement BFF/API sur les validations, les cookies, l'interservice et les
-  audits.
+- fiche client admin et manager AD alignes sur le statut AD reel.
 
-La V0.18 n'ajoute toujours aucun paiement reel, aucune facturation fiscale
+Renforts apportes par la V0.19 :
+
+- mutations BFF admin sensibles protegees par un jeton CSRF, sans stockage
+  en `localStorage` ou `sessionStorage` ;
+- `X-Service-Auth` exige sur `/internal/*` dans tout environnement non
+  `Development`, et plus seulement en Production ;
+- `RUN_MARIADB_TESTS=true` explicitement refuse hors `Development` ;
+- validateur d'entrees AD strict cote `API-INTERNAL` : DN normalises et
+  scope client verifie avant toute action ;
+- routes admin BFF reorganisees autour de mutations bornees auditables
+  plutot qu'une simple lecture seule ;
+- suite de tests `API-INTERNAL` etendue sur les flux AD controles.
+
+La V0.19 n'ajoute toujours aucun paiement reel, aucune facturation fiscale
 reelle, aucun e-mail automatique, SMS, push, WebSocket, provisioning complet
 ou suppression client/AD destructive. L'AD de production reste hors perimetre.
 
@@ -172,6 +186,7 @@ npm run check:health
 - [Operations](docs/OPERATIONS.md)
 - [Backup and restore](docs/BACKUP_RESTORE.md)
 - [Roadmap](docs/ROADMAP.md)
+- [Active Directory security hardening V0.19](docs/V0.19_AD_SECURITY_HARDENING.md)
 - [Active Directory controlled write V0.18](docs/V0.18_ACTIVE_DIRECTORY_CONTROLLED_WRITE.md)
 - [Preproduction technique V0.16](docs/V0.16_PREPRODUCTION_TECHNIQUE.md)
 - [Recette preproduction V0.17](docs/V0.17_RECETTE_PREPRODUCTION.md)

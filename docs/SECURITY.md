@@ -40,9 +40,10 @@ navigateur -> WEBPORTAL / BFF -> API-INTERNAL -> MariaDB
   `API-INTERNAL` lorsqu'un mode de test controle est explicitement prepare.
 - Tout flux non documente est refuse par defaut.
 
-## Durcissement V0.18
+## Durcissement V0.19
 
-La V0.18 conserve l'architecture et ajoute des garde-fous supplementaires :
+La V0.19 prolonge la V0.18, conserve l'architecture et cumule les garde-fous
+suivants :
 
 - la fiche client admin consolide identite, statut, services, demandes,
   documents commerciaux, factures, activite recente et audits via
@@ -98,7 +99,7 @@ invalide ou locale sans derogation explicite `ALLOW_LOCAL_INTERNAL_API_URL=true`
 - Aucun token, cookie, mot de passe, chaine de connexion ou secret dans les
   logs, audits ou vues admin.
 
-Politique cookie V0.18 :
+Politique cookie V0.19 :
 
 - `HttpOnly` obligatoire ;
 - `Secure` obligatoire hors developpement local ;
@@ -122,8 +123,9 @@ cookie HttpOnly -> BFF -> session API-INTERNAL -> user_id -> customer_id
 - Les validations BFF/API refusent les identifiants mal formes avant
   interpretation metier.
 - Les tests MariaDB opt-in couvrent deja des cas d'isolation support,
-  notification et document commercial ; la V0.18 etend la surface admin avec la
-  fiche client et les flux AD controles.
+  notification et document commercial ; les V0.18 et V0.19 etendent la
+  surface admin avec la fiche client, les flux AD controles et leurs
+  mutations protegees par CSRF.
 
 ## Autorisation
 
@@ -204,7 +206,7 @@ WEBPORTAL applique :
   contre AD n'est expose.
 - Toute OU de production reste hors perimetre et explicitement refusee.
 
-## Recette securite V0.18
+## Recette securite V0.19
 
 Verifier au minimum :
 

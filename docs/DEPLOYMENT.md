@@ -1,6 +1,6 @@
 # Deploiement
 
-Ce runbook V0.18 couvre la mise en place de `Development`, `Staging` et
+Ce runbook V0.19 couvre la mise en place de `Development`, `Staging` et
 `Production` en conservant strictement l'architecture :
 
 ```text
@@ -159,7 +159,7 @@ Sont interdits :
 9. Executer la recette de
    [V0.17](V0.17_RECETTE_PREPRODUCTION.md).
 
-## Garde-fous V0.18
+## Garde-fous V0.19
 
 - aucune connexion SQL directe depuis `WEBPORTAL` ;
 - aucune AD hors de l'OU de test validee ;

@@ -1,5 +1,25 @@
 # Feuille de route
 
+## Jalon V0.19 durcissement securite et coherence AD
+
+Statut : **implemente dans le depot, prolonge le jalon V0.18**.
+
+- mutations BFF admin sensibles protegees par un jeton CSRF cote serveur,
+  sans stockage en `localStorage` ou `sessionStorage` ;
+- `X-Service-Auth` exige sur `/internal/*` dans tout environnement non
+  `Development`, et plus seulement en Production ;
+- `RUN_MARIADB_TESTS=true` explicitement refuse hors `Development` ;
+- validateur d'entrees Active Directory strict cote `API-INTERNAL` : DN
+  normalises et scope client verifie avant toute action ;
+- routes admin BFF reorganisees autour de mutations bornees auditables
+  plutot qu'une lecture seule ;
+- suite de tests `API-INTERNAL` etendue sur les flux AD controles.
+
+La V0.19 ne change pas l'architecture `browser -> WEBPORTAL/BFF ->
+API-INTERNAL -> MariaDB`, n'ouvre aucun nouveau perimetre metier, n'active
+aucune OU AD de production, n'ajoute aucun paiement, e-mail, SMS, push,
+WebSocket, provisioning complet ou suppression destructive.
+
 ## Jalon V0.18 Active Directory controlled_write borne
 
 Statut : **implémente dans le dépôt, borné à l'OU de test validée**.
