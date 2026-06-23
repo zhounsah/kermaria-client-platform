@@ -281,12 +281,18 @@ public sealed class LiveBpceInvoicingService : IBpceInvoicingService
                 var linePayload = new
                 {
                     invoice = created.Id,
-                    label = line.Label,
-                    description = line.Description,
-                    quantity = line.Quantity,
+                    name = line.Label,
+                    additional_info = line.Description,
+                    quantity = line.Quantity.ToString(
+                        System.Globalization.CultureInfo.InvariantCulture),
                     unit = line.UnitLabel,
-                    unit_price = line.UnitPriceEuros,
-                    vat_rate = line.TaxRatePercent ?? 0m
+                    unit_price = line.UnitPriceEuros.ToString(
+                        "F2",
+                        System.Globalization.CultureInfo.InvariantCulture),
+                    tax_percent = (line.TaxRatePercent ?? 0m).ToString(
+                        "F2",
+                        System.Globalization.CultureInfo.InvariantCulture),
+                    position = line.SortOrder
                 };
 
                 await _apiClient.PostJsonAsync<object>(
