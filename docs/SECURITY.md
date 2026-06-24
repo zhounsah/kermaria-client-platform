@@ -7,10 +7,10 @@ Actifs principaux :
 - identites et sessions portail ;
 - profils clients et references de contrat ;
 - demandes support et service ;
-- documents commerciaux informatifs ;
+- documents commerciaux informatifs et factures fiscales BPCE ;
 - journaux d'audit ;
-- secrets applicatifs ;
-- MariaDB et Active Directory.
+- secrets applicatifs (incluant `BPCE_REFRESH_TOKEN` et `PAYPAL_CLIENT_SECRET`) ;
+- MariaDB, Active Directory, API BPCE et API PayPal.
 
 Menaces principales :
 
@@ -69,8 +69,16 @@ suivants :
   capture ou journalise.
 - La connexion MariaDB est assemblee en memoire a partir des variables
   `SQL_*`. Aucune chaine complete ne doit etre stockee ni affichee.
+- `BPCE_REFRESH_TOKEN` est un JWT long-lived bancaire : jamais commit,
+  jamais log, jamais retourne dans une reponse API. Il est echange contre
+  un access token court mis en cache memoire avec verrou et invalide sur
+  401. Voir `docs/V0.20_BPCE_INVOICING.md`.
+- `PAYPAL_CLIENT_SECRET` est traite avec le meme niveau de protection. Le
+  module `apps/webportal/lib/paypal.ts` ne le journalise jamais et ne le
+  renvoie jamais cote navigateur.
 - Les anciens secrets de test deja exposes doivent etre consideres compromis et
-  ne jamais etre repetes.
+  ne jamais etre repetes. Une rotation effective de tous les secrets cites
+  est prevue en V0.23b sur la cible R740xd.
 - `npm run check:secrets` reste un garde-fou local, pas un remplacement de
   scanner cote forge.
 
@@ -137,8 +145,13 @@ cookie HttpOnly -> BFF -> session API-INTERNAL -> user_id -> customer_id
 - Les actions AD reelles ne sont autorisees qu'en `controlled_write` dans l'OU
   de test validee.
 - Aucune suppression client destructive, aucun hard delete AD, aucun
-  provisioning complet, aucun paiement, e-mail, SMS, push ou WebSocket n'est
-  introduit.
+  provisioning complet, aucun e-mail automatique, SMS, push ou WebSocket
+  n'est introduit.
+- L'emission de facture BPCE (`POST .../issue`) et la confirmation de
+  paiement PayPal sont reservees respectivement aux roles `internal_admin`
+  et au flux de retour PayPal authentifie par session client. Le
+  basculement `BPCE_INTEGRATION_MODE=live` ou `PAYPAL_MODE=live` requiert
+  une validation explicite (V0.23b).
 
 ## Logs, audits et erreurs
 

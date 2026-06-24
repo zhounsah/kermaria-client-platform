@@ -1,6 +1,6 @@
 # Deploiement
 
-Ce runbook V0.19 couvre la mise en place de `Development`, `Staging` et
+Ce runbook V0.21 couvre la mise en place de `Development`, `Staging` et
 `Production` en conservant strictement l'architecture :
 
 ```text
@@ -35,10 +35,21 @@ Commun :
 - `DOTNET_ENVIRONMENT`
 - `SERVICE_AUTH_TOKEN`
 - `LOG_LEVEL`
+- `LOG_FILE_DIRECTORY` (optionnel, active la journalisation fichier
+  rotative quotidienne) ; `LOG_FILE_LEVEL` et `LOG_FILE_RETENTION_DAYS`
+  reglent niveau et purge
 - `SESSION_DURATION_MINUTES`
 - `LOGIN_MAX_FAILURES`
 - `LOGIN_LOCKOUT_MINUTES`
 - `AD_INTEGRATION_MODE=disabled`
+
+Facturation BPCE (V0.20) :
+
+- `BPCE_INTEGRATION_MODE=disabled|mock|live` (defaut `disabled`)
+- `BPCE_BASE_URL=https://www.gestion-factures.banquepopulaire.fr`
+- `BPCE_REFRESH_TOKEN` (**secret strict**, jamais commit, jamais log)
+- `BPCE_SENDER_ID` (renseigne via `--verify-bpce-sender`)
+- `BPCE_REQUEST_TIMEOUT_MS` (defaut 10000)
 
 Developpement uniquement :
 
@@ -59,6 +70,19 @@ Developpement uniquement :
 
 `SESSION_COOKIE_SAME_SITE=none` exige `SESSION_COOKIE_SECURE=true`.
 
+Paiement et reglement (V0.21) :
+
+- `PAYPAL_MODE=sandbox|live` (defaut `sandbox`)
+- `PAYPAL_CLIENT_ID`
+- `PAYPAL_CLIENT_SECRET` (**secret strict**, jamais commit, jamais log)
+- `BILLING_IBAN`, `BILLING_BIC`, `BILLING_TRANSFER_LABEL` (affiches sur la
+  section reglement des factures emises)
+- `BILLING_PAYPAL_URL` (fallback PayPal.me si l'integration PayPal Orders
+  n'est pas configuree)
+
+Le mode `live` PayPal n'est jamais active sans validation explicite (cf.
+V0.23b, R740xd).
+
 ## Profils d'environnement
 
 ### Development
@@ -76,6 +100,8 @@ Developpement uniquement :
 - `ASPNETCORE_ENVIRONMENT=Staging`
 - `DOTNET_ENVIRONMENT=Staging`
 - `AD_INTEGRATION_MODE=disabled`
+- `BPCE_INTEGRATION_MODE=disabled` ou `mock`
+- `PAYPAL_MODE=sandbox`
 - MariaDB reelle obligatoire
 - aucun `DEMO_*`
 - secrets hors Git
@@ -87,6 +113,8 @@ Developpement uniquement :
 - `ASPNETCORE_ENVIRONMENT=Production`
 - `DOTNET_ENVIRONMENT=Production`
 - `AD_INTEGRATION_MODE=disabled`
+- `BPCE_INTEGRATION_MODE=disabled` tant que V0.23b n'a pas valide la cible
+- `PAYPAL_MODE=sandbox` tant que V0.23b n'a pas valide la cible
 - MariaDB reelle obligatoire
 - aucun `DEMO_*`
 - secrets hors Git
@@ -159,10 +187,27 @@ Sont interdits :
 9. Executer la recette de
    [V0.17](V0.17_RECETTE_PREPRODUCTION.md).
 
-## Garde-fous V0.19
+## Pare-feu sortant additionnel V0.20-V0.21
+
+| Source | Destination | Port |
+|---|---|---|
+| `API-INTERNAL` | `www.gestion-factures.banquepopulaire.fr` (BPCE) | TCP 443 |
+| `WEBPORTAL` | `api-m.sandbox.paypal.com` / `api-m.paypal.com` | TCP 443 |
+
+Ces sorties ne sont autorisees que lorsque les modes correspondants ne
+sont pas `disabled`. Le navigateur ne contacte jamais BPCE ; il est
+redirige vers `paypal.com` pour l'approbation buyer puis ramene sur le
+portail.
+
+## Garde-fous V0.21
 
 - aucune connexion SQL directe depuis `WEBPORTAL` ;
 - aucune AD hors de l'OU de test validee ;
-- aucun paiement, e-mail, SMS, push, WebSocket ou provisioning ;
+- aucun appel BPCE depuis `WEBPORTAL` ; tout passe par `API-INTERNAL` ;
+- aucun secret PayPal cote navigateur (le client id est public mais le
+  flux Create Order reste cote serveur) ;
+- aucun mode `live` BPCE ou PayPal sans validation explicite (V0.23b) ;
+- aucun e-mail, SMS, push, WebSocket ou provisioning declenche par un
+  encaissement ;
 - aucune suppression client destructive ;
 - aucune confusion volontaire staging -> production.

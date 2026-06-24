@@ -211,11 +211,25 @@ L'intégration pourra présenter l'état d'un abonnement ou déclencher un
 workflow de provisioning. Les clés, profils et secrets VPN ne devront pas
 transiter inutilement ni être stockés dans les logs.
 
-### Facturation
+### Facturation BPCE (V0.20)
 
-`API-INTERNAL` adaptera le système de facturation existant au modèle commun des
-factures. Le portail recevra uniquement les données du client authentifié et
-des liens ou documents à durée de vie contrôlée si nécessaire.
+`API-INTERNAL` integre l'API de gestion de factures Banque Populaire pour
+emettre des factures fiscales reelles (numerotation immuable, PDF
+archive localement, voir `docs/V0.20_BPCE_INVOICING.md`). Le portail
+recoit uniquement les metadonnees du client authentifie et le PDF servi
+depuis le cache local. Le navigateur ne contacte jamais BPCE.
+
+### Paiement en ligne PayPal (V0.21)
+
+`WEBPORTAL` orchestre cote serveur le flux PayPal Orders API v2 pour les
+paiements one-shot (carte ou compte PayPal). Le buyer est redirige vers
+PayPal pour approbation puis ramene sur le portail. La capture, la
+confirmation `mark_as_paid` cote BPCE et la mise a jour du statut local
+sont realisees par `API-INTERNAL`. Voir `docs/V0.21_PAYMENT_CHANNELS.md`.
+
+Les abonnements recurrents (V0.22) passeront par l'API PayPal
+Subscriptions et des webhooks, avec generation automatique de factures
+BPCE mensuelles. Voir `docs/V0.22_SUBSCRIPTIONS.md`.
 
 ## Principes d'évolution
 

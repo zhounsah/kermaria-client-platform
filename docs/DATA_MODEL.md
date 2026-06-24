@@ -147,11 +147,15 @@ Catalogue commercial administrable de V0.15.
 | `currency` | text | Devise, `EUR` dans cette version |
 | `status` | text | `active` ou `inactive` |
 | `display_order` | integer | Ordre d'affichage |
+| `tax_rate_basis_points` | integer, nullable | Taux indicatif TVA en basis points (V0.20.1) |
+| `external_reference` | text, nullable, unique | Code d'import catalogue, ex. `AUDIT-SECU-BASE` (V0.20.1) |
 | `created_at` | timestamp | Date de création |
 | `updated_at` | timestamp | Dernière modification |
 
 Aucune suppression définitive n'est requise en V0.15. Une offre inactive peut
-rester référencée par des documents existants.
+rester référencée par des documents existants. La V0.20.1 ajoute
+`tax_rate_basis_points` et `external_reference` pour l'auto-fill des
+formulaires de ligne et l'import idempotent du catalogue.
 
 ## commercial_documents
 
@@ -164,7 +168,7 @@ client.
 | `customer_id` | identifier | Client concerné |
 | `service_request_id` | identifier, nullable | Demande de service liée |
 | `document_type` | text | `quote_draft`, `billing_draft`, `informational_invoice` |
-| `status` | text | `draft`, `pending_review`, `shared_with_customer`, `cancelled` |
+| `status` | text | `draft`, `pending_review`, `shared_with_customer`, `cancelled`, `issued`, `paid` |
 | `title` | text | Titre affiché |
 | `internal_reference` | text | Référence interne non fiscale |
 | `currency` | text | Devise |
@@ -178,8 +182,11 @@ client.
 | `shared_at` | timestamp, nullable | Date de partage au client |
 | `cancelled_at` | timestamp, nullable | Date d'annulation |
 
-Le document ne constitue jamais une facture officielle. `shared_with_customer`
-signifie uniquement que le client peut voir le document dans son portail.
+Le document devient une vraie facture quand son statut passe a `issued`
+(emission BPCE en V0.20). Le statut `paid` est positionne par la
+confirmation de paiement (V0.21). Les statuts V0.15
+(`draft`, `pending_review`, `shared_with_customer`, `cancelled`) restent
+purement informatifs : ils n'engagent ni la banque ni le client.
 
 ## commercial_document_lines
 
@@ -202,6 +209,45 @@ Lignes modifiables tant que le document reste en brouillon.
 
 La V0.15 ne cherche pas à couvrir toutes les subtilités comptables ou TVA.
 Les montants restent informatifs, validés côté serveur et stockés en centimes.
+
+## bpce_customers
+
+Mapping client local <-> identifiant BPCE (migration `008_bpce_invoicing`,
+V0.20).
+
+| Champ | Type logique | Description |
+|---|---|---|
+| `id` | identifier | Cle interne |
+| `customer_id` | identifier | Client local |
+| `bpce_customer_id` | text | Identifiant retourne par BPCE |
+| `external_id_sent` | text | Reference externe envoyee a BPCE (idempotence) |
+| `synchronized_at` | timestamp | Derniere synchronisation reussie |
+
+Contraintes : unicite par `customer_id`. Aucune information sensible n'est
+stockee ici en dehors du couple d'identifiants.
+
+## bpce_invoices
+
+Double persistance locale des factures BPCE (migration
+`008_bpce_invoicing`, V0.20).
+
+| Champ | Type logique | Description |
+|---|---|---|
+| `id` | identifier | Cle interne |
+| `commercial_document_id` | identifier | Document local source |
+| `customer_id` | identifier | Client concerne |
+| `bpce_invoice_id` | text | Identifiant retourne par BPCE |
+| `fiscal_number` | text | Numerotation fiscale immuable allouee par BPCE |
+| `issue_date` | timestamp | Date d'emission cote BPCE |
+| `validated_at` | timestamp | Date de validation BPCE |
+| `marked_as_paid_at` | timestamp, nullable | Date du `mark_as_paid` (V0.21) |
+| `pdf_blob` | binary | PDF immuable cache localement |
+| `pdf_hash` | text | SHA-256 du PDF (controle d'integrite) |
+| `created_at` | timestamp | Date de creation locale |
+
+Contraintes : unicite par `commercial_document_id`. La facture devient
+immuable cote banque apres validation : aucune mise a jour de `fiscal_number`
+n'est autorisee localement.
 
 ## support_requests
 

@@ -13,17 +13,17 @@ Pendant cette phase :
 - aucune numerotation fiscale revendiquee comme legale ;
 - aucun client reel integre.
 
-Les jalons fonctionnels (V0.20, V0.21) avancent en respectant ces bornes.
-Les jalons d'exploitation finale (V0.22b, V1.0) sont **bloques par la
+Les jalons fonctionnels (V0.20 a V0.22) avancent en respectant ces bornes.
+Les jalons d'exploitation finale (V0.23b, V1.0) sont **bloques par la
 livraison du R740xd**.
 
 ## Jalon V0.20 facturation reelle BPCE controlee
 
 Statut : **implemente dans le depot, en phase de tests (mode live non active
-par defaut)**.
+par defaut)**. Documentation dediee : [`V0.20_BPCE_INVOICING.md`](V0.20_BPCE_INVOICING.md).
 
 Integration avec l'API de gestion de factures de la Banque Populaire
-(https://www.gestion-factures.banquepopulaire.fr/inv/api/v5) :
+(`https://www.gestion-factures.banquepopulaire.fr/inv/api/v5`) :
 
 - `BPCE_INTEGRATION_MODE` : `disabled` (defaut) | `mock` | `live` ;
   le mode `live` emet de vraies factures cote banque, ne l'activer qu'apres
@@ -41,61 +41,133 @@ Integration avec l'API de gestion de factures de la Banque Populaire
   cache local (jamais d'acces BPCE direct depuis le navigateur) ;
 - interface admin : bouton d'emission avec confirmation, affichage numero
   fiscal, lien PDF ;
-- portail client : affichage du statut `issued` sans texte "informatif" ;
-  telechargement PDF client prevu en V0.21 (necessite endpoint portail dedie).
+- portail client : affichage du statut `issued` sans texte "informatif".
 
 La V0.20 ne declenche aucun envoi e-mail, aucune action AD, aucun paiement
 en ligne. Le mode `live` est desactive par defaut, conforme au principe
 phase-de-tests (R740xd non encore livre).
 
-## Jalon V0.21 suivi paiement manuel et premier canal e-mail
+### V0.20.1 import du catalogue de services
 
-Statut : **a faire, e-mail desactive par defaut**.
+Statut : **implemente dans le depot**.
 
-- statut paiement `unpaid`, `partial`, `paid`, `overdue` ;
-- enregistrement manuel admin d'un encaissement ;
-- relances depuis l'admin avec notifications portail (s'appuie sur V0.12) ;
+- migration `009_catalog_articles` : ajoute `tax_rate_basis_points` et
+  `external_reference` (unique) sur `commercial_offers` ;
+- import de 17 articles reels (audit, VPN, RDS, support N1/N2, etc.) a 20 %
+  TVA, prix en centimes, `external_reference` reutilisable en cle d'import ;
+- formulaire de ligne admin : selection d'une offre auto-remplit libelle,
+  unite, prix et taux indicatif. Aucun calcul de TVA legal a ce stade.
+
+## Jalon V0.21 canaux de paiement client
+
+Statut : **partiellement implemente dans le depot, en phase de tests**.
+Documentation dediee : [`V0.21_PAYMENT_CHANNELS.md`](V0.21_PAYMENT_CHANNELS.md).
+
+Acquis livres :
+
+- section `Reglement` affichee sur le portail client uniquement pour les
+  factures `issued` ou `paid` ;
+- virement bancaire : IBAN, BIC, libelle beneficiaire et reference a indiquer
+  presentes via les variables `BILLING_*` ;
+- paiement carte / PayPal en ligne (`PAYPAL_MODE=sandbox|live`,
+  `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`) :
+  - OAuth2 client credentials avec cache de token jusqu'a expiration ;
+  - creation d'ordre PayPal `intent: CAPTURE` (one-shot, jamais recurrent) ;
+  - capture lors du retour utilisateur, propagation a BPCE via
+    `POST /invoices/{id}/mark_as_paid/` et a `commercial_documents.status` ;
+  - statut local `paid` ajoute aux types partages et au formatter ;
+  - bouton PayPal masque apres paiement, message "facture reglee" affiche.
+
+Restent a finir avant cloture de V0.21 :
+
+- vue admin de suivi des paiements : tableau des factures `issued`/`paid`,
+  marquage manuel d'un encaissement (cas virement bancaire) ;
+- telechargement PDF cote portail client : endpoint dedie cote
+  `API-INTERNAL` avec validation d'ownership et signature de session ;
 - canal e-mail transactionnel sortant, **premier vrai canal externe**, via
   SMTP configurable mais non cable sur un SMTP de production ;
 - templates minimaux : facture emise, relance, confirmation encaissement ;
-- journal d'envoi e-mail isole.
+- journal d'envoi e-mail isole, sans contenu sensible.
 
-La V0.21 n'ajoute aucun paiement en ligne, aucun prelevement SEPA, aucun
-rapprochement bancaire, aucun SMS, aucun push, aucun WebSocket. Le SMTP
-reel reste branchable uniquement en preprod cible.
+La V0.21 n'introduit aucun prelevement SEPA recurrent, aucun rapprochement
+bancaire automatique, aucun SMS, aucun push, aucun WebSocket. Les
+abonnements recurrents font l'objet du jalon V0.22 separe. Le SMTP reel
+reste branchable uniquement en preprod cible.
 
-## Jalon V0.22a stabilisation testable sur SRV-01 et SRV-02
+## Jalon V0.22 abonnements recurrents PayPal
+
+Statut : **a faire**. Documentation de cadrage :
+[`V0.22_SUBSCRIPTIONS.md`](V0.22_SUBSCRIPTIONS.md).
+
+Objectif : permettre la facturation automatique mensuelle des services
+recurrents (acces VPN, RDS, support continu) sans saisie manuelle
+d'encaissement. S'appuie sur l'API PayPal Subscriptions, distincte de
+l'API Orders utilisee en V0.21.
+
+Perimetre vise :
+
+- distinction `one_time` vs `recurring` au catalogue (`commercial_offers`),
+  via une colonne additionnelle `billing_cadence` ;
+- creation manuelle des Plans PayPal cote dashboard developpeur pour chaque
+  service recurrent, avec stockage de l'identifiant retourne dans le
+  catalogue local ;
+- flux de souscription cote portail : redirection vers l'approbation du
+  mandat PayPal, callback de confirmation, persistance de la souscription
+  dans une table dediee `subscriptions` (id PayPal, plan, statut, dates) ;
+- webhooks PayPal (`BILLING.SUBSCRIPTION.ACTIVATED`,
+  `PAYMENT.SALE.COMPLETED`, `BILLING.SUBSCRIPTION.CANCELLED`...) :
+  authentification du webhook, idempotence sur l'event id, generation
+  automatique de facture BPCE et marquage `paid` ;
+- interface admin de suivi : liste des abonnements actifs, lien vers la
+  facture mensuelle generee, suspension et annulation cote PayPal.
+
+Garde-fous :
+
+- aucun cycle de prelevement declenche tant que `PAYPAL_MODE=sandbox` ;
+- aucune souscription active en environnement de tests sur un buyer reel ;
+- l'admin reste capable de marquer une periode comme `unpaid` si la banque
+  refuse le prelevement (statut PayPal `SUSPENDED` ou `EXPIRED`).
+
+La V0.22 n'ajoute ni rapprochement bancaire SEPA hors PayPal, ni SMS, ni
+push, ni provisioning AD automatique declenche par un encaissement.
+
+## Jalon V0.23a stabilisation testable sur SRV-01 et SRV-02
 
 Statut : **a faire, faisable sans la cible R740xd**.
 
-- recette complete executee sur le staging interne (couvre V0.16 et V0.17) ;
+- recette complete executee sur le staging interne (couvre V0.16, V0.17,
+  V0.20 BPCE mock et V0.21 PayPal sandbox) ;
 - restauration MariaDB testee sur instance distincte ;
 - revue accessibilite WCAG AA des parcours client critiques ;
-- audit securite interne : dependances, secrets, headers, rate limiting ;
+- audit securite interne : dependances, secrets, headers, rate limiting,
+  exposition du refresh token BPCE et des credentials PayPal ;
 - documentation utilisateur admin et client ;
 - procedure formelle de mise en production redigee, **non executee** ;
 - plan de continuite minimal documente.
 
-La V0.22a n'ajoute aucune fonctionnalite metier et ne s'execute pas sur
+La V0.23a n'ajoute aucune fonctionnalite metier et ne s'execute pas sur
 l'infrastructure definitive.
 
-## Jalon V0.22b validation cible R740xd
+## Jalon V0.23b validation cible R740xd
 
 Statut : **bloque, declenche a la livraison du R740xd**.
 
 - bascule des services sur l'hote cible ;
-- execution de la procedure de mise en production redigee en V0.22a ;
+- execution de la procedure de mise en production redigee en V0.23a ;
 - restauration MariaDB testee sur la cible reelle ;
 - supervision, sauvegardes et alertes cables sur l'infrastructure
   definitive ;
-- rotation effective des secrets precedemment exposes ;
-- certificats et regles pare-feu actifs sur la cible.
+- rotation effective des secrets precedemment exposes (incluant
+  `BPCE_REFRESH_TOKEN`, `PAYPAL_CLIENT_SECRET`, `SERVICE_AUTH_TOKEN`) ;
+- certificats et regles pare-feu actifs sur la cible ;
+- bascule `BPCE_INTEGRATION_MODE=live` et `PAYPAL_MODE=live` apres
+  validation explicite.
 
-La V0.22b n'ajoute aucune fonctionnalite metier.
+La V0.23b n'ajoute aucune fonctionnalite metier.
 
 ## Jalon V1.0 produit commercialisable minimal
 
-Statut : **bloque, materiel**. Prerequis : V0.22b realisee sur le R740xd.
+Statut : **bloque, materiel**. Prerequis : V0.23b realisee sur le R740xd.
 
 - deploiement sur l'infrastructure cible avec domaine, TLS et supervision
   actifs ;
@@ -106,7 +178,7 @@ Statut : **bloque, materiel**. Prerequis : V0.22b realisee sur le R740xd.
 - SLA documente et procedure d'incident formelle.
 
 La V1.0 ne marque pas la fin du produit. Toute fonctionnalite supplementaire
-identifiee pendant V0.22 est isolee en V0.23 ou plus tard, jamais ajoutee
+identifiee pendant V0.23 est isolee en V0.24 ou plus tard, jamais ajoutee
 en derniere minute a V1.0.
 
 ## Hors sequence
@@ -115,8 +187,8 @@ Reserves, non programmes :
 
 - changement de mot de passe AD cote client (prepare mais desactive depuis V0.9) ;
 - provisioning AD etendu hors OU de test ;
-- paiement en ligne, prelevement SEPA, integration comptable ;
-- automatisation NAS, RDS, VPN.
+- prelevement SEPA hors PayPal, integration comptable automatique ;
+- automatisation NAS, RDS, VPN declenchee par un encaissement.
 
 ## Jalon V0.19 durcissement securite et coherence AD
 

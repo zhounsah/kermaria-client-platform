@@ -12,37 +12,52 @@ browser -> WEBPORTAL / BFF -> API-INTERNAL -> MariaDB
 
 `WEBPORTAL` ne doit jamais acceder directement a MariaDB.
 
-## Etat V0.19
+## Etat courant V0.21
 
-La V0.19 prolonge l'integration Active Directory controlee de la V0.18 et
-durcit la securite des flux admin, sans changer l'architecture ni ouvrir
-de nouveau perimetre metier.
+Le depot couvre aujourd'hui les jalons V0.9 a V0.21 (V0.21 partiellement,
+voir [`docs/ROADMAP.md`](docs/ROADMAP.md)). L'integration BPCE de la V0.20
+emet de vraies factures fiscales (mode `live` desactive par defaut, en
+phase de tests) et la V0.21 ouvre les canaux de paiement client.
 
-Acquis V0.18 toujours actifs :
+Acquis V0.20 :
 
-- modes AD `disabled`, `mock`, `read_only` et `controlled_write` ;
-- recherches AD et actions d'administration bornees a l'OU de test
-  `OU=TEST_SITE_WEB,DC=home,DC=bzh` ;
-- liaisons `customer_ad_links` stockees dans MariaDB via `API-INTERNAL`
-  uniquement ;
-- fiche client admin et manager AD alignes sur le statut AD reel.
+- facturation reelle via l'API BPCE Banque Populaire avec numerotation
+  fiscale, validation immuable et PDF cache localement
+  ([`docs/V0.20_BPCE_INVOICING.md`](docs/V0.20_BPCE_INVOICING.md)) ;
+- modes `BPCE_INTEGRATION_MODE` : `disabled` (defaut) / `mock` / `live` ;
+- double persistance `bpce_customers` / `bpce_invoices` independante de
+  la disponibilite de l'API banque ;
+- commande CLI `--verify-bpce-sender` lecture seule pour la configuration ;
+- import de 17 articles catalogue avec `external_reference` et taux TVA
+  indicatif (V0.20.1).
 
-Renforts apportes par la V0.19 :
+Acquis V0.21 :
 
-- mutations BFF admin sensibles protegees par un jeton CSRF, sans stockage
-  en `localStorage` ou `sessionStorage` ;
+- section `Reglement` cote portail client avec IBAN, BIC, libelle et
+  reference a indiquer (variables `BILLING_*`) ;
+- paiement carte / PayPal via PayPal Orders API v2 (`intent: CAPTURE`,
+  one-shot, jamais recurrent), modes `PAYPAL_MODE=sandbox|live` ;
+- confirmation paiement propagee a BPCE (`mark_as_paid`) et au statut
+  local `paid` ;
+- bouton PayPal masque apres paiement, message de confirmation affiche
+  ([`docs/V0.21_PAYMENT_CHANNELS.md`](docs/V0.21_PAYMENT_CHANNELS.md)).
+
+Acquis V0.18 et V0.19 (toujours actifs) :
+
+- modes AD `disabled`, `mock`, `read_only` et `controlled_write` bornes a
+  l'OU de test `OU=TEST_SITE_WEB,DC=home,DC=bzh` ;
+- mutations BFF admin sensibles protegees par un jeton CSRF cote serveur ;
 - `X-Service-Auth` exige sur `/internal/*` dans tout environnement non
-  `Development`, et plus seulement en Production ;
-- `RUN_MARIADB_TESTS=true` explicitement refuse hors `Development` ;
-- validateur d'entrees AD strict cote `API-INTERNAL` : DN normalises et
-  scope client verifie avant toute action ;
-- routes admin BFF reorganisees autour de mutations bornees auditables
-  plutot qu'une simple lecture seule ;
-- suite de tests `API-INTERNAL` etendue sur les flux AD controles.
+  `Development` ;
+- validateur d'entrees AD strict cote `API-INTERNAL`.
 
-La V0.19 n'ajoute toujours aucun paiement reel, aucune facturation fiscale
-reelle, aucun e-mail automatique, SMS, push, WebSocket, provisioning complet
-ou suppression client/AD destructive. L'AD de production reste hors perimetre.
+Restent ouverts en V0.21 : telechargement PDF cote portail client, vue
+admin de suivi des paiements, canal e-mail transactionnel. Le mode `live`
+PayPal n'est jamais active sans validation explicite (V0.23b, R740xd).
+
+Le projet reste en **phase de tests** sur SRV-01 et SRV-02 tant que la
+cible R740xd n'est pas livree : aucun client reel, aucun envoi e-mail
+externe, aucun prelevement recurrent active.
 
 ## Architecture
 
@@ -111,6 +126,18 @@ Variables critiques API-INTERNAL :
 - `AD_CLIENTS_OU_DN`
 - `AD_SERVICE_ACCOUNT_USERNAME`
 - `AD_SERVICE_ACCOUNT_PASSWORD`
+- `BPCE_INTEGRATION_MODE=disabled|mock|live`
+- `BPCE_BASE_URL`, `BPCE_REFRESH_TOKEN`, `BPCE_SENDER_ID`
+- `LOG_FILE_DIRECTORY`, `LOG_FILE_LEVEL`, `LOG_FILE_RETENTION_DAYS`
+  (rotation quotidienne, voir `apps/api-internal/Infrastructure/FileLoggerProvider.cs`)
+
+Variables paiement et reglement (V0.21) :
+
+- `PAYPAL_MODE=sandbox|live`
+- `PAYPAL_CLIENT_ID`
+- `PAYPAL_CLIENT_SECRET`
+- `BILLING_IBAN`, `BILLING_BIC`, `BILLING_TRANSFER_LABEL`
+- `BILLING_PAYPAL_URL` (fallback PayPal.me)
 
 ## Developpement local
 
@@ -171,10 +198,13 @@ npm run check:health
 - ne pas connecter `WEBPORTAL` directement a MariaDB ;
 - ne pas activer l'AD hors de l'OU de test validee ;
 - ne pas exposer de hard delete AD ;
-- ne pas ajouter paiement reel, facturation fiscale reelle, e-mail automatique,
-  SMS, push, WebSocket ou provisioning ;
-- ne pas logger tokens, cookies, mots de passe, chaines de connexion ou
-  secrets.
+- ne pas activer `BPCE_INTEGRATION_MODE=live` ou `PAYPAL_MODE=live` sans
+  validation explicite (cible R740xd, V0.23b) ;
+- ne pas ajouter de prelevement SEPA hors PayPal, d'e-mail automatique,
+  de SMS, push, WebSocket ou provisioning declenche par un encaissement ;
+- ne pas logger tokens, cookies, mots de passe, chaines de connexion,
+  secrets BPCE (`BPCE_REFRESH_TOKEN`), credentials PayPal ni montants de
+  facture complets.
 
 ## Documentation
 
@@ -186,6 +216,9 @@ npm run check:health
 - [Operations](docs/OPERATIONS.md)
 - [Backup and restore](docs/BACKUP_RESTORE.md)
 - [Roadmap](docs/ROADMAP.md)
+- [BPCE invoicing V0.20](docs/V0.20_BPCE_INVOICING.md)
+- [Payment channels V0.21](docs/V0.21_PAYMENT_CHANNELS.md)
+- [Subscriptions cadrage V0.22](docs/V0.22_SUBSCRIPTIONS.md)
 - [Active Directory security hardening V0.19](docs/V0.19_AD_SECURITY_HARDENING.md)
 - [Active Directory controlled write V0.18](docs/V0.18_ACTIVE_DIRECTORY_CONTROLLED_WRITE.md)
 - [Preproduction technique V0.16](docs/V0.16_PREPRODUCTION_TECHNIQUE.md)

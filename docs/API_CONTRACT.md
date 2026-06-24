@@ -37,6 +37,11 @@ Le navigateur accède uniquement à `WEBPORTAL` :
 - `PATCH /api/admin/commercial-documents/{id}/lines/{lineId}`
 - `POST /api/admin/commercial-documents/{id}/share`
 - `POST /api/admin/commercial-documents/{id}/cancel`
+- `POST /api/admin/commercial-documents/{id}/issue`
+- `GET /api/admin/commercial-documents/{id}/invoice`
+- `GET /api/admin/commercial-documents/{id}/invoice/pdf`
+- `POST /api/payment/paypal/create`
+- `GET /api/payment/paypal/return`
 - `GET /api/admin/support-requests/{id}`
 - `PATCH /api/admin/support-requests/{id}/status`
 - `POST /api/admin/support-requests/{id}/notes`
@@ -75,6 +80,10 @@ publiées par le reverse proxy et jamais appelées directement par le navigateur
 - `PATCH /internal/admin/commercial-documents/{id}/lines/{lineId}`
 - `POST /internal/admin/commercial-documents/{id}/share`
 - `POST /internal/admin/commercial-documents/{id}/cancel`
+- `POST /internal/admin/commercial-documents/{id}/issue`
+- `GET /internal/admin/commercial-documents/{id}/invoice`
+- `GET /internal/admin/commercial-documents/{id}/invoice/pdf`
+- `POST /internal/portal/commercial-documents/{id}/payment-confirm`
 - `GET /internal/admin/support-requests/{id}`
 - `PATCH /internal/admin/support-requests/{id}/status`
 - `POST /internal/admin/support-requests/{id}/notes`
@@ -110,6 +119,53 @@ publiées par le reverse proxy et jamais appelées directement par le navigateur
 - `POST /internal/ad/add-user-to-group`
 - `POST /internal/ad/remove-user-from-group`
 
+## Facturation BPCE V0.20
+
+Les routes BPCE restent strictement dans le flux
+`Navigateur -> WEBPORTAL/BFF -> API-INTERNAL -> BPCE`. Le navigateur ne
+contacte jamais l'API BPCE.
+
+Contraintes :
+
+- `POST /api/admin/commercial-documents/{id}/issue` exige le role
+  `internal_admin`. Le BFF appelle `POST .../issue` cote
+  API-INTERNAL qui orchestre customer upsert, draft, validate et cache
+  PDF (cf. `docs/V0.20_BPCE_INVOICING.md`).
+- `GET .../invoice` retourne les metadonnees de la facture BPCE
+  associee (numero fiscal, dates, statut). Aucune cle BPCE n'est exposee.
+- `GET .../invoice/pdf` retourne le PDF depuis le cache local. L'API
+  BPCE n'est jamais re-interrogee pour servir un PDF cote portail.
+- `POST /internal/portal/commercial-documents/{id}/payment-confirm` est
+  appele par le flux de retour PayPal apres capture. Il propage
+  `mark_as_paid` cote BPCE et passe `commercial_documents.status` a
+  `paid`.
+
+Garde-fous :
+
+- aucun appel BPCE n'est realise si `BPCE_INTEGRATION_MODE=disabled` ;
+- `BPCE_REFRESH_TOKEN` ne quitte jamais API-INTERNAL ;
+- aucun corps de reponse BPCE complet n'est journalise.
+
+## Paiement en ligne PayPal V0.21
+
+Les routes paiement restent strictement dans le flux
+`Navigateur -> WEBPORTAL -> PayPal`. PayPal redirige le buyer vers
+`/api/payment/paypal/return` apres approbation.
+
+Contraintes :
+
+- `POST /api/payment/paypal/create` exige une session client. Il appelle
+  PayPal Orders API v2 cote serveur avec `intent: CAPTURE` (one-shot,
+  jamais recurrent) puis retourne `{ orderId, approveUrl }`.
+- `GET /api/payment/paypal/return?token={orderId}&documentId={id}` est la
+  cible de redirection PayPal. Il capture l'ordre, appelle
+  `payment-confirm` cote API-INTERNAL puis redirige vers la facture avec
+  un parametre `payment=success`, `cancelled` ou `error`.
+- Aucun montant fourni par le navigateur n'est utilise : le montant est
+  recalcule cote serveur depuis le document commercial.
+- `PAYPAL_CLIENT_SECRET` ne quitte jamais WEBPORTAL et n'est jamais
+  journalise.
+
 ## Socle commercial V0.15
 
 Les routes commerciales restent strictement dans le flux
@@ -127,13 +183,14 @@ Contraintes :
 - Les montants commerciaux sont validés et stockés en centimes entiers.
 - `document_type` est borné à `quote_draft`, `billing_draft` ou
   `informational_invoice`.
-- `status` est borné à `draft`, `pending_review`, `shared_with_customer` ou
-  `cancelled`.
+- `status` est borné à `draft`, `pending_review`, `shared_with_customer`,
+  `cancelled`, `issued` ou `paid`. `issued` et `paid` sont produits
+  uniquement par les flux BPCE/paiement (V0.20/V0.21).
 - `shared_with_customer` ne signifie jamais facture officielle.
 - Le disclaimer par défaut est
   `Document informatif - ne constitue pas une facture officielle.`
-- Aucune route ne génère de PDF légal, paiement, e-mail réel ou numérotation
-  fiscale définitive.
+- La numerotation fiscale officielle et les PDF immuables sont produits
+  par BPCE en V0.20, jamais en V0.15.
 
 ## Conventions
 

@@ -1,4 +1,4 @@
-# Exploitation V0.19
+# Exploitation V0.21
 
 ## Objectif
 
@@ -51,6 +51,18 @@ Variables critiques API-INTERNAL :
 - `LOGIN_MAX_FAILURES`
 - `LOGIN_LOCKOUT_MINUTES`
 - `AD_INTEGRATION_MODE=disabled`
+- `BPCE_INTEGRATION_MODE=disabled|mock|live` (defaut `disabled`)
+- `BPCE_BASE_URL`, `BPCE_REFRESH_TOKEN` (secret), `BPCE_SENDER_ID`
+- `LOG_FILE_DIRECTORY`, `LOG_FILE_LEVEL`, `LOG_FILE_RETENTION_DAYS`
+  (journalisation fichier rotative quotidienne, voir
+  `apps/api-internal/Infrastructure/FileLoggerProvider.cs`)
+
+Paiement et reglement (V0.21) :
+
+- `PAYPAL_MODE=sandbox|live`
+- `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`
+- `BILLING_IBAN`, `BILLING_BIC`, `BILLING_TRANSFER_LABEL`,
+  `BILLING_PAYPAL_URL`
 
 ## Validations
 
@@ -98,7 +110,20 @@ API-INTERNAL :
 $env:ASPNETCORE_ENVIRONMENT="Development"
 $env:DOTNET_ENVIRONMENT="Development"
 $env:AD_INTEGRATION_MODE="disabled"
+$env:BPCE_INTEGRATION_MODE="disabled"
 dotnet run --project .\apps\api-internal\Kermaria.ApiInternal.csproj --urls http://localhost:5000
+```
+
+Pour tester la facturation BPCE en local, basculer en `mock` (aucun appel
+sortant) ou exceptionnellement en `live` (refresh token requis, emission
+fiscale reelle).
+
+Verification du sender BPCE (lecture seule) :
+
+```powershell
+$env:BPCE_INTEGRATION_MODE="live"
+$env:BPCE_REFRESH_TOKEN="<inject_depuis_secret_local>"
+dotnet run --project .\apps\api-internal\Kermaria.ApiInternal.csproj -- --verify-bpce-sender
 ```
 
 WEBPORTAL :
@@ -147,7 +172,16 @@ Surveiller au minimum :
 - lockouts et echecs de connexion ;
 - audits importants ;
 - correlation id, code HTTP et duree ;
-- absence de token, cookie, mot de passe, chaine de connexion et secret.
+- erreurs BPCE (status code retourne par la banque) sans corps complet
+  cote logs publics ;
+- erreurs PayPal Create/Capture sans le `client_secret` ni le corps
+  complet de la reponse ;
+- absence de token, cookie, mot de passe, chaine de connexion, secret
+  BPCE/PayPal et montant complet de facture.
+
+La journalisation fichier est activee si `LOG_FILE_DIRECTORY` est defini.
+Les fichiers `api-internal-YYYY-MM-DD.log` plus anciens que
+`LOG_FILE_RETENTION_DAYS` (defaut 30) sont purges au demarrage suivant.
 
 ## Checklist staging
 
@@ -176,9 +210,14 @@ Surveiller au minimum :
 ## Rollback
 
 1. Retirer `WEBPORTAL` du trafic.
-2. Conserver `AD_INTEGRATION_MODE=disabled`.
+2. Conserver `AD_INTEGRATION_MODE=disabled`,
+   `BPCE_INTEGRATION_MODE=disabled` et `PAYPAL_MODE=sandbox`.
 3. Restaurer l'artefact precedent.
-4. Si migration en cause, restaurer la sauvegarde validee.
+4. Si migration en cause (007/008/009 incluses), restaurer la sauvegarde
+   validee.
 5. Redemarrer `API-INTERNAL` puis `WEBPORTAL`.
 6. Rejouer les health checks.
 7. Verifier login client, login admin et refus de role croise.
+8. Si une facture BPCE a ete emise par erreur, elle reste immuable cote
+   banque : creer un avoir cote dashboard BPCE plutot que d'essayer de la
+   "supprimer" cote application.
