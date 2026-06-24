@@ -14,6 +14,7 @@ import {
   formatDateTime,
 } from "@/lib/formatters";
 import { getCommercialDocument } from "@/lib/internal-api";
+import { getBillingConfig } from "@/lib/runtime-config";
 
 export const metadata = {
   title: "Détail document commercial",
@@ -50,6 +51,7 @@ export default async function CommercialDocumentDetailPage({
   }
 
   const document = result.data;
+  const billing = getBillingConfig();
   const status = commercialDocumentStatus[document.status] ?? {
     label: document.status,
     tone: "slate" as const,
@@ -106,6 +108,58 @@ export default async function CommercialDocumentDetailPage({
       </div>
 
       <CommercialDocumentLineTable lines={document.lines} />
+
+      {isIssued ? (
+        <section aria-label="Modalités de règlement" className="content-panel">
+          <span className="card-kicker">Règlement</span>
+          <h2>Comment régler cette facture</h2>
+
+          {billing.iban ? (
+            <div>
+              <h3 style={{ marginTop: "1rem", marginBottom: "0.5rem" }}>
+                Virement bancaire
+              </h3>
+              <dl className="request-details">
+                <div><dt>Bénéficiaire</dt><dd>{billing.transferLabel}</dd></div>
+                <div><dt>IBAN</dt><dd><code>{billing.iban}</code></dd></div>
+                {billing.bic ? (
+                  <div><dt>BIC / SWIFT</dt><dd><code>{billing.bic}</code></dd></div>
+                ) : null}
+                <div>
+                  <dt>Référence à indiquer</dt>
+                  <dd>{document.internalReference}</dd>
+                </div>
+              </dl>
+            </div>
+          ) : null}
+
+          {billing.paypalUrl ? (
+            <div style={{ marginTop: "1.5rem" }}>
+              <h3 style={{ marginBottom: "0.5rem" }}>Paiement en ligne</h3>
+              <p style={{ marginBottom: "0.75rem", color: "var(--color-text-muted)" }}>
+                Vous pouvez régler directement en ligne via PayPal en cliquant
+                sur le bouton ci-dessous. Indiquez la référence{" "}
+                <strong>{document.internalReference}</strong> dans la note.
+              </p>
+              <a
+                className="button"
+                href={billing.paypalUrl}
+                rel="noopener noreferrer"
+                target="_blank"
+              >
+                Payer via PayPal
+              </a>
+            </div>
+          ) : null}
+
+          {!billing.iban && !billing.paypalUrl ? (
+            <p style={{ color: "var(--color-text-muted)" }}>
+              Les coordonnées de règlement vous seront communiquées par votre
+              prestataire.
+            </p>
+          ) : null}
+        </section>
+      ) : null}
     </>
   );
 }

@@ -3,6 +3,15 @@ import "server-only";
 const LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1"]);
 let missingInternalApiWarningWritten = false;
 
+export function getBillingConfig() {
+  return {
+    iban: process.env.BILLING_IBAN?.trim() || null,
+    bic: process.env.BILLING_BIC?.trim() || null,
+    paypalUrl: process.env.BILLING_PAYPAL_URL?.trim() || null,
+    transferLabel: process.env.BILLING_TRANSFER_LABEL?.trim() || "Zachary HOUNSA-HOUNKPA EI",
+  };
+}
+
 export class ServerRuntimeConfigurationError extends Error {
   constructor(variableName: string) {
     super(`Configuration serveur invalide : ${variableName}.`);
