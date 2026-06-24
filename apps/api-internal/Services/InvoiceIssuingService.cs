@@ -26,6 +26,11 @@ public interface IInvoiceIssuingService
     Task<BpceInvoiceRecord?> GetInvoiceRecordAsync(
         string documentId,
         CancellationToken cancellationToken);
+
+    Task<IssueInvoiceResult> ConfirmPaymentAsync(
+        string documentId,
+        string correlationId,
+        CancellationToken cancellationToken);
 }
 
 public sealed class InvoiceIssuingService : IInvoiceIssuingService
@@ -227,6 +232,58 @@ public sealed class InvoiceIssuingService : IInvoiceIssuingService
                 ? "Invoice was created at BPCE but validation is pending. Check the BPCE dashboard."
                 : $"Invoice issued successfully. Fiscal number: {fiscalNumber}",
             record is not null ? MapRecord(record) : null);
+    }
+
+    public async Task<IssueInvoiceResult> ConfirmPaymentAsync(
+        string documentId,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
+        var record = await _bpceRepository.GetInvoiceRecordAsync(
+            documentId, cancellationToken);
+
+        if (record is null)
+        {
+            return new IssueInvoiceResult(
+                false, "INVOICE_NOT_FOUND",
+                "No issued invoice found for this document.");
+        }
+
+        if (record.Status == "paid")
+        {
+            return new IssueInvoiceResult(
+                true, "ALREADY_PAID",
+                "This invoice is already marked as paid.",
+                MapRecord(record));
+        }
+
+        var markResult = await _bpce.MarkInvoiceAsPaidAsync(
+            record.BpceInvoiceId, cancellationToken);
+
+        if (markResult.StatusCode >= 400)
+        {
+            _logger.LogWarning(
+                "BPCE mark_as_paid failed [{Code}] {Message} for document {DocumentId}",
+                markResult.Code, markResult.Message, documentId);
+            return new IssueInvoiceResult(
+                false, markResult.Code, markResult.Message);
+        }
+
+        await _bpceRepository.UpdateInvoiceValidatedAsync(
+            documentId,
+            record.FiscalNumber,
+            "paid",
+            null,
+            record.PdfHash,
+            cancellationToken);
+
+        var updated = await _bpceRepository.GetInvoiceRecordAsync(
+            documentId, cancellationToken);
+
+        return new IssueInvoiceResult(
+            true, "PAYMENT_CONFIRMED",
+            "Invoice marked as paid.",
+            updated is not null ? MapRecord(updated) : null);
     }
 
     public Task<byte[]?> GetCachedInvoicePdfAsync(

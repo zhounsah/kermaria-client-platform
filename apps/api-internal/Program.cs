@@ -643,6 +643,54 @@ app.MapGet(
                 id,
                 context.RequestAborted));
     });
+app.MapPost(
+    "/internal/portal/commercial-documents/{id}/payment-confirm",
+    async (
+        string id,
+        HttpContext context,
+        IInvoiceIssuingService issuingService,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            auditService);
+        var result = await issuingService.ConfirmPaymentAsync(
+            id,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "commercial_document.payment_confirm",
+                result.Succeeded ? "success" : "refused",
+                ReasonCode: result.Code,
+                TargetType: "commercial_document",
+                TargetReference: id,
+                ActorUserId: session.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+
+        if (!result.Succeeded)
+        {
+            var statusCode = result.Code == "INVOICE_NOT_FOUND"
+                ? StatusCodes.Status404NotFound
+                : StatusCodes.Status400BadRequest;
+            return Results.Json(
+                new ApiError(result.Code, result.Message, context.GetCorrelationId()),
+                statusCode: statusCode);
+        }
+
+        return Results.Ok(new
+        {
+            code = result.Code,
+            message = result.Message,
+            invoice = result.Invoice,
+            correlation_id = context.GetCorrelationId()
+        });
+    });
+
 app.MapGet(
     "/internal/portal/support-requests",
     async (

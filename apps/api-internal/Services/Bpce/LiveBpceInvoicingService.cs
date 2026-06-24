@@ -422,6 +422,47 @@ public sealed class LiveBpceInvoicingService : IBpceInvoicingService
         }
     }
 
+    public async Task<BpceServiceResult<bool>> MarkInvoiceAsPaidAsync(
+        string bpceInvoiceId,
+        CancellationToken cancellationToken)
+    {
+        if (!_configuration.ConfigurationValid)
+        {
+            return new BpceServiceResult<bool>(
+                StatusCodes.Status503ServiceUnavailable,
+                "BPCE_UNCONFIGURED",
+                "BPCE invoicing API is not configured.");
+        }
+
+        try
+        {
+            await _apiClient.PostJsonAsync<object>(
+                $"{InvoicesPath}{bpceInvoiceId}/mark_as_paid/",
+                new { },
+                cancellationToken);
+
+            return new BpceServiceResult<bool>(
+                StatusCodes.Status200OK,
+                "BPCE_INVOICE_MARKED_PAID",
+                "BPCE invoice marked as paid.",
+                true);
+        }
+        catch (Exception ex)
+            when (ex is BpceAuthenticationException
+                or HttpRequestException
+                or TaskCanceledException)
+        {
+            _logger.LogWarning(
+                ex,
+                "BPCE mark_as_paid for invoice {InvoiceId} failed",
+                bpceInvoiceId);
+            return new BpceServiceResult<bool>(
+                StatusCodes.Status503ServiceUnavailable,
+                "BPCE_UNREACHABLE",
+                "BPCE invoicing API could not be reached.");
+        }
+    }
+
     private static Dictionary<string, object?> BuildCustomerPayload(
         string externalReference,
         string displayName,

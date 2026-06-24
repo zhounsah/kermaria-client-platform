@@ -3,7 +3,9 @@ import { notFound } from "next/navigation";
 
 import { CommercialDocumentLineTable } from "@/components/CommercialDocumentLineTable";
 import { ErrorState } from "@/components/ErrorState";
+import { FormMessage } from "@/components/FormMessage";
 import { PageHeader } from "@/components/PageHeader";
+import { PayPalPayButton } from "@/components/PayPalPayButton";
 import { SectionCard } from "@/components/SectionCard";
 import { StatusBadge } from "@/components/StatusBadge";
 import { requireClientSession } from "@/lib/auth";
@@ -14,7 +16,7 @@ import {
   formatDateTime,
 } from "@/lib/formatters";
 import { getCommercialDocument } from "@/lib/internal-api";
-import { getBillingConfig } from "@/lib/runtime-config";
+import { getBillingConfig, isPayPalConfigured } from "@/lib/runtime-config";
 
 export const metadata = {
   title: "Détail document commercial",
@@ -22,13 +24,18 @@ export const metadata = {
 
 export const dynamic = "force-dynamic";
 
-type PageProps = { params: Promise<{ id: string }> };
+type PageProps = {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ payment?: string }>;
+};
 
 export default async function CommercialDocumentDetailPage({
   params,
+  searchParams,
 }: PageProps) {
   await requireClientSession();
   const { id } = await params;
+  const { payment } = await searchParams;
   const result = await getCommercialDocument(id);
 
   if (result.error) {
@@ -39,7 +46,7 @@ export default async function CommercialDocumentDetailPage({
             Retour aux documents
           </Link>
         }
-        description="Impossible de charger ce document commercial informatif."
+        description="Impossible de charger ce document commercial."
         reference={result.correlationId}
         title="Document indisponible"
       />
@@ -52,6 +59,7 @@ export default async function CommercialDocumentDetailPage({
 
   const document = result.data;
   const billing = getBillingConfig();
+  const paypalEnabled = isPayPalConfigured();
   const status = commercialDocumentStatus[document.status] ?? {
     label: document.status,
     tone: "slate" as const,
@@ -66,6 +74,18 @@ export default async function CommercialDocumentDetailPage({
         eyebrow={document.internalReference}
         title={document.title}
       />
+
+      {payment === "error" ? (
+        <FormMessage title="Paiement non complété" tone="error">
+          <p>Le paiement PayPal n&apos;a pas pu être confirmé. Réessayez ou choisissez un autre mode de règlement.</p>
+        </FormMessage>
+      ) : null}
+
+      {payment === "cancelled" ? (
+        <FormMessage title="Paiement annulé" tone="info">
+          <p>Vous avez annulé le paiement PayPal. Votre facture reste en attente de règlement.</p>
+        </FormMessage>
+      ) : null}
 
       {!isIssued ? (
         <div className="security-warning">
@@ -89,7 +109,14 @@ export default async function CommercialDocumentDetailPage({
             <div><dt>Créé le</dt><dd>{formatDateTime(document.createdAt)}</dd></div>
             <div><dt>Mise à jour</dt><dd>{formatDateTime(document.updatedAt)}</dd></div>
             <div><dt>Partagé le</dt><dd>{document.sharedAt ? formatDateTime(document.sharedAt) : "Non partagé"}</dd></div>
-            <div><dt>Demande liée</dt><dd>{document.serviceRequestId && document.serviceRequestReference ? <Link href={`/request-service/${encodeURIComponent(document.serviceRequestId)}`}>{document.serviceRequestReference}</Link> : "Aucune"}</dd></div>
+            <div>
+              <dt>Demande liée</dt>
+              <dd>
+                {document.serviceRequestId && document.serviceRequestReference
+                  ? <Link href={`/request-service/${encodeURIComponent(document.serviceRequestId)}`}>{document.serviceRequestReference}</Link>
+                  : "Aucune"}
+              </dd>
+            </div>
           </dl>
         </SectionCard>
 
@@ -133,14 +160,18 @@ export default async function CommercialDocumentDetailPage({
             </div>
           ) : null}
 
-          {billing.paypalUrl ? (
+          {paypalEnabled ? (
             <div style={{ marginTop: "1.5rem" }}>
               <h3 style={{ marginBottom: "0.5rem" }}>Paiement en ligne</h3>
               <p style={{ marginBottom: "0.75rem", color: "var(--color-text-muted)" }}>
-                Vous pouvez régler directement en ligne via PayPal en cliquant
-                sur le bouton ci-dessous. Indiquez la référence{" "}
-                <strong>{document.internalReference}</strong> dans la note.
+                Réglez directement par carte ou compte PayPal. Vous serez
+                redirigé vers PayPal puis ramené automatiquement.
               </p>
+              <PayPalPayButton documentId={id} />
+            </div>
+          ) : billing.paypalUrl ? (
+            <div style={{ marginTop: "1.5rem" }}>
+              <h3 style={{ marginBottom: "0.5rem" }}>Paiement en ligne</h3>
               <a
                 className="button"
                 href={billing.paypalUrl}
@@ -152,7 +183,7 @@ export default async function CommercialDocumentDetailPage({
             </div>
           ) : null}
 
-          {!billing.iban && !billing.paypalUrl ? (
+          {!billing.iban && !paypalEnabled && !billing.paypalUrl ? (
             <p style={{ color: "var(--color-text-muted)" }}>
               Les coordonnées de règlement vous seront communiquées par votre
               prestataire.

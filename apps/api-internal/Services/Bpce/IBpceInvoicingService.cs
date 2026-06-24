@@ -40,6 +40,10 @@ public interface IBpceInvoicingService
     Task<BpceServiceResult<byte[]>> GetInvoicePdfAsync(
         string bpceInvoiceId,
         CancellationToken cancellationToken);
+
+    Task<BpceServiceResult<bool>> MarkInvoiceAsPaidAsync(
+        string bpceInvoiceId,
+        CancellationToken cancellationToken);
 }
 
 public sealed record BpceInvoiceLineInput(

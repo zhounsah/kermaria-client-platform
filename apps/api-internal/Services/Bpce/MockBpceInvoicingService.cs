@@ -125,4 +125,13 @@ public sealed class MockBpceInvoicingService : IBpceInvoicingService
             "Mock BPCE PDF retrieved.",
             fakePdf));
     }
+
+    public Task<BpceServiceResult<bool>> MarkInvoiceAsPaidAsync(
+        string bpceInvoiceId,
+        CancellationToken cancellationToken)
+        => Task.FromResult(new BpceServiceResult<bool>(
+            StatusCodes.Status200OK,
+            "BPCE_INVOICE_MARKED_PAID",
+            "Mock BPCE invoice marked as paid.",
+            true));
 }

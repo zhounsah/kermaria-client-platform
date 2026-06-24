@@ -81,4 +81,12 @@ public sealed class DisabledBpceInvoicingService : IBpceInvoicingService
             StatusCodes.Status501NotImplemented,
             "BPCE_INTEGRATION_DISABLED",
             "BPCE invoicing integration is disabled."));
+
+    public Task<BpceServiceResult<bool>> MarkInvoiceAsPaidAsync(
+        string bpceInvoiceId,
+        CancellationToken cancellationToken)
+        => Task.FromResult(new BpceServiceResult<bool>(
+            StatusCodes.Status501NotImplemented,
+            "BPCE_INTEGRATION_DISABLED",
+            "BPCE invoicing integration is disabled."));
 }

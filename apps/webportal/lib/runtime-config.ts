@@ -3,6 +3,13 @@ import "server-only";
 const LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1"]);
 let missingInternalApiWarningWritten = false;
 
+export function isPayPalConfigured(): boolean {
+  return (
+    !!process.env.PAYPAL_CLIENT_ID?.trim()
+    && !!process.env.PAYPAL_CLIENT_SECRET?.trim()
+  );
+}
+
 export function getBillingConfig() {
   return {
     iban: process.env.BILLING_IBAN?.trim() || null,
