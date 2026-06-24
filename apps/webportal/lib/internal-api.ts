@@ -725,6 +725,26 @@ export function getAdminCommercialDocumentInvoice(id: string) {
   );
 }
 
+export type AdminEmailLogEntry = {
+  id: string;
+  template: string;
+  recipient: string;
+  subject: string;
+  status: string;
+  errorMessage: string | null;
+  relatedDocumentId: string | null;
+  correlationId: string;
+  createdAt: string;
+  sentAt: string | null;
+};
+
+export function getAdminEmailLog(limit = 100) {
+  return getAdminData<AdminEmailLogEntry[]>(
+    `/internal/admin/email-log?limit=${encodeURIComponent(String(limit))}`,
+    [],
+  );
+}
+
 export function getAdminSupportRequests() {
   return getAdminData<AdminSupportRequestSummary[]>(
     "/internal/admin/support-requests",

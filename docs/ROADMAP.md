@@ -60,8 +60,9 @@ Statut : **implemente dans le depot**.
 
 ## Jalon V0.21 canaux de paiement client
 
-Statut : **partiellement implemente dans le depot, en phase de tests**.
-Documentation dediee : [`V0.21_PAYMENT_CHANNELS.md`](V0.21_PAYMENT_CHANNELS.md).
+Statut : **implemente dans le depot, en phase de tests (e-mail `live` et
+PayPal `live` desactives par defaut)**. Documentation dediee :
+[`V0.21_PAYMENT_CHANNELS.md`](V0.21_PAYMENT_CHANNELS.md).
 
 Acquis livres :
 
@@ -76,23 +77,39 @@ Acquis livres :
   - capture lors du retour utilisateur, propagation a BPCE via
     `POST /invoices/{id}/mark_as_paid/` et a `commercial_documents.status` ;
   - statut local `paid` ajoute aux types partages et au formatter ;
-  - bouton PayPal masque apres paiement, message "facture reglee" affiche.
-
-Restent a finir avant cloture de V0.21 :
-
-- vue admin de suivi des paiements : tableau des factures `issued`/`paid`,
-  marquage manuel d'un encaissement (cas virement bancaire) ;
-- telechargement PDF cote portail client : endpoint dedie cote
-  `API-INTERNAL` avec validation d'ownership et signature de session ;
-- canal e-mail transactionnel sortant, **premier vrai canal externe**, via
-  SMTP configurable mais non cable sur un SMTP de production ;
-- templates minimaux : facture emise, relance, confirmation encaissement ;
-- journal d'envoi e-mail isole, sans contenu sensible.
+  - bouton PayPal masque apres paiement, message "facture reglee" affiche ;
+- **telechargement PDF cote portail client** : endpoint dedie
+  `GET /internal/portal/commercial-documents/{id}/invoice/pdf` cote
+  `API-INTERNAL` avec controle d'ownership par session client
+  (`GetClientDocumentAsync` -> 404 `PORTAL_DATA_NOT_FOUND` si non
+  proprietaire). PDF servi depuis le cache local, bouton "Telecharger la
+  facture (PDF)" dans le bloc Reglement ;
+- **vue admin de suivi des paiements** : page `/admin/payments` avec
+  totaux a regler / regle, filtre statut (Toutes / A regler / Reglees),
+  table des factures emises. Marquage manuel d'un encaissement hors
+  PayPal via `POST .../mark-as-paid` qui reutilise `ConfirmPaymentAsync`
+  (meme flow BPCE `mark_as_paid` + statut local que le rail PayPal) ;
+  bouton "Marquer paye (hors PayPal)" sur la fiche document admin ;
+- **canal e-mail transactionnel sortant**, **premier vrai canal externe**,
+  via SMTP configurable mais non cable sur un SMTP de production :
+  - `EMAIL_INTEGRATION_MODE=disabled` (defaut) | `mock` | `live`,
+    `System.Net.Mail.SmtpClient` avec STARTTLS ;
+  - destinataire = `customers.billing_email` uniquement, statut
+    `no_recipient` trace sans envoi si vide ;
+  - 3 templates texte (fr) : `invoice_issued`, `payment_reminder`,
+    `payment_confirmed` ;
+  - declenchements automatiques : `IssueInvoiceAsync(sendEmail=true)` ->
+    `invoice_issued` ; `ConfirmPaymentAsync` (PayPal ou manuel) ->
+    `payment_confirmed` (best-effort, n'echoue pas le flow BPCE) ;
+  - declenchement manuel : `POST .../send-reminder` -> `payment_reminder` ;
+  - journal d'envoi isole : table `email_messages` (migration
+    `010_email_log`), page `/admin/email-log` (200 derniers envois).
 
 La V0.21 n'introduit aucun prelevement SEPA recurrent, aucun rapprochement
-bancaire automatique, aucun SMS, aucun push, aucun WebSocket. Les
-abonnements recurrents font l'objet du jalon V0.22 separe. Le SMTP reel
-reste branchable uniquement en preprod cible.
+bancaire automatique, aucun SMS, aucun push, aucun WebSocket, aucun envoi
+HTML enrichi (texte uniquement). Les abonnements recurrents font l'objet
+du jalon V0.22 separe. Le SMTP reel et PayPal `live` restent branchables
+uniquement en preprod cible.
 
 ## Jalon V0.22 abonnements recurrents PayPal
 
@@ -133,14 +150,16 @@ push, ni provisioning AD automatique declenche par un encaissement.
 
 ## Jalon V0.23a stabilisation testable sur SRV-01 et SRV-02
 
-Statut : **a faire, faisable sans la cible R740xd**.
+Statut : **a faire, faisable sans la cible R740xd**. Renomme depuis
+V0.22a au 2026-06-24 pour intercaler V0.22 subscriptions.
 
 - recette complete executee sur le staging interne (couvre V0.16, V0.17,
-  V0.20 BPCE mock et V0.21 PayPal sandbox) ;
+  V0.20 BPCE mock et V0.21 PayPal sandbox + e-mail mock) ;
 - restauration MariaDB testee sur instance distincte ;
+- audit securite interne : dependances, secrets (couvre
+  `BPCE_REFRESH_TOKEN`, `SMTP_PASSWORD`, `PAYPAL_CLIENT_SECRET`,
+  `SERVICE_AUTH_TOKEN`), headers, rate limiting ;
 - revue accessibilite WCAG AA des parcours client critiques ;
-- audit securite interne : dependances, secrets, headers, rate limiting,
-  exposition du refresh token BPCE et des credentials PayPal ;
 - documentation utilisateur admin et client ;
 - procedure formelle de mise en production redigee, **non executee** ;
 - plan de continuite minimal documente.
@@ -150,18 +169,19 @@ l'infrastructure definitive.
 
 ## Jalon V0.23b validation cible R740xd
 
-Statut : **bloque, declenche a la livraison du R740xd**.
+Statut : **bloque, declenche a la livraison du R740xd**. Renomme depuis
+V0.22b au 2026-06-24.
 
 - bascule des services sur l'hote cible ;
 - execution de la procedure de mise en production redigee en V0.23a ;
 - restauration MariaDB testee sur la cible reelle ;
 - supervision, sauvegardes et alertes cables sur l'infrastructure
   definitive ;
-- rotation effective des secrets precedemment exposes (incluant
-  `BPCE_REFRESH_TOKEN`, `PAYPAL_CLIENT_SECRET`, `SERVICE_AUTH_TOKEN`) ;
+- rotation effective des secrets precedemment exposes (`BPCE_REFRESH_TOKEN`,
+  `SMTP_PASSWORD`, `PAYPAL_CLIENT_SECRET`, `SERVICE_AUTH_TOKEN`) ;
 - certificats et regles pare-feu actifs sur la cible ;
-- bascule `BPCE_INTEGRATION_MODE=live` et `PAYPAL_MODE=live` apres
-  validation explicite.
+- bascule `BPCE_INTEGRATION_MODE=live`, `EMAIL_INTEGRATION_MODE=live` et
+  `PAYPAL_MODE=live` apres validation explicite.
 
 La V0.23b n'ajoute aucune fonctionnalite metier.
 
@@ -187,8 +207,8 @@ Reserves, non programmes :
 
 - changement de mot de passe AD cote client (prepare mais desactive depuis V0.9) ;
 - provisioning AD etendu hors OU de test ;
-- prelevement SEPA hors PayPal, integration comptable automatique ;
-- automatisation NAS, RDS, VPN declenchee par un encaissement.
+- paiement en ligne, prelevement SEPA, integration comptable ;
+- automatisation NAS, RDS, VPN.
 
 ## Jalon V0.19 durcissement securite et coherence AD
 
@@ -233,6 +253,7 @@ Statut : **implémenté dans le dépôt, recette préproduction à exécuter**.
 
 - fiche client admin consolidée avec identité, statut, services, demandes,
   documents commerciaux, factures, activité récente et audits associés ;
+- nouveau contrat admin `customer detail` et route dédiée
 - nouveau contrat admin `customer detail` et route dédiée
   `/internal/admin/customers/{customerReference}` ;
 - contrôles d'identifiants renforcés côté BFF et API pour limiter les accès

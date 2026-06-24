@@ -5,6 +5,7 @@ import { AdminCommercialDocumentActionButton } from "@/components/AdminCommercia
 import { AdminCommercialDocumentEditForm } from "@/components/AdminCommercialDocumentEditForm";
 import { AdminCommercialDocumentLineForm } from "@/components/AdminCommercialDocumentLineForm";
 import { AdminInvoiceIssuingSection } from "@/components/AdminInvoiceIssuingSection";
+import { AdminSendReminderButton } from "@/components/AdminSendReminderButton";
 import { CommercialDocumentLineTable } from "@/components/CommercialDocumentLineTable";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
@@ -74,6 +75,7 @@ export default async function AdminCommercialDocumentDetailPage({
   const canCancel = document.status !== "cancelled" && document.status !== "issued";
   const canIssue = document.status === "shared_with_customer";
   const isIssued = document.status === "issued";
+  const canSendReminder = document.status === "issued";
 
   return (
     <>
@@ -171,6 +173,16 @@ export default async function AdminCommercialDocumentDetailPage({
             issuable={canIssue}
           />
         </SectionCard>
+
+        {canSendReminder ? (
+          <SectionCard ariaLabel="Relance de paiement">
+            <h2>Relance</h2>
+            <p className="form-hint">
+              Envoie un e-mail de relance au contact de facturation du client.
+            </p>
+            <AdminSendReminderButton documentId={document.id} />
+          </SectionCard>
+        ) : null}
 
         <SectionCard ariaLabel="Ajout de ligne">
           <h2>Ajouter une ligne</h2>

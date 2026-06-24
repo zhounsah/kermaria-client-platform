@@ -9,6 +9,8 @@ const navigationItems = [
   { href: "/admin", label: "Vue d'ensemble" },
   { href: "/admin/catalog", label: "Catalogue" },
   { href: "/admin/commercial-documents", label: "Documents" },
+  { href: "/admin/payments", label: "Paiements" },
+  { href: "/admin/email-log", label: "E-mails" },
   { href: "/admin/customers", label: "Clients" },
   { href: "/admin/support-requests", label: "Support" },
   { href: "/admin/service-requests", label: "Demandes service" },

@@ -37,6 +37,8 @@ export function AdminInvoiceIssuingSection({
   const router = useRouter();
   const isSubmittingRef = useRef(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isMarkingPaidRef = useRef(false);
+  const [isMarkingPaid, setIsMarkingPaid] = useState(false);
   const [message, setMessage] = useState<{
     tone: "success" | "error";
     text: string;
@@ -44,6 +46,41 @@ export function AdminInvoiceIssuingSection({
   const [invoice, setInvoice] = useState<IssuedInvoiceInfo | null>(
     existingInvoice ?? null,
   );
+
+  async function handleMarkAsPaid() {
+    if (!invoice || invoice.status === "paid" || isMarkingPaidRef.current) {
+      return;
+    }
+    if (
+      !window.confirm(
+        "Confirmer que cette facture a été réglée hors PayPal (virement, chèque, espèces) ? Cette action marquera la facture payée chez BPCE.",
+      )
+    ) {
+      return;
+    }
+
+    isMarkingPaidRef.current = true;
+    setIsMarkingPaid(true);
+    setMessage(null);
+
+    const result = await requestBffJson<IssueResult>(
+      `/api/admin/commercial-documents/${encodeURIComponent(documentId)}/mark-as-paid`,
+      { method: "POST" },
+    );
+
+    if (result.ok) {
+      setMessage({ tone: "success", text: result.data.message });
+      if (result.data.invoice) {
+        setInvoice(result.data.invoice);
+      }
+      router.refresh();
+    } else {
+      setMessage({ tone: "error", text: result.error.message });
+    }
+
+    isMarkingPaidRef.current = false;
+    setIsMarkingPaid(false);
+  }
 
   async function handleIssue() {
     if (!issuable || isSubmittingRef.current) return;
@@ -87,8 +124,17 @@ export function AdminInvoiceIssuingSection({
   }
 
   if (invoice) {
+    const isPaid = invoice.status === "paid";
     return (
       <div className="stack-list">
+        {message ? (
+          <FormMessage
+            title={message.tone === "success" ? "Mise à jour effectuée" : "Échec"}
+            tone={message.tone}
+          >
+            <p>{message.text}</p>
+          </FormMessage>
+        ) : null}
         <dl className="request-details">
           <div>
             <dt>Numéro fiscal</dt>
@@ -117,6 +163,18 @@ export function AdminInvoiceIssuingSection({
           </a>
         ) : (
           <p className="form-hint">PDF en cours de génération — réessayez dans quelques instants.</p>
+        )}
+        {isPaid ? (
+          <p className="form-hint">✓ Facture réglée.</p>
+        ) : (
+          <SubmitButton
+            className="button button-secondary"
+            idleLabel="Marquer payé (hors PayPal)"
+            isSubmitting={isMarkingPaid}
+            submittingLabel="Enregistrement..."
+            onClick={handleMarkAsPaid}
+            type="button"
+          />
         )}
       </div>
     );

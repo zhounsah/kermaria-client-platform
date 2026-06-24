@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using Kermaria.ApiInternal.Contracts;
 using Kermaria.ApiInternal.Data.Repositories;
 using Kermaria.ApiInternal.Services.Bpce;
+using Kermaria.ApiInternal.Services.Email;
 
 namespace Kermaria.ApiInternal.Services;
 
@@ -38,17 +39,20 @@ public sealed class InvoiceIssuingService : IInvoiceIssuingService
     private readonly ICommercialRepository _commercialRepository;
     private readonly IBpceInvoicingService _bpce;
     private readonly IBpceInvoicingRepository _bpceRepository;
+    private readonly IEmailDispatchService _emailDispatch;
     private readonly ILogger<InvoiceIssuingService> _logger;
 
     public InvoiceIssuingService(
         ICommercialRepository commercialRepository,
         IBpceInvoicingService bpce,
         IBpceInvoicingRepository bpceRepository,
+        IEmailDispatchService emailDispatch,
         ILogger<InvoiceIssuingService> logger)
     {
         _commercialRepository = commercialRepository;
         _bpce = bpce;
         _bpceRepository = bpceRepository;
+        _emailDispatch = emailDispatch;
         _logger = logger;
     }
 
@@ -218,6 +222,20 @@ public sealed class InvoiceIssuingService : IInvoiceIssuingService
         {
             await _commercialRepository.MarkDocumentIssuedAsync(
                 documentId, correlationId, cancellationToken);
+
+            if (sendEmail)
+            {
+                var emailResult = await _emailDispatch.SendInvoiceIssuedAsync(
+                    documentId, correlationId, cancellationToken);
+                if (!emailResult.Succeeded)
+                {
+                    _logger.LogWarning(
+                        "Invoice issued but email dispatch failed [{Code}] {Message} for document {DocumentId}",
+                        emailResult.Code,
+                        emailResult.Message,
+                        documentId);
+                }
+            }
         }
 
         var record = await _bpceRepository.GetInvoiceRecordAsync(
@@ -279,6 +297,17 @@ public sealed class InvoiceIssuingService : IInvoiceIssuingService
 
         await _commercialRepository.MarkDocumentPaidAsync(
             documentId, correlationId, cancellationToken);
+
+        var emailResult = await _emailDispatch.SendPaymentConfirmedAsync(
+            documentId, correlationId, cancellationToken);
+        if (!emailResult.Succeeded)
+        {
+            _logger.LogWarning(
+                "Payment confirmed but email dispatch failed [{Code}] {Message} for document {DocumentId}",
+                emailResult.Code,
+                emailResult.Message,
+                documentId);
+        }
 
         var updated = await _bpceRepository.GetInvoiceRecordAsync(
             documentId, cancellationToken);

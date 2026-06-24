@@ -9,6 +9,7 @@ using Kermaria.ApiInternal.Services;
 using Kermaria.ApiInternal.Data.Repositories;
 using Kermaria.ApiInternal.Services.ActiveDirectory;
 using Kermaria.ApiInternal.Services.Bpce;
+using Kermaria.ApiInternal.Services.Email;
 using Microsoft.AspNetCore.Diagnostics;
 using MySqlConnector;
 
@@ -75,6 +76,7 @@ var sqlConfiguration = SqlConfigurationResolver.Resolve(
     builder.Environment);
 var adConfiguration = AdConfigurationResolver.Resolve(builder.Configuration);
 var bpceConfiguration = BpceConfigurationResolver.Resolve(builder.Configuration);
+var emailConfiguration = EmailConfigurationResolver.Resolve(builder.Configuration);
 var authConfiguration = AuthConfigurationResolver.Resolve(
     builder.Configuration,
     builder.Environment);
@@ -82,6 +84,7 @@ var authConfiguration = AuthConfigurationResolver.Resolve(
 builder.Services.AddSingleton(sqlConfiguration);
 builder.Services.AddSingleton(adConfiguration);
 builder.Services.AddSingleton(bpceConfiguration);
+builder.Services.AddSingleton(emailConfiguration);
 builder.Services.AddSingleton(authConfiguration);
 builder.Services.AddSingleton<IPortalPasswordService, PortalPasswordService>();
 builder.Services.AddSingleton<ISessionTokenService, SessionTokenService>();
@@ -175,6 +178,25 @@ builder.Services.AddSingleton<IBpceInvoicingService>(serviceProvider =>
                     ILogger<LiveBpceInvoicingService>>()),
         _ => new DisabledBpceInvoicingService(bpceConfiguration)
     });
+builder.Services.AddSingleton<MockEmailLogRepository>();
+builder.Services.AddScoped<IEmailLogRepository>(
+    serviceProvider => sqlConfiguration.IsPersistent
+        ? new MariaDbEmailLogRepository(sqlConfiguration)
+        : serviceProvider.GetRequiredService<MockEmailLogRepository>());
+builder.Services.AddSingleton<IEmailService>(serviceProvider =>
+    emailConfiguration.Mode switch
+    {
+        EmailIntegrationMode.Mock =>
+            new MockEmailService(
+                emailConfiguration,
+                serviceProvider.GetRequiredService<ILogger<MockEmailService>>()),
+        EmailIntegrationMode.Live =>
+            new LiveEmailService(
+                emailConfiguration,
+                serviceProvider.GetRequiredService<ILogger<LiveEmailService>>()),
+        _ => new DisabledEmailService(emailConfiguration)
+    });
+builder.Services.AddScoped<IEmailDispatchService, EmailDispatchService>();
 
 var app = builder.Build();
 var exposeDebugExceptionDetails =
@@ -196,12 +218,13 @@ else
 }
 
 app.Logger.LogInformation(
-    "API-INTERNAL started in environment {Environment}; persistence {PersistenceMode}; Active Directory mode {AdMode}; operations_enabled {OperationsEnabled}; BPCE mode {BpceMode}",
+    "API-INTERNAL started in environment {Environment}; persistence {PersistenceMode}; Active Directory mode {AdMode}; operations_enabled {OperationsEnabled}; BPCE mode {BpceMode}; Email mode {EmailMode}",
     app.Environment.EnvironmentName,
     sqlConfiguration.IsPersistent ? "mariadb" : "mock",
     adConfiguration.ModeName,
     adConfiguration.WritesEnabled,
-    bpceConfiguration.ModeName);
+    bpceConfiguration.ModeName,
+    emailConfiguration.ModeName);
 
 if (args.Contains("--seed-demo-data", StringComparer.OrdinalIgnoreCase)
     && !args.Contains("--apply-migrations", StringComparer.OrdinalIgnoreCase))
@@ -689,6 +712,61 @@ app.MapPost(
             invoice = result.Invoice,
             correlation_id = context.GetCorrelationId()
         });
+    });
+app.MapGet(
+    "/internal/portal/commercial-documents/{id}/invoice/pdf",
+    async (
+        string id,
+        HttpContext context,
+        ICommercialService commercialService,
+        IInvoiceIssuingService issuingService,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            auditService);
+        var document = await commercialService.GetClientDocumentAsync(
+            session,
+            id,
+            context.RequestAborted);
+        if (document.Status != "issued" && document.Status != "paid")
+        {
+            return Results.Json(
+                new ApiError(
+                    "INVOICE_NOT_AVAILABLE",
+                    "The invoice is not available for this document.",
+                    context.GetCorrelationId()),
+                statusCode: StatusCodes.Status404NotFound);
+        }
+
+        var record = await issuingService.GetInvoiceRecordAsync(
+            id, context.RequestAborted);
+        if (record is null)
+        {
+            return Results.Json(
+                new ApiError(
+                    "INVOICE_NOT_FOUND",
+                    "No issued invoice found for this document.",
+                    context.GetCorrelationId()),
+                statusCode: StatusCodes.Status404NotFound);
+        }
+
+        var pdf = await issuingService.GetCachedInvoicePdfAsync(
+            id, context.RequestAborted);
+        if (pdf is null)
+        {
+            return Results.Json(
+                new ApiError(
+                    "PDF_NOT_AVAILABLE",
+                    "The invoice PDF is not yet available.",
+                    context.GetCorrelationId()),
+                statusCode: StatusCodes.Status404NotFound);
+        }
+
+        var filename = $"facture-{record.FiscalNumber ?? record.BpceInvoiceId}.pdf";
+        return Results.File(pdf, "application/pdf", filename);
     });
 
 app.MapGet(
@@ -2066,6 +2144,127 @@ app.MapGet(
 
         var filename = $"facture-{record.FiscalNumber ?? record.BpceInvoiceId}.pdf";
         return Results.File(pdf, "application/pdf", filename);
+    });
+
+app.MapPost(
+    "/internal/admin/commercial-documents/{id}/send-reminder",
+    async (
+        string id,
+        HttpContext context,
+        IEmailDispatchService emailDispatch,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.commercial_documents.send_reminder");
+        var result = await emailDispatch.SendPaymentReminderAsync(
+            id,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "commercial_document.send_reminder",
+                result.Succeeded ? "success" : "refused",
+                ReasonCode: result.Code,
+                TargetType: "commercial_document",
+                TargetReference: id,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+
+        if (!result.Succeeded)
+        {
+            var statusCode = result.Code == "DOCUMENT_NOT_FOUND"
+                ? StatusCodes.Status404NotFound
+                : StatusCodes.Status400BadRequest;
+            return Results.Json(
+                new ApiError(result.Code, result.Message, context.GetCorrelationId()),
+                statusCode: statusCode);
+        }
+
+        return Results.Ok(new
+        {
+            code = result.Code,
+            message = result.Message,
+            correlation_id = context.GetCorrelationId()
+        });
+    });
+
+app.MapGet(
+    "/internal/admin/email-log",
+    async (
+        HttpContext context,
+        IEmailLogRepository emailLog,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.email_log.read");
+        var limit = int.TryParse(
+            context.Request.Query["limit"].ToString(), out var parsed)
+            ? parsed
+            : 100;
+        var entries = await emailLog.ListRecentAsync(
+            limit, context.RequestAborted);
+        context.Response.Headers["X-Data-Source"] =
+            emailLog.IsPersistent ? "mariadb" : "mock";
+        return Results.Ok(entries);
+    });
+
+app.MapPost(
+    "/internal/admin/commercial-documents/{id}/mark-as-paid",
+    async (
+        string id,
+        HttpContext context,
+        IInvoiceIssuingService issuingService,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.commercial_documents.mark_as_paid");
+        var result = await issuingService.ConfirmPaymentAsync(
+            id,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "commercial_document.mark_as_paid",
+                result.Succeeded ? "success" : "refused",
+                ReasonCode: result.Code,
+                TargetType: "commercial_document",
+                TargetReference: id,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+
+        if (!result.Succeeded)
+        {
+            var statusCode = result.Code == "INVOICE_NOT_FOUND"
+                ? StatusCodes.Status404NotFound
+                : StatusCodes.Status400BadRequest;
+            return Results.Json(
+                new ApiError(result.Code, result.Message, context.GetCorrelationId()),
+                statusCode: statusCode);
+        }
+
+        return Results.Ok(new
+        {
+            code = result.Code,
+            message = result.Message,
+            invoice = result.Invoice,
+            correlation_id = context.GetCorrelationId()
+        });
     });
 
 app.MapFallback((HttpContext context) =>

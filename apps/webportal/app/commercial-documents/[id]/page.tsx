@@ -142,6 +142,16 @@ export default async function CommercialDocumentDetailPage({
           <span className="card-kicker">Règlement</span>
           <h2>Comment régler cette facture</h2>
 
+          <p style={{ marginTop: "0.5rem" }}>
+            <a
+              className="button"
+              href={`/api/commercial-documents/${encodeURIComponent(id)}/invoice/pdf`}
+              rel="noopener"
+            >
+              Télécharger la facture (PDF)
+            </a>
+          </p>
+
           {billing.iban ? (
             <div>
               <h3 style={{ marginTop: "1rem", marginBottom: "0.5rem" }}>
