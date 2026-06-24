@@ -646,6 +646,24 @@ public sealed class MockCommercialRepository : ICommercialRepository
         return Task.CompletedTask;
     }
 
+    public Task MarkDocumentPaidAsync(
+        string documentId,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
+        lock (_store.SyncRoot)
+        {
+            var doc = _store.Documents.FirstOrDefault(d => d.Id == documentId);
+            if (doc is not null)
+            {
+                doc.Status = "paid";
+                doc.UpdatedAt = DateTime.UtcNow.ToString("O");
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
     private MockCommercialDocument FindDocument(string documentId)
         => _store.Documents.FirstOrDefault(document => document.Id == documentId)
             ?? throw new PortalDataNotFoundException();

@@ -1551,4 +1551,23 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
         cmd.Parameters.AddWithValue("documentId", documentId);
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
+
+    public async Task MarkDocumentPaidAsync(
+        string documentId,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            UPDATE commercial_documents SET
+                status = 'paid',
+                updated_at = NOW(6)
+            WHERE id = @documentId
+            """;
+        cmd.Parameters.AddWithValue("documentId", documentId);
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
+    }
 }

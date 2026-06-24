@@ -64,7 +64,8 @@ export default async function CommercialDocumentDetailPage({
     label: document.status,
     tone: "slate" as const,
   };
-  const isIssued = document.status === "issued";
+  const isIssued = document.status === "issued" || document.status === "paid";
+  const isPaid = document.status === "paid";
 
   return (
     <>
@@ -160,7 +161,13 @@ export default async function CommercialDocumentDetailPage({
             </div>
           ) : null}
 
-          {paypalEnabled ? (
+          {isPaid ? (
+            <div style={{ marginTop: "1rem" }}>
+              <p style={{ color: "var(--color-text-muted)" }}>
+                ✓ Cette facture a été réglée. Merci pour votre paiement.
+              </p>
+            </div>
+          ) : paypalEnabled ? (
             <div style={{ marginTop: "1.5rem" }}>
               <h3 style={{ marginBottom: "0.5rem" }}>Paiement en ligne</h3>
               <p style={{ marginBottom: "0.75rem", color: "var(--color-text-muted)" }}>

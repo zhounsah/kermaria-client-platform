@@ -75,6 +75,11 @@ public interface ICommercialRepository
         string documentId,
         string correlationId,
         CancellationToken cancellationToken);
+
+    Task MarkDocumentPaidAsync(
+        string documentId,
+        string correlationId,
+        CancellationToken cancellationToken);
 }
 
 public sealed record DocumentForIssuing(

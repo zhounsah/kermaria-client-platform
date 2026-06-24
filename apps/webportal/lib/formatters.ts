@@ -16,6 +16,7 @@ export const commercialDocumentStatus = {
   shared_with_customer: { label: "Partagé au client", tone: "success" },
   cancelled: { label: "Annulé", tone: "neutral" },
   issued: { label: "Facture émise", tone: "success" },
+  paid: { label: "Réglée", tone: "success" },
 } as const;
 
 export const commercialDocumentType = {

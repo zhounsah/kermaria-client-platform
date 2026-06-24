@@ -277,6 +277,9 @@ public sealed class InvoiceIssuingService : IInvoiceIssuingService
             record.PdfHash,
             cancellationToken);
 
+        await _commercialRepository.MarkDocumentPaidAsync(
+            documentId, correlationId, cancellationToken);
+
         var updated = await _bpceRepository.GetInvoiceRecordAsync(
             documentId, cancellationToken);
 
