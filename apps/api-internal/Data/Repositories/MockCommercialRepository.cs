@@ -670,6 +670,16 @@ public sealed class MockCommercialRepository : ICommercialRepository
         return Task.CompletedTask;
     }
 
+    public Task<string> CreateBillingDocumentFromOfferAsync(
+        string customerId,
+        string offerId,
+        string title,
+        string correlationId,
+        CancellationToken cancellationToken)
+        => throw new NotSupportedException(
+            "Mock commercial repository does not support system-issued billing "
+            + "documents. Run with MariaDB to exercise the webhook orchestration.");
+
     private MockCommercialDocument FindDocument(string documentId)
         => _store.Documents.FirstOrDefault(document => document.Id == documentId)
             ?? throw new PortalDataNotFoundException();

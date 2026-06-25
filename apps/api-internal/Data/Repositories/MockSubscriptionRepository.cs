@@ -58,6 +58,20 @@ public sealed class MockSubscriptionRepository : ISubscriptionRepository
         }
     }
 
+    public Task<SubscriptionSummary?> GetByPayPalIdAsync(
+        string paypalSubscriptionId,
+        CancellationToken cancellationToken)
+    {
+        lock (_store.SyncRoot)
+        {
+            return Task.FromResult(
+                _store.Subscriptions.FirstOrDefault(
+                    subscription =>
+                        subscription.PayPalSubscriptionId
+                            == paypalSubscriptionId));
+        }
+    }
+
     public Task<SubscriptionSummary> CreatePendingAsync(
         string customerId,
         string commercialOfferId,
@@ -115,6 +129,36 @@ public sealed class MockSubscriptionRepository : ISubscriptionRepository
                 Status = newStatus,
                 UpdatedAt = now,
                 CancelledAt = cancelledAt
+            };
+            _store.Subscriptions[index] = updated;
+            return Task.FromResult(updated);
+        }
+    }
+
+    public Task<SubscriptionSummary> ActivateAsync(
+        string subscriptionId,
+        DateTime startedAtUtc,
+        DateTime nextBillingAtUtc,
+        CancellationToken cancellationToken)
+    {
+        lock (_store.SyncRoot)
+        {
+            var index = _store.Subscriptions.FindIndex(
+                subscription => subscription.Id == subscriptionId);
+            if (index < 0)
+            {
+                throw new InvalidOperationException(
+                    $"Subscription {subscriptionId} not found.");
+            }
+
+            var current = _store.Subscriptions[index];
+            var now = DateTime.UtcNow.ToString("O");
+            var updated = current with
+            {
+                Status = "active",
+                StartedAt = current.StartedAt ?? startedAtUtc.ToString("O"),
+                NextBillingAt = nextBillingAtUtc.ToString("O"),
+                UpdatedAt = now
             };
             _store.Subscriptions[index] = updated;
             return Task.FromResult(updated);

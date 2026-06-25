@@ -80,6 +80,13 @@ public interface ICommercialRepository
         string documentId,
         string correlationId,
         CancellationToken cancellationToken);
+
+    Task<string> CreateBillingDocumentFromOfferAsync(
+        string customerId,
+        string offerId,
+        string title,
+        string correlationId,
+        CancellationToken cancellationToken);
 }
 
 public sealed record DocumentForIssuing(

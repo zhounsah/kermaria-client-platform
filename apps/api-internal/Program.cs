@@ -134,6 +134,12 @@ builder.Services.AddScoped<ISubscriptionRepository>(
         ? new MariaDbSubscriptionRepository(sqlConfiguration)
         : new MockSubscriptionRepository(
             serviceProvider.GetRequiredService<MockSubscriptionStore>()));
+builder.Services.AddSingleton<MockPayPalWebhookStore>();
+builder.Services.AddScoped<IPayPalWebhookRepository>(
+    serviceProvider => sqlConfiguration.IsPersistent
+        ? new MariaDbPayPalWebhookRepository(sqlConfiguration)
+        : new MockPayPalWebhookRepository(
+            serviceProvider.GetRequiredService<MockPayPalWebhookStore>()));
 builder.Services.AddScoped<IActiveDirectoryLinkRepository>(
     _ => sqlConfiguration.IsPersistent
         ? new MariaDbActiveDirectoryLinkRepository(sqlConfiguration)
@@ -147,6 +153,7 @@ builder.Services.AddScoped<
     PortalNotificationService>();
 builder.Services.AddScoped<ICommercialService, CommercialService>();
 builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
+builder.Services.AddScoped<IPayPalWebhookService, PayPalWebhookService>();
 builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddTransient<MariaDbMigrationRunner>();
 builder.Services.AddSingleton<OperationalReadinessService>();
@@ -907,6 +914,27 @@ app.MapPost(
                 SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
             context.RequestAborted);
         return SubscriptionOk(context, service, result);
+    });
+
+app.MapPost(
+    "/internal/webhooks/paypal",
+    async (
+        HttpContext context,
+        IPayPalWebhookService webhookService) =>
+    {
+        var payload = await ReadPayload<PayPalWebhookEventPayload>(context)
+            ?? throw new PortalValidationException();
+        var result = await webhookService.ProcessAsync(
+            payload,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        return Results.Ok(new
+        {
+            event_id = result.EventId,
+            status = result.Status,
+            error_message = result.ErrorMessage,
+            correlation_id = context.GetCorrelationId()
+        });
     });
 
 app.MapGet(

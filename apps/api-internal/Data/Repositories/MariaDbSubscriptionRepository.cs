@@ -82,6 +82,28 @@ public sealed class MariaDbSubscriptionRepository : ISubscriptionRepository
         return Read(reader);
     }
 
+    public async Task<SubscriptionSummary?> GetByPayPalIdAsync(
+        string paypalSubscriptionId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = BaseSelect + """
+            WHERE subscription.paypal_subscription_id = @paypalId
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("paypalId", paypalSubscriptionId);
+
+        await using var reader = await command.ExecuteReaderAsync(
+            cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return Read(reader);
+    }
+
     public async Task<SubscriptionSummary> CreatePendingAsync(
         string customerId,
         string commercialOfferId,
@@ -163,6 +185,37 @@ public sealed class MariaDbSubscriptionRepository : ISubscriptionRepository
         return await GetByIdAsync(subscriptionId, cancellationToken)
             ?? throw new InvalidOperationException(
                 "Subscription could not be reloaded after status update.");
+    }
+
+    public async Task<SubscriptionSummary> ActivateAsync(
+        string subscriptionId,
+        DateTime startedAtUtc,
+        DateTime nextBillingAtUtc,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE subscriptions
+            SET status = 'active',
+                started_at = COALESCE(started_at, @startedAt),
+                next_billing_at = @nextBillingAt,
+                updated_at = UTC_TIMESTAMP(6)
+            WHERE id = @id;
+            """;
+        command.Parameters.AddWithValue("id", subscriptionId);
+        command.Parameters.AddWithValue("startedAt", startedAtUtc);
+        command.Parameters.AddWithValue("nextBillingAt", nextBillingAtUtc);
+        var affected = await command.ExecuteNonQueryAsync(cancellationToken);
+        if (affected == 0)
+        {
+            throw new InvalidOperationException(
+                $"Subscription {subscriptionId} not found.");
+        }
+
+        return await GetByIdAsync(subscriptionId, cancellationToken)
+            ?? throw new InvalidOperationException(
+                "Subscription could not be reloaded after activation.");
     }
 
     private async Task<MySqlConnection> OpenAsync(

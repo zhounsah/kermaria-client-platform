@@ -1594,4 +1594,223 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
         cmd.Parameters.AddWithValue("documentId", documentId);
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
+
+    public async Task<string> CreateBillingDocumentFromOfferAsync(
+        string customerId,
+        string offerId,
+        string title,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(
+            IsolationLevel.ReadCommitted,
+            cancellationToken);
+
+        var systemUserId = await ResolveSystemActorAsync(
+            connection,
+            transaction,
+            cancellationToken);
+
+        var offer = await ReadOfferDetailsAsync(
+            connection,
+            transaction,
+            offerId,
+            cancellationToken);
+
+        var documentId = Guid.NewGuid().ToString("D");
+        var now = DateTime.UtcNow;
+        var reference = CreateReference();
+
+        await using (var documentCommand = connection.CreateCommand())
+        {
+            documentCommand.Transaction = transaction;
+            documentCommand.CommandText =
+                """
+                INSERT INTO commercial_documents (
+                    id,
+                    customer_id,
+                    service_request_id,
+                    document_type,
+                    status,
+                    title,
+                    internal_reference,
+                    currency,
+                    subtotal_amount_cents,
+                    tax_amount_cents,
+                    total_amount_cents,
+                    disclaimer,
+                    created_by_user_id,
+                    created_at,
+                    updated_at,
+                    shared_at,
+                    cancelled_at
+                ) VALUES (
+                    @id,
+                    @customerId,
+                    NULL,
+                    'informational_invoice',
+                    'shared_with_customer',
+                    @title,
+                    @reference,
+                    0,
+                    0,
+                    0,
+                    @disclaimer,
+                    @createdBy,
+                    @createdAt,
+                    @updatedAt,
+                    @sharedAt,
+                    NULL
+                );
+                """;
+            documentCommand.Parameters.AddWithValue("@id", documentId);
+            documentCommand.Parameters.AddWithValue("@customerId", customerId);
+            documentCommand.Parameters.AddWithValue("@title", title);
+            documentCommand.Parameters.AddWithValue("@reference", reference);
+            documentCommand.Parameters.AddWithValue(
+                "@disclaimer",
+                CommercialStatuses.DefaultDisclaimer);
+            documentCommand.Parameters.AddWithValue("@createdBy", systemUserId);
+            documentCommand.Parameters.AddWithValue("@createdAt", now);
+            documentCommand.Parameters.AddWithValue("@updatedAt", now);
+            documentCommand.Parameters.AddWithValue("@sharedAt", now);
+            await documentCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        var lineId = Guid.NewGuid().ToString("D");
+        await using (var lineCommand = connection.CreateCommand())
+        {
+            lineCommand.Transaction = transaction;
+            lineCommand.CommandText =
+                """
+                INSERT INTO commercial_document_lines (
+                    id,
+                    document_id,
+                    offer_id,
+                    label,
+                    description,
+                    quantity,
+                    unit_label,
+                    unit_price_cents,
+                    tax_rate_basis_points,
+                    line_total_cents,
+                    sort_order,
+                    created_at,
+                    updated_at
+                ) VALUES (
+                    @id,
+                    @documentId,
+                    @offerId,
+                    @label,
+                    @description,
+                    1.00,
+                    @unitLabel,
+                    @unitPriceCents,
+                    @taxRate,
+                    @lineTotal,
+                    10,
+                    @createdAt,
+                    @updatedAt
+                );
+                """;
+            lineCommand.Parameters.AddWithValue("@id", lineId);
+            lineCommand.Parameters.AddWithValue("@documentId", documentId);
+            lineCommand.Parameters.AddWithValue("@offerId", offerId);
+            lineCommand.Parameters.AddWithValue("@label", offer.Name);
+            lineCommand.Parameters.AddWithValue("@description", offer.Description);
+            lineCommand.Parameters.AddWithValue("@unitLabel", offer.UnitLabel);
+            lineCommand.Parameters.AddWithValue(
+                "@unitPriceCents",
+                offer.PriceAmountCents);
+            lineCommand.Parameters.AddWithValue(
+                "@taxRate",
+                offer.TaxRateBasisPoints is null
+                    ? DBNull.Value
+                    : (object)offer.TaxRateBasisPoints.Value);
+            lineCommand.Parameters.AddWithValue(
+                "@lineTotal",
+                offer.PriceAmountCents);
+            lineCommand.Parameters.AddWithValue("@createdAt", now);
+            lineCommand.Parameters.AddWithValue("@updatedAt", now);
+            await lineCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await RecalculateDocumentTotalsAsync(
+            connection,
+            transaction,
+            documentId,
+            now,
+            cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+        return documentId;
+    }
+
+    private static async Task<string> ResolveSystemActorAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT id FROM portal_users
+            WHERE role = 'internal_admin'
+              AND status = 'active'
+            ORDER BY created_at
+            LIMIT 1;
+            """;
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        if (result is null or DBNull)
+        {
+            throw new InvalidOperationException(
+                "No active internal_admin user available to act as system actor.");
+        }
+
+        return MariaDbIdentifierReader.ConvertRequiredValue(
+            result,
+            "portal_users.id");
+    }
+
+    private sealed record OfferDetailsRow(
+        string Name,
+        string Description,
+        string UnitLabel,
+        int PriceAmountCents,
+        int? TaxRateBasisPoints);
+
+    private static async Task<OfferDetailsRow> ReadOfferDetailsAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        string offerId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT name, description, unit_label, price_amount_cents,
+                tax_rate_basis_points
+            FROM commercial_offers
+            WHERE id = @id
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("@id", offerId);
+        await using var reader = await command.ExecuteReaderAsync(
+            cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException(
+                $"Offer {offerId} not found.");
+        }
+
+        return new OfferDetailsRow(
+            reader.GetString("name"),
+            reader.GetString("description"),
+            reader.GetString("unit_label"),
+            reader.GetInt32("price_amount_cents"),
+            reader.IsDBNull(reader.GetOrdinal("tax_rate_basis_points"))
+                ? null
+                : reader.GetInt32("tax_rate_basis_points"));
+    }
 }
