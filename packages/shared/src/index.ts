@@ -233,6 +233,8 @@ export interface InvoiceSummary {
 
 export type CommercialOfferStatus = "active" | "inactive";
 
+export type CommercialOfferBillingCadence = "one_time" | "monthly";
+
 export interface CommercialOfferSummary {
   id: string;
   name: string;
@@ -246,6 +248,8 @@ export interface CommercialOfferSummary {
   externalReference: string | null;
   status: CommercialOfferStatus;
   displayOrder: number;
+  billingCadence: CommercialOfferBillingCadence;
+  paypalPlanId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -258,6 +262,8 @@ export interface CommercialOfferPayload {
   priceAmountCents: number;
   status: CommercialOfferStatus;
   displayOrder: number;
+  billingCadence: CommercialOfferBillingCadence;
+  paypalPlanId: string | null;
 }
 
 export type CommercialDocumentType =

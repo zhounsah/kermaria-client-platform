@@ -17,6 +17,15 @@ public static partial class CommercialStatuses
     public const string InformationalInvoice = "informational_invoice";
     public const string DefaultDisclaimer =
         "Document informatif — ne constitue pas une facture officielle.";
+    public const string CadenceOneTime = "one_time";
+    public const string CadenceMonthly = "monthly";
+
+    public static readonly IReadOnlySet<string> BillingCadences =
+        new HashSet<string>(StringComparer.Ordinal)
+        {
+            CadenceOneTime,
+            CadenceMonthly
+        };
 
     public static readonly IReadOnlySet<string> Offer =
         new HashSet<string>(StringComparer.Ordinal)
@@ -57,7 +66,9 @@ public sealed record ValidatedCommercialOffer(
     string UnitLabel,
     int PriceAmountCents,
     string Status,
-    int DisplayOrder);
+    int DisplayOrder,
+    string BillingCadence,
+    string? PayPalPlanId);
 
 public sealed record ValidatedCommercialDocument(
     string? CustomerReference,
@@ -322,6 +333,27 @@ public sealed partial class CommercialService : ICommercialService
             throw new PortalValidationException();
         }
 
+        var billingCadence = Normalize(payload.BillingCadence)
+            ?? CommercialStatuses.CadenceOneTime;
+        if (!CommercialStatuses.BillingCadences.Contains(billingCadence))
+        {
+            throw new PortalValidationException();
+        }
+
+        var paypalPlanId = Normalize(payload.PayPalPlanId);
+        if (paypalPlanId is not null
+            && (paypalPlanId.Length > 64
+                || !PayPalPlanIdPattern().IsMatch(paypalPlanId)))
+        {
+            throw new PortalValidationException();
+        }
+
+        if (billingCadence == CommercialStatuses.CadenceOneTime
+            && paypalPlanId is not null)
+        {
+            throw new PortalValidationException();
+        }
+
         return new ValidatedCommercialOffer(
             name,
             description,
@@ -329,7 +361,9 @@ public sealed partial class CommercialService : ICommercialService
             unitLabel,
             priceAmountCents,
             status,
-            displayOrder);
+            displayOrder,
+            billingCadence,
+            paypalPlanId);
     }
 
     private static ValidatedCommercialDocument ValidateDocumentPayload(
@@ -517,4 +551,7 @@ public sealed partial class CommercialService : ICommercialService
 
     [GeneratedRegex("^[A-Za-z0-9-]{1,100}$", RegexOptions.CultureInvariant)]
     private static partial Regex IdentifierPattern();
+
+    [GeneratedRegex("^[A-Za-z0-9_-]{1,64}$", RegexOptions.CultureInvariant)]
+    private static partial Regex PayPalPlanIdPattern();
 }

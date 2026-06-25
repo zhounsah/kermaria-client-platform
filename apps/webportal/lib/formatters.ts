@@ -30,6 +30,11 @@ export const commercialOfferStatus = {
   inactive: { label: "Inactive", tone: "neutral" },
 } as const;
 
+export const commercialOfferBillingCadence = {
+  one_time: { label: "Ponctuelle", tone: "neutral" },
+  monthly: { label: "Mensuelle", tone: "info" },
+} as const;
+
 export const supportStatus = {
   open: {
     label: "Ouverte",

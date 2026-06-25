@@ -15,6 +15,8 @@ public sealed record CommercialOfferSummary(
     string? ExternalReference,
     string Status,
     int DisplayOrder,
+    string BillingCadence,
+    string? PayPalPlanId,
     string CreatedAt,
     string UpdatedAt);
 
@@ -164,7 +166,9 @@ public sealed record CommercialOfferPayload(
     string? UnitLabel,
     int? PriceAmountCents,
     string? Status,
-    int? DisplayOrder);
+    int? DisplayOrder,
+    string? BillingCadence,
+    string? PayPalPlanId);
 
 public sealed record CommercialDocumentPayload(
     string? CustomerReference,

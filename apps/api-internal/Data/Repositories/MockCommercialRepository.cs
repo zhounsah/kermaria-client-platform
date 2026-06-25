@@ -243,7 +243,9 @@ public sealed class MockCommercialRepository : ICommercialRepository
                 offer.Status,
                 offer.DisplayOrder,
                 now,
-                now);
+                now,
+                offer.BillingCadence,
+                offer.PayPalPlanId);
             _store.Offers.Add(item);
 
             return Task.FromResult(new CommercialOfferMutationResponse(
@@ -271,7 +273,9 @@ public sealed class MockCommercialRepository : ICommercialRepository
                 || current.UnitLabel != offer.UnitLabel
                 || current.PriceAmountCents != offer.PriceAmountCents
                 || current.Status != offer.Status
-                || current.DisplayOrder != offer.DisplayOrder;
+                || current.DisplayOrder != offer.DisplayOrder
+                || current.BillingCadence != offer.BillingCadence
+                || current.PayPalPlanId != offer.PayPalPlanId;
 
             current.Name = offer.Name;
             current.Description = offer.Description;
@@ -280,6 +284,8 @@ public sealed class MockCommercialRepository : ICommercialRepository
             current.PriceAmountCents = offer.PriceAmountCents;
             current.Status = offer.Status;
             current.DisplayOrder = offer.DisplayOrder;
+            current.BillingCadence = offer.BillingCadence;
+            current.PayPalPlanId = offer.PayPalPlanId;
             current.UpdatedAt = DateTime.UtcNow.ToString("O");
 
             return Task.FromResult(new CommercialOfferMutationResponse(
@@ -801,6 +807,8 @@ public sealed class MockCommercialRepository : ICommercialRepository
             null,
             offer.Status,
             offer.DisplayOrder,
+            offer.BillingCadence,
+            offer.PayPalPlanId,
             offer.CreatedAt,
             offer.UpdatedAt);
 
@@ -925,7 +933,9 @@ public sealed record MockCommercialOffer(
     string InitialStatus,
     int InitialDisplayOrder,
     string CreatedAt,
-    string InitialUpdatedAt)
+    string InitialUpdatedAt,
+    string InitialBillingCadence = CommercialStatuses.CadenceOneTime,
+    string? InitialPayPalPlanId = null)
 {
     public string Name { get; set; } = InitialName;
     public string Description { get; set; } = InitialDescription;
@@ -935,6 +945,8 @@ public sealed record MockCommercialOffer(
     public string Status { get; set; } = InitialStatus;
     public int DisplayOrder { get; set; } = InitialDisplayOrder;
     public string UpdatedAt { get; set; } = InitialUpdatedAt;
+    public string BillingCadence { get; set; } = InitialBillingCadence;
+    public string? PayPalPlanId { get; set; } = InitialPayPalPlanId;
 }
 
 public sealed record MockCommercialDocument(

@@ -1,6 +1,7 @@
 "use client";
 
 import type {
+  CommercialOfferBillingCadence,
   CommercialOfferMutationResponse,
   CommercialOfferSummary,
 } from "@kermaria/shared";
@@ -29,6 +30,11 @@ export function AdminCatalogOfferForm({ offer }: AdminCatalogOfferFormProps) {
     String(offer?.displayOrder ?? 0),
   );
   const [status, setStatus] = useState(offer?.status ?? "active");
+  const [billingCadence, setBillingCadence] =
+    useState<CommercialOfferBillingCadence>(
+      offer?.billingCadence ?? "one_time",
+    );
+  const [paypalPlanId, setPaypalPlanId] = useState(offer?.paypalPlanId ?? "");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState<{
     tone: "success" | "error";
@@ -41,6 +47,7 @@ export function AdminCatalogOfferForm({ offer }: AdminCatalogOfferFormProps) {
       return;
     }
 
+    const trimmedPlanId = paypalPlanId.trim();
     const payload = {
       name: name.trim(),
       description: description.trim(),
@@ -49,6 +56,11 @@ export function AdminCatalogOfferForm({ offer }: AdminCatalogOfferFormProps) {
       priceAmountCents: Number.parseInt(priceAmountCents, 10),
       status,
       displayOrder: Number.parseInt(displayOrder, 10),
+      billingCadence,
+      paypalPlanId:
+        billingCadence === "monthly" && trimmedPlanId.length > 0
+          ? trimmedPlanId
+          : null,
     };
 
     if (
@@ -60,6 +72,8 @@ export function AdminCatalogOfferForm({ offer }: AdminCatalogOfferFormProps) {
       || payload.priceAmountCents < 0
       || !Number.isInteger(payload.displayOrder)
       || payload.displayOrder < 0
+      || (payload.paypalPlanId !== null
+        && !/^[A-Za-z0-9_-]{1,64}$/.test(payload.paypalPlanId))
     ) {
       setMessage({
         tone: "error",
@@ -166,6 +180,39 @@ export function AdminCatalogOfferForm({ offer }: AdminCatalogOfferFormProps) {
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
           </select>
+        </label>
+      </div>
+      <div className="form-grid">
+        <label>
+          Cadence de facturation
+          <select
+            onChange={(event) => {
+              const next = event.target
+                .value as CommercialOfferBillingCadence;
+              setBillingCadence(next);
+              if (next === "one_time") {
+                setPaypalPlanId("");
+              }
+            }}
+            value={billingCadence}
+          >
+            <option value="one_time">Ponctuelle</option>
+            <option value="monthly">Mensuelle</option>
+          </select>
+        </label>
+        <label>
+          Identifiant PayPal Plan
+          <input
+            disabled={billingCadence !== "monthly"}
+            maxLength={64}
+            onChange={(event) => setPaypalPlanId(event.target.value)}
+            placeholder="P-XXXXXXXXXXXXXXXXXXX"
+            value={paypalPlanId}
+          />
+          <span className="field-hint">
+            Créé manuellement dans le dashboard PayPal pour les offres
+            mensuelles ; laisser vide pour les offres ponctuelles.
+          </span>
         </label>
       </div>
       {message ? (

@@ -2213,6 +2213,38 @@ td {
   }
 }
 
+.badge-stack {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.filter-links {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 0 0 auto;
+  font-size: 0.85rem;
+}
+
+.filter-links a {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  text-decoration: none;
+  background: transparent;
+}
+
+.filter-links a[aria-current="page"] {
+  color: var(--primary);
+  border-color: var(--primary);
+  background: var(--primary-light, rgba(0, 102, 204, 0.08));
+  font-weight: 600;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

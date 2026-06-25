@@ -93,10 +93,20 @@ export function parseCommercialOfferPayload(
     || typeof candidate.priceAmountCents !== "number"
     || typeof candidate.status !== "string"
     || typeof candidate.displayOrder !== "number"
+    || typeof candidate.billingCadence !== "string"
+    || !(
+      typeof candidate.paypalPlanId === "string"
+      || candidate.paypalPlanId === null
+      || candidate.paypalPlanId === undefined
+    )
   ) {
     return null;
   }
 
+  const paypalPlanId =
+    typeof candidate.paypalPlanId === "string"
+      ? candidate.paypalPlanId.trim() || null
+      : null;
   const payload: CommercialOfferPayload = {
     name: candidate.name.trim(),
     description: candidate.description.trim(),
@@ -105,6 +115,9 @@ export function parseCommercialOfferPayload(
     priceAmountCents: Math.trunc(candidate.priceAmountCents),
     status: candidate.status as CommercialOfferPayload["status"],
     displayOrder: Math.trunc(candidate.displayOrder),
+    billingCadence:
+      candidate.billingCadence as CommercialOfferPayload["billingCadence"],
+    paypalPlanId,
   };
 
   return payload.name.length >= 3
@@ -122,6 +135,13 @@ export function parseCommercialOfferPayload(
     && Number.isInteger(payload.displayOrder)
     && payload.displayOrder >= 0
     && payload.displayOrder <= 100000
+    && ["one_time", "monthly"].includes(payload.billingCadence)
+    && (payload.paypalPlanId === null
+      || /^[A-Za-z0-9_-]{1,64}$/.test(payload.paypalPlanId))
+    && !(
+      payload.billingCadence === "one_time"
+      && payload.paypalPlanId !== null
+    )
     ? payload
     : null;
 }

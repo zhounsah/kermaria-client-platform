@@ -41,6 +41,8 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 external_reference,
                 status,
                 display_order,
+                billing_cadence,
+                paypal_plan_id,
                 created_at,
                 updated_at
             FROM commercial_offers
@@ -78,6 +80,8 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 external_reference,
                 status,
                 display_order,
+                billing_cadence,
+                paypal_plan_id,
                 created_at,
                 updated_at
             FROM commercial_offers
@@ -115,6 +119,8 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 currency,
                 status,
                 display_order,
+                billing_cadence,
+                paypal_plan_id,
                 created_at,
                 updated_at
             ) VALUES (
@@ -128,6 +134,8 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 'EUR',
                 @status,
                 @display_order,
+                @billing_cadence,
+                @paypal_plan_id,
                 @created_at,
                 @updated_at
             );
@@ -140,6 +148,8 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
         command.Parameters.AddWithValue("@price_amount_cents", offer.PriceAmountCents);
         command.Parameters.AddWithValue("@status", offer.Status);
         command.Parameters.AddWithValue("@display_order", offer.DisplayOrder);
+        command.Parameters.AddWithValue("@billing_cadence", offer.BillingCadence);
+        command.Parameters.AddWithValue("@paypal_plan_id", DbValue(offer.PayPalPlanId));
         command.Parameters.AddWithValue("@created_at", now);
         command.Parameters.AddWithValue("@updated_at", now);
         await command.ExecuteNonQueryAsync(cancellationToken);
@@ -173,7 +183,9 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
             || current.UnitLabel != offer.UnitLabel
             || current.PriceAmountCents != offer.PriceAmountCents
             || current.Status != offer.Status
-            || current.DisplayOrder != offer.DisplayOrder;
+            || current.DisplayOrder != offer.DisplayOrder
+            || current.BillingCadence != offer.BillingCadence
+            || current.PayPalPlanId != offer.PayPalPlanId;
 
         await using (var command = connection.CreateCommand())
         {
@@ -188,6 +200,8 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                     price_amount_cents = @price_amount_cents,
                     status = @status,
                     display_order = @display_order,
+                    billing_cadence = @billing_cadence,
+                    paypal_plan_id = @paypal_plan_id,
                     updated_at = @updated_at
                 WHERE id = @id;
                 """;
@@ -199,6 +213,8 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
             command.Parameters.AddWithValue("@price_amount_cents", offer.PriceAmountCents);
             command.Parameters.AddWithValue("@status", offer.Status);
             command.Parameters.AddWithValue("@display_order", offer.DisplayOrder);
+            command.Parameters.AddWithValue("@billing_cadence", offer.BillingCadence);
+            command.Parameters.AddWithValue("@paypal_plan_id", DbValue(offer.PayPalPlanId));
             command.Parameters.AddWithValue("@updated_at", DateTime.UtcNow);
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -935,6 +951,8 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 : reader.GetString("external_reference"),
             reader.GetString("status"),
             reader.GetInt32("display_order"),
+            reader.GetString("billing_cadence"),
+            ReadNullableString(reader, "paypal_plan_id"),
             ToUtcIso(reader.GetDateTime("created_at")),
             ToUtcIso(reader.GetDateTime("updated_at")));
 
@@ -1054,7 +1072,9 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 unit_label,
                 price_amount_cents,
                 status,
-                display_order
+                display_order,
+                billing_cadence,
+                paypal_plan_id
             FROM commercial_offers
             WHERE id = @id
             FOR UPDATE;
@@ -1074,7 +1094,9 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
             reader.GetString("unit_label"),
             reader.GetInt32("price_amount_cents"),
             reader.GetString("status"),
-            reader.GetInt32("display_order"));
+            reader.GetInt32("display_order"),
+            reader.GetString("billing_cadence"),
+            ReadNullableString(reader, "paypal_plan_id"));
     }
 
     private static async Task<string> ResolveCustomerIdAsync(
@@ -1420,7 +1442,9 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
         string UnitLabel,
         int PriceAmountCents,
         string Status,
-        int DisplayOrder);
+        int DisplayOrder,
+        string BillingCadence,
+        string? PayPalPlanId);
 
     private sealed record DocumentRow(
         string CustomerId,
