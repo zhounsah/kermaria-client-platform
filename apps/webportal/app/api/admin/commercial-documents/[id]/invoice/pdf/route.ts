@@ -3,10 +3,7 @@ import "server-only";
 import { NextRequest, NextResponse } from "next/server";
 
 import { CORRELATION_HEADER, resolveCorrelationId } from "@/lib/correlation";
-import {
-  getInternalAdminData,
-  getInternalSession,
-} from "@/lib/internal-api";
+import { getInternalSession } from "@/lib/internal-api";
 import { getSessionCookieName } from "@/lib/session-config";
 import { controlledAdminError } from "@/lib/admin-bff";
 import {

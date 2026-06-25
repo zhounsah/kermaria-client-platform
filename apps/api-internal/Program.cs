@@ -714,6 +714,40 @@ app.MapPost(
         });
     });
 app.MapGet(
+    "/internal/portal/commercial-documents/{id}/invoice",
+    async (
+        string id,
+        HttpContext context,
+        ICommercialService commercialService,
+        IInvoiceIssuingService issuingService,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            auditService);
+        await commercialService.GetClientDocumentAsync(
+            session,
+            id,
+            context.RequestAborted);
+        var record = await issuingService.GetInvoiceRecordAsync(
+            id, context.RequestAborted);
+        if (record is null)
+        {
+            return Results.Ok<BpceIssuedInvoiceInfo?>(null);
+        }
+
+        return Results.Ok<BpceIssuedInvoiceInfo?>(new BpceIssuedInvoiceInfo(
+            record.BpceInvoiceId,
+            record.FiscalNumber,
+            record.Status,
+            record.IssueDate,
+            record.TotalAmountCents,
+            record.Currency,
+            record.PdfHash is not null));
+    });
+app.MapGet(
     "/internal/portal/commercial-documents/{id}/invoice/pdf",
     async (
         string id,

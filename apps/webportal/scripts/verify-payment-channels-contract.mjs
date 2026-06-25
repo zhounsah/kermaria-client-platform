@@ -12,9 +12,6 @@ const clientDocumentPage = await read(
 const clientPdfRoute = await read(
   "app/api/commercial-documents/[id]/invoice/pdf/route.ts",
 );
-const adminDocumentPage = await read(
-  "app/admin/commercial-documents/[id]/page.tsx",
-);
 const issuingSection = await read(
   "components/AdminInvoiceIssuingSection.tsx",
 );
@@ -78,6 +75,21 @@ assert.match(
   programCs,
   /GetClientDocumentAsync/,
   "L'endpoint portal PDF doit utiliser GetClientDocumentAsync pour l'ownership.",
+);
+assert.match(
+  programCs,
+  /"\/internal\/portal\/commercial-documents\/\{id\}\/invoice"/,
+  "L'endpoint portal metadata invoice doit exister (pour pdfAvailable).",
+);
+assert.match(
+  clientDocumentPage,
+  /getCommercialDocumentInvoice/,
+  "La page client doit charger les metadonnees invoice pour decider du bouton PDF.",
+);
+assert.match(
+  clientDocumentPage,
+  /pdfAvailable/,
+  "La page client doit conditionner le bouton PDF sur pdfAvailable.",
 );
 
 // --- Vue admin paiements + marquage manuel ---
@@ -177,6 +189,11 @@ assert.match(
   invoiceIssuingCs,
   /SendPaymentConfirmedAsync/,
   "ConfirmPaymentAsync doit declencher SendPaymentConfirmedAsync.",
+);
+assert.match(
+  invoiceIssuingCs,
+  /TryDispatchEmailAsync/,
+  "Les envois d'email doivent passer par TryDispatchEmailAsync (best-effort, swallow exceptions).",
 );
 assert.match(
   programCs,

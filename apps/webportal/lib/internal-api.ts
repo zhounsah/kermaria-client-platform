@@ -338,6 +338,14 @@ export function getCommercialDocument(id: string) {
   );
 }
 
+export function getCommercialDocumentInvoice(id: string) {
+  return getPortalData<BpceIssuedInvoiceInfo | null>(
+    `/internal/portal/commercial-documents/${encodeURIComponent(id)}/invoice`,
+    null,
+    null,
+  );
+}
+
 export function getSupportRequests() {
   return getPortalData<SupportRequestSummary[]>(
     "/internal/portal/support-requests",

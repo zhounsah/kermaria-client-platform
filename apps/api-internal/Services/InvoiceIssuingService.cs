@@ -225,16 +225,11 @@ public sealed class InvoiceIssuingService : IInvoiceIssuingService
 
             if (sendEmail)
             {
-                var emailResult = await _emailDispatch.SendInvoiceIssuedAsync(
-                    documentId, correlationId, cancellationToken);
-                if (!emailResult.Succeeded)
-                {
-                    _logger.LogWarning(
-                        "Invoice issued but email dispatch failed [{Code}] {Message} for document {DocumentId}",
-                        emailResult.Code,
-                        emailResult.Message,
-                        documentId);
-                }
+                await TryDispatchEmailAsync(
+                    "invoice_issued",
+                    documentId,
+                    () => _emailDispatch.SendInvoiceIssuedAsync(
+                        documentId, correlationId, cancellationToken));
             }
         }
 
@@ -298,16 +293,11 @@ public sealed class InvoiceIssuingService : IInvoiceIssuingService
         await _commercialRepository.MarkDocumentPaidAsync(
             documentId, correlationId, cancellationToken);
 
-        var emailResult = await _emailDispatch.SendPaymentConfirmedAsync(
-            documentId, correlationId, cancellationToken);
-        if (!emailResult.Succeeded)
-        {
-            _logger.LogWarning(
-                "Payment confirmed but email dispatch failed [{Code}] {Message} for document {DocumentId}",
-                emailResult.Code,
-                emailResult.Message,
-                documentId);
-        }
+        await TryDispatchEmailAsync(
+            "payment_confirmed",
+            documentId,
+            () => _emailDispatch.SendPaymentConfirmedAsync(
+                documentId, correlationId, cancellationToken));
 
         var updated = await _bpceRepository.GetInvoiceRecordAsync(
             documentId, cancellationToken);
@@ -316,6 +306,34 @@ public sealed class InvoiceIssuingService : IInvoiceIssuingService
             true, "PAYMENT_CONFIRMED",
             "Invoice marked as paid.",
             updated is not null ? MapRecord(updated) : null);
+    }
+
+    private async Task TryDispatchEmailAsync(
+        string templateName,
+        string documentId,
+        Func<Task<Email.EmailDispatchResult>> dispatch)
+    {
+        try
+        {
+            var result = await dispatch();
+            if (!result.Succeeded)
+            {
+                _logger.LogWarning(
+                    "Email dispatch returned failure [{Code}] {Message} for template {Template} document {DocumentId}",
+                    result.Code,
+                    result.Message,
+                    templateName,
+                    documentId);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Email dispatch threw for template {Template} document {DocumentId} - swallowing to preserve BPCE flow",
+                templateName,
+                documentId);
+        }
     }
 
     public Task<byte[]?> GetCachedInvoicePdfAsync(

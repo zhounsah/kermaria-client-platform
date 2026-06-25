@@ -15,7 +15,10 @@ import {
   formatCurrencyFromCents,
   formatDateTime,
 } from "@/lib/formatters";
-import { getCommercialDocument } from "@/lib/internal-api";
+import {
+  getCommercialDocument,
+  getCommercialDocumentInvoice,
+} from "@/lib/internal-api";
 import { getBillingConfig, isPayPalConfigured } from "@/lib/runtime-config";
 
 export const metadata = {
@@ -36,7 +39,10 @@ export default async function CommercialDocumentDetailPage({
   await requireClientSession();
   const { id } = await params;
   const { payment } = await searchParams;
-  const result = await getCommercialDocument(id);
+  const [result, invoiceResult] = await Promise.all([
+    getCommercialDocument(id),
+    getCommercialDocumentInvoice(id),
+  ]);
 
   if (result.error) {
     return (
@@ -66,6 +72,7 @@ export default async function CommercialDocumentDetailPage({
   };
   const isIssued = document.status === "issued" || document.status === "paid";
   const isPaid = document.status === "paid";
+  const pdfAvailable = invoiceResult.data?.pdfAvailable === true;
 
   return (
     <>
@@ -142,15 +149,24 @@ export default async function CommercialDocumentDetailPage({
           <span className="card-kicker">Règlement</span>
           <h2>Comment régler cette facture</h2>
 
-          <p style={{ marginTop: "0.5rem" }}>
-            <a
-              className="button"
-              href={`/api/commercial-documents/${encodeURIComponent(id)}/invoice/pdf`}
-              rel="noopener"
+          {pdfAvailable ? (
+            <p style={{ marginTop: "0.5rem" }}>
+              <a
+                className="button"
+                href={`/api/commercial-documents/${encodeURIComponent(id)}/invoice/pdf`}
+                rel="noopener"
+              >
+                Télécharger la facture (PDF)
+              </a>
+            </p>
+          ) : (
+            <p
+              style={{ marginTop: "0.5rem", color: "var(--color-text-muted)" }}
             >
-              Télécharger la facture (PDF)
-            </a>
-          </p>
+              PDF en cours de génération — il sera disponible ici dans quelques
+              instants.
+            </p>
+          )}
 
           {billing.iban ? (
             <div>
