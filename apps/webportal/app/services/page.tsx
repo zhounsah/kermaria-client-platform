@@ -7,8 +7,12 @@ import { PageHeader } from "@/components/PageHeader";
 import { SectionHeading } from "@/components/SectionHeading";
 import { ServiceCard } from "@/components/ServiceCard";
 import { StatusBadge } from "@/components/StatusBadge";
+import { SubscribeButton } from "@/components/SubscribeButton";
 import { requireClientSession } from "@/lib/auth";
-import { formatCurrencyFromCents } from "@/lib/formatters";
+import {
+  commercialOfferBillingCadence,
+  formatCurrencyFromCents,
+} from "@/lib/formatters";
 import {
   getCommercialCatalog,
   getServices,
@@ -94,19 +98,35 @@ export default async function ServicesPage() {
           />
         ) : (
           <section className="catalog-grid" aria-label="Catalogue commercial">
-            {catalogResult.data.map((offer) => (
-              <article className="catalog-card" key={offer.id}>
-                <span className="card-kicker">{offer.category}</span>
-                <h2>{offer.name}</h2>
-                <p>{offer.description}</p>
-                <div className="catalog-scope">
-                  <span>
-                    {offer.unitLabel} · Prix indicatif {offer.priceKind.toUpperCase()}
-                  </span>
-                  <strong>{formatCurrencyFromCents(offer.priceAmountCents)}</strong>
-                </div>
-              </article>
-            ))}
+            {catalogResult.data.map((offer) => {
+              const cadence = commercialOfferBillingCadence[offer.billingCadence];
+              const canSubscribe =
+                offer.billingCadence === "monthly"
+                && !!offer.paypalPlanId
+                && offer.status === "active";
+              return (
+                <article className="catalog-card" key={offer.id}>
+                  <div className="badge-stack">
+                    <StatusBadge label={cadence.label} tone={cadence.tone} />
+                  </div>
+                  <span className="card-kicker">{offer.category}</span>
+                  <h2>{offer.name}</h2>
+                  <p>{offer.description}</p>
+                  <div className="catalog-scope">
+                    <span>
+                      {offer.unitLabel} · Prix indicatif {offer.priceKind.toUpperCase()}
+                    </span>
+                    <strong>{formatCurrencyFromCents(offer.priceAmountCents)}</strong>
+                  </div>
+                  {canSubscribe ? (
+                    <SubscribeButton
+                      offerId={offer.id}
+                      offerName={offer.name}
+                    />
+                  ) : null}
+                </article>
+              );
+            })}
           </section>
         )}
       </section>

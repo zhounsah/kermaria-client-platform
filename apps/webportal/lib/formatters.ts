@@ -35,6 +35,15 @@ export const commercialOfferBillingCadence = {
   monthly: { label: "Mensuelle", tone: "info" },
 } as const;
 
+export const subscriptionStatus = {
+  pending_approval: { label: "En attente d'approbation", tone: "warning" },
+  pending_activation: { label: "Approuvée, activation en cours", tone: "info" },
+  active: { label: "Active", tone: "success" },
+  suspended: { label: "Suspendue", tone: "warning" },
+  cancelled: { label: "Annulée", tone: "neutral" },
+  expired: { label: "Expirée", tone: "neutral" },
+} as const;
+
 export const supportStatus = {
   open: {
     label: "Ouverte",

@@ -235,6 +235,38 @@ export type CommercialOfferStatus = "active" | "inactive";
 
 export type CommercialOfferBillingCadence = "one_time" | "monthly";
 
+export type SubscriptionStatus =
+  | "pending_approval"
+  | "pending_activation"
+  | "active"
+  | "suspended"
+  | "cancelled"
+  | "expired";
+
+export interface SubscriptionSummary {
+  id: string;
+  customerId: string;
+  customerReference: string;
+  customerName: string;
+  commercialOfferId: string;
+  offerName: string;
+  paypalPlanId: string;
+  paypalSubscriptionId: string | null;
+  status: SubscriptionStatus;
+  priceAmountCents: number;
+  currency: string;
+  startedAt: string | null;
+  nextBillingAt: string | null;
+  cancelledAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SubscriptionCreatePayload {
+  offerId: string;
+  paypalSubscriptionId: string;
+}
+
 export interface CommercialOfferSummary {
   id: string;
   name: string;

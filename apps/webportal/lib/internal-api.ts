@@ -37,6 +37,7 @@ import type {
   ServiceRequestPayload,
   ServiceRequestSummary,
   ServiceSummary,
+  SubscriptionSummary,
   SupportRequestPayload,
   SupportRequestSummary,
 } from "@kermaria/shared";
@@ -322,6 +323,14 @@ export function getCommercialCatalog() {
   );
 }
 
+export function getClientSubscriptions() {
+  return getPortalData<SubscriptionSummary[]>(
+    "/internal/portal/subscriptions",
+    [],
+    [],
+  );
+}
+
 export function getCommercialDocuments() {
   return getPortalData<CommercialDocumentSummary[]>(
     "/internal/portal/commercial-documents",
@@ -545,6 +554,30 @@ export async function mutateInternalPortalPayload<TPayload>(
         [PORTAL_SESSION_HEADER]: sessionToken,
       },
       body: JSON.stringify(payload),
+    },
+    correlationId,
+  );
+}
+
+export async function mutateInternalPortalPayloadTyped<TResponse, TPayload>(
+  path: string,
+  payload: TPayload | undefined,
+  sessionToken: string,
+  correlationId = resolveCorrelationId(null),
+) {
+  return requestInternalAuth<TResponse>(
+    path,
+    {
+      method: "POST",
+      headers: {
+        [PORTAL_SESSION_HEADER]: sessionToken,
+        ...(payload === undefined
+          ? {}
+          : { "Content-Type": "application/json" }),
+      },
+      ...(payload === undefined
+        ? {}
+        : { body: JSON.stringify(payload) }),
     },
     correlationId,
   );

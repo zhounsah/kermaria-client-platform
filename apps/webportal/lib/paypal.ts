@@ -158,3 +158,60 @@ export function isPayPalConfigured(): boolean {
     && !!process.env.PAYPAL_CLIENT_SECRET?.trim()
   );
 }
+
+export type CreateSubscriptionResult = {
+  subscriptionId: string;
+  approveUrl: string;
+};
+
+export async function createPayPalSubscription(
+  planId: string,
+  subscriberEmail: string,
+  returnUrl: string,
+  cancelUrl: string,
+): Promise<CreateSubscriptionResult> {
+  const token = await getPayPalAccessToken();
+
+  const response = await fetch(`${getBase()}/v1/billing/subscriptions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      plan_id: planId,
+      subscriber: {
+        email_address: subscriberEmail,
+      },
+      application_context: {
+        return_url: returnUrl,
+        cancel_url: cancelUrl,
+        user_action: "SUBSCRIBE_NOW",
+      },
+    }),
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(
+      `Création souscription PayPal échouée : ${response.status} ${err}`,
+    );
+  }
+
+  const data = await response.json();
+  const approveLink = (data.links as Array<{ rel: string; href: string }>).find(
+    (link) => link.rel === "approve",
+  );
+
+  if (!approveLink) {
+    throw new Error(
+      "Lien d'approbation PayPal introuvable pour la souscription.",
+    );
+  }
+
+  return {
+    subscriptionId: data.id as string,
+    approveUrl: approveLink.href,
+  };
+}

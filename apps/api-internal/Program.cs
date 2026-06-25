@@ -822,6 +822,94 @@ app.MapGet(
     });
 
 app.MapGet(
+    "/internal/portal/subscriptions",
+    async (
+        HttpContext context,
+        ISubscriptionService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            auditService);
+        return SubscriptionOk(
+            context,
+            service,
+            await service.GetClientSubscriptionsAsync(
+                session,
+                context.RequestAborted));
+    });
+app.MapPost(
+    "/internal/portal/subscriptions",
+    async (
+        HttpContext context,
+        ISubscriptionService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            auditService);
+        var payload = await ReadPayload<SubscriptionCreatePayload>(context)
+            ?? throw new PortalValidationException();
+        if (string.IsNullOrWhiteSpace(payload.OfferId)
+            || string.IsNullOrWhiteSpace(payload.PayPalSubscriptionId))
+        {
+            throw new PortalValidationException();
+        }
+
+        var result = await service.CreatePendingAsync(
+            session,
+            payload.OfferId.Trim(),
+            payload.PayPalSubscriptionId.Trim(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "subscription.created",
+                "success",
+                TargetType: "subscription",
+                TargetReference: result.Id,
+                CustomerId: session.CustomerId,
+                ActorUserId: session.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return SubscriptionOk(context, service, result);
+    });
+app.MapPost(
+    "/internal/portal/subscriptions/{id}/return-approved",
+    async (
+        string id,
+        HttpContext context,
+        ISubscriptionService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            auditService);
+        var result = await service.MarkAsPendingActivationAsync(
+            session,
+            id,
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "subscription.return_approved",
+                "success",
+                TargetType: "subscription",
+                TargetReference: id,
+                CustomerId: session.CustomerId,
+                ActorUserId: session.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return SubscriptionOk(context, service, result);
+    });
+
+app.MapGet(
     "/internal/portal/support-requests",
     async (
         HttpContext context,
@@ -2383,6 +2471,16 @@ static IResult NotificationOk<T>(
 static IResult CommercialOk<T>(
     HttpContext context,
     ICommercialService service,
+    T data)
+{
+    context.Response.Headers["X-Data-Source"] =
+        service.IsPersistent ? "mariadb" : "mock";
+    return Results.Ok(data);
+}
+
+static IResult SubscriptionOk<T>(
+    HttpContext context,
+    ISubscriptionService service,
     T data)
 {
     context.Response.Headers["X-Data-Source"] =

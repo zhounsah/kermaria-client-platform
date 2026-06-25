@@ -1,5 +1,9 @@
 namespace Kermaria.ApiInternal.Contracts;
 
+public sealed record SubscriptionCreatePayload(
+    string? OfferId,
+    string? PayPalSubscriptionId);
+
 public sealed record SubscriptionSummary(
     string Id,
     string CustomerId,

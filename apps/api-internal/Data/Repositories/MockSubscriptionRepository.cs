@@ -57,4 +57,67 @@ public sealed class MockSubscriptionRepository : ISubscriptionRepository
                     subscription => subscription.Id == subscriptionId));
         }
     }
+
+    public Task<SubscriptionSummary> CreatePendingAsync(
+        string customerId,
+        string commercialOfferId,
+        string paypalPlanId,
+        string paypalSubscriptionId,
+        CancellationToken cancellationToken)
+    {
+        lock (_store.SyncRoot)
+        {
+            var now = DateTime.UtcNow.ToString("O");
+            var summary = new SubscriptionSummary(
+                Guid.NewGuid().ToString("D"),
+                customerId,
+                customerId,
+                customerId,
+                commercialOfferId,
+                commercialOfferId,
+                paypalPlanId,
+                paypalSubscriptionId,
+                "pending_approval",
+                0,
+                "EUR",
+                null,
+                null,
+                null,
+                now,
+                now);
+            _store.Subscriptions.Add(summary);
+            return Task.FromResult(summary);
+        }
+    }
+
+    public Task<SubscriptionSummary> UpdateStatusAsync(
+        string subscriptionId,
+        string newStatus,
+        CancellationToken cancellationToken)
+    {
+        lock (_store.SyncRoot)
+        {
+            var index = _store.Subscriptions.FindIndex(
+                subscription => subscription.Id == subscriptionId);
+            if (index < 0)
+            {
+                throw new InvalidOperationException(
+                    $"Subscription {subscriptionId} not found.");
+            }
+
+            var current = _store.Subscriptions[index];
+            var now = DateTime.UtcNow.ToString("O");
+            var cancelledAt = newStatus == "cancelled"
+                ? current.CancelledAt ?? now
+                : current.CancelledAt;
+            var updated = current with
+            {
+                Status = newStatus,
+                UpdatedAt = now,
+                CancelledAt = cancelledAt
+            };
+            _store.Subscriptions[index] = updated;
+            return Task.FromResult(updated);
+        }
+    }
 }
