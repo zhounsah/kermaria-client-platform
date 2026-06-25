@@ -40,7 +40,7 @@ public sealed class MariaDbEmailLogRepository : IEmailLogRepository
             VALUES
                 (@id, @template, @recipient, @subject, @body, @status,
                  @errorMessage, @relatedDocumentId, @correlationId,
-                 NOW(6), @sentAt)
+                 UTC_TIMESTAMP(6), @sentAt)
             """;
         cmd.Parameters.AddWithValue("id", id);
         cmd.Parameters.AddWithValue("template", template);
