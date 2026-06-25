@@ -128,6 +128,12 @@ builder.Services.AddScoped<ICommercialRepository>(
         ? new MariaDbCommercialRepository(sqlConfiguration)
         : new MockCommercialRepository(
             serviceProvider.GetRequiredService<MockCommercialStore>()));
+builder.Services.AddSingleton<MockSubscriptionStore>();
+builder.Services.AddScoped<ISubscriptionRepository>(
+    serviceProvider => sqlConfiguration.IsPersistent
+        ? new MariaDbSubscriptionRepository(sqlConfiguration)
+        : new MockSubscriptionRepository(
+            serviceProvider.GetRequiredService<MockSubscriptionStore>()));
 builder.Services.AddScoped<IActiveDirectoryLinkRepository>(
     _ => sqlConfiguration.IsPersistent
         ? new MariaDbActiveDirectoryLinkRepository(sqlConfiguration)
@@ -140,6 +146,7 @@ builder.Services.AddScoped<
     IPortalNotificationService,
     PortalNotificationService>();
 builder.Services.AddScoped<ICommercialService, CommercialService>();
+builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
 builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddTransient<MariaDbMigrationRunner>();
 builder.Services.AddSingleton<OperationalReadinessService>();
