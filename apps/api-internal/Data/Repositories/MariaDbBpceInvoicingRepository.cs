@@ -62,11 +62,11 @@ public sealed class MariaDbBpceInvoicingRepository : IBpceInvoicingRepository
             INSERT INTO bpce_customers
                 (id, customer_id, bpce_customer_id, bpce_external_id, synced_at)
             VALUES
-                (UUID(), @customerId, @bpceCustomerId, @bpceExternalId, NOW(6))
+                (UUID(), @customerId, @bpceCustomerId, @bpceExternalId, UTC_TIMESTAMP(6))
             ON DUPLICATE KEY UPDATE
                 bpce_customer_id = @bpceCustomerId,
                 bpce_external_id = @bpceExternalId,
-                synced_at = NOW(6)
+                synced_at = UTC_TIMESTAMP(6)
             """;
         cmd.Parameters.AddWithValue("customerId", customerId);
         cmd.Parameters.AddWithValue("bpceCustomerId", bpceCustomerId);
@@ -170,7 +170,7 @@ public sealed class MariaDbBpceInvoicingRepository : IBpceInvoicingRepository
                 @currency,
                 NULL,
                 NULL,
-                NOW(6),
+                UTC_TIMESTAMP(6),
                 NULL
             )
             """;
@@ -202,7 +202,7 @@ public sealed class MariaDbBpceInvoicingRepository : IBpceInvoicingRepository
                 status          = @status,
                 pdf_hash        = @pdfHash,
                 pdf_content     = @pdfContent,
-                validated_at    = NOW(6)
+                validated_at    = UTC_TIMESTAMP(6)
             WHERE commercial_document_id = @documentId
             """;
         cmd.Parameters.AddWithValue("documentId", commercialDocumentId);
