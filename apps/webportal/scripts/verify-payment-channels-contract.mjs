@@ -91,6 +91,16 @@ assert.match(
   /pdfAvailable/,
   "La page client doit conditionner le bouton PDF sur pdfAvailable.",
 );
+assert.match(
+  programCs,
+  /EnsureInvoicePdfAsync/,
+  "Les endpoints PDF doivent utiliser EnsureInvoicePdfAsync pour fetch on-demand depuis BPCE.",
+);
+assert.match(
+  invoiceIssuingCs,
+  /EnsureInvoicePdfAsync/,
+  "InvoiceIssuingService doit exposer EnsureInvoicePdfAsync (cache + BPCE fallback).",
+);
 
 // --- Vue admin paiements + marquage manuel ---
 assert.match(

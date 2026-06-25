@@ -24,6 +24,10 @@ public interface IInvoiceIssuingService
         string documentId,
         CancellationToken cancellationToken);
 
+    Task<byte[]?> EnsureInvoicePdfAsync(
+        string documentId,
+        CancellationToken cancellationToken);
+
     Task<BpceInvoiceRecord?> GetInvoiceRecordAsync(
         string documentId,
         CancellationToken cancellationToken);
@@ -340,6 +344,49 @@ public sealed class InvoiceIssuingService : IInvoiceIssuingService
         string documentId,
         CancellationToken cancellationToken)
         => _bpceRepository.GetInvoicePdfAsync(documentId, cancellationToken);
+
+    public async Task<byte[]?> EnsureInvoicePdfAsync(
+        string documentId,
+        CancellationToken cancellationToken)
+    {
+        var cached = await _bpceRepository.GetInvoicePdfAsync(
+            documentId, cancellationToken);
+        if (cached is not null && cached.Length > 0)
+        {
+            return cached;
+        }
+
+        var record = await _bpceRepository.GetInvoiceRecordAsync(
+            documentId, cancellationToken);
+        if (record is null)
+        {
+            return null;
+        }
+
+        var fetched = await _bpce.GetInvoicePdfAsync(
+            record.BpceInvoiceId, cancellationToken);
+        if (fetched.StatusCode >= 400 || fetched.Value is null || fetched.Value.Length == 0)
+        {
+            _logger.LogInformation(
+                "BPCE PDF on-demand fetch unsuccessful for invoice {InvoiceId} document {DocumentId} status {StatusCode}",
+                record.BpceInvoiceId,
+                documentId,
+                fetched.StatusCode);
+            return null;
+        }
+
+        var pdfHash = Convert.ToHexString(
+            SHA256.HashData(fetched.Value)).ToLowerInvariant();
+        await _bpceRepository.UpdateInvoiceValidatedAsync(
+            documentId,
+            record.FiscalNumber,
+            record.Status,
+            fetched.Value,
+            pdfHash,
+            cancellationToken);
+
+        return fetched.Value;
+    }
 
     public Task<BpceInvoiceRecord?> GetInvoiceRecordAsync(
         string documentId,

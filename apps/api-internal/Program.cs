@@ -738,6 +738,17 @@ app.MapGet(
             return Results.Ok<BpceIssuedInvoiceInfo?>(null);
         }
 
+        if (record.PdfHash is null)
+        {
+            var fetched = await issuingService.EnsureInvoicePdfAsync(
+                id, context.RequestAborted);
+            if (fetched is not null)
+            {
+                record = await issuingService.GetInvoiceRecordAsync(
+                    id, context.RequestAborted) ?? record;
+            }
+        }
+
         return Results.Ok<BpceIssuedInvoiceInfo?>(new BpceIssuedInvoiceInfo(
             record.BpceInvoiceId,
             record.FiscalNumber,
@@ -787,7 +798,7 @@ app.MapGet(
                 statusCode: StatusCodes.Status404NotFound);
         }
 
-        var pdf = await issuingService.GetCachedInvoicePdfAsync(
+        var pdf = await issuingService.EnsureInvoicePdfAsync(
             id, context.RequestAborted);
         if (pdf is null)
         {
@@ -2128,6 +2139,17 @@ app.MapGet(
                 statusCode: StatusCodes.Status404NotFound);
         }
 
+        if (record.PdfHash is null)
+        {
+            var fetched = await issuingService.EnsureInvoicePdfAsync(
+                id, context.RequestAborted);
+            if (fetched is not null)
+            {
+                record = await issuingService.GetInvoiceRecordAsync(
+                    id, context.RequestAborted) ?? record;
+            }
+        }
+
         return Results.Ok(new BpceIssuedInvoiceInfo(
             record.BpceInvoiceId,
             record.FiscalNumber,
@@ -2164,7 +2186,7 @@ app.MapGet(
                 statusCode: StatusCodes.Status404NotFound);
         }
 
-        var pdf = await issuingService.GetCachedInvoicePdfAsync(
+        var pdf = await issuingService.EnsureInvoicePdfAsync(
             id, context.RequestAborted);
         if (pdf is null)
         {
