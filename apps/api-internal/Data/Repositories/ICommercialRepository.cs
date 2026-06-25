@@ -84,9 +84,15 @@ public interface ICommercialRepository
     Task<string> CreateBillingDocumentFromOfferAsync(
         string customerId,
         string offerId,
+        string subscriptionId,
         string title,
         string correlationId,
         CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<CommercialDocumentSummary>>
+        GetDocumentsForSubscriptionAsync(
+            string subscriptionId,
+            CancellationToken cancellationToken);
 }
 
 public sealed record DocumentForIssuing(

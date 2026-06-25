@@ -1948,6 +1948,75 @@ app.MapPatch(
         return CommercialOk(context, service, result);
     });
 app.MapGet(
+    "/internal/admin/subscriptions",
+    async (
+        HttpContext context,
+        ISubscriptionService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.subscriptions.read");
+        return SubscriptionOk(
+            context,
+            service,
+            await service.GetAdminSubscriptionsAsync(context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/admin/subscriptions/{id}",
+    async (
+        string id,
+        HttpContext context,
+        ISubscriptionService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.subscriptions.read");
+        return SubscriptionOk(
+            context,
+            service,
+            await service.GetAdminSubscriptionDetailAsync(
+                id,
+                context.RequestAborted));
+    });
+app.MapPost(
+    "/internal/admin/subscriptions/{id}/cancel",
+    async (
+        string id,
+        HttpContext context,
+        ISubscriptionService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.subscriptions.cancel");
+        var result = await service.AdminCancelAsync(
+            id,
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "subscription.admin_cancel",
+                "success",
+                TargetType: "subscription",
+                TargetReference: result.Id,
+                CustomerId: result.CustomerId,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return SubscriptionOk(context, service, result);
+    });
+app.MapGet(
     "/internal/admin/commercial-documents",
     async (
         HttpContext context,

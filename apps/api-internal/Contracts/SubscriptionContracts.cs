@@ -21,3 +21,7 @@ public sealed record SubscriptionSummary(
     string? CancelledAt,
     string CreatedAt,
     string UpdatedAt);
+
+public sealed record AdminSubscriptionDetail(
+    SubscriptionSummary Subscription,
+    IReadOnlyList<CommercialDocumentSummary> Documents);

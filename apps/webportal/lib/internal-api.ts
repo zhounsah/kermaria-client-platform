@@ -38,6 +38,7 @@ import type {
   ServiceRequestSummary,
   ServiceSummary,
   SubscriptionSummary,
+  AdminSubscriptionDetail,
   SupportRequestPayload,
   SupportRequestSummary,
 } from "@kermaria/shared";
@@ -732,6 +733,20 @@ export function getAdminCatalog() {
   return getAdminData<CommercialOfferSummary[]>(
     "/internal/admin/catalog",
     [],
+  );
+}
+
+export function getAdminSubscriptions() {
+  return getAdminData<SubscriptionSummary[]>(
+    "/internal/admin/subscriptions",
+    [],
+  );
+}
+
+export function getAdminSubscription(id: string) {
+  return getAdminData<AdminSubscriptionDetail | null>(
+    `/internal/admin/subscriptions/${encodeURIComponent(id)}`,
+    null,
   );
 }
 

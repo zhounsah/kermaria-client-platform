@@ -113,8 +113,8 @@ uniquement en preprod cible.
 
 ## Jalon V0.22 abonnements recurrents PayPal
 
-Statut : **a faire**. Documentation de cadrage :
-[`V0.22_SUBSCRIPTIONS.md`](V0.22_SUBSCRIPTIONS.md).
+Statut : **implemente dans le depot** (2026-06-25). Documentation
+d'implementation : [`V0.22_SUBSCRIPTIONS.md`](V0.22_SUBSCRIPTIONS.md).
 
 Objectif : permettre la facturation automatique mensuelle des services
 recurrents (acces VPN, RDS, support continu) sans saisie manuelle

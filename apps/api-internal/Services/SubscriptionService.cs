@@ -36,6 +36,14 @@ public interface ISubscriptionService
         PortalSessionContext session,
         string subscriptionId,
         CancellationToken cancellationToken);
+
+    Task<AdminSubscriptionDetail> GetAdminSubscriptionDetailAsync(
+        string subscriptionId,
+        CancellationToken cancellationToken);
+
+    Task<SubscriptionSummary> AdminCancelAsync(
+        string subscriptionId,
+        CancellationToken cancellationToken);
 }
 
 public sealed class SubscriptionService : ISubscriptionService
@@ -140,6 +148,41 @@ public sealed class SubscriptionService : ISubscriptionService
         return await _repository.UpdateStatusAsync(
             subscriptionId,
             "pending_activation",
+            cancellationToken);
+    }
+
+    public async Task<AdminSubscriptionDetail> GetAdminSubscriptionDetailAsync(
+        string subscriptionId,
+        CancellationToken cancellationToken)
+    {
+        var subscription = await _repository.GetByIdAsync(
+            subscriptionId,
+            cancellationToken)
+            ?? throw new PortalDataNotFoundException();
+        var documents = await _commercialRepository
+            .GetDocumentsForSubscriptionAsync(
+                subscriptionId,
+                cancellationToken);
+        return new AdminSubscriptionDetail(subscription, documents);
+    }
+
+    public async Task<SubscriptionSummary> AdminCancelAsync(
+        string subscriptionId,
+        CancellationToken cancellationToken)
+    {
+        var current = await _repository.GetByIdAsync(
+            subscriptionId,
+            cancellationToken)
+            ?? throw new PortalDataNotFoundException();
+
+        if (current.Status is "cancelled" or "expired")
+        {
+            return current;
+        }
+
+        return await _repository.UpdateStatusAsync(
+            subscriptionId,
+            "cancelled",
             cancellationToken);
     }
 }

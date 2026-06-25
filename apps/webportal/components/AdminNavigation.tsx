@@ -10,6 +10,7 @@ const navigationItems = [
   { href: "/admin/catalog", label: "Catalogue" },
   { href: "/admin/commercial-documents", label: "Documents" },
   { href: "/admin/payments", label: "Paiements" },
+  { href: "/admin/subscriptions", label: "Abonnements" },
   { href: "/admin/email-log", label: "E-mails" },
   { href: "/admin/customers", label: "Clients" },
   { href: "/admin/support-requests", label: "Support" },

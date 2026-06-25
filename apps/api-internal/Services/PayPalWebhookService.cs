@@ -253,6 +253,7 @@ public sealed class PayPalWebhookService : IPayPalWebhookService
         var documentId = await _commercial.CreateBillingDocumentFromOfferAsync(
             subscription.CustomerId,
             subscription.CommercialOfferId,
+            subscription.Id,
             title,
             correlationId,
             cancellationToken);

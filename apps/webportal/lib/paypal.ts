@@ -164,6 +164,41 @@ export type CreateSubscriptionResult = {
   approveUrl: string;
 };
 
+export async function cancelPayPalSubscription(
+  paypalSubscriptionId: string,
+  reason: string,
+): Promise<void> {
+  const token = await getPayPalAccessToken();
+
+  const response = await fetch(
+    `${getBase()}/v1/billing/subscriptions/${encodeURIComponent(
+      paypalSubscriptionId,
+    )}/cancel`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ reason }),
+      cache: "no-store",
+    },
+  );
+
+  if (response.status === 204) {
+    return;
+  }
+
+  if (response.status === 422) {
+    return;
+  }
+
+  const err = await response.text();
+  throw new Error(
+    `Annulation souscription PayPal échouée : ${response.status} ${err}`,
+  );
+}
+
 export async function createPayPalSubscription(
   planId: string,
   subscriberEmail: string,

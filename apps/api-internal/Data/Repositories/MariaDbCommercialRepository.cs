@@ -1598,6 +1598,7 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
     public async Task<string> CreateBillingDocumentFromOfferAsync(
         string customerId,
         string offerId,
+        string subscriptionId,
         string title,
         string correlationId,
         CancellationToken cancellationToken)
@@ -1631,6 +1632,7 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                     id,
                     customer_id,
                     service_request_id,
+                    subscription_id,
                     document_type,
                     status,
                     title,
@@ -1649,6 +1651,7 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                     @id,
                     @customerId,
                     NULL,
+                    @subscriptionId,
                     'informational_invoice',
                     'shared_with_customer',
                     @title,
@@ -1666,6 +1669,7 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 """;
             documentCommand.Parameters.AddWithValue("@id", documentId);
             documentCommand.Parameters.AddWithValue("@customerId", customerId);
+            documentCommand.Parameters.AddWithValue("@subscriptionId", subscriptionId);
             documentCommand.Parameters.AddWithValue("@title", title);
             documentCommand.Parameters.AddWithValue("@reference", reference);
             documentCommand.Parameters.AddWithValue(
@@ -1745,6 +1749,47 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
 
         await transaction.CommitAsync(cancellationToken);
         return documentId;
+    }
+
+    public async Task<IReadOnlyList<CommercialDocumentSummary>>
+        GetDocumentsForSubscriptionAsync(
+            string subscriptionId,
+            CancellationToken cancellationToken)
+    {
+        var documents = new List<CommercialDocumentSummary>();
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT
+                document.id,
+                document.document_type,
+                document.status,
+                document.title,
+                document.internal_reference,
+                document.currency,
+                document.subtotal_amount_cents,
+                document.tax_amount_cents,
+                document.total_amount_cents,
+                document.disclaimer,
+                document.created_at,
+                document.updated_at,
+                document.shared_at,
+                document.service_request_id,
+                NULL AS service_request_reference
+            FROM commercial_documents document
+            WHERE document.subscription_id = @subscriptionId
+            ORDER BY document.created_at DESC, document.id DESC;
+            """;
+        command.Parameters.AddWithValue("subscriptionId", subscriptionId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            documents.Add(ReadDocumentSummary(reader));
+        }
+
+        return documents;
     }
 
     private static async Task<string> ResolveSystemActorAsync(

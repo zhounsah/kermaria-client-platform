@@ -20,6 +20,7 @@
     "test:ad-security": "node scripts/verify-ad-security-contract.mjs",
     "test:bpce": "node scripts/verify-bpce-invoicing-contract.mjs",
     "test:payments": "node scripts/verify-payment-channels-contract.mjs",
+    "test:subscriptions": "node scripts/verify-subscriptions-contract.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

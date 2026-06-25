@@ -267,6 +267,11 @@ export interface SubscriptionCreatePayload {
   paypalSubscriptionId: string;
 }
 
+export interface AdminSubscriptionDetail {
+  subscription: SubscriptionSummary;
+  documents: CommercialDocumentSummary[];
+}
+
 export interface CommercialOfferSummary {
   id: string;
   name: string;
