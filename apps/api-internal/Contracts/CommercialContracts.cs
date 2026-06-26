@@ -16,7 +16,7 @@ public sealed record CommercialOfferSummary(
     string Status,
     int DisplayOrder,
     string BillingCadence,
-    string? PayPalPlanId,
+    [property: JsonPropertyName("paypalPlanId")] string? PayPalPlanId,
     string CreatedAt,
     string UpdatedAt);
 
@@ -168,7 +168,7 @@ public sealed record CommercialOfferPayload(
     string? Status,
     int? DisplayOrder,
     string? BillingCadence,
-    string? PayPalPlanId);
+    [property: JsonPropertyName("paypalPlanId")] string? PayPalPlanId);
 
 public sealed record CommercialDocumentPayload(
     string? CustomerReference,

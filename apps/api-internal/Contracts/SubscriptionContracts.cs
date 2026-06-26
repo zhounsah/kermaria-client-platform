@@ -1,8 +1,10 @@
+using System.Text.Json.Serialization;
+
 namespace Kermaria.ApiInternal.Contracts;
 
 public sealed record SubscriptionCreatePayload(
     string? OfferId,
-    string? PayPalSubscriptionId);
+    [property: JsonPropertyName("paypalSubscriptionId")] string? PayPalSubscriptionId);
 
 public sealed record SubscriptionSummary(
     string Id,
@@ -11,8 +13,8 @@ public sealed record SubscriptionSummary(
     string CustomerName,
     string CommercialOfferId,
     string OfferName,
-    string PayPalPlanId,
-    string? PayPalSubscriptionId,
+    [property: JsonPropertyName("paypalPlanId")] string PayPalPlanId,
+    [property: JsonPropertyName("paypalSubscriptionId")] string? PayPalSubscriptionId,
     string Status,
     int PriceAmountCents,
     string Currency,
