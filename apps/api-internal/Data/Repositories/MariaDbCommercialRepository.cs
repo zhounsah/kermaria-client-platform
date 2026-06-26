@@ -1684,6 +1684,7 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                     'shared_with_customer',
                     @title,
                     @reference,
+                    'EUR',
                     0,
                     0,
                     0,
