@@ -18,6 +18,7 @@ import {
 } from "@/lib/runtime-config";
 import {
   createPayPalSubscription,
+  getPayPalMode,
   isPayPalConfigured,
 } from "@/lib/paypal";
 
@@ -123,15 +124,20 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const mode = getPayPalMode();
+  const activePlanId =
+    mode === "live" ? offer.paypalPlanIdLive : offer.paypalPlanIdSandbox;
   if (
     offer.billingCadence !== "monthly"
-    || !offer.paypalPlanId
+    || !activePlanId
     || offer.status !== "active"
   ) {
     return NextResponse.json(
       {
         code: "OFFER_NOT_SUBSCRIBABLE",
-        message: "Cette offre n'accepte pas de souscription mensuelle.",
+        message:
+          `Cette offre n'a pas de plan PayPal ${mode}. Demandez à un admin `
+          + "de créer le plan avant de souscrire.",
       },
       { status: 400 },
     );
@@ -148,7 +154,7 @@ export async function POST(request: NextRequest) {
   let approveUrl: string;
   try {
     const result = await createPayPalSubscription(
-      offer.paypalPlanId,
+      activePlanId,
       session.user.email,
       `${portalUrl}${returnPath}`,
       `${portalUrl}${cancelPath}`,

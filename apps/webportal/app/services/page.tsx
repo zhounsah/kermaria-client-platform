@@ -18,6 +18,7 @@ import {
   getServices,
   resolveDataSource,
 } from "@/lib/internal-api";
+import { getPayPalMode } from "@/lib/paypal";
 
 export const metadata = {
   title: "Services",
@@ -100,9 +101,13 @@ export default async function ServicesPage() {
           <section className="catalog-grid" aria-label="Catalogue commercial">
             {catalogResult.data.map((offer) => {
               const cadence = commercialOfferBillingCadence[offer.billingCadence];
+              const activePlanId =
+                getPayPalMode() === "live"
+                  ? offer.paypalPlanIdLive
+                  : offer.paypalPlanIdSandbox;
               const canSubscribe =
                 offer.billingCadence === "monthly"
-                && !!offer.paypalPlanId
+                && !!activePlanId
                 && offer.status === "active";
               return (
                 <article className="catalog-card" key={offer.id}>
