@@ -24,7 +24,7 @@ public sealed class MariaDbSubscriptionRepository : ISubscriptionRepository
         var rows = new List<SubscriptionSummary>();
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText = BaseSelect + """
+        command.CommandText = BaseSelect + "\n" + """
             WHERE subscription.customer_id = @customerId
             ORDER BY subscription.updated_at DESC, subscription.id DESC;
             """;
@@ -46,7 +46,7 @@ public sealed class MariaDbSubscriptionRepository : ISubscriptionRepository
         var rows = new List<SubscriptionSummary>();
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText = BaseSelect + """
+        command.CommandText = BaseSelect + "\n" + """
             ORDER BY subscription.updated_at DESC, subscription.id DESC;
             """;
 
@@ -66,7 +66,7 @@ public sealed class MariaDbSubscriptionRepository : ISubscriptionRepository
     {
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText = BaseSelect + """
+        command.CommandText = BaseSelect + "\n" + """
             WHERE subscription.id = @id
             LIMIT 1;
             """;
@@ -88,7 +88,7 @@ public sealed class MariaDbSubscriptionRepository : ISubscriptionRepository
     {
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText = BaseSelect + """
+        command.CommandText = BaseSelect + "\n" + """
             WHERE subscription.paypal_subscription_id = @paypalId
             LIMIT 1;
             """;

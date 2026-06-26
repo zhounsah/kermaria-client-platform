@@ -14,7 +14,7 @@ const navigationItems = [
   { href: "/admin/email-log", label: "E-mails" },
   { href: "/admin/customers", label: "Clients" },
   { href: "/admin/support-requests", label: "Support" },
-  { href: "/admin/service-requests", label: "Demandes service" },
+  { href: "/admin/service-requests", label: "Demandes" },
   { href: "/admin/sessions", label: "Sessions" },
   { href: "/admin/audit-logs", label: "Audits" },
 ];
@@ -48,7 +48,7 @@ export function AdminNavigation({ displayName }: AdminNavigationProps) {
             );
           })}
         </div>
-        <span className="nav-role">Administration interne</span>
+        <span className="nav-role">Admin</span>
         <span className="nav-user" title={displayName}>
           {displayName}
         </span>
