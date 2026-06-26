@@ -62,6 +62,15 @@ const webhookMigration = await read(
 const linkMigration = await read(
   "../../apps/api-internal/Migrations/MariaDb/015_subscription_document_link.sql",
 );
+const planPerModeMigration = await read(
+  "../../apps/api-internal/Migrations/MariaDb/016_paypal_plan_per_mode.sql",
+);
+const paypalAutoPlanRoute = await read(
+  "app/api/admin/catalog/[id]/paypal-plan/route.ts",
+);
+const paypalRuntimeConfigCs = await read(
+  "../../apps/api-internal/Data/Configuration/PayPalRuntimeConfiguration.cs",
+);
 
 // --- Schema ---
 assert.match(
@@ -104,6 +113,21 @@ assert.match(
   /subscription_id CHAR\(36\)/,
   "commercial_documents.subscription_id doit etre defini.",
 );
+assert.match(
+  planPerModeMigration,
+  /paypal_plan_id_sandbox/,
+  "Migration 016 doit ajouter paypal_plan_id_sandbox.",
+);
+assert.match(
+  planPerModeMigration,
+  /paypal_plan_id_live/,
+  "Migration 016 doit ajouter paypal_plan_id_live.",
+);
+assert.match(
+  planPerModeMigration,
+  /DROP COLUMN paypal_plan_id\b/,
+  "Migration 016 doit dropper l'ancienne colonne paypal_plan_id.",
+);
 
 // --- Shared types ---
 assert.match(
@@ -125,6 +149,16 @@ assert.match(
   sharedTypes,
   /type CommercialOfferBillingCadence/,
   "CommercialOfferBillingCadence doit etre exporte dans shared.",
+);
+assert.match(
+  sharedTypes,
+  /paypalPlanIdSandbox: string \| null/,
+  "CommercialOfferSummary doit exposer paypalPlanIdSandbox.",
+);
+assert.match(
+  sharedTypes,
+  /paypalPlanIdLive: string \| null/,
+  "CommercialOfferSummary doit exposer paypalPlanIdLive.",
 );
 
 // --- Webhook ---
@@ -219,6 +253,51 @@ assert.match(
   paypalLib,
   /cancelPayPalSubscription/,
   "cancelPayPalSubscription helper doit exister.",
+);
+assert.match(
+  paypalLib,
+  /createPayPalProduct/,
+  "createPayPalProduct helper doit exister.",
+);
+assert.match(
+  paypalLib,
+  /createPayPalPlan/,
+  "createPayPalPlan helper doit exister.",
+);
+assert.match(
+  paypalLib,
+  /\/v1\/catalogs\/products/,
+  "createPayPalProduct doit cibler /v1/catalogs/products.",
+);
+assert.match(
+  paypalLib,
+  /\/v1\/billing\/plans/,
+  "createPayPalPlan doit cibler /v1/billing/plans.",
+);
+assert.match(
+  paypalAutoPlanRoute,
+  /createPayPalProduct/,
+  "La route auto-plan doit appeler createPayPalProduct.",
+);
+assert.match(
+  paypalAutoPlanRoute,
+  /createPayPalPlan/,
+  "La route auto-plan doit appeler createPayPalPlan.",
+);
+assert.match(
+  paypalAutoPlanRoute,
+  /PLAN_ALREADY_EXISTS/,
+  "La route auto-plan doit refuser si le plan existe deja pour le mode.",
+);
+assert.match(
+  paypalRuntimeConfigCs,
+  /enum PayPalMode/,
+  "PayPalRuntimeConfiguration doit definir l'enum PayPalMode.",
+);
+assert.match(
+  paypalRuntimeConfigCs,
+  /PAYPAL_MODE/,
+  "PayPalConfigurationResolver doit lire PAYPAL_MODE.",
 );
 assert.match(
   subscribeCreateRoute,
@@ -331,13 +410,33 @@ assert.match(
 );
 assert.match(
   catalogForm,
-  /paypalPlanId/,
-  "Le formulaire catalogue doit gerer paypalPlanId.",
+  /paypalPlanIdSandbox/,
+  "Le formulaire catalogue doit gerer paypalPlanIdSandbox.",
+);
+assert.match(
+  catalogForm,
+  /paypalPlanIdLive/,
+  "Le formulaire catalogue doit gerer paypalPlanIdLive.",
+);
+assert.match(
+  catalogForm,
+  /Créer le plan PayPal/,
+  "Le formulaire doit exposer le bouton Créer le plan PayPal.",
 );
 assert.match(
   adminCatalogPage,
   /billingCadence/,
   "La page catalogue doit afficher la cadence.",
+);
+assert.match(
+  adminCatalogPage,
+  /paypalPlanIdSandbox/,
+  "La page catalogue doit afficher l'id sandbox.",
+);
+assert.match(
+  adminCatalogPage,
+  /paypalPlanIdLive/,
+  "La page catalogue doit afficher l'id live.",
 );
 
 // --- Service+repo wiring ---

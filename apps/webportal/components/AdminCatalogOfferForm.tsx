@@ -16,6 +16,12 @@ type AdminCatalogOfferFormProps = {
   offer?: CommercialOfferSummary;
 };
 
+type CreatePlanResponse = {
+  paypalPlanId: string;
+  paypalProductId: string;
+  mode: "sandbox" | "live";
+};
+
 export function AdminCatalogOfferForm({ offer }: AdminCatalogOfferFormProps) {
   const router = useRouter();
   const isSubmittingRef = useRef(false);
@@ -34,8 +40,15 @@ export function AdminCatalogOfferForm({ offer }: AdminCatalogOfferFormProps) {
     useState<CommercialOfferBillingCadence>(
       offer?.billingCadence ?? "one_time",
     );
-  const [paypalPlanId, setPaypalPlanId] = useState(offer?.paypalPlanId ?? "");
+  const paypalPlanIdSandbox = offer?.paypalPlanIdSandbox ?? null;
+  const paypalPlanIdLive = offer?.paypalPlanIdLive ?? null;
+  const planLocked = paypalPlanIdSandbox !== null || paypalPlanIdLive !== null;
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCreatingPlan, setIsCreatingPlan] = useState(false);
+  const [planMessage, setPlanMessage] = useState<{
+    tone: "success" | "error";
+    text: string;
+  } | null>(null);
   const [message, setMessage] = useState<{
     tone: "success" | "error";
     text: string;
@@ -47,7 +60,6 @@ export function AdminCatalogOfferForm({ offer }: AdminCatalogOfferFormProps) {
       return;
     }
 
-    const trimmedPlanId = paypalPlanId.trim();
     const payload = {
       name: name.trim(),
       description: description.trim(),
@@ -57,10 +69,8 @@ export function AdminCatalogOfferForm({ offer }: AdminCatalogOfferFormProps) {
       status,
       displayOrder: Number.parseInt(displayOrder, 10),
       billingCadence,
-      paypalPlanId:
-        billingCadence === "monthly" && trimmedPlanId.length > 0
-          ? trimmedPlanId
-          : null,
+      paypalPlanIdSandbox,
+      paypalPlanIdLive,
     };
 
     if (
@@ -72,8 +82,6 @@ export function AdminCatalogOfferForm({ offer }: AdminCatalogOfferFormProps) {
       || payload.priceAmountCents < 0
       || !Number.isInteger(payload.displayOrder)
       || payload.displayOrder < 0
-      || (payload.paypalPlanId !== null
-        && !/^[A-Za-z0-9_-]{1,64}$/.test(payload.paypalPlanId))
     ) {
       setMessage({
         tone: "error",
@@ -111,6 +119,31 @@ export function AdminCatalogOfferForm({ offer }: AdminCatalogOfferFormProps) {
 
     isSubmittingRef.current = false;
     setIsSubmitting(false);
+  }
+
+  async function handleCreatePlan() {
+    if (!offer || isCreatingPlan) {
+      return;
+    }
+    setIsCreatingPlan(true);
+    setPlanMessage(null);
+
+    const result = await requestBffJson<CreatePlanResponse>(
+      `/api/admin/catalog/${encodeURIComponent(offer.id)}/paypal-plan`,
+      { method: "POST" },
+    );
+
+    if (result.ok) {
+      setPlanMessage({
+        tone: "success",
+        text: `Plan PayPal ${result.data.mode} créé : ${result.data.paypalPlanId}`,
+      });
+      router.refresh();
+    } else {
+      setPlanMessage({ tone: "error", text: result.error.message });
+    }
+
+    setIsCreatingPlan(false);
   }
 
   return (
@@ -154,10 +187,17 @@ export function AdminCatalogOfferForm({ offer }: AdminCatalogOfferFormProps) {
         <label>
           Prix indicatif HT (centimes)
           <input
+            disabled={planLocked}
             inputMode="numeric"
             onChange={(event) => setPriceAmountCents(event.target.value)}
             value={priceAmountCents}
           />
+          {planLocked ? (
+            <span className="field-hint">
+              Le prix est figé car au moins un plan PayPal a été créé pour
+              cette offre. Pour changer le prix, créez une nouvelle offre.
+            </span>
+          ) : null}
         </label>
       </div>
       <div className="form-grid">
@@ -186,35 +226,52 @@ export function AdminCatalogOfferForm({ offer }: AdminCatalogOfferFormProps) {
         <label>
           Cadence de facturation
           <select
-            onChange={(event) => {
-              const next = event.target
-                .value as CommercialOfferBillingCadence;
-              setBillingCadence(next);
-              if (next === "one_time") {
-                setPaypalPlanId("");
-              }
-            }}
+            disabled={planLocked}
+            onChange={(event) => setBillingCadence(
+              event.target.value as CommercialOfferBillingCadence,
+            )}
             value={billingCadence}
           >
             <option value="one_time">Ponctuelle</option>
             <option value="monthly">Mensuelle</option>
           </select>
         </label>
-        <label>
-          Identifiant PayPal Plan
-          <input
-            disabled={billingCadence !== "monthly"}
-            maxLength={64}
-            onChange={(event) => setPaypalPlanId(event.target.value)}
-            placeholder="P-XXXXXXXXXXXXXXXXXXX"
-            value={paypalPlanId}
-          />
-          <span className="field-hint">
-            Créé manuellement dans le dashboard PayPal pour les offres
-            mensuelles ; laisser vide pour les offres ponctuelles.
+        <div>
+          <span className="field-hint" style={{ display: "block" }}>
+            Plan PayPal sandbox : {paypalPlanIdSandbox ?? "non créé"}
           </span>
-        </label>
+          <span className="field-hint" style={{ display: "block" }}>
+            Plan PayPal live : {paypalPlanIdLive ?? "non créé"}
+          </span>
+        </div>
       </div>
+      {offer && billingCadence === "monthly" ? (
+        <div>
+          <button
+            className="button"
+            disabled={isCreatingPlan}
+            onClick={handleCreatePlan}
+            type="button"
+          >
+            {isCreatingPlan
+              ? "Création du plan PayPal..."
+              : "Créer le plan PayPal pour le mode actif"}
+          </button>
+          <p className="field-hint">
+            Crée un product + plan PayPal pour le mode PAYPAL_MODE en cours
+            (sandbox ou live) et enregistre l&apos;identifiant. Si le plan
+            existe déjà pour ce mode, l&apos;appel est refusé.
+          </p>
+          {planMessage ? (
+            <FormMessage
+              title={planMessage.tone === "success" ? "Plan créé" : "Échec"}
+              tone={planMessage.tone}
+            >
+              <p>{planMessage.text}</p>
+            </FormMessage>
+          ) : null}
+        </div>
+      ) : null}
       {message ? (
         <FormMessage
           title={message.tone === "success" ? "Catalogue enregistré" : "Échec"}

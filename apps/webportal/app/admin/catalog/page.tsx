@@ -139,7 +139,9 @@ export default async function AdminCatalogPage({
                     <p className="request-description">{offer.description}</p>
                     {offer.billingCadence === "monthly" ? (
                       <p className="field-hint">
-                        PayPal Plan : {offer.paypalPlanId ?? "non configuré"}
+                        PayPal Plan sandbox :{" "}
+                        {offer.paypalPlanIdSandbox ?? "non créé"} · live :{" "}
+                        {offer.paypalPlanIdLive ?? "non créé"}
                       </p>
                     ) : null}
                     <p className="field-hint">

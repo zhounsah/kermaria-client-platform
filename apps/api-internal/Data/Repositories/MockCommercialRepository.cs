@@ -245,7 +245,8 @@ public sealed class MockCommercialRepository : ICommercialRepository
                 now,
                 now,
                 offer.BillingCadence,
-                offer.PayPalPlanId);
+                offer.PayPalPlanIdSandbox,
+                offer.PayPalPlanIdLive);
             _store.Offers.Add(item);
 
             return Task.FromResult(new CommercialOfferMutationResponse(
@@ -266,6 +267,14 @@ public sealed class MockCommercialRepository : ICommercialRepository
         {
             var current = _store.Offers.FirstOrDefault(item => item.Id == offerId)
                 ?? throw new PortalDataNotFoundException();
+            var planAlreadySet =
+                current.PayPalPlanIdSandbox is not null
+                || current.PayPalPlanIdLive is not null;
+            if (planAlreadySet && current.PriceAmountCents != offer.PriceAmountCents)
+            {
+                throw new PortalValidationException();
+            }
+
             var changed =
                 current.Name != offer.Name
                 || current.Description != offer.Description
@@ -275,7 +284,8 @@ public sealed class MockCommercialRepository : ICommercialRepository
                 || current.Status != offer.Status
                 || current.DisplayOrder != offer.DisplayOrder
                 || current.BillingCadence != offer.BillingCadence
-                || current.PayPalPlanId != offer.PayPalPlanId;
+                || current.PayPalPlanIdSandbox != offer.PayPalPlanIdSandbox
+                || current.PayPalPlanIdLive != offer.PayPalPlanIdLive;
 
             current.Name = offer.Name;
             current.Description = offer.Description;
@@ -285,7 +295,8 @@ public sealed class MockCommercialRepository : ICommercialRepository
             current.Status = offer.Status;
             current.DisplayOrder = offer.DisplayOrder;
             current.BillingCadence = offer.BillingCadence;
-            current.PayPalPlanId = offer.PayPalPlanId;
+            current.PayPalPlanIdSandbox = offer.PayPalPlanIdSandbox;
+            current.PayPalPlanIdLive = offer.PayPalPlanIdLive;
             current.UpdatedAt = DateTime.UtcNow.ToString("O");
 
             return Task.FromResult(new CommercialOfferMutationResponse(
@@ -826,7 +837,8 @@ public sealed class MockCommercialRepository : ICommercialRepository
             offer.Status,
             offer.DisplayOrder,
             offer.BillingCadence,
-            offer.PayPalPlanId,
+            offer.PayPalPlanIdSandbox,
+            offer.PayPalPlanIdLive,
             offer.CreatedAt,
             offer.UpdatedAt);
 
@@ -953,7 +965,8 @@ public sealed record MockCommercialOffer(
     string CreatedAt,
     string InitialUpdatedAt,
     string InitialBillingCadence = CommercialStatuses.CadenceOneTime,
-    string? InitialPayPalPlanId = null)
+    string? InitialPayPalPlanIdSandbox = null,
+    string? InitialPayPalPlanIdLive = null)
 {
     public string Name { get; set; } = InitialName;
     public string Description { get; set; } = InitialDescription;
@@ -964,7 +977,8 @@ public sealed record MockCommercialOffer(
     public int DisplayOrder { get; set; } = InitialDisplayOrder;
     public string UpdatedAt { get; set; } = InitialUpdatedAt;
     public string BillingCadence { get; set; } = InitialBillingCadence;
-    public string? PayPalPlanId { get; set; } = InitialPayPalPlanId;
+    public string? PayPalPlanIdSandbox { get; set; } = InitialPayPalPlanIdSandbox;
+    public string? PayPalPlanIdLive { get; set; } = InitialPayPalPlanIdLive;
 }
 
 public sealed record MockCommercialDocument(

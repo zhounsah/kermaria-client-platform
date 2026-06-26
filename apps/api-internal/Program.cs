@@ -80,12 +80,14 @@ var emailConfiguration = EmailConfigurationResolver.Resolve(builder.Configuratio
 var authConfiguration = AuthConfigurationResolver.Resolve(
     builder.Configuration,
     builder.Environment);
+var paypalConfiguration = PayPalConfigurationResolver.Resolve(builder.Configuration);
 
 builder.Services.AddSingleton(sqlConfiguration);
 builder.Services.AddSingleton(adConfiguration);
 builder.Services.AddSingleton(bpceConfiguration);
 builder.Services.AddSingleton(emailConfiguration);
 builder.Services.AddSingleton(authConfiguration);
+builder.Services.AddSingleton(paypalConfiguration);
 builder.Services.AddSingleton<IPortalPasswordService, PortalPasswordService>();
 builder.Services.AddSingleton<ISessionTokenService, SessionTokenService>();
 builder.Services.AddSingleton<MockAuthenticationStore>();

@@ -286,7 +286,8 @@ export interface CommercialOfferSummary {
   status: CommercialOfferStatus;
   displayOrder: number;
   billingCadence: CommercialOfferBillingCadence;
-  paypalPlanId: string | null;
+  paypalPlanIdSandbox: string | null;
+  paypalPlanIdLive: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -300,7 +301,8 @@ export interface CommercialOfferPayload {
   status: CommercialOfferStatus;
   displayOrder: number;
   billingCadence: CommercialOfferBillingCadence;
-  paypalPlanId: string | null;
+  paypalPlanIdSandbox: string | null;
+  paypalPlanIdLive: string | null;
 }
 
 export type CommercialDocumentType =

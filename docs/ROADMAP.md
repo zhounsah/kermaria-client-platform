@@ -113,8 +113,17 @@ uniquement en preprod cible.
 
 ## Jalon V0.22 abonnements recurrents PayPal
 
-Statut : **implemente dans le depot** (2026-06-25). Documentation
-d'implementation : [`V0.22_SUBSCRIPTIONS.md`](V0.22_SUBSCRIPTIONS.md).
+Statut : **implemente dans le depot** (V0.22 le 2026-06-25, V0.22.1 le
+2026-06-26). Documentation d'implementation :
+[`V0.22_SUBSCRIPTIONS.md`](V0.22_SUBSCRIPTIONS.md).
+
+V0.22.1 ajoute la creation automatique des Plans PayPal depuis le
+formulaire admin (bouton "Créer le plan PayPal") et stocke les IDs en
+deux colonnes distinctes `paypal_plan_id_sandbox` et `paypal_plan_id_live`
+(migration 016) — un plan PayPal sandbox n'existe pas en live, donc
+chaque mode a son propre identifiant. Le prix d'une offre devient
+immutable des qu'un plan PayPal existe pour eviter de desynchroniser les
+souscriptions actives.
 
 Objectif : permettre la facturation automatique mensuelle des services
 recurrents (acces VPN, RDS, support continu) sans saisie manuelle

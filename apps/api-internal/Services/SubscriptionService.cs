@@ -1,4 +1,5 @@
 using Kermaria.ApiInternal.Contracts;
+using Kermaria.ApiInternal.Data.Configuration;
 using Kermaria.ApiInternal.Data.Repositories;
 
 namespace Kermaria.ApiInternal.Services;
@@ -50,13 +51,16 @@ public sealed class SubscriptionService : ISubscriptionService
 {
     private readonly ISubscriptionRepository _repository;
     private readonly ICommercialRepository _commercialRepository;
+    private readonly PayPalRuntimeConfiguration _paypal;
 
     public SubscriptionService(
         ISubscriptionRepository repository,
-        ICommercialRepository commercialRepository)
+        ICommercialRepository commercialRepository,
+        PayPalRuntimeConfiguration paypal)
     {
         _repository = repository;
         _commercialRepository = commercialRepository;
+        _paypal = paypal;
     }
 
     public bool IsPersistent => _repository.IsPersistent;
@@ -89,16 +93,20 @@ public sealed class SubscriptionService : ISubscriptionService
                 StringComparison.Ordinal))
             ?? throw new PortalDataNotFoundException();
 
+        var activePlanId = _paypal.IsLive
+            ? offer.PayPalPlanIdLive
+            : offer.PayPalPlanIdSandbox;
+
         if (!string.Equals(
                 offer.BillingCadence,
                 CommercialStatuses.CadenceMonthly,
                 StringComparison.Ordinal)
-            || string.IsNullOrWhiteSpace(offer.PayPalPlanId))
+            || string.IsNullOrWhiteSpace(activePlanId))
         {
             throw new PortalValidationException();
         }
 
-        return new SubscriptionLookup(offer, offer.PayPalPlanId);
+        return new SubscriptionLookup(offer, activePlanId);
     }
 
     public async Task<SubscriptionSummary> CreatePendingAsync(

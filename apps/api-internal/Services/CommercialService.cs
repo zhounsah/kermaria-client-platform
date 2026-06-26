@@ -68,7 +68,8 @@ public sealed record ValidatedCommercialOffer(
     string Status,
     int DisplayOrder,
     string BillingCadence,
-    string? PayPalPlanId);
+    string? PayPalPlanIdSandbox,
+    string? PayPalPlanIdLive);
 
 public sealed record ValidatedCommercialDocument(
     string? CustomerReference,
@@ -340,16 +341,11 @@ public sealed partial class CommercialService : ICommercialService
             throw new PortalValidationException();
         }
 
-        var paypalPlanId = Normalize(payload.PayPalPlanId);
-        if (paypalPlanId is not null
-            && (paypalPlanId.Length > 64
-                || !PayPalPlanIdPattern().IsMatch(paypalPlanId)))
-        {
-            throw new PortalValidationException();
-        }
+        var paypalPlanIdSandbox = ValidatePayPalPlanId(payload.PayPalPlanIdSandbox);
+        var paypalPlanIdLive = ValidatePayPalPlanId(payload.PayPalPlanIdLive);
 
         if (billingCadence == CommercialStatuses.CadenceOneTime
-            && paypalPlanId is not null)
+            && (paypalPlanIdSandbox is not null || paypalPlanIdLive is not null))
         {
             throw new PortalValidationException();
         }
@@ -363,7 +359,24 @@ public sealed partial class CommercialService : ICommercialService
             status,
             displayOrder,
             billingCadence,
-            paypalPlanId);
+            paypalPlanIdSandbox,
+            paypalPlanIdLive);
+    }
+
+    private static string? ValidatePayPalPlanId(string? value)
+    {
+        var normalized = Normalize(value);
+        if (normalized is null)
+        {
+            return null;
+        }
+
+        if (normalized.Length > 64 || !PayPalPlanIdPattern().IsMatch(normalized))
+        {
+            throw new PortalValidationException();
+        }
+
+        return normalized;
     }
 
     private static ValidatedCommercialDocument ValidateDocumentPayload(

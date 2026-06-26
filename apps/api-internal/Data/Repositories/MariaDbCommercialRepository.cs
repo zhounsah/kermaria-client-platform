@@ -42,7 +42,8 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 status,
                 display_order,
                 billing_cadence,
-                paypal_plan_id,
+                paypal_plan_id_sandbox,
+                paypal_plan_id_live,
                 created_at,
                 updated_at
             FROM commercial_offers
@@ -81,7 +82,8 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 status,
                 display_order,
                 billing_cadence,
-                paypal_plan_id,
+                paypal_plan_id_sandbox,
+                paypal_plan_id_live,
                 created_at,
                 updated_at
             FROM commercial_offers
@@ -120,7 +122,8 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 status,
                 display_order,
                 billing_cadence,
-                paypal_plan_id,
+                paypal_plan_id_sandbox,
+                paypal_plan_id_live,
                 created_at,
                 updated_at
             ) VALUES (
@@ -135,7 +138,8 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 @status,
                 @display_order,
                 @billing_cadence,
-                @paypal_plan_id,
+                @paypal_plan_id_sandbox,
+                @paypal_plan_id_live,
                 @created_at,
                 @updated_at
             );
@@ -149,7 +153,12 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
         command.Parameters.AddWithValue("@status", offer.Status);
         command.Parameters.AddWithValue("@display_order", offer.DisplayOrder);
         command.Parameters.AddWithValue("@billing_cadence", offer.BillingCadence);
-        command.Parameters.AddWithValue("@paypal_plan_id", DbValue(offer.PayPalPlanId));
+        command.Parameters.AddWithValue(
+            "@paypal_plan_id_sandbox",
+            DbValue(offer.PayPalPlanIdSandbox));
+        command.Parameters.AddWithValue(
+            "@paypal_plan_id_live",
+            DbValue(offer.PayPalPlanIdLive));
         command.Parameters.AddWithValue("@created_at", now);
         command.Parameters.AddWithValue("@updated_at", now);
         await command.ExecuteNonQueryAsync(cancellationToken);
@@ -176,6 +185,14 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
             transaction,
             offerId,
             cancellationToken);
+        var planAlreadySet =
+            current.PayPalPlanIdSandbox is not null
+            || current.PayPalPlanIdLive is not null;
+        if (planAlreadySet && current.PriceAmountCents != offer.PriceAmountCents)
+        {
+            throw new PortalValidationException();
+        }
+
         var changed =
             current.Name != offer.Name
             || current.Description != offer.Description
@@ -185,7 +202,8 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
             || current.Status != offer.Status
             || current.DisplayOrder != offer.DisplayOrder
             || current.BillingCadence != offer.BillingCadence
-            || current.PayPalPlanId != offer.PayPalPlanId;
+            || current.PayPalPlanIdSandbox != offer.PayPalPlanIdSandbox
+            || current.PayPalPlanIdLive != offer.PayPalPlanIdLive;
 
         await using (var command = connection.CreateCommand())
         {
@@ -201,7 +219,8 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                     status = @status,
                     display_order = @display_order,
                     billing_cadence = @billing_cadence,
-                    paypal_plan_id = @paypal_plan_id,
+                    paypal_plan_id_sandbox = @paypal_plan_id_sandbox,
+                    paypal_plan_id_live = @paypal_plan_id_live,
                     updated_at = @updated_at
                 WHERE id = @id;
                 """;
@@ -214,7 +233,12 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
             command.Parameters.AddWithValue("@status", offer.Status);
             command.Parameters.AddWithValue("@display_order", offer.DisplayOrder);
             command.Parameters.AddWithValue("@billing_cadence", offer.BillingCadence);
-            command.Parameters.AddWithValue("@paypal_plan_id", DbValue(offer.PayPalPlanId));
+            command.Parameters.AddWithValue(
+                "@paypal_plan_id_sandbox",
+                DbValue(offer.PayPalPlanIdSandbox));
+            command.Parameters.AddWithValue(
+                "@paypal_plan_id_live",
+                DbValue(offer.PayPalPlanIdLive));
             command.Parameters.AddWithValue("@updated_at", DateTime.UtcNow);
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -952,7 +976,8 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
             reader.GetString("status"),
             reader.GetInt32("display_order"),
             reader.GetString("billing_cadence"),
-            ReadNullableString(reader, "paypal_plan_id"),
+            ReadNullableString(reader, "paypal_plan_id_sandbox"),
+            ReadNullableString(reader, "paypal_plan_id_live"),
             ToUtcIso(reader.GetDateTime("created_at")),
             ToUtcIso(reader.GetDateTime("updated_at")));
 
@@ -1074,7 +1099,8 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 status,
                 display_order,
                 billing_cadence,
-                paypal_plan_id
+                paypal_plan_id_sandbox,
+                paypal_plan_id_live
             FROM commercial_offers
             WHERE id = @id
             FOR UPDATE;
@@ -1096,7 +1122,8 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
             reader.GetString("status"),
             reader.GetInt32("display_order"),
             reader.GetString("billing_cadence"),
-            ReadNullableString(reader, "paypal_plan_id"));
+            ReadNullableString(reader, "paypal_plan_id_sandbox"),
+            ReadNullableString(reader, "paypal_plan_id_live"));
     }
 
     private static async Task<string> ResolveCustomerIdAsync(
@@ -1444,7 +1471,8 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
         string Status,
         int DisplayOrder,
         string BillingCadence,
-        string? PayPalPlanId);
+        string? PayPalPlanIdSandbox,
+        string? PayPalPlanIdLive);
 
     private sealed record DocumentRow(
         string CustomerId,

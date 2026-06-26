@@ -159,6 +159,110 @@ export function isPayPalConfigured(): boolean {
   );
 }
 
+export type PayPalEnvironment = "sandbox" | "live";
+
+export function getPayPalMode(): PayPalEnvironment {
+  return process.env.PAYPAL_MODE === "live" ? "live" : "sandbox";
+}
+
+export async function createPayPalProduct(
+  name: string,
+  description: string,
+): Promise<string> {
+  const token = await getPayPalAccessToken();
+  const safeDescription = (description || name).slice(0, 256);
+
+  const response = await fetch(`${getBase()}/v1/catalogs/products`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      "PayPal-Request-Id": `prod-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2, 10)}`,
+    },
+    body: JSON.stringify({
+      name: name.slice(0, 127),
+      description: safeDescription,
+      type: "SERVICE",
+      category: "SOFTWARE",
+    }),
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(
+      `Création produit PayPal échouée : ${response.status} ${err}`,
+    );
+  }
+
+  const data = (await response.json()) as { id?: string };
+  if (!data.id) {
+    throw new Error("PayPal n'a pas retourné d'identifiant de produit.");
+  }
+  return data.id;
+}
+
+export async function createPayPalPlan(
+  productId: string,
+  name: string,
+  priceAmountCents: number,
+  currency: string,
+): Promise<string> {
+  const token = await getPayPalAccessToken();
+  const value = (priceAmountCents / 100).toFixed(2);
+
+  const response = await fetch(`${getBase()}/v1/billing/plans`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      "PayPal-Request-Id": `plan-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2, 10)}`,
+    },
+    body: JSON.stringify({
+      product_id: productId,
+      name: name.slice(0, 127),
+      status: "ACTIVE",
+      billing_cycles: [
+        {
+          frequency: { interval_unit: "MONTH", interval_count: 1 },
+          tenure_type: "REGULAR",
+          sequence: 1,
+          total_cycles: 0,
+          pricing_scheme: {
+            fixed_price: {
+              value,
+              currency_code: currency,
+            },
+          },
+        },
+      ],
+      payment_preferences: {
+        auto_bill_outstanding: true,
+        setup_fee_failure_action: "CONTINUE",
+        payment_failure_threshold: 3,
+      },
+    }),
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(
+      `Création plan PayPal échouée : ${response.status} ${err}`,
+    );
+  }
+
+  const data = (await response.json()) as { id?: string };
+  if (!data.id) {
+    throw new Error("PayPal n'a pas retourné d'identifiant de plan.");
+  }
+  return data.id;
+}
+
 export type CreateSubscriptionResult = {
   subscriptionId: string;
   approveUrl: string;

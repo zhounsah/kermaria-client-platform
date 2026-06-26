@@ -95,17 +95,26 @@ export function parseCommercialOfferPayload(
     || typeof candidate.displayOrder !== "number"
     || typeof candidate.billingCadence !== "string"
     || !(
-      typeof candidate.paypalPlanId === "string"
-      || candidate.paypalPlanId === null
-      || candidate.paypalPlanId === undefined
+      typeof candidate.paypalPlanIdSandbox === "string"
+      || candidate.paypalPlanIdSandbox === null
+      || candidate.paypalPlanIdSandbox === undefined
+    )
+    || !(
+      typeof candidate.paypalPlanIdLive === "string"
+      || candidate.paypalPlanIdLive === null
+      || candidate.paypalPlanIdLive === undefined
     )
   ) {
     return null;
   }
 
-  const paypalPlanId =
-    typeof candidate.paypalPlanId === "string"
-      ? candidate.paypalPlanId.trim() || null
+  const paypalPlanIdSandbox =
+    typeof candidate.paypalPlanIdSandbox === "string"
+      ? candidate.paypalPlanIdSandbox.trim() || null
+      : null;
+  const paypalPlanIdLive =
+    typeof candidate.paypalPlanIdLive === "string"
+      ? candidate.paypalPlanIdLive.trim() || null
       : null;
   const payload: CommercialOfferPayload = {
     name: candidate.name.trim(),
@@ -117,9 +126,11 @@ export function parseCommercialOfferPayload(
     displayOrder: Math.trunc(candidate.displayOrder),
     billingCadence:
       candidate.billingCadence as CommercialOfferPayload["billingCadence"],
-    paypalPlanId,
+    paypalPlanIdSandbox,
+    paypalPlanIdLive,
   };
 
+  const planIdPattern = /^[A-Za-z0-9_-]{1,64}$/;
   return payload.name.length >= 3
     && payload.name.length <= 200
     && payload.description.length >= 3
@@ -136,11 +147,14 @@ export function parseCommercialOfferPayload(
     && payload.displayOrder >= 0
     && payload.displayOrder <= 100000
     && ["one_time", "monthly"].includes(payload.billingCadence)
-    && (payload.paypalPlanId === null
-      || /^[A-Za-z0-9_-]{1,64}$/.test(payload.paypalPlanId))
+    && (payload.paypalPlanIdSandbox === null
+      || planIdPattern.test(payload.paypalPlanIdSandbox))
+    && (payload.paypalPlanIdLive === null
+      || planIdPattern.test(payload.paypalPlanIdLive))
     && !(
       payload.billingCadence === "one_time"
-      && payload.paypalPlanId !== null
+      && (payload.paypalPlanIdSandbox !== null
+        || payload.paypalPlanIdLive !== null)
     )
     ? payload
     : null;
