@@ -11,6 +11,9 @@ type AppShellProps = {
 
 export async function AppShell({ children }: AppShellProps) {
   const session = await getCurrentPortalSession();
+  const hasSidebar =
+    session?.user.role === "client_user"
+    || session?.user.role === "internal_admin";
 
   return (
     <>
@@ -28,13 +31,19 @@ export async function AppShell({ children }: AppShellProps) {
           <div className="demo-chip">Espace sécurisé</div>
         </div>
       </header>
-      {session?.user.role === "client_user" ? (
-        <PortalNavigation displayName={session.user.displayName} />
-      ) : null}
-      {session?.user.role === "internal_admin" ? (
-        <AdminNavigation displayName={session.user.displayName} />
-      ) : null}
-      <main className="main-content">{children}</main>
+      {hasSidebar ? (
+        <div className="app-shell">
+          {session?.user.role === "client_user" ? (
+            <PortalNavigation displayName={session.user.displayName} />
+          ) : null}
+          {session?.user.role === "internal_admin" ? (
+            <AdminNavigation displayName={session.user.displayName} />
+          ) : null}
+          <main className="main-content app-content">{children}</main>
+        </div>
+      ) : (
+        <main className="main-content">{children}</main>
+      )}
       <footer className="site-footer">
         <div>
           <strong>Zachary HOUNSA-HOUNKPA EI</strong>

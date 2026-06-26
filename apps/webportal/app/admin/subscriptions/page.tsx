@@ -4,6 +4,7 @@ import type { SubscriptionStatus } from "@kermaria/shared";
 
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
+import { MetricCard } from "@/components/MetricCard";
 import { MockNotice } from "@/components/MockNotice";
 import { PageHeader } from "@/components/PageHeader";
 import { SectionCard } from "@/components/SectionCard";
@@ -83,26 +84,39 @@ export default async function AdminSubscriptionsPage({
         title="Abonnements"
       />
 
-      <section className="metrics-grid" aria-label="Indicateurs abonnements">
-        <article className="content-panel">
-          <span className="card-kicker">Souscriptions actives</span>
-          <h2>{activeCount}</h2>
-        </article>
-        <article className="content-panel">
-          <span className="card-kicker">MRR estimé HT</span>
-          <h2>{formatCurrencyFromCents(mrrCents)}</h2>
-        </article>
-        <article className="content-panel">
-          <span className="card-kicker">Total enregistrées</span>
-          <h2>{result.data.length}</h2>
-        </article>
+      <section
+        aria-label="Indicateurs abonnements"
+        className="metrics-grid metrics-grid-three"
+      >
+        <MetricCard
+          detail="Souscriptions actuellement actives"
+          label="Souscriptions actives"
+          tone="green"
+          value={String(activeCount)}
+        />
+        <MetricCard
+          detail="Somme des prix HT des souscriptions actives"
+          label="MRR estimé HT"
+          tone="amber"
+          value={formatCurrencyFromCents(mrrCents)}
+        />
+        <MetricCard
+          detail="Tous statuts confondus"
+          label="Total enregistrées"
+          tone="slate"
+          value={String(result.data.length)}
+        />
       </section>
 
       <section className="content-panel">
-        <form className="form-grid" action="/admin/subscriptions" method="GET">
-          <label>
-            Statut
-            <select defaultValue={status} name="status">
+        <form
+          className="admin-filters"
+          action="/admin/subscriptions"
+          method="GET"
+        >
+          <div className="field">
+            <label htmlFor="status-filter">Statut</label>
+            <select defaultValue={status} id="status-filter" name="status">
               <option value="all">Tous</option>
               <option value="pending_approval">En attente d&apos;approbation</option>
               <option value="pending_activation">Approuvée, activation</option>
@@ -111,18 +125,19 @@ export default async function AdminSubscriptionsPage({
               <option value="cancelled">Annulée</option>
               <option value="expired">Expirée</option>
             </select>
-          </label>
-          <label>
-            Client (référence ou nom)
+          </div>
+          <div className="field">
+            <label htmlFor="customer-filter">Client (référence ou nom)</label>
             <input
               defaultValue={customerFilter}
+              id="customer-filter"
               maxLength={120}
               name="customer"
               placeholder="ex. CLI-DEMO-0042"
             />
-          </label>
-          <button className="button" type="submit">
-            Filtrer
+          </div>
+          <button className="button button-secondary" type="submit">
+            Appliquer
           </button>
         </form>
       </section>

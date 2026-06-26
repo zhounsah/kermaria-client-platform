@@ -13,8 +13,8 @@ Pendant cette phase :
 - aucune numerotation fiscale revendiquee comme legale ;
 - aucun client reel integre.
 
-Les jalons fonctionnels (V0.20 a V0.22) avancent en respectant ces bornes.
-Les jalons d'exploitation finale (V0.23b, V1.0) sont **bloques par la
+Les jalons fonctionnels (V0.20 a V0.23) avancent en respectant ces bornes.
+Les jalons d'exploitation finale (V0.24b, V1.0) sont **bloques par la
 livraison du R740xd**.
 
 ## Jalon V0.20 facturation reelle BPCE controlee
@@ -157,10 +157,36 @@ Garde-fous :
 La V0.22 n'ajoute ni rapprochement bancaire SEPA hors PayPal, ni SMS, ni
 push, ni provisioning AD automatique declenche par un encaissement.
 
-## Jalon V0.23a stabilisation testable sur SRV-01 et SRV-02
+## Jalon V0.23 harmonisation UX portail et admin
+
+Statut : **implemente dans le depot** (2026-06-26). Aucune dependance
+materielle. Refonte purement frontend, contrats API inchanges.
+
+- navigation laterale gauche unifiee (sidebar) pour le portail client et
+  l'administration interne, exposant **toutes** les pages disponibles
+  (les pages auparavant non listees dans le bandeau superieur sont
+  desormais accessibles depuis la sidebar) ;
+- dashboard admin nettoye : seules les metriques et l'etat AD restent
+  inline, le flux d'activite publique est extrait dans `/admin/activity`
+  (le journal d'audit reste a `/admin/audit-logs`) ;
+- catalogue admin refondu : `/admin/catalog` devient une liste tabulaire,
+  `/admin/catalog/[id]` ouvre la fiche complete d'edition, creation via
+  `/admin/catalog/new` (apres creation, redirection vers la fiche) ;
+- pages admin Paiements et Abonnements harmonisees : meme bandeau
+  `metrics-grid-three` + meme bloc filtres `content-panel > admin-filters` ;
+- page client `/invoices` : table elargie, colonne action droite reste
+  visible sans defilement horizontal ;
+- page client `/support` : formulaire de nouvelle demande en zone
+  centrale en haut, demandes existantes empilees en liste dessous.
+
+La V0.23 n'ajoute aucune fonctionnalite metier ni mutation cote API ; elle
+ne deplace pas la frontiere hardware (V0.24 reste bloquee par la livraison
+R740xd).
+
+## Jalon V0.24a stabilisation testable sur SRV-01 et SRV-02
 
 Statut : **a faire, faisable sans la cible R740xd**. Renomme depuis
-V0.22a au 2026-06-24 pour intercaler V0.22 subscriptions.
+V0.23a au 2026-06-26 pour intercaler V0.23 harmonisation UX.
 
 - recette complete executee sur le staging interne (couvre V0.16, V0.17,
   V0.20 BPCE mock et V0.21 PayPal sandbox + e-mail mock) ;
@@ -173,16 +199,16 @@ V0.22a au 2026-06-24 pour intercaler V0.22 subscriptions.
 - procedure formelle de mise en production redigee, **non executee** ;
 - plan de continuite minimal documente.
 
-La V0.23a n'ajoute aucune fonctionnalite metier et ne s'execute pas sur
+La V0.24a n'ajoute aucune fonctionnalite metier et ne s'execute pas sur
 l'infrastructure definitive.
 
-## Jalon V0.23b validation cible R740xd
+## Jalon V0.24b validation cible R740xd
 
 Statut : **bloque, declenche a la livraison du R740xd**. Renomme depuis
-V0.22b au 2026-06-24.
+V0.23b au 2026-06-26.
 
 - bascule des services sur l'hote cible ;
-- execution de la procedure de mise en production redigee en V0.23a ;
+- execution de la procedure de mise en production redigee en V0.24a ;
 - restauration MariaDB testee sur la cible reelle ;
 - supervision, sauvegardes et alertes cables sur l'infrastructure
   definitive ;
@@ -192,11 +218,11 @@ V0.22b au 2026-06-24.
 - bascule `BPCE_INTEGRATION_MODE=live`, `EMAIL_INTEGRATION_MODE=live` et
   `PAYPAL_MODE=live` apres validation explicite.
 
-La V0.23b n'ajoute aucune fonctionnalite metier.
+La V0.24b n'ajoute aucune fonctionnalite metier.
 
 ## Jalon V1.0 produit commercialisable minimal
 
-Statut : **bloque, materiel**. Prerequis : V0.23b realisee sur le R740xd.
+Statut : **bloque, materiel**. Prerequis : V0.24b realisee sur le R740xd.
 
 - deploiement sur l'infrastructure cible avec domaine, TLS et supervision
   actifs ;
@@ -207,7 +233,7 @@ Statut : **bloque, materiel**. Prerequis : V0.23b realisee sur le R740xd.
 - SLA documente et procedure d'incident formelle.
 
 La V1.0 ne marque pas la fin du produit. Toute fonctionnalite supplementaire
-identifiee pendant V0.23 est isolee en V0.24 ou plus tard, jamais ajoutee
+identifiee pendant V0.24 est isolee en V0.25 ou plus tard, jamais ajoutee
 en derniere minute a V1.0.
 
 ## Hors sequence

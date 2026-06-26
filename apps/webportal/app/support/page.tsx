@@ -48,7 +48,7 @@ export default async function SupportPage() {
         title="Demandes de support"
       />
 
-      <div className="support-layout">
+      <div className="support-stacked">
         <FormSection
           description="Ne saisissez aucun mot de passe, identifiant ou contenu confidentiel."
           title="Nouvelle demande"
@@ -65,10 +65,10 @@ export default async function SupportPage() {
           )}
         </FormSection>
 
-        <section>
+        <section aria-label="Historique des demandes support">
           <div className="section-heading">
             <div>
-              <h2>Demandes récentes</h2>
+              <h2>Demandes existantes</h2>
               <p>Historique rattaché au client connecté.</p>
             </div>
           </div>
@@ -85,36 +85,38 @@ export default async function SupportPage() {
               title="Aucune demande"
             />
           ) : (
-            <div className="ticket-list">
+            <ul className="support-request-list">
               {requestsResult.data.map((request) => {
                 const status = supportStatus[request.status];
 
                 return (
-                  <article className="ticket-card" key={request.id}>
-                    <div className="ticket-card-header">
-                      <span className="card-kicker">{request.reference}</span>
-                      <RequestStatusBadge
-                        requestType="support"
-                        status={request.status}
-                      />
-                    </div>
-                    <h3>{request.subject}</h3>
-                    <p>{request.serviceName}</p>
-                    <p className="status-description">{status.description}</p>
-                    <div className="ticket-meta">
-                      <span>Priorité {priorityLabels[request.priority]}</span>
-                      <span>Mis à jour le {formatDate(request.updatedAt)}</span>
+                  <li className="support-request-row" key={request.id}>
+                    <div className="support-request-row-main">
+                      <div className="support-request-row-head">
+                        <span className="card-kicker">{request.reference}</span>
+                        <RequestStatusBadge
+                          requestType="support"
+                          status={request.status}
+                        />
+                      </div>
+                      <h3>{request.subject}</h3>
+                      <p className="support-request-row-meta">
+                        {request.serviceName} · Priorité{" "}
+                        {priorityLabels[request.priority]} · Mis à jour le{" "}
+                        {formatDate(request.updatedAt)}
+                      </p>
+                      <p className="status-description">{status.description}</p>
                     </div>
                     <Link
-                      className="text-link"
+                      className="button button-ghost button-compact"
                       href={`/support/${encodeURIComponent(request.id)}`}
                     >
                       Consulter le suivi
                     </Link>
-                  </article>
+                  </li>
                 );
               })}
-            </div>
+            </ul>
           )}
         </section>
       </div>

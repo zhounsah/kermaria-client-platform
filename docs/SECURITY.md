@@ -78,7 +78,7 @@ suivants :
   renvoie jamais cote navigateur.
 - Les anciens secrets de test deja exposes doivent etre consideres compromis et
   ne jamais etre repetes. Une rotation effective de tous les secrets cites
-  est prevue en V0.23b sur la cible R740xd.
+  est prevue en V0.24b sur la cible R740xd.
 - `npm run check:secrets` reste un garde-fou local, pas un remplacement de
   scanner cote forge.
 
@@ -151,7 +151,7 @@ cookie HttpOnly -> BFF -> session API-INTERNAL -> user_id -> customer_id
   paiement PayPal sont reservees respectivement aux roles `internal_admin`
   et au flux de retour PayPal authentifie par session client. Le
   basculement `BPCE_INTEGRATION_MODE=live` ou `PAYPAL_MODE=live` requiert
-  une validation explicite (V0.23b).
+  une validation explicite (V0.24b).
 
 ## Logs, audits et erreurs
 

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { AdminDataTable } from "@/components/AdminDataTable";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
+import { MetricCard } from "@/components/MetricCard";
 import { MockNotice } from "@/components/MockNotice";
 import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -69,38 +70,47 @@ export default async function AdminPaymentsPage({ searchParams }: PageProps) {
         title="Paiements"
       />
 
-      <section className="content-panel">
-        <dl className="request-details">
-          <div>
-            <dt>À régler</dt>
-            <dd>
-              <strong>{formatCurrencyFromCents(totals.unpaidAmountCents)}</strong>
-              {" "}({totals.unpaidCount} facture{totals.unpaidCount > 1 ? "s" : ""})
-            </dd>
-          </div>
-          <div>
-            <dt>Réglé</dt>
-            <dd>
-              {formatCurrencyFromCents(totals.paidAmountCents)}
-              {" "}({totals.paidCount} facture{totals.paidCount > 1 ? "s" : ""})
-            </dd>
-          </div>
-        </dl>
+      <section
+        aria-label="Synthèse des paiements"
+        className="metrics-grid metrics-grid-three"
+      >
+        <MetricCard
+          detail={`${totals.unpaidCount} facture${totals.unpaidCount > 1 ? "s" : ""}`}
+          label="À régler"
+          tone="amber"
+          value={formatCurrencyFromCents(totals.unpaidAmountCents)}
+        />
+        <MetricCard
+          detail={`${totals.paidCount} facture${totals.paidCount > 1 ? "s" : ""}`}
+          label="Réglé"
+          tone="green"
+          value={formatCurrencyFromCents(totals.paidAmountCents)}
+        />
+        <MetricCard
+          detail="Encaissé + à encaisser"
+          label="Total émis"
+          tone="slate"
+          value={formatCurrencyFromCents(
+            totals.unpaidAmountCents + totals.paidAmountCents,
+          )}
+        />
       </section>
 
-      <form className="admin-filters" method="get">
-        <div className="field">
-          <label htmlFor="status-filter">Statut paiement</label>
-          <select defaultValue={status} id="status-filter" name="status">
-            <option value="all">Toutes</option>
-            <option value="unpaid">À régler</option>
-            <option value="paid">Réglées</option>
-          </select>
-        </div>
-        <button className="button button-secondary" type="submit">
-          Appliquer
-        </button>
-      </form>
+      <section className="content-panel">
+        <form className="admin-filters" method="get">
+          <div className="field">
+            <label htmlFor="status-filter">Statut paiement</label>
+            <select defaultValue={status} id="status-filter" name="status">
+              <option value="all">Toutes</option>
+              <option value="unpaid">À régler</option>
+              <option value="paid">Réglées</option>
+            </select>
+          </div>
+          <button className="button button-secondary" type="submit">
+            Appliquer
+          </button>
+        </form>
+      </section>
 
       {documentsResult.error ? (
         <ErrorState

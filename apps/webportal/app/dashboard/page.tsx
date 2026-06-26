@@ -106,7 +106,10 @@ export default async function DashboardPage() {
         />
       ) : null}
 
-      <section className="metrics-grid" aria-label="Indicateurs du compte">
+      <section
+        aria-label="Indicateurs du compte"
+        className="metrics-grid"
+      >
         <MetricCard
           detail="Selon le périmètre convenu"
           label="Services actifs"

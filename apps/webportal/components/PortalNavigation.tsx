@@ -5,14 +5,35 @@ import { usePathname } from "next/navigation";
 
 import { LogoutButton } from "@/components/LogoutButton";
 
-const navigationItems = [
-  { href: "/dashboard", label: "Vue d'ensemble" },
-  { href: "/services", label: "Services" },
-  { href: "/invoices", label: "Documents" },
-  { href: "/support", label: "Support" },
-  { href: "/request-service", label: "Nouvelle demande" },
-  { href: "/notifications", label: "Notifications" },
-  { href: "/profile", label: "Profil" },
+type NavSection = {
+  label: string;
+  items: { href: string; label: string; exact?: boolean }[];
+};
+
+const navigationSections: NavSection[] = [
+  {
+    label: "Mon espace",
+    items: [
+      { href: "/dashboard", label: "Vue d'ensemble", exact: true },
+      { href: "/services", label: "Mes services" },
+      { href: "/invoices", label: "Documents & factures" },
+    ],
+  },
+  {
+    label: "Demandes",
+    items: [
+      { href: "/support", label: "Support" },
+      { href: "/request-service", label: "Nouvelle demande" },
+    ],
+  },
+  {
+    label: "Suivi",
+    items: [
+      { href: "/notifications", label: "Notifications" },
+      { href: "/profile", label: "Profil" },
+      { href: "/password", label: "Mot de passe" },
+    ],
+  },
 ];
 
 type PortalNavigationProps = {
@@ -23,29 +44,44 @@ export function PortalNavigation({ displayName }: PortalNavigationProps) {
   const pathname = usePathname();
 
   return (
-    <nav aria-label="Navigation principale" className="portal-nav">
-      <div className="portal-nav-inner">
-        <div className="portal-nav-links">
-          {navigationItems.map((item) => {
-            const isActive =
-              pathname === item.href
-              || pathname.startsWith(`${item.href}/`);
-
-            return (
-              <Link
-                aria-current={isActive ? "page" : undefined}
-                className={isActive ? "nav-link nav-link-active" : "nav-link"}
-                href={item.href}
-                key={item.href}
-              >
-                {item.label}
-              </Link>
-            );
-          })}
-        </div>
-        <span className="nav-user" title={displayName}>
+    <nav aria-label="Navigation principale" className="app-sidebar">
+      <div className="app-sidebar-header">
+        <span className="app-sidebar-role">Espace client</span>
+        <span className="app-sidebar-user" title={displayName}>
           {displayName}
         </span>
+      </div>
+      <div className="app-sidebar-scroll">
+        {navigationSections.map((section) => (
+          <div className="app-sidebar-section" key={section.label}>
+            <span className="app-sidebar-section-label">{section.label}</span>
+            <ul className="app-sidebar-list">
+              {section.items.map((item) => {
+                const isActive = item.exact
+                  ? pathname === item.href
+                  : pathname === item.href || pathname.startsWith(`${item.href}/`);
+
+                return (
+                  <li key={item.href}>
+                    <Link
+                      aria-current={isActive ? "page" : undefined}
+                      className={
+                        isActive
+                          ? "app-sidebar-link app-sidebar-link-active"
+                          : "app-sidebar-link"
+                      }
+                      href={item.href}
+                    >
+                      {item.label}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
+      </div>
+      <div className="app-sidebar-footer">
         <LogoutButton />
       </div>
     </nav>

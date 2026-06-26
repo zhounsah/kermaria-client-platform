@@ -112,7 +112,11 @@ export function AdminCatalogOfferForm({ offer }: AdminCatalogOfferFormProps) {
           ? "L'offre a été mise à jour."
           : "L'offre a été créée.",
       });
-      router.refresh();
+      if (offer) {
+        router.refresh();
+      } else {
+        router.push(`/admin/catalog/${encodeURIComponent(result.data.id)}`);
+      }
     } else {
       setMessage({ tone: "error", text: result.error.message });
     }
