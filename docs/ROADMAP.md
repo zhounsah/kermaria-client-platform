@@ -13,9 +13,9 @@ Pendant cette phase :
 - aucune numerotation fiscale revendiquee comme legale ;
 - aucun client reel integre.
 
-Les jalons fonctionnels (V0.20 a V0.23) avancent en respectant ces bornes.
-Les jalons d'exploitation finale (V0.24b, V1.0) sont **bloques par la
-livraison du R740xd**.
+Les jalons fonctionnels (V0.20 a V0.27) avancent en respectant ces bornes.
+Les jalons d'exploitation finale (V1.0 beta 1, V1.0 RC) sont **bloques
+par la livraison du R740xd**.
 
 ## Jalon V0.20 facturation reelle BPCE controlee
 
@@ -180,13 +180,14 @@ materielle. Refonte purement frontend, contrats API inchanges.
   centrale en haut, demandes existantes empilees en liste dessous.
 
 La V0.23 n'ajoute aucune fonctionnalite metier ni mutation cote API ; elle
-ne deplace pas la frontiere hardware (V0.24 reste bloquee par la livraison
-R740xd).
+ne deplace pas la frontiere hardware (V1.0 beta 1 reste bloquee par la
+livraison R740xd).
 
-## Jalon V0.24a stabilisation testable sur SRV-01 et SRV-02
+## Jalon V0.24 stabilisation testable sur SRV-01 et SRV-02
 
-Statut : **a faire, faisable sans la cible R740xd**. Renomme depuis
-V0.23a au 2026-06-26 pour intercaler V0.23 harmonisation UX.
+Statut : **a faire, faisable sans la cible R740xd**. Ex-V0.24a renomme
+au 2026-06-28 (la phase de validation hardware ex-V0.24b devient
+V1.0 beta 1).
 
 - recette complete executee sur le staging interne (couvre V0.16, V0.17,
   V0.20 BPCE mock et V0.21 PayPal sandbox + e-mail mock) ;
@@ -199,16 +200,83 @@ V0.23a au 2026-06-26 pour intercaler V0.23 harmonisation UX.
 - procedure formelle de mise en production redigee, **non executee** ;
 - plan de continuite minimal documente.
 
-La V0.24a n'ajoute aucune fonctionnalite metier et ne s'execute pas sur
+La V0.24 n'ajoute aucune fonctionnalite metier et ne s'execute pas sur
 l'infrastructure definitive.
 
-## Jalon V0.24b validation cible R740xd
+## Jalon V0.25 finalisation Active Directory
 
-Statut : **bloque, declenche a la livraison du R740xd**. Renomme depuis
-V0.23b au 2026-06-26.
+Statut : **a cadrer, faisable sans la cible R740xd**. Ajoute au
+2026-06-28.
+
+Apporte les briques AD restantes preparees mais desactivees ou hors
+sequence depuis V0.9 / V0.18, sans encore sortir de l'OU de test :
+
+- changement de mot de passe AD cote client : reactiver le flux prepare
+  en V0.9, exige re-auth recente, audit ecrit, sans bypass ;
+- provisioning AD etendu : creer/desactiver des comptes dans
+  `OU=TEST_SITE_WEB,DC=home,DC=bzh` depuis l'admin (au-dela du
+  `controlled_write` actuel borne) ;
+- procedure documentee de sortie progressive de `OU=TEST_SITE_WEB`,
+  prerequis a la mise en prod V1.0 RC ;
+- harmonisation des libelles AD (deja en francais cote fiche client
+  depuis V0.23.1, a propager partout) et journalisation enrichie.
+
+La V0.25 n'ouvre pas encore les ecritures hors OU de test ni n'active
+le mode `live` AD : tout reste sur SRV-01/02.
+
+## Jalon V0.26 creation de compte self-service
+
+Statut : **a cadrer, faisable sans la cible R740xd**. Ajoute au
+2026-06-28.
+
+Permet a un visiteur d'initier la creation d'un compte client sans
+intervention manuelle prealable :
+
+- formulaire d'inscription public (entreprise, contact, e-mail) avec
+  validation et anti-bot ;
+- verification e-mail (token signe, expiration courte) ;
+- creation du compte en statut `pending` cote portail, sans
+  provisioning AD automatique ;
+- workflow admin de validation/refus avec audit ;
+- e-mail transactionnel `account_pending` et `account_approved` (mode
+  `mock` jusqu'a V1.0 RC) ;
+- isolation stricte : aucun acces aux services tant que l'admin n'a pas
+  valide, aucune creation de compte AD avant V0.25.
+
+La V0.26 prepare le canal de conversion sans bypasser la qualification
+commerciale manuelle.
+
+## Jalon V0.27 site vitrine public
+
+Statut : **a cadrer, faisable sans la cible R740xd**. Ajoute au
+2026-06-28.
+
+Page d'accueil publique non authentifiee, en amont du backend client et
+admin :
+
+- landing page `/` avec presentation des offres (catalogue V0.15
+  reutilise en lecture seule), proposition de valeur, contact ;
+- pages legales : mentions legales, politique de confidentialite, CGV
+  (prerequis a V1.0 RC) ;
+- redirection vers `/login` pour les clients existants et vers
+  l'inscription V0.26 pour les nouveaux ;
+- SEO de base (sitemap, meta description, robots.txt deja present) ;
+- aucun appel a l'API interne depuis le site vitrine : donnees servies
+  par le BFF en mode statique ou cache court.
+
+La V0.27 separe clairement le public anonyme (vitrine) et l'espace
+authentifie (portail + admin). Elle est realisee avant la bascule
+hardware pour permettre une presentation publique des l'arrivee du
+R740xd.
+
+## Jalon V1.0 beta 1 test de deploiement sur la cible R740xd
+
+Statut : **bloque, declenche a la livraison du R740xd**. Ex-V0.24b
+renomme au 2026-06-28. Premier deploiement complet sur l'infrastructure
+definitive, en mode beta interne (pas encore de client reel).
 
 - bascule des services sur l'hote cible ;
-- execution de la procedure de mise en production redigee en V0.24a ;
+- execution de la procedure de mise en production redigee en V0.24 ;
 - restauration MariaDB testee sur la cible reelle ;
 - supervision, sauvegardes et alertes cables sur l'infrastructure
   definitive ;
@@ -216,34 +284,40 @@ V0.23b au 2026-06-26.
   `SMTP_PASSWORD`, `PAYPAL_CLIENT_SECRET`, `SERVICE_AUTH_TOKEN`) ;
 - certificats et regles pare-feu actifs sur la cible ;
 - bascule `BPCE_INTEGRATION_MODE=live`, `EMAIL_INTEGRATION_MODE=live` et
-  `PAYPAL_MODE=live` apres validation explicite.
+  `PAYPAL_MODE=live` apres validation explicite ;
+- recette UX et fonctionnelle re-executee dans l'environnement cible.
 
-La V0.24b n'ajoute aucune fonctionnalite metier.
+La V1.0 beta 1 n'ajoute aucune fonctionnalite metier ; elle valide la
+chaine de deploiement bout en bout sans premier client reel.
 
-## Jalon V1.0 produit commercialisable minimal
+## Jalon V1.0 RC deploiement reel et mise en production
 
-Statut : **bloque, materiel**. Prerequis : V0.24b realisee sur le R740xd.
+Statut : **bloque, materiel**. Prerequis : V1.0 beta 1 realisee et
+recettee sur le R740xd. Ex-V1.0 renomme au 2026-06-28.
 
-- deploiement sur l'infrastructure cible avec domaine, TLS et supervision
-  actifs ;
-- CGV, mentions legales et politique de confidentialite publiees ;
+- exposition publique avec domaine, TLS et supervision actifs ;
+- CGV, mentions legales et politique de confidentialite (V0.27)
+  publiees et acceptees ;
 - tarification publique alignee avec le catalogue V0.15 ;
-- premier client reel integre, **sortie de `OU=TEST_SITE_WEB`** vers une OU
-  de production validee ;
-- SLA documente et procedure d'incident formelle.
+- premier client reel integre, **sortie de `OU=TEST_SITE_WEB`** vers
+  une OU de production validee (procedure V0.25) ;
+- SLA documente et procedure d'incident formelle ;
+- ouverture des inscriptions self-service V0.26 si validation
+  juridique OK.
 
-La V1.0 ne marque pas la fin du produit. Toute fonctionnalite supplementaire
-identifiee pendant V0.24 est isolee en V0.25 ou plus tard, jamais ajoutee
-en derniere minute a V1.0.
+La V1.0 RC ne marque pas la fin du produit. Toute fonctionnalite
+supplementaire identifiee pendant V0.27 ou V1.0 beta 1 est isolee en
+V1.1 ou plus tard, jamais ajoutee en derniere minute a V1.0 RC.
 
 ## Hors sequence
 
-Reserves, non programmes :
+Reserves, non programmes (ni dans V0.24, ni dans V1.0 RC) :
 
-- changement de mot de passe AD cote client (prepare mais desactive depuis V0.9) ;
-- provisioning AD etendu hors OU de test ;
-- paiement en ligne, prelevement SEPA, integration comptable ;
-- automatisation NAS, RDS, VPN.
+- prelevement SEPA hors PayPal ;
+- integration comptable automatique ;
+- automatisation NAS, RDS, VPN declenchee par un encaissement ;
+- HTML enrichi dans les e-mails (texte uniquement depuis V0.21) ;
+- application mobile native.
 
 ## Jalon V0.19 durcissement securite et coherence AD
 

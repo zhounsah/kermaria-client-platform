@@ -81,7 +81,7 @@ Paiement et reglement (V0.21) :
   n'est pas configuree)
 
 Le mode `live` PayPal n'est jamais active sans validation explicite (cf.
-V0.24b, R740xd).
+V1.0 beta 1, R740xd).
 
 ## Profils d'environnement
 
@@ -113,8 +113,8 @@ V0.24b, R740xd).
 - `ASPNETCORE_ENVIRONMENT=Production`
 - `DOTNET_ENVIRONMENT=Production`
 - `AD_INTEGRATION_MODE=disabled`
-- `BPCE_INTEGRATION_MODE=disabled` tant que V0.24b n'a pas valide la cible
-- `PAYPAL_MODE=sandbox` tant que V0.24b n'a pas valide la cible
+- `BPCE_INTEGRATION_MODE=disabled` tant que V1.0 beta 1 n'a pas valide la cible
+- `PAYPAL_MODE=sandbox` tant que V1.0 beta 1 n'a pas valide la cible
 - MariaDB reelle obligatoire
 - aucun `DEMO_*`
 - secrets hors Git
@@ -206,7 +206,7 @@ portail.
 - aucun appel BPCE depuis `WEBPORTAL` ; tout passe par `API-INTERNAL` ;
 - aucun secret PayPal cote navigateur (le client id est public mais le
   flux Create Order reste cote serveur) ;
-- aucun mode `live` BPCE ou PayPal sans validation explicite (V0.24b) ;
+- aucun mode `live` BPCE ou PayPal sans validation explicite (V1.0 beta 1) ;
 - aucun e-mail, SMS, push, WebSocket ou provisioning declenche par un
   encaissement ;
 - aucune suppression client destructive ;
