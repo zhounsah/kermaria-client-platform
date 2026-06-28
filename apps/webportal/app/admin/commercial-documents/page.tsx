@@ -1,12 +1,10 @@
 import Link from "next/link";
 
-import { AdminCommercialDocumentCreateForm } from "@/components/AdminCommercialDocumentCreateForm";
 import { AdminDataTable } from "@/components/AdminDataTable";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { MockNotice } from "@/components/MockNotice";
 import { PageHeader } from "@/components/PageHeader";
-import { SectionCard } from "@/components/SectionCard";
 import { StatusBadge } from "@/components/StatusBadge";
 import { requireAdminSession } from "@/lib/auth";
 import {
@@ -15,12 +13,7 @@ import {
   formatCurrencyFromCents,
   formatDateTime,
 } from "@/lib/formatters";
-import {
-  getAdminCommercialDocuments,
-  getAdminCustomers,
-  getAdminServiceRequests,
-  resolveDataSource,
-} from "@/lib/internal-api";
+import { getAdminCommercialDocuments } from "@/lib/internal-api";
 
 export const metadata = {
   title: "Documents commerciaux - Administration",
@@ -39,28 +32,32 @@ export default async function AdminCommercialDocumentsPage({
   const filters = await searchParams;
   const customerReference = first(filters.customerReference);
   const serviceRequestId = first(filters.serviceRequestId);
-  const [documentsResult, customersResult, serviceRequestsResult] =
-    await Promise.all([
-      getAdminCommercialDocuments(),
-      getAdminCustomers(),
-      getAdminServiceRequests(),
-    ]);
+  const documentsResult = await getAdminCommercialDocuments();
 
   const documents = documentsResult.data.filter((document) =>
     (!customerReference || document.customerReference === customerReference)
     && (!serviceRequestId || document.serviceRequestId === serviceRequestId)
   );
-  const source = resolveDataSource([
-    documentsResult.source,
-    customersResult.source,
-    serviceRequestsResult.source,
-  ]);
+
+  const newDraftHref = (() => {
+    const params = new URLSearchParams();
+    if (customerReference) params.set("customerReference", customerReference);
+    if (serviceRequestId) params.set("serviceRequestId", serviceRequestId);
+    const query = params.toString();
+    return query
+      ? `/admin/commercial-documents/new?${query}`
+      : "/admin/commercial-documents/new";
+  })();
 
   return (
     <>
       <PageHeader
-        action={<StatusBadge label="Suivi commercial" tone="info" />}
-        description="Créer des brouillons, ajouter des lignes, partager côté client puis annuler si nécessaire, sans jamais émettre de facture officielle."
+        action={
+          <Link className="button" href={newDraftHref}>
+            Nouveau brouillon
+          </Link>
+        }
+        description="Suivi des brouillons, propositions et documents informatifs partagés avec les clients."
         eyebrow="Administration interne"
         title="Documents commerciaux"
       />
@@ -76,29 +73,6 @@ export default async function AdminCommercialDocumentsPage({
         </div>
         <StatusBadge label="Aucune numérotation fiscale" tone="warning" />
       </section>
-
-      {!customersResult.error && !serviceRequestsResult.error ? (
-        <SectionCard ariaLabel="Création d'un document commercial">
-          <h2>Créer un brouillon</h2>
-          <AdminCommercialDocumentCreateForm
-            customers={customersResult.data}
-            initialCustomerReference={customerReference}
-            initialServiceRequestId={serviceRequestId}
-            serviceRequests={serviceRequestsResult.data}
-          />
-        </SectionCard>
-      ) : (
-        <ErrorState
-          compact
-          description="Les listes clients ou demandes nécessaires à la création sont indisponibles."
-          reference={
-            customersResult.error
-              ? customersResult.correlationId
-              : serviceRequestsResult.correlationId
-          }
-          title="Création indisponible"
-        />
-      )}
 
       {documentsResult.error ? (
         <ErrorState
@@ -123,7 +97,7 @@ export default async function AdminCommercialDocumentsPage({
             "Demande liée",
             "Total",
             "Mise à jour",
-            "Détail",
+            "Action",
           ]}
           rows={documents.map((document) => {
             const status = commercialDocumentStatus[document.status];
@@ -156,7 +130,7 @@ export default async function AdminCommercialDocumentsPage({
 
       <MockNotice
         correlationId={documentsResult.correlationId}
-        source={source}
+        source={documentsResult.source}
       />
     </>
   );

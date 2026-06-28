@@ -62,7 +62,8 @@ export default async function AdminCustomerDetailPage({
   const customer = result.data;
   const identity = customer.identity;
   const adMode = adStatusResult.data?.mode ?? "indisponible";
-  const adModeLabel = describeAdMode(
+  const adModeLabelFr = localizeAdMode(adStatusResult.data?.mode);
+  const adModeDescription = describeAdMode(
     adStatusResult.data?.mode,
     adStatusResult.data?.writesEnabled ?? false,
   );
@@ -187,14 +188,15 @@ export default async function AdminCustomerDetailPage({
             <div>
               <strong>Active Directory V0.18</strong>
               <span>
-                Mode courant : {adMode}. {adModeLabel} Aucun hard delete AD
-                n&apos;est exposé et aucun flux n&apos;est autorisé hors de l&apos;OU
-                de test.
+                Mode courant : {adModeLabelFr} (<code>{adMode}</code>).{" "}
+                {adModeDescription} Aucune suppression définitive AD n&apos;est
+                exposée et aucun flux n&apos;est autorisé hors de l&apos;OU de
+                test.
               </span>
             </div>
             <StatusBadge
               label={adStatusResult.data?.writesEnabled
-                ? "Controlled write borné"
+                ? "Écriture contrôlée bornée"
                 : "Sans écriture réelle"}
               tone={adStatusResult.data?.writesEnabled ? "warning" : "info"}
             />
@@ -488,8 +490,23 @@ function describeAdMode(mode: string | undefined, writesEnabled: boolean) {
     case "controlled_write":
       return writesEnabled
         ? "Les écritures AD réelles sont strictement bornées à OU=TEST_SITE_WEB,DC=home,DC=bzh."
-        : "Le mode controlled_write est configuré sans écriture disponible.";
+        : "Le mode écriture contrôlée est configuré sans écriture disponible.";
     default:
       return "Le statut AD n'est pas disponible.";
+  }
+}
+
+function localizeAdMode(mode: string | undefined) {
+  switch (mode) {
+    case "disabled":
+      return "Désactivé";
+    case "mock":
+      return "Simulé";
+    case "read_only":
+      return "Lecture seule";
+    case "controlled_write":
+      return "Écriture contrôlée";
+    default:
+      return "Indisponible";
   }
 }

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { AdminCatalogOfferForm } from "@/components/AdminCatalogOfferForm";
+import { AdminCatalogOfferStatusToggleButton } from "@/components/AdminCatalogOfferStatusToggleButton";
 import { ErrorState } from "@/components/ErrorState";
 import { MockNotice } from "@/components/MockNotice";
 import { PageHeader } from "@/components/PageHeader";
@@ -94,6 +95,11 @@ export default async function AdminCatalogOfferPage({ params }: PageProps) {
       <SectionCard ariaLabel={`Édition de l'offre ${offer.name}`}>
         <h2>Modifier l&apos;offre</h2>
         <AdminCatalogOfferForm offer={offer} />
+      </SectionCard>
+
+      <SectionCard ariaLabel={`Statut de l'offre ${offer.name}`}>
+        <h2>Statut de diffusion</h2>
+        <AdminCatalogOfferStatusToggleButton offer={offer} />
       </SectionCard>
 
       <MockNotice

@@ -97,20 +97,24 @@ h3 {
 }
 
 .site-header-inner,
-.main-content,
 .site-footer {
-  width: min(1180px, calc(100% - 48px));
+  width: min(1480px, calc(100% - 32px));
+  margin-inline: auto;
+}
+
+.main-content {
+  width: min(1180px, calc(100% - 32px));
   margin-inline: auto;
 }
 
 .app-shell {
   display: grid;
-  width: min(1280px, calc(100% - 48px));
+  width: min(1480px, calc(100% - 32px));
   margin-inline: auto;
-  grid-template-columns: 248px minmax(0, 1fr);
-  gap: 28px;
+  grid-template-columns: 232px minmax(0, 1fr);
+  gap: 24px;
   align-items: start;
-  padding-top: 24px;
+  padding-top: 20px;
 }
 
 .app-content {
@@ -649,6 +653,18 @@ h3 {
   color: white;
 }
 
+.button-danger {
+  border-color: var(--danger);
+  color: white;
+  background: var(--danger);
+}
+
+.button-danger:hover,
+.button-danger:focus-visible {
+  border-color: #7e2c2c;
+  background: #7e2c2c;
+}
+
 .button-small {
   min-height: 36px;
   padding-inline: 13px;
@@ -842,6 +858,29 @@ button:disabled {
 
 .section-card {
   min-width: 0;
+  margin-bottom: 20px;
+}
+
+.request-detail-layout > .section-card,
+.dashboard-layout > .section-card {
+  margin-bottom: 0;
+}
+
+.app-content > .content-panel,
+.app-content > .table-card,
+.main-content > .content-panel,
+.main-content > .table-card {
+  margin-bottom: 20px;
+}
+
+.catalog-deactivate-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.catalog-deactivate-block .button {
+  align-self: flex-start;
 }
 
 .section-heading {
@@ -1151,6 +1190,21 @@ td {
   padding: 15px 18px;
   border-top: 1px solid var(--border);
   text-align: left;
+  white-space: normal;
+}
+
+td code,
+td time,
+td .status-badge,
+td .request-status-badge,
+td .table-action,
+td .button {
+  white-space: nowrap;
+}
+
+.admin-table tr td:last-child,
+.invoice-table tr td:last-child {
+  text-align: right;
   white-space: nowrap;
 }
 
@@ -1390,7 +1444,43 @@ td {
 }
 
 .admin-filters .field {
+  display: flex;
   margin: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.admin-filters .field label {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.admin-filters input,
+.admin-filters select {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.88rem;
+}
+
+.admin-filters input:focus,
+.admin-filters select:focus {
+  border-color: var(--primary);
+  outline: 3px solid rgb(36 89 169 / 18%);
+  outline-offset: 0;
+}
+
+.admin-filters .button {
+  align-self: end;
+  height: 40px;
+  border-radius: 10px;
 }
 
 .content-panel > .admin-filters {
@@ -2198,7 +2288,7 @@ td {
   .site-header-inner,
   .main-content,
   .site-footer {
-    width: min(100% - 28px, 1180px);
+    width: min(100% - 28px, 1480px);
   }
 
   .main-content {
