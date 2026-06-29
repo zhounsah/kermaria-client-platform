@@ -248,26 +248,70 @@ commerciale manuelle.
 
 ## Jalon V0.27 site vitrine public
 
-Statut : **a cadrer, faisable sans la cible R740xd**. Ajoute au
-2026-06-28.
+Statut : **livre et valide le 2026-06-30** (squelette + flag desactive
+par defaut), finalisation du contenu et bascule
+`PUBLIC_VITRINE_ENABLED=true` reportees a la recette pre-V1.0 RC. Doc
+detaillee : [docs/V0.27_PUBLIC_VITRINE.md](V0.27_PUBLIC_VITRINE.md).
 
 Page d'accueil publique non authentifiee, en amont du backend client et
 admin :
 
-- landing page `/` avec presentation des offres (catalogue V0.15
-  reutilise en lecture seule), proposition de valeur, contact ;
-- pages legales : mentions legales, politique de confidentialite, CGV
-  (prerequis a V1.0 RC) ;
-- redirection vers `/login` pour les clients existants et vers
-  l'inscription V0.26 pour les nouveaux ;
-- SEO de base (sitemap, meta description, robots.txt deja present) ;
-- aucun appel a l'API interne depuis le site vitrine : donnees servies
-  par le BFF en mode statique ou cache court.
+- branche racine `/` selon la session : client authentifie ->
+  `/dashboard`, admin -> `/admin`, anonyme +
+  `PUBLIC_VITRINE_ENABLED=false` -> `/login` (comportement V0.23),
+  anonyme + `PUBLIC_VITRINE_ENABLED=true` -> landing vitrine ;
+- bascule `PublicShell` / `AppShell` par route via une `proxy.ts`
+  (convention Next 16) qui injecte `x-pathname` (pas de move des routes
+  existantes en `(app)/`) ;
+- landing avec contenu et ton calques sur
+  [zacharyhounsa.ovh](https://zacharyhounsa.ovh/) : hero "Informatique
+  claire et utile", section Methode (3 etapes), section Services (6
+  prestations : hebergement de dossiers, sauvegarde, acces distant,
+  VPN prive, maintenance, reseau & infrastructure), section "Pour qui"
+  (particuliers / associations / petites structures), CTA finale ;
+- portfolio **embarque statique** : copie integrale du portfolio Astro
+  (21 fichiers HTML/CSS/JS + sous-projets) dans
+  `apps/webportal/public/portfolio/`. Lien dans la nav vers
+  `/portfolio/index.html`. Aucune modification du contenu : la
+  canonical pointe toujours vers `zacharyhounsa.ovh/portfolio/`, ce
+  qui evite la duplication SEO ;
+- page `/offres` lecture seule reutilisant le catalogue V0.15
+  (`/internal/portal/catalog` rendu anonyme cote api-internal, toujours
+  protege par `X-Service-Auth`), tri par `displayOrder`, filtre des
+  offres `monthly` sans plan PayPal pour le mode actif, cache 5 min
+  (`revalidate = 300`) ;
+- page `/contact` avec formulaire POST `/api/contact` (rate limit 5
+  req/5 min par IP), forward vers `/internal/public/contact-message`
+  api-internal, template email `contact_form` respectant
+  `EMAIL_INTEGRATION_MODE` (recipient = `CONTACT_FORM_RECIPIENT`).
+  Lien de retour en haut de page (vers `/offres` si `?offer=` present,
+  sinon vers `/`) ;
+- pages `/a-propos`, `/mentions-legales`, `/politique-confidentialite`,
+  `/cgv` en TSX statique (squelette + placeholders, contenu definitif
+  avant V1.0 RC). Page confidentialite affiche deja la position
+  no-tracking ;
+- SEO : `sitemap.ts` dynamique (les 7 pages Next ; portfolio non
+  inclus car canonical pointe ailleurs), `robots.ts` etendu (allow
+  tout sauf routes privees, gate sur `PUBLIC_VITRINE_ENABLED`),
+  JSON-LD `Organization` sur `/`, `metadataBase` + `openGraph` defaut,
+  titre override par page ;
+- conformite : aucun analytics, aucun pixel tiers, aucune banniere de
+  consentement cookies (decision 2026-06-28).
+
+Variables d'environnement nouvelles : `PUBLIC_VITRINE_ENABLED` (defaut
+`false`), `CONTACT_FORM_RECIPIENT` (destinataire interne du formulaire
+contact).
+
+A traiter avant V1.0 RC : raffiner le header
+`X-Robots-Tag: noindex, nofollow` defini dans `next.config.ts`
+(actuellement applique a toutes les routes, heritage V0.23) pour qu'il
+ne couvre que les routes privees une fois la vitrine activee.
 
 La V0.27 separe clairement le public anonyme (vitrine) et l'espace
 authentifie (portail + admin). Elle est realisee avant la bascule
 hardware pour permettre une presentation publique des l'arrivee du
-R740xd.
+R740xd. Le contenu redactionnel des pages legales et `/a-propos` reste
+a finaliser avant V1.0 RC.
 
 ## Jalon V1.0 beta 1 test de deploiement sur la cible R740xd
 

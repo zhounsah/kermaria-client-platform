@@ -1,67 +1,192 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
-export default function HomePage() {
+import { getCurrentPortalSession } from "@/lib/auth";
+import {
+  PORTFOLIO_URL,
+  getPortalPublicUrl,
+  isVitrinePublicEnabled,
+} from "@/lib/public-routes";
+
+function organizationJsonLd() {
+  const baseUrl = getPortalPublicUrl();
+  return {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    name: "Zachary HOUNSA-HOUNKPA EI",
+    url: baseUrl,
+    sameAs: [],
+  };
+}
+
+const METHOD_STEPS = [
+  {
+    number: "01",
+    title: "Échange et diagnostic",
+    body: "On commence par comprendre vos usages, vos contraintes et ce qui vous fait perdre du temps aujourd'hui.",
+  },
+  {
+    number: "02",
+    title: "Proposition adaptée",
+    body: "Vous recevez un périmètre clair, des choix techniques justifiés et un devis sans mauvaise surprise.",
+  },
+  {
+    number: "03",
+    title: "Mise en place et transmission",
+    body: "On configure, on documente et on vous donne les repères pour rester autonome au quotidien.",
+  },
+];
+
+const SERVICES = [
+  {
+    title: "Hébergement de dossiers",
+    body: "Un espace centralisé pour ranger, partager et retrouver vos documents sans dépendre du grand public.",
+  },
+  {
+    title: "Sauvegarde de données",
+    body: "Vos fichiers protégés contre la perte de matériel, l'erreur de manipulation ou le rançongiciel.",
+  },
+  {
+    title: "Accès distant sécurisé",
+    body: "Travailler depuis chez vous, en déplacement ou depuis un site distant comme si vous étiez au bureau.",
+  },
+  {
+    title: "VPN privé",
+    body: "Un tunnel chiffré pour relier vos sites, vos collaborateurs ou vos appareils sans exposition publique.",
+  },
+  {
+    title: "Maintenance informatique",
+    body: "Mises à jour, surveillance, intervention rapide en cas de souci : votre outil reste en bon état.",
+  },
+  {
+    title: "Réseau & infrastructure",
+    body: "Câblage, équipements actifs, segmentation : poser des bases solides ou reprendre une installation existante.",
+  },
+];
+
+const AUDIENCES = [
+  {
+    title: "Particuliers",
+    body: "Pour ranger une photothèque familiale, sécuriser ses sauvegardes ou retrouver l'accès à ses fichiers depuis n'importe où.",
+  },
+  {
+    title: "Associations",
+    body: "Pour mutualiser les outils des bénévoles sans dépendre d'une plateforme publicitaire ni installer du logiciel sur chaque poste.",
+  },
+  {
+    title: "Petites structures",
+    body: "Pour disposer d'une infrastructure professionnelle sans embaucher un service informatique en interne.",
+  },
+];
+
+export default async function HomePage() {
+  const session = await getCurrentPortalSession();
+
+  if (session?.user.role === "client_user") {
+    redirect("/dashboard");
+  }
+
+  if (session?.user.role === "internal_admin") {
+    redirect("/admin");
+  }
+
+  if (!isVitrinePublicEnabled()) {
+    redirect("/login");
+  }
+
   return (
-    <section className="landing">
-      <div className="landing-copy">
-        <p className="eyebrow">Zachary HOUNSA-HOUNKPA EI</p>
-        <h1>Vos services et demandes réunis dans un espace client clair.</h1>
-        <p className="lead">
-          Consultez les services, informations de facturation et demandes
-          d&apos;assistance rattachés à votre compte client.
+    <>
+      <script
+        type="application/ld+json"
+        // Schema.org structured data — safe inlined JSON, generated server-side.
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(organizationJsonLd()),
+        }}
+      />
+
+      <section className="vitrine-hero">
+        <p className="eyebrow">Zachary HOUNSA-HOUNKPA</p>
+        <h1>Informatique claire et utile.</h1>
+        <p className="vitrine-hero-lead">
+          Vos outils informatiques, mieux organisés. Un accompagnement pour
+          héberger, sauvegarder, connecter et maintenir ce dont vous avez
+          besoin — sans jargon inutile.
         </p>
-        <div className="actions">
-          <Link className="button" href="/login">
-            Se connecter
+        <div className="vitrine-hero-actions">
+          <Link className="button" href="#services">
+            Découvrir les services
+          </Link>
+          <Link className="button button-secondary" href="/contact">
+            Échanger sur un projet
           </Link>
         </div>
-        <p className="landing-note">
-          Espace authentifié avec administration interne en lecture seule.
-          Aucune action Active Directory réelle, facturation réelle ni paiement.
-        </p>
-      </div>
+      </section>
 
-      <aside className="landing-preview" aria-label="Aperçu de l'espace client">
-        <div className="preview-header">
-          <div>
-            <span className="preview-kicker">Aperçu illustratif</span>
-            <strong>Exemple d&apos;espace client</strong>
-          </div>
-          <span className="status-badge status-success">
-            Session serveur requise
-          </span>
+      <section className="vitrine-method">
+        <header className="vitrine-section-header">
+          <p className="eyebrow">Méthode</p>
+          <h2>Une démarche simple, en trois temps.</h2>
+        </header>
+        <ol className="vitrine-method-grid">
+          {METHOD_STEPS.map((step) => (
+            <li key={step.number} className="vitrine-method-step">
+              <span className="vitrine-method-number">{step.number}</span>
+              <h3>{step.title}</h3>
+              <p>{step.body}</p>
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      <section className="vitrine-services" id="services">
+        <header className="vitrine-section-header">
+          <p className="eyebrow">Services</p>
+          <h2>Ce que je propose, de l&apos;atelier à la mise en service.</h2>
+          <p className="vitrine-section-lead">
+            Les prestations se combinent selon vos besoins. Pour un tarif
+            indicatif, consultez le{" "}
+            <Link href="/offres">catalogue d&apos;offres</Link> ; pour des
+            exemples concrets, voyez le{" "}
+            <a href={PORTFOLIO_URL}>portfolio</a>.
+          </p>
+        </header>
+        <ul className="vitrine-services-grid">
+          {SERVICES.map((service) => (
+            <li key={service.title} className="vitrine-service-card">
+              <h3>{service.title}</h3>
+              <p>{service.body}</p>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section className="vitrine-audiences">
+        <header className="vitrine-section-header">
+          <p className="eyebrow">Pour qui</p>
+          <h2>Un accompagnement de proximité pour les structures à taille humaine.</h2>
+        </header>
+        <ul className="vitrine-audiences-grid">
+          {AUDIENCES.map((audience) => (
+            <li key={audience.title} className="vitrine-audience-card">
+              <h3>{audience.title}</h3>
+              <p>{audience.body}</p>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section className="vitrine-cta">
+        <div>
+          <h2>Un projet, une question, un besoin d&apos;avis ?</h2>
+          <p>
+            Décrivez votre situation en quelques lignes. Réponse personnelle
+            par e-mail, sans engagement.
+          </p>
         </div>
-        <div className="preview-metrics">
-          <div>
-            <span>Services actifs</span>
-            <strong>3</strong>
-          </div>
-          <div>
-            <span>Demandes ouvertes</span>
-            <strong>2</strong>
-          </div>
-          <div>
-            <span>Document informatif</span>
-            <strong>1</strong>
-          </div>
-        </div>
-        <div className="preview-list">
-          <div>
-            <span className="preview-icon">HDP</span>
-            <p>
-              <strong>Hébergement dossier personnel</strong>
-              <small>Selon devis</small>
-            </p>
-          </div>
-          <div>
-            <span className="preview-icon">SAV</span>
-            <p>
-              <strong>Sauvegarde dossier personnel</strong>
-              <small>Inclus selon périmètre</small>
-            </p>
-          </div>
-        </div>
-      </aside>
-    </section>
+        <Link className="button" href="/contact">
+          Demander un échange
+        </Link>
+      </section>
+    </>
   );
 }

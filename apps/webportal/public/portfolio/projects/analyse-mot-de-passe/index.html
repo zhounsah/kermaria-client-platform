@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Application web d'analyse de mot de passe avec score, critères et recommandations."
+    />
+    <title>Analyse de mot de passe</title>
+    <link rel="canonical" href="https://zacharyhounsa.ovh/portfolio/projects/analyse-mot-de-passe/" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <div class="glow glow-left"></div>
+      <div class="glow glow-right"></div>
+
+      <header class="topbar">
+        <a class="back-link" href="../projets-nsi.html">Retour au portfolio</a>
+        <span class="topbar-tag">Projet NSI</span>
+      </header>
+
+      <main class="layout">
+        <section class="hero-card">
+          <span class="eyebrow">Sécurité des mots de passe</span>
+          <h1>Analyse de mot de passe</h1>
+          <p>
+            Cette interface évalue la robustesse d'un mot de passe, explique les
+            critères de validation et propose des recommandations pour améliorer
+            sa qualité.
+          </p>
+
+          <div class="hero-stats">
+            <article>
+              <strong>5</strong>
+              <span>Critères contrôlés</span>
+            </article>
+            <article>
+              <strong>100</strong>
+              <span>Score maximal</span>
+            </article>
+            <article>
+              <strong>Front</strong>
+              <span>HTML CSS JavaScript</span>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel analyzer-panel">
+          <div class="panel-heading">
+            <div>
+              <span class="panel-label">Analyse en direct</span>
+              <h2>Tester un mot de passe</h2>
+            </div>
+            <button class="ghost-button" id="toggle-visibility" type="button">
+              Afficher
+            </button>
+          </div>
+
+          <label class="input-label" for="password-input">Mot de passe</label>
+          <div class="input-wrap">
+            <input
+              id="password-input"
+              type="password"
+              autocomplete="off"
+              placeholder="Saisir un mot de passe"
+            />
+          </div>
+
+          <div class="score-panel">
+            <div class="score-copy">
+              <span id="strength-label">À analyser</span>
+              <strong id="score-value">0/100</strong>
+            </div>
+            <div class="meter-track" aria-hidden="true">
+              <span id="score-bar"></span>
+            </div>
+          </div>
+
+          <div class="insight-grid">
+            <article class="insight-card">
+              <span class="insight-label">Longueur</span>
+              <strong id="length-value">0 caractères</strong>
+            </article>
+            <article class="insight-card">
+              <span class="insight-label">Niveau</span>
+              <strong id="level-value">Insuffisant</strong>
+            </article>
+            <article class="insight-card">
+              <span class="insight-label">Signal</span>
+              <strong id="risk-value">Trop faible</strong>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel checklist-panel">
+          <div class="panel-heading">
+            <div>
+              <span class="panel-label">Vérification</span>
+              <h2>Critères de robustesse</h2>
+            </div>
+          </div>
+
+          <ul class="checklist" id="criteria-list">
+            <li data-rule="length">Au moins 12 caractères</li>
+            <li data-rule="lowercase">Contient des lettres minuscules</li>
+            <li data-rule="uppercase">Contient des lettres majuscules</li>
+            <li data-rule="number">Contient des chiffres</li>
+            <li data-rule="symbol">Contient des caractères spéciaux</li>
+          </ul>
+
+          <div class="recommendation-card">
+            <span class="panel-label">Recommandation</span>
+            <p id="recommendation-text">
+              Saisir un mot de passe pour afficher une analyse détaillée.
+            </p>
+          </div>
+        </section>
+
+        <section class="panel info-panel">
+          <div class="panel-heading">
+            <div>
+              <span class="panel-label">Ce que fait le projet</span>
+              <h2>Logique implémentée</h2>
+            </div>
+          </div>
+
+          <ul class="feature-list">
+            <li>Analyse du mot de passe en temps réel sans rechargement.</li>
+            <li>Calcul d'un score combinant longueur, diversité et pénalités.</li>
+            <li>Mise à jour d'un indicateur visuel avec message contextualisé.</li>
+            <li>Présentation de recommandations concrètes pour renforcer la saisie.</li>
+          </ul>
+        </section>
+      </main>
+    </div>
+
+    <script src="./script.js"></script>
+  </body>
+</html>

@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Aperçu d’un laboratoire d’infrastructure privé autour de Windows Server, Hyper-V, OPNsense, VLAN et VPN."
+    />
+    <meta name="theme-color" content="#050816" />
+    <title>Laboratoire d’infrastructure privé | Zachary HOUNSA-HOUNKPA</title>
+    <link rel="canonical" href="https://zacharyhounsa.ovh/portfolio/projects/infrastructure-home-bzh.html" />
+    <link rel="stylesheet" href="../style.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <div class="ambient ambient-left"></div>
+      <div class="ambient ambient-right"></div>
+
+      <header class="site-header">
+        <nav class="navbar container">
+          <a class="brand" href="../index.html" aria-label="Accueil">
+            <span class="brand-mark">ZH</span>
+            <span class="brand-text">
+              <strong>Zachary</strong>
+              <small>Portfolio</small>
+            </span>
+          </a>
+          <button
+            class="nav-toggle"
+            type="button"
+            aria-expanded="false"
+            aria-controls="nav-menu"
+            aria-label="Ouvrir le menu"
+          >
+            <span></span>
+            <span></span>
+          </button>
+          <div class="nav-menu" id="nav-menu">
+            <a href="../index.html">Accueil</a>
+            <a href="./index.html" aria-current="page">Projets</a>
+            <a href="../cyber.html">Cybersécurité</a>
+            <a href="../skills.html">Compétences</a>
+            <a href="../experience.html">Engagement</a>
+            <a href="../contact.html" class="nav-cta">Contact</a>
+          </div>
+        </nav>
+      </header>
+
+      <main>
+        <section class="page-hero container reveal">
+          <a class="breadcrumb-link" href="./index.html">Retour à l'index des projets</a>
+          <span class="section-kicker">Infrastructure / Homelab</span>
+          <h1>Laboratoire d’infrastructure privé</h1>
+          <p>
+            Un environnement d’apprentissage et d’expérimentation conçu pour
+            mettre en pratique la virtualisation, les services d’annuaire, la
+            segmentation réseau et l’accès distant.
+          </p>
+        </section>
+
+        <section class="section container reveal">
+          <div class="detail-grid">
+            <article class="detail-card">
+              <h3>Vue d'ensemble</h3>
+              <p>
+                Le laboratoire s’appuie sur plusieurs machines virtuelles afin
+                de tester des scénarios système et réseau dans un cadre privé.
+                Cette fiche reste volontairement synthétique et ne publie pas
+                la cartographie complète ni les paramètres de l’environnement.
+              </p>
+            </article>
+            <article class="detail-card">
+              <h3>Services clés</h3>
+              <div class="skill-badges">
+                <span>Active Directory</span>
+                <span>DNS</span>
+                <span>RDS</span>
+                <span>SQL</span>
+                <span>OPNsense</span>
+                <span>VLAN</span>
+                <span>VPN</span>
+                <span>Cloudflare</span>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="section container reveal">
+          <div class="section-heading section-heading-compact">
+            <span class="section-kicker">Compétences mobilisées</span>
+            <h2>Un aperçu technique non exhaustif</h2>
+            <p>
+              Les éléments ci-dessous présentent les principes travaillés sans
+              exposer les schémas, adresses, règles détaillées ou configurations
+              internes de l’environnement.
+            </p>
+          </div>
+
+          <div class="detail-grid detail-grid-spaced">
+            <article class="detail-card detail-card-emphasis">
+              <h3>Lecture de l'infrastructure</h3>
+              <p>
+                Le projet permet de répartir différents rôles entre plusieurs
+                machines virtuelles et d’observer les dépendances entre
+                annuaire, résolution de noms, accès distant et services internes.
+              </p>
+            </article>
+            <article class="detail-card">
+              <h3>Sécurité et segmentation</h3>
+              <p>
+                Le firewall OPNsense est virtualisé et intégré à une segmentation
+                réseau par VLAN pour isoler les usages, séparer les services
+                d'infrastructure, contrôler les flux et garder une meilleure
+                lisibilité du trafic interne.
+              </p>
+            </article>
+            <article class="detail-card">
+              <h3>Accès distant sécurisé</h3>
+              <p>
+                Les essais d’accès distant s’appuient sur un VPN et des règles
+                d’accès limitées afin de travailler les principes de filtrage et
+                de réduction de l’exposition des services.
+              </p>
+            </article>
+            <article class="detail-card">
+              <h3>Objectif opérationnel</h3>
+              <p>
+                Cette organisation sert à tester des scénarios de continuité,
+                des comportements réseau et des méthodes de diagnostic dans un
+                environnement contrôlé.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section class="section container reveal">
+          <div class="section-heading section-heading-compact">
+            <span class="section-kicker">Virtualisation</span>
+            <h2>Expérimentation et administration</h2>
+            <p>
+              La virtualisation permet de créer, isoler, sauvegarder et faire
+              évoluer différents services sans publier les captures ni la
+              topologie détaillée de l’environnement privé.
+            </p>
+          </div>
+
+          <div class="detail-grid detail-grid-spaced">
+            <article class="detail-card detail-card-emphasis">
+              <h3>Virtualisation</h3>
+              <p>
+                Création et administration de machines virtuelles, allocation
+                raisonnée des ressources et organisation des rôles techniques.
+              </p>
+            </article>
+            <article class="detail-card">
+              <h3>Répartition de charge</h3>
+              <p>
+                Observation de l’utilisation CPU, mémoire et stockage afin de
+                comprendre l’impact de la répartition des machines virtuelles.
+              </p>
+            </article>
+            <article class="detail-card">
+              <h3>Continuité de service</h3>
+              <p>
+                Mise en situation de pannes partielles et vérification des
+                procédures de reprise dans le cadre du laboratoire.
+              </p>
+            </article>
+            <article class="detail-card">
+              <h3>Documentation</h3>
+              <p>
+                Tenue de repères d’administration et de procédures internes,
+                distinctes de cette présentation publique volontairement limitée.
+              </p>
+            </article>
+          </div>
+        </section>
+      </main>
+
+      <footer class="site-footer">
+        <div class="container footer-row">
+          <p>Zachary HOUNSA-HOUNKPA</p>
+          <a href="../contact.html">Me contacter</a>
+        </div>
+      </footer>
+    </div>
+
+    <script src="../script.js"></script>
+  </body>
+</html>

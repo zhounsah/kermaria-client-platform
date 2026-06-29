@@ -17,6 +17,7 @@ public sealed record EmailRuntimeConfiguration(
     string? FromAddress,
     string FromDisplayName,
     string PortalPublicUrl,
+    string? ContactFormRecipient,
     int RequestTimeoutMs,
     bool ConfigurationValid)
 {
@@ -42,6 +43,8 @@ public static class EmailConfigurationResolver
         var portalPublicUrl =
             NullIfWhiteSpace(configuration["PUBLIC_PORTAL_URL"])
             ?? string.Empty;
+        var contactFormRecipient = NullIfWhiteSpace(
+            configuration["CONTACT_FORM_RECIPIENT"]);
         var requestTimeoutMs = ParseMilliseconds(
             configuration["SMTP_TIMEOUT_MS"],
             10000,
@@ -66,6 +69,7 @@ public static class EmailConfigurationResolver
             fromAddress,
             fromDisplayName,
             portalPublicUrl,
+            contactFormRecipient,
             requestTimeoutMs,
             configurationValid);
     }

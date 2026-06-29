@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Application web de consultation de recettes avec recherche et filtres."
+    />
+    <title>Application de recettes</title>
+    <link rel="canonical" href="https://zacharyhounsa.ovh/portfolio/projects/application-recettes/" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="recipes-shell">
+      <div class="glow glow-left"></div>
+      <div class="glow glow-right"></div>
+
+      <header class="topbar">
+        <a class="back-link" href="../projets-nsi.html">Retour au portfolio</a>
+        <span class="topbar-tag">Projet NSI</span>
+      </header>
+
+      <main class="recipes-layout">
+        <section class="hero-card">
+          <span class="eyebrow">Consultation de contenu</span>
+          <h1>Application de recettes</h1>
+          <p>
+            Une interface web pour parcourir des recettes, filtrer le contenu
+            par catégorie et retrouver rapidement une idée de plat grâce à une
+            navigation lisible.
+          </p>
+
+          <div class="hero-meta">
+            <article>
+              <strong id="recipe-count">0</strong>
+              <span>Recettes affichées</span>
+            </article>
+            <article>
+              <strong>3</strong>
+              <span>Catégories</span>
+            </article>
+            <article>
+              <strong>Front</strong>
+              <span>HTML CSS JavaScript</span>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel filters-panel">
+          <div class="panel-heading">
+            <div>
+              <span class="panel-label">Navigation</span>
+              <h2>Explorer les recettes</h2>
+            </div>
+          </div>
+
+          <label class="field-label" for="search-input">Recherche</label>
+          <input
+            id="search-input"
+            class="field-input"
+            type="search"
+            placeholder="Exemple : salade, tarte, poulet"
+          />
+
+          <div class="chip-group" id="category-filters" aria-label="Filtres de catégories">
+            <button class="chip is-active" type="button" data-category="all">Toutes</button>
+            <button class="chip" type="button" data-category="Petit-dejeuner">Petit-déjeuner</button>
+            <button class="chip" type="button" data-category="Plat">Plat</button>
+            <button class="chip" type="button" data-category="Dessert">Dessert</button>
+          </div>
+        </section>
+
+        <section class="panel summary-panel">
+          <div class="panel-heading">
+            <div>
+              <span class="panel-label">Ce que fait le projet</span>
+              <h2>Fonctionnalités</h2>
+            </div>
+          </div>
+
+          <ul class="feature-list">
+            <li>Affichage dynamique des cartes recettes à partir d'un jeu de données JavaScript.</li>
+            <li>Recherche instantanée sur le titre, la catégorie et les ingrédients.</li>
+            <li>Filtres par catégorie pour simplifier la consultation du contenu.</li>
+            <li>Présentation claire avec temps, niveau et ingrédients principaux.</li>
+          </ul>
+        </section>
+
+        <section class="results-section">
+          <div class="results-header">
+            <div>
+              <span class="panel-label">Catalogue</span>
+              <h2>Recettes disponibles</h2>
+            </div>
+            <p id="results-copy">Chargement des recettes...</p>
+          </div>
+
+          <div class="recipes-grid" id="recipes-grid"></div>
+        </section>
+      </main>
+    </div>
+
+    <script src="./script.js"></script>
+  </body>
+</html>

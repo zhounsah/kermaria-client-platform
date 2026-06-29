@@ -625,23 +625,76 @@ app.MapGet(
             service,
             await service.GetServiceCatalogAsync(context.RequestAborted));
     });
+// V0.27 : catalogue lisible sans session pour alimenter la vitrine publique
+// (`/offres`). Toujours protégé par `X-Service-Auth` côté ingress webportal.
 app.MapGet(
     "/internal/portal/catalog",
     async (
         HttpContext context,
-        ICommercialService service,
-        IAuthenticationService authenticationService,
-        IAuditService auditService) =>
+        ICommercialService service) =>
     {
-        _ = await ResolveClientSessionAsync(
-            context,
-            authenticationService,
-            auditService);
         return CommercialOk(
             context,
             service,
             await service.GetClientCatalogAsync(context.RequestAborted));
     });
+
+// V0.27 : réception des messages du formulaire /contact (vitrine publique).
+// Anonyme, protégé par `X-Service-Auth`. Rate limit appliqué côté webportal BFF.
+app.MapPost(
+    "/internal/public/contact-message",
+    async (
+        HttpContext context,
+        IEmailDispatchService emailDispatch) =>
+    {
+        var payload = await ReadPayload<ContactMessagePayload>(context);
+        var correlationId = context.GetCorrelationId();
+
+        if (payload is null
+            || string.IsNullOrWhiteSpace(payload.Name)
+            || string.IsNullOrWhiteSpace(payload.Email)
+            || string.IsNullOrWhiteSpace(payload.Message))
+        {
+            return Results.Json(
+                new ApiError(
+                    "INVALID_REQUEST",
+                    "Le formulaire de contact est incomplet.",
+                    correlationId),
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var submission = new ContactFormSubmission(
+            VisitorName: payload.Name.Trim(),
+            VisitorEmail: payload.Email.Trim(),
+            SubjectLine: payload.Subject?.Trim() ?? string.Empty,
+            Message: payload.Message,
+            OfferReference: string.IsNullOrWhiteSpace(payload.OfferReference)
+                ? null
+                : payload.OfferReference.Trim());
+
+        var result = await emailDispatch.SendContactFormAsync(
+            submission,
+            correlationId,
+            context.RequestAborted);
+
+        if (!result.Succeeded)
+        {
+            var statusCode = result.Code == "NO_RECIPIENT"
+                ? StatusCodes.Status503ServiceUnavailable
+                : StatusCodes.Status502BadGateway;
+            return Results.Json(
+                new ApiError(result.Code, result.Message, correlationId),
+                statusCode: statusCode);
+        }
+
+        return Results.Ok(new
+        {
+            code = result.Code,
+            message = result.Message,
+            correlation_id = correlationId
+        });
+    });
+
 app.MapGet(
     "/internal/portal/commercial-documents",
     async (

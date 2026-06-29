@@ -186,6 +186,82 @@ async function getPortalData<T>(
   }
 }
 
+async function getPublicData<T>(
+  path: string,
+  localFallback: T,
+  unavailableValue: T,
+): Promise<PortalDataResult<T>> {
+  const correlationId = resolveCorrelationId(null);
+
+  let internalApiUrl: string | undefined;
+  try {
+    internalApiUrl = getInternalApiUrl();
+  } catch {
+    return {
+      data: unavailableValue,
+      source: "unavailable",
+      correlationId,
+      error: unavailableError(correlationId),
+    };
+  }
+
+  if (!internalApiUrl) {
+    if (isDevelopmentFallbackAllowed()) {
+      return {
+        data: localFallback,
+        source: "local-fallback",
+        correlationId,
+      };
+    }
+
+    return {
+      data: unavailableValue,
+      source: "unavailable",
+      correlationId,
+      error: unavailableError(correlationId),
+    };
+  }
+
+  try {
+    const response = await fetch(`${internalApiUrl}${path}`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(INTERNAL_API_TIMEOUT_MS),
+      headers: {
+        Accept: "application/json",
+        ...getInternalServiceHeaders(),
+        [CORRELATION_HEADER]: correlationId,
+      },
+    });
+
+    if (!response.ok) {
+      throw await toInternalApiError(response, correlationId);
+    }
+
+    return {
+      data: await readInternalJson<T>(response, correlationId),
+      source:
+        response.headers.get("X-Data-Source") === "mariadb"
+          ? "api-internal-persistent"
+          : "api-internal-mock",
+      correlationId: resolveCorrelationId(
+        response.headers.get(CORRELATION_HEADER),
+      ),
+    };
+  } catch (error) {
+    const apiError =
+      error instanceof InternalApiError
+        ? error.apiError
+        : unavailableError(correlationId);
+
+    return {
+      data: unavailableValue,
+      source: "unavailable",
+      correlationId,
+      error: apiError,
+    };
+  }
+}
+
 async function postPortalData<TPayload>(
   path: string,
   payload: TPayload,
@@ -318,6 +394,14 @@ export function getServiceCatalog() {
 
 export function getCommercialCatalog() {
   return getPortalData<CommercialOfferSummary[]>(
+    "/internal/portal/catalog",
+    mockCommercialOffers,
+    [],
+  );
+}
+
+export function getPublicCommercialCatalog() {
+  return getPublicData<CommercialOfferSummary[]>(
     "/internal/portal/catalog",
     mockCommercialOffers,
     [],

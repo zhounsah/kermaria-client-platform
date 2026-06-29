@@ -9,6 +9,13 @@ public sealed record EmailDispatchResult(
     string Code,
     string Message);
 
+public sealed record ContactFormSubmission(
+    string VisitorName,
+    string VisitorEmail,
+    string SubjectLine,
+    string Message,
+    string? OfferReference);
+
 public interface IEmailDispatchService
 {
     Task<EmailDispatchResult> SendInvoiceIssuedAsync(
@@ -23,6 +30,11 @@ public interface IEmailDispatchService
 
     Task<EmailDispatchResult> SendPaymentConfirmedAsync(
         string documentId,
+        string correlationId,
+        CancellationToken cancellationToken);
+
+    Task<EmailDispatchResult> SendContactFormAsync(
+        ContactFormSubmission submission,
         string correlationId,
         CancellationToken cancellationToken);
 }
@@ -101,6 +113,73 @@ public sealed class EmailDispatchService : IEmailDispatchService
                 doc.TotalAmountCents,
                 doc.Currency),
             cancellationToken);
+
+    public async Task<EmailDispatchResult> SendContactFormAsync(
+        ContactFormSubmission submission,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
+        var recipient = _configuration.ContactFormRecipient?.Trim();
+        if (string.IsNullOrWhiteSpace(recipient))
+        {
+            await _emailLog.RecordAsync(
+                EmailTemplates.ContactForm,
+                string.Empty,
+                "(no recipient)",
+                string.Empty,
+                "no_recipient",
+                "CONTACT_FORM_RECIPIENT is not configured.",
+                null,
+                correlationId,
+                false,
+                cancellationToken);
+            _logger.LogWarning(
+                "Contact form email skipped: CONTACT_FORM_RECIPIENT is not configured.");
+            return new EmailDispatchResult(
+                false, "NO_RECIPIENT",
+                "L'adresse de destination du formulaire de contact n'est pas configurée.");
+        }
+
+        var (subject, body) = EmailTemplates.RenderContactForm(
+            submission.VisitorName,
+            submission.VisitorEmail,
+            submission.SubjectLine,
+            submission.Message,
+            submission.OfferReference);
+
+        var message = new EmailMessage(
+            recipient,
+            subject,
+            body,
+            EmailTemplates.ContactForm,
+            RelatedDocumentId: null,
+            CorrelationId: correlationId);
+
+        var delivery = await _emailService.SendAsync(message, cancellationToken);
+        await _emailLog.RecordAsync(
+            EmailTemplates.ContactForm,
+            recipient,
+            subject,
+            body,
+            delivery.Status,
+            delivery.ErrorMessage,
+            null,
+            correlationId,
+            delivery.Succeeded,
+            cancellationToken);
+
+        if (!delivery.Succeeded)
+        {
+            return new EmailDispatchResult(
+                false,
+                $"EMAIL_{delivery.Status.ToUpperInvariant()}",
+                delivery.ErrorMessage ?? "Email delivery failed.");
+        }
+
+        return new EmailDispatchResult(
+            true, "EMAIL_SENT",
+            $"Message transmis à {recipient}.");
+    }
 
     private async Task<EmailDispatchResult> DispatchAsync(
         string documentId,

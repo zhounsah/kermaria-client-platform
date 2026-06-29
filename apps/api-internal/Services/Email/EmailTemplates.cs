@@ -7,6 +7,37 @@ public static class EmailTemplates
     public const string InvoiceIssued = "invoice_issued";
     public const string PaymentReminder = "payment_reminder";
     public const string PaymentConfirmed = "payment_confirmed";
+    public const string ContactForm = "contact_form";
+
+    public static (string Subject, string Body) RenderContactForm(
+        string visitorName,
+        string visitorEmail,
+        string subjectLine,
+        string message,
+        string? offerReference)
+    {
+        var trimmedSubject = string.IsNullOrWhiteSpace(subjectLine)
+            ? "(sans sujet)"
+            : subjectLine.Trim();
+        var subject = $"[Vitrine] {trimmedSubject}";
+        var offerLine = string.IsNullOrWhiteSpace(offerReference)
+            ? string.Empty
+            : $"Offre référencée : {offerReference}\n";
+        var body = $"""
+            Nouveau message reçu depuis le formulaire de contact du site vitrine.
+
+            De   : {visitorName} <{visitorEmail}>
+            Sujet : {trimmedSubject}
+            {offerLine}
+            Message :
+            {message.Trim()}
+
+            ---
+            Ce message a été émis depuis la page /contact. Répondez directement
+            à l'adresse e-mail ci-dessus pour entrer en contact avec le visiteur.
+            """;
+        return (subject, body);
+    }
 
     public static (string Subject, string Body) RenderInvoiceIssued(
         string customerName,

@@ -139,6 +139,13 @@ public sealed record RequestStatusPayload(string? Status);
 
 public sealed record RequestTextPayload(string? Text);
 
+public sealed record ContactMessagePayload(
+    string? Name,
+    string? Email,
+    string? Subject,
+    string? Message,
+    string? OfferReference);
+
 public sealed record RequestMutationResponse(
     string Id,
     string Reference,

@@ -12,14 +12,52 @@ browser -> WEBPORTAL / BFF -> API-INTERNAL -> MariaDB
 
 `WEBPORTAL` ne doit jamais acceder directement a MariaDB.
 
-## Etat courant V0.23.1
+## Etat courant V0.27
 
-Le depot couvre aujourd'hui les jalons V0.9 a V0.23.1 (voir
+Le depot couvre aujourd'hui les jalons V0.9 a V0.27 (voir
 [`docs/ROADMAP.md`](docs/ROADMAP.md)). L'integration BPCE de la V0.20
 emet de vraies factures fiscales (mode `live` desactive par defaut, en
 phase de tests), la V0.21 ouvre les canaux de paiement client one-shot,
-la V0.22 ajoute les abonnements PayPal recurrents, et les V0.23/V0.23.1
-harmonisent l'UX cote client et admin.
+la V0.22 ajoute les abonnements PayPal recurrents, les V0.23/V0.23.1
+harmonisent l'UX cote client et admin, et la V0.27 ajoute le site
+vitrine public en amont du backend authentifie.
+
+Acquis V0.27 (site vitrine public,
+[`docs/V0.27_PUBLIC_VITRINE.md`](docs/V0.27_PUBLIC_VITRINE.md)) :
+
+- bascule `PublicShell` / `AppShell` selon la route, pilotee par une
+  `proxy.ts` (convention Next 16) qui injecte `x-pathname` ;
+- racine `/` branche selon la session : client -> `/dashboard`,
+  admin -> `/admin`, anonyme + `PUBLIC_VITRINE_ENABLED=false` ->
+  `/login`, anonyme + flag actif -> landing vitrine ;
+- landing au ton calque sur [zacharyhounsa.ovh](https://zacharyhounsa.ovh/) :
+  hero "Informatique claire et utile", section Methode (3 etapes),
+  Services (6 prestations), Pour qui (particuliers / associations /
+  petites structures), CTA finale ;
+- portfolio integre en statique : copie integrale du portfolio Astro
+  sous `apps/webportal/public/portfolio/` (21 fichiers, source de
+  verite reste sur `zacharyhounsa.ovh/portfolio/` via canonical), lien
+  dans la nav header ;
+- pages publiques Next `/`, `/offres`, `/a-propos`, `/contact`,
+  `/mentions-legales`, `/politique-confidentialite`, `/cgv` (contenu
+  redactionnel des pages legales et `/a-propos` finalise avant
+  V1.0 RC) ;
+- `/offres` reutilise le catalogue V0.15 en lecture seule
+  (`/internal/portal/catalog` rendu anonyme cote api-internal, toujours
+  protege par `X-Service-Auth`), tri `displayOrder`, filtre des offres
+  `monthly` sans plan PayPal pour le mode actif, cache 5 min ;
+- `/contact` : POST `/api/contact` avec rate limit (5 req/5 min par
+  IP), forward vers `/internal/public/contact-message`, template email
+  `contact_form` (recipient `CONTACT_FORM_RECIPIENT`, respect
+  `EMAIL_INTEGRATION_MODE`), lien de retour en haut de page ;
+- SEO : `sitemap.ts` dynamique (les 7 pages Next, portfolio non
+  inclus), `robots.ts` etendu, JSON-LD `Organization` sur `/`,
+  `metadataBase` + `openGraph` par defaut ;
+- conformite confidentialite : aucun analytics, aucun pixel tiers,
+  aucune banniere cookies. Page politique de confidentialite enumere
+  les seuls cookies emis (session, CSRF, hCaptcha si active) ;
+- flag `PUBLIC_VITRINE_ENABLED=false` par defaut, bascule a `true` en
+  preprod apres recette.
 
 Acquis V0.23 et V0.23.1 (harmonisation UX,
 [`docs/V0.23_HARMONISATION_UX.md`](docs/V0.23_HARMONISATION_UX.md)) :
