@@ -12,34 +12,68 @@ browser -> WEBPORTAL / BFF -> API-INTERNAL -> MariaDB
 
 `WEBPORTAL` ne doit jamais acceder directement a MariaDB.
 
-## Etat courant V0.21
+## Etat courant V0.23.1
 
-Le depot couvre aujourd'hui les jalons V0.9 a V0.21 (V0.21 partiellement,
-voir [`docs/ROADMAP.md`](docs/ROADMAP.md)). L'integration BPCE de la V0.20
+Le depot couvre aujourd'hui les jalons V0.9 a V0.23.1 (voir
+[`docs/ROADMAP.md`](docs/ROADMAP.md)). L'integration BPCE de la V0.20
 emet de vraies factures fiscales (mode `live` desactive par defaut, en
-phase de tests) et la V0.21 ouvre les canaux de paiement client.
+phase de tests), la V0.21 ouvre les canaux de paiement client one-shot,
+la V0.22 ajoute les abonnements PayPal recurrents, et les V0.23/V0.23.1
+harmonisent l'UX cote client et admin.
 
-Acquis V0.20 :
+Acquis V0.23 et V0.23.1 (harmonisation UX,
+[`docs/V0.23_HARMONISATION_UX.md`](docs/V0.23_HARMONISATION_UX.md)) :
+
+- navigation laterale gauche unifiee (sidebar) cote portail client et
+  cote administration, exposant **toutes** les pages disponibles ;
+- dashboard admin nettoye, flux d'activite publique extrait dans
+  `/admin/activity`, journal d'audit a `/admin/audit-logs` ;
+- catalogue admin refondu : liste tabulaire `/admin/catalog`, fiche
+  d'edition `/admin/catalog/[id]`, creation `/admin/catalog/new` ;
+- bouton Desactiver/Reactiver l'offre (soft-delete via PATCH
+  `status: inactive`, pas d'API DELETE) ;
+- page support cote client en zone centrale (formulaire en haut,
+  liste empilee dessous) ;
+- harmonisation visuelle paiements/abonnements (meme bandeau
+  metriques + bloc filtres) ;
+- elargissement global a 1480 px, bouton "Consulter" toujours visible
+  sans scroll horizontal, filtres harmonises (label au-dessus,
+  arrondis), libelles AD en francais sur la fiche client.
+
+Acquis V0.22 et V0.22.1 (abonnements PayPal,
+[`docs/V0.22_SUBSCRIPTIONS.md`](docs/V0.22_SUBSCRIPTIONS.md)) :
+
+- facturation automatique mensuelle via PayPal Subscriptions API,
+  flow client `/services` -> "Souscrire" -> approbation PayPal ->
+  webhook `ACTIVATED` -> `PAYMENT.SALE.COMPLETED` ;
+- webhook `POST /api/webhooks/paypal` avec verification de signature
+  PayPal (skippable en sandbox local) et idempotence par `event_id` ;
+- creation automatique du document `informational_invoice` + facture
+  BPCE mock + email `payment_confirmed` a chaque paiement recurrent ;
+- admin `/admin/subscriptions` (filtre statut/client + MRR HT estime),
+  bouton "Annuler" (cancel PayPal + audit) sur `/admin/subscriptions/{id}` ;
+- creation automatique des Plans PayPal depuis l'admin (V0.22.1) :
+  `paypal_plan_id_sandbox` + `paypal_plan_id_live`, bouton "Creer le
+  plan PayPal" sur la fiche offre, prix fige une fois un plan cree ;
+- mode `PAYPAL_MODE=live` reste interdit avant V1.0 beta 1.
+
+Acquis V0.20 et V0.21 (facturation et paiements one-shot) :
 
 - facturation reelle via l'API BPCE Banque Populaire avec numerotation
   fiscale, validation immuable et PDF cache localement
   ([`docs/V0.20_BPCE_INVOICING.md`](docs/V0.20_BPCE_INVOICING.md)) ;
 - modes `BPCE_INTEGRATION_MODE` : `disabled` (defaut) / `mock` / `live` ;
-- double persistance `bpce_customers` / `bpce_invoices` independante de
-  la disponibilite de l'API banque ;
-- commande CLI `--verify-bpce-sender` lecture seule pour la configuration ;
 - import de 17 articles catalogue avec `external_reference` et taux TVA
-  indicatif (V0.20.1).
-
-Acquis V0.21 :
-
-- section `Reglement` cote portail client avec IBAN, BIC, libelle et
-  reference a indiquer (variables `BILLING_*`) ;
-- paiement carte / PayPal via PayPal Orders API v2 (`intent: CAPTURE`,
-  one-shot, jamais recurrent), modes `PAYPAL_MODE=sandbox|live` ;
-- confirmation paiement propagee a BPCE (`mark_as_paid`) et au statut
-  local `paid` ;
-- bouton PayPal masque apres paiement, message de confirmation affiche
+  indicatif (V0.20.1) ;
+- section `Reglement` cote portail client avec IBAN/BIC ;
+- paiement carte / PayPal one-shot via PayPal Orders API v2
+  (`intent: CAPTURE`), modes `PAYPAL_MODE=sandbox|live` ;
+- telechargement PDF cote portail client (V0.21), vue admin
+  `/admin/payments` (totaux a regler/regle + filtre statut) ;
+- canal e-mail transactionnel `EMAIL_INTEGRATION_MODE` =
+  `disabled` (defaut) / `mock` / `live`, 3 templates texte
+  (invoice_issued, payment_reminder, payment_confirmed),
+  journal `/admin/email-log`
   ([`docs/V0.21_PAYMENT_CHANNELS.md`](docs/V0.21_PAYMENT_CHANNELS.md)).
 
 Acquis V0.18 et V0.19 (toujours actifs) :
@@ -51,13 +85,12 @@ Acquis V0.18 et V0.19 (toujours actifs) :
   `Development` ;
 - validateur d'entrees AD strict cote `API-INTERNAL`.
 
-Restent ouverts en V0.21 : telechargement PDF cote portail client, vue
-admin de suivi des paiements, canal e-mail transactionnel. Le mode `live`
-PayPal n'est jamais active sans validation explicite (V0.23b, R740xd).
+Le mode `live` BPCE/PayPal/EMAIL n'est jamais active sans validation
+explicite (V1.0 beta 1, R740xd).
 
 Le projet reste en **phase de tests** sur SRV-01 et SRV-02 tant que la
 cible R740xd n'est pas livree : aucun client reel, aucun envoi e-mail
-externe, aucun prelevement recurrent active.
+externe a un destinataire reel, aucun prelevement recurrent active.
 
 ## Architecture
 
@@ -131,13 +164,25 @@ Variables critiques API-INTERNAL :
 - `LOG_FILE_DIRECTORY`, `LOG_FILE_LEVEL`, `LOG_FILE_RETENTION_DAYS`
   (rotation quotidienne, voir `apps/api-internal/Infrastructure/FileLoggerProvider.cs`)
 
-Variables paiement et reglement (V0.21) :
+Variables paiement et reglement (V0.21 / V0.22) :
 
 - `PAYPAL_MODE=sandbox|live`
 - `PAYPAL_CLIENT_ID`
 - `PAYPAL_CLIENT_SECRET`
+- `PAYPAL_WEBHOOK_ID` (V0.22, requis pour la verification webhook)
+- `PAYPAL_WEBHOOK_VERIFY=true|false` (V0.22, skippable en sandbox local
+  uniquement)
 - `BILLING_IBAN`, `BILLING_BIC`, `BILLING_TRANSFER_LABEL`
 - `BILLING_PAYPAL_URL` (fallback PayPal.me)
+
+Variables e-mail transactionnel (V0.21) :
+
+- `EMAIL_INTEGRATION_MODE=disabled|mock|live` (defaut `disabled`)
+- `SMTP_HOST`, `SMTP_PORT` (defaut 587)
+- `SMTP_USE_STARTTLS=true|false` (defaut `true`)
+- `SMTP_USERNAME`, `SMTP_PASSWORD`
+- `SMTP_FROM_ADDRESS`, `SMTP_FROM_DISPLAY_NAME`
+- `SMTP_TIMEOUT_MS`
 
 ## Developpement local
 
@@ -162,7 +207,14 @@ Sous PowerShell restrictif, utiliser `npm.cmd`.
 
 ## Verification
 
-Validation globale :
+Verifications locales rapides (typecheck + lint webportal) :
+
+```powershell
+npm run typecheck:webportal
+npm run lint:webportal
+```
+
+Validation globale (typecheck + lint + build + tests contrats) :
 
 ```powershell
 npm run validate
@@ -192,14 +244,25 @@ Health checks :
 npm run check:health
 ```
 
+Tests contrat ciblés (sans MariaDB requise) :
+
+```powershell
+npm run test:bpce          # facturation BPCE V0.20
+npm run test:payments      # canaux paiement V0.21
+npm run test:subscriptions # abonnements PayPal V0.22
+npm run test:activity      # flux activite admin
+npm run test:ad-security   # garde-fous AD
+```
+
 ## Contraintes permanentes
 
 - ne pas changer l'architecture ;
 - ne pas connecter `WEBPORTAL` directement a MariaDB ;
 - ne pas activer l'AD hors de l'OU de test validee ;
 - ne pas exposer de hard delete AD ;
-- ne pas activer `BPCE_INTEGRATION_MODE=live` ou `PAYPAL_MODE=live` sans
-  validation explicite (cible R740xd, V0.23b) ;
+- ne pas activer `BPCE_INTEGRATION_MODE=live`, `PAYPAL_MODE=live` ou
+  `EMAIL_INTEGRATION_MODE=live` sans validation explicite (cible
+  R740xd, V1.0 beta 1) ;
 - ne pas ajouter de prelevement SEPA hors PayPal, d'e-mail automatique,
   de SMS, push, WebSocket ou provisioning declenche par un encaissement ;
 - ne pas logger tokens, cookies, mots de passe, chaines de connexion,
@@ -218,7 +281,11 @@ npm run check:health
 - [Roadmap](docs/ROADMAP.md)
 - [BPCE invoicing V0.20](docs/V0.20_BPCE_INVOICING.md)
 - [Payment channels V0.21](docs/V0.21_PAYMENT_CHANNELS.md)
-- [Subscriptions cadrage V0.22](docs/V0.22_SUBSCRIPTIONS.md)
+- [Subscriptions V0.22](docs/V0.22_SUBSCRIPTIONS.md)
+- [Harmonisation UX V0.23](docs/V0.23_HARMONISATION_UX.md)
+- [Cadrage AD finalisation V0.25](docs/V0.25_AD_FINALISATION.md)
+- [Cadrage self-service signup V0.26](docs/V0.26_SELF_SERVICE_SIGNUP.md)
+- [Cadrage site vitrine public V0.27](docs/V0.27_PUBLIC_VITRINE.md)
 - [Active Directory security hardening V0.19](docs/V0.19_AD_SECURITY_HARDENING.md)
 - [Active Directory controlled write V0.18](docs/V0.18_ACTIVE_DIRECTORY_CONTROLLED_WRITE.md)
 - [Preproduction technique V0.16](docs/V0.16_PREPRODUCTION_TECHNIQUE.md)
