@@ -284,6 +284,7 @@ npm run test:ad-security   # garde-fous AD
 - [Subscriptions V0.22](docs/V0.22_SUBSCRIPTIONS.md)
 - [Harmonisation UX V0.23](docs/V0.23_HARMONISATION_UX.md)
 - [Cadrage AD finalisation V0.25](docs/V0.25_AD_FINALISATION.md)
+- [Procedure sortie OU AD prod (V0.25 brique 3)](docs/AD_PRODUCTION_MIGRATION.md)
 - [Cadrage self-service signup V0.26](docs/V0.26_SELF_SERVICE_SIGNUP.md)
 - [Cadrage site vitrine public V0.27](docs/V0.27_PUBLIC_VITRINE.md)
 - [Active Directory security hardening V0.19](docs/V0.19_AD_SECURITY_HARDENING.md)

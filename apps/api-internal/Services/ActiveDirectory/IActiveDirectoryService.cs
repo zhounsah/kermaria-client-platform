@@ -52,4 +52,8 @@ public interface IActiveDirectoryService
         string customerReference,
         string? samAccountName,
         CancellationToken cancellationToken);
+    Task<AdServiceResult<IReadOnlyList<AdDirectoryObjectSummary>>> GetUserEffectiveGroupsAsync(
+        string customerReference,
+        string? samAccountName,
+        CancellationToken cancellationToken);
 }

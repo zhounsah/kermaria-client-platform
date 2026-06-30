@@ -388,6 +388,64 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
         "Active Directory user moved to the Disabled OU."));
     }
 
+    public Task<AdServiceResult<IReadOnlyList<AdDirectoryObjectSummary>>> GetUserEffectiveGroupsAsync(
+        string customerReference,
+        string? samAccountName,
+        CancellationToken cancellationToken)
+    {
+        var resolvedUser = ResolveBySam(customerReference, samAccountName, "user");
+        if (resolvedUser.Value is null)
+        {
+            return Task.FromResult(
+                new AdServiceResult<IReadOnlyList<AdDirectoryObjectSummary>>(
+                    resolvedUser.StatusCode,
+                    resolvedUser.Code,
+                    resolvedUser.Message,
+                    Array.Empty<AdDirectoryObjectSummary>()));
+        }
+
+        try
+        {
+            using var root = BindEntry(_scope.ClientsOuDn);
+            var escapedUserDn = ActiveDirectoryPathScope.EscapeLdapFilterValue(
+                resolvedUser.Value.DistinguishedName);
+            // LDAP_MATCHING_RULE_IN_CHAIN (1.2.840.113556.1.4.1941) returns
+            // direct AND transitive group memberships.
+            var filter =
+                $"(&(objectClass=group)(member:1.2.840.113556.1.4.1941:={escapedUserDn}))";
+            using var searcher = CreateSearcher(root, filter);
+            using var results = searcher.FindAll();
+            var groups = results
+                .Cast<SearchResult>()
+                .Select(result => MapEntry(result.GetDirectoryEntry()))
+                .Where(group => group.CustomerReference.Equals(
+                    resolvedUser.Value.CustomerReference,
+                    StringComparison.OrdinalIgnoreCase))
+                .OrderBy(group => group.SamAccountName, StringComparer.OrdinalIgnoreCase)
+                .Take(_configuration.MaxResults)
+                .ToArray();
+
+            return Task.FromResult(
+                new AdServiceResult<IReadOnlyList<AdDirectoryObjectSummary>>(
+                    StatusCodes.Status200OK,
+                    "AD_USER_GROUPS_FOUND",
+                    "Active Directory user effective groups resolved.",
+                    groups));
+        }
+        catch (Exception exception) when (IsDirectoryFailure(exception))
+        {
+            _logger.LogWarning(
+                "Active Directory effective groups lookup failed without exposing target details exception_type {ExceptionType}",
+                exception.GetType().Name);
+            return Task.FromResult(
+                new AdServiceResult<IReadOnlyList<AdDirectoryObjectSummary>>(
+                    StatusCodes.Status503ServiceUnavailable,
+                    "AD_UNAVAILABLE",
+                    "Active Directory is temporarily unavailable.",
+                    Array.Empty<AdDirectoryObjectSummary>()));
+        }
+    }
+
     private AdServiceResult<IReadOnlyList<AdDirectoryObjectSummary>> SearchDirectory(
         string objectType,
         string? query,

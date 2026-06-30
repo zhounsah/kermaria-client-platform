@@ -28,4 +28,19 @@ assert.match(
 // Aucune route admin ne doit exposer de secret en clair
 assert.doesNotMatch(adminBff, /password\s*=\s*["'][^"']+["']/i, "Le BFF admin ne doit pas contenir de mot de passe en clair.");
 
-console.log("Vérification du contrat sécurité AD V0.19 réussie.");
+// V0.25 brique 2a — lecture groupes effectifs d'un utilisateur AD
+const adUserGroupsRoute = await read(
+  "app/api/admin/customers/[customerReference]/ad/users/[samAccountName]/groups/route.ts",
+);
+assert.match(
+  adUserGroupsRoute,
+  /handleAdminGet/,
+  "La route lecture des groupes effectifs doit passer par handleAdminGet (session + CSRF + admin).",
+);
+assert.match(
+  adUserGroupsRoute,
+  /\/internal\/admin\/customers\/.+\/ad\/users\/.+\/groups/,
+  "La route doit forwarder vers l'endpoint API-INTERNAL dedie.",
+);
+
+console.log("Vérification du contrat sécurité AD V0.19 + V0.25 brique 2a réussie.");

@@ -1638,6 +1638,38 @@ app.MapPost(
             result);
     });
 app.MapGet(
+    "/internal/admin/customers/{customerReference}/ad/users/{samAccountName}/groups",
+    async (
+        string customerReference,
+        string samAccountName,
+        HttpContext context,
+        IActiveDirectoryService service,
+        IActiveDirectoryLinkRepository repository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.customers.ad_users.groups_read");
+        var customer = await ResolveAdCustomerContextAsync(
+            repository,
+            customerReference,
+            context.RequestAborted);
+        var result = await service.GetUserEffectiveGroupsAsync(
+            customer.CustomerReference,
+            NormalizeSamIdentifier(samAccountName),
+            context.RequestAborted);
+        return await CompleteAdQueryAsync(
+            context,
+            auditService,
+            "admin.customers.ad_users.groups_read",
+            actor.UserId,
+            customer.CustomerId,
+            result);
+    });
+app.MapGet(
     "/internal/admin/support-requests",
     async (
         HttpContext context,

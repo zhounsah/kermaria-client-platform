@@ -84,6 +84,12 @@ public sealed class DisabledActiveDirectoryService : IActiveDirectoryService
         CancellationToken cancellationToken)
         => Task.FromResult(DisabledObjectResult());
 
+    public Task<AdServiceResult<IReadOnlyList<AdDirectoryObjectSummary>>> GetUserEffectiveGroupsAsync(
+        string customerReference,
+        string? samAccountName,
+        CancellationToken cancellationToken)
+        => Task.FromResult(DisabledListResult());
+
     private static AdServiceResult<IReadOnlyList<AdDirectoryObjectSummary>> DisabledListResult()
         => new(
             StatusCodes.Status501NotImplemented,

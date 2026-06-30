@@ -219,6 +219,9 @@ export function AdminCustomerAdManager({
   const [selectedGroup, setSelectedGroup] = useState<AdDirectoryObjectSummary | null>(
     null,
   );
+  const [effectiveGroups, setEffectiveGroups] = useState<AdDirectoryObjectSummary[]>([]);
+  const [effectiveGroupsForUserGuid, setEffectiveGroupsForUserGuid] = useState<string | null>(null);
+  const [isLoadingEffectiveGroups, setIsLoadingEffectiveGroups] = useState(false);
 
   function rememberDirectoryObject(next: AdDirectoryObjectSummary) {
     setRecentObjects((current) => upsertDirectoryObjectResult(current, next));
@@ -575,6 +578,39 @@ async function submitMutation<TPayload>(
         ? "L'utilisateur etait deja dans l'OU Disabled."
         : "Utilisateur deplace vers l'OU Disabled.",
     );
+  }
+
+  async function handleLoadEffectiveGroups() {
+    if (!selectedUser) {
+      setMessage({
+        tone: "error",
+        text: "Selectionnez un utilisateur avant de lister ses groupes.",
+      });
+      return;
+    }
+
+    setIsLoadingEffectiveGroups(true);
+    setMessage(null);
+
+    const result = await requestBffJson<AdDirectoryObjectSummary[]>(
+      `/api/admin/customers/${encodeURIComponent(customerReference)}/ad/users/${encodeURIComponent(selectedUser.samAccountName)}/groups`,
+      { method: "GET" },
+    );
+
+    if (result.ok) {
+      setEffectiveGroups(result.data);
+      setEffectiveGroupsForUserGuid(selectedUser.objectGuid);
+      setMessage({
+        tone: "info",
+        text: `${result.data.length} groupe(s) effectif(s) trouve(s).`,
+      });
+    } else {
+      setEffectiveGroups([]);
+      setEffectiveGroupsForUserGuid(null);
+      setMessage({ tone: "error", text: result.error.message });
+    }
+
+    setIsLoadingEffectiveGroups(false);
   }
 
   async function handleUnlink(linkId: string) {
@@ -1185,6 +1221,67 @@ async function submitMutation<TPayload>(
           </form>
         </SectionCard>
       </div>
+
+      <SectionCard ariaLabel="Groupes effectifs de l'utilisateur AD">
+        <h2>Groupes effectifs</h2>
+        <p className="field-hint">
+          Lecture seule. Liste tous les groupes auxquels l&apos;utilisateur
+          selectionne appartient (directement ou par imbrication). Verrouille
+          au scope du client.
+        </p>
+        {selectedUser ? (
+          <p className="field-hint">
+            Utilisateur cible : <strong>{selectedUser.samAccountName}</strong>
+            {effectiveGroupsForUserGuid !== null
+              && effectiveGroupsForUserGuid !== selectedUser.objectGuid
+              ? " — les resultats ci-dessous portent sur un autre utilisateur, relancer la recherche."
+              : ""}
+          </p>
+        ) : (
+          <p className="field-hint">
+            Selectionnez d&apos;abord un utilisateur dans la section de
+            recherche pour activer cette lecture.
+          </p>
+        )}
+        <div className="ad-button-row">
+          <button
+            className="button button-secondary"
+            disabled={isLoadingEffectiveGroups || !selectedUser}
+            onClick={() => void handleLoadEffectiveGroups()}
+            type="button"
+          >
+            {isLoadingEffectiveGroups
+              ? "Chargement..."
+              : "Lister les groupes effectifs"}
+          </button>
+        </div>
+        {effectiveGroupsForUserGuid !== null
+          && effectiveGroupsForUserGuid === selectedUser?.objectGuid
+          && effectiveGroups.length === 0
+          ? (
+            <p className="field-hint">
+              Aucun groupe effectif trouve pour cet utilisateur.
+            </p>
+          )
+          : null}
+        {effectiveGroups.length > 0
+          && effectiveGroupsForUserGuid === selectedUser?.objectGuid
+          ? (
+            <div className="stack-list">
+              {effectiveGroups.map((group) => (
+                <div className="stack-row" key={group.objectGuid}>
+                  <div className="stack-row-main">
+                    <strong>{group.samAccountName}</strong>
+                    <span>{group.displayName}</span>
+                    <span>{group.distinguishedName}</span>
+                  </div>
+                  <StatusBadge label="Groupe" tone="info" />
+                </div>
+              ))}
+            </div>
+          )
+          : null}
+      </SectionCard>
     </div>
   );
 }

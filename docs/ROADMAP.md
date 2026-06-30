@@ -205,21 +205,33 @@ l'infrastructure definitive.
 
 ## Jalon V0.25 finalisation Active Directory
 
-Statut : **a cadrer, faisable sans la cible R740xd**. Ajoute au
-2026-06-28.
+Statut : **en cours, faisable sans la cible R740xd**. Cadrage ajoute au
+2026-06-28, voir [`V0.25_AD_FINALISATION.md`](V0.25_AD_FINALISATION.md).
 
 Apporte les briques AD restantes preparees mais desactivees ou hors
 sequence depuis V0.9 / V0.18, sans encore sortir de l'OU de test :
 
-- changement de mot de passe AD cote client : reactiver le flux prepare
-  en V0.9, exige re-auth recente, audit ecrit, sans bypass ;
-- provisioning AD etendu : creer/desactiver des comptes dans
-  `OU=TEST_SITE_WEB,DC=home,DC=bzh` depuis l'admin (au-dela du
-  `controlled_write` actuel borne) ;
-- procedure documentee de sortie progressive de `OU=TEST_SITE_WEB`,
-  prerequis a la mise en prod V1.0 RC ;
-- harmonisation des libelles AD (deja en francais cote fiche client
-  depuis V0.23.1, a propager partout) et journalisation enrichie.
+- **brique 3 livree 2026-06-30** : procedure documentee de sortie
+  progressive de `OU=TEST_SITE_WEB`, prerequis a la mise en prod
+  V1.0 RC, voir
+  [`AD_PRODUCTION_MIGRATION.md`](AD_PRODUCTION_MIGRATION.md). Point cle
+  identifie : la sortie d'OU exige une PR de code (levee du
+  `RequiredTestOuRoot` hardcode dans
+  `apps/api-internal/Data/Configuration/AdRuntimeConfiguration.cs`),
+  pas seulement une reconfiguration env. Procedure executee en V1.0 RC,
+  pas en V0.25 ;
+- **brique 2 en cours** : provisioning AD etendu (rename/move user,
+  lecture groupes effectifs) toujours borne a `OU=TEST_SITE_WEB`.
+  Sous-brique 2a livree 2026-06-30 : lecture des groupes effectifs
+  (directs + transitifs via LDAP_MATCHING_RULE_IN_CHAIN), endpoint
+  `GET /internal/admin/customers/{ref}/ad/users/{sam}/groups`,
+  section UI "Groupes effectifs". Sous-briques 2b (rename) et 2c
+  (move users + cross-customer) a venir ;
+- **brique 1 a venir** : changement de mot de passe AD cote client,
+  reactiver le flux prepare en V0.9 derriere
+  `AD_PASSWORD_CHANGE_ENABLED` (defaut `false`), exige re-auth recente,
+  audit ecrit, sans bypass, policy AD du domaine seule source de
+  verite.
 
 La V0.25 n'ouvre pas encore les ecritures hors OU de test ni n'active
 le mode `live` AD : tout reste sur SRV-01/02.

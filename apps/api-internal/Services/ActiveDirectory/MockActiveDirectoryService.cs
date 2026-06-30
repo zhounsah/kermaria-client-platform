@@ -292,6 +292,45 @@ public sealed class MockActiveDirectoryService : IActiveDirectoryService
         }
     }
 
+    public Task<AdServiceResult<IReadOnlyList<AdDirectoryObjectSummary>>> GetUserEffectiveGroupsAsync(
+        string customerReference,
+        string? samAccountName,
+        CancellationToken cancellationToken)
+    {
+        var resolvedUser = ResolveBySam(customerReference, samAccountName, "user");
+        if (resolvedUser.Value is null)
+        {
+            return Task.FromResult(
+                new AdServiceResult<IReadOnlyList<AdDirectoryObjectSummary>>(
+                    resolvedUser.StatusCode,
+                    resolvedUser.Code,
+                    resolvedUser.Message,
+                    Array.Empty<AdDirectoryObjectSummary>()));
+        }
+
+        lock (_syncRoot)
+        {
+            var userDn = resolvedUser.Value.DistinguishedName;
+            var groups = _groupMembers
+                .Where(kvp => kvp.Value.Contains(userDn))
+                .Select(kvp => _objectsByDn.TryGetValue(kvp.Key, out var groupObject)
+                    ? groupObject
+                    : null)
+                .Where(groupObject => groupObject is not null)
+                .Select(groupObject => ToSummary(groupObject!))
+                .OrderBy(group => group.SamAccountName, StringComparer.OrdinalIgnoreCase)
+                .Take(_configuration.MaxResults)
+                .ToArray();
+
+            return Task.FromResult(
+                new AdServiceResult<IReadOnlyList<AdDirectoryObjectSummary>>(
+                    StatusCodes.Status200OK,
+                    "AD_USER_GROUPS_FOUND",
+                    "Active Directory user effective groups resolved in mock mode.",
+                    groups));
+        }
+    }
+
     private AdServiceResult<IReadOnlyList<AdDirectoryObjectSummary>> SearchObjects(
         string objectType,
         string? query,
