@@ -28,4 +28,101 @@ assert.match(
 // Aucune route admin ne doit exposer de secret en clair
 assert.doesNotMatch(adminBff, /password\s*=\s*["'][^"']+["']/i, "Le BFF admin ne doit pas contenir de mot de passe en clair.");
 
-console.log("Vérification du contrat sécurité AD V0.19 réussie.");
+// V0.25 brique 2a — lecture groupes effectifs d'un utilisateur AD
+const adUserGroupsRoute = await read(
+  "app/api/admin/customers/[customerReference]/ad/users/[samAccountName]/groups/route.ts",
+);
+assert.match(
+  adUserGroupsRoute,
+  /handleAdminGet/,
+  "La route lecture des groupes effectifs doit passer par handleAdminGet (session + CSRF + admin).",
+);
+assert.match(
+  adUserGroupsRoute,
+  /\/internal\/admin\/customers\/.+\/ad\/users\/.+\/groups/,
+  "La route doit forwarder vers l'endpoint API-INTERNAL dedie.",
+);
+
+// V0.25 brique 2b — renommage d'un utilisateur AD
+const adUserRenameRoute = await read(
+  "app/api/admin/customers/[customerReference]/ad/users/[samAccountName]/rename/route.ts",
+);
+assert.match(
+  adUserRenameRoute,
+  /handleAdminMutation/,
+  "La route renommage AD doit passer par handleAdminMutation (session + CSRF + admin).",
+);
+assert.match(
+  adUserRenameRoute,
+  /parseAdUserRenamePayload/,
+  "La route renommage doit valider le payload via parseAdUserRenamePayload.",
+);
+assert.match(
+  adUserRenameRoute,
+  /\/internal\/admin\/customers\/.+\/ad\/users\/.+\/rename/,
+  "La route renommage doit forwarder vers l'endpoint API-INTERNAL dedie.",
+);
+
+// V0.25 brique 2c — deplacement (Users<->Disabled + cross-client)
+const adUserMoveRoute = await read(
+  "app/api/admin/customers/[customerReference]/ad/users/[samAccountName]/move/route.ts",
+);
+assert.match(
+  adUserMoveRoute,
+  /handleAdminMutation/,
+  "La route deplacement AD doit passer par handleAdminMutation (session + CSRF + admin).",
+);
+assert.match(
+  adUserMoveRoute,
+  /parseAdUserMovePayload/,
+  "La route deplacement doit valider le payload via parseAdUserMovePayload.",
+);
+assert.match(
+  adUserMoveRoute,
+  /\/internal\/admin\/customers\/.+\/ad\/users\/.+\/move/,
+  "La route deplacement doit forwarder vers l'endpoint API-INTERNAL dedie.",
+);
+
+// V0.25 brique 1 — changement de mot de passe AD client
+const passwordRoute = await read("app/api/profile/password/route.ts");
+assert.match(
+  passwordRoute,
+  /handlePortalPayloadMutation/,
+  "La route de changement de mot de passe doit passer par handlePortalPayloadMutation (session client).",
+);
+assert.match(
+  passwordRoute,
+  /\/internal\/profile\/password/,
+  "La route doit forwarder vers l'endpoint API-INTERNAL /internal/profile/password.",
+);
+assert.doesNotMatch(
+  passwordRoute,
+  /console\.(log|info|warn|error)\([^)]*password/i,
+  "La route ne doit jamais journaliser le mot de passe.",
+);
+
+const passwordForm = await read("components/PasswordChangeForm.tsx");
+assert.match(
+  passwordForm,
+  /type="password"/,
+  "Le formulaire doit utiliser type=password pour masquer la saisie.",
+);
+assert.match(
+  passwordForm,
+  /autoComplete="new-password"/,
+  "Le formulaire doit declarer autoComplete pour les gestionnaires de mot de passe.",
+);
+assert.doesNotMatch(
+  passwordForm,
+  /localStorage|sessionStorage/,
+  "Le formulaire ne doit pas stocker le mot de passe en local/sessionStorage.",
+);
+
+const passwordPage = await read("app/password/page.tsx");
+assert.match(
+  passwordPage,
+  /AD_PASSWORD_CHANGE_ENABLED/,
+  "La page doit verifier le flag AD_PASSWORD_CHANGE_ENABLED avant de rendre le formulaire.",
+);
+
+console.log("Vérification du contrat sécurité AD V0.19 + V0.25 briques 1/2a/2b/2c réussie.");

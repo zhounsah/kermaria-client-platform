@@ -625,6 +625,31 @@ export interface AdGroupMemberPayload {
   userSamAccountName: string;
 }
 
+export interface AdUserRenamePayload {
+  newSamAccountName: string;
+  newDisplayName: string;
+  newUserPrincipalName: string | null;
+}
+
+export type AdUserMoveContainer = "Users" | "Disabled";
+
+export interface AdUserMovePayload {
+  targetCustomerReference: string;
+  targetContainer: AdUserMoveContainer;
+}
+
+export interface PortalPasswordChangePayload {
+  currentPassword: string;
+  newPassword: string;
+}
+
+export interface PortalPasswordChangeResponse {
+  code: string;
+  message: string;
+  mode: AdMode;
+  correlation_id: CorrelationId;
+}
+
 export interface AdMutationResponse {
   code: string;
   message: string;

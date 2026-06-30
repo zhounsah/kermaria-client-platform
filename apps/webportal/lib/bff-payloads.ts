@@ -2,6 +2,8 @@ import type {
   AdGroupCreatePayload,
   AdGroupMemberPayload,
   AdUserCreatePayload,
+  AdUserMovePayload,
+  AdUserRenamePayload,
   CommercialDocumentLinePayload,
   CommercialDocumentPayload,
   CommercialOfferPayload,
@@ -389,6 +391,67 @@ export function parseAdGroupCreatePayload(
     && payload.displayName.length >= 3
     && payload.displayName.length <= 200
     && (payload.description === null || payload.description.length <= 255)
+    ? payload
+    : null;
+}
+
+export function parseAdUserRenamePayload(
+  value: unknown,
+): AdUserRenamePayload | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Partial<AdUserRenamePayload>;
+  if (
+    typeof candidate.newSamAccountName !== "string"
+    || typeof candidate.newDisplayName !== "string"
+  ) {
+    return null;
+  }
+
+  const payload: AdUserRenamePayload = {
+    newSamAccountName: candidate.newSamAccountName.trim(),
+    newDisplayName: candidate.newDisplayName.trim(),
+    newUserPrincipalName:
+      typeof candidate.newUserPrincipalName === "string"
+        ? candidate.newUserPrincipalName.trim() || null
+        : null,
+  };
+
+  return /^[A-Za-z0-9._-]{1,64}$/.test(payload.newSamAccountName)
+    && payload.newDisplayName.length >= 3
+    && payload.newDisplayName.length <= 200
+    && (payload.newUserPrincipalName === null
+      || isValidAdUserPrincipalName(payload.newUserPrincipalName))
+    ? payload
+    : null;
+}
+
+export function parseAdUserMovePayload(
+  value: unknown,
+): AdUserMovePayload | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Partial<AdUserMovePayload>;
+  if (
+    typeof candidate.targetCustomerReference !== "string"
+    || typeof candidate.targetContainer !== "string"
+  ) {
+    return null;
+  }
+
+  const payload: AdUserMovePayload = {
+    targetCustomerReference: candidate.targetCustomerReference.trim(),
+    targetContainer:
+      candidate.targetContainer as AdUserMovePayload["targetContainer"],
+  };
+
+  return /^[A-Za-z0-9-]{1,100}$/.test(payload.targetCustomerReference)
+    && (payload.targetContainer === "Users"
+      || payload.targetContainer === "Disabled")
     ? payload
     : null;
 }

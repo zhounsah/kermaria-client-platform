@@ -219,6 +219,120 @@ public sealed class MariaDbActiveDirectoryLinkRepository
         return new CustomerAdLinkUpsertResult(id, true);
     }
 
+    public async Task<bool> RefreshCustomerLinkAsync(
+        string targetCustomerReference,
+        AdDirectoryObjectSummary directoryObject,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(
+            cancellationToken);
+
+        var targetCustomer = await GetCustomerContextAsync(
+            connection,
+            transaction,
+            targetCustomerReference,
+            cancellationToken)
+            ?? throw new InvalidOperationException(
+                "Target customer is unavailable for Active Directory link refresh.");
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            UPDATE customer_ad_links
+            SET customer_id = @customer_id,
+                object_sid = @object_sid,
+                object_type = @object_type,
+                sam_account_name = @sam_account_name,
+                user_principal_name = @user_principal_name,
+                display_name = @display_name,
+                distinguished_name = @distinguished_name
+            WHERE object_guid = @object_guid;
+            """;
+        command.Parameters.AddWithValue(
+            "@customer_id",
+            targetCustomer.CustomerId);
+        command.Parameters.AddWithValue(
+            "@object_sid",
+            directoryObject.ObjectSid);
+        command.Parameters.AddWithValue(
+            "@object_type",
+            directoryObject.ObjectType);
+        command.Parameters.AddWithValue(
+            "@sam_account_name",
+            directoryObject.SamAccountName);
+        command.Parameters.AddWithValue(
+            "@user_principal_name",
+            DbValue(directoryObject.UserPrincipalName));
+        command.Parameters.AddWithValue(
+            "@display_name",
+            directoryObject.DisplayName);
+        command.Parameters.AddWithValue(
+            "@distinguished_name",
+            directoryObject.DistinguishedName);
+        command.Parameters.AddWithValue(
+            "@object_guid",
+            directoryObject.ObjectGuid);
+        var affected = await command.ExecuteNonQueryAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return affected > 0;
+    }
+
+    public async Task<CustomerAdLinkSummary?> FindUserLinkByEmailAsync(
+        string customerReference,
+        string email,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT
+                link.id,
+                customer.external_reference AS customer_reference,
+                link.object_guid,
+                link.object_sid,
+                link.object_type,
+                link.sam_account_name,
+                link.user_principal_name,
+                link.display_name,
+                link.distinguished_name,
+                link.linked_at,
+                actor.display_name AS linked_by
+            FROM customer_ad_links link
+            INNER JOIN customers customer
+                ON customer.id = link.customer_id
+            LEFT JOIN portal_users actor
+                ON actor.id = link.linked_by_user_id
+            WHERE customer.external_reference = @customer_reference
+              AND link.object_type = 'user'
+              AND LOWER(link.user_principal_name) = LOWER(@email)
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("@customer_reference", customerReference);
+        command.Parameters.AddWithValue("@email", email);
+        await using var reader = await command.ExecuteReaderAsync(
+            cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new CustomerAdLinkSummary(
+            ReadRequiredIdentifier(reader, "id"),
+            reader.GetString("customer_reference"),
+            ReadRequiredIdentifier(reader, "object_guid"),
+            reader.GetString("object_sid"),
+            reader.GetString("object_type"),
+            reader.GetString("sam_account_name"),
+            ReadNullableString(reader, "user_principal_name"),
+            reader.GetString("display_name"),
+            reader.GetString("distinguished_name"),
+            ToUtcIso(reader.GetDateTime("linked_at")),
+            ReadNullableString(reader, "linked_by"));
+    }
+
     public async Task<bool> DeleteCustomerLinkAsync(
         string customerReference,
         string linkId,

@@ -12,7 +12,7 @@ browser -> WEBPORTAL / BFF -> API-INTERNAL -> MariaDB
 
 `WEBPORTAL` ne doit jamais acceder directement a MariaDB.
 
-## Etat courant V0.27
+## Etat courant V0.27 (+ V0.25 finalisation AD)
 
 Le depot couvre aujourd'hui les jalons V0.9 a V0.27 (voir
 [`docs/ROADMAP.md`](docs/ROADMAP.md)). L'integration BPCE de la V0.20
@@ -114,6 +114,23 @@ Acquis V0.20 et V0.21 (facturation et paiements one-shot) :
   journal `/admin/email-log`
   ([`docs/V0.21_PAYMENT_CHANNELS.md`](docs/V0.21_PAYMENT_CHANNELS.md)).
 
+Acquis V0.25 (finalisation Active Directory, livre 2026-06-30,
+[`docs/V0.25_AD_FINALISATION.md`](docs/V0.25_AD_FINALISATION.md)) :
+
+- brique 3 : procedure de sortie d'OU vers production
+  ([`docs/AD_PRODUCTION_MIGRATION.md`](docs/AD_PRODUCTION_MIGRATION.md))
+  redigee, executable en V1.0 RC seulement ;
+- brique 2 : provisioning AD etendu dans `OU=TEST_SITE_WEB` (lecture
+  groupes effectifs directs+transitifs, rename user
+  CN/sAM/displayName/UPN, move user Users<->Disabled meme client OU
+  cross-client). UI : 3 nouvelles SectionCards dans la fiche client ;
+- brique 1 : changement de mot de passe AD client depuis `/password`,
+  derriere flag `AD_PASSWORD_CHANGE_ENABLED=true` (defaut `false`),
+  policy AD du domaine = seule source de verite (aucune regle
+  longueur/complexite cote API), rate limit 3 echecs / 15 min avec
+  blocage 15 min, audit `ad.password_change.*`, aucun mot de passe en
+  log ni en cache.
+
 Acquis V0.18 et V0.19 (toujours actifs) :
 
 - modes AD `disabled`, `mock`, `read_only` et `controlled_write` bornes a
@@ -197,6 +214,8 @@ Variables critiques API-INTERNAL :
 - `AD_CLIENTS_OU_DN`
 - `AD_SERVICE_ACCOUNT_USERNAME`
 - `AD_SERVICE_ACCOUNT_PASSWORD`
+- `AD_PASSWORD_CHANGE_ENABLED=true|false` (defaut `false`, V0.25 brique 1)
+- `AD_PASSWORD_RATE_LIMIT_PER_15MIN=3` (defaut, V0.25 brique 1)
 - `BPCE_INTEGRATION_MODE=disabled|mock|live`
 - `BPCE_BASE_URL`, `BPCE_REFRESH_TOKEN`, `BPCE_SENDER_ID`
 - `LOG_FILE_DIRECTORY`, `LOG_FILE_LEVEL`, `LOG_FILE_RETENTION_DAYS`
@@ -322,6 +341,7 @@ npm run test:ad-security   # garde-fous AD
 - [Subscriptions V0.22](docs/V0.22_SUBSCRIPTIONS.md)
 - [Harmonisation UX V0.23](docs/V0.23_HARMONISATION_UX.md)
 - [Cadrage AD finalisation V0.25](docs/V0.25_AD_FINALISATION.md)
+- [Procedure sortie OU AD prod (V0.25 brique 3)](docs/AD_PRODUCTION_MIGRATION.md)
 - [Cadrage self-service signup V0.26](docs/V0.26_SELF_SERVICE_SIGNUP.md)
 - [Cadrage site vitrine public V0.27](docs/V0.27_PUBLIC_VITRINE.md)
 - [Active Directory security hardening V0.19](docs/V0.19_AD_SECURITY_HARDENING.md)

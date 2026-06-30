@@ -205,21 +205,49 @@ l'infrastructure definitive.
 
 ## Jalon V0.25 finalisation Active Directory
 
-Statut : **a cadrer, faisable sans la cible R740xd**. Ajoute au
-2026-06-28.
+Statut : **livre 2026-06-30**. Cadrage 2026-06-28, voir
+[`V0.25_AD_FINALISATION.md`](V0.25_AD_FINALISATION.md).
 
 Apporte les briques AD restantes preparees mais desactivees ou hors
 sequence depuis V0.9 / V0.18, sans encore sortir de l'OU de test :
 
-- changement de mot de passe AD cote client : reactiver le flux prepare
-  en V0.9, exige re-auth recente, audit ecrit, sans bypass ;
-- provisioning AD etendu : creer/desactiver des comptes dans
-  `OU=TEST_SITE_WEB,DC=home,DC=bzh` depuis l'admin (au-dela du
-  `controlled_write` actuel borne) ;
-- procedure documentee de sortie progressive de `OU=TEST_SITE_WEB`,
-  prerequis a la mise en prod V1.0 RC ;
-- harmonisation des libelles AD (deja en francais cote fiche client
-  depuis V0.23.1, a propager partout) et journalisation enrichie.
+- **brique 3 livree 2026-06-30** : procedure documentee de sortie
+  progressive de `OU=TEST_SITE_WEB`, prerequis a la mise en prod
+  V1.0 RC, voir
+  [`AD_PRODUCTION_MIGRATION.md`](AD_PRODUCTION_MIGRATION.md). Point cle
+  identifie : la sortie d'OU exige une PR de code (levee du
+  `RequiredTestOuRoot` hardcode dans
+  `apps/api-internal/Data/Configuration/AdRuntimeConfiguration.cs`),
+  pas seulement une reconfiguration env. Procedure executee en V1.0 RC,
+  pas en V0.25 ;
+- **brique 1 livree 2026-06-30** : changement de mot de passe AD cote
+  client (page `/password`), derriere flag
+  `AD_PASSWORD_CHANGE_ENABLED=true|false` (defaut `false`), policy AD
+  du domaine = seule source de verite, rate limit 3 echecs / 15 min
+  avec blocage 15 min, audit `ad.password_change.*`, aucun mot de passe
+  en log ni en cache. Endpoint API-INTERNAL
+  `POST /internal/profile/password`, BFF
+  `POST /api/profile/password`. Liaison portal_user -> AD via
+  convention `customer_ad_links.user_principal_name == portal_users.email` ;
+- **brique 2 livree 2026-06-30** : provisioning AD etendu, toujours
+  borne a `OU=TEST_SITE_WEB`. Sous-brique 2a : lecture des groupes
+  effectifs (directs + transitifs via `LDAP_MATCHING_RULE_IN_CHAIN`),
+  endpoint `GET /internal/admin/customers/{ref}/ad/users/{sam}/groups`,
+  section UI "Groupes effectifs". Sous-brique 2b : renommage
+  utilisateur (CN + sAMAccountName + displayName + UPN en un appel),
+  endpoint `POST .../rename`, audit `admin.customers.ad_users.rename`,
+  `customer_ad_links` mis a jour automatiquement. Sous-brique 2c :
+  deplacement utilisateur Users <-> Disabled meme client et cross-client
+  (rare), endpoint `POST .../move` avec `targetCustomerReference` +
+  `targetContainer` ("Users"|"Disabled"), refus early si client cible
+  inexistant, `customer_ad_links` migre vers le nouveau client si
+  cross-client. UI : SectionCards Renommer / Deplacer avec
+  `window.confirm()` cross-client ;
+- **brique 1 a venir** : changement de mot de passe AD cote client,
+  reactiver le flux prepare en V0.9 derriere
+  `AD_PASSWORD_CHANGE_ENABLED` (defaut `false`), exige re-auth recente,
+  audit ecrit, sans bypass, policy AD du domaine seule source de
+  verite.
 
 La V0.25 n'ouvre pas encore les ecritures hors OU de test ni n'active
 le mode `live` AD : tout reste sur SRV-01/02.

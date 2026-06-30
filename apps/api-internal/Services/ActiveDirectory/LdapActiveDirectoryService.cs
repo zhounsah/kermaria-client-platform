@@ -388,6 +388,285 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
         "Active Directory user moved to the Disabled OU."));
     }
 
+    public Task<AdServiceResult<AdDirectoryObjectSummary>> RenameUserAsync(
+        string customerReference,
+        string? currentSamAccountName,
+        RenameAdUserRequest? request,
+        CancellationToken cancellationToken)
+    {
+        if (!_configuration.WritesEnabled)
+        {
+            return Task.FromResult(ReadOnlyResult());
+        }
+
+        var resolvedUser = ResolveBySam(customerReference, currentSamAccountName, "user");
+        if (resolvedUser.Value is null)
+        {
+            return Task.FromResult(resolvedUser);
+        }
+
+        var newSam = ActiveDirectoryInputValidator.NormalizeSamAccountName(
+            request?.NewSamAccountName);
+        var newDisplayName = request?.NewDisplayName?.Trim();
+        if (newSam is null || string.IsNullOrWhiteSpace(newDisplayName))
+        {
+            return Task.FromResult(InvalidObject());
+        }
+
+        if (!ActiveDirectoryInputValidator.TryNormalizeUserPrincipalName(
+                request!.NewUserPrincipalName,
+                _configuration.Domain,
+                out var newUpn))
+        {
+            return Task.FromResult(InvalidObject());
+        }
+
+        var resolvedSummary = resolvedUser.Value;
+        var resolvedUpn = newUpn
+            ?? $"{newSam}@{_configuration.Domain}";
+
+        if (resolvedSummary.SamAccountName.Equals(newSam, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(resolvedSummary.DisplayName, newDisplayName, StringComparison.Ordinal)
+            && string.Equals(
+                resolvedSummary.UserPrincipalName,
+                resolvedUpn,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return Task.FromResult(new AdServiceResult<AdDirectoryObjectSummary>(
+                StatusCodes.Status200OK,
+                "AD_USER_RENAME_NOOP",
+                "Active Directory user already matches the requested attributes.",
+                resolvedSummary,
+                false));
+        }
+
+        var currentParentDn = resolvedSummary.DistinguishedName[
+            (resolvedSummary.DistinguishedName.IndexOf(',') + 1)..];
+        var newCnRdn = $"CN={ActiveDirectoryPathScope.EscapeRdnValue(newSam)}";
+        var newDn = $"{newCnRdn},{currentParentDn}";
+
+        return Task.FromResult(ExecuteWrite(() =>
+        {
+            using var user = BindEntry(resolvedSummary.DistinguishedName);
+            if (!resolvedSummary.SamAccountName.Equals(
+                    newSam,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                using var parent = BindEntry(currentParentDn);
+                user.MoveTo(parent, newCnRdn);
+                user.CommitChanges();
+            }
+
+            user.Properties["sAMAccountName"].Value = newSam;
+            user.Properties["displayName"].Value = newDisplayName;
+            user.Properties["userPrincipalName"].Value = resolvedUpn;
+            user.CommitChanges();
+
+            using var refreshed = BindEntry(newDn);
+            refreshed.RefreshCache();
+            return MapEntry(refreshed);
+        },
+        "AD_USER_RENAMED",
+        "Active Directory user renamed."));
+    }
+
+    public Task<AdServiceResult<AdDirectoryObjectSummary>> MoveUserAsync(
+        string customerReference,
+        string? samAccountName,
+        MoveAdUserRequest? request,
+        CancellationToken cancellationToken)
+    {
+        if (!_configuration.WritesEnabled)
+        {
+            return Task.FromResult(ReadOnlyResult());
+        }
+
+        var resolvedUser = ResolveBySam(customerReference, samAccountName, "user");
+        if (resolvedUser.Value is null)
+        {
+            return Task.FromResult(resolvedUser);
+        }
+
+        var targetCustomerReference =
+            ActiveDirectoryInputValidator.NormalizeCustomerReference(
+                request?.TargetCustomerReference);
+        var targetContainer = ActiveDirectoryInputValidator.NormalizeMoveContainer(
+            request?.TargetContainer);
+        if (targetCustomerReference is null || targetContainer is null)
+        {
+            return Task.FromResult(InvalidObject());
+        }
+
+        var resolvedSummary = resolvedUser.Value;
+        var targetParentDn = targetContainer == "Users"
+            ? _scope.BuildUsersOuDn(targetCustomerReference)
+            : _scope.BuildDisabledOuDn(targetCustomerReference);
+        var currentParentDn = resolvedSummary.DistinguishedName[
+            (resolvedSummary.DistinguishedName.IndexOf(',') + 1)..];
+        if (currentParentDn.Equals(targetParentDn, StringComparison.OrdinalIgnoreCase))
+        {
+            return Task.FromResult(new AdServiceResult<AdDirectoryObjectSummary>(
+                StatusCodes.Status200OK,
+                "AD_USER_MOVE_NOOP",
+                "Active Directory user is already at the requested location.",
+                resolvedSummary,
+                false));
+        }
+
+        var targetDn = $"CN={ActiveDirectoryPathScope.EscapeRdnValue(resolvedSummary.SamAccountName)},{targetParentDn}";
+
+        return Task.FromResult(ExecuteWrite(() =>
+        {
+            using var user = BindEntry(resolvedSummary.DistinguishedName);
+            using var targetParent = BindEntry(targetParentDn);
+            user.MoveTo(targetParent);
+            user.CommitChanges();
+            using var moved = BindEntry(targetDn);
+            moved.RefreshCache();
+            return MapEntry(moved);
+        },
+        "AD_USER_MOVED",
+        "Active Directory user moved."));
+    }
+
+    public Task<AdServiceResult<AdDirectoryObjectSummary>> ChangeUserPasswordAsync(
+        string customerReference,
+        string? samAccountName,
+        string? currentPassword,
+        string? newPassword,
+        CancellationToken cancellationToken)
+    {
+        if (!_configuration.WritesEnabled)
+        {
+            return Task.FromResult(ReadOnlyResult());
+        }
+
+        var resolvedUser = ResolveBySam(customerReference, samAccountName, "user");
+        if (resolvedUser.Value is null)
+        {
+            return Task.FromResult(resolvedUser);
+        }
+
+        if (string.IsNullOrEmpty(currentPassword)
+            || string.IsNullOrEmpty(newPassword))
+        {
+            return Task.FromResult(InvalidObject());
+        }
+
+        if (currentPassword.Length > 1024 || newPassword.Length > 1024)
+        {
+            return Task.FromResult(InvalidObject());
+        }
+
+        if (resolvedUser.Value.IsDisabled)
+        {
+            return Task.FromResult(new AdServiceResult<AdDirectoryObjectSummary>(
+                StatusCodes.Status403Forbidden,
+                "AD_USER_DISABLED",
+                "L'utilisateur Active Directory est desactive.",
+                resolvedUser.Value,
+                false));
+        }
+
+        try
+        {
+            using var user = BindEntry(resolvedUser.Value.DistinguishedName);
+            user.Invoke(
+                "ChangePassword",
+                new object[] { currentPassword, newPassword });
+            user.CommitChanges();
+            return Task.FromResult(new AdServiceResult<AdDirectoryObjectSummary>(
+                StatusCodes.Status200OK,
+                "AD_PASSWORD_CHANGED",
+                "Active Directory password changed.",
+                resolvedUser.Value,
+                true));
+        }
+        catch (System.Reflection.TargetInvocationException exception)
+            when (exception.InnerException is not null)
+        {
+            _logger.LogWarning(
+                "Active Directory password change refused without exposing details exception_type {ExceptionType}",
+                exception.InnerException.GetType().Name);
+            return Task.FromResult(new AdServiceResult<AdDirectoryObjectSummary>(
+                StatusCodes.Status400BadRequest,
+                "AD_PASSWORD_CHANGE_FAILED",
+                "Le mot de passe ne respecte pas la politique du domaine ou le mot de passe actuel est incorrect.",
+                resolvedUser.Value,
+                false));
+        }
+        catch (Exception exception) when (IsDirectoryFailure(exception))
+        {
+            _logger.LogWarning(
+                "Active Directory password change failed without exposing target details exception_type {ExceptionType}",
+                exception.GetType().Name);
+            return Task.FromResult(new AdServiceResult<AdDirectoryObjectSummary>(
+                StatusCodes.Status503ServiceUnavailable,
+                "AD_UNAVAILABLE",
+                "Active Directory is temporarily unavailable.",
+                resolvedUser.Value,
+                false));
+        }
+    }
+
+    public Task<AdServiceResult<IReadOnlyList<AdDirectoryObjectSummary>>> GetUserEffectiveGroupsAsync(
+        string customerReference,
+        string? samAccountName,
+        CancellationToken cancellationToken)
+    {
+        var resolvedUser = ResolveBySam(customerReference, samAccountName, "user");
+        if (resolvedUser.Value is null)
+        {
+            return Task.FromResult(
+                new AdServiceResult<IReadOnlyList<AdDirectoryObjectSummary>>(
+                    resolvedUser.StatusCode,
+                    resolvedUser.Code,
+                    resolvedUser.Message,
+                    Array.Empty<AdDirectoryObjectSummary>()));
+        }
+
+        try
+        {
+            using var root = BindEntry(_scope.ClientsOuDn);
+            var escapedUserDn = ActiveDirectoryPathScope.EscapeLdapFilterValue(
+                resolvedUser.Value.DistinguishedName);
+            // LDAP_MATCHING_RULE_IN_CHAIN (1.2.840.113556.1.4.1941) returns
+            // direct AND transitive group memberships.
+            var filter =
+                $"(&(objectClass=group)(member:1.2.840.113556.1.4.1941:={escapedUserDn}))";
+            using var searcher = CreateSearcher(root, filter);
+            using var results = searcher.FindAll();
+            var groups = results
+                .Cast<SearchResult>()
+                .Select(result => MapEntry(result.GetDirectoryEntry()))
+                .Where(group => group.CustomerReference.Equals(
+                    resolvedUser.Value.CustomerReference,
+                    StringComparison.OrdinalIgnoreCase))
+                .OrderBy(group => group.SamAccountName, StringComparer.OrdinalIgnoreCase)
+                .Take(_configuration.MaxResults)
+                .ToArray();
+
+            return Task.FromResult(
+                new AdServiceResult<IReadOnlyList<AdDirectoryObjectSummary>>(
+                    StatusCodes.Status200OK,
+                    "AD_USER_GROUPS_FOUND",
+                    "Active Directory user effective groups resolved.",
+                    groups));
+        }
+        catch (Exception exception) when (IsDirectoryFailure(exception))
+        {
+            _logger.LogWarning(
+                "Active Directory effective groups lookup failed without exposing target details exception_type {ExceptionType}",
+                exception.GetType().Name);
+            return Task.FromResult(
+                new AdServiceResult<IReadOnlyList<AdDirectoryObjectSummary>>(
+                    StatusCodes.Status503ServiceUnavailable,
+                    "AD_UNAVAILABLE",
+                    "Active Directory is temporarily unavailable.",
+                    Array.Empty<AdDirectoryObjectSummary>()));
+        }
+    }
+
     private AdServiceResult<IReadOnlyList<AdDirectoryObjectSummary>> SearchDirectory(
         string objectType,
         string? query,

@@ -292,6 +292,257 @@ public sealed class MockActiveDirectoryService : IActiveDirectoryService
         }
     }
 
+    public Task<AdServiceResult<AdDirectoryObjectSummary>> RenameUserAsync(
+        string customerReference,
+        string? currentSamAccountName,
+        RenameAdUserRequest? request,
+        CancellationToken cancellationToken)
+    {
+        var resolved = ResolveBySam(customerReference, currentSamAccountName, "user");
+        if (resolved.Value is null)
+        {
+            return Task.FromResult(resolved);
+        }
+
+        var newSam = ActiveDirectoryInputValidator.NormalizeSamAccountName(
+            request?.NewSamAccountName);
+        var newDisplayName = request?.NewDisplayName?.Trim();
+        if (newSam is null || string.IsNullOrWhiteSpace(newDisplayName))
+        {
+            return Task.FromResult(InvalidObject("INVALID_REQUEST"));
+        }
+
+        if (!ActiveDirectoryInputValidator.TryNormalizeUserPrincipalName(
+                request!.NewUserPrincipalName,
+                _configuration.Domain ?? "home.bzh",
+                out var newUpn))
+        {
+            return Task.FromResult(InvalidObject("INVALID_REQUEST"));
+        }
+
+        var resolvedSummary = resolved.Value;
+        var newDn = _scope.BuildUserDn(resolvedSummary.CustomerReference, newSam);
+        var resolvedUpn = newUpn
+            ?? $"{newSam}@{_configuration.Domain ?? "home.bzh"}";
+
+        lock (_syncRoot)
+        {
+            var current = _objectsByDn[resolvedSummary.DistinguishedName];
+            if (current.SamAccountName.Equals(newSam, StringComparison.OrdinalIgnoreCase)
+                && current.DisplayName.Equals(newDisplayName, StringComparison.Ordinal)
+                && string.Equals(
+                    current.UserPrincipalName,
+                    resolvedUpn,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(new AdServiceResult<AdDirectoryObjectSummary>(
+                    StatusCodes.Status200OK,
+                    "AD_USER_RENAME_NOOP",
+                    "Active Directory user already matches the requested attributes.",
+                    ToSummary(current),
+                    false));
+            }
+
+            if (!newDn.Equals(
+                    current.DistinguishedName,
+                    StringComparison.OrdinalIgnoreCase)
+                && _objectsByDn.ContainsKey(newDn))
+            {
+                return Task.FromResult(new AdServiceResult<AdDirectoryObjectSummary>(
+                    StatusCodes.Status409Conflict,
+                    "AD_OBJECT_ALREADY_EXISTS",
+                    "An Active Directory object already exists with this account name."));
+            }
+
+            _objectsByDn.Remove(current.DistinguishedName);
+            var renamed = current with
+            {
+                SamAccountName = newSam,
+                DisplayName = newDisplayName,
+                UserPrincipalName = resolvedUpn,
+                DistinguishedName = newDn
+            };
+            _objectsByDn[newDn] = renamed;
+
+            // Migrate this user's membership references inside the mock store
+            // so subsequent group lookups keep working.
+            foreach (var members in _groupMembers.Values)
+            {
+                if (members.Remove(current.DistinguishedName))
+                {
+                    members.Add(newDn);
+                }
+            }
+
+            return Task.FromResult(new AdServiceResult<AdDirectoryObjectSummary>(
+                StatusCodes.Status200OK,
+                "AD_USER_RENAMED",
+                "Active Directory user renamed in mock mode.",
+                ToSummary(renamed),
+                true));
+        }
+    }
+
+    public Task<AdServiceResult<AdDirectoryObjectSummary>> MoveUserAsync(
+        string customerReference,
+        string? samAccountName,
+        MoveAdUserRequest? request,
+        CancellationToken cancellationToken)
+    {
+        var resolved = ResolveBySam(customerReference, samAccountName, "user");
+        if (resolved.Value is null)
+        {
+            return Task.FromResult(resolved);
+        }
+
+        var targetCustomerReference =
+            ActiveDirectoryInputValidator.NormalizeCustomerReference(
+                request?.TargetCustomerReference);
+        var targetContainer = ActiveDirectoryInputValidator.NormalizeMoveContainer(
+            request?.TargetContainer);
+        if (targetCustomerReference is null || targetContainer is null)
+        {
+            return Task.FromResult(InvalidObject("INVALID_REQUEST"));
+        }
+
+        var resolvedSummary = resolved.Value;
+        var targetParentDn = targetContainer == "Users"
+            ? _scope.BuildUsersOuDn(targetCustomerReference)
+            : _scope.BuildDisabledOuDn(targetCustomerReference);
+        var targetDn =
+            $"CN={ActiveDirectoryPathScope.EscapeRdnValue(resolvedSummary.SamAccountName)},{targetParentDn}";
+
+        lock (_syncRoot)
+        {
+            var current = _objectsByDn[resolvedSummary.DistinguishedName];
+            if (current.DistinguishedName.Equals(
+                    targetDn,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(new AdServiceResult<AdDirectoryObjectSummary>(
+                    StatusCodes.Status200OK,
+                    "AD_USER_MOVE_NOOP",
+                    "Active Directory user is already at the requested location.",
+                    ToSummary(current),
+                    false));
+            }
+
+            if (_objectsByDn.ContainsKey(targetDn))
+            {
+                return Task.FromResult(new AdServiceResult<AdDirectoryObjectSummary>(
+                    StatusCodes.Status409Conflict,
+                    "AD_OBJECT_ALREADY_EXISTS",
+                    "An Active Directory object already exists at the target location."));
+            }
+
+            _objectsByDn.Remove(current.DistinguishedName);
+            var moved = current with
+            {
+                DistinguishedName = targetDn,
+                CustomerReference = targetCustomerReference
+            };
+            _objectsByDn[targetDn] = moved;
+
+            foreach (var members in _groupMembers.Values)
+            {
+                if (members.Remove(current.DistinguishedName))
+                {
+                    members.Add(targetDn);
+                }
+            }
+
+            return Task.FromResult(new AdServiceResult<AdDirectoryObjectSummary>(
+                StatusCodes.Status200OK,
+                "AD_USER_MOVED",
+                "Active Directory user moved in mock mode.",
+                ToSummary(moved),
+                true));
+        }
+    }
+
+    public Task<AdServiceResult<AdDirectoryObjectSummary>> ChangeUserPasswordAsync(
+        string customerReference,
+        string? samAccountName,
+        string? currentPassword,
+        string? newPassword,
+        CancellationToken cancellationToken)
+    {
+        var resolved = ResolveBySam(customerReference, samAccountName, "user");
+        if (resolved.Value is null)
+        {
+            return Task.FromResult(resolved);
+        }
+
+        if (string.IsNullOrEmpty(currentPassword)
+            || string.IsNullOrEmpty(newPassword))
+        {
+            return Task.FromResult(InvalidObject("INVALID_REQUEST"));
+        }
+
+        if (currentPassword.Length > 1024 || newPassword.Length > 1024)
+        {
+            return Task.FromResult(InvalidObject("INVALID_REQUEST"));
+        }
+
+        if (currentPassword.Equals(newPassword, StringComparison.Ordinal))
+        {
+            return Task.FromResult(new AdServiceResult<AdDirectoryObjectSummary>(
+                StatusCodes.Status400BadRequest,
+                "AD_PASSWORD_POLICY_VIOLATION",
+                "Le mot de passe ne respecte pas la politique du domaine.",
+                resolved.Value,
+                false));
+        }
+
+        // Mock mode does not store passwords. We simulate success without
+        // touching state so the flow can be exercised end-to-end.
+        return Task.FromResult(new AdServiceResult<AdDirectoryObjectSummary>(
+            StatusCodes.Status200OK,
+            "AD_PASSWORD_CHANGED",
+            "Active Directory password changed in mock mode.",
+            resolved.Value,
+            true));
+    }
+
+    public Task<AdServiceResult<IReadOnlyList<AdDirectoryObjectSummary>>> GetUserEffectiveGroupsAsync(
+        string customerReference,
+        string? samAccountName,
+        CancellationToken cancellationToken)
+    {
+        var resolvedUser = ResolveBySam(customerReference, samAccountName, "user");
+        if (resolvedUser.Value is null)
+        {
+            return Task.FromResult(
+                new AdServiceResult<IReadOnlyList<AdDirectoryObjectSummary>>(
+                    resolvedUser.StatusCode,
+                    resolvedUser.Code,
+                    resolvedUser.Message,
+                    Array.Empty<AdDirectoryObjectSummary>()));
+        }
+
+        lock (_syncRoot)
+        {
+            var userDn = resolvedUser.Value.DistinguishedName;
+            var groups = _groupMembers
+                .Where(kvp => kvp.Value.Contains(userDn))
+                .Select(kvp => _objectsByDn.TryGetValue(kvp.Key, out var groupObject)
+                    ? groupObject
+                    : null)
+                .Where(groupObject => groupObject is not null)
+                .Select(groupObject => ToSummary(groupObject!))
+                .OrderBy(group => group.SamAccountName, StringComparer.OrdinalIgnoreCase)
+                .Take(_configuration.MaxResults)
+                .ToArray();
+
+            return Task.FromResult(
+                new AdServiceResult<IReadOnlyList<AdDirectoryObjectSummary>>(
+                    StatusCodes.Status200OK,
+                    "AD_USER_GROUPS_FOUND",
+                    "Active Directory user effective groups resolved in mock mode.",
+                    groups));
+        }
+    }
+
     private AdServiceResult<IReadOnlyList<AdDirectoryObjectSummary>> SearchObjects(
         string objectType,
         string? query,

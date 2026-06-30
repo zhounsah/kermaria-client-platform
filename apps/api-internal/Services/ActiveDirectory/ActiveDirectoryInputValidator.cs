@@ -8,6 +8,21 @@ public static class ActiveDirectoryInputValidator
     public static string? NormalizeSamAccountName(string? value)
         => NormalizeByRegex(value, "^[A-Za-z0-9._-]{1,64}$");
 
+    public static string? NormalizeMoveContainer(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var normalized = value.Trim();
+        return normalized.Equals("Users", StringComparison.OrdinalIgnoreCase)
+            ? "Users"
+            : normalized.Equals("Disabled", StringComparison.OrdinalIgnoreCase)
+                ? "Disabled"
+                : null;
+    }
+
     public static string? NormalizeQuery(string? value)
     {
         if (value is null)
