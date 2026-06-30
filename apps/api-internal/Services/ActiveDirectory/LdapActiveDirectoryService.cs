@@ -1018,11 +1018,28 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
                 "AD_SCOPE_NOT_ALLOWED",
                 "The requested Active Directory operation is outside the allowed scope.");
         }
+        catch (DirectoryServicesCOMException exception)
+            when (IsConstraintViolation(exception))
+        {
+            // AD utilise CONSTRAINT_VIOLATION pour les conflits de
+            // sAMAccountName en doublon (contrainte d'unicite domaine)
+            // en plus de LDAP_ALREADY_EXISTS sur le DN cible.
+            return new AdServiceResult<AdDirectoryObjectSummary>(
+                StatusCodes.Status409Conflict,
+                "AD_OBJECT_ALREADY_EXISTS",
+                "The requested Active Directory object name or attribute is already in use.");
+        }
         catch (Exception exception) when (IsDirectoryFailure(exception))
         {
+            var hresult = exception is DirectoryServicesCOMException dsex
+                ? dsex.ErrorCode
+                : exception is COMException comex
+                    ? comex.ErrorCode
+                    : 0;
             _logger.LogWarning(
-                "Active Directory write failed without exposing target details exception_type {ExceptionType}",
-                exception.GetType().Name);
+                "Active Directory write failed without exposing target details exception_type {ExceptionType} hresult 0x{Hresult:X8}",
+                exception.GetType().Name,
+                hresult);
             return new AdServiceResult<AdDirectoryObjectSummary>(
                 StatusCodes.Status503ServiceUnavailable,
                 "AD_UNAVAILABLE",
@@ -1191,6 +1208,9 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
     private static bool IsAccessDenied(DirectoryServicesCOMException exception)
         => exception.ErrorCode == unchecked((int)0x80072098)
             || exception.ErrorCode == unchecked((int)0x80070005);
+
+    private static bool IsConstraintViolation(DirectoryServicesCOMException exception)
+        => exception.ErrorCode == unchecked((int)0x8007202F);
 
     private static AdServiceResult<AdDirectoryObjectSummary> InvalidObject()
         => new(
