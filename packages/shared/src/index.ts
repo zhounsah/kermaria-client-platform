@@ -638,6 +638,18 @@ export interface AdUserMovePayload {
   targetContainer: AdUserMoveContainer;
 }
 
+export interface PortalPasswordChangePayload {
+  currentPassword: string;
+  newPassword: string;
+}
+
+export interface PortalPasswordChangeResponse {
+  code: string;
+  message: string;
+  mode: AdMode;
+  correlation_id: CorrelationId;
+}
+
 export interface AdMutationResponse {
   code: string;
   message: string;

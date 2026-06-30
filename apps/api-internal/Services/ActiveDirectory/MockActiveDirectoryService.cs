@@ -460,6 +460,50 @@ public sealed class MockActiveDirectoryService : IActiveDirectoryService
         }
     }
 
+    public Task<AdServiceResult<AdDirectoryObjectSummary>> ChangeUserPasswordAsync(
+        string customerReference,
+        string? samAccountName,
+        string? currentPassword,
+        string? newPassword,
+        CancellationToken cancellationToken)
+    {
+        var resolved = ResolveBySam(customerReference, samAccountName, "user");
+        if (resolved.Value is null)
+        {
+            return Task.FromResult(resolved);
+        }
+
+        if (string.IsNullOrEmpty(currentPassword)
+            || string.IsNullOrEmpty(newPassword))
+        {
+            return Task.FromResult(InvalidObject("INVALID_REQUEST"));
+        }
+
+        if (currentPassword.Length > 1024 || newPassword.Length > 1024)
+        {
+            return Task.FromResult(InvalidObject("INVALID_REQUEST"));
+        }
+
+        if (currentPassword.Equals(newPassword, StringComparison.Ordinal))
+        {
+            return Task.FromResult(new AdServiceResult<AdDirectoryObjectSummary>(
+                StatusCodes.Status400BadRequest,
+                "AD_PASSWORD_POLICY_VIOLATION",
+                "Le mot de passe ne respecte pas la politique du domaine.",
+                resolved.Value,
+                false));
+        }
+
+        // Mock mode does not store passwords. We simulate success without
+        // touching state so the flow can be exercised end-to-end.
+        return Task.FromResult(new AdServiceResult<AdDirectoryObjectSummary>(
+            StatusCodes.Status200OK,
+            "AD_PASSWORD_CHANGED",
+            "Active Directory password changed in mock mode.",
+            resolved.Value,
+            true));
+    }
+
     public Task<AdServiceResult<IReadOnlyList<AdDirectoryObjectSummary>>> GetUserEffectiveGroupsAsync(
         string customerReference,
         string? samAccountName,

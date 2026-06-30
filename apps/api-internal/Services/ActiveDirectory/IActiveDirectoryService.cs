@@ -66,4 +66,10 @@ public interface IActiveDirectoryService
         string? samAccountName,
         MoveAdUserRequest? request,
         CancellationToken cancellationToken);
+    Task<AdServiceResult<AdDirectoryObjectSummary>> ChangeUserPasswordAsync(
+        string customerReference,
+        string? samAccountName,
+        string? currentPassword,
+        string? newPassword,
+        CancellationToken cancellationToken);
 }

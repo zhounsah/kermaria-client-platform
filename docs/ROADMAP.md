@@ -205,8 +205,8 @@ l'infrastructure definitive.
 
 ## Jalon V0.25 finalisation Active Directory
 
-Statut : **en cours, faisable sans la cible R740xd**. Cadrage ajoute au
-2026-06-28, voir [`V0.25_AD_FINALISATION.md`](V0.25_AD_FINALISATION.md).
+Statut : **livre 2026-06-30**. Cadrage 2026-06-28, voir
+[`V0.25_AD_FINALISATION.md`](V0.25_AD_FINALISATION.md).
 
 Apporte les briques AD restantes preparees mais desactivees ou hors
 sequence depuis V0.9 / V0.18, sans encore sortir de l'OU de test :
@@ -220,6 +220,15 @@ sequence depuis V0.9 / V0.18, sans encore sortir de l'OU de test :
   `apps/api-internal/Data/Configuration/AdRuntimeConfiguration.cs`),
   pas seulement une reconfiguration env. Procedure executee en V1.0 RC,
   pas en V0.25 ;
+- **brique 1 livree 2026-06-30** : changement de mot de passe AD cote
+  client (page `/password`), derriere flag
+  `AD_PASSWORD_CHANGE_ENABLED=true|false` (defaut `false`), policy AD
+  du domaine = seule source de verite, rate limit 3 echecs / 15 min
+  avec blocage 15 min, audit `ad.password_change.*`, aucun mot de passe
+  en log ni en cache. Endpoint API-INTERNAL
+  `POST /internal/profile/password`, BFF
+  `POST /api/profile/password`. Liaison portal_user -> AD via
+  convention `customer_ad_links.user_principal_name == portal_users.email` ;
 - **brique 2 livree 2026-06-30** : provisioning AD etendu, toujours
   borne a `OU=TEST_SITE_WEB`. Sous-brique 2a : lecture des groupes
   effectifs (directs + transitifs via `LDAP_MATCHING_RULE_IN_CHAIN`),

@@ -34,4 +34,8 @@ public interface IActiveDirectoryLinkRepository
         string targetCustomerReference,
         AdDirectoryObjectSummary directoryObject,
         CancellationToken cancellationToken);
+    Task<CustomerAdLinkSummary?> FindUserLinkByEmailAsync(
+        string customerReference,
+        string email,
+        CancellationToken cancellationToken);
 }

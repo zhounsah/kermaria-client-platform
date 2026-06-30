@@ -83,4 +83,46 @@ assert.match(
   "La route deplacement doit forwarder vers l'endpoint API-INTERNAL dedie.",
 );
 
-console.log("Vérification du contrat sécurité AD V0.19 + V0.25 briques 2a/2b/2c réussie.");
+// V0.25 brique 1 — changement de mot de passe AD client
+const passwordRoute = await read("app/api/profile/password/route.ts");
+assert.match(
+  passwordRoute,
+  /handlePortalPayloadMutation/,
+  "La route de changement de mot de passe doit passer par handlePortalPayloadMutation (session client).",
+);
+assert.match(
+  passwordRoute,
+  /\/internal\/profile\/password/,
+  "La route doit forwarder vers l'endpoint API-INTERNAL /internal/profile/password.",
+);
+assert.doesNotMatch(
+  passwordRoute,
+  /console\.(log|info|warn|error)\([^)]*password/i,
+  "La route ne doit jamais journaliser le mot de passe.",
+);
+
+const passwordForm = await read("components/PasswordChangeForm.tsx");
+assert.match(
+  passwordForm,
+  /type="password"/,
+  "Le formulaire doit utiliser type=password pour masquer la saisie.",
+);
+assert.match(
+  passwordForm,
+  /autoComplete="new-password"/,
+  "Le formulaire doit declarer autoComplete pour les gestionnaires de mot de passe.",
+);
+assert.doesNotMatch(
+  passwordForm,
+  /localStorage|sessionStorage/,
+  "Le formulaire ne doit pas stocker le mot de passe en local/sessionStorage.",
+);
+
+const passwordPage = await read("app/password/page.tsx");
+assert.match(
+  passwordPage,
+  /AD_PASSWORD_CHANGE_ENABLED/,
+  "La page doit verifier le flag AD_PASSWORD_CHANGE_ENABLED avant de rendre le formulaire.",
+);
+
+console.log("Vérification du contrat sécurité AD V0.19 + V0.25 briques 1/2a/2b/2c réussie.");

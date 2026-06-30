@@ -66,6 +66,16 @@ public sealed record MoveAdUserRequest(
     string? TargetCustomerReference,
     string? TargetContainer);
 
+public sealed record ChangeAdPasswordRequest(
+    string? CurrentPassword,
+    string? NewPassword);
+
+public sealed record AdPasswordChangeResponse(
+    string Code,
+    string Message,
+    string Mode,
+    [property: JsonPropertyName("correlation_id")] string CorrelationId);
+
 public sealed record AdMutationResponse(
     string Code,
     string Message,

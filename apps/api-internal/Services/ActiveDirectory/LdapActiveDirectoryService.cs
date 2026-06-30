@@ -529,6 +529,86 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
         "Active Directory user moved."));
     }
 
+    public Task<AdServiceResult<AdDirectoryObjectSummary>> ChangeUserPasswordAsync(
+        string customerReference,
+        string? samAccountName,
+        string? currentPassword,
+        string? newPassword,
+        CancellationToken cancellationToken)
+    {
+        if (!_configuration.WritesEnabled)
+        {
+            return Task.FromResult(ReadOnlyResult());
+        }
+
+        var resolvedUser = ResolveBySam(customerReference, samAccountName, "user");
+        if (resolvedUser.Value is null)
+        {
+            return Task.FromResult(resolvedUser);
+        }
+
+        if (string.IsNullOrEmpty(currentPassword)
+            || string.IsNullOrEmpty(newPassword))
+        {
+            return Task.FromResult(InvalidObject());
+        }
+
+        if (currentPassword.Length > 1024 || newPassword.Length > 1024)
+        {
+            return Task.FromResult(InvalidObject());
+        }
+
+        if (resolvedUser.Value.IsDisabled)
+        {
+            return Task.FromResult(new AdServiceResult<AdDirectoryObjectSummary>(
+                StatusCodes.Status403Forbidden,
+                "AD_USER_DISABLED",
+                "L'utilisateur Active Directory est desactive.",
+                resolvedUser.Value,
+                false));
+        }
+
+        try
+        {
+            using var user = BindEntry(resolvedUser.Value.DistinguishedName);
+            user.Invoke(
+                "ChangePassword",
+                new object[] { currentPassword, newPassword });
+            user.CommitChanges();
+            return Task.FromResult(new AdServiceResult<AdDirectoryObjectSummary>(
+                StatusCodes.Status200OK,
+                "AD_PASSWORD_CHANGED",
+                "Active Directory password changed.",
+                resolvedUser.Value,
+                true));
+        }
+        catch (System.Reflection.TargetInvocationException exception)
+            when (exception.InnerException is not null)
+        {
+            _logger.LogWarning(
+                "Active Directory password change refused without exposing details exception_type {ExceptionType}",
+                exception.InnerException.GetType().Name);
+            return Task.FromResult(new AdServiceResult<AdDirectoryObjectSummary>(
+                StatusCodes.Status400BadRequest,
+                "AD_PASSWORD_CHANGE_FAILED",
+                "Le mot de passe ne respecte pas la politique du domaine ou le mot de passe actuel est incorrect.",
+                resolvedUser.Value,
+                false));
+        }
+        catch (Exception exception) when (IsDirectoryFailure(exception))
+        {
+            _logger.LogWarning(
+                "Active Directory password change failed without exposing target details exception_type {ExceptionType}",
+                exception.GetType().Name);
+            return Task.FromResult(new AdServiceResult<AdDirectoryObjectSummary>(
+                StatusCodes.Status503ServiceUnavailable,
+                "AD_UNAVAILABLE",
+                "Active Directory is temporarily unavailable.",
+                resolvedUser.Value,
+                false));
+        }
+    }
+
     public Task<AdServiceResult<IReadOnlyList<AdDirectoryObjectSummary>>> GetUserEffectiveGroupsAsync(
         string customerReference,
         string? samAccountName,

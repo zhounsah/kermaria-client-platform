@@ -75,6 +75,8 @@ var sqlConfiguration = SqlConfigurationResolver.Resolve(
     builder.Configuration,
     builder.Environment);
 var adConfiguration = AdConfigurationResolver.Resolve(builder.Configuration);
+var adPasswordConfiguration =
+    AdPasswordConfigurationResolver.Resolve(builder.Configuration);
 var bpceConfiguration = BpceConfigurationResolver.Resolve(builder.Configuration);
 var emailConfiguration = EmailConfigurationResolver.Resolve(builder.Configuration);
 var authConfiguration = AuthConfigurationResolver.Resolve(
@@ -84,6 +86,8 @@ var paypalConfiguration = PayPalConfigurationResolver.Resolve(builder.Configurat
 
 builder.Services.AddSingleton(sqlConfiguration);
 builder.Services.AddSingleton(adConfiguration);
+builder.Services.AddSingleton(adPasswordConfiguration);
+builder.Services.AddSingleton<IAdPasswordRateLimiter, AdPasswordRateLimiter>();
 builder.Services.AddSingleton(bpceConfiguration);
 builder.Services.AddSingleton(emailConfiguration);
 builder.Services.AddSingleton(authConfiguration);
@@ -537,6 +541,169 @@ app.MapPost(
     "/internal/auth/sessions/revoke-others",
     RevokeOtherPortalSessions);
 
+app.MapPost(
+    "/internal/profile/password",
+    async (
+        HttpContext context,
+        IActiveDirectoryService adService,
+        IActiveDirectoryLinkRepository linkRepository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService,
+        IAdPasswordRateLimiter rateLimiter,
+        AdPasswordRuntimeConfiguration adPasswordConfig) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            auditService);
+
+        if (!adPasswordConfig.ChangeEnabled)
+        {
+            await RecordAdAuditAsync(
+                context,
+                auditService,
+                "ad.password_change",
+                "refused",
+                "AD_PASSWORD_CHANGE_DISABLED",
+                "portal_user",
+                session.UserId,
+                session.UserId,
+                session.CustomerId);
+            return Results.Json(
+                new ApiError(
+                    "AD_PASSWORD_CHANGE_DISABLED",
+                    "Le changement de mot de passe Active Directory est desactive.",
+                    context.GetCorrelationId()),
+                statusCode: StatusCodes.Status403Forbidden);
+        }
+
+        var now = DateTime.UtcNow;
+        if (rateLimiter.CheckUser(session.UserId, now)
+            == AdPasswordRateLimitDecision.Locked)
+        {
+            await RecordAdAuditAsync(
+                context,
+                auditService,
+                "ad.password_change",
+                "refused",
+                "AD_PASSWORD_CHANGE_LOCKED",
+                "portal_user",
+                session.UserId,
+                session.UserId,
+                session.CustomerId);
+            return Results.Json(
+                new ApiError(
+                    "AD_PASSWORD_CHANGE_LOCKED",
+                    "Trop de tentatives. Reessayez plus tard.",
+                    context.GetCorrelationId()),
+                statusCode: StatusCodes.Status429TooManyRequests);
+        }
+
+        var request = await ReadPayload<ChangeAdPasswordRequest>(context);
+        if (request is null
+            || string.IsNullOrEmpty(request.CurrentPassword)
+            || string.IsNullOrEmpty(request.NewPassword)
+            || request.CurrentPassword.Length > 1024
+            || request.NewPassword.Length > 1024)
+        {
+            await RecordAdAuditAsync(
+                context,
+                auditService,
+                "ad.password_change",
+                "refused",
+                "INVALID_REQUEST",
+                "portal_user",
+                session.UserId,
+                session.UserId,
+                session.CustomerId);
+            return Results.Json(
+                new ApiError(
+                    "INVALID_REQUEST",
+                    "La requete est invalide.",
+                    context.GetCorrelationId()),
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var link = await linkRepository.FindUserLinkByEmailAsync(
+            session.CustomerReference,
+            session.Email,
+            context.RequestAborted);
+        if (link is null)
+        {
+            await RecordAdAuditAsync(
+                context,
+                auditService,
+                "ad.password_change",
+                "refused",
+                "AD_NO_LINK_FOR_USER",
+                "portal_user",
+                session.UserId,
+                session.UserId,
+                session.CustomerId);
+            return Results.Json(
+                new ApiError(
+                    "AD_NO_LINK_FOR_USER",
+                    "Aucun compte Active Directory n'est associe a ce profil.",
+                    context.GetCorrelationId()),
+                statusCode: StatusCodes.Status404NotFound);
+        }
+
+        var result = await adService.ChangeUserPasswordAsync(
+            link.CustomerReference,
+            link.SamAccountName,
+            request.CurrentPassword,
+            request.NewPassword,
+            context.RequestAborted);
+
+        var failed = result.StatusCode >= 400 || !result.Changed;
+        if (failed)
+        {
+            rateLimiter.RegisterFailure(session.UserId, now);
+            var locked = rateLimiter.CheckUser(session.UserId, now)
+                == AdPasswordRateLimitDecision.Locked;
+            await RecordAdAuditAsync(
+                context,
+                auditService,
+                "ad.password_change",
+                "refused",
+                locked ? "AD_PASSWORD_CHANGE_LOCKED" : result.Code,
+                "portal_user",
+                session.UserId,
+                session.UserId,
+                session.CustomerId);
+
+            return Results.Json(
+                new ApiError(
+                    locked ? "AD_PASSWORD_CHANGE_LOCKED" : "AD_PASSWORD_CHANGE_FAILED",
+                    locked
+                        ? "Trop de tentatives. Reessayez plus tard."
+                        : "Le mot de passe ne respecte pas la politique du domaine ou le mot de passe actuel est incorrect.",
+                    context.GetCorrelationId()),
+                statusCode: locked
+                    ? StatusCodes.Status429TooManyRequests
+                    : StatusCodes.Status400BadRequest);
+        }
+
+        rateLimiter.Reset(session.UserId);
+        await RecordAdAuditAsync(
+            context,
+            auditService,
+            "ad.password_change",
+            "success",
+            "AD_PASSWORD_CHANGED",
+            "portal_user",
+            session.UserId,
+            session.UserId,
+            session.CustomerId);
+
+        return Results.Json(
+            new AdPasswordChangeResponse(
+                "AD_PASSWORD_CHANGED",
+                "Le mot de passe Active Directory a ete change.",
+                adService.ModeName,
+                context.GetCorrelationId()),
+            statusCode: StatusCodes.Status200OK);
+    });
 app.MapGet(
     "/internal/portal/summary",
     async (

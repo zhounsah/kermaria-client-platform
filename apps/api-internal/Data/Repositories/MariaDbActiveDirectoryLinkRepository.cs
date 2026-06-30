@@ -279,6 +279,60 @@ public sealed class MariaDbActiveDirectoryLinkRepository
         return affected > 0;
     }
 
+    public async Task<CustomerAdLinkSummary?> FindUserLinkByEmailAsync(
+        string customerReference,
+        string email,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT
+                link.id,
+                customer.external_reference AS customer_reference,
+                link.object_guid,
+                link.object_sid,
+                link.object_type,
+                link.sam_account_name,
+                link.user_principal_name,
+                link.display_name,
+                link.distinguished_name,
+                link.linked_at,
+                actor.display_name AS linked_by
+            FROM customer_ad_links link
+            INNER JOIN customers customer
+                ON customer.id = link.customer_id
+            LEFT JOIN portal_users actor
+                ON actor.id = link.linked_by_user_id
+            WHERE customer.external_reference = @customer_reference
+              AND link.object_type = 'user'
+              AND LOWER(link.user_principal_name) = LOWER(@email)
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("@customer_reference", customerReference);
+        command.Parameters.AddWithValue("@email", email);
+        await using var reader = await command.ExecuteReaderAsync(
+            cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new CustomerAdLinkSummary(
+            ReadRequiredIdentifier(reader, "id"),
+            reader.GetString("customer_reference"),
+            ReadRequiredIdentifier(reader, "object_guid"),
+            reader.GetString("object_sid"),
+            reader.GetString("object_type"),
+            reader.GetString("sam_account_name"),
+            ReadNullableString(reader, "user_principal_name"),
+            reader.GetString("display_name"),
+            reader.GetString("distinguished_name"),
+            ToUtcIso(reader.GetDateTime("linked_at")),
+            ReadNullableString(reader, "linked_by"));
+    }
+
     public async Task<bool> DeleteCustomerLinkAsync(
         string customerReference,
         string linkId,

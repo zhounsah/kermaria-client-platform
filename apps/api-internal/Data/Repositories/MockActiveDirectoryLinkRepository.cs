@@ -152,6 +152,28 @@ public sealed class MockActiveDirectoryLinkRepository
         }
     }
 
+    public Task<CustomerAdLinkSummary?> FindUserLinkByEmailAsync(
+        string customerReference,
+        string email,
+        CancellationToken cancellationToken)
+    {
+        lock (SyncRoot)
+        {
+            if (!LinksByCustomer.TryGetValue(customerReference, out var links))
+            {
+                return Task.FromResult<CustomerAdLinkSummary?>(null);
+            }
+
+            var match = links.FirstOrDefault(link =>
+                link.ObjectType.Equals("user", StringComparison.OrdinalIgnoreCase)
+                && link.UserPrincipalName is not null
+                && link.UserPrincipalName.Equals(
+                    email,
+                    StringComparison.OrdinalIgnoreCase));
+            return Task.FromResult<CustomerAdLinkSummary?>(match);
+        }
+    }
+
     public Task<bool> DeleteCustomerLinkAsync(
         string customerReference,
         string linkId,

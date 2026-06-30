@@ -104,6 +104,14 @@ public sealed class DisabledActiveDirectoryService : IActiveDirectoryService
         CancellationToken cancellationToken)
         => Task.FromResult(DisabledObjectResult());
 
+    public Task<AdServiceResult<AdDirectoryObjectSummary>> ChangeUserPasswordAsync(
+        string customerReference,
+        string? samAccountName,
+        string? currentPassword,
+        string? newPassword,
+        CancellationToken cancellationToken)
+        => Task.FromResult(DisabledObjectResult());
+
     private static AdServiceResult<IReadOnlyList<AdDirectoryObjectSummary>> DisabledListResult()
         => new(
             StatusCodes.Status501NotImplemented,
