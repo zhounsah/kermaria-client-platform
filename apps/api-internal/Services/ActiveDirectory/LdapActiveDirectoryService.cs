@@ -706,14 +706,16 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
                 Array.Empty<AdDirectoryObjectSummary>());
         }
 
+        var rootDn = BuildSearchRootDistinguishedName(
+            objectType,
+            normalizedCustomerReference);
+        var filter = BuildSearchFilter(objectType, normalizedQuery);
         try
         {
-            using var root = BindEntry(
-                BuildSearchRootDistinguishedName(
-                    objectType,
-                    normalizedCustomerReference));
-            using var searcher = CreateSearcher(root, BuildSearchFilter(objectType, normalizedQuery));
+            using var root = BindEntry(rootDn);
+            using var searcher = CreateSearcher(root, filter);
             using var results = searcher.FindAll();
+            var rawCount = results.Count;
             var objects = results
                 .Cast<SearchResult>()
                 .Select(result => MapEntry(result.GetDirectoryEntry()))
@@ -724,6 +726,14 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
                         StringComparison.OrdinalIgnoreCase))
                 .Take(_configuration.MaxResults)
                 .ToArray();
+
+            _logger.LogInformation(
+                "Active Directory search object_type {ObjectType} root_dn {RootDn} filter {Filter} raw_count {RawCount} filtered_count {FilteredCount}",
+                objectType,
+                rootDn,
+                filter,
+                rawCount,
+                objects.Length);
 
             return new AdServiceResult<IReadOnlyList<AdDirectoryObjectSummary>>(
                 StatusCodes.Status200OK,
