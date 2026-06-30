@@ -56,4 +56,14 @@ public interface IActiveDirectoryService
         string customerReference,
         string? samAccountName,
         CancellationToken cancellationToken);
+    Task<AdServiceResult<AdDirectoryObjectSummary>> RenameUserAsync(
+        string customerReference,
+        string? currentSamAccountName,
+        RenameAdUserRequest? request,
+        CancellationToken cancellationToken);
+    Task<AdServiceResult<AdDirectoryObjectSummary>> MoveUserAsync(
+        string customerReference,
+        string? samAccountName,
+        MoveAdUserRequest? request,
+        CancellationToken cancellationToken);
 }

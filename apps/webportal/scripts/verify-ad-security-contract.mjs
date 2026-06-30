@@ -43,4 +43,44 @@ assert.match(
   "La route doit forwarder vers l'endpoint API-INTERNAL dedie.",
 );
 
-console.log("Vérification du contrat sécurité AD V0.19 + V0.25 brique 2a réussie.");
+// V0.25 brique 2b — renommage d'un utilisateur AD
+const adUserRenameRoute = await read(
+  "app/api/admin/customers/[customerReference]/ad/users/[samAccountName]/rename/route.ts",
+);
+assert.match(
+  adUserRenameRoute,
+  /handleAdminMutation/,
+  "La route renommage AD doit passer par handleAdminMutation (session + CSRF + admin).",
+);
+assert.match(
+  adUserRenameRoute,
+  /parseAdUserRenamePayload/,
+  "La route renommage doit valider le payload via parseAdUserRenamePayload.",
+);
+assert.match(
+  adUserRenameRoute,
+  /\/internal\/admin\/customers\/.+\/ad\/users\/.+\/rename/,
+  "La route renommage doit forwarder vers l'endpoint API-INTERNAL dedie.",
+);
+
+// V0.25 brique 2c — deplacement (Users<->Disabled + cross-client)
+const adUserMoveRoute = await read(
+  "app/api/admin/customers/[customerReference]/ad/users/[samAccountName]/move/route.ts",
+);
+assert.match(
+  adUserMoveRoute,
+  /handleAdminMutation/,
+  "La route deplacement AD doit passer par handleAdminMutation (session + CSRF + admin).",
+);
+assert.match(
+  adUserMoveRoute,
+  /parseAdUserMovePayload/,
+  "La route deplacement doit valider le payload via parseAdUserMovePayload.",
+);
+assert.match(
+  adUserMoveRoute,
+  /\/internal\/admin\/customers\/.+\/ad\/users\/.+\/move/,
+  "La route deplacement doit forwarder vers l'endpoint API-INTERNAL dedie.",
+);
+
+console.log("Vérification du contrat sécurité AD V0.19 + V0.25 briques 2a/2b/2c réussie.");

@@ -57,6 +57,15 @@ public sealed record CreateAdGroupRequest(
 public sealed record AdGroupMemberRequest(
     string? UserSamAccountName);
 
+public sealed record RenameAdUserRequest(
+    string? NewSamAccountName,
+    string? NewDisplayName,
+    string? NewUserPrincipalName);
+
+public sealed record MoveAdUserRequest(
+    string? TargetCustomerReference,
+    string? TargetContainer);
+
 public sealed record AdMutationResponse(
     string Code,
     string Message,

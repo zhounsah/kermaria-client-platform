@@ -219,6 +219,66 @@ public sealed class MariaDbActiveDirectoryLinkRepository
         return new CustomerAdLinkUpsertResult(id, true);
     }
 
+    public async Task<bool> RefreshCustomerLinkAsync(
+        string targetCustomerReference,
+        AdDirectoryObjectSummary directoryObject,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(
+            cancellationToken);
+
+        var targetCustomer = await GetCustomerContextAsync(
+            connection,
+            transaction,
+            targetCustomerReference,
+            cancellationToken)
+            ?? throw new InvalidOperationException(
+                "Target customer is unavailable for Active Directory link refresh.");
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            UPDATE customer_ad_links
+            SET customer_id = @customer_id,
+                object_sid = @object_sid,
+                object_type = @object_type,
+                sam_account_name = @sam_account_name,
+                user_principal_name = @user_principal_name,
+                display_name = @display_name,
+                distinguished_name = @distinguished_name
+            WHERE object_guid = @object_guid;
+            """;
+        command.Parameters.AddWithValue(
+            "@customer_id",
+            targetCustomer.CustomerId);
+        command.Parameters.AddWithValue(
+            "@object_sid",
+            directoryObject.ObjectSid);
+        command.Parameters.AddWithValue(
+            "@object_type",
+            directoryObject.ObjectType);
+        command.Parameters.AddWithValue(
+            "@sam_account_name",
+            directoryObject.SamAccountName);
+        command.Parameters.AddWithValue(
+            "@user_principal_name",
+            DbValue(directoryObject.UserPrincipalName));
+        command.Parameters.AddWithValue(
+            "@display_name",
+            directoryObject.DisplayName);
+        command.Parameters.AddWithValue(
+            "@distinguished_name",
+            directoryObject.DistinguishedName);
+        command.Parameters.AddWithValue(
+            "@object_guid",
+            directoryObject.ObjectGuid);
+        var affected = await command.ExecuteNonQueryAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return affected > 0;
+    }
+
     public async Task<bool> DeleteCustomerLinkAsync(
         string customerReference,
         string linkId,

@@ -99,6 +99,59 @@ public sealed class MockActiveDirectoryLinkRepository
         }
     }
 
+    public Task<bool> RefreshCustomerLinkAsync(
+        string targetCustomerReference,
+        AdDirectoryObjectSummary directoryObject,
+        CancellationToken cancellationToken)
+    {
+        lock (SyncRoot)
+        {
+            string? sourceCustomerReference = null;
+            CustomerAdLinkSummary? existing = null;
+            foreach (var entry in LinksByCustomer)
+            {
+                var match = entry.Value.FirstOrDefault(link =>
+                    link.ObjectGuid.Equals(
+                        directoryObject.ObjectGuid,
+                        StringComparison.OrdinalIgnoreCase));
+                if (match is not null)
+                {
+                    sourceCustomerReference = entry.Key;
+                    existing = match;
+                    break;
+                }
+            }
+
+            if (existing is null || sourceCustomerReference is null)
+            {
+                return Task.FromResult(false);
+            }
+
+            LinksByCustomer[sourceCustomerReference].Remove(existing);
+            if (!LinksByCustomer.TryGetValue(
+                    targetCustomerReference,
+                    out var targetLinks))
+            {
+                targetLinks = [];
+                LinksByCustomer[targetCustomerReference] = targetLinks;
+            }
+
+            targetLinks.Add(new CustomerAdLinkSummary(
+                existing.Id,
+                targetCustomerReference,
+                directoryObject.ObjectGuid,
+                directoryObject.ObjectSid,
+                directoryObject.ObjectType,
+                directoryObject.SamAccountName,
+                directoryObject.UserPrincipalName,
+                directoryObject.DisplayName,
+                directoryObject.DistinguishedName,
+                existing.LinkedAt,
+                existing.LinkedBy));
+            return Task.FromResult(true);
+        }
+    }
+
     public Task<bool> DeleteCustomerLinkAsync(
         string customerReference,
         string linkId,

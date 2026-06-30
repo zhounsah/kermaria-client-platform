@@ -625,6 +625,19 @@ export interface AdGroupMemberPayload {
   userSamAccountName: string;
 }
 
+export interface AdUserRenamePayload {
+  newSamAccountName: string;
+  newDisplayName: string;
+  newUserPrincipalName: string | null;
+}
+
+export type AdUserMoveContainer = "Users" | "Disabled";
+
+export interface AdUserMovePayload {
+  targetCustomerReference: string;
+  targetContainer: AdUserMoveContainer;
+}
+
 export interface AdMutationResponse {
   code: string;
   message: string;

@@ -1669,6 +1669,107 @@ app.MapGet(
             customer.CustomerId,
             result);
     });
+app.MapPost(
+    "/internal/admin/customers/{customerReference}/ad/users/{samAccountName}/rename",
+    async (
+        string customerReference,
+        string samAccountName,
+        HttpContext context,
+        IActiveDirectoryService service,
+        IActiveDirectoryLinkRepository repository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.customers.ad_users.rename");
+        var customer = await ResolveAdCustomerContextAsync(
+            repository,
+            customerReference,
+            context.RequestAborted);
+        var request = await ReadPayload<RenameAdUserRequest>(context);
+        var result = await service.RenameUserAsync(
+            customer.CustomerReference,
+            NormalizeSamIdentifier(samAccountName),
+            request,
+            context.RequestAborted);
+        if (result.StatusCode < 400 && result.Changed && result.Value is not null)
+        {
+            await repository.RefreshCustomerLinkAsync(
+                customer.CustomerReference,
+                result.Value,
+                context.RequestAborted);
+        }
+
+        return await CompleteAdMutationAsync(
+            context,
+            auditService,
+            "admin.customers.ad_users.rename",
+            actor.UserId,
+            customer.CustomerId,
+            service.ModeName,
+            result);
+    });
+app.MapPost(
+    "/internal/admin/customers/{customerReference}/ad/users/{samAccountName}/move",
+    async (
+        string customerReference,
+        string samAccountName,
+        HttpContext context,
+        IActiveDirectoryService service,
+        IActiveDirectoryLinkRepository repository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.customers.ad_users.move");
+        var sourceCustomer = await ResolveAdCustomerContextAsync(
+            repository,
+            customerReference,
+            context.RequestAborted);
+        var request = await ReadPayload<MoveAdUserRequest>(context);
+        // Validate target customer exists locally before talking to AD.
+        // The AD scope check (NormalizeMoveContainer + customer reference
+        // format) still runs inside the service, but a missing customer
+        // here means our DB cannot persist the link, so refuse early.
+        if (!string.IsNullOrWhiteSpace(request?.TargetCustomerReference)
+            && !request.TargetCustomerReference.Equals(
+                sourceCustomer.CustomerReference,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            _ = await ResolveAdCustomerContextAsync(
+                repository,
+                request.TargetCustomerReference,
+                context.RequestAborted);
+        }
+
+        var result = await service.MoveUserAsync(
+            sourceCustomer.CustomerReference,
+            NormalizeSamIdentifier(samAccountName),
+            request,
+            context.RequestAborted);
+        if (result.StatusCode < 400 && result.Changed && result.Value is not null)
+        {
+            await repository.RefreshCustomerLinkAsync(
+                result.Value.CustomerReference,
+                result.Value,
+                context.RequestAborted);
+        }
+
+        return await CompleteAdMutationAsync(
+            context,
+            auditService,
+            "admin.customers.ad_users.move",
+            actor.UserId,
+            sourceCustomer.CustomerId,
+            service.ModeName,
+            result);
+    });
 app.MapGet(
     "/internal/admin/support-requests",
     async (

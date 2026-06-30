@@ -388,6 +388,147 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
         "Active Directory user moved to the Disabled OU."));
     }
 
+    public Task<AdServiceResult<AdDirectoryObjectSummary>> RenameUserAsync(
+        string customerReference,
+        string? currentSamAccountName,
+        RenameAdUserRequest? request,
+        CancellationToken cancellationToken)
+    {
+        if (!_configuration.WritesEnabled)
+        {
+            return Task.FromResult(ReadOnlyResult());
+        }
+
+        var resolvedUser = ResolveBySam(customerReference, currentSamAccountName, "user");
+        if (resolvedUser.Value is null)
+        {
+            return Task.FromResult(resolvedUser);
+        }
+
+        var newSam = ActiveDirectoryInputValidator.NormalizeSamAccountName(
+            request?.NewSamAccountName);
+        var newDisplayName = request?.NewDisplayName?.Trim();
+        if (newSam is null || string.IsNullOrWhiteSpace(newDisplayName))
+        {
+            return Task.FromResult(InvalidObject());
+        }
+
+        if (!ActiveDirectoryInputValidator.TryNormalizeUserPrincipalName(
+                request!.NewUserPrincipalName,
+                _configuration.Domain,
+                out var newUpn))
+        {
+            return Task.FromResult(InvalidObject());
+        }
+
+        var resolvedSummary = resolvedUser.Value;
+        var resolvedUpn = newUpn
+            ?? $"{newSam}@{_configuration.Domain}";
+
+        if (resolvedSummary.SamAccountName.Equals(newSam, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(resolvedSummary.DisplayName, newDisplayName, StringComparison.Ordinal)
+            && string.Equals(
+                resolvedSummary.UserPrincipalName,
+                resolvedUpn,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return Task.FromResult(new AdServiceResult<AdDirectoryObjectSummary>(
+                StatusCodes.Status200OK,
+                "AD_USER_RENAME_NOOP",
+                "Active Directory user already matches the requested attributes.",
+                resolvedSummary,
+                false));
+        }
+
+        var currentParentDn = resolvedSummary.DistinguishedName[
+            (resolvedSummary.DistinguishedName.IndexOf(',') + 1)..];
+        var newCnRdn = $"CN={ActiveDirectoryPathScope.EscapeRdnValue(newSam)}";
+        var newDn = $"{newCnRdn},{currentParentDn}";
+
+        return Task.FromResult(ExecuteWrite(() =>
+        {
+            using var user = BindEntry(resolvedSummary.DistinguishedName);
+            if (!resolvedSummary.SamAccountName.Equals(
+                    newSam,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                using var parent = BindEntry(currentParentDn);
+                user.MoveTo(parent, newCnRdn);
+                user.CommitChanges();
+            }
+
+            user.Properties["sAMAccountName"].Value = newSam;
+            user.Properties["displayName"].Value = newDisplayName;
+            user.Properties["userPrincipalName"].Value = resolvedUpn;
+            user.CommitChanges();
+
+            using var refreshed = BindEntry(newDn);
+            refreshed.RefreshCache();
+            return MapEntry(refreshed);
+        },
+        "AD_USER_RENAMED",
+        "Active Directory user renamed."));
+    }
+
+    public Task<AdServiceResult<AdDirectoryObjectSummary>> MoveUserAsync(
+        string customerReference,
+        string? samAccountName,
+        MoveAdUserRequest? request,
+        CancellationToken cancellationToken)
+    {
+        if (!_configuration.WritesEnabled)
+        {
+            return Task.FromResult(ReadOnlyResult());
+        }
+
+        var resolvedUser = ResolveBySam(customerReference, samAccountName, "user");
+        if (resolvedUser.Value is null)
+        {
+            return Task.FromResult(resolvedUser);
+        }
+
+        var targetCustomerReference =
+            ActiveDirectoryInputValidator.NormalizeCustomerReference(
+                request?.TargetCustomerReference);
+        var targetContainer = ActiveDirectoryInputValidator.NormalizeMoveContainer(
+            request?.TargetContainer);
+        if (targetCustomerReference is null || targetContainer is null)
+        {
+            return Task.FromResult(InvalidObject());
+        }
+
+        var resolvedSummary = resolvedUser.Value;
+        var targetParentDn = targetContainer == "Users"
+            ? _scope.BuildUsersOuDn(targetCustomerReference)
+            : _scope.BuildDisabledOuDn(targetCustomerReference);
+        var currentParentDn = resolvedSummary.DistinguishedName[
+            (resolvedSummary.DistinguishedName.IndexOf(',') + 1)..];
+        if (currentParentDn.Equals(targetParentDn, StringComparison.OrdinalIgnoreCase))
+        {
+            return Task.FromResult(new AdServiceResult<AdDirectoryObjectSummary>(
+                StatusCodes.Status200OK,
+                "AD_USER_MOVE_NOOP",
+                "Active Directory user is already at the requested location.",
+                resolvedSummary,
+                false));
+        }
+
+        var targetDn = $"CN={ActiveDirectoryPathScope.EscapeRdnValue(resolvedSummary.SamAccountName)},{targetParentDn}";
+
+        return Task.FromResult(ExecuteWrite(() =>
+        {
+            using var user = BindEntry(resolvedSummary.DistinguishedName);
+            using var targetParent = BindEntry(targetParentDn);
+            user.MoveTo(targetParent);
+            user.CommitChanges();
+            using var moved = BindEntry(targetDn);
+            moved.RefreshCache();
+            return MapEntry(moved);
+        },
+        "AD_USER_MOVED",
+        "Active Directory user moved."));
+    }
+
     public Task<AdServiceResult<IReadOnlyList<AdDirectoryObjectSummary>>> GetUserEffectiveGroupsAsync(
         string customerReference,
         string? samAccountName,

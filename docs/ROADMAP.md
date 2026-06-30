@@ -220,13 +220,20 @@ sequence depuis V0.9 / V0.18, sans encore sortir de l'OU de test :
   `apps/api-internal/Data/Configuration/AdRuntimeConfiguration.cs`),
   pas seulement une reconfiguration env. Procedure executee en V1.0 RC,
   pas en V0.25 ;
-- **brique 2 en cours** : provisioning AD etendu (rename/move user,
-  lecture groupes effectifs) toujours borne a `OU=TEST_SITE_WEB`.
-  Sous-brique 2a livree 2026-06-30 : lecture des groupes effectifs
-  (directs + transitifs via LDAP_MATCHING_RULE_IN_CHAIN), endpoint
-  `GET /internal/admin/customers/{ref}/ad/users/{sam}/groups`,
-  section UI "Groupes effectifs". Sous-briques 2b (rename) et 2c
-  (move users + cross-customer) a venir ;
+- **brique 2 livree 2026-06-30** : provisioning AD etendu, toujours
+  borne a `OU=TEST_SITE_WEB`. Sous-brique 2a : lecture des groupes
+  effectifs (directs + transitifs via `LDAP_MATCHING_RULE_IN_CHAIN`),
+  endpoint `GET /internal/admin/customers/{ref}/ad/users/{sam}/groups`,
+  section UI "Groupes effectifs". Sous-brique 2b : renommage
+  utilisateur (CN + sAMAccountName + displayName + UPN en un appel),
+  endpoint `POST .../rename`, audit `admin.customers.ad_users.rename`,
+  `customer_ad_links` mis a jour automatiquement. Sous-brique 2c :
+  deplacement utilisateur Users <-> Disabled meme client et cross-client
+  (rare), endpoint `POST .../move` avec `targetCustomerReference` +
+  `targetContainer` ("Users"|"Disabled"), refus early si client cible
+  inexistant, `customer_ad_links` migre vers le nouveau client si
+  cross-client. UI : SectionCards Renommer / Deplacer avec
+  `window.confirm()` cross-client ;
 - **brique 1 a venir** : changement de mot de passe AD cote client,
   reactiver le flux prepare en V0.9 derriere
   `AD_PASSWORD_CHANGE_ENABLED` (defaut `false`), exige re-auth recente,

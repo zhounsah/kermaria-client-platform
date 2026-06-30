@@ -8,6 +8,8 @@ import type {
   AdLinkMutationResponse,
   AdMutationResponse,
   AdUserCreatePayload,
+  AdUserMovePayload,
+  AdUserRenamePayload,
   CustomerAdLinkPayload,
   CustomerAdLinkSummary,
 } from "@kermaria/shared";
@@ -222,6 +224,15 @@ export function AdminCustomerAdManager({
   const [effectiveGroups, setEffectiveGroups] = useState<AdDirectoryObjectSummary[]>([]);
   const [effectiveGroupsForUserGuid, setEffectiveGroupsForUserGuid] = useState<string | null>(null);
   const [isLoadingEffectiveGroups, setIsLoadingEffectiveGroups] = useState(false);
+  const [renamePayload, setRenamePayload] = useState<AdUserRenamePayload>({
+    newSamAccountName: "",
+    newDisplayName: "",
+    newUserPrincipalName: null,
+  });
+  const [movePayload, setMovePayload] = useState<AdUserMovePayload>({
+    targetCustomerReference: customerReference,
+    targetContainer: "Users",
+  });
 
   function rememberDirectoryObject(next: AdDirectoryObjectSummary) {
     setRecentObjects((current) => upsertDirectoryObjectResult(current, next));
@@ -611,6 +622,107 @@ async function submitMutation<TPayload>(
     }
 
     setIsLoadingEffectiveGroups(false);
+  }
+
+  async function handleRenameUser(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedUser) {
+      setMessage({
+        tone: "error",
+        text: "Selectionnez un utilisateur a renommer.",
+      });
+      return;
+    }
+
+    const payload: AdUserRenamePayload = {
+      newSamAccountName: renamePayload.newSamAccountName.trim(),
+      newDisplayName: renamePayload.newDisplayName.trim(),
+      newUserPrincipalName:
+        renamePayload.newUserPrincipalName?.trim() || null,
+    };
+    if (!payload.newSamAccountName || !payload.newDisplayName) {
+      setMessage({
+        tone: "error",
+        text: "Le compte et le nom d'affichage sont obligatoires.",
+      });
+      return;
+    }
+
+    await submitMutation(
+      `/api/admin/customers/${encodeURIComponent(customerReference)}/ad/users/${encodeURIComponent(selectedUser.samAccountName)}/rename`,
+      "POST",
+      payload,
+      (data) => data.code === "AD_USER_RENAME_NOOP"
+        ? "Aucune modification : l'utilisateur a deja ces attributs."
+        : "Utilisateur Active Directory renomme.",
+      (data) => {
+        if (data.object?.objectType === "user") {
+          selectUser(data.object);
+          setRenamePayload({
+            newSamAccountName: "",
+            newDisplayName: "",
+            newUserPrincipalName: null,
+          });
+        }
+      },
+    );
+  }
+
+  async function handleMoveUser(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedUser) {
+      setMessage({
+        tone: "error",
+        text: "Selectionnez un utilisateur a deplacer.",
+      });
+      return;
+    }
+
+    const payload: AdUserMovePayload = {
+      targetCustomerReference: movePayload.targetCustomerReference.trim(),
+      targetContainer: movePayload.targetContainer,
+    };
+    if (!payload.targetCustomerReference) {
+      setMessage({
+        tone: "error",
+        text: "La reference client cible est obligatoire.",
+      });
+      return;
+    }
+
+    const isCrossCustomer = !payload.targetCustomerReference.localeCompare(
+      customerReference,
+      undefined,
+      { sensitivity: "accent" },
+    )
+      ? false
+      : true;
+    if (isCrossCustomer) {
+      const confirmed = window.confirm(
+        `Deplacement CROSS-CLIENT vers ${payload.targetCustomerReference} (${payload.targetContainer}). Confirmer ?`,
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    await submitMutation(
+      `/api/admin/customers/${encodeURIComponent(customerReference)}/ad/users/${encodeURIComponent(selectedUser.samAccountName)}/move`,
+      "POST",
+      payload,
+      (data) => data.code === "AD_USER_MOVE_NOOP"
+        ? "Aucune modification : l'utilisateur est deja a cet emplacement."
+        : "Utilisateur Active Directory deplace.",
+      (data) => {
+        if (data.object?.objectType === "user") {
+          selectUser(data.object);
+          setMovePayload({
+            targetCustomerReference: customerReference,
+            targetContainer: "Users",
+          });
+        }
+      },
+    );
   }
 
   async function handleUnlink(linkId: string) {
@@ -1282,6 +1394,146 @@ async function submitMutation<TPayload>(
           )
           : null}
       </SectionCard>
+
+      <div className="request-detail-layout">
+        <SectionCard ariaLabel="Renommer un utilisateur AD">
+          <h2>Renommer l&apos;utilisateur</h2>
+          <p className="field-hint">
+            Met a jour simultanement CN, sAMAccountName, displayName et UPN.
+            L&apos;utilisateur reste dans la meme OU. Bornée au scope du
+            client courant.
+          </p>
+          {selectedUser ? (
+            <p className="field-hint">
+              Utilisateur cible : <strong>{selectedUser.samAccountName}</strong>
+              {" — "}
+              <span>{selectedUser.displayName}</span>
+            </p>
+          ) : (
+            <p className="field-hint">
+              Selectionnez d&apos;abord un utilisateur dans la section de
+              recherche.
+            </p>
+          )}
+          <form className="form-card compact-form-card" onSubmit={handleRenameUser}>
+            <label>
+              Nouveau SamAccountName
+              <input
+                disabled={!selectedUser}
+                onChange={(event) =>
+                  setRenamePayload((current) => ({
+                    ...current,
+                    newSamAccountName: event.target.value,
+                  }))}
+                value={renamePayload.newSamAccountName}
+              />
+            </label>
+            <label>
+              Nouveau DisplayName
+              <input
+                disabled={!selectedUser}
+                onChange={(event) =>
+                  setRenamePayload((current) => ({
+                    ...current,
+                    newDisplayName: event.target.value,
+                  }))}
+                value={renamePayload.newDisplayName}
+              />
+            </label>
+            <label>
+              Nouveau UserPrincipalName (optionnel)
+              <input
+                disabled={!selectedUser}
+                onChange={(event) =>
+                  setRenamePayload((current) => ({
+                    ...current,
+                    newUserPrincipalName: event.target.value,
+                  }))}
+                value={renamePayload.newUserPrincipalName ?? ""}
+              />
+            </label>
+            <SubmitButton
+              disabled={!selectedUser}
+              idleLabel="Renommer"
+              isSubmitting={isSubmitting}
+              submittingLabel="Renommage..."
+            />
+          </form>
+        </SectionCard>
+
+        <SectionCard ariaLabel="Deplacer un utilisateur AD">
+          <h2>Deplacer l&apos;utilisateur</h2>
+          <p className="field-hint">
+            Deplace l&apos;utilisateur entre Users / Disabled du meme client,
+            ou cross-client vers un autre client (rare, ex. erreur de saisie
+            initiale). Le sAMAccountName et le CN sont preserves ; le DN
+            change. Le lien `customer_ad_links` est repris automatiquement.
+          </p>
+          {selectedUser ? (
+            <p className="field-hint">
+              Utilisateur cible : <strong>{selectedUser.samAccountName}</strong>
+              {" — "}
+              <span>DN actuel : {selectedUser.distinguishedName}</span>
+            </p>
+          ) : (
+            <p className="field-hint">
+              Selectionnez d&apos;abord un utilisateur dans la section de
+              recherche.
+            </p>
+          )}
+          <form className="form-card compact-form-card" onSubmit={handleMoveUser}>
+            <label>
+              Reference client cible
+              <input
+                disabled={!selectedUser}
+                onChange={(event) =>
+                  setMovePayload((current) => ({
+                    ...current,
+                    targetCustomerReference: event.target.value,
+                  }))}
+                value={movePayload.targetCustomerReference}
+              />
+            </label>
+            <fieldset>
+              <legend>Conteneur cible</legend>
+              <label className="checkbox-inline">
+                <input
+                  checked={movePayload.targetContainer === "Users"}
+                  disabled={!selectedUser}
+                  name={`ad-move-container-${customerReference}`}
+                  onChange={() =>
+                    setMovePayload((current) => ({
+                      ...current,
+                      targetContainer: "Users",
+                    }))}
+                  type="radio"
+                />
+                Users (actifs)
+              </label>
+              <label className="checkbox-inline">
+                <input
+                  checked={movePayload.targetContainer === "Disabled"}
+                  disabled={!selectedUser}
+                  name={`ad-move-container-${customerReference}`}
+                  onChange={() =>
+                    setMovePayload((current) => ({
+                      ...current,
+                      targetContainer: "Disabled",
+                    }))}
+                  type="radio"
+                />
+                Disabled
+              </label>
+            </fieldset>
+            <SubmitButton
+              disabled={!selectedUser}
+              idleLabel="Deplacer"
+              isSubmitting={isSubmitting}
+              submittingLabel="Deplacement..."
+            />
+          </form>
+        </SectionCard>
+      </div>
     </div>
   );
 }

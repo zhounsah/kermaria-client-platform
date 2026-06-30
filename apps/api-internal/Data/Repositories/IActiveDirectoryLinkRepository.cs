@@ -30,4 +30,8 @@ public interface IActiveDirectoryLinkRepository
         string customerReference,
         string linkId,
         CancellationToken cancellationToken);
+    Task<bool> RefreshCustomerLinkAsync(
+        string targetCustomerReference,
+        AdDirectoryObjectSummary directoryObject,
+        CancellationToken cancellationToken);
 }
