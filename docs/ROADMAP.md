@@ -205,8 +205,11 @@ l'infrastructure definitive.
 
 ## Jalon V0.25 finalisation Active Directory
 
-Statut : **livre 2026-06-30**. Cadrage 2026-06-28, voir
-[`V0.25_AD_FINALISATION.md`](V0.25_AD_FINALISATION.md).
+Statut : **livre et valide en recette utilisateur 2026-06-30** sur AD
+reel (`home.bzh`, mode `controlled_write`). Cadrage 2026-06-28, voir
+[`V0.25_AD_FINALISATION.md`](V0.25_AD_FINALISATION.md) (section
+"Recette utilisateur" pour le detail des cas et les correctifs
+UX/diagnostic apportes pendant la recette).
 
 Apporte les briques AD restantes preparees mais desactivees ou hors
 sequence depuis V0.9 / V0.18, sans encore sortir de l'OU de test :

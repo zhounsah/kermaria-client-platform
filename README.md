@@ -114,7 +114,8 @@ Acquis V0.20 et V0.21 (facturation et paiements one-shot) :
   journal `/admin/email-log`
   ([`docs/V0.21_PAYMENT_CHANNELS.md`](docs/V0.21_PAYMENT_CHANNELS.md)).
 
-Acquis V0.25 (finalisation Active Directory, livre 2026-06-30,
+Acquis V0.25 (finalisation Active Directory, livre et valide en
+recette utilisateur 2026-06-30 sur AD reel `home.bzh`,
 [`docs/V0.25_AD_FINALISATION.md`](docs/V0.25_AD_FINALISATION.md)) :
 
 - brique 3 : procedure de sortie d'OU vers production
