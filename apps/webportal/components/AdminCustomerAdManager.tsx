@@ -648,6 +648,33 @@ async function submitMutation<TPayload>(
       return;
     }
 
+    if (!/^[A-Za-z0-9._-]{1,64}$/.test(payload.newSamAccountName)) {
+      setMessage({
+        tone: "error",
+        text: "Le SamAccountName n'accepte que A-Z, 0-9, . _ - (64 caracteres max).",
+      });
+      return;
+    }
+
+    if (payload.newDisplayName.length < 3 || payload.newDisplayName.length > 200) {
+      setMessage({
+        tone: "error",
+        text: "Le DisplayName doit faire entre 3 et 200 caracteres.",
+      });
+      return;
+    }
+
+    if (
+      payload.newUserPrincipalName !== null
+      && !/^[^\s@]+@[^\s@]+$/.test(payload.newUserPrincipalName)
+    ) {
+      setMessage({
+        tone: "error",
+        text: "L'UPN doit avoir le format nom@domaine (ex: jdoe@home.bzh). Laissez vide pour ne pas le modifier.",
+      });
+      return;
+    }
+
     await submitMutation(
       `/api/admin/customers/${encodeURIComponent(customerReference)}/ad/users/${encodeURIComponent(selectedUser.samAccountName)}/rename`,
       "POST",
@@ -1449,9 +1476,16 @@ async function submitMutation<TPayload>(
                     ...current,
                     newUserPrincipalName: event.target.value,
                   }))}
+                placeholder="ex: jdoe@home.bzh"
                 value={renamePayload.newUserPrincipalName ?? ""}
               />
             </label>
+            <p className="field-hint">
+              Format UPN : <code>nom@domaine</code>. Le domaine doit
+              correspondre a <code>AD_DOMAIN</code> (ou
+              <code>AD_ALLOWED_UPN_DOMAINS</code>). Laisser vide pour ne
+              pas modifier l&apos;UPN.
+            </p>
             <SubmitButton
               disabled={!selectedUser}
               idleLabel="Renommer"
