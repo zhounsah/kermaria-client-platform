@@ -27,12 +27,17 @@ export async function POST(request: NextRequest, context: RouteContext) {
     );
   }
 
-  const payload = parseAdUserRenamePayload(await readJson(request));
+  const rawJson = await readJson(request);
+  const payload = parseAdUserRenamePayload(rawJson);
   if (!payload) {
+    console.warn(
+      "[ad-rename-bff] payload rejected by parser",
+      summarizeRenameInput(rawJson),
+    );
     return controlledAdminError(
       400,
       "INVALID_REQUEST",
-      "Le renommage Active Directory demande est invalide.",
+      "Renommage AD rejete : SAM doit matcher /^[A-Za-z0-9._-]{1,64}$/, displayName 3-200 chars, UPN optionnel doit utiliser un domaine autorise (defaut home.bzh).",
       correlationId,
     );
   }
@@ -51,4 +56,44 @@ async function readJson(request: NextRequest) {
   } catch {
     return null;
   }
+}
+
+// Logs a non-sensitive shape summary (no values) to help diagnose
+// rejected payloads without leaking content.
+function summarizeRenameInput(value: unknown) {
+  if (!value || typeof value !== "object") {
+    return { kind: typeof value };
+  }
+
+  const candidate = value as Record<string, unknown>;
+  const samRaw = typeof candidate.newSamAccountName === "string"
+    ? candidate.newSamAccountName
+    : null;
+  const dnRaw = typeof candidate.newDisplayName === "string"
+    ? candidate.newDisplayName
+    : null;
+  const upnRaw = typeof candidate.newUserPrincipalName === "string"
+    ? candidate.newUserPrincipalName
+    : null;
+
+  return {
+    newSamAccountName: samRaw === null
+      ? "missing"
+      : {
+          length: samRaw.length,
+          matchesRegex: /^[A-Za-z0-9._-]{1,64}$/.test(samRaw.trim()),
+        },
+    newDisplayName: dnRaw === null
+      ? "missing"
+      : {
+          length: dnRaw.trim().length,
+        },
+    newUserPrincipalName: upnRaw === null
+      ? null
+      : {
+          length: upnRaw.trim().length,
+          hasAtSign: upnRaw.includes("@"),
+          domain: upnRaw.split("@")[1]?.toLowerCase() ?? null,
+        },
+  };
 }
