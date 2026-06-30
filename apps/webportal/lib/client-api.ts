@@ -214,6 +214,20 @@ function userMessageFor(
   }
 
   if (status === 404) {
+    if (code === "PORTAL_DATA_NOT_FOUND") {
+      // Cas typique : reference client cible inexistante en DB pour
+      // un move cross-client, ou customer/document referencé hors base.
+      return "La référence demandée est introuvable côté serveur (par ex. client cible inexistant).";
+    }
+
+    if (code === "AD_OBJECT_NOT_FOUND") {
+      return "L'objet Active Directory demandé est introuvable dans l'OU configurée.";
+    }
+
+    if (code === "AD_NO_LINK_FOR_USER") {
+      return "Aucun compte Active Directory n'est associé à ce profil portail.";
+    }
+
     return serverMessage
       ? serverMessage
       : "La ressource demandée est introuvable.";
