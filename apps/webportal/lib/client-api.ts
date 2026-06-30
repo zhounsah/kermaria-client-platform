@@ -56,7 +56,11 @@ export async function requestBffJson<T>(
         status: response.status,
         error: {
           code: apiError?.code ?? "BFF_REQUEST_FAILED",
-          message: userMessageFor(response.status, apiError?.code),
+          message: userMessageFor(
+            response.status,
+            apiError?.code,
+            apiError?.message,
+          ),
           correlationId: apiError?.correlation_id,
         },
       };
@@ -153,9 +157,19 @@ function isApiError(value: unknown): value is ApiError {
   );
 }
 
-function userMessageFor(status: number, code?: string) {
+function userMessageFor(
+  status: number,
+  code?: string,
+  serverMessage?: string,
+) {
   if (code === "INVALID_CREDENTIALS" || code === "LOGIN_FAILED") {
     return "Identifiants invalides.";
+  }
+
+  // Rate limit dedie AD_PASSWORD_CHANGE_LOCKED a un message specifique
+  // pour ne pas le confondre avec un account lockout login.
+  if (code === "AD_PASSWORD_CHANGE_LOCKED") {
+    return "Trop de tentatives de changement de mot de passe. Reessayez dans quelques minutes.";
   }
 
   if (code === "ACCOUNT_LOCKED" || status === 429) {
@@ -181,7 +195,28 @@ function userMessageFor(status: number, code?: string) {
   }
 
   if (code === "INVALID_REQUEST" || status === 400) {
-    return "Vérifiez les champs du formulaire puis réessayez.";
+    // Le BFF/API renvoie des messages explicites pour les payloads
+    // refuses (renommage, deplacement, mot de passe...). On les
+    // propage tels quels au lieu du fallback generique.
+    return serverMessage
+      ? serverMessage
+      : "Vérifiez les champs du formulaire puis réessayez.";
+  }
+
+  if (status === 409) {
+    if (code === "AD_OBJECT_ALREADY_EXISTS") {
+      return "Cet identifiant Active Directory est déjà utilisé (nom de compte ou DN en conflit).";
+    }
+
+    return serverMessage
+      ? serverMessage
+      : "Conflit : la ressource demandée existe déjà ou est dans un état incompatible.";
+  }
+
+  if (status === 404) {
+    return serverMessage
+      ? serverMessage
+      : "La ressource demandée est introuvable.";
   }
 
   if (
@@ -192,5 +227,7 @@ function userMessageFor(status: number, code?: string) {
     return "Le service est temporairement indisponible. Réessayez dans quelques instants.";
   }
 
-  return "La demande n’a pas pu être traitée. Réessayez dans quelques instants.";
+  return serverMessage
+    ? serverMessage
+    : "La demande n’a pas pu être traitée. Réessayez dans quelques instants.";
 }
