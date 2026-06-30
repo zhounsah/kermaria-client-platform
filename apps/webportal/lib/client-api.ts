@@ -120,7 +120,9 @@ function shouldAttachCsrfToken(
     return false;
   }
 
-  return ["POST", "PATCH", "PUT", "DELETE"].includes(
+  // handleAdminGet (cote serveur) exige le jeton CSRF sur tout admin,
+  // y compris les GET. On attache donc le jeton pour toute methode.
+  return ["GET", "POST", "PATCH", "PUT", "DELETE"].includes(
     method.toUpperCase(),
   );
 }
