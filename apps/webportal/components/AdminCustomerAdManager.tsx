@@ -553,8 +553,8 @@ async function submitMutation<TPayload>(
       "POST",
       {},
       (data) => data.code === "AD_USER_ALREADY_DISABLED"
-        ? "L'utilisateur etait deja desactive."
-        : "Utilisateur desactive.",
+        ? "L'utilisateur etait deja désactive."
+        : "Utilisateur désactive.",
     );
   }
 
@@ -613,7 +613,7 @@ async function submitMutation<TPayload>(
                 ? "Ecriture bornee"
                 : status?.readsEnabled
                   ? "Lecture sans ecriture"
-                  : "AD desactivee"}
+                  : "AD désactivee"}
               tone={status?.writesEnabled
                 ? "warning"
                 : status?.readsEnabled
@@ -663,11 +663,11 @@ async function submitMutation<TPayload>(
       </SectionCard>
 
       <div className="request-detail-layout">
-        <SectionCard ariaLabel="Objets AD lies">
+        <SectionCard ariaLabel="Objets AD liés">
           <div className="section-heading">
             <div>
-              <h2>Objets AD lies</h2>
-              <p>Table MariaDB `customer_ad_links` sans suppression AD definitive.</p>
+              <h2>Objets AD liés</h2>
+              <p>Table MariaDB `customer_ad_links` sans suppression AD définitive.</p>
             </div>
           </div>
           {links.length === 0 ? (
@@ -717,7 +717,7 @@ async function submitMutation<TPayload>(
                 }}
                 value={selectedLinkObjectGuid}
               >
-                <option value="">Selectionner un utilisateur ou un groupe</option>
+                <option value="">Sélectionner un utilisateur ou un groupe</option>
                 {selectableLinkObjects.map((item) => (
                   <option key={item.objectGuid} value={item.objectGuid}>
                     {item.objectType} · {item.samAccountName} · {item.displayName}
@@ -726,8 +726,8 @@ async function submitMutation<TPayload>(
               </select>
             </label>
             <p className="field-hint">
-              Options alimentees depuis les recherches, les objets deja lies et les
-              creations recentes.
+              Options alimentées depuis les recherches, les objets déjà liés et les
+              créations récentes.
             </p>
             <label className="checkbox-inline">
               <input
@@ -741,7 +741,7 @@ async function submitMutation<TPayload>(
               <p className="field-hint">
                 {linkDn
                   ? `DistinguishedName selectionne : ${linkDn}`
-                  : "Le DistinguishedName sera rempli automatiquement apres selection d'un objet."}
+                  : "Le DistinguishedName sera rempli automatiquement après sélection d'un objet."}
               </p>
             ) : null}
             {showAdvancedLinkMode ? (
@@ -789,33 +789,33 @@ async function submitMutation<TPayload>(
           </form>
           {usersSearchCount !== null ? (
             <p className="field-hint">
-              {usersSearchCount} resultat(s) trouve(s).
+              {usersSearchCount} resultat(s) trouvé(s).
             </p>
           ) : null}
           {selectedUser ? (
             <div className="ad-selected-summary">
               <div className="ad-selection-summary-header">
                 <div className="stack-row-main">
-                  <strong>Utilisateur selectionne</strong>
+                  <strong>Utilisateur sélectionné</strong>
                   <span>{selectedUser.samAccountName}</span>
                   <span className="ad-selection-meta">{selectedUser.displayName}</span>
                   <span className="ad-selection-meta">{selectedUser.distinguishedName}</span>
                 </div>
                 <StatusBadge
-                  label={selectedUser.isDisabled ? "Desactive" : "Actif"}
+                  label={selectedUser.isDisabled ? "Désactive" : "Actif"}
                   tone={selectedUser.isDisabled ? "warning" : "success"}
                 />
               </div>
             </div>
           ) : (
             <p className="field-hint">
-              Selectionnez un utilisateur pour pre-remplir les actions de groupe,
-              de desactivation et de deplacement.
+              Sélectionnez un utilisateur pour pré-remplir les actions de groupe,
+              de désactivation et de deplacement.
             </p>
           )}
           {usersSearchCount === 0 ? (
             <p className="field-hint">
-              Aucun resultat utilisateur ne correspond a cette recherche.
+              Aucun résultat utilisateur ne correspond à cette recherche.
             </p>
           ) : null}
           <div className="stack-list">
@@ -840,7 +840,7 @@ async function submitMutation<TPayload>(
                     : "Selectionner"}
                 </button>
                 <StatusBadge
-                  label={user.isDisabled ? "Desactive" : "Actif"}
+                  label={user.isDisabled ? "Désactive" : "Actif"}
                   tone={user.isDisabled ? "warning" : "success"}
                 />
               </div>
@@ -873,14 +873,14 @@ async function submitMutation<TPayload>(
           </form>
           {groupsSearchCount !== null ? (
             <p className="field-hint">
-              {groupsSearchCount} resultat(s) trouve(s).
+              {groupsSearchCount} résultat(s) trouvé(s).
             </p>
           ) : null}
           {selectedGroup ? (
             <div className="ad-selected-summary">
               <div className="ad-selection-summary-header">
                 <div className="stack-row-main">
-                  <strong>Groupe selectionne</strong>
+                  <strong>Groupe sélectionné</strong>
                   <span>{selectedGroup.samAccountName}</span>
                   <span className="ad-selection-meta">{selectedGroup.displayName}</span>
                   <span className="ad-selection-meta">{selectedGroup.distinguishedName}</span>
@@ -890,13 +890,13 @@ async function submitMutation<TPayload>(
             </div>
           ) : (
             <p className="field-hint">
-              Selectionnez un groupe pour pre-remplir les actions d&apos;ajout et de
+              Sélectionnez un groupe pour pré-remplir les actions d&apos;ajout et de
               retrait de membre.
             </p>
           )}
           {groupsSearchCount === 0 ? (
             <p className="field-hint">
-              Aucun resultat groupe ne correspond a cette recherche.
+              Aucun résultat groupe ne correspond à cette recherche.
             </p>
           ) : null}
           <div className="stack-list">
@@ -928,8 +928,8 @@ async function submitMutation<TPayload>(
       </div>
 
       <div className="request-detail-layout">
-        <SectionCard ariaLabel="Creer un utilisateur AD de test">
-          <h2>Creer un utilisateur de test</h2>
+        <SectionCard ariaLabel="Créer un utilisateur AD de test">
+          <h2>Créer un utilisateur de test</h2>
           <form className="form-card compact-form-card" onSubmit={handleCreateUser}>
             <div className="form-grid">
               <label>
@@ -1002,15 +1002,15 @@ async function submitMutation<TPayload>(
               />
             </label>
             <SubmitButton
-              idleLabel="Creer l'utilisateur"
+              idleLabel="Créer l'utilisateur"
               isSubmitting={isSubmitting}
               submittingLabel="Creation..."
             />
           </form>
         </SectionCard>
 
-        <SectionCard ariaLabel="Creer un groupe AD client">
-          <h2>Creer un groupe client</h2>
+        <SectionCard ariaLabel="Créer un groupe AD client">
+          <h2>Créer un groupe client</h2>
           <form className="form-card compact-form-card" onSubmit={handleCreateGroup}>
             <label>
               SamAccountName
@@ -1059,7 +1059,7 @@ async function submitMutation<TPayload>(
           <h2>Ajouter ou retirer un membre</h2>
           <form className="form-card compact-form-card" onSubmit={handleAddMembership}>
             <p className="field-hint">
-              Champs pre-remplis depuis les objets selectionnes, tout en restant
+              Champs pré-remplis depuis les objets sélectionnés, tout en restant
               modifiables si besoin.
             </p>
             <label>
@@ -1080,7 +1080,7 @@ async function submitMutation<TPayload>(
                 }}
                 value={selectedGroup?.objectGuid ?? ""}
               >
-                <option value="">Selectionner un groupe</option>
+                <option value="">Sélectionner un groupe</option>
                 {selectableGroups.map((group) => (
                   <option key={group.objectGuid} value={group.objectGuid}>
                     {group.samAccountName} · {group.displayName}
@@ -1107,7 +1107,7 @@ async function submitMutation<TPayload>(
                 }}
                 value={selectedUser?.objectGuid ?? ""}
               >
-                <option value="">Selectionner un utilisateur</option>
+                <option value="">Sélectionner un utilisateur</option>
                 {selectableUsers.map((user) => (
                   <option key={user.objectGuid} value={user.objectGuid}>
                     {user.samAccountName} · {user.displayName}
@@ -1133,11 +1133,11 @@ async function submitMutation<TPayload>(
           </form>
         </SectionCard>
 
-        <SectionCard ariaLabel="Desactivation et deplacement AD">
-          <h2>Desactiver puis deplacer</h2>
+        <SectionCard ariaLabel="Désactivation et déplacement AD">
+          <h2>Désactiver puis déplacer</h2>
           <form className="form-card compact-form-card" onSubmit={handleDisableUser}>
             <p className="field-hint">
-              L&apos;utilisateur selectionne est repris automatiquement pour les
+              L&apos;utilisateur sélectionné est repris automatiquement pour les
               actions de cycle de vie.
             </p>
             <label>
@@ -1159,7 +1159,7 @@ async function submitMutation<TPayload>(
                 }}
                 value={selectedUser?.objectGuid ?? ""}
               >
-                <option value="">Selectionner un utilisateur</option>
+                <option value="">Sélectionner un utilisateur</option>
                 {selectableUsers.map((user) => (
                   <option key={user.objectGuid} value={user.objectGuid}>
                     {user.samAccountName} · {user.displayName}
@@ -1169,9 +1169,9 @@ async function submitMutation<TPayload>(
             </label>
             <div className="ad-button-row">
               <SubmitButton
-                idleLabel="Desactiver"
+                idleLabel="Désactiver"
                 isSubmitting={isSubmitting}
-                submittingLabel="Desactivation..."
+                submittingLabel="Désactivation..."
               />
               <button
                 className="button button-secondary"
@@ -1179,7 +1179,7 @@ async function submitMutation<TPayload>(
                 onClick={() => void handleMoveToDisabled()}
                 type="button"
               >
-                Deplacer vers Disabled
+                Déplacer vers Disabled
               </button>
             </div>
           </form>
