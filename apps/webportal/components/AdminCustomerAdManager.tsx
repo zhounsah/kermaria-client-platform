@@ -13,7 +13,7 @@ import type {
   CustomerAdLinkPayload,
   CustomerAdLinkSummary,
 } from "@kermaria/shared";
-import { FormEvent, startTransition, useRef, useState } from "react";
+import { FormEvent, startTransition, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { FormMessage } from "@/components/FormMessage";
@@ -177,6 +177,7 @@ export function AdminCustomerAdManager({
 }: AdminCustomerAdManagerProps) {
   const router = useRouter();
   const busyRef = useRef(false);
+  const messageRef = useRef<HTMLDivElement>(null);
   const status = initialStatus;
   const [localLinks, setLocalLinks] = useState<CustomerAdLinkSummary[]>([]);
   const [removedLinkIds, setRemovedLinkIds] = useState<string[]>([]);
@@ -233,6 +234,15 @@ export function AdminCustomerAdManager({
     targetCustomerReference: customerReference,
     targetContainer: "Users",
   });
+
+  useEffect(() => {
+    if (message && messageRef.current) {
+      messageRef.current.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }
+  }, [message]);
 
   function rememberDirectoryObject(next: AdDirectoryObjectSummary) {
     setRecentObjects((current) => upsertDirectoryObjectResult(current, next));
@@ -828,12 +838,14 @@ async function submitMutation<TPayload>(
           </FormMessage>
         ) : null}
         {message ? (
-          <FormMessage
-            title={message.tone === "success" ? "Action terminee" : message.tone === "info" ? "Information" : "Echec"}
-            tone={message.tone}
-          >
-            <p>{message.text}</p>
-          </FormMessage>
+          <div ref={messageRef}>
+            <FormMessage
+              title={message.tone === "success" ? "Action terminee" : message.tone === "info" ? "Information" : "Echec"}
+              tone={message.tone}
+            >
+              <p>{message.text}</p>
+            </FormMessage>
+          </div>
         ) : null}
       </SectionCard>
 
