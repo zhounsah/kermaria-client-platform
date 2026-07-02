@@ -15,6 +15,8 @@ using MySqlConnector;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Host.UseWindowsService();
+
 builder.Logging.ClearProviders();
 builder.Logging.AddJsonConsole(options =>
 {

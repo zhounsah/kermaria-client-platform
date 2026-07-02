@@ -1,5 +1,12 @@
 # Deploiement
 
+Pour le deploiement concret Windows Server 2022 sans VM (SRV-01
+WEBPORTAL + SRV-02 API-INTERNAL + SRV-07 MariaDB, cible actuelle en
+phase de tests), voir le runbook dedie
+[`DEPLOYMENT_WINDOWS.md`](DEPLOYMENT_WINDOWS.md). Le present
+document reste la reference des variables, modes et garde-fous
+generaux.
+
 Ce runbook V0.21 couvre la mise en place de `Development`, `Staging` et
 `Production` en conservant strictement l'architecture :
 
