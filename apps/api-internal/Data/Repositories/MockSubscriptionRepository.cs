@@ -58,25 +58,29 @@ public sealed class MockSubscriptionRepository : ISubscriptionRepository
         }
     }
 
-    public Task<SubscriptionSummary?> GetByPayPalIdAsync(
-        string paypalSubscriptionId,
+    public Task<SubscriptionSummary?> GetByExternalIdAsync(
+        string rail,
+        string externalId,
         CancellationToken cancellationToken)
     {
         lock (_store.SyncRoot)
         {
             return Task.FromResult(
                 _store.Subscriptions.FirstOrDefault(
-                    subscription =>
-                        subscription.PayPalSubscriptionId
-                            == paypalSubscriptionId));
+                    subscription => rail == "stripe"
+                        ? subscription.StripeSubscriptionId == externalId
+                        : subscription.PayPalSubscriptionId == externalId));
         }
     }
 
     public Task<SubscriptionSummary> CreatePendingAsync(
         string customerId,
         string commercialOfferId,
-        string paypalPlanId,
-        string paypalSubscriptionId,
+        string rail,
+        string? paypalPlanId,
+        string? paypalSubscriptionId,
+        string? stripePriceId,
+        string? stripeSubscriptionId,
         CancellationToken cancellationToken)
     {
         lock (_store.SyncRoot)
@@ -89,8 +93,11 @@ public sealed class MockSubscriptionRepository : ISubscriptionRepository
                 customerId,
                 commercialOfferId,
                 commercialOfferId,
+                rail,
                 paypalPlanId,
                 paypalSubscriptionId,
+                stripePriceId,
+                stripeSubscriptionId,
                 "pending_approval",
                 0,
                 "EUR",

@@ -69,7 +69,9 @@ public sealed record ValidatedCommercialOffer(
     int DisplayOrder,
     string BillingCadence,
     string? PayPalPlanIdSandbox,
-    string? PayPalPlanIdLive);
+    string? PayPalPlanIdLive,
+    string? StripePriceIdTest,
+    string? StripePriceIdLive);
 
 public sealed record ValidatedCommercialDocument(
     string? CustomerReference,
@@ -343,9 +345,14 @@ public sealed partial class CommercialService : ICommercialService
 
         var paypalPlanIdSandbox = ValidatePayPalPlanId(payload.PayPalPlanIdSandbox);
         var paypalPlanIdLive = ValidatePayPalPlanId(payload.PayPalPlanIdLive);
+        var stripePriceIdTest = ValidateStripePriceId(payload.StripePriceIdTest);
+        var stripePriceIdLive = ValidateStripePriceId(payload.StripePriceIdLive);
 
         if (billingCadence == CommercialStatuses.CadenceOneTime
-            && (paypalPlanIdSandbox is not null || paypalPlanIdLive is not null))
+            && (paypalPlanIdSandbox is not null
+                || paypalPlanIdLive is not null
+                || stripePriceIdTest is not null
+                || stripePriceIdLive is not null))
         {
             throw new PortalValidationException();
         }
@@ -360,10 +367,28 @@ public sealed partial class CommercialService : ICommercialService
             displayOrder,
             billingCadence,
             paypalPlanIdSandbox,
-            paypalPlanIdLive);
+            paypalPlanIdLive,
+            stripePriceIdTest,
+            stripePriceIdLive);
     }
 
     private static string? ValidatePayPalPlanId(string? value)
+    {
+        var normalized = Normalize(value);
+        if (normalized is null)
+        {
+            return null;
+        }
+
+        if (normalized.Length > 64 || !PayPalPlanIdPattern().IsMatch(normalized))
+        {
+            throw new PortalValidationException();
+        }
+
+        return normalized;
+    }
+
+    private static string? ValidateStripePriceId(string? value)
     {
         var normalized = Normalize(value);
         if (normalized is null)

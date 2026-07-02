@@ -18,6 +18,8 @@ public sealed record CommercialOfferSummary(
     string BillingCadence,
     [property: JsonPropertyName("paypalPlanIdSandbox")] string? PayPalPlanIdSandbox,
     [property: JsonPropertyName("paypalPlanIdLive")] string? PayPalPlanIdLive,
+    [property: JsonPropertyName("stripePriceIdTest")] string? StripePriceIdTest,
+    [property: JsonPropertyName("stripePriceIdLive")] string? StripePriceIdLive,
     string CreatedAt,
     string UpdatedAt);
 
@@ -50,7 +52,8 @@ public record CommercialDocumentSummary(
     string UpdatedAt,
     string? SharedAt,
     string? ServiceRequestId,
-    string? ServiceRequestReference);
+    string? ServiceRequestReference,
+    string? PaymentMethod);
 
 public record CommercialDocumentDetail(
     string Id,
@@ -68,6 +71,7 @@ public record CommercialDocumentDetail(
     string? SharedAt,
     string? ServiceRequestId,
     string? ServiceRequestReference,
+    string? PaymentMethod,
     IReadOnlyList<CommercialDocumentLine> Lines)
     : CommercialDocumentSummary(
         Id,
@@ -84,7 +88,8 @@ public record CommercialDocumentDetail(
         UpdatedAt,
         SharedAt,
         ServiceRequestId,
-        ServiceRequestReference);
+        ServiceRequestReference,
+        PaymentMethod);
 
 public record AdminCommercialDocumentSummary(
     string Id,
@@ -102,6 +107,7 @@ public record AdminCommercialDocumentSummary(
     string? SharedAt,
     string? ServiceRequestId,
     string? ServiceRequestReference,
+    string? PaymentMethod,
     string CustomerReference,
     string CustomerName)
     : CommercialDocumentSummary(
@@ -119,7 +125,8 @@ public record AdminCommercialDocumentSummary(
         UpdatedAt,
         SharedAt,
         ServiceRequestId,
-        ServiceRequestReference);
+        ServiceRequestReference,
+        PaymentMethod);
 
 public record AdminCommercialDocumentDetail(
     string Id,
@@ -137,6 +144,7 @@ public record AdminCommercialDocumentDetail(
     string? SharedAt,
     string? ServiceRequestId,
     string? ServiceRequestReference,
+    string? PaymentMethod,
     string CustomerReference,
     string CustomerName,
     string CreatedByDisplayName,
@@ -157,6 +165,7 @@ public record AdminCommercialDocumentDetail(
         SharedAt,
         ServiceRequestId,
         ServiceRequestReference,
+        PaymentMethod,
         CustomerReference,
         CustomerName);
 
@@ -170,7 +179,9 @@ public sealed record CommercialOfferPayload(
     int? DisplayOrder,
     string? BillingCadence,
     [property: JsonPropertyName("paypalPlanIdSandbox")] string? PayPalPlanIdSandbox,
-    [property: JsonPropertyName("paypalPlanIdLive")] string? PayPalPlanIdLive);
+    [property: JsonPropertyName("paypalPlanIdLive")] string? PayPalPlanIdLive,
+    [property: JsonPropertyName("stripePriceIdTest")] string? StripePriceIdTest,
+    [property: JsonPropertyName("stripePriceIdLive")] string? StripePriceIdLive);
 
 public sealed record CommercialDocumentPayload(
     string? CustomerReference,
@@ -180,6 +191,8 @@ public sealed record CommercialDocumentPayload(
     string? ServiceRequestId,
     string? Disclaimer,
     string? Status);
+
+public sealed record PaymentConfirmPayload(string? PaymentMethod);
 
 public sealed record CommercialDocumentLinePayload(
     string? OfferId,

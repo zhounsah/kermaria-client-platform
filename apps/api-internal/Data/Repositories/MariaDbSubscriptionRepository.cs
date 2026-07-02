@@ -82,17 +82,24 @@ public sealed class MariaDbSubscriptionRepository : ISubscriptionRepository
         return Read(reader);
     }
 
-    public async Task<SubscriptionSummary?> GetByPayPalIdAsync(
-        string paypalSubscriptionId,
+    public async Task<SubscriptionSummary?> GetByExternalIdAsync(
+        string rail,
+        string externalId,
         CancellationToken cancellationToken)
     {
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText = BaseSelect + "\n" + """
-            WHERE subscription.paypal_subscription_id = @paypalId
-            LIMIT 1;
-            """;
-        command.Parameters.AddWithValue("paypalId", paypalSubscriptionId);
+        command.CommandText = BaseSelect + "\n" + (
+            rail == "stripe"
+                ? """
+                  WHERE subscription.stripe_subscription_id = @externalId
+                  LIMIT 1;
+                  """
+                : """
+                  WHERE subscription.paypal_subscription_id = @externalId
+                  LIMIT 1;
+                  """);
+        command.Parameters.AddWithValue("externalId", externalId);
 
         await using var reader = await command.ExecuteReaderAsync(
             cancellationToken);
@@ -107,8 +114,11 @@ public sealed class MariaDbSubscriptionRepository : ISubscriptionRepository
     public async Task<SubscriptionSummary> CreatePendingAsync(
         string customerId,
         string commercialOfferId,
-        string paypalPlanId,
-        string paypalSubscriptionId,
+        string rail,
+        string? paypalPlanId,
+        string? paypalSubscriptionId,
+        string? stripePriceId,
+        string? stripeSubscriptionId,
         CancellationToken cancellationToken)
     {
         var id = Guid.NewGuid().ToString("D");
@@ -119,8 +129,11 @@ public sealed class MariaDbSubscriptionRepository : ISubscriptionRepository
                 id,
                 customer_id,
                 commercial_offer_id,
+                rail,
                 paypal_subscription_id,
                 paypal_plan_id,
+                stripe_subscription_id,
+                stripe_price_id,
                 status,
                 started_at,
                 next_billing_at,
@@ -131,8 +144,11 @@ public sealed class MariaDbSubscriptionRepository : ISubscriptionRepository
                 @id,
                 @customerId,
                 @commercialOfferId,
+                @rail,
                 @paypalSubscriptionId,
                 @paypalPlanId,
+                @stripeSubscriptionId,
+                @stripePriceId,
                 'pending_approval',
                 NULL,
                 NULL,
@@ -144,10 +160,19 @@ public sealed class MariaDbSubscriptionRepository : ISubscriptionRepository
         command.Parameters.AddWithValue("id", id);
         command.Parameters.AddWithValue("customerId", customerId);
         command.Parameters.AddWithValue("commercialOfferId", commercialOfferId);
+        command.Parameters.AddWithValue("rail", rail);
         command.Parameters.AddWithValue(
             "paypalSubscriptionId",
-            paypalSubscriptionId);
-        command.Parameters.AddWithValue("paypalPlanId", paypalPlanId);
+            (object?)paypalSubscriptionId ?? DBNull.Value);
+        command.Parameters.AddWithValue(
+            "paypalPlanId",
+            (object?)paypalPlanId ?? DBNull.Value);
+        command.Parameters.AddWithValue(
+            "stripeSubscriptionId",
+            (object?)stripeSubscriptionId ?? DBNull.Value);
+        command.Parameters.AddWithValue(
+            "stripePriceId",
+            (object?)stripePriceId ?? DBNull.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
 
         return await GetByIdAsync(id, cancellationToken)
@@ -235,8 +260,11 @@ public sealed class MariaDbSubscriptionRepository : ISubscriptionRepository
             customer.display_name AS customer_name,
             subscription.commercial_offer_id,
             offer.name AS offer_name,
+            subscription.rail,
             subscription.paypal_plan_id,
             subscription.paypal_subscription_id,
+            subscription.stripe_price_id,
+            subscription.stripe_subscription_id,
             subscription.status,
             offer.price_amount_cents,
             offer.currency,
@@ -260,10 +288,19 @@ public sealed class MariaDbSubscriptionRepository : ISubscriptionRepository
             reader.GetString("customer_name"),
             MariaDbIdentifierReader.ReadRequired(reader, "commercial_offer_id"),
             reader.GetString("offer_name"),
-            reader.GetString("paypal_plan_id"),
+            reader.GetString("rail"),
+            reader.IsDBNull(reader.GetOrdinal("paypal_plan_id"))
+                ? null
+                : reader.GetString("paypal_plan_id"),
             reader.IsDBNull(reader.GetOrdinal("paypal_subscription_id"))
                 ? null
                 : reader.GetString("paypal_subscription_id"),
+            reader.IsDBNull(reader.GetOrdinal("stripe_price_id"))
+                ? null
+                : reader.GetString("stripe_price_id"),
+            reader.IsDBNull(reader.GetOrdinal("stripe_subscription_id"))
+                ? null
+                : reader.GetString("stripe_subscription_id"),
             reader.GetString("status"),
             reader.GetInt32("price_amount_cents"),
             reader.GetString("currency"),

@@ -401,7 +401,8 @@ fonctionnalite hardware-gated.
 
 ## Jalon V0.29 Stripe comme rail de paiement parallele
 
-Statut : **a cadrer, faisable sans la cible R740xd**.
+Statut : **implemente dans le depot** (2026-07-02). Documentation
+d'implementation : [`V0.29_STRIPE_PAYMENTS.md`](V0.29_STRIPE_PAYMENTS.md).
 
 Ajoute Stripe en parallele de PayPal (V0.21 one-shot, V0.22
 abonnements), sans remplacer PayPal. Le client choisit son rail au
@@ -435,7 +436,23 @@ moment de regler une facture ou souscrire un service.
   idempotence en mode `test`.
 
 Garde-fou : aucune ouverture du mode `live` Stripe avant V1.0 beta 1
-sur le R740xd, identique a PayPal et BPCE.
+sur le R740xd, identique a PayPal et BPCE — **et code en dur cette fois**
+dans `RuntimeConfigurationValidator` (contrairement au garde-fou PayPal,
+jamais implemente, qui reste une simple discipline de process).
+
+**Ecarts d'implementation vs cadrage (2026-07-02)** : (a) "PaymentIntent"
+est realise via Stripe Checkout Sessions (`mode=payment`/`mode=subscription`),
+qui crée un PaymentIntent/une Subscription en interne — choix qui
+preserve la convention "raw fetch, pas de SDK" et l'UX 100% redirect
+deja en place pour PayPal, plutot que PaymentIntent+Stripe.js Elements
+cote client ; (b) la table `subscriptions` est generalisee par colonne
+`rail ENUM('paypal','stripe')` plutot que dupliquee, pour garder le MRR
+et les listes admin cross-rail en une seule requete ; (c) migrations
+`017_stripe_webhook_events.sql`, `018_subscriptions_stripe_rail.sql`,
+`019_stripe_offers_and_payment_method.sql` — cette derniere ferme une
+lacune V0.21 preexistante (`commercial_documents` n'avait jamais de
+colonne pour savoir quel rail avait regle une facture, le endpoint
+`payment-confirm` ignorait silencieusement le corps de la requete).
 
 ## Jalon V0.30 test envoi e-mail automatique reel
 

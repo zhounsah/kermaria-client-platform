@@ -15,12 +15,17 @@ import { getSessionCookieName } from "@/lib/session-config";
 import {
   getInternalApiUrl,
   getInternalServiceHeaders,
+  isStripeConfigured,
 } from "@/lib/runtime-config";
 import {
   createPayPalSubscription,
   getPayPalMode,
   isPayPalConfigured,
 } from "@/lib/paypal";
+import {
+  createStripeSubscriptionCheckoutSession,
+  getStripeMode,
+} from "@/lib/stripe";
 
 const PORTAL_SESSION_HEADER = "X-Portal-Session";
 
@@ -29,25 +34,7 @@ export async function POST(request: NextRequest) {
     request.headers.get(CORRELATION_HEADER),
   );
 
-  if (!isPayPalConfigured()) {
-    return NextResponse.json(
-      {
-        code: "PAYPAL_NOT_CONFIGURED",
-        message: "Le paiement en ligne n'est pas disponible.",
-      },
-      { status: 503 },
-    );
-  }
-
-  const sessionToken = request.cookies.get(getSessionCookieName())?.value;
-  if (!sessionToken) {
-    return NextResponse.json(
-      { code: "UNAUTHORIZED", message: "Session requise." },
-      { status: 401 },
-    );
-  }
-
-  let body: { offerId?: string };
+  let body: { offerId?: string; rail?: string };
   try {
     body = await request.json();
   } catch {
@@ -62,6 +49,35 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       { code: "INVALID_REQUEST", message: "Identifiant d'offre invalide." },
       { status: 400 },
+    );
+  }
+
+  const rail = body.rail === "stripe" ? "stripe" : "paypal";
+
+  if (rail === "stripe" && !isStripeConfigured()) {
+    return NextResponse.json(
+      {
+        code: "STRIPE_NOT_CONFIGURED",
+        message: "Le paiement Stripe n'est pas disponible.",
+      },
+      { status: 503 },
+    );
+  }
+  if (rail === "paypal" && !isPayPalConfigured()) {
+    return NextResponse.json(
+      {
+        code: "PAYPAL_NOT_CONFIGURED",
+        message: "Le paiement en ligne n'est pas disponible.",
+      },
+      { status: 503 },
+    );
+  }
+
+  const sessionToken = request.cookies.get(getSessionCookieName())?.value;
+  if (!sessionToken) {
+    return NextResponse.json(
+      { code: "UNAUTHORIZED", message: "Session requise." },
+      { status: 401 },
     );
   }
 
@@ -124,6 +140,57 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const portalUrl =
+    process.env.PUBLIC_PORTAL_URL?.replace(/\/$/, "") ?? "http://localhost:3000";
+  const cancelPath = `/profile/subscriptions?subscription=cancelled`;
+
+  if (rail === "stripe") {
+    const mode = getStripeMode();
+    const activePriceId =
+      mode === "live" ? offer.stripePriceIdLive : offer.stripePriceIdTest;
+    if (
+      offer.billingCadence !== "monthly"
+      || !activePriceId
+      || offer.status !== "active"
+    ) {
+      return NextResponse.json(
+        {
+          code: "OFFER_NOT_SUBSCRIBABLE",
+          message:
+            `Cette offre n'a pas de prix Stripe ${mode}. Demandez à un admin `
+            + "de créer le prix avant de souscrire.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const returnPath = `/api/subscriptions/stripe/return?offerId=${encodeURIComponent(
+      offer.id,
+    )}&session_id={CHECKOUT_SESSION_ID}`;
+
+    try {
+      const result = await createStripeSubscriptionCheckoutSession(
+        activePriceId,
+        session.user.email,
+        `${portalUrl}${returnPath}`,
+        `${portalUrl}${cancelPath}`,
+      );
+      return NextResponse.json({
+        subscriptionId: null,
+        approveUrl: result.approveUrl,
+      });
+    } catch (error) {
+      console.error("Stripe create subscription checkout error:", error);
+      return NextResponse.json(
+        {
+          code: "STRIPE_ERROR",
+          message: "Impossible de créer la souscription Stripe.",
+        },
+        { status: 503 },
+      );
+    }
+  }
+
   const mode = getPayPalMode();
   const activePlanId =
     mode === "live" ? offer.paypalPlanIdLive : offer.paypalPlanIdSandbox;
@@ -143,12 +210,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const portalUrl =
-    process.env.PUBLIC_PORTAL_URL?.replace(/\/$/, "") ?? "http://localhost:3000";
   const returnPath = `/api/subscriptions/return?offerId=${encodeURIComponent(
     offer.id,
   )}`;
-  const cancelPath = `/profile/subscriptions?subscription=cancelled`;
 
   let paypalSubscriptionId: string;
   let approveUrl: string;
@@ -176,10 +240,10 @@ export async function POST(request: NextRequest) {
   try {
     summary = await mutateInternalPortalPayloadTyped<
       SubscriptionSummary,
-      { offerId: string; paypalSubscriptionId: string }
+      { offerId: string; rail: string; paypalSubscriptionId: string }
     >(
       "/internal/portal/subscriptions",
-      { offerId: offer.id, paypalSubscriptionId },
+      { offerId: offer.id, rail: "paypal", paypalSubscriptionId },
       sessionToken,
       correlationId,
     );

@@ -174,12 +174,25 @@ export default async function AdminSubscriptionsPage({
                     </p>
                   </div>
                   <div className="badge-stack">
+                    <StatusBadge
+                      label={item.rail === "stripe" ? "Stripe" : "PayPal"}
+                      tone="info"
+                    />
                     <StatusBadge label={status.label} tone={status.tone} />
                   </div>
                 </div>
                 <p className="field-hint">
-                  Plan PayPal : {item.paypalPlanId} · Souscription PayPal :{" "}
-                  {item.paypalSubscriptionId ?? "—"}
+                  {item.rail === "stripe" ? (
+                    <>
+                      Prix Stripe : {item.stripePriceId ?? "—"} · Souscription
+                      Stripe : {item.stripeSubscriptionId ?? "—"}
+                    </>
+                  ) : (
+                    <>
+                      Plan PayPal : {item.paypalPlanId ?? "—"} · Souscription
+                      PayPal : {item.paypalSubscriptionId ?? "—"}
+                    </>
+                  )}
                 </p>
                 <p className="field-hint">
                   Prochaine échéance :{" "}

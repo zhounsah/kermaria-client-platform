@@ -51,6 +51,7 @@ export async function GET(request: NextRequest) {
     await mutateInternalPortalPayload(
       `/internal/portal/commercial-documents/${encodeURIComponent(documentId)}/payment-confirm`,
       {
+        paymentMethod: "paypal",
         paypalOrderId: token,
         paypalCaptureId: capture.captureId,
       },

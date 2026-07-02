@@ -4,30 +4,30 @@ using Kermaria.ApiInternal.Data.Repositories;
 
 namespace Kermaria.ApiInternal.Services;
 
-public interface IPayPalWebhookService
+public interface IStripeWebhookService
 {
-    Task<PayPalWebhookProcessingResult> ProcessAsync(
-        PayPalWebhookEventPayload payload,
+    Task<StripeWebhookProcessingResult> ProcessAsync(
+        StripeWebhookEventPayload payload,
         string correlationId,
         CancellationToken cancellationToken);
 }
 
-public sealed class PayPalWebhookService : IPayPalWebhookService
+public sealed class StripeWebhookService : IStripeWebhookService
 {
-    private readonly IPayPalWebhookRepository _events;
+    private readonly IStripeWebhookRepository _events;
     private readonly ISubscriptionRepository _subscriptions;
     private readonly ICommercialRepository _commercial;
     private readonly IInvoiceIssuingService _issuing;
     private readonly IAuditService _audit;
-    private readonly ILogger<PayPalWebhookService> _logger;
+    private readonly ILogger<StripeWebhookService> _logger;
 
-    public PayPalWebhookService(
-        IPayPalWebhookRepository events,
+    public StripeWebhookService(
+        IStripeWebhookRepository events,
         ISubscriptionRepository subscriptions,
         ICommercialRepository commercial,
         IInvoiceIssuingService issuing,
         IAuditService audit,
-        ILogger<PayPalWebhookService> logger)
+        ILogger<StripeWebhookService> logger)
     {
         _events = events;
         _subscriptions = subscriptions;
@@ -37,8 +37,8 @@ public sealed class PayPalWebhookService : IPayPalWebhookService
         _logger = logger;
     }
 
-    public async Task<PayPalWebhookProcessingResult> ProcessAsync(
-        PayPalWebhookEventPayload payload,
+    public async Task<StripeWebhookProcessingResult> ProcessAsync(
+        StripeWebhookEventPayload payload,
         string correlationId,
         CancellationToken cancellationToken)
     {
@@ -56,10 +56,10 @@ public sealed class PayPalWebhookService : IPayPalWebhookService
         if (existing is not null)
         {
             _logger.LogInformation(
-                "Duplicate PayPal webhook event {EventId} ignored (status={Status})",
+                "Duplicate Stripe webhook event {EventId} ignored (status={Status})",
                 eventId,
                 existing.Status);
-            return new PayPalWebhookProcessingResult(
+            return new StripeWebhookProcessingResult(
                 eventId,
                 existing.Status,
                 ErrorMessage: null);
@@ -75,9 +75,7 @@ public sealed class PayPalWebhookService : IPayPalWebhookService
         try
         {
             var status = await DispatchAsync(
-                eventId,
                 eventType,
-                payload.ResourceId,
                 rawPayload,
                 correlationId,
                 cancellationToken);
@@ -96,7 +94,7 @@ public sealed class PayPalWebhookService : IPayPalWebhookService
                     break;
             }
 
-            return new PayPalWebhookProcessingResult(
+            return new StripeWebhookProcessingResult(
                 eventId,
                 status,
                 ErrorMessage: null);
@@ -105,14 +103,14 @@ public sealed class PayPalWebhookService : IPayPalWebhookService
         {
             _logger.LogError(
                 ex,
-                "PayPal webhook event {EventId} ({EventType}) failed",
+                "Stripe webhook event {EventId} ({EventType}) failed",
                 eventId,
                 eventType);
             await _events.MarkFailedAsync(
                 eventId,
                 Truncate(ex.Message, 4000),
                 cancellationToken);
-            return new PayPalWebhookProcessingResult(
+            return new StripeWebhookProcessingResult(
                 eventId,
                 "failed",
                 ErrorMessage: ex.Message);
@@ -120,51 +118,28 @@ public sealed class PayPalWebhookService : IPayPalWebhookService
     }
 
     private async Task<string> DispatchAsync(
-        string eventId,
         string eventType,
-        string? resourceId,
         string rawPayload,
         string correlationId,
         CancellationToken cancellationToken)
     {
         switch (eventType)
         {
-            case "BILLING.SUBSCRIPTION.ACTIVATED":
-                await HandleSubscriptionActivatedAsync(
-                    resourceId,
+            case "payment_intent.succeeded":
+                return await HandlePaymentIntentSucceededAsync(
+                    rawPayload,
+                    correlationId,
+                    cancellationToken);
+
+            case "invoice.paid":
+                await HandleInvoicePaidAsync(
+                    rawPayload,
                     correlationId,
                     cancellationToken);
                 return "processed";
 
-            case "BILLING.SUBSCRIPTION.SUSPENDED":
-                await HandleSubscriptionStatusAsync(
-                    resourceId,
-                    "suspended",
-                    "subscription.suspended",
-                    correlationId,
-                    cancellationToken);
-                return "processed";
-
-            case "BILLING.SUBSCRIPTION.CANCELLED":
-                await HandleSubscriptionStatusAsync(
-                    resourceId,
-                    "cancelled",
-                    "subscription.cancelled",
-                    correlationId,
-                    cancellationToken);
-                return "processed";
-
-            case "BILLING.SUBSCRIPTION.EXPIRED":
-                await HandleSubscriptionStatusAsync(
-                    resourceId,
-                    "expired",
-                    "subscription.expired",
-                    correlationId,
-                    cancellationToken);
-                return "processed";
-
-            case "PAYMENT.SALE.COMPLETED":
-                await HandlePaymentCompletedAsync(
+            case "customer.subscription.deleted":
+                await HandleSubscriptionDeletedAsync(
                     rawPayload,
                     correlationId,
                     cancellationToken);
@@ -172,81 +147,83 @@ public sealed class PayPalWebhookService : IPayPalWebhookService
 
             default:
                 _logger.LogInformation(
-                    "PayPal webhook event {EventType} not handled — marked ignored",
+                    "Stripe webhook event {EventType} not handled — marked ignored",
                     eventType);
                 return "ignored";
         }
     }
 
-    private async Task HandleSubscriptionActivatedAsync(
-        string? paypalSubscriptionId,
-        string correlationId,
-        CancellationToken cancellationToken)
-    {
-        var subscription = await ResolveSubscriptionAsync(
-            paypalSubscriptionId,
-            cancellationToken);
-        var now = DateTime.UtcNow;
-        var nextBilling = now.AddMonths(1);
-        var activated = await _subscriptions.ActivateAsync(
-            subscription.Id,
-            now,
-            nextBilling,
-            cancellationToken);
-        await _audit.RecordAsync(
-            new AuditEvent(
-                correlationId,
-                "subscription.activated",
-                "success",
-                TargetType: "subscription",
-                TargetReference: activated.Id,
-                CustomerId: activated.CustomerId),
-            cancellationToken);
-    }
-
-    private async Task HandleSubscriptionStatusAsync(
-        string? paypalSubscriptionId,
-        string newStatus,
-        string auditAction,
-        string correlationId,
-        CancellationToken cancellationToken)
-    {
-        var subscription = await ResolveSubscriptionAsync(
-            paypalSubscriptionId,
-            cancellationToken);
-        var updated = await _subscriptions.UpdateStatusAsync(
-            subscription.Id,
-            newStatus,
-            cancellationToken);
-        await _audit.RecordAsync(
-            new AuditEvent(
-                correlationId,
-                auditAction,
-                "success",
-                TargetType: "subscription",
-                TargetReference: updated.Id,
-                CustomerId: updated.CustomerId),
-            cancellationToken);
-    }
-
-    private async Task HandlePaymentCompletedAsync(
+    private async Task<string> HandlePaymentIntentSucceededAsync(
         string rawPayload,
         string correlationId,
         CancellationToken cancellationToken)
     {
-        var paypalSubscriptionId = ExtractBillingAgreementId(rawPayload);
-        if (string.IsNullOrWhiteSpace(paypalSubscriptionId))
+        var invoiceId = ReadDataObjectString(rawPayload, "invoice");
+        if (!string.IsNullOrWhiteSpace(invoiceId))
+        {
+            // This PaymentIntent belongs to a subscription invoice — the
+            // "invoice.paid" event already handles confirmation for it.
+            return "ignored";
+        }
+
+        var documentId = ReadDataObjectMetadataString(rawPayload, "document_id");
+        if (string.IsNullOrWhiteSpace(documentId))
         {
             throw new InvalidOperationException(
-                "PAYMENT.SALE.COMPLETED payload has no billing_agreement_id.");
+                "payment_intent.succeeded payload has no metadata.document_id.");
+        }
+
+        var confirmResult = await _issuing.ConfirmPaymentAsync(
+            documentId,
+            correlationId,
+            "stripe",
+            cancellationToken);
+        if (!confirmResult.Succeeded)
+        {
+            throw new InvalidOperationException(
+                $"Stripe payment confirm failed: {confirmResult.Code} {confirmResult.Message}");
+        }
+
+        return "processed";
+    }
+
+    private async Task HandleInvoicePaidAsync(
+        string rawPayload,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
+        var stripeSubscriptionId = ReadDataObjectString(rawPayload, "subscription");
+        if (string.IsNullOrWhiteSpace(stripeSubscriptionId))
+        {
+            throw new InvalidOperationException(
+                "invoice.paid payload has no subscription id.");
         }
 
         var subscription = await _subscriptions.GetByExternalIdAsync(
-            "paypal",
-            paypalSubscriptionId,
+            "stripe",
+            stripeSubscriptionId,
             cancellationToken)
             ?? throw new InvalidOperationException(
-                $"No local subscription matches PayPal id {paypalSubscriptionId}.");
+                $"No local subscription matches Stripe id {stripeSubscriptionId}.");
+
+        if (subscription.Status is "pending_approval" or "pending_activation")
+        {
+            var now = DateTime.UtcNow;
+            subscription = await _subscriptions.ActivateAsync(
+                subscription.Id,
+                now,
+                now.AddMonths(1),
+                cancellationToken);
+            await _audit.RecordAsync(
+                new AuditEvent(
+                    correlationId,
+                    "subscription.activated",
+                    "success",
+                    TargetType: "subscription",
+                    TargetReference: subscription.Id,
+                    CustomerId: subscription.CustomerId),
+                cancellationToken);
+        }
 
         var title =
             $"Échéance mensuelle {DateTime.UtcNow:yyyy-MM} — {subscription.OfferName}";
@@ -273,7 +250,7 @@ public sealed class PayPalWebhookService : IPayPalWebhookService
         var confirmResult = await _issuing.ConfirmPaymentAsync(
             documentId,
             correlationId,
-            "paypal",
+            "stripe",
             cancellationToken);
         if (!confirmResult.Succeeded)
         {
@@ -292,36 +269,75 @@ public sealed class PayPalWebhookService : IPayPalWebhookService
             cancellationToken);
     }
 
-    private async Task<SubscriptionSummary> ResolveSubscriptionAsync(
-        string? paypalSubscriptionId,
+    private async Task HandleSubscriptionDeletedAsync(
+        string rawPayload,
+        string correlationId,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(paypalSubscriptionId))
+        var stripeSubscriptionId = ReadDataObjectString(rawPayload, "id");
+        if (string.IsNullOrWhiteSpace(stripeSubscriptionId))
         {
             throw new InvalidOperationException(
-                "PayPal subscription id is required.");
+                "customer.subscription.deleted payload has no id.");
         }
 
-        return await _subscriptions.GetByExternalIdAsync(
-            "paypal",
-            paypalSubscriptionId,
+        var subscription = await _subscriptions.GetByExternalIdAsync(
+            "stripe",
+            stripeSubscriptionId,
             cancellationToken)
             ?? throw new InvalidOperationException(
-                $"No local subscription matches PayPal id {paypalSubscriptionId}.");
+                $"No local subscription matches Stripe id {stripeSubscriptionId}.");
+
+        var updated = await _subscriptions.UpdateStatusAsync(
+            subscription.Id,
+            "cancelled",
+            cancellationToken);
+        await _audit.RecordAsync(
+            new AuditEvent(
+                correlationId,
+                "subscription.cancelled",
+                "success",
+                TargetType: "subscription",
+                TargetReference: updated.Id,
+                CustomerId: updated.CustomerId),
+            cancellationToken);
     }
 
-    private static string? ExtractBillingAgreementId(string rawPayload)
+    private static string? ReadDataObjectString(string rawPayload, string property)
     {
         try
         {
             using var document = JsonDocument.Parse(rawPayload);
-            if (document.RootElement.TryGetProperty(
-                    "resource", out var resource)
-                && resource.TryGetProperty(
-                    "billing_agreement_id", out var agreement)
-                && agreement.ValueKind == JsonValueKind.String)
+            if (document.RootElement.TryGetProperty("data", out var data)
+                && data.TryGetProperty("object", out var dataObject)
+                && dataObject.TryGetProperty(property, out var value)
+                && value.ValueKind == JsonValueKind.String)
             {
-                return agreement.GetString();
+                return value.GetString();
+            }
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+
+        return null;
+    }
+
+    private static string? ReadDataObjectMetadataString(
+        string rawPayload,
+        string metadataKey)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(rawPayload);
+            if (document.RootElement.TryGetProperty("data", out var data)
+                && data.TryGetProperty("object", out var dataObject)
+                && dataObject.TryGetProperty("metadata", out var metadata)
+                && metadata.TryGetProperty(metadataKey, out var value)
+                && value.ValueKind == JsonValueKind.String)
+            {
+                return value.GetString();
             }
         }
         catch (JsonException)

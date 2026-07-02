@@ -22,6 +22,12 @@ type CreatePlanResponse = {
   mode: "sandbox" | "live";
 };
 
+type CreateStripePriceResponse = {
+  stripePriceId: string;
+  stripeProductId: string;
+  mode: "test" | "live";
+};
+
 export function AdminCatalogOfferForm({ offer }: AdminCatalogOfferFormProps) {
   const router = useRouter();
   const isSubmittingRef = useRef(false);
@@ -42,10 +48,21 @@ export function AdminCatalogOfferForm({ offer }: AdminCatalogOfferFormProps) {
     );
   const paypalPlanIdSandbox = offer?.paypalPlanIdSandbox ?? null;
   const paypalPlanIdLive = offer?.paypalPlanIdLive ?? null;
-  const planLocked = paypalPlanIdSandbox !== null || paypalPlanIdLive !== null;
+  const stripePriceIdTest = offer?.stripePriceIdTest ?? null;
+  const stripePriceIdLive = offer?.stripePriceIdLive ?? null;
+  const planLocked =
+    paypalPlanIdSandbox !== null
+    || paypalPlanIdLive !== null
+    || stripePriceIdTest !== null
+    || stripePriceIdLive !== null;
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCreatingPlan, setIsCreatingPlan] = useState(false);
+  const [isCreatingStripePrice, setIsCreatingStripePrice] = useState(false);
   const [planMessage, setPlanMessage] = useState<{
+    tone: "success" | "error";
+    text: string;
+  } | null>(null);
+  const [stripePriceMessage, setStripePriceMessage] = useState<{
     tone: "success" | "error";
     text: string;
   } | null>(null);
@@ -71,6 +88,8 @@ export function AdminCatalogOfferForm({ offer }: AdminCatalogOfferFormProps) {
       billingCadence,
       paypalPlanIdSandbox,
       paypalPlanIdLive,
+      stripePriceIdTest,
+      stripePriceIdLive,
     };
 
     if (
@@ -148,6 +167,31 @@ export function AdminCatalogOfferForm({ offer }: AdminCatalogOfferFormProps) {
     }
 
     setIsCreatingPlan(false);
+  }
+
+  async function handleCreateStripePrice() {
+    if (!offer || isCreatingStripePrice) {
+      return;
+    }
+    setIsCreatingStripePrice(true);
+    setStripePriceMessage(null);
+
+    const result = await requestBffJson<CreateStripePriceResponse>(
+      `/api/admin/catalog/${encodeURIComponent(offer.id)}/stripe-price`,
+      { method: "POST" },
+    );
+
+    if (result.ok) {
+      setStripePriceMessage({
+        tone: "success",
+        text: `Prix Stripe ${result.data.mode} créé : ${result.data.stripePriceId}`,
+      });
+      router.refresh();
+    } else {
+      setStripePriceMessage({ tone: "error", text: result.error.message });
+    }
+
+    setIsCreatingStripePrice(false);
   }
 
   return (
@@ -247,6 +291,12 @@ export function AdminCatalogOfferForm({ offer }: AdminCatalogOfferFormProps) {
           <span className="field-hint" style={{ display: "block" }}>
             Plan PayPal live : {paypalPlanIdLive ?? "non créé"}
           </span>
+          <span className="field-hint" style={{ display: "block" }}>
+            Prix Stripe test : {stripePriceIdTest ?? "non créé"}
+          </span>
+          <span className="field-hint" style={{ display: "block" }}>
+            Prix Stripe live : {stripePriceIdLive ?? "non créé"}
+          </span>
         </div>
       </div>
       {offer && billingCadence === "monthly" ? (
@@ -272,6 +322,30 @@ export function AdminCatalogOfferForm({ offer }: AdminCatalogOfferFormProps) {
               tone={planMessage.tone}
             >
               <p>{planMessage.text}</p>
+            </FormMessage>
+          ) : null}
+          <button
+            className="button"
+            disabled={isCreatingStripePrice}
+            onClick={handleCreateStripePrice}
+            style={{ marginTop: "0.5rem" }}
+            type="button"
+          >
+            {isCreatingStripePrice
+              ? "Création du prix Stripe..."
+              : "Créer le prix Stripe pour le mode actif"}
+          </button>
+          <p className="field-hint">
+            Crée un product + price Stripe pour le mode STRIPE_MODE en cours
+            (test ou live) et enregistre l&apos;identifiant. Si le prix
+            existe déjà pour ce mode, l&apos;appel est refusé.
+          </p>
+          {stripePriceMessage ? (
+            <FormMessage
+              title={stripePriceMessage.tone === "success" ? "Prix créé" : "Échec"}
+              tone={stripePriceMessage.tone}
+            >
+              <p>{stripePriceMessage.text}</p>
             </FormMessage>
           ) : null}
         </div>

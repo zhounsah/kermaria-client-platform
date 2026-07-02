@@ -4,7 +4,9 @@ namespace Kermaria.ApiInternal.Contracts;
 
 public sealed record SubscriptionCreatePayload(
     string? OfferId,
-    [property: JsonPropertyName("paypalSubscriptionId")] string? PayPalSubscriptionId);
+    string? Rail,
+    [property: JsonPropertyName("paypalSubscriptionId")] string? PayPalSubscriptionId,
+    [property: JsonPropertyName("stripeSubscriptionId")] string? StripeSubscriptionId);
 
 public sealed record SubscriptionSummary(
     string Id,
@@ -13,8 +15,11 @@ public sealed record SubscriptionSummary(
     string CustomerName,
     string CommercialOfferId,
     string OfferName,
-    [property: JsonPropertyName("paypalPlanId")] string PayPalPlanId,
+    string Rail,
+    [property: JsonPropertyName("paypalPlanId")] string? PayPalPlanId,
     [property: JsonPropertyName("paypalSubscriptionId")] string? PayPalSubscriptionId,
+    [property: JsonPropertyName("stripePriceId")] string? StripePriceId,
+    [property: JsonPropertyName("stripeSubscriptionId")] string? StripeSubscriptionId,
     string Status,
     int PriceAmountCents,
     string Currency,

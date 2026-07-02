@@ -83,6 +83,7 @@ var authConfiguration = AuthConfigurationResolver.Resolve(
     builder.Configuration,
     builder.Environment);
 var paypalConfiguration = PayPalConfigurationResolver.Resolve(builder.Configuration);
+var stripeConfiguration = StripeConfigurationResolver.Resolve(builder.Configuration);
 
 builder.Services.AddSingleton(sqlConfiguration);
 builder.Services.AddSingleton(adConfiguration);
@@ -92,6 +93,7 @@ builder.Services.AddSingleton(bpceConfiguration);
 builder.Services.AddSingleton(emailConfiguration);
 builder.Services.AddSingleton(authConfiguration);
 builder.Services.AddSingleton(paypalConfiguration);
+builder.Services.AddSingleton(stripeConfiguration);
 builder.Services.AddSingleton<IPortalPasswordService, PortalPasswordService>();
 builder.Services.AddSingleton<ISessionTokenService, SessionTokenService>();
 builder.Services.AddSingleton<MockAuthenticationStore>();
@@ -146,6 +148,12 @@ builder.Services.AddScoped<IPayPalWebhookRepository>(
         ? new MariaDbPayPalWebhookRepository(sqlConfiguration)
         : new MockPayPalWebhookRepository(
             serviceProvider.GetRequiredService<MockPayPalWebhookStore>()));
+builder.Services.AddSingleton<MockStripeWebhookStore>();
+builder.Services.AddScoped<IStripeWebhookRepository>(
+    serviceProvider => sqlConfiguration.IsPersistent
+        ? new MariaDbStripeWebhookRepository(sqlConfiguration)
+        : new MockStripeWebhookRepository(
+            serviceProvider.GetRequiredService<MockStripeWebhookStore>()));
 builder.Services.AddScoped<IActiveDirectoryLinkRepository>(
     _ => sqlConfiguration.IsPersistent
         ? new MariaDbActiveDirectoryLinkRepository(sqlConfiguration)
@@ -160,6 +168,7 @@ builder.Services.AddScoped<
 builder.Services.AddScoped<ICommercialService, CommercialService>();
 builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
 builder.Services.AddScoped<IPayPalWebhookService, PayPalWebhookService>();
+builder.Services.AddScoped<IStripeWebhookService, StripeWebhookService>();
 builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddTransient<MariaDbMigrationRunner>();
 builder.Services.AddSingleton<OperationalReadinessService>();
@@ -915,9 +924,17 @@ app.MapPost(
             context,
             authenticationService,
             auditService);
+        var confirmPayload = await ReadPayload<PaymentConfirmPayload>(context);
+        var paymentMethod = string.Equals(
+            confirmPayload?.PaymentMethod,
+            "stripe",
+            StringComparison.Ordinal)
+            ? "stripe"
+            : "paypal";
         var result = await issuingService.ConfirmPaymentAsync(
             id,
             context.GetCorrelationId(),
+            paymentMethod,
             context.RequestAborted);
         await auditService.RecordAsync(
             new AuditEvent(
@@ -1083,8 +1100,14 @@ app.MapPost(
             auditService);
         var payload = await ReadPayload<SubscriptionCreatePayload>(context)
             ?? throw new PortalValidationException();
+        var rail = string.Equals(payload.Rail, "stripe", StringComparison.Ordinal)
+            ? "stripe"
+            : "paypal";
+        var externalSubscriptionId = rail == "stripe"
+            ? payload.StripeSubscriptionId
+            : payload.PayPalSubscriptionId;
         if (string.IsNullOrWhiteSpace(payload.OfferId)
-            || string.IsNullOrWhiteSpace(payload.PayPalSubscriptionId))
+            || string.IsNullOrWhiteSpace(externalSubscriptionId))
         {
             throw new PortalValidationException();
         }
@@ -1092,7 +1115,8 @@ app.MapPost(
         var result = await service.CreatePendingAsync(
             session,
             payload.OfferId.Trim(),
-            payload.PayPalSubscriptionId.Trim(),
+            rail,
+            externalSubscriptionId.Trim(),
             context.RequestAborted);
         await auditService.RecordAsync(
             new AuditEvent(
@@ -1145,6 +1169,27 @@ app.MapPost(
         IPayPalWebhookService webhookService) =>
     {
         var payload = await ReadPayload<PayPalWebhookEventPayload>(context)
+            ?? throw new PortalValidationException();
+        var result = await webhookService.ProcessAsync(
+            payload,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        return Results.Ok(new
+        {
+            event_id = result.EventId,
+            status = result.Status,
+            error_message = result.ErrorMessage,
+            correlation_id = context.GetCorrelationId()
+        });
+    });
+
+app.MapPost(
+    "/internal/webhooks/stripe",
+    async (
+        HttpContext context,
+        IStripeWebhookService webhookService) =>
+    {
+        var payload = await ReadPayload<StripeWebhookEventPayload>(context)
             ?? throw new PortalValidationException();
         var result = await webhookService.ProcessAsync(
             payload,
@@ -2838,6 +2883,7 @@ app.MapPost(
         var result = await issuingService.ConfirmPaymentAsync(
             id,
             context.GetCorrelationId(),
+            "manual",
             context.RequestAborted);
         await auditService.RecordAsync(
             new AuditEvent(

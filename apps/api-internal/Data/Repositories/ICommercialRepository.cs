@@ -79,6 +79,7 @@ public interface ICommercialRepository
     Task MarkDocumentPaidAsync(
         string documentId,
         string correlationId,
+        string paymentMethod,
         CancellationToken cancellationToken);
 
     Task<string> CreateBillingDocumentFromOfferAsync(

@@ -95,6 +95,30 @@ Acquis V0.22 et V0.22.1 (abonnements PayPal,
   plan PayPal" sur la fiche offre, prix fige une fois un plan cree ;
 - mode `PAYPAL_MODE=live` reste interdit avant V1.0 beta 1.
 
+Acquis V0.29 (Stripe, rail de paiement parallele a PayPal,
+[`docs/V0.29_STRIPE_PAYMENTS.md`](docs/V0.29_STRIPE_PAYMENTS.md)) :
+
+- one-shot via Stripe Checkout Sessions (`mode=payment`) et webhook
+  `payment_intent.succeeded` ;
+- abonnements via Checkout Sessions `mode=subscription` +
+  `stripe_price_id_test`/`stripe_price_id_live` sur `commercial_offers`,
+  webhook `invoice.paid` (active + facture chaque echeance) et
+  `customer.subscription.deleted` (annulation) ;
+- webhook `POST /api/webhooks/stripe`, verification de signature HMAC
+  locale (pas d'appel reseau, contrairement a PayPal), idempotence
+  `stripe_webhook_events.event_id` ;
+- table `subscriptions` generalisee par `rail` (`paypal`/`stripe`) plutot
+  que dupliquee, colonne `payment_method` sur `commercial_documents`
+  (ferme une lacune V0.21 : le rail de paiement n'etait jamais persiste) ;
+- admin : colonne "Rail" sur `/admin/payments`, badge "Rail" sur
+  `/admin/subscriptions`, bouton "Creer le prix Stripe" sur la fiche
+  offre (miroir V0.22.1) ;
+- portail client : radio de rail sur le bouton "Payer" et "Souscrire"
+  quand PayPal et Stripe sont actifs, defaut Stripe ;
+- mode `STRIPE_MODE=live` interdit avant V1.0 beta 1, **garde-fou code en
+  dur** dans `RuntimeConfigurationValidator` (contrairement a PayPal ou
+  ce n'est qu'une discipline de process).
+
 Acquis V0.20 et V0.21 (facturation et paiements one-shot) :
 
 - facturation reelle via l'API BPCE Banque Populaire avec numerotation
@@ -157,7 +181,6 @@ au 2026-06-30) :
 - V0.24 stabilisation testable SRV-01/02 ;
 - V0.26 creation de compte self-service ;
 - V0.28 catalogue packs et offres groupees ;
-- V0.29 Stripe comme rail parallele de PayPal ;
 - V0.30 premier test SMTP reel controle (allowlist destinataires) ;
 - V0.31 sortie effective de `OU=TEST_SITE_WEB` (procedure V0.25
   brique 3 executee, levee du `RequiredTestOuRoot` hardcode).
@@ -249,6 +272,15 @@ Variables paiement et reglement (V0.21 / V0.22) :
 - `BILLING_IBAN`, `BILLING_BIC`, `BILLING_TRANSFER_LABEL`
 - `BILLING_PAYPAL_URL` (fallback PayPal.me)
 
+Variables Stripe (V0.29, rail parallele a PayPal) :
+
+- `STRIPE_MODE=disabled|test|live` (defaut `disabled`)
+- `STRIPE_SECRET_KEY`
+- `STRIPE_PUBLISHABLE_KEY`
+- `STRIPE_WEBHOOK_SECRET` (requis pour la verification de signature)
+- `STRIPE_WEBHOOK_VERIFY=true|false` (defaut `true`, `false` autorise en
+  debug local uniquement)
+
 Variables e-mail transactionnel (V0.21) :
 
 - `EMAIL_INTEGRATION_MODE=disabled|mock|live` (defaut `disabled`)
@@ -321,11 +353,12 @@ npm run check:health
 Tests contrat ciblés (sans MariaDB requise) :
 
 ```powershell
-npm run test:bpce          # facturation BPCE V0.20
-npm run test:payments      # canaux paiement V0.21
-npm run test:subscriptions # abonnements PayPal V0.22
-npm run test:activity      # flux activite admin
-npm run test:ad-security   # garde-fous AD
+npm run test:bpce            # facturation BPCE V0.20
+npm run test:payments        # canaux paiement V0.21
+npm run test:subscriptions   # abonnements PayPal V0.22
+npm run test:payments-stripe # rail Stripe V0.29
+npm run test:activity        # flux activite admin
+npm run test:ad-security     # garde-fous AD
 ```
 
 ## Contraintes permanentes

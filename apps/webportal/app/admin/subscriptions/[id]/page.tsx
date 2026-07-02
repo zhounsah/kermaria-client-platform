@@ -78,13 +78,32 @@ export default async function AdminSubscriptionDetailPage({
             <dd>{formatCurrencyFromCents(subscription.priceAmountCents)}</dd>
           </div>
           <div>
-            <dt>Plan PayPal</dt>
-            <dd>{subscription.paypalPlanId}</dd>
+            <dt>Rail</dt>
+            <dd>{subscription.rail === "stripe" ? "Stripe" : "PayPal"}</dd>
           </div>
-          <div>
-            <dt>Souscription PayPal</dt>
-            <dd>{subscription.paypalSubscriptionId ?? "—"}</dd>
-          </div>
+          {subscription.rail === "stripe" ? (
+            <>
+              <div>
+                <dt>Prix Stripe</dt>
+                <dd>{subscription.stripePriceId ?? "—"}</dd>
+              </div>
+              <div>
+                <dt>Souscription Stripe</dt>
+                <dd>{subscription.stripeSubscriptionId ?? "—"}</dd>
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <dt>Plan PayPal</dt>
+                <dd>{subscription.paypalPlanId ?? "—"}</dd>
+              </div>
+              <div>
+                <dt>Souscription PayPal</dt>
+                <dd>{subscription.paypalSubscriptionId ?? "—"}</dd>
+              </div>
+            </>
+          )}
           <div>
             <dt>Démarrée le</dt>
             <dd>

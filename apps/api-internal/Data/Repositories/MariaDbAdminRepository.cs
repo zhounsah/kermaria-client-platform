@@ -850,6 +850,7 @@ public sealed class MariaDbAdminRepository : IAdminRepository
                 document.created_at,
                 document.updated_at,
                 document.shared_at,
+                document.payment_method,
                 document.service_request_id,
                 request.reference AS service_request_reference
             FROM commercial_documents document
@@ -881,6 +882,7 @@ public sealed class MariaDbAdminRepository : IAdminRepository
                 ToUtcIso(ReadNullableUtc(reader, "shared_at")),
                 ReadNullableIdentifier(reader, "service_request_id"),
                 ReadNullableString(reader, "service_request_reference"),
+                ReadNullableString(reader, "payment_method"),
                 customerReference,
                 customerName));
         }

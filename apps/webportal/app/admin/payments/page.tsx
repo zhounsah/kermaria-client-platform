@@ -23,6 +23,12 @@ export const dynamic = "force-dynamic";
 const paymentStatuses = ["all", "unpaid", "paid"] as const;
 type PaymentStatusFilter = (typeof paymentStatuses)[number];
 
+const paymentMethodLabel: Record<string, string> = {
+  paypal: "PayPal",
+  stripe: "Stripe",
+  manual: "Manuel",
+};
+
 type PageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
@@ -136,6 +142,7 @@ export default async function AdminPaymentsPage({ searchParams }: PageProps) {
             "Référence",
             "Client",
             "Titre",
+            "Rail",
             "Statut",
             "Total",
             "Émise le",
@@ -147,6 +154,7 @@ export default async function AdminPaymentsPage({ searchParams }: PageProps) {
               <code key={`${doc.id}-reference`}>{doc.internalReference}</code>,
               `${doc.customerName} (${doc.customerReference})`,
               doc.title,
+              paymentMethodLabel[doc.paymentMethod ?? ""] ?? "—",
               <StatusBadge
                 key={`${doc.id}-status`}
                 label={paid ? "Réglée" : "À régler"}

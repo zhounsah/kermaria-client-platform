@@ -6,7 +6,8 @@ namespace Kermaria.ApiInternal.Services;
 
 public sealed record SubscriptionLookup(
     CommercialOfferSummary Offer,
-    string PayPalPlanId);
+    string Rail,
+    string ExternalPlanId);
 
 public interface ISubscriptionService
 {
@@ -25,12 +26,14 @@ public interface ISubscriptionService
 
     Task<SubscriptionLookup> ResolveSubscribableOfferAsync(
         string offerId,
+        string rail,
         CancellationToken cancellationToken);
 
     Task<SubscriptionSummary> CreatePendingAsync(
         PortalSessionContext session,
         string offerId,
-        string paypalSubscriptionId,
+        string rail,
+        string externalSubscriptionId,
         CancellationToken cancellationToken);
 
     Task<SubscriptionSummary> MarkAsPendingActivationAsync(
@@ -52,15 +55,18 @@ public sealed class SubscriptionService : ISubscriptionService
     private readonly ISubscriptionRepository _repository;
     private readonly ICommercialRepository _commercialRepository;
     private readonly PayPalRuntimeConfiguration _paypal;
+    private readonly StripeRuntimeConfiguration _stripe;
 
     public SubscriptionService(
         ISubscriptionRepository repository,
         ICommercialRepository commercialRepository,
-        PayPalRuntimeConfiguration paypal)
+        PayPalRuntimeConfiguration paypal,
+        StripeRuntimeConfiguration stripe)
     {
         _repository = repository;
         _commercialRepository = commercialRepository;
         _paypal = paypal;
+        _stripe = stripe;
     }
 
     public bool IsPersistent => _repository.IsPersistent;
@@ -82,6 +88,7 @@ public sealed class SubscriptionService : ISubscriptionService
 
     public async Task<SubscriptionLookup> ResolveSubscribableOfferAsync(
         string offerId,
+        string rail,
         CancellationToken cancellationToken)
     {
         var catalog = await _commercialRepository.GetClientCatalogAsync(
@@ -93,9 +100,9 @@ public sealed class SubscriptionService : ISubscriptionService
                 StringComparison.Ordinal))
             ?? throw new PortalDataNotFoundException();
 
-        var activePlanId = _paypal.IsLive
-            ? offer.PayPalPlanIdLive
-            : offer.PayPalPlanIdSandbox;
+        var activePlanId = rail == "stripe"
+            ? (_stripe.IsLive ? offer.StripePriceIdLive : offer.StripePriceIdTest)
+            : (_paypal.IsLive ? offer.PayPalPlanIdLive : offer.PayPalPlanIdSandbox);
 
         if (!string.Equals(
                 offer.BillingCadence,
@@ -106,23 +113,28 @@ public sealed class SubscriptionService : ISubscriptionService
             throw new PortalValidationException();
         }
 
-        return new SubscriptionLookup(offer, activePlanId);
+        return new SubscriptionLookup(offer, rail, activePlanId);
     }
 
     public async Task<SubscriptionSummary> CreatePendingAsync(
         PortalSessionContext session,
         string offerId,
-        string paypalSubscriptionId,
+        string rail,
+        string externalSubscriptionId,
         CancellationToken cancellationToken)
     {
         var lookup = await ResolveSubscribableOfferAsync(
             offerId,
+            rail,
             cancellationToken);
         return await _repository.CreatePendingAsync(
             session.CustomerId,
             lookup.Offer.Id,
-            lookup.PayPalPlanId,
-            paypalSubscriptionId,
+            rail,
+            rail == "stripe" ? null : lookup.ExternalPlanId,
+            rail == "stripe" ? null : externalSubscriptionId,
+            rail == "stripe" ? lookup.ExternalPlanId : null,
+            rail == "stripe" ? externalSubscriptionId : null,
             cancellationToken);
     }
 

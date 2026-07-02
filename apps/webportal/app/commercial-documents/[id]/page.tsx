@@ -5,7 +5,7 @@ import { CommercialDocumentLineTable } from "@/components/CommercialDocumentLine
 import { ErrorState } from "@/components/ErrorState";
 import { FormMessage } from "@/components/FormMessage";
 import { PageHeader } from "@/components/PageHeader";
-import { PayPalPayButton } from "@/components/PayPalPayButton";
+import { PayButton } from "@/components/PayButton";
 import { SectionCard } from "@/components/SectionCard";
 import { StatusBadge } from "@/components/StatusBadge";
 import { requireClientSession } from "@/lib/auth";
@@ -19,7 +19,11 @@ import {
   getCommercialDocument,
   getCommercialDocumentInvoice,
 } from "@/lib/internal-api";
-import { getBillingConfig, isPayPalConfigured } from "@/lib/runtime-config";
+import {
+  getBillingConfig,
+  isPayPalConfigured,
+  isStripeConfigured,
+} from "@/lib/runtime-config";
 
 export const metadata = {
   title: "Détail document commercial",
@@ -66,6 +70,7 @@ export default async function CommercialDocumentDetailPage({
   const document = result.data;
   const billing = getBillingConfig();
   const paypalEnabled = isPayPalConfigured();
+  const stripeEnabled = isStripeConfigured();
   const status = commercialDocumentStatus[document.status] ?? {
     label: document.status,
     tone: "slate" as const,
@@ -193,14 +198,18 @@ export default async function CommercialDocumentDetailPage({
                 ✓ Cette facture a été réglée. Merci pour votre paiement.
               </p>
             </div>
-          ) : paypalEnabled ? (
+          ) : paypalEnabled || stripeEnabled ? (
             <div style={{ marginTop: "1.5rem" }}>
               <h3 style={{ marginBottom: "0.5rem" }}>Paiement en ligne</h3>
               <p style={{ marginBottom: "0.75rem", color: "var(--color-text-muted)" }}>
                 Réglez directement par carte ou compte PayPal. Vous serez
-                redirigé vers PayPal puis ramené automatiquement.
+                redirigé puis ramené automatiquement.
               </p>
-              <PayPalPayButton documentId={id} />
+              <PayButton
+                documentId={id}
+                paypalEnabled={paypalEnabled}
+                stripeEnabled={stripeEnabled}
+              />
             </div>
           ) : billing.paypalUrl ? (
             <div style={{ marginTop: "1.5rem" }}>

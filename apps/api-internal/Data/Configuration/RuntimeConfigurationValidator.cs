@@ -140,6 +140,30 @@ public static class RuntimeConfigurationValidator
                 invalidVariables);
         }
 
+        var stripeMode = configuration["STRIPE_MODE"]?.Trim();
+        if (string.Equals(
+                stripeMode,
+                "live",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (var variable in new[]
+            {
+                "STRIPE_SECRET_KEY",
+                "STRIPE_PUBLISHABLE_KEY"
+            })
+            {
+                if (string.IsNullOrWhiteSpace(configuration[variable]))
+                {
+                    invalidVariables.Add(variable);
+                }
+            }
+
+            ValidateSecret(
+                configuration,
+                "STRIPE_WEBHOOK_SECRET",
+                invalidVariables);
+        }
+
         foreach (var variable in DevelopmentSeedPasswordVariables)
         {
             if (!string.IsNullOrWhiteSpace(configuration[variable]))

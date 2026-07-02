@@ -246,7 +246,9 @@ public sealed class MockCommercialRepository : ICommercialRepository
                 now,
                 offer.BillingCadence,
                 offer.PayPalPlanIdSandbox,
-                offer.PayPalPlanIdLive);
+                offer.PayPalPlanIdLive,
+                offer.StripePriceIdTest,
+                offer.StripePriceIdLive);
             _store.Offers.Add(item);
 
             return Task.FromResult(new CommercialOfferMutationResponse(
@@ -269,7 +271,9 @@ public sealed class MockCommercialRepository : ICommercialRepository
                 ?? throw new PortalDataNotFoundException();
             var planAlreadySet =
                 current.PayPalPlanIdSandbox is not null
-                || current.PayPalPlanIdLive is not null;
+                || current.PayPalPlanIdLive is not null
+                || current.StripePriceIdTest is not null
+                || current.StripePriceIdLive is not null;
             if (planAlreadySet && current.PriceAmountCents != offer.PriceAmountCents)
             {
                 throw new PortalValidationException();
@@ -285,7 +289,9 @@ public sealed class MockCommercialRepository : ICommercialRepository
                 || current.DisplayOrder != offer.DisplayOrder
                 || current.BillingCadence != offer.BillingCadence
                 || current.PayPalPlanIdSandbox != offer.PayPalPlanIdSandbox
-                || current.PayPalPlanIdLive != offer.PayPalPlanIdLive;
+                || current.PayPalPlanIdLive != offer.PayPalPlanIdLive
+                || current.StripePriceIdTest != offer.StripePriceIdTest
+                || current.StripePriceIdLive != offer.StripePriceIdLive;
 
             current.Name = offer.Name;
             current.Description = offer.Description;
@@ -297,6 +303,8 @@ public sealed class MockCommercialRepository : ICommercialRepository
             current.BillingCadence = offer.BillingCadence;
             current.PayPalPlanIdSandbox = offer.PayPalPlanIdSandbox;
             current.PayPalPlanIdLive = offer.PayPalPlanIdLive;
+            current.StripePriceIdTest = offer.StripePriceIdTest;
+            current.StripePriceIdLive = offer.StripePriceIdLive;
             current.UpdatedAt = DateTime.UtcNow.ToString("O");
 
             return Task.FromResult(new CommercialOfferMutationResponse(
@@ -666,6 +674,7 @@ public sealed class MockCommercialRepository : ICommercialRepository
     public Task MarkDocumentPaidAsync(
         string documentId,
         string correlationId,
+        string paymentMethod,
         CancellationToken cancellationToken)
     {
         lock (_store.SyncRoot)
@@ -674,6 +683,7 @@ public sealed class MockCommercialRepository : ICommercialRepository
             if (doc is not null)
             {
                 doc.Status = "paid";
+                doc.PaymentMethod = paymentMethod;
                 doc.UpdatedAt = DateTime.UtcNow.ToString("O");
             }
         }
@@ -839,6 +849,8 @@ public sealed class MockCommercialRepository : ICommercialRepository
             offer.BillingCadence,
             offer.PayPalPlanIdSandbox,
             offer.PayPalPlanIdLive,
+            offer.StripePriceIdTest,
+            offer.StripePriceIdLive,
             offer.CreatedAt,
             offer.UpdatedAt);
 
@@ -859,6 +871,7 @@ public sealed class MockCommercialRepository : ICommercialRepository
             document.SharedAt,
             document.ServiceRequestId,
             document.ServiceRequestReference,
+            document.PaymentMethod,
             LinesFor(document.Id)
                 .OrderBy(line => line.SortOrder)
                 .ThenBy(line => line.CreatedAt)
@@ -882,6 +895,7 @@ public sealed class MockCommercialRepository : ICommercialRepository
             document.SharedAt,
             document.ServiceRequestId,
             document.ServiceRequestReference,
+            document.PaymentMethod,
             document.CustomerReference,
             document.CustomerName,
             document.CreatedByDisplayName,
@@ -908,7 +922,8 @@ public sealed class MockCommercialRepository : ICommercialRepository
             document.UpdatedAt,
             document.SharedAt,
             document.ServiceRequestId,
-            document.ServiceRequestReference);
+            document.ServiceRequestReference,
+            document.PaymentMethod);
 
     private static AdminCommercialDocumentSummary ToAdminSummary(
         MockCommercialDocument document)
@@ -928,6 +943,7 @@ public sealed class MockCommercialRepository : ICommercialRepository
             document.SharedAt,
             document.ServiceRequestId,
             document.ServiceRequestReference,
+            document.PaymentMethod,
             document.CustomerReference,
             document.CustomerName);
 
@@ -966,7 +982,9 @@ public sealed record MockCommercialOffer(
     string InitialUpdatedAt,
     string InitialBillingCadence = CommercialStatuses.CadenceOneTime,
     string? InitialPayPalPlanIdSandbox = null,
-    string? InitialPayPalPlanIdLive = null)
+    string? InitialPayPalPlanIdLive = null,
+    string? InitialStripePriceIdTest = null,
+    string? InitialStripePriceIdLive = null)
 {
     public string Name { get; set; } = InitialName;
     public string Description { get; set; } = InitialDescription;
@@ -979,6 +997,8 @@ public sealed record MockCommercialOffer(
     public string BillingCadence { get; set; } = InitialBillingCadence;
     public string? PayPalPlanIdSandbox { get; set; } = InitialPayPalPlanIdSandbox;
     public string? PayPalPlanIdLive { get; set; } = InitialPayPalPlanIdLive;
+    public string? StripePriceIdTest { get; set; } = InitialStripePriceIdTest;
+    public string? StripePriceIdLive { get; set; } = InitialStripePriceIdLive;
 }
 
 public sealed record MockCommercialDocument(
@@ -1012,6 +1032,7 @@ public sealed record MockCommercialDocument(
     public string UpdatedAt { get; set; } = InitialUpdatedAt;
     public string? SharedAt { get; set; } = InitialSharedAt;
     public string? CancelledAt { get; set; } = InitialCancelledAt;
+    public string? PaymentMethod { get; set; }
 }
 
 public sealed record MockCommercialDocumentLine(

@@ -10,6 +10,14 @@ export function isPayPalConfigured(): boolean {
   );
 }
 
+export function isStripeConfigured(): boolean {
+  return (
+    process.env.STRIPE_MODE?.trim().toLowerCase() !== "disabled"
+    && !!process.env.STRIPE_SECRET_KEY?.trim()
+    && !!process.env.STRIPE_PUBLISHABLE_KEY?.trim()
+  );
+}
+
 export function getBillingConfig() {
   return {
     iban: process.env.BILLING_IBAN?.trim() || null,

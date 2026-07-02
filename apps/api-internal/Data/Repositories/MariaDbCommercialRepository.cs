@@ -44,6 +44,8 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 billing_cadence,
                 paypal_plan_id_sandbox,
                 paypal_plan_id_live,
+                stripe_price_id_test,
+                stripe_price_id_live,
                 created_at,
                 updated_at
             FROM commercial_offers
@@ -84,6 +86,8 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 billing_cadence,
                 paypal_plan_id_sandbox,
                 paypal_plan_id_live,
+                stripe_price_id_test,
+                stripe_price_id_live,
                 created_at,
                 updated_at
             FROM commercial_offers
@@ -124,6 +128,8 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 billing_cadence,
                 paypal_plan_id_sandbox,
                 paypal_plan_id_live,
+                stripe_price_id_test,
+                stripe_price_id_live,
                 created_at,
                 updated_at
             ) VALUES (
@@ -140,6 +146,8 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 @billing_cadence,
                 @paypal_plan_id_sandbox,
                 @paypal_plan_id_live,
+                @stripe_price_id_test,
+                @stripe_price_id_live,
                 @created_at,
                 @updated_at
             );
@@ -159,6 +167,12 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
         command.Parameters.AddWithValue(
             "@paypal_plan_id_live",
             DbValue(offer.PayPalPlanIdLive));
+        command.Parameters.AddWithValue(
+            "@stripe_price_id_test",
+            DbValue(offer.StripePriceIdTest));
+        command.Parameters.AddWithValue(
+            "@stripe_price_id_live",
+            DbValue(offer.StripePriceIdLive));
         command.Parameters.AddWithValue("@created_at", now);
         command.Parameters.AddWithValue("@updated_at", now);
         await command.ExecuteNonQueryAsync(cancellationToken);
@@ -187,7 +201,9 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
             cancellationToken);
         var planAlreadySet =
             current.PayPalPlanIdSandbox is not null
-            || current.PayPalPlanIdLive is not null;
+            || current.PayPalPlanIdLive is not null
+            || current.StripePriceIdTest is not null
+            || current.StripePriceIdLive is not null;
         if (planAlreadySet && current.PriceAmountCents != offer.PriceAmountCents)
         {
             throw new PortalValidationException();
@@ -203,7 +219,9 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
             || current.DisplayOrder != offer.DisplayOrder
             || current.BillingCadence != offer.BillingCadence
             || current.PayPalPlanIdSandbox != offer.PayPalPlanIdSandbox
-            || current.PayPalPlanIdLive != offer.PayPalPlanIdLive;
+            || current.PayPalPlanIdLive != offer.PayPalPlanIdLive
+            || current.StripePriceIdTest != offer.StripePriceIdTest
+            || current.StripePriceIdLive != offer.StripePriceIdLive;
 
         await using (var command = connection.CreateCommand())
         {
@@ -221,6 +239,8 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                     billing_cadence = @billing_cadence,
                     paypal_plan_id_sandbox = @paypal_plan_id_sandbox,
                     paypal_plan_id_live = @paypal_plan_id_live,
+                    stripe_price_id_test = @stripe_price_id_test,
+                    stripe_price_id_live = @stripe_price_id_live,
                     updated_at = @updated_at
                 WHERE id = @id;
                 """;
@@ -239,6 +259,12 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
             command.Parameters.AddWithValue(
                 "@paypal_plan_id_live",
                 DbValue(offer.PayPalPlanIdLive));
+            command.Parameters.AddWithValue(
+                "@stripe_price_id_test",
+                DbValue(offer.StripePriceIdTest));
+            command.Parameters.AddWithValue(
+                "@stripe_price_id_live",
+                DbValue(offer.StripePriceIdLive));
             command.Parameters.AddWithValue("@updated_at", DateTime.UtcNow);
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -276,6 +302,7 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 document.created_at,
                 document.updated_at,
                 document.shared_at,
+                document.payment_method,
                 document.service_request_id,
                 request.reference AS service_request_reference
             FROM commercial_documents document
@@ -319,6 +346,7 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 document.created_at,
                 document.updated_at,
                 document.shared_at,
+                document.payment_method,
                 document.service_request_id,
                 request.reference AS service_request_reference
             FROM commercial_documents document
@@ -357,6 +385,7 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
             summary.SharedAt,
             summary.ServiceRequestId,
             summary.ServiceRequestReference,
+            summary.PaymentMethod,
             await GetLinesAsync(connection, documentId, cancellationToken));
     }
 
@@ -383,6 +412,7 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 document.created_at,
                 document.updated_at,
                 document.shared_at,
+                document.payment_method,
                 document.service_request_id,
                 request.reference AS service_request_reference,
                 customer.id AS customer_id,
@@ -427,6 +457,7 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 document.created_at,
                 document.updated_at,
                 document.shared_at,
+                document.payment_method,
                 document.service_request_id,
                 request.reference AS service_request_reference,
                 customer.id AS customer_id,
@@ -473,6 +504,7 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
             summary.SharedAt,
             summary.ServiceRequestId,
             summary.ServiceRequestReference,
+            summary.PaymentMethod,
             summary.CustomerReference,
             summary.CustomerName,
             createdByDisplayName,
@@ -978,6 +1010,8 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
             reader.GetString("billing_cadence"),
             ReadNullableString(reader, "paypal_plan_id_sandbox"),
             ReadNullableString(reader, "paypal_plan_id_live"),
+            ReadNullableString(reader, "stripe_price_id_test"),
+            ReadNullableString(reader, "stripe_price_id_live"),
             ToUtcIso(reader.GetDateTime("created_at")),
             ToUtcIso(reader.GetDateTime("updated_at")));
 
@@ -998,7 +1032,8 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
             ToUtcIso(reader.GetDateTime("updated_at")),
             ReadNullableDateTimeIso(reader, "shared_at"),
             ReadNullableString(reader, "service_request_id"),
-            ReadNullableString(reader, "service_request_reference"));
+            ReadNullableString(reader, "service_request_reference"),
+            ReadNullableString(reader, "payment_method"));
 
     private static AdminCommercialDocumentSummary ReadAdminDocumentSummary(
         MySqlDataReader reader)
@@ -1025,6 +1060,7 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
             summary.SharedAt,
             summary.ServiceRequestId,
             summary.ServiceRequestReference,
+            summary.PaymentMethod,
             customerReference,
             customerName);
     }
@@ -1100,7 +1136,9 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 display_order,
                 billing_cadence,
                 paypal_plan_id_sandbox,
-                paypal_plan_id_live
+                paypal_plan_id_live,
+                stripe_price_id_test,
+                stripe_price_id_live
             FROM commercial_offers
             WHERE id = @id
             FOR UPDATE;
@@ -1123,7 +1161,9 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
             reader.GetInt32("display_order"),
             reader.GetString("billing_cadence"),
             ReadNullableString(reader, "paypal_plan_id_sandbox"),
-            ReadNullableString(reader, "paypal_plan_id_live"));
+            ReadNullableString(reader, "paypal_plan_id_live"),
+            ReadNullableString(reader, "stripe_price_id_test"),
+            ReadNullableString(reader, "stripe_price_id_live"));
     }
 
     private static async Task<string> ResolveCustomerIdAsync(
@@ -1472,7 +1512,9 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
         int DisplayOrder,
         string BillingCadence,
         string? PayPalPlanIdSandbox,
-        string? PayPalPlanIdLive);
+        string? PayPalPlanIdLive,
+        string? StripePriceIdTest,
+        string? StripePriceIdLive);
 
     private sealed record DocumentRow(
         string CustomerId,
@@ -1607,6 +1649,7 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
     public async Task MarkDocumentPaidAsync(
         string documentId,
         string correlationId,
+        string paymentMethod,
         CancellationToken cancellationToken)
     {
         await using var connection = new MySqlConnection(_connectionString);
@@ -1616,10 +1659,12 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
         cmd.CommandText = """
             UPDATE commercial_documents SET
                 status = 'paid',
+                payment_method = @paymentMethod,
                 updated_at = NOW(6)
             WHERE id = @documentId
             """;
         cmd.Parameters.AddWithValue("documentId", documentId);
+        cmd.Parameters.AddWithValue("paymentMethod", paymentMethod);
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -1804,6 +1849,7 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 document.created_at,
                 document.updated_at,
                 document.shared_at,
+                document.payment_method,
                 document.service_request_id,
                 NULL AS service_request_reference
             FROM commercial_documents document

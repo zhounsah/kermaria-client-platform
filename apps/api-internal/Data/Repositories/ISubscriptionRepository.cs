@@ -17,15 +17,19 @@ public interface ISubscriptionRepository
         string subscriptionId,
         CancellationToken cancellationToken);
 
-    Task<SubscriptionSummary?> GetByPayPalIdAsync(
-        string paypalSubscriptionId,
+    Task<SubscriptionSummary?> GetByExternalIdAsync(
+        string rail,
+        string externalId,
         CancellationToken cancellationToken);
 
     Task<SubscriptionSummary> CreatePendingAsync(
         string customerId,
         string commercialOfferId,
-        string paypalPlanId,
-        string paypalSubscriptionId,
+        string rail,
+        string? paypalPlanId,
+        string? paypalSubscriptionId,
+        string? stripePriceId,
+        string? stripeSubscriptionId,
         CancellationToken cancellationToken);
 
     Task<SubscriptionSummary> UpdateStatusAsync(

@@ -35,6 +35,7 @@ public interface IInvoiceIssuingService
     Task<IssueInvoiceResult> ConfirmPaymentAsync(
         string documentId,
         string correlationId,
+        string paymentMethod,
         CancellationToken cancellationToken);
 }
 
@@ -254,6 +255,7 @@ public sealed class InvoiceIssuingService : IInvoiceIssuingService
     public async Task<IssueInvoiceResult> ConfirmPaymentAsync(
         string documentId,
         string correlationId,
+        string paymentMethod,
         CancellationToken cancellationToken)
     {
         var record = await _bpceRepository.GetInvoiceRecordAsync(
@@ -295,7 +297,7 @@ public sealed class InvoiceIssuingService : IInvoiceIssuingService
             cancellationToken);
 
         await _commercialRepository.MarkDocumentPaidAsync(
-            documentId, correlationId, cancellationToken);
+            documentId, correlationId, paymentMethod, cancellationToken);
 
         await TryDispatchEmailAsync(
             "payment_confirmed",

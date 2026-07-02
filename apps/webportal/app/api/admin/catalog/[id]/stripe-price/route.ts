@@ -15,13 +15,13 @@ import { getSessionCookieName } from "@/lib/session-config";
 import {
   getInternalApiUrl,
   getInternalServiceHeaders,
+  isStripeConfigured,
 } from "@/lib/runtime-config";
 import {
-  createPayPalPlan,
-  createPayPalProduct,
-  getPayPalMode,
-  isPayPalConfigured,
-} from "@/lib/paypal";
+  createStripePrice,
+  createStripeProduct,
+  getStripeMode,
+} from "@/lib/stripe";
 
 export async function POST(
   request: NextRequest,
@@ -39,11 +39,11 @@ export async function POST(
     );
   }
 
-  if (!isPayPalConfigured()) {
+  if (!isStripeConfigured()) {
     return NextResponse.json(
       {
-        code: "PAYPAL_NOT_CONFIGURED",
-        message: "PayPal n'est pas configuré.",
+        code: "STRIPE_NOT_CONFIGURED",
+        message: "Stripe n'est pas configuré.",
       },
       { status: 503 },
     );
@@ -120,54 +120,53 @@ export async function POST(
       {
         code: "OFFER_NOT_MONTHLY",
         message:
-          "Le plan PayPal n'a de sens que sur une offre mensuelle.",
+          "Le prix Stripe n'a de sens que sur une offre mensuelle.",
       },
       { status: 400 },
     );
   }
 
-  const mode = getPayPalMode();
+  const mode = getStripeMode();
   const existingForMode =
-    mode === "live" ? offer.paypalPlanIdLive : offer.paypalPlanIdSandbox;
+    mode === "live" ? offer.stripePriceIdLive : offer.stripePriceIdTest;
   if (existingForMode) {
     return NextResponse.json(
       {
-        code: "PLAN_ALREADY_EXISTS",
-        message: `Un plan PayPal ${mode} existe déjà pour cette offre.`,
+        code: "PRICE_ALREADY_EXISTS",
+        message: `Un prix Stripe ${mode} existe déjà pour cette offre.`,
       },
       { status: 409 },
     );
   }
 
-  let paypalProductId: string;
-  let paypalPlanId: string;
+  let stripeProductId: string;
+  let stripePriceId: string;
   try {
-    paypalProductId = await createPayPalProduct(offer.name, offer.description);
+    stripeProductId = await createStripeProduct(offer.name, offer.description);
   } catch (error) {
-    console.error("PayPal create product error:", error);
+    console.error("Stripe create product error:", error);
     return NextResponse.json(
       {
-        code: "PAYPAL_PRODUCT_ERROR",
-        message: "Impossible de créer le produit PayPal.",
+        code: "STRIPE_PRODUCT_ERROR",
+        message: "Impossible de créer le produit Stripe.",
       },
       { status: 502 },
     );
   }
 
   try {
-    paypalPlanId = await createPayPalPlan(
-      paypalProductId,
-      offer.name,
+    stripePriceId = await createStripePrice(
+      stripeProductId,
       offer.priceAmountCents,
       offer.currency,
     );
   } catch (error) {
-    console.error("PayPal create plan error:", error);
+    console.error("Stripe create price error:", error);
     return NextResponse.json(
       {
-        code: "PAYPAL_PLAN_ERROR",
+        code: "STRIPE_PRICE_ERROR",
         message:
-          "Le produit PayPal a été créé mais la création du plan a échoué.",
+          "Le produit Stripe a été créé mais la création du prix a échoué.",
       },
       { status: 502 },
     );
@@ -182,12 +181,10 @@ export async function POST(
     status: offer.status,
     displayOrder: offer.displayOrder,
     billingCadence: offer.billingCadence,
-    paypalPlanIdSandbox:
-      mode === "sandbox" ? paypalPlanId : offer.paypalPlanIdSandbox,
-    paypalPlanIdLive:
-      mode === "live" ? paypalPlanId : offer.paypalPlanIdLive,
-    stripePriceIdTest: offer.stripePriceIdTest,
-    stripePriceIdLive: offer.stripePriceIdLive,
+    paypalPlanIdSandbox: offer.paypalPlanIdSandbox,
+    paypalPlanIdLive: offer.paypalPlanIdLive,
+    stripePriceIdTest: mode === "test" ? stripePriceId : offer.stripePriceIdTest,
+    stripePriceIdLive: mode === "live" ? stripePriceId : offer.stripePriceIdLive,
   };
 
   try {
@@ -199,12 +196,12 @@ export async function POST(
       correlationId,
     );
   } catch (error) {
-    console.error("Persist PayPal plan id error:", error);
+    console.error("Persist Stripe price id error:", error);
     return NextResponse.json(
       {
         code: "PERSIST_ERROR",
         message:
-          `Le plan PayPal ${mode} ${paypalPlanId} a été créé chez PayPal `
+          `Le prix Stripe ${mode} ${stripePriceId} a été créé chez Stripe `
           + "mais n'a pas pu être enregistré localement. Copiez-le et "
           + "saisissez-le manuellement.",
       },
@@ -213,8 +210,8 @@ export async function POST(
   }
 
   return NextResponse.json({
-    paypalPlanId,
-    paypalProductId,
+    stripePriceId,
+    stripeProductId,
     mode,
   });
 }

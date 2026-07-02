@@ -243,6 +243,8 @@ export type SubscriptionStatus =
   | "cancelled"
   | "expired";
 
+export type PaymentRail = "paypal" | "stripe";
+
 export interface SubscriptionSummary {
   id: string;
   customerId: string;
@@ -250,8 +252,11 @@ export interface SubscriptionSummary {
   customerName: string;
   commercialOfferId: string;
   offerName: string;
-  paypalPlanId: string;
+  rail: PaymentRail;
+  paypalPlanId: string | null;
   paypalSubscriptionId: string | null;
+  stripePriceId: string | null;
+  stripeSubscriptionId: string | null;
   status: SubscriptionStatus;
   priceAmountCents: number;
   currency: string;
@@ -264,7 +269,9 @@ export interface SubscriptionSummary {
 
 export interface SubscriptionCreatePayload {
   offerId: string;
-  paypalSubscriptionId: string;
+  rail: PaymentRail;
+  paypalSubscriptionId?: string;
+  stripeSubscriptionId?: string;
 }
 
 export interface AdminSubscriptionDetail {
@@ -288,6 +295,8 @@ export interface CommercialOfferSummary {
   billingCadence: CommercialOfferBillingCadence;
   paypalPlanIdSandbox: string | null;
   paypalPlanIdLive: string | null;
+  stripePriceIdTest: string | null;
+  stripePriceIdLive: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -303,6 +312,8 @@ export interface CommercialOfferPayload {
   billingCadence: CommercialOfferBillingCadence;
   paypalPlanIdSandbox: string | null;
   paypalPlanIdLive: string | null;
+  stripePriceIdTest: string | null;
+  stripePriceIdLive: string | null;
 }
 
 export type CommercialDocumentType =
@@ -349,6 +360,7 @@ export interface CommercialDocumentSummary {
   sharedAt: string | null;
   serviceRequestId: string | null;
   serviceRequestReference: string | null;
+  paymentMethod: PaymentRail | "manual" | null;
 }
 
 export interface CommercialDocumentDetail extends CommercialDocumentSummary {

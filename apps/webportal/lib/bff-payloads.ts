@@ -106,6 +106,16 @@ export function parseCommercialOfferPayload(
       || candidate.paypalPlanIdLive === null
       || candidate.paypalPlanIdLive === undefined
     )
+    || !(
+      typeof candidate.stripePriceIdTest === "string"
+      || candidate.stripePriceIdTest === null
+      || candidate.stripePriceIdTest === undefined
+    )
+    || !(
+      typeof candidate.stripePriceIdLive === "string"
+      || candidate.stripePriceIdLive === null
+      || candidate.stripePriceIdLive === undefined
+    )
   ) {
     return null;
   }
@@ -117,6 +127,14 @@ export function parseCommercialOfferPayload(
   const paypalPlanIdLive =
     typeof candidate.paypalPlanIdLive === "string"
       ? candidate.paypalPlanIdLive.trim() || null
+      : null;
+  const stripePriceIdTest =
+    typeof candidate.stripePriceIdTest === "string"
+      ? candidate.stripePriceIdTest.trim() || null
+      : null;
+  const stripePriceIdLive =
+    typeof candidate.stripePriceIdLive === "string"
+      ? candidate.stripePriceIdLive.trim() || null
       : null;
   const payload: CommercialOfferPayload = {
     name: candidate.name.trim(),
@@ -130,6 +148,8 @@ export function parseCommercialOfferPayload(
       candidate.billingCadence as CommercialOfferPayload["billingCadence"],
     paypalPlanIdSandbox,
     paypalPlanIdLive,
+    stripePriceIdTest,
+    stripePriceIdLive,
   };
 
   const planIdPattern = /^[A-Za-z0-9_-]{1,64}$/;

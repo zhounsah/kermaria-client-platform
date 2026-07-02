@@ -19,6 +19,7 @@ import {
   resolveDataSource,
 } from "@/lib/internal-api";
 import { getPayPalMode } from "@/lib/paypal";
+import { getStripeMode } from "@/lib/stripe";
 
 export const metadata = {
   title: "Services",
@@ -105,10 +106,19 @@ export default async function ServicesPage() {
                 getPayPalMode() === "live"
                   ? offer.paypalPlanIdLive
                   : offer.paypalPlanIdSandbox;
-              const canSubscribe =
+              const activePriceId =
+                getStripeMode() === "live"
+                  ? offer.stripePriceIdLive
+                  : offer.stripePriceIdTest;
+              const canSubscribePaypal =
                 offer.billingCadence === "monthly"
                 && !!activePlanId
                 && offer.status === "active";
+              const canSubscribeStripe =
+                offer.billingCadence === "monthly"
+                && !!activePriceId
+                && offer.status === "active";
+              const canSubscribe = canSubscribePaypal || canSubscribeStripe;
               return (
                 <article className="catalog-card" key={offer.id}>
                   <div className="badge-stack">
@@ -127,6 +137,8 @@ export default async function ServicesPage() {
                     <SubscribeButton
                       offerId={offer.id}
                       offerName={offer.name}
+                      paypalEnabled={canSubscribePaypal}
+                      stripeEnabled={canSubscribeStripe}
                     />
                   ) : null}
                 </article>
