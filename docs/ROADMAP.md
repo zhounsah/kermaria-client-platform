@@ -225,19 +225,24 @@ Aucune fonctionnalite metier ajoutee. Aucune dependance hardware.
 
 ## Jalon V0.24 stabilisation testable sur SRV-01 et SRV-02
 
-Statut : **a faire, faisable sans la cible R740xd**. Ex-V0.24a renomme
+Statut : **cadrage redige, execution a faire**. Cadrage detaille :
+[`V0.24_STABILISATION.md`](V0.24_STABILISATION.md). Ex-V0.24a renomme
 au 2026-06-28 (la phase de validation hardware ex-V0.24b devient
 V1.0 beta 1).
 
 - recette complete executee sur le staging interne (couvre V0.16, V0.17,
-  V0.20 BPCE mock et V0.21 PayPal sandbox + e-mail mock) ;
+  V0.20 BPCE mock, V0.21 PayPal sandbox + e-mail mock, V0.22 souscriptions,
+  V0.25 AD `controlled_write`, V0.26 signup, V0.27 vitrine, V0.29 Stripe
+  `test`, V0.30 partiel allowlist SMTP, V0.23.2 timezone) ;
 - restauration MariaDB testee sur instance distincte ;
 - audit securite interne : dependances, secrets (couvre
   `BPCE_REFRESH_TOKEN`, `SMTP_PASSWORD`, `PAYPAL_CLIENT_SECRET`,
-  `SERVICE_AUTH_TOKEN`), headers, rate limiting ;
+  `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `SERVICE_AUTH_TOKEN`,
+  `SQL_PASSWORD`, `HCAPTCHA_SECRET_KEY`), headers, rate limiting ;
 - revue accessibilite WCAG AA des parcours client critiques ;
 - documentation utilisateur admin et client ;
-- procedure formelle de mise en production redigee, **non executee** ;
+- procedure formelle de mise en production redigee dans
+  `docs/PRODUCTION_DEPLOYMENT.md`, **non executee** ;
 - plan de continuite minimal documente.
 
 La V0.24 n'ajoute aucune fonctionnalite metier et ne s'execute pas sur
