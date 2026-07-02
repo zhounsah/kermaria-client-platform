@@ -10,6 +10,9 @@ export const PUBLIC_ROUTES = [
   "/mentions-legales",
   "/politique-confidentialite",
   "/cgv",
+  // V0.26 : parcours d'inscription self-service (chrome vitrine public).
+  "/signup",
+  "/set-password",
 ] as const;
 
 // Portfolio statique copié sous apps/webportal/public/portfolio/.

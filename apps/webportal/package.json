@@ -23,6 +23,7 @@
     "test:subscriptions": "node scripts/verify-subscriptions-contract.mjs",
     "test:payments-stripe": "node scripts/verify-stripe-contract.mjs",
     "test:timezone": "node scripts/verify-timezone-contract.mjs",
+    "test:signup": "node scripts/verify-signup-contract.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

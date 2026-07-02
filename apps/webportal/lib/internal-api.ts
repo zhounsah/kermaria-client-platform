@@ -799,6 +799,49 @@ export function getAdminCustomer(customerReference: string) {
   );
 }
 
+export type SignupAdminSummary = {
+  id: string;
+  status: string;
+  companyName: string;
+  contactName: string;
+  email: string;
+  emailVerified: boolean;
+  createdAt: string;
+  approvedAt: string | null;
+  rejectedAt: string | null;
+};
+
+export type SignupAdminDetail = {
+  id: string;
+  status: string;
+  companyName: string;
+  contactName: string;
+  email: string;
+  phone: string | null;
+  message: string | null;
+  sourceAddress: string | null;
+  rejectedReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+  approvedAt: string | null;
+  rejectedAt: string | null;
+};
+
+export function getAdminSignups(status?: string) {
+  const suffix = status ? `?status=${encodeURIComponent(status)}` : "";
+  return getAdminData<SignupAdminSummary[]>(
+    `/internal/admin/signups${suffix}`,
+    [],
+  );
+}
+
+export function getAdminSignup(id: string) {
+  return getAdminData<SignupAdminDetail | null>(
+    `/internal/admin/signups/${encodeURIComponent(id)}`,
+    null,
+  );
+}
+
 export function getAdminAdStatus() {
   return getAdminData<AdminAdStatus | null>(
     "/internal/admin/ad/status",

@@ -32,6 +32,7 @@ const navigationSections: NavSection[] = [
     label: "Relation client",
     items: [
       { href: "/admin/customers", label: "Clients" },
+      { href: "/admin/signups", label: "Demandes d'inscription" },
       { href: "/admin/support-requests", label: "Demandes support" },
       { href: "/admin/service-requests", label: "Demandes service" },
       { href: "/admin/email-log", label: "Journal e-mails" },

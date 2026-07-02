@@ -111,6 +111,25 @@ Acquis V0.22 et V0.22.1 (abonnements PayPal,
   plan PayPal" sur la fiche offre, prix fige une fois un plan cree ;
 - mode `PAYPAL_MODE=live` reste interdit avant V1.0 beta 1.
 
+Acquis V0.26 (creation de compte self-service, livre le 2026-07-02,
+`SIGNUP_ENABLED=false` par defaut,
+[`docs/V0.26_SELF_SERVICE_SIGNUP.md`](docs/V0.26_SELF_SERVICE_SIGNUP.md)) :
+
+- formulaire public `/signup` avec honeypot + timing anti-bot et
+  **hCaptcha** verifie cote serveur (`siteverify`) avant insertion ;
+- verification e-mail par token aleatoire 32 octets **stocke en hash
+  SHA-256**, TTL 24h, one-shot ; table `signup_pending`
+  (migration `020_signup_pending.sql`) ;
+- workflow admin `/admin/signups` (liste/detail/approuver/refuser) ;
+  l'approbation cree customer + portal_user (statut `active`, sans mot de
+  passe), **aucune creation AD automatique** ;
+- activation par **lien de definition de mot de passe** (`/set-password`,
+  token hash SHA-256 one-shot TTL 24h) : aucun mot de passe en clair ;
+- e-mails `signup_verification` / `account_approved` / `account_rejected`
+  (mode courant `disabled`/`mock`/`live`), audit a chaque etape ;
+- tests contrat `npm run test:signup`. Ouverture des inscriptions
+  reservee au test interne tant que `EMAIL_INTEGRATION_MODE=mock`.
+
 Acquis V0.29 (Stripe, rail de paiement parallele a PayPal,
 [`docs/V0.29_STRIPE_PAYMENTS.md`](docs/V0.29_STRIPE_PAYMENTS.md)) :
 
@@ -193,7 +212,6 @@ A venir avant la bascule hardware (tous faisables sans R740xd, ajoutes
 au 2026-06-30) :
 
 - V0.24 stabilisation testable SRV-01/02 ;
-- V0.26 creation de compte self-service ;
 - V0.28 catalogue packs et offres groupees ;
 - V0.30 premier test SMTP reel controle (allowlist destinataires) ;
 - V0.31 sortie effective de `OU=TEST_SITE_WEB` (procedure V0.25
@@ -371,6 +389,7 @@ npm run test:bpce            # facturation BPCE V0.20
 npm run test:payments        # canaux paiement V0.21
 npm run test:subscriptions   # abonnements PayPal V0.22
 npm run test:payments-stripe # rail Stripe V0.29
+npm run test:signup          # inscription self-service V0.26
 npm run test:activity        # flux activite admin
 npm run test:ad-security     # garde-fous AD
 ```
@@ -407,7 +426,8 @@ npm run test:ad-security     # garde-fous AD
 - [Patch horodatages V0.23.2](docs/V0.23.2_TIMEZONE_PATCH.md)
 - [Cadrage AD finalisation V0.25](docs/V0.25_AD_FINALISATION.md)
 - [Procedure sortie OU AD prod (V0.25 brique 3)](docs/AD_PRODUCTION_MIGRATION.md)
-- [Cadrage self-service signup V0.26](docs/V0.26_SELF_SERVICE_SIGNUP.md)
+- [Self-service signup V0.26](docs/V0.26_SELF_SERVICE_SIGNUP.md)
+- [Guide utilisateur signup V0.26](docs/V0.26_USER_GUIDE_SIGNUP.md)
 - [Cadrage site vitrine public V0.27](docs/V0.27_PUBLIC_VITRINE.md)
 - [Active Directory security hardening V0.19](docs/V0.19_AD_SECURITY_HARDENING.md)
 - [Active Directory controlled write V0.18](docs/V0.18_ACTIVE_DIRECTORY_CONTROLLED_WRITE.md)

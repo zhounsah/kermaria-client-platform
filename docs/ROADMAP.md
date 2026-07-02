@@ -293,25 +293,44 @@ le mode `live` AD : tout reste sur SRV-01/02. La sortie effective de
 
 ## Jalon V0.26 creation de compte self-service
 
-Statut : **a cadrer, faisable sans la cible R740xd**. Ajoute au
-2026-06-28.
+Statut : **livre le 2026-07-02**, `SIGNUP_ENABLED=false` par defaut (kill
+switch). Doc detaillee :
+[docs/V0.26_SELF_SERVICE_SIGNUP.md](V0.26_SELF_SERVICE_SIGNUP.md) ; guide
+utilisateur : [docs/V0.26_USER_GUIDE_SIGNUP.md](V0.26_USER_GUIDE_SIGNUP.md).
 
 Permet a un visiteur d'initier la creation d'un compte client sans
 intervention manuelle prealable :
 
 - formulaire d'inscription public (entreprise, contact, e-mail) avec
-  validation et anti-bot ;
-- verification e-mail (token signe, expiration courte) ;
-- creation du compte en statut `pending` cote portail, sans
+  validation, honeypot + timing anti-bot et **hCaptcha** verifie cote
+  serveur (`siteverify`) avant toute insertion en base ;
+- verification e-mail via token aleatoire 32 octets, **stocke uniquement
+  en hash SHA-256**, TTL 24h, one-shot ;
+- creation du compte cote portail **uniquement a l'approbation admin**
+  (customer + portal_user, statut `active` mais sans mot de passe), sans
   provisioning AD automatique ;
-- workflow admin de validation/refus avec audit ;
-- e-mail transactionnel `account_pending` et `account_approved` (mode
-  `mock` jusqu'a V1.0 RC) ;
-- isolation stricte : aucun acces aux services tant que l'admin n'a pas
-  valide, aucune creation de compte AD avant V0.25.
+- workflow admin `/admin/signups` (liste + detail + approuver/refuser)
+  avec audit a chaque etape (`signup.submit` / `.verify_success` /
+  `.verify_failed` / `.approved` / `.rejected` / `.password_set`) ;
+- **definition du mot de passe par lien** : l'e-mail `account_approved`
+  contient un lien one-shot (token hash SHA-256, TTL 24h) vers
+  `/set-password` ; aucun mot de passe en clair ne transite ni n'est
+  journalise ;
+- e-mails transactionnels `signup_verification` / `account_approved` /
+  `account_rejected` (texte, mode courant `disabled`/`mock`/`live`) ;
+- isolation stricte : aucun acces au portail authentifie tant que le mot
+  de passe n'est pas defini, aucune creation de compte AD (acte admin
+  separe via V0.18/V0.25).
+
+Migration `020_signup_pending.sql` (renumerotee depuis le `017` du
+cadrage : les `017`/`018`/`019` ont ete consommes par V0.29 Stripe ;
+aucune migration de templates e-mail necessaire, `email_messages.template`
+etant un VARCHAR libre). Tests contrat : `npm run test:signup`.
 
 La V0.26 prepare le canal de conversion sans bypasser la qualification
-commerciale manuelle.
+commerciale manuelle. **Ouverture des inscriptions (`SIGNUP_ENABLED=true`)
+reservee au test interne** tant que `EMAIL_INTEGRATION_MODE=mock`, et a la
+validation juridique pour la production (cf. V1.0 RC).
 
 ## Jalon V0.27 site vitrine public
 

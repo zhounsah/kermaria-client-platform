@@ -84,6 +84,7 @@ var authConfiguration = AuthConfigurationResolver.Resolve(
     builder.Environment);
 var paypalConfiguration = PayPalConfigurationResolver.Resolve(builder.Configuration);
 var stripeConfiguration = StripeConfigurationResolver.Resolve(builder.Configuration);
+var signupConfiguration = SignupConfigurationResolver.Resolve(builder.Configuration);
 
 builder.Services.AddSingleton(sqlConfiguration);
 builder.Services.AddSingleton(adConfiguration);
@@ -94,6 +95,7 @@ builder.Services.AddSingleton(emailConfiguration);
 builder.Services.AddSingleton(authConfiguration);
 builder.Services.AddSingleton(paypalConfiguration);
 builder.Services.AddSingleton(stripeConfiguration);
+builder.Services.AddSingleton(signupConfiguration);
 builder.Services.AddSingleton<IPortalPasswordService, PortalPasswordService>();
 builder.Services.AddSingleton<ISessionTokenService, SessionTokenService>();
 builder.Services.AddSingleton<MockAuthenticationStore>();
@@ -158,6 +160,13 @@ builder.Services.AddScoped<IActiveDirectoryLinkRepository>(
     _ => sqlConfiguration.IsPersistent
         ? new MariaDbActiveDirectoryLinkRepository(sqlConfiguration)
         : new MockActiveDirectoryLinkRepository());
+builder.Services.AddSingleton<MockSignupStore>();
+builder.Services.AddScoped<ISignupRepository>(
+    serviceProvider => sqlConfiguration.IsPersistent
+        ? new MariaDbSignupRepository(sqlConfiguration)
+        : new MockSignupRepository(
+            serviceProvider.GetRequiredService<MockSignupStore>(),
+            serviceProvider.GetRequiredService<MockAuthenticationStore>()));
 builder.Services.AddScoped<IPortalService, PortalService>();
 builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
 builder.Services.AddScoped<IAdminService, AdminService>();
@@ -226,6 +235,7 @@ builder.Services.AddSingleton<IEmailService>(serviceProvider =>
         _ => new DisabledEmailService(emailConfiguration)
     });
 builder.Services.AddScoped<IEmailDispatchService, EmailDispatchService>();
+builder.Services.AddScoped<ISignupService, SignupService>();
 
 var app = builder.Build();
 var exposeDebugExceptionDetails =
@@ -871,6 +881,142 @@ app.MapPost(
         });
     });
 
+// V0.26 : inscription self-service (anonyme, protégé par X-Service-Auth).
+// hCaptcha, honeypot et rate limit IP sont assurés côté webportal BFF.
+app.MapPost(
+    "/internal/signup",
+    async (
+        HttpContext context,
+        ISignupService signupService,
+        IAuditService auditService) =>
+    {
+        var correlationId = context.GetCorrelationId();
+        var payload = await ReadPayload<SignupSubmitPayload>(context);
+        if (payload is null)
+        {
+            return Results.Json(
+                new ApiError(
+                    "INVALID_REQUEST",
+                    "Le corps de la requête est invalide.",
+                    correlationId),
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var result = await signupService.SubmitAsync(
+            payload, correlationId, context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                correlationId,
+                "signup.submit",
+                result.Succeeded ? "success" : "refused",
+                ReasonCode: result.Code,
+                TargetType: "signup",
+                SourceAddress:
+                    context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+
+        if (!result.Succeeded)
+        {
+            var statusCode = result.Code == "SIGNUP_DISABLED"
+                ? StatusCodes.Status403Forbidden
+                : StatusCodes.Status400BadRequest;
+            return Results.Json(
+                new ApiError(result.Code, result.Message, correlationId),
+                statusCode: statusCode);
+        }
+
+        return Results.Ok(new
+        {
+            code = result.Code,
+            message = result.Message,
+            correlation_id = correlationId
+        });
+    });
+
+app.MapPost(
+    "/internal/signup/verify",
+    async (
+        HttpContext context,
+        ISignupService signupService,
+        IAuditService auditService) =>
+    {
+        var correlationId = context.GetCorrelationId();
+        var payload = await ReadPayload<SignupVerifyPayload>(context);
+        var result = await signupService.VerifyEmailAsync(
+            payload?.Token, context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                correlationId,
+                result.Succeeded
+                    ? "signup.verify_success"
+                    : "signup.verify_failed",
+                result.Succeeded ? "success" : "refused",
+                ReasonCode: result.Code,
+                TargetType: "signup",
+                SourceAddress:
+                    context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+
+        if (!result.Succeeded)
+        {
+            var statusCode = result.Code == "TOKEN_EXPIRED"
+                ? StatusCodes.Status410Gone
+                : StatusCodes.Status400BadRequest;
+            return Results.Json(
+                new ApiError(result.Code, result.Message, correlationId),
+                statusCode: statusCode);
+        }
+
+        return Results.Ok(new
+        {
+            code = result.Code,
+            message = result.Message,
+            correlation_id = correlationId
+        });
+    });
+
+app.MapPost(
+    "/internal/signup/set-password",
+    async (
+        HttpContext context,
+        ISignupService signupService,
+        IAuditService auditService) =>
+    {
+        var correlationId = context.GetCorrelationId();
+        var payload = await ReadPayload<SignupSetPasswordPayload>(context);
+        var result = await signupService.SetPasswordAsync(
+            payload?.Token, payload?.Password, context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                correlationId,
+                result.Succeeded
+                    ? "signup.password_set"
+                    : "signup.password_failed",
+                result.Succeeded ? "success" : "refused",
+                ReasonCode: result.Code,
+                TargetType: "signup",
+                SourceAddress:
+                    context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+
+        if (!result.Succeeded)
+        {
+            var statusCode = result.Code == "TOKEN_EXPIRED"
+                ? StatusCodes.Status410Gone
+                : StatusCodes.Status400BadRequest;
+            return Results.Json(
+                new ApiError(result.Code, result.Message, correlationId),
+                statusCode: statusCode);
+        }
+
+        return Results.Ok(new
+        {
+            code = result.Code,
+            message = result.Message,
+            correlation_id = correlationId
+        });
+    });
+
 app.MapGet(
     "/internal/portal/commercial-documents",
     async (
@@ -1430,6 +1576,152 @@ app.MapGet(
             await service.GetCustomerAsync(
                 customerReference,
                 context.RequestAborted));
+    });
+
+// V0.26 : gestion admin des demandes d'inscription self-service.
+app.MapGet(
+    "/internal/admin/signups",
+    async (
+        HttpContext context,
+        ISignupService signupService,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.signups.read");
+        var status = context.Request.Query["status"].FirstOrDefault();
+        context.Response.Headers["X-Data-Source"] =
+            signupService.IsPersistent ? "mariadb" : "mock";
+        return Results.Ok(
+            await signupService.ListAsync(status, context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/admin/signups/{id}",
+    async (
+        string id,
+        HttpContext context,
+        ISignupService signupService,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.signups.detail.read");
+        var detail = await signupService.GetAsync(id, context.RequestAborted);
+        if (detail is null)
+        {
+            return Results.Json(
+                new ApiError(
+                    "SIGNUP_NOT_FOUND",
+                    "Demande introuvable.",
+                    context.GetCorrelationId()),
+                statusCode: StatusCodes.Status404NotFound);
+        }
+
+        context.Response.Headers["X-Data-Source"] =
+            signupService.IsPersistent ? "mariadb" : "mock";
+        return Results.Ok(detail);
+    });
+app.MapPost(
+    "/internal/admin/signups/{id}/approve",
+    async (
+        string id,
+        HttpContext context,
+        ISignupService signupService,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.signups.approve.request");
+        var result = await signupService.ApproveAsync(
+            id, context.GetCorrelationId(), context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "signup.approved",
+                result.Succeeded ? "success" : "refused",
+                ReasonCode: result.Code,
+                TargetType: "signup",
+                TargetReference: id,
+                ActorUserId: actor.UserId,
+                SourceAddress:
+                    context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+
+        if (!result.Succeeded)
+        {
+            var statusCode = result.Code == "SIGNUP_NOT_FOUND"
+                ? StatusCodes.Status404NotFound
+                : StatusCodes.Status409Conflict;
+            return Results.Json(
+                new ApiError(
+                    result.Code, result.Message, context.GetCorrelationId()),
+                statusCode: statusCode);
+        }
+
+        return Results.Ok(new
+        {
+            code = result.Code,
+            message = result.Message,
+            correlation_id = context.GetCorrelationId()
+        });
+    });
+app.MapPost(
+    "/internal/admin/signups/{id}/reject",
+    async (
+        string id,
+        HttpContext context,
+        ISignupService signupService,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.signups.reject.request");
+        var payload = await ReadPayload<SignupRejectPayload>(context);
+        var result = await signupService.RejectAsync(
+            id, payload?.Reason, context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "signup.rejected",
+                result.Succeeded ? "success" : "refused",
+                ReasonCode: result.Code,
+                TargetType: "signup",
+                TargetReference: id,
+                ActorUserId: actor.UserId,
+                SourceAddress:
+                    context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+
+        if (!result.Succeeded)
+        {
+            var statusCode = result.Code == "SIGNUP_NOT_FOUND"
+                ? StatusCodes.Status404NotFound
+                : StatusCodes.Status409Conflict;
+            return Results.Json(
+                new ApiError(
+                    result.Code, result.Message, context.GetCorrelationId()),
+                statusCode: statusCode);
+        }
+
+        return Results.Ok(new
+        {
+            code = result.Code,
+            message = result.Message,
+            correlation_id = context.GetCorrelationId()
+        });
     });
 app.MapGet(
     "/internal/admin/ad/status",

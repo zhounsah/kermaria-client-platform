@@ -3016,3 +3016,177 @@ td {
 .legal-page section li {
   margin-bottom: 6px;
 }
+
+/* V0.26 — inscription self-service (signup, vérification, mot de passe) */
+.signup-page,
+.signup-verify-page,
+.set-password-page {
+  max-width: 720px;
+  margin-inline: auto;
+}
+
+.signup-header {
+  margin-bottom: 24px;
+}
+
+.signup-header h1 {
+  margin: 0 0 10px;
+  font-size: 1.85rem;
+  letter-spacing: -0.02em;
+}
+
+.signup-lead {
+  margin: 0;
+  color: var(--muted);
+}
+
+.signup-form-note,
+.set-password-note {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* Honeypot anti-bot : retiré du flux visuel et de la tabulation. */
+.signup-honeypot {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.h-captcha {
+  margin: 4px 0;
+}
+
+.signup-closed,
+.set-password-invalid,
+.signup-verify-result {
+  padding: 16px 18px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.signup-verify-success {
+  border-color: var(--success);
+  background: var(--success-light);
+  color: var(--success);
+}
+
+.signup-verify-error {
+  border-color: var(--danger);
+  background: var(--danger-light);
+  color: var(--danger);
+}
+
+.signup-verify-result p {
+  margin: 0 0 8px;
+}
+
+.signup-verify-result p:last-child {
+  margin-bottom: 0;
+}
+
+.signup-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.signup-filter-link {
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+
+.signup-filter-link:hover {
+  border-color: var(--primary);
+  color: var(--text);
+}
+
+.signup-filter-link-active {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #fff;
+}
+
+.signup-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.signup-reject {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.signup-reject label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.signup-reject textarea {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+}
+
+.signup-actions-hint,
+.signup-actions-done {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.signup-message-block {
+  margin-top: 18px;
+}
+
+.signup-message-block h3 {
+  margin: 0 0 6px;
+  font-size: 0.95rem;
+}
+
+.signup-message-block p {
+  margin: 0;
+  white-space: pre-wrap;
+  color: var(--text);
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px 20px;
+  margin: 0;
+}
+
+.detail-grid dt {
+  margin: 0 0 2px;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.detail-grid dd {
+  margin: 0;
+  color: var(--text);
+}

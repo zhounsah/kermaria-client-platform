@@ -37,6 +37,27 @@ public interface IEmailDispatchService
         ContactFormSubmission submission,
         string correlationId,
         CancellationToken cancellationToken);
+
+    Task<EmailDispatchResult> SendSignupVerificationAsync(
+        string email,
+        string contactName,
+        string verificationUrl,
+        string correlationId,
+        CancellationToken cancellationToken);
+
+    Task<EmailDispatchResult> SendAccountApprovedAsync(
+        string email,
+        string contactName,
+        string setPasswordUrl,
+        string correlationId,
+        CancellationToken cancellationToken);
+
+    Task<EmailDispatchResult> SendAccountRejectedAsync(
+        string email,
+        string contactName,
+        string? reason,
+        string correlationId,
+        CancellationToken cancellationToken);
 }
 
 public sealed class EmailDispatchService : IEmailDispatchService
@@ -179,6 +200,111 @@ public sealed class EmailDispatchService : IEmailDispatchService
         return new EmailDispatchResult(
             true, "EMAIL_SENT",
             $"Message transmis à {recipient}.");
+    }
+
+    public Task<EmailDispatchResult> SendSignupVerificationAsync(
+        string email,
+        string contactName,
+        string verificationUrl,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
+        var (subject, body) = EmailTemplates.RenderSignupVerification(
+            contactName, verificationUrl);
+        return SendAdHocAsync(
+            email,
+            subject,
+            body,
+            EmailTemplates.SignupVerification,
+            correlationId,
+            cancellationToken);
+    }
+
+    public Task<EmailDispatchResult> SendAccountApprovedAsync(
+        string email,
+        string contactName,
+        string setPasswordUrl,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
+        var (subject, body) = EmailTemplates.RenderAccountApproved(
+            contactName, setPasswordUrl);
+        return SendAdHocAsync(
+            email,
+            subject,
+            body,
+            EmailTemplates.AccountApproved,
+            correlationId,
+            cancellationToken);
+    }
+
+    public Task<EmailDispatchResult> SendAccountRejectedAsync(
+        string email,
+        string contactName,
+        string? reason,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
+        var (subject, body) = EmailTemplates.RenderAccountRejected(
+            contactName, reason);
+        return SendAdHocAsync(
+            email,
+            subject,
+            body,
+            EmailTemplates.AccountRejected,
+            correlationId,
+            cancellationToken);
+    }
+
+    // Envoi d'un e-mail transactionnel non lié à un document commercial
+    // (inscription self-service). Journalisé dans email_messages avec
+    // related_document_id = NULL, comme le formulaire de contact V0.27.
+    private async Task<EmailDispatchResult> SendAdHocAsync(
+        string recipientRaw,
+        string subject,
+        string body,
+        string template,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
+        var recipient = recipientRaw?.Trim();
+        if (string.IsNullOrWhiteSpace(recipient))
+        {
+            return new EmailDispatchResult(
+                false, "NO_RECIPIENT", "Aucun destinataire.");
+        }
+
+        var message = new EmailMessage(
+            recipient,
+            subject,
+            body,
+            template,
+            RelatedDocumentId: null,
+            CorrelationId: correlationId);
+
+        var delivery = await _emailService.SendAsync(message, cancellationToken);
+        await _emailLog.RecordAsync(
+            template,
+            recipient,
+            subject,
+            body,
+            delivery.Status,
+            delivery.ErrorMessage,
+            null,
+            correlationId,
+            delivery.Succeeded,
+            cancellationToken);
+
+        if (!delivery.Succeeded)
+        {
+            return new EmailDispatchResult(
+                false,
+                $"EMAIL_{delivery.Status.ToUpperInvariant()}",
+                delivery.ErrorMessage ?? "Email delivery failed.");
+        }
+
+        return new EmailDispatchResult(
+            true, "EMAIL_SENT", $"Email envoyé à {recipient}.");
     }
 
     private async Task<EmailDispatchResult> DispatchAsync(
