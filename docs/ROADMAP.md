@@ -293,8 +293,11 @@ le mode `live` AD : tout reste sur SRV-01/02. La sortie effective de
 
 ## Jalon V0.26 creation de compte self-service
 
-Statut : **livre le 2026-07-02**, `SIGNUP_ENABLED=false` par defaut (kill
-switch). Doc detaillee :
+Statut : **livre et valide en recette utilisateur le 2026-07-02**,
+`SIGNUP_ENABLED=false` par defaut (kill switch). Recette rejouee en
+`EMAIL_INTEGRATION_MODE=live` avec SMTP OVH reel : parcours complet
+inscription -> verification -> approbation -> definition mot de passe
+-> connexion boucle sur un nouveau compte reel. Doc detaillee :
 [docs/V0.26_SELF_SERVICE_SIGNUP.md](V0.26_SELF_SERVICE_SIGNUP.md) ; guide
 utilisateur : [docs/V0.26_USER_GUIDE_SIGNUP.md](V0.26_USER_GUIDE_SIGNUP.md).
 
@@ -490,8 +493,10 @@ colonne pour savoir quel rail avait regle une facture, le endpoint
 
 ## Jalon V0.30 test envoi e-mail automatique reel
 
-Statut : **partiellement livre le 2026-07-02** (uniquement la brique
-allowlist). Doc : [`V0.30_EMAIL_LIVE_TEST.md`](V0.30_EMAIL_LIVE_TEST.md).
+Statut : **partiellement livre et valide en recette utilisateur le
+2026-07-02** (uniquement la brique allowlist ; envoi SMTP OVH reel
+verifie via signup live + formulaire contact). Doc :
+[`V0.30_EMAIL_LIVE_TEST.md`](V0.30_EMAIL_LIVE_TEST.md).
 Restent a faire avant V1.0 RC : statuts `email_messages` etendus,
 sous-domaine dedie `tests-mail.*`, SPF/DKIM/DMARC documentes, recette
 guidee Gmail/Outlook/interne.
