@@ -213,7 +213,10 @@ au 2026-06-30) :
 
 - V0.24 stabilisation testable SRV-01/02 ;
 - V0.28 catalogue packs et offres groupees ;
-- V0.30 premier test SMTP reel controle (allowlist destinataires) ;
+- V0.30 premier test SMTP reel controle (brique allowlist livree le
+  2026-07-02 — [`docs/V0.30_EMAIL_LIVE_TEST.md`](docs/V0.30_EMAIL_LIVE_TEST.md) —
+  reste a livrer : statuts `email_messages` etendus, sous-domaine
+  emetteur dedie, SPF/DKIM/DMARC documentes, recette guidee) ;
 - V0.31 sortie effective de `OU=TEST_SITE_WEB` (procedure V0.25
   brique 3 executee, levee du `RequiredTestOuRoot` hardcode).
 
@@ -390,6 +393,7 @@ npm run test:payments        # canaux paiement V0.21
 npm run test:subscriptions   # abonnements PayPal V0.22
 npm run test:payments-stripe # rail Stripe V0.29
 npm run test:signup          # inscription self-service V0.26
+npm run test:email-live      # allowlist envoi live V0.30 partiel
 npm run test:activity        # flux activite admin
 npm run test:ad-security     # garde-fous AD
 ```
@@ -428,6 +432,7 @@ npm run test:ad-security     # garde-fous AD
 - [Procedure sortie OU AD prod (V0.25 brique 3)](docs/AD_PRODUCTION_MIGRATION.md)
 - [Self-service signup V0.26](docs/V0.26_SELF_SERVICE_SIGNUP.md)
 - [Guide utilisateur signup V0.26](docs/V0.26_USER_GUIDE_SIGNUP.md)
+- [Test envoi e-mail live V0.30 (partiel : allowlist)](docs/V0.30_EMAIL_LIVE_TEST.md)
 - [Cadrage site vitrine public V0.27](docs/V0.27_PUBLIC_VITRINE.md)
 - [Active Directory security hardening V0.19](docs/V0.19_AD_SECURITY_HARDENING.md)
 - [Active Directory controlled write V0.18](docs/V0.18_ACTIVE_DIRECTORY_CONTROLLED_WRITE.md)

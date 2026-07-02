@@ -19,11 +19,58 @@ public sealed record EmailRuntimeConfiguration(
     string PortalPublicUrl,
     string? ContactFormRecipient,
     int RequestTimeoutMs,
+    // V0.30 partiel : allowlist des destinataires acceptés en mode `live`.
+    // Fail-closed : `LiveAllowlistOnly` défaut true ; allowlist vide -> tout
+    // envoi live est bloqué (`blocked_allowlist`) tant que la V1.0 RC n'a
+    // pas ouvert l'envoi général.
+    bool LiveAllowlistOnly,
+    IReadOnlyList<string> LiveAllowlist,
     bool ConfigurationValid)
 {
     public string ModeName => Mode.ToString().ToLowerInvariant();
 
     public bool SendsEnabled => Mode is EmailIntegrationMode.Live;
+
+    // Compare le destinataire (normalisé en lowercase) aux entrées de
+    // l'allowlist. Chaque entrée peut être une adresse complète
+    // (`zhounsah@home.bzh`) ou un motif de domaine (`@home.bzh`).
+    public bool IsRecipientAllowed(string recipient)
+    {
+        if (!LiveAllowlistOnly)
+        {
+            return true;
+        }
+
+        var normalized = recipient?.Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return false;
+        }
+
+        foreach (var entry in LiveAllowlist)
+        {
+            if (string.IsNullOrWhiteSpace(entry))
+            {
+                continue;
+            }
+
+            var pattern = entry.Trim().ToLowerInvariant();
+            if (pattern.StartsWith('@'))
+            {
+                if (normalized.EndsWith(pattern, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+            else if (string.Equals(
+                normalized, pattern, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }
 
 public static class EmailConfigurationResolver
@@ -50,6 +97,9 @@ public static class EmailConfigurationResolver
             10000,
             minimum: 1000,
             maximum: 30000);
+        var liveAllowlistOnly = ParseBool(
+            configuration["EMAIL_LIVE_ALLOWLIST_ONLY"], true);
+        var liveAllowlist = ParseAllowlist(configuration["EMAIL_LIVE_ALLOWLIST"]);
 
         var configurationValid = mode switch
         {
@@ -71,7 +121,24 @@ public static class EmailConfigurationResolver
             portalPublicUrl,
             contactFormRecipient,
             requestTimeoutMs,
+            liveAllowlistOnly,
+            liveAllowlist,
             configurationValid);
+    }
+
+    private static IReadOnlyList<string> ParseAllowlist(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return Array.Empty<string>();
+        }
+
+        return value
+            .Split([',', ';', '\n'], StringSplitOptions.RemoveEmptyEntries
+                | StringSplitOptions.TrimEntries)
+            .Where(entry => !string.IsNullOrWhiteSpace(entry))
+            .Select(entry => entry.Trim())
+            .ToArray();
     }
 
     private static EmailIntegrationMode ParseMode(string? value)

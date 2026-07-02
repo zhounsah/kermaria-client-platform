@@ -490,7 +490,26 @@ colonne pour savoir quel rail avait regle une facture, le endpoint
 
 ## Jalon V0.30 test envoi e-mail automatique reel
 
-Statut : **a cadrer, faisable sans la cible R740xd**.
+Statut : **partiellement livre le 2026-07-02** (uniquement la brique
+allowlist). Doc : [`V0.30_EMAIL_LIVE_TEST.md`](V0.30_EMAIL_LIVE_TEST.md).
+Restent a faire avant V1.0 RC : statuts `email_messages` etendus,
+sous-domaine dedie `tests-mail.*`, SPF/DKIM/DMARC documentes, recette
+guidee Gmail/Outlook/interne.
+
+### Livre : garde-fou allowlist (2026-07-02)
+
+- variables `EMAIL_LIVE_ALLOWLIST_ONLY=true` (defaut fail-closed) et
+  `EMAIL_LIVE_ALLOWLIST` (adresses completes ou motifs `@domaine`),
+  parse insensible a la casse ;
+- gate dans `LiveEmailService.SendAsync` **avant** toute construction
+  `SmtpClient` : destinataire hors allowlist -> retour
+  `EmailDeliveryResult(false, "blocked_allowlist", ...)`, log `Warning`,
+  status persiste dans `email_messages.status = "blocked_allowlist"` ;
+- allowlist vide + `AllowlistOnly=true` -> tout envoi live refuse
+  (defense en profondeur) ;
+- test contrat : `npm run test:email-live`.
+
+### Reste a faire (cadrage initial)
 
 Premiere bascule controlee de `EMAIL_INTEGRATION_MODE` vers `live` sur
 un SMTP reel **sans attendre le R740xd**, dans le cadre limite de la
@@ -503,7 +522,8 @@ la V1.0 beta 1.
   reserve `tests-mail.zacharyhounsa.ovh`) ;
 - destinataire **liste blanche** uniquement (boites internes
   `@home.bzh` + boite personnelle de l'editeur), refus en dur de tout
-  destinataire externe tant que `EMAIL_LIVE_ALLOWLIST_ONLY=true` ;
+  destinataire externe tant que `EMAIL_LIVE_ALLOWLIST_ONLY=true`
+  (**LIVRE**) ;
 - 4 templates couverts : `invoice_issued`, `payment_reminder`,
   `payment_confirmed`, `contact_form` ;
 - enregistrement `email_messages.status` etendu : succes SMTP =

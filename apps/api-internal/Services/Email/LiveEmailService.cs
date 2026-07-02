@@ -35,6 +35,22 @@ public sealed class LiveEmailService : IEmailService
                 "SMTP host or from address is not configured.");
         }
 
+        // V0.30 partiel : allowlist des destinataires. Fail-closed par
+        // défaut ; aucun appel SMTP n'est réalisé si le destinataire n'est
+        // pas explicitement autorisé.
+        if (!_configuration.IsRecipientAllowed(message.Recipient))
+        {
+            _logger.LogWarning(
+                "Live email blocked by allowlist for template {Template} recipient {Recipient} correlation_id {CorrelationId}",
+                message.Template,
+                message.Recipient,
+                message.CorrelationId);
+            return new EmailDeliveryResult(
+                false,
+                "blocked_allowlist",
+                "Recipient is not in EMAIL_LIVE_ALLOWLIST.");
+        }
+
         using var smtp = new SmtpClient(
             _configuration.SmtpHost,
             _configuration.SmtpPort)
