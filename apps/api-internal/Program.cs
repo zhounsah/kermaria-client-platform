@@ -19,8 +19,8 @@ builder.Logging.ClearProviders();
 builder.Logging.AddJsonConsole(options =>
 {
     options.IncludeScopes = true;
-    options.TimestampFormat = "yyyy-MM-ddTHH:mm:ss.fffZ";
-    options.UseUtcTimestamp = true;
+    options.TimestampFormat = "yyyy-MM-ddTHH:mm:ss.fffzzz";
+    options.UseUtcTimestamp = false;
 });
 
 if (Enum.TryParse<LogLevel>(

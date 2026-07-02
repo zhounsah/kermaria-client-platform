@@ -185,26 +185,41 @@ livraison R740xd).
 
 ## Jalon V0.23.2 patch harmonisation horodatages
 
-Statut : **a faire, faisable sans la cible R740xd**. Patch cross-cutting
-identifie en recette V0.25 : les logs `api-internal`, les entrees d'audit
-et les colonnes `created_at` / `updated_at` affichees cote portail
-arrivent avec deux heures d'avance sur l'heure locale Europe/Paris (les
-processus tournent en UTC sans conversion a l'affichage).
+Statut : **implemente dans le depot, en phase de tests**. Documentation
+dediee : [`V0.23.2_TIMEZONE_PATCH.md`](V0.23.2_TIMEZONE_PATCH.md). Patch
+cross-cutting identifie en recette V0.25 : les logs `api-internal`, les
+entrees d'audit et les colonnes `created_at` / `updated_at` affichees
+cote portail arrivaient avec deux heures d'avance sur l'heure locale
+Europe/Paris (processus en UTC sans conversion a l'affichage).
 
-- normaliser le fuseau cible **Europe/Paris** sur la chaine d'affichage
-  (portail client, admin, e-mails transactionnels) sans modifier le
-  stockage MariaDB qui reste UTC ;
-- exposer la timezone sur les serializers c\xF4te API-INTERNAL et la
-  consommer cote BFF/`PortalNavigation` avant rendu ;
-- corriger les templates email (`invoice_issued`,
-  `payment_reminder`, `payment_confirmed`, `contact_form`,
-  futurs `account_pending` / `account_approved`) qui injectent un
-  horodatage ;
-- ajouter un test de non-regression dans `scripts/verify-*-contract.mjs`
-  qui v\xE9rifie qu'une date renvoy\xE9e par l'API est interpr\xE9t\xE9e en
-  Europe/Paris c\xF4te webportal ;
-- pas de migration de donnees : les `DATETIME` MariaDB existants restent
-  en UTC, seule l'interpretation cote affichage change.
+Livre :
+
+- **Front** : `formatDate` / `formatDateTime`
+  (`apps/webportal/lib/formatters.ts`) forcent
+  `timeZone: DISPLAY_TIME_ZONE` (`"Europe/Paris"`, IANA — bascule DST
+  automatique). Les 33 pages qui consomment ces helpers sont couvertes
+  sans modification, aucun `toLocaleString` ne contourne le helper.
+- **C#** : helper partage
+  `apps/api-internal/Infrastructure/KermariaTimeZone.cs` (IANA +
+  fallback Windows `Romance Standard Time`). Utilise pour la date
+  fiscale envoyee a BPCE (`InvoiceIssuingService.cs:138` — auparavant
+  bug latent : une facture emise entre 00h et 02h Paris ete envoyait la
+  date de la veille a BPCE) et pour le rollover / le timestamp
+  `FileLoggerProvider`.
+- **Console log** : `Program.cs` `AddJsonConsole` bascule en
+  `UseUtcTimestamp = false` + format `yyyy-MM-ddTHH:mm:ss.fffzzz`
+  (offset ISO 8601 explicite `+02:00` ete / `+01:00` hiver).
+- **Templates email** (`invoice_issued`, `payment_reminder`,
+  `payment_confirmed`, `contact_form`) : audites, aucun n'injecte de
+  date inline dans le corps, rien a patcher.
+- **Stockage** : MariaDB reste en UTC, les payloads JSON sortis par
+  l'API restent en ISO 8601 `Z` — seule la chaine d'affichage est
+  convertie. Zero migration.
+- **Tests** : `npm run test:timezone` (nouveau
+  `apps/webportal/scripts/verify-timezone-contract.mjs`) combine
+  assertions statiques sur les 5 fichiers touches + assertions runtime
+  `Intl.DateTimeFormat` sur trois inputs UTC (ete, hiver, bascule
+  2026-03-29) validant la conversion DST automatique.
 
 Aucune fonctionnalite metier ajoutee. Aucune dependance hardware.
 

@@ -59,6 +59,22 @@ Acquis V0.27 (site vitrine public,
 - flag `PUBLIC_VITRINE_ENABLED=false` par defaut, bascule a `true` en
   preprod apres recette.
 
+Acquis V0.23.2 (patch harmonisation horodatages,
+[`docs/V0.23.2_TIMEZONE_PATCH.md`](docs/V0.23.2_TIMEZONE_PATCH.md)) :
+
+- `formatDate` / `formatDateTime` cote front forcent
+  `timeZone: "Europe/Paris"` (constante `DISPLAY_TIME_ZONE`), bascule
+  DST automatique ete/hiver via IANA ;
+- helper C# partage `KermariaTimeZone` (Infrastructure/) avec fallback
+  Windows `Romance Standard Time`, utilise pour la date fiscale envoyee
+  a BPCE (`InvoiceIssuingService`) et les timestamps du logger fichier ;
+- console log `AddJsonConsole` : `UseUtcTimestamp = false` + format
+  `yyyy-MM-ddTHH:mm:ss.fffzzz` (offset ISO 8601 explicite) ;
+- MariaDB reste en UTC et les payloads JSON `Z` inchanges — seule la
+  chaine d'affichage est convertie ;
+- non-regression : `npm run test:timezone` couvre l'ete, l'hiver et la
+  bascule 2026-03-29.
+
 Acquis V0.23 et V0.23.1 (harmonisation UX,
 [`docs/V0.23_HARMONISATION_UX.md`](docs/V0.23_HARMONISATION_UX.md)) :
 
@@ -176,8 +192,6 @@ recurrent active.
 A venir avant la bascule hardware (tous faisables sans R740xd, ajoutes
 au 2026-06-30) :
 
-- V0.23.2 patch harmonisation horodatages (logs/audit/affichage +2h
-  -> Europe/Paris) ;
 - V0.24 stabilisation testable SRV-01/02 ;
 - V0.26 creation de compte self-service ;
 - V0.28 catalogue packs et offres groupees ;
@@ -390,6 +404,7 @@ npm run test:ad-security     # garde-fous AD
 - [Payment channels V0.21](docs/V0.21_PAYMENT_CHANNELS.md)
 - [Subscriptions V0.22](docs/V0.22_SUBSCRIPTIONS.md)
 - [Harmonisation UX V0.23](docs/V0.23_HARMONISATION_UX.md)
+- [Patch horodatages V0.23.2](docs/V0.23.2_TIMEZONE_PATCH.md)
 - [Cadrage AD finalisation V0.25](docs/V0.25_AD_FINALISATION.md)
 - [Procedure sortie OU AD prod (V0.25 brique 3)](docs/AD_PRODUCTION_MIGRATION.md)
 - [Cadrage self-service signup V0.26](docs/V0.26_SELF_SERVICE_SIGNUP.md)

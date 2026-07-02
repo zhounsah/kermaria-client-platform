@@ -111,11 +111,14 @@ export const serviceRequestStatus = {
   },
 } as const;
 
+export const DISPLAY_TIME_ZONE = "Europe/Paris";
+
 export function formatDate(value: string) {
   return new Intl.DateTimeFormat("fr-FR", {
     day: "2-digit",
     month: "short",
     year: "numeric",
+    timeZone: DISPLAY_TIME_ZONE,
   }).format(new Date(value));
 }
 
@@ -126,6 +129,7 @@ export function formatDateTime(value: string) {
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: DISPLAY_TIME_ZONE,
   }).format(new Date(value));
 }
 

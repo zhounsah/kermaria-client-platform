@@ -36,6 +36,7 @@
     "test:payments": "npm --prefix apps/webportal run test:payments",
     "test:subscriptions": "npm --prefix apps/webportal run test:subscriptions",
     "test:payments-stripe": "npm --prefix apps/webportal run test:payments-stripe",
+    "test:timezone": "npm --prefix apps/webportal run test:timezone",
     "validate": "npm run check:secrets && npm run lint:web && npm run typecheck:shared && npm run typecheck:webportal && npm run build:web && npm run build:api && npm run test:api && npm --prefix apps/webportal run test:forms && npm --prefix apps/webportal run test:auth && npm --prefix apps/webportal run test:admin && npm run test:operations && npm run test:ux && npm run test:workflow && npm run test:notifications && npm run test:replies && npm run test:activity && npm run test:commercial && npm run test:ad-security && npm run test:bpce",
     "validate:mariadb": "node scripts/validate-mariadb.mjs",
     "validate:preprod": "node scripts/validate-preprod.mjs",

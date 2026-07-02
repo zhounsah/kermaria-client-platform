@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using Kermaria.ApiInternal.Contracts;
 using Kermaria.ApiInternal.Data.Repositories;
+using Kermaria.ApiInternal.Infrastructure;
 using Kermaria.ApiInternal.Services.Bpce;
 using Kermaria.ApiInternal.Services.Email;
 
@@ -135,7 +136,7 @@ public sealed class InvoiceIssuingService : IInvoiceIssuingService
             doc.CustomerExternalReference,
             cancellationToken);
 
-        var issueDate = DateTime.UtcNow.ToString("yyyy-MM-dd");
+        var issueDate = KermariaTimeZone.Now.ToString("yyyy-MM-dd");
         var lines = doc.Lines
             .Select(l => new BpceInvoiceLineInput(
                 l.Label,

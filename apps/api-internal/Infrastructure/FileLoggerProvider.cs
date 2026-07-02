@@ -56,7 +56,7 @@ public sealed class FileLoggerProvider : ILoggerProvider
 
     private void EnsureWriter()
     {
-        var today = DateTime.UtcNow.ToString("yyyy-MM-dd");
+        var today = KermariaTimeZone.Now.ToString("yyyy-MM-dd");
         if (_currentDate == today && _writer is not null)
         {
             return;
@@ -142,7 +142,7 @@ public sealed class FileLogger : ILogger, IDisposable
 
         var entry = new
         {
-            Timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
+            Timestamp = KermariaTimeZone.Now.ToString("yyyy-MM-ddTHH:mm:ss.fffzzz"),
             LogLevel = logLevel.ToString(),
             Category = _category,
             Message = formatter(state, exception),
