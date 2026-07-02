@@ -13,9 +13,9 @@ Pendant cette phase :
 - aucune numerotation fiscale revendiquee comme legale ;
 - aucun client reel integre.
 
-Les jalons fonctionnels (V0.20 a V0.27) avancent en respectant ces bornes.
-Les jalons d'exploitation finale (V1.0 beta 1, V1.0 RC) sont **bloques
-par la livraison du R740xd**.
+Les jalons fonctionnels (V0.20 a V0.31) avancent en respectant ces
+bornes. Les jalons d'exploitation finale (V1.0 beta 1, V1.0 RC) sont
+**bloques par la livraison du R740xd**.
 
 ## Jalon V0.20 facturation reelle BPCE controlee
 
@@ -183,6 +183,31 @@ La V0.23 n'ajoute aucune fonctionnalite metier ni mutation cote API ; elle
 ne deplace pas la frontiere hardware (V1.0 beta 1 reste bloquee par la
 livraison R740xd).
 
+## Jalon V0.23.2 patch harmonisation horodatages
+
+Statut : **a faire, faisable sans la cible R740xd**. Patch cross-cutting
+identifie en recette V0.25 : les logs `api-internal`, les entrees d'audit
+et les colonnes `created_at` / `updated_at` affichees cote portail
+arrivent avec deux heures d'avance sur l'heure locale Europe/Paris (les
+processus tournent en UTC sans conversion a l'affichage).
+
+- normaliser le fuseau cible **Europe/Paris** sur la chaine d'affichage
+  (portail client, admin, e-mails transactionnels) sans modifier le
+  stockage MariaDB qui reste UTC ;
+- exposer la timezone sur les serializers c\xF4te API-INTERNAL et la
+  consommer cote BFF/`PortalNavigation` avant rendu ;
+- corriger les templates email (`invoice_issued`,
+  `payment_reminder`, `payment_confirmed`, `contact_form`,
+  futurs `account_pending` / `account_approved`) qui injectent un
+  horodatage ;
+- ajouter un test de non-regression dans `scripts/verify-*-contract.mjs`
+  qui v\xE9rifie qu'une date renvoy\xE9e par l'API est interpr\xE9t\xE9e en
+  Europe/Paris c\xF4te webportal ;
+- pas de migration de donnees : les `DATETIME` MariaDB existants restent
+  en UTC, seule l'interpretation cote affichage change.
+
+Aucune fonctionnalite metier ajoutee. Aucune dependance hardware.
+
 ## Jalon V0.24 stabilisation testable sur SRV-01 et SRV-02
 
 Statut : **a faire, faisable sans la cible R740xd**. Ex-V0.24a renomme
@@ -245,15 +270,11 @@ sequence depuis V0.9 / V0.18, sans encore sortir de l'OU de test :
   `targetContainer` ("Users"|"Disabled"), refus early si client cible
   inexistant, `customer_ad_links` migre vers le nouveau client si
   cross-client. UI : SectionCards Renommer / Deplacer avec
-  `window.confirm()` cross-client ;
-- **brique 1 a venir** : changement de mot de passe AD cote client,
-  reactiver le flux prepare en V0.9 derriere
-  `AD_PASSWORD_CHANGE_ENABLED` (defaut `false`), exige re-auth recente,
-  audit ecrit, sans bypass, policy AD du domaine seule source de
-  verite.
+  `window.confirm()` cross-client.
 
 La V0.25 n'ouvre pas encore les ecritures hors OU de test ni n'active
-le mode `live` AD : tout reste sur SRV-01/02.
+le mode `live` AD : tout reste sur SRV-01/02. La sortie effective de
+`OU=TEST_SITE_WEB` est portee par le jalon V0.31.
 
 ## Jalon V0.26 creation de compte self-service
 
@@ -344,6 +365,144 @@ hardware pour permettre une presentation publique des l'arrivee du
 R740xd. Le contenu redactionnel des pages legales et `/a-propos` reste
 a finaliser avant V1.0 RC.
 
+## Jalon V0.28 catalogue packs et offres groupees
+
+Statut : **a cadrer, faisable sans la cible R740xd**.
+
+Le catalogue actuel (V0.15 + V0.20.1) ne g\xE8re que des offres unitaires.
+La V0.28 ajoute la notion de **pack** : un produit commercial unique
+compose de plusieurs offres existantes, avec un prix ou un remise
+specifique au pack (ex. "Pack PME = VPN + Sauvegarde + 5h support").
+
+- modele : table `commercial_offer_bundles` + table de liaison
+  `commercial_offer_bundle_items` (offre fille, quantite, ordre
+  d'affichage), `external_reference` unique partage avec
+  `commercial_offers` ;
+- prix : strategie au choix par pack (`sum_of_lines` reproduit la somme,
+  `fixed_total` impose un total HT, `percent_discount` applique un
+  pourcentage sur la somme) ; rendu cote portail et `/admin/payments`
+  inchange ;
+- creation document : selectionner un pack en ligne explose le pack en
+  N lignes filles taggees `bundle_parent_id` cote
+  `commercial_document_lines`, idempotent ;
+- compatibilite PayPal (V0.22) : un pack ne peut etre `recurring` que
+  si toutes ses offres filles ont la meme cadence `monthly`. La creation
+  du plan PayPal du pack utilise le prix calcule et garde son propre
+  `paypal_plan_id_sandbox` / `paypal_plan_id_live` ;
+- admin `/admin/catalog` : section dediee "Packs" en plus de "Offres
+  simples", fiche d'edition `/admin/catalog/bundles/{id}` avec drag and
+  drop des items, prix calcule en direct ;
+- portail client `/services` et `/offres` : packs mis en avant en haut
+  de liste, badge "Pack", detail des prestations incluses sur la fiche
+  de l'offre.
+
+La V0.28 n'introduit aucun nouveau rail de paiement et aucune
+fonctionnalite hardware-gated.
+
+## Jalon V0.29 Stripe comme rail de paiement parallele
+
+Statut : **a cadrer, faisable sans la cible R740xd**.
+
+Ajoute Stripe en parallele de PayPal (V0.21 one-shot, V0.22
+abonnements), sans remplacer PayPal. Le client choisit son rail au
+moment de regler une facture ou souscrire un service.
+
+- variables : `STRIPE_MODE=disabled` (defaut) | `test` | `live`,
+  `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`,
+  `STRIPE_WEBHOOK_SECRET` ; mode `live` reste interdit avant V1.0 beta
+  1 ;
+- one-shot : `POST /api/payments/stripe/create-intent`
+  ([PaymentIntent](https://stripe.com/docs/api/payment_intents)),
+  capture automatique au confirm front, propagation BPCE
+  `mark_as_paid` + statut local `paid` identique au flow PayPal ;
+- abonnements : `Stripe.Subscriptions` avec un `Stripe.Product` +
+  `Stripe.Price` par offre `monthly`, miroir des deux colonnes
+  `paypal_plan_id_*` -> `stripe_price_id_test` + `stripe_price_id_live`
+  (migration dediee) ;
+- webhook `POST /api/webhooks/stripe` : verification de signature
+  `Stripe-Signature`, idempotence sur `event.id` dans
+  `stripe_webhook_events` (miroir de `paypal_webhook_events`), switch
+  sur `payment_intent.succeeded` / `invoice.paid` /
+  `customer.subscription.deleted` ;
+- admin : `/admin/payments` et `/admin/subscriptions` ajoutent une
+  colonne "Rail" (PayPal vs Stripe), filtres etendus, MRR HT agrege
+  cross-rail ;
+- portail client : le bouton "Payer" propose un radio rail si les deux
+  sont actifs, defaut Stripe si `STRIPE_MODE != disabled`, sinon
+  PayPal ;
+- tests : `npm run test:payments-stripe`
+  (`scripts/verify-stripe-contract.mjs`) couvre intent + webhook +
+  idempotence en mode `test`.
+
+Garde-fou : aucune ouverture du mode `live` Stripe avant V1.0 beta 1
+sur le R740xd, identique a PayPal et BPCE.
+
+## Jalon V0.30 test envoi e-mail automatique reel
+
+Statut : **a cadrer, faisable sans la cible R740xd**.
+
+Premiere bascule controlee de `EMAIL_INTEGRATION_MODE` vers `live` sur
+un SMTP reel **sans attendre le R740xd**, dans le cadre limite de la
+phase de tests. Objectif : valider la chaine SMTP de bout en bout
+(authentification, STARTTLS, reputation, deliverabilite) avant d'engager
+la V1.0 beta 1.
+
+- choix d'un SMTP de transit dedie phase-de-tests (compte applicatif
+  separe de la prod, From `noreply@zacharyhounsa.ovh` ou sous-domaine
+  reserve `tests-mail.zacharyhounsa.ovh`) ;
+- destinataire **liste blanche** uniquement (boites internes
+  `@home.bzh` + boite personnelle de l'editeur), refus en dur de tout
+  destinataire externe tant que `EMAIL_LIVE_ALLOWLIST_ONLY=true` ;
+- 4 templates couverts : `invoice_issued`, `payment_reminder`,
+  `payment_confirmed`, `contact_form` ;
+- enregistrement `email_messages.status` etendu : succes SMTP =
+  `live_sent`, erreur classifiee (`smtp_auth`, `smtp_relay_refused`,
+  `smtp_timeout`, `smtp_other`) ;
+- check SPF / DKIM / DMARC sur le sous-domaine emetteur, documente dans
+  `docs/V0.30_EMAIL_LIVE_TEST.md` (a creer au demarrage du jalon) ;
+- recette guidee : declencher manuellement les 4 templates et verifier
+  reception dans Inbox (pas Spam) sur Gmail + Outlook + serveur interne ;
+- rollback : retour immediat a `EMAIL_INTEGRATION_MODE=mock` documente.
+
+La V0.30 n'eteint pas PayPal/BPCE en mode sandbox/mock : elle isole le
+canal e-mail comme premier vrai canal externe production-grade.
+
+## Jalon V0.31 provisioning AD reel hors OU de test
+
+Statut : **a cadrer, faisable sans la cible R740xd** (depend de la
+disponibilite de l'AD `home.bzh`, deja utilise en recette V0.25).
+
+Execution effective de la procedure documentee en V0.25 brique 3
+(`docs/AD_PRODUCTION_MIGRATION.md`). Sort definitivement de
+`OU=TEST_SITE_WEB,DC=home,DC=bzh` pour cibler une **OU de production**
+validee, sur le meme AD que la recette V0.25.
+
+- **PR code de levee** : remplacer
+  `AdRuntimeConfiguration.RequiredTestOuRoot` (`const string` hardcode
+  ligne 41 de `apps/api-internal/Data/Configuration/AdRuntimeConfiguration.cs`)
+  par une variable d'environnement `AD_REQUIRED_OU_ROOT` + allowlist
+  `AD_ALLOWED_ROOTS` (liste blanche de DN racines acceptees) ;
+- **option A** (recommandee par la procedure brique 3) : bascule
+  franche par client, re-provisioning sous nouvelle OU prod,
+  invalidation du `customer_ad_links.distinguished_name` ancien,
+  audit `admin.customers.ad_users.migrate_root` ;
+- **option B** : per-customer `ad_ou_override`, non implementee en
+  V0.31 sauf besoin avere ;
+- tests des 4 modes AD (`disabled`, `mock`, `read_only`,
+  `controlled_write`) sous la nouvelle OU ;
+- recette utilisateur sur 1 client temoin (`CLI-DEMO-0060` ou
+  equivalent) avec rejouage des cas V0.25 (search / create / rename /
+  move / groups / password) ;
+- mise a jour du seed mock pour refleter la nouvelle racine sans
+  casser les tests `read_only` en developpement ;
+- mode `live` AD n'est toujours pas necessaire :
+  `controlled_write` reste le mode cible. La "vraie" production AD est
+  livree quand V0.31 valide la nouvelle OU racine et que V1.0 RC
+  ouvre l'OU au premier client reel.
+
+La V0.31 ne couvre pas le hardware R740xd. Elle valide uniquement que
+le code et la procedure tiennent quand on quitte l'OU de test.
+
 ## Jalon V1.0 beta 1 test de deploiement sur la cible R740xd
 
 Statut : **bloque, declenche a la livraison du R740xd**. Ex-V0.24b
@@ -373,9 +532,10 @@ recettee sur le R740xd. Ex-V1.0 renomme au 2026-06-28.
 - exposition publique avec domaine, TLS et supervision actifs ;
 - CGV, mentions legales et politique de confidentialite (V0.27)
   publiees et acceptees ;
-- tarification publique alignee avec le catalogue V0.15 ;
-- premier client reel integre, **sortie de `OU=TEST_SITE_WEB`** vers
-  une OU de production validee (procedure V0.25) ;
+- tarification publique alignee avec le catalogue V0.15 + packs V0.28 ;
+- premier client reel integre dans l'OU de production validee en V0.31
+  (la procedure de sortie de `OU=TEST_SITE_WEB` est rejouee une fois
+  pour le premier client reel) ;
 - SLA documente et procedure d'incident formelle ;
 - ouverture des inscriptions self-service V0.26 si validation
   juridique OK.
@@ -386,13 +546,17 @@ V1.1 ou plus tard, jamais ajoutee en derniere minute a V1.0 RC.
 
 ## Hors sequence
 
-Reserves, non programmes (ni dans V0.24, ni dans V1.0 RC) :
+Reserves, non programmes (ni dans V0.24, ni dans V0.28-V0.31, ni dans
+V1.0 RC) :
 
-- prelevement SEPA hors PayPal ;
+- prelevement SEPA hors PayPal/Stripe ;
 - integration comptable automatique ;
 - automatisation NAS, RDS, VPN declenchee par un encaissement ;
 - HTML enrichi dans les e-mails (texte uniquement depuis V0.21) ;
 - application mobile native.
+
+Note : Stripe est desormais **dans la sequence** (V0.29), les packs et
+offres groupees egalement (V0.28).
 
 ## Jalon V0.19 durcissement securite et coherence AD
 

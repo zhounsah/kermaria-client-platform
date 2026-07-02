@@ -141,12 +141,28 @@ Acquis V0.18 et V0.19 (toujours actifs) :
   `Development` ;
 - validateur d'entrees AD strict cote `API-INTERNAL`.
 
-Le mode `live` BPCE/PayPal/EMAIL n'est jamais active sans validation
-explicite (V1.0 beta 1, R740xd).
+Le mode `live` BPCE/PayPal/EMAIL/Stripe n'est jamais active sans
+validation explicite (V1.0 beta 1, R740xd).
 
 Le projet reste en **phase de tests** sur SRV-01 et SRV-02 tant que la
 cible R740xd n'est pas livree : aucun client reel, aucun envoi e-mail
-externe a un destinataire reel, aucun prelevement recurrent active.
+externe a un destinataire reel hors liste blanche, aucun prelevement
+recurrent active.
+
+A venir avant la bascule hardware (tous faisables sans R740xd, ajoutes
+au 2026-06-30) :
+
+- V0.23.2 patch harmonisation horodatages (logs/audit/affichage +2h
+  -> Europe/Paris) ;
+- V0.24 stabilisation testable SRV-01/02 ;
+- V0.26 creation de compte self-service ;
+- V0.28 catalogue packs et offres groupees ;
+- V0.29 Stripe comme rail parallele de PayPal ;
+- V0.30 premier test SMTP reel controle (allowlist destinataires) ;
+- V0.31 sortie effective de `OU=TEST_SITE_WEB` (procedure V0.25
+  brique 3 executee, levee du `RequiredTestOuRoot` hardcode).
+
+Voir [`docs/ROADMAP.md`](docs/ROADMAP.md) pour le detail.
 
 ## Architecture
 
