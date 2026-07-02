@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
   }
 
   const errorUrl = `${portalUrl}/commercial-documents/${encodeURIComponent(documentId)}?payment=error`;
-  const successUrl = `${portalUrl}/commercial-documents/${encodeURIComponent(documentId)}/payment-success`;
+  const successUrl = `${portalUrl}/commercial-documents/${encodeURIComponent(documentId)}/payment-success?rail=paypal`;
 
   const sessionToken = request.cookies.get(getSessionCookieName())?.value;
   if (!sessionToken) {

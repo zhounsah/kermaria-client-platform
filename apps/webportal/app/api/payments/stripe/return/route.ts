@@ -18,6 +18,6 @@ export async function GET(request: NextRequest) {
   // happens asynchronously via the payment_intent.succeeded webhook — this
   // route is purely a redirect, never the source of truth for payment state.
   return NextResponse.redirect(
-    `${portalUrl}/commercial-documents/${encodeURIComponent(documentId)}/payment-success`,
+    `${portalUrl}/commercial-documents/${encodeURIComponent(documentId)}/payment-success?rail=stripe`,
   );
 }

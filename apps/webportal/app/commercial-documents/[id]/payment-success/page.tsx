@@ -9,11 +9,32 @@ export const metadata = {
 
 export const dynamic = "force-dynamic";
 
-type PageProps = { params: Promise<{ id: string }> };
+type PageProps = {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
 
-export default async function PaymentSuccessPage({ params }: PageProps) {
+const railMessage: Record<string, string> = {
+  paypal:
+    "Votre paiement PayPal a été capturé avec succès. La facture est " +
+    "désormais marquée comme réglée.",
+  stripe:
+    "Votre paiement Stripe a bien été reçu. La facture sera marquée comme " +
+    "réglée dans quelques instants, le temps que la confirmation nous " +
+    "parvienne.",
+};
+
+export default async function PaymentSuccessPage({
+  params,
+  searchParams,
+}: PageProps) {
   await requireClientSession();
   const { id } = await params;
+  const { rail } = await searchParams;
+  const railKey = Array.isArray(rail) ? rail[0] : rail;
+  const message =
+    (railKey ? railMessage[railKey] : undefined)
+    ?? "Votre paiement a bien été reçu. La facture est désormais marquée comme réglée.";
 
   return (
     <>
@@ -27,10 +48,7 @@ export default async function PaymentSuccessPage({ params }: PageProps) {
         <div>
           <span className="card-kicker">Confirmation</span>
           <h2>Merci pour votre règlement</h2>
-          <p>
-            Votre paiement PayPal a été capturé avec succès. La facture est
-            désormais marquée comme réglée.
-          </p>
+          <p>{message}</p>
           <p style={{ marginTop: "0.5rem", color: "var(--color-text-muted)" }}>
             Un e-mail de confirmation vous sera envoyé si une adresse est
             associée à votre compte.
