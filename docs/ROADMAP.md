@@ -275,10 +275,12 @@ Runbook infra : [`DEPLOYMENT_WINDOWS.md`](DEPLOYMENT_WINDOWS.md).
 - revue accessibilite WCAG AA des parcours client critiques.
 
 **Reste a executer (Brique 3)** :
+- **procedure formelle de mise en production redigee 2026-07-03**
+  dans [`docs/PRODUCTION_DEPLOYMENT.md`](PRODUCTION_DEPLOYMENT.md),
+  a relire et signer off, **non executee** avant V1.0 beta 1 ;
 - documentation utilisateur admin et client ;
-- procedure formelle de mise en production redigee dans
-  `docs/PRODUCTION_DEPLOYMENT.md`, **non executee** ;
-- plan de continuite minimal documente.
+- plan de continuite minimal (integre a la section 11 de
+  PRODUCTION_DEPLOYMENT.md).
 
 La V0.24 n'ajoute aucune fonctionnalite metier (sauf
 `--seed-admin` qui est un outil de bootstrap) et ne s'execute pas

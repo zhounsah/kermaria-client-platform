@@ -454,6 +454,7 @@ npm run test:ad-security     # garde-fous AD
 - [Security](docs/SECURITY.md)
 - [Deployment](docs/DEPLOYMENT.md)
 - [Deploiement Windows Server 2022 (SRV-01/02/07)](docs/DEPLOYMENT_WINDOWS.md)
+- [Procedure de mise en production (R740xd)](docs/PRODUCTION_DEPLOYMENT.md)
 - [Operations](docs/OPERATIONS.md)
 - [Backup and restore](docs/BACKUP_RESTORE.md)
 - [Roadmap](docs/ROADMAP.md)
