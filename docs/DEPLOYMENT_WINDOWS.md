@@ -787,6 +787,20 @@ New-NetFirewallRule -DisplayName "API-INTERNAL to KERMARIA-SRV-02" `
 
 ## 5. KERMARIA-SRV-01 — IIS + ARR + URL Rewrite
 
+Deux sites IIS distincts sur la meme IP, chacun avec plusieurs
+host headers, tous deux reverse-proxy vers le meme Node loopback :
+
+| Site | Hostnames | Role | Header noindex |
+|---|---|---|---|
+| `kermaria-vitrine` | `www.home.bzh`, `www.zacharyhounsa.ovh` | Vitrine publique V0.27 (landing, `/offres`, `/contact`, `/portfolio/*`, etc.) | strippe |
+| `kermaria-portal` | `portail.home.bzh`, `dashboard.home.bzh`, `portail.zacharyhounsa.ovh`, `dashboard.zacharyhounsa.ovh` | Backoffice authentifie (`/login`, `/dashboard`, `/admin/*`, `/api/*`) | conserve |
+
+Node fait deja le routing par path (V0.27 `proxy.ts` bascule
+`PublicShell` / `AppShell`). Les deux sites IIS pointent donc sur
+le meme process `127.0.0.1:3000` — la separation IIS ne sert qu'a
+la lisibilite operationnelle et au controle du header
+`X-Robots-Tag`.
+
 ### Installation
 
 ```powershell
@@ -797,7 +811,8 @@ Install-WindowsFeature Web-Server, Web-Common-Http, Web-Static-Content, `
 ```
 
 Installer **URL Rewrite 2.1** et **Application Request Routing 3.0**
-via les installeurs MSI officiels de iis.net :
+via les installeurs MSI officiels de iis.net (ou automatiser
+depuis `Invoke-WebRequest` sur les liens ci-dessous) :
 
 - https://www.iis.net/downloads/microsoft/url-rewrite
 - https://www.iis.net/downloads/microsoft/application-request-routing
@@ -813,24 +828,74 @@ Set-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST' `
   -filter "system.webServer/proxy" -name "enabled" -value $true
 ```
 
-Autoriser les server variables custom via IIS Manager -> serveur ->
-URL Rewrite -> View Server Variables -> Add :
-
-- `HTTP_X_FORWARDED_PROTO`
-- `HTTP_X_FORWARDED_HOST`
-
-### Site IIS
-
-Creer un site "kermaria" pointant sur un dossier vide (le rewrite
-est la vraie config) :
+Whitelist des server variables custom (necessaire pour que les
+rules puissent `<set name="HTTP_X_FORWARDED_*" />`) :
 
 ```powershell
-New-Item -ItemType Directory -Force -Path C:\inetpub\kermaria
-New-Website -Name "kermaria" -PhysicalPath "C:\inetpub\kermaria" `
-  -Port 80 -HostHeader "portail.example.com" -Force
+$existing = @(Get-WebConfiguration -pspath 'MACHINE/WEBROOT/APPHOST' `
+  -filter "system.webServer/rewrite/allowedServerVariables/add" -ErrorAction SilentlyContinue |
+  Select-Object -ExpandProperty name)
+foreach ($v in 'HTTP_X_FORWARDED_PROTO','HTTP_X_FORWARDED_HOST') {
+    if ($v -notin $existing) {
+        Add-WebConfigurationProperty -pspath 'MACHINE/WEBROOT/APPHOST' `
+          -filter "system.webServer/rewrite/allowedServerVariables" `
+          -name "." -value @{name=$v}
+    }
+}
 ```
 
-Placer ce `web.config` dans `C:\inetpub\kermaria\` :
+### App pool partage `Kermaria-Webportal`
+
+Un seul app pool en **No Managed Code** (les sites ne servent que
+du reverse proxy, aucun runtime .NET dans IIS) :
+
+```powershell
+$AppPoolName = "Kermaria-Webportal"
+if (-not (Test-Path "IIS:\AppPools\$AppPoolName")) {
+    New-WebAppPool -Name $AppPoolName
+}
+Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name managedRuntimeVersion -Value ""
+Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name managedPipelineMode  -Value "Integrated"
+Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name processModel.identityType -Value "ApplicationPoolIdentity"
+Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name startMode -Value "AlwaysRunning"
+```
+
+### Site `kermaria-portal` (backoffice)
+
+Le site backoffice **redirige `/` vers `/login`** pour eviter
+d'exposer la landing marketing aux hostnames `portail.*` /
+`dashboard.*`.
+
+```powershell
+$Ip         = "192.168.100.201"    # IP publique du serveur
+$CertThumb  = "<empreinte du wildcard *.home.bzh + *.zacharyhounsa.ovh>"
+$PortalPath = "C:\inetpub\kermaria"
+$PortalHosts = @(
+    "portail.home.bzh", "dashboard.home.bzh",
+    "portail.zacharyhounsa.ovh", "dashboard.zacharyhounsa.ovh"
+)
+
+New-Item -ItemType Directory -Force -Path $PortalPath | Out-Null
+
+New-Website -Name "kermaria-portal" -PhysicalPath $PortalPath `
+  -ApplicationPool "Kermaria-Webportal" `
+  -IPAddress $Ip -Port 80 -HostHeader $PortalHosts[0] -Force
+
+foreach ($h in $PortalHosts) {
+    if (-not (Get-WebBinding -Name "kermaria-portal" -Port 80 -HostHeader $h -Protocol http -ErrorAction SilentlyContinue)) {
+        New-WebBinding -Name "kermaria-portal" -Protocol http `
+          -IPAddress $Ip -Port 80 -HostHeader $h
+    }
+    if (-not (Get-WebBinding -Name "kermaria-portal" -Port 443 -HostHeader $h -Protocol https -ErrorAction SilentlyContinue)) {
+        New-WebBinding -Name "kermaria-portal" -Protocol https `
+          -IPAddress $Ip -Port 443 -HostHeader $h -SslFlags 1
+        (Get-WebBinding -Name "kermaria-portal" -Port 443 -HostHeader $h -Protocol https).AddSslCertificate($CertThumb, "My")
+    }
+}
+Start-Website -Name "kermaria-portal"
+```
+
+`web.config` du site portal (`C:\inetpub\kermaria\web.config`) :
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -838,23 +903,26 @@ Placer ce `web.config` dans `C:\inetpub\kermaria\` :
   <system.webServer>
     <rewrite>
       <rules>
-        <!-- ACME challenge Let's Encrypt : servir en clair 80 -->
+        <!-- Laisse passer ACME HTTP-01 en clair au cas ou -->
         <rule name="AcmeChallenge" stopProcessing="true">
           <match url="^\.well-known/acme-challenge/(.*)$" />
           <action type="None" />
         </rule>
 
-        <!-- Force HTTPS -->
         <rule name="ForceHttps" stopProcessing="true">
           <match url="(.*)" />
           <conditions>
             <add input="{HTTPS}" pattern="off" />
           </conditions>
-          <action type="Redirect" url="https://{HTTP_HOST}/{R:1}"
-                  redirectType="Permanent" />
+          <action type="Redirect" url="https://{HTTP_HOST}/{R:1}" redirectType="Permanent" />
         </rule>
 
-        <!-- Reverse proxy vers Node -->
+        <!-- / → /login pour les hostnames backoffice -->
+        <rule name="RootToLogin" stopProcessing="true">
+          <match url="^$" />
+          <action type="Redirect" url="/login" redirectType="Found" />
+        </rule>
+
         <rule name="ReverseProxyToNext" stopProcessing="true">
           <match url="(.*)" />
           <action type="Rewrite" url="http://127.0.0.1:3000/{R:1}" />
@@ -869,17 +937,138 @@ Placer ce `web.config` dans `C:\inetpub\kermaria\` :
     <httpProtocol>
       <customHeaders>
         <remove name="X-Powered-By" />
-        <remove name="Server" />
       </customHeaders>
     </httpProtocol>
 
     <security>
       <requestFiltering>
-        <requestLimits maxAllowedContentLength="10485760" />  <!-- 10 Mo -->
+        <requestLimits maxAllowedContentLength="10485760" />
       </requestFiltering>
     </security>
   </system.webServer>
 </configuration>
+```
+
+### Site `kermaria-vitrine` (public, indexable)
+
+Le site vitrine **strippe le header `X-Robots-Tag`** (envoye par
+Node globalement via `next.config.ts`, heritage V0.23) pour que les
+pages publiques soient indexables. Le backoffice le conserve.
+
+```powershell
+$VitrineSite  = "kermaria-vitrine"
+$VitrinePath  = "C:\inetpub\kermaria-vitrine"
+$VitrineHosts = @("www.home.bzh", "www.zacharyhounsa.ovh")
+
+New-Item -ItemType Directory -Force -Path $VitrinePath | Out-Null
+
+New-Website -Name $VitrineSite -PhysicalPath $VitrinePath `
+  -ApplicationPool "Kermaria-Webportal" `
+  -IPAddress $Ip -Port 80 -HostHeader $VitrineHosts[0] -Force
+
+foreach ($h in $VitrineHosts) {
+    if (-not (Get-WebBinding -Name $VitrineSite -Port 80 -HostHeader $h -Protocol http -ErrorAction SilentlyContinue)) {
+        New-WebBinding -Name $VitrineSite -Protocol http `
+          -IPAddress $Ip -Port 80 -HostHeader $h
+    }
+    if (-not (Get-WebBinding -Name $VitrineSite -Port 443 -HostHeader $h -Protocol https -ErrorAction SilentlyContinue)) {
+        New-WebBinding -Name $VitrineSite -Protocol https `
+          -IPAddress $Ip -Port 443 -HostHeader $h -SslFlags 1
+        (Get-WebBinding -Name $VitrineSite -Port 443 -HostHeader $h -Protocol https).AddSslCertificate($CertThumb, "My")
+    }
+}
+Start-Website -Name $VitrineSite
+```
+
+`web.config` du site vitrine (`C:\inetpub\kermaria-vitrine\web.config`) :
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+  <system.webServer>
+    <rewrite>
+      <rules>
+        <rule name="AcmeChallenge" stopProcessing="true">
+          <match url="^\.well-known/acme-challenge/(.*)$" />
+          <action type="None" />
+        </rule>
+
+        <rule name="ForceHttps" stopProcessing="true">
+          <match url="(.*)" />
+          <conditions>
+            <add input="{HTTPS}" pattern="off" />
+          </conditions>
+          <action type="Redirect" url="https://{HTTP_HOST}/{R:1}" redirectType="Permanent" />
+        </rule>
+
+        <rule name="ReverseProxyToNext" stopProcessing="true">
+          <match url="(.*)" />
+          <action type="Rewrite" url="http://127.0.0.1:3000/{R:1}" />
+          <serverVariables>
+            <set name="HTTP_X_FORWARDED_PROTO" value="https" />
+            <set name="HTTP_X_FORWARDED_HOST" value="{HTTP_HOST}" />
+          </serverVariables>
+        </rule>
+      </rules>
+
+      <outboundRules>
+        <!-- Node envoie X-Robots-Tag: noindex, nofollow globalement (next.config.ts,
+             heritage V0.23). Sur la vitrine on veut etre indexable. -->
+        <rule name="StripXRobotsTag">
+          <match serverVariable="RESPONSE_X_Robots_Tag" pattern=".+" />
+          <action type="Rewrite" value="" />
+        </rule>
+      </outboundRules>
+    </rewrite>
+
+    <httpProtocol>
+      <customHeaders>
+        <remove name="X-Powered-By" />
+      </customHeaders>
+    </httpProtocol>
+
+    <security>
+      <requestFiltering>
+        <requestLimits maxAllowedContentLength="10485760" />
+      </requestFiltering>
+    </security>
+  </system.webServer>
+</configuration>
+```
+
+### DNS et hostnames
+
+- **`*.home.bzh`** : DNS interne sur le DC AD (SRV-03 dans notre
+  topologie). Ajouter les A records `www`, `portail`, `dashboard`
+  → `192.168.100.201`.
+- **`*.zacharyhounsa.ovh`** : DNS public OVH. CNAME ou A records
+  `www`, `portail`, `dashboard` vers l'IP WAN + port forward
+  80/443 vers `192.168.100.201`.
+
+Le certificat wildcard Let's Encrypt en place couvre deja
+`*.home.bzh`, `*.zacharyhounsa.ovh` et `*.kermaria35580.ovh` — sa
+reutilisation evite un cert propre par sous-domaine. Voir section
+6 pour le renouvellement.
+
+### Verification depuis SRV-01
+
+Depuis une session PowerShell 5.1 elevee sur SRV-01, avec le hosts
+file ou le DNS interne resolvant les hostnames sur `192.168.100.201` :
+
+```powershell
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+
+# Backoffice : / → /login
+$b = Invoke-WebRequest -Uri "https://portail.home.bzh/" `
+  -MaximumRedirection 0 -UseBasicParsing
+$b.StatusCode                        # 302
+$b.Headers.Location                  # https://portail.home.bzh/login
+
+# Vitrine : landing V0.27 avec X-Robots-Tag strippe
+$v = Invoke-WebRequest -Uri "https://www.home.bzh/" -UseBasicParsing
+$v.StatusCode                        # 200
+$v.Headers['X-Robots-Tag']           # vide → outbound rule OK
+$v.Content -match "claire et utile"  # True (hero V0.27)
 ```
 
 ## 6. KERMARIA-SRV-01 — TLS via win-acme (Let's Encrypt)
@@ -1110,7 +1299,130 @@ Passer en **Server Core** (sans GUI) n'est **pas necessaire** ici
 vu la RAM disponible. Le laisser en mode GUI simplifie la
 maintenance ponctuelle (RDP, MMC IIS, gestion certif).
 
-## 13. Suite
+## 13. Gotchas rencontres a l'installation (2026-07-03)
+
+Points de vigilance decouverts pendant le premier deploiement reel
+sur KERMARIA-SRV-01/02/07. Utile pour eviter de perdre du temps
+en cas de re-installation ou de migration vers le R740xd.
+
+### API-INTERNAL
+
+- **`LOG_FILE_DIRECTORY` machine-specifique** : le convertisseur
+  `scripts/build-api-config.ps1` bloque la variable en source
+  (`.local.env.ps1` du dev) et injecte automatiquement le default
+  cible `C:\apps\api-internal\logs`. Si le config.json est edite a
+  la main plus tard avec un chemin qui n'existe pas sur la cible,
+  `FileLoggerProvider` throw `UnauthorizedAccessException` au start
+  du service — le SCM le rebalance en boucle sans jamais ecrire le
+  log applicatif.
+- **Migrations `--apply-migrations` gated a Development** : override
+  session-scope `$env:ASPNETCORE_ENVIRONMENT="Development"` +
+  `$env:SQL_USERNAME=kermaria_migrator` le temps de la commande, le
+  process quitte apres migration donc l'API ne demarre jamais en
+  mode Dev. Fermer la fenetre PowerShell pour purger les env
+  locaux.
+- **Migrations 004/005/006 avaient un INSERT redondant** dans leur
+  propre SQL sur `schema_migrations` — corrige, mais si un
+  environnement dev pre-2026-07-03 avait applique la version
+  buggee, le premier `--apply-migrations` reproduira "Duplicate
+  entry" sur ces IDs. Purger manuellement via `DELETE FROM
+  schema_migrations WHERE migration_id IN (...)` puis rejouer.
+- **`RuntimeConfigurationValidator.IsPlaceholderSecret` refuse
+  toute valeur commencant par "test"** (garde-fou anti-dev-creds
+  en staging/prod). Si tu vois "Configuration invalide :
+  SQL_PASSWORD, AD_SERVICE_ACCOUNT_PASSWORD", tes creds commencent
+  par "Test..." ou "test..." — rotate cote MariaDB et AD, puis
+  regenere le config JSON.
+- **`AD_INTEGRATION_MODE=disabled` en V0.24** : le validator ne
+  check `AD_SERVICE_ACCOUNT_PASSWORD` que si le mode est
+  `read_only`/`controlled_write`. Sur un deploiement staging
+  V0.24, laisser `disabled` evite ce check.
+- **Bootstrap du 1er admin** : `--seed-admin` prompt interactif
+  email + mot de passe (mdp masque, jamais loggue). Cree un
+  sentinel customer `INTERNAL` si aucun customer n'existe.
+  Usable hors Development (contrairement a `--seed-demo-data`).
+
+### WEBPORTAL
+
+- **Wrapper PowerShell obligatoire** : Node n'a pas de source de
+  config native, `scripts/start-webportal.ps1` charge le JSON en
+  env vars de session puis exec `node server.js`. Aucune pollution
+  Machine.
+- **Layout standalone Next monorepo-aware** : parce que
+  `next.config.ts` declare `turbopack.root = repo racine`,
+  `.next/standalone/` sort `apps/webportal/server.js` +
+  `node_modules/` a la racine. `AppDirectory` NSSM sur
+  `C:\apps\webportal`, chemin server.js sur
+  `C:\apps\webportal\apps\webportal\server.js`.
+- **PUBLIC_VITRINE_ENABLED** : par defaut `false`, mettre `true`
+  dans `webportal.config.json` + `Restart-Service KermariaWebportal`
+  pour activer les routes vitrine V0.27. Sinon `/`, `/offres`,
+  `/contact` etc. retournent 404 malgre les bindings IIS.
+
+### IIS
+
+- **ARR proxy `enabled=true`** obligatoire au niveau serveur —
+  sans ca, URL Rewrite ignore silencieusement les rules `Rewrite
+  url="http://..."` (aucune erreur, requetes 404).
+- **Whitelist des server variables** au niveau serveur pour
+  `HTTP_X_FORWARDED_PROTO` et `HTTP_X_FORWARDED_HOST`. Si non fait,
+  URL Rewrite ignore les `<set>` dans les rules.
+- **App pool en `No Managed Code`** : les sites reverse proxy
+  n'executent aucun code .NET dans IIS. Un pool avec
+  `managedRuntimeVersion=""` limite la surface d'attaque.
+- **SNI actif (`SslFlags=1`)** sur les bindings 443 permet la
+  cohabitation avec les autres sites de meme IP (Default Web Site,
+  portfolio-zachary, RADIO-PROXY dans notre topologie). Les
+  clients TLS modernes envoient tous SNI. Test `Invoke-WebRequest
+  https://192.168.100.201/` avec `-Headers @{Host='...'}` echoue
+  au TLS handshake **parce qu'IIS ne peut pas mapper le SNI depuis
+  l'IP nue** — tester avec `https://<hostname>/` (via hosts file
+  ou DNS interne) pour que le SNI soit correctement envoye.
+
+### PowerShell 5.1
+
+- **`ServerCertificateValidationCallback = { $true }` bugge** en
+  session PS 5.1 non-interactive : `PSInvalidOperationException:
+  Il n'y a pas d'instance d'execution disponible`. Contournement :
+  ajouter la classe `ServerCertificateValidator` via `Add-Type` et
+  passer sa methode statique. Souvent inutile si le certif est
+  trusted (cas Let's Encrypt wildcard).
+- **`WriteAllLines(path, [string], encoding)` avec un scalaire**
+  choisit le mauvais overload et ecrit tout sur une ligne. Forcer
+  le type array : `[string[]]$lines`. Symptome typique : hosts
+  file avec 4 entrees concatenees sans newline.
+- **`Set-Content` sur un fichier en cours de lecture par la meme
+  session** echoue avec "Le flux ne peut pas etre lu". Utiliser
+  `[System.IO.File]::ReadAllLines` + `WriteAllLines` qui ferment
+  le handle immediatement.
+- **Comptes de service et `icacls`** : les grants sur
+  `svc-kermaria-*` ou `HOME\svc_api_portal_ad` echouent avec "Le
+  mappage entre les noms de compte et les ID de securite n'a pas
+  ete effectue" si le compte n'existe pas encore. Creer d'abord
+  via `New-LocalUser` ou verifier `Get-ADUser` avant les ACL.
+- **`Administrators` vs `Administrateurs`** : Windows FR nomme le
+  groupe local `Administrateurs`. `Administrator` (compte) et
+  `Administrateurs` (groupe) sont distincts. Utiliser le SID
+  langue-neutre `*S-1-5-32-544` dans `icacls /grant:r` pour eviter
+  toute confusion.
+- **`sc.exe create` finicky** : espace obligatoire apres chaque
+  `parametre= `, echappements guillemets pour `binPath=`, echec
+  silencieux qui affiche l'aide. Preferer `New-Service` (quoting
+  PS natif).
+
+### Documentation et copy-paste
+
+- **Chat / rendu markdown auto-linkifie les hostnames en `www.*`**
+  au moment du copy — la copie d'une commande `www.home.bzh`
+  depuis un rendu markdown produit `[www.home.bzh](https://www.home.bzh)`
+  en clipboard. Impact : les hostnames pastes dans PowerShell
+  contiennent des crochets litteraux, bindings IIS et hosts file
+  corrompus. Contournement dans les scripts :
+  `$prefix = 'w' + 'ww'; "${prefix}.home.bzh"`. Verification via
+  base64 : `[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(...))`
+  puis decodage cote humain.
+
+## 14. Suite
 
 Ce runbook couvre la phase de tests KERMARIA-SRV-01/02/07 (V0.24 Brique 1)
 et sera adapte comme ossature de la procedure V1.0 beta 1 sur
@@ -1119,8 +1431,9 @@ R740xd (V0.24 Brique 3, livrable
 delta suivants :
 
 - comptes de service **AD domain-joined** au lieu de comptes locaux
-  (si KERMARIA-SRV-01/02 rejoignent le domaine `home.bzh`) ;
-- migration secrets vers DPAPI ou secret store dedie ;
+  (deja fait cote SRV-01/02 via `HOME\svc_api_portal_ad`) ;
+- migration secrets vers DPAPI ou secret store dedie (staging
+  actuel : fichier JSON avec ACL restrictive) ;
 - TLS MariaDB active (`REQUIRE SSL`) ;
 - bascule des modes vers `live` selon l'ordre documente en
   V0.24 Brique 3 ;

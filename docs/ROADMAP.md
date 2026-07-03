@@ -225,28 +225,64 @@ Aucune fonctionnalite metier ajoutee. Aucune dependance hardware.
 
 ## Jalon V0.24 stabilisation testable sur SRV-01 et SRV-02
 
-Statut : **cadrage redige, execution a faire**. Cadrage detaille :
-[`V0.24_STABILISATION.md`](V0.24_STABILISATION.md). Ex-V0.24a renomme
-au 2026-06-28 (la phase de validation hardware ex-V0.24b devient
-V1.0 beta 1).
+Statut : **en cours, infra debout depuis 2026-07-03**. Cadrage
+detaille : [`V0.24_STABILISATION.md`](V0.24_STABILISATION.md).
+Ex-V0.24a renomme au 2026-06-28 (la phase de validation hardware
+ex-V0.24b devient V1.0 beta 1).
 
+Runbook infra : [`DEPLOYMENT_WINDOWS.md`](DEPLOYMENT_WINDOWS.md).
+
+**Livre au 2026-07-03** :
+- Infra deployee sur KERMARIA-SRV-01 (Dell Optiplex 5070, WEBPORTAL
+  + IIS front), KERMARIA-SRV-02 (ASUS FX753VD, API-INTERNAL) et
+  KERMARIA-SRV-07 (MariaDB 192.168.100.207). Windows Server 2022,
+  sans VM ni Docker.
+- Compte de service AD partage `HOME\svc_api_portal_ad` pour les
+  deux services Windows.
+- Config unifiee dans un fichier JSON par app
+  (`C:\ProgramData\Kermaria\{api-internal,webportal}.config.json`)
+  au lieu des variables Machine — patch Program.cs charge
+  `KERMARIA_CONFIG_PATH`, wrapper Node lit et injecte les env de
+  session. Zero pollution systeme.
+- Split IIS : `kermaria-vitrine` (`www.home.bzh` + `www.zacharyhounsa.ovh`,
+  X-Robots-Tag strippe pour indexation) et `kermaria-portal`
+  (`portail.*` + `dashboard.*` sur les deux domaines, `/` → `/login`),
+  wildcard Let's Encrypt reutilise.
+- `PUBLIC_VITRINE_ENABLED=true` — vitrine V0.27 accessible sur `www.*`,
+  backoffice reserve aux hostnames `portail`/`dashboard`.
+- Bootstrap 1er admin via nouveau flag CLI `--seed-admin` (Program.cs
+  + `MariaDbAdminSeeder`), usable hors Development, prompt masque,
+  hash PBKDF2, sentinel customer `INTERNAL` si aucun customer.
+- Scripts de deploiement livres : `build-api-config.ps1`,
+  `build-webportal-config.ps1`, `start-webportal.ps1`.
+
+**Reste a executer (Brique 1)** :
 - recette complete executee sur le staging interne (couvre V0.16, V0.17,
   V0.20 BPCE mock, V0.21 PayPal sandbox + e-mail mock, V0.22 souscriptions,
   V0.25 AD `controlled_write`, V0.26 signup, V0.27 vitrine, V0.29 Stripe
   `test`, V0.30 partiel allowlist SMTP, V0.23.2 timezone) ;
-- restauration MariaDB testee sur instance distincte ;
+- restauration MariaDB testee sur instance distincte.
+
+**Reste a executer (Brique 2)** :
 - audit securite interne : dependances, secrets (couvre
   `BPCE_REFRESH_TOKEN`, `SMTP_PASSWORD`, `PAYPAL_CLIENT_SECRET`,
   `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `SERVICE_AUTH_TOKEN`,
   `SQL_PASSWORD`, `HCAPTCHA_SECRET_KEY`), headers, rate limiting ;
-- revue accessibilite WCAG AA des parcours client critiques ;
+- rotation des mots de passe faibles utilises pendant l'installation
+  (compte AD, user MariaDB) — le validator `IsPlaceholderSecret`
+  refuse deja tout secret commencant par "test", donc a traiter
+  avant sortie de recette ;
+- revue accessibilite WCAG AA des parcours client critiques.
+
+**Reste a executer (Brique 3)** :
 - documentation utilisateur admin et client ;
 - procedure formelle de mise en production redigee dans
   `docs/PRODUCTION_DEPLOYMENT.md`, **non executee** ;
 - plan de continuite minimal documente.
 
-La V0.24 n'ajoute aucune fonctionnalite metier et ne s'execute pas sur
-l'infrastructure definitive.
+La V0.24 n'ajoute aucune fonctionnalite metier (sauf
+`--seed-admin` qui est un outil de bootstrap) et ne s'execute pas
+sur l'infrastructure definitive.
 
 ## Jalon V0.25 finalisation Active Directory
 

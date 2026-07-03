@@ -12,15 +12,26 @@ browser -> WEBPORTAL / BFF -> API-INTERNAL -> MariaDB
 
 `WEBPORTAL` ne doit jamais acceder directement a MariaDB.
 
-## Etat courant V0.27 (+ V0.25 finalisation AD)
+## Etat courant V0.27 + V0.29 Stripe + V0.30 partiel + V0.24 infra debout
 
-Le depot couvre aujourd'hui les jalons V0.9 a V0.27 (voir
+Le depot couvre aujourd'hui les jalons V0.9 a V0.30 partiel (voir
 [`docs/ROADMAP.md`](docs/ROADMAP.md)). L'integration BPCE de la V0.20
 emet de vraies factures fiscales (mode `live` desactive par defaut, en
 phase de tests), la V0.21 ouvre les canaux de paiement client one-shot,
 la V0.22 ajoute les abonnements PayPal recurrents, les V0.23/V0.23.1
-harmonisent l'UX cote client et admin, et la V0.27 ajoute le site
-vitrine public en amont du backend authentifie.
+harmonisent l'UX cote client et admin, la V0.27 ajoute le site
+vitrine public, la V0.29 branche Stripe comme rail parallele a PayPal,
+et la V0.30 partiel livre le garde-fou `EMAIL_LIVE_ALLOWLIST` pour
+tester les envois SMTP reels.
+
+V0.24 : cadrage redige, **infra staging debout sur KERMARIA-SRV-01/02/07
+depuis 2026-07-03**. Deploiement natif Windows Server 2022 sans VM
+documente dans [`docs/DEPLOYMENT_WINDOWS.md`](docs/DEPLOYMENT_WINDOWS.md).
+Split IIS front vitrine/backoffice avec host headers scoped, config
+runtime en fichier JSON externe (aucune variable Machine), bootstrap
+du 1er admin via `--seed-admin` (voir "Bootstrap du premier admin"
+plus bas). Reste a executer : recette Brique 1, audit securite
+Brique 2, redaction procedure prod Brique 3.
 
 Acquis V0.27 (site vitrine public,
 [`docs/V0.27_PUBLIC_VITRINE.md`](docs/V0.27_PUBLIC_VITRINE.md)) :
@@ -346,6 +357,28 @@ npm run dev:web
 
 Sous PowerShell restrictif, utiliser `npm.cmd`.
 
+### Bootstrap du premier admin (staging / prod)
+
+En dehors du seed demo (Development uniquement), le premier compte
+`internal_admin` d'un deploiement se cree en prompt interactif :
+
+```powershell
+# Sur la machine cible, avec les SQL_* pointant sur la base kermaria
+$env:SQL_USERNAME = "kermaria_migrator"   # ou celui qui a les DML droits
+$env:SQL_PASSWORD = "<mdp>"
+C:\apps\api-internal\Kermaria.ApiInternal.exe --environment Staging --seed-admin
+```
+
+Le prompt masque le mot de passe (jamais loggue, jamais visible
+dans `Get-Process` ou dans NSSM stdout), verifie qu'il fait au
+moins 12 caracteres, refuse un doublon email. Si aucun customer
+n'existe encore, un sentinel `INTERNAL` est cree pour satisfaire
+la FK `portal_users.customer_id`.
+
+L'utilisateur peut ensuite se connecter au portail via
+`/login` et approuver les signups V0.26 recus via
+`/admin/signups`.
+
 ## Verification
 
 Verifications locales rapides (typecheck + lint webportal) :
@@ -420,9 +453,11 @@ npm run test:ad-security     # garde-fous AD
 - [Data model](docs/DATA_MODEL.md)
 - [Security](docs/SECURITY.md)
 - [Deployment](docs/DEPLOYMENT.md)
+- [Deploiement Windows Server 2022 (SRV-01/02/07)](docs/DEPLOYMENT_WINDOWS.md)
 - [Operations](docs/OPERATIONS.md)
 - [Backup and restore](docs/BACKUP_RESTORE.md)
 - [Roadmap](docs/ROADMAP.md)
+- [V0.24 Stabilisation (cadrage)](docs/V0.24_STABILISATION.md)
 - [BPCE invoicing V0.20](docs/V0.20_BPCE_INVOICING.md)
 - [Payment channels V0.21](docs/V0.21_PAYMENT_CHANNELS.md)
 - [Subscriptions V0.22](docs/V0.22_SUBSCRIPTIONS.md)
