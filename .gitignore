@@ -66,3 +66,6 @@ test.csv
 *.local.ps1
 *.secrets.ps1
 local.env.ps1
+
+# Claude Code worktrees (transient checkouts, never commit)
+.claude/worktrees/
