@@ -293,125 +293,136 @@ Si `svc-kermaria-api` n'existe pas, `icacls` renvoie
 pas été effectué`. Creer d'abord le compte via
 `New-LocalUser` (voir section "Prerequis operateur").
 
-### Configuration et secrets
+### Configuration
 
-La config API-INTERNAL utilise deux sources, avec cette precedence
-(la plus a droite gagne) :
+Toute la config runtime (SQL, secrets, modes, logs, session, seuils,
+BPCE / PayPal / Stripe / SMTP / hCaptcha) est **rassemblee dans un
+seul fichier JSON externe** :
+`C:\ProgramData\Kermaria\api-internal.config.json`.
+
+Aucune variable d'environnement Machine n'est necessaire cote
+API-INTERNAL. L'environnement (`Staging`, `Production`) se passe
+via l'argument CLI `--environment` du service Windows (voir
+section "Enregistrement Windows Service").
+
+Precedence des sources de config (la plus a droite gagne) :
 
 ```
-appsettings.json < appsettings.{Env}.json < secrets.json < variables env
+appsettings.json < appsettings.{Env}.json < config.json < env vars < CLI args
 ```
 
-Les **secrets sensibles** (mots de passe, tokens) vont dans un
-fichier JSON externe, hors du dossier de l'app. Les **variables
-non-sensibles ou operationnelles** (env name, log level, modes)
-peuvent rester en env Machine pour lisibilite.
+Les env vars gardent la main : ca permet un override ponctuel
+depuis une session PowerShell (typiquement `--apply-migrations`
+avec `kermaria_migrator`) sans editer le fichier.
 
-#### Fichier de secrets externe
-
-Program.cs charge automatiquement le fichier a
-`C:\ProgramData\Kermaria\api-internal.secrets.json` (chemin
-overridable via l'env `KERMARIA_SECRETS_PATH`). Le fichier est
-optionnel : s'il est absent, tout doit venir des env vars.
-
-Creer le dossier avec ACL restrictive :
+#### Creation du dossier
 
 ```powershell
 New-Item -ItemType Directory -Force -Path C:\ProgramData\Kermaria
 
 icacls C:\ProgramData\Kermaria /inheritance:r `
   /grant:r '*S-1-5-32-544:(OI)(CI)F' `
-  /grant:r '*S-1-5-18:(OI)(CI)RX' `
   /grant:r 'svc-kermaria-api:(OI)(CI)RX'
 ```
 
-Deposer `C:\ProgramData\Kermaria\api-internal.secrets.json`. Soit
+#### Generation du fichier config
+
+Deposer `C:\ProgramData\Kermaria\api-internal.config.json`, soit
 manuellement, soit avec le convertisseur
-[`scripts/build-secrets-json.ps1`](../scripts/build-secrets-json.ps1)
+[`scripts/build-api-config.ps1`](../scripts/build-api-config.ps1)
 qui derive le JSON depuis un `.local.env.ps1` (regex sur les
-`$env:KEY = "value"`, allowlist stricte sur les cles sensibles,
-n'affiche jamais les valeurs) :
+`$env:KEY = "value"`, blocklist des cles interdites, n'affiche
+jamais les valeurs) :
 
 ```powershell
-# Depuis le poste de dev
-.\scripts\build-secrets-json.ps1 `
-  -InputPath .\.local.env.ps1 `
-  -OutputPath \\KERMARIA-SRV-02\C$\ProgramData\Kermaria\api-internal.secrets.json
+# Depuis le poste de dev, ecrit directement sur KERMARIA-SRV-02 via SMB
+.\scripts\build-api-config.ps1 `
+  -OutputPath \\KERMARIA-SRV-02\C$\ProgramData\Kermaria\api-internal.config.json
 
-# Sur KERMARIA-SRV-02 directement, avec un source local :
-.\scripts\build-secrets-json.ps1 -InputPath C:\admin\dev.env.ps1
+# Aperçu sans ecriture
+.\scripts\build-api-config.ps1 -WhatIf
+
+# Sur KERMARIA-SRV-02 directement avec un source local
+.\scripts\build-api-config.ps1 -InputPath C:\admin\dev.env.ps1
 ```
 
-Format du JSON produit (cles vides absentes plutot que null) :
+Le script auto-detecte le fichier source dans (ordre) :
+1. `<repo>/.local.env.ps1`
+2. `<repo-parent>/<repo-name>.local.env.ps1`
+3. `<repo-parent>/.local.env.ps1`
+
+Blocklist appliquee (jamais extraites, meme presentes en source) :
+`DEMO_PORTAL_EMAIL`, `DEMO_PORTAL_PASSWORD`,
+`DEMO_INTERNAL_ADMIN_EMAIL`, `DEMO_INTERNAL_ADMIN_PASSWORD`,
+`RUN_MARIADB_TESTS`, `ALLOW_LOCAL_INTERNAL_API_URL`,
+`ASPNETCORE_ENVIRONMENT`, `DOTNET_ENVIRONMENT`,
+`KERMARIA_CONFIG_PATH`.
+
+Les valeurs vides sont egalement omises (bruit inutile).
+
+Format du JSON produit (plat, cles = noms de config API) :
 
 ```json
 {
+  "LOG_LEVEL": "Information",
+  "LOG_FILE_DIRECTORY": "C:\\apps\\api-internal\\logs",
+  "LOG_FILE_LEVEL": "Information",
+  "LOG_FILE_RETENTION_DAYS": "30",
+  "SQL_PROVIDER": "mariadb",
+  "SQL_HOST": "192.168.100.207",
+  "SQL_PORT": "3306",
+  "SQL_DATABASE": "kermaria",
+  "SQL_USERNAME": "kermaria_api",
   "SQL_PASSWORD": "<mdp_kermaria_api>",
   "SERVICE_AUTH_TOKEN": "<token_partage_avec_webportal>",
-  "BPCE_REFRESH_TOKEN": "",
-  "PAYPAL_CLIENT_SECRET": "",
-  "STRIPE_SECRET_KEY": "",
-  "STRIPE_WEBHOOK_SECRET": "",
-  "SMTP_PASSWORD": "",
-  "HCAPTCHA_SECRET_KEY": ""
+  "SESSION_DURATION_MINUTES": "480",
+  "LOGIN_MAX_FAILURES": "5",
+  "LOGIN_LOCKOUT_MINUTES": "15",
+  "AD_INTEGRATION_MODE": "disabled",
+  "BPCE_INTEGRATION_MODE": "mock",
+  "EMAIL_INTEGRATION_MODE": "mock",
+  "SIGNUP_ENABLED": "false",
+  "PUBLIC_VITRINE_ENABLED": "false",
+  "AD_PASSWORD_CHANGE_ENABLED": "false"
 }
 ```
 
-Les cles vides ("") ou absentes sont ignorees — remplir uniquement
-ce dont les scenarios de recette V0.24 ont besoin. Restreindre les
-ACL du fichier lui-meme :
+Ajouter les secrets BPCE / PayPal / Stripe / SMTP au fur et a
+mesure des scenarios de recette V0.24 qui les exigent.
+
+#### ACL restrictive sur le fichier
 
 ```powershell
-icacls C:\ProgramData\Kermaria\api-internal.secrets.json /inheritance:r `
+icacls C:\ProgramData\Kermaria\api-internal.config.json /inheritance:r `
   /grant:r '*S-1-5-32-544:F' `
   /grant:r 'svc-kermaria-api:R'
 ```
 
-Le compte SYSTEM n'a plus besoin d'acces au fichier (le service
-tourne sous `svc-kermaria-api`). Seul un admin peut ecrire, seul
-le compte de service peut lire.
+Seul un admin peut ecrire, seul le compte de service peut lire.
 
-#### Variables Machine (non-sensibles)
+#### Nettoyage des anciennes variables Machine
+
+Si des variables Machine ont ete positionnees avant la bascule (ancien
+runbook, `.local.env.ps1` sourcé) :
 
 ```powershell
-$scope = "Machine"
-[Environment]::SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT","Staging",$scope)
-[Environment]::SetEnvironmentVariable("DOTNET_ENVIRONMENT","Staging",$scope)
-[Environment]::SetEnvironmentVariable("LOG_LEVEL","Information",$scope)
-[Environment]::SetEnvironmentVariable("LOG_FILE_DIRECTORY","C:\apps\api-internal\logs",$scope)
-[Environment]::SetEnvironmentVariable("LOG_FILE_LEVEL","Information",$scope)
-[Environment]::SetEnvironmentVariable("LOG_FILE_RETENTION_DAYS","30",$scope)
-
-[Environment]::SetEnvironmentVariable("SQL_PROVIDER","mariadb",$scope)
-[Environment]::SetEnvironmentVariable("SQL_HOST","192.168.100.207",$scope)
-[Environment]::SetEnvironmentVariable("SQL_PORT","3306",$scope)
-[Environment]::SetEnvironmentVariable("SQL_DATABASE","kermaria",$scope)
-[Environment]::SetEnvironmentVariable("SQL_USERNAME","kermaria_api",$scope)
-
-[Environment]::SetEnvironmentVariable("SESSION_DURATION_MINUTES","480",$scope)
-[Environment]::SetEnvironmentVariable("LOGIN_MAX_FAILURES","5",$scope)
-[Environment]::SetEnvironmentVariable("LOGIN_LOCKOUT_MINUTES","15",$scope)
-
-# Modes strictement disabled/mock/sandbox en V0.24
-[Environment]::SetEnvironmentVariable("AD_INTEGRATION_MODE","disabled",$scope)
-[Environment]::SetEnvironmentVariable("BPCE_INTEGRATION_MODE","mock",$scope)
-[Environment]::SetEnvironmentVariable("EMAIL_INTEGRATION_MODE","mock",$scope)
-[Environment]::SetEnvironmentVariable("SIGNUP_ENABLED","false",$scope)
-[Environment]::SetEnvironmentVariable("PUBLIC_VITRINE_ENABLED","false",$scope)
-[Environment]::SetEnvironmentVariable("AD_PASSWORD_CHANGE_ENABLED","false",$scope)
+Get-ChildItem Env: `
+  | Where-Object Name -match '^(SQL_|BPCE_|PAYPAL_|STRIPE_|SMTP_|SERVICE_AUTH|HCAPTCHA_|LOG_|SESSION_|LOGIN_|AD_|EMAIL_|SIGNUP_|PUBLIC_VITRINE|BILLING_)' `
+  | ForEach-Object {
+      [Environment]::SetEnvironmentVariable($_.Name, $null, 'Machine')
+    }
 ```
 
-Note : `SQL_PASSWORD`, `SERVICE_AUTH_TOKEN` et tout autre secret ne
-figurent **pas** en env Machine. Les env Machine ne portent que la
-config publique (host, database name, modes, seuils).
+Verifier ensuite `Get-ChildItem Env:` : seules les variables systeme
+Windows doivent rester.
 
 #### Override ponctuel via env vars
 
-Les env vars gagnent sur le fichier secrets. Utile pour un run
+Les env vars gagnent sur le fichier config. Utile pour un run
 ad-hoc (par exemple `--apply-migrations` avec `kermaria_migrator`
-temporaire) : ouvrir une session PowerShell, definir uniquement
-les valeurs a overrider comme `$env:...`, lancer la commande,
-fermer la session. Voir section "Appliquer les migrations".
+temporaire) : ouvrir une session PowerShell, definir uniquement les
+valeurs a overrider comme `$env:...`, lancer la commande, fermer
+la session. Voir section "Appliquer les migrations".
 
 ### Appliquer les migrations
 
@@ -428,21 +439,20 @@ l'operation. Le process quitte de lui-meme apres migration
 Depuis une session PowerShell **elevée** sur KERMARIA-SRV-02 :
 
 ```powershell
-# Override env pour CETTE session uniquement (Machine reste a Staging)
-$env:ASPNETCORE_ENVIRONMENT = "Development"
-$env:DOTNET_ENVIRONMENT = "Development"
-
-# Credentials du compte migration (a la place de kermaria_api)
+# Override SQL pour CETTE session uniquement (le service utilisera
+# toujours kermaria_api depuis le config file au prochain start).
 $env:SQL_USERNAME = "kermaria_migrator"
 $env:SQL_PASSWORD = "<mdp migrator>"
 
-C:\apps\api-internal\Kermaria.ApiInternal.exe --apply-migrations
+# --environment Development satisfait le garde-fou de Program.cs
+C:\apps\api-internal\Kermaria.ApiInternal.exe --environment Development --apply-migrations
 ```
 
-Le process affiche les migrations appliquees puis quitte. **Fermer
-la fenetre PowerShell** juste apres pour que les env locaux
-disparaissent. La prochaine invocation reprend `Staging` (env
-Machine) + `kermaria_api` (fichier secrets externe).
+Le process applique les migrations puis quitte. **Fermer la fenetre
+PowerShell** juste apres pour que `$env:SQL_USERNAME` /
+`$env:SQL_PASSWORD` disparaissent. Le service Windows continuera a
+utiliser `kermaria_api` depuis
+`C:\ProgramData\Kermaria\api-internal.config.json`.
 
 Prerequis MariaDB (sur KERMARIA-SRV-07 en `mysql -u root -p`) : la
 base et les deux comptes doivent exister avant, sinon le migration
@@ -463,9 +473,14 @@ GRANTs (CREATE/ALTER/DROP requis).
 
 ### Enregistrement Windows Service
 
+`--environment Staging` remplace la variable Machine
+`ASPNETCORE_ENVIRONMENT`. Parseé par ASP.NET Core dans
+`CreateBuilder(args)` avant la lecture du config file, donc
+`app.Environment.IsDevelopment()` fonctionne comme attendu.
+
 ```powershell
 sc.exe create KermariaApiInternal `
-  binPath= "\"C:\apps\api-internal\Kermaria.ApiInternal.exe\" --urls http://<IP_KERMARIA_SRV_02>:5000" `
+  binPath= "\"C:\apps\api-internal\Kermaria.ApiInternal.exe\" --environment Staging --urls http://<IP_KERMARIA_SRV_02>:5000" `
   DisplayName= "Kermaria API Internal" `
   start= auto `
   obj= ".\svc-kermaria-api" password= "<pwd>"
