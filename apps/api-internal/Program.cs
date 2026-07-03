@@ -17,34 +17,36 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseWindowsService();
 
-// External JSON secrets file (optional). Path can be overridden via
-// KERMARIA_SECRETS_PATH; default C:\ProgramData\Kermaria\api-internal.secrets.json.
+// External JSON config file (optional). Path overridable via
+// KERMARIA_CONFIG_PATH; default C:\ProgramData\Kermaria\api-internal.config.json.
+// Contains ALL app config (SQL, secrets, modes, logs, session) in one place
+// to avoid polluting Machine environment variables.
 // Inserted BEFORE the env variables source so env vars keep the highest
 // precedence — enables ad-hoc overrides (e.g. --apply-migrations with a
-// different SQL_USERNAME/SQL_PASSWORD) without editing the secrets file.
-var secretsPath =
-    Environment.GetEnvironmentVariable("KERMARIA_SECRETS_PATH")
-    ?? @"C:\ProgramData\Kermaria\api-internal.secrets.json";
+// different SQL_USERNAME/SQL_PASSWORD) without editing the config file.
+var configPath =
+    Environment.GetEnvironmentVariable("KERMARIA_CONFIG_PATH")
+    ?? @"C:\ProgramData\Kermaria\api-internal.config.json";
 var envSourceIndex = builder.Configuration.Sources
     .ToList()
     .FindIndex(s =>
         s is Microsoft.Extensions.Configuration.EnvironmentVariables
             .EnvironmentVariablesConfigurationSource);
-var secretsSource =
+var externalConfigSource =
     new Microsoft.Extensions.Configuration.Json.JsonConfigurationSource
     {
-        Path = secretsPath,
+        Path = configPath,
         Optional = true,
         ReloadOnChange = false,
     };
-secretsSource.ResolveFileProvider();
+externalConfigSource.ResolveFileProvider();
 if (envSourceIndex >= 0)
 {
-    builder.Configuration.Sources.Insert(envSourceIndex, secretsSource);
+    builder.Configuration.Sources.Insert(envSourceIndex, externalConfigSource);
 }
 else
 {
-    builder.Configuration.Sources.Add(secretsSource);
+    builder.Configuration.Sources.Add(externalConfigSource);
 }
 
 builder.Logging.ClearProviders();
