@@ -72,7 +72,11 @@ $Blocklist = @(
     "ASPNETCORE_ENVIRONMENT",
     "DOTNET_ENVIRONMENT",
     # KERMARIA_CONFIG_PATH pointerait sur lui-même, non-sens.
-    "KERMARIA_CONFIG_PATH"
+    "KERMARIA_CONFIG_PATH",
+    # Chemin machine-spécifique — le poste de dev n'a pas la même
+    # arborescence que la machine cible. On force un default sensé
+    # plus bas.
+    "LOG_FILE_DIRECTORY"
 )
 
 # Auto-détection du fichier source si non fourni.
@@ -122,6 +126,12 @@ Get-Content -LiteralPath $InputPath | ForEach-Object {
             $extracted[$key] = $value
         }
     }
+}
+
+# Default du chemin logs cote machine cible (blocklisté depuis le source).
+# La cible standard du runbook est C:\apps\api-internal\logs.
+if (-not $extracted.Contains("LOG_FILE_DIRECTORY")) {
+    $extracted["LOG_FILE_DIRECTORY"] = "C:\apps\api-internal\logs"
 }
 
 Write-Host "Cles extraites : $($extracted.Count)"
