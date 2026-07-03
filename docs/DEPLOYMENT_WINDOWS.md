@@ -72,7 +72,7 @@ pour la lisibilite :
 
 ### Creation des comptes de service
 
-Sur KERMARIA-SRV-02, en PowerShell elevé :
+**Sur KERMARIA-SRV-02** (compte pour l'API), en PowerShell elevé :
 
 ```powershell
 $pwd = Read-Host -AsSecureString "Mot de passe svc-kermaria-api"
@@ -82,11 +82,24 @@ New-LocalUser -Name "svc-kermaria-api" -Password $pwd `
   -AccountNeverExpires
 ```
 
-Sur KERMARIA-SRV-01, meme chose pour `svc-kermaria-web`.
+**Sur KERMARIA-SRV-01** (compte pour le WEBPORTAL), en PowerShell elevé :
+
+```powershell
+$pwd = Read-Host -AsSecureString "Mot de passe svc-kermaria-web"
+New-LocalUser -Name "svc-kermaria-web" -Password $pwd `
+  -PasswordNeverExpires -UserMayNotChangePassword `
+  -Description "Kermaria WEBPORTAL service account" `
+  -AccountNeverExpires
+```
 
 Le droit "Log on as a service" est ajoute automatiquement par
-`sc.exe create` / `nssm install` lorsqu'on renseigne `ObjectName=`.
+`New-Service` / `nssm install` lorsqu'on renseigne le compte.
 Aucune configuration `secpol.msc` supplementaire n'est necessaire.
+
+**Ces comptes doivent exister avant** les `icacls /grant:r
+'svc-kermaria-*'`, sinon la commande échoue avec
+`Le mappage entre les noms de compte et les ID de sécurité n'a
+pas été effectué`.
 
 ### ACL avec SIDs bien-known (langue-neutre)
 
@@ -546,9 +559,31 @@ node --version   # v24.x.x
 npm --version
 ```
 
-Installer **NSSM** (https://nssm.cc, telecharger `nssm-2.24.zip`,
-extraire `win64\nssm.exe` vers `C:\Program Files\nssm\`, ajouter
-au PATH machine).
+Installer **NSSM**. Automatisation possible :
+
+```powershell
+$nssmDir = "C:\Program Files\nssm"
+New-Item -ItemType Directory -Force -Path $nssmDir | Out-Null
+
+$zip = "$env:TEMP\nssm-2.24.zip"
+Invoke-WebRequest -Uri "https://nssm.cc/release/nssm-2.24.zip" -OutFile $zip
+Expand-Archive -Path $zip -DestinationPath "$env:TEMP\nssm-2.24-extract" -Force
+Copy-Item "$env:TEMP\nssm-2.24-extract\nssm-2.24\win64\nssm.exe" `
+  "$nssmDir\nssm.exe" -Force
+Remove-Item $zip, "$env:TEMP\nssm-2.24-extract" -Recurse -Force
+
+# Ajouter au PATH Machine (pris en compte a la prochaine session shell)
+$path = [Environment]::GetEnvironmentVariable("Path", "Machine")
+if ($path -notlike "*$nssmDir*") {
+    [Environment]::SetEnvironmentVariable("Path", "$path;$nssmDir", "Machine")
+}
+
+& "$nssmDir\nssm.exe" version
+```
+
+Si `Invoke-WebRequest` echoue (TLS, firewall, proxy), telecharger
+manuellement le zip depuis https://nssm.cc/release/nssm-2.24.zip puis
+extraire `win64\nssm.exe` vers `C:\Program Files\nssm\nssm.exe`.
 
 ### Deploiement binaire
 
@@ -669,24 +704,31 @@ NSSM lance **powershell.exe** qui lui-meme lance `start-webportal.ps1`.
 standalone) pour que `require('next')` resolve le `node_modules`
 hoiste — le wrapper laisse le cwd du process Node identique.
 
+Utiliser le chemin absolu de `nssm.exe` pour ne pas dependre du PATH
+(le PATH Machine mis a jour a l'install de NSSM n'est visible qu'a
+la prochaine session PowerShell). Remplacer `<pwd>` par le vrai mot
+de passe de `svc-kermaria-web` avant execution.
+
 ```powershell
+$nssm = "C:\Program Files\nssm\nssm.exe"
 $pshell = (Get-Command powershell.exe).Source
-nssm install KermariaWebportal $pshell "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\apps\webportal\start-webportal.ps1"
-nssm set KermariaWebportal AppDirectory "C:\apps\webportal"
-nssm set KermariaWebportal DisplayName "Kermaria WEBPORTAL"
-nssm set KermariaWebportal Description "Kermaria Next.js portal front (KERMARIA-SRV-01). Bound to 127.0.0.1:3000, fronted by IIS. Config from C:\ProgramData\Kermaria\webportal.config.json."
-nssm set KermariaWebportal Start SERVICE_AUTO_START
-nssm set KermariaWebportal ObjectName ".\svc-kermaria-web" "<pwd>"
+
+& $nssm install KermariaWebportal $pshell "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\apps\webportal\start-webportal.ps1"
+& $nssm set KermariaWebportal AppDirectory "C:\apps\webportal"
+& $nssm set KermariaWebportal DisplayName "Kermaria WEBPORTAL"
+& $nssm set KermariaWebportal Description "Kermaria Next.js portal front (KERMARIA-SRV-01). Bound to 127.0.0.1:3000, fronted by IIS. Config from C:\ProgramData\Kermaria\webportal.config.json."
+& $nssm set KermariaWebportal Start SERVICE_AUTO_START
+& $nssm set KermariaWebportal ObjectName ".\svc-kermaria-web" "<pwd>"
 
 # Logs rotatifs
-nssm set KermariaWebportal AppStdout "C:\apps\webportal\logs\stdout.log"
-nssm set KermariaWebportal AppStderr "C:\apps\webportal\logs\stderr.log"
-nssm set KermariaWebportal AppRotateFiles 1
-nssm set KermariaWebportal AppRotateOnline 1
-nssm set KermariaWebportal AppRotateBytes 10485760      # 10 Mo
-nssm set KermariaWebportal AppStopMethodSkip 0
-nssm set KermariaWebportal AppExit Default Restart
-nssm set KermariaWebportal AppRestartDelay 5000
+& $nssm set KermariaWebportal AppStdout "C:\apps\webportal\logs\stdout.log"
+& $nssm set KermariaWebportal AppStderr "C:\apps\webportal\logs\stderr.log"
+& $nssm set KermariaWebportal AppRotateFiles 1
+& $nssm set KermariaWebportal AppRotateOnline 1
+& $nssm set KermariaWebportal AppRotateBytes 10485760      # 10 Mo
+& $nssm set KermariaWebportal AppStopMethodSkip 0
+& $nssm set KermariaWebportal AppExit Default Restart
+& $nssm set KermariaWebportal AppRestartDelay 5000
 
 Start-Service KermariaWebportal
 ```
