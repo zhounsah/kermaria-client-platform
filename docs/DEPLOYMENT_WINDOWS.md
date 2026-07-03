@@ -325,8 +325,24 @@ icacls C:\ProgramData\Kermaria /inheritance:r `
   /grant:r 'svc-kermaria-api:(OI)(CI)RX'
 ```
 
-Deposer `C:\ProgramData\Kermaria\api-internal.secrets.json` avec le
-contenu suivant (JSON plat, cles = noms de config API) :
+Deposer `C:\ProgramData\Kermaria\api-internal.secrets.json`. Soit
+manuellement, soit avec le convertisseur
+[`scripts/build-secrets-json.ps1`](../scripts/build-secrets-json.ps1)
+qui derive le JSON depuis un `.local.env.ps1` (regex sur les
+`$env:KEY = "value"`, allowlist stricte sur les cles sensibles,
+n'affiche jamais les valeurs) :
+
+```powershell
+# Depuis le poste de dev
+.\scripts\build-secrets-json.ps1 `
+  -InputPath .\.local.env.ps1 `
+  -OutputPath \\KERMARIA-SRV-02\C$\ProgramData\Kermaria\api-internal.secrets.json
+
+# Sur KERMARIA-SRV-02 directement, avec un source local :
+.\scripts\build-secrets-json.ps1 -InputPath C:\admin\dev.env.ps1
+```
+
+Format du JSON produit (cles vides absentes plutot que null) :
 
 ```json
 {
