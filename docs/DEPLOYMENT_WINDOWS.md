@@ -60,9 +60,10 @@ pour la lisibilite :
 
 ## Prerequis operateur
 
-- Comptes de service locaux **non-Administrator** sur chaque hote :
-  - KERMARIA-SRV-01 : `svc-kermaria-web` (a creer, voir plus bas)
-  - KERMARIA-SRV-02 : `svc-kermaria-api` (a creer, voir plus bas)
+- Comptes de service **non-Administrator** sur chaque hote :
+  - KERMARIA-SRV-01 : `HOME\svc_api_portal_ad` (compte AD partagé
+    avec l'API, voir section "Comptes de service")
+  - KERMARIA-SRV-02 : `HOME\svc_api_portal_ad`
   - KERMARIA-SRV-07 : `svc-mariadb` (fourni par l'installeur MariaDB)
 - Nom de domaine FQDN pointe vers l'IP publique de KERMARIA-SRV-01 (pour
   Let's Encrypt HTTP-01).
@@ -70,21 +71,38 @@ pour la lisibilite :
 - Verrouillage : aucun SDK (.NET, Node) sur KERMARIA-SRV-01/02, uniquement les
   runtimes. Le build est produit sur le poste de dev.
 
-### Creation des comptes de service
+### Comptes de service
 
-**Sur KERMARIA-SRV-02** (compte pour l'API), en PowerShell elevé :
+**Option retenue** (2026-07-03) : compte AD unique
+`HOME\svc_api_portal_ad` pour les deux services (KermariaApiInternal
+sur SRV-02 et KermariaWebportal sur SRV-01). Meilleure hygiene que
+les comptes locaux : mot de passe gere cote domaine, revocation
+centrale, un seul secret a tracker.
+
+Conditions :
+
+- Les deux serveurs doivent etre **joints au domaine HOME** :
+  `(Get-CimInstance Win32_ComputerSystem).PartOfDomain` retourne
+  `True`.
+- Le compte `HOME\svc_api_portal_ad` doit exister cote AD
+  (pre-existant dans cette infra).
+- NSSM et `New-Service` ajoutent automatiquement le droit "Log on
+  as a service" au compte. Si une GPO du domaine bloque cet
+  ajout, il faut declarer le compte dans "Log on as a service"
+  via `secpol.msc` (Local Security Policy) ou GPO.
+
+**Fallback comptes locaux** (si le domaine n'est pas dispo ou pour
+un environnement standalone) :
 
 ```powershell
+# Sur KERMARIA-SRV-02
 $pwd = Read-Host -AsSecureString "Mot de passe svc-kermaria-api"
 New-LocalUser -Name "svc-kermaria-api" -Password $pwd `
   -PasswordNeverExpires -UserMayNotChangePassword `
   -Description "Kermaria API-INTERNAL service account" `
   -AccountNeverExpires
-```
 
-**Sur KERMARIA-SRV-01** (compte pour le WEBPORTAL), en PowerShell elevé :
-
-```powershell
+# Sur KERMARIA-SRV-01
 $pwd = Read-Host -AsSecureString "Mot de passe svc-kermaria-web"
 New-LocalUser -Name "svc-kermaria-web" -Password $pwd `
   -PasswordNeverExpires -UserMayNotChangePassword `
@@ -92,14 +110,15 @@ New-LocalUser -Name "svc-kermaria-web" -Password $pwd `
   -AccountNeverExpires
 ```
 
-Le droit "Log on as a service" est ajoute automatiquement par
-`New-Service` / `nssm install` lorsqu'on renseigne le compte.
-Aucune configuration `secpol.msc` supplementaire n'est necessaire.
+**Rappel** : le compte utilise (AD ou local) doit exister avant les
+`icacls /grant:r`, sinon la commande echoue avec `Le mappage entre
+les noms de compte et les ID de sécurité n'a pas été effectué`.
 
-**Ces comptes doivent exister avant** les `icacls /grant:r
-'svc-kermaria-*'`, sinon la commande échoue avec
-`Le mappage entre les noms de compte et les ID de sécurité n'a
-pas été effectué`.
+Dans le reste de ce runbook, remplacer :
+
+- `HOME\svc_api_portal_ad` par `.\svc-kermaria-api` (SRV-02) ou
+  `.\svc-kermaria-web` (SRV-01) si tu bascules sur les comptes
+  locaux.
 
 ### ACL avec SIDs bien-known (langue-neutre)
 
@@ -291,20 +310,22 @@ New-Item -ItemType Directory -Force -Path C:\apps\api-internal\logs
 
 # SIDs langue-neutre : S-1-5-32-544 = Administrators/Administrateurs,
 # S-1-5-18 = SYSTEM/Système. Le prefixe '*' indique un SID litteral.
+# Le compte AD HOME\svc_api_portal_ad est le compte de service partage.
 icacls C:\apps\api-internal /inheritance:r `
   /grant:r '*S-1-5-32-544:(OI)(CI)F' `
   /grant:r '*S-1-5-18:(OI)(CI)RX' `
-  /grant:r 'svc-kermaria-api:(OI)(CI)RX'
+  /grant:r 'HOME\svc_api_portal_ad:(OI)(CI)RX'
 
 # Sur logs, le service doit ecrire (Modify)
 icacls C:\apps\api-internal\logs `
-  /grant:r 'svc-kermaria-api:(OI)(CI)M'
+  /grant:r 'HOME\svc_api_portal_ad:(OI)(CI)M'
 ```
 
-Si `svc-kermaria-api` n'existe pas, `icacls` renvoie
-`Le mappage entre les noms de compte et les ID de sécurité n'a
-pas été effectué`. Creer d'abord le compte via
-`New-LocalUser` (voir section "Prerequis operateur").
+Si le compte AD n'est pas resolvable (SRV-02 hors domaine, faute
+de frappe, compte inexistant), `icacls` renvoie `Le mappage entre
+les noms de compte et les ID de sécurité n'a pas été effectué`.
+Verifier `(Get-CimInstance Win32_ComputerSystem).PartOfDomain` et
+`Get-ADUser svc_api_portal_ad` (depuis un DC ou avec RSAT).
 
 ### Configuration
 
@@ -335,7 +356,7 @@ New-Item -ItemType Directory -Force -Path C:\ProgramData\Kermaria
 
 icacls C:\ProgramData\Kermaria /inheritance:r `
   /grant:r '*S-1-5-32-544:(OI)(CI)F' `
-  /grant:r 'svc-kermaria-api:(OI)(CI)RX'
+  /grant:r 'HOME\svc_api_portal_ad:(OI)(CI)RX'
 ```
 
 #### Generation du fichier config
@@ -408,7 +429,7 @@ mesure des scenarios de recette V0.24 qui les exigent.
 ```powershell
 icacls C:\ProgramData\Kermaria\api-internal.config.json /inheritance:r `
   /grant:r '*S-1-5-32-544:F' `
-  /grant:r 'svc-kermaria-api:R'
+  /grant:r 'HOME\svc_api_portal_ad:R'
 ```
 
 Seul un admin peut ecrire, seul le compte de service peut lire.
@@ -497,9 +518,9 @@ qui fait échouer si on l'oublie). Les placeholders `<IP…>` et
 `<pwd>` doivent etre substitues par des valeurs reelles.
 
 ```powershell
-# Credentials du compte de service (prompt secure)
-$cred = Get-Credential -UserName ".\svc-kermaria-api" `
-  -Message "Mot de passe svc-kermaria-api"
+# Credentials du compte de service AD (prompt secure)
+$cred = Get-Credential -UserName "HOME\svc_api_portal_ad" `
+  -Message "Mot de passe svc_api_portal_ad"
 
 # Assigner "Log on as a service" au compte (sinon New-Service refuse le start)
 # Cette ligne est optionnelle : sc.exe / New-Service l'ajoute automatiquement
@@ -609,12 +630,12 @@ New-Item -ItemType Directory -Force -Path C:\apps\webportal\logs
 icacls C:\apps\webportal /inheritance:r `
   /grant:r '*S-1-5-32-544:(OI)(CI)F' `
   /grant:r '*S-1-5-18:(OI)(CI)RX' `
-  /grant:r 'svc-kermaria-web:(OI)(CI)RX'
-icacls C:\apps\webportal\logs /grant:r 'svc-kermaria-web:(OI)(CI)M'
+  /grant:r 'HOME\svc_api_portal_ad:(OI)(CI)RX'
+icacls C:\apps\webportal\logs /grant:r 'HOME\svc_api_portal_ad:(OI)(CI)M'
 ```
 
-Rappel : `svc-kermaria-web` doit exister au prealable (`New-LocalUser`,
-voir section "Prerequis operateur").
+Rappel : le compte AD `HOME\svc_api_portal_ad` doit etre resolvable
+(SRV-01 joint au domaine).
 
 ### Configuration WEBPORTAL
 
@@ -666,11 +687,11 @@ New-Item -ItemType Directory -Force -Path C:\ProgramData\Kermaria
 
 icacls C:\ProgramData\Kermaria /inheritance:r `
   /grant:r '*S-1-5-32-544:(OI)(CI)F' `
-  /grant:r 'svc-kermaria-web:(OI)(CI)RX'
+  /grant:r 'HOME\svc_api_portal_ad:(OI)(CI)RX'
 
 icacls C:\ProgramData\Kermaria\webportal.config.json /inheritance:r `
   /grant:r '*S-1-5-32-544:F' `
-  /grant:r 'svc-kermaria-web:R'
+  /grant:r 'HOME\svc_api_portal_ad:R'
 ```
 
 Le wrapper `scripts/start-webportal.ps1` (a copier sur SRV-01 dans
@@ -707,7 +728,7 @@ hoiste — le wrapper laisse le cwd du process Node identique.
 Utiliser le chemin absolu de `nssm.exe` pour ne pas dependre du PATH
 (le PATH Machine mis a jour a l'install de NSSM n'est visible qu'a
 la prochaine session PowerShell). Remplacer `<pwd>` par le vrai mot
-de passe de `svc-kermaria-web` avant execution.
+de passe du compte AD `HOME\svc_api_portal_ad` avant execution.
 
 ```powershell
 $nssm = "C:\Program Files\nssm\nssm.exe"
@@ -718,7 +739,7 @@ $pshell = (Get-Command powershell.exe).Source
 & $nssm set KermariaWebportal DisplayName "Kermaria WEBPORTAL"
 & $nssm set KermariaWebportal Description "Kermaria Next.js portal front (KERMARIA-SRV-01). Bound to 127.0.0.1:3000, fronted by IIS. Config from C:\ProgramData\Kermaria\webportal.config.json."
 & $nssm set KermariaWebportal Start SERVICE_AUTO_START
-& $nssm set KermariaWebportal ObjectName ".\svc-kermaria-web" "<pwd>"
+& $nssm set KermariaWebportal ObjectName "HOME\svc_api_portal_ad" "<pwd>"
 
 # Logs rotatifs
 & $nssm set KermariaWebportal AppStdout "C:\apps\webportal\logs\stdout.log"
