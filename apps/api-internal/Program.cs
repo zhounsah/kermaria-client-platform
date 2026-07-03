@@ -214,6 +214,7 @@ builder.Services.AddScoped<IPayPalWebhookService, PayPalWebhookService>();
 builder.Services.AddScoped<IStripeWebhookService, StripeWebhookService>();
 builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddTransient<MariaDbMigrationRunner>();
+builder.Services.AddTransient<MariaDbAdminSeeder>();
 builder.Services.AddSingleton<OperationalReadinessService>();
 builder.Services.AddSingleton<IActiveDirectoryService>(serviceProvider =>
     adConfiguration.Mode switch
@@ -319,6 +320,19 @@ if (args.Contains("--apply-migrations", StringComparer.OrdinalIgnoreCase))
         scope.ServiceProvider.GetRequiredService<MariaDbMigrationRunner>();
     await migrationRunner.ApplyAsync(
         args.Contains("--seed-demo-data", StringComparer.OrdinalIgnoreCase));
+    return;
+}
+
+if (args.Contains("--seed-admin", StringComparer.OrdinalIgnoreCase))
+{
+    // Interactive bootstrap of the first internal_admin. Usable outside
+    // Development because credentials are prompted on stdin (never in
+    // Get-Process, event logs, or the process command line).
+    await using var scope = app.Services.CreateAsyncScope();
+    var seeder =
+        scope.ServiceProvider.GetRequiredService<MariaDbAdminSeeder>();
+    var exit = await seeder.RunAsync();
+    Environment.Exit(exit);
     return;
 }
 
