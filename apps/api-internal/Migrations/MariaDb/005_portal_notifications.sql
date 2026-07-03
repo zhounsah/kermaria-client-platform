@@ -21,11 +21,3 @@ CREATE TABLE IF NOT EXISTS portal_notifications (
     CONSTRAINT fk_portal_notifications_customer
         FOREIGN KEY (customer_id) REFERENCES customers (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-INSERT INTO schema_migrations (migration_id, applied_at)
-SELECT '005_portal_notifications', NOW(6)
-WHERE NOT EXISTS (
-    SELECT 1
-    FROM schema_migrations
-    WHERE migration_id = '005_portal_notifications'
-);

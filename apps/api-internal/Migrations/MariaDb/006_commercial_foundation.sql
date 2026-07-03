@@ -359,12 +359,3 @@ AND NOT EXISTS (
     WHERE id = '80000000-0000-0000-0000-000000000003'
 );
 
--- statement-break
-
-INSERT INTO schema_migrations (migration_id, applied_at)
-SELECT '006_commercial_foundation', NOW(6)
-WHERE NOT EXISTS (
-    SELECT 1
-    FROM schema_migrations
-    WHERE migration_id = '006_commercial_foundation'
-);
