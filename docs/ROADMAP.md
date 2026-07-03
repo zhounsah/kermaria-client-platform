@@ -231,6 +231,8 @@ Ex-V0.24a renomme au 2026-06-28 (la phase de validation hardware
 ex-V0.24b devient V1.0 beta 1).
 
 Runbook infra : [`DEPLOYMENT_WINDOWS.md`](DEPLOYMENT_WINDOWS.md).
+Fichier de suivi vivant des scenarios OK/KO :
+[`V0.24_SUIVI.md`](V0.24_SUIVI.md).
 
 **Livre au 2026-07-03** :
 - Infra deployee sur KERMARIA-SRV-01 (Dell Optiplex 5070, WEBPORTAL

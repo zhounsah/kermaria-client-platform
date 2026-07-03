@@ -459,6 +459,7 @@ npm run test:ad-security     # garde-fous AD
 - [Backup and restore](docs/BACKUP_RESTORE.md)
 - [Roadmap](docs/ROADMAP.md)
 - [V0.24 Stabilisation (cadrage)](docs/V0.24_STABILISATION.md)
+- [V0.24 Suivi execution briques](docs/V0.24_SUIVI.md)
 - [BPCE invoicing V0.20](docs/V0.20_BPCE_INVOICING.md)
 - [Payment channels V0.21](docs/V0.21_PAYMENT_CHANNELS.md)
 - [Subscriptions V0.22](docs/V0.22_SUBSCRIPTIONS.md)
