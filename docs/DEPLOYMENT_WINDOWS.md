@@ -293,10 +293,69 @@ Si `svc-kermaria-api` n'existe pas, `icacls` renvoie
 pas été effectué`. Creer d'abord le compte via
 `New-LocalUser` (voir section "Prerequis operateur").
 
-### Variables d'environnement Machine
+### Configuration et secrets
 
-Injecter les secrets et la config comme **Machine-scope** (survit
-au reboot, lisible par le service) :
+La config API-INTERNAL utilise deux sources, avec cette precedence
+(la plus a droite gagne) :
+
+```
+appsettings.json < appsettings.{Env}.json < secrets.json < variables env
+```
+
+Les **secrets sensibles** (mots de passe, tokens) vont dans un
+fichier JSON externe, hors du dossier de l'app. Les **variables
+non-sensibles ou operationnelles** (env name, log level, modes)
+peuvent rester en env Machine pour lisibilite.
+
+#### Fichier de secrets externe
+
+Program.cs charge automatiquement le fichier a
+`C:\ProgramData\Kermaria\api-internal.secrets.json` (chemin
+overridable via l'env `KERMARIA_SECRETS_PATH`). Le fichier est
+optionnel : s'il est absent, tout doit venir des env vars.
+
+Creer le dossier avec ACL restrictive :
+
+```powershell
+New-Item -ItemType Directory -Force -Path C:\ProgramData\Kermaria
+
+icacls C:\ProgramData\Kermaria /inheritance:r `
+  /grant:r '*S-1-5-32-544:(OI)(CI)F' `
+  /grant:r '*S-1-5-18:(OI)(CI)RX' `
+  /grant:r 'svc-kermaria-api:(OI)(CI)RX'
+```
+
+Deposer `C:\ProgramData\Kermaria\api-internal.secrets.json` avec le
+contenu suivant (JSON plat, cles = noms de config API) :
+
+```json
+{
+  "SQL_PASSWORD": "<mdp_kermaria_api>",
+  "SERVICE_AUTH_TOKEN": "<token_partage_avec_webportal>",
+  "BPCE_REFRESH_TOKEN": "",
+  "PAYPAL_CLIENT_SECRET": "",
+  "STRIPE_SECRET_KEY": "",
+  "STRIPE_WEBHOOK_SECRET": "",
+  "SMTP_PASSWORD": "",
+  "HCAPTCHA_SECRET_KEY": ""
+}
+```
+
+Les cles vides ("") ou absentes sont ignorees — remplir uniquement
+ce dont les scenarios de recette V0.24 ont besoin. Restreindre les
+ACL du fichier lui-meme :
+
+```powershell
+icacls C:\ProgramData\Kermaria\api-internal.secrets.json /inheritance:r `
+  /grant:r '*S-1-5-32-544:F' `
+  /grant:r 'svc-kermaria-api:R'
+```
+
+Le compte SYSTEM n'a plus besoin d'acces au fichier (le service
+tourne sous `svc-kermaria-api`). Seul un admin peut ecrire, seul
+le compte de service peut lire.
+
+#### Variables Machine (non-sensibles)
 
 ```powershell
 $scope = "Machine"
@@ -312,9 +371,7 @@ $scope = "Machine"
 [Environment]::SetEnvironmentVariable("SQL_PORT","3306",$scope)
 [Environment]::SetEnvironmentVariable("SQL_DATABASE","kermaria",$scope)
 [Environment]::SetEnvironmentVariable("SQL_USERNAME","kermaria_api",$scope)
-[Environment]::SetEnvironmentVariable("SQL_PASSWORD","<inject>",$scope)
 
-[Environment]::SetEnvironmentVariable("SERVICE_AUTH_TOKEN","<inject>",$scope)
 [Environment]::SetEnvironmentVariable("SESSION_DURATION_MINUTES","480",$scope)
 [Environment]::SetEnvironmentVariable("LOGIN_MAX_FAILURES","5",$scope)
 [Environment]::SetEnvironmentVariable("LOGIN_LOCKOUT_MINUTES","15",$scope)
@@ -328,15 +385,17 @@ $scope = "Machine"
 [Environment]::SetEnvironmentVariable("AD_PASSWORD_CHANGE_ENABLED","false",$scope)
 ```
 
-Repeter pour les secrets Stripe/PayPal si les scenarios de recette
-correspondants sont execute (garde-fou `STRIPE_MODE=live` refuse
-sans les 3 variables non-placeholder — voir
-`RuntimeConfigurationValidator.cs`).
+Note : `SQL_PASSWORD`, `SERVICE_AUTH_TOKEN` et tout autre secret ne
+figurent **pas** en env Machine. Les env Machine ne portent que la
+config publique (host, database name, modes, seuils).
 
-**Rappel securite** : les variables Machine-scope sont lisibles par
-tout admin local. Acceptable en V0.24 staging. Pour V1.0 beta 1,
-migrer vers DPAPI ou `appsettings.Production.json` avec ACL
-restrictive. Traite en V0.24 Brique 2 (audit secrets).
+#### Override ponctuel via env vars
+
+Les env vars gagnent sur le fichier secrets. Utile pour un run
+ad-hoc (par exemple `--apply-migrations` avec `kermaria_migrator`
+temporaire) : ouvrir une session PowerShell, definir uniquement
+les valeurs a overrider comme `$env:...`, lancer la commande,
+fermer la session. Voir section "Appliquer les migrations".
 
 ### Appliquer les migrations
 
@@ -366,8 +425,14 @@ C:\apps\api-internal\Kermaria.ApiInternal.exe --apply-migrations
 
 Le process affiche les migrations appliquees puis quitte. **Fermer
 la fenetre PowerShell** juste apres pour que les env locaux
-disparaissent. La prochaine invocation reprend les valeurs Machine
-(`Staging` + `kermaria_api`).
+disparaissent. La prochaine invocation reprend `Staging` (env
+Machine) + `kermaria_api` (fichier secrets externe).
+
+Prerequis MariaDB (sur KERMARIA-SRV-07 en `mysql -u root -p`) : la
+base et les deux comptes doivent exister avant, sinon le migration
+runner echoue immediatement avec `Unknown database 'kermaria'` ou
+`Access denied for user 'kermaria_migrator'`. Voir section
+"KERMARIA-SRV-07 — MariaDB / Compte applicatif".
 
 Verifier depuis KERMARIA-SRV-07 :
 

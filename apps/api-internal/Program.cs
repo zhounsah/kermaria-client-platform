@@ -17,6 +17,36 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseWindowsService();
 
+// External JSON secrets file (optional). Path can be overridden via
+// KERMARIA_SECRETS_PATH; default C:\ProgramData\Kermaria\api-internal.secrets.json.
+// Inserted BEFORE the env variables source so env vars keep the highest
+// precedence — enables ad-hoc overrides (e.g. --apply-migrations with a
+// different SQL_USERNAME/SQL_PASSWORD) without editing the secrets file.
+var secretsPath =
+    Environment.GetEnvironmentVariable("KERMARIA_SECRETS_PATH")
+    ?? @"C:\ProgramData\Kermaria\api-internal.secrets.json";
+var envSourceIndex = builder.Configuration.Sources
+    .ToList()
+    .FindIndex(s =>
+        s is Microsoft.Extensions.Configuration.EnvironmentVariables
+            .EnvironmentVariablesConfigurationSource);
+var secretsSource =
+    new Microsoft.Extensions.Configuration.Json.JsonConfigurationSource
+    {
+        Path = secretsPath,
+        Optional = true,
+        ReloadOnChange = false,
+    };
+secretsSource.ResolveFileProvider();
+if (envSourceIndex >= 0)
+{
+    builder.Configuration.Sources.Insert(envSourceIndex, secretsSource);
+}
+else
+{
+    builder.Configuration.Sources.Add(secretsSource);
+}
+
 builder.Logging.ClearProviders();
 builder.Logging.AddJsonConsole(options =>
 {
