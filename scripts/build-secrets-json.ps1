@@ -18,7 +18,10 @@ Aucune valeur de secret n'est affichée à la console — seuls les noms de
 clés trouvées/manquantes sont listés.
 
 .PARAMETER InputPath
-Fichier .ps1 source. Défaut : `.local.env.ps1` à la racine du dépôt.
+Fichier .ps1 source. Si non fourni, cherche automatiquement dans :
+  1. <repo>/.local.env.ps1
+  2. <repo-parent>/<repo-name>.local.env.ps1
+  3. <repo-parent>/.local.env.ps1
 
 .PARAMETER OutputPath
 Fichier JSON destination. Défaut :
@@ -39,9 +42,33 @@ Affiche les clés qui seraient extraites sans écrire le fichier.
 #>
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
-    [string]$InputPath = (Join-Path $PSScriptRoot "..\.local.env.ps1"),
+    [string]$InputPath,
     [string]$OutputPath = "C:\ProgramData\Kermaria\api-internal.secrets.json"
 )
+
+# Auto-detection du fichier source si non fourni. Cherche dans l'ordre :
+#   1. <repo>/.local.env.ps1                              (dans le repo, caché)
+#   2. <repo-parent>/<repo-name>.local.env.ps1            (à côté du repo, préfixé)
+#   3. <repo-parent>/.local.env.ps1                       (à côté du repo, caché)
+if (-not $InputPath) {
+    $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+    $repoName = Split-Path $repoRoot -Leaf
+    $repoParent = Split-Path $repoRoot -Parent
+    $candidates = @(
+        (Join-Path $repoRoot ".local.env.ps1"),
+        (Join-Path $repoParent "$repoName.local.env.ps1"),
+        (Join-Path $repoParent ".local.env.ps1")
+    )
+    $found = $candidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    if ($found) {
+        $InputPath = $found
+    } else {
+        Write-Error "Aucun fichier source trouvé automatiquement. Chemins essayés :"
+        $candidates | ForEach-Object { Write-Error "  - $_" }
+        Write-Error "Passer -InputPath <chemin> explicitement."
+        exit 1
+    }
+}
 
 $ErrorActionPreference = "Stop"
 
