@@ -61,14 +61,47 @@ pour la lisibilite :
 ## Prerequis operateur
 
 - Comptes de service locaux **non-Administrator** sur chaque hote :
-  - KERMARIA-SRV-01 : `svc-kermaria-web`
-  - KERMARIA-SRV-02 : `svc-kermaria-api`
+  - KERMARIA-SRV-01 : `svc-kermaria-web` (a creer, voir plus bas)
+  - KERMARIA-SRV-02 : `svc-kermaria-api` (a creer, voir plus bas)
   - KERMARIA-SRV-07 : `svc-mariadb` (fourni par l'installeur MariaDB)
 - Nom de domaine FQDN pointe vers l'IP publique de KERMARIA-SRV-01 (pour
   Let's Encrypt HTTP-01).
 - Ports pare-feu perimeter : 80 + 443 vers KERMARIA-SRV-01 uniquement.
 - Verrouillage : aucun SDK (.NET, Node) sur KERMARIA-SRV-01/02, uniquement les
   runtimes. Le build est produit sur le poste de dev.
+
+### Creation des comptes de service
+
+Sur KERMARIA-SRV-02, en PowerShell elevé :
+
+```powershell
+$pwd = Read-Host -AsSecureString "Mot de passe svc-kermaria-api"
+New-LocalUser -Name "svc-kermaria-api" -Password $pwd `
+  -PasswordNeverExpires -UserMayNotChangePassword `
+  -Description "Kermaria API-INTERNAL service account" `
+  -AccountNeverExpires
+```
+
+Sur KERMARIA-SRV-01, meme chose pour `svc-kermaria-web`.
+
+Le droit "Log on as a service" est ajoute automatiquement par
+`sc.exe create` / `nssm install` lorsqu'on renseigne `ObjectName=`.
+Aucune configuration `secpol.msc` supplementaire n'est necessaire.
+
+### ACL avec SIDs bien-known (langue-neutre)
+
+Windows FR utilise `Administrateurs` (groupe), `Administrateur` etant
+un compte. Pour ne pas dependre de la localisation, utiliser les SIDs
+bien-known avec le prefixe `*` dans `icacls` :
+
+| SID | Signification |
+|---|---|
+| `*S-1-5-32-544` | Groupe local `Administrators` / `Administrateurs` |
+| `*S-1-5-18` | Compte `SYSTEM` / `Système` |
+| `*S-1-5-32-545` | Groupe `Users` / `Utilisateurs` |
+
+Exemple applique dans les sections KERMARIA-SRV-01 et KERMARIA-SRV-02
+plus bas.
 
 ## 1. Build des artefacts (poste de dev)
 
@@ -242,13 +275,23 @@ Preparer le dossier de logs :
 
 ```powershell
 New-Item -ItemType Directory -Force -Path C:\apps\api-internal\logs
+
+# SIDs langue-neutre : S-1-5-32-544 = Administrators/Administrateurs,
+# S-1-5-18 = SYSTEM/Système. Le prefixe '*' indique un SID litteral.
 icacls C:\apps\api-internal /inheritance:r `
-  /grant:r 'Administrators:(OI)(CI)F' `
-  /grant:r 'svc-kermaria-api:(OI)(CI)RX' `
-  /grant:r 'svc-kermaria-api:(OI)(CI)M' # M sur logs seulement, cf plus bas
+  /grant:r '*S-1-5-32-544:(OI)(CI)F' `
+  /grant:r '*S-1-5-18:(OI)(CI)RX' `
+  /grant:r 'svc-kermaria-api:(OI)(CI)RX'
+
+# Sur logs, le service doit ecrire (Modify)
 icacls C:\apps\api-internal\logs `
   /grant:r 'svc-kermaria-api:(OI)(CI)M'
 ```
+
+Si `svc-kermaria-api` n'existe pas, `icacls` renvoie
+`Le mappage entre les noms de compte et les ID de sécurité n'a
+pas été effectué`. Creer d'abord le compte via
+`New-LocalUser` (voir section "Prerequis operateur").
 
 ### Variables d'environnement Machine
 
@@ -297,23 +340,45 @@ restrictive. Traite en V0.24 Brique 2 (audit secrets).
 
 ### Appliquer les migrations
 
-Depuis une session PowerShell **elevée** sur KERMARIA-SRV-02, avec
-temporairement les credentials `kermaria_migrator` :
+`--apply-migrations` refuse tout environnement autre que
+`Development` (garde-fou code en dur dans
+[Program.cs:277-283](../apps/api-internal/Program.cs)) — c'est un
+choix explicite pour eviter qu'une commande ops ne touche
+accidentellement une base staging/prod. Pour appliquer les
+migrations en staging il faut basculer l'environnement **au niveau
+de la session PowerShell seulement** (pas Machine), le temps de
+l'operation. Le process quitte de lui-meme apres migration
+(`return;`), donc l'API ne demarre jamais en mode Development.
+
+Depuis une session PowerShell **elevée** sur KERMARIA-SRV-02 :
 
 ```powershell
+# Override env pour CETTE session uniquement (Machine reste a Staging)
+$env:ASPNETCORE_ENVIRONMENT = "Development"
+$env:DOTNET_ENVIRONMENT = "Development"
+
+# Credentials du compte migration (a la place de kermaria_api)
 $env:SQL_USERNAME = "kermaria_migrator"
 $env:SQL_PASSWORD = "<mdp migrator>"
+
 C:\apps\api-internal\Kermaria.ApiInternal.exe --apply-migrations
 ```
 
-Verifier :
+Le process affiche les migrations appliquees puis quitte. **Fermer
+la fenetre PowerShell** juste apres pour que les env locaux
+disparaissent. La prochaine invocation reprend les valeurs Machine
+(`Staging` + `kermaria_api`).
+
+Verifier depuis KERMARIA-SRV-07 :
 
 ```sql
+USE kermaria;
 SELECT migration_id, applied_at FROM schema_migrations ORDER BY applied_at;
 ```
 
-Rebasculer les variables Machine-scope sur `kermaria_api` pour le
-runtime nominal.
+Doit lister toutes les migrations 001 a 020_signup_pending inclus.
+Si une manque, verifier les credentials `kermaria_migrator` et les
+GRANTs (CREATE/ALTER/DROP requis).
 
 ### Enregistrement Windows Service
 
@@ -398,15 +463,19 @@ C:\apps\webportal\
 └── logs\               (a creer)
 ```
 
-Preparer les logs :
+Preparer les logs (memes SIDs langue-neutre que KERMARIA-SRV-02) :
 
 ```powershell
 New-Item -ItemType Directory -Force -Path C:\apps\webportal\logs
 icacls C:\apps\webportal /inheritance:r `
-  /grant:r 'Administrators:(OI)(CI)F' `
+  /grant:r '*S-1-5-32-544:(OI)(CI)F' `
+  /grant:r '*S-1-5-18:(OI)(CI)RX' `
   /grant:r 'svc-kermaria-web:(OI)(CI)RX'
 icacls C:\apps\webportal\logs /grant:r 'svc-kermaria-web:(OI)(CI)M'
 ```
+
+Rappel : `svc-kermaria-web` doit exister au prealable (`New-LocalUser`,
+voir section "Prerequis operateur").
 
 ### Variables d'environnement Machine
 
