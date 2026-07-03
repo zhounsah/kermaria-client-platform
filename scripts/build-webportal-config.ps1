@@ -25,6 +25,14 @@ Fichier .ps1 source. Auto-détection si omis.
 Fichier JSON destination. Défaut :
 `C:\ProgramData\Kermaria\webportal.config.json`.
 
+.PARAMETER Override
+Table de hachage de clés à forcer APRÈS extraction et defaults. Utile
+pour les valeurs host-spécifiques qui diffèrent entre le poste de dev
+et la cible : typiquement `INTERNAL_API_URL`, qui vaut `localhost:5000`
+en dev local (correct) mais doit pointer l'IP VLAN de SRV-02 en staging
+split-host. On garde ainsi un seul `.local.env.ps1` de dev sans risquer
+de réinjecter la mauvaise valeur au prochain build staging.
+
 .PARAMETER WhatIf
 Aperçu sans écrire.
 
@@ -34,11 +42,19 @@ Aperçu sans écrire.
 .EXAMPLE
 .\scripts\build-webportal-config.ps1 `
   -OutputPath \\KERMARIA-SRV-01\C$\ProgramData\Kermaria\webportal.config.json
+
+.EXAMPLE
+# Staging split-host : INTERNAL_API_URL doit viser l'IP VLAN de SRV-02,
+# jamais localhost (sinon /api/health/ready = 503 en production).
+.\scripts\build-webportal-config.ps1 `
+  -OutputPath \\KERMARIA-SRV-01\C$\ProgramData\Kermaria\webportal.config.json `
+  -Override @{ INTERNAL_API_URL = "http://192.168.100.202:5000" }
 #>
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
     [string]$InputPath,
-    [string]$OutputPath = "C:\ProgramData\Kermaria\webportal.config.json"
+    [string]$OutputPath = "C:\ProgramData\Kermaria\webportal.config.json",
+    [hashtable]$Override = @{}
 )
 
 $ErrorActionPreference = "Stop"
@@ -136,6 +152,21 @@ if (-not $extracted.Contains("NODE_ENV")) { $extracted["NODE_ENV"] = "production
 if (-not $extracted.Contains("HOSTNAME")) { $extracted["HOSTNAME"] = "127.0.0.1" }
 if (-not $extracted.Contains("PORT"))     { $extracted["PORT"] = "3000" }
 
+# Overrides host-specifiques (ex. -Override @{ INTERNAL_API_URL = "http://192.168.100.202:5000" }).
+# Appliques APRES extraction et defaults : ils gagnent sur la valeur du .env.ps1
+# et sur les defaults. Permet de garder INTERNAL_API_URL=localhost:5000 (correct
+# pour le dev local) dans le .local.env.ps1 unique tout en ciblant l'IP VLAN de
+# SRV-02 au build de la config staging/prod split-host.
+$overridden = @()
+foreach ($key in @($Override.Keys)) {
+    $name = [string]$key
+    if ($Blocklist -contains $name) {
+        throw "Cle '$name' passee en -Override mais blocklistee (server-side/dev only) : refus."
+    }
+    $extracted[$name] = [string]$Override[$key]
+    $overridden += $name
+}
+
 Write-Host "Cles extraites : $($extracted.Count) (dont NODE_ENV/HOSTNAME/PORT par defaut si absents)"
 foreach ($k in $extracted.Keys) {
     Write-Host "  [OK]      $k"
@@ -150,10 +181,34 @@ if ($blocked.Count -gt 0) {
     Write-Host "Cles refusees par blocklist (server-side only, DEMO_*, dev) : $($blocked.Count)"
     foreach ($k in $blocked) { Write-Host "  [blocked] $k" }
 }
+if ($overridden.Count -gt 0) {
+    Write-Host ""
+    Write-Host "Cles forcees via -Override : $($overridden.Count)"
+    foreach ($k in $overridden) { Write-Host "  [override] $k" }
+}
 Write-Host ""
 
 if ($extracted.Count -eq 0) {
     throw "Aucune cle exploitable trouvee dans $InputPath."
+}
+
+# Garde-fou : miroir de getInternalApiUrl()/validateServerRuntimeConfiguration()
+# dans apps/webportal/lib/runtime-config.ts. En NODE_ENV=production une
+# INTERNAL_API_URL pointant un hostname local fait throw le webportal au
+# demarrage (ALLOW_LOCAL_INTERNAL_API_URL est blocklistee ici, donc jamais
+# true dans la config generee) => /api/health/ready renvoie 503. C'est le cas
+# quand on regenere une config staging split-host depuis le .local.env.ps1 de
+# dev (INTERNAL_API_URL=localhost:5000). On previent au build plutot qu'a la
+# recette.
+if ($extracted["NODE_ENV"] -eq "production" -and $extracted.Contains("INTERNAL_API_URL")) {
+    $localHosts = @("localhost", "127.0.0.1", "::1")
+    $apiHost = $null
+    try { $apiHost = ([System.Uri]$extracted["INTERNAL_API_URL"]).Host.Trim('[', ']') } catch { }
+    if ($apiHost -and ($localHosts -contains $apiHost.ToLower())) {
+        Write-Warning "INTERNAL_API_URL vise un hostname LOCAL ($apiHost) avec NODE_ENV=production."
+        Write-Warning "Le webportal throw au demarrage (runtime-config.ts) => /api/health/ready = 503."
+        Write-Warning "Deploiement multi-hotes : passer -Override @{ INTERNAL_API_URL = 'http://<IP_VLAN_SRV-02>:5000' }."
+    }
 }
 
 $json = $extracted | ConvertTo-Json -Depth 1

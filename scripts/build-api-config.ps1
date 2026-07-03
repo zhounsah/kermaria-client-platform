@@ -33,6 +33,14 @@ Fichier .ps1 source. Si non fourni, cherche automatiquement dans :
 Fichier JSON destination. Défaut :
 `C:\ProgramData\Kermaria\api-internal.config.json`.
 
+.PARAMETER Override
+Table de hachage de clés à forcer APRÈS extraction et defaults. Utile
+pour les valeurs host-spécifiques qui diffèrent entre le poste de dev
+et la cible sans éditer le `.local.env.ps1` : par exemple `SQL_HOST`
+(dev local vs `192.168.100.207` de SRV-07), ou tout autre paramètre
+dépendant de la topologie. Miroir du même mécanisme dans
+build-webportal-config.ps1 (où il sert pour `INTERNAL_API_URL`).
+
 .PARAMETER WhatIf
 Affiche les clés qui seraient extraites sans écrire le fichier.
 
@@ -42,11 +50,18 @@ Affiche les clés qui seraient extraites sans écrire le fichier.
 .EXAMPLE
 .\scripts\build-api-config.ps1 `
   -OutputPath \\KERMARIA-SRV-02\C$\ProgramData\Kermaria\api-internal.config.json
+
+.EXAMPLE
+# Forcer SQL_HOST vers SRV-07 si le .local.env.ps1 de dev pointe ailleurs.
+.\scripts\build-api-config.ps1 `
+  -OutputPath \\KERMARIA-SRV-02\C$\ProgramData\Kermaria\api-internal.config.json `
+  -Override @{ SQL_HOST = "192.168.100.207" }
 #>
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
     [string]$InputPath,
-    [string]$OutputPath = "C:\ProgramData\Kermaria\api-internal.config.json"
+    [string]$OutputPath = "C:\ProgramData\Kermaria\api-internal.config.json",
+    [hashtable]$Override = @{}
 )
 
 $ErrorActionPreference = "Stop"
@@ -134,6 +149,19 @@ if (-not $extracted.Contains("LOG_FILE_DIRECTORY")) {
     $extracted["LOG_FILE_DIRECTORY"] = "C:\apps\api-internal\logs"
 }
 
+# Overrides host-specifiques (ex. -Override @{ SQL_HOST = "192.168.100.207" }).
+# Appliques APRES extraction et default : ils gagnent sur la valeur du source.
+# Permet de cibler la topologie staging/prod sans editer le .local.env.ps1 de dev.
+$overridden = @()
+foreach ($key in @($Override.Keys)) {
+    $name = [string]$key
+    if ($Blocklist -contains $name) {
+        throw "Cle '$name' passee en -Override mais blocklistee (DEMO_*/dev/env) : refus."
+    }
+    $extracted[$name] = [string]$Override[$key]
+    $overridden += $name
+}
+
 Write-Host "Cles extraites : $($extracted.Count)"
 foreach ($k in $extracted.Keys) {
     Write-Host "  [OK]      $k"
@@ -151,6 +179,11 @@ if ($blocked.Count -gt 0) {
     foreach ($k in $blocked) {
         Write-Host "  [blocked] $k"
     }
+}
+if ($overridden.Count -gt 0) {
+    Write-Host ""
+    Write-Host "Cles forcees via -Override : $($overridden.Count)"
+    foreach ($k in $overridden) { Write-Host "  [override] $k" }
 }
 Write-Host ""
 

@@ -385,6 +385,23 @@ Le script auto-detecte le fichier source dans (ordre) :
 2. `<repo-parent>/<repo-name>.local.env.ps1`
 3. `<repo-parent>/.local.env.ps1`
 
+Clés host-spécifiques : si une valeur du `.local.env.ps1` de dev
+diffère de la cible (typiquement `SQL_HOST`, `localhost` en dev vs
+`192.168.100.207` de SRV-07), la forcer au build via `-Override`
+plutôt que d'éditer le source de dev :
+
+```powershell
+.\scripts\build-api-config.ps1 `
+  -OutputPath \\KERMARIA-SRV-02\C$\ProgramData\Kermaria\api-internal.config.json `
+  -Override @{ SQL_HOST = "192.168.100.207" }
+```
+
+Contrairement à `INTERNAL_API_URL` côté WEBPORTAL, aucune de ces
+clés API n'a de garde-fou runtime qui rejette une valeur locale : un
+`SQL_HOST` resté sur `localhost` échoue silencieusement à la
+connexion MariaDB (`/health/ready` KO) plutôt qu'avec un message
+explicite — d'où l'intérêt de l'`-Override` au build.
+
 Blocklist appliquee (jamais extraites, meme presentes en source) :
 `DEMO_PORTAL_EMAIL`, `DEMO_PORTAL_PASSWORD`,
 `DEMO_INTERNAL_ADMIN_EMAIL`, `DEMO_INTERNAL_ADMIN_PASSWORD`,
@@ -652,8 +669,12 @@ exclut les cles server-side seulement — SQL_*, AD_*, BPCE_*, SMTP_*,
 LOG_FILE_*, etc.) :
 
 ```powershell
+# Split-host : INTERNAL_API_URL DOIT viser l'IP VLAN de SRV-02, jamais
+# localhost. Le -Override force la bonne valeur sans toucher au
+# .local.env.ps1 de dev (ou localhost:5000 reste correct pour le dev local).
 .\scripts\build-webportal-config.ps1 `
-  -OutputPath \\KERMARIA-SRV-01\C$\ProgramData\Kermaria\webportal.config.json
+  -OutputPath \\KERMARIA-SRV-01\C$\ProgramData\Kermaria\webportal.config.json `
+  -Override @{ INTERNAL_API_URL = "http://192.168.100.202:5000" }
 
 # Aperçu sans ecriture
 .\scripts\build-webportal-config.ps1 -WhatIf
@@ -661,6 +682,21 @@ LOG_FILE_*, etc.) :
 
 Le script ajoute automatiquement des defauts sains si absents du
 source : `NODE_ENV=production`, `HOSTNAME=127.0.0.1`, `PORT=3000`.
+
+> **INTERNAL_API_URL en split-host — piege 503.** Le WEBPORTAL tourne
+> sur SRV-01, l'API sur SRV-02 bindée sur `192.168.100.202:5000`.
+> `INTERNAL_API_URL` doit donc valoir `http://192.168.100.202:5000`
+> (IP VLAN de SRV-02), **jamais** `localhost:5000`. En
+> `NODE_ENV=production` une URL locale fait throw
+> `validateServerRuntimeConfiguration()`
+> ([apps/webportal/lib/runtime-config.ts](../apps/webportal/lib/runtime-config.ts))
+> et `/api/health/ready` renvoie 503. `ALLOW_LOCAL_INTERNAL_API_URL`
+> est blocklistée par le générateur (jamais écrite dans le JSON) : on
+> **ne** la met **pas** à `true` pour contourner — on corrige l'URL.
+> Le `.local.env.ps1` de dev garde `localhost:5000` (correct en dev
+> local) ; c'est le `-Override` ci-dessus qui cible SRV-02 au build
+> staging/prod. Le générateur émet un `AVERTISSEMENT` explicite s'il
+> détecte une INTERNAL_API_URL locale avec `NODE_ENV=production`.
 
 Contenu attendu (extrait typique) :
 
@@ -1358,6 +1394,18 @@ en cas de re-installation ou de migration vers le R740xd.
   dans `webportal.config.json` + `Restart-Service KermariaWebportal`
   pour activer les routes vitrine V0.27. Sinon `/`, `/offres`,
   `/contact` etc. retournent 404 malgre les bindings IIS.
+- **`INTERNAL_API_URL=localhost:5000` regenere en split-host → 503**
+  (V0.24 Brique 1) : le `.local.env.ps1` de dev porte
+  `INTERNAL_API_URL=http://localhost:5000` (correct en dev local).
+  Regenerer la config staging depuis ce source sans override
+  reinjecte `localhost`, or SRV-02 est bindee sur
+  `192.168.100.202:5000`. En `NODE_ENV=production` `runtime-config.ts`
+  throw sur une URL locale (sauf `ALLOW_LOCAL_INTERNAL_API_URL=true`,
+  blocklistee, a ne PAS activer) et `/api/health/ready` renvoie 503.
+  Corriger avec `-Override @{ INTERNAL_API_URL =
+  'http://192.168.100.202:5000' }` (voir section KERMARIA-SRV-01 /
+  Configuration WEBPORTAL). Le generateur avertit desormais au build
+  s'il detecte cette combinaison.
 
 ### IIS
 
