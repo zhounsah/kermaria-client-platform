@@ -478,23 +478,31 @@ GRANTs (CREATE/ALTER/DROP requis).
 `CreateBuilder(args)` avant la lecture du config file, donc
 `app.Environment.IsDevelopment()` fonctionne comme attendu.
 
-```powershell
-sc.exe create KermariaApiInternal `
-  binPath= "\"C:\apps\api-internal\Kermaria.ApiInternal.exe\" --environment Staging --urls http://<IP_KERMARIA_SRV_02>:5000" `
-  DisplayName= "Kermaria API Internal" `
-  start= auto `
-  obj= ".\svc-kermaria-api" password= "<pwd>"
-
-sc.exe description KermariaApiInternal "Kermaria portal API. Listen on private VLAN only."
-
-# Politique de restart : 5s, 10s, 30s ; compteur remis a zero apres 1j
-sc.exe failure KermariaApiInternal reset= 86400 `
-  actions= restart/5000/restart/10000/restart/30000
-```
-
-Demarrer :
+`New-Service` est plus lisible que `sc.exe create` (quoting geré
+par PowerShell natif, pas de `binPath= ` avec espace obligatoire
+qui fait échouer si on l'oublie). Les placeholders `<IP…>` et
+`<pwd>` doivent etre substitues par des valeurs reelles.
 
 ```powershell
+# Credentials du compte de service (prompt secure)
+$cred = Get-Credential -UserName ".\svc-kermaria-api" `
+  -Message "Mot de passe svc-kermaria-api"
+
+# Assigner "Log on as a service" au compte (sinon New-Service refuse le start)
+# Cette ligne est optionnelle : sc.exe / New-Service l'ajoute automatiquement
+# lors de la creation avec ObjectName.
+
+New-Service -Name "KermariaApiInternal" `
+  -BinaryPathName '"C:\apps\api-internal\Kermaria.ApiInternal.exe" --environment Staging --urls http://192.168.100.202:5000' `
+  -DisplayName "Kermaria API Internal" `
+  -Description "Kermaria portal API. Listen on private VLAN only. Config from C:\ProgramData\Kermaria\api-internal.config.json." `
+  -StartupType Automatic `
+  -Credential $cred
+
+# Politique de restart : 5s, 10s, 30s ; compteur remis a zero apres 1 jour.
+# sc.exe failure a une syntaxe finicky (espace apres =), mais fonctionne ici :
+sc.exe failure KermariaApiInternal reset= 86400 actions= restart/5000/restart/10000/restart/30000
+
 Start-Service KermariaApiInternal
 Get-Service KermariaApiInternal
 ```
@@ -573,36 +581,100 @@ icacls C:\apps\webportal\logs /grant:r 'svc-kermaria-web:(OI)(CI)M'
 Rappel : `svc-kermaria-web` doit exister au prealable (`New-LocalUser`,
 voir section "Prerequis operateur").
 
-### Variables d'environnement Machine
+### Configuration WEBPORTAL
+
+Meme principe que cote API : toute la config dans un fichier JSON
+externe, aucune variable Machine. Node n'a pas de source de config
+native comme ASP.NET Core, donc un **wrapper PowerShell**
+(`scripts/start-webportal.ps1`) charge le JSON avant d'exec node.
+
+Generation du fichier config depuis le poste de dev, avec le
+convertisseur dedie
+[`scripts/build-webportal-config.ps1`](../scripts/build-webportal-config.ps1)
+(miroir de build-api-config, avec une blocklist plus large qui
+exclut les cles server-side seulement — SQL_*, AD_*, BPCE_*, SMTP_*,
+LOG_FILE_*, etc.) :
 
 ```powershell
-$scope = "Machine"
-[Environment]::SetEnvironmentVariable("NODE_ENV","production",$scope)
-[Environment]::SetEnvironmentVariable("HOSTNAME","127.0.0.1",$scope)
-[Environment]::SetEnvironmentVariable("PORT","3000",$scope)
+.\scripts\build-webportal-config.ps1 `
+  -OutputPath \\KERMARIA-SRV-01\C$\ProgramData\Kermaria\webportal.config.json
 
-[Environment]::SetEnvironmentVariable("INTERNAL_API_URL","http://<IP_KERMARIA_SRV_02>:5000",$scope)
-[Environment]::SetEnvironmentVariable("ALLOW_LOCAL_INTERNAL_API_URL","false",$scope)
-[Environment]::SetEnvironmentVariable("SERVICE_AUTH_TOKEN","<meme valeur que KERMARIA-SRV-02>",$scope)
+# Aperçu sans ecriture
+.\scripts\build-webportal-config.ps1 -WhatIf
+```
 
-[Environment]::SetEnvironmentVariable("SESSION_COOKIE_NAME","kermaria_session",$scope)
-[Environment]::SetEnvironmentVariable("SESSION_COOKIE_SECURE","true",$scope)
-[Environment]::SetEnvironmentVariable("SESSION_COOKIE_SAME_SITE","lax",$scope)
+Le script ajoute automatiquement des defauts sains si absents du
+source : `NODE_ENV=production`, `HOSTNAME=127.0.0.1`, `PORT=3000`.
+
+Contenu attendu (extrait typique) :
+
+```json
+{
+  "NODE_ENV": "production",
+  "HOSTNAME": "127.0.0.1",
+  "PORT": "3000",
+  "INTERNAL_API_URL": "http://<IP_KERMARIA_SRV_02>:5000",
+  "SERVICE_AUTH_TOKEN": "<meme valeur que KERMARIA-SRV-02>",
+  "PAYPAL_MODE": "sandbox",
+  "PAYPAL_CLIENT_ID": "...",
+  "PAYPAL_CLIENT_SECRET": "...",
+  "STRIPE_MODE": "test",
+  "STRIPE_SECRET_KEY": "...",
+  "SIGNUP_ENABLED": "false"
+}
+```
+
+Sur KERMARIA-SRV-01, ACL restrictive :
+
+```powershell
+New-Item -ItemType Directory -Force -Path C:\ProgramData\Kermaria
+
+icacls C:\ProgramData\Kermaria /inheritance:r `
+  /grant:r '*S-1-5-32-544:(OI)(CI)F' `
+  /grant:r 'svc-kermaria-web:(OI)(CI)RX'
+
+icacls C:\ProgramData\Kermaria\webportal.config.json /inheritance:r `
+  /grant:r '*S-1-5-32-544:F' `
+  /grant:r 'svc-kermaria-web:R'
+```
+
+Le wrapper `scripts/start-webportal.ps1` (a copier sur SRV-01 dans
+`C:\apps\webportal\`) est charge par NSSM. Il lit
+`C:\ProgramData\Kermaria\webportal.config.json`, injecte chaque cle
+comme env var **de sa session PowerShell**, puis exec
+`node C:\apps\webportal\apps\webportal\server.js`. Les env sont
+strictement locales au process (jamais Machine).
+
+Copier le wrapper depuis le repo :
+
+```powershell
+Copy-Item .\scripts\start-webportal.ps1 `
+  \\KERMARIA-SRV-01\C$\apps\webportal\start-webportal.ps1
+```
+
+Nettoyer d'anciennes variables Machine si presentes :
+
+```powershell
+Get-ChildItem Env: `
+  | Where-Object Name -match '^(NODE_ENV|HOSTNAME|PORT|INTERNAL_API_URL|ALLOW_LOCAL_INTERNAL_API_URL|SERVICE_AUTH_TOKEN|SESSION_COOKIE_|PAYPAL_|STRIPE_|SIGNUP_|PUBLIC_VITRINE_|BILLING_|HCAPTCHA_|WEBPORTAL_BASE_URL|PUBLIC_PORTAL_URL)' `
+  | ForEach-Object {
+      [Environment]::SetEnvironmentVariable($_.Name, $null, 'Machine')
+    }
 ```
 
 ### Enregistrement Windows Service via NSSM
 
-Note : `AppDirectory` doit pointer sur `C:\apps\webportal\` (racine
-du paquet standalone) pour que `require('next')` resolve le
-`node_modules` hoiste. Le script server.js, lui, est dans le
-sous-dossier `apps\webportal\` :
+NSSM lance **powershell.exe** qui lui-meme lance `start-webportal.ps1`.
+`AppDirectory` reste sur `C:\apps\webportal\` (racine du paquet
+standalone) pour que `require('next')` resolve le `node_modules`
+hoiste — le wrapper laisse le cwd du process Node identique.
 
 ```powershell
-$node = (Get-Command node.exe).Source
-nssm install KermariaWebportal $node "C:\apps\webportal\apps\webportal\server.js"
+$pshell = (Get-Command powershell.exe).Source
+nssm install KermariaWebportal $pshell "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\apps\webportal\start-webportal.ps1"
 nssm set KermariaWebportal AppDirectory "C:\apps\webportal"
 nssm set KermariaWebportal DisplayName "Kermaria WEBPORTAL"
-nssm set KermariaWebportal Description "Kermaria Next.js portal front (KERMARIA-SRV-01). Bound to 127.0.0.1:3000, fronted by IIS."
+nssm set KermariaWebportal Description "Kermaria Next.js portal front (KERMARIA-SRV-01). Bound to 127.0.0.1:3000, fronted by IIS. Config from C:\ProgramData\Kermaria\webportal.config.json."
 nssm set KermariaWebportal Start SERVICE_AUTO_START
 nssm set KermariaWebportal ObjectName ".\svc-kermaria-web" "<pwd>"
 
@@ -618,6 +690,11 @@ nssm set KermariaWebportal AppRestartDelay 5000
 
 Start-Service KermariaWebportal
 ```
+
+Le wrapper log au demarrage le nombre de cles chargees et les
+valeurs de NODE_ENV / HOSTNAME / PORT (jamais les secrets). Erreur
+courante : `Config file introuvable` → le fichier config n'est
+pas au bon chemin ou l'ACL empeche le service de le lire.
 
 ### Verification interne
 
