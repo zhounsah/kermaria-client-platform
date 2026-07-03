@@ -1,38 +1,47 @@
-# Deploiement Windows Server 2022 (SRV-01 / SRV-02 / SRV-07)
+# Deploiement Windows Server 2022 (KERMARIA-SRV-01 / KERMARIA-SRV-02 / KERMARIA-SRV-07)
 
 Runbook cible : deploiement natif sans VM ni Docker, sur trois hotes
 Windows Server 2022 existants. Sert de reference pour la Brique 1 de
-V0.24 (recette staging SRV-01/02) et d'ossature pour V1.0 beta 1
+V0.24 (recette staging KERMARIA-SRV-01/02) et d'ossature pour V1.0 beta 1
 (R740xd, memes recettes appliquees sur la cible definitive).
 
 Ce runbook complete [`DEPLOYMENT.md`](DEPLOYMENT.md) (variables
 d'env, modes, garde-fous). Il ne le remplace pas.
 
-## Topologie
+## Topologie et materiel
 
 ```text
 Internet
    │  443
    ▼
-[ SRV-01  WEBPORTAL  ]  Windows Server 2022
+[ KERMARIA-SRV-01  WEBPORTAL  ]  Dell Optiplex 5070 (i7-9700, 40 Go DDR4)
+   Windows Server 2022
    IIS 443 (TLS via win-acme) + ARR + URL Rewrite
       └── proxy 127.0.0.1:3000
             └── KermariaWebportal (Windows Service via NSSM)
                   = Node.js 24 + Next standalone
    │  privé, TCP 5000
    ▼
-[ SRV-02  API-INTERNAL ]  Windows Server 2022
+[ KERMARIA-SRV-02  API-INTERNAL ]  ASUS FX753VD (i7-7700HQ, 32 Go DDR4)
+   Windows Server 2022
    KermariaApiInternal (Windows Service natif .NET)
-      = dotnet.exe + Kestrel bind IP privée:5000
+      = Kermaria.ApiInternal.exe + Kestrel bind IP privée:5000
    │  privé, TCP 3306
    ▼
-[ SRV-07  KERMARIA-SRV-07.home.bzh  (192.168.100.207) ]
+[ KERMARIA-SRV-07  (kermaria-srv-07.home.bzh, 192.168.100.207) ]
    MariaDB 11.x
 ```
 
-- SRV-01 : seul hote exposé Internet (port 443).
-- SRV-02 : jamais Internet, joignable seulement depuis SRV-01 en 5000.
-- SRV-07 : jamais Internet, joignable seulement depuis SRV-02 en 3306.
+- KERMARIA-SRV-01 : seul hote exposé Internet (port 443). 40 Go RAM
+  largement suffisants pour Node + IIS + supervision.
+- KERMARIA-SRV-02 : jamais Internet, joignable seulement depuis
+  KERMARIA-SRV-01 en 5000. 32 Go RAM permettent une marge confortable
+  meme si un dump MariaDB ou une charge de recette temporaire y
+  transite. GPU GTX 1050 non utilise (pas de pilote necessaire cote
+  serveur, laisser desactive dans Device Manager pour eviter les
+  MAJ Windows Update qui redemarrent la machine).
+- KERMARIA-SRV-07 : jamais Internet, joignable seulement depuis
+  KERMARIA-SRV-02 en 3306.
 
 ## Prerequis code applicatif
 
@@ -52,18 +61,20 @@ pour la lisibilite :
 ## Prerequis operateur
 
 - Comptes de service locaux **non-Administrator** sur chaque hote :
-  - SRV-01 : `svc-kermaria-web`
-  - SRV-02 : `svc-kermaria-api`
-  - SRV-07 : `svc-mariadb` (fourni par l'installeur MariaDB)
-- Nom de domaine FQDN pointe vers l'IP publique de SRV-01 (pour
+  - KERMARIA-SRV-01 : `svc-kermaria-web`
+  - KERMARIA-SRV-02 : `svc-kermaria-api`
+  - KERMARIA-SRV-07 : `svc-mariadb` (fourni par l'installeur MariaDB)
+- Nom de domaine FQDN pointe vers l'IP publique de KERMARIA-SRV-01 (pour
   Let's Encrypt HTTP-01).
-- Ports pare-feu perimeter : 80 + 443 vers SRV-01 uniquement.
-- Verrouillage : aucun SDK (.NET, Node) sur SRV-01/02, uniquement les
+- Ports pare-feu perimeter : 80 + 443 vers KERMARIA-SRV-01 uniquement.
+- Verrouillage : aucun SDK (.NET, Node) sur KERMARIA-SRV-01/02, uniquement les
   runtimes. Le build est produit sur le poste de dev.
 
 ## 1. Build des artefacts (poste de dev)
 
-Depuis un checkout `main` a jour :
+Depuis un checkout `main` a jour, sur le poste de dev (pas dans un
+worktree Claude Code : les junctions node_modules d'un worktree
+cassent Turbopack, cf. memoire `workflow-preferences`) :
 
 ```powershell
 # API-INTERNAL — publish framework-dependent, avec apphost .exe
@@ -74,28 +85,57 @@ dotnet publish .\apps\api-internal\Kermaria.ApiInternal.csproj `
 
 # WEBPORTAL — build standalone
 npm --prefix apps\webportal run build
+```
 
-# On rassemble le paquet WEBPORTAL a copier tel quel
+`next build` avec `output: "standalone"` produit un layout
+**monorepo-aware** (parce que `turbopack.root` pointe sur le repo
+racine dans `next.config.ts`) :
+
+```text
+apps\webportal\.next\standalone\
+├── apps\webportal\
+│   ├── server.js          # entrypoint Node
+│   ├── package.json
+│   └── .next\             # chunks serveur (sans /static ni /public)
+└── node_modules\          # deps prod hoistées
+```
+
+Il faut copier `.next\static` et `public` **manuellement** — Next
+ne les inclut jamais dans le standalone (voir doc Next.js).
+Assembler le paquet a transferer :
+
+```powershell
 $dst = ".\out\webportal"
+Remove-Item -Recurse -Force $dst -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $dst | Out-Null
+
+# Base standalone (contient apps\webportal\ + node_modules\)
 Copy-Item -Recurse -Force apps\webportal\.next\standalone\* $dst
-Copy-Item -Recurse -Force apps\webportal\.next\static $dst\.next\static
-Copy-Item -Recurse -Force apps\webportal\public $dst\public
+
+# static et public a placer au niveau du server.js
+Copy-Item -Recurse -Force apps\webportal\.next\static `
+  "$dst\apps\webportal\.next\static"
+Copy-Item -Recurse -Force apps\webportal\public `
+  "$dst\apps\webportal\public"
 ```
 
 Verifier les artefacts :
 
 - `.\out\api-internal\Kermaria.ApiInternal.exe` existe ;
-- `.\out\webportal\server.js` existe (~50 lignes) et
-  `.\out\webportal\node_modules\` est mince (< 100 Mo).
+- `.\out\webportal\apps\webportal\server.js` existe ;
+- `.\out\webportal\apps\webportal\.next\static\` contient les chunks
+  client (bundles JS/CSS hashes) ;
+- `.\out\webportal\apps\webportal\public\portfolio\` contient bien
+  le portfolio embarque V0.27 ;
+- `.\out\webportal\node_modules\next\` present.
 
 Transferer les dossiers vers les serveurs (SMB partage administratif
-`\\SRV-01\C$\apps\webportal-staging\` et `\\SRV-02\C$\apps\api-internal-staging\`,
-ou zip + scp/RDP). **Ne pas** ecraser un deploiement live : on copie
-d'abord dans un dossier `-staging` puis on bascule (voir section
-"Mise a jour").
+`\\KERMARIA-SRV-01\C$\apps\webportal-staging\` et
+`\\KERMARIA-SRV-02\C$\apps\api-internal-staging\`, ou zip + scp/RDP).
+**Ne pas** ecraser un deploiement live : on copie d'abord dans un
+dossier `-staging` puis on bascule (voir section "Mise a jour").
 
-## 2. SRV-07 — MariaDB
+## 2. KERMARIA-SRV-07 — MariaDB
 
 ### Installation
 
@@ -112,7 +152,7 @@ Editer `C:\Program Files\MariaDB 11.x\data\my.ini` :
 bind-address = 192.168.100.207
 skip-name-resolve
 default-storage-engine = InnoDB
-innodb_buffer_pool_size = 512M    # ajuster selon RAM SRV-07
+innodb_buffer_pool_size = 512M    # ajuster selon RAM KERMARIA-SRV-07
 ```
 
 `bind-address` restrictif : jamais `0.0.0.0`, jamais laisse par
@@ -127,25 +167,25 @@ Restart-Service MariaDB
 
 ### Compte applicatif
 
-Depuis un client `mysql` sur SRV-07 :
+Depuis un client `mysql` sur KERMARIA-SRV-07 :
 
 ```sql
 CREATE DATABASE kermaria
   DEFAULT CHARACTER SET utf8mb4
   DEFAULT COLLATE utf8mb4_unicode_ci;
 
--- <IP_SRV_02> = IP privee statique de SRV-02
-CREATE USER 'kermaria_api'@'<IP_SRV_02>' IDENTIFIED BY '<mdp_fort>';
+-- <IP_KERMARIA_SRV_02> = IP privee statique de KERMARIA-SRV-02
+CREATE USER 'kermaria_api'@'<IP_KERMARIA_SRV_02>' IDENTIFIED BY '<mdp_fort>';
 
 GRANT SELECT, INSERT, UPDATE, DELETE, EXECUTE
-  ON kermaria.* TO 'kermaria_api'@'<IP_SRV_02>';
+  ON kermaria.* TO 'kermaria_api'@'<IP_KERMARIA_SRV_02>';
 
 -- Compte de migration separe, active uniquement le temps d'appliquer
 -- les migrations, revoque ensuite.
-CREATE USER 'kermaria_migrator'@'<IP_SRV_02>' IDENTIFIED BY '<mdp_fort>';
+CREATE USER 'kermaria_migrator'@'<IP_KERMARIA_SRV_02>' IDENTIFIED BY '<mdp_fort>';
 GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, DROP, INDEX,
       REFERENCES, TRIGGER
-  ON kermaria.* TO 'kermaria_migrator'@'<IP_SRV_02>';
+  ON kermaria.* TO 'kermaria_migrator'@'<IP_KERMARIA_SRV_02>';
 
 FLUSH PRIVILEGES;
 ```
@@ -154,12 +194,12 @@ Note : le compte `kermaria_api` n'a **pas** CREATE/ALTER/DROP. Les
 migrations passent par `kermaria_migrator` (bascule variable
 `SQL_USERNAME`/`SQL_PASSWORD` le temps de l'operation).
 
-### Pare-feu SRV-07
+### Pare-feu KERMARIA-SRV-07
 
 ```powershell
-New-NetFirewallRule -DisplayName "MariaDB from SRV-02" `
+New-NetFirewallRule -DisplayName "MariaDB from KERMARIA-SRV-02" `
   -Direction Inbound -Protocol TCP -LocalPort 3306 `
-  -RemoteAddress <IP_SRV_02> -Action Allow
+  -RemoteAddress <IP_KERMARIA_SRV_02> -Action Allow
 
 # Refus explicite depuis tout autre origine
 New-NetFirewallRule -DisplayName "MariaDB deny all others" `
@@ -168,7 +208,7 @@ New-NetFirewallRule -DisplayName "MariaDB deny all others" `
 
 ### Verification
 
-Depuis SRV-02 (une fois SRV-02 provisionne) :
+Depuis KERMARIA-SRV-02 (une fois KERMARIA-SRV-02 provisionne) :
 
 ```powershell
 Test-NetConnection 192.168.100.207 -Port 3306   # doit repondre
@@ -182,7 +222,7 @@ generer un certif serveur MariaDB, ajouter `ssl-ca`, `ssl-cert`,
 SSL;` et cote API-INTERNAL positionner `SQL_USE_SSL=true`. A
 tracker dans V0.24 audit securite (Brique 2) ou en task chip.
 
-## 3. SRV-02 — API-INTERNAL
+## 3. KERMARIA-SRV-02 — API-INTERNAL
 
 ### Installation runtime
 
@@ -195,7 +235,7 @@ Installer **.NET 10 Runtime (win-x64)**, pas le SDK :
 
 ### Deploiement binaire
 
-Copier `\\SRV-02\C$\apps\api-internal-staging\` (produit en section 1)
+Copier `\\KERMARIA-SRV-02\C$\apps\api-internal-staging\` (produit en section 1)
 vers `C:\apps\api-internal\` (bascule atomique : voir "Mise a jour").
 
 Preparer le dossier de logs :
@@ -257,7 +297,7 @@ restrictive. Traite en V0.24 Brique 2 (audit secrets).
 
 ### Appliquer les migrations
 
-Depuis une session PowerShell **elevée** sur SRV-02, avec
+Depuis une session PowerShell **elevée** sur KERMARIA-SRV-02, avec
 temporairement les credentials `kermaria_migrator` :
 
 ```powershell
@@ -279,7 +319,7 @@ runtime nominal.
 
 ```powershell
 sc.exe create KermariaApiInternal `
-  binPath= "\"C:\apps\api-internal\Kermaria.ApiInternal.exe\" --urls http://<IP_SRV_02>:5000" `
+  binPath= "\"C:\apps\api-internal\Kermaria.ApiInternal.exe\" --urls http://<IP_KERMARIA_SRV_02>:5000" `
   DisplayName= "Kermaria API Internal" `
   start= auto `
   obj= ".\svc-kermaria-api" password= "<pwd>"
@@ -300,32 +340,32 @@ Get-Service KermariaApiInternal
 
 ### Verification
 
-Depuis SRV-02 :
+Depuis KERMARIA-SRV-02 :
 
 ```powershell
-Invoke-RestMethod http://<IP_SRV_02>:5000/health/live
-Invoke-RestMethod http://<IP_SRV_02>:5000/health/ready
+Invoke-RestMethod http://<IP_KERMARIA_SRV_02>:5000/health/live
+Invoke-RestMethod http://<IP_KERMARIA_SRV_02>:5000/health/ready
 ```
 
 Attendu : HTTP 200 avec `X-Correlation-Id`. Si `ready` echoue,
 inspecter `C:\apps\api-internal\logs\api-internal-YYYY-MM-DD.log` :
-principale cause = SQL_* incorrect ou pare-feu vers SRV-07.
+principale cause = SQL_* incorrect ou pare-feu vers KERMARIA-SRV-07.
 
-### Pare-feu SRV-02
+### Pare-feu KERMARIA-SRV-02
 
 ```powershell
-# Entrant : uniquement depuis SRV-01
-New-NetFirewallRule -DisplayName "API from SRV-01" `
+# Entrant : uniquement depuis KERMARIA-SRV-01
+New-NetFirewallRule -DisplayName "API from KERMARIA-SRV-01" `
   -Direction Inbound -Protocol TCP -LocalPort 5000 `
-  -RemoteAddress <IP_SRV_01> -Action Allow
+  -RemoteAddress <IP_KERMARIA_SRV_01> -Action Allow
 
-# Sortant : uniquement vers SRV-07 sur 3306
-New-NetFirewallRule -DisplayName "MariaDB to SRV-07" `
+# Sortant : uniquement vers KERMARIA-SRV-07 sur 3306
+New-NetFirewallRule -DisplayName "MariaDB to KERMARIA-SRV-07" `
   -Direction Outbound -Protocol TCP -RemotePort 3306 `
   -RemoteAddress 192.168.100.207 -Action Allow
 ```
 
-## 4. SRV-01 — WEBPORTAL
+## 4. KERMARIA-SRV-01 — WEBPORTAL
 
 ### Installation runtime
 
@@ -344,6 +384,19 @@ au PATH machine).
 ### Deploiement binaire
 
 Copier `.\out\webportal\` du poste de dev vers `C:\apps\webportal\`.
+Le contenu doit ressembler a :
+
+```text
+C:\apps\webportal\
+├── apps\webportal\
+│   ├── server.js
+│   ├── package.json
+│   ├── .next\
+│   │   └── static\
+│   └── public\
+├── node_modules\
+└── logs\               (a creer)
+```
 
 Preparer les logs :
 
@@ -363,9 +416,9 @@ $scope = "Machine"
 [Environment]::SetEnvironmentVariable("HOSTNAME","127.0.0.1",$scope)
 [Environment]::SetEnvironmentVariable("PORT","3000",$scope)
 
-[Environment]::SetEnvironmentVariable("INTERNAL_API_URL","http://<IP_SRV_02>:5000",$scope)
+[Environment]::SetEnvironmentVariable("INTERNAL_API_URL","http://<IP_KERMARIA_SRV_02>:5000",$scope)
 [Environment]::SetEnvironmentVariable("ALLOW_LOCAL_INTERNAL_API_URL","false",$scope)
-[Environment]::SetEnvironmentVariable("SERVICE_AUTH_TOKEN","<meme valeur que SRV-02>",$scope)
+[Environment]::SetEnvironmentVariable("SERVICE_AUTH_TOKEN","<meme valeur que KERMARIA-SRV-02>",$scope)
 
 [Environment]::SetEnvironmentVariable("SESSION_COOKIE_NAME","kermaria_session",$scope)
 [Environment]::SetEnvironmentVariable("SESSION_COOKIE_SECURE","true",$scope)
@@ -374,12 +427,17 @@ $scope = "Machine"
 
 ### Enregistrement Windows Service via NSSM
 
+Note : `AppDirectory` doit pointer sur `C:\apps\webportal\` (racine
+du paquet standalone) pour que `require('next')` resolve le
+`node_modules` hoiste. Le script server.js, lui, est dans le
+sous-dossier `apps\webportal\` :
+
 ```powershell
 $node = (Get-Command node.exe).Source
-nssm install KermariaWebportal $node "C:\apps\webportal\server.js"
+nssm install KermariaWebportal $node "C:\apps\webportal\apps\webportal\server.js"
 nssm set KermariaWebportal AppDirectory "C:\apps\webportal"
 nssm set KermariaWebportal DisplayName "Kermaria WEBPORTAL"
-nssm set KermariaWebportal Description "Kermaria Next.js portal front (SRV-01). Bound to 127.0.0.1:3000, fronted by IIS."
+nssm set KermariaWebportal Description "Kermaria Next.js portal front (KERMARIA-SRV-01). Bound to 127.0.0.1:3000, fronted by IIS."
 nssm set KermariaWebportal Start SERVICE_AUTO_START
 nssm set KermariaWebportal ObjectName ".\svc-kermaria-web" "<pwd>"
 
@@ -398,7 +456,7 @@ Start-Service KermariaWebportal
 
 ### Verification interne
 
-Depuis SRV-01 :
+Depuis KERMARIA-SRV-01 :
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:3000/api/health/live
@@ -406,23 +464,23 @@ Invoke-RestMethod http://127.0.0.1:3000/api/health/ready
 ```
 
 Attendu : HTTP 200. `ready` peut echouer si `INTERNAL_API_URL` non
-joignable — verifier la route SRV-01 -> SRV-02:5000 et la valeur
+joignable — verifier la route KERMARIA-SRV-01 -> KERMARIA-SRV-02:5000 et la valeur
 de `SERVICE_AUTH_TOKEN` identique cote API.
 
-### Pare-feu SRV-01 (partie WEBPORTAL)
+### Pare-feu KERMARIA-SRV-01 (partie WEBPORTAL)
 
 ```powershell
-# Sortant : uniquement vers SRV-02 sur 5000
-New-NetFirewallRule -DisplayName "API-INTERNAL to SRV-02" `
+# Sortant : uniquement vers KERMARIA-SRV-02 sur 5000
+New-NetFirewallRule -DisplayName "API-INTERNAL to KERMARIA-SRV-02" `
   -Direction Outbound -Protocol TCP -RemotePort 5000 `
-  -RemoteAddress <IP_SRV_02> -Action Allow
+  -RemoteAddress <IP_KERMARIA_SRV_02> -Action Allow
 
 # Sortant PayPal / Stripe / BPCE / SMTP : uniquement si les modes
 # correspondants ne sont pas 'disabled'. Ne pas ouvrir en V0.24 tant
 # que le scenario ne le demande pas.
 ```
 
-## 5. SRV-01 — IIS + ARR + URL Rewrite
+## 5. KERMARIA-SRV-01 — IIS + ARR + URL Rewrite
 
 ### Installation
 
@@ -519,7 +577,7 @@ Placer ce `web.config` dans `C:\inetpub\kermaria\` :
 </configuration>
 ```
 
-## 6. SRV-01 — TLS via win-acme (Let's Encrypt)
+## 6. KERMARIA-SRV-01 — TLS via win-acme (Let's Encrypt)
 
 Telecharger `win-acme.v2.x.x.x64.pluggable.zip` depuis
 https://github.com/win-acme/win-acme/releases, extraire vers
@@ -588,12 +646,12 @@ Pas d'`preload` avant V1.0 RC.
 
 | Source | Destination | Port | Direction | Regle |
 |---|---|---|---|---|
-| Internet | SRV-01 | 443 | In | Autorise |
-| Internet | SRV-01 | 80 | In | Autorise (ACME) |
-| SRV-01 | SRV-02 | 5000 | Out | Autorise |
-| SRV-02 | SRV-07 | 3306 | Out | Autorise |
-| SRV-01 | Internet 443 | 443 | Out | Autorise si PayPal/Stripe/BPCE/SMTP `!= disabled` |
-| Reseau admin | SRV-01/02/07 | RDP 3389 | In | Autorise depuis VPN uniquement |
+| Internet | KERMARIA-SRV-01 | 443 | In | Autorise |
+| Internet | KERMARIA-SRV-01 | 80 | In | Autorise (ACME) |
+| KERMARIA-SRV-01 | KERMARIA-SRV-02 | 5000 | Out | Autorise |
+| KERMARIA-SRV-02 | KERMARIA-SRV-07 | 3306 | Out | Autorise |
+| KERMARIA-SRV-01 | Internet 443 | 443 | Out | Autorise si PayPal/Stripe/BPCE/SMTP `!= disabled` |
+| Reseau admin | KERMARIA-SRV-01/02/07 | RDP 3389 | In | Autorise depuis VPN uniquement |
 | Tout autre flux | — | — | — | Refuse par defaut |
 
 ## 8. Verifications post-installation
@@ -622,7 +680,7 @@ et la Brique 1 de [`V0.24_STABILISATION.md`](V0.24_STABILISATION.md).
 Regle : ne jamais ecraser un dossier live en place. Deux dossiers,
 bascule par renommage.
 
-Sur SRV-02 :
+Sur KERMARIA-SRV-02 :
 
 ```powershell
 Stop-Service KermariaApiInternal
@@ -634,7 +692,7 @@ Start-Service KermariaApiInternal
 # Si KO : Stop, renommage inverse, restart
 ```
 
-Sur SRV-01 :
+Sur KERMARIA-SRV-01 :
 
 ```powershell
 Stop-Service KermariaWebportal
@@ -652,11 +710,11 @@ est deja appliquee — voir [`BACKUP_RESTORE.md`](BACKUP_RESTORE.md).
 
 Enchainement general :
 
-1. `Stop-Service KermariaWebportal` sur SRV-01 (arret trafic
+1. `Stop-Service KermariaWebportal` sur KERMARIA-SRV-01 (arret trafic
    utilisateur).
-2. `Stop-Service KermariaApiInternal` sur SRV-02.
+2. `Stop-Service KermariaApiInternal` sur KERMARIA-SRV-02.
 3. Restaurer les dossiers `-old-<DATE>` par renommage inverse.
-4. Restaurer la sauvegarde MariaDB sur SRV-07 si une migration est
+4. Restaurer la sauvegarde MariaDB sur KERMARIA-SRV-07 si une migration est
    en cause (procedure detaillee dans
    [`BACKUP_RESTORE.md`](BACKUP_RESTORE.md)).
 5. `Start-Service KermariaApiInternal` puis `KermariaWebportal`.
@@ -666,7 +724,7 @@ Enchainement general :
 ## 11. Surveillance minimale
 
 Tache planifiee toutes les 5 min sur un hote de monitoring
-(ou SRV-01 si pas d'hote dedie) :
+(ou KERMARIA-SRV-01 si pas d'hote dedie) :
 
 ```powershell
 try {
@@ -701,36 +759,62 @@ Select-String C:\apps\api-internal\logs\*.log `
   -CaseSensitive:$false
 ```
 
-## 12. RAM et sizing
+## 12. RAM, CPU et sizing
 
-| Composant | Hote | RAM typique |
-|---|---|---|
-| Windows Server 2022 (avec GUI) | tous | ~1.5 Go |
-| MariaDB (base < 5 Go) | SRV-07 | 512 Mo - 1 Go |
-| Kestrel API-INTERNAL | SRV-02 | 150-300 Mo |
-| Node.js WEBPORTAL | SRV-01 | 150-300 Mo |
-| IIS worker + ARR | SRV-01 | 100-200 Mo |
+Materiel disponible :
 
-Configurations minimum recommandees :
+| Hote | Machine | CPU | RAM |
+|---|---|---|---|
+| KERMARIA-SRV-01 | Dell Optiplex 5070 | Intel i7-9700 (8c/8t, 3.0-4.7 GHz) | 40 Go DDR4 |
+| KERMARIA-SRV-02 | ASUS FX753VD (portable) | Intel i7-7700HQ (4c/8t, 2.8-3.8 GHz) | 32 Go DDR4 |
+| KERMARIA-SRV-07 | (existant) | (existant) | (existant) |
 
-- SRV-01 : 4 Go
-- SRV-02 : 4 Go
-- SRV-07 : 4 Go (8 Go si volumetrie MariaDB > 2 Go)
+Empreinte typique des processus :
 
-Passer en **Server Core** (sans GUI) libere ~500 Mo par hote et
-reduit la surface d'attaque, au prix d'une administration
-exclusivement PowerShell/RSAT.
+| Composant | Hote | RAM active | CPU au ralenti |
+|---|---|---|---|
+| Windows Server 2022 (avec GUI) | tous | ~1.5 Go | negligeable |
+| MariaDB (base < 5 Go) | KERMARIA-SRV-07 | 512 Mo - 1 Go | <1% |
+| Kestrel API-INTERNAL | KERMARIA-SRV-02 | 150-300 Mo | <2% |
+| Node.js WEBPORTAL | KERMARIA-SRV-01 | 150-300 Mo | <2% |
+| IIS worker + ARR | KERMARIA-SRV-01 | 100-200 Mo | <1% |
+
+Consequence :
+
+- **KERMARIA-SRV-01** avec 40 Go a une marge de ~38 Go pour buffers,
+  cache disque IIS et pics. Aucune pression memoire attendue.
+- **KERMARIA-SRV-02** avec 32 Go peut absorber un dump MariaDB
+  temporaire en local (pour transferer vers un stockage tiers) sans
+  swap, et heberger a l'avenir un supervisor Grafana/Prometheus
+  ou un endpoint de collecte de logs sans redimensionner.
+- Le portable ASUS FX753VD implique quelques points d'attention non
+  lies au dimensionnement :
+  - **batterie** : configurer `powercfg /setacvalueindex … 0` pour
+    empecher la mise en veille meme couvercle ferme (Panneau de
+    config > Options d'alimentation > Choisir l'action lors de la
+    fermeture du capot) ; brancher le secteur en permanence.
+  - **GPU GTX 1050 Mobile** : desactiver dans Device Manager pour
+    eviter les MAJ NVIDIA Windows Update qui declenchent des
+    redemarrages. Non utilise cote serveur.
+  - **etat physique** : machine portable = points de defaillance
+    en plus (charniere, ecran, clavier). Prevoir sauvegarde du
+    disque systeme et plan de bascule vers la cible R740xd dans
+    la sequence V1.0 beta 1.
+
+Passer en **Server Core** (sans GUI) n'est **pas necessaire** ici
+vu la RAM disponible. Le laisser en mode GUI simplifie la
+maintenance ponctuelle (RDP, MMC IIS, gestion certif).
 
 ## 13. Suite
 
-Ce runbook couvre la phase de tests SRV-01/02/07 (V0.24 Brique 1)
+Ce runbook couvre la phase de tests KERMARIA-SRV-01/02/07 (V0.24 Brique 1)
 et sera adapte comme ossature de la procedure V1.0 beta 1 sur
 R740xd (V0.24 Brique 3, livrable
 [`PRODUCTION_DEPLOYMENT.md`](PRODUCTION_DEPLOYMENT.md)) avec les
 delta suivants :
 
 - comptes de service **AD domain-joined** au lieu de comptes locaux
-  (si SRV-01/02 rejoignent le domaine `home.bzh`) ;
+  (si KERMARIA-SRV-01/02 rejoignent le domaine `home.bzh`) ;
 - migration secrets vers DPAPI ou secret store dedie ;
 - TLS MariaDB active (`REQUIRE SSL`) ;
 - bascule des modes vers `live` selon l'ordre documente en
