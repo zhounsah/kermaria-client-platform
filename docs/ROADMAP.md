@@ -233,6 +233,11 @@ ex-V0.24b devient V1.0 beta 1).
 Runbook infra : [`DEPLOYMENT_WINDOWS.md`](DEPLOYMENT_WINDOWS.md).
 Fichier de suivi vivant des scenarios OK/KO :
 [`V0.24_SUIVI.md`](V0.24_SUIVI.md).
+Guides utilisateur livres (Brique 3) :
+[`GUIDE_CLIENT_PAIEMENT.md`](GUIDE_CLIENT_PAIEMENT.md) (client) et
+[`GUIDE_ADMIN.md`](GUIDE_ADMIN.md) (admin : paiements, abonnements, journal
+e-mails, inscriptions, Active Directory). Rotation des secrets etendue :
+[`SECRET_ROTATION.md`](SECRET_ROTATION.md).
 
 **Livre au 2026-07-03** :
 - Infra deployee sur KERMARIA-SRV-01 (Dell Optiplex 5070, WEBPORTAL
