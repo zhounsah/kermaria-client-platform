@@ -7,6 +7,9 @@ type BffFailureEvent = {
   operation: string;
   status: number;
   surface: string;
+  // Contexte de diagnostic optionnel (ex. error-codes hCaptcha). Ne doit jamais
+  // contenir de secret ni de donnée personnelle : ces logs partent en clair.
+  detail?: string;
 };
 
 export function logBffFailure(event: BffFailureEvent) {

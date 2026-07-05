@@ -1,5 +1,7 @@
 import "server-only";
 
+import { isIP } from "node:net";
+
 import { CORRELATION_HEADER } from "@/lib/correlation";
 import {
   getInternalApiUrl,
@@ -20,6 +22,10 @@ export type InternalSignupResult = {
 export type HCaptchaOutcome = {
   ok: boolean;
   code: string;
+  // `error-codes` renvoyés par hCaptcha siteverify (ex. sitekey-secret-mismatch,
+  // invalid-input-response, timeout-or-duplicate). Nécessaires pour diagnostiquer
+  // un rejet côté serveur sans les exposer au client.
+  errorCodes?: string[];
 };
 
 // hCaptcha est obligatoire (décision de cadrage V0.26). En développement
@@ -43,8 +49,16 @@ export async function verifyHCaptcha(
   }
 
   const params = new URLSearchParams({ secret, response: token });
-  if (remoteIp && remoteIp !== "unknown") {
-    params.set("remoteip", remoteIp);
+  // Le x-forwarded-for injecté par le reverse proxy peut contenir une
+  // adresse IPv6 lien-local avec zone index (ex. `fe80::1%12`, typique d'un
+  // client LAN interne) ou une liste d'IP : hCaptcha rejette ces formats
+  // (invalid-remoteip) et fait échouer siteverify alors que le token est
+  // valide. On retire donc le zone index `%…` puis on valide via net.isIP
+  // (qui renvoie 0 pour une liste ou du garbage). remoteip est optionnel :
+  // en cas de doute on l'omet plutôt que de casser la vérification.
+  const cleanRemoteIp = remoteIp?.split("%", 1)[0]?.trim();
+  if (cleanRemoteIp && isIP(cleanRemoteIp) !== 0) {
+    params.set("remoteip", cleanRemoteIp);
   }
 
   try {
@@ -55,10 +69,17 @@ export async function verifyHCaptcha(
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: params.toString(),
     });
-    const data = (await response.json()) as { success?: boolean };
+    const data = (await response.json()) as {
+      success?: boolean;
+      "error-codes"?: string[];
+    };
     return data?.success === true
       ? { ok: true, code: "CAPTCHA_OK" }
-      : { ok: false, code: "CAPTCHA_FAILED" };
+      : {
+          ok: false,
+          code: "CAPTCHA_FAILED",
+          errorCodes: data?.["error-codes"],
+        };
   } catch {
     return { ok: false, code: "CAPTCHA_UNAVAILABLE" };
   }

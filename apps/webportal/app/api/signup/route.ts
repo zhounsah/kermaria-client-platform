@@ -8,6 +8,7 @@ import {
   checkRateLimit,
   getRequestIdentifier,
 } from "@/lib/rate-limit";
+import { logBffFailure } from "@/lib/bff-observability";
 import { callInternalSignup, verifyHCaptcha } from "@/lib/signup-server";
 
 type SignupRequestBody = {
@@ -122,6 +123,21 @@ export async function POST(request: NextRequest) {
     typeof body.hcaptchaToken === "string" ? body.hcaptchaToken : null;
   const captcha = await verifyHCaptcha(captchaToken, identifier);
   if (!captcha.ok) {
+    // Le message client reste générique (non-leak), mais on trace le code
+    // interne réel + les error-codes hCaptcha pour pouvoir distinguer une
+    // mauvaise config (CAPTCHA_MISCONFIGURED), un mismatch sitekey/secret,
+    // une indisponibilité réseau (CAPTCHA_UNAVAILABLE) ou un vrai échec.
+    logBffFailure({
+      category: "captcha",
+      code: captcha.code,
+      correlation_id: correlationId,
+      operation: "signup.verifyHCaptcha",
+      status: 400,
+      surface: "webportal-bff",
+      detail: captcha.errorCodes?.length
+        ? captcha.errorCodes.join(",")
+        : undefined,
+    });
     return NextResponse.json(
       {
         code: "CAPTCHA_FAILED",
