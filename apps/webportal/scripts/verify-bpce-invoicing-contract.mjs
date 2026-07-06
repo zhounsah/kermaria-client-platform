@@ -35,7 +35,17 @@ assert.match(adminDocumentPage, /AdminInvoiceIssuingSection/, "La page admin doi
 assert.match(issuingSection, /Émettre la facture BPCE/, "Le bouton d'émission doit être présent.");
 assert.match(issuingSection, /fiscalNumber/, "Le numéro fiscal doit être affiché après émission.");
 assert.match(issuingSection, /invoice\/pdf/, "Le lien de téléchargement PDF doit être présent.");
-assert.doesNotMatch(issuingSection, /Payer|paiement en ligne|PayPal|Stripe/, "Aucun paiement en ligne ne doit être exposé.");
+// V0.21 : la fiche admin expose un marquage manuel « Marquer payé (hors PayPal) »
+// (réconciliation hors ligne d'un règlement virement/chèque/espèces via
+// /mark-as-paid). Ce n'est PAS un rail de paiement en ligne : la section
+// d'émission BPCE ne doit initier aucun paiement en ligne (pas de bouton
+// client PayPal/Stripe, pas de create-order/create-intent/Checkout).
+assert.match(issuingSection, /Marquer payé \(hors PayPal\)/, "Le marquage manuel hors PayPal doit être présent (V0.21).");
+assert.doesNotMatch(
+  issuingSection,
+  /create-order|create-intent|Checkout|payer en ligne|stripe/i,
+  "Aucune initiation de paiement en ligne ne doit être exposée côté admin BPCE.",
+);
 
 // Routes BFF admin
 assert.match(issueRoute, /\/internal\/admin\/commercial-documents/, "La route issue doit pointer vers l'API interne.");

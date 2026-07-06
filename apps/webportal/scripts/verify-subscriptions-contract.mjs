@@ -30,6 +30,7 @@ const cancelButton = await read(
 const adminNav = await read("components/AdminNavigation.tsx");
 const catalogForm = await read("components/AdminCatalogOfferForm.tsx");
 const adminCatalogPage = await read("app/admin/catalog/page.tsx");
+const adminCatalogDetailPage = await read("app/admin/catalog/[id]/page.tsx");
 const servicesPage = await read("app/services/page.tsx");
 
 // Repo-level artefacts
@@ -426,17 +427,20 @@ assert.match(
 assert.match(
   adminCatalogPage,
   /billingCadence/,
-  "La page catalogue doit afficher la cadence.",
+  "La liste catalogue doit afficher la cadence.",
 );
+// V0.23 refonte catalogue : la liste /admin/catalog est devenue tabulaire ;
+// l'affichage des plan ids PayPal a migré vers la fiche détail
+// /admin/catalog/[id] (et le formulaire d'édition AdminCatalogOfferForm).
 assert.match(
-  adminCatalogPage,
+  adminCatalogDetailPage,
   /paypalPlanIdSandbox/,
-  "La page catalogue doit afficher l'id sandbox.",
+  "La fiche catalogue détail doit afficher l'id sandbox.",
 );
 assert.match(
-  adminCatalogPage,
+  adminCatalogDetailPage,
   /paypalPlanIdLive/,
-  "La page catalogue doit afficher l'id live.",
+  "La fiche catalogue détail doit afficher l'id live.",
 );
 
 // --- Service+repo wiring ---
@@ -460,10 +464,12 @@ assert.match(
   /ActivateAsync/,
   "Maria repo doit avoir ActivateAsync.",
 );
+// V0.29 : lookup généralisé multi-rail — GetByPayPalIdAsync renommé
+// GetByExternalIdAsync(rail, externalId), utilisé par PayPal ET Stripe.
 assert.match(
   subscriptionRepoMaria,
-  /GetByPayPalIdAsync/,
-  "Maria repo doit avoir GetByPayPalIdAsync.",
+  /GetByExternalIdAsync/,
+  "Maria repo doit avoir GetByExternalIdAsync (lookup multi-rail V0.29).",
 );
 assert.match(
   commercialRepoMaria,
