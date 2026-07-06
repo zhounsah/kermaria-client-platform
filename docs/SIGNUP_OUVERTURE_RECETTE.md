@@ -4,6 +4,16 @@ Statut : **inscriptions ouvertes en recette interne `@home.bzh`** le 2026-07-06,
 après correction de l'envoi email live (voir plus bas). Ouverture publique
 **non faite** (gated V1.0 RC + hardware R740xd).
 
+> **Déploiement effectué le 2026-07-06.** Configs régénérées et poussées sur
+> SRV-01 (`webportal.config.json`) et SRV-02 (`api-internal.config.json`) avec
+> les overrides staging (`PUBLIC_PORTAL_URL=https://portail.home.bzh`,
+> `INTERNAL_API_URL=http://192.168.100.202:5000`, `SQL_HOST=192.168.100.207`).
+> Services redémarrés : `KermariaWebportal` (SRV-01, 24 clés chargées dont
+> hCaptcha, Next.js Ready, stderr vide) et `KermariaApiInternal` (SRV-02,
+> `health/ready` = healthy : config + mariadb + ad). Reste la **recette
+> fonctionnelle manuelle** (signup `@home.bzh` → email vérif → approbation →
+> set-password), à consigner dans [V0.24_SUIVI.md](V0.24_SUIVI.md).
+
 Références : [V0.26_SELF_SERVICE_SIGNUP.md](V0.26_SELF_SERVICE_SIGNUP.md) (cadrage
 + archi), [V0.26_USER_GUIDE_SIGNUP.md](V0.26_USER_GUIDE_SIGNUP.md),
 [V0.30_EMAIL_LIVE_TEST.md](V0.30_EMAIL_LIVE_TEST.md) (allowlist),
