@@ -1224,7 +1224,24 @@ Start-Service KermariaApiInternal
 
 Sur KERMARIA-SRV-01 :
 
+> **Piege (rencontre 2026-07-06).** Le paquet standalone produit par
+> `next build` (section 1) ne contient QUE `apps\` + `node_modules\`.
+> Il n'inclut NI le wrapper `start-webportal.ps1` que NSSM lance
+> (`-File C:\apps\webportal\start-webportal.ps1`), NI le dossier `logs\`
+> (avec son ACL `svc_api_portal_ad:(OI)(CI)M` requise pour que NSSM y
+> ecrive stdout/stderr). Une bascule par simple renommage les **perd**
+> → `Start-Service KermariaWebportal` echoue (`StartServiceFailed`,
+> service en etat `Paused`). Avant de renommer, semer ces deux elements
+> dans `webportal-staging` (copie depuis la live courante) :
+
 ```powershell
+# Completer le -staging avec les elements hors paquet standalone
+Copy-Item C:\apps\webportal\start-webportal.ps1 `
+  C:\apps\webportal-staging\start-webportal.ps1 -Force
+New-Item -ItemType Directory -Force -Path C:\apps\webportal-staging\logs | Out-Null
+icacls C:\apps\webportal-staging\logs /grant:r 'HOME\svc_api_portal_ad:(OI)(CI)M'
+
+# Bascule
 Stop-Service KermariaWebportal
 Rename-Item C:\apps\webportal C:\apps\webportal-old-<DATE>
 Rename-Item C:\apps\webportal-staging C:\apps\webportal
