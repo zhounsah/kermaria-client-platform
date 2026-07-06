@@ -50,6 +50,10 @@ public interface ISignupService
         string? token,
         string? password,
         CancellationToken cancellationToken);
+
+    Task<SignupOperationResult> ValidateSetPasswordTokenAsync(
+        string? token,
+        CancellationToken cancellationToken);
 }
 
 public sealed class SignupService : ISignupService
@@ -349,6 +353,42 @@ public sealed class SignupService : ISignupService
         return new SignupOperationResult(
             true, "PASSWORD_SET",
             "Mot de passe défini. Vous pouvez désormais vous connecter.");
+    }
+
+    // Validation non destructive du lien de définition de mot de passe :
+    // utilisée au chargement (GET) de la page /set-password pour décider
+    // d'afficher le formulaire ou l'état « lien invalide / expiré » SANS
+    // consommer le jeton (la consommation reste le POST SetPasswordAsync).
+    // Le hash du jeton étant effacé à la consommation, un lien déjà utilisé
+    // n'est plus retrouvé et retombe sur TOKEN_INVALID, comme un lien inconnu.
+    public async Task<SignupOperationResult> ValidateSetPasswordTokenAsync(
+        string? token,
+        CancellationToken cancellationToken)
+    {
+        var normalizedToken = token?.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedToken))
+        {
+            return TokenInvalid();
+        }
+
+        var target = await _repository.FindApprovedByPasswordHashAsync(
+            HashToken(normalizedToken), cancellationToken);
+        if (target is null)
+        {
+            return TokenInvalid();
+        }
+
+        if (target.PasswordSetupExpiresAtUtc is { } expiry
+            && expiry < DateTime.UtcNow)
+        {
+            return new SignupOperationResult(
+                false, "TOKEN_EXPIRED",
+                "Ce lien de définition de mot de passe a expiré.");
+        }
+
+        return new SignupOperationResult(
+            true, "TOKEN_VALID",
+            "Lien valide. Choisissez votre mot de passe.");
     }
 
     private static SignupOperationResult Accepted()

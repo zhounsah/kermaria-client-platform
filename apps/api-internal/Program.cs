@@ -1065,6 +1065,41 @@ app.MapPost(
         });
     });
 
+// V0.26 : validation non destructive du lien de définition de mot de passe.
+// Appelée au chargement de la page /set-password pour afficher directement
+// l'état « lien invalide / expiré » sans laisser l'utilisateur remplir un
+// formulaire voué à l'échec. NE CONSOMME PAS le jeton : l'anti-rejeu reste
+// entièrement porté par le POST /internal/signup/set-password (seul point de
+// consommation), on ne trace donc pas d'audit sur cette simple lecture.
+app.MapGet(
+    "/internal/signup/set-password/validate",
+    async (
+        HttpContext context,
+        ISignupService signupService) =>
+    {
+        var correlationId = context.GetCorrelationId();
+        var token = context.Request.Query["token"].FirstOrDefault();
+        var result = await signupService.ValidateSetPasswordTokenAsync(
+            token, context.RequestAborted);
+
+        if (!result.Succeeded)
+        {
+            var statusCode = result.Code == "TOKEN_EXPIRED"
+                ? StatusCodes.Status410Gone
+                : StatusCodes.Status400BadRequest;
+            return Results.Json(
+                new ApiError(result.Code, result.Message, correlationId),
+                statusCode: statusCode);
+        }
+
+        return Results.Ok(new
+        {
+            code = result.Code,
+            message = result.Message,
+            correlation_id = correlationId
+        });
+    });
+
 app.MapGet(
     "/internal/portal/commercial-documents",
     async (

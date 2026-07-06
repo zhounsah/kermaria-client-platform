@@ -117,30 +117,77 @@ export async function callInternalSignup(
       body: JSON.stringify(body),
     });
 
-    const payload = await safeReadJson(upstream);
-    return {
-      ok: upstream.ok,
-      status: upstream.status,
-      code:
-        typeof payload?.code === "string"
-          ? payload.code
-          : upstream.ok
-            ? "OK"
-            : "SIGNUP_REQUEST_FAILED",
-      message:
-        typeof payload?.message === "string"
-          ? payload.message
-          : upstream.ok
-            ? "Demande traitée."
-            : "La demande n'a pas pu être traitée.",
-      correlationId:
-        typeof payload?.correlation_id === "string"
-          ? payload.correlation_id
-          : correlationId,
-    };
+    return toResult(upstream, await safeReadJson(upstream), correlationId);
   } catch {
     return unavailable();
   }
+}
+
+// Validation non destructive (GET) du jeton de définition de mot de passe.
+// Permet à la page /set-password d'afficher l'état « lien invalide / expiré »
+// dès le chargement, sans consommer le jeton (la consommation reste le POST
+// /internal/signup/set-password). Relais anonyme X-Service-Auth, sans session.
+export async function validateSetPasswordToken(
+  token: string,
+  correlationId: string,
+): Promise<InternalSignupResult> {
+  let internalApiUrl: string | undefined;
+  try {
+    internalApiUrl = getInternalApiUrl();
+  } catch {
+    return unavailable();
+  }
+
+  if (!internalApiUrl) {
+    return unavailable();
+  }
+
+  try {
+    const upstream = await fetch(
+      `${internalApiUrl}/internal/signup/set-password/validate?token=${encodeURIComponent(token)}`,
+      {
+        method: "GET",
+        cache: "no-store",
+        signal: AbortSignal.timeout(INTERNAL_TIMEOUT_MS),
+        headers: {
+          Accept: "application/json",
+          ...getInternalServiceHeaders(),
+          [CORRELATION_HEADER]: correlationId,
+        },
+      },
+    );
+
+    return toResult(upstream, await safeReadJson(upstream), correlationId);
+  } catch {
+    return unavailable();
+  }
+}
+
+function toResult(
+  upstream: Response,
+  payload: Record<string, unknown> | null,
+  correlationId: string,
+): InternalSignupResult {
+  return {
+    ok: upstream.ok,
+    status: upstream.status,
+    code:
+      typeof payload?.code === "string"
+        ? payload.code
+        : upstream.ok
+          ? "OK"
+          : "SIGNUP_REQUEST_FAILED",
+    message:
+      typeof payload?.message === "string"
+        ? payload.message
+        : upstream.ok
+          ? "Demande traitée."
+          : "La demande n'a pas pu être traitée.",
+    correlationId:
+      typeof payload?.correlation_id === "string"
+        ? payload.correlation_id
+        : correlationId,
+  };
 }
 
 function unavailable(): InternalSignupResult {

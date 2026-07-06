@@ -158,6 +158,20 @@ check("hCaptcha vérifié côté serveur, fail-closed en production", () => {
 check("BFF set-password relaie vers l'API interne", () => {
   assert.match(setPasswordRoute, /\/internal\/signup\/set-password/);
 });
+check("lien set-password validé au chargement (GET non destructif)", () => {
+  // API : endpoint GET dédié, distinct du POST qui consomme le jeton
+  assert.match(
+    programCs,
+    /app\.MapGet\(\s*"\/internal\/signup\/set-password\/validate"/,
+  );
+  assert.match(signupService, /ValidateSetPasswordTokenAsync/);
+  // BFF : relais GET vers l'endpoint de validation
+  assert.match(signupServerLib, /validateSetPasswordToken/);
+  assert.match(signupServerLib, /set-password\/validate/);
+  // Page : décide côté serveur d'afficher le formulaire ou l'erreur
+  assert.match(setPasswordPage, /validateSetPasswordToken/);
+  assert.match(setPasswordPage, /Définition impossible/);
+});
 check("routes admin signup câblées", () => {
   assert.match(adminSignupsRoute, /handleAdminGet/);
   assert.match(adminSignupApproveRoute, /handleAdminMutation/);
