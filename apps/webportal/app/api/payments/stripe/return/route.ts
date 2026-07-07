@@ -1,13 +1,14 @@
 import "server-only";
 
 import { NextRequest, NextResponse } from "next/server";
+import { getPortalPublicUrl } from "@/lib/public-routes";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const documentId = searchParams.get("documentId");
   const sessionId = searchParams.get("session_id");
 
-  const portalUrl = process.env.PUBLIC_PORTAL_URL?.replace(/\/$/, "") ?? "http://localhost:3000";
+  const portalUrl = getPortalPublicUrl(request);
 
   if (!documentId || !sessionId) {
     return NextResponse.redirect(`${portalUrl}/invoices?payment=error`);

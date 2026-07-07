@@ -10,7 +10,9 @@ import { requireAdminSession } from "@/lib/auth";
 import {
   commercialOfferBillingCadence,
   commercialOfferStatus,
+  formatCommitmentMonths,
   formatCurrencyFromCents,
+  formatPaymentModeLabel,
 } from "@/lib/formatters";
 import { getAdminCatalog } from "@/lib/internal-api";
 
@@ -52,10 +54,19 @@ export default async function AdminCatalogPage({
             Créer une offre
           </Link>
         }
-        description="Catalogue informatif. Chaque ligne ouvre la fiche de l'offre pour modification."
+        description="Catalogue facturable. Les variantes packs v0.32 y cohabitent avec les anciennes offres techniques."
         eyebrow="Administration interne"
         title="Catalogue commercial"
       />
+
+      <p>
+        <Link
+          className="button button-secondary"
+          href="/admin/public-pack-catalog"
+        >
+          Gerer la vitrine packs
+        </Link>
+      </p>
 
       <section className="content-panel admin-safety-panel">
         <div>
@@ -133,9 +144,25 @@ export default async function AdminCatalogPage({
               <>
                 <strong key={`${offer.id}-name`}>{offer.name}</strong>
                 <div className="cell-secondary">{offer.unitLabel}</div>
+                {offer.publicPackCode ? (
+                  <div className="cell-secondary">
+                    {formatCommitmentMonths(offer.commitmentMonths)} ·{" "}
+                    {formatPaymentModeLabel(offer.paymentMode)}
+                  </div>
+                ) : null}
               </>,
               offer.category,
-              formatCurrencyFromCents(offer.priceAmountCents),
+              <>
+                <strong key={`${offer.id}-price`}>
+                  {formatCurrencyFromCents(offer.priceAmountCents)}
+                </strong>
+                {offer.setupFeeAmountCents !== null ? (
+                  <div className="cell-secondary">
+                    Mise en service{" "}
+                    {formatCurrencyFromCents(offer.setupFeeAmountCents)}
+                  </div>
+                ) : null}
+              </>,
               <StatusBadge
                 key={`${offer.id}-cadence`}
                 label={cadenceBadge.label}

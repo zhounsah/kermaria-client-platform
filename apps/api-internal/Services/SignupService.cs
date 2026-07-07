@@ -35,6 +35,10 @@ public interface ISignupService
         string id,
         CancellationToken cancellationToken);
 
+    Task<PendingPackSelectionSummary?> GetPendingPackSelectionAsync(
+        PortalSessionContext session,
+        CancellationToken cancellationToken);
+
     Task<SignupOperationResult> ApproveAsync(
         string id,
         string correlationId,
@@ -108,6 +112,7 @@ public sealed class SignupService : ISignupService
         var email = payload.Email?.Trim().ToLowerInvariant() ?? string.Empty;
         var phone = NormalizeOptional(payload.Phone, 40);
         var message = NormalizeOptional(payload.Message, MaxMessageLength);
+        var packSelection = ValidatePackSelection(payload.PackSelection);
 
         if (companyName.Length is < 1 or > MaxNameLength
             || contactName.Length is < 1 or > MaxNameLength
@@ -141,6 +146,7 @@ public sealed class SignupService : ISignupService
             email,
             phone,
             message,
+            packSelection,
             HashToken(token),
             DateTime.UtcNow.AddHours(_configuration.VerificationTokenTtlHours),
             NormalizeOptional(payload.SourceAddress, 45),
@@ -211,6 +217,26 @@ public sealed class SignupService : ISignupService
     {
         var record = await _repository.GetByIdAsync(id, cancellationToken);
         return record is null ? null : ToDetail(record);
+    }
+
+    public async Task<PendingPackSelectionSummary?> GetPendingPackSelectionAsync(
+        PortalSessionContext session,
+        CancellationToken cancellationToken)
+    {
+        var record = await _repository.GetLatestApprovedByCustomerIdAsync(
+            session.CustomerId,
+            cancellationToken);
+        if (record?.PackSelection is null)
+        {
+            return null;
+        }
+
+        return new PendingPackSelectionSummary(
+            record.Id,
+            record.Status,
+            ToNullableIso(record.ApprovedAtUtc),
+            ToIso(record.CreatedAtUtc),
+            record.PackSelection);
     }
 
     public async Task<SignupOperationResult> ApproveAsync(
@@ -493,12 +519,57 @@ public sealed class SignupService : ISignupService
             record.Email,
             record.Phone,
             record.Message,
+            record.PackSelection,
             record.SourceAddress,
             record.RejectedReason,
             ToIso(record.CreatedAtUtc),
             ToIso(record.UpdatedAtUtc),
             ToNullableIso(record.ApprovedAtUtc),
             ToNullableIso(record.RejectedAtUtc));
+
+    private static SignupPackSelectionSnapshot? ValidatePackSelection(
+        SignupPackSelectionSnapshot? snapshot)
+    {
+        if (snapshot is null)
+        {
+            return null;
+        }
+
+        var packKey = snapshot.PackKey?.Trim();
+        var packLabel = snapshot.PackLabel?.Trim();
+        var offerId = snapshot.OfferId?.Trim();
+        var offerExternalReference = snapshot.OfferExternalReference?.Trim();
+        var paymentMode = snapshot.PaymentMode?.Trim();
+        var currency = snapshot.Currency?.Trim().ToUpperInvariant();
+
+        if (string.IsNullOrWhiteSpace(packKey)
+            || string.IsNullOrWhiteSpace(packLabel)
+            || string.IsNullOrWhiteSpace(offerId)
+            || string.IsNullOrWhiteSpace(offerExternalReference)
+            || string.IsNullOrWhiteSpace(paymentMode)
+            || string.IsNullOrWhiteSpace(currency)
+            || snapshot.CommitmentMonths is not 1 and not 6 and not 12
+            || snapshot.BillingIntervalMonths is < 1 or > 12
+            || snapshot.DiscountPercent is < 0 or > 100
+            || snapshot.MonthlyPriceAmountCents < 0
+            || snapshot.BillingPriceAmountCents < 0
+            || snapshot.SetupFeeAmountCents < 0
+            || snapshot.FirstChargeAmountCents < 0
+            || currency != "EUR")
+        {
+            throw new PortalValidationException();
+        }
+
+        return snapshot with
+        {
+            PackKey = packKey,
+            PackLabel = packLabel,
+            OfferId = offerId,
+            OfferExternalReference = offerExternalReference,
+            PaymentMode = paymentMode,
+            Currency = currency
+        };
+    }
 
     private static string ToIso(DateTime value)
         => DateTime.SpecifyKind(value, DateTimeKind.Utc).ToString("O");

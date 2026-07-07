@@ -15,7 +15,8 @@ public interface IStripeWebhookService
 public sealed class StripeWebhookService : IStripeWebhookService
 {
     private readonly IStripeWebhookRepository _events;
-    private readonly ISubscriptionRepository _subscriptions;
+    private readonly ISubscriptionRepository _subscriptionRepository;
+    private readonly ISubscriptionService _subscriptions;
     private readonly ICommercialRepository _commercial;
     private readonly IInvoiceIssuingService _issuing;
     private readonly IAuditService _audit;
@@ -23,13 +24,15 @@ public sealed class StripeWebhookService : IStripeWebhookService
 
     public StripeWebhookService(
         IStripeWebhookRepository events,
-        ISubscriptionRepository subscriptions,
+        ISubscriptionRepository subscriptionRepository,
+        ISubscriptionService subscriptions,
         ICommercialRepository commercial,
         IInvoiceIssuingService issuing,
         IAuditService audit,
         ILogger<StripeWebhookService> logger)
     {
         _events = events;
+        _subscriptionRepository = subscriptionRepository;
         _subscriptions = subscriptions;
         _commercial = commercial;
         _issuing = issuing;
@@ -55,27 +58,38 @@ public sealed class StripeWebhookService : IStripeWebhookService
         var existing = await _events.GetByEventIdAsync(eventId, cancellationToken);
         if (existing is not null)
         {
+            if (existing.Status is not "failed")
+            {
+                _logger.LogInformation(
+                    "Duplicate Stripe webhook event {EventId} ignored (status={Status})",
+                    eventId,
+                    existing.Status);
+                return new StripeWebhookProcessingResult(
+                    eventId,
+                    existing.Status,
+                    ErrorMessage: null);
+            }
+
             _logger.LogInformation(
-                "Duplicate Stripe webhook event {EventId} ignored (status={Status})",
+                "Retrying Stripe webhook event {EventId} after prior status {Status}",
                 eventId,
                 existing.Status);
-            return new StripeWebhookProcessingResult(
-                eventId,
-                existing.Status,
-                ErrorMessage: null);
         }
-
-        await _events.InsertReceivedAsync(
-            eventId,
-            eventType,
-            payload.ResourceId,
-            rawPayload,
-            cancellationToken);
+        else
+        {
+            await _events.InsertReceivedAsync(
+                eventId,
+                eventType,
+                payload.ResourceId,
+                rawPayload,
+                cancellationToken);
+        }
 
         try
         {
             var status = await DispatchAsync(
                 eventType,
+                payload.ResourceId,
                 rawPayload,
                 correlationId,
                 cancellationToken);
@@ -119,6 +133,7 @@ public sealed class StripeWebhookService : IStripeWebhookService
 
     private async Task<string> DispatchAsync(
         string eventType,
+        string? resourceId,
         string rawPayload,
         string correlationId,
         CancellationToken cancellationToken)
@@ -132,11 +147,13 @@ public sealed class StripeWebhookService : IStripeWebhookService
                     cancellationToken);
 
             case "invoice.paid":
-                await HandleInvoicePaidAsync(
+            case "invoice.payment_succeeded":
+                return await HandleInvoicePaymentSucceededAsync(
+                    resourceId,
+                    eventType,
                     rawPayload,
                     correlationId,
                     cancellationToken);
-                return "processed";
 
             case "customer.subscription.deleted":
                 await HandleSubscriptionDeletedAsync(
@@ -147,7 +164,7 @@ public sealed class StripeWebhookService : IStripeWebhookService
 
             default:
                 _logger.LogInformation(
-                    "Stripe webhook event {EventType} not handled — marked ignored",
+                    "Stripe webhook event {EventType} not handled - marked ignored",
                     eventType);
                 return "ignored";
         }
@@ -161,16 +178,16 @@ public sealed class StripeWebhookService : IStripeWebhookService
         var invoiceId = ReadDataObjectString(rawPayload, "invoice");
         if (!string.IsNullOrWhiteSpace(invoiceId))
         {
-            // This PaymentIntent belongs to a subscription invoice — the
-            // "invoice.paid" event already handles confirmation for it.
             return "ignored";
         }
 
         var documentId = ReadDataObjectMetadataString(rawPayload, "document_id");
         if (string.IsNullOrWhiteSpace(documentId))
         {
-            throw new InvalidOperationException(
-                "payment_intent.succeeded payload has no metadata.document_id.");
+            _logger.LogWarning(
+                "Stripe payment_intent.succeeded event {PaymentIntentId} ignored because metadata.document_id is missing",
+                ReadDataObjectString(rawPayload, "id") ?? "<unknown>");
+            return "ignored";
         }
 
         var confirmResult = await _issuing.ConfirmPaymentAsync(
@@ -187,19 +204,35 @@ public sealed class StripeWebhookService : IStripeWebhookService
         return "processed";
     }
 
-    private async Task HandleInvoicePaidAsync(
+    private async Task<string> HandleInvoicePaymentSucceededAsync(
+        string? resourceId,
+        string eventType,
         string rawPayload,
         string correlationId,
         CancellationToken cancellationToken)
     {
-        var stripeSubscriptionId = ReadDataObjectString(rawPayload, "subscription");
+        var invoiceId = WebhookResourceIdNormalizer.Normalize(resourceId)
+            ?? ReadDataObjectString(rawPayload, "id");
+        if (!string.IsNullOrWhiteSpace(invoiceId)
+            && await _events.HasProcessedInvoiceSuccessEventAsync(
+                invoiceId,
+                cancellationToken))
+        {
+            _logger.LogInformation(
+                "Stripe invoice success event {EventType} ignored because invoice {InvoiceId} is already processed",
+                eventType,
+                invoiceId);
+            return "ignored";
+        }
+
+        var stripeSubscriptionId = ReadStripeInvoiceSubscriptionId(rawPayload);
         if (string.IsNullOrWhiteSpace(stripeSubscriptionId))
         {
             throw new InvalidOperationException(
-                "invoice.paid payload has no subscription id.");
+                $"{eventType} payload has no subscription id.");
         }
 
-        var subscription = await _subscriptions.GetByExternalIdAsync(
+        var subscription = await _subscriptionRepository.GetByExternalIdAsync(
             "stripe",
             stripeSubscriptionId,
             cancellationToken)
@@ -212,7 +245,8 @@ public sealed class StripeWebhookService : IStripeWebhookService
             subscription = await _subscriptions.ActivateAsync(
                 subscription.Id,
                 now,
-                now.AddMonths(1),
+                now,
+                correlationId,
                 cancellationToken);
             await _audit.RecordAsync(
                 new AuditEvent(
@@ -225,14 +259,30 @@ public sealed class StripeWebhookService : IStripeWebhookService
                 cancellationToken);
         }
 
-        var title =
-            $"Échéance mensuelle {DateTime.UtcNow:yyyy-MM} — {subscription.OfferName}";
+        var extraLines = subscription.PaidCyclesCount == 0
+            && subscription.SetupFeeAmountCents > 0
+            ? new[]
+            {
+                new SubscriptionBillingDocumentLineRequest(
+                    null,
+                    "Mise en service",
+                    $"Mise en service du {subscription.OfferName}",
+                    1m,
+                    "forfait",
+                    subscription.SetupFeeAmountCents,
+                    null,
+                    5)
+            }
+            : Array.Empty<SubscriptionBillingDocumentLineRequest>();
+        var title = $"Echeance {DateTime.UtcNow:yyyy-MM} - {subscription.OfferName}";
 
-        var documentId = await _commercial.CreateBillingDocumentFromOfferAsync(
-            subscription.CustomerId,
-            subscription.CommercialOfferId,
-            subscription.Id,
-            title,
+        var documentId = await _commercial.CreateBillingDocumentForSubscriptionAsync(
+            new SubscriptionBillingDocumentRequest(
+                subscription.CustomerId,
+                subscription.CommercialOfferId,
+                subscription.Id,
+                title,
+                extraLines),
             correlationId,
             cancellationToken);
 
@@ -258,6 +308,11 @@ public sealed class StripeWebhookService : IStripeWebhookService
                 $"BPCE confirm failed: {confirmResult.Code} {confirmResult.Message}");
         }
 
+        subscription = await _subscriptions.RecordPaymentAsync(
+            subscription.Id,
+            DateTime.UtcNow,
+            cancellationToken);
+
         await _audit.RecordAsync(
             new AuditEvent(
                 correlationId,
@@ -267,6 +322,8 @@ public sealed class StripeWebhookService : IStripeWebhookService
                 TargetReference: subscription.Id,
                 CustomerId: subscription.CustomerId),
             cancellationToken);
+
+        return "processed";
     }
 
     private async Task HandleSubscriptionDeletedAsync(
@@ -281,7 +338,7 @@ public sealed class StripeWebhookService : IStripeWebhookService
                 "customer.subscription.deleted payload has no id.");
         }
 
-        var subscription = await _subscriptions.GetByExternalIdAsync(
+        var subscription = await _subscriptionRepository.GetByExternalIdAsync(
             "stripe",
             stripeSubscriptionId,
             cancellationToken)
@@ -291,6 +348,9 @@ public sealed class StripeWebhookService : IStripeWebhookService
         var updated = await _subscriptions.UpdateStatusAsync(
             subscription.Id,
             "cancelled",
+            "subscription.provisioning.cancelled",
+            correlationId,
+            requestedByUserId: null,
             cancellationToken);
         await _audit.RecordAsync(
             new AuditEvent(
@@ -338,6 +398,45 @@ public sealed class StripeWebhookService : IStripeWebhookService
                 && value.ValueKind == JsonValueKind.String)
             {
                 return value.GetString();
+            }
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+
+        return null;
+    }
+
+    private static string? ReadStripeInvoiceSubscriptionId(string rawPayload)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(rawPayload);
+            if (!document.RootElement.TryGetProperty("data", out var data)
+                || !data.TryGetProperty("object", out var dataObject))
+            {
+                return null;
+            }
+
+            if (dataObject.TryGetProperty("subscription", out var directSubscription)
+                && directSubscription.ValueKind == JsonValueKind.String)
+            {
+                return directSubscription.GetString();
+            }
+
+            if (dataObject.TryGetProperty("parent", out var parent)
+                && parent.ValueKind == JsonValueKind.Object
+                && parent.TryGetProperty(
+                    "subscription_details",
+                    out var subscriptionDetails)
+                && subscriptionDetails.ValueKind == JsonValueKind.Object
+                && subscriptionDetails.TryGetProperty(
+                    "subscription",
+                    out var nestedSubscription)
+                && nestedSubscription.ValueKind == JsonValueKind.String)
+            {
+                return nestedSubscription.GetString();
             }
         }
         catch (JsonException)

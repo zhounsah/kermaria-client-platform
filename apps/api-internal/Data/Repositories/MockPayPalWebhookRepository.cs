@@ -46,7 +46,7 @@ public sealed class MockPayPalWebhookRepository : IPayPalWebhookRepository
                 id,
                 eventId,
                 eventType,
-                resourceId,
+                WebhookResourceIdNormalizer.Normalize(resourceId),
                 "received");
             return Task.FromResult(id);
         }

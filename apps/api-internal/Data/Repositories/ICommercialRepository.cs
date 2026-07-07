@@ -82,11 +82,8 @@ public interface ICommercialRepository
         string paymentMethod,
         CancellationToken cancellationToken);
 
-    Task<string> CreateBillingDocumentFromOfferAsync(
-        string customerId,
-        string offerId,
-        string subscriptionId,
-        string title,
+    Task<string> CreateBillingDocumentForSubscriptionAsync(
+        SubscriptionBillingDocumentRequest request,
         string correlationId,
         CancellationToken cancellationToken);
 
@@ -111,3 +108,20 @@ public sealed record DocumentForIssuing(
     int TotalAmountCents,
     string Status,
     IReadOnlyList<CommercialDocumentLine> Lines);
+
+public sealed record SubscriptionBillingDocumentRequest(
+    string CustomerId,
+    string OfferId,
+    string SubscriptionId,
+    string Title,
+    IReadOnlyList<SubscriptionBillingDocumentLineRequest> Lines);
+
+public sealed record SubscriptionBillingDocumentLineRequest(
+    string? OfferId,
+    string Label,
+    string Description,
+    decimal Quantity,
+    string UnitLabel,
+    int UnitPriceCents,
+    int? TaxRateBasisPoints,
+    int SortOrder);

@@ -1,44 +1,18 @@
 import "server-only";
 
-import { headers } from "next/headers";
+import type { NextRequest } from "next/server";
 
-export const PUBLIC_ROUTES = [
-  "/",
-  "/offres",
-  "/a-propos",
-  "/contact",
-  "/mentions-legales",
-  "/politique-confidentialite",
-  "/cgv",
-  // V0.26 : parcours d'inscription self-service (chrome vitrine public).
-  "/signup",
-  "/set-password",
-] as const;
+import {
+  isPublicRoute,
+  PORTFOLIO_URL,
+  PUBLIC_ROUTES,
+} from "./public-route-config";
 
-// Portfolio statique copié sous apps/webportal/public/portfolio/.
-// Le `.html` explicite garde le bon contexte de directory pour que les
-// liens relatifs du portfolio (projects/, contact.html, etc.) résolvent.
-export const PORTFOLIO_URL = "/portfolio/index.html";
+const LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1"]);
 
-export function isPublicRoute(pathname: string | null | undefined): boolean {
-  if (!pathname) {
-    return false;
-  }
+type PortalRequestLike = Pick<NextRequest, "headers" | "nextUrl">;
 
-  if (pathname === "/") {
-    return true;
-  }
-
-  return PUBLIC_ROUTES.some(
-    (route) =>
-      route !== "/" && (pathname === route || pathname.startsWith(`${route}/`)),
-  );
-}
-
-export async function getCurrentPathname(): Promise<string | null> {
-  const headersList = await headers();
-  return headersList.get("x-pathname");
-}
+export { isPublicRoute, PORTFOLIO_URL, PUBLIC_ROUTES };
 
 export function isVitrinePublicEnabled(): boolean {
   return process.env.PUBLIC_VITRINE_ENABLED?.trim().toLowerCase() === "true";
@@ -48,10 +22,60 @@ export function isSignupEnabled(): boolean {
   return process.env.SIGNUP_ENABLED?.trim().toLowerCase() === "true";
 }
 
-export function getPortalPublicUrl(): string {
-  const fromEnv = process.env.PUBLIC_PORTAL_URL?.trim();
-  if (fromEnv) {
-    return fromEnv.replace(/\/+$/, "");
+function normalizeAbsoluteUrl(value: string): string | null {
+  try {
+    const url = new URL(value);
+    if (!["http:", "https:"].includes(url.protocol)) {
+      return null;
+    }
+    return url.toString().replace(/\/+$/, "");
+  } catch {
+    return null;
   }
+}
+
+function isLocalAbsoluteUrl(value: string): boolean {
+  try {
+    return LOCAL_HOSTNAMES.has(new URL(value).hostname);
+  } catch {
+    return false;
+  }
+}
+
+function getRequestOrigin(request: PortalRequestLike): string | null {
+  const forwardedProto = request.headers
+    .get("x-forwarded-proto")
+    ?.split(",")[0]
+    ?.trim();
+  const forwardedHost = request.headers
+    .get("x-forwarded-host")
+    ?.split(",")[0]
+    ?.trim();
+  const host = forwardedHost || request.headers.get("host")?.trim();
+  const protocol =
+    forwardedProto || request.nextUrl.protocol.replace(/:$/, "") || "https";
+
+  if (host) {
+    return normalizeAbsoluteUrl(`${protocol}://${host}`);
+  }
+
+  return normalizeAbsoluteUrl(request.nextUrl.origin);
+}
+
+export function getPortalPublicUrl(request?: PortalRequestLike): string {
+  const requestOrigin = request ? getRequestOrigin(request) : null;
+  if (requestOrigin && !isLocalAbsoluteUrl(requestOrigin)) {
+    return requestOrigin;
+  }
+
+  const fromEnv = normalizeAbsoluteUrl(process.env.PUBLIC_PORTAL_URL?.trim() ?? "");
+  if (fromEnv) {
+    return fromEnv;
+  }
+
+  if (requestOrigin) {
+    return requestOrigin;
+  }
+
   return "http://localhost:3000";
 }

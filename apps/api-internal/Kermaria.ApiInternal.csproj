@@ -21,5 +21,9 @@
       Include="Migrations\MariaDb\*.sql"
       CopyToOutputDirectory="PreserveNewest"
     />
+    <Content
+      Include="SeedContent\*"
+      CopyToOutputDirectory="PreserveNewest"
+    />
   </ItemGroup>
 </Project>

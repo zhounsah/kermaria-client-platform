@@ -17,6 +17,7 @@
     "test:replies": "node scripts/verify-client-replies-contract.mjs",
     "test:activity": "node scripts/verify-admin-activity-contract.mjs",
     "test:commercial": "node scripts/verify-commercial-foundation-contract.mjs",
+    "test:managed-content": "node scripts/verify-managed-content-contract.mjs",
     "test:ad-security": "node scripts/verify-ad-security-contract.mjs",
     "test:bpce": "node scripts/verify-bpce-invoicing-contract.mjs",
     "test:payments": "node scripts/verify-payment-channels-contract.mjs",
@@ -31,7 +32,8 @@
     "@kermaria/shared": "0.1.0",
     "next": "16.2.9",
     "react": "19.2.7",
-    "react-dom": "19.2.7"
+    "react-dom": "19.2.7",
+    "react-markdown": "^10.1.0"
   },
   "devDependencies": {
     "@types/node": "24.13.2",

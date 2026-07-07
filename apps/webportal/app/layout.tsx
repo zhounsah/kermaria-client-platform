@@ -2,12 +2,11 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 import { AppShell } from "@/components/AppShell";
-import { PublicShell } from "@/components/PublicShell";
 import {
-  getCurrentPathname,
   getPortalPublicUrl,
-  isPublicRoute,
+  isSignupEnabled,
 } from "@/lib/public-routes";
+import { getCurrentPortalSession } from "@/lib/auth";
 import "./globals.css";
 
 const SITE_TITLE = "Zachary HOUNSA-HOUNKPA EI - Espace client professionnel";
@@ -33,17 +32,15 @@ export const metadata: Metadata = {
 export default async function RootLayout({
   children,
 }: Readonly<{ children: ReactNode }>) {
-  const pathname = await getCurrentPathname();
-  const usePublicShell = isPublicRoute(pathname);
+  const session = await getCurrentPortalSession();
+  const signupEnabled = isSignupEnabled();
 
   return (
     <html lang="fr">
       <body>
-        {usePublicShell ? (
-          <PublicShell>{children}</PublicShell>
-        ) : (
-          <AppShell>{children}</AppShell>
-        )}
+        <AppShell session={session} signupEnabled={signupEnabled}>
+          {children}
+        </AppShell>
       </body>
     </html>
   );

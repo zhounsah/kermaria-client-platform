@@ -8,6 +8,12 @@ public sealed class MockStripeWebhookStore
 
 public sealed class MockStripeWebhookRepository : IStripeWebhookRepository
 {
+    private static readonly HashSet<string> ProcessedInvoiceSuccessEventTypes =
+    [
+        "invoice.paid",
+        "invoice.payment_succeeded"
+    ];
+
     private readonly MockStripeWebhookStore _store;
 
     public MockStripeWebhookRepository(MockStripeWebhookStore store)
@@ -23,6 +29,32 @@ public sealed class MockStripeWebhookRepository : IStripeWebhookRepository
         {
             _store.Events.TryGetValue(eventId, out var record);
             return Task.FromResult(record);
+        }
+    }
+
+    public Task<bool> HasProcessedInvoiceSuccessEventAsync(
+        string resourceId,
+        CancellationToken cancellationToken)
+    {
+        var normalizedResourceId = WebhookResourceIdNormalizer.Normalize(resourceId);
+        if (normalizedResourceId is null)
+        {
+            return Task.FromResult(false);
+        }
+
+        lock (_store.SyncRoot)
+        {
+            var exists = _store.Events.Values.Any(record =>
+                string.Equals(
+                    record.ResourceId,
+                    normalizedResourceId,
+                    StringComparison.Ordinal)
+                && string.Equals(
+                    record.Status,
+                    "processed",
+                    StringComparison.Ordinal)
+                && ProcessedInvoiceSuccessEventTypes.Contains(record.EventType));
+            return Task.FromResult(exists);
         }
     }
 
@@ -46,7 +78,7 @@ public sealed class MockStripeWebhookRepository : IStripeWebhookRepository
                 id,
                 eventId,
                 eventType,
-                resourceId,
+                WebhookResourceIdNormalizer.Normalize(resourceId),
                 "received");
             return Task.FromResult(id);
         }

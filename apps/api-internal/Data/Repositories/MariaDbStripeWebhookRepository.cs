@@ -5,6 +5,12 @@ namespace Kermaria.ApiInternal.Data.Repositories;
 
 public sealed class MariaDbStripeWebhookRepository : IStripeWebhookRepository
 {
+    private static readonly string[] ProcessedInvoiceSuccessEventTypes =
+    [
+        "invoice.paid",
+        "invoice.payment_succeeded"
+    ];
+
     private readonly string _connectionString;
 
     public MariaDbStripeWebhookRepository(SqlRuntimeConfiguration configuration)
@@ -45,6 +51,38 @@ public sealed class MariaDbStripeWebhookRepository : IStripeWebhookRepository
             reader.GetString("status"));
     }
 
+    public async Task<bool> HasProcessedInvoiceSuccessEventAsync(
+        string resourceId,
+        CancellationToken cancellationToken)
+    {
+        var normalizedResourceId = WebhookResourceIdNormalizer.Normalize(resourceId);
+        if (normalizedResourceId is null)
+        {
+            return false;
+        }
+
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*)
+            FROM stripe_webhook_events
+            WHERE resource_id = @resourceId
+              AND status = 'processed'
+              AND event_type IN (@eventTypePaid, @eventTypeSucceeded);
+            """;
+        command.Parameters.AddWithValue("resourceId", normalizedResourceId);
+        command.Parameters.AddWithValue(
+            "eventTypePaid",
+            ProcessedInvoiceSuccessEventTypes[0]);
+        command.Parameters.AddWithValue(
+            "eventTypeSucceeded",
+            ProcessedInvoiceSuccessEventTypes[1]);
+
+        var count = Convert.ToInt32(
+            await command.ExecuteScalarAsync(cancellationToken));
+        return count > 0;
+    }
+
     public async Task<string> InsertReceivedAsync(
         string eventId,
         string eventType,
@@ -83,7 +121,8 @@ public sealed class MariaDbStripeWebhookRepository : IStripeWebhookRepository
         command.Parameters.AddWithValue("eventType", eventType);
         command.Parameters.AddWithValue(
             "resourceId",
-            (object?)resourceId ?? DBNull.Value);
+            (object?)WebhookResourceIdNormalizer.Normalize(resourceId)
+            ?? DBNull.Value);
         command.Parameters.AddWithValue("rawPayload", rawPayload);
         await command.ExecuteNonQueryAsync(cancellationToken);
         return id;

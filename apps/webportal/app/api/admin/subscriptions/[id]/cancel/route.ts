@@ -11,12 +11,17 @@ import {
   getInternalSession,
   mutateInternalAdminData,
 } from "@/lib/internal-api";
+import { cancelPayPalSubscription, isPayPalConfigured } from "@/lib/paypal";
 import { getSessionCookieName } from "@/lib/session-config";
 import {
   getInternalApiUrl,
   getInternalServiceHeaders,
 } from "@/lib/runtime-config";
-import { cancelPayPalSubscription, isPayPalConfigured } from "@/lib/paypal";
+import {
+  cancelStripeSubscription,
+  getStripeMode,
+  scheduleStripeSubscriptionCancellationAtPeriodEnd,
+} from "@/lib/stripe";
 
 export async function POST(
   request: NextRequest,
@@ -46,7 +51,7 @@ export async function POST(
     const session = await getInternalSession(sessionToken, correlationId);
     if (session.user.role !== "internal_admin") {
       return NextResponse.json(
-        { code: "ACCESS_DENIED", message: "Accès refusé." },
+        { code: "ACCESS_DENIED", message: "Acces refuse." },
         { status: 403 },
       );
     }
@@ -92,49 +97,96 @@ export async function POST(
   }
 
   const detail = (await detailResponse.json()) as AdminSubscriptionDetail;
-  const paypalSubscriptionId = detail.subscription.paypalSubscriptionId;
+  const subscription = detail.subscription;
 
-  if (
-    paypalSubscriptionId
-    && detail.subscription.status !== "cancelled"
-    && detail.subscription.status !== "expired"
-  ) {
-    if (!isPayPalConfigured()) {
-      return NextResponse.json(
-        {
-          code: "PAYPAL_NOT_CONFIGURED",
-          message: "PayPal n'est pas configuré.",
-        },
-        { status: 503 },
-      );
-    }
-    try {
-      await cancelPayPalSubscription(
-        paypalSubscriptionId,
-        "Annulation administrative depuis le portail Kermaria.",
-      );
-    } catch (error) {
-      console.error("PayPal cancel subscription error:", error);
-      return NextResponse.json(
-        {
-          code: "PAYPAL_ERROR",
-          message:
-            "PayPal n'a pas pu annuler la souscription. Le statut local n'a pas été modifié.",
-        },
-        { status: 502 },
-      );
-    }
+  if (subscription.status === "pending_cancellation") {
+    return NextResponse.json(subscription);
   }
 
-  let result: SubscriptionSummary;
+  const nextBillingAt = subscription.nextBillingAt
+    ? new Date(subscription.nextBillingAt)
+    : null;
+  const shouldDeferCancellation =
+    (subscription.status === "active" || subscription.status === "suspended")
+    && nextBillingAt !== null
+    && nextBillingAt.getTime() > Date.now();
+
   try {
-    result = await mutateInternalAdminData<SubscriptionSummary, undefined>(
+    if (shouldDeferCancellation) {
+      if (subscription.rail === "stripe" && subscription.stripeSubscriptionId) {
+        if (getStripeMode() === "disabled") {
+          return NextResponse.json(
+            {
+              code: "STRIPE_NOT_CONFIGURED",
+              message: "Stripe n'est pas configure.",
+            },
+            { status: 503 },
+          );
+        }
+
+        await scheduleStripeSubscriptionCancellationAtPeriodEnd(
+          subscription.stripeSubscriptionId,
+        );
+      }
+    } else if (
+      subscription.status !== "cancelled"
+      && subscription.status !== "expired"
+    ) {
+      if (subscription.rail === "paypal" && subscription.paypalSubscriptionId) {
+        if (!isPayPalConfigured()) {
+          return NextResponse.json(
+            {
+              code: "PAYPAL_NOT_CONFIGURED",
+              message: "PayPal n'est pas configure.",
+            },
+            { status: 503 },
+          );
+        }
+
+        await cancelPayPalSubscription(
+          subscription.paypalSubscriptionId,
+          "Annulation administrative depuis le portail Kermaria.",
+        );
+      }
+
+      if (subscription.rail === "stripe" && subscription.stripeSubscriptionId) {
+        if (getStripeMode() === "disabled") {
+          return NextResponse.json(
+            {
+              code: "STRIPE_NOT_CONFIGURED",
+              message: "Stripe n'est pas configure.",
+            },
+            { status: 503 },
+          );
+        }
+
+        await cancelStripeSubscription(subscription.stripeSubscriptionId);
+      }
+    }
+  } catch (error) {
+    console.error("Payment cancel subscription error:", error);
+    return NextResponse.json(
+      {
+        code:
+          subscription.rail === "stripe" ? "STRIPE_ERROR" : "PAYPAL_ERROR",
+        message:
+          shouldDeferCancellation
+            ? "L'operateur de paiement n'a pas pu programmer la fin de terme. Le statut local n'a pas ete modifie."
+            : "L'operateur de paiement n'a pas pu annuler la souscription. Le statut local n'a pas ete modifie.",
+      },
+      { status: 502 },
+    );
+  }
+
+  try {
+    const result = await mutateInternalAdminData<SubscriptionSummary, undefined>(
       `/internal/admin/subscriptions/${encodeURIComponent(id)}/cancel`,
       "POST",
       undefined,
       sessionToken,
       correlationId,
     );
+    return NextResponse.json(result);
   } catch (error) {
     console.error("Admin cancel subscription error:", error);
     return NextResponse.json(
@@ -145,6 +197,4 @@ export async function POST(
       { status: 503 },
     );
   }
-
-  return NextResponse.json(result);
 }

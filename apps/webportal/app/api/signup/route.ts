@@ -3,12 +3,20 @@ import "server-only";
 import { NextRequest, NextResponse } from "next/server";
 
 import { CORRELATION_HEADER, resolveCorrelationId } from "@/lib/correlation";
+import {
+  getPublicCommercialCatalog,
+  getPublicPackCatalogContent,
+} from "@/lib/internal-api";
 import { isSignupEnabled } from "@/lib/public-routes";
 import {
   checkRateLimit,
   getRequestIdentifier,
 } from "@/lib/rate-limit";
 import { logBffFailure } from "@/lib/bff-observability";
+import {
+  buildSignupPackSnapshot,
+  resolvePackSelectionInput,
+} from "@/lib/public-packs";
 import { callInternalSignup, verifyHCaptcha } from "@/lib/signup-server";
 
 type SignupRequestBody = {
@@ -17,6 +25,9 @@ type SignupRequestBody = {
   email?: unknown;
   phone?: unknown;
   message?: unknown;
+  packKey?: unknown;
+  commitmentMonths?: unknown;
+  paymentMode?: unknown;
   hcaptchaToken?: unknown;
   // Honeypot (doit rester vide) + horodatage de rendu (anti-bot timing).
   website?: unknown;
@@ -149,10 +160,54 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const hasPackSelection =
+    body.packKey !== undefined
+    || body.commitmentMonths !== undefined
+    || body.paymentMode !== undefined;
+  let packSelection = null;
+  if (hasPackSelection) {
+    const selection = resolvePackSelectionInput({
+      packKey: body.packKey,
+      commitmentMonths: body.commitmentMonths,
+      paymentMode: body.paymentMode,
+    });
+    if (!selection) {
+      return NextResponse.json(
+        {
+          code: "INVALID_PACK_SELECTION",
+          message: "Le pack choisi n'est pas valide.",
+          correlation_id: correlationId,
+        },
+        { status: 400 },
+      );
+    }
+
+    const [catalogResult, packContentResult] = await Promise.all([
+      getPublicCommercialCatalog(),
+      getPublicPackCatalogContent(),
+    ]);
+    packSelection = buildSignupPackSnapshot(
+      catalogResult.data,
+      selection,
+      packContentResult.data,
+    );
+    if (!packSelection) {
+      return NextResponse.json(
+        {
+          code: "PACK_SELECTION_UNAVAILABLE",
+          message: "Le pack choisi n'est plus disponible.",
+          correlation_id: correlationId,
+        },
+        { status: 409 },
+      );
+    }
+  }
+
   const result = await callInternalSignup(
     "/internal/signup",
     {
       ...payload,
+      packSelection,
       sourceAddress: identifier === "unknown" ? null : identifier,
       userAgent: request.headers.get("user-agent")?.slice(0, 500) ?? null,
     },

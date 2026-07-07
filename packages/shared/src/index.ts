@@ -235,9 +235,12 @@ export type CommercialOfferStatus = "active" | "inactive";
 
 export type CommercialOfferBillingCadence = "one_time" | "monthly";
 
+export type CommercialOfferPaymentMode = "monthly" | "upfront";
+
 export type SubscriptionStatus =
   | "pending_approval"
   | "pending_activation"
+  | "pending_cancellation"
   | "active"
   | "suspended"
   | "cancelled"
@@ -252,6 +255,8 @@ export interface SubscriptionSummary {
   customerName: string;
   commercialOfferId: string;
   offerName: string;
+  offerExternalReference: string | null;
+  publicPackCode: PublicPackCode | null;
   rail: PaymentRail;
   paypalPlanId: string | null;
   paypalSubscriptionId: string | null;
@@ -259,6 +264,14 @@ export interface SubscriptionSummary {
   stripeSubscriptionId: string | null;
   status: SubscriptionStatus;
   priceAmountCents: number;
+  setupFeeAmountCents: number;
+  billingIntervalMonths: number;
+  commitmentMonths: number;
+  paymentMode: CommercialOfferPaymentMode;
+  paidCyclesCount: number;
+  commitmentEndsAt: string | null;
+  cancelRequestedAt: string | null;
+  cancelAtTermEnd: boolean;
   currency: string;
   startedAt: string | null;
   nextBillingAt: string | null;
@@ -274,9 +287,46 @@ export interface SubscriptionCreatePayload {
   stripeSubscriptionId?: string;
 }
 
+export type SubscriptionProvisioningStatus =
+  | "not_configured"
+  | "not_required"
+  | "ready"
+  | "succeeded"
+  | "failed";
+
+export interface SubscriptionProvisioningTargetUserSummary {
+  samAccountName: string;
+  displayName: string;
+  userPrincipalName: string | null;
+}
+
+export interface SubscriptionProvisioningActionSummary {
+  id: string;
+  actionType: string;
+  status: string;
+  resultCode: string | null;
+  changed: boolean;
+  correlationId: string;
+  targetReference: string;
+  requestedAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
+export interface SubscriptionProvisioningSummary {
+  status: SubscriptionProvisioningStatus;
+  mappedGroups: string[];
+  reconciledGroups: string[];
+  targetUsers: SubscriptionProvisioningTargetUserSummary[];
+  canRetry: boolean;
+  lastResultCode: string | null;
+  recentActions: SubscriptionProvisioningActionSummary[];
+}
+
 export interface AdminSubscriptionDetail {
   subscription: SubscriptionSummary;
   documents: CommercialDocumentSummary[];
+  provisioning: SubscriptionProvisioningSummary;
 }
 
 export interface CommercialOfferSummary {
@@ -293,6 +343,11 @@ export interface CommercialOfferSummary {
   status: CommercialOfferStatus;
   displayOrder: number;
   billingCadence: CommercialOfferBillingCadence;
+  setupFeeAmountCents: number | null;
+  billingIntervalMonths: number | null;
+  commitmentMonths: number | null;
+  paymentMode: CommercialOfferPaymentMode | null;
+  publicPackCode: PublicPackCode | null;
   paypalPlanIdSandbox: string | null;
   paypalPlanIdLive: string | null;
   stripePriceIdTest: string | null;
@@ -310,10 +365,742 @@ export interface CommercialOfferPayload {
   status: CommercialOfferStatus;
   displayOrder: number;
   billingCadence: CommercialOfferBillingCadence;
+  setupFeeAmountCents: number | null;
+  billingIntervalMonths: number | null;
+  commitmentMonths: number | null;
+  paymentMode: CommercialOfferPaymentMode | null;
+  publicPackCode: PublicPackCode | null;
   paypalPlanIdSandbox: string | null;
   paypalPlanIdLive: string | null;
   stripePriceIdTest: string | null;
   stripePriceIdLive: string | null;
+}
+
+export type PublicPackCode =
+  | "pack-dossier-securise"
+  | "pack-acces-distance"
+  | "pack-bureau-windows-distance"
+  | "pack-pro-association";
+
+export type PublicPackCommitmentMonths = 1 | 6 | 12;
+
+export type ManagedContentType = "legal" | "pack_sheet" | "page";
+
+export type ManagedContentKey =
+  | "legal:cgv"
+  | "legal:mentions-legales"
+  | "page:a-propos"
+  | `pack-sheet:${PublicPackCode}`;
+
+export interface ManagedContentSummary {
+  key: ManagedContentKey;
+  contentType: ManagedContentType;
+  title: string;
+  publicPath: string;
+  versionLabel: string | null;
+  updatedAt: string | null;
+}
+
+export interface ManagedContentDetail extends ManagedContentSummary {
+  bodyMarkdown: string;
+  createdAt: string | null;
+}
+
+export interface ManagedContentPayload {
+  bodyMarkdown: string;
+  versionLabel: string | null;
+}
+
+export interface ManagedContentMutationResponse {
+  key: ManagedContentKey;
+  changed: boolean;
+  updatedAt: string;
+  correlation_id: CorrelationId;
+}
+
+export interface ManagedContentRegistryEntry {
+  key: ManagedContentKey;
+  contentType: ManagedContentType;
+  title: string;
+  publicPath: string;
+  sortOrder: number;
+  packCode: PublicPackCode | null;
+}
+
+export interface SignupPackSelectionSnapshot {
+  packKey: PublicPackCode;
+  packLabel: string;
+  offerId: string;
+  offerExternalReference: string;
+  commitmentMonths: PublicPackCommitmentMonths;
+  paymentMode: CommercialOfferPaymentMode;
+  billingIntervalMonths: number;
+  discountPercent: number;
+  monthlyPriceAmountCents: number;
+  billingPriceAmountCents: number;
+  setupFeeAmountCents: number;
+  firstChargeAmountCents: number;
+  currency: "EUR";
+}
+
+export interface PendingPackSelectionSummary {
+  signupId: string;
+  status: string;
+  approvedAt: string | null;
+  createdAt: string;
+  snapshot: SignupPackSelectionSnapshot;
+}
+
+export interface PublicPackVariantManifest {
+  commitmentMonths: PublicPackCommitmentMonths;
+  paymentMode: CommercialOfferPaymentMode;
+  externalReference: string;
+}
+
+export interface PublicPackManifest {
+  key: PublicPackCode;
+  slug: string;
+  label: string;
+  shortLabel: string;
+  headline: string;
+  audience: string;
+  description: string;
+  highlights: readonly string[];
+  included: readonly string[];
+  technicalServiceReferences: readonly string[];
+  provisioningGroupSamAccountNames: readonly string[];
+  order: number;
+  variants: readonly PublicPackVariantManifest[];
+}
+
+export type PublicPackComparisonValueKind = "included" | "excluded" | "text";
+
+export interface PublicPackComparisonValue {
+  kind: PublicPackComparisonValueKind;
+  text: string | null;
+}
+
+export interface PublicPackPresentation {
+  packCode: PublicPackCode;
+  label: string;
+  shortLabel: string;
+  headline: string;
+  audience: string;
+  description: string;
+  highlights: readonly string[];
+  included: readonly string[];
+  highlightLabel: string | null;
+  displayOrder: number;
+}
+
+export interface PublicPackComparisonRow {
+  id: string;
+  label: string;
+  sortOrder: number;
+  values: Record<PublicPackCode, PublicPackComparisonValue>;
+}
+
+export interface PublicPackCatalogContent {
+  pageEyebrow: string;
+  pageTitle: string;
+  pageDescription: string;
+  comparisonColumnLabel: string;
+  footnotePrimary: string;
+  footnoteSecondary: string;
+  packs: readonly PublicPackPresentation[];
+  comparisonRows: readonly PublicPackComparisonRow[];
+  updatedAt: string | null;
+}
+
+export interface PublicPackCatalogContentPayload {
+  pageEyebrow: string;
+  pageTitle: string;
+  pageDescription: string;
+  comparisonColumnLabel: string;
+  footnotePrimary: string;
+  footnoteSecondary: string;
+  packs: readonly PublicPackPresentation[];
+  comparisonRows: readonly PublicPackComparisonRow[];
+}
+
+export interface PublicPackCatalogMutationResponse {
+  changed: boolean;
+  updatedAt: string;
+  correlation_id: CorrelationId;
+}
+
+export interface ResolvedPublicPackVariant {
+  offer: CommercialOfferSummary;
+  externalReference: string;
+  commitmentMonths: PublicPackCommitmentMonths;
+  paymentMode: CommercialOfferPaymentMode;
+  billingIntervalMonths: number;
+  discountPercent: number;
+  monthlyPriceAmountCents: number;
+  billingPriceAmountCents: number;
+  setupFeeAmountCents: number;
+  firstChargeAmountCents: number;
+  currency: "EUR";
+}
+
+export interface ResolvedPublicPackManifest extends PublicPackManifest {
+  variantsByCommitment: Record<
+    PublicPackCommitmentMonths,
+    {
+      monthly: ResolvedPublicPackVariant;
+      upfront: ResolvedPublicPackVariant | null;
+    }
+  >;
+}
+
+const PUBLIC_PACK_VARIANTS_BY_TERM: ReadonlyArray<PublicPackVariantManifest> = [
+  {
+    commitmentMonths: 1,
+    paymentMode: "monthly",
+    externalReference: "PACK-DOSSIER-1M-MENS",
+  },
+  {
+    commitmentMonths: 6,
+    paymentMode: "monthly",
+    externalReference: "PACK-DOSSIER-6M-MENS",
+  },
+  {
+    commitmentMonths: 6,
+    paymentMode: "upfront",
+    externalReference: "PACK-DOSSIER-6M-COMPT",
+  },
+  {
+    commitmentMonths: 12,
+    paymentMode: "monthly",
+    externalReference: "PACK-DOSSIER-12M-MENS",
+  },
+  {
+    commitmentMonths: 12,
+    paymentMode: "upfront",
+    externalReference: "PACK-DOSSIER-12M-COMPT",
+  },
+] as const;
+
+function withVariantPrefix(
+  prefix: string,
+): ReadonlyArray<PublicPackVariantManifest> {
+  return PUBLIC_PACK_VARIANTS_BY_TERM.map((variant) => ({
+    ...variant,
+    externalReference: variant.externalReference.replace("PACK-DOSSIER", prefix),
+  }));
+}
+
+export const PUBLIC_PACKS: ReadonlyArray<PublicPackManifest> = [
+  {
+    key: "pack-dossier-securise",
+    slug: "dossier-securise",
+    label: "Pack Dossier Sécurisé",
+    shortLabel: "Dossier Sécurisé",
+    headline: "Vos fichiers essentiels restent accessibles et sauvegardés.",
+    audience: "Pour une personne qui veut un dossier personnel simple et protégé.",
+    description:
+      "Un espace de fichiers à distance, sécurisé et sauvegardé, sans jargon technique à gérer.",
+    highlights: [
+      "Dossier personnel sécurisé 32 Go",
+      "Accès à distance aux fichiers",
+      "Sauvegarde régulière",
+      "Support de base",
+    ],
+    included: [
+      "32 Go de stockage personnel",
+      "Accès distant à vos documents",
+      "Sauvegardes planifiées",
+      "Aide de base en cas de besoin",
+    ],
+    technicalServiceReferences: ["STOCK-PERSO-32", "SAVE-PERSO"],
+    provisioningGroupSamAccountNames: [],
+    order: 10,
+    variants: withVariantPrefix("PACK-DOSSIER"),
+  },
+  {
+    key: "pack-acces-distance",
+    slug: "acces-distance",
+    label: "Pack Accès à Distance",
+    shortLabel: "Accès à Distance",
+    headline: "Travaillez à distance avec un accès privé supervisé.",
+    audience: "Pour une personne qui veut retrouver ses fichiers via un accès plus encadré.",
+    description:
+      "La base du dossier sécurisé, enrichie d'un accès VPN personnel et d'une supervision légère.",
+    highlights: [
+      "Tout le pack Dossier Sécurisé",
+      "Accès VPN personnel",
+      "Supervision du service",
+      "Support niveau 1",
+    ],
+    included: [
+      "Stockage personnel et sauvegarde",
+      "VPN personnel pour se connecter",
+      "Supervision du service",
+      "Support niveau 1",
+    ],
+    technicalServiceReferences: [
+      "STOCK-PERSO-32",
+      "SAVE-PERSO",
+      "ACCES-VPN",
+      "SUPERV-SERVICE",
+      "SUPPORT-LV1",
+    ],
+    provisioningGroupSamAccountNames: ["GG_VPN"],
+    order: 20,
+    variants: withVariantPrefix("PACK-ACCES"),
+  },
+  {
+    key: "pack-bureau-windows-distance",
+    slug: "bureau-windows-distance",
+    label: "Pack Bureau Windows à Distance",
+    shortLabel: "Bureau Windows",
+    headline: "Un environnement Windows distant prêt à l'emploi.",
+    audience: "Pour retrouver un bureau Windows complet depuis l'extérieur.",
+    description:
+      "Un bureau Windows à distance avec accès VPN, stockage, sauvegarde et suivi du service.",
+    highlights: [
+      "Bureau Windows à distance",
+      "Accès VPN personnel",
+      "Stockage 32 Go et sauvegarde",
+      "Supervision et support niveau 1",
+    ],
+    included: [
+      "Accès à un bureau Windows distant",
+      "VPN personnel inclus",
+      "32 Go de stockage et sauvegardes",
+      "Supervision et support niveau 1",
+    ],
+    technicalServiceReferences: [
+      "ACCES-RDS",
+      "ACCES-VPN",
+      "STOCK-PERSO-32",
+      "SAVE-PERSO",
+      "SUPERV-SERVICE",
+      "SUPPORT-LV1",
+    ],
+    provisioningGroupSamAccountNames: ["GG_VPN", "GG_RDS"],
+    order: 30,
+    variants: withVariantPrefix("PACK-BUREAU"),
+  },
+  {
+    key: "pack-pro-association",
+    slug: "pro-association",
+    label: "Pack Pro / Association",
+    shortLabel: "Pro / Association",
+    headline: "Une base complète pour une petite structure ou une association.",
+    audience: "Pour une petite équipe qui veut une offre plus large et encadrée.",
+    description:
+      "Une formule plus complète pour une petite structure, avec plus de capacité et une documentation simplifiée.",
+    highlights: [
+      "2 utilisateurs et 64 Go de stockage",
+      "Accès VPN personnel",
+      "Sauvegarde et supervision",
+      "Support niveau 1 et documentation simplifiée",
+    ],
+    included: [
+      "Base de stockage et capacité additionnelle",
+      "VPN personnel",
+      "Sauvegarde et supervision",
+      "Support niveau 1 et documentation",
+    ],
+    technicalServiceReferences: [
+      "USER-ADD",
+      "STOCK-PERSO-32",
+      "STOCK-SUP-32",
+      "ACCES-VPN",
+      "SAVE-PERSO",
+      "SUPERV-SERVICE",
+      "SUPPORT-LV1",
+      "DOC-TECH",
+    ],
+    provisioningGroupSamAccountNames: ["GG_VPN"],
+    order: 40,
+    variants: withVariantPrefix("PACK-PRO"),
+  },
+] as const;
+
+export function getPublicPackDiscountPercent(
+  commitmentMonths: PublicPackCommitmentMonths,
+): number {
+  switch (commitmentMonths) {
+    case 6:
+      return 10;
+    case 12:
+      return 20;
+    default:
+      return 0;
+  }
+}
+
+export function getPublicPackManifest(
+  packKey: PublicPackCode,
+): PublicPackManifest | null {
+  return PUBLIC_PACKS.find((pack) => pack.key === packKey) ?? null;
+}
+
+export function getPublicPackManifestBySlug(
+  slug: string,
+): PublicPackManifest | null {
+  return PUBLIC_PACKS.find((pack) => pack.slug === slug) ?? null;
+}
+
+export function buildPackSheetContentKey(
+  packCode: PublicPackCode,
+): ManagedContentKey {
+  return `pack-sheet:${packCode}`;
+}
+
+export function buildPackSheetPublicPath(packCode: PublicPackCode): string {
+  const pack = getPublicPackManifest(packCode);
+  return pack ? `/offres/${pack.slug}` : "/offres";
+}
+
+export function isManagedContentKey(value: unknown): value is ManagedContentKey {
+  return typeof value === "string"
+    && (value === "legal:cgv"
+      || value === "legal:mentions-legales"
+      || value === "page:a-propos"
+      || PUBLIC_PACKS.some(
+        (pack) => value === buildPackSheetContentKey(pack.key),
+      ));
+}
+
+export function getManagedContentRegistry(): readonly ManagedContentRegistryEntry[] {
+  return [
+    {
+      key: "legal:cgv",
+      contentType: "legal",
+      title: "Conditions générales de vente",
+      publicPath: "/cgv",
+      sortOrder: 10,
+      packCode: null,
+    },
+    {
+      key: "legal:mentions-legales",
+      contentType: "legal",
+      title: "Mentions légales",
+      publicPath: "/mentions-legales",
+      sortOrder: 20,
+      packCode: null,
+    },
+    {
+      key: "page:a-propos",
+      contentType: "page",
+      title: "À propos de Zachary IT",
+      publicPath: "/a-propos",
+      sortOrder: 30,
+      packCode: null,
+    },
+    ...PUBLIC_PACKS.map((pack) => ({
+      key: buildPackSheetContentKey(pack.key),
+      contentType: "pack_sheet" as const,
+      title: `Fiche technique - ${pack.label}`,
+      publicPath: `/offres/${pack.slug}`,
+      sortOrder: 100 + pack.order,
+      packCode: pack.key,
+    })),
+  ];
+}
+
+export function getManagedContentEntry(
+  key: ManagedContentKey,
+): ManagedContentRegistryEntry | null {
+  return getManagedContentRegistry().find((entry) => entry.key === key) ?? null;
+}
+
+export function resolvePublicPackVariantFromCatalog(
+  catalog: readonly CommercialOfferSummary[],
+  packKey: PublicPackCode,
+  commitmentMonths: PublicPackCommitmentMonths,
+  paymentMode: CommercialOfferPaymentMode,
+): ResolvedPublicPackVariant | null {
+  const pack = getPublicPackManifest(packKey);
+  if (!pack) {
+    return null;
+  }
+
+  const variant = pack.variants.find(
+    (candidate) =>
+      candidate.commitmentMonths === commitmentMonths
+      && candidate.paymentMode === paymentMode,
+  );
+  if (!variant) {
+    return null;
+  }
+
+  const offer = catalog.find(
+    (candidate) => candidate.externalReference === variant.externalReference,
+  );
+  if (!offer) {
+    return null;
+  }
+
+  const billingIntervalMonths =
+    offer.billingIntervalMonths
+    ?? (paymentMode === "upfront" ? commitmentMonths : 1);
+  const setupFeeAmountCents = offer.setupFeeAmountCents ?? 0;
+  const billingPriceAmountCents = offer.priceAmountCents;
+  const monthlyPriceAmountCents =
+    billingIntervalMonths > 1
+      ? Math.round(billingPriceAmountCents / commitmentMonths)
+      : billingPriceAmountCents;
+
+  return {
+    offer,
+    externalReference: variant.externalReference,
+    commitmentMonths,
+    paymentMode,
+    billingIntervalMonths,
+    discountPercent: getPublicPackDiscountPercent(commitmentMonths),
+    monthlyPriceAmountCents,
+    billingPriceAmountCents,
+    setupFeeAmountCents,
+    firstChargeAmountCents: billingPriceAmountCents + setupFeeAmountCents,
+    currency: "EUR",
+  };
+}
+
+export function resolvePublicPackCatalog(
+  catalog: readonly CommercialOfferSummary[],
+): ResolvedPublicPackManifest[] {
+  return PUBLIC_PACKS.flatMap((pack) => {
+    const monthly1 = resolvePublicPackVariantFromCatalog(
+      catalog,
+      pack.key,
+      1,
+      "monthly",
+    );
+    const monthly6 = resolvePublicPackVariantFromCatalog(
+      catalog,
+      pack.key,
+      6,
+      "monthly",
+    );
+    const monthly12 = resolvePublicPackVariantFromCatalog(
+      catalog,
+      pack.key,
+      12,
+      "monthly",
+    );
+
+    // If the billable catalog is not fully seeded yet, hide the incomplete
+    // public pack instead of crashing the whole vitrine/signup flow.
+    if (!monthly1 || !monthly6 || !monthly12) {
+      return [];
+    }
+
+    return [{
+      ...pack,
+      variantsByCommitment: {
+        1: {
+          monthly: monthly1,
+          upfront: null,
+        },
+        6: {
+          monthly: monthly6,
+          upfront:
+            resolvePublicPackVariantFromCatalog(
+              catalog,
+              pack.key,
+              6,
+              "upfront",
+            ),
+        },
+        12: {
+          monthly: monthly12,
+          upfront:
+            resolvePublicPackVariantFromCatalog(
+              catalog,
+              pack.key,
+              12,
+              "upfront",
+            ),
+        },
+      },
+    }];
+  }).sort((left, right) => left.order - right.order);
+}
+
+export function createSignupPackSelectionSnapshot(
+  variant: ResolvedPublicPackVariant,
+): SignupPackSelectionSnapshot {
+  const packKey = variant.offer.publicPackCode ?? inferPublicPackCode(variant);
+  const manifest = getPublicPackManifest(packKey);
+
+  return {
+    packKey,
+    packLabel: manifest?.label ?? variant.offer.name,
+    offerId: variant.offer.id,
+    offerExternalReference: variant.externalReference,
+    commitmentMonths: variant.commitmentMonths,
+    paymentMode: variant.paymentMode,
+    billingIntervalMonths: variant.billingIntervalMonths,
+    discountPercent: variant.discountPercent,
+    monthlyPriceAmountCents: variant.monthlyPriceAmountCents,
+    billingPriceAmountCents: variant.billingPriceAmountCents,
+    setupFeeAmountCents: variant.setupFeeAmountCents,
+    firstChargeAmountCents: variant.firstChargeAmountCents,
+    currency: variant.currency,
+  };
+}
+
+function inferPublicPackCode(
+  variant: ResolvedPublicPackVariant,
+): PublicPackCode {
+  return (
+    variant.offer.publicPackCode
+    ?? PUBLIC_PACKS.find((pack) =>
+      pack.variants.some(
+        (candidate) => candidate.externalReference === variant.externalReference,
+      ),
+    )?.key
+    ?? "pack-dossier-securise"
+  );
+}
+
+function createComparisonValue(
+  kind: PublicPackComparisonValueKind,
+  text: string | null = null,
+): PublicPackComparisonValue {
+  return { kind, text };
+}
+
+export const DEFAULT_PUBLIC_PACK_CATALOG_CONTENT: PublicPackCatalogContentPayload = {
+  pageEyebrow: "Catalogue packs",
+  pageTitle: "Des packs simples, lisibles et prêts à activer",
+  pageDescription:
+    "Comparez les packs, choisissez votre durée d'engagement, puis lancez votre demande sans avoir à comprendre les briques techniques internes.",
+  comparisonColumnLabel: "Fonctionnalités clés",
+  footnotePrimary:
+    "Les tarifs affichés sont hors taxes et correspondent au catalogue public actuel. Le détail technique reste géré en interne pour le provisionnement et le support.",
+  footnoteSecondary:
+    "Besoin d'un accompagnement spécifique ? Passez par le formulaire de contact.",
+  packs: PUBLIC_PACKS.map((pack) => ({
+    packCode: pack.key,
+    label: pack.label,
+    shortLabel: pack.shortLabel,
+    headline: pack.headline,
+    audience: pack.audience,
+    description: pack.description,
+    highlights: [...pack.highlights],
+    included: [...pack.included],
+    highlightLabel: null,
+    displayOrder: pack.order,
+  })),
+  comparisonRows: [
+    {
+      id: "storage",
+      label: "Stockage sécurisé inclus",
+      sortOrder: 10,
+      values: {
+        "pack-dossier-securise": createComparisonValue("text", "32 Go"),
+        "pack-acces-distance": createComparisonValue("text", "32 Go"),
+        "pack-bureau-windows-distance": createComparisonValue("text", "32 Go"),
+        "pack-pro-association": createComparisonValue("text", "64 Go"),
+      },
+    },
+    {
+      id: "remote-files",
+      label: "Accès distant aux fichiers",
+      sortOrder: 20,
+      values: {
+        "pack-dossier-securise": createComparisonValue("included"),
+        "pack-acces-distance": createComparisonValue("included"),
+        "pack-bureau-windows-distance": createComparisonValue("included"),
+        "pack-pro-association": createComparisonValue("included"),
+      },
+    },
+    {
+      id: "vpn",
+      label: "Accès VPN personnel",
+      sortOrder: 30,
+      values: {
+        "pack-dossier-securise": createComparisonValue("excluded"),
+        "pack-acces-distance": createComparisonValue("included"),
+        "pack-bureau-windows-distance": createComparisonValue("included"),
+        "pack-pro-association": createComparisonValue("included"),
+      },
+    },
+    {
+      id: "backup",
+      label: "Sauvegarde régulière",
+      sortOrder: 40,
+      values: {
+        "pack-dossier-securise": createComparisonValue("included"),
+        "pack-acces-distance": createComparisonValue("included"),
+        "pack-bureau-windows-distance": createComparisonValue("included"),
+        "pack-pro-association": createComparisonValue("included"),
+      },
+    },
+    {
+      id: "supervision",
+      label: "Supervision du service",
+      sortOrder: 50,
+      values: {
+        "pack-dossier-securise": createComparisonValue("excluded"),
+        "pack-acces-distance": createComparisonValue("included"),
+        "pack-bureau-windows-distance": createComparisonValue("included"),
+        "pack-pro-association": createComparisonValue("included"),
+      },
+    },
+    {
+      id: "windows-desktop",
+      label: "Bureau Windows à distance",
+      sortOrder: 60,
+      values: {
+        "pack-dossier-securise": createComparisonValue("excluded"),
+        "pack-acces-distance": createComparisonValue("excluded"),
+        "pack-bureau-windows-distance": createComparisonValue("included"),
+        "pack-pro-association": createComparisonValue("excluded"),
+      },
+    },
+    {
+      id: "support",
+      label: "Support inclus",
+      sortOrder: 70,
+      values: {
+        "pack-dossier-securise": createComparisonValue("text", "Base"),
+        "pack-acces-distance": createComparisonValue("text", "Niveau 1"),
+        "pack-bureau-windows-distance": createComparisonValue("text", "Niveau 1"),
+        "pack-pro-association": createComparisonValue("text", "Niveau 1"),
+      },
+    },
+    {
+      id: "users",
+      label: "Utilisateurs inclus",
+      sortOrder: 80,
+      values: {
+        "pack-dossier-securise": createComparisonValue("text", "1"),
+        "pack-acces-distance": createComparisonValue("text", "1"),
+        "pack-bureau-windows-distance": createComparisonValue("text", "1"),
+        "pack-pro-association": createComparisonValue("text", "2"),
+      },
+    },
+    {
+      id: "documentation",
+      label: "Documentation simplifiée",
+      sortOrder: 90,
+      values: {
+        "pack-dossier-securise": createComparisonValue("excluded"),
+        "pack-acces-distance": createComparisonValue("excluded"),
+        "pack-bureau-windows-distance": createComparisonValue("excluded"),
+        "pack-pro-association": createComparisonValue("included"),
+      },
+    },
+  ],
+};
+
+export function createDefaultPublicPackCatalogContentPayload(): PublicPackCatalogContentPayload {
+  return JSON.parse(
+    JSON.stringify(DEFAULT_PUBLIC_PACK_CATALOG_CONTENT),
+  ) as PublicPackCatalogContentPayload;
+}
+
+export function createDefaultPublicPackCatalogContent(): PublicPackCatalogContent {
+  return {
+    ...createDefaultPublicPackCatalogContentPayload(),
+    updatedAt: null,
+  };
 }
 
 export type CommercialDocumentType =

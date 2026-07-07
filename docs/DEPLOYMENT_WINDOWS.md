@@ -364,9 +364,9 @@ icacls C:\ProgramData\Kermaria /inheritance:r `
 Deposer `C:\ProgramData\Kermaria\api-internal.config.json`, soit
 manuellement, soit avec le convertisseur
 [`scripts/build-api-config.ps1`](../scripts/build-api-config.ps1)
-qui derive le JSON depuis un `.local.env.ps1` (regex sur les
-`$env:KEY = "value"`, blocklist des cles interdites, n'affiche
-jamais les valeurs) :
+qui derive le JSON depuis un `.local.env.ps1` (formes supportees :
+`$env:KEY = "value"` et `Set-Item -Path 'Env:KEY-WITH-HYPHEN' -Value 'value'`,
+blocklist des cles interdites, n'affiche jamais les valeurs) :
 
 ```powershell
 # Depuis le poste de dev, ecrit directement sur KERMARIA-SRV-02 via SMB

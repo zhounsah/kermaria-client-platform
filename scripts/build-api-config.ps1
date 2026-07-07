@@ -3,10 +3,13 @@
 Génère api-internal.config.json à partir d'un fichier PowerShell .env.
 
 .DESCRIPTION
-Extrait TOUTES les valeurs `$env:KEY = "value"` d'un fichier PowerShell
-(typiquement .local.env.ps1) et produit un JSON plat lisible par la source
-Configuration de l'API (Program.cs charge
-C:\ProgramData\Kermaria\api-internal.config.json par défaut).
+Extrait TOUTES les valeurs d'un fichier PowerShell
+(typiquement .local.env.ps1) déclarées soit sous la forme
+`$env:KEY = "value"`, soit sous la forme
+`Set-Item -Path 'Env:KEY-WITH-HYPHEN' -Value 'value'`, puis produit
+un JSON plat lisible par la source Configuration de l'API
+(Program.cs charge C:\ProgramData\Kermaria\api-internal.config.json
+par défaut).
 
 L'objectif est de rassembler TOUTE la config runtime de l'API (SQL, secrets,
 modes, logs, session, seuils) dans un seul fichier, plutôt que d'en éclater
@@ -127,12 +130,24 @@ $extracted = [ordered]@{}
 $blocked = @()
 $emptyValues = @()
 
-$pattern = '^\s*\$env:([A-Z_][A-Z0-9_]*)\s*=\s*([''"])(.*)\2\s*(?:#.*)?\s*$'
+$assignmentPattern =
+    '^\s*\$env:([A-Z_][A-Z0-9_]*)\s*=\s*([''"])(.*)\2\s*(?:#.*)?\s*$'
+$setItemPattern =
+    '^\s*Set-Item\s+-Path\s+([''"])Env:([^''"]+)\1\s+-Value\s+([''"])(.*)\3\s*(?:#.*)?\s*$'
 
 Get-Content -LiteralPath $InputPath | ForEach-Object {
-    if ($_ -match $pattern) {
+    $key = $null
+    $value = $null
+
+    if ($_ -match $assignmentPattern) {
         $key = $Matches[1]
         $value = $Matches[3]
+    } elseif ($_ -match $setItemPattern) {
+        $key = $Matches[2]
+        $value = $Matches[4]
+    }
+
+    if ($null -ne $key) {
         if ($Blocklist -contains $key) {
             $blocked += $key
         } elseif ([string]::IsNullOrEmpty($value)) {
@@ -188,7 +203,7 @@ if ($overridden.Count -gt 0) {
 Write-Host ""
 
 if ($extracted.Count -eq 0) {
-    throw "Aucune cle exploitable trouvee dans $InputPath. Verifier le format ('`$env:KEY = ""value""')."
+    throw "Aucune cle exploitable trouvee dans $InputPath. Verifier le format ('`$env:KEY = ""value""' ou 'Set-Item -Path ''Env:KEY-WITH-HYPHEN'' -Value ''value''')."
 }
 
 $json = $extracted | ConvertTo-Json -Depth 1

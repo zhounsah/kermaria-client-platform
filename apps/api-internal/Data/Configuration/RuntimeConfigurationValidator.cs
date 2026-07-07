@@ -101,6 +101,7 @@ public static class RuntimeConfigurationValidator
             {
                 "AD_DOMAIN",
                 "AD_CLIENTS_OU_DN",
+                "AD_REQUIRED_OU_ROOT",
                 "AD_SERVICE_ACCOUNT_USERNAME"
             })
             {

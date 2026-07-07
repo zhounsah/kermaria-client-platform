@@ -1,3 +1,5 @@
+using Kermaria.ApiInternal.Contracts;
+
 namespace Kermaria.ApiInternal.Data.Repositories;
 
 // V0.26 : persistance des demandes d'inscription self-service. Les hash
@@ -10,6 +12,7 @@ public sealed record SignupInsert(
     string Email,
     string? Phone,
     string? Message,
+    SignupPackSelectionSnapshot? PackSelection,
     string VerificationTokenHash,
     DateTime VerificationTokenExpiresAtUtc,
     string? SourceAddress,
@@ -23,6 +26,7 @@ public sealed record SignupPendingRecord(
     string Email,
     string? Phone,
     string? Message,
+    SignupPackSelectionSnapshot? PackSelection,
     string? SourceAddress,
     DateTime? VerificationTokenExpiresAtUtc,
     string? ApprovedUserId,
@@ -93,6 +97,10 @@ public interface ISignupRepository
 
     Task<SignupPendingRecord?> GetByIdAsync(
         string id,
+        CancellationToken cancellationToken);
+
+    Task<SignupPendingRecord?> GetLatestApprovedByCustomerIdAsync(
+        string customerId,
         CancellationToken cancellationToken);
 
     // Crée customer + portal_user (sans mot de passe) et bascule la

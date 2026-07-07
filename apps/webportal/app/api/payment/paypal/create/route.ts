@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { CORRELATION_HEADER, resolveCorrelationId } from "@/lib/correlation";
 import { getInternalSession } from "@/lib/internal-api";
+import { getPortalPublicUrl } from "@/lib/public-routes";
 import { getSessionCookieName } from "@/lib/session-config";
 import { getInternalApiUrl, getInternalServiceHeaders } from "@/lib/runtime-config";
 import { createPayPalOrder, isPayPalConfigured } from "@/lib/paypal";
@@ -114,7 +115,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const portalUrl = process.env.PUBLIC_PORTAL_URL?.replace(/\/$/, "") ?? "http://localhost:3000";
+  const portalUrl = getPortalPublicUrl(request);
   const returnUrl = `${portalUrl}/api/payment/paypal/return?documentId=${encodeURIComponent(documentId)}`;
   const cancelUrl = `${portalUrl}/commercial-documents/${encodeURIComponent(documentId)}?payment=cancelled`;
 

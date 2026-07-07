@@ -106,6 +106,8 @@ public sealed class MockCommercialStore
 
     public MockCommercialStore()
     {
+        Offers.AddRange(CreatePublicPackOffers());
+
         Lines["commercial-doc-mock-001"] =
         [
             new(
@@ -181,6 +183,271 @@ public sealed class MockCommercialStore
                 * (line.TaxRateBasisPoints.Value / 10000m),
                 0,
                 MidpointRounding.AwayFromZero);
+
+    private static IReadOnlyList<MockCommercialOffer> CreatePublicPackOffers()
+        =>
+        [
+            CreatePublicPackOffer(
+                "offer-pack-dossier-1m-monthly",
+                "Pack Dossier SÃ©curisÃ©",
+                "Un espace de fichiers Ã  distance, sÃ©curisÃ© et sauvegardÃ©.",
+                900,
+                1500,
+                1,
+                "monthly",
+                "pack-dossier-securise",
+                "PACK-DOSSIER-1M-MENS",
+                110),
+            CreatePublicPackOffer(
+                "offer-pack-dossier-6m-monthly",
+                "Pack Dossier SÃ©curisÃ©",
+                "Un espace de fichiers Ã  distance, sÃ©curisÃ© et sauvegardÃ©.",
+                810,
+                1500,
+                6,
+                "monthly",
+                "pack-dossier-securise",
+                "PACK-DOSSIER-6M-MENS",
+                111),
+            CreatePublicPackOffer(
+                "offer-pack-dossier-6m-upfront",
+                "Pack Dossier SÃ©curisÃ©",
+                "Un espace de fichiers Ã  distance, sÃ©curisÃ© et sauvegardÃ©.",
+                4860,
+                1500,
+                6,
+                "upfront",
+                "pack-dossier-securise",
+                "PACK-DOSSIER-6M-COMPT",
+                112),
+            CreatePublicPackOffer(
+                "offer-pack-dossier-12m-monthly",
+                "Pack Dossier SÃ©curisÃ©",
+                "Un espace de fichiers Ã  distance, sÃ©curisÃ© et sauvegardÃ©.",
+                720,
+                1500,
+                12,
+                "monthly",
+                "pack-dossier-securise",
+                "PACK-DOSSIER-12M-MENS",
+                113),
+            CreatePublicPackOffer(
+                "offer-pack-dossier-12m-upfront",
+                "Pack Dossier SÃ©curisÃ©",
+                "Un espace de fichiers Ã  distance, sÃ©curisÃ© et sauvegardÃ©.",
+                8640,
+                1500,
+                12,
+                "upfront",
+                "pack-dossier-securise",
+                "PACK-DOSSIER-12M-COMPT",
+                114),
+            CreatePublicPackOffer(
+                "offer-pack-acces-1m-monthly",
+                "Pack AccÃ¨s Ã  Distance",
+                "La base du dossier sÃ©curisÃ©e, enrichie d'un accÃ¨s VPN personnel.",
+                1900,
+                2500,
+                1,
+                "monthly",
+                "pack-acces-distance",
+                "PACK-ACCES-1M-MENS",
+                120),
+            CreatePublicPackOffer(
+                "offer-pack-acces-6m-monthly",
+                "Pack AccÃ¨s Ã  Distance",
+                "La base du dossier sÃ©curisÃ©e, enrichie d'un accÃ¨s VPN personnel.",
+                1710,
+                2500,
+                6,
+                "monthly",
+                "pack-acces-distance",
+                "PACK-ACCES-6M-MENS",
+                121),
+            CreatePublicPackOffer(
+                "offer-pack-acces-6m-upfront",
+                "Pack AccÃ¨s Ã  Distance",
+                "La base du dossier sÃ©curisÃ©e, enrichie d'un accÃ¨s VPN personnel.",
+                10260,
+                2500,
+                6,
+                "upfront",
+                "pack-acces-distance",
+                "PACK-ACCES-6M-COMPT",
+                122),
+            CreatePublicPackOffer(
+                "offer-pack-acces-12m-monthly",
+                "Pack AccÃ¨s Ã  Distance",
+                "La base du dossier sÃ©curisÃ©e, enrichie d'un accÃ¨s VPN personnel.",
+                1520,
+                2500,
+                12,
+                "monthly",
+                "pack-acces-distance",
+                "PACK-ACCES-12M-MENS",
+                123),
+            CreatePublicPackOffer(
+                "offer-pack-acces-12m-upfront",
+                "Pack AccÃ¨s Ã  Distance",
+                "La base du dossier sÃ©curisÃ©e, enrichie d'un accÃ¨s VPN personnel.",
+                18240,
+                2500,
+                12,
+                "upfront",
+                "pack-acces-distance",
+                "PACK-ACCES-12M-COMPT",
+                124),
+            CreatePublicPackOffer(
+                "offer-pack-bureau-1m-monthly",
+                "Pack Bureau Windows Ã  Distance",
+                "Un bureau Windows Ã  distance avec VPN, stockage et sauvegarde.",
+                3500,
+                3500,
+                1,
+                "monthly",
+                "pack-bureau-windows-distance",
+                "PACK-BUREAU-1M-MENS",
+                130),
+            CreatePublicPackOffer(
+                "offer-pack-bureau-6m-monthly",
+                "Pack Bureau Windows Ã  Distance",
+                "Un bureau Windows Ã  distance avec VPN, stockage et sauvegarde.",
+                3150,
+                3500,
+                6,
+                "monthly",
+                "pack-bureau-windows-distance",
+                "PACK-BUREAU-6M-MENS",
+                131),
+            CreatePublicPackOffer(
+                "offer-pack-bureau-6m-upfront",
+                "Pack Bureau Windows Ã  Distance",
+                "Un bureau Windows Ã  distance avec VPN, stockage et sauvegarde.",
+                18900,
+                3500,
+                6,
+                "upfront",
+                "pack-bureau-windows-distance",
+                "PACK-BUREAU-6M-COMPT",
+                132),
+            CreatePublicPackOffer(
+                "offer-pack-bureau-12m-monthly",
+                "Pack Bureau Windows Ã  Distance",
+                "Un bureau Windows Ã  distance avec VPN, stockage et sauvegarde.",
+                2800,
+                3500,
+                12,
+                "monthly",
+                "pack-bureau-windows-distance",
+                "PACK-BUREAU-12M-MENS",
+                133),
+            CreatePublicPackOffer(
+                "offer-pack-bureau-12m-upfront",
+                "Pack Bureau Windows Ã  Distance",
+                "Un bureau Windows Ã  distance avec VPN, stockage et sauvegarde.",
+                33600,
+                3500,
+                12,
+                "upfront",
+                "pack-bureau-windows-distance",
+                "PACK-BUREAU-12M-COMPT",
+                134),
+            CreatePublicPackOffer(
+                "offer-pack-pro-1m-monthly",
+                "Pack Pro / Association",
+                "Une base complÃ¨te pour une petite structure ou une association.",
+                4900,
+                4900,
+                1,
+                "monthly",
+                "pack-pro-association",
+                "PACK-PRO-1M-MENS",
+                140),
+            CreatePublicPackOffer(
+                "offer-pack-pro-6m-monthly",
+                "Pack Pro / Association",
+                "Une base complÃ¨te pour une petite structure ou une association.",
+                4410,
+                4900,
+                6,
+                "monthly",
+                "pack-pro-association",
+                "PACK-PRO-6M-MENS",
+                141),
+            CreatePublicPackOffer(
+                "offer-pack-pro-6m-upfront",
+                "Pack Pro / Association",
+                "Une base complÃ¨te pour une petite structure ou une association.",
+                26460,
+                4900,
+                6,
+                "upfront",
+                "pack-pro-association",
+                "PACK-PRO-6M-COMPT",
+                142),
+            CreatePublicPackOffer(
+                "offer-pack-pro-12m-monthly",
+                "Pack Pro / Association",
+                "Une base complÃ¨te pour une petite structure ou une association.",
+                3920,
+                4900,
+                12,
+                "monthly",
+                "pack-pro-association",
+                "PACK-PRO-12M-MENS",
+                143),
+            CreatePublicPackOffer(
+                "offer-pack-pro-12m-upfront",
+                "Pack Pro / Association",
+                "Une base complÃ¨te pour une petite structure ou une association.",
+                47040,
+                4900,
+                12,
+                "upfront",
+                "pack-pro-association",
+                "PACK-PRO-12M-COMPT",
+                144)
+        ];
+
+    private static MockCommercialOffer CreatePublicPackOffer(
+        string id,
+        string name,
+        string description,
+        int priceAmountCents,
+        int setupFeeAmountCents,
+        int commitmentMonths,
+        string paymentMode,
+        string publicPackCode,
+        string externalReference,
+        int displayOrder)
+        => new(
+            id,
+            name,
+            description,
+            "Pack grand public",
+            paymentMode == CommercialStatuses.PaymentModeUpfront
+                ? "engagement"
+                : "mois",
+            "ht",
+            priceAmountCents,
+            "EUR",
+            CommercialStatuses.OfferActive,
+            displayOrder,
+            "2026-07-07T08:00:00Z",
+            "2026-07-07T08:00:00Z",
+            CommercialStatuses.CadenceMonthly,
+            setupFeeAmountCents,
+            paymentMode == CommercialStatuses.PaymentModeUpfront
+                ? commitmentMonths
+                : 1,
+            commitmentMonths,
+            paymentMode,
+            publicPackCode,
+            null,
+            null,
+            null,
+            null,
+            externalReference);
 }
 
 public sealed class MockCommercialRepository : ICommercialRepository
@@ -245,6 +512,11 @@ public sealed class MockCommercialRepository : ICommercialRepository
                 now,
                 now,
                 offer.BillingCadence,
+                offer.SetupFeeAmountCents,
+                offer.BillingIntervalMonths,
+                offer.CommitmentMonths,
+                offer.PaymentMode,
+                offer.PublicPackCode,
                 offer.PayPalPlanIdSandbox,
                 offer.PayPalPlanIdLive,
                 offer.StripePriceIdTest,
@@ -288,6 +560,11 @@ public sealed class MockCommercialRepository : ICommercialRepository
                 || current.Status != offer.Status
                 || current.DisplayOrder != offer.DisplayOrder
                 || current.BillingCadence != offer.BillingCadence
+                || current.SetupFeeAmountCents != offer.SetupFeeAmountCents
+                || current.BillingIntervalMonths != offer.BillingIntervalMonths
+                || current.CommitmentMonths != offer.CommitmentMonths
+                || current.PaymentMode != offer.PaymentMode
+                || current.PublicPackCode != offer.PublicPackCode
                 || current.PayPalPlanIdSandbox != offer.PayPalPlanIdSandbox
                 || current.PayPalPlanIdLive != offer.PayPalPlanIdLive
                 || current.StripePriceIdTest != offer.StripePriceIdTest
@@ -301,6 +578,11 @@ public sealed class MockCommercialRepository : ICommercialRepository
             current.Status = offer.Status;
             current.DisplayOrder = offer.DisplayOrder;
             current.BillingCadence = offer.BillingCadence;
+            current.SetupFeeAmountCents = offer.SetupFeeAmountCents;
+            current.BillingIntervalMonths = offer.BillingIntervalMonths;
+            current.CommitmentMonths = offer.CommitmentMonths;
+            current.PaymentMode = offer.PaymentMode;
+            current.PublicPackCode = offer.PublicPackCode;
             current.PayPalPlanIdSandbox = offer.PayPalPlanIdSandbox;
             current.PayPalPlanIdLive = offer.PayPalPlanIdLive;
             current.StripePriceIdTest = offer.StripePriceIdTest;
@@ -691,11 +973,8 @@ public sealed class MockCommercialRepository : ICommercialRepository
         return Task.CompletedTask;
     }
 
-    public Task<string> CreateBillingDocumentFromOfferAsync(
-        string customerId,
-        string offerId,
-        string subscriptionId,
-        string title,
+    public Task<string> CreateBillingDocumentForSubscriptionAsync(
+        SubscriptionBillingDocumentRequest request,
         string correlationId,
         CancellationToken cancellationToken)
         => throw new NotSupportedException(
@@ -843,10 +1122,15 @@ public sealed class MockCommercialRepository : ICommercialRepository
             offer.PriceAmountCents,
             offer.Currency,
             null,
-            null,
+            offer.ExternalReference,
             offer.Status,
             offer.DisplayOrder,
             offer.BillingCadence,
+            offer.SetupFeeAmountCents,
+            offer.BillingIntervalMonths,
+            offer.CommitmentMonths,
+            offer.PaymentMode,
+            offer.PublicPackCode,
             offer.PayPalPlanIdSandbox,
             offer.PayPalPlanIdLive,
             offer.StripePriceIdTest,
@@ -981,10 +1265,16 @@ public sealed record MockCommercialOffer(
     string CreatedAt,
     string InitialUpdatedAt,
     string InitialBillingCadence = CommercialStatuses.CadenceOneTime,
+    int? InitialSetupFeeAmountCents = null,
+    int? InitialBillingIntervalMonths = null,
+    int? InitialCommitmentMonths = null,
+    string? InitialPaymentMode = null,
+    string? InitialPublicPackCode = null,
     string? InitialPayPalPlanIdSandbox = null,
     string? InitialPayPalPlanIdLive = null,
     string? InitialStripePriceIdTest = null,
-    string? InitialStripePriceIdLive = null)
+    string? InitialStripePriceIdLive = null,
+    string? InitialExternalReference = null)
 {
     public string Name { get; set; } = InitialName;
     public string Description { get; set; } = InitialDescription;
@@ -995,10 +1285,16 @@ public sealed record MockCommercialOffer(
     public int DisplayOrder { get; set; } = InitialDisplayOrder;
     public string UpdatedAt { get; set; } = InitialUpdatedAt;
     public string BillingCadence { get; set; } = InitialBillingCadence;
+    public int? SetupFeeAmountCents { get; set; } = InitialSetupFeeAmountCents;
+    public int? BillingIntervalMonths { get; set; } = InitialBillingIntervalMonths;
+    public int? CommitmentMonths { get; set; } = InitialCommitmentMonths;
+    public string? PaymentMode { get; set; } = InitialPaymentMode;
+    public string? PublicPackCode { get; set; } = InitialPublicPackCode;
     public string? PayPalPlanIdSandbox { get; set; } = InitialPayPalPlanIdSandbox;
     public string? PayPalPlanIdLive { get; set; } = InitialPayPalPlanIdLive;
     public string? StripePriceIdTest { get; set; } = InitialStripePriceIdTest;
     public string? StripePriceIdLive { get; set; } = InitialStripePriceIdLive;
+    public string? ExternalReference { get; set; } = InitialExternalReference;
 }
 
 public sealed record MockCommercialDocument(

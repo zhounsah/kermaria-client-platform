@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { ClientCancelSubscriptionButton } from "@/components/ClientCancelSubscriptionButton";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { MockNotice } from "@/components/MockNotice";
@@ -8,8 +9,11 @@ import { SectionHeading } from "@/components/SectionHeading";
 import { StatusBadge } from "@/components/StatusBadge";
 import { requireClientSession } from "@/lib/auth";
 import {
+  formatBillingIntervalMonths,
+  formatCommitmentMonths,
   formatCurrencyFromCents,
   formatDateTime,
+  formatPaymentModeLabel,
   subscriptionStatus,
 } from "@/lib/formatters";
 import { getClientSubscriptions } from "@/lib/internal-api";
@@ -26,18 +30,32 @@ const FLASH_MESSAGES: Record<
 > = {
   approved: {
     tone: "success",
-    label: "Souscription approuvée",
-    text: "Votre souscription est en cours d'activation. La facturation démarre dès qu'elle est confirmée par PayPal.",
+    label: "Souscription approuvee",
+    text:
+      "Votre souscription est en cours d'activation. Le provisioning demarrera automatiquement apres validation.",
   },
   cancelled: {
     tone: "warning",
-    label: "Souscription annulée",
-    text: "Vous avez annulé la souscription avant son activation.",
+    label: "Parcours interrompu",
+    text: "La creation de souscription a ete interrompue avant activation.",
+  },
+  scheduled: {
+    tone: "warning",
+    label: "Resiliation programmee",
+    text:
+      "La resiliation prendra effet a la fin du terme deja engage ou deja paye.",
+  },
+  terminated: {
+    tone: "success",
+    label: "Souscription resiliee",
+    text:
+      "La resiliation a bien ete enregistree. Les acces associes sont en cours de reconciliation.",
   },
   error: {
     tone: "danger",
     label: "Souscription en erreur",
-    text: "Un problème est survenu lors du retour PayPal. Vérifiez la liste ou réessayez.",
+    text:
+      "Un probleme est survenu lors du retour de paiement. Verifiez la liste ou reessayez.",
   },
 };
 
@@ -45,6 +63,7 @@ function resolveFlash(value: unknown) {
   if (typeof value !== "string") {
     return null;
   }
+
   return FLASH_MESSAGES[value] ?? null;
 }
 
@@ -61,8 +80,12 @@ export default async function ProfileSubscriptionsPage({
   return (
     <>
       <PageHeader
-        action={<StatusBadge label="Vue client" tone="info" />}
-        description="Suivi des abonnements mensuels rattachés à votre compte."
+        action={
+          <Link className="button" href="/services">
+            Ajouter / remplacer une offre
+          </Link>
+        }
+        description="Suivi de vos abonnements recurrents, avec resiliation immediate ou differee selon le terme en cours."
         eyebrow="Compte"
         title="Mes souscriptions"
       />
@@ -76,8 +99,8 @@ export default async function ProfileSubscriptionsPage({
 
       <section className="request-history-section">
         <SectionHeading
-          description="Les souscriptions sont gérées par PayPal pour la partie paiement et par notre back-office pour la facturation BPCE."
-          title="Souscriptions actives et en cours"
+          description="Pour remplacer une offre, souscrivez d'abord a la nouvelle, puis resiliez l'ancienne une fois l'activation confirmee."
+          title="Souscriptions actives et historiques recents"
         />
         {result.error ? (
           <ErrorState
@@ -92,13 +115,18 @@ export default async function ProfileSubscriptionsPage({
                 Voir les offres
               </Link>
             }
-            description="Aucune souscription en cours. Vous pouvez en démarrer une depuis le catalogue de services."
+            description="Aucune souscription en cours. Vous pouvez en demarrer une depuis le catalogue de services."
             title="Aucune souscription"
           />
         ) : (
           <div className="stack-panels">
             {result.data.map((item) => {
               const status = subscriptionStatus[item.status];
+              const cancellable =
+                item.status !== "cancelled"
+                && item.status !== "expired"
+                && item.status !== "pending_cancellation";
+
               return (
                 <article
                   className="content-panel stack-panel"
@@ -107,18 +135,28 @@ export default async function ProfileSubscriptionsPage({
                 >
                   <div className="section-heading">
                     <div>
-                      <span className="card-kicker">Offre mensuelle</span>
+                      <span className="card-kicker">
+                        {item.publicPackCode
+                          ? "Pack grand public"
+                          : "Offre recurrente"}
+                      </span>
                       <h2>{item.offerName}</h2>
                       <p>
-                        {formatCurrencyFromCents(item.priceAmountCents)} HT /
-                        mois
+                        {formatCurrencyFromCents(item.priceAmountCents)} HT ·{" "}
+                        {formatBillingIntervalMonths(item.billingIntervalMonths)}
                       </p>
                     </div>
-                    <StatusBadge label={status.label} tone={status.tone} />
+                    <div className="badge-stack">
+                      <StatusBadge
+                        label={item.rail === "stripe" ? "Stripe" : "PayPal"}
+                        tone="info"
+                      />
+                      <StatusBadge label={status.label} tone={status.tone} />
+                    </div>
                   </div>
                   <dl className="profile-details">
                     <div>
-                      <dt>Démarrée le</dt>
+                      <dt>Demarree le</dt>
                       <dd>
                         {item.startedAt
                           ? formatDateTime(item.startedAt)
@@ -126,22 +164,80 @@ export default async function ProfileSubscriptionsPage({
                       </dd>
                     </div>
                     <div>
-                      <dt>Prochaine échéance</dt>
+                      <dt>Engagement</dt>
+                      <dd>{formatCommitmentMonths(item.commitmentMonths)}</dd>
+                    </div>
+                    <div>
+                      <dt>Mode de paiement</dt>
+                      <dd>{formatPaymentModeLabel(item.paymentMode)}</dd>
+                    </div>
+                    <div>
+                      <dt>Mise en service</dt>
+                      <dd>{formatCurrencyFromCents(item.setupFeeAmountCents)} HT</dd>
+                    </div>
+                    <div>
+                      <dt>Prochaine echeance</dt>
                       <dd>
                         {item.nextBillingAt
                           ? formatDateTime(item.nextBillingAt)
-                          : "À déterminer"}
+                          : "A determiner"}
                       </dd>
                     </div>
                     <div>
-                      <dt>Identifiant PayPal</dt>
-                      <dd>{item.paypalSubscriptionId ?? "—"}</dd>
+                      <dt>Fin d&apos;engagement</dt>
+                      <dd>
+                        {item.commitmentEndsAt
+                          ? formatDateTime(item.commitmentEndsAt)
+                          : "—"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Cycles payes</dt>
+                      <dd>{String(item.paidCyclesCount)}</dd>
+                    </div>
+                    <div>
+                      <dt>Reference offre</dt>
+                      <dd>{item.offerExternalReference ?? "—"}</dd>
+                    </div>
+                    <div>
+                      <dt>Identifiant paiement</dt>
+                      <dd>
+                        {item.rail === "stripe"
+                          ? item.stripeSubscriptionId ?? "—"
+                          : item.paypalSubscriptionId ?? "—"}
+                      </dd>
                     </div>
                   </dl>
+                  {item.cancelAtTermEnd ? (
+                    <p className="field-hint">
+                      Resiliation demandee le{" "}
+                      {item.cancelRequestedAt
+                        ? formatDateTime(item.cancelRequestedAt)
+                        : "date indisponible"}
+                      {" · "}le service restera actif jusqu&apos;a la fin du terme
+                      en cours.
+                    </p>
+                  ) : null}
                   <p className="field-hint">
-                    Souscrite le {formatDateTime(item.createdAt)} · mise à jour
+                    Souscrite le {formatDateTime(item.createdAt)} · mise a jour
                     le {formatDateTime(item.updatedAt)}
                   </p>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 12,
+                      flexWrap: "wrap",
+                      alignItems: "center",
+                    }}
+                  >
+                    <ClientCancelSubscriptionButton
+                      disabled={!cancellable}
+                      subscriptionId={item.id}
+                    />
+                    <Link className="button button-secondary" href="/services">
+                      Ajouter / remplacer une offre
+                    </Link>
+                  </div>
                 </article>
               );
             })}

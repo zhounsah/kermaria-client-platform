@@ -15,7 +15,8 @@ public interface IPayPalWebhookService
 public sealed class PayPalWebhookService : IPayPalWebhookService
 {
     private readonly IPayPalWebhookRepository _events;
-    private readonly ISubscriptionRepository _subscriptions;
+    private readonly ISubscriptionRepository _subscriptionRepository;
+    private readonly ISubscriptionService _subscriptions;
     private readonly ICommercialRepository _commercial;
     private readonly IInvoiceIssuingService _issuing;
     private readonly IAuditService _audit;
@@ -23,13 +24,15 @@ public sealed class PayPalWebhookService : IPayPalWebhookService
 
     public PayPalWebhookService(
         IPayPalWebhookRepository events,
-        ISubscriptionRepository subscriptions,
+        ISubscriptionRepository subscriptionRepository,
+        ISubscriptionService subscriptions,
         ICommercialRepository commercial,
         IInvoiceIssuingService issuing,
         IAuditService audit,
         ILogger<PayPalWebhookService> logger)
     {
         _events = events;
+        _subscriptionRepository = subscriptionRepository;
         _subscriptions = subscriptions;
         _commercial = commercial;
         _issuing = issuing;
@@ -172,7 +175,7 @@ public sealed class PayPalWebhookService : IPayPalWebhookService
 
             default:
                 _logger.LogInformation(
-                    "PayPal webhook event {EventType} not handled — marked ignored",
+                    "PayPal webhook event {EventType} not handled - marked ignored",
                     eventType);
                 return "ignored";
         }
@@ -187,11 +190,11 @@ public sealed class PayPalWebhookService : IPayPalWebhookService
             paypalSubscriptionId,
             cancellationToken);
         var now = DateTime.UtcNow;
-        var nextBilling = now.AddMonths(1);
         var activated = await _subscriptions.ActivateAsync(
             subscription.Id,
             now,
-            nextBilling,
+            now,
+            correlationId,
             cancellationToken);
         await _audit.RecordAsync(
             new AuditEvent(
@@ -217,6 +220,9 @@ public sealed class PayPalWebhookService : IPayPalWebhookService
         var updated = await _subscriptions.UpdateStatusAsync(
             subscription.Id,
             newStatus,
+            $"subscription.provisioning.{newStatus}",
+            correlationId,
+            requestedByUserId: null,
             cancellationToken);
         await _audit.RecordAsync(
             new AuditEvent(
@@ -241,21 +247,37 @@ public sealed class PayPalWebhookService : IPayPalWebhookService
                 "PAYMENT.SALE.COMPLETED payload has no billing_agreement_id.");
         }
 
-        var subscription = await _subscriptions.GetByExternalIdAsync(
+        var subscription = await _subscriptionRepository.GetByExternalIdAsync(
             "paypal",
             paypalSubscriptionId,
             cancellationToken)
             ?? throw new InvalidOperationException(
                 $"No local subscription matches PayPal id {paypalSubscriptionId}.");
 
-        var title =
-            $"Échéance mensuelle {DateTime.UtcNow:yyyy-MM} — {subscription.OfferName}";
+        var extraLines = subscription.PaidCyclesCount == 0
+            && subscription.SetupFeeAmountCents > 0
+            ? new[]
+            {
+                new SubscriptionBillingDocumentLineRequest(
+                    null,
+                    "Mise en service",
+                    $"Mise en service du {subscription.OfferName}",
+                    1m,
+                    "forfait",
+                    subscription.SetupFeeAmountCents,
+                    null,
+                    5)
+            }
+            : Array.Empty<SubscriptionBillingDocumentLineRequest>();
+        var title = $"Echeance {DateTime.UtcNow:yyyy-MM} - {subscription.OfferName}";
 
-        var documentId = await _commercial.CreateBillingDocumentFromOfferAsync(
-            subscription.CustomerId,
-            subscription.CommercialOfferId,
-            subscription.Id,
-            title,
+        var documentId = await _commercial.CreateBillingDocumentForSubscriptionAsync(
+            new SubscriptionBillingDocumentRequest(
+                subscription.CustomerId,
+                subscription.CommercialOfferId,
+                subscription.Id,
+                title,
+                extraLines),
             correlationId,
             cancellationToken);
 
@@ -281,6 +303,11 @@ public sealed class PayPalWebhookService : IPayPalWebhookService
                 $"BPCE confirm failed: {confirmResult.Code} {confirmResult.Message}");
         }
 
+        subscription = await _subscriptions.RecordPaymentAsync(
+            subscription.Id,
+            DateTime.UtcNow,
+            cancellationToken);
+
         await _audit.RecordAsync(
             new AuditEvent(
                 correlationId,
@@ -302,7 +329,7 @@ public sealed class PayPalWebhookService : IPayPalWebhookService
                 "PayPal subscription id is required.");
         }
 
-        return await _subscriptions.GetByExternalIdAsync(
+        return await _subscriptionRepository.GetByExternalIdAsync(
             "paypal",
             paypalSubscriptionId,
             cancellationToken)

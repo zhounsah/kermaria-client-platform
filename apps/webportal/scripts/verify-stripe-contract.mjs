@@ -21,6 +21,12 @@ const subscribeCreateRoute = await read(
 const subscribeStripeReturnRoute = await read(
   "app/api/subscriptions/stripe/return/route.ts",
 );
+const clientCancelRoute = await read(
+  "app/api/subscriptions/[id]/cancel/route.ts",
+);
+const adminCancelRoute = await read(
+  "app/api/admin/subscriptions/[id]/cancel/route.ts",
+);
 const stripePriceRoute = await read(
   "app/api/admin/catalog/[id]/stripe-price/route.ts",
 );
@@ -165,6 +171,11 @@ assert.match(
 );
 assert.match(
   stripeWebhookService,
+  /"invoice.payment_succeeded"/,
+  "StripeWebhookService doit gerer invoice.payment_succeeded.",
+);
+assert.match(
+  stripeWebhookService,
   /"customer.subscription.deleted"/,
   "StripeWebhookService doit gerer customer.subscription.deleted.",
 );
@@ -218,6 +229,26 @@ assert.match(
   "createStripeSubscriptionCheckoutSession doit etre exporte.",
 );
 assert.match(
+  stripeLib,
+  /setupFeeAmountCents/,
+  "Le helper Stripe abonnement doit accepter les frais de mise en service.",
+);
+assert.match(
+  stripeLib,
+  /recurring\[interval_count\]/,
+  "Le helper Stripe doit piloter interval_count pour les engagements 1\/6\/12.",
+);
+assert.match(
+  stripeLib,
+  /scheduleStripeSubscriptionCancellationAtPeriodEnd/,
+  "Le helper Stripe doit permettre la resiliation a fin de terme.",
+);
+assert.match(
+  stripeLib,
+  /export async function cancelStripeSubscription/,
+  "cancelStripeSubscription doit etre exporte.",
+);
+assert.match(
   stripeWebhookLib,
   /export function verifyStripeSignature/,
   "verifyStripeSignature doit etre exporte.",
@@ -264,6 +295,32 @@ assert.match(
   /createStripeProduct/,
   "La route admin stripe-price doit creer un produit Stripe.",
 );
+assert.match(
+  stripePriceRoute,
+  /billingIntervalMonths \?\? 1/,
+  "La route admin stripe-price doit utiliser l'intervalle catalogue.",
+);
+assert.match(
+  clientCancelRoute,
+  /cancelStripeSubscription/,
+  "La route client de résiliation doit pouvoir annuler Stripe.",
+);
+assert.match(
+  adminCancelRoute,
+  /cancelStripeSubscription/,
+  "La route admin d'annulation doit pouvoir annuler Stripe.",
+);
+
+assert.match(
+  clientCancelRoute,
+  /scheduleStripeSubscriptionCancellationAtPeriodEnd/,
+  "La route client de resiliation doit pouvoir programmer une fin de terme Stripe.",
+);
+assert.match(
+  adminCancelRoute,
+  /scheduleStripeSubscriptionCancellationAtPeriodEnd/,
+  "La route admin d'annulation doit pouvoir programmer une fin de terme Stripe.",
+);
 
 // --- UI ---
 assert.match(
@@ -293,8 +350,13 @@ assert.match(
 );
 assert.match(
   servicesPage,
-  /canSubscribeStripe/,
-  "La page services doit calculer canSubscribeStripe.",
+  /getStripeMode/,
+  "La page services doit propager le mode Stripe aux cartes packs.",
+);
+assert.match(
+  servicesPage,
+  /PublicPackCard/,
+  "La page services doit utiliser les cartes packs pour les souscriptions Stripe.",
 );
 assert.match(
   commercialDocumentPage,

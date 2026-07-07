@@ -42,6 +42,11 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 status,
                 display_order,
                 billing_cadence,
+                setup_fee_amount_cents,
+                billing_interval_months,
+                commitment_months,
+                payment_mode,
+                public_pack_code,
                 paypal_plan_id_sandbox,
                 paypal_plan_id_live,
                 stripe_price_id_test,
@@ -84,6 +89,11 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 status,
                 display_order,
                 billing_cadence,
+                setup_fee_amount_cents,
+                billing_interval_months,
+                commitment_months,
+                payment_mode,
+                public_pack_code,
                 paypal_plan_id_sandbox,
                 paypal_plan_id_live,
                 stripe_price_id_test,
@@ -126,6 +136,11 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 status,
                 display_order,
                 billing_cadence,
+                setup_fee_amount_cents,
+                billing_interval_months,
+                commitment_months,
+                payment_mode,
+                public_pack_code,
                 paypal_plan_id_sandbox,
                 paypal_plan_id_live,
                 stripe_price_id_test,
@@ -144,6 +159,11 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 @status,
                 @display_order,
                 @billing_cadence,
+                @setup_fee_amount_cents,
+                @billing_interval_months,
+                @commitment_months,
+                @payment_mode,
+                @public_pack_code,
                 @paypal_plan_id_sandbox,
                 @paypal_plan_id_live,
                 @stripe_price_id_test,
@@ -161,6 +181,21 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
         command.Parameters.AddWithValue("@status", offer.Status);
         command.Parameters.AddWithValue("@display_order", offer.DisplayOrder);
         command.Parameters.AddWithValue("@billing_cadence", offer.BillingCadence);
+        command.Parameters.AddWithValue(
+            "@setup_fee_amount_cents",
+            DbValue(offer.SetupFeeAmountCents));
+        command.Parameters.AddWithValue(
+            "@billing_interval_months",
+            DbValue(offer.BillingIntervalMonths));
+        command.Parameters.AddWithValue(
+            "@commitment_months",
+            DbValue(offer.CommitmentMonths));
+        command.Parameters.AddWithValue(
+            "@payment_mode",
+            DbValue(offer.PaymentMode));
+        command.Parameters.AddWithValue(
+            "@public_pack_code",
+            DbValue(offer.PublicPackCode));
         command.Parameters.AddWithValue(
             "@paypal_plan_id_sandbox",
             DbValue(offer.PayPalPlanIdSandbox));
@@ -218,6 +253,11 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
             || current.Status != offer.Status
             || current.DisplayOrder != offer.DisplayOrder
             || current.BillingCadence != offer.BillingCadence
+            || current.SetupFeeAmountCents != offer.SetupFeeAmountCents
+            || current.BillingIntervalMonths != offer.BillingIntervalMonths
+            || current.CommitmentMonths != offer.CommitmentMonths
+            || current.PaymentMode != offer.PaymentMode
+            || current.PublicPackCode != offer.PublicPackCode
             || current.PayPalPlanIdSandbox != offer.PayPalPlanIdSandbox
             || current.PayPalPlanIdLive != offer.PayPalPlanIdLive
             || current.StripePriceIdTest != offer.StripePriceIdTest
@@ -237,6 +277,11 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                     status = @status,
                     display_order = @display_order,
                     billing_cadence = @billing_cadence,
+                    setup_fee_amount_cents = @setup_fee_amount_cents,
+                    billing_interval_months = @billing_interval_months,
+                    commitment_months = @commitment_months,
+                    payment_mode = @payment_mode,
+                    public_pack_code = @public_pack_code,
                     paypal_plan_id_sandbox = @paypal_plan_id_sandbox,
                     paypal_plan_id_live = @paypal_plan_id_live,
                     stripe_price_id_test = @stripe_price_id_test,
@@ -253,6 +298,21 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
             command.Parameters.AddWithValue("@status", offer.Status);
             command.Parameters.AddWithValue("@display_order", offer.DisplayOrder);
             command.Parameters.AddWithValue("@billing_cadence", offer.BillingCadence);
+            command.Parameters.AddWithValue(
+                "@setup_fee_amount_cents",
+                DbValue(offer.SetupFeeAmountCents));
+            command.Parameters.AddWithValue(
+                "@billing_interval_months",
+                DbValue(offer.BillingIntervalMonths));
+            command.Parameters.AddWithValue(
+                "@commitment_months",
+                DbValue(offer.CommitmentMonths));
+            command.Parameters.AddWithValue(
+                "@payment_mode",
+                DbValue(offer.PaymentMode));
+            command.Parameters.AddWithValue(
+                "@public_pack_code",
+                DbValue(offer.PublicPackCode));
             command.Parameters.AddWithValue(
                 "@paypal_plan_id_sandbox",
                 DbValue(offer.PayPalPlanIdSandbox));
@@ -1008,6 +1068,17 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
             reader.GetString("status"),
             reader.GetInt32("display_order"),
             reader.GetString("billing_cadence"),
+            reader.IsDBNull(reader.GetOrdinal("setup_fee_amount_cents"))
+                ? null
+                : reader.GetInt32("setup_fee_amount_cents"),
+            reader.IsDBNull(reader.GetOrdinal("billing_interval_months"))
+                ? null
+                : reader.GetInt32("billing_interval_months"),
+            reader.IsDBNull(reader.GetOrdinal("commitment_months"))
+                ? null
+                : reader.GetInt32("commitment_months"),
+            ReadNullableString(reader, "payment_mode"),
+            ReadNullableString(reader, "public_pack_code"),
             ReadNullableString(reader, "paypal_plan_id_sandbox"),
             ReadNullableString(reader, "paypal_plan_id_live"),
             ReadNullableString(reader, "stripe_price_id_test"),
@@ -1135,6 +1206,11 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 status,
                 display_order,
                 billing_cadence,
+                setup_fee_amount_cents,
+                billing_interval_months,
+                commitment_months,
+                payment_mode,
+                public_pack_code,
                 paypal_plan_id_sandbox,
                 paypal_plan_id_live,
                 stripe_price_id_test,
@@ -1160,6 +1236,17 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
             reader.GetString("status"),
             reader.GetInt32("display_order"),
             reader.GetString("billing_cadence"),
+            reader.IsDBNull(reader.GetOrdinal("setup_fee_amount_cents"))
+                ? null
+                : reader.GetInt32("setup_fee_amount_cents"),
+            reader.IsDBNull(reader.GetOrdinal("billing_interval_months"))
+                ? null
+                : reader.GetInt32("billing_interval_months"),
+            reader.IsDBNull(reader.GetOrdinal("commitment_months"))
+                ? null
+                : reader.GetInt32("commitment_months"),
+            ReadNullableString(reader, "payment_mode"),
+            ReadNullableString(reader, "public_pack_code"),
             ReadNullableString(reader, "paypal_plan_id_sandbox"),
             ReadNullableString(reader, "paypal_plan_id_live"),
             ReadNullableString(reader, "stripe_price_id_test"),
@@ -1511,6 +1598,11 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
         string Status,
         int DisplayOrder,
         string BillingCadence,
+        int? SetupFeeAmountCents,
+        int? BillingIntervalMonths,
+        int? CommitmentMonths,
+        string? PaymentMode,
+        string? PublicPackCode,
         string? PayPalPlanIdSandbox,
         string? PayPalPlanIdLive,
         string? StripePriceIdTest,
@@ -1668,11 +1760,8 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    public async Task<string> CreateBillingDocumentFromOfferAsync(
-        string customerId,
-        string offerId,
-        string subscriptionId,
-        string title,
+    public async Task<string> CreateBillingDocumentForSubscriptionAsync(
+        SubscriptionBillingDocumentRequest request,
         string correlationId,
         CancellationToken cancellationToken)
     {
@@ -1689,7 +1778,7 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
         var offer = await ReadOfferDetailsAsync(
             connection,
             transaction,
-            offerId,
+            request.OfferId,
             cancellationToken);
 
         var documentId = Guid.NewGuid().ToString("D");
@@ -1742,9 +1831,9 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 );
                 """;
             documentCommand.Parameters.AddWithValue("@id", documentId);
-            documentCommand.Parameters.AddWithValue("@customerId", customerId);
-            documentCommand.Parameters.AddWithValue("@subscriptionId", subscriptionId);
-            documentCommand.Parameters.AddWithValue("@title", title);
+            documentCommand.Parameters.AddWithValue("@customerId", request.CustomerId);
+            documentCommand.Parameters.AddWithValue("@subscriptionId", request.SubscriptionId);
+            documentCommand.Parameters.AddWithValue("@title", request.Title);
             documentCommand.Parameters.AddWithValue("@reference", reference);
             documentCommand.Parameters.AddWithValue(
                 "@disclaimer",
@@ -1756,62 +1845,37 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
             await documentCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        var lineId = Guid.NewGuid().ToString("D");
-        await using (var lineCommand = connection.CreateCommand())
+        await InsertSubscriptionDocumentLineAsync(
+            connection,
+            transaction,
+            documentId,
+            request.OfferId,
+            offer.Name,
+            offer.Description,
+            quantity: 1m,
+            offer.UnitLabel,
+            offer.PriceAmountCents,
+            offer.TaxRateBasisPoints,
+            sortOrder: 10,
+            now,
+            cancellationToken);
+
+        foreach (var extraLine in request.Lines.OrderBy(line => line.SortOrder))
         {
-            lineCommand.Transaction = transaction;
-            lineCommand.CommandText =
-                """
-                INSERT INTO commercial_document_lines (
-                    id,
-                    document_id,
-                    offer_id,
-                    label,
-                    description,
-                    quantity,
-                    unit_label,
-                    unit_price_cents,
-                    tax_rate_basis_points,
-                    line_total_cents,
-                    sort_order,
-                    created_at,
-                    updated_at
-                ) VALUES (
-                    @id,
-                    @documentId,
-                    @offerId,
-                    @label,
-                    @description,
-                    1.00,
-                    @unitLabel,
-                    @unitPriceCents,
-                    @taxRate,
-                    @lineTotal,
-                    10,
-                    @createdAt,
-                    @updatedAt
-                );
-                """;
-            lineCommand.Parameters.AddWithValue("@id", lineId);
-            lineCommand.Parameters.AddWithValue("@documentId", documentId);
-            lineCommand.Parameters.AddWithValue("@offerId", offerId);
-            lineCommand.Parameters.AddWithValue("@label", offer.Name);
-            lineCommand.Parameters.AddWithValue("@description", offer.Description);
-            lineCommand.Parameters.AddWithValue("@unitLabel", offer.UnitLabel);
-            lineCommand.Parameters.AddWithValue(
-                "@unitPriceCents",
-                offer.PriceAmountCents);
-            lineCommand.Parameters.AddWithValue(
-                "@taxRate",
-                offer.TaxRateBasisPoints is null
-                    ? DBNull.Value
-                    : (object)offer.TaxRateBasisPoints.Value);
-            lineCommand.Parameters.AddWithValue(
-                "@lineTotal",
-                offer.PriceAmountCents);
-            lineCommand.Parameters.AddWithValue("@createdAt", now);
-            lineCommand.Parameters.AddWithValue("@updatedAt", now);
-            await lineCommand.ExecuteNonQueryAsync(cancellationToken);
+            await InsertSubscriptionDocumentLineAsync(
+                connection,
+                transaction,
+                documentId,
+                extraLine.OfferId,
+                extraLine.Label,
+                extraLine.Description,
+                extraLine.Quantity,
+                extraLine.UnitLabel,
+                extraLine.UnitPriceCents,
+                extraLine.TaxRateBasisPoints ?? offer.TaxRateBasisPoints,
+                extraLine.SortOrder,
+                now,
+                cancellationToken);
         }
 
         await RecalculateDocumentTotalsAsync(
@@ -1823,6 +1887,75 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
 
         await transaction.CommitAsync(cancellationToken);
         return documentId;
+    }
+
+    private static async Task InsertSubscriptionDocumentLineAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        string documentId,
+        string? offerId,
+        string label,
+        string description,
+        decimal quantity,
+        string unitLabel,
+        int unitPriceCents,
+        int? taxRateBasisPoints,
+        int sortOrder,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
+        var lineTotalCents = (int)decimal.Round(
+            quantity * unitPriceCents,
+            0,
+            MidpointRounding.AwayFromZero);
+        await using var lineCommand = connection.CreateCommand();
+        lineCommand.Transaction = transaction;
+        lineCommand.CommandText =
+            """
+            INSERT INTO commercial_document_lines (
+                id,
+                document_id,
+                offer_id,
+                label,
+                description,
+                quantity,
+                unit_label,
+                unit_price_cents,
+                tax_rate_basis_points,
+                line_total_cents,
+                sort_order,
+                created_at,
+                updated_at
+            ) VALUES (
+                @id,
+                @documentId,
+                @offerId,
+                @label,
+                @description,
+                @quantity,
+                @unitLabel,
+                @unitPriceCents,
+                @taxRate,
+                @lineTotal,
+                @sortOrder,
+                @createdAt,
+                @updatedAt
+            );
+            """;
+        lineCommand.Parameters.AddWithValue("@id", Guid.NewGuid().ToString("D"));
+        lineCommand.Parameters.AddWithValue("@documentId", documentId);
+        lineCommand.Parameters.AddWithValue("@offerId", DbValue(offerId));
+        lineCommand.Parameters.AddWithValue("@label", label);
+        lineCommand.Parameters.AddWithValue("@description", description);
+        lineCommand.Parameters.AddWithValue("@quantity", quantity);
+        lineCommand.Parameters.AddWithValue("@unitLabel", unitLabel);
+        lineCommand.Parameters.AddWithValue("@unitPriceCents", unitPriceCents);
+        lineCommand.Parameters.AddWithValue("@taxRate", DbValue(taxRateBasisPoints));
+        lineCommand.Parameters.AddWithValue("@lineTotal", lineTotalCents);
+        lineCommand.Parameters.AddWithValue("@sortOrder", sortOrder);
+        lineCommand.Parameters.AddWithValue("@createdAt", now);
+        lineCommand.Parameters.AddWithValue("@updatedAt", now);
+        await lineCommand.ExecuteNonQueryAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyList<CommercialDocumentSummary>>

@@ -4,10 +4,11 @@ Génère webportal.config.json à partir d'un fichier PowerShell .env.
 
 .DESCRIPTION
 Miroir de build-api-config.ps1 pour le WEBPORTAL Node.js sur SRV-01.
-Extrait toutes les valeurs `$env:KEY = "value"` du .env.ps1 sauf celles
-qui sont uniquement server-side (SQL, AD, BPCE, SMTP, logs, session
-timeouts…) et produit
-C:\ProgramData\Kermaria\webportal.config.json.
+Extrait toutes les valeurs du .env.ps1 déclarées soit sous la forme
+`$env:KEY = "value"`, soit sous la forme
+`Set-Item -Path 'Env:KEY-WITH-HYPHEN' -Value 'value'`, sauf celles qui
+sont uniquement server-side (SQL, AD, BPCE, SMTP, logs, session
+timeouts…) et produit C:\ProgramData\Kermaria\webportal.config.json.
 
 Le wrapper start-webportal.ps1 lit ce fichier au démarrage du service
 NSSM, injecte chaque clé comme variable d'environnement dans sa propre
@@ -131,12 +132,24 @@ $extracted = [ordered]@{}
 $blocked = @()
 $emptyValues = @()
 
-$pattern = '^\s*\$env:([A-Z_][A-Z0-9_]*)\s*=\s*([''"])(.*)\2\s*(?:#.*)?\s*$'
+$assignmentPattern =
+    '^\s*\$env:([A-Z_][A-Z0-9_]*)\s*=\s*([''"])(.*)\2\s*(?:#.*)?\s*$'
+$setItemPattern =
+    '^\s*Set-Item\s+-Path\s+([''"])Env:([^''"]+)\1\s+-Value\s+([''"])(.*)\3\s*(?:#.*)?\s*$'
 
 Get-Content -LiteralPath $InputPath | ForEach-Object {
-    if ($_ -match $pattern) {
+    $key = $null
+    $value = $null
+
+    if ($_ -match $assignmentPattern) {
         $key = $Matches[1]
         $value = $Matches[3]
+    } elseif ($_ -match $setItemPattern) {
+        $key = $Matches[2]
+        $value = $Matches[4]
+    }
+
+    if ($null -ne $key) {
         if ($Blocklist -contains $key) {
             $blocked += $key
         } elseif ([string]::IsNullOrEmpty($value)) {

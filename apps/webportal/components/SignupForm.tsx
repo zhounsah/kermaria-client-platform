@@ -3,12 +3,28 @@
 import Script from "next/script";
 import { useEffect, useRef, useState } from "react";
 
+import type {
+  CommercialOfferPaymentMode,
+  PublicPackCode,
+  PublicPackCommitmentMonths,
+} from "@kermaria/shared";
+
 import { FormMessage } from "@/components/FormMessage";
 import { SubmitButton } from "@/components/SubmitButton";
 import { requestBffJson } from "@/lib/client-api";
+import { formatCurrencyFromCents } from "@/lib/formatters";
 
 type SignupFormProps = {
   hcaptchaSiteKey: string | null;
+  initialPackSelection?: {
+    packKey: PublicPackCode;
+    packLabel: string;
+    commitmentMonths: PublicPackCommitmentMonths;
+    paymentMode: CommercialOfferPaymentMode;
+    monthlyPriceAmountCents: number;
+    setupFeeAmountCents: number;
+    firstChargeAmountCents: number;
+  } | null;
 };
 
 type SignupState =
@@ -22,7 +38,10 @@ type SignupResponse = {
   correlation_id?: string;
 };
 
-export function SignupForm({ hcaptchaSiteKey }: SignupFormProps) {
+export function SignupForm({
+  hcaptchaSiteKey,
+  initialPackSelection = null,
+}: SignupFormProps) {
   const isSubmittingRef = useRef(false);
   const renderedAtRef = useRef<number>(0);
   const [companyName, setCompanyName] = useState("");
@@ -68,6 +87,9 @@ export function SignupForm({ hcaptchaSiteKey }: SignupFormProps) {
           email,
           phone,
           message,
+          packKey: initialPackSelection?.packKey ?? null,
+          commitmentMonths: initialPackSelection?.commitmentMonths ?? null,
+          paymentMode: initialPackSelection?.paymentMode ?? null,
           hcaptchaToken: hcaptchaToken || null,
           website: honeypot,
           formRenderedAt: renderedAtRef.current,
@@ -181,7 +203,60 @@ export function SignupForm({ hcaptchaSiteKey }: SignupFormProps) {
           />
         </label>
 
-        {/* Honeypot anti-bot : masqué et hors flux de tabulation. */}
+        {initialPackSelection ? (
+          <section
+            className="content-panel"
+            aria-label="Pack choisi"
+            style={{ marginTop: 8 }}
+          >
+            <h2 style={{ marginTop: 0 }}>{initialPackSelection.packLabel}</h2>
+            <p className="field-hint" style={{ marginTop: 8 }}>
+              Engagement {initialPackSelection.commitmentMonths} mois · paiement{" "}
+              {initialPackSelection.paymentMode === "upfront"
+                ? "comptant"
+                : "mensuel"}
+            </p>
+            <p className="field-hint">
+              Tarif affiché :{" "}
+              {formatCurrencyFromCents(
+                initialPackSelection.monthlyPriceAmountCents,
+              )}{" "}
+              HT / mois
+            </p>
+            <p className="field-hint">
+              Mise en service :{" "}
+              {formatCurrencyFromCents(
+                initialPackSelection.setupFeeAmountCents,
+              )}{" "}
+              HT · première échéance :{" "}
+              {formatCurrencyFromCents(
+                initialPackSelection.firstChargeAmountCents,
+              )}{" "}
+              HT
+            </p>
+          </section>
+        ) : null}
+
+        {initialPackSelection ? (
+          <>
+            <input
+              name="packKey"
+              type="hidden"
+              value={initialPackSelection.packKey}
+            />
+            <input
+              name="commitmentMonths"
+              type="hidden"
+              value={String(initialPackSelection.commitmentMonths)}
+            />
+            <input
+              name="paymentMode"
+              type="hidden"
+              value={initialPackSelection.paymentMode}
+            />
+          </>
+        ) : null}
+
         <div aria-hidden="true" className="signup-honeypot">
           <label>
             Ne remplissez pas ce champ
@@ -199,11 +274,9 @@ export function SignupForm({ hcaptchaSiteKey }: SignupFormProps) {
         ) : null}
 
         <p className="signup-form-note">
-          En envoyant ce formulaire, vous demandez la création d&apos;un
-          accès. Un e-mail de confirmation vous sera adressé, puis notre
-          équipe validera votre demande avant l&apos;ouverture de
-          l&apos;accès. Aucune donnée n&apos;est utilisée à des fins
-          publicitaires.
+          En envoyant ce formulaire, vous demandez la création d&apos;un accès.
+          Un e-mail de confirmation vous sera adressé, puis notre équipe
+          validera votre demande avant l&apos;ouverture du compte.
         </p>
 
         <SubmitButton

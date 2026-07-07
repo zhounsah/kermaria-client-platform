@@ -11,6 +11,12 @@ import { useRouter } from "next/navigation";
 import { FormMessage } from "@/components/FormMessage";
 import { SubmitButton } from "@/components/SubmitButton";
 import { requestBffJson } from "@/lib/client-api";
+import {
+  formatBillingIntervalMonths,
+  formatCommitmentMonths,
+  formatCurrencyFromCents,
+  formatPaymentModeLabel,
+} from "@/lib/formatters";
 
 type AdminCatalogOfferFormProps = {
   offer?: CommercialOfferSummary;
@@ -50,6 +56,11 @@ export function AdminCatalogOfferForm({ offer }: AdminCatalogOfferFormProps) {
   const paypalPlanIdLive = offer?.paypalPlanIdLive ?? null;
   const stripePriceIdTest = offer?.stripePriceIdTest ?? null;
   const stripePriceIdLive = offer?.stripePriceIdLive ?? null;
+  const setupFeeAmountCents = offer?.setupFeeAmountCents ?? null;
+  const billingIntervalMonths = offer?.billingIntervalMonths ?? null;
+  const commitmentMonths = offer?.commitmentMonths ?? null;
+  const paymentMode = offer?.paymentMode ?? null;
+  const publicPackCode = offer?.publicPackCode ?? null;
   const planLocked =
     paypalPlanIdSandbox !== null
     || paypalPlanIdLive !== null
@@ -86,6 +97,11 @@ export function AdminCatalogOfferForm({ offer }: AdminCatalogOfferFormProps) {
       status,
       displayOrder: Number.parseInt(displayOrder, 10),
       billingCadence,
+      setupFeeAmountCents,
+      billingIntervalMonths,
+      commitmentMonths,
+      paymentMode,
+      publicPackCode,
       paypalPlanIdSandbox,
       paypalPlanIdLive,
       stripePriceIdTest,
@@ -299,6 +315,41 @@ export function AdminCatalogOfferForm({ offer }: AdminCatalogOfferFormProps) {
           </span>
         </div>
       </div>
+      {publicPackCode ? (
+        <div className="content-panel" style={{ marginTop: 12, padding: 16 }}>
+          <strong>Metadonnees pack public</strong>
+          <dl className="profile-details" style={{ marginTop: 12 }}>
+            <div>
+              <dt>Code pack</dt>
+              <dd>{publicPackCode}</dd>
+            </div>
+            <div>
+              <dt>Engagement</dt>
+              <dd>{formatCommitmentMonths(commitmentMonths)}</dd>
+            </div>
+            <div>
+              <dt>Mode de paiement</dt>
+              <dd>{formatPaymentModeLabel(paymentMode)}</dd>
+            </div>
+            <div>
+              <dt>Intervalle facture</dt>
+              <dd>{formatBillingIntervalMonths(billingIntervalMonths)}</dd>
+            </div>
+            <div>
+              <dt>Mise en service</dt>
+              <dd>
+                {setupFeeAmountCents === null
+                  ? "—"
+                  : `${formatCurrencyFromCents(setupFeeAmountCents)} HT`}
+              </dd>
+            </div>
+          </dl>
+          <p className="field-hint">
+            Ces metadonnees sont preservees automatiquement lors des mises a
+            jour de la fiche.
+          </p>
+        </div>
+      ) : null}
       {offer && billingCadence === "monthly" ? (
         <div>
           <button

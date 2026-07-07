@@ -15,6 +15,7 @@ public sealed class MockSignupRow
     public required string Email { get; set; }
     public string? Phone { get; set; }
     public string? Message { get; set; }
+    public SignupPackSelectionSnapshot? PackSelection { get; set; }
     public string? VerificationTokenHash { get; set; }
     public DateTime? VerificationTokenExpiresAtUtc { get; set; }
     public string? PasswordSetupTokenHash { get; set; }
@@ -86,6 +87,7 @@ public sealed class MockSignupRepository : ISignupRepository
             Email = insert.Email,
             Phone = insert.Phone,
             Message = insert.Message,
+            PackSelection = insert.PackSelection,
             VerificationTokenHash = insert.VerificationTokenHash,
             VerificationTokenExpiresAtUtc = insert.VerificationTokenExpiresAtUtc,
             SourceAddress = insert.SourceAddress,
@@ -155,6 +157,21 @@ public sealed class MockSignupRepository : ISignupRepository
             : null);
     }
 
+    public Task<SignupPendingRecord?> GetLatestApprovedByCustomerIdAsync(
+        string customerId,
+        CancellationToken cancellationToken)
+    {
+        var row = _rows.Values
+            .Where(candidate =>
+                candidate.Status == "approved"
+                && candidate.ApprovedCustomerId == customerId
+                && candidate.PackSelection is not null)
+            .OrderByDescending(candidate => candidate.ApprovedAtUtc)
+            .ThenByDescending(candidate => candidate.CreatedAtUtc)
+            .FirstOrDefault();
+        return Task.FromResult(row is null ? null : ToRecord(row));
+    }
+
     public Task<SignupApprovalResult?> ApproveAsync(
         SignupApprovalRequest request,
         CancellationToken cancellationToken)
@@ -165,9 +182,6 @@ public sealed class MockSignupRepository : ISignupRepository
             return Task.FromResult<SignupApprovalResult?>(null);
         }
 
-        // Utilisateur créé sans mot de passe (PasswordHash = null) : la
-        // connexion échouera contre le dummy hash tant que le lien de
-        // définition n'a pas été utilisé.
         _authenticationStore.Users[request.BillingEmail] =
             new PortalUserCredential(
                 request.UserId,
@@ -272,6 +286,7 @@ public sealed class MockSignupRepository : ISignupRepository
             row.Email,
             row.Phone,
             row.Message,
+            row.PackSelection,
             row.SourceAddress,
             row.VerificationTokenExpiresAtUtc,
             row.ApprovedUserId,

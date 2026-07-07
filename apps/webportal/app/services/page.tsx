@@ -4,20 +4,23 @@ import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { MockNotice } from "@/components/MockNotice";
 import { PageHeader } from "@/components/PageHeader";
+import { PublicPackCard } from "@/components/PublicPackCard";
 import { SectionHeading } from "@/components/SectionHeading";
 import { ServiceCard } from "@/components/ServiceCard";
 import { StatusBadge } from "@/components/StatusBadge";
-import { SubscribeButton } from "@/components/SubscribeButton";
 import { requireClientSession } from "@/lib/auth";
 import {
-  commercialOfferBillingCadence,
-  formatCurrencyFromCents,
-} from "@/lib/formatters";
-import {
-  getCommercialCatalog,
+  getPendingPackSelection,
+  getPublicCommercialCatalog,
+  getPublicPackCatalogContent,
   getServices,
   resolveDataSource,
 } from "@/lib/internal-api";
+import {
+  findPendingPackSelectionForPack,
+  findPackPresentation,
+  resolvePackCatalog,
+} from "@/lib/public-packs";
 import { getPayPalMode } from "@/lib/paypal";
 import { getStripeMode } from "@/lib/stripe";
 
@@ -29,33 +32,46 @@ export const dynamic = "force-dynamic";
 
 export default async function ServicesPage() {
   await requireClientSession();
-  const [servicesResult, catalogResult] = await Promise.all([
+  const [
+    servicesResult,
+    catalogResult,
+    packContentResult,
+    pendingSelectionResult,
+  ] = await Promise.all([
     getServices(),
-    getCommercialCatalog(),
+    getPublicCommercialCatalog(),
+    getPublicPackCatalogContent(),
+    getPendingPackSelection(),
   ]);
   const source = resolveDataSource([
     servicesResult.source,
     catalogResult.source,
+    packContentResult.source,
+    pendingSelectionResult.source,
   ]);
+  const packs = resolvePackCatalog(catalogResult.data, packContentResult.data);
+  const pendingSelection = pendingSelectionResult.data;
+  const stripeMode = getStripeMode();
+  const paypalMode = getPayPalMode();
 
   return (
     <>
       <PageHeader
         action={
-          <Link className="button" href="/request-service">
-            Demander un service
+          <Link className="button" href="/profile/subscriptions">
+            GÃ©rer mes souscriptions
           </Link>
         }
-        description="Consultez les services déjà suivis sur votre compte ainsi que les offres commerciales actuellement visibles dans le portail."
-        eyebrow="Périmètre client"
-        title="Mes services et offres"
+        description="Consultez les services dÃ©jÃ  suivis sur votre compte et finalisez un pack grand public sans repasser par les anciennes offres techniques."
+        eyebrow="PÃ©rimÃ¨tre client"
+        title="Mes services et packs"
       />
 
       {servicesResult.error ? (
         <ErrorState
           action={
             <Link className="button" href="/services">
-              Réessayer
+              RÃ©essayer
             </Link>
           }
           description="Impossible de charger vos services pour le moment."
@@ -65,11 +81,11 @@ export default async function ServicesPage() {
       ) : servicesResult.data.length === 0 ? (
         <EmptyState
           action={
-            <Link className="button" href="/request-service">
-              Préparer une demande
+            <Link className="button" href="/offres">
+              DÃ©couvrir les packs
             </Link>
           }
-          description="Aucun service n'est actuellement associé à ce compte. Vous pouvez transmettre une demande qui sera étudiée avant toute activation."
+          description="Aucun service n'est actuellement associÃ© Ã  ce compte."
           title="Aucun service"
         />
       ) : (
@@ -80,70 +96,76 @@ export default async function ServicesPage() {
         </section>
       )}
 
+      {pendingSelection ? (
+        <section className="request-history-section">
+          <SectionHeading
+            action={<StatusBadge label="Ã€ finaliser" tone="warning" />}
+            description="Votre compte a bien Ã©tÃ© crÃ©Ã©. Il ne reste qu'Ã  finaliser le paiement du pack choisi lors de votre demande d'inscription."
+            title="Finaliser mon pack"
+          />
+          <div className="public-pack-grid">
+            {packs
+              .filter((pack) => pack.key === pendingSelection.snapshot.packKey)
+              .map((pack) => (
+                <PublicPackCard
+                  key={`pending-${pack.key}`}
+                  mode="subscribe"
+                  pack={pack}
+                  initialSelection={findPendingPackSelectionForPack(
+                    pendingSelection,
+                    pack.key,
+                  )}
+                  stripeMode={stripeMode}
+                  paypalMode={paypalMode}
+                  highlightLabel={
+                    findPackPresentation(
+                      pack.key,
+                      packContentResult.data,
+                    )?.highlightLabel ?? "SÃ©lection reprise"
+                  }
+                />
+              ))}
+          </div>
+        </section>
+      ) : null}
+
       <section className="request-history-section">
         <SectionHeading
-          action={<StatusBadge label="Catalogue informatif" tone="info" />}
-          description="Prix indicatifs HT et périmètre informatif. Aucun paiement ni engagement automatique n'est possible ici."
-          title="Catalogue des offres visibles"
+          action={<StatusBadge label="Catalogue packs" tone="info" />}
+          description="Les nouvelles souscriptions passent dÃ©sormais uniquement par les packs grand public. Les anciennes offres techniques restent gÃ©rÃ©es en historique et en administration."
+          title="Souscrire Ã  un pack"
         />
         {catalogResult.error ? (
           <ErrorState
             compact
-            description="Impossible de charger le catalogue des offres pour le moment."
+            description="Impossible de charger le catalogue packs pour le moment."
             reference={catalogResult.correlationId}
             title="Catalogue indisponible"
           />
-        ) : catalogResult.data.length === 0 ? (
+        ) : packs.length === 0 ? (
           <EmptyState
-            description="Aucune offre commerciale n'est actuellement affichée dans le portail."
+            description="Aucun pack grand public n'est actuellement affichÃ© dans le portail."
             title="Catalogue vide"
           />
         ) : (
-          <section className="catalog-grid" aria-label="Catalogue commercial">
-            {catalogResult.data.map((offer) => {
-              const cadence = commercialOfferBillingCadence[offer.billingCadence];
-              const activePlanId =
-                getPayPalMode() === "live"
-                  ? offer.paypalPlanIdLive
-                  : offer.paypalPlanIdSandbox;
-              const activePriceId =
-                getStripeMode() === "live"
-                  ? offer.stripePriceIdLive
-                  : offer.stripePriceIdTest;
-              const canSubscribePaypal =
-                offer.billingCadence === "monthly"
-                && !!activePlanId
-                && offer.status === "active";
-              const canSubscribeStripe =
-                offer.billingCadence === "monthly"
-                && !!activePriceId
-                && offer.status === "active";
-              const canSubscribe = canSubscribePaypal || canSubscribeStripe;
-              return (
-                <article className="catalog-card" key={offer.id}>
-                  <div className="badge-stack">
-                    <StatusBadge label={cadence.label} tone={cadence.tone} />
-                  </div>
-                  <span className="card-kicker">{offer.category}</span>
-                  <h2>{offer.name}</h2>
-                  <p>{offer.description}</p>
-                  <div className="catalog-scope">
-                    <span>
-                      {offer.unitLabel} · Prix indicatif {offer.priceKind.toUpperCase()}
-                    </span>
-                    <strong>{formatCurrencyFromCents(offer.priceAmountCents)}</strong>
-                  </div>
-                  {canSubscribe ? (
-                    <SubscribeButton
-                      offerId={offer.id}
-                      offerName={offer.name}
-                      paypalEnabled={canSubscribePaypal}
-                      stripeEnabled={canSubscribeStripe}
-                    />
-                  ) : null}
-                </article>
-              );
-            })}
+          <section className="public-pack-grid" aria-label="Packs grand public">
+            {packs.map((pack) => (
+              <PublicPackCard
+                key={pack.key}
+                mode="subscribe"
+                pack={pack}
+                initialSelection={findPendingPackSelectionForPack(
+                  pendingSelection,
+                  pack.key,
+                )}
+                stripeMode={stripeMode}
+                paypalMode={paypalMode}
+                highlightLabel={findPackPresentation(
+                  pack.key,
+                  packContentResult.data,
+                )?.highlightLabel}
+              />
+            ))}
           </section>
         )}
       </section>

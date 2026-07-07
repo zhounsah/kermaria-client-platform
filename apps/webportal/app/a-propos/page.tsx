@@ -1,46 +1,36 @@
 import type { Metadata } from "next";
 
+import { ErrorState } from "@/components/ErrorState";
+import { PublicManagedContentArticle } from "@/components/PublicManagedContentArticle";
+import { getPublicManagedContent } from "@/lib/internal-api";
+
 export const metadata: Metadata = {
   title: "À propos",
   description:
     "Présentation de Zachary HOUNSA-HOUNKPA EI et de ses domaines d'intervention.",
 };
 
-export default function AProposPage() {
+export const revalidate = 300;
+
+export default async function AProposPage() {
+  const result = await getPublicManagedContent("page:a-propos");
+
+  if (result.error || !result.data) {
+    return (
+      <ErrorState
+        description="Impossible de charger la page à propos pour le moment."
+        reference={result.correlationId}
+        title="Page à propos indisponible"
+      />
+    );
+  }
+
   return (
-    <article className="legal-page">
-      <header className="legal-page-header">
-        <p className="eyebrow">À propos</p>
-        <h1>Zachary HOUNSA-HOUNKPA EI</h1>
-        <p className="legal-page-status">
-          Contenu placeholder. La version définitive sera publiée avant la mise
-          en production (V1.0 RC).
-        </p>
-      </header>
-
-      <section>
-        <h2>Présentation</h2>
-        <p>
-          [À compléter : présentation de l&apos;entrepreneur, parcours, domaines
-          d&apos;intervention et positionnement.]
-        </p>
-      </section>
-
-      <section>
-        <h2>Engagement</h2>
-        <p>
-          [À compléter : valeurs, engagements vis-à-vis des clients,
-          transparence sur la facturation et la disponibilité.]
-        </p>
-      </section>
-
-      <section>
-        <h2>Coordonnées</h2>
-        <p>
-          Pour toute prise de contact ou demande de devis, rendez-vous sur la
-          page <a href="/contact">contact</a>.
-        </p>
-      </section>
-    </article>
+    <PublicManagedContentArticle
+      content={result.data}
+      correlationId={result.correlationId}
+      eyebrow="À propos"
+      source={result.source}
+    />
   );
 }

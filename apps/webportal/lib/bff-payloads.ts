@@ -6,10 +6,19 @@ import type {
   AdUserRenamePayload,
   CommercialDocumentLinePayload,
   CommercialDocumentPayload,
+  CommercialOfferPaymentMode,
   CommercialOfferPayload,
+  ManagedContentPayload,
+  PublicPackCode,
+  PublicPackComparisonValueKind,
+  PublicPackCatalogContentPayload,
   CustomerAdLinkPayload,
   ServiceRequestPayload,
   SupportRequestPayload,
+} from "@kermaria/shared";
+import {
+  createDefaultPublicPackCatalogContentPayload,
+  getPublicPackManifest,
 } from "@kermaria/shared";
 
 const adUserPrincipalNamePattern = /^[^\s@]+@[^\s@]+$/;
@@ -97,6 +106,31 @@ export function parseCommercialOfferPayload(
     || typeof candidate.displayOrder !== "number"
     || typeof candidate.billingCadence !== "string"
     || !(
+      typeof candidate.setupFeeAmountCents === "number"
+      || candidate.setupFeeAmountCents === null
+      || candidate.setupFeeAmountCents === undefined
+    )
+    || !(
+      typeof candidate.billingIntervalMonths === "number"
+      || candidate.billingIntervalMonths === null
+      || candidate.billingIntervalMonths === undefined
+    )
+    || !(
+      typeof candidate.commitmentMonths === "number"
+      || candidate.commitmentMonths === null
+      || candidate.commitmentMonths === undefined
+    )
+    || !(
+      typeof candidate.paymentMode === "string"
+      || candidate.paymentMode === null
+      || candidate.paymentMode === undefined
+    )
+    || !(
+      typeof candidate.publicPackCode === "string"
+      || candidate.publicPackCode === null
+      || candidate.publicPackCode === undefined
+    )
+    || !(
       typeof candidate.paypalPlanIdSandbox === "string"
       || candidate.paypalPlanIdSandbox === null
       || candidate.paypalPlanIdSandbox === undefined
@@ -136,6 +170,26 @@ export function parseCommercialOfferPayload(
     typeof candidate.stripePriceIdLive === "string"
       ? candidate.stripePriceIdLive.trim() || null
       : null;
+  const setupFeeAmountCents =
+    typeof candidate.setupFeeAmountCents === "number"
+      ? Math.trunc(candidate.setupFeeAmountCents)
+      : null;
+  const billingIntervalMonths =
+    typeof candidate.billingIntervalMonths === "number"
+      ? Math.trunc(candidate.billingIntervalMonths)
+      : null;
+  const commitmentMonths =
+    typeof candidate.commitmentMonths === "number"
+      ? Math.trunc(candidate.commitmentMonths)
+      : null;
+  const paymentMode =
+    typeof candidate.paymentMode === "string"
+      ? candidate.paymentMode.trim() || null
+      : null;
+  const publicPackCode =
+    typeof candidate.publicPackCode === "string"
+      ? candidate.publicPackCode.trim() || null
+      : null;
   const payload: CommercialOfferPayload = {
     name: candidate.name.trim(),
     description: candidate.description.trim(),
@@ -146,6 +200,11 @@ export function parseCommercialOfferPayload(
     displayOrder: Math.trunc(candidate.displayOrder),
     billingCadence:
       candidate.billingCadence as CommercialOfferPayload["billingCadence"],
+    setupFeeAmountCents,
+    billingIntervalMonths,
+    commitmentMonths,
+    paymentMode: paymentMode as CommercialOfferPaymentMode | null,
+    publicPackCode: publicPackCode as PublicPackCode | null,
     paypalPlanIdSandbox,
     paypalPlanIdLive,
     stripePriceIdTest,
@@ -153,6 +212,33 @@ export function parseCommercialOfferPayload(
   };
 
   const planIdPattern = /^[A-Za-z0-9_-]{1,64}$/;
+  const isValidSetupFee =
+    payload.setupFeeAmountCents === null
+    || (Number.isInteger(payload.setupFeeAmountCents)
+      && payload.setupFeeAmountCents >= 0
+      && payload.setupFeeAmountCents <= 100000000);
+  const isValidBillingInterval =
+    payload.billingIntervalMonths === null
+    || (Number.isInteger(payload.billingIntervalMonths)
+      && [1, 6, 12].includes(payload.billingIntervalMonths));
+  const isValidCommitment =
+    payload.commitmentMonths === null
+    || (Number.isInteger(payload.commitmentMonths)
+      && [1, 6, 12].includes(payload.commitmentMonths));
+  const isValidPaymentMode =
+    payload.paymentMode === null
+    || payload.paymentMode === "monthly"
+    || payload.paymentMode === "upfront";
+  const isValidPublicPackCode =
+    payload.publicPackCode === null
+    || getPublicPackManifest(payload.publicPackCode) !== null;
+  const hasPackMetadata =
+    payload.setupFeeAmountCents !== null
+    || payload.billingIntervalMonths !== null
+    || payload.commitmentMonths !== null
+    || payload.paymentMode !== null
+    || payload.publicPackCode !== null;
+
   return payload.name.length >= 3
     && payload.name.length <= 200
     && payload.description.length >= 3
@@ -169,16 +255,198 @@ export function parseCommercialOfferPayload(
     && payload.displayOrder >= 0
     && payload.displayOrder <= 100000
     && ["one_time", "monthly"].includes(payload.billingCadence)
+    && isValidSetupFee
+    && isValidBillingInterval
+    && isValidCommitment
+    && isValidPaymentMode
+    && isValidPublicPackCode
     && (payload.paypalPlanIdSandbox === null
       || planIdPattern.test(payload.paypalPlanIdSandbox))
     && (payload.paypalPlanIdLive === null
       || planIdPattern.test(payload.paypalPlanIdLive))
+    && (payload.stripePriceIdTest === null
+      || planIdPattern.test(payload.stripePriceIdTest))
+    && (payload.stripePriceIdLive === null
+      || planIdPattern.test(payload.stripePriceIdLive))
     && !(
       payload.billingCadence === "one_time"
-      && (payload.paypalPlanIdSandbox !== null
+      && (hasPackMetadata
+        || payload.paypalPlanIdSandbox !== null
         || payload.paypalPlanIdLive !== null)
     )
     ? payload
+    : null;
+}
+
+export function parsePublicPackCatalogContentPayload(
+  value: unknown,
+): PublicPackCatalogContentPayload | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Partial<PublicPackCatalogContentPayload>;
+  if (
+    typeof candidate.pageEyebrow !== "string"
+    || typeof candidate.pageTitle !== "string"
+    || typeof candidate.pageDescription !== "string"
+    || typeof candidate.comparisonColumnLabel !== "string"
+    || typeof candidate.footnotePrimary !== "string"
+    || typeof candidate.footnoteSecondary !== "string"
+    || !Array.isArray(candidate.packs)
+    || !Array.isArray(candidate.comparisonRows)
+  ) {
+    return null;
+  }
+
+  const defaultPayload = createDefaultPublicPackCatalogContentPayload();
+  const packCodes = new Set(defaultPayload.packs.map((pack) => pack.packCode));
+  const valueKinds = new Set<string>(["included", "excluded", "text"]);
+
+  const packs = candidate.packs.map((pack) => {
+    if (!pack || typeof pack !== "object") {
+      return null;
+    }
+
+    const item = pack as PublicPackCatalogContentPayload["packs"][number];
+    return typeof item.packCode === "string"
+      && packCodes.has(item.packCode as PublicPackCode)
+      && typeof item.label === "string"
+      && typeof item.shortLabel === "string"
+      && typeof item.headline === "string"
+      && typeof item.audience === "string"
+      && typeof item.description === "string"
+      && Array.isArray(item.highlights)
+      && item.highlights.every((entry) => typeof entry === "string")
+      && Array.isArray(item.included)
+      && item.included.every((entry) => typeof entry === "string")
+      && (typeof item.highlightLabel === "string"
+        || item.highlightLabel === null
+        || item.highlightLabel === undefined)
+      && typeof item.displayOrder === "number"
+      ? {
+          packCode: item.packCode as PublicPackCode,
+          label: item.label.trim(),
+          shortLabel: item.shortLabel.trim(),
+          headline: item.headline.trim(),
+          audience: item.audience.trim(),
+          description: item.description.trim(),
+          highlights: item.highlights
+            .map((entry) => entry.trim())
+            .filter((entry) => entry.length > 0),
+          included: item.included
+            .map((entry) => entry.trim())
+            .filter((entry) => entry.length > 0),
+          highlightLabel:
+            typeof item.highlightLabel === "string"
+              ? item.highlightLabel.trim() || null
+              : null,
+          displayOrder: Math.trunc(item.displayOrder),
+        }
+      : null;
+  });
+
+  const comparisonRows = candidate.comparisonRows.map((row) => {
+    if (!row || typeof row !== "object") {
+      return null;
+    }
+
+    const item = row as PublicPackCatalogContentPayload["comparisonRows"][number];
+    if (
+      typeof item.id !== "string"
+      || typeof item.label !== "string"
+      || typeof item.sortOrder !== "number"
+      || !item.values
+      || typeof item.values !== "object"
+    ) {
+      return null;
+    }
+
+    const values = {} as PublicPackCatalogContentPayload["comparisonRows"][number]["values"];
+    for (const packCode of packCodes) {
+      const rawValue = item.values[packCode as PublicPackCode];
+      if (!rawValue || typeof rawValue !== "object") {
+        return null;
+      }
+
+      const typedValue = rawValue as { kind?: unknown; text?: unknown };
+      if (
+        typeof typedValue.kind !== "string"
+        || !valueKinds.has(typedValue.kind)
+        || !(
+          typeof typedValue.text === "string"
+          || typedValue.text === null
+          || typedValue.text === undefined
+        )
+      ) {
+        return null;
+      }
+
+      values[packCode as PublicPackCode] = {
+        kind: typedValue.kind as PublicPackComparisonValueKind,
+        text:
+          typeof typedValue.text === "string"
+            ? typedValue.text.trim() || null
+            : null,
+      };
+    }
+
+    return {
+      id: item.id.trim(),
+      label: item.label.trim(),
+      sortOrder: Math.trunc(item.sortOrder),
+      values,
+    };
+  });
+
+  if (packs.some((pack) => pack === null) || comparisonRows.some((row) => row === null)) {
+    return null;
+  }
+
+  return {
+    pageEyebrow: candidate.pageEyebrow.trim(),
+    pageTitle: candidate.pageTitle.trim(),
+    pageDescription: candidate.pageDescription.trim(),
+    comparisonColumnLabel: candidate.comparisonColumnLabel.trim(),
+    footnotePrimary: candidate.footnotePrimary.trim(),
+    footnoteSecondary: candidate.footnoteSecondary.trim(),
+    packs: packs as PublicPackCatalogContentPayload["packs"],
+    comparisonRows: comparisonRows as PublicPackCatalogContentPayload["comparisonRows"],
+  };
+}
+
+export function parseManagedContentPayload(
+  value: unknown,
+): ManagedContentPayload | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Partial<ManagedContentPayload>;
+  if (
+    typeof candidate.bodyMarkdown !== "string"
+    || !(
+      typeof candidate.versionLabel === "string"
+      || candidate.versionLabel === null
+      || candidate.versionLabel === undefined
+    )
+  ) {
+    return null;
+  }
+
+  const bodyMarkdown = candidate.bodyMarkdown.trim();
+  const versionLabel =
+    typeof candidate.versionLabel === "string"
+      ? candidate.versionLabel.trim() || null
+      : null;
+
+  return bodyMarkdown.length >= 10
+    && bodyMarkdown.length <= 120000
+    && (versionLabel === null || versionLabel.length <= 160)
+    ? {
+        bodyMarkdown,
+        versionLabel,
+      }
     : null;
 }
 

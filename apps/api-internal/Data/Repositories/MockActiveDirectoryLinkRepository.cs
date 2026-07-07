@@ -56,6 +56,36 @@ public sealed class MockActiveDirectoryLinkRepository
         }
     }
 
+    public Task<IReadOnlyList<CustomerAdLinkSummary>> GetCustomerUserLinksAsync(
+        string customerId,
+        CancellationToken cancellationToken)
+    {
+        var customerReference = CustomerContexts.Values
+            .FirstOrDefault(context => context.CustomerId == customerId)
+            ?.CustomerReference;
+        if (customerReference is null)
+        {
+            return Task.FromResult<IReadOnlyList<CustomerAdLinkSummary>>(
+                Array.Empty<CustomerAdLinkSummary>());
+        }
+
+        lock (SyncRoot)
+        {
+            return Task.FromResult<IReadOnlyList<CustomerAdLinkSummary>>(
+                LinksByCustomer.TryGetValue(
+                    customerReference,
+                    out var links)
+                    ? links
+                        .Where(link => string.Equals(
+                            link.ObjectType,
+                            "user",
+                            StringComparison.OrdinalIgnoreCase))
+                        .OrderByDescending(link => link.LinkedAt)
+                        .ToArray()
+                    : Array.Empty<CustomerAdLinkSummary>());
+        }
+    }
+
     public Task<CustomerAdLinkUpsertResult> UpsertCustomerLinkAsync(
         string customerReference,
         string? actorUserId,

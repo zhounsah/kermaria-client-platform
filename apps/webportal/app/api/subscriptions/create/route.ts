@@ -11,17 +11,18 @@ import {
   getInternalSession,
   mutateInternalPortalPayloadTyped,
 } from "@/lib/internal-api";
+import {
+  createPayPalSubscription,
+  getPayPalMode,
+  isPayPalConfigured,
+} from "@/lib/paypal";
+import { getPortalPublicUrl } from "@/lib/public-routes";
 import { getSessionCookieName } from "@/lib/session-config";
 import {
   getInternalApiUrl,
   getInternalServiceHeaders,
   isStripeConfigured,
 } from "@/lib/runtime-config";
-import {
-  createPayPalSubscription,
-  getPayPalMode,
-  isPayPalConfigured,
-} from "@/lib/paypal";
 import {
   createStripeSubscriptionCheckoutSession,
   getStripeMode,
@@ -39,7 +40,7 @@ export async function POST(request: NextRequest) {
     body = await request.json();
   } catch {
     return NextResponse.json(
-      { code: "INVALID_REQUEST", message: "Corps de requête invalide." },
+      { code: "INVALID_REQUEST", message: "Corps de requete invalide." },
       { status: 400 },
     );
   }
@@ -86,7 +87,7 @@ export async function POST(request: NextRequest) {
     session = await getInternalSession(sessionToken, correlationId);
     if (session.user.role !== "client_user") {
       return NextResponse.json(
-        { code: "ACCESS_DENIED", message: "Accès refusé." },
+        { code: "ACCESS_DENIED", message: "Acces refuse." },
         { status: 403 },
       );
     }
@@ -140,9 +141,8 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const portalUrl =
-    process.env.PUBLIC_PORTAL_URL?.replace(/\/$/, "") ?? "http://localhost:3000";
-  const cancelPath = `/profile/subscriptions?subscription=cancelled`;
+  const portalUrl = getPortalPublicUrl(request);
+  const cancelPath = "/profile/subscriptions?subscription=cancelled";
 
   if (rail === "stripe") {
     const mode = getStripeMode();
@@ -157,8 +157,8 @@ export async function POST(request: NextRequest) {
         {
           code: "OFFER_NOT_SUBSCRIBABLE",
           message:
-            `Cette offre n'a pas de prix Stripe ${mode}. Demandez à un admin `
-            + "de créer le prix avant de souscrire.",
+            `Cette offre n'a pas de prix Stripe ${mode}. Demandez a un admin `
+            + "de creer le prix avant de souscrire.",
         },
         { status: 400 },
       );
@@ -169,12 +169,15 @@ export async function POST(request: NextRequest) {
     )}&session_id={CHECKOUT_SESSION_ID}`;
 
     try {
-      const result = await createStripeSubscriptionCheckoutSession(
-        activePriceId,
-        session.user.email,
-        `${portalUrl}${returnPath}`,
-        `${portalUrl}${cancelPath}`,
-      );
+      const result = await createStripeSubscriptionCheckoutSession({
+        priceId: activePriceId,
+        customerEmail: session.user.email,
+        successUrl: `${portalUrl}${returnPath}`,
+        cancelUrl: `${portalUrl}${cancelPath}`,
+        setupFeeAmountCents: offer.setupFeeAmountCents ?? 0,
+        currency: offer.currency,
+        setupFeeLabel: `Mise en service - ${offer.name}`,
+      });
       return NextResponse.json({
         subscriptionId: null,
         approveUrl: result.approveUrl,
@@ -184,7 +187,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           code: "STRIPE_ERROR",
-          message: "Impossible de créer la souscription Stripe.",
+          message: "Impossible de creer la souscription Stripe.",
         },
         { status: 503 },
       );
@@ -203,8 +206,8 @@ export async function POST(request: NextRequest) {
       {
         code: "OFFER_NOT_SUBSCRIBABLE",
         message:
-          `Cette offre n'a pas de plan PayPal ${mode}. Demandez à un admin `
-          + "de créer le plan avant de souscrire.",
+          `Cette offre n'a pas de plan PayPal ${mode}. Demandez a un admin `
+          + "de creer le plan avant de souscrire.",
       },
       { status: 400 },
     );
@@ -230,7 +233,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         code: "PAYPAL_ERROR",
-        message: "Impossible de créer la souscription PayPal.",
+        message: "Impossible de creer la souscription PayPal.",
       },
       { status: 503 },
     );

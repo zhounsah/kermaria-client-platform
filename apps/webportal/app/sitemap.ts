@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { PUBLIC_PACKS } from "@kermaria/shared";
 
 import {
   getPortalPublicUrl,
@@ -32,11 +33,18 @@ export default function sitemap(): MetadataRoute.Sitemap {
 
   const baseUrl = getPortalPublicUrl();
   const now = new Date();
-
-  return PUBLIC_ROUTE_ENTRIES.map(({ path, changeFrequency, priority }) => ({
-    url: `${baseUrl}${path === "/" ? "" : path}`,
-    lastModified: now,
-    changeFrequency,
-    priority,
+  const packEntries = PUBLIC_PACKS.map((pack) => ({
+    path: `/offres/${pack.slug}`,
+    changeFrequency: "weekly" as const,
+    priority: 0.7,
   }));
+
+  return [...PUBLIC_ROUTE_ENTRIES, ...packEntries].map(
+    ({ path, changeFrequency, priority }) => ({
+      url: `${baseUrl}${path === "/" ? "" : path}`,
+      lastModified: now,
+      changeFrequency,
+      priority,
+    }),
+  );
 }

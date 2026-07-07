@@ -11,8 +11,11 @@ import { SectionCard } from "@/components/SectionCard";
 import { StatusBadge } from "@/components/StatusBadge";
 import { requireAdminSession } from "@/lib/auth";
 import {
+  formatBillingIntervalMonths,
+  formatCommitmentMonths,
   formatCurrencyFromCents,
   formatDateTime,
+  formatPaymentModeLabel,
   subscriptionStatus,
 } from "@/lib/formatters";
 import { getAdminSubscriptions } from "@/lib/internal-api";
@@ -27,6 +30,7 @@ const STATUS_FILTERS: ReadonlyArray<"all" | SubscriptionStatus> = [
   "all",
   "pending_approval",
   "pending_activation",
+  "pending_cancellation",
   "active",
   "suspended",
   "cancelled",
@@ -68,18 +72,23 @@ export default async function AdminSubscriptionsPage({
     return true;
   });
 
-  const activeCount = result.data.filter(
-    (item) => item.status === "active",
-  ).length;
-  const mrrCents = result.data
+  const activeCount = result.data.filter((item) => item.status === "active").length;
+  const monthlyEquivalentCents = result.data
     .filter((item) => item.status === "active")
-    .reduce((sum, item) => sum + item.priceAmountCents, 0);
+    .reduce(
+      (sum, item) =>
+        sum
+        + Math.round(
+          item.priceAmountCents / Math.max(1, item.billingIntervalMonths),
+        ),
+      0,
+    );
 
   return (
     <>
       <PageHeader
         action={<StatusBadge label="Vue admin" tone="info" />}
-        description="Suivi des souscriptions mensuelles PayPal et de leurs facturations BPCE."
+        description="Suivi des souscriptions recurrentes, engagements, cycles de paiement et resiliations programmees."
         eyebrow="Administration"
         title="Abonnements"
       />
@@ -95,14 +104,14 @@ export default async function AdminSubscriptionsPage({
           value={String(activeCount)}
         />
         <MetricCard
-          detail="Somme des prix HT des souscriptions actives"
-          label="MRR estimé HT"
+          detail="Equivalent mensuel HT sur les souscriptions actives"
+          label="Revenu mensuel equivalent"
           tone="amber"
-          value={formatCurrencyFromCents(mrrCents)}
+          value={formatCurrencyFromCents(monthlyEquivalentCents)}
         />
         <MetricCard
           detail="Tous statuts confondus"
-          label="Total enregistrées"
+          label="Total enregistrees"
           tone="slate"
           value={String(result.data.length)}
         />
@@ -119,15 +128,16 @@ export default async function AdminSubscriptionsPage({
             <select defaultValue={status} id="status-filter" name="status">
               <option value="all">Tous</option>
               <option value="pending_approval">En attente d&apos;approbation</option>
-              <option value="pending_activation">Approuvée, activation</option>
+              <option value="pending_activation">Approuvee, activation</option>
+              <option value="pending_cancellation">Resiliation programmee</option>
               <option value="active">Active</option>
               <option value="suspended">Suspendue</option>
-              <option value="cancelled">Annulée</option>
-              <option value="expired">Expirée</option>
+              <option value="cancelled">Annulee</option>
+              <option value="expired">Expiree</option>
             </select>
           </div>
           <div className="field">
-            <label htmlFor="customer-filter">Client (référence ou nom)</label>
+            <label htmlFor="customer-filter">Client (reference ou nom)</label>
             <input
               defaultValue={customerFilter}
               id="customer-filter"
@@ -151,12 +161,12 @@ export default async function AdminSubscriptionsPage({
       ) : filtered.length === 0 ? (
         <EmptyState
           description="Aucune souscription ne correspond aux filtres choisis."
-          title="Aucun résultat"
+          title="Aucun resultat"
         />
       ) : (
         <div className="stack-panels">
           {filtered.map((item) => {
-            const status = subscriptionStatus[item.status];
+            const statusBadge = subscriptionStatus[item.status];
             return (
               <SectionCard
                 ariaLabel={`Abonnement ${item.offerName}`}
@@ -170,7 +180,8 @@ export default async function AdminSubscriptionsPage({
                     </span>
                     <h2>{item.offerName}</h2>
                     <p>
-                      {formatCurrencyFromCents(item.priceAmountCents)} HT / mois
+                      {formatCurrencyFromCents(item.priceAmountCents)} HT ·{" "}
+                      {formatBillingIntervalMonths(item.billingIntervalMonths)}
                     </p>
                   </div>
                   <div className="badge-stack">
@@ -178,9 +189,17 @@ export default async function AdminSubscriptionsPage({
                       label={item.rail === "stripe" ? "Stripe" : "PayPal"}
                       tone="info"
                     />
-                    <StatusBadge label={status.label} tone={status.tone} />
+                    <StatusBadge
+                      label={statusBadge.label}
+                      tone={statusBadge.tone}
+                    />
                   </div>
                 </div>
+                <p className="field-hint">
+                  {formatCommitmentMonths(item.commitmentMonths)} ·{" "}
+                  {formatPaymentModeLabel(item.paymentMode)} · mise en service{" "}
+                  {formatCurrencyFromCents(item.setupFeeAmountCents)} HT
+                </p>
                 <p className="field-hint">
                   {item.rail === "stripe" ? (
                     <>
@@ -195,13 +214,17 @@ export default async function AdminSubscriptionsPage({
                   )}
                 </p>
                 <p className="field-hint">
-                  Prochaine échéance :{" "}
+                  Prochaine echeance :{" "}
                   {item.nextBillingAt
                     ? formatDateTime(item.nextBillingAt)
-                    : "À déterminer"}
+                    : "A determiner"}
+                  {" · "}fin d&apos;engagement :{" "}
+                  {item.commitmentEndsAt
+                    ? formatDateTime(item.commitmentEndsAt)
+                    : "—"}
                 </p>
                 <Link className="button" href={`/admin/subscriptions/${item.id}`}>
-                  Voir le détail
+                  Voir le detail
                 </Link>
               </SectionCard>
             );

@@ -85,8 +85,25 @@ assert.match(
   /Aucune numérotation fiscale définitive n(?:'|&apos;)est générée\s+dans cette version\./,
 );
 assert.doesNotMatch(documentsPage, /Payer|paiement en ligne|PayPal|Stripe/);
-assert.doesNotMatch(documentDetailPage, /Payer|paiement en ligne|PayPal|Stripe/);
-assert.match(servicesPage, /Catalogue informatif/);
+assert.match(documentDetailPage, /isIssued \? \(/);
+assert.match(documentDetailPage, /PayButton/);
+assert.match(documentDetailPage, /isPayPalConfigured/);
+assert.match(documentDetailPage, /isStripeConfigured/);
+assert.match(
+  servicesPage,
+  /getPendingPackSelection/,
+  "La page services doit reprendre un pack choisi au signup quand il existe.",
+);
+assert.match(
+  servicesPage,
+  /PublicPackCard/,
+  "La page services doit exposer le catalogue packs v0.32.",
+);
+assert.match(
+  servicesPage,
+  /Finaliser mon pack|Catalogue packs|Souscrire .* pack/,
+  "La page services doit presenter clairement les packs grand public.",
+);
 assert.match(invoiceTable, /Informations indicatives/);
 assert.doesNotMatch(
   [

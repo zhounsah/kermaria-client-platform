@@ -21,6 +21,9 @@ public interface IActiveDirectoryLinkRepository
     Task<IReadOnlyList<CustomerAdLinkSummary>> GetCustomerLinksAsync(
         string customerReference,
         CancellationToken cancellationToken);
+    Task<IReadOnlyList<CustomerAdLinkSummary>> GetCustomerUserLinksAsync(
+        string customerId,
+        CancellationToken cancellationToken);
     Task<CustomerAdLinkUpsertResult> UpsertCustomerLinkAsync(
         string customerReference,
         string? actorUserId,

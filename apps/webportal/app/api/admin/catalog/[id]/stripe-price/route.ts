@@ -43,7 +43,7 @@ export async function POST(
     return NextResponse.json(
       {
         code: "STRIPE_NOT_CONFIGURED",
-        message: "Stripe n'est pas configuré.",
+        message: "Stripe n'est pas configure.",
       },
       { status: 503 },
     );
@@ -61,7 +61,7 @@ export async function POST(
     const session = await getInternalSession(sessionToken, correlationId);
     if (session.user.role !== "internal_admin") {
       return NextResponse.json(
-        { code: "ACCESS_DENIED", message: "Accès refusé." },
+        { code: "ACCESS_DENIED", message: "Acces refuse." },
         { status: 403 },
       );
     }
@@ -85,19 +85,16 @@ export async function POST(
     );
   }
 
-  const catalogResponse = await fetch(
-    `${internalApiUrl}/internal/admin/catalog`,
-    {
-      cache: "no-store",
-      signal: AbortSignal.timeout(10000),
-      headers: {
-        Accept: "application/json",
-        ...getInternalServiceHeaders(),
-        [CORRELATION_HEADER]: correlationId,
-        "X-Portal-Session": sessionToken,
-      },
+  const catalogResponse = await fetch(`${internalApiUrl}/internal/admin/catalog`, {
+    cache: "no-store",
+    signal: AbortSignal.timeout(10000),
+    headers: {
+      Accept: "application/json",
+      ...getInternalServiceHeaders(),
+      [CORRELATION_HEADER]: correlationId,
+      "X-Portal-Session": sessionToken,
     },
-  );
+  });
 
   if (!catalogResponse.ok) {
     return NextResponse.json(
@@ -118,9 +115,8 @@ export async function POST(
   if (offer.billingCadence !== "monthly") {
     return NextResponse.json(
       {
-        code: "OFFER_NOT_MONTHLY",
-        message:
-          "Le prix Stripe n'a de sens que sur une offre mensuelle.",
+        code: "OFFER_NOT_RECURRING",
+        message: "Le prix Stripe n'a de sens que sur une offre recurrente.",
       },
       { status: 400 },
     );
@@ -133,7 +129,7 @@ export async function POST(
     return NextResponse.json(
       {
         code: "PRICE_ALREADY_EXISTS",
-        message: `Un prix Stripe ${mode} existe déjà pour cette offre.`,
+        message: `Un prix Stripe ${mode} existe deja pour cette offre.`,
       },
       { status: 409 },
     );
@@ -148,7 +144,7 @@ export async function POST(
     return NextResponse.json(
       {
         code: "STRIPE_PRODUCT_ERROR",
-        message: "Impossible de créer le produit Stripe.",
+        message: "Impossible de creer le produit Stripe.",
       },
       { status: 502 },
     );
@@ -159,6 +155,7 @@ export async function POST(
       stripeProductId,
       offer.priceAmountCents,
       offer.currency,
+      offer.billingIntervalMonths ?? 1,
     );
   } catch (error) {
     console.error("Stripe create price error:", error);
@@ -166,7 +163,7 @@ export async function POST(
       {
         code: "STRIPE_PRICE_ERROR",
         message:
-          "Le produit Stripe a été créé mais la création du prix a échoué.",
+          "Le produit Stripe a ete cree mais la creation du prix a echoue.",
       },
       { status: 502 },
     );
@@ -181,6 +178,11 @@ export async function POST(
     status: offer.status,
     displayOrder: offer.displayOrder,
     billingCadence: offer.billingCadence,
+    setupFeeAmountCents: offer.setupFeeAmountCents,
+    billingIntervalMonths: offer.billingIntervalMonths,
+    commitmentMonths: offer.commitmentMonths,
+    paymentMode: offer.paymentMode,
+    publicPackCode: offer.publicPackCode,
     paypalPlanIdSandbox: offer.paypalPlanIdSandbox,
     paypalPlanIdLive: offer.paypalPlanIdLive,
     stripePriceIdTest: mode === "test" ? stripePriceId : offer.stripePriceIdTest,
@@ -201,8 +203,8 @@ export async function POST(
       {
         code: "PERSIST_ERROR",
         message:
-          `Le prix Stripe ${mode} ${stripePriceId} a été créé chez Stripe `
-          + "mais n'a pas pu être enregistré localement. Copiez-le et "
+          `Le prix Stripe ${mode} ${stripePriceId} a ete cree chez Stripe `
+          + "mais n'a pas pu etre enregistre localement. Copiez-le et "
           + "saisissez-le manuellement.",
       },
       { status: 503 },

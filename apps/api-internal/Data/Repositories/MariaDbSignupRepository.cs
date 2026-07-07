@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Kermaria.ApiInternal.Contracts;
 using Kermaria.ApiInternal.Data.Configuration;
 using MySqlConnector;
@@ -6,6 +7,7 @@ namespace Kermaria.ApiInternal.Data.Repositories;
 
 public sealed class MariaDbSignupRepository : ISignupRepository
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly SqlRuntimeConfiguration _configuration;
 
     public MariaDbSignupRepository(SqlRuntimeConfiguration configuration)
@@ -53,13 +55,13 @@ public sealed class MariaDbSignupRepository : ISignupRepository
         cmd.CommandText = """
             INSERT INTO signup_pending
                 (id, status, company_name, contact_name, email, phone,
-                 message, verification_token_hash,
+                 message, pack_selection_snapshot_json, verification_token_hash,
                  verification_token_expires_at, source_address, user_agent,
                  created_at, updated_at)
             VALUES
                 (@id, 'email_pending', @companyName, @contactName, @email,
-                 @phone, @message, @verificationHash, @verificationExpires,
-                 @sourceAddress, @userAgent, UTC_TIMESTAMP(6),
+                 @phone, @message, @packSelectionSnapshotJson, @verificationHash,
+                 @verificationExpires, @sourceAddress, @userAgent, UTC_TIMESTAMP(6),
                  UTC_TIMESTAMP(6))
             """;
         cmd.Parameters.AddWithValue("id", insert.Id);
@@ -70,6 +72,9 @@ public sealed class MariaDbSignupRepository : ISignupRepository
             "phone", (object?)insert.Phone ?? DBNull.Value);
         cmd.Parameters.AddWithValue(
             "message", (object?)insert.Message ?? DBNull.Value);
+        cmd.Parameters.AddWithValue(
+            "packSelectionSnapshotJson",
+            SerializeSnapshot(insert.PackSelection));
         cmd.Parameters.AddWithValue(
             "verificationHash", insert.VerificationTokenHash);
         cmd.Parameters.AddWithValue(
@@ -121,7 +126,6 @@ public sealed class MariaDbSignupRepository : ISignupRepository
         await connection.OpenAsync(cancellationToken);
 
         await using var cmd = connection.CreateCommand();
-        // Le jeton est consommé : on efface le hash pour empêcher tout rejeu.
         cmd.CommandText = """
             UPDATE signup_pending
             SET status = 'email_verified',
@@ -147,9 +151,10 @@ public sealed class MariaDbSignupRepository : ISignupRepository
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = $"""
             SELECT id, status, company_name, contact_name, email, phone,
-                   message, source_address, verification_token_expires_at,
-                   approved_user_id, approved_customer_id, approved_at,
-                   rejected_at, rejected_reason, created_at, updated_at
+                   message, pack_selection_snapshot_json, source_address,
+                   verification_token_expires_at, approved_user_id,
+                   approved_customer_id, approved_at, rejected_at,
+                   rejected_reason, created_at, updated_at
             FROM signup_pending
             {(string.IsNullOrWhiteSpace(statusFilter)
                 ? string.Empty
@@ -183,14 +188,47 @@ public sealed class MariaDbSignupRepository : ISignupRepository
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = """
             SELECT id, status, company_name, contact_name, email, phone,
-                   message, source_address, verification_token_expires_at,
-                   approved_user_id, approved_customer_id, approved_at,
-                   rejected_at, rejected_reason, created_at, updated_at
+                   message, pack_selection_snapshot_json, source_address,
+                   verification_token_expires_at, approved_user_id,
+                   approved_customer_id, approved_at, rejected_at,
+                   rejected_reason, created_at, updated_at
             FROM signup_pending
             WHERE id = @id
             LIMIT 1
             """;
         cmd.Parameters.AddWithValue("id", id);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return ReadRecord(reader);
+    }
+
+    public async Task<SignupPendingRecord?> GetLatestApprovedByCustomerIdAsync(
+        string customerId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(
+            _configuration.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT id, status, company_name, contact_name, email, phone,
+                   message, pack_selection_snapshot_json, source_address,
+                   verification_token_expires_at, approved_user_id,
+                   approved_customer_id, approved_at, rejected_at,
+                   rejected_reason, created_at, updated_at
+            FROM signup_pending
+            WHERE approved_customer_id = @customerId
+              AND status = 'approved'
+              AND pack_selection_snapshot_json IS NOT NULL
+            ORDER BY approved_at DESC, created_at DESC
+            LIMIT 1
+            """;
+        cmd.Parameters.AddWithValue("customerId", customerId);
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
         {
@@ -210,7 +248,6 @@ public sealed class MariaDbSignupRepository : ISignupRepository
         await using var transaction =
             await connection.BeginTransactionAsync(cancellationToken);
 
-        // Verrou de statut : on ne bascule que depuis 'email_verified'.
         await using (var guard = connection.CreateCommand())
         {
             guard.Transaction = transaction;
@@ -253,8 +290,6 @@ public sealed class MariaDbSignupRepository : ISignupRepository
         await using (var userCmd = connection.CreateCommand())
         {
             userCmd.Transaction = transaction;
-            // Aucun mot de passe : le compte n'est activable qu'après la
-            // définition du mot de passe via le lien one-shot.
             userCmd.CommandText = """
                 INSERT INTO portal_users
                     (id, customer_id, identity_provider_subject, email,
@@ -398,7 +433,6 @@ public sealed class MariaDbSignupRepository : ISignupRepository
         await using (var signupCmd = connection.CreateCommand())
         {
             signupCmd.Transaction = transaction;
-            // Jeton consommé : on efface le hash pour empêcher le rejeu.
             signupCmd.CommandText = """
                 UPDATE signup_pending
                 SET password_setup_token_hash = NULL,
@@ -427,6 +461,7 @@ public sealed class MariaDbSignupRepository : ISignupRepository
             reader.IsDBNull(reader.GetOrdinal("message"))
                 ? null
                 : reader.GetString("message"),
+            DeserializeSnapshot(reader, "pack_selection_snapshot_json"),
             reader.IsDBNull(reader.GetOrdinal("source_address"))
                 ? null
                 : reader.GetString("source_address"),
@@ -450,5 +485,37 @@ public sealed class MariaDbSignupRepository : ISignupRepository
                 : reader.GetString("rejected_reason"),
             reader.GetDateTime("created_at"),
             reader.GetDateTime("updated_at"));
+    }
+
+    private static object SerializeSnapshot(SignupPackSelectionSnapshot? snapshot)
+        => snapshot is null
+            ? DBNull.Value
+            : JsonSerializer.Serialize(snapshot, JsonOptions);
+
+    private static SignupPackSelectionSnapshot? DeserializeSnapshot(
+        MySqlDataReader reader,
+        string columnName)
+    {
+        if (reader.IsDBNull(reader.GetOrdinal(columnName)))
+        {
+            return null;
+        }
+
+        var raw = reader.GetString(columnName);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<SignupPackSelectionSnapshot>(
+                raw,
+                JsonOptions);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 }

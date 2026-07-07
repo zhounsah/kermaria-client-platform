@@ -1,19 +1,40 @@
+"use client";
+
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
+
+import type { InternalSession } from "@kermaria/shared";
 
 import { AdminNavigation } from "@/components/AdminNavigation";
 import { PortalNavigation } from "@/components/PortalNavigation";
-import { getCurrentPortalSession } from "@/lib/auth";
+import { PublicShell } from "@/components/PublicShell";
+import { isPublicRoute } from "@/lib/public-route-config";
 
 type AppShellProps = {
   children: ReactNode;
+  session: InternalSession | null;
+  signupEnabled: boolean;
 };
 
-export async function AppShell({ children }: AppShellProps) {
-  const session = await getCurrentPortalSession();
+export function AppShell({
+  children,
+  session,
+  signupEnabled,
+}: AppShellProps) {
+  const pathname = usePathname();
+  const usePublicShell = isPublicRoute(pathname);
   const hasSidebar =
     session?.user.role === "client_user"
     || session?.user.role === "internal_admin";
+
+  if (usePublicShell) {
+    return (
+      <PublicShell signupEnabled={signupEnabled}>
+        {children}
+      </PublicShell>
+    );
+  }
 
   return (
     <>

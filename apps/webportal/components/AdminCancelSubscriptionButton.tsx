@@ -25,7 +25,7 @@ export function AdminCancelSubscriptionButton({
     if (
       typeof window !== "undefined"
       && !window.confirm(
-        "Annuler cette souscription chez PayPal et en local ?",
+        "Demander la resiliation de cette souscription ? Si un terme est en cours, elle prendra effet a son echeance.",
       )
     ) {
       return;
@@ -56,7 +56,7 @@ export function AdminCancelSubscriptionButton({
         onClick={handleClick}
         type="button"
       >
-        {isSubmitting ? "Annulation..." : "Annuler la souscription"}
+        {isSubmitting ? "Resiliation..." : "Demander la resiliation"}
       </button>
       {error ? (
         <p

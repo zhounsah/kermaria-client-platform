@@ -5,18 +5,18 @@ export const serviceStatus = {
 } as const;
 
 export const invoiceStatus = {
-  paid: { label: "Payée", tone: "success" },
-  pending: { label: "À régler", tone: "warning" },
+  paid: { label: "Payee", tone: "success" },
+  pending: { label: "A regler", tone: "warning" },
   overdue: { label: "En retard", tone: "danger" },
 } as const;
 
 export const commercialDocumentStatus = {
   draft: { label: "Brouillon", tone: "neutral" },
-  pending_review: { label: "À vérifier", tone: "warning" },
-  shared_with_customer: { label: "Partagé au client", tone: "success" },
-  cancelled: { label: "Annulé", tone: "neutral" },
-  issued: { label: "Facture émise", tone: "success" },
-  paid: { label: "Réglée", tone: "success" },
+  pending_review: { label: "A verifier", tone: "warning" },
+  shared_with_customer: { label: "Partage au client", tone: "success" },
+  cancelled: { label: "Annule", tone: "neutral" },
+  issued: { label: "Facture emise", tone: "success" },
+  paid: { label: "Reglee", tone: "success" },
 } as const;
 
 export const commercialDocumentType = {
@@ -32,23 +32,40 @@ export const commercialOfferStatus = {
 
 export const commercialOfferBillingCadence = {
   one_time: { label: "Ponctuelle", tone: "neutral" },
-  monthly: { label: "Mensuelle", tone: "info" },
+  monthly: { label: "Recurrente", tone: "info" },
+} as const;
+
+export const commercialOfferPaymentMode = {
+  monthly: { label: "Mensualise", tone: "info" },
+  upfront: { label: "Comptant", tone: "warning" },
 } as const;
 
 export const subscriptionStatus = {
   pending_approval: { label: "En attente d'approbation", tone: "warning" },
-  pending_activation: { label: "Approuvée, activation en cours", tone: "info" },
+  pending_activation: { label: "Approuvee, activation en cours", tone: "info" },
+  pending_cancellation: {
+    label: "Resiliation programmee",
+    tone: "warning",
+  },
   active: { label: "Active", tone: "success" },
   suspended: { label: "Suspendue", tone: "warning" },
-  cancelled: { label: "Annulée", tone: "neutral" },
-  expired: { label: "Expirée", tone: "neutral" },
+  cancelled: { label: "Annulee", tone: "neutral" },
+  expired: { label: "Expiree", tone: "neutral" },
+} as const;
+
+export const subscriptionProvisioningStatus = {
+  not_configured: { label: "Non configure", tone: "warning" },
+  not_required: { label: "Non requis", tone: "neutral" },
+  ready: { label: "Pret", tone: "info" },
+  succeeded: { label: "Synchronise", tone: "success" },
+  failed: { label: "Echec", tone: "danger" },
 } as const;
 
 export const supportStatus = {
   open: {
     label: "Ouverte",
     tone: "info",
-    description: "Votre demande a été reçue.",
+    description: "Votre demande a ete recue.",
   },
   in_progress: {
     label: "En cours",
@@ -61,53 +78,53 @@ export const supportStatus = {
     description: "Votre demande est en attente d'un retour de votre part.",
   },
   resolved: {
-    label: "Résolue",
+    label: "Resolue",
     tone: "success",
-    description: "Votre demande a été résolue.",
+    description: "Votre demande a ete resolue.",
   },
   closed: {
-    label: "Clôturée",
+    label: "Cloturee",
     tone: "neutral",
-    description: "Le suivi de cette demande est clôturé.",
+    description: "Le suivi de cette demande est cloture.",
   },
   cancelled: {
-    label: "Annulée",
+    label: "Annulee",
     tone: "neutral",
-    description: "Cette demande a été annulée.",
+    description: "Cette demande a ete annulee.",
   },
 } as const;
 
 export const serviceRequestStatus = {
   received: {
-    label: "Reçue",
+    label: "Recue",
     tone: "info",
-    description: "Votre demande a été reçue.",
+    description: "Votre demande a ete recue.",
   },
   under_review: {
-    label: "En étude",
+    label: "En etude",
     tone: "warning",
-    description: "Votre demande de service est en cours d'étude.",
+    description: "Votre demande de service est en cours d'etude.",
   },
   accepted: {
-    label: "Acceptée",
+    label: "Acceptee",
     tone: "success",
     description:
-      "Votre demande a été acceptée. Elle sera traitée manuellement.",
+      "Votre demande a ete acceptee. Elle sera traitee manuellement.",
   },
   rejected: {
-    label: "Refusée",
+    label: "Refusee",
     tone: "danger",
-    description: "Votre demande ne peut pas être retenue dans ce périmètre.",
+    description: "Votre demande ne peut pas etre retenue dans ce perimetre.",
   },
   cancelled: {
-    label: "Annulée",
+    label: "Annulee",
     tone: "neutral",
-    description: "Cette demande a été annulée.",
+    description: "Cette demande a ete annulee.",
   },
   completed: {
-    label: "Terminée",
+    label: "Terminee",
     tone: "success",
-    description: "Le traitement manuel de cette demande est terminé.",
+    description: "Le traitement manuel de cette demande est termine.",
   },
 } as const;
 
@@ -142,4 +159,30 @@ export function formatCurrency(value: number) {
 
 export function formatCurrencyFromCents(value: number) {
   return formatCurrency(value / 100);
+}
+
+export function formatCommitmentMonths(value: number | null | undefined) {
+  if (!value || value < 1) {
+    return "—";
+  }
+
+  return value === 1 ? "1 mois" : `${value} mois`;
+}
+
+export function formatBillingIntervalMonths(value: number | null | undefined) {
+  if (!value || value < 1) {
+    return "—";
+  }
+
+  return value === 1 ? "Tous les mois" : `Tous les ${value} mois`;
+}
+
+export function formatPaymentModeLabel(
+  value: "monthly" | "upfront" | null | undefined,
+) {
+  if (!value) {
+    return "—";
+  }
+
+  return commercialOfferPaymentMode[value].label;
 }

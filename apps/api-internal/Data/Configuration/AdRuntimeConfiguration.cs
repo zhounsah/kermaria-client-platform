@@ -12,6 +12,8 @@ public sealed record AdRuntimeConfiguration(
     AdIntegrationMode Mode,
     string? Domain,
     string? ClientsOuDn,
+    string? RequiredOuRoot,
+    IReadOnlyList<string> AllowedRoots,
     string? ServiceAccountUsername,
     string? ServiceAccountPassword,
     int ConnectTimeoutMs,
@@ -34,13 +36,37 @@ public sealed record AdRuntimeConfiguration(
     public bool WritesEnabled => Mode is
         AdIntegrationMode.Mock
         or AdIntegrationMode.ControlledWrite;
+
+    public bool IsWithinAllowedRoots(string? distinguishedName)
+    {
+        var normalized = NormalizeDistinguishedName(distinguishedName);
+        if (normalized is null)
+        {
+            return false;
+        }
+
+        foreach (var allowedRoot in AllowedRoots)
+        {
+            if (normalized.Equals(
+                    allowedRoot,
+                    StringComparison.OrdinalIgnoreCase)
+                || normalized.EndsWith(
+                    $",{allowedRoot}",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public string? NormalizeDistinguishedName(string? distinguishedName)
+        => AdConfigurationResolver.NormalizeDn(distinguishedName);
 }
 
 public static class AdConfigurationResolver
 {
-    private const string RequiredTestOuRoot =
-        "OU=TEST_SITE_WEB,DC=home,DC=bzh";
-
     public static AdRuntimeConfiguration Resolve(IConfiguration configuration)
     {
         var mode = ParseMode(configuration["AD_INTEGRATION_MODE"]);
@@ -49,6 +75,13 @@ public static class AdConfigurationResolver
             or AdIntegrationMode.ControlledWrite;
         var domain = NullIfWhiteSpace(configuration["AD_DOMAIN"]);
         var clientsOuDn = NormalizeDn(configuration["AD_CLIENTS_OU_DN"]);
+        var requiredOuRoot = NormalizeDn(
+            configuration["AD_REQUIRED_OU_ROOT"])
+            ?? clientsOuDn;
+        var allowedRoots = ParseAllowedRoots(
+            configuration["AD_ALLOWED_ROOTS"],
+            requiredOuRoot,
+            clientsOuDn);
         var serviceAccountUsername = requiresDirectoryConfiguration
             ? NullIfWhiteSpace(configuration["AD_SERVICE_ACCOUNT_USERNAME"])
             : null;
@@ -75,10 +108,10 @@ public static class AdConfigurationResolver
             || (
                 domain is not null
                 && clientsOuDn is not null
-                && string.Equals(
-                    clientsOuDn,
-                    RequiredTestOuRoot,
-                    StringComparison.OrdinalIgnoreCase)
+                && requiredOuRoot is not null
+                && allowedRoots.Count > 0
+                && IsWithinRoot(clientsOuDn, requiredOuRoot)
+                && allowedRoots.All(root => IsWithinRoot(root, requiredOuRoot))
                 && serviceAccountUsername is not null
                 && serviceAccountPassword is not null
             );
@@ -87,6 +120,8 @@ public static class AdConfigurationResolver
             mode,
             domain,
             clientsOuDn,
+            requiredOuRoot,
+            allowedRoots,
             serviceAccountUsername,
             serviceAccountPassword,
             connectTimeoutMs,
@@ -124,7 +159,7 @@ public static class AdConfigurationResolver
         return Math.Clamp(parsed, minimum, maximum);
     }
 
-    private static string? NormalizeDn(string? distinguishedName)
+    internal static string? NormalizeDn(string? distinguishedName)
     {
         if (string.IsNullOrWhiteSpace(distinguishedName))
         {
@@ -140,5 +175,52 @@ public static class AdConfigurationResolver
         return parts.Length == 0
             ? null
             : string.Join(",", parts);
+    }
+
+    private static IReadOnlyList<string> ParseAllowedRoots(
+        string? value,
+        string? requiredOuRoot,
+        string? clientsOuDn)
+    {
+        var roots = new List<string>();
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            foreach (var candidate in value.Split(
+                [';', '\n', '\r'],
+                StringSplitOptions.RemoveEmptyEntries
+                | StringSplitOptions.TrimEntries))
+            {
+                var normalized = NormalizeDn(candidate);
+                if (normalized is not null)
+                {
+                    roots.Add(normalized);
+                }
+            }
+        }
+
+        if (roots.Count == 0)
+        {
+            var fallback = requiredOuRoot ?? clientsOuDn;
+            if (fallback is not null)
+            {
+                roots.Add(fallback);
+            }
+        }
+
+        return roots
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static bool IsWithinRoot(
+        string distinguishedName,
+        string requiredOuRoot)
+    {
+        return distinguishedName.Equals(
+                requiredOuRoot,
+                StringComparison.OrdinalIgnoreCase)
+            || distinguishedName.EndsWith(
+                $",{requiredOuRoot}",
+                StringComparison.OrdinalIgnoreCase);
     }
 }

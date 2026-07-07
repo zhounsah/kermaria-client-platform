@@ -83,7 +83,8 @@ public sealed class MariaDbPayPalWebhookRepository : IPayPalWebhookRepository
         command.Parameters.AddWithValue("eventType", eventType);
         command.Parameters.AddWithValue(
             "resourceId",
-            (object?)resourceId ?? DBNull.Value);
+            (object?)WebhookResourceIdNormalizer.Normalize(resourceId)
+            ?? DBNull.Value);
         command.Parameters.AddWithValue("rawPayload", rawPayload);
         await command.ExecuteNonQueryAsync(cancellationToken);
         return id;

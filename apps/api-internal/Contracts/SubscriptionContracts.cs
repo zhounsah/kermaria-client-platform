@@ -15,6 +15,8 @@ public sealed record SubscriptionSummary(
     string CustomerName,
     string CommercialOfferId,
     string OfferName,
+    [property: JsonPropertyName("offerExternalReference")] string? OfferExternalReference,
+    [property: JsonPropertyName("publicPackCode")] string? PublicPackCode,
     string Rail,
     [property: JsonPropertyName("paypalPlanId")] string? PayPalPlanId,
     [property: JsonPropertyName("paypalSubscriptionId")] string? PayPalSubscriptionId,
@@ -22,6 +24,14 @@ public sealed record SubscriptionSummary(
     [property: JsonPropertyName("stripeSubscriptionId")] string? StripeSubscriptionId,
     string Status,
     int PriceAmountCents,
+    [property: JsonPropertyName("setupFeeAmountCents")] int SetupFeeAmountCents,
+    [property: JsonPropertyName("billingIntervalMonths")] int BillingIntervalMonths,
+    [property: JsonPropertyName("commitmentMonths")] int CommitmentMonths,
+    [property: JsonPropertyName("paymentMode")] string PaymentMode,
+    [property: JsonPropertyName("paidCyclesCount")] int PaidCyclesCount,
+    [property: JsonPropertyName("commitmentEndsAt")] string? CommitmentEndsAt,
+    [property: JsonPropertyName("cancelRequestedAt")] string? CancelRequestedAt,
+    [property: JsonPropertyName("cancelAtTermEnd")] bool CancelAtTermEnd,
     string Currency,
     string? StartedAt,
     string? NextBillingAt,
@@ -29,6 +39,33 @@ public sealed record SubscriptionSummary(
     string CreatedAt,
     string UpdatedAt);
 
+public sealed record SubscriptionProvisioningTargetUserSummary(
+    string SamAccountName,
+    string DisplayName,
+    string? UserPrincipalName);
+
+public sealed record SubscriptionProvisioningActionSummary(
+    string Id,
+    string ActionType,
+    string Status,
+    string? ResultCode,
+    bool Changed,
+    string CorrelationId,
+    string TargetReference,
+    string RequestedAt,
+    string? StartedAt,
+    string? CompletedAt);
+
+public sealed record SubscriptionProvisioningSummary(
+    string Status,
+    IReadOnlyList<string> MappedGroups,
+    IReadOnlyList<string> ReconciledGroups,
+    IReadOnlyList<SubscriptionProvisioningTargetUserSummary> TargetUsers,
+    bool CanRetry,
+    string? LastResultCode,
+    IReadOnlyList<SubscriptionProvisioningActionSummary> RecentActions);
+
 public sealed record AdminSubscriptionDetail(
     SubscriptionSummary Subscription,
-    IReadOnlyList<CommercialDocumentSummary> Documents);
+    IReadOnlyList<CommercialDocumentSummary> Documents,
+    SubscriptionProvisioningSummary Provisioning);

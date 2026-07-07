@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { CORRELATION_HEADER, resolveCorrelationId } from "@/lib/correlation";
 import { getInternalSession } from "@/lib/internal-api";
+import { getPortalPublicUrl } from "@/lib/public-routes";
 import { getSessionCookieName } from "@/lib/session-config";
 import {
   getInternalApiUrl,
@@ -118,7 +119,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const portalUrl = process.env.PUBLIC_PORTAL_URL?.replace(/\/$/, "") ?? "http://localhost:3000";
+  const portalUrl = getPortalPublicUrl(request);
   const successUrl = `${portalUrl}/api/payments/stripe/return?documentId=${encodeURIComponent(documentId)}&session_id={CHECKOUT_SESSION_ID}`;
   const cancelUrl = `${portalUrl}/commercial-documents/${encodeURIComponent(documentId)}?payment=cancelled`;
 

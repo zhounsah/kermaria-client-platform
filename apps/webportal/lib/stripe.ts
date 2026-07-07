@@ -12,7 +12,7 @@ export function getStripeMode(): StripeEnvironment {
 function getSecretKey(): string {
   const key = process.env.STRIPE_SECRET_KEY?.trim();
   if (!key) {
-    throw new Error("STRIPE_SECRET_KEY non configurée.");
+    throw new Error("STRIPE_SECRET_KEY non configuree.");
   }
   return key;
 }
@@ -33,7 +33,7 @@ async function stripeRequest<T>(
 
   if (!response.ok) {
     const err = await response.text();
-    throw new Error(`Requête Stripe échouée (${path}) : ${response.status} ${err}`);
+    throw new Error(`Requete Stripe echouee (${path}) : ${response.status} ${err}`);
   }
 
   return (await response.json()) as T;
@@ -68,32 +68,57 @@ export async function createStripeOneShotCheckoutSession(
   );
 
   if (!data.url) {
-    throw new Error("Stripe n'a pas retourné d'URL de paiement.");
+    throw new Error("Stripe n'a pas retourne d'URL de paiement.");
   }
 
   return { sessionId: data.id, approveUrl: data.url };
 }
 
-export async function createStripeSubscriptionCheckoutSession(
-  priceId: string,
-  customerEmail: string,
-  successUrl: string,
-  cancelUrl: string,
-): Promise<CreateCheckoutSessionResult> {
+type StripeSubscriptionCheckoutOptions = {
+  priceId: string;
+  customerEmail: string;
+  successUrl: string;
+  cancelUrl: string;
+  setupFeeAmountCents?: number;
+  currency?: string;
+  setupFeeLabel?: string;
+};
+
+export async function createStripeSubscriptionCheckoutSession({
+  priceId,
+  customerEmail,
+  successUrl,
+  cancelUrl,
+  setupFeeAmountCents = 0,
+  currency = "EUR",
+  setupFeeLabel = "Mise en service",
+}: StripeSubscriptionCheckoutOptions): Promise<CreateCheckoutSessionResult> {
+  const params: Record<string, string> = {
+    mode: "subscription",
+    "line_items[0][price]": priceId,
+    "line_items[0][quantity]": "1",
+    customer_email: customerEmail,
+    success_url: successUrl,
+    cancel_url: cancelUrl,
+  };
+
+  if (setupFeeAmountCents > 0) {
+    params["line_items[1][price_data][currency]"] = currency.toLowerCase();
+    params["line_items[1][price_data][product_data][name]"] =
+      setupFeeLabel.slice(0, 250);
+    params["line_items[1][price_data][unit_amount]"] = String(
+      setupFeeAmountCents,
+    );
+    params["line_items[1][quantity]"] = "1";
+  }
+
   const data = await stripeRequest<{ id: string; url: string | null }>(
     "/checkout/sessions",
-    {
-      mode: "subscription",
-      "line_items[0][price]": priceId,
-      "line_items[0][quantity]": "1",
-      customer_email: customerEmail,
-      success_url: successUrl,
-      cancel_url: cancelUrl,
-    },
+    params,
   );
 
   if (!data.url) {
-    throw new Error("Stripe n'a pas retourné d'URL de souscription.");
+    throw new Error("Stripe n'a pas retourne d'URL de souscription.");
   }
 
   return { sessionId: data.id, approveUrl: data.url };
@@ -118,7 +143,7 @@ export async function getStripeCheckoutSession(
 
   if (!response.ok) {
     const err = await response.text();
-    throw new Error(`Lecture session Stripe échouée : ${response.status} ${err}`);
+    throw new Error(`Lecture session Stripe echouee : ${response.status} ${err}`);
   }
 
   const data = (await response.json()) as {
@@ -147,12 +172,47 @@ export async function createStripePrice(
   productId: string,
   priceAmountCents: number,
   currency: string,
+  billingIntervalMonths = 1,
 ): Promise<string> {
   const data = await stripeRequest<{ id: string }>("/prices", {
     product: productId,
     unit_amount: String(priceAmountCents),
     currency: currency.toLowerCase(),
     "recurring[interval]": "month",
+    "recurring[interval_count]": String(billingIntervalMonths),
   });
   return data.id;
+}
+
+export async function scheduleStripeSubscriptionCancellationAtPeriodEnd(
+  stripeSubscriptionId: string,
+): Promise<void> {
+  await stripeRequest(
+    `/subscriptions/${encodeURIComponent(stripeSubscriptionId)}`,
+    {
+      cancel_at_period_end: "true",
+    },
+  );
+}
+
+export async function cancelStripeSubscription(
+  stripeSubscriptionId: string,
+): Promise<void> {
+  const response = await fetch(
+    `${API_BASE}/subscriptions/${encodeURIComponent(stripeSubscriptionId)}`,
+    {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${getSecretKey()}` },
+      cache: "no-store",
+    },
+  );
+
+  if (response.ok) {
+    return;
+  }
+
+  const err = await response.text();
+  throw new Error(
+    `Annulation souscription Stripe echouee : ${response.status} ${err}`,
+  );
 }

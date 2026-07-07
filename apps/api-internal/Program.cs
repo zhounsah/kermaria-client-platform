@@ -6,10 +6,10 @@ using Kermaria.ApiInternal.Data.Migration;
 using Kermaria.ApiInternal.Data.Repositories;
 using Kermaria.ApiInternal.Infrastructure;
 using Kermaria.ApiInternal.Services;
-using Kermaria.ApiInternal.Data.Repositories;
 using Kermaria.ApiInternal.Services.ActiveDirectory;
 using Kermaria.ApiInternal.Services.Bpce;
 using Kermaria.ApiInternal.Services.Email;
+using Kermaria.ApiInternal.Services.Provisioning;
 using Microsoft.AspNetCore.Diagnostics;
 using MySqlConnector;
 
@@ -119,6 +119,8 @@ var authConfiguration = AuthConfigurationResolver.Resolve(
 var paypalConfiguration = PayPalConfigurationResolver.Resolve(builder.Configuration);
 var stripeConfiguration = StripeConfigurationResolver.Resolve(builder.Configuration);
 var signupConfiguration = SignupConfigurationResolver.Resolve(builder.Configuration);
+var subscriptionProvisioningConfiguration =
+    SubscriptionProvisioningConfigurationResolver.Resolve(builder.Configuration);
 
 builder.Services.AddSingleton(sqlConfiguration);
 builder.Services.AddSingleton(adConfiguration);
@@ -130,6 +132,7 @@ builder.Services.AddSingleton(authConfiguration);
 builder.Services.AddSingleton(paypalConfiguration);
 builder.Services.AddSingleton(stripeConfiguration);
 builder.Services.AddSingleton(signupConfiguration);
+builder.Services.AddSingleton(subscriptionProvisioningConfiguration);
 builder.Services.AddSingleton<IPortalPasswordService, PortalPasswordService>();
 builder.Services.AddSingleton<ISessionTokenService, SessionTokenService>();
 builder.Services.AddSingleton<MockAuthenticationStore>();
@@ -172,12 +175,31 @@ builder.Services.AddScoped<ICommercialRepository>(
         ? new MariaDbCommercialRepository(sqlConfiguration)
         : new MockCommercialRepository(
             serviceProvider.GetRequiredService<MockCommercialStore>()));
+builder.Services.AddSingleton<MockManagedContentStore>();
+builder.Services.AddScoped<IManagedContentRepository>(
+    serviceProvider => sqlConfiguration.IsPersistent
+        ? new MariaDbManagedContentRepository(sqlConfiguration)
+        : new MockManagedContentRepository(
+            serviceProvider.GetRequiredService<MockManagedContentStore>()));
+builder.Services.AddSingleton<MockPublicPackCatalogStore>();
+builder.Services.AddScoped<IPublicPackCatalogRepository>(
+    serviceProvider => sqlConfiguration.IsPersistent
+        ? new MariaDbPublicPackCatalogRepository(sqlConfiguration)
+        : new MockPublicPackCatalogRepository(
+            serviceProvider.GetRequiredService<MockPublicPackCatalogStore>()));
 builder.Services.AddSingleton<MockSubscriptionStore>();
 builder.Services.AddScoped<ISubscriptionRepository>(
     serviceProvider => sqlConfiguration.IsPersistent
         ? new MariaDbSubscriptionRepository(sqlConfiguration)
         : new MockSubscriptionRepository(
             serviceProvider.GetRequiredService<MockSubscriptionStore>()));
+builder.Services.AddSingleton<MockSubscriptionProvisioningActionStore>();
+builder.Services.AddScoped<ISubscriptionProvisioningActionRepository>(
+    serviceProvider => sqlConfiguration.IsPersistent
+        ? new MariaDbSubscriptionProvisioningActionRepository(sqlConfiguration)
+        : new MockSubscriptionProvisioningActionRepository(
+            serviceProvider.GetRequiredService<
+                MockSubscriptionProvisioningActionStore>()));
 builder.Services.AddSingleton<MockPayPalWebhookStore>();
 builder.Services.AddScoped<IPayPalWebhookRepository>(
     serviceProvider => sqlConfiguration.IsPersistent
@@ -209,10 +231,17 @@ builder.Services.AddScoped<
     IPortalNotificationService,
     PortalNotificationService>();
 builder.Services.AddScoped<ICommercialService, CommercialService>();
+builder.Services.AddScoped<IManagedContentService, ManagedContentService>();
+builder.Services.AddScoped<IPublicPackCatalogService, PublicPackCatalogService>();
 builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
+builder.Services.AddScoped<IProvisioningService, ProvisioningService>();
+builder.Services.AddScoped<
+    ISubscriptionProvisioningManager,
+    SubscriptionProvisioningManager>();
 builder.Services.AddScoped<IPayPalWebhookService, PayPalWebhookService>();
 builder.Services.AddScoped<IStripeWebhookService, StripeWebhookService>();
 builder.Services.AddScoped<IAuditService, AuditService>();
+builder.Services.AddHostedService<PayPalPendingCancellationWorker>();
 builder.Services.AddTransient<MariaDbMigrationRunner>();
 builder.Services.AddTransient<MariaDbAdminSeeder>();
 builder.Services.AddSingleton<OperationalReadinessService>();
@@ -227,6 +256,17 @@ builder.Services.AddSingleton<IActiveDirectoryService>(serviceProvider =>
                 serviceProvider.GetRequiredService<
                     ILogger<LdapActiveDirectoryService>>()),
         _ => new DisabledActiveDirectoryService(adConfiguration)
+    });
+builder.Services.AddSingleton<IAdGroupProvisioner>(serviceProvider =>
+    adConfiguration.Mode switch
+    {
+        AdIntegrationMode.Mock => new MockAdGroupProvisioner(),
+        AdIntegrationMode.ReadOnly or AdIntegrationMode.ControlledWrite =>
+            new LdapAdGroupProvisioner(
+                adConfiguration,
+                serviceProvider.GetRequiredService<
+                    ILogger<LdapAdGroupProvisioner>>()),
+        _ => new DisabledAdGroupProvisioner()
     });
 builder.Services.AddHttpClient(
     BpceTokenCache.HttpClientName,
@@ -1315,6 +1355,167 @@ app.MapGet(
                 session,
                 context.RequestAborted));
     });
+app.MapGet(
+    "/internal/portal/pending-pack-selection",
+    async (
+        HttpContext context,
+        ISignupService signupService,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            auditService);
+        context.Response.Headers["X-Data-Source"] =
+            signupService.IsPersistent ? "mariadb" : "mock";
+        return Results.Ok(
+            await signupService.GetPendingPackSelectionAsync(
+                session,
+                context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/portal/content/{key}",
+    async (
+        string key,
+        HttpContext context,
+        IManagedContentService service) =>
+    {
+        return ManagedContentOk(
+            context,
+            service,
+            await service.GetPublicAsync(key, context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/admin/content",
+    async (
+        HttpContext context,
+        IManagedContentService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.catalog.read");
+        return ManagedContentOk(
+            context,
+            service,
+            await service.GetAdminListAsync(context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/admin/content/{key}",
+    async (
+        string key,
+        HttpContext context,
+        IManagedContentService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.catalog.read");
+        return ManagedContentOk(
+            context,
+            service,
+            await service.GetAdminDetailAsync(key, context.RequestAborted));
+    });
+app.MapPatch(
+    "/internal/admin/content/{key}",
+    async (
+        string key,
+        HttpContext context,
+        IManagedContentService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.catalog.write");
+        var payload = await ReadPayload<ManagedContentPayload>(context)
+            ?? throw new PortalValidationException();
+        var result = await service.UpsertAsync(
+            key,
+            payload,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "managed_content.update",
+                result.Changed ? "success" : "unchanged",
+                TargetType: "managed_content",
+                TargetReference: key,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return ManagedContentOk(context, service, result);
+    });
+app.MapGet(
+    "/internal/portal/public-pack-catalog",
+    async (
+        HttpContext context,
+        IPublicPackCatalogService service) =>
+    {
+        return PublicPackCatalogOk(
+            context,
+            service,
+            await service.GetAsync(context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/admin/public-pack-catalog",
+    async (
+        HttpContext context,
+        IPublicPackCatalogService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.catalog.read");
+        return PublicPackCatalogOk(
+            context,
+            service,
+            await service.GetAsync(context.RequestAborted));
+    });
+app.MapPatch(
+    "/internal/admin/public-pack-catalog",
+    async (
+        HttpContext context,
+        IPublicPackCatalogService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.catalog.write");
+        var payload = await ReadPayload<PublicPackCatalogContentPayload>(context)
+            ?? throw new PortalValidationException();
+        var result = await service.UpsertAsync(
+            payload,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "public_pack_catalog.update",
+                result.Changed ? "success" : "unchanged",
+                TargetType: "public_pack_catalog",
+                TargetReference: "public-pack-catalog",
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return PublicPackCatalogOk(context, service, result);
+    });
 app.MapPost(
     "/internal/portal/subscriptions",
     async (
@@ -1390,6 +1591,37 @@ app.MapPost(
             context.RequestAborted);
         return SubscriptionOk(context, service, result);
     });
+app.MapPost(
+    "/internal/portal/subscriptions/{id}/cancel",
+    async (
+        string id,
+        HttpContext context,
+        ISubscriptionService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            auditService);
+        var result = await service.ClientCancelAsync(
+            session,
+            id,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "subscription.client_cancel",
+                "success",
+                TargetType: "subscription",
+                TargetReference: result.Id,
+                CustomerId: result.CustomerId,
+                ActorUserId: session.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return SubscriptionOk(context, service, result);
+    });
 
 app.MapPost(
     "/internal/webhooks/paypal",
@@ -1424,13 +1656,18 @@ app.MapPost(
             payload,
             context.GetCorrelationId(),
             context.RequestAborted);
-        return Results.Ok(new
+        var response = new
         {
             event_id = result.EventId,
             status = result.Status,
             error_message = result.ErrorMessage,
             correlation_id = context.GetCorrelationId()
-        });
+        };
+        return result.Status == "failed"
+            ? Results.Json(
+                response,
+                statusCode: StatusCodes.Status500InternalServerError)
+            : Results.Ok(response);
     });
 
 app.MapGet(
@@ -2777,6 +3014,8 @@ app.MapPost(
             "admin.subscriptions.cancel");
         var result = await service.AdminCancelAsync(
             id,
+            context.GetCorrelationId(),
+            actor.UserId,
             context.RequestAborted);
         await auditService.RecordAsync(
             new AuditEvent(
@@ -2786,6 +3025,39 @@ app.MapPost(
                 TargetType: "subscription",
                 TargetReference: result.Id,
                 CustomerId: result.CustomerId,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return SubscriptionOk(context, service, result);
+    });
+app.MapPost(
+    "/internal/admin/subscriptions/{id}/provisioning/reconcile",
+    async (
+        string id,
+        HttpContext context,
+        ISubscriptionService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.subscriptions.provisioning.reconcile");
+        var result = await service.ReconcileProvisioningAsync(
+            id,
+            "subscription.provisioning.manual_reconcile",
+            context.GetCorrelationId(),
+            actor.UserId,
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "subscription.provisioning_reconcile",
+                result.Status == "failed" ? "refused" : "success",
+                ReasonCode: result.LastResultCode,
+                TargetType: "subscription",
+                TargetReference: id,
                 ActorUserId: actor.UserId,
                 SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
             context.RequestAborted);
@@ -3344,6 +3616,26 @@ static IResult NotificationOk<T>(
 static IResult CommercialOk<T>(
     HttpContext context,
     ICommercialService service,
+    T data)
+{
+    context.Response.Headers["X-Data-Source"] =
+        service.IsPersistent ? "mariadb" : "mock";
+    return Results.Ok(data);
+}
+
+static IResult ManagedContentOk<T>(
+    HttpContext context,
+    IManagedContentService service,
+    T data)
+{
+    context.Response.Headers["X-Data-Source"] =
+        service.IsPersistent ? "mariadb" : "mock";
+    return Results.Ok(data);
+}
+
+static IResult PublicPackCatalogOk<T>(
+    HttpContext context,
+    IPublicPackCatalogService service,
     T data)
 {
     context.Response.Headers["X-Data-Source"] =

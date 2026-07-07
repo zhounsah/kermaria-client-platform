@@ -4,10 +4,18 @@ import type {
   CommercialDocumentSummary,
   CommercialOfferSummary,
   InvoiceSummary,
+  ManagedContentDetail,
+  ManagedContentKey,
+  ManagedContentSummary,
+  PublicPackCode,
   PortalSummary,
   ServiceCatalogItem,
   ServiceSummary,
   SupportRequestSummary,
+} from "@kermaria/shared";
+import {
+  getManagedContentRegistry,
+  PUBLIC_PACKS,
 } from "@kermaria/shared";
 
 export const mockCustomer: ClientProfile = {
@@ -120,7 +128,7 @@ export const mockInvoices: InvoiceSummary[] = [
   },
 ];
 
-export const mockCommercialOffers: CommercialOfferSummary[] = [
+const mockTechnicalCommercialOffers: CommercialOfferSummary[] = [
   {
     id: "offer-admin-001",
     name: "Audit poste de travail",
@@ -135,6 +143,11 @@ export const mockCommercialOffers: CommercialOfferSummary[] = [
     status: "active",
     displayOrder: 10,
     billingCadence: "one_time",
+    setupFeeAmountCents: null,
+    billingIntervalMonths: null,
+    commitmentMonths: null,
+    paymentMode: null,
+    publicPackCode: null,
     paypalPlanIdSandbox: null,
     paypalPlanIdLive: null,
     stripePriceIdTest: null,
@@ -157,6 +170,11 @@ export const mockCommercialOffers: CommercialOfferSummary[] = [
     status: "active",
     displayOrder: 20,
     billingCadence: "one_time",
+    setupFeeAmountCents: null,
+    billingIntervalMonths: null,
+    commitmentMonths: null,
+    paymentMode: null,
+    publicPackCode: null,
     paypalPlanIdSandbox: null,
     paypalPlanIdLive: null,
     stripePriceIdTest: null,
@@ -178,6 +196,11 @@ export const mockCommercialOffers: CommercialOfferSummary[] = [
     status: "active",
     displayOrder: 30,
     billingCadence: "one_time",
+    setupFeeAmountCents: null,
+    billingIntervalMonths: null,
+    commitmentMonths: null,
+    paymentMode: null,
+    publicPackCode: null,
     paypalPlanIdSandbox: null,
     paypalPlanIdLive: null,
     stripePriceIdTest: null,
@@ -185,6 +208,91 @@ export const mockCommercialOffers: CommercialOfferSummary[] = [
     createdAt: "2026-06-01T09:10:00Z",
     updatedAt: "2026-06-01T09:10:00Z",
   },
+];
+
+const PUBLIC_PACK_PRICING: Record<
+  PublicPackCode,
+  { monthlyAmountCents: number; setupFeeAmountCents: number }
+> = {
+  "pack-dossier-securise": {
+    monthlyAmountCents: 900,
+    setupFeeAmountCents: 1500,
+  },
+  "pack-acces-distance": {
+    monthlyAmountCents: 1900,
+    setupFeeAmountCents: 2500,
+  },
+  "pack-bureau-windows-distance": {
+    monthlyAmountCents: 3500,
+    setupFeeAmountCents: 3500,
+  },
+  "pack-pro-association": {
+    monthlyAmountCents: 4900,
+    setupFeeAmountCents: 4900,
+  },
+};
+
+function resolveDiscountMultiplier(commitmentMonths: 1 | 6 | 12) {
+  switch (commitmentMonths) {
+    case 6:
+      return 0.9;
+    case 12:
+      return 0.8;
+    default:
+      return 1;
+  }
+}
+
+function createMockPublicPackOffers(): CommercialOfferSummary[] {
+  return PUBLIC_PACKS.flatMap((pack) =>
+    pack.variants.map((variant, index) => {
+      const pricing = PUBLIC_PACK_PRICING[pack.key];
+      const discountedMonthlyAmountCents = Math.round(
+        pricing.monthlyAmountCents
+          * resolveDiscountMultiplier(variant.commitmentMonths),
+      );
+      const billingIntervalMonths =
+        variant.paymentMode === "upfront" ? variant.commitmentMonths : 1;
+      const priceAmountCents =
+        variant.paymentMode === "upfront"
+          ? discountedMonthlyAmountCents * variant.commitmentMonths
+          : discountedMonthlyAmountCents;
+
+      return {
+        id:
+          `offer-${pack.slug}-${variant.commitmentMonths}-`
+          + `${variant.paymentMode}`,
+        name: pack.label,
+        description: pack.description,
+        category: "Pack grand public",
+        unitLabel: variant.paymentMode === "upfront" ? "engagement" : "mois",
+        priceKind: "ht",
+        priceAmountCents,
+        currency: "EUR",
+        taxRateBasisPoints: 2000,
+        externalReference: variant.externalReference,
+        status: "active",
+        displayOrder: pack.order + index,
+        billingCadence: "monthly",
+        setupFeeAmountCents: pricing.setupFeeAmountCents,
+        billingIntervalMonths,
+        commitmentMonths: variant.commitmentMonths,
+        paymentMode: variant.paymentMode,
+        publicPackCode: pack.key,
+        paypalPlanIdSandbox: null,
+        paypalPlanIdLive: null,
+        stripePriceIdTest: null,
+        stripePriceIdLive: null,
+        createdAt: "2026-07-07T08:00:00Z",
+        updatedAt: "2026-07-07T08:00:00Z",
+      };
+    }),
+  );
+}
+
+export const mockCommercialOffers: CommercialOfferSummary[] = [
+  ...mockTechnicalCommercialOffers,
+  ...createMockPublicPackOffers(),
 ];
 
 export const mockCommercialDocuments: CommercialDocumentSummary[] = [
@@ -370,3 +478,170 @@ export const mockPortalSummary: PortalSummary = {
   activeServiceRequestCount: 1,
   lastUpdatedAt: "2026-06-11T08:45:00Z",
 };
+
+function createMockPackSheetBody(packCode: PublicPackCode) {
+  const pack = PUBLIC_PACKS.find((item) => item.key === packCode);
+  if (!pack) {
+    return "## Présentation\n\nContenu indisponible.";
+  }
+
+  const componentOffers = pack.technicalServiceReferences
+    .map((reference) =>
+      mockCommercialOffers.find(
+        (offer) => offer.externalReference === reference && offer.status === "active",
+      ) ?? null,
+    )
+    .filter((offer): offer is CommercialOfferSummary => offer !== null);
+
+  const lines = [
+    "## Présentation",
+    "",
+    pack.description,
+    "",
+    `Public visé : ${pack.audience}`,
+    "",
+    "## Composants techniques liés",
+    "",
+    componentOffers.length > 0
+      ? `La composition technique active de ce pack est calculée automatiquement. ${componentOffers.length} composant(s) sont actuellement rattaché(s) et affiché(s) séparément sur la page publique.`
+      : "La composition technique active de ce pack est calculée automatiquement et affichée séparément sur la page publique.",
+    "",
+    "## Pré-requis",
+    "",
+    "- Un court cadrage reste recommandé pour valider les usages, accès et contraintes techniques.",
+    "- Les accès nominatifs et besoins d'accompagnement sont confirmés avant mise en service.",
+    "",
+    "## Limites",
+    "",
+    "- Cette fiche décrit le périmètre standard du pack et ne remplace pas un devis spécifique.",
+    "- Les demandes hors périmètre peuvent donner lieu à une prestation complémentaire.",
+    "",
+    "## Support",
+    "",
+    "- Le support inclus suit le périmètre standard affiché sur la vitrine.",
+    "- Les changements structurants ou migrations étendues sont qualifiés séparément.",
+  ];
+
+  return lines.join("\n");
+}
+
+function createMockManagedContentDetail(
+  key: ManagedContentKey,
+): ManagedContentDetail | null {
+  const entry = getManagedContentRegistry().find((item) => item.key === key);
+  if (!entry) {
+    return null;
+  }
+
+  const baseTimestamps = {
+    createdAt: "2026-07-07T08:00:00Z",
+    updatedAt: "2026-07-07T08:00:00Z",
+  };
+
+  switch (key) {
+    case "legal:cgv":
+      return {
+        ...entry,
+        versionLabel: "Version du : 07 juillet 2026",
+        bodyMarkdown: [
+          "Les présentes Conditions Générales de Vente s'appliquent aux prestations proposées par Zachary IT.",
+          "",
+          "## Objet",
+          "",
+          "Les prestations couvertes comprennent notamment l'hébergement de dossiers, la sauvegarde, l'accès distant, le support et les interventions informatiques décrites dans les devis ou propositions commerciales.",
+          "",
+          "## Commandes et exécution",
+          "",
+          "Toute commande validée implique l'acceptation pleine et entière des CGV. Le périmètre exact reste défini par le devis, la proposition commerciale ou la facture associée.",
+          "",
+          "## Facturation et paiement",
+          "",
+          "Les prix sont exprimés en euros. La mention de franchise en base de TVA s'applique lorsque le régime concerné est en vigueur.",
+          "",
+          "## Données et responsabilité",
+          "",
+          "Le Client reste responsable des contenus confiés. Zachary IT intervient dans une obligation de moyens et selon le périmètre convenu.",
+        ].join("\n"),
+        ...baseTimestamps,
+      };
+    case "legal:mentions-legales":
+      return {
+        ...entry,
+        versionLabel: "Dernière mise à jour : 07 juillet 2026",
+        bodyMarkdown: [
+          "Le présent site est édité par Zachary HOUNSA-HOUNKPA EI, nom commercial Zachary IT.",
+          "",
+          "## Éditeur du site",
+          "",
+          "**Zachary HOUNSA-HOUNKPA EI**",
+          "Nom commercial : **Zachary IT**",
+          "Adresse professionnelle : **3 Kermaria, 35580 Guichen, France**",
+          "Adresse e-mail : **[zhounsah@home.bzh](mailto:zhounsah@home.bzh)**",
+          "",
+          "## Hébergement",
+          "",
+          "Le site est hébergé sur une infrastructure administrée par Zachary IT, avec des services tiers possibles pour la couche technique de sécurisation et de diffusion.",
+          "",
+          "## Propriété intellectuelle",
+          "",
+          "Les contenus, textes, logos et éléments graphiques restent protégés par les droits applicables.",
+        ].join("\n"),
+        ...baseTimestamps,
+      };
+    case "page:a-propos":
+      return {
+        ...entry,
+        versionLabel: null,
+        bodyMarkdown: [
+          "Zachary IT est une micro-entreprise de services informatiques basée à Guichen, créée par Zachary HOUNSA-HOUNKPA.",
+          "",
+          "J'accompagne les particuliers, indépendants et petites structures dans la mise en place de solutions informatiques simples et compréhensibles : assistance, maintenance, sauvegarde, hébergement de dossiers, VPN privé, accès distant et accompagnement réseau.",
+          "",
+          "Mon objectif est de proposer des services clairs, adaptés aux besoins réels, avec une facturation transparente et une attention particulière portée à la sécurité, aux sauvegardes et à la confidentialité des données.",
+          "",
+          "Zachary IT s'adresse aux clients qui cherchent un interlocuteur local, accessible et capable d'expliquer les choses simplement, sans vendre une solution inutilement complexe.",
+        ].join("\n"),
+        ...baseTimestamps,
+      };
+    default:
+      return {
+        ...entry,
+        versionLabel: null,
+        bodyMarkdown: createMockPackSheetBody(entry.packCode as PublicPackCode),
+        ...baseTimestamps,
+      };
+  }
+}
+
+export const mockManagedContentDetails = new Map<
+  ManagedContentKey,
+  ManagedContentDetail
+>(
+  getManagedContentRegistry()
+    .map((entry) => createMockManagedContentDetail(entry.key))
+    .filter((entry): entry is ManagedContentDetail => entry !== null)
+    .map((entry) => [entry.key, entry]),
+);
+
+export const mockManagedContentSummaries: ManagedContentSummary[] =
+  getManagedContentRegistry()
+    .map((entry) => {
+      const detail = mockManagedContentDetails.get(entry.key);
+      return detail
+        ? {
+            key: detail.key,
+            contentType: detail.contentType,
+            title: detail.title,
+            publicPath: detail.publicPath,
+            versionLabel: detail.versionLabel,
+            updatedAt: detail.updatedAt,
+          }
+        : null;
+    })
+    .filter((entry): entry is ManagedContentSummary => entry !== null);
+
+export function getMockManagedContent(
+  key: ManagedContentKey,
+): ManagedContentDetail | null {
+  return mockManagedContentDetails.get(key) ?? null;
+}

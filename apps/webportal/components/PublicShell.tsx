@@ -1,18 +1,16 @@
+"use client";
+
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import {
-  PORTFOLIO_URL,
-  isSignupEnabled,
-} from "@/lib/public-routes";
+import { PORTFOLIO_URL } from "@/lib/public-route-config";
 
 type PublicShellProps = {
   children: ReactNode;
+  signupEnabled: boolean;
 };
 
-export function PublicShell({ children }: PublicShellProps) {
-  const signupEnabled = isSignupEnabled();
-
+export function PublicShell({ children, signupEnabled }: PublicShellProps) {
   return (
     <>
       <header className="public-header">

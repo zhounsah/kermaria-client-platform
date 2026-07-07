@@ -26,22 +26,29 @@ import type {
   InternalSession,
   InternalSessionCreated,
   LoginPayload,
+  ManagedContentDetail,
+  ManagedContentKey,
+  ManagedContentSummary,
   MockSubmissionResponse,
   NotificationReadResponse,
+  PendingPackSelectionSummary,
   PortalSummary,
   PortalNotificationSummary,
   PortalServiceRequestDetail,
   PortalSupportRequestDetail,
+  PublicPackCatalogContent,
   RequestMutationResponse,
   ServiceCatalogItem,
   ServiceRequestPayload,
   ServiceRequestSummary,
   ServiceSummary,
   SubscriptionSummary,
+  SignupPackSelectionSnapshot,
   AdminSubscriptionDetail,
   SupportRequestPayload,
   SupportRequestSummary,
 } from "@kermaria/shared";
+import { createDefaultPublicPackCatalogContent } from "@kermaria/shared";
 
 import { CORRELATION_HEADER, resolveCorrelationId } from "@/lib/correlation";
 import {
@@ -55,7 +62,9 @@ import {
   mockCommercialDocuments,
   mockCommercialOffers,
   mockCustomer,
+  getMockManagedContent,
   mockInvoices,
+  mockManagedContentSummaries,
   mockPortalSummary,
   mockServiceCatalog,
   mockServices,
@@ -408,11 +417,37 @@ export function getPublicCommercialCatalog() {
   );
 }
 
+export function getPublicPackCatalogContent() {
+  return getPublicData<PublicPackCatalogContent>(
+    "/internal/portal/public-pack-catalog",
+    createDefaultPublicPackCatalogContent(),
+    createDefaultPublicPackCatalogContent(),
+  );
+}
+
+export function getPublicManagedContent(key: ManagedContentKey) {
+  const localFallback = getMockManagedContent(key);
+
+  return getPublicData<ManagedContentDetail | null>(
+    `/internal/portal/content/${encodeURIComponent(key)}`,
+    localFallback,
+    null,
+  );
+}
+
 export function getClientSubscriptions() {
   return getPortalData<SubscriptionSummary[]>(
     "/internal/portal/subscriptions",
     [],
     [],
+  );
+}
+
+export function getPendingPackSelection() {
+  return getPortalData<PendingPackSelectionSummary | null>(
+    "/internal/portal/pending-pack-selection",
+    null,
+    null,
   );
 }
 
@@ -819,6 +854,7 @@ export type SignupAdminDetail = {
   email: string;
   phone: string | null;
   message: string | null;
+  packSelection: SignupPackSelectionSnapshot | null;
   sourceAddress: string | null;
   rejectedReason: string | null;
   createdAt: string;
@@ -860,6 +896,27 @@ export function getAdminCatalog() {
   return getAdminData<CommercialOfferSummary[]>(
     "/internal/admin/catalog",
     [],
+  );
+}
+
+export function getAdminPublicPackCatalogContent() {
+  return getAdminData<PublicPackCatalogContent>(
+    "/internal/admin/public-pack-catalog",
+    createDefaultPublicPackCatalogContent(),
+  );
+}
+
+export function getAdminManagedContentList() {
+  return getAdminData<ManagedContentSummary[]>(
+    "/internal/admin/content",
+    mockManagedContentSummaries,
+  );
+}
+
+export function getAdminManagedContent(key: ManagedContentKey) {
+  return getAdminData<ManagedContentDetail | null>(
+    `/internal/admin/content/${encodeURIComponent(key)}`,
+    getMockManagedContent(key),
   );
 }
 

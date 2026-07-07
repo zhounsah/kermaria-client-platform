@@ -11,17 +11,17 @@ import {
   getInternalSession,
   mutateInternalAdminData,
 } from "@/lib/internal-api";
-import { getSessionCookieName } from "@/lib/session-config";
-import {
-  getInternalApiUrl,
-  getInternalServiceHeaders,
-} from "@/lib/runtime-config";
 import {
   createPayPalPlan,
   createPayPalProduct,
   getPayPalMode,
   isPayPalConfigured,
 } from "@/lib/paypal";
+import { getSessionCookieName } from "@/lib/session-config";
+import {
+  getInternalApiUrl,
+  getInternalServiceHeaders,
+} from "@/lib/runtime-config";
 
 export async function POST(
   request: NextRequest,
@@ -43,7 +43,7 @@ export async function POST(
     return NextResponse.json(
       {
         code: "PAYPAL_NOT_CONFIGURED",
-        message: "PayPal n'est pas configuré.",
+        message: "PayPal n'est pas configure.",
       },
       { status: 503 },
     );
@@ -61,7 +61,7 @@ export async function POST(
     const session = await getInternalSession(sessionToken, correlationId);
     if (session.user.role !== "internal_admin") {
       return NextResponse.json(
-        { code: "ACCESS_DENIED", message: "Accès refusé." },
+        { code: "ACCESS_DENIED", message: "Acces refuse." },
         { status: 403 },
       );
     }
@@ -85,19 +85,16 @@ export async function POST(
     );
   }
 
-  const catalogResponse = await fetch(
-    `${internalApiUrl}/internal/admin/catalog`,
-    {
-      cache: "no-store",
-      signal: AbortSignal.timeout(10000),
-      headers: {
-        Accept: "application/json",
-        ...getInternalServiceHeaders(),
-        [CORRELATION_HEADER]: correlationId,
-        "X-Portal-Session": sessionToken,
-      },
+  const catalogResponse = await fetch(`${internalApiUrl}/internal/admin/catalog`, {
+    cache: "no-store",
+    signal: AbortSignal.timeout(10000),
+    headers: {
+      Accept: "application/json",
+      ...getInternalServiceHeaders(),
+      [CORRELATION_HEADER]: correlationId,
+      "X-Portal-Session": sessionToken,
     },
-  );
+  });
 
   if (!catalogResponse.ok) {
     return NextResponse.json(
@@ -118,9 +115,8 @@ export async function POST(
   if (offer.billingCadence !== "monthly") {
     return NextResponse.json(
       {
-        code: "OFFER_NOT_MONTHLY",
-        message:
-          "Le plan PayPal n'a de sens que sur une offre mensuelle.",
+        code: "OFFER_NOT_RECURRING",
+        message: "Le plan PayPal n'a de sens que sur une offre recurrente.",
       },
       { status: 400 },
     );
@@ -133,7 +129,7 @@ export async function POST(
     return NextResponse.json(
       {
         code: "PLAN_ALREADY_EXISTS",
-        message: `Un plan PayPal ${mode} existe déjà pour cette offre.`,
+        message: `Un plan PayPal ${mode} existe deja pour cette offre.`,
       },
       { status: 409 },
     );
@@ -148,7 +144,7 @@ export async function POST(
     return NextResponse.json(
       {
         code: "PAYPAL_PRODUCT_ERROR",
-        message: "Impossible de créer le produit PayPal.",
+        message: "Impossible de creer le produit PayPal.",
       },
       { status: 502 },
     );
@@ -160,6 +156,10 @@ export async function POST(
       offer.name,
       offer.priceAmountCents,
       offer.currency,
+      {
+        billingIntervalMonths: offer.billingIntervalMonths ?? 1,
+        setupFeeAmountCents: offer.setupFeeAmountCents ?? 0,
+      },
     );
   } catch (error) {
     console.error("PayPal create plan error:", error);
@@ -167,7 +167,7 @@ export async function POST(
       {
         code: "PAYPAL_PLAN_ERROR",
         message:
-          "Le produit PayPal a été créé mais la création du plan a échoué.",
+          "Le produit PayPal a ete cree mais la creation du plan a echoue.",
       },
       { status: 502 },
     );
@@ -182,10 +182,14 @@ export async function POST(
     status: offer.status,
     displayOrder: offer.displayOrder,
     billingCadence: offer.billingCadence,
+    setupFeeAmountCents: offer.setupFeeAmountCents,
+    billingIntervalMonths: offer.billingIntervalMonths,
+    commitmentMonths: offer.commitmentMonths,
+    paymentMode: offer.paymentMode,
+    publicPackCode: offer.publicPackCode,
     paypalPlanIdSandbox:
       mode === "sandbox" ? paypalPlanId : offer.paypalPlanIdSandbox,
-    paypalPlanIdLive:
-      mode === "live" ? paypalPlanId : offer.paypalPlanIdLive,
+    paypalPlanIdLive: mode === "live" ? paypalPlanId : offer.paypalPlanIdLive,
     stripePriceIdTest: offer.stripePriceIdTest,
     stripePriceIdLive: offer.stripePriceIdLive,
   };
@@ -204,8 +208,8 @@ export async function POST(
       {
         code: "PERSIST_ERROR",
         message:
-          `Le plan PayPal ${mode} ${paypalPlanId} a été créé chez PayPal `
-          + "mais n'a pas pu être enregistré localement. Copiez-le et "
+          `Le plan PayPal ${mode} ${paypalPlanId} a ete cree chez PayPal `
+          + "mais n'a pas pu etre enregistre localement. Copiez-le et "
           + "saisissez-le manuellement.",
       },
       { status: 503 },

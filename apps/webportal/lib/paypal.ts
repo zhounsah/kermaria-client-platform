@@ -11,7 +11,7 @@ function getCredentials() {
   const clientId = process.env.PAYPAL_CLIENT_ID?.trim();
   const clientSecret = process.env.PAYPAL_CLIENT_SECRET?.trim();
   if (!clientId || !clientSecret) {
-    throw new Error("PAYPAL_CLIENT_ID ou PAYPAL_CLIENT_SECRET non configurés.");
+    throw new Error("PAYPAL_CLIENT_ID ou PAYPAL_CLIENT_SECRET non configures.");
   }
   return { clientId, clientSecret };
 }
@@ -40,9 +40,7 @@ export async function getPayPalAccessToken(): Promise<string> {
   });
 
   if (!response.ok) {
-    throw new Error(
-      `Échec de l'authentification PayPal : ${response.status}`,
-    );
+    throw new Error(`Echec de l'authentification PayPal : ${response.status}`);
   }
 
   const data = await response.json();
@@ -77,7 +75,7 @@ export async function createPayPalOrder(
       purchase_units: [
         {
           reference_id: invoiceReference,
-          description: `Règlement facture ${invoiceReference}`,
+          description: `Reglement facture ${invoiceReference}`,
           amount: {
             currency_code: currency,
             value: amount,
@@ -101,7 +99,7 @@ export async function createPayPalOrder(
 
   if (!response.ok) {
     const err = await response.text();
-    throw new Error(`Création ordre PayPal échouée : ${response.status} ${err}`);
+    throw new Error(`Creation ordre PayPal echouee : ${response.status} ${err}`);
   }
 
   const data = await response.json();
@@ -110,7 +108,7 @@ export async function createPayPalOrder(
   );
 
   if (!approveLink) {
-    throw new Error("Lien d'approbation PayPal introuvable dans la réponse.");
+    throw new Error("Lien d'approbation PayPal introuvable dans la reponse.");
   }
 
   return { orderId: data.id as string, approveUrl: approveLink.href };
@@ -140,7 +138,7 @@ export async function capturePayPalOrder(
 
   if (!response.ok) {
     const err = await response.text();
-    throw new Error(`Capture PayPal échouée : ${response.status} ${err}`);
+    throw new Error(`Capture PayPal echouee : ${response.status} ${err}`);
   }
 
   const data = await response.json();
@@ -192,26 +190,32 @@ export async function createPayPalProduct(
 
   if (!response.ok) {
     const err = await response.text();
-    throw new Error(
-      `Création produit PayPal échouée : ${response.status} ${err}`,
-    );
+    throw new Error(`Creation produit PayPal echouee : ${response.status} ${err}`);
   }
 
   const data = (await response.json()) as { id?: string };
   if (!data.id) {
-    throw new Error("PayPal n'a pas retourné d'identifiant de produit.");
+    throw new Error("PayPal n'a pas retourne d'identifiant de produit.");
   }
   return data.id;
 }
+
+type CreatePayPalPlanOptions = {
+  billingIntervalMonths?: number;
+  setupFeeAmountCents?: number;
+};
 
 export async function createPayPalPlan(
   productId: string,
   name: string,
   priceAmountCents: number,
   currency: string,
+  options: CreatePayPalPlanOptions = {},
 ): Promise<string> {
   const token = await getPayPalAccessToken();
   const value = (priceAmountCents / 100).toFixed(2);
+  const billingIntervalMonths = options.billingIntervalMonths ?? 1;
+  const setupFeeAmountCents = options.setupFeeAmountCents ?? 0;
 
   const response = await fetch(`${getBase()}/v1/billing/plans`, {
     method: "POST",
@@ -228,7 +232,10 @@ export async function createPayPalPlan(
       status: "ACTIVE",
       billing_cycles: [
         {
-          frequency: { interval_unit: "MONTH", interval_count: 1 },
+          frequency: {
+            interval_unit: "MONTH",
+            interval_count: billingIntervalMonths,
+          },
           tenure_type: "REGULAR",
           sequence: 1,
           total_cycles: 0,
@@ -244,6 +251,14 @@ export async function createPayPalPlan(
         auto_bill_outstanding: true,
         setup_fee_failure_action: "CONTINUE",
         payment_failure_threshold: 3,
+        ...(setupFeeAmountCents > 0
+          ? {
+              setup_fee: {
+                value: (setupFeeAmountCents / 100).toFixed(2),
+                currency_code: currency,
+              },
+            }
+          : {}),
       },
     }),
     cache: "no-store",
@@ -251,14 +266,12 @@ export async function createPayPalPlan(
 
   if (!response.ok) {
     const err = await response.text();
-    throw new Error(
-      `Création plan PayPal échouée : ${response.status} ${err}`,
-    );
+    throw new Error(`Creation plan PayPal echouee : ${response.status} ${err}`);
   }
 
   const data = (await response.json()) as { id?: string };
   if (!data.id) {
-    throw new Error("PayPal n'a pas retourné d'identifiant de plan.");
+    throw new Error("PayPal n'a pas retourne d'identifiant de plan.");
   }
   return data.id;
 }
@@ -299,7 +312,7 @@ export async function cancelPayPalSubscription(
 
   const err = await response.text();
   throw new Error(
-    `Annulation souscription PayPal échouée : ${response.status} ${err}`,
+    `Annulation souscription PayPal echouee : ${response.status} ${err}`,
   );
 }
 
@@ -334,7 +347,7 @@ export async function createPayPalSubscription(
   if (!response.ok) {
     const err = await response.text();
     throw new Error(
-      `Création souscription PayPal échouée : ${response.status} ${err}`,
+      `Creation souscription PayPal echouee : ${response.status} ${err}`,
     );
   }
 

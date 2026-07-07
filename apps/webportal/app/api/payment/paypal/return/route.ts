@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { CORRELATION_HEADER, resolveCorrelationId } from "@/lib/correlation";
 import { getInternalSession, mutateInternalPortalPayload } from "@/lib/internal-api";
+import { getPortalPublicUrl } from "@/lib/public-routes";
 import { getSessionCookieName } from "@/lib/session-config";
 import { capturePayPalOrder } from "@/lib/paypal";
 
@@ -16,7 +17,7 @@ export async function GET(request: NextRequest) {
   const documentId = searchParams.get("documentId");
   const token = searchParams.get("token"); // PayPal order ID
 
-  const portalUrl = process.env.PUBLIC_PORTAL_URL?.replace(/\/$/, "") ?? "http://localhost:3000";
+  const portalUrl = getPortalPublicUrl(request);
 
   if (!documentId || !token) {
     return NextResponse.redirect(

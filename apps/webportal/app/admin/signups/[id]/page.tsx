@@ -9,7 +9,7 @@ import { SectionCard } from "@/components/SectionCard";
 import { SectionHeading } from "@/components/SectionHeading";
 import { StatusBadge } from "@/components/StatusBadge";
 import { requireAdminSession } from "@/lib/auth";
-import { formatDateTime } from "@/lib/formatters";
+import { formatCurrencyFromCents, formatDateTime } from "@/lib/formatters";
 import { getAdminSignup } from "@/lib/internal-api";
 import {
   localizeSignupStatus,
@@ -112,6 +112,52 @@ export default async function AdminSignupDetailPage({ params }: PageProps) {
           <div className="signup-message-block">
             <h3>Message du demandeur</h3>
             <p>{signup.message}</p>
+          </div>
+        ) : null}
+
+        {signup.packSelection ? (
+          <div className="signup-message-block">
+            <h3>Pack choisi</h3>
+            <dl className="profile-details">
+              <div>
+                <dt>Pack</dt>
+                <dd>{signup.packSelection.packLabel}</dd>
+              </div>
+              <div>
+                <dt>Reference</dt>
+                <dd>{signup.packSelection.offerExternalReference}</dd>
+              </div>
+              <div>
+                <dt>Engagement</dt>
+                <dd>{signup.packSelection.commitmentMonths} mois</dd>
+              </div>
+              <div>
+                <dt>Paiement</dt>
+                <dd>
+                  {signup.packSelection.paymentMode === "upfront"
+                    ? "Comptant"
+                    : "Mensualise"}
+                </dd>
+              </div>
+              <div>
+                <dt>Mensuel affiche</dt>
+                <dd>
+                  {formatCurrencyFromCents(
+                    signup.packSelection.monthlyPriceAmountCents,
+                  )}{" "}
+                  HT
+                </dd>
+              </div>
+              <div>
+                <dt>Premiere echeance</dt>
+                <dd>
+                  {formatCurrencyFromCents(
+                    signup.packSelection.firstChargeAmountCents,
+                  )}{" "}
+                  HT
+                </dd>
+              </div>
+            </dl>
           </div>
         ) : null}
 

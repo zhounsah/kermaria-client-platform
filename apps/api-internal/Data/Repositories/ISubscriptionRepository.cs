@@ -24,7 +24,7 @@ public interface ISubscriptionRepository
 
     Task<SubscriptionSummary> CreatePendingAsync(
         string customerId,
-        string commercialOfferId,
+        CommercialOfferSummary offer,
         string rail,
         string? paypalPlanId,
         string? paypalSubscriptionId,
@@ -41,5 +41,17 @@ public interface ISubscriptionRepository
         string subscriptionId,
         DateTime startedAtUtc,
         DateTime nextBillingAtUtc,
+        DateTime commitmentEndsAtUtc,
+        CancellationToken cancellationToken);
+
+    Task<SubscriptionSummary> RecordPaymentAsync(
+        string subscriptionId,
+        DateTime nextBillingAtUtc,
+        DateTime commitmentEndsAtUtc,
+        CancellationToken cancellationToken);
+
+    Task<SubscriptionSummary> RequestCancellationAsync(
+        string subscriptionId,
+        DateTime requestedAtUtc,
         CancellationToken cancellationToken);
 }

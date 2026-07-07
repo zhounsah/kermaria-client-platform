@@ -1,4 +1,5 @@
 using Kermaria.ApiInternal.Contracts;
+using Kermaria.ApiInternal.Services;
 
 namespace Kermaria.ApiInternal.Data.Repositories;
 
@@ -75,7 +76,7 @@ public sealed class MockSubscriptionRepository : ISubscriptionRepository
 
     public Task<SubscriptionSummary> CreatePendingAsync(
         string customerId,
-        string commercialOfferId,
+        CommercialOfferSummary offer,
         string rail,
         string? paypalPlanId,
         string? paypalSubscriptionId,
@@ -91,15 +92,25 @@ public sealed class MockSubscriptionRepository : ISubscriptionRepository
                 customerId,
                 customerId,
                 customerId,
-                commercialOfferId,
-                commercialOfferId,
+                offer.Id,
+                offer.Name,
+                offer.ExternalReference,
+                offer.PublicPackCode,
                 rail,
                 paypalPlanId,
                 paypalSubscriptionId,
                 stripePriceId,
                 stripeSubscriptionId,
                 "pending_approval",
+                offer.PriceAmountCents,
+                offer.SetupFeeAmountCents ?? 0,
+                offer.BillingIntervalMonths ?? 1,
+                offer.CommitmentMonths ?? offer.BillingIntervalMonths ?? 1,
+                offer.PaymentMode ?? CommercialStatuses.PaymentModeMonthly,
                 0,
+                null,
+                null,
+                false,
                 "EUR",
                 null,
                 null,
@@ -135,7 +146,10 @@ public sealed class MockSubscriptionRepository : ISubscriptionRepository
             {
                 Status = newStatus,
                 UpdatedAt = now,
-                CancelledAt = cancelledAt
+                CancelledAt = cancelledAt,
+                CancelAtTermEnd = newStatus is "cancelled" or "expired"
+                    ? false
+                    : current.CancelAtTermEnd
             };
             _store.Subscriptions[index] = updated;
             return Task.FromResult(updated);
@@ -146,6 +160,7 @@ public sealed class MockSubscriptionRepository : ISubscriptionRepository
         string subscriptionId,
         DateTime startedAtUtc,
         DateTime nextBillingAtUtc,
+        DateTime commitmentEndsAtUtc,
         CancellationToken cancellationToken)
     {
         lock (_store.SyncRoot)
@@ -165,6 +180,76 @@ public sealed class MockSubscriptionRepository : ISubscriptionRepository
                 Status = "active",
                 StartedAt = current.StartedAt ?? startedAtUtc.ToString("O"),
                 NextBillingAt = nextBillingAtUtc.ToString("O"),
+                CommitmentEndsAt = current.CommitmentEndsAt
+                    ?? commitmentEndsAtUtc.ToString("O"),
+                UpdatedAt = now,
+                CancelRequestedAt = current.Status == "pending_cancellation"
+                    ? current.CancelRequestedAt
+                    : null,
+                CancelAtTermEnd = current.Status == "pending_cancellation"
+                    && current.CancelAtTermEnd
+            };
+            _store.Subscriptions[index] = updated;
+            return Task.FromResult(updated);
+        }
+    }
+
+    public Task<SubscriptionSummary> RecordPaymentAsync(
+        string subscriptionId,
+        DateTime nextBillingAtUtc,
+        DateTime commitmentEndsAtUtc,
+        CancellationToken cancellationToken)
+    {
+        lock (_store.SyncRoot)
+        {
+            var index = _store.Subscriptions.FindIndex(
+                subscription => subscription.Id == subscriptionId);
+            if (index < 0)
+            {
+                throw new InvalidOperationException(
+                    $"Subscription {subscriptionId} not found.");
+            }
+
+            var current = _store.Subscriptions[index];
+            var now = DateTime.UtcNow.ToString("O");
+            var updated = current with
+            {
+                Status = current.Status == "pending_cancellation"
+                    ? "pending_cancellation"
+                    : "active",
+                PaidCyclesCount = current.PaidCyclesCount + 1,
+                NextBillingAt = nextBillingAtUtc.ToString("O"),
+                CommitmentEndsAt = commitmentEndsAtUtc.ToString("O"),
+                UpdatedAt = now
+            };
+            _store.Subscriptions[index] = updated;
+            return Task.FromResult(updated);
+        }
+    }
+
+    public Task<SubscriptionSummary> RequestCancellationAsync(
+        string subscriptionId,
+        DateTime requestedAtUtc,
+        CancellationToken cancellationToken)
+    {
+        lock (_store.SyncRoot)
+        {
+            var index = _store.Subscriptions.FindIndex(
+                subscription => subscription.Id == subscriptionId);
+            if (index < 0)
+            {
+                throw new InvalidOperationException(
+                    $"Subscription {subscriptionId} not found.");
+            }
+
+            var current = _store.Subscriptions[index];
+            var now = DateTime.UtcNow.ToString("O");
+            var updated = current with
+            {
+                Status = "pending_cancellation",
+                CancelRequestedAt = current.CancelRequestedAt
+                    ?? requestedAtUtc.ToString("O"),
+                CancelAtTermEnd = true,
                 UpdatedAt = now
             };
             _store.Subscriptions[index] = updated;

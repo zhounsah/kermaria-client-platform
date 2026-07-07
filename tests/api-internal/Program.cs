@@ -679,6 +679,12 @@ async Task RunMockTestsAsync()
             MockCustomerReference(),
             workflowServiceId,
             persistent: false);
+        await VerifyManagedContentAsync(
+            client,
+            mockBaseUrl,
+            sessionToken!,
+            adminSessionToken,
+            persistent: false);
 
         using var adminActivityRequest = CreateSessionRequest(
             HttpMethod.Get,
@@ -2141,6 +2147,12 @@ async Task RunMariaDbReadTestsAsync()
             workflowServiceRequestId,
             persistent: true,
             foreignCustomerId: isolationCustomerId);
+        await VerifyManagedContentAsync(
+            client,
+            mariaDbBaseUrl,
+            sessionToken,
+            adminSessionToken,
+            persistent: true);
 
         adLinkFixtureId = await InsertCustomerAdLinkAsync("CLI-DEMO-0060");
         using var adLinksRequest = CreateSessionRequest(
@@ -3616,6 +3628,201 @@ async Task VerifyCommercialMigrationAsync()
     Ensure(
         count == 1,
         "La migration 006_commercial_foundation doit être appliquée avant les tests opt-in.");
+}
+
+async Task VerifyManagedContentAsync(
+    HttpClient client,
+    string baseUrl,
+    string clientSessionToken,
+    string adminSessionToken,
+    bool persistent)
+{
+    var expectedDataSource = persistent ? "mariadb" : "mock";
+    const string legalKey = "legal:cgv";
+    const string packSheetKey = "pack-sheet:pack-dossier-securise";
+    var encodedLegalKey = Uri.EscapeDataString(legalKey);
+    var encodedPackSheetKey = Uri.EscapeDataString(packSheetKey);
+
+    using var publicLegalRequest = new HttpRequestMessage(
+        HttpMethod.Get,
+        $"{baseUrl}/internal/portal/content/{encodedLegalKey}");
+    publicLegalRequest.Headers.Add(correlationHeader, "managed-content-public");
+    using var publicLegalResponse = await client.SendAsync(publicLegalRequest);
+    using var publicLegalPayload = JsonDocument.Parse(
+        await publicLegalResponse.Content.ReadAsStringAsync());
+    Ensure(
+        publicLegalResponse.StatusCode == HttpStatusCode.OK
+        && publicLegalResponse.Headers.GetValues(dataSourceHeader).Single()
+            == expectedDataSource
+        && publicLegalPayload.RootElement.GetProperty("key").GetString()
+            == legalKey
+        && publicLegalPayload.RootElement
+            .GetProperty("versionLabel")
+            .GetString()
+            ?.Contains("07 juillet 2026", StringComparison.Ordinal) == true
+        && publicLegalPayload.RootElement
+            .GetProperty("bodyMarkdown")
+            .GetString()
+            ?.Contains("Les présentes Conditions Générales de Vente", StringComparison.Ordinal) == true,
+        "Le contenu public des CGV doit être seedé et lisible en UTF-8.");
+
+    using var publicPackSheetRequest = new HttpRequestMessage(
+        HttpMethod.Get,
+        $"{baseUrl}/internal/portal/content/{encodedPackSheetKey}");
+    publicPackSheetRequest.Headers.Add(correlationHeader, "managed-content-pack");
+    using var publicPackSheetResponse = await client.SendAsync(
+        publicPackSheetRequest);
+    using var publicPackSheetPayload = JsonDocument.Parse(
+        await publicPackSheetResponse.Content.ReadAsStringAsync());
+    Ensure(
+        publicPackSheetResponse.StatusCode == HttpStatusCode.OK
+        && publicPackSheetPayload.RootElement.GetProperty("key").GetString()
+            == packSheetKey
+        && publicPackSheetPayload.RootElement
+            .GetProperty("bodyMarkdown")
+            .GetString()
+            ?.Contains("## Présentation", StringComparison.Ordinal) == true,
+        "Une fiche technique pack doit être disponible côté public.");
+
+    using var clientForbiddenAdminListRequest = CreateSessionRequest(
+        HttpMethod.Get,
+        $"{baseUrl}/internal/admin/content",
+        clientSessionToken);
+    using var clientForbiddenAdminListResponse = await client.SendAsync(
+        clientForbiddenAdminListRequest);
+    Ensure(
+        clientForbiddenAdminListResponse.StatusCode == HttpStatusCode.Forbidden,
+        "Un client ne doit pas accéder à la liste admin des contenus.");
+
+    using var adminListRequest = CreateSessionRequest(
+        HttpMethod.Get,
+        $"{baseUrl}/internal/admin/content",
+        adminSessionToken);
+    using var adminListResponse = await client.SendAsync(adminListRequest);
+    using var adminListPayload = JsonDocument.Parse(
+        await adminListResponse.Content.ReadAsStringAsync());
+    var adminEntries = adminListPayload.RootElement.EnumerateArray().ToArray();
+    Ensure(
+        adminListResponse.StatusCode == HttpStatusCode.OK
+        && adminListResponse.Headers.GetValues(dataSourceHeader).Single()
+            == expectedDataSource
+        && adminEntries.Length >= 6
+        && adminEntries.Any(item =>
+            item.GetProperty("key").GetString() == legalKey
+            && item.GetProperty("contentType").GetString() == "legal")
+        && adminEntries.Any(item =>
+            item.GetProperty("key").GetString() == packSheetKey
+            && item.GetProperty("contentType").GetString() == "pack_sheet"),
+        "La liste admin des contenus doit exposer les contenus légaux et les fiches packs.");
+
+    using var adminDetailRequest = CreateSessionRequest(
+        HttpMethod.Get,
+        $"{baseUrl}/internal/admin/content/{encodedLegalKey}",
+        adminSessionToken);
+    using var adminDetailResponse = await client.SendAsync(adminDetailRequest);
+    using var adminDetailPayload = JsonDocument.Parse(
+        await adminDetailResponse.Content.ReadAsStringAsync());
+    Ensure(
+        adminDetailResponse.StatusCode == HttpStatusCode.OK
+        && adminDetailResponse.Headers.GetValues(dataSourceHeader).Single()
+            == expectedDataSource
+        && adminDetailPayload.RootElement.GetProperty("key").GetString()
+            == legalKey
+        && adminDetailPayload.RootElement
+            .GetProperty("bodyMarkdown")
+            .GetString()
+            ?.Contains("TVA non applicable", StringComparison.Ordinal) == true,
+        "Le détail admin des CGV doit rester accessible.");
+
+    using var originalPackDetailRequest = CreateSessionRequest(
+        HttpMethod.Get,
+        $"{baseUrl}/internal/admin/content/{encodedPackSheetKey}",
+        adminSessionToken);
+    using var originalPackDetailResponse = await client.SendAsync(
+        originalPackDetailRequest);
+    using var originalPackDetailPayload = JsonDocument.Parse(
+        await originalPackDetailResponse.Content.ReadAsStringAsync());
+    Ensure(
+        originalPackDetailResponse.StatusCode == HttpStatusCode.OK,
+        "La fiche technique admin initiale doit être lisible.");
+
+    var originalBodyMarkdown = originalPackDetailPayload.RootElement
+        .GetProperty("bodyMarkdown")
+        .GetString()
+        ?? throw new InvalidOperationException(
+            "Le bodyMarkdown initial de la fiche pack est absent.");
+    var originalVersionLabel = originalPackDetailPayload.RootElement
+        .GetProperty("versionLabel")
+        .ValueKind == JsonValueKind.Null
+            ? null
+            : originalPackDetailPayload.RootElement
+                .GetProperty("versionLabel")
+                .GetString();
+
+    var updatedVersionLabel = $"Smoke test {DateTime.UtcNow:yyyyMMddHHmmssfff}";
+    const string updatedBodyMarkdown =
+        "## Présentation\n\nContenu de test administrable avec accents : accès, sécurité, pré-requis.\n\n## Support\n\nPoint de contrôle smoke test.";
+
+    try
+    {
+        using var updateRequest = CreateSessionRequest(
+            HttpMethod.Patch,
+            $"{baseUrl}/internal/admin/content/{encodedPackSheetKey}",
+            adminSessionToken);
+        updateRequest.Content = JsonContent.Create(new
+        {
+            bodyMarkdown = updatedBodyMarkdown,
+            versionLabel = updatedVersionLabel
+        });
+        using var updateResponse = await client.SendAsync(updateRequest);
+        using var updatePayload = JsonDocument.Parse(
+            await updateResponse.Content.ReadAsStringAsync());
+        Ensure(
+            updateResponse.StatusCode == HttpStatusCode.OK
+            && updateResponse.Headers.GetValues(dataSourceHeader).Single()
+                == expectedDataSource
+            && updatePayload.RootElement.GetProperty("key").GetString()
+                == packSheetKey
+            && updatePayload.RootElement.GetProperty("changed").GetBoolean()
+            && updatePayload.RootElement
+                .GetProperty("correlation_id")
+                .GetString() is { Length: > 0 },
+            "La mise à jour admin d'une fiche pack doit être persistée.");
+
+        using var refreshedPackDetailRequest = CreateSessionRequest(
+            HttpMethod.Get,
+            $"{baseUrl}/internal/admin/content/{encodedPackSheetKey}",
+            adminSessionToken);
+        using var refreshedPackDetailResponse = await client.SendAsync(
+            refreshedPackDetailRequest);
+        using var refreshedPackDetailPayload = JsonDocument.Parse(
+            await refreshedPackDetailResponse.Content.ReadAsStringAsync());
+        Ensure(
+            refreshedPackDetailResponse.StatusCode == HttpStatusCode.OK
+            && refreshedPackDetailPayload.RootElement
+                .GetProperty("bodyMarkdown")
+                .GetString() == updatedBodyMarkdown
+            && refreshedPackDetailPayload.RootElement
+                .GetProperty("versionLabel")
+                .GetString() == updatedVersionLabel,
+            "La fiche pack mise à jour doit être relisible côté admin.");
+    }
+    finally
+    {
+        using var restoreRequest = CreateSessionRequest(
+            HttpMethod.Patch,
+            $"{baseUrl}/internal/admin/content/{encodedPackSheetKey}",
+            adminSessionToken);
+        restoreRequest.Content = JsonContent.Create(new
+        {
+            bodyMarkdown = originalBodyMarkdown,
+            versionLabel = originalVersionLabel
+        });
+        using var restoreResponse = await client.SendAsync(restoreRequest);
+        Ensure(
+            restoreResponse.StatusCode == HttpStatusCode.OK,
+            "La restauration de la fiche pack après smoke test doit réussir.");
+    }
 }
 
 async Task VerifyCommercialFoundationAsync(

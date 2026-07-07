@@ -8,6 +8,7 @@ import {
   getInternalSession,
   mutateInternalPortalPayloadTyped,
 } from "@/lib/internal-api";
+import { getPortalPublicUrl } from "@/lib/public-routes";
 import { getSessionCookieName } from "@/lib/session-config";
 import {
   getInternalApiUrl,
@@ -21,8 +22,7 @@ export async function GET(request: NextRequest) {
     request.headers.get(CORRELATION_HEADER),
   );
 
-  const portalUrl =
-    process.env.PUBLIC_PORTAL_URL?.replace(/\/$/, "") ?? "http://localhost:3000";
+  const portalUrl = getPortalPublicUrl(request);
   const errorUrl = `${portalUrl}/profile/subscriptions?subscription=error`;
   const successUrl = `${portalUrl}/profile/subscriptions?subscription=approved`;
 

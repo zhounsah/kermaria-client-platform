@@ -19,12 +19,21 @@ public static partial class CommercialStatuses
         "Document informatif — ne constitue pas une facture officielle.";
     public const string CadenceOneTime = "one_time";
     public const string CadenceMonthly = "monthly";
+    public const string PaymentModeMonthly = "monthly";
+    public const string PaymentModeUpfront = "upfront";
 
     public static readonly IReadOnlySet<string> BillingCadences =
         new HashSet<string>(StringComparer.Ordinal)
         {
             CadenceOneTime,
             CadenceMonthly
+        };
+
+    public static readonly IReadOnlySet<string> PaymentModes =
+        new HashSet<string>(StringComparer.Ordinal)
+        {
+            PaymentModeMonthly,
+            PaymentModeUpfront
         };
 
     public static readonly IReadOnlySet<string> Offer =
@@ -68,6 +77,11 @@ public sealed record ValidatedCommercialOffer(
     string Status,
     int DisplayOrder,
     string BillingCadence,
+    int? SetupFeeAmountCents,
+    int? BillingIntervalMonths,
+    int? CommitmentMonths,
+    string? PaymentMode,
+    string? PublicPackCode,
     string? PayPalPlanIdSandbox,
     string? PayPalPlanIdLive,
     string? StripePriceIdTest,
@@ -343,16 +357,53 @@ public sealed partial class CommercialService : ICommercialService
             throw new PortalValidationException();
         }
 
+        var setupFeeAmountCents = payload.SetupFeeAmountCents;
+        if (setupFeeAmountCents is < 0 or > MaxPriceAmountCents)
+        {
+            throw new PortalValidationException();
+        }
+
+        var billingIntervalMonths = payload.BillingIntervalMonths;
+        if (billingIntervalMonths is < 1 or > 12)
+        {
+            throw new PortalValidationException();
+        }
+
+        var commitmentMonths = payload.CommitmentMonths;
+        if (commitmentMonths is < 1 or > 12)
+        {
+            throw new PortalValidationException();
+        }
+
+        var paymentMode = Normalize(payload.PaymentMode);
+        if (paymentMode is not null
+            && !CommercialStatuses.PaymentModes.Contains(paymentMode))
+        {
+            throw new PortalValidationException();
+        }
+
+        var publicPackCode = ValidatePackCode(payload.PublicPackCode);
+
         var paypalPlanIdSandbox = ValidatePayPalPlanId(payload.PayPalPlanIdSandbox);
         var paypalPlanIdLive = ValidatePayPalPlanId(payload.PayPalPlanIdLive);
         var stripePriceIdTest = ValidateStripePriceId(payload.StripePriceIdTest);
         var stripePriceIdLive = ValidateStripePriceId(payload.StripePriceIdLive);
 
         if (billingCadence == CommercialStatuses.CadenceOneTime
-            && (paypalPlanIdSandbox is not null
+            && (billingIntervalMonths is not null
+                || commitmentMonths is not null
+                || paymentMode is not null
+                || publicPackCode is not null
+                || paypalPlanIdSandbox is not null
                 || paypalPlanIdLive is not null
                 || stripePriceIdTest is not null
                 || stripePriceIdLive is not null))
+        {
+            throw new PortalValidationException();
+        }
+
+        if (paymentMode == CommercialStatuses.PaymentModeUpfront
+            && billingCadence != CommercialStatuses.CadenceMonthly)
         {
             throw new PortalValidationException();
         }
@@ -366,6 +417,11 @@ public sealed partial class CommercialService : ICommercialService
             status,
             displayOrder,
             billingCadence,
+            setupFeeAmountCents,
+            billingIntervalMonths,
+            commitmentMonths,
+            paymentMode,
+            publicPackCode,
             paypalPlanIdSandbox,
             paypalPlanIdLive,
             stripePriceIdTest,
@@ -397,6 +453,22 @@ public sealed partial class CommercialService : ICommercialService
         }
 
         if (normalized.Length > 64 || !PayPalPlanIdPattern().IsMatch(normalized))
+        {
+            throw new PortalValidationException();
+        }
+
+        return normalized;
+    }
+
+    private static string? ValidatePackCode(string? value)
+    {
+        var normalized = Normalize(value);
+        if (normalized is null)
+        {
+            return null;
+        }
+
+        if (normalized.Length > 64 || !PackCodePattern().IsMatch(normalized))
         {
             throw new PortalValidationException();
         }
@@ -592,4 +664,7 @@ public sealed partial class CommercialService : ICommercialService
 
     [GeneratedRegex("^[A-Za-z0-9_-]{1,64}$", RegexOptions.CultureInvariant)]
     private static partial Regex PayPalPlanIdPattern();
+
+    [GeneratedRegex("^[a-z0-9-]{1,64}$", RegexOptions.CultureInvariant)]
+    private static partial Regex PackCodePattern();
 }

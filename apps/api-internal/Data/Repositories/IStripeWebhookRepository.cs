@@ -13,6 +13,10 @@ public interface IStripeWebhookRepository
         string eventId,
         CancellationToken cancellationToken);
 
+    Task<bool> HasProcessedInvoiceSuccessEventAsync(
+        string resourceId,
+        CancellationToken cancellationToken);
+
     Task<string> InsertReceivedAsync(
         string eventId,
         string eventType,

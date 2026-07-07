@@ -12,8 +12,11 @@ import { requireAdminSession } from "@/lib/auth";
 import {
   commercialOfferBillingCadence,
   commercialOfferStatus,
+  formatBillingIntervalMonths,
+  formatCommitmentMonths,
   formatCurrencyFromCents,
   formatDateTime,
+  formatPaymentModeLabel,
 } from "@/lib/formatters";
 import { getAdminCatalog } from "@/lib/internal-api";
 
@@ -80,6 +83,38 @@ export default async function AdminCatalogOfferPage({ params }: PageProps) {
       <SectionCard ariaLabel={`Aperçu de l'offre ${offer.name}`}>
         <h2>Description publique</h2>
         <p className="request-description">{offer.description}</p>
+        {offer.publicPackCode ? (
+          <dl className="profile-details" style={{ marginTop: 16 }}>
+            <div>
+              <dt>Pack public</dt>
+              <dd>{offer.publicPackCode}</dd>
+            </div>
+            <div>
+              <dt>Engagement</dt>
+              <dd>{formatCommitmentMonths(offer.commitmentMonths)}</dd>
+            </div>
+            <div>
+              <dt>Mode de paiement</dt>
+              <dd>{formatPaymentModeLabel(offer.paymentMode)}</dd>
+            </div>
+            <div>
+              <dt>Intervalle de facturation</dt>
+              <dd>{formatBillingIntervalMonths(offer.billingIntervalMonths)}</dd>
+            </div>
+            <div>
+              <dt>Mise en service</dt>
+              <dd>
+                {offer.setupFeeAmountCents === null
+                  ? "—"
+                  : `${formatCurrencyFromCents(offer.setupFeeAmountCents)} HT`}
+              </dd>
+            </div>
+            <div>
+              <dt>Reference produit</dt>
+              <dd>{offer.externalReference ?? "—"}</dd>
+            </div>
+          </dl>
+        ) : null}
         {offer.billingCadence === "monthly" ? (
           <p className="field-hint">
             PayPal Plan sandbox : {offer.paypalPlanIdSandbox ?? "non créé"} ·
