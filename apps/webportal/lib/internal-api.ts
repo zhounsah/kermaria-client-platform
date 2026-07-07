@@ -16,6 +16,7 @@ import type {
   AdminSupportRequestSummary,
   ApiError,
   ClientProfile,
+  CartSummary,
   CommercialDocumentDetail,
   CommercialDocumentSummary,
   CommercialOfferSummary,
@@ -406,6 +407,21 @@ export function getCommercialCatalog() {
     "/internal/portal/catalog",
     mockCommercialOffers,
     [],
+  );
+}
+
+const EMPTY_CART: CartSummary = {
+  items: [],
+  itemCount: 0,
+  subtotalCents: 0,
+  currency: "EUR",
+};
+
+export function getCart() {
+  return getPortalData<CartSummary>(
+    "/internal/portal/cart",
+    EMPTY_CART,
+    EMPTY_CART,
   );
 }
 

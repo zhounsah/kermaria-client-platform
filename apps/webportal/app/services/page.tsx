@@ -58,20 +58,20 @@ export default async function ServicesPage() {
     <>
       <PageHeader
         action={
-          <Link className="button" href="/profile/subscriptions">
-            GÃ©rer mes souscriptions
+          <Link className="button" href="/souscrire">
+            Ajouter un service
           </Link>
         }
-        description="Consultez les services dÃ©jÃ  suivis sur votre compte et finalisez un pack grand public sans repasser par les anciennes offres techniques."
-        eyebrow="PÃ©rimÃ¨tre client"
-        title="Mes services et packs"
+        description="Retrouvez ici les services déjà suivis sur votre compte. Pour souscrire un pack ou prendre une prestation à la carte, ouvrez l'espace « Souscrire »."
+        eyebrow="Périmètre client"
+        title="Mes services"
       />
 
       {servicesResult.error ? (
         <ErrorState
           action={
             <Link className="button" href="/services">
-              RÃ©essayer
+              Réessayer
             </Link>
           }
           description="Impossible de charger vos services pour le moment."
@@ -81,11 +81,11 @@ export default async function ServicesPage() {
       ) : servicesResult.data.length === 0 ? (
         <EmptyState
           action={
-            <Link className="button" href="/offres">
-              DÃ©couvrir les packs
+            <Link className="button" href="/souscrire">
+              Découvrir les offres
             </Link>
           }
-          description="Aucun service n'est actuellement associÃ© Ã  ce compte."
+          description="Aucun service n'est actuellement associé à ce compte."
           title="Aucun service"
         />
       ) : (
@@ -99,8 +99,8 @@ export default async function ServicesPage() {
       {pendingSelection ? (
         <section className="request-history-section">
           <SectionHeading
-            action={<StatusBadge label="Ã€ finaliser" tone="warning" />}
-            description="Votre compte a bien Ã©tÃ© crÃ©Ã©. Il ne reste qu'Ã  finaliser le paiement du pack choisi lors de votre demande d'inscription."
+            action={<StatusBadge label="À finaliser" tone="warning" />}
+            description="Votre compte a bien été créé. Il ne reste qu'à finaliser le paiement du pack choisi lors de votre demande d'inscription."
             title="Finaliser mon pack"
           />
           <div className="public-pack-grid">
@@ -121,7 +121,7 @@ export default async function ServicesPage() {
                     findPackPresentation(
                       pack.key,
                       packContentResult.data,
-                    )?.highlightLabel ?? "SÃ©lection reprise"
+                    )?.highlightLabel ?? "Sélection reprise"
                   }
                 />
               ))}
@@ -131,43 +131,20 @@ export default async function ServicesPage() {
 
       <section className="request-history-section">
         <SectionHeading
-          action={<StatusBadge label="Catalogue packs" tone="info" />}
-          description="Les nouvelles souscriptions passent dÃ©sormais uniquement par les packs grand public. Les anciennes offres techniques restent gÃ©rÃ©es en historique et en administration."
-          title="Souscrire Ã  un pack"
+          action={<StatusBadge label="Ajouter un service" tone="info" />}
+          description="Souscrivez un pack grand public clé en main, ou prenez une prestation à la carte sans passer par l'achat d'un pack."
+          title="Étendre mon périmètre"
         />
-        {catalogResult.error ? (
-          <ErrorState
-            compact
-            description="Impossible de charger le catalogue packs pour le moment."
-            reference={catalogResult.correlationId}
-            title="Catalogue indisponible"
-          />
-        ) : packs.length === 0 ? (
-          <EmptyState
-            description="Aucun pack grand public n'est actuellement affichÃ© dans le portail."
-            title="Catalogue vide"
-          />
-        ) : (
-          <section className="public-pack-grid" aria-label="Packs grand public">
-            {packs.map((pack) => (
-              <PublicPackCard
-                key={pack.key}
-                mode="subscribe"
-                pack={pack}
-                initialSelection={findPendingPackSelectionForPack(
-                  pendingSelection,
-                  pack.key,
-                )}
-                stripeMode={stripeMode}
-                paypalMode={paypalMode}
-                highlightLabel={findPackPresentation(
-                  pack.key,
-                  packContentResult.data,
-                )?.highlightLabel}
-              />
-            ))}
-          </section>
-        )}
+        <div className="cta-panel">
+          <p>
+            L&apos;espace « Souscrire » regroupe les packs grand public et les
+            options individuelles. Chaque option à la carte se prend séparément,
+            sans engagement de pack.
+          </p>
+          <Link className="button" href="/souscrire">
+            Ouvrir l&apos;espace Souscrire
+          </Link>
+        </div>
       </section>
 
       {source !== "unavailable" ? (

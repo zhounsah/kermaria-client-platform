@@ -1497,3 +1497,45 @@ export interface MockSubmissionResponse {
   message: string;
   correlation_id: CorrelationId;
 }
+
+// V0.35 — Panier / commande groupee a la carte.
+// Le client compose lui-meme un panier d'options a la carte (offres
+// one-shot uniquement) ; la confirmation materialise un unique document
+// commercial multi-lignes regle via les rails existants (Stripe / PayPal /
+// virement).
+
+export interface CartItem {
+  offerId: string;
+  name: string;
+  description: string;
+  category: string;
+  unitLabel: string;
+  unitPriceCents: number;
+  taxRateBasisPoints: number | null;
+  quantity: number;
+  lineTotalCents: number;
+}
+
+export interface CartSummary {
+  items: CartItem[];
+  itemCount: number;
+  subtotalCents: number;
+  currency: "EUR";
+}
+
+export interface CartAddPayload {
+  offerId: string;
+  quantity?: number;
+}
+
+export interface CartMutationResponse {
+  cart: CartSummary;
+  correlation_id: CorrelationId;
+}
+
+export interface CartConfirmResponse {
+  documentId: string;
+  itemCount: number;
+  totalAmountCents: number;
+  correlation_id: CorrelationId;
+}

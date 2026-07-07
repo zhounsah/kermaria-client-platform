@@ -4,6 +4,7 @@ using Kermaria.ApiInternal.Data.Repositories;
 using Kermaria.ApiInternal.Infrastructure;
 using Kermaria.ApiInternal.Services.Bpce;
 using Kermaria.ApiInternal.Services.Email;
+using Kermaria.ApiInternal.Services.Provisioning;
 
 namespace Kermaria.ApiInternal.Services;
 
@@ -46,6 +47,7 @@ public sealed class InvoiceIssuingService : IInvoiceIssuingService
     private readonly IBpceInvoicingService _bpce;
     private readonly IBpceInvoicingRepository _bpceRepository;
     private readonly IEmailDispatchService _emailDispatch;
+    private readonly ICartProvisioningTrigger _cartProvisioning;
     private readonly ILogger<InvoiceIssuingService> _logger;
 
     public InvoiceIssuingService(
@@ -53,12 +55,14 @@ public sealed class InvoiceIssuingService : IInvoiceIssuingService
         IBpceInvoicingService bpce,
         IBpceInvoicingRepository bpceRepository,
         IEmailDispatchService emailDispatch,
+        ICartProvisioningTrigger cartProvisioning,
         ILogger<InvoiceIssuingService> logger)
     {
         _commercialRepository = commercialRepository;
         _bpce = bpce;
         _bpceRepository = bpceRepository;
         _emailDispatch = emailDispatch;
+        _cartProvisioning = cartProvisioning;
         _logger = logger;
     }
 
@@ -299,6 +303,11 @@ public sealed class InvoiceIssuingService : IInvoiceIssuingService
 
         await _commercialRepository.MarkDocumentPaidAsync(
             documentId, correlationId, paymentMethod, cancellationToken);
+
+        // V0.35 : provisioning « le cas echeant » pour les documents issus
+        // d'un panier client (no-op pour les autres origines). Best-effort.
+        await _cartProvisioning.OnDocumentPaidAsync(
+            documentId, correlationId, cancellationToken);
 
         await TryDispatchEmailAsync(
             "payment_confirmed",

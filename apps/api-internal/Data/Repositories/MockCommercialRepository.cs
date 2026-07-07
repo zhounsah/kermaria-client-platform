@@ -988,6 +988,22 @@ public sealed class MockCommercialRepository : ICommercialRepository
         => Task.FromResult<IReadOnlyList<CommercialDocumentSummary>>(
             Array.Empty<CommercialDocumentSummary>());
 
+    public Task<CartDocumentCreationResult> CreateCartDocumentAsync(
+        string customerId,
+        string actorUserId,
+        string title,
+        IReadOnlyList<CartDocumentLineInput> lines,
+        string correlationId,
+        CancellationToken cancellationToken)
+        => throw new NotSupportedException(
+            "Mock commercial repository does not materialise cart documents. "
+            + "Run with MariaDB to exercise cart confirmation and issuing.");
+
+    public Task<CartPaidDocumentContext?> GetCartPaidDocumentContextAsync(
+        string documentId,
+        CancellationToken cancellationToken)
+        => Task.FromResult<CartPaidDocumentContext?>(null);
+
     private MockCommercialDocument FindDocument(string documentId)
         => _store.Documents.FirstOrDefault(document => document.Id == documentId)
             ?? throw new PortalDataNotFoundException();

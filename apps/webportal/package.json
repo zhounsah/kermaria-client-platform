@@ -26,6 +26,7 @@
     "test:timezone": "node scripts/verify-timezone-contract.mjs",
     "test:signup": "node scripts/verify-signup-contract.mjs",
     "test:email-live": "node scripts/verify-email-live-contract.mjs",
+    "test:cart": "node scripts/verify-cart-contract.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

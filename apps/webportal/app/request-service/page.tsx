@@ -22,7 +22,13 @@ import {
 export const metadata = { title: "Demander un service" };
 export const dynamic = "force-dynamic";
 
-export default async function RequestServicePage() {
+type RequestServicePageProps = {
+  searchParams: Promise<{ service?: string }>;
+};
+
+export default async function RequestServicePage({
+  searchParams,
+}: RequestServicePageProps) {
   await requireClientSession();
   const [catalogResult, requestsResult] = await Promise.all([
     getServiceCatalog(),
@@ -32,6 +38,10 @@ export default async function RequestServicePage() {
     catalogResult.source,
     requestsResult.source,
   ]);
+  const { service: requestedServiceId } = await searchParams;
+  const preselectedService = requestedServiceId
+    ? catalogResult.data.find((service) => service.id === requestedServiceId)
+    : undefined;
 
   return (
     <>
@@ -71,10 +81,17 @@ export default async function RequestServicePage() {
           </section>
           <div className="request-layout">
             <FormSection
-              description="Présentez le contexte sans identifiant, mot de passe ni donnée confidentielle."
+              description={
+                preselectedService
+                  ? `Option « ${preselectedService.name} » pré-sélectionnée. Précisez votre besoin sans identifiant, mot de passe ni donnée confidentielle.`
+                  : "Présentez le contexte sans identifiant, mot de passe ni donnée confidentielle."
+              }
               title="Parlez-nous de votre besoin"
             >
-              <ServiceRequestForm services={catalogResult.data} />
+              <ServiceRequestForm
+                initialCatalogItemId={preselectedService?.id}
+                services={catalogResult.data}
+              />
             </FormSection>
             <aside className="process-card">
               <p className="eyebrow">Parcours prévu</p>

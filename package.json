@@ -40,7 +40,8 @@
     "test:timezone": "npm --prefix apps/webportal run test:timezone",
     "test:signup": "npm --prefix apps/webportal run test:signup",
     "test:email-live": "npm --prefix apps/webportal run test:email-live",
-    "validate": "npm run check:secrets && npm run lint:web && npm run typecheck:shared && npm run typecheck:webportal && npm run build:web && npm run build:api && npm run test:api && npm --prefix apps/webportal run test:forms && npm --prefix apps/webportal run test:auth && npm --prefix apps/webportal run test:admin && npm run test:operations && npm run test:ux && npm run test:workflow && npm run test:notifications && npm run test:replies && npm run test:activity && npm run test:commercial && npm run test:managed-content && npm run test:ad-security && npm run test:bpce",
+    "test:cart": "npm --prefix apps/webportal run test:cart",
+    "validate": "npm run check:secrets && npm run lint:web && npm run typecheck:shared && npm run typecheck:webportal && npm run build:web && npm run build:api && npm run test:api && npm --prefix apps/webportal run test:forms && npm --prefix apps/webportal run test:auth && npm --prefix apps/webportal run test:admin && npm run test:operations && npm run test:ux && npm run test:workflow && npm run test:notifications && npm run test:replies && npm run test:activity && npm run test:commercial && npm run test:managed-content && npm run test:ad-security && npm run test:bpce && npm run test:cart",
     "validate:mariadb": "node scripts/validate-mariadb.mjs",
     "validate:preprod": "node scripts/validate-preprod.mjs",
     "validate:staging": "node scripts/validate-staging.mjs"

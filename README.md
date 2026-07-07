@@ -12,17 +12,20 @@ browser -> WEBPORTAL / BFF -> API-INTERNAL -> MariaDB
 
 `WEBPORTAL` ne doit jamais acceder directement a MariaDB.
 
-## Etat courant V0.27 + V0.29 Stripe + V0.30 partiel + V0.24 infra debout
+## Etat courant V0.27 + V0.29 Stripe + V0.30 partiel + V0.35 panier + V0.24 infra debout
 
-Le depot couvre aujourd'hui les jalons V0.9 a V0.30 partiel (voir
+Le depot couvre aujourd'hui les jalons V0.9 a V0.31 + V0.35 (voir
 [`docs/ROADMAP.md`](docs/ROADMAP.md)). L'integration BPCE de la V0.20
 emet de vraies factures fiscales (mode `live` desactive par defaut, en
 phase de tests), la V0.21 ouvre les canaux de paiement client one-shot,
 la V0.22 ajoute les abonnements PayPal recurrents, les V0.23/V0.23.1
 harmonisent l'UX cote client et admin, la V0.27 ajoute le site
 vitrine public, la V0.29 branche Stripe comme rail parallele a PayPal,
-et la V0.30 partiel livre le garde-fou `EMAIL_LIVE_ALLOWLIST` pour
-tester les envois SMTP reels.
+la V0.30 partiel livre le garde-fou `EMAIL_LIVE_ALLOWLIST` pour
+tester les envois SMTP reels, et la V0.35 ajoute un **panier a la carte**
+self-service (regroupe N options one-shot en une commande unique reglee via
+Stripe / PayPal / virement, cf.
+[`docs/V0.35_CART_ALACARTE.md`](docs/V0.35_CART_ALACARTE.md)).
 
 V0.24 : cadrage redige, **infra staging debout sur KERMARIA-SRV-01/02/07
 depuis 2026-07-03**. Deploiement natif Windows Server 2022 sans VM
@@ -229,7 +232,9 @@ au 2026-06-30) :
   reste a livrer : statuts `email_messages` etendus, sous-domaine
   emetteur dedie, SPF/DKIM/DMARC documentes, recette guidee) ;
 - V0.31 sortie effective de `OU=TEST_SITE_WEB` (procedure V0.25
-  brique 3 executee, levee du `RequiredTestOuRoot` hardcode).
+  brique 3 executee, levee du `RequiredTestOuRoot` hardcode) ;
+- V0.35 panier / commande groupee a la carte (a cadrer, depend de V0.28 —
+  [`docs/V0.35_CART_ALACARTE.md`](docs/V0.35_CART_ALACARTE.md)).
 
 Voir [`docs/ROADMAP.md`](docs/ROADMAP.md) pour le detail.
 

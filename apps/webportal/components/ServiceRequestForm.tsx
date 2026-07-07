@@ -19,6 +19,7 @@ import {
 
 type ServiceRequestFormProps = {
   services: ServiceCatalogItem[];
+  initialCatalogItemId?: string;
 };
 
 type SubmissionState =
@@ -28,6 +29,7 @@ type SubmissionState =
 
 export function ServiceRequestForm({
   services,
+  initialCatalogItemId,
 }: ServiceRequestFormProps) {
   const router = useRouter();
   const isSubmittingRef = useRef(false);
@@ -37,8 +39,13 @@ export function ServiceRequestForm({
   const [fieldErrors, setFieldErrors] = useState<
     FieldErrors<keyof ServiceRequestPayload>
   >({});
+  const preselectedCatalogItemId =
+    initialCatalogItemId
+    && services.some((service) => service.id === initialCatalogItemId)
+      ? initialCatalogItemId
+      : "";
   const [payload, setPayload] = useState<ServiceRequestPayload>({
-    catalogItemId: "",
+    catalogItemId: preselectedCatalogItemId,
     subject: "",
     description: "",
   });

@@ -2000,6 +2000,153 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
         return documents;
     }
 
+    public async Task<CartDocumentCreationResult> CreateCartDocumentAsync(
+        string customerId,
+        string actorUserId,
+        string title,
+        IReadOnlyList<CartDocumentLineInput> lines,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(
+            IsolationLevel.ReadCommitted,
+            cancellationToken);
+
+        var documentId = Guid.NewGuid().ToString("D");
+        var now = DateTime.UtcNow;
+        var reference = CreateReference();
+
+        await using (var documentCommand = connection.CreateCommand())
+        {
+            documentCommand.Transaction = transaction;
+            documentCommand.CommandText =
+                """
+                INSERT INTO commercial_documents (
+                    id,
+                    customer_id,
+                    service_request_id,
+                    subscription_id,
+                    origin,
+                    document_type,
+                    status,
+                    title,
+                    internal_reference,
+                    currency,
+                    subtotal_amount_cents,
+                    tax_amount_cents,
+                    total_amount_cents,
+                    disclaimer,
+                    created_by_user_id,
+                    created_at,
+                    updated_at,
+                    shared_at,
+                    cancelled_at
+                ) VALUES (
+                    @id,
+                    @customerId,
+                    NULL,
+                    NULL,
+                    'client_cart',
+                    'informational_invoice',
+                    'shared_with_customer',
+                    @title,
+                    @reference,
+                    'EUR',
+                    0,
+                    0,
+                    0,
+                    @disclaimer,
+                    @createdBy,
+                    @createdAt,
+                    @updatedAt,
+                    @sharedAt,
+                    NULL
+                );
+                """;
+            documentCommand.Parameters.AddWithValue("@id", documentId);
+            documentCommand.Parameters.AddWithValue("@customerId", customerId);
+            documentCommand.Parameters.AddWithValue("@title", title);
+            documentCommand.Parameters.AddWithValue("@reference", reference);
+            documentCommand.Parameters.AddWithValue(
+                "@disclaimer",
+                CommercialStatuses.DefaultDisclaimer);
+            documentCommand.Parameters.AddWithValue("@createdBy", actorUserId);
+            documentCommand.Parameters.AddWithValue("@createdAt", now);
+            documentCommand.Parameters.AddWithValue("@updatedAt", now);
+            documentCommand.Parameters.AddWithValue("@sharedAt", now);
+            await documentCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        foreach (var line in lines.OrderBy(item => item.SortOrder))
+        {
+            await InsertSubscriptionDocumentLineAsync(
+                connection,
+                transaction,
+                documentId,
+                line.OfferId,
+                line.Label,
+                line.Description,
+                line.Quantity,
+                line.UnitLabel,
+                line.UnitPriceCents,
+                line.TaxRateBasisPoints,
+                line.SortOrder,
+                now,
+                cancellationToken);
+        }
+
+        await RecalculateDocumentTotalsAsync(
+            connection,
+            transaction,
+            documentId,
+            now,
+            cancellationToken);
+
+        int totalAmountCents;
+        await using (var totalCommand = connection.CreateCommand())
+        {
+            totalCommand.Transaction = transaction;
+            totalCommand.CommandText =
+                """
+                SELECT total_amount_cents
+                FROM commercial_documents
+                WHERE id = @id;
+                """;
+            totalCommand.Parameters.AddWithValue("@id", documentId);
+            var scalar = await totalCommand.ExecuteScalarAsync(cancellationToken);
+            totalAmountCents = Convert.ToInt32(scalar);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return new CartDocumentCreationResult(documentId, totalAmountCents);
+    }
+
+    public async Task<CartPaidDocumentContext?> GetCartPaidDocumentContextAsync(
+        string documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT origin, customer_id
+            FROM commercial_documents
+            WHERE id = @id;
+            """;
+        command.Parameters.AddWithValue("id", documentId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var origin = reader.IsDBNull(0) ? null : reader.GetString(0);
+        var customerId = reader.GetString(1);
+        return new CartPaidDocumentContext(origin, customerId);
+    }
+
     private static async Task<string> ResolveSystemActorAsync(
         MySqlConnection connection,
         MySqlTransaction transaction,

@@ -624,6 +624,47 @@ validee, sur le meme AD que la recette V0.25.
 La V0.31 ne couvre pas le hardware R740xd. Elle valide uniquement que
 le code et la procedure tiennent quand on quitte l'OU de test.
 
+## Jalon V0.35 panier / commande groupee a la carte
+
+Statut : **implemente dans le depot (2026-07-08)**, faisable sans la cible
+R740xd. Documentation dediee :
+[`V0.35_CART_ALACARTE.md`](V0.35_CART_ALACARTE.md). Dependance a V0.28
+(packs) **conceptuelle et non bloquante** (V0.35 reutilise directement
+`commercial_document_lines`), donc livre avant V0.28.
+
+Avant V0.35, la page `/souscrire` gerait deux flux **mono-article** : les
+packs grand public via `PublicPackCard` -> `SubscribeButton` (rail
+Stripe/PayPal deja en place), et les options a la carte renvoyant chacune
+vers `/request-service` (demande etudiee, sans paiement direct). La V0.35
+introduit un **panier** client self-service pour regrouper N options a la
+carte en une seule commande, **sans approbation admin prealable** :
+
+- table `cart_items` rattachee au client (migration
+  `028_alacarte_cart.sql`) + colonne `commercial_documents.origin` ;
+  selection multiple depuis `/souscrire`, synthese sur `/panier` ;
+- panier strictement **one-shot** : seules les offres `one_time` actives a
+  prix > 0 sont eligibles ; toute offre `recurring` est refusee
+  (`CART_OFFER_NOT_ELIGIBLE`), coherent avec le garde-fou cadence V0.28 ;
+- la confirmation materialise **un** document commercial multi-lignes
+  (`origin = 'client_cart'`, reutilise `commercial_document_lines`) puis
+  l'emet aussitot (BPCE mock en phase de tests) pour le rendre payable ;
+- **reglement via les rails existants** : Stripe, PayPal (`PayButton`) et
+  virement bancaire (bloc V0.21) sur le document genere — **aucun nouveau
+  rail ni code de paiement** ;
+- **provisioning automatique « le cas echeant »** au reglement (tous rails
+  via `ConfirmPaymentAsync`) : reconcilie le provisioning AD existant du
+  client. **Revise le garde-fou de cadrage** « aucun provisioning declenche
+  par le panier ». Inerte pour le catalogue one-shot courant (aucun mapping),
+  mais cable pour l'avenir ;
+- tests : `npm run test:cart` (contrat statique de bout en bout).
+
+Le choix du rail Stripe vs PayPal est **deja livre** (V0.29) et n'est pas un
+objectif de la V0.35. La V0.35 n'ajoute ni prelevement recurrent
+multi-articles, ni checkout Stripe/PayPal multi-panier natif, ni
+fonctionnalite hardware-gated. Elle reste bornee a la phase de tests (mode
+`live` interdit avant V1.0 beta 1) ; recette MariaDB du chemin confirm ->
+emission -> reglement -> provisioning a rejouer.
+
 ## Jalon V1.0 beta 1 test de deploiement sur la cible R740xd
 
 Statut : **bloque, declenche a la livraison du R740xd**. Ex-V0.24b

@@ -91,7 +91,42 @@ public interface ICommercialRepository
         GetDocumentsForSubscriptionAsync(
             string subscriptionId,
             CancellationToken cancellationToken);
+
+    // V0.35 — panier a la carte : materialise le panier confirme en un unique
+    // document commercial multi-lignes (statut shared_with_customer, prêt a
+    // etre emis), tag origin = 'client_cart'.
+    Task<CartDocumentCreationResult> CreateCartDocumentAsync(
+        string customerId,
+        string actorUserId,
+        string title,
+        IReadOnlyList<CartDocumentLineInput> lines,
+        string correlationId,
+        CancellationToken cancellationToken);
+
+    // Contexte minimal utilise au reglement pour cibler le provisioning
+    // « le cas echeant » sans impacter les autres documents.
+    Task<CartPaidDocumentContext?> GetCartPaidDocumentContextAsync(
+        string documentId,
+        CancellationToken cancellationToken);
 }
+
+public sealed record CartDocumentLineInput(
+    string OfferId,
+    string Label,
+    string Description,
+    decimal Quantity,
+    string UnitLabel,
+    int UnitPriceCents,
+    int? TaxRateBasisPoints,
+    int SortOrder);
+
+public sealed record CartDocumentCreationResult(
+    string DocumentId,
+    int TotalAmountCents);
+
+public sealed record CartPaidDocumentContext(
+    string? Origin,
+    string CustomerId);
 
 public sealed record DocumentForIssuing(
     string DocumentId,

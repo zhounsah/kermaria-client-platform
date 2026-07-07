@@ -231,6 +231,14 @@ builder.Services.AddScoped<
     IPortalNotificationService,
     PortalNotificationService>();
 builder.Services.AddScoped<ICommercialService, CommercialService>();
+builder.Services.AddSingleton<MockCartStore>();
+builder.Services.AddScoped<ICartRepository>(
+    serviceProvider => sqlConfiguration.IsPersistent
+        ? new MariaDbCartRepository(sqlConfiguration)
+        : new MockCartRepository(
+            serviceProvider.GetRequiredService<MockCartStore>()));
+builder.Services.AddScoped<ICartProvisioningTrigger, CartProvisioningTrigger>();
+builder.Services.AddScoped<ICartService, CartService>();
 builder.Services.AddScoped<IManagedContentService, ManagedContentService>();
 builder.Services.AddScoped<IPublicPackCatalogService, PublicPackCatalogService>();
 builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
@@ -494,6 +502,14 @@ app.UseExceptionHandler(exceptionHandler =>
                 StatusCodes.Status403Forbidden,
                 "ACCESS_DENIED",
                 "L'accès à cette ressource est refusé."),
+            CartOfferNotEligibleException => (
+                StatusCodes.Status400BadRequest,
+                "CART_OFFER_NOT_ELIGIBLE",
+                "Cette offre ne peut pas être ajoutée au panier (offre récurrente, gratuite ou indisponible)."),
+            EmptyCartException => (
+                StatusCodes.Status400BadRequest,
+                "CART_EMPTY",
+                "Votre panier est vide."),
             PortalValidationException => (
                 StatusCodes.Status400BadRequest,
                 "INVALID_REQUEST",
@@ -911,6 +927,118 @@ app.MapGet(
             context,
             service,
             await service.GetClientCatalogAsync(context.RequestAborted));
+    });
+
+// V0.35 : panier / commande groupée à la carte (offres one-shot). Session
+// client requise ; le panier est strictement borné au customer de la session.
+app.MapGet(
+    "/internal/portal/cart",
+    async (
+        HttpContext context,
+        ICartService cartService,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            auditService);
+        var cart = await cartService.GetCartAsync(
+            session.CustomerId,
+            context.RequestAborted);
+        context.Response.Headers["X-Data-Source"] =
+            cartService.IsPersistent ? "mariadb" : "mock";
+        return Results.Ok(cart);
+    });
+app.MapPost(
+    "/internal/portal/cart/items",
+    async (
+        HttpContext context,
+        ICartService cartService,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            auditService);
+        var payload = await ReadPayload<CartAddRequest>(context);
+        var cart = await cartService.AddItemAsync(
+            session.CustomerId,
+            payload?.OfferId,
+            payload?.Quantity,
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "cart.item_added",
+                "success",
+                TargetType: "commercial_offer",
+                TargetReference: payload?.OfferId,
+                ActorUserId: session.UserId,
+                CustomerId: session.CustomerId),
+            context.RequestAborted);
+        return Results.Ok(
+            new CartMutationResponse(cart, context.GetCorrelationId()));
+    });
+app.MapPost(
+    "/internal/portal/cart/items/remove",
+    async (
+        HttpContext context,
+        ICartService cartService,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            auditService);
+        var payload = await ReadPayload<CartRemoveRequest>(context);
+        var cart = await cartService.RemoveItemAsync(
+            session.CustomerId,
+            payload?.OfferId,
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "cart.item_removed",
+                "success",
+                TargetType: "commercial_offer",
+                TargetReference: payload?.OfferId,
+                ActorUserId: session.UserId,
+                CustomerId: session.CustomerId),
+            context.RequestAborted);
+        return Results.Ok(
+            new CartMutationResponse(cart, context.GetCorrelationId()));
+    });
+app.MapPost(
+    "/internal/portal/cart/confirm",
+    async (
+        HttpContext context,
+        ICartService cartService,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            auditService);
+        var result = await cartService.ConfirmAsync(
+            session.CustomerId,
+            session.UserId,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "cart.confirmed",
+                "success",
+                TargetType: "commercial_document",
+                TargetReference: result.DocumentId,
+                ActorUserId: session.UserId,
+                CustomerId: session.CustomerId),
+            context.RequestAborted);
+        return Results.Ok(result);
     });
 
 // V0.27 : réception des messages du formulaire /contact (vitrine publique).
