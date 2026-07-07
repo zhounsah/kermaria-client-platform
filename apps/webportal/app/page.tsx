@@ -110,7 +110,7 @@ export default async function HomePage() {
         <p className="vitrine-hero-lead">
           Vos outils informatiques, mieux organisés. Un accompagnement pour
           héberger, sauvegarder, connecter et maintenir ce dont vous avez
-          besoin — sans jargon inutile.
+          besoin sans jargon inutile.
         </p>
         <div className="vitrine-hero-actions">
           <Link className="button" href="#services">

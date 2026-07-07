@@ -1,0 +1,121 @@
+﻿Propri�taire�: HOME\Admins du domaine
+Groupe�: HOME\Admins du domaine
+
+Liste dacc�s�:
+{Cet objet est prot�g� contre lh�ritage des autorisations de son parent}
+Autoriser BUILTIN\Acc�s compatible pr�-Windows 2000
+                                          ACC�S SP�CIAL
+                                          READ PERMISSONS
+                                          LIST CONTENTS
+                                          READ PROPERTY
+                                          LIST OBJECT
+Autoriser BUILTIN\Acc�s compatible pr�-Windows 2000
+                                          ACC�S SP�CIAL
+                                          READ PERMISSONS
+                                          LIST CONTENTS
+                                          READ PROPERTY
+                                          LIST OBJECT
+Autoriser HOME\Admins du domaine          ACC�S SP�CIAL
+                                          READ PERMISSONS
+                                          WRITE PERMISSIONS
+                                          CHANGE OWNERSHIP
+                                          CREATE CHILD
+                                          DELETE CHILD
+                                          LIST CONTENTS
+                                          WRITE SELF
+                                          WRITE PROPERTY
+                                          READ PROPERTY
+                                          LIST OBJECT
+                                          CONTROL ACCESS
+Autoriser HOME\Administrateurs de lentreprise
+                                          ACC�S SP�CIAL
+                                          READ PERMISSONS
+                                          WRITE PERMISSIONS
+                                          CHANGE OWNERSHIP
+                                          CREATE CHILD
+                                          DELETE CHILD
+                                          LIST CONTENTS
+                                          WRITE SELF
+                                          WRITE PROPERTY
+                                          READ PROPERTY
+                                          LIST OBJECT
+                                          CONTROL ACCESS
+Autoriser BUILTIN\Administrateurs         ACC�S SP�CIAL
+                                          DELETE
+                                          READ PERMISSONS
+                                          WRITE PERMISSIONS
+                                          CHANGE OWNERSHIP
+                                          CREATE CHILD
+                                          DELETE CHILD
+                                          LIST CONTENTS
+                                          WRITE SELF
+                                          WRITE PROPERTY
+                                          READ PROPERTY
+                                          LIST OBJECT
+                                          CONTROL ACCESS
+Autoriser AUTORITE NT\Utilisateurs authentifi�s
+                                          ACC�S SP�CIAL
+                                          READ PERMISSONS
+                                          LIST CONTENTS
+                                          READ PROPERTY
+                                          LIST OBJECT
+Autoriser AUTORITE NT\Syst�me             FULL CONTROL
+Autoriser BUILTIN\Acc�s compatible pr�-Windows 2000
+                                          ACC�S SP�CIAL pour Account Restrictions
+                                          READ PROPERTY
+Autoriser BUILTIN\Acc�s compatible pr�-Windows 2000
+                                          ACC�S SP�CIAL pour Account Restrictions
+                                          READ PROPERTY
+Autoriser BUILTIN\Acc�s compatible pr�-Windows 2000
+                                          ACC�S SP�CIAL pour Logon Information
+                                          READ PROPERTY
+Autoriser BUILTIN\Acc�s compatible pr�-Windows 2000
+                                          ACC�S SP�CIAL pour Logon Information
+                                          READ PROPERTY
+Autoriser BUILTIN\Acc�s compatible pr�-Windows 2000
+                                          ACC�S SP�CIAL pour Group Membership
+                                          READ PROPERTY
+Autoriser BUILTIN\Acc�s compatible pr�-Windows 2000
+                                          ACC�S SP�CIAL pour Group Membership
+                                          READ PROPERTY
+Autoriser BUILTIN\Acc�s compatible pr�-Windows 2000
+                                          ACC�S SP�CIAL pour General Information
+                                          READ PROPERTY
+Autoriser BUILTIN\Acc�s compatible pr�-Windows 2000
+                                          ACC�S SP�CIAL pour General Information
+                                          READ PROPERTY
+Autoriser BUILTIN\Acc�s compatible pr�-Windows 2000
+                                          ACC�S SP�CIAL pour Remote Access Information
+                                          READ PROPERTY
+Autoriser BUILTIN\Acc�s compatible pr�-Windows 2000
+                                          ACC�S SP�CIAL pour Remote Access Information
+                                          READ PROPERTY
+Autoriser HOME\�diteurs de certificats    ACC�S SP�CIAL pour userCertificate
+                                          WRITE PROPERTY
+                                          READ PROPERTY
+Autoriser BUILTIN\Groupe dacc�s dautorisation Windows
+                                          ACC�S SP�CIAL pour tokenGroupsGlobalAndUniversal
+                                          READ PROPERTY
+Autoriser BUILTIN\Serveurs de licences des services Terminal Server
+                                          ACC�S SP�CIAL pour terminalServer
+                                          WRITE PROPERTY
+                                          READ PROPERTY
+Autoriser BUILTIN\Serveurs de licences des services Terminal Server
+                                          ACC�S SP�CIAL pour Terminal Server License Server
+                                          WRITE PROPERTY
+                                          READ PROPERTY
+Autoriser AUTORITE NT\SELF                ACC�S SP�CIAL pour Private Information
+                                          WRITE PROPERTY
+                                          READ PROPERTY
+                                          CONTROL ACCESS
+Autoriser Tout le monde                   Change Password
+Autoriser AUTORITE NT\SELF                Change Password
+
+Autorisations transmises aux sous-objets�:
+Transmises � tous les sous-objets
+Autoriser AUTORITE NT\SELF                ACC�S SP�CIAL pour Private Information
+                                          WRITE PROPERTY
+                                          READ PROPERTY
+                                          CONTROL ACCESS
+
+La commande sest correctement termin�e.

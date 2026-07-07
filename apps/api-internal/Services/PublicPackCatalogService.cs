@@ -116,7 +116,7 @@ public sealed partial class PublicPackCatalogService : IPublicPackCatalogService
                     "Pro / Association",
                     "Une base complète pour une petite structure ou une association.",
                     "Pour une petite équipe qui veut une offre plus large et encadrée.",
-                    "Une formule plus complète pour une petite structure, avec plus de capacité et une documentation simplifiée.",
+                    "Une formule plus complète pour une petite structure, avec plus de capacité.",
                     [
                         "2 utilisateurs et 64 Go de stockage",
                         "Accès VPN personnel",

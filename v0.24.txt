@@ -1,0 +1,123 @@
+Déjà validé :
+- [x] `V0.26-2b` UX du lien `/set-password` invalide/consommé affichée dès le chargement
+
+**Préparation**
+- [!] `P01` `npm run validate:staging` KO côté outillage sur le staging déployé
+- [X] `P02` `npm run check:health` OK sur SRV-01 + SRV-02
+- [~] `P03` Sauvegarde MariaDB de référence faite localement depuis SRV-07, pas encore rejouée sur SRV-07
+- [X] `P04` Mot de passe faible initial du compte AD `HOME\svc_api_portal_ad` roté
+- [X] `P05` Mot de passe `test_web` MariaDB roté
+- [X] `P06` Entrées temporaires `hosts` purgées sur SRV-01
+
+**Base commune V0.17**
+- [X] `V0.17-C1` Connexion client valide
+- [X] `V0.17-C2` Dashboard client
+- [X] `V0.17-C3` Profil client
+- [X] `V0.17-C4` Services client avec isolation
+- [X] `V0.17-C5` Factures et documents commerciaux
+- [X] `V0.17-C6` Support puis service
+- [X] `V0.17-C7` Réponse client sur une demande
+- [X] `V0.17-C8` Accès ressource d’un autre client refusé
+- [X] `V0.17-A1` Connexion admin valide
+- [X] `V0.17-A2` Synthèse `/admin`
+- [X] `V0.17-A3` `/admin/customers`
+- [X] `V0.17-A4` Fiche client admin
+- [X] `V0.17-A5` Demande support admin
+- [X] `V0.17-A6` Demande service admin
+- [X] `V0.17-A7` Création / MAJ document commercial informatif
+- [X] `V0.17-A8` Audits sans secret loggé
+- [X] `V0.17-S1` Headers WEBPORTAL
+- [X] `V0.17-S2` Cookie session `HttpOnly` `Secure` `SameSite`
+- [X] `V0.17-S3` Aucun secret dans le bundle client
+- [X] `V0.17-S4` `INTERNAL_API_URL` bien server-only
+- [X] `V0.17-S5` Refus accès admin avec session client
+- [X] `V0.17-S6` Refus identifiant mal formé sur route admin détail
+- [X] `V0.17-S7` Isolation croisée entre 2 clients
+- [X] `V0.17-E1` Login invalide avec message neutre
+- [X] `V0.17-E2` Session expirée/révoquée bien gérée
+- [X] `V0.17-E3` API indisponible avec erreur contrôlée
+- [X] `V0.17-E4` Readiness en échec avec `503` + correlation id
+- [X] `V0.17-E5` Payload JSON invalide renvoie `INVALID_REQUEST`
+
+**Paiement / facture**
+- [X] `V0.20-1` Emission document informatif puis BPCE `mock`
+- [ ] `V0.20.1-1` Import catalogue avec auto-remplissage des lignes
+- [X] `V0.21-1` Paiement PayPal sandbox one-shot
+- [X] `V0.22-1` Souscription mensuelle PayPal sandbox
+- [ ] `V0.22-2` Annulation abonnement admin
+- [ ] `V0.22-3` Idempotence webhook PayPal
+
+**Stripe V0.29**
+- [ ] `V0.29-1` Checkout Stripe `mode=payment`
+- [ ] `V0.29-2` Checkout Stripe `mode=subscription`
+- [ ] `V0.29-3` Bascule rail Stripe/PayPal côté portail
+- [ ] `V0.29-4` Idempotence webhook Stripe
+
+**Active Directory V0.25**
+- [X] `V0.25-1` Lecture groupes effectifs directs + transitifs
+- [X] `V0.25-2` Rename utilisateur borné à l’OU test
+- [X] `V0.25-3` Move utilisateur Users <-> Disabled même client
+- [X] `V0.25-4` Move utilisateur cross-client
+- [ ] `V0.25-5` Changement de mot de passe AD via `/password`
+- [ ] `V0.25-6` Rate limit changement mot de passe
+
+**Signup V0.26**
+- [X] `V0.26-1` Parcours complet `signup -> verify -> approve -> set-password -> login`
+- [X] `V0.26-2` Anti-rejeu lien `/set-password` déjà consommé
+- [ ] `V0.26-3` hCaptcha fail-closed sans clé
+- [X] `V0.26-4` hCaptcha avec clé valide
+- [ ] `V0.26-5` Rate limit IP signup
+- [ ] `V0.26-6` Rebasculer `SIGNUP_ENABLED=false` en fin de recette
+
+**Vitrine V0.27**
+- [~] `V0.27-1` `PUBLIC_VITRINE_ENABLED=true` et rendu `PublicShell`
+- [X] `V0.27-2` Rate limit `/contact`
+- [!] `V0.27-3` `sitemap.xml` et `robots.txt`
+- [X] `V0.27-4` Portfolio embarqué accessible
+- [X] `V0.27-5` `www.*` indexable sans `X-Robots-Tag`
+- [X] `V0.27-6` `portail.*` / `dashboard.*` toujours `noindex`
+
+**SMTP allowlist V0.30 partiel**
+- [X] `V0.30-1` Envoi vers destinataire dans allowlist
+- [X] `V0.30-2` Blocage vers destinataire hors allowlist
+- [X] `V0.30-3` Fail-closed avec allowlist vide
+- [-] `V0.30-4` Rebasculer `EMAIL_INTEGRATION_MODE=mock`
+
+**Timezone V0.23.2**
+- [ ] `V0.23.2-1` Date fiscale BPCE correcte entre 00h et 02h Paris
+- [ ] `V0.23.2-2` Rollover log à minuit Paris
+- [ ] `V0.23.2-3` Affichage front en `Europe/Paris`
+
+**Transverses**
+- [ ] `T-1` Restauration MariaDB sur base dédiée + readiness + login admin
+- [ ] `T-2` Isolation client
+- [X] `T-3` `correlation_id` bout en bout
+- [ ] `T-4` Accessibilité WCAG AA sur parcours critiques
+
+**Audit sécurité V0.24**
+- [ ] Matrice secrets pour `BPCE_REFRESH_TOKEN`, `SMTP_PASSWORD`, `PAYPAL_CLIENT_SECRET`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `SERVICE_AUTH_TOKEN`, `SQL_PASSWORD`, `HCAPTCHA_SECRET_KEY`
+- [X] `DEP-1` `npm audit --production`
+- [~] `DEP-2` `dotnet list ... package --vulnerable --include-transitive`
+- [ ] `DEP-3` Triage des vulnérabilités `moderate` / `low`
+- [X] `HDR-1` à `HDR-9` Vérification complète des headers de sécurité
+- [~] `RL-1` à `RL-6` Vérification complète des rate limits et protections anti-abus
+- [X] `LOG-1` à `LOG-3` Vérification absence de fuite dans logs, stdout/stderr, audits
+- [~] `ISO-1` à `ISO-3` Vérifications isolation client / admin
+
+**Notes 2026-07-06**
+- `dashboard.home.bzh` et `dashboard.zacharyhounsa.ovh` pointent bien vers `192.168.100.201` (SRV-01)
+- anomalies et incohérences centralisées dans `docs/V0.24_ANOMALIES.md`
+- arrêt/reprise de `KermariaApiInternal` validés sans reboot serveur ; retour en santé confirmé après chaque test
+- [ ] `ROT-1` à `ROT-5` Rotation des mots de passe faibles + configs à jour
+
+**Validation documentaire / sortie**
+- [ ] `DU-1` Vérifier `docs/V0.26_USER_GUIDE_SIGNUP.md`
+- [ ] `DU-2` Vérifier le `README.md`
+- [ ] `DU-3` Vérifier `docs/OPERATIONS.md`
+- [ ] `DU-4` à `DU-9` Rédiger les guides courts manquants
+- [ ] Sign-off Brique 1
+- [ ] Sign-off Brique 2
+- [ ] Sign-off Brique 3
+- [ ] Mettre à jour `ROADMAP.md`
+- [ ] Mettre à jour `V0.24_STABILISATION.md`
+- [ ] Clôturer officiellement la V0.24

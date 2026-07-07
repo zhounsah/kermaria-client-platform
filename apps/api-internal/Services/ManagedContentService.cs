@@ -156,7 +156,7 @@ public sealed class ManagedContentService : IManagedContentService
             PackAudience:
                 "Pour une petite équipe qui veut une offre plus large et encadrée.",
             PackDescription:
-                "Une formule plus complète pour une petite structure, avec plus de capacité et une documentation simplifiée.",
+                "Une formule plus complète pour une petite structure, avec plus de capacité.",
             TechnicalServiceReferences:
             [
                 "USER-ADD",

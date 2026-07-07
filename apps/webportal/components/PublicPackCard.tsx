@@ -164,7 +164,7 @@ export function PublicPackCard({
           <dd>
             {effectivePaymentMode === "upfront"
               ? `${formatCurrencyFromCents(variant.billingPriceAmountCents)} HT tous les ${variant.billingIntervalMonths} mois`
-              : `${formatCurrencyFromCents(variant.billingPriceAmountCents)} HT par échéance`}
+              : `${formatCurrencyFromCents(variant.billingPriceAmountCents)} HT/mois`}
           </dd>
         </div>
         <div>
