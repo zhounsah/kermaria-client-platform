@@ -16,6 +16,8 @@ const navigationSections: NavSection[] = [
     items: [
       { href: "/dashboard", label: "Vue d'ensemble", exact: true },
       { href: "/services", label: "Mes services" },
+      { href: "/souscrire", label: "Souscrire" },
+      { href: "/profile/subscriptions", label: "Mes souscriptions" },
       { href: "/invoices", label: "Documents & factures" },
     ],
   },
@@ -30,7 +32,7 @@ const navigationSections: NavSection[] = [
     label: "Suivi",
     items: [
       { href: "/notifications", label: "Notifications" },
-      { href: "/profile", label: "Profil" },
+      { href: "/profile", label: "Profil", exact: true },
       { href: "/password", label: "Mot de passe" },
     ],
   },
