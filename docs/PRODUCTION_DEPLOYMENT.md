@@ -163,7 +163,13 @@ sur R740xd. N'engage pas la production.
   - Stripe : basculer sur les cles `live`, generer un
     `STRIPE_WEBHOOK_SECRET` pour l'endpoint
     `https://portail.<domaine>/api/webhooks/stripe`.
-  - hCaptcha : cle prod avec le domaine autorise.
+  - hCaptcha : `HCAPTCHA_SITE_KEY` + `HCAPTCHA_SECRET_KEY` **du meme
+    site** (un couple depareille = `sitekey-secret-mismatch`), avec le
+    hostname servant `/signup` (`portail.<domaine>`) dans les hostnames
+    autorises du site. Recetter avec de **vraies** cles (les cles de
+    test ignorent `remoteip` et ne reproduisent pas le comportement).
+    Signup **fail-closed** sans cle. Detail : `DEPLOYMENT_WINDOWS.md`
+    (pre-requis hCaptcha).
   - SMTP : provisionner la boite prod (recommande via
     sous-domaine dedie `mail.<domaine>` pour la reputation).
 - DNS : mettre en place les enregistrements avec TTL court (5 min)

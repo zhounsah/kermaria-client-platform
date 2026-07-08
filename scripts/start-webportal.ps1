@@ -50,7 +50,19 @@ try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 function Write-Log {
     param([string]$Message, [string]$Level = "INFO")
     $ts = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss.fffzzz")
-    Write-Host "$ts [$Level] webportal-wrapper: $Message"
+    $line = "$ts [$Level] webportal-wrapper: $Message"
+    # On écrit directement sur les handles stdout/stderr du process plutôt
+    # que via Write-Host : sous NSSM (hôte de service non-interactif,
+    # powershell -NonInteractive), le flux Information de Write-Host n'est
+    # pas garanti d'atteindre le handle redirigé vers AppStdout, ce qui
+    # rendait ces logs invisibles. [Console]::Out/Error écrit sur le fd
+    # que NSSM capte. Les messages ERROR partent sur stderr (stderr.log),
+    # alignés avec la sortie d'erreur de node.
+    if ($Level -eq "ERROR") {
+        [Console]::Error.WriteLine($line)
+    } else {
+        [Console]::Out.WriteLine($line)
+    }
 }
 
 # Résolution de node.exe si non fourni

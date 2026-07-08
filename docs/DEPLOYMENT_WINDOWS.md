@@ -712,9 +712,42 @@ Contenu attendu (extrait typique) :
   "PAYPAL_CLIENT_SECRET": "...",
   "STRIPE_MODE": "test",
   "STRIPE_SECRET_KEY": "...",
-  "SIGNUP_ENABLED": "false"
+  "SIGNUP_ENABLED": "false",
+  "HCAPTCHA_SITE_KEY": "<site_key>",
+  "HCAPTCHA_SECRET_KEY": "<secret_key>"
 }
 ```
+
+> **hCaptcha — pre-requis des que `SIGNUP_ENABLED=true` (recette reelle
+> ou prod).** Le signup est **fail-closed** : en `NODE_ENV=production`,
+> sans `HCAPTCHA_SECRET_KEY` reel (ou avec un placeholder), *toute*
+> soumission `/signup` est refusee (`CAPTCHA_MISCONFIGURED`). Provisionner :
+> - un site hCaptcha reel ; `HCAPTCHA_SITE_KEY` (publique, injectee dans
+>   le formulaire) et `HCAPTCHA_SECRET_KEY` (server-only) **doivent
+>   provenir du meme site** — un couple site/secret depareille renvoie
+>   `sitekey-secret-mismatch` et le siteverify echoue en 400
+>   `CAPTCHA_FAILED` malgre un token valide ;
+> - les **hostnames autorises** du site hCaptcha doivent inclure le
+>   domaine servant le formulaire : `portail.home.bzh` (+ `dashboard.home.bzh`
+>   et les hosts `*.zacharyhounsa.ovh` si le formulaire y est expose).
+>   Un hostname absent renvoie une reponse siteverify avec le champ
+>   `hostname` non conforme ;
+> - **derriere ARR, ne pas s'appuyer sur `remoteip`.** Le WEBPORTAL ne
+>   transmet `remoteip` a hCaptcha que si l'IP client (premier segment de
+>   `X-Forwarded-For`) est **publique** ; une IP LAN privee (acces interne
+>   a `portail.home.bzh`) est volontairement omise, car elle divergerait
+>   de l'IP vue par hCaptcha lors de la resolution du widget et ferait
+>   rejeter le siteverify. Aucune config ARR supplementaire n'est requise.
+>
+> Les **cles de test** hCaptcha (`10000000-ffff-ffff-ffff-000000000001`
+> / `0x0000000000000000000000000000000000000000`) passent en direct mais
+> ignorent `remoteip` : elles ne reproduisent pas le comportement reel et
+> ne valident pas ce pre-requis. Toujours recetter avec de **vraies cles**.
+>
+> Un echec de verification est desormais journalise sur `stderr`
+> (`event: "hcaptcha_verify_failed"`, avec `error_codes`, `hostname`,
+> `remoteip_sent`, `correlation_id`) — cf. section "Verification des logs
+> NSSM" pour le lire. Aucun secret ni token n'est journalise.
 
 Sur KERMARIA-SRV-01, ACL restrictive :
 
@@ -794,6 +827,51 @@ Le wrapper log au demarrage le nombre de cles chargees et les
 valeurs de NODE_ENV / HOSTNAME / PORT (jamais les secrets). Erreur
 courante : `Config file introuvable` → le fichier config n'est
 pas au bon chemin ou l'ACL empeche le service de le lire.
+
+### Verification des logs NSSM (stdout/stderr)
+
+Sans ces logs, tout diagnostic applicatif en prod est impossible
+(ex. sous-code d'echec hCaptcha, cf. section signup). Verifier apres
+`Start-Service` :
+
+```powershell
+# 1. Les parametres I/O sont bien poses SUR LE SERVICE installe.
+#    (Un service installe avant les `nssm set AppStdout/AppStderr`
+#     n'ecrit rien tant qu'on ne les repose pas + restart.)
+$nssm = "C:\Program Files\nssm\nssm.exe"
+& $nssm get KermariaWebportal AppStdout      # -> C:\apps\webportal\logs\stdout.log
+& $nssm get KermariaWebportal AppStderr      # -> C:\apps\webportal\logs\stderr.log
+
+# 2. Le dossier existe ET le compte de service peut y ecrire (Modify).
+Test-Path C:\apps\webportal\logs
+(Get-Acl C:\apps\webportal\logs).Access |
+  Where-Object IdentityReference -match 'svc_api_portal_ad'
+
+# 3. Les fichiers se remplissent (le wrapper ecrit au demarrage).
+Get-Content C:\apps\webportal\logs\stdout.log -Tail 20
+Get-Content C:\apps\webportal\logs\stderr.log -Tail 20
+```
+
+> **Fichiers `stdout.log` / `stderr.log` absents ou vides.** Causes,
+> par ordre de frequence :
+> 1. **Dossier non provisionne / non inscriptible.** NSSM ne peut pas
+>    creer le fichier si `C:\apps\webportal\logs` n'existe pas ou si
+>    `HOME\svc_api_portal_ad` n'a pas `Modify` dessus (voir la creation
+>    du dossier + `icacls ... :(OI)(CI)M` plus haut). Rejouer ces deux
+>    commandes puis `Restart-Service KermariaWebportal`.
+> 2. **Parametres I/O non appliques au service installe.** Reposer
+>    `AppStdout`/`AppStderr` (+ `AppRotateFiles 1`) puis redemarrer.
+> 3. **Log du wrapper avale.** Le wrapper ecrit desormais via
+>    `[Console]::Out/Error` (et non `Write-Host`, dont le flux
+>    Information n'atteint pas toujours le handle redirige sous un hote
+>    de service non-interactif). Un ancien `start-webportal.ps1` sur
+>    SRV-01 peut encore utiliser `Write-Host` — recopier la version du
+>    repo (`scripts/start-webportal.ps1`).
+>
+> Les logs applicatifs Next.js (`console.error`, `process.stderr.write`
+> de `lib/bff-observability.ts` et de la verification hCaptcha)
+> heritent des memes handles que le wrapper : une fois les 3 points
+> ci-dessus valides, ils apparaissent dans `stderr.log`.
 
 ### Verification interne
 

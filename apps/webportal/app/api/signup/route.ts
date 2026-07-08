@@ -120,7 +120,7 @@ export async function POST(request: NextRequest) {
 
   const captchaToken =
     typeof body.hcaptchaToken === "string" ? body.hcaptchaToken : null;
-  const captcha = await verifyHCaptcha(captchaToken, identifier);
+  const captcha = await verifyHCaptcha(captchaToken, identifier, correlationId);
   if (!captcha.ok) {
     return NextResponse.json(
       {
