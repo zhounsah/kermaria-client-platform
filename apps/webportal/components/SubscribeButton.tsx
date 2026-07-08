@@ -58,28 +58,51 @@ export function SubscribeButton({
   return (
     <div>
       {showRailChoice ? (
-        <div role="radiogroup" aria-label="Rail de paiement" style={{ marginBottom: 6 }}>
-          <label style={{ marginRight: "1rem" }}>
-            <input
-              checked={rail === "stripe"}
-              name={`payment-rail-${offerId}`}
-              onChange={() => setRail("stripe")}
-              type="radio"
-              value="stripe"
-            />{" "}
-            Stripe
-          </label>
-          <label>
-            <input
-              checked={rail === "paypal"}
-              name={`payment-rail-${offerId}`}
-              onChange={() => setRail("paypal")}
-              type="radio"
-              value="paypal"
-            />{" "}
-            PayPal
-          </label>
-        </div>
+        <fieldset className="payment-rail-group">
+          <legend>Choisir le mode de paiement</legend>
+          <div
+            aria-label="Rail de paiement"
+            className="payment-rail-options"
+            role="radiogroup"
+          >
+            <label
+              className={
+                rail === "stripe"
+                  ? "payment-rail-option payment-rail-option-active"
+                  : "payment-rail-option"
+              }
+            >
+              <input
+                checked={rail === "stripe"}
+                className="visually-hidden"
+                name={`payment-rail-${offerId}`}
+                onChange={() => setRail("stripe")}
+                type="radio"
+                value="stripe"
+              />
+              <span className="payment-rail-title">Carte bancaire</span>
+              <span className="payment-rail-hint">Paiement via Stripe</span>
+            </label>
+            <label
+              className={
+                rail === "paypal"
+                  ? "payment-rail-option payment-rail-option-active"
+                  : "payment-rail-option"
+              }
+            >
+              <input
+                checked={rail === "paypal"}
+                className="visually-hidden"
+                name={`payment-rail-${offerId}`}
+                onChange={() => setRail("paypal")}
+                type="radio"
+                value="paypal"
+              />
+              <span className="payment-rail-title">PayPal</span>
+              <span className="payment-rail-hint">Paiement sur compte PayPal</span>
+            </label>
+          </div>
+        </fieldset>
       ) : null}
       <button
         className="button"
@@ -87,16 +110,10 @@ export function SubscribeButton({
         onClick={handleClick}
         type="button"
       >
-        {isSubmitting
-          ? "Redirection..."
-          : `Souscrire à ${offerName}`}
+        {isSubmitting ? "Redirection..." : `Souscrire à ${offerName}`}
       </button>
       {error ? (
-        <p
-          className="field-hint"
-          role="alert"
-          style={{ marginTop: 6, color: "var(--danger)" }}
-        >
+        <p className="payment-inline-error" role="alert">
           {error}
         </p>
       ) : null}

@@ -27,6 +27,12 @@ export function AppShell({
   const hasSidebar =
     session?.user.role === "client_user"
     || session?.user.role === "internal_admin";
+  const shellLabel =
+    session?.user.role === "internal_admin"
+      ? "Administration interne"
+      : session?.user.role === "client_user"
+        ? "Espace client sécurisé"
+        : "Accès sécurisé";
 
   if (usePublicShell) {
     return (
@@ -38,6 +44,9 @@ export function AppShell({
 
   return (
     <>
+      <a className="skip-link" href="#main-content">
+        Aller au contenu
+      </a>
       <header className="site-header">
         <div className="site-header-inner">
           <Link className="brand" href="/">
@@ -49,7 +58,7 @@ export function AppShell({
               <small>Espace client</small>
             </span>
           </Link>
-          <div className="demo-chip">Espace sécurisé</div>
+          <div className="demo-chip">{shellLabel}</div>
         </div>
       </header>
       {hasSidebar ? (
@@ -60,10 +69,14 @@ export function AppShell({
           {session?.user.role === "internal_admin" ? (
             <AdminNavigation displayName={session.user.displayName} />
           ) : null}
-          <main className="main-content app-content">{children}</main>
+          <main className="main-content app-content" id="main-content">
+            {children}
+          </main>
         </div>
       ) : (
-        <main className="main-content">{children}</main>
+        <main className="main-content" id="main-content">
+          {children}
+        </main>
       )}
       <footer className="site-footer">
         <div>

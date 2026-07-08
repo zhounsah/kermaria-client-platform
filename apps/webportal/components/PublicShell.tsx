@@ -13,6 +13,9 @@ type PublicShellProps = {
 export function PublicShell({ children, signupEnabled }: PublicShellProps) {
   return (
     <>
+      <a className="skip-link" href="#main-content">
+        Aller au contenu
+      </a>
       <header className="public-header">
         <div className="public-header-inner">
           <Link className="brand brand-public" href="/">
@@ -25,27 +28,33 @@ export function PublicShell({ children, signupEnabled }: PublicShellProps) {
             </span>
           </Link>
           <nav className="public-header-nav" aria-label="Navigation principale">
-            <Link href="/offres">Offres</Link>
-            <a href={PORTFOLIO_URL}>Portfolio</a>
-            <Link href="/a-propos">À propos</Link>
-            <Link href="/contact">Contact</Link>
-            <Link className="public-header-login" href="/login">
-              Connexion
-            </Link>
-            {signupEnabled ? (
-              <Link className="public-header-signup" href="/signup">
-                Inscription
+            <div className="public-header-links">
+              <Link href="/offres">Offres</Link>
+              <a href={PORTFOLIO_URL}>Portfolio</a>
+              <Link href="/a-propos">À propos</Link>
+              <Link href="/contact">Contact</Link>
+            </div>
+            <div className="public-header-actions">
+              <Link className="public-header-login" href="/login">
+                Connexion
               </Link>
-            ) : null}
+              {signupEnabled ? (
+                <Link className="public-header-signup" href="/signup">
+                  Inscription
+                </Link>
+              ) : null}
+            </div>
           </nav>
         </div>
       </header>
-      <main className="public-main">{children}</main>
+      <main className="public-main" id="main-content">
+        {children}
+      </main>
       <footer className="public-footer">
         <div className="public-footer-inner">
           <div className="public-footer-brand">
             <strong>Zachary HOUNSA-HOUNKPA EI</strong>
-            <p>Espace client professionnel.</p>
+            <p>Site public, offres et espace client professionnel.</p>
           </div>
           <nav className="public-footer-nav" aria-label="Liens légaux">
             <Link href="/mentions-legales">Mentions légales</Link>

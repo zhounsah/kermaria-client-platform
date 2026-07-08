@@ -14,7 +14,7 @@ export function AdminDataTable({
   return (
     <div className="table-card admin-table">
       <div className="table-scroll">
-        <table>
+        <table className="admin-data-table">
           <caption className="sr-only">{caption}</caption>
           <thead>
             <tr>
@@ -29,7 +29,9 @@ export function AdminDataTable({
             {rows.map((row, rowIndex) => (
               <tr key={rowIndex}>
                 {row.map((cell, cellIndex) => (
-                  <td key={cellIndex}>{cell}</td>
+                  <td data-label={columns[cellIndex]} key={cellIndex}>
+                    {cell}
+                  </td>
                 ))}
               </tr>
             ))}
