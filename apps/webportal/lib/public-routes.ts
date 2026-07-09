@@ -11,6 +11,7 @@ import {
 const LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1"]);
 
 type PortalRequestLike = Pick<NextRequest, "headers" | "nextUrl">;
+type HeaderLookup = Pick<Headers, "get">;
 
 export { isPublicRoute, PORTFOLIO_URL, PUBLIC_ROUTES };
 
@@ -43,23 +44,50 @@ function isLocalAbsoluteUrl(value: string): boolean {
 }
 
 function getRequestOrigin(request: PortalRequestLike): string | null {
-  const forwardedProto = request.headers
+  const requestOrigin = getOriginFromHeaders(request.headers);
+  if (requestOrigin) {
+    return requestOrigin;
+  }
+
+  return normalizeAbsoluteUrl(request.nextUrl.origin);
+}
+
+function getOriginFromHeaders(headers: HeaderLookup): string | null {
+  const forwardedProto = headers
     .get("x-forwarded-proto")
     ?.split(",")[0]
     ?.trim();
-  const forwardedHost = request.headers
+  const forwardedHost = headers
     .get("x-forwarded-host")
     ?.split(",")[0]
     ?.trim();
-  const host = forwardedHost || request.headers.get("host")?.trim();
+  const host = forwardedHost || headers.get("host")?.trim();
   const protocol =
-    forwardedProto || request.nextUrl.protocol.replace(/:$/, "") || "https";
+    forwardedProto || "https";
 
   if (host) {
     return normalizeAbsoluteUrl(`${protocol}://${host}`);
   }
 
-  return normalizeAbsoluteUrl(request.nextUrl.origin);
+  return null;
+}
+
+export function getPortalPublicUrlFromHeaders(headers: HeaderLookup): string {
+  const requestOrigin = getOriginFromHeaders(headers);
+  if (requestOrigin && !isLocalAbsoluteUrl(requestOrigin)) {
+    return requestOrigin;
+  }
+
+  const fromEnv = normalizeAbsoluteUrl(process.env.PUBLIC_PORTAL_URL?.trim() ?? "");
+  if (fromEnv) {
+    return fromEnv;
+  }
+
+  if (requestOrigin) {
+    return requestOrigin;
+  }
+
+  return "http://localhost:3000";
 }
 
 export function getPortalPublicUrl(request?: PortalRequestLike): string {
