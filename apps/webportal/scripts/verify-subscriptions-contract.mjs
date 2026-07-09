@@ -82,12 +82,41 @@ const signupPackSnapshotMigration = await read(
 const subscriptionPackMetadataMigration = await read(
   "../../apps/api-internal/Migrations/MariaDb/025_subscription_pack_metadata.sql",
 );
+const checkoutContracts = await read(
+  "../../apps/api-internal/Contracts/CheckoutContracts.cs",
+);
+const recurringCheckoutService = await read(
+  "../../apps/api-internal/Services/RecurringCheckoutService.cs",
+);
+const recurringCheckoutMigration = await read(
+  "../../apps/api-internal/Migrations/MariaDb/029_billed_recurring_checkout.sql",
+);
+const recurringOfferCadenceBackfillMigration = await read(
+  "../../apps/api-internal/Migrations/MariaDb/030_recurring_offer_cadence_backfill.sql",
+);
 const paypalAutoPlanRoute = await read(
   "app/api/admin/catalog/[id]/paypal-plan/route.ts",
 );
 const paypalRuntimeConfigCs = await read(
   "../../apps/api-internal/Data/Configuration/PayPalRuntimeConfiguration.cs",
 );
+const checkoutSummaryRoute = await read("app/api/checkout/summary/route.ts");
+const recurringCheckoutItemsRoute = await read(
+  "app/api/checkout/subscriptions/items/route.ts",
+);
+const recurringCheckoutRemoveRoute = await read(
+  "app/api/checkout/subscriptions/items/remove/route.ts",
+);
+const recurringCheckoutConfirmRoute = await read(
+  "app/api/checkout/subscriptions/confirm/route.ts",
+);
+const addRecurringCheckoutButton = await read(
+  "components/AddRecurringCheckoutButton.tsx",
+);
+const recurringCheckoutConfirmButton = await read(
+  "components/RecurringCheckoutConfirmButton.tsx",
+);
+const publicPackCard = await read("components/PublicPackCard.tsx");
 
 assert.match(
   offerMigration,
@@ -204,6 +233,36 @@ assert.match(
   /cancel_at_term_end/,
   "La migration subscription doit stocker la resiliation a fin de terme.",
 );
+assert.match(
+  recurringCheckoutMigration,
+  /ENUM\('paypal','stripe','billing'\)/,
+  "La migration billed checkout doit ajouter le rail billing.",
+);
+assert.match(
+  recurringCheckoutMigration,
+  /pending_payment/,
+  "La migration billed checkout doit ajouter pending_payment.",
+);
+assert.match(
+  recurringCheckoutMigration,
+  /CREATE TABLE IF NOT EXISTS recurring_checkout_items/i,
+  "La migration billed checkout doit creer recurring_checkout_items.",
+);
+assert.match(
+  recurringCheckoutMigration,
+  /CREATE TABLE IF NOT EXISTS commercial_document_line_subscriptions/i,
+  "La migration billed checkout doit creer le lien ligne-document-souscription.",
+);
+assert.match(
+  recurringOfferCadenceBackfillMigration,
+  /billing_cadence = 'monthly'/,
+  "Un backfill doit remettre en monthly les offres recurrentes creees avant billing_cadence.",
+);
+assert.match(
+  recurringOfferCadenceBackfillMigration,
+  /ACCES-VPN[\s\S]*SAVE-PERSO[\s\S]*SUPERV-SERVICE/,
+  "Le backfill doit couvrir les references historiques recurrentes du catalogue.",
+);
 
 assert.match(
   sharedTypes,
@@ -214,6 +273,16 @@ assert.match(
   sharedTypes,
   /"pending_cancellation"/,
   "SubscriptionStatus doit inclure pending_cancellation.",
+);
+assert.match(
+  sharedTypes,
+  /"pending_payment"/,
+  "SubscriptionStatus doit inclure pending_payment.",
+);
+assert.match(
+  sharedTypes,
+  /type PaymentRail = "paypal" \| "stripe" \| "billing";/,
+  "PaymentRail doit inclure billing.",
 );
 assert.match(
   sharedTypes,
@@ -274,6 +343,21 @@ assert.match(
   sharedTypes,
   /interface AdminSubscriptionDetail/,
   "AdminSubscriptionDetail doit etre defini dans shared.",
+);
+assert.match(
+  sharedTypes,
+  /interface CheckoutSummary/,
+  "CheckoutSummary doit etre partage pour le recap unifie.",
+);
+assert.match(
+  sharedTypes,
+  /interface RecurringCheckoutItem/,
+  "RecurringCheckoutItem doit etre partage.",
+);
+assert.match(
+  sharedTypes,
+  /interface CheckoutRecurringConfirmResponse/,
+  "CheckoutRecurringConfirmResponse doit etre partage.",
 );
 assert.match(
   sharedTypes,
@@ -518,6 +602,26 @@ assert.match(
   "L'endpoint de reprise du pack signup doit etre declare.",
 );
 assert.match(
+  programCs,
+  /"\/internal\/portal\/checkout\/summary"/,
+  "L'endpoint checkout summary doit etre declare.",
+);
+assert.match(
+  programCs,
+  /"\/internal\/portal\/checkout\/subscriptions\/items"/,
+  "L'endpoint d'ajout recurring checkout doit etre declare.",
+);
+assert.match(
+  programCs,
+  /"\/internal\/portal\/checkout\/subscriptions\/items\/remove"/,
+  "L'endpoint de suppression recurring checkout doit etre declare.",
+);
+assert.match(
+  programCs,
+  /"\/internal\/portal\/checkout\/subscriptions\/confirm"/,
+  "L'endpoint de confirmation recurring checkout doit etre declare.",
+);
+assert.match(
   subscribeButton,
   /Souscrire/,
   "Le bouton Souscrire doit etre present.",
@@ -543,9 +647,49 @@ assert.match(
   "La page services doit expliciter la reprise et la souscription de packs.",
 );
 assert.match(
+  checkoutSummaryRoute,
+  /\/internal\/portal\/checkout\/summary/,
+  "La route BFF checkout summary doit forwarder vers l'API interne.",
+);
+assert.match(
+  recurringCheckoutItemsRoute,
+  /\/internal\/portal\/checkout\/subscriptions\/items/,
+  "La route BFF d'ajout recurring checkout doit forwarder vers l'API interne.",
+);
+assert.match(
+  recurringCheckoutRemoveRoute,
+  /\/internal\/portal\/checkout\/subscriptions\/items\/remove/,
+  "La route BFF de suppression recurring checkout doit forwarder vers l'API interne.",
+);
+assert.match(
+  recurringCheckoutConfirmRoute,
+  /\/internal\/portal\/checkout\/subscriptions\/confirm/,
+  "La route BFF de confirmation recurring checkout doit forwarder vers l'API interne.",
+);
+assert.match(
+  publicPackCard,
+  /AddRecurringCheckoutButton/,
+  "La carte pack doit proposer l'ajout au recurring checkout en mode souscription.",
+);
+assert.match(
+  addRecurringCheckoutButton,
+  /\/api\/checkout\/subscriptions\/items/,
+  "Le bouton d'ajout recurring checkout doit appeler la route BFF dediee.",
+);
+assert.match(
+  recurringCheckoutConfirmButton,
+  /\/api\/checkout\/subscriptions\/confirm/,
+  "Le bouton de confirmation recurring checkout doit appeler la route BFF dediee.",
+);
+assert.match(
   clientListPage,
   /getClientSubscriptions/,
   "La page client doit charger les souscriptions.",
+);
+assert.match(
+  clientListPage,
+  /formatSubscriptionRailLabel|Facture locale/,
+  "La page client doit afficher le rail billing/facture locale.",
 );
 assert.match(
   clientListPage,
@@ -610,7 +754,7 @@ assert.match(
 );
 assert.match(
   adminListPage,
-  /Revenu mensuel equivalent/,
+  /Revenu mensuel équivalent/,
   "La page admin doit afficher un equivalent mensuel.",
 );
 assert.match(
@@ -771,6 +915,11 @@ assert.match(
   "RecordPaymentAsync doit etre defini.",
 );
 assert.match(
+  subscriptionService,
+  /CreateBilledPendingAsync/,
+  "CreateBilledPendingAsync doit exister pour les souscriptions facturees.",
+);
+assert.match(
   subscriptionRepoMaria,
   /ActivateAsync/,
   "Maria repo doit avoir ActivateAsync.",
@@ -799,6 +948,31 @@ assert.match(
   commercialRepoMaria,
   /GetDocumentsForSubscriptionAsync/,
   "Maria repo doit avoir GetDocumentsForSubscriptionAsync.",
+);
+assert.match(
+  checkoutContracts,
+  /record CheckoutSummaryResponse/,
+  "Les contrats C# doivent exposer CheckoutSummaryResponse.",
+);
+assert.match(
+  checkoutContracts,
+  /record CheckoutRecurringConfirmResponse/,
+  "Les contrats C# doivent exposer CheckoutRecurringConfirmResponse.",
+);
+assert.match(
+  recurringCheckoutService,
+  /CreateBilledPendingAsync/,
+  "RecurringCheckoutService doit creer les souscriptions facturees avant paiement.",
+);
+assert.match(
+  recurringCheckoutService,
+  /CreateRecurringCheckoutDocumentAsync/,
+  "RecurringCheckoutService doit creer une facture initiale groupee.",
+);
+assert.match(
+  recurringCheckoutService,
+  /CreateBilledPendingAsync/,
+  "RecurringCheckoutService doit creer les souscriptions locales avant paiement.",
 );
 assert.match(
   internalApi,

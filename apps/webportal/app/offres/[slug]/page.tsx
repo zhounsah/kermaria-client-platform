@@ -166,7 +166,7 @@ export default async function PublicPackSheetPage({ params }: PageProps) {
               <article className="managed-pack-component-card" key={offer.id}>
                 <p className="card-kicker">{offer.category}</p>
                 <h3>{offer.name}</h3>
-                <p>{offer.description}</p>
+                <p className="multiline-text">{offer.description}</p>
                 <p className="field-hint">
                   Référence : {offer.externalReference ?? "—"} · Unité :{" "}
                   {offer.unitLabel}

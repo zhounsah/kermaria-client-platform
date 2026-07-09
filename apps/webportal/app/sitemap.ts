@@ -1,8 +1,10 @@
 import type { MetadataRoute } from "next";
+import { headers } from "next/headers";
+import { connection } from "next/server";
 import { PUBLIC_PACKS } from "@kermaria/shared";
 
 import {
-  getPortalPublicUrl,
+  getPortalPublicUrlFromHeaders,
   isVitrinePublicEnabled,
 } from "@/lib/public-routes";
 
@@ -26,12 +28,14 @@ const PUBLIC_ROUTE_ENTRIES: PublicRouteEntry[] = [
   { path: "/cgv", changeFrequency: "yearly", priority: 0.3 },
 ];
 
-export default function sitemap(): MetadataRoute.Sitemap {
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  await connection();
+
   if (!isVitrinePublicEnabled()) {
     return [];
   }
 
-  const baseUrl = getPortalPublicUrl();
+  const baseUrl = getPortalPublicUrlFromHeaders(await headers());
   const now = new Date();
   const packEntries = PUBLIC_PACKS.map((pack) => ({
     path: `/offres/${pack.slug}`,

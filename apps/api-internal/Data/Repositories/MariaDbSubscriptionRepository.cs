@@ -116,6 +116,7 @@ public sealed class MariaDbSubscriptionRepository : ISubscriptionRepository
         string customerId,
         CommercialOfferSummary offer,
         string rail,
+        string initialStatus,
         string? paypalPlanId,
         string? paypalSubscriptionId,
         string? stripePriceId,
@@ -159,7 +160,7 @@ public sealed class MariaDbSubscriptionRepository : ISubscriptionRepository
                 @paypalPlanId,
                 @stripeSubscriptionId,
                 @stripePriceId,
-                'pending_approval',
+                @initialStatus,
                 @publicPackCode,
                 @setupFeeAmountCents,
                 @billingIntervalMonths,
@@ -180,6 +181,7 @@ public sealed class MariaDbSubscriptionRepository : ISubscriptionRepository
         command.Parameters.AddWithValue("customerId", customerId);
         command.Parameters.AddWithValue("commercialOfferId", offer.Id);
         command.Parameters.AddWithValue("rail", rail);
+        command.Parameters.AddWithValue("initialStatus", initialStatus);
         command.Parameters.AddWithValue(
             "paypalSubscriptionId",
             (object?)paypalSubscriptionId ?? DBNull.Value);

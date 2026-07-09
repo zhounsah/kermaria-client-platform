@@ -40,6 +40,7 @@ export function AddToCartButton({ offerId, label }: AddToCartButtonProps) {
 
     if (result.ok) {
       setAdded(true);
+      window.dispatchEvent(new Event("kermaria:checkout-changed"));
       router.refresh();
       window.setTimeout(() => setAdded(false), 2500);
     } else {
@@ -56,9 +57,9 @@ export function AddToCartButton({ offerId, label }: AddToCartButtonProps) {
       ) : null}
       <SubmitButton
         className="button"
-        idleLabel={added ? "Ajouté ✓" : (label ?? "Ajouter au panier")}
+        idleLabel={added ? "Ajouté au panier" : (label ?? "Ajouter au panier")}
         isSubmitting={isSubmitting}
-        submittingLabel="Ajout…"
+        submittingLabel="Ajout..."
         onClick={handleAdd}
         type="button"
       />

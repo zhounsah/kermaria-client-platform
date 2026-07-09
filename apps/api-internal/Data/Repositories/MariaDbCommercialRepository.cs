@@ -1760,6 +1760,28 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    public async Task SetDocumentPaymentMethodAsync(
+        string documentId,
+        string? paymentMethod,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            UPDATE commercial_documents SET
+                payment_method = @paymentMethod,
+                updated_at = UTC_TIMESTAMP(6)
+            WHERE id = @documentId
+            """;
+        cmd.Parameters.AddWithValue("documentId", documentId);
+        cmd.Parameters.AddWithValue(
+            "paymentMethod",
+            paymentMethod is null ? DBNull.Value : paymentMethod);
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     public async Task<string> CreateBillingDocumentForSubscriptionAsync(
         SubscriptionBillingDocumentRequest request,
         string correlationId,
@@ -1845,7 +1867,7 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
             await documentCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        await InsertSubscriptionDocumentLineAsync(
+        var billingLineId = await InsertSubscriptionDocumentLineAsync(
             connection,
             transaction,
             documentId,
@@ -1859,10 +1881,17 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
             sortOrder: 10,
             now,
             cancellationToken);
+        await InsertLineSubscriptionLinkAsync(
+            connection,
+            transaction,
+            billingLineId,
+            request.SubscriptionId,
+            now,
+            cancellationToken);
 
         foreach (var extraLine in request.Lines.OrderBy(line => line.SortOrder))
         {
-            await InsertSubscriptionDocumentLineAsync(
+            var extraLineId = await InsertSubscriptionDocumentLineAsync(
                 connection,
                 transaction,
                 documentId,
@@ -1874,6 +1903,13 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 extraLine.UnitPriceCents,
                 extraLine.TaxRateBasisPoints ?? offer.TaxRateBasisPoints,
                 extraLine.SortOrder,
+                now,
+                cancellationToken);
+            await InsertLineSubscriptionLinkAsync(
+                connection,
+                transaction,
+                extraLineId,
+                request.SubscriptionId,
                 now,
                 cancellationToken);
         }
@@ -1889,7 +1925,168 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
         return documentId;
     }
 
-    private static async Task InsertSubscriptionDocumentLineAsync(
+    public async Task<RecurringCheckoutDocumentCreationResult> CreateRecurringCheckoutDocumentAsync(
+        RecurringCheckoutDocumentRequest request,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(
+            IsolationLevel.ReadCommitted,
+            cancellationToken);
+
+        var documentId = Guid.NewGuid().ToString("D");
+        var now = DateTime.UtcNow;
+        var reference = CreateReference();
+
+        await using (var documentCommand = connection.CreateCommand())
+        {
+            documentCommand.Transaction = transaction;
+            documentCommand.CommandText =
+                """
+                INSERT INTO commercial_documents (
+                    id,
+                    customer_id,
+                    service_request_id,
+                    subscription_id,
+                    origin,
+                    document_type,
+                    status,
+                    title,
+                    internal_reference,
+                    currency,
+                    subtotal_amount_cents,
+                    tax_amount_cents,
+                    total_amount_cents,
+                    disclaimer,
+                    created_by_user_id,
+                    created_at,
+                    updated_at,
+                    shared_at,
+                    cancelled_at
+                ) VALUES (
+                    @id,
+                    @customerId,
+                    NULL,
+                    NULL,
+                    'recurring_checkout',
+                    'informational_invoice',
+                    'shared_with_customer',
+                    @title,
+                    @reference,
+                    'EUR',
+                    0,
+                    0,
+                    0,
+                    @disclaimer,
+                    @createdBy,
+                    @createdAt,
+                    @updatedAt,
+                    @sharedAt,
+                    NULL
+                );
+                """;
+            documentCommand.Parameters.AddWithValue("@id", documentId);
+            documentCommand.Parameters.AddWithValue("@customerId", request.CustomerId);
+            documentCommand.Parameters.AddWithValue("@title", request.Title);
+            documentCommand.Parameters.AddWithValue("@reference", reference);
+            documentCommand.Parameters.AddWithValue(
+                "@disclaimer",
+                CommercialStatuses.DefaultDisclaimer);
+            documentCommand.Parameters.AddWithValue("@createdBy", request.ActorUserId);
+            documentCommand.Parameters.AddWithValue("@createdAt", now);
+            documentCommand.Parameters.AddWithValue("@updatedAt", now);
+            documentCommand.Parameters.AddWithValue("@sharedAt", now);
+            await documentCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        var sortOrder = 10;
+        foreach (var item in request.Items)
+        {
+            var offer = await ReadOfferDetailsAsync(
+                connection,
+                transaction,
+                item.OfferId,
+                cancellationToken);
+            var recurringLineId = await InsertSubscriptionDocumentLineAsync(
+                connection,
+                transaction,
+                documentId,
+                item.OfferId,
+                offer.Name,
+                offer.Description,
+                quantity: 1m,
+                offer.UnitLabel,
+                offer.PriceAmountCents,
+                offer.TaxRateBasisPoints,
+                sortOrder,
+                now,
+                cancellationToken);
+            await InsertLineSubscriptionLinkAsync(
+                connection,
+                transaction,
+                recurringLineId,
+                item.SubscriptionId,
+                now,
+                cancellationToken);
+            sortOrder += 10;
+
+            if (item.SetupFeeAmountCents > 0)
+            {
+                var setupLineId = await InsertSubscriptionDocumentLineAsync(
+                    connection,
+                    transaction,
+                    documentId,
+                    item.OfferId,
+                    $"Frais de mise en service - {offer.Name}",
+                    "Mise en service initiale du service.",
+                    quantity: 1m,
+                    "forfait",
+                    item.SetupFeeAmountCents,
+                    offer.TaxRateBasisPoints,
+                    sortOrder,
+                    now,
+                    cancellationToken);
+                await InsertLineSubscriptionLinkAsync(
+                    connection,
+                    transaction,
+                    setupLineId,
+                    item.SubscriptionId,
+                    now,
+                    cancellationToken);
+                sortOrder += 10;
+            }
+        }
+
+        await RecalculateDocumentTotalsAsync(
+            connection,
+            transaction,
+            documentId,
+            now,
+            cancellationToken);
+
+        int totalAmountCents;
+        await using (var totalCommand = connection.CreateCommand())
+        {
+            totalCommand.Transaction = transaction;
+            totalCommand.CommandText =
+                """
+                SELECT total_amount_cents
+                FROM commercial_documents
+                WHERE id = @id;
+                """;
+            totalCommand.Parameters.AddWithValue("@id", documentId);
+            var scalar = await totalCommand.ExecuteScalarAsync(cancellationToken);
+            totalAmountCents = Convert.ToInt32(scalar);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return new RecurringCheckoutDocumentCreationResult(
+            documentId,
+            totalAmountCents);
+    }
+
+    private static async Task<string> InsertSubscriptionDocumentLineAsync(
         MySqlConnection connection,
         MySqlTransaction transaction,
         string documentId,
@@ -1908,6 +2105,7 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
             quantity * unitPriceCents,
             0,
             MidpointRounding.AwayFromZero);
+        var lineId = Guid.NewGuid().ToString("D");
         await using var lineCommand = connection.CreateCommand();
         lineCommand.Transaction = transaction;
         lineCommand.CommandText =
@@ -1942,7 +2140,7 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 @updatedAt
             );
             """;
-        lineCommand.Parameters.AddWithValue("@id", Guid.NewGuid().ToString("D"));
+        lineCommand.Parameters.AddWithValue("@id", lineId);
         lineCommand.Parameters.AddWithValue("@documentId", documentId);
         lineCommand.Parameters.AddWithValue("@offerId", DbValue(offerId));
         lineCommand.Parameters.AddWithValue("@label", label);
@@ -1956,6 +2154,40 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
         lineCommand.Parameters.AddWithValue("@createdAt", now);
         lineCommand.Parameters.AddWithValue("@updatedAt", now);
         await lineCommand.ExecuteNonQueryAsync(cancellationToken);
+        return lineId;
+    }
+
+    private static async Task InsertLineSubscriptionLinkAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        string documentLineId,
+        string subscriptionId,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            INSERT INTO commercial_document_line_subscriptions (
+                id,
+                document_line_id,
+                subscription_id,
+                created_at
+            ) VALUES (
+                @id,
+                @documentLineId,
+                @subscriptionId,
+                @createdAt
+            )
+            ON DUPLICATE KEY UPDATE
+                subscription_id = VALUES(subscription_id);
+            """;
+        command.Parameters.AddWithValue("@id", Guid.NewGuid().ToString("D"));
+        command.Parameters.AddWithValue("@documentLineId", documentLineId);
+        command.Parameters.AddWithValue("@subscriptionId", subscriptionId);
+        command.Parameters.AddWithValue("@createdAt", now);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyList<CommercialDocumentSummary>>
@@ -1987,6 +2219,14 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 NULL AS service_request_reference
             FROM commercial_documents document
             WHERE document.subscription_id = @subscriptionId
+               OR EXISTS (
+                    SELECT 1
+                    FROM commercial_document_line_subscriptions link
+                    INNER JOIN commercial_document_lines line
+                        ON line.id = link.document_line_id
+                    WHERE line.document_id = document.id
+                      AND link.subscription_id = @subscriptionId
+               )
             ORDER BY document.created_at DESC, document.id DESC;
             """;
         command.Parameters.AddWithValue("subscriptionId", subscriptionId);
@@ -1998,6 +2238,44 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
         }
 
         return documents;
+    }
+
+    public async Task<IReadOnlyList<string>> GetLinkedSubscriptionIdsForDocumentAsync(
+        string documentId,
+        CancellationToken cancellationToken)
+    {
+        var subscriptionIds = new List<string>();
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT DISTINCT linked.subscription_id
+            FROM (
+                SELECT document.subscription_id
+                FROM commercial_documents document
+                WHERE document.id = @documentId
+                  AND document.subscription_id IS NOT NULL
+
+                UNION
+
+                SELECT link.subscription_id
+                FROM commercial_document_line_subscriptions link
+                INNER JOIN commercial_document_lines line
+                    ON line.id = link.document_line_id
+                WHERE line.document_id = @documentId
+            ) linked
+            ORDER BY linked.subscription_id;
+            """;
+        command.Parameters.AddWithValue("documentId", documentId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            subscriptionIds.Add(
+                MariaDbIdentifierReader.ReadRequired(reader, "subscription_id"));
+        }
+
+        return subscriptionIds;
     }
 
     public async Task<CartDocumentCreationResult> CreateCartDocumentAsync(
@@ -2080,7 +2358,7 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
 
         foreach (var line in lines.OrderBy(item => item.SortOrder))
         {
-            await InsertSubscriptionDocumentLineAsync(
+            _ = await InsertSubscriptionDocumentLineAsync(
                 connection,
                 transaction,
                 documentId,

@@ -11,21 +11,17 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { requireClientSession } from "@/lib/auth";
 import { formatCurrencyFromCents } from "@/lib/formatters";
 import {
-  getCart,
+  getCheckoutSummary,
   getCommercialCatalog,
-  getPendingPackSelection,
   getPublicCommercialCatalog,
   getPublicPackCatalogContent,
   getServiceCatalog,
   resolveDataSource,
 } from "@/lib/internal-api";
 import {
-  findPendingPackSelectionForPack,
   findPackPresentation,
   resolvePackCatalog,
 } from "@/lib/public-packs";
-import { getPayPalMode } from "@/lib/paypal";
-import { getStripeMode } from "@/lib/stripe";
 
 export const metadata = {
   title: "Souscrire",
@@ -38,32 +34,25 @@ export default async function SubscribePage() {
   const [
     catalogResult,
     packContentResult,
-    pendingSelectionResult,
     serviceCatalogResult,
     commercialCatalogResult,
-    cartResult,
+    checkoutResult,
   ] = await Promise.all([
     getPublicCommercialCatalog(),
     getPublicPackCatalogContent(),
-    getPendingPackSelection(),
     getServiceCatalog(),
     getCommercialCatalog(),
-    getCart(),
+    getCheckoutSummary(),
   ]);
   const source = resolveDataSource([
     catalogResult.source,
     packContentResult.source,
-    pendingSelectionResult.source,
     serviceCatalogResult.source,
     commercialCatalogResult.source,
-    cartResult.source,
+    checkoutResult.source,
   ]);
   const packs = resolvePackCatalog(catalogResult.data, packContentResult.data);
-  const pendingSelection = pendingSelectionResult.data;
-  const stripeMode = getStripeMode();
-  const paypalMode = getPayPalMode();
 
-  // V0.35 : options a la carte payables = offres one-shot actives, hors packs.
   const aLaCarteOffers = commercialCatalogResult.data
     .filter(
       (offer) =>
@@ -73,7 +62,7 @@ export default async function SubscribePage() {
         && offer.priceAmountCents > 0,
     )
     .sort((a, b) => a.displayOrder - b.displayOrder);
-  const cart = cartResult.data;
+  const checkout = checkoutResult.data;
 
   return (
     <>
@@ -83,28 +72,40 @@ export default async function SubscribePage() {
             Retour à mes services
           </Link>
         }
-        description="Choisissez un pack grand public clé en main, ou prenez une prestation à la carte sans engagement de pack."
+        description="Ajoutez vos achats ponctuels et vos packs récurrents dans un panier unifié, puis confirmez ensuite le tunnel adapté à chaque type d'achat."
         eyebrow="Ajouter un service"
         title="Souscrire à une offre"
       />
 
-      {cart.itemCount > 0 ? (
-        <div className="cart-access-bar">
-          <span className="cart-access-count">
-            {cart.itemCount} option{cart.itemCount > 1 ? "s" : ""} dans votre
-            panier
-          </span>
+      {checkout.totalItemCount > 0 ? (
+        <section className="checkout-access-banner">
+          <div>
+            <span className="card-kicker">Panier unifié</span>
+            <h2>
+              {checkout.cart.itemCount} achat(s) ponctuel(s) et{" "}
+              {checkout.recurring.itemCount} abonnement(s) en cours
+            </h2>
+            <p>
+              Validation immédiate estimée à{" "}
+              <strong>
+                {formatCurrencyFromCents(
+                  checkout.cart.subtotalCents + checkout.recurring.subtotalCents,
+                )}
+              </strong>
+              . Les deux tunnels restent distincts au moment de confirmer.
+            </p>
+          </div>
           <Link className="button" href="/panier">
             Voir mon panier
           </Link>
-        </div>
+        </section>
       ) : null}
 
       <section className="request-history-section">
         <SectionHeading
-          action={<StatusBadge label="Packs grand public" tone="info" />}
-          description="Une offre complète, à tarification lisible, avec l'engagement et le mode de paiement de votre choix."
-          title="Souscrire à un pack"
+          action={<StatusBadge label="Abonnements facturés" tone="info" />}
+          description="Choisissez votre pack, ajoutez-le au panier, puis confirmez une facture de premier terme avant de régler par Stripe, PayPal ou virement bancaire."
+          title="Packs récurrents"
         />
         {catalogResult.error ? (
           <ErrorState
@@ -125,12 +126,7 @@ export default async function SubscribePage() {
                 key={pack.key}
                 mode="subscribe"
                 pack={pack}
-                initialSelection={findPendingPackSelectionForPack(
-                  pendingSelection,
-                  pack.key,
-                )}
-                stripeMode={stripeMode}
-                paypalMode={paypalMode}
+                initialSelection={null}
                 highlightLabel={findPackPresentation(
                   pack.key,
                   packContentResult.data,
@@ -144,8 +140,8 @@ export default async function SubscribePage() {
       <section className="request-history-section">
         <SectionHeading
           action={<StatusBadge label="Paiement immédiat" tone="success" />}
-          description="Ajoutez une ou plusieurs prestations ponctuelles à votre panier, puis réglez le tout en une seule commande (carte bancaire, PayPal ou virement). Aucune validation préalable n'est requise."
-          title="Options à la carte"
+          description="Ajoutez une ou plusieurs prestations ponctuelles à votre panier, puis réglez le tout en une seule commande."
+          title="Achats ponctuels"
         />
         {commercialCatalogResult.error ? (
           <ErrorState
@@ -168,7 +164,7 @@ export default async function SubscribePage() {
               <article className="catalog-card" key={offer.id}>
                 <span className="card-kicker">{offer.category}</span>
                 <h2>{offer.name}</h2>
-                <p>{offer.description}</p>
+                <p className="multiline-text">{offer.description}</p>
                 <div className="catalog-scope">
                   <strong>
                     {formatCurrencyFromCents(offer.priceAmountCents)} HT
@@ -185,7 +181,7 @@ export default async function SubscribePage() {
       <section className="request-history-section">
         <SectionHeading
           action={<StatusBadge label="Sur devis" tone="neutral" />}
-          description="Besoin d'une prestation sur mesure, non listée ci-dessus ? Faites une demande : elle est étudiée avant toute activation et fait l'objet d'un devis."
+          description="Besoin d'une prestation sur mesure non listée ci-dessus ? Faites une demande : elle reste étudiée avant toute activation."
           title="Prestations sur devis"
         />
         {serviceCatalogResult.error ? (
@@ -206,7 +202,7 @@ export default async function SubscribePage() {
               <article className="catalog-card" key={service.id}>
                 <span className="card-kicker">{service.category}</span>
                 <h2>{service.name}</h2>
-                <p>{service.description}</p>
+                <p className="multiline-text">{service.description}</p>
                 <div className="catalog-scope">
                   <span>{service.scope}</span>
                   <strong>{service.commercialTerms}</strong>

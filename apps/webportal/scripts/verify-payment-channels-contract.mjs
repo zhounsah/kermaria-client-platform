@@ -12,6 +12,9 @@ const clientDocumentPage = await read(
 const clientPdfRoute = await read(
   "app/api/commercial-documents/[id]/invoice/pdf/route.ts",
 );
+const clientPaymentMethodRoute = await read(
+  "app/api/commercial-documents/[id]/payment-method/route.ts",
+);
 const issuingSection = await read(
   "components/AdminInvoiceIssuingSection.tsx",
 );
@@ -34,6 +37,9 @@ const envExample = await read("../../.env.example");
 const programCs = await read("../../apps/api-internal/Program.cs");
 const invoiceIssuingCs = await read(
   "../../apps/api-internal/Services/InvoiceIssuingService.cs",
+);
+const billedSubscriptionTriggerCs = await read(
+  "../../apps/api-internal/Services/Provisioning/BilledSubscriptionPaymentTrigger.cs",
 );
 const emailDispatchCs = await read(
   "../../apps/api-internal/Services/Email/EmailDispatchService.cs",
@@ -92,6 +98,31 @@ assert.match(
   "La page client doit conditionner le bouton PDF sur pdfAvailable.",
 );
 assert.match(
+  clientDocumentPage,
+  /Choisir votre mode de règlement/,
+  "La page client doit proposer un choix explicite du mode de règlement.",
+);
+assert.match(
+  clientDocumentPage,
+  /document\.paymentMethod === "manual"/,
+  "La page client doit rappeler qu'un virement sélectionné laisse la facture en attente.",
+);
+assert.match(
+  clientDocumentPage,
+  /bankTransferEnabled=/,
+  "La page client doit transmettre la disponibilité du virement au composant de paiement.",
+);
+assert.match(
+  clientPaymentMethodRoute,
+  /\/internal\/portal\/commercial-documents\/.+\/payment-method/,
+  "La route BFF de sélection du virement doit pointer vers l'endpoint portail interne.",
+);
+assert.match(
+  clientPaymentMethodRoute,
+  /paymentMethod: "manual"/,
+  "La route BFF doit persister le choix de virement bancaire.",
+);
+assert.match(
   programCs,
   /EnsureInvoicePdfAsync/,
   "Les endpoints PDF doivent utiliser EnsureInvoicePdfAsync pour fetch on-demand depuis BPCE.",
@@ -107,6 +138,16 @@ assert.match(
   programCs,
   /\/internal\/admin\/commercial-documents\/\{id\}\/mark-as-paid/,
   "L'endpoint admin mark-as-paid doit exister.",
+);
+assert.match(
+  programCs,
+  /\/internal\/portal\/commercial-documents\/\{id\}\/payment-method/,
+  "L'endpoint portail de sélection du virement doit exister.",
+);
+assert.match(
+  programCs,
+  /commercial_document\.payment_method_selected/,
+  "Le choix client du virement doit être audité.",
 );
 assert.match(
   programCs,
@@ -199,6 +240,16 @@ assert.match(
   invoiceIssuingCs,
   /SendPaymentConfirmedAsync/,
   "ConfirmPaymentAsync doit declencher SendPaymentConfirmedAsync.",
+);
+assert.match(
+  invoiceIssuingCs,
+  /_billedSubscriptions\.OnDocumentPaidAsync/,
+  "ConfirmPaymentAsync doit aussi declencher les souscriptions facturees apres paiement ou mark-as-paid.",
+);
+assert.match(
+  billedSubscriptionTriggerCs,
+  /pending_payment[\s\S]*ActivateAsync[\s\S]*RecordPaymentAsync/,
+  "Le trigger document paye doit activer les souscriptions facturees puis enregistrer le cycle.",
 );
 assert.match(
   invoiceIssuingCs,

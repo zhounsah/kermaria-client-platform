@@ -16,6 +16,7 @@ import {
   formatCurrencyFromCents,
   formatDateTime,
   formatPaymentModeLabel,
+  formatSubscriptionRailLabel,
   subscriptionStatus,
 } from "@/lib/formatters";
 import { getAdminSubscriptions } from "@/lib/internal-api";
@@ -29,6 +30,7 @@ export const dynamic = "force-dynamic";
 const STATUS_FILTERS: ReadonlyArray<"all" | SubscriptionStatus> = [
   "all",
   "pending_approval",
+  "pending_payment",
   "pending_activation",
   "pending_cancellation",
   "active",
@@ -88,7 +90,7 @@ export default async function AdminSubscriptionsPage({
     <>
       <PageHeader
         action={<StatusBadge label="Vue admin" tone="info" />}
-        description="Suivi des souscriptions recurrentes, engagements, cycles de paiement et resiliations programmees."
+        description="Suivi des souscriptions récurrentes, engagements, cycles de paiement et résiliations programmées."
         eyebrow="Administration"
         title="Abonnements"
       />
@@ -104,14 +106,14 @@ export default async function AdminSubscriptionsPage({
           value={String(activeCount)}
         />
         <MetricCard
-          detail="Equivalent mensuel HT sur les souscriptions actives"
-          label="Revenu mensuel equivalent"
+          detail="Équivalent mensuel HT sur les souscriptions actives"
+          label="Revenu mensuel équivalent"
           tone="amber"
           value={formatCurrencyFromCents(monthlyEquivalentCents)}
         />
         <MetricCard
           detail="Tous statuts confondus"
-          label="Total enregistrees"
+          label="Total enregistrées"
           tone="slate"
           value={String(result.data.length)}
         />
@@ -128,16 +130,17 @@ export default async function AdminSubscriptionsPage({
             <select defaultValue={status} id="status-filter" name="status">
               <option value="all">Tous</option>
               <option value="pending_approval">En attente d&apos;approbation</option>
-              <option value="pending_activation">Approuvee, activation</option>
-              <option value="pending_cancellation">Resiliation programmee</option>
+              <option value="pending_payment">En attente de paiement</option>
+              <option value="pending_activation">Approuvée, activation</option>
+              <option value="pending_cancellation">Résiliation programmée</option>
               <option value="active">Active</option>
               <option value="suspended">Suspendue</option>
-              <option value="cancelled">Annulee</option>
-              <option value="expired">Expiree</option>
+              <option value="cancelled">Annulée</option>
+              <option value="expired">Expirée</option>
             </select>
           </div>
           <div className="field">
-            <label htmlFor="customer-filter">Client (reference ou nom)</label>
+            <label htmlFor="customer-filter">Client (référence ou nom)</label>
             <input
               defaultValue={customerFilter}
               id="customer-filter"
@@ -161,7 +164,7 @@ export default async function AdminSubscriptionsPage({
       ) : filtered.length === 0 ? (
         <EmptyState
           description="Aucune souscription ne correspond aux filtres choisis."
-          title="Aucun resultat"
+          title="Aucun résultat"
         />
       ) : (
         <div className="stack-panels">
@@ -186,7 +189,7 @@ export default async function AdminSubscriptionsPage({
                   </div>
                   <div className="badge-stack">
                     <StatusBadge
-                      label={item.rail === "stripe" ? "Stripe" : "PayPal"}
+                      label={formatSubscriptionRailLabel(item.rail)}
                       tone="info"
                     />
                     <StatusBadge
@@ -201,30 +204,34 @@ export default async function AdminSubscriptionsPage({
                   {formatCurrencyFromCents(item.setupFeeAmountCents)} HT
                 </p>
                 <p className="field-hint">
-                  {item.rail === "stripe" ? (
-                    <>
-                      Prix Stripe : {item.stripePriceId ?? "—"} · Souscription
-                      Stripe : {item.stripeSubscriptionId ?? "—"}
-                    </>
-                  ) : (
-                    <>
-                      Plan PayPal : {item.paypalPlanId ?? "—"} · Souscription
-                      PayPal : {item.paypalSubscriptionId ?? "—"}
-                    </>
-                  )}
+                  {item.rail === "stripe"
+                    ? (
+                        <>
+                          Prix Stripe : {item.stripePriceId ?? "—"} · Souscription
+                          Stripe : {item.stripeSubscriptionId ?? "—"}
+                        </>
+                      )
+                    : item.rail === "paypal"
+                      ? (
+                          <>
+                            Plan PayPal : {item.paypalPlanId ?? "—"} · Souscription
+                            PayPal : {item.paypalSubscriptionId ?? "—"}
+                          </>
+                        )
+                      : "Facture locale Kermaria"}
                 </p>
                 <p className="field-hint">
-                  Prochaine echeance :{" "}
+                  Prochaine échéance :{" "}
                   {item.nextBillingAt
                     ? formatDateTime(item.nextBillingAt)
-                    : "A determiner"}
+                    : "À déterminer"}
                   {" · "}fin d&apos;engagement :{" "}
                   {item.commitmentEndsAt
                     ? formatDateTime(item.commitmentEndsAt)
                     : "—"}
                 </p>
                 <Link className="button" href={`/admin/subscriptions/${item.id}`}>
-                  Voir le detail
+                  Voir le détail
                 </Link>
               </SectionCard>
             );

@@ -237,8 +237,21 @@ builder.Services.AddScoped<ICartRepository>(
         ? new MariaDbCartRepository(sqlConfiguration)
         : new MockCartRepository(
             serviceProvider.GetRequiredService<MockCartStore>()));
+builder.Services.AddSingleton<MockRecurringCheckoutStore>();
+builder.Services.AddScoped<IRecurringCheckoutRepository>(
+    serviceProvider => sqlConfiguration.IsPersistent
+        ? new MariaDbRecurringCheckoutRepository(sqlConfiguration)
+        : new MockRecurringCheckoutRepository(
+            serviceProvider.GetRequiredService<MockRecurringCheckoutStore>()));
+builder.Services.AddSingleton<
+    IBilledRecurringCheckoutSchemaEnsurer,
+    BilledRecurringCheckoutSchemaEnsurer>();
 builder.Services.AddScoped<ICartProvisioningTrigger, CartProvisioningTrigger>();
+builder.Services.AddScoped<
+    IBilledSubscriptionPaymentTrigger,
+    BilledSubscriptionPaymentTrigger>();
 builder.Services.AddScoped<ICartService, CartService>();
+builder.Services.AddScoped<IRecurringCheckoutService, RecurringCheckoutService>();
 builder.Services.AddScoped<IManagedContentService, ManagedContentService>();
 builder.Services.AddScoped<IPublicPackCatalogService, PublicPackCatalogService>();
 builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
@@ -250,6 +263,7 @@ builder.Services.AddScoped<IPayPalWebhookService, PayPalWebhookService>();
 builder.Services.AddScoped<IStripeWebhookService, StripeWebhookService>();
 builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddHostedService<PayPalPendingCancellationWorker>();
+builder.Services.AddHostedService<BillingSubscriptionRenewalWorker>();
 builder.Services.AddTransient<MariaDbMigrationRunner>();
 builder.Services.AddTransient<MariaDbAdminSeeder>();
 builder.Services.AddSingleton<OperationalReadinessService>();
@@ -510,6 +524,14 @@ app.UseExceptionHandler(exceptionHandler =>
                 StatusCodes.Status400BadRequest,
                 "CART_EMPTY",
                 "Votre panier est vide."),
+            RecurringOfferNotEligibleException => (
+                StatusCodes.Status400BadRequest,
+                "RECURRING_CHECKOUT_OFFER_NOT_ELIGIBLE",
+                "Cette offre ne peut pas être ajoutée à la sélection d'abonnements."),
+            EmptyRecurringCheckoutException => (
+                StatusCodes.Status400BadRequest,
+                "RECURRING_CHECKOUT_EMPTY",
+                "Aucun abonnement n'est actuellement sélectionné."),
             PortalValidationException => (
                 StatusCodes.Status400BadRequest,
                 "INVALID_REQUEST",
@@ -1041,6 +1063,114 @@ app.MapPost(
         return Results.Ok(result);
     });
 
+app.MapGet(
+    "/internal/portal/checkout/summary",
+    async (
+        HttpContext context,
+        IRecurringCheckoutService checkoutService,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            auditService);
+        var summary = await checkoutService.GetSummaryAsync(
+            session,
+            context.RequestAborted);
+        context.Response.Headers["X-Data-Source"] =
+            checkoutService.IsPersistent ? "mariadb" : "mock";
+        return Results.Ok(summary);
+    });
+app.MapPost(
+    "/internal/portal/checkout/subscriptions/items",
+    async (
+        HttpContext context,
+        IRecurringCheckoutService checkoutService,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            auditService);
+        var payload = await ReadPayload<CheckoutRecurringAddRequest>(context);
+        var result = await checkoutService.AddItemAsync(
+            session,
+            payload?.OfferId,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "checkout.subscription_item_added",
+                "success",
+                TargetType: "commercial_offer",
+                TargetReference: payload?.OfferId,
+                ActorUserId: session.UserId,
+                CustomerId: session.CustomerId),
+            context.RequestAborted);
+        return Results.Ok(result);
+    });
+app.MapPost(
+    "/internal/portal/checkout/subscriptions/items/remove",
+    async (
+        HttpContext context,
+        IRecurringCheckoutService checkoutService,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            auditService);
+        var payload = await ReadPayload<CheckoutRecurringAddRequest>(context);
+        var result = await checkoutService.RemoveItemAsync(
+            session,
+            payload?.OfferId,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "checkout.subscription_item_removed",
+                "success",
+                TargetType: "commercial_offer",
+                TargetReference: payload?.OfferId,
+                ActorUserId: session.UserId,
+                CustomerId: session.CustomerId),
+            context.RequestAborted);
+        return Results.Ok(result);
+    });
+app.MapPost(
+    "/internal/portal/checkout/subscriptions/confirm",
+    async (
+        HttpContext context,
+        IRecurringCheckoutService checkoutService,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            auditService);
+        var result = await checkoutService.ConfirmAsync(
+            session,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "checkout.subscriptions_confirmed",
+                "success",
+                TargetType: "commercial_document",
+                TargetReference: result.DocumentId,
+                ActorUserId: session.UserId,
+                CustomerId: session.CustomerId),
+            context.RequestAborted);
+        return Results.Ok(result);
+    });
+
 // V0.27 : réception des messages du formulaire /contact (vitrine publique).
 // Anonyme, protégé par `X-Service-Auth`. Rate limit appliqué côté webportal BFF.
 app.MapPost(
@@ -1307,6 +1437,40 @@ app.MapGet(
                 session,
                 id,
                 context.RequestAborted));
+    });
+app.MapPost(
+    "/internal/portal/commercial-documents/{id}/payment-method",
+    async (
+        string id,
+        HttpContext context,
+        ICommercialService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            auditService);
+        var payload = await ReadPayload<PaymentMethodSelectionPayload>(context)
+            ?? throw new PortalValidationException();
+        var result = await service.SelectClientDocumentPaymentMethodAsync(
+            session,
+            id,
+            payload,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "commercial_document.payment_method_selected",
+                result.Changed ? "success" : "unchanged",
+                TargetType: "commercial_document",
+                TargetReference: id,
+                CustomerId: session.CustomerId,
+                ActorUserId: session.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return Results.Ok(result);
     });
 app.MapPost(
     "/internal/portal/commercial-documents/{id}/payment-confirm",
@@ -1658,9 +1822,12 @@ app.MapPost(
             auditService);
         var payload = await ReadPayload<SubscriptionCreatePayload>(context)
             ?? throw new PortalValidationException();
-        var rail = string.Equals(payload.Rail, "stripe", StringComparison.Ordinal)
-            ? "stripe"
-            : "paypal";
+        var rail = payload.Rail switch
+        {
+            "stripe" => "stripe",
+            "paypal" => "paypal",
+            _ => throw new PortalValidationException()
+        };
         var externalSubscriptionId = rail == "stripe"
             ? payload.StripeSubscriptionId
             : payload.PayPalSubscriptionId;

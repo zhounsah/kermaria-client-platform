@@ -158,7 +158,7 @@ export async function POST(request: NextRequest) {
           code: "OFFER_NOT_SUBSCRIBABLE",
           message:
             `Cette offre n'a pas de prix Stripe ${mode}. Demandez a un admin `
-            + "de creer le prix avant de souscrire.",
+            + "de cr?er le prix avant de souscrire.",
         },
         { status: 400 },
       );
@@ -187,7 +187,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           code: "STRIPE_ERROR",
-          message: "Impossible de creer la souscription Stripe.",
+          message: "Impossible de cr?er la souscription Stripe.",
         },
         { status: 503 },
       );
@@ -207,7 +207,7 @@ export async function POST(request: NextRequest) {
         code: "OFFER_NOT_SUBSCRIBABLE",
         message:
           `Cette offre n'a pas de plan PayPal ${mode}. Demandez a un admin `
-          + "de creer le plan avant de souscrire.",
+          + "de cr?er le plan avant de souscrire.",
       },
       { status: 400 },
     );
@@ -233,7 +233,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         code: "PAYPAL_ERROR",
-        message: "Impossible de creer la souscription PayPal.",
+        message: "Impossible de cr?er la souscription PayPal.",
       },
       { status: 503 },
     );

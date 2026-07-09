@@ -37,8 +37,8 @@ public sealed class MariaDbCartRepository : ICartRepository
         while (await reader.ReadAsync(cancellationToken))
         {
             items.Add(new CartItemRecord(
-                reader.GetString(0),
-                reader.GetInt32(1)));
+                MariaDbIdentifierReader.ReadRequired(reader, "offer_id"),
+                reader.GetInt32("quantity")));
         }
 
         return items;

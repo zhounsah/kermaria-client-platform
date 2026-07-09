@@ -1,15 +1,15 @@
 import Link from "next/link";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { getCurrentPortalSession } from "@/lib/auth";
 import {
   PORTFOLIO_URL,
-  getPortalPublicUrl,
+  getPortalPublicUrlFromHeaders,
   isVitrinePublicEnabled,
 } from "@/lib/public-routes";
 
-function organizationJsonLd() {
-  const baseUrl = getPortalPublicUrl();
+function organizationJsonLd(baseUrl: string) {
   return {
     "@context": "https://schema.org",
     "@type": "Organization",
@@ -96,6 +96,7 @@ const TRUST_POINTS = [
 
 export default async function HomePage() {
   const session = await getCurrentPortalSession();
+  const baseUrl = getPortalPublicUrlFromHeaders(await headers());
 
   if (session?.user.role === "client_user") {
     redirect("/dashboard");
@@ -115,7 +116,7 @@ export default async function HomePage() {
         type="application/ld+json"
         // Schema.org structured data - safe inlined JSON, generated server-side.
         dangerouslySetInnerHTML={{
-          __html: JSON.stringify(organizationJsonLd()),
+          __html: JSON.stringify(organizationJsonLd(baseUrl)),
         }}
       />
 

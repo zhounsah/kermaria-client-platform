@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { CORRELATION_HEADER, resolveCorrelationId } from "@/lib/correlation";
 import {
+  getInternalApiError,
   getInternalPortalData,
   getInternalSession,
   mutateInternalPortalPayloadTyped,
@@ -28,7 +29,11 @@ export async function POST(
 
   if (!/^[A-Za-z0-9-]{1,100}$/.test(id)) {
     return NextResponse.json(
-      { code: "INVALID_REQUEST", message: "Identifiant invalide." },
+      {
+        code: "INVALID_REQUEST",
+        message: "Identifiant invalide.",
+        correlation_id: correlationId,
+      },
       { status: 400 },
     );
   }
@@ -36,7 +41,11 @@ export async function POST(
   const sessionToken = request.cookies.get(getSessionCookieName())?.value;
   if (!sessionToken) {
     return NextResponse.json(
-      { code: "UNAUTHORIZED", message: "Session requise." },
+      {
+        code: "UNAUTHORIZED",
+        message: "Session requise.",
+        correlation_id: correlationId,
+      },
       { status: 401 },
     );
   }
@@ -45,13 +54,21 @@ export async function POST(
     const session = await getInternalSession(sessionToken, correlationId);
     if (session.user.role !== "client_user") {
       return NextResponse.json(
-        { code: "ACCESS_DENIED", message: "Acces refuse." },
+        {
+          code: "ACCESS_DENIED",
+          message: "Accès refusé.",
+          correlation_id: correlationId,
+        },
         { status: 403 },
       );
     }
   } catch {
     return NextResponse.json(
-      { code: "SESSION_INVALID", message: "Session invalide." },
+      {
+        code: "SESSION_INVALID",
+        message: "Session invalide.",
+        correlation_id: correlationId,
+      },
       { status: 401 },
     );
   }
@@ -71,7 +88,11 @@ export async function POST(
 
   if (!subscription) {
     return NextResponse.json(
-      { code: "SUBSCRIPTION_NOT_FOUND", message: "Souscription introuvable." },
+      {
+        code: "SUBSCRIPTION_NOT_FOUND",
+        message: "Souscription introuvable.",
+        correlation_id: correlationId,
+      },
       { status: 404 },
     );
   }
@@ -95,7 +116,8 @@ export async function POST(
           return NextResponse.json(
             {
               code: "STRIPE_NOT_CONFIGURED",
-              message: "Stripe n'est pas configure.",
+              message: "Stripe n'est pas configuré.",
+              correlation_id: correlationId,
             },
             { status: 503 },
           );
@@ -114,7 +136,8 @@ export async function POST(
           return NextResponse.json(
             {
               code: "PAYPAL_NOT_CONFIGURED",
-              message: "PayPal n'est pas configure.",
+              message: "PayPal n'est pas configuré.",
+              correlation_id: correlationId,
             },
             { status: 503 },
           );
@@ -122,7 +145,7 @@ export async function POST(
 
         await cancelPayPalSubscription(
           subscription.paypalSubscriptionId,
-          "Resiliation client depuis le portail Kermaria.",
+          "Résiliation client depuis le portail Kermaria.",
         );
       }
 
@@ -131,7 +154,8 @@ export async function POST(
           return NextResponse.json(
             {
               code: "STRIPE_NOT_CONFIGURED",
-              message: "Stripe n'est pas configure.",
+              message: "Stripe n'est pas configuré.",
+              correlation_id: correlationId,
             },
             { status: 503 },
           );
@@ -148,8 +172,9 @@ export async function POST(
           subscription.rail === "stripe" ? "STRIPE_ERROR" : "PAYPAL_ERROR",
         message:
           shouldDeferCancellation
-            ? "La resiliation a echoue chez l'operateur de paiement. Le statut local n'a pas ete modifie."
-            : "Le paiement n'a pas pu etre resilie. Le statut local n'a pas ete modifie.",
+            ? "La résiliation a échoué chez l'opérateur de paiement. Le statut local n'a pas été modifié."
+            : "Le paiement n'a pas pu être résilié. Le statut local n'a pas été modifié.",
+        correlation_id: correlationId,
       },
       { status: 502 },
     );
@@ -168,10 +193,19 @@ export async function POST(
     return NextResponse.json(result);
   } catch (error) {
     console.error("Client persist cancel error:", error);
+    const failure = getInternalApiError(error);
+    if (
+      failure.error.code === "SQL_UNAVAILABLE"
+      || failure.error.code === "INTERNAL_ERROR"
+    ) {
+      return NextResponse.json(failure.error, { status: failure.status });
+    }
+
     return NextResponse.json(
       {
         code: "PERSIST_ERROR",
-        message: "Impossible d'enregistrer la resiliation locale.",
+        message: "Impossible d'enregistrer la résiliation locale.",
+        correlation_id: failure.error.correlation_id,
       },
       { status: 503 },
     );

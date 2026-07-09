@@ -62,7 +62,7 @@ export default async function AdminSignupDetailPage({ params }: PageProps) {
       />
 
       <Link className="back-link" href="/admin/signups">
-        <span aria-hidden="true">←</span> Retour aux demandes
+        Retour aux demandes
       </Link>
 
       <SectionCard ariaLabel="Informations de la demande">
@@ -124,7 +124,7 @@ export default async function AdminSignupDetailPage({ params }: PageProps) {
                 <dd>{signup.packSelection.packLabel}</dd>
               </div>
               <div>
-                <dt>Reference</dt>
+                <dt>Référence</dt>
                 <dd>{signup.packSelection.offerExternalReference}</dd>
               </div>
               <div>
@@ -136,11 +136,11 @@ export default async function AdminSignupDetailPage({ params }: PageProps) {
                 <dd>
                   {signup.packSelection.paymentMode === "upfront"
                     ? "Comptant"
-                    : "Mensualise"}
+                    : "Mensualisé"}
                 </dd>
               </div>
               <div>
-                <dt>Mensuel affiche</dt>
+                <dt>Mensuel affiché</dt>
                 <dd>
                   {formatCurrencyFromCents(
                     signup.packSelection.monthlyPriceAmountCents,
@@ -149,7 +149,7 @@ export default async function AdminSignupDetailPage({ params }: PageProps) {
                 </dd>
               </div>
               <div>
-                <dt>Premiere echeance</dt>
+                <dt>Première échéance</dt>
                 <dd>
                   {formatCurrencyFromCents(
                     signup.packSelection.firstChargeAmountCents,

@@ -1,4 +1,5 @@
 import type { ApiError } from "@kermaria/shared";
+
 import {
   CSRF_HEADER_NAME,
   readCsrfTokenFromDocumentCookie,
@@ -60,6 +61,7 @@ export async function requestBffJson<T>(
             response.status,
             apiError?.code,
             apiError?.message,
+            apiError?.correlation_id,
           ),
           correlationId: apiError?.correlation_id,
         },
@@ -124,8 +126,8 @@ function shouldAttachCsrfToken(
     return false;
   }
 
-  // handleAdminGet (cote serveur) exige le jeton CSRF sur tout admin,
-  // y compris les GET. On attache donc le jeton pour toute methode.
+  // handleAdminGet (côté serveur) exige le jeton CSRF sur tout admin,
+  // y compris les GET. On attache donc le jeton pour toute méthode.
   return ["GET", "POST", "PATCH", "PUT", "DELETE"].includes(
     method.toUpperCase(),
   );
@@ -161,15 +163,16 @@ function userMessageFor(
   status: number,
   code?: string,
   serverMessage?: string,
+  correlationId?: string,
 ) {
   if (code === "INVALID_CREDENTIALS" || code === "LOGIN_FAILED") {
     return "Identifiants invalides.";
   }
 
-  // Rate limit dedie AD_PASSWORD_CHANGE_LOCKED a un message specifique
+  // Rate limit dédié AD_PASSWORD_CHANGE_LOCKED à un message spécifique
   // pour ne pas le confondre avec un account lockout login.
   if (code === "AD_PASSWORD_CHANGE_LOCKED") {
-    return "Trop de tentatives de changement de mot de passe. Reessayez dans quelques minutes.";
+    return "Trop de tentatives de changement de mot de passe. Réessayez dans quelques minutes.";
   }
 
   if (code === "ACCOUNT_LOCKED" || status === 429) {
@@ -196,8 +199,8 @@ function userMessageFor(
 
   if (code === "INVALID_REQUEST" || status === 400) {
     // Le BFF/API renvoie des messages explicites pour les payloads
-    // refuses (renommage, deplacement, mot de passe...). On les
-    // propage tels quels au lieu du fallback generique.
+    // refusés (renommage, déplacement, mot de passe...). On les
+    // propage tels quels au lieu du fallback générique.
     return serverMessage
       ? serverMessage
       : "Vérifiez les champs du formulaire puis réessayez.";
@@ -215,8 +218,8 @@ function userMessageFor(
 
   if (status === 404) {
     if (code === "PORTAL_DATA_NOT_FOUND") {
-      // Cas typique : reference client cible inexistante en DB pour
-      // un move cross-client, ou customer/document referencé hors base.
+      // Cas typique : référence client cible inexistante en DB pour
+      // un move cross-client, ou customer/document référencé hors base.
       return "La référence demandée est introuvable côté serveur (par ex. client cible inexistant).";
     }
 
@@ -234,14 +237,30 @@ function userMessageFor(
   }
 
   if (
-    code === "SQL_UNAVAILABLE"
+    code === "STRIPE_NOT_CONFIGURED"
+    || code === "PAYPAL_NOT_CONFIGURED"
+    || code === "PERSIST_ERROR"
+    || code === "STRIPE_ERROR"
+    || code === "PAYPAL_ERROR"
+    || code === "SQL_UNAVAILABLE"
     || code === "INTERNAL_API_UNAVAILABLE"
+    || code === "INTERNAL_ERROR"
     || status >= 500
   ) {
+    if (serverMessage) {
+      return appendCorrelationId(serverMessage, correlationId);
+    }
+
     return "Le service est temporairement indisponible. Réessayez dans quelques instants.";
   }
 
   return serverMessage
-    ? serverMessage
+    ? appendCorrelationId(serverMessage, correlationId)
     : "La demande n’a pas pu être traitée. Réessayez dans quelques instants.";
+}
+
+function appendCorrelationId(message: string, correlationId?: string) {
+  return correlationId
+    ? `${message} (Référence: ${correlationId})`
+    : message;
 }

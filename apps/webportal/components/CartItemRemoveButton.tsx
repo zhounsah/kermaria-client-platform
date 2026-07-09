@@ -3,8 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
-import { SubmitButton } from "@/components/SubmitButton";
 import type { CartMutationResponse } from "@kermaria/shared";
+
+import { SubmitButton } from "@/components/SubmitButton";
 import { requestBffJson } from "@/lib/client-api";
 
 type CartItemRemoveButtonProps = {
@@ -31,6 +32,7 @@ export function CartItemRemoveButton({ offerId }: CartItemRemoveButtonProps) {
     );
 
     if (result.ok) {
+      window.dispatchEvent(new Event("kermaria:checkout-changed"));
       router.refresh();
     } else {
       isSubmittingRef.current = false;
@@ -43,7 +45,7 @@ export function CartItemRemoveButton({ offerId }: CartItemRemoveButtonProps) {
       className="button button-ghost"
       idleLabel="Retirer"
       isSubmitting={isSubmitting}
-      submittingLabel="…"
+      submittingLabel="..."
       onClick={handleRemove}
       type="button"
     />

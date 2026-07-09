@@ -104,6 +104,9 @@ public sealed class MockCommercialStore
     public Dictionary<string, List<MockCommercialDocumentLine>> Lines { get; } =
         new();
 
+    public List<MockCommercialDocumentSubscriptionLink> SubscriptionLinks { get; } =
+        [];
+
     public MockCommercialStore()
     {
         Offers.AddRange(CreatePublicPackOffers());
@@ -189,8 +192,8 @@ public sealed class MockCommercialStore
         [
             CreatePublicPackOffer(
                 "offer-pack-dossier-1m-monthly",
-                "Pack Dossier SÃ©curisÃ©",
-                "Un espace de fichiers Ã  distance, sÃ©curisÃ© et sauvegardÃ©.",
+                "Pack Dossier Sécurisé",
+                "Un espace de fichiers à distance, sécurisé et sauvegardé.",
                 900,
                 1500,
                 1,
@@ -200,8 +203,8 @@ public sealed class MockCommercialStore
                 110),
             CreatePublicPackOffer(
                 "offer-pack-dossier-6m-monthly",
-                "Pack Dossier SÃ©curisÃ©",
-                "Un espace de fichiers Ã  distance, sÃ©curisÃ© et sauvegardÃ©.",
+                "Pack Dossier Sécurisé",
+                "Un espace de fichiers à distance, sécurisé et sauvegardé.",
                 810,
                 1500,
                 6,
@@ -211,8 +214,8 @@ public sealed class MockCommercialStore
                 111),
             CreatePublicPackOffer(
                 "offer-pack-dossier-6m-upfront",
-                "Pack Dossier SÃ©curisÃ©",
-                "Un espace de fichiers Ã  distance, sÃ©curisÃ© et sauvegardÃ©.",
+                "Pack Dossier Sécurisé",
+                "Un espace de fichiers à distance, sécurisé et sauvegardé.",
                 4860,
                 1500,
                 6,
@@ -222,8 +225,8 @@ public sealed class MockCommercialStore
                 112),
             CreatePublicPackOffer(
                 "offer-pack-dossier-12m-monthly",
-                "Pack Dossier SÃ©curisÃ©",
-                "Un espace de fichiers Ã  distance, sÃ©curisÃ© et sauvegardÃ©.",
+                "Pack Dossier Sécurisé",
+                "Un espace de fichiers à distance, sécurisé et sauvegardé.",
                 720,
                 1500,
                 12,
@@ -233,8 +236,8 @@ public sealed class MockCommercialStore
                 113),
             CreatePublicPackOffer(
                 "offer-pack-dossier-12m-upfront",
-                "Pack Dossier SÃ©curisÃ©",
-                "Un espace de fichiers Ã  distance, sÃ©curisÃ© et sauvegardÃ©.",
+                "Pack Dossier Sécurisé",
+                "Un espace de fichiers à distance, sécurisé et sauvegardé.",
                 8640,
                 1500,
                 12,
@@ -244,8 +247,8 @@ public sealed class MockCommercialStore
                 114),
             CreatePublicPackOffer(
                 "offer-pack-acces-1m-monthly",
-                "Pack AccÃ¨s Ã  Distance",
-                "La base du dossier sÃ©curisÃ©e, enrichie d'un accÃ¨s VPN personnel.",
+                "Pack Accès à Distance",
+                "La base du dossier sécurisée, enrichie d'un accès VPN personnel.",
                 1900,
                 2500,
                 1,
@@ -255,8 +258,8 @@ public sealed class MockCommercialStore
                 120),
             CreatePublicPackOffer(
                 "offer-pack-acces-6m-monthly",
-                "Pack AccÃ¨s Ã  Distance",
-                "La base du dossier sÃ©curisÃ©e, enrichie d'un accÃ¨s VPN personnel.",
+                "Pack Accès à Distance",
+                "La base du dossier sécurisée, enrichie d'un accès VPN personnel.",
                 1710,
                 2500,
                 6,
@@ -266,8 +269,8 @@ public sealed class MockCommercialStore
                 121),
             CreatePublicPackOffer(
                 "offer-pack-acces-6m-upfront",
-                "Pack AccÃ¨s Ã  Distance",
-                "La base du dossier sÃ©curisÃ©e, enrichie d'un accÃ¨s VPN personnel.",
+                "Pack Accès à Distance",
+                "La base du dossier sécurisée, enrichie d'un accès VPN personnel.",
                 10260,
                 2500,
                 6,
@@ -277,8 +280,8 @@ public sealed class MockCommercialStore
                 122),
             CreatePublicPackOffer(
                 "offer-pack-acces-12m-monthly",
-                "Pack AccÃ¨s Ã  Distance",
-                "La base du dossier sÃ©curisÃ©e, enrichie d'un accÃ¨s VPN personnel.",
+                "Pack Accès à Distance",
+                "La base du dossier sécurisée, enrichie d'un accès VPN personnel.",
                 1520,
                 2500,
                 12,
@@ -288,8 +291,8 @@ public sealed class MockCommercialStore
                 123),
             CreatePublicPackOffer(
                 "offer-pack-acces-12m-upfront",
-                "Pack AccÃ¨s Ã  Distance",
-                "La base du dossier sÃ©curisÃ©e, enrichie d'un accÃ¨s VPN personnel.",
+                "Pack Accès à Distance",
+                "La base du dossier sécurisée, enrichie d'un accès VPN personnel.",
                 18240,
                 2500,
                 12,
@@ -299,8 +302,8 @@ public sealed class MockCommercialStore
                 124),
             CreatePublicPackOffer(
                 "offer-pack-bureau-1m-monthly",
-                "Pack Bureau Windows Ã  Distance",
-                "Un bureau Windows Ã  distance avec VPN, stockage et sauvegarde.",
+                "Pack Bureau Windows à Distance",
+                "Un bureau Windows à distance avec VPN, stockage et sauvegarde.",
                 3500,
                 3500,
                 1,
@@ -310,8 +313,8 @@ public sealed class MockCommercialStore
                 130),
             CreatePublicPackOffer(
                 "offer-pack-bureau-6m-monthly",
-                "Pack Bureau Windows Ã  Distance",
-                "Un bureau Windows Ã  distance avec VPN, stockage et sauvegarde.",
+                "Pack Bureau Windows à Distance",
+                "Un bureau Windows à distance avec VPN, stockage et sauvegarde.",
                 3150,
                 3500,
                 6,
@@ -321,8 +324,8 @@ public sealed class MockCommercialStore
                 131),
             CreatePublicPackOffer(
                 "offer-pack-bureau-6m-upfront",
-                "Pack Bureau Windows Ã  Distance",
-                "Un bureau Windows Ã  distance avec VPN, stockage et sauvegarde.",
+                "Pack Bureau Windows à Distance",
+                "Un bureau Windows à distance avec VPN, stockage et sauvegarde.",
                 18900,
                 3500,
                 6,
@@ -332,8 +335,8 @@ public sealed class MockCommercialStore
                 132),
             CreatePublicPackOffer(
                 "offer-pack-bureau-12m-monthly",
-                "Pack Bureau Windows Ã  Distance",
-                "Un bureau Windows Ã  distance avec VPN, stockage et sauvegarde.",
+                "Pack Bureau Windows à Distance",
+                "Un bureau Windows à distance avec VPN, stockage et sauvegarde.",
                 2800,
                 3500,
                 12,
@@ -343,8 +346,8 @@ public sealed class MockCommercialStore
                 133),
             CreatePublicPackOffer(
                 "offer-pack-bureau-12m-upfront",
-                "Pack Bureau Windows Ã  Distance",
-                "Un bureau Windows Ã  distance avec VPN, stockage et sauvegarde.",
+                "Pack Bureau Windows à Distance",
+                "Un bureau Windows à distance avec VPN, stockage et sauvegarde.",
                 33600,
                 3500,
                 12,
@@ -355,7 +358,7 @@ public sealed class MockCommercialStore
             CreatePublicPackOffer(
                 "offer-pack-pro-1m-monthly",
                 "Pack Pro / Association",
-                "Une base complÃ¨te pour une petite structure ou une association.",
+                "Une base complète pour une petite structure ou une association.",
                 4900,
                 4900,
                 1,
@@ -366,7 +369,7 @@ public sealed class MockCommercialStore
             CreatePublicPackOffer(
                 "offer-pack-pro-6m-monthly",
                 "Pack Pro / Association",
-                "Une base complÃ¨te pour une petite structure ou une association.",
+                "Une base complète pour une petite structure ou une association.",
                 4410,
                 4900,
                 6,
@@ -377,7 +380,7 @@ public sealed class MockCommercialStore
             CreatePublicPackOffer(
                 "offer-pack-pro-6m-upfront",
                 "Pack Pro / Association",
-                "Une base complÃ¨te pour une petite structure ou une association.",
+                "Une base complète pour une petite structure ou une association.",
                 26460,
                 4900,
                 6,
@@ -388,7 +391,7 @@ public sealed class MockCommercialStore
             CreatePublicPackOffer(
                 "offer-pack-pro-12m-monthly",
                 "Pack Pro / Association",
-                "Une base complÃ¨te pour une petite structure ou une association.",
+                "Une base complète pour une petite structure ou une association.",
                 3920,
                 4900,
                 12,
@@ -399,7 +402,7 @@ public sealed class MockCommercialStore
             CreatePublicPackOffer(
                 "offer-pack-pro-12m-upfront",
                 "Pack Pro / Association",
-                "Une base complÃ¨te pour une petite structure ou une association.",
+                "Une base complète pour une petite structure ou une association.",
                 47040,
                 4900,
                 12,
@@ -435,6 +438,7 @@ public sealed class MockCommercialStore
             displayOrder,
             "2026-07-07T08:00:00Z",
             "2026-07-07T08:00:00Z",
+            null,
             CommercialStatuses.CadenceMonthly,
             setupFeeAmountCents,
             paymentMode == CommercialStatuses.PaymentModeUpfront
@@ -511,6 +515,7 @@ public sealed class MockCommercialRepository : ICommercialRepository
                 offer.DisplayOrder,
                 now,
                 now,
+                null,
                 offer.BillingCadence,
                 offer.SetupFeeAmountCents,
                 offer.BillingIntervalMonths,
@@ -688,6 +693,7 @@ public sealed class MockCommercialRepository : ICommercialRepository
                 now,
                 null,
                 null);
+            item.CustomerId = "mock-customer";
             _store.Documents.Add(item);
             _store.Lines[item.Id] = [];
 
@@ -919,7 +925,7 @@ public sealed class MockCommercialRepository : ICommercialRepository
 
             return Task.FromResult<DocumentForIssuing?>(new DocumentForIssuing(
                 doc.Id,
-                doc.CustomerReference,
+                doc.CustomerId,
                 doc.CustomerReference,
                 doc.CustomerName,
                 null,
@@ -973,20 +979,209 @@ public sealed class MockCommercialRepository : ICommercialRepository
         return Task.CompletedTask;
     }
 
+    public Task SetDocumentPaymentMethodAsync(
+        string documentId,
+        string? paymentMethod,
+        CancellationToken cancellationToken)
+    {
+        lock (_store.SyncRoot)
+        {
+            var doc = _store.Documents.FirstOrDefault(d => d.Id == documentId);
+            if (doc is not null)
+            {
+                doc.PaymentMethod = paymentMethod;
+                doc.UpdatedAt = DateTime.UtcNow.ToString("O");
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
     public Task<string> CreateBillingDocumentForSubscriptionAsync(
         SubscriptionBillingDocumentRequest request,
         string correlationId,
         CancellationToken cancellationToken)
-        => throw new NotSupportedException(
-            "Mock commercial repository does not support system-issued billing "
-            + "documents. Run with MariaDB to exercise the webhook orchestration.");
+    {
+        lock (_store.SyncRoot)
+        {
+            var now = DateTime.UtcNow.ToString("O");
+            var offer = ResolveOffer(request.OfferId)
+                ?? throw new PortalValidationException();
+            var document = new MockCommercialDocument(
+                Guid.NewGuid().ToString("D"),
+                MockPortalData.Profile.CustomerReference,
+                MockPortalData.Profile.CompanyName,
+                null,
+                null,
+                "informational_invoice",
+                CommercialStatuses.SharedWithCustomer,
+                request.Title,
+                CreateReference(),
+                "EUR",
+                CommercialStatuses.DefaultDisclaimer,
+                "Système de démonstration",
+                now,
+                now,
+                now,
+                null)
+            {
+                CustomerId = request.CustomerId,
+                SubscriptionId = request.SubscriptionId,
+                Origin = "subscription_billing",
+            };
+            _store.Documents.Add(document);
+            _store.Lines[document.Id] = [];
+
+            AddSystemLine(
+                document,
+                request.SubscriptionId,
+                offer.Id,
+                offer.Name,
+                offer.Description,
+                1m,
+                offer.UnitLabel,
+                offer.PriceAmountCents,
+                offer.TaxRateBasisPoints,
+                10,
+                now);
+
+            foreach (var line in request.Lines.OrderBy(item => item.SortOrder))
+            {
+                AddSystemLine(
+                    document,
+                    request.SubscriptionId,
+                    line.OfferId,
+                    line.Label,
+                    line.Description,
+                    line.Quantity,
+                    line.UnitLabel,
+                    line.UnitPriceCents,
+                    line.TaxRateBasisPoints ?? offer.TaxRateBasisPoints,
+                    line.SortOrder,
+                    now);
+            }
+
+            RecalculateTotals(document);
+            return Task.FromResult(document.Id);
+        }
+    }
+
+    public Task<RecurringCheckoutDocumentCreationResult> CreateRecurringCheckoutDocumentAsync(
+        RecurringCheckoutDocumentRequest request,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
+        lock (_store.SyncRoot)
+        {
+            var now = DateTime.UtcNow.ToString("O");
+            var document = new MockCommercialDocument(
+                Guid.NewGuid().ToString("D"),
+                MockPortalData.Profile.CustomerReference,
+                MockPortalData.Profile.CompanyName,
+                null,
+                null,
+                "informational_invoice",
+                CommercialStatuses.SharedWithCustomer,
+                request.Title,
+                CreateReference(),
+                "EUR",
+                CommercialStatuses.DefaultDisclaimer,
+                MockPortalData.Profile.ContactName,
+                now,
+                now,
+                now,
+                null)
+            {
+                CustomerId = request.CustomerId,
+                Origin = "recurring_checkout",
+            };
+            _store.Documents.Add(document);
+            _store.Lines[document.Id] = [];
+
+            var sortOrder = 10;
+            foreach (var item in request.Items)
+            {
+                var offer = ResolveOffer(item.OfferId)
+                    ?? throw new PortalValidationException();
+                AddSystemLine(
+                    document,
+                    item.SubscriptionId,
+                    offer.Id,
+                    offer.Name,
+                    offer.Description,
+                    1m,
+                    offer.UnitLabel,
+                    offer.PriceAmountCents,
+                    offer.TaxRateBasisPoints,
+                    sortOrder,
+                    now);
+                sortOrder += 10;
+
+                if (item.SetupFeeAmountCents > 0)
+                {
+                    AddSystemLine(
+                        document,
+                        item.SubscriptionId,
+                        offer.Id,
+                        $"Frais de mise en service - {offer.Name}",
+                        "Mise en service initiale du service.",
+                        1m,
+                        "forfait",
+                        item.SetupFeeAmountCents,
+                        offer.TaxRateBasisPoints,
+                        sortOrder,
+                        now);
+                    sortOrder += 10;
+                }
+            }
+
+            RecalculateTotals(document);
+            return Task.FromResult(
+                new RecurringCheckoutDocumentCreationResult(
+                    document.Id,
+                    document.TotalAmountCents));
+        }
+    }
 
     public Task<IReadOnlyList<CommercialDocumentSummary>>
         GetDocumentsForSubscriptionAsync(
-            string subscriptionId,
-            CancellationToken cancellationToken)
-        => Task.FromResult<IReadOnlyList<CommercialDocumentSummary>>(
-            Array.Empty<CommercialDocumentSummary>());
+        string subscriptionId,
+        CancellationToken cancellationToken)
+    {
+        lock (_store.SyncRoot)
+        {
+            return Task.FromResult<IReadOnlyList<CommercialDocumentSummary>>(
+                _store.Documents
+                    .Where(document =>
+                        document.SubscriptionId == subscriptionId
+                        || _store.SubscriptionLinks.Any(link =>
+                            link.DocumentId == document.Id
+                            && link.SubscriptionId == subscriptionId))
+                    .OrderByDescending(document => document.CreatedAt)
+                    .Select(ToDocumentSummary)
+                    .ToArray());
+        }
+    }
+
+    public Task<IReadOnlyList<string>> GetLinkedSubscriptionIdsForDocumentAsync(
+        string documentId,
+        CancellationToken cancellationToken)
+    {
+        lock (_store.SyncRoot)
+        {
+            var ids = _store.SubscriptionLinks
+                .Where(link => link.DocumentId == documentId)
+                .Select(link => link.SubscriptionId)
+                .Concat(_store.Documents
+                    .Where(document => document.Id == documentId)
+                    .Select(document => document.SubscriptionId)
+                    .Where(static value => !string.IsNullOrWhiteSpace(value))
+                    .Select(static value => value!))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            return Task.FromResult<IReadOnlyList<string>>(ids);
+        }
+    }
 
     public Task<CartDocumentCreationResult> CreateCartDocumentAsync(
         string customerId,
@@ -995,14 +1190,74 @@ public sealed class MockCommercialRepository : ICommercialRepository
         IReadOnlyList<CartDocumentLineInput> lines,
         string correlationId,
         CancellationToken cancellationToken)
-        => throw new NotSupportedException(
-            "Mock commercial repository does not materialise cart documents. "
-            + "Run with MariaDB to exercise cart confirmation and issuing.");
+    {
+        lock (_store.SyncRoot)
+        {
+            var now = DateTime.UtcNow.ToString("O");
+            var document = new MockCommercialDocument(
+                Guid.NewGuid().ToString("D"),
+                MockPortalData.Profile.CustomerReference,
+                MockPortalData.Profile.CompanyName,
+                null,
+                null,
+                "informational_invoice",
+                CommercialStatuses.SharedWithCustomer,
+                title,
+                CreateReference(),
+                "EUR",
+                CommercialStatuses.DefaultDisclaimer,
+                MockPortalData.Profile.ContactName,
+                now,
+                now,
+                now,
+                null)
+            {
+                CustomerId = customerId,
+                Origin = "client_cart",
+            };
+            _store.Documents.Add(document);
+            _store.Lines[document.Id] = [];
+
+            foreach (var line in lines.OrderBy(item => item.SortOrder))
+            {
+                AddSystemLine(
+                    document,
+                    subscriptionId: null,
+                    line.OfferId,
+                    line.Label,
+                    line.Description,
+                    line.Quantity,
+                    line.UnitLabel,
+                    line.UnitPriceCents,
+                    line.TaxRateBasisPoints,
+                    line.SortOrder,
+                    now);
+            }
+
+            RecalculateTotals(document);
+            return Task.FromResult(
+                new CartDocumentCreationResult(
+                    document.Id,
+                    document.TotalAmountCents));
+        }
+    }
 
     public Task<CartPaidDocumentContext?> GetCartPaidDocumentContextAsync(
         string documentId,
         CancellationToken cancellationToken)
-        => Task.FromResult<CartPaidDocumentContext?>(null);
+    {
+        lock (_store.SyncRoot)
+        {
+            var document = _store.Documents.FirstOrDefault(
+                candidate => candidate.Id == documentId);
+            return Task.FromResult(
+                document is null
+                    ? null
+                    : new CartPaidDocumentContext(
+                        document.Origin,
+                        document.CustomerId));
+        }
+    }
 
     private MockCommercialDocument FindDocument(string documentId)
         => _store.Documents.FirstOrDefault(document => document.Id == documentId)
@@ -1072,6 +1327,48 @@ public sealed class MockCommercialRepository : ICommercialRepository
             now);
     }
 
+    private void AddSystemLine(
+        MockCommercialDocument document,
+        string? subscriptionId,
+        string? offerId,
+        string label,
+        string description,
+        decimal quantity,
+        string unitLabel,
+        int unitPriceCents,
+        int? taxRateBasisPoints,
+        int sortOrder,
+        string now)
+    {
+        var lineTotalCents = (int)decimal.Round(
+            quantity * unitPriceCents,
+            0,
+            MidpointRounding.AwayFromZero);
+        var lineId = Guid.NewGuid().ToString("D");
+        LinesFor(document.Id).Add(new MockCommercialDocumentLine(
+            lineId,
+            document.Id,
+            offerId,
+            label,
+            description,
+            quantity,
+            unitLabel,
+            unitPriceCents,
+            taxRateBasisPoints,
+            lineTotalCents,
+            sortOrder,
+            now,
+            now));
+
+        if (!string.IsNullOrWhiteSpace(subscriptionId))
+        {
+            _store.SubscriptionLinks.Add(
+                new MockCommercialDocumentSubscriptionLink(
+                    document.Id,
+                    subscriptionId));
+        }
+    }
+
     private MockCommercialOffer? ResolveOffer(string? offerId)
         => offerId is null
             ? null
@@ -1137,7 +1434,7 @@ public sealed class MockCommercialRepository : ICommercialRepository
             offer.PriceKind,
             offer.PriceAmountCents,
             offer.Currency,
-            null,
+            offer.TaxRateBasisPoints,
             offer.ExternalReference,
             offer.Status,
             offer.DisplayOrder,
@@ -1280,6 +1577,7 @@ public sealed record MockCommercialOffer(
     int InitialDisplayOrder,
     string CreatedAt,
     string InitialUpdatedAt,
+    int? InitialTaxRateBasisPoints = null,
     string InitialBillingCadence = CommercialStatuses.CadenceOneTime,
     int? InitialSetupFeeAmountCents = null,
     int? InitialBillingIntervalMonths = null,
@@ -1300,6 +1598,7 @@ public sealed record MockCommercialOffer(
     public string Status { get; set; } = InitialStatus;
     public int DisplayOrder { get; set; } = InitialDisplayOrder;
     public string UpdatedAt { get; set; } = InitialUpdatedAt;
+    public int? TaxRateBasisPoints { get; set; } = InitialTaxRateBasisPoints;
     public string BillingCadence { get; set; } = InitialBillingCadence;
     public int? SetupFeeAmountCents { get; set; } = InitialSetupFeeAmountCents;
     public int? BillingIntervalMonths { get; set; } = InitialBillingIntervalMonths;
@@ -1331,6 +1630,9 @@ public sealed record MockCommercialDocument(
     string? InitialSharedAt,
     string? InitialCancelledAt)
 {
+    public string CustomerId { get; set; } = "mock-customer";
+    public string? SubscriptionId { get; set; }
+    public string? Origin { get; set; }
     public string? ServiceRequestId { get; set; } = InitialServiceRequestId;
     public string? ServiceRequestReference { get; set; } =
         InitialServiceRequestReference;
@@ -1346,6 +1648,10 @@ public sealed record MockCommercialDocument(
     public string? CancelledAt { get; set; } = InitialCancelledAt;
     public string? PaymentMethod { get; set; }
 }
+
+public sealed record MockCommercialDocumentSubscriptionLink(
+    string DocumentId,
+    string SubscriptionId);
 
 public sealed record MockCommercialDocumentLine(
     string Id,

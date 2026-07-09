@@ -9,7 +9,7 @@ import type {
   ResolvedPublicPackManifest,
 } from "@kermaria/shared";
 
-import { SubscribeButton } from "@/components/SubscribeButton";
+import { AddRecurringCheckoutButton } from "@/components/AddRecurringCheckoutButton";
 import { formatCurrencyFromCents } from "@/lib/formatters";
 import {
   type PublicPackSelectionInput,
@@ -21,8 +21,6 @@ type PublicPackCardProps = {
   mode: "signup" | "subscribe";
   signupEnabled?: boolean;
   initialSelection?: PublicPackSelectionInput | null;
-  stripeMode?: "disabled" | "test" | "live";
-  paypalMode?: "sandbox" | "live";
   highlightLabel?: string | null;
 };
 
@@ -31,8 +29,6 @@ export function PublicPackCard({
   mode,
   signupEnabled = true,
   initialSelection = null,
-  stripeMode = "disabled",
-  paypalMode = "sandbox",
   highlightLabel = null,
 }: PublicPackCardProps) {
   const [commitmentMonths, setCommitmentMonths] =
@@ -64,22 +60,6 @@ export function PublicPackCard({
     }),
     [commitmentMonths, effectivePaymentMode, pack.key],
   );
-
-  const canSubscribeStripe =
-    mode === "subscribe"
-    && stripeMode !== "disabled"
-    && !!(
-      stripeMode === "live"
-        ? variant.offer.stripePriceIdLive
-        : variant.offer.stripePriceIdTest
-    );
-  const canSubscribePaypal =
-    mode === "subscribe"
-    && !!(
-      paypalMode === "live"
-        ? variant.offer.paypalPlanIdLive
-        : variant.offer.paypalPlanIdSandbox
-    );
 
   return (
     <article className="public-pack-card">
@@ -209,18 +189,11 @@ export function PublicPackCard({
               Demander ce pack
             </Link>
           )
-        ) : canSubscribePaypal || canSubscribeStripe ? (
-          <SubscribeButton
-            offerId={variant.offer.id}
-            offerName={pack.shortLabel}
-            paypalEnabled={canSubscribePaypal}
-            stripeEnabled={canSubscribeStripe}
-          />
         ) : (
-          <p className="field-hint">
-            Cette variante n&apos;est pas encore prête pour une souscription en
-            ligne sur l&apos;environnement courant.
-          </p>
+          <AddRecurringCheckoutButton
+            label="Ajouter au panier"
+            offerId={variant.offer.id}
+          />
         )}
         <Link className="text-link" href={`/offres/${pack.slug}`}>
           Voir la fiche technique

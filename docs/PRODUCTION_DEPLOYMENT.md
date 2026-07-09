@@ -558,9 +558,10 @@ au demarrage, ajuster selon telemetrie.
 
 ### 9.7 `PUBLIC_VITRINE_ENABLED=true` (V1.0 RC uniquement)
 
-Prerequis : contenu redactionnel finalise (pages `/a-propos`,
-`/mentions-legales`, `/politique-confidentialite`, `/cgv`), SEO
-verifie.
+Prerequis : contenu redactionnel finalise. Etat actuel :
+`/a-propos`, `/mentions-legales` et `/cgv` sont pilotables via
+`/admin/content` (V0.33) ; `/politique-confidentialite` reste a
+valider separement. SEO verifie.
 
 Bascule dans `webportal.config.json` :
 

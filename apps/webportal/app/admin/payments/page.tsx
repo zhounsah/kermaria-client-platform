@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { requireAdminSession } from "@/lib/auth";
 import {
+  formatDocumentPaymentMethodLabel,
   formatCurrencyFromCents,
   formatDateTime,
 } from "@/lib/formatters";
@@ -22,12 +23,6 @@ export const dynamic = "force-dynamic";
 
 const paymentStatuses = ["all", "unpaid", "paid"] as const;
 type PaymentStatusFilter = (typeof paymentStatuses)[number];
-
-const paymentMethodLabel: Record<string, string> = {
-  paypal: "PayPal",
-  stripe: "Stripe",
-  manual: "Manuel",
-};
 
 type PageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -69,12 +64,12 @@ export default async function AdminPaymentsPage({ searchParams }: PageProps) {
 
   return (
     <>
-      <PageHeader
-        action={<StatusBadge label="Suivi paiements" tone="info" />}
-        description="Factures émises chez BPCE, en attente de règlement ou réglées (PayPal ou marquage manuel)."
-        eyebrow="Administration interne"
-        title="Paiements"
-      />
+        <PageHeader
+          action={<StatusBadge label="Suivi paiements" tone="info" />}
+          description="Factures émises chez BPCE, en attente de règlement ou réglées via Stripe, PayPal ou virement bancaire."
+          eyebrow="Administration interne"
+          title="Paiements"
+        />
 
       <section
         aria-label="Synthèse des paiements"
@@ -154,7 +149,7 @@ export default async function AdminPaymentsPage({ searchParams }: PageProps) {
               <code key={`${doc.id}-reference`}>{doc.internalReference}</code>,
               `${doc.customerName} (${doc.customerReference})`,
               doc.title,
-              paymentMethodLabel[doc.paymentMethod ?? ""] ?? "—",
+              formatDocumentPaymentMethodLabel(doc.paymentMethod),
               <StatusBadge
                 key={`${doc.id}-status`}
                 label={paid ? "Réglée" : "À régler"}

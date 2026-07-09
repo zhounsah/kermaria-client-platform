@@ -26,6 +26,7 @@ public interface ISubscriptionRepository
         string customerId,
         CommercialOfferSummary offer,
         string rail,
+        string initialStatus,
         string? paypalPlanId,
         string? paypalSubscriptionId,
         string? stripePriceId,

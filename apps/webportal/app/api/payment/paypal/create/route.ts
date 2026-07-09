@@ -5,12 +5,28 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { CORRELATION_HEADER, resolveCorrelationId } from "@/lib/correlation";
 import { getInternalSession } from "@/lib/internal-api";
+import { createPayPalOrder, isPayPalConfigured } from "@/lib/paypal";
 import { getPortalPublicUrl } from "@/lib/public-routes";
 import { getSessionCookieName } from "@/lib/session-config";
 import { getInternalApiUrl, getInternalServiceHeaders } from "@/lib/runtime-config";
-import { createPayPalOrder, isPayPalConfigured } from "@/lib/paypal";
 
 const PORTAL_SESSION_HEADER = "X-Portal-Session";
+
+function errorJson(
+  status: number,
+  code: string,
+  message: string,
+  correlationId: string,
+) {
+  return NextResponse.json(
+    {
+      code,
+      message,
+      correlation_id: correlationId,
+    },
+    { status },
+  );
+}
 
 export async function POST(request: NextRequest) {
   const correlationId = resolveCorrelationId(
@@ -18,63 +34,63 @@ export async function POST(request: NextRequest) {
   );
 
   if (!isPayPalConfigured()) {
-    return NextResponse.json(
-      { code: "PAYPAL_NOT_CONFIGURED", message: "Le paiement en ligne n'est pas disponible." },
-      { status: 503 },
+    return errorJson(
+      503,
+      "PAYPAL_NOT_CONFIGURED",
+      "Le paiement en ligne n'est pas disponible.",
+      correlationId,
     );
   }
 
   const sessionToken = request.cookies.get(getSessionCookieName())?.value;
   if (!sessionToken) {
-    return NextResponse.json(
-      { code: "UNAUTHORIZED", message: "Session requise." },
-      { status: 401 },
-    );
+    return errorJson(401, "UNAUTHORIZED", "Session requise.", correlationId);
   }
 
   let body: { documentId?: string };
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json(
-      { code: "INVALID_REQUEST", message: "Corps de requête invalide." },
-      { status: 400 },
+    return errorJson(
+      400,
+      "INVALID_REQUEST",
+      "Corps de requête invalide.",
+      correlationId,
     );
   }
 
   const { documentId } = body;
   if (!documentId || !/^[A-Za-z0-9-]{1,100}$/.test(documentId)) {
-    return NextResponse.json(
-      { code: "INVALID_REQUEST", message: "Identifiant de document invalide." },
-      { status: 400 },
+    return errorJson(
+      400,
+      "INVALID_REQUEST",
+      "Identifiant de document invalide.",
+      correlationId,
     );
   }
 
   try {
     const session = await getInternalSession(sessionToken, correlationId);
     if (session.user.role !== "client_user") {
-      return NextResponse.json(
-        { code: "ACCESS_DENIED", message: "Accès refusé." },
-        { status: 403 },
-      );
+      return errorJson(403, "ACCESS_DENIED", "Accès refusé.", correlationId);
     }
   } catch {
-    return NextResponse.json(
-      { code: "SESSION_INVALID", message: "Session invalide." },
-      { status: 401 },
-    );
+    return errorJson(401, "SESSION_INVALID", "Session invalide.", correlationId);
   }
 
   let internalApiUrl: string | undefined;
   try {
     internalApiUrl = getInternalApiUrl();
   } catch {
-    /* ignored */
+    internalApiUrl = undefined;
   }
+
   if (!internalApiUrl) {
-    return NextResponse.json(
-      { code: "UNAVAILABLE", message: "API interne indisponible." },
-      { status: 503 },
+    return errorJson(
+      503,
+      "UNAVAILABLE",
+      "API interne indisponible.",
+      correlationId,
     );
   }
 
@@ -93,26 +109,27 @@ export async function POST(request: NextRequest) {
   );
 
   if (!docResponse.ok) {
-    return NextResponse.json(
-      { code: "DOCUMENT_NOT_FOUND", message: "Document introuvable." },
-      { status: 404 },
+    return errorJson(
+      404,
+      "DOCUMENT_NOT_FOUND",
+      "Document introuvable.",
+      correlationId,
     );
   }
 
   const doc = (await docResponse.json()) as CommercialDocumentDetail;
 
   if (doc.status !== "issued") {
-    return NextResponse.json(
-      { code: "DOCUMENT_NOT_ISSUED", message: "Seules les factures émises peuvent être réglées." },
-      { status: 400 },
+    return errorJson(
+      400,
+      "DOCUMENT_NOT_ISSUED",
+      "Seules les factures émises peuvent être réglées.",
+      correlationId,
     );
   }
 
   if (doc.totalAmountCents <= 0) {
-    return NextResponse.json(
-      { code: "AMOUNT_INVALID", message: "Montant invalide." },
-      { status: 400 },
-    );
+    return errorJson(400, "AMOUNT_INVALID", "Montant invalide.", correlationId);
   }
 
   const portalUrl = getPortalPublicUrl(request);
@@ -131,9 +148,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ orderId, approveUrl });
   } catch (error) {
     console.error("PayPal create order error:", error);
-    return NextResponse.json(
-      { code: "PAYPAL_ERROR", message: "Impossible de créer l'ordre de paiement." },
-      { status: 503 },
+    return errorJson(
+      503,
+      "PAYPAL_ERROR",
+      "Impossible de créer l'ordre de paiement.",
+      correlationId,
     );
   }
 }

@@ -167,7 +167,7 @@ export function PublicPackComparisonTable({
         )}
 
         <div className="public-pack-compare-fixed-choice public-pack-compare-fixed-choice-summary">
-          <span className="public-pack-compare-label">Selection</span>
+          <span className="public-pack-compare-label">Sélection</span>
           <strong>
             {formatCommitmentMonths(commitmentMonths)}{" "}
             {commitmentMonths > 1
@@ -192,8 +192,8 @@ export function PublicPackComparisonTable({
             ) : null}
             <h2>{content.comparisonColumnLabel}</h2>
             <p>
-              Comparez les differences utiles avant de choisir votre pack. Les
-              prix, remises et premieres echeances s&apos;ajustent selon la duree
+              Comparez les différences utiles avant de choisir votre pack. Les
+              prix, remises et premières échéances s&apos;ajustent selon la durée
               d&apos;engagement choisie.
             </p>
             <div className="public-pack-compare-legend">
@@ -271,8 +271,8 @@ export function PublicPackComparisonTable({
                       : "Sans remise"}
                     {" - "}
                     {isUpfront
-                      ? `${formatCurrencyFromCents(variant.monthlyPriceAmountCents)} / mois equivalent`
-                      : `${formatCurrencyFromCents(variant.billingPriceAmountCents)} par echeance`}
+                      ? `${formatCurrencyFromCents(variant.monthlyPriceAmountCents)} / mois équivalent`
+                      : `${formatCurrencyFromCents(variant.billingPriceAmountCents)} par échéance`}
                   </p>
 
                   <ul className="public-pack-compare-highlights">
@@ -295,7 +295,7 @@ export function PublicPackComparisonTable({
                       <dd>{formatCurrencyFromCents(variant.setupFeeAmountCents)}</dd>
                     </div>
                     <div>
-                      <dt>1re echeance</dt>
+                      <dt>1re échéance</dt>
                       <dd>{formatCurrencyFromCents(variant.firstChargeAmountCents)}</dd>
                     </div>
                   </dl>

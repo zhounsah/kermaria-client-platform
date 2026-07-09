@@ -169,6 +169,13 @@ public interface ICommercialService
         string documentId,
         string correlationId,
         CancellationToken cancellationToken);
+
+    Task<CommercialDocumentMutationResponse> SelectClientDocumentPaymentMethodAsync(
+        PortalSessionContext actor,
+        string documentId,
+        PaymentMethodSelectionPayload payload,
+        string correlationId,
+        CancellationToken cancellationToken);
 }
 
 public sealed partial class CommercialService : ICommercialService
@@ -319,6 +326,53 @@ public sealed partial class CommercialService : ICommercialService
             ValidateIdentifier(documentId),
             correlationId,
             cancellationToken);
+
+    public async Task<CommercialDocumentMutationResponse>
+        SelectClientDocumentPaymentMethodAsync(
+            PortalSessionContext actor,
+            string documentId,
+            PaymentMethodSelectionPayload payload,
+            string correlationId,
+            CancellationToken cancellationToken)
+    {
+        var normalizedDocumentId = ValidateIdentifier(documentId);
+        var paymentMethod = payload.PaymentMethod?.Trim();
+        if (!string.Equals(paymentMethod, "manual", StringComparison.Ordinal))
+        {
+            throw new PortalValidationException();
+        }
+
+        var current = await _repository.GetClientDocumentAsync(
+            actor,
+            normalizedDocumentId,
+            cancellationToken)
+            ?? throw new PortalDataNotFoundException();
+
+        if (current.Status != "issued")
+        {
+            throw new PortalValidationException();
+        }
+
+        var changed = !string.Equals(
+            current.PaymentMethod,
+            paymentMethod,
+            StringComparison.Ordinal);
+
+        if (changed)
+        {
+            await _repository.SetDocumentPaymentMethodAsync(
+                normalizedDocumentId,
+                paymentMethod,
+                cancellationToken);
+        }
+
+        return new CommercialDocumentMutationResponse(
+            current.Id,
+            current.InternalReference,
+            current.Status,
+            changed,
+            correlationId);
+    }
 
     private static ValidatedCommercialOffer ValidateOfferPayload(
         CommercialOfferPayload payload)

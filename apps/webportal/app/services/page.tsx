@@ -21,8 +21,6 @@ import {
   findPackPresentation,
   resolvePackCatalog,
 } from "@/lib/public-packs";
-import { getPayPalMode } from "@/lib/paypal";
-import { getStripeMode } from "@/lib/stripe";
 
 export const metadata = {
   title: "Services",
@@ -51,8 +49,6 @@ export default async function ServicesPage() {
   ]);
   const packs = resolvePackCatalog(catalogResult.data, packContentResult.data);
   const pendingSelection = pendingSelectionResult.data;
-  const stripeMode = getStripeMode();
-  const paypalMode = getPayPalMode();
 
   return (
     <>
@@ -115,8 +111,6 @@ export default async function ServicesPage() {
                     pendingSelection,
                     pack.key,
                   )}
-                  stripeMode={stripeMode}
-                  paypalMode={paypalMode}
                   highlightLabel={
                     findPackPresentation(
                       pack.key,
@@ -138,8 +132,8 @@ export default async function ServicesPage() {
         <div className="cta-panel">
           <p>
             L&apos;espace « Souscrire » regroupe les packs grand public et les
-            options individuelles. Chaque option à la carte se prend séparément,
-            sans engagement de pack.
+            options individuelles. Chaque option à la carte se prend
+            séparément, sans engagement de pack.
           </p>
           <Link className="button" href="/souscrire">
             Ouvrir l&apos;espace Souscrire

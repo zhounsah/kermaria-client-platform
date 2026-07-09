@@ -909,8 +909,9 @@ host headers, tous deux reverse-proxy vers le meme Node loopback :
 | `kermaria-vitrine` | `www.home.bzh`, `www.zacharyhounsa.ovh` | Vitrine publique V0.27 (landing, `/offres`, `/contact`, `/portfolio/*`, etc.) | strippe |
 | `kermaria-portal` | `portail.home.bzh`, `dashboard.home.bzh`, `portail.zacharyhounsa.ovh`, `dashboard.zacharyhounsa.ovh` | Backoffice authentifie (`/login`, `/dashboard`, `/admin/*`, `/api/*`) | conserve |
 
-Node fait deja le routing par path (V0.27 `proxy.ts` bascule
-`PublicShell` / `AppShell`). Les deux sites IIS pointent donc sur
+Node fait deja le routing par path. Etat actuel : `AppShell.tsx`
+choisit `PublicShell` ou le shell securise via `usePathname()` +
+`public-route-config.ts`. Les deux sites IIS pointent donc sur
 le meme process `127.0.0.1:3000` — la separation IIS ne sert qu'a
 la lisibilite operationnelle et au controle du header
 `X-Robots-Tag`.

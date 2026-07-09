@@ -71,7 +71,7 @@ export default async function RequestServicePage({
               <article className="catalog-card" key={service.id}>
                 <span className="card-kicker">{service.category}</span>
                 <h2>{service.name}</h2>
-                <p>{service.description}</p>
+                <p className="multiline-text">{service.description}</p>
                 <div className="catalog-scope">
                   <span>{service.scope}</span>
                   <strong>{service.commercialTerms}</strong>

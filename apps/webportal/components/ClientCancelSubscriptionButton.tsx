@@ -25,7 +25,7 @@ export function ClientCancelSubscriptionButton({
     if (
       typeof window !== "undefined"
       && !window.confirm(
-        "Demander la resiliation de cette souscription ? Si un terme est en cours, elle prendra effet a son echeance.",
+        "Demander la résiliation de cette souscription ? Si un terme est en cours, elle prendra effet à son échéance.",
       )
     ) {
       return;
@@ -60,7 +60,7 @@ export function ClientCancelSubscriptionButton({
         onClick={handleClick}
         type="button"
       >
-        {isSubmitting ? "Resiliation..." : "Demander la resiliation"}
+        {isSubmitting ? "Résiliation..." : "Demander la résiliation"}
       </button>
       {error ? (
         <p

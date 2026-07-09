@@ -82,8 +82,18 @@ public interface ICommercialRepository
         string paymentMethod,
         CancellationToken cancellationToken);
 
+    Task SetDocumentPaymentMethodAsync(
+        string documentId,
+        string? paymentMethod,
+        CancellationToken cancellationToken);
+
     Task<string> CreateBillingDocumentForSubscriptionAsync(
         SubscriptionBillingDocumentRequest request,
+        string correlationId,
+        CancellationToken cancellationToken);
+
+    Task<RecurringCheckoutDocumentCreationResult> CreateRecurringCheckoutDocumentAsync(
+        RecurringCheckoutDocumentRequest request,
         string correlationId,
         CancellationToken cancellationToken);
 
@@ -91,6 +101,10 @@ public interface ICommercialRepository
         GetDocumentsForSubscriptionAsync(
             string subscriptionId,
             CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<string>> GetLinkedSubscriptionIdsForDocumentAsync(
+        string documentId,
+        CancellationToken cancellationToken);
 
     // V0.35 — panier a la carte : materialise le panier confirme en un unique
     // document commercial multi-lignes (statut shared_with_customer, prêt a
@@ -160,3 +174,18 @@ public sealed record SubscriptionBillingDocumentLineRequest(
     int UnitPriceCents,
     int? TaxRateBasisPoints,
     int SortOrder);
+
+public sealed record RecurringCheckoutDocumentRequest(
+    string CustomerId,
+    string ActorUserId,
+    string Title,
+    IReadOnlyList<RecurringCheckoutDocumentSubscriptionRequest> Items);
+
+public sealed record RecurringCheckoutDocumentSubscriptionRequest(
+    string SubscriptionId,
+    string OfferId,
+    int SetupFeeAmountCents);
+
+public sealed record RecurringCheckoutDocumentCreationResult(
+    string DocumentId,
+    int TotalAmountCents);

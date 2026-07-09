@@ -345,13 +345,13 @@ assert.match(
 );
 assert.match(
   adminSubscriptionsPage,
-  /item\.rail === "stripe"/,
-  "La page admin abonnements doit afficher le rail.",
+  /formatSubscriptionRailLabel|Facture locale Kermaria/,
+  "La page admin abonnements doit afficher le rail, y compris la facturation locale.",
 );
 assert.match(
   servicesPage,
-  /getStripeMode/,
-  "La page services doit propager le mode Stripe aux cartes packs.",
+  /href="\/souscrire"|PublicPackCard/,
+  "La page services doit renvoyer vers l'entree de souscription des packs.",
 );
 assert.match(
   servicesPage,
@@ -367,8 +367,8 @@ assert.match(
 // --- Shared types ---
 assert.match(
   sharedTypes,
-  /export type PaymentRail = "paypal" \| "stripe";/,
-  "PaymentRail doit etre exporte.",
+  /export type PaymentRail = "paypal" \| "stripe" \| "billing";/,
+  "PaymentRail doit inclure le rail billing.",
 );
 assert.match(
   sharedTypes,

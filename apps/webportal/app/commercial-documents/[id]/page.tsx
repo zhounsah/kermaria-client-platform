@@ -12,6 +12,7 @@ import { requireClientSession } from "@/lib/auth";
 import {
   commercialDocumentStatus,
   commercialDocumentType,
+  formatDocumentPaymentMethodLabel,
   formatCurrencyFromCents,
   formatDateTime,
 } from "@/lib/formatters";
@@ -78,6 +79,16 @@ export default async function CommercialDocumentDetailPage({
   const isIssued = document.status === "issued" || document.status === "paid";
   const isPaid = document.status === "paid";
   const pdfAvailable = invoiceResult.data?.pdfAvailable === true;
+  const bankTransferEnabled = Boolean(billing.iban);
+  const paymentMethodLabel = formatDocumentPaymentMethodLabel(
+    document.paymentMethod,
+  );
+  const initialPaymentMethod =
+    document.paymentMethod === "stripe" ||
+    document.paymentMethod === "paypal" ||
+    document.paymentMethod === "manual"
+      ? document.paymentMethod
+      : null;
 
   return (
     <>
@@ -122,6 +133,12 @@ export default async function CommercialDocumentDetailPage({
             <div><dt>Créé le</dt><dd>{formatDateTime(document.createdAt)}</dd></div>
             <div><dt>Mise à jour</dt><dd>{formatDateTime(document.updatedAt)}</dd></div>
             <div><dt>Partagé le</dt><dd>{document.sharedAt ? formatDateTime(document.sharedAt) : "Non partagé"}</dd></div>
+            {isIssued && document.paymentMethod ? (
+              <div>
+                <dt>Mode de règlement</dt>
+                <dd>{paymentMethodLabel}</dd>
+              </div>
+            ) : null}
             <div>
               <dt>Demande liée</dt>
               <dd>
@@ -192,21 +209,36 @@ export default async function CommercialDocumentDetailPage({
             </div>
           ) : null}
 
+          {!isPaid && document.paymentMethod === "manual" ? (
+            <FormMessage title="Virement sélectionné" tone="info">
+              <p>
+                Votre facture reste en attente de réception du règlement. Dès
+                que le paiement est confirmé, l&apos;activation démarre
+                automatiquement si nécessaire.
+              </p>
+            </FormMessage>
+          ) : null}
+
           {isPaid ? (
             <div style={{ marginTop: "1rem" }}>
               <p style={{ color: "var(--color-text-muted)" }}>
                 ✓ Cette facture a été réglée. Merci pour votre paiement.
               </p>
             </div>
-          ) : paypalEnabled || stripeEnabled ? (
+          ) : paypalEnabled || stripeEnabled || bankTransferEnabled ? (
             <div style={{ marginTop: "1.5rem" }}>
-              <h3 style={{ marginBottom: "0.5rem" }}>Paiement en ligne</h3>
+              <h3 style={{ marginBottom: "0.5rem" }}>
+                Choisir votre mode de règlement
+              </h3>
               <p style={{ marginBottom: "0.75rem", color: "var(--color-text-muted)" }}>
-                Réglez directement par carte ou compte PayPal. Vous serez
-                redirigé puis ramené automatiquement.
+                Réglez directement en ligne, ou sélectionnez le virement pour
+                conserver cette facture en attente jusqu&apos;à réception du
+                montant.
               </p>
               <PayButton
+                bankTransferEnabled={bankTransferEnabled}
                 documentId={id}
+                initialPaymentMethod={initialPaymentMethod}
                 paypalEnabled={paypalEnabled}
                 stripeEnabled={stripeEnabled}
               />
@@ -225,7 +257,7 @@ export default async function CommercialDocumentDetailPage({
             </div>
           ) : null}
 
-          {!billing.iban && !paypalEnabled && !billing.paypalUrl ? (
+          {!bankTransferEnabled && !paypalEnabled && !stripeEnabled && !billing.paypalUrl ? (
             <p style={{ color: "var(--color-text-muted)" }}>
               Les coordonnées de règlement vous seront communiquées par votre
               prestataire.

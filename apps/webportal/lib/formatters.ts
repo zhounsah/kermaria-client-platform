@@ -1,3 +1,5 @@
+import type { PaymentRail } from "@kermaria/shared";
+
 export const serviceStatus = {
   active: { label: "Actif", tone: "success" },
   pending: { label: "En attente", tone: "warning" },
@@ -5,18 +7,18 @@ export const serviceStatus = {
 } as const;
 
 export const invoiceStatus = {
-  paid: { label: "Payee", tone: "success" },
-  pending: { label: "A regler", tone: "warning" },
+  paid: { label: "Payée", tone: "success" },
+  pending: { label: "À régler", tone: "warning" },
   overdue: { label: "En retard", tone: "danger" },
 } as const;
 
 export const commercialDocumentStatus = {
   draft: { label: "Brouillon", tone: "neutral" },
-  pending_review: { label: "A verifier", tone: "warning" },
-  shared_with_customer: { label: "Partage au client", tone: "success" },
-  cancelled: { label: "Annule", tone: "neutral" },
-  issued: { label: "Facture emise", tone: "success" },
-  paid: { label: "Reglee", tone: "success" },
+  pending_review: { label: "À vérifier", tone: "warning" },
+  shared_with_customer: { label: "Partagé au client", tone: "success" },
+  cancelled: { label: "Annulé", tone: "neutral" },
+  issued: { label: "Facture émise", tone: "success" },
+  paid: { label: "Réglée", tone: "success" },
 } as const;
 
 export const commercialDocumentType = {
@@ -32,40 +34,41 @@ export const commercialOfferStatus = {
 
 export const commercialOfferBillingCadence = {
   one_time: { label: "Ponctuelle", tone: "neutral" },
-  monthly: { label: "Recurrente", tone: "info" },
+  monthly: { label: "Récurrente", tone: "info" },
 } as const;
 
 export const commercialOfferPaymentMode = {
-  monthly: { label: "Mensualise", tone: "info" },
+  monthly: { label: "Mensualisé", tone: "info" },
   upfront: { label: "Comptant", tone: "warning" },
 } as const;
 
 export const subscriptionStatus = {
   pending_approval: { label: "En attente d'approbation", tone: "warning" },
-  pending_activation: { label: "Approuvee, activation en cours", tone: "info" },
+  pending_payment: { label: "En attente de paiement", tone: "warning" },
+  pending_activation: { label: "Approuvée, activation en cours", tone: "info" },
   pending_cancellation: {
-    label: "Resiliation programmee",
+    label: "Résiliation programmée",
     tone: "warning",
   },
   active: { label: "Active", tone: "success" },
   suspended: { label: "Suspendue", tone: "warning" },
-  cancelled: { label: "Annulee", tone: "neutral" },
-  expired: { label: "Expiree", tone: "neutral" },
+  cancelled: { label: "Annulée", tone: "neutral" },
+  expired: { label: "Expirée", tone: "neutral" },
 } as const;
 
 export const subscriptionProvisioningStatus = {
-  not_configured: { label: "Non configure", tone: "warning" },
+  not_configured: { label: "Non configuré", tone: "warning" },
   not_required: { label: "Non requis", tone: "neutral" },
-  ready: { label: "Pret", tone: "info" },
-  succeeded: { label: "Synchronise", tone: "success" },
-  failed: { label: "Echec", tone: "danger" },
+  ready: { label: "Prêt", tone: "info" },
+  succeeded: { label: "Synchronisé", tone: "success" },
+  failed: { label: "Échec", tone: "danger" },
 } as const;
 
 export const supportStatus = {
   open: {
     label: "Ouverte",
     tone: "info",
-    description: "Votre demande a ete recue.",
+    description: "Votre demande a été reçue.",
   },
   in_progress: {
     label: "En cours",
@@ -78,53 +81,53 @@ export const supportStatus = {
     description: "Votre demande est en attente d'un retour de votre part.",
   },
   resolved: {
-    label: "Resolue",
+    label: "Résolue",
     tone: "success",
-    description: "Votre demande a ete resolue.",
+    description: "Votre demande a été résolue.",
   },
   closed: {
-    label: "Cloturee",
+    label: "Clôturée",
     tone: "neutral",
-    description: "Le suivi de cette demande est cloture.",
+    description: "Le suivi de cette demande est clôturé.",
   },
   cancelled: {
-    label: "Annulee",
+    label: "Annulée",
     tone: "neutral",
-    description: "Cette demande a ete annulee.",
+    description: "Cette demande a été annulée.",
   },
 } as const;
 
 export const serviceRequestStatus = {
   received: {
-    label: "Recue",
+    label: "Reçue",
     tone: "info",
-    description: "Votre demande a ete recue.",
+    description: "Votre demande a été reçue.",
   },
   under_review: {
-    label: "En etude",
+    label: "En étude",
     tone: "warning",
-    description: "Votre demande de service est en cours d'etude.",
+    description: "Votre demande de service est en cours d'étude.",
   },
   accepted: {
-    label: "Acceptee",
+    label: "Acceptée",
     tone: "success",
     description:
-      "Votre demande a ete acceptee. Elle sera traitee manuellement.",
+      "Votre demande a été acceptée. Elle sera traitée manuellement.",
   },
   rejected: {
-    label: "Refusee",
+    label: "Refusée",
     tone: "danger",
-    description: "Votre demande ne peut pas etre retenue dans ce perimetre.",
+    description: "Votre demande ne peut pas être retenue dans ce périmètre.",
   },
   cancelled: {
-    label: "Annulee",
+    label: "Annulée",
     tone: "neutral",
-    description: "Cette demande a ete annulee.",
+    description: "Cette demande a été annulée.",
   },
   completed: {
-    label: "Terminee",
+    label: "Terminée",
     tone: "success",
-    description: "Le traitement manuel de cette demande est termine.",
+    description: "Le traitement manuel de cette demande est terminé.",
   },
 } as const;
 
@@ -185,4 +188,32 @@ export function formatPaymentModeLabel(
   }
 
   return commercialOfferPaymentMode[value].label;
+}
+
+export function formatSubscriptionRailLabel(rail: PaymentRail) {
+  switch (rail) {
+    case "stripe":
+      return "Stripe";
+    case "paypal":
+      return "PayPal";
+    default:
+      return "Facture";
+  }
+}
+
+export function formatDocumentPaymentMethodLabel(
+  paymentMethod: PaymentRail | "manual" | null | undefined,
+) {
+  switch (paymentMethod) {
+    case "stripe":
+      return "Stripe";
+    case "paypal":
+      return "PayPal";
+    case "manual":
+      return "Virement bancaire";
+    case "billing":
+      return "Facture";
+    default:
+      return "—";
+  }
 }

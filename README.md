@@ -12,9 +12,9 @@ browser -> WEBPORTAL / BFF -> API-INTERNAL -> MariaDB
 
 `WEBPORTAL` ne doit jamais acceder directement a MariaDB.
 
-## Etat courant V0.27 + V0.29 Stripe + V0.30 partiel + V0.35 panier + V0.24 infra debout
+## Etat courant V0.27 + V0.29 Stripe + V0.30 partiel + V0.32/V0.33 packs + V0.35/V0.36 checkout + V0.24 infra debout
 
-Le depot couvre aujourd'hui les jalons V0.9 a V0.31 + V0.35 (voir
+Le depot couvre aujourd'hui les jalons V0.9 a V0.31 + V0.35 + V0.36 (voir
 [`docs/ROADMAP.md`](docs/ROADMAP.md)). L'integration BPCE de la V0.20
 emet de vraies factures fiscales (mode `live` desactive par defaut, en
 phase de tests), la V0.21 ouvre les canaux de paiement client one-shot,
@@ -26,6 +26,26 @@ tester les envois SMTP reels, et la V0.35 ajoute un **panier a la carte**
 self-service (regroupe N options one-shot en une commande unique reglee via
 Stripe / PayPal / virement, cf.
 [`docs/V0.35_CART_ALACARTE.md`](docs/V0.35_CART_ALACARTE.md)).
+
+V0.32 (2026-07-09) remplace l'affichage public des briques techniques par
+4 **packs grand public** relies au catalogue facturable existant, avec
+variantes 1/6/12 mois, paiement mensualise ou comptant selon le cas,
+snapshot au signup et compatibilite de provisionnement via
+`external_reference`, cf.
+[`docs/V0.32_PUBLIC_PACKS.md`](docs/V0.32_PUBLIC_PACKS.md). V0.33 ajoute
+la couche de **contenus administrables** pour les CGV, les mentions
+legales, la page a propos et les fiches detaillees des packs publics, cf.
+[`docs/V0.33_CONTENUS_ADMINISTRABLES.md`](docs/V0.33_CONTENUS_ADMINISTRABLES.md).
+
+V0.36 (2026-07-09) complete ce socle avec un **panier unifie** qui
+previsualise achats ponctuels et abonnements recurrents sur `/souscrire`,
+dans un drawer de header et sur `/panier`, tout en conservant deux tunnels
+de confirmation distincts. Les abonnements peuvent maintenant etre
+**factures** (`rail=billing`) : creation locale en `pending_payment`,
+facture initiale groupee, choix explicite Stripe / PayPal / virement sur la
+page document, activation automatique au paiement et renouvellement facture
+via worker, cf.
+[`docs/V0.36_PANIER_UNIFIE_ABONNEMENTS_FACTURES.md`](docs/V0.36_PANIER_UNIFIE_ABONNEMENTS_FACTURES.md).
 
 V0.35.1 (2026-07-09) : correctif transversal des horodatages — plus aucun
 `NOW()`/`CURRENT_TIMESTAMP` (heure locale serveur) en base, serialisation
@@ -239,8 +259,6 @@ au 2026-06-30) :
   emetteur dedie, SPF/DKIM/DMARC documentes, recette guidee) ;
 - V0.31 sortie effective de `OU=TEST_SITE_WEB` (procedure V0.25
   brique 3 executee, levee du `RequiredTestOuRoot` hardcode) ;
-- V0.35 panier / commande groupee a la carte (a cadrer, depend de V0.28 —
-  [`docs/V0.35_CART_ALACARTE.md`](docs/V0.35_CART_ALACARTE.md)).
 
 Voir [`docs/ROADMAP.md`](docs/ROADMAP.md) pour le detail.
 
@@ -469,6 +487,7 @@ npm run test:ad-security     # garde-fous AD
 - [Operations](docs/OPERATIONS.md)
 - [Backup and restore](docs/BACKUP_RESTORE.md)
 - [Roadmap](docs/ROADMAP.md)
+- [Implementation map - current state](docs/IMPLEMENTATION_MAP_CURRENT.md)
 - [V0.24 Stabilisation (cadrage)](docs/V0.24_STABILISATION.md)
 - [V0.24 Suivi execution briques](docs/V0.24_SUIVI.md)
 - [Guide client — payer une facture](docs/GUIDE_CLIENT_PAIEMENT.md)
@@ -486,6 +505,11 @@ npm run test:ad-security     # garde-fous AD
 - [Guide utilisateur signup V0.26](docs/V0.26_USER_GUIDE_SIGNUP.md)
 - [Test envoi e-mail live V0.30 (partiel : allowlist)](docs/V0.30_EMAIL_LIVE_TEST.md)
 - [Cadrage site vitrine public V0.27](docs/V0.27_PUBLIC_VITRINE.md)
+- [Packs grand public V0.32](docs/V0.32_PUBLIC_PACKS.md)
+- [Contenus administrables V0.33](docs/V0.33_CONTENUS_ADMINISTRABLES.md)
+- [Panier one-shot V0.35](docs/V0.35_CART_ALACARTE.md)
+- [Panier unifie et abonnements factures V0.36](docs/V0.36_PANIER_UNIFIE_ABONNEMENTS_FACTURES.md)
+- [Correctif UTC V0.35.1](docs/V0.35.1_TIMEZONE_UTC_FIX.md)
 - [Active Directory security hardening V0.19](docs/V0.19_AD_SECURITY_HARDENING.md)
 - [Active Directory controlled write V0.18](docs/V0.18_ACTIVE_DIRECTORY_CONTROLLED_WRITE.md)
 - [Preproduction technique V0.16](docs/V0.16_PREPRODUCTION_TECHNIQUE.md)

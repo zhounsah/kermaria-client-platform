@@ -16,13 +16,14 @@ import {
   formatCurrencyFromCents,
   formatDateTime,
   formatPaymentModeLabel,
+  formatSubscriptionRailLabel,
   subscriptionProvisioningStatus,
   subscriptionStatus,
 } from "@/lib/formatters";
 import { getAdminSubscription } from "@/lib/internal-api";
 
 export const metadata = {
-  title: "Detail abonnement - Administration",
+  title: "Détail abonnement - Administration",
 };
 
 export const dynamic = "force-dynamic";
@@ -30,9 +31,9 @@ export const dynamic = "force-dynamic";
 const ACTION_STATUS_BADGE = {
   requested: { label: "Demande", tone: "info" },
   running: { label: "En cours", tone: "warning" },
-  succeeded: { label: "Succes", tone: "success" },
+  succeeded: { label: "Succès", tone: "success" },
   unchanged: { label: "Sans changement", tone: "neutral" },
-  failed: { label: "Echec", tone: "danger" },
+  failed: { label: "Échec", tone: "danger" },
 } as const;
 
 export default async function AdminSubscriptionDetailPage({
@@ -48,7 +49,7 @@ export default async function AdminSubscriptionDetailPage({
     return (
       <>
         <PageHeader
-          description="Detail de la souscription client."
+          description="Détail de la souscription client."
           eyebrow="Administration"
           title="Abonnement"
         />
@@ -78,20 +79,20 @@ export default async function AdminSubscriptionDetailPage({
     <>
       <PageHeader
         action={<StatusBadge label={status.label} tone={status.tone} />}
-        description={`${subscription.customerReference} · ${subscription.customerName}`}
+        description={`${subscription.customerReference} - ${subscription.customerName}`}
         eyebrow="Administration"
         title={subscription.offerName}
       />
 
-      <SectionCard ariaLabel="Informations generales">
-        <h2>Informations generales</h2>
+      <SectionCard ariaLabel="Informations générales">
+        <h2>Informations générales</h2>
         <dl className="profile-details">
           <div>
             <dt>Offre</dt>
             <dd>{subscription.offerName}</dd>
           </div>
           <div>
-            <dt>Reference offre</dt>
+            <dt>Référence offre</dt>
             <dd>{subscription.offerExternalReference ?? "—"}</dd>
           </div>
           <div>
@@ -99,7 +100,7 @@ export default async function AdminSubscriptionDetailPage({
             <dd>{subscription.publicPackCode ?? "—"}</dd>
           </div>
           <div>
-            <dt>Prix par echeance HT</dt>
+            <dt>Prix par échéance HT</dt>
             <dd>{formatCurrencyFromCents(subscription.priceAmountCents)}</dd>
           </div>
           <div>
@@ -119,12 +120,12 @@ export default async function AdminSubscriptionDetailPage({
             <dd>{formatPaymentModeLabel(subscription.paymentMode)}</dd>
           </div>
           <div>
-            <dt>Cycles payes</dt>
+            <dt>Cycles payés</dt>
             <dd>{String(subscription.paidCyclesCount)}</dd>
           </div>
           <div>
             <dt>Rail</dt>
-            <dd>{subscription.rail === "stripe" ? "Stripe" : "PayPal"}</dd>
+            <dd>{formatSubscriptionRailLabel(subscription.rail)}</dd>
           </div>
           {subscription.rail === "stripe" ? (
             <>
@@ -137,7 +138,7 @@ export default async function AdminSubscriptionDetailPage({
                 <dd>{subscription.stripeSubscriptionId ?? "—"}</dd>
               </div>
             </>
-          ) : (
+          ) : subscription.rail === "paypal" ? (
             <>
               <div>
                 <dt>Plan PayPal</dt>
@@ -148,9 +149,20 @@ export default async function AdminSubscriptionDetailPage({
                 <dd>{subscription.paypalSubscriptionId ?? "—"}</dd>
               </div>
             </>
+          ) : (
+            <>
+              <div>
+                <dt>Facturation</dt>
+                <dd>Facture locale Kermaria</dd>
+              </div>
+              <div>
+                <dt>Encaissement</dt>
+                <dd>Stripe, PayPal ou virement depuis la facture</dd>
+              </div>
+            </>
           )}
           <div>
-            <dt>Demarree le</dt>
+            <dt>Démarrée le</dt>
             <dd>
               {subscription.startedAt
                 ? formatDateTime(subscription.startedAt)
@@ -158,11 +170,11 @@ export default async function AdminSubscriptionDetailPage({
             </dd>
           </div>
           <div>
-            <dt>Prochaine echeance</dt>
+            <dt>Prochaine échéance</dt>
             <dd>
               {subscription.nextBillingAt
                 ? formatDateTime(subscription.nextBillingAt)
-                : "A determiner"}
+                : "À déterminer"}
             </dd>
           </div>
           <div>
@@ -174,7 +186,7 @@ export default async function AdminSubscriptionDetailPage({
             </dd>
           </div>
           <div>
-            <dt>Resiliation demandee le</dt>
+            <dt>Résiliation demandée le</dt>
             <dd>
               {subscription.cancelRequestedAt
                 ? formatDateTime(subscription.cancelRequestedAt)
@@ -182,11 +194,11 @@ export default async function AdminSubscriptionDetailPage({
             </dd>
           </div>
           <div>
-            <dt>Fin de terme programmee</dt>
+            <dt>Fin de terme programmée</dt>
             <dd>{subscription.cancelAtTermEnd ? "Oui" : "Non"}</dd>
           </div>
           <div>
-            <dt>Annulee le</dt>
+            <dt>Annulée le</dt>
             <dd>
               {subscription.cancelledAt
                 ? formatDateTime(subscription.cancelledAt)
@@ -196,8 +208,8 @@ export default async function AdminSubscriptionDetailPage({
         </dl>
         {subscription.cancelAtTermEnd ? (
           <p className="field-hint">
-            La souscription reste active jusqu&apos;a la prochaine fin de terme
-            enregistree.
+            La souscription reste active jusqu&apos;à la prochaine fin de terme
+            enregistrée.
           </p>
         ) : null}
         <AdminCancelSubscriptionButton
@@ -211,8 +223,8 @@ export default async function AdminSubscriptionDetailPage({
           <div>
             <h2>Provisioning Active Directory</h2>
             <p className="field-hint">
-              Reconciliation calculee au niveau du client, sur tous les liens
-              AD utilisateur associes a ce compte.
+              Réconciliation calculée au niveau du client, sur tous les liens
+              AD utilisateur associés à ce compte.
             </p>
           </div>
           <div className="badge-stack">
@@ -224,7 +236,7 @@ export default async function AdminSubscriptionDetailPage({
         </div>
         <dl className="profile-details">
           <div>
-            <dt>Groupes mappes</dt>
+            <dt>Groupes mappés</dt>
             <dd>
               {provisioning.mappedGroups.length > 0
                 ? provisioning.mappedGroups.join(", ")
@@ -232,7 +244,7 @@ export default async function AdminSubscriptionDetailPage({
             </dd>
           </div>
           <div>
-            <dt>Groupes reconcilies</dt>
+            <dt>Groupes réconciliés</dt>
             <dd>
               {provisioning.reconciledGroups.length > 0
                 ? provisioning.reconciledGroups.join(", ")
@@ -244,7 +256,7 @@ export default async function AdminSubscriptionDetailPage({
             <dd>{String(provisioning.targetUsers.length)}</dd>
           </div>
           <div>
-            <dt>Dernier resultat</dt>
+            <dt>Dernier résultat</dt>
             <dd>{provisioning.lastResultCode ?? "—"}</dd>
           </div>
         </dl>
@@ -258,10 +270,10 @@ export default async function AdminSubscriptionDetailPage({
         )}
 
         <div style={{ marginTop: 18 }}>
-          <h3>Utilisateurs vises</h3>
+          <h3>Utilisateurs visés</h3>
           {provisioning.targetUsers.length === 0 ? (
             <p className="field-hint">
-              Aucun lien AD utilisateur n&apos;est actuellement rattache a ce
+              Aucun lien AD utilisateur n&apos;est actuellement rattaché à ce
               client.
             </p>
           ) : (
@@ -273,7 +285,7 @@ export default async function AdminSubscriptionDetailPage({
                     <p className="field-hint">
                       {user.displayName}
                       {user.userPrincipalName
-                        ? ` · ${user.userPrincipalName}`
+                        ? ` - ${user.userPrincipalName}`
                         : ""}
                     </p>
                   </div>
@@ -284,10 +296,10 @@ export default async function AdminSubscriptionDetailPage({
         </div>
 
         <div style={{ marginTop: 18 }}>
-          <h3>Dernieres actions</h3>
+          <h3>Dernières actions</h3>
           {provisioning.recentActions.length === 0 ? (
             <p className="field-hint">
-              Aucune action de provisioning enregistree pour cette souscription.
+              Aucune action de provisioning enregistrée pour cette souscription.
             </p>
           ) : (
             <ul className="stack-list">
@@ -304,13 +316,13 @@ export default async function AdminSubscriptionDetailPage({
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <strong>{action.actionType}</strong>
                       <p className="field-hint">
-                        {formatDateTime(action.requestedAt)} · correlation{" "}
+                        {formatDateTime(action.requestedAt)} - corrélation{" "}
                         {action.correlationId}
-                        {action.resultCode ? ` · ${action.resultCode}` : ""}
+                        {action.resultCode ? ` - ${action.resultCode}` : ""}
                       </p>
                     </div>
                     <StatusBadge
-                      label={action.changed ? "Modifie" : "Idempotent"}
+                      label={action.changed ? "Modifié" : "Idempotent"}
                       tone={action.changed ? "success" : "neutral"}
                     />
                     <StatusBadge
@@ -325,11 +337,11 @@ export default async function AdminSubscriptionDetailPage({
         </div>
       </SectionCard>
 
-      <SectionCard ariaLabel="Factures BPCE liees">
-        <h2>Factures BPCE generees</h2>
+      <SectionCard ariaLabel="Factures BPCE liées">
+        <h2>Factures BPCE générées</h2>
         {documents.length === 0 ? (
           <p className="field-hint">
-            Aucun document n&apos;a encore ete genere pour cette souscription.
+            Aucun document n&apos;a encore été généré pour cette souscription.
           </p>
         ) : (
           <ul className="stack-list">
@@ -340,7 +352,7 @@ export default async function AdminSubscriptionDetailPage({
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <strong>{doc.internalReference}</strong>
                     <p className="field-hint">
-                      {doc.title} · {formatDateTime(doc.createdAt)}
+                      {doc.title} - {formatDateTime(doc.createdAt)}
                     </p>
                   </div>
                   <strong>{formatCurrencyFromCents(doc.totalAmountCents)}</strong>

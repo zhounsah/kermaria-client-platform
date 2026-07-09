@@ -38,6 +38,11 @@ public interface ISubscriptionService
         string externalSubscriptionId,
         CancellationToken cancellationToken);
 
+    Task<SubscriptionSummary> CreateBilledPendingAsync(
+        PortalSessionContext session,
+        string offerId,
+        CancellationToken cancellationToken);
+
     Task<SubscriptionSummary> MarkAsPendingActivationAsync(
         PortalSessionContext session,
         string subscriptionId,
@@ -152,7 +157,17 @@ public sealed class SubscriptionService : ISubscriptionService
                 offer.BillingCadence,
                 CommercialStatuses.CadenceMonthly,
                 StringComparison.Ordinal)
-            || string.IsNullOrWhiteSpace(activePlanId))
+            || offer.PriceAmountCents <= 0)
+        {
+            throw new PortalValidationException();
+        }
+
+        if (string.Equals(rail, "billing", StringComparison.Ordinal))
+        {
+            return new SubscriptionLookup(offer, rail, string.Empty);
+        }
+
+        if (string.IsNullOrWhiteSpace(activePlanId))
         {
             throw new PortalValidationException();
         }
@@ -175,10 +190,32 @@ public sealed class SubscriptionService : ISubscriptionService
             session.CustomerId,
             lookup.Offer,
             rail,
+            "pending_approval",
             rail == "stripe" ? null : lookup.ExternalPlanId,
             rail == "stripe" ? null : externalSubscriptionId,
             rail == "stripe" ? lookup.ExternalPlanId : null,
             rail == "stripe" ? externalSubscriptionId : null,
+            cancellationToken);
+    }
+
+    public async Task<SubscriptionSummary> CreateBilledPendingAsync(
+        PortalSessionContext session,
+        string offerId,
+        CancellationToken cancellationToken)
+    {
+        var lookup = await ResolveSubscribableOfferAsync(
+            offerId,
+            "billing",
+            cancellationToken);
+        return await _repository.CreatePendingAsync(
+            session.CustomerId,
+            lookup.Offer,
+            "billing",
+            "pending_payment",
+            null,
+            null,
+            null,
+            null,
             cancellationToken);
     }
 
@@ -482,6 +519,7 @@ public sealed class SubscriptionService : ISubscriptionService
 
     private static bool IsSupportedStatus(string status)
         => status is "pending_approval"
+            or "pending_payment"
             or "pending_activation"
             or "pending_cancellation"
             or "active"

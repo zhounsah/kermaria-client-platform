@@ -42,7 +42,7 @@ export function PasswordChangeForm() {
     if (newPassword === currentPassword) {
       setMessage({
         tone: "error",
-        text: "Le nouveau mot de passe doit etre different du mot de passe actuel.",
+        text: "Le nouveau mot de passe doit être différent du mot de passe actuel.",
       });
       return;
     }
@@ -66,7 +66,7 @@ export function PasswordChangeForm() {
     if (result.ok) {
       setMessage({
         tone: "success",
-        text: "Mot de passe Active Directory mis a jour.",
+        text: "Mot de passe Active Directory mis à jour.",
       });
       setCurrentPassword("");
       setNewPassword("");
@@ -115,13 +115,13 @@ export function PasswordChangeForm() {
         />
       </label>
       <p className="field-hint">
-        La politique de complexite et d&apos;historique du mot de passe est
-        controlee par votre domaine Active Directory. Aucune regle locale
-        n&apos;est appliquee cote portail.
+        La politique de complexité et d&apos;historique du mot de passe est
+        contrôlée par votre domaine Active Directory. Aucune règle locale
+        n&apos;est appliquée côté portail.
       </p>
       {message ? (
         <FormMessage
-          title={message.tone === "success" ? "Mot de passe change" : "Echec"}
+          title={message.tone === "success" ? "Mot de passe changé" : "Échec"}
           tone={message.tone}
         >
           <p>{message.text}</p>

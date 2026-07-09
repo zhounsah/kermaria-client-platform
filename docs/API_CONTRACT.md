@@ -19,8 +19,17 @@ Le navigateur accède uniquement à `WEBPORTAL` :
 - `POST /api/notifications/{id}/read`
 - `POST /api/notifications/read-all`
 - `GET /api/catalog`
+- `GET /api/cart`
+- `POST /api/cart/items`
+- `POST /api/cart/items/remove`
+- `POST /api/cart/confirm`
+- `GET /api/checkout/summary`
+- `POST /api/checkout/subscriptions/items`
+- `POST /api/checkout/subscriptions/items/remove`
+- `POST /api/checkout/subscriptions/confirm`
 - `GET /api/commercial-documents`
 - `GET /api/commercial-documents/{id}`
+- `POST /api/commercial-documents/{id}/payment-method`
 - `GET /api/admin/overview`
 - `GET /api/admin/activity`
 - `GET /api/admin/customers`
@@ -29,6 +38,9 @@ Le navigateur accède uniquement à `WEBPORTAL` :
 - `GET /api/admin/catalog`
 - `POST /api/admin/catalog`
 - `PATCH /api/admin/catalog/{id}`
+- `GET /api/admin/content`
+- `GET /api/admin/content/{key}`
+- `PATCH /api/admin/content/{key}`
 - `GET /api/admin/commercial-documents`
 - `POST /api/admin/commercial-documents`
 - `GET /api/admin/commercial-documents/{id}`
@@ -50,6 +62,8 @@ Le navigateur accède uniquement à `WEBPORTAL` :
 - `PATCH /api/admin/service-requests/{id}/status`
 - `POST /api/admin/service-requests/{id}/notes`
 - `POST /api/admin/service-requests/{id}/messages`
+- `GET /api/admin/public-pack-catalog`
+- `PATCH /api/admin/public-pack-catalog`
 - `GET /api/admin/sessions`
 - `GET /api/admin/audit-logs`
 
@@ -72,6 +86,10 @@ publiées par le reverse proxy et jamais appelées directement par le navigateur
 - `GET /internal/admin/catalog`
 - `POST /internal/admin/catalog`
 - `PATCH /internal/admin/catalog/{id}`
+- `GET /internal/portal/content/{key}`
+- `GET /internal/admin/content`
+- `GET /internal/admin/content/{key}`
+- `PATCH /internal/admin/content/{key}`
 - `GET /internal/admin/commercial-documents`
 - `POST /internal/admin/commercial-documents`
 - `GET /internal/admin/commercial-documents/{id}`
@@ -100,6 +118,14 @@ publiées par le reverse proxy et jamais appelées directement par le navigateur
 - `GET /internal/portal/invoices`
 - `GET /internal/portal/service-catalog`
 - `GET /internal/portal/catalog`
+- `GET /internal/portal/cart`
+- `POST /internal/portal/cart/items`
+- `POST /internal/portal/cart/items/remove`
+- `POST /internal/portal/cart/confirm`
+- `GET /internal/portal/checkout/summary`
+- `POST /internal/portal/checkout/subscriptions/items`
+- `POST /internal/portal/checkout/subscriptions/items/remove`
+- `POST /internal/portal/checkout/subscriptions/confirm`
 - `GET /internal/portal/support-requests`
 - `GET /internal/portal/support-requests/{id}`
 - `POST /internal/portal/support-requests/{id}/messages`
@@ -108,11 +134,15 @@ publiées par le reverse proxy et jamais appelées directement par le navigateur
 - `POST /internal/portal/service-requests/{id}/messages`
 - `GET /internal/portal/commercial-documents`
 - `GET /internal/portal/commercial-documents/{id}`
+- `POST /internal/portal/commercial-documents/{id}/payment-method`
 - `GET /internal/portal/notifications`
 - `POST /internal/portal/notifications/{id}/read`
 - `POST /internal/portal/notifications/read-all`
 - `POST /internal/portal/support-requests`
 - `POST /internal/portal/service-requests`
+- `GET /internal/portal/public-pack-catalog`
+- `GET /internal/admin/public-pack-catalog`
+- `PATCH /internal/admin/public-pack-catalog`
 - `GET /internal/ad/health`
 - `POST /internal/ad/change-password`
 - `POST /internal/ad/create-user`
@@ -165,6 +195,96 @@ Contraintes :
   recalcule cote serveur depuis le document commercial.
 - `PAYPAL_CLIENT_SECRET` ne quitte jamais WEBPORTAL et n'est jamais
   journalise.
+
+## Contenus administrables V0.33
+
+Le module de contenus administrables repose sur un **registre ferme** de
+cles partage entre `packages/shared`, `WEBPORTAL` et `API-INTERNAL`.
+
+Contraintes :
+
+- cles actuelles : `legal:cgv`, `legal:mentions-legales`,
+  `page:a-propos` et `pack-sheet:<publicPackCode>` ;
+- aucune creation libre de contenu par API ;
+- aucune suppression libre par API ;
+- seules `bodyMarkdown` et `versionLabel` sont mutables ;
+- `title`, `contentType` et `publicPath` restent figes par la cle ;
+- les routes admin exigent `internal_admin` cote BFF et
+  `admin.catalog.read` / `admin.catalog.write` cote `API-INTERNAL` ;
+- l'ecriture journalise `managed_content.update`.
+
+Comportement des endpoints :
+
+- `GET /internal/portal/content/{key}` : lecture publique interne d'un
+  contenu seed ou persiste ;
+- `GET /internal/admin/content` : liste admin ;
+- `GET /internal/admin/content/{key}` : detail admin ;
+- `PATCH /internal/admin/content/{key}` : upsert persistant ;
+- `GET/PATCH /internal/admin/public-pack-catalog` : contenu marketing de
+  la vitrine packs, distinct des fiches techniques detaillees.
+
+Notes de contrat :
+
+- les cles sont souvent URL-encodees (`legal%3Acgv`) entre l'UI et le
+  BFF ; les routes Next les decodent avant validation ;
+- le site public ne publie pas de route navigateur `/api/content` :
+  les pages publiques appellent ces surfaces via les helpers serveur
+  `internal-api.ts` ;
+- le rendu Markdown public et admin passe par `react-markdown`, sans
+  HTML brut.
+
+## Checkout unifie V0.36
+
+Les routes checkout restent strictement dans le flux
+`Navigateur -> WEBPORTAL/BFF -> API-INTERNAL -> MariaDB`.
+
+Contraintes :
+
+- `GET /api/checkout/summary` et
+  `GET /internal/portal/checkout/summary` exposent un agregat unique
+  `CheckoutSummary` avec :
+  - `cart` pour le panier one-shot ;
+  - `recurring` pour la selection recurrente facturee ;
+  - `totalItemCount` et `hasMixedCheckout` pour l'UI.
+- `POST /api/checkout/subscriptions/items` et son endpoint miroir interne
+  ajoutent une offre `monthly` active et payable a la selection recurrente.
+  Les offres `one_time`, gratuites ou inactives sont refusees via
+  `RECURRING_CHECKOUT_OFFER_NOT_ELIGIBLE`.
+- `POST /api/checkout/subscriptions/items/remove` retire une selection
+  recurrente par `offerId`.
+- `POST /api/checkout/subscriptions/confirm` cree :
+  - une souscription locale `rail='billing'` et `status='pending_payment'`
+    par ligne recurrente ;
+  - un document commercial groupe `origin='recurring_checkout'` ;
+  - les liaisons `commercial_document_line_subscriptions`.
+- `POST /api/cart/confirm` reste reserve au tunnel one-shot et continue de
+  produire un document `origin='client_cart'`.
+- Le BFF peut retomber sur le seul panier historique si
+  `/internal/portal/checkout/summary` n'existe pas encore sur le runtime
+  cible (`ROUTE_NOT_FOUND`, `SQL_UNAVAILABLE`, `INTERNAL_ERROR`,
+  `INTERNAL_API_UNAVAILABLE`, `INVALID_INTERNAL_RESPONSE`).
+
+## Choix explicite du virement bancaire V0.36
+
+La selection du virement bancaire reste strictement dans le flux
+`Navigateur -> WEBPORTAL/BFF -> API-INTERNAL -> MariaDB`.
+
+Contraintes :
+
+- `POST /api/commercial-documents/{id}/payment-method` appelle
+  `POST /internal/portal/commercial-documents/{id}/payment-method`.
+- Le payload accepte uniquement `{ "paymentMethod": "manual" }`.
+- Le document doit appartenir au client de la session et etre deja `issued`.
+- Cette route **n'encaisse rien** : elle enregistre seulement le choix du
+  rail et laisse le document en attente de reglement.
+- L'encaissement reel converge ensuite sur
+  `POST /internal/portal/commercial-documents/{id}/payment-confirm`
+  (Stripe / PayPal) ou sur le flux admin `mark-as-paid` (virement).
+- Une fois le document marque `paid`, `InvoiceIssuingService` declenche
+  a la fois :
+  - `CartProvisioningTrigger` pour les documents issus du panier one-shot ;
+  - `BilledSubscriptionPaymentTrigger` pour les souscriptions reliees au
+    document (premier paiement ou renouvellement).
 
 ## Socle commercial V0.15
 

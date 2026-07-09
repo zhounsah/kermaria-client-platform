@@ -37,7 +37,7 @@ export function ServiceCard({ service }: ServiceCardProps) {
       <div>
         <p className="card-kicker">{service.reference}</p>
         <h2>{service.name}</h2>
-        <p className="card-description">{service.description}</p>
+        <p className="card-description multiline-text">{service.description}</p>
       </div>
       <dl className="compact-details">
         <div>

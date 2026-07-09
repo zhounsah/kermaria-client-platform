@@ -14,6 +14,7 @@ import {
   formatCurrencyFromCents,
   formatDateTime,
   formatPaymentModeLabel,
+  formatSubscriptionRailLabel,
   subscriptionStatus,
 } from "@/lib/formatters";
 import { getClientSubscriptions } from "@/lib/internal-api";
@@ -30,32 +31,32 @@ const FLASH_MESSAGES: Record<
 > = {
   approved: {
     tone: "success",
-    label: "Souscription approuvee",
+    label: "Souscription approuvée",
     text:
-      "Votre souscription est en cours d'activation. Le provisioning demarrera automatiquement apres validation.",
+      "Votre souscription est en cours d'activation. Le provisioning démarrera automatiquement après validation.",
   },
   cancelled: {
     tone: "warning",
     label: "Parcours interrompu",
-    text: "La creation de souscription a ete interrompue avant activation.",
+    text: "La création de souscription a été interrompue avant activation.",
   },
   scheduled: {
     tone: "warning",
-    label: "Resiliation programmee",
+    label: "Résiliation programmée",
     text:
-      "La resiliation prendra effet a la fin du terme deja engage ou deja paye.",
+      "La résiliation prendra effet à la fin du terme déjà engagé ou déjà payé.",
   },
   terminated: {
     tone: "success",
-    label: "Souscription resiliee",
+    label: "Souscription résiliée",
     text:
-      "La resiliation a bien ete enregistree. Les acces associes sont en cours de reconciliation.",
+      "La résiliation a bien été enregistrée. Les accès associés sont en cours de réconciliation.",
   },
   error: {
     tone: "danger",
     label: "Souscription en erreur",
     text:
-      "Un probleme est survenu lors du retour de paiement. Verifiez la liste ou reessayez.",
+      "Un problème est survenu lors du retour de paiement. Vérifiez la liste ou réessayez.",
   },
 };
 
@@ -85,7 +86,7 @@ export default async function ProfileSubscriptionsPage({
             Ajouter / remplacer une offre
           </Link>
         }
-        description="Suivi de vos abonnements recurrents, avec resiliation immediate ou differee selon le terme en cours."
+        description="Suivi de vos abonnements récurrents, avec résiliation immédiate ou différée selon le terme en cours."
         eyebrow="Compte"
         title="Mes souscriptions"
       />
@@ -99,8 +100,8 @@ export default async function ProfileSubscriptionsPage({
 
       <section className="request-history-section">
         <SectionHeading
-          description="Pour remplacer une offre, souscrivez d'abord a la nouvelle, puis resiliez l'ancienne une fois l'activation confirmee."
-          title="Souscriptions actives et historiques recents"
+          description="Pour remplacer une offre, souscrivez d'abord à la nouvelle, puis résiliez l'ancienne une fois l'activation confirmée."
+          title="Souscriptions actives et historiques récents"
         />
         {result.error ? (
           <ErrorState
@@ -115,7 +116,7 @@ export default async function ProfileSubscriptionsPage({
                 Voir les offres
               </Link>
             }
-            description="Aucune souscription en cours. Vous pouvez en demarrer une depuis le catalogue de services."
+            description="Aucune souscription en cours. Vous pouvez en démarrer une depuis le catalogue de services."
             title="Aucune souscription"
           />
         ) : (
@@ -138,7 +139,7 @@ export default async function ProfileSubscriptionsPage({
                       <span className="card-kicker">
                         {item.publicPackCode
                           ? "Pack grand public"
-                          : "Offre recurrente"}
+                          : "Offre récurrente"}
                       </span>
                       <h2>{item.offerName}</h2>
                       <p>
@@ -148,7 +149,7 @@ export default async function ProfileSubscriptionsPage({
                     </div>
                     <div className="badge-stack">
                       <StatusBadge
-                        label={item.rail === "stripe" ? "Stripe" : "PayPal"}
+                        label={formatSubscriptionRailLabel(item.rail)}
                         tone="info"
                       />
                       <StatusBadge label={status.label} tone={status.tone} />
@@ -156,7 +157,7 @@ export default async function ProfileSubscriptionsPage({
                   </div>
                   <dl className="profile-details">
                     <div>
-                      <dt>Demarree le</dt>
+                      <dt>Démarrée le</dt>
                       <dd>
                         {item.startedAt
                           ? formatDateTime(item.startedAt)
@@ -176,11 +177,11 @@ export default async function ProfileSubscriptionsPage({
                       <dd>{formatCurrencyFromCents(item.setupFeeAmountCents)} HT</dd>
                     </div>
                     <div>
-                      <dt>Prochaine echeance</dt>
+                      <dt>Prochaine échéance</dt>
                       <dd>
                         {item.nextBillingAt
                           ? formatDateTime(item.nextBillingAt)
-                          : "A determiner"}
+                          : "À déterminer"}
                       </dd>
                     </div>
                     <div>
@@ -192,11 +193,11 @@ export default async function ProfileSubscriptionsPage({
                       </dd>
                     </div>
                     <div>
-                      <dt>Cycles payes</dt>
+                      <dt>Cycles payés</dt>
                       <dd>{String(item.paidCyclesCount)}</dd>
                     </div>
                     <div>
-                      <dt>Reference offre</dt>
+                      <dt>Référence offre</dt>
                       <dd>{item.offerExternalReference ?? "—"}</dd>
                     </div>
                     <div>
@@ -204,22 +205,24 @@ export default async function ProfileSubscriptionsPage({
                       <dd>
                         {item.rail === "stripe"
                           ? item.stripeSubscriptionId ?? "—"
-                          : item.paypalSubscriptionId ?? "—"}
+                          : item.rail === "paypal"
+                            ? item.paypalSubscriptionId ?? "—"
+                            : "Facture locale"}
                       </dd>
                     </div>
                   </dl>
                   {item.cancelAtTermEnd ? (
                     <p className="field-hint">
-                      Resiliation demandee le{" "}
+                      Résiliation demandée le{" "}
                       {item.cancelRequestedAt
                         ? formatDateTime(item.cancelRequestedAt)
                         : "date indisponible"}
-                      {" · "}le service restera actif jusqu&apos;a la fin du terme
+                      {" · "}le service restera actif jusqu&apos;à la fin du terme
                       en cours.
                     </p>
                   ) : null}
                   <p className="field-hint">
-                    Souscrite le {formatDateTime(item.createdAt)} · mise a jour
+                    Souscrite le {formatDateTime(item.createdAt)} · mise à jour
                     le {formatDateTime(item.updatedAt)}
                   </p>
                   <div

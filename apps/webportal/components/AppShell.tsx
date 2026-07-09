@@ -7,6 +7,7 @@ import type { ReactNode } from "react";
 import type { InternalSession } from "@kermaria/shared";
 
 import { AdminNavigation } from "@/components/AdminNavigation";
+import { HeaderCartDrawer } from "@/components/HeaderCartDrawer";
 import { PortalNavigation } from "@/components/PortalNavigation";
 import { PublicShell } from "@/components/PublicShell";
 import { isPublicRoute } from "@/lib/public-route-config";
@@ -58,7 +59,10 @@ export function AppShell({
               <small>Espace client</small>
             </span>
           </Link>
-          <div className="demo-chip">{shellLabel}</div>
+          <div className="site-header-tools">
+            {session?.user.role === "client_user" ? <HeaderCartDrawer /> : null}
+            <div className="demo-chip">{shellLabel}</div>
+          </div>
         </div>
       </header>
       {hasSidebar ? (

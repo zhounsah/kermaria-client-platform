@@ -17,6 +17,7 @@ import type {
   ApiError,
   ClientProfile,
   CartSummary,
+  CheckoutSummary,
   CommercialDocumentDetail,
   CommercialDocumentSummary,
   CommercialOfferSummary,
@@ -417,12 +418,70 @@ const EMPTY_CART: CartSummary = {
   currency: "EUR",
 };
 
+const EMPTY_CHECKOUT_SUMMARY: CheckoutSummary = {
+  cart: EMPTY_CART,
+  recurring: {
+    items: [],
+    itemCount: 0,
+    subtotalCents: 0,
+    currency: "EUR",
+  },
+  totalItemCount: 0,
+  hasMixedCheckout: false,
+};
+
+async function getCheckoutSummaryWithLegacyFallback() {
+  const summary = await getPortalData<CheckoutSummary>(
+    "/internal/portal/checkout/summary",
+    EMPTY_CHECKOUT_SUMMARY,
+    EMPTY_CHECKOUT_SUMMARY,
+  );
+
+  if (!summary.error || !shouldFallbackToLegacyCart(summary.error.code)) {
+    return summary;
+  }
+
+  const cart = await getCart();
+  if (cart.error) {
+    return summary;
+  }
+
+  return {
+    data: buildLegacyCheckoutSummary(cart.data),
+    source: cart.source,
+    correlationId: cart.correlationId,
+  } satisfies PortalDataResult<CheckoutSummary>;
+}
+
+function buildLegacyCheckoutSummary(cart: CartSummary): CheckoutSummary {
+  return {
+    cart,
+    recurring: EMPTY_CHECKOUT_SUMMARY.recurring,
+    totalItemCount: cart.itemCount,
+    hasMixedCheckout: false,
+  };
+}
+
+function shouldFallbackToLegacyCart(code: string) {
+  return [
+    "ROUTE_NOT_FOUND",
+    "SQL_UNAVAILABLE",
+    "INTERNAL_ERROR",
+    "INTERNAL_API_UNAVAILABLE",
+    "INVALID_INTERNAL_RESPONSE",
+  ].includes(code);
+}
+
 export function getCart() {
   return getPortalData<CartSummary>(
     "/internal/portal/cart",
     EMPTY_CART,
     EMPTY_CART,
   );
+}
+
+export function getCheckoutSummary() {
+  return getCheckoutSummaryWithLegacyFallback();
 }
 
 export function getPublicCommercialCatalog() {

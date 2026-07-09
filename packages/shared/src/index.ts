@@ -239,6 +239,7 @@ export type CommercialOfferPaymentMode = "monthly" | "upfront";
 
 export type SubscriptionStatus =
   | "pending_approval"
+  | "pending_payment"
   | "pending_activation"
   | "pending_cancellation"
   | "active"
@@ -246,7 +247,7 @@ export type SubscriptionStatus =
   | "cancelled"
   | "expired";
 
-export type PaymentRail = "paypal" | "stripe";
+export type PaymentRail = "paypal" | "stripe" | "billing";
 
 export interface SubscriptionSummary {
   id: string;
@@ -1537,5 +1538,52 @@ export interface CartConfirmResponse {
   documentId: string;
   itemCount: number;
   totalAmountCents: number;
+  correlation_id: CorrelationId;
+}
+
+export interface RecurringCheckoutItem {
+  offerId: string;
+  name: string;
+  description: string;
+  category: string;
+  unitLabel: string;
+  publicPackCode: PublicPackCode | null;
+  priceAmountCents: number;
+  setupFeeAmountCents: number;
+  firstChargeAmountCents: number;
+  billingIntervalMonths: number;
+  commitmentMonths: number;
+  paymentMode: CommercialOfferPaymentMode;
+  currency: "EUR";
+}
+
+export interface CheckoutBucket<TItem> {
+  items: TItem[];
+  itemCount: number;
+  subtotalCents: number;
+  currency: "EUR";
+}
+
+export interface CheckoutSummary {
+  cart: CartSummary;
+  recurring: CheckoutBucket<RecurringCheckoutItem>;
+  totalItemCount: number;
+  hasMixedCheckout: boolean;
+}
+
+export interface CheckoutRecurringAddPayload {
+  offerId: string;
+}
+
+export interface CheckoutRecurringMutationResponse {
+  recurring: CheckoutBucket<RecurringCheckoutItem>;
+  correlation_id: CorrelationId;
+}
+
+export interface CheckoutRecurringConfirmResponse {
+  documentId: string;
+  itemCount: number;
+  totalAmountCents: number;
+  subscriptionIds: string[];
   correlation_id: CorrelationId;
 }

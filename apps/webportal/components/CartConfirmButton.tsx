@@ -26,6 +26,7 @@ export function CartConfirmButton() {
     );
 
     if (result.ok) {
+      window.dispatchEvent(new Event("kermaria:checkout-changed"));
       router.push(`/commercial-documents/${result.data.documentId}`);
     } else {
       setError(result.error.message);
@@ -45,7 +46,7 @@ export function CartConfirmButton() {
         className="button"
         idleLabel="Confirmer ma commande"
         isSubmitting={isSubmitting}
-        submittingLabel="Création de la commande…"
+        submittingLabel="Création de la commande..."
         onClick={handleConfirm}
         type="button"
       />

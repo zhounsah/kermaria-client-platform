@@ -116,7 +116,7 @@ export async function POST(
     return NextResponse.json(
       {
         code: "OFFER_NOT_RECURRING",
-        message: "Le prix Stripe n'a de sens que sur une offre recurrente.",
+        message: "Le prix Stripe n'a de sens que sur une offre r?currente.",
       },
       { status: 400 },
     );
@@ -144,7 +144,7 @@ export async function POST(
     return NextResponse.json(
       {
         code: "STRIPE_PRODUCT_ERROR",
-        message: "Impossible de creer le produit Stripe.",
+        message: "Impossible de cr?er le produit Stripe.",
       },
       { status: 502 },
     );

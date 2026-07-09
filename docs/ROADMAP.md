@@ -427,9 +427,9 @@ admin :
   `/dashboard`, admin -> `/admin`, anonyme +
   `PUBLIC_VITRINE_ENABLED=false` -> `/login` (comportement V0.23),
   anonyme + `PUBLIC_VITRINE_ENABLED=true` -> landing vitrine ;
-- bascule `PublicShell` / `AppShell` par route via une `proxy.ts`
-  (convention Next 16) qui injecte `x-pathname` (pas de move des routes
-  existantes en `(app)/`) ;
+- bascule `PublicShell` / shell securise par route. Etat actuel :
+  `AppShell.tsx` choisit selon `usePathname()` + `public-route-config.ts`
+  ; `proxy.ts` n'est plus la source de verite fonctionnelle de ce split ;
 - landing avec contenu et ton calques sur
   [zacharyhounsa.ovh](https://zacharyhounsa.ovh/) : hero "Informatique
   claire et utile", section Methode (3 etapes), section Services (6
@@ -453,10 +453,10 @@ admin :
   `EMAIL_INTEGRATION_MODE` (recipient = `CONTACT_FORM_RECIPIENT`).
   Lien de retour en haut de page (vers `/offres` si `?offer=` present,
   sinon vers `/`) ;
-- pages `/a-propos`, `/mentions-legales`, `/politique-confidentialite`,
-  `/cgv` en TSX statique (squelette + placeholders, contenu definitif
-  avant V1.0 RC). Page confidentialite affiche deja la position
-  no-tracking ;
+- pages publiques legales/editoriales initialement posees en statique
+  en V0.27 ; etat actuel : `/a-propos`, `/mentions-legales` et `/cgv`
+  sont admin-editables via V0.33, `/politique-confidentialite` restant
+  hors module ;
 - SEO : `sitemap.ts` dynamique (les 7 pages Next ; portfolio non
   inclus car canonical pointe ailleurs), `robots.ts` etendu (allow
   tout sauf routes privees, gate sur `PUBLIC_VITRINE_ENABLED`),
@@ -657,6 +657,39 @@ validee, sur le meme AD que la recette V0.25.
 La V0.31 ne couvre pas le hardware R740xd. Elle valide uniquement que
 le code et la procedure tiennent quand on quitte l'OU de test.
 
+## Jalon V0.33 contenus administrables
+
+Statut : **implante dans le depot**. Documentation dediee :
+[`V0.33_CONTENUS_ADMINISTRABLES.md`](V0.33_CONTENUS_ADMINISTRABLES.md).
+
+La V0.33 introduit un module ferme de **contenus administrables**,
+persiste en MariaDB et edite depuis le back-office, pour eviter les
+edits manuels de fichiers applicatifs sur les contenus legaux et les
+fiches techniques packs.
+
+- table `managed_content_entries` (`content_key`, `content_type`,
+  `title`, `public_path`, `body_markdown`, `version_label`,
+  `created_at`, `updated_at`) ;
+- registre ferme partage pour :
+  `legal:cgv`, `legal:mentions-legales`, `page:a-propos` et
+  `pack-sheet:<publicPackCode>` ;
+- seed idempotent applicatif dans `api-internal` :
+  fichiers UTF-8 pour `cgv`, `mentions-legales`, `a-propos` et
+  generation applicative pour les fiches packs ;
+- back-office `/admin/content` + `/admin/content/[key]` avec textarea
+  Markdown, champ de version, apercu rendu, sauvegarde persistante ;
+- pages publiques `/cgv`, `/mentions-legales`, `/a-propos` branchees sur
+  le contenu admin ;
+- ajout de `/offres/[slug]` comme fiche technique pack publique,
+  complementaire a la vitrine `/offres` ;
+- rendu Markdown via `react-markdown`, sans HTML brut, avec affichage
+  de `versionLabel` et `updatedAt`.
+
+La V0.33 reste volontairement simple : pas de CMS libre, pas de
+creation/suppression admin, pas de WYSIWYG, pas de duplication des
+composants techniques dans le texte libre. La structure est toutefois
+prete a accueillir d'autres contenus plus tard sans refaire le schema.
+
 ## Jalon V0.35 panier / commande groupee a la carte
 
 Statut : **implemente dans le depot (2026-07-08)**, faisable sans la cible
@@ -716,6 +749,51 @@ supprimes (migration `031`), logger fichier a offset Paris explicite.
 SQL d'heure locale dans `Data`/`Services`/`Migrations`. Donnees de la
 recette SRV-07 reparees (-2h sur les lignes concernees).
 
+## Jalon V0.36 panier unifie et abonnements factures
+
+Statut : **implante dans le depot (2026-07-09)**. Documentation dediee :
+[`V0.36_PANIER_UNIFIE_ABONNEMENTS_FACTURES.md`](V0.36_PANIER_UNIFIE_ABONNEMENTS_FACTURES.md).
+
+Cette V0.36 prolonge la V0.35 sans la remplacer :
+
+- `/souscrire` devient l'entree de selection commune pour les achats
+  ponctuels et les packs recurrents ;
+- le header client authentifie affiche un mini-panier avec drawer
+  survol/clic et recapitulatif des deux tunnels ;
+- `/panier` presente un recapitulatif unique, mais conserve deux boutons
+  de confirmation distincts :
+  - commande one-shot pour `cart_items` ;
+  - confirmation recurrente facturee pour `recurring_checkout_items`.
+
+Livraison metier :
+
+- nouvelles selections persistantes `recurring_checkout_items` par
+  client + offre ;
+- nouveau statut local `subscriptions.status = pending_payment` pour les
+  souscriptions facturees avant leur premier reglement ;
+- creation d'une **facture initiale groupee** pour les lignes
+  recurrentes, avec liaison `commercial_document_line_subscriptions` entre
+  les lignes du document et les souscriptions locales ;
+- choix explicite Stripe / PayPal / **virement bancaire** sur la page
+  document client ;
+- au paiement d'un document recurrent :
+  `pending_payment -> pending_activation -> active`, calcul de
+  `started_at`, `next_billing_at`, `commitment_ends_at`, puis
+  provisioning automatique si necessaire ;
+- le flux admin existant **Marquer comme paye** declenche le meme
+  pipeline pour les virements recus ;
+- un worker periodique emet les renouvellements des souscriptions
+  `rail='billing'` et suspend en cas d'impaye prolonge.
+
+Correctifs inclus dans le meme jalon :
+
+- lecture MariaDB du panier rendue tolerante au type reel renvoye pour
+  `offer_id`, ce qui supprime l'`InvalidCastException` observee sur
+  `MariaDbCartRepository` ;
+- les erreurs portail sur panier / paiement / resiliation propagent des
+  messages plus utiles et la reference de correlation, au lieu du
+  message generique uniforme.
+
 ## Jalon V1.0 beta 1 test de deploiement sur la cible R740xd
 
 Statut : **bloque, declenche a la livraison du R740xd**. Ex-V0.24b
@@ -743,8 +821,8 @@ Statut : **bloque, materiel**. Prerequis : V1.0 beta 1 realisee et
 recettee sur le R740xd. Ex-V1.0 renomme au 2026-06-28.
 
 - exposition publique avec domaine, TLS et supervision actifs ;
-- CGV, mentions legales et politique de confidentialite (V0.27)
-  publiees et acceptees ;
+- CGV et mentions legales publiees via `/admin/content` (V0.33) ;
+- politique de confidentialite publiee et acceptee ;
 - tarification publique alignee avec le catalogue V0.15 + packs V0.28 ;
 - premier client reel integre dans l'OU de production validee en V0.31
   (la procedure de sortie de `OU=TEST_SITE_WEB` est rejouee une fois

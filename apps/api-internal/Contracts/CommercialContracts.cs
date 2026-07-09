@@ -204,6 +204,8 @@ public sealed record CommercialDocumentPayload(
 
 public sealed record PaymentConfirmPayload(string? PaymentMethod);
 
+public sealed record PaymentMethodSelectionPayload(string? PaymentMethod);
+
 public sealed record CommercialDocumentLinePayload(
     string? OfferId,
     string? Label,

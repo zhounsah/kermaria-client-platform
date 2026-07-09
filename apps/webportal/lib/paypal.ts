@@ -11,7 +11,7 @@ function getCredentials() {
   const clientId = process.env.PAYPAL_CLIENT_ID?.trim();
   const clientSecret = process.env.PAYPAL_CLIENT_SECRET?.trim();
   if (!clientId || !clientSecret) {
-    throw new Error("PAYPAL_CLIENT_ID ou PAYPAL_CLIENT_SECRET non configures.");
+    throw new Error("PAYPAL_CLIENT_ID ou PAYPAL_CLIENT_SECRET non configur?s.");
   }
   return { clientId, clientSecret };
 }
@@ -40,7 +40,7 @@ export async function getPayPalAccessToken(): Promise<string> {
   });
 
   if (!response.ok) {
-    throw new Error(`Echec de l'authentification PayPal : ${response.status}`);
+    throw new Error(`?chec de l'authentification PayPal : ${response.status}`);
   }
 
   const data = await response.json();
@@ -108,7 +108,7 @@ export async function createPayPalOrder(
   );
 
   if (!approveLink) {
-    throw new Error("Lien d'approbation PayPal introuvable dans la reponse.");
+    throw new Error("Lien d'approbation PayPal introuvable dans la r?ponse.");
   }
 
   return { orderId: data.id as string, approveUrl: approveLink.href };

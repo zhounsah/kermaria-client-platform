@@ -75,7 +75,7 @@ export default async function AdminPublicPackCatalogPage() {
   return (
     <>
       <PageHeader
-        description="Pilotez la presentation publique des packs sans modifier le code ni toucher au socle de facturation."
+        description="Pilotez la présentation publique des packs sans modifier le code ni toucher au socle de facturation."
         eyebrow="Administration interne"
         title="Vitrine packs"
       />
@@ -83,11 +83,11 @@ export default async function AdminPublicPackCatalogPage() {
       <section className="content-panel page-header-split">
         <div>
           <span className="card-kicker">Pilotage back-office</span>
-          <h2>Tout gerer sans retoucher le code</h2>
+          <h2>Tout gérer sans retoucher le code</h2>
           <p>
             Cette page centralise la vitrine publique. Les textes, badges et
             lignes du comparatif se modifient ici. Les prix, frais de mise en
-            service et identifiants de paiement se reglent dans les fiches du
+            service et identifiants de paiement se règlent dans les fiches du
             catalogue commercial.
           </p>
         </div>
@@ -103,7 +103,7 @@ export default async function AdminPublicPackCatalogPage() {
 
       <p>
         <Link className="text-link" href="/admin/catalog">
-          ← Retour au catalogue commercial
+          Retour au catalogue commercial
         </Link>
       </p>
 
@@ -111,9 +111,9 @@ export default async function AdminPublicPackCatalogPage() {
         <SectionCard ariaLabel="Variantes facturables des packs publics">
           <h2>Tarification et variantes facturables</h2>
           <p className="field-hint">
-            Chaque ligne ci-dessous renvoie vers la fiche facturable utilisee
+            Chaque ligne ci-dessous renvoie vers la fiche facturable utilisée
             par le site et par le provisionnement. Vous pouvez y ajuster les
-            montants ou les references PSP depuis le back-office.
+            montants ou les références PSP depuis le back-office.
           </p>
 
           <div className="public-pack-admin-grid">
@@ -139,7 +139,7 @@ export default async function AdminPublicPackCatalogPage() {
                         <th>Variante</th>
                         <th>Prix HT</th>
                         <th>Mise en service</th>
-                        <th>Reference</th>
+                        <th>Référence</th>
                         <th>Action</th>
                       </tr>
                     </thead>
@@ -166,8 +166,8 @@ export default async function AdminPublicPackCatalogPage() {
                             </strong>
                             <div className="cell-secondary">
                               {variant.paymentMode === "upfront"
-                                ? `${formatCurrencyFromCents(variant.monthlyPriceAmountCents)} / mois equivalent`
-                                : `${formatCurrencyFromCents(variant.billingPriceAmountCents)} par echeance`}
+                                ? `${formatCurrencyFromCents(variant.monthlyPriceAmountCents)} / mois équivalent`
+                                : `${formatCurrencyFromCents(variant.billingPriceAmountCents)} par échéance`}
                             </div>
                           </td>
                           <td>
@@ -205,9 +205,9 @@ export default async function AdminPublicPackCatalogPage() {
         <SectionCard ariaLabel="Configuration de la vitrine packs">
           <h2>Modifier la vitrine publique</h2>
           <p className="field-hint">
-            Cette zone pilote uniquement la presentation client et le tableau
-            comparatif visible sur le site public. Les variantes facturees
-            restent gerees dans le catalogue commercial juste au-dessus.
+            Cette zone pilote uniquement la présentation client et le tableau
+            comparatif visible sur le site public. Les variantes facturées
+            restent gérées dans le catalogue commercial juste au-dessus.
           </p>
           <AdminPublicPackCatalogForm initialContent={contentResult.data} />
         </SectionCard>

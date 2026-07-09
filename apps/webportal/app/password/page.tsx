@@ -34,7 +34,7 @@ export default async function PasswordPage() {
         description={
           enabled
             ? "Modifier le mot de passe Active Directory du compte courant."
-            : "Le changement de mot de passe n’est pas disponible dans cette version."
+            : "Le changement de mot de passe n'est pas disponible dans cette version."
         }
         eyebrow="Sécurité du compte"
         title="Changer mon mot de passe"
@@ -45,10 +45,10 @@ export default async function PasswordPage() {
           <section className="content-panel">
             <h2>Mot de passe Active Directory</h2>
             <p className="page-description">
-              La modification est transmise a l&apos;API interne, qui
-              authentifie l&apos;ancien mot de passe avant de demander la
-              mise a jour a Active Directory. Aucun mot de passe n&apos;est
-              stocke cote portail, ni journalise.
+              La modification est transmise à l&apos;API interne, qui
+              authentifie l&apos;ancien mot de passe avant de demander la mise à
+              jour à Active Directory. Aucun mot de passe n&apos;est stocké côté
+              portail, ni journalisé.
             </p>
             <PasswordChangeForm />
             <div className="form-footer">
@@ -73,17 +73,17 @@ export default async function PasswordPage() {
       ) : (
         <>
           <DisabledActionNotice
-            description="Aucun mot de passe ne peut être saisi ou transmis depuis cette page. L’intégration Active Directory réelle reste désactivée."
-            title="Le changement de mot de passe n’est pas disponible dans cette version."
+            description="Aucun mot de passe ne peut être saisi ou transmis depuis cette page. L'intégration Active Directory réelle reste désactivée."
+            title="Le changement de mot de passe n'est pas disponible dans cette version."
           />
 
           <div className="password-layout">
             <section className="content-panel">
               <h2>Accès au portail</h2>
               <p className="page-description">
-                Le compte actuellement connecté utilise l’authentification
+                Le compte actuellement connecté utilise l&apos;authentification
                 locale du portail. Aucun parcours de modification ou de
-                récupération automatisée n’est activé.
+                récupération automatisée n&apos;est activé.
               </p>
               <div className="form-footer">
                 <Link className="text-link" href="/profile">

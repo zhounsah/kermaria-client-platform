@@ -48,6 +48,7 @@ public sealed class InvoiceIssuingService : IInvoiceIssuingService
     private readonly IBpceInvoicingRepository _bpceRepository;
     private readonly IEmailDispatchService _emailDispatch;
     private readonly ICartProvisioningTrigger _cartProvisioning;
+    private readonly IBilledSubscriptionPaymentTrigger _billedSubscriptions;
     private readonly ILogger<InvoiceIssuingService> _logger;
 
     public InvoiceIssuingService(
@@ -56,6 +57,7 @@ public sealed class InvoiceIssuingService : IInvoiceIssuingService
         IBpceInvoicingRepository bpceRepository,
         IEmailDispatchService emailDispatch,
         ICartProvisioningTrigger cartProvisioning,
+        IBilledSubscriptionPaymentTrigger billedSubscriptions,
         ILogger<InvoiceIssuingService> logger)
     {
         _commercialRepository = commercialRepository;
@@ -63,6 +65,7 @@ public sealed class InvoiceIssuingService : IInvoiceIssuingService
         _bpceRepository = bpceRepository;
         _emailDispatch = emailDispatch;
         _cartProvisioning = cartProvisioning;
+        _billedSubscriptions = billedSubscriptions;
         _logger = logger;
     }
 
@@ -309,6 +312,8 @@ public sealed class InvoiceIssuingService : IInvoiceIssuingService
         // V0.35 : provisioning « le cas echeant » pour les documents issus
         // d'un panier client (no-op pour les autres origines). Best-effort.
         await _cartProvisioning.OnDocumentPaidAsync(
+            documentId, correlationId, cancellationToken);
+        await _billedSubscriptions.OnDocumentPaidAsync(
             documentId, correlationId, cancellationToken);
 
         await TryDispatchEmailAsync(

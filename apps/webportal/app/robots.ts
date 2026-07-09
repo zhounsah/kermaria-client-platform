@@ -1,8 +1,16 @@
 import type { MetadataRoute } from "next";
+import { headers } from "next/headers";
+import { connection } from "next/server";
 
-import { isVitrinePublicEnabled } from "@/lib/public-routes";
+import {
+  getPortalPublicUrlFromHeaders,
+  isVitrinePublicEnabled,
+} from "@/lib/public-routes";
 
-export default function robots(): MetadataRoute.Robots {
+export default async function robots(): Promise<MetadataRoute.Robots> {
+  await connection();
+  const baseUrl = getPortalPublicUrlFromHeaders(await headers());
+
   if (!isVitrinePublicEnabled()) {
     return {
       rules: {
@@ -33,5 +41,7 @@ export default function robots(): MetadataRoute.Robots {
         "/access-denied",
       ],
     },
+    host: new URL(baseUrl).host,
+    sitemap: `${baseUrl}/sitemap.xml`,
   };
 }
