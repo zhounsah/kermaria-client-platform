@@ -1,6 +1,6 @@
 ---
 name: roadmap-current
-description: "Snapshot roadmap kermaria-client-platform au 2026-07-06 (repris sur preuves code+git+docs). V0.15→V0.30 partiel livrés (code présent). V0.24 : cadrage + infra staging debout (2026-07-03) ; recette Brique 1/2/3 NON exécutée globalement — le suivi vivant docs/V0.24_SUIVI.md est vide sauf V0.26-2b [x] (2026-07-06). Seule tranche réellement travaillée en staging = signup+email (2026-07-05/06, tracée en git). V1.0 beta 1 hardware-gated R740xd."
+description: "Snapshot roadmap kermaria-client-platform (maj 2026-07-09). V0.15→V0.30 partiel + V0.35/.1 livrés. V0.24 : cadrage + infra staging debout (2026-07-03) ; recette Brique 1/2/3 EXÉCUTÉE 2026-07-03→06 mais sur la branche NON MERGÉE claude/priceless-driscoll-a6928d — d'où le docs/V0.24_SUIVI.md vide côté main qui avait fait croire à tort que rien n'était fait. Depuis consolidée (SUIVI rempli + audit sécu + guides). Reste sign-off. V1.0 beta 1 hardware-gated R740xd."
 metadata:
   node_type: memory
   type: project
@@ -12,13 +12,16 @@ prioritaire (code + historique Git + tests de contrat + docs datées).
 Source canonique : [docs/ROADMAP.md](docs/ROADMAP.md) et
 [docs/V0.24_SUIVI.md](docs/V0.24_SUIVI.md).
 
-> ⚠️ Correction 2026-07-06 : une version antérieure de la mémoire externe
-> (datée 2026-07-05) affirmait que les Briques V0.24 1/2/3 étaient
-> « exécutées / Brique 1 clôturée / guides créés / audit fait ». **C'était
-> faux** : aucune trace dans Git, `docs/V0.24_SUIVI.md` a toutes ses cases
-> `[ ]` sauf V0.26-2b, et les guides `GUIDE_CLIENT_PAIEMENT.md` /
-> `GUIDE_ADMIN.md` **n'existent pas** dans `docs/`. Ne pas remarquer une
-> case V0.24 comme faite sans preuve datée dans le suivi vivant.
+> ⚠️ Correction 2026-07-09 (remplace la note du 2026-07-06) : la recette
+> V0.24 **a bien été exécutée** (2026-07-03→06) — mais sur la branche
+> `claude/priceless-driscoll-a6928d`, jamais fusionnée. La note du 2026-07-06
+> avait conclu « non exécutée / aucune trace Git / guides inexistants » parce
+> qu'elle n'a inspecté que `main` (SUIVI resté vide, fichier rempli vivant sur
+> la branche). Preuve d'authenticité : le bloquant `V0.29-2` décrit (Stripe
+> `invoice.paid` lisant le champ legacy) était un vrai bug, depuis corrigé
+> dans `main`. Contenu désormais consolidé (SUIVI, audit, guides). Leçon :
+> avant de conclure « pas fait », chercher aussi sur **les branches non
+> mergées** (`git branch --all`, `git log --all`), pas seulement `main`.
 
 **Livré et figé dans le dépôt (code présent) :**
 - V0.15 à V0.23.2 (historique complet dans [docs/ROADMAP.md](docs/ROADMAP.md)).
@@ -28,7 +31,7 @@ Source canonique : [docs/ROADMAP.md](docs/ROADMAP.md) et
 - V0.29 Stripe — livré 2026-07-02, rail parallèle PayPal (Checkout Sessions, colonne `rail`).
 - V0.30 partiel (allowlist SMTP `EMAIL_LIVE_ALLOWLIST`) — livré/recetté 2026-07-02, fail-closed.
 
-**V0.24 — cadrage + infra debout, RECETTE NON EXÉCUTÉE :**
+**V0.24 — cadrage + infra debout, RECETTE EXÉCUTÉE (branche consolidée) :**
 
 Cadrage 2026-07-02 dans [docs/V0.24_STABILISATION.md](docs/V0.24_STABILISATION.md).
 Infra staging montée le 2026-07-03 sur KERMARIA-SRV-01/02/07
@@ -37,20 +40,22 @@ SRV-01 WEBPORTAL Node+IIS split, SRV-02 API dotnet Service natif,
 SRV-07 MariaDB `test_web` (migrations 001-020), compte AD partagé
 `HOME\svc_api_portal_ad`, 1er admin via `--seed-admin`.
 
-Statut réel des 3 briques (preuve = `docs/V0.24_SUIVI.md` + git) :
-- **Brique 1 (recette staging)** : **NON exécutée**. Toutes les lignes du
-  suivi sont `[ ]` sauf **V0.26-2b `[x]`** (UX lien set-password, validation
-  GET non destructive, vérifiée sur staging le 2026-07-06 — commit
-  `f473f82`, code `7f1af8f`). Le journal du suivi s'arrête au 2026-07-03
-  (montage infra + fix `INTERNAL_API_URL`). Aucune preuve de V0.17
-  (28 scén.), V0.20/21/22, V0.29 Stripe, V0.23.2 timezone, transverses
-  T-1..T-4, ni restauration MariaDB.
-- **Brique 2 (audit sécurité)** : **NON exécutée** (matrice secrets vide,
-  pas de rapport `npm audit`/`dotnet list --vulnerable`, headers, rate-limit,
-  isolation, grep logs — tout `[ ]`).
-- **Brique 3 (doc)** : `docs/PRODUCTION_DEPLOYMENT.md` **rédigé** (commit
-  `db7e000`, non signé off). Guides utilisateur admin/client (DU-4..DU-9)
-  **non rédigés** — les fichiers annoncés n'existent pas.
+Statut réel des 3 briques (preuve = `docs/V0.24_SUIVI.md` **rempli**, rapatrié
+depuis `claude/priceless-driscoll-a6928d`) :
+- **Brique 1 (recette staging)** : **exécutée**, sortie marquée `[~]`
+  (partielle). Couvre V0.17 (28 scén.), V0.20 BPCE mock, V0.21 PayPal,
+  V0.22 souscriptions, V0.29 Stripe `test`, V0.25 AD par référence,
+  V0.26 signup, V0.27 vitrine, V0.30 allowlist SMTP (+ envoi live confirmé),
+  V0.23.2 timezone, transverses T-1..T-4 dont restauration MariaDB. Bloquants
+  tracés : **V0.29-2** (Stripe abo — **corrigé depuis dans `main`**),
+  hCaptcha/ARR et SMTP live (**résolus 2026-07-06**).
+- **Brique 2 (audit sécurité)** : **exécutée** — matrice des 8 secrets
+  renseignée, rotation SQL/AD testée en staging (P04/P05).
+- **Brique 3 (doc)** : `docs/PRODUCTION_DEPLOYMENT.md` rédigé (non signé off) ;
+  guides utilisateur `GUIDE_ADMIN.md` / `GUIDE_CLIENT_PAIEMENT.md` rédigés +
+  complément `SECRET_ROTATION.md`.
+- **Reste** : **sign-off** formel de V0.24 (le contenu recette est désormais
+  dans la branche `docs-review-branch-cleanup`, à merger dans `main`).
 
 **Seule tranche réellement travaillée en staging (tracée en Git) —
 signup + email, 2026-07-05/06 :**
@@ -69,11 +74,11 @@ signup + email, 2026-07-05/06 :**
 tooling `-Override` + garde-fou build (commit `276f6f2`). Ce n'est plus un
 bloquant ouvert.
 
-**Suspicion produit non vérifiée (à confirmer, ne pas traiter comme prouvé) :**
-`StripeWebhookService.HandleInvoicePaidAsync` lit `data.object.subscription`
-(champ signalé legacy dans des versions récentes de l'API Stripe). Chemin de
-code réel, **mais aucun test exécuté ne l'a démontré KO**. À vérifier avant
-d'activer un abonnement Stripe en recette (V0.29-2).
+**Bug Stripe V0.29-2 — confirmé PUIS corrigé :** la recette a démontré KO
+l'activation d'abonnement Stripe (`invoice.paid` ne lisait que le champ legacy
+`data.object.subscription`, absent en API `2026-06-24.dahlia`). **`main`
+corrige** : `StripeWebhookService.ReadStripeInvoiceSubscriptionId` lit désormais
+aussi `parent.subscription_details.subscription`. Plus un bloquant ouvert.
 
 **Tests de contrat (MariaDB-less) — 8/8 verts au 2026-07-06** après
 correction de 2 scripts devenus obsolètes vs produit :

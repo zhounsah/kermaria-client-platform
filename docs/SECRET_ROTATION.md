@@ -117,6 +117,80 @@ des ordres et captures au nom de l'app.
 Le `PAYPAL_CLIENT_SECRET` n'est jamais renvoyé au navigateur et le cache
 mémoire de l'access token est purgé au redémarrage du processus.
 
+## Credentials Stripe
+
+`STRIPE_SECRET_KEY` (clé serveur) et `STRIPE_WEBHOOK_SECRET` (signing secret
+de l'endpoint webhook) proviennent du dashboard Stripe. La compromission de
+la clé secrète permet de créer des paiements/abonnements au nom du compte.
+
+1. Dashboard Stripe (mode cohérent avec `STRIPE_MODE`) → Developers → API keys
+   → **Roll** la Secret key (révoque l'ancienne).
+2. Mettre à jour `STRIPE_SECRET_KEY` dans le gestionnaire de secrets WEBPORTAL.
+3. Pour `STRIPE_WEBHOOK_SECRET` : Developers → Webhooks → l'endpoint
+   (`https://<portail>/api/webhooks/stripe`) → afficher le signing secret.
+   **Éditer l'URL d'un endpoint existant conserve son signing secret** ;
+   recréer l'endpoint en génère un nouveau (`whsec_…`) à répercuter.
+4. Mettre à jour `STRIPE_WEBHOOK_SECRET` dans le gestionnaire WEBPORTAL.
+5. Redémarrer WEBPORTAL.
+6. Vérifier un `mode=payment` test + un rejeu webhook (idempotence via
+   `stripe_webhook_events`) avant tout passage `STRIPE_MODE=live`.
+
+Ni la clé secrète ni le webhook secret ne sont renvoyés au navigateur.
+
+## Mot de passe SMTP (boîte OVH)
+
+`SMTP_PASSWORD` est le mot de passe (ou mot de passe d'application) de la
+boîte `SMTP_USERNAME` chez OVH (`ssl0.ovh.net:587`, STARTTLS).
+
+1. Espace client OVH → Emails → la boîte concernée → changer le mot de passe.
+2. Mettre à jour `SMTP_PASSWORD` dans le gestionnaire de secrets API-INTERNAL.
+3. Vérifier `SMTP_USE_STARTTLS=true`, port `587`, et `SMTP_FROM_ADDRESS`
+   **égal** à `SMTP_USERNAME` (OVH exige que l'expéditeur soit le compte
+   authentifié, sinon `5.7.0 Authentication required`).
+4. Redémarrer API-INTERNAL.
+5. En `EMAIL_INTEGRATION_MODE=live` + allowlist, déclencher un email vers une
+   adresse allowlistée et vérifier `email_messages.status=sent` + réception.
+
+Le mot de passe SMTP n'est jamais renvoyé au navigateur ni loggé.
+
+## Secret hCaptcha
+
+`HCAPTCHA_SECRET_KEY` (+ `HCAPTCHA_SITE_KEY` publique) du dashboard hCaptcha.
+Obligatoire en production : sans secret valide, `verifyHCaptcha` échoue
+fail-closed (`CAPTCHA_MISCONFIGURED`) et le signup est refusé.
+
+1. Dashboard hCaptcha → le site → régénérer le secret.
+2. Mettre à jour `HCAPTCHA_SECRET_KEY` dans le gestionnaire de secrets
+   WEBPORTAL.
+3. Vérifier que le hostname du portail est dans les **Hostnames autorisés**
+   du site hCaptcha (sinon la vérification du token est rejetée).
+4. Redémarrer WEBPORTAL.
+5. Avec `SIGNUP_ENABLED=true`, soumettre le formulaire et vérifier le passage
+   du captcha.
+
+La site key est publique (rendue au client) ; le secret reste server-only.
+
+## Compte de service AD (`svc_api_portal_ad`)
+
+Compte AD partagé, **identité de logon** des services Windows
+(`KermariaApiInternal` sur l'hôte API, `KermariaWebportal` sur l'hôte
+WEBPORTAL) et source de `AD_SERVICE_ACCOUNT_PASSWORD` (binds AD).
+
+1. Changer le mot de passe AD (`Set-ADAccountPassword -Reset` ou ADUC), mot de
+   passe fort ne commençant pas par un motif placeholder.
+2. Mettre à jour le mot de passe de logon des **deux** services, chacun sur
+   son hôte :
+   ```powershell
+   sc.exe config <Service> obj= "HOME\svc_api_portal_ad" password= "<NEW>"
+   ```
+3. Mettre à jour `AD_SERVICE_ACCOUNT_PASSWORD` dans le config API.
+4. Redémarrer les services **un à la fois**, vérifier `Running` + health.
+   Le nouveau mot de passe n'est requis qu'au redémarrage : ne pas rebooter un
+   hôte tant que son service n'a pas redémarré vert.
+5. Attention à la fenêtre de grâce NTLM (`OldPasswordAllowedPeriod`, ~60 min) :
+   un service redémarré sur l'ancien mot de passe peut sembler OK puis échouer
+   au redémarrage suivant. Toujours réappliquer `sc.exe config` sur le bon hôte.
+
 ## Sessions
 
 Après compromission d'un mot de passe utilisateur ou d'un hôte, révoquer les
@@ -137,7 +211,7 @@ réalisée dans une fenêtre annoncée.
 npm.cmd run check:secrets
 git status --short
 git diff --check
-git grep -n -I -E "SQL_PASSWORD=|SERVICE_AUTH_TOKEN=|DEMO_.*_PASSWORD=|BPCE_REFRESH_TOKEN=|PAYPAL_CLIENT_SECRET="
+git grep -n -I -E "SQL_PASSWORD=|SERVICE_AUTH_TOKEN=|DEMO_.*_PASSWORD=|BPCE_REFRESH_TOKEN=|PAYPAL_CLIENT_SECRET=|SMTP_PASSWORD=|STRIPE_SECRET_KEY=|STRIPE_WEBHOOK_SECRET=|HCAPTCHA_SECRET_KEY="
 ```
 
 Les résultats légitimes doivent être des placeholders ou de la documentation.
