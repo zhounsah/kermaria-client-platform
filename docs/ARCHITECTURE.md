@@ -23,6 +23,8 @@ déjà et ne fait pas partie des VM à créer.
 
 - l'interface web destinée aux clients ;
 - le backend public de type Backend for Frontend (BFF) ;
+- le split UX entre routes publiques et shell securise via
+  `AppShell.tsx` + `public-route-config.ts` ;
 - les routes BFF d'authentification et le cookie de session `HttpOnly` ;
 - les routes BFF d'administration et leurs mutations bornees ;
 - les contrôles de validation, de rate limiting et de protection web ;
@@ -49,6 +51,7 @@ aux outils de facturation internes.
 - les lectures globales admin limitées et auditables ;
 - la validation stricte de configuration et la readiness MariaDB ;
 - les mocks des integrations tant que les systemes reels ne sont pas actives ;
+- les contenus editoriaux admin-editables persistes en MariaDB ;
 - l'unique point d'acces autorise a MariaDB et Active Directory.
 
 Elle n'expose aucune interface directement sur Internet. Son pare-feu n'accepte
@@ -111,6 +114,46 @@ uniquement des actions bornees via le BFF, avec controle de role, validation
 des identifiants et CSRF sur les mutations sensibles. Un utilisateur client est
 refusé côté BFF et côté API-INTERNAL. Un administrateur interne n'utilise pas
 les vues client afin d'éviter toute confusion ou impersonation implicite.
+
+## Flux contenus administrables V0.33
+
+```mermaid
+sequenceDiagram
+    participant A as Admin interne
+    participant W as WEBPORTAL / BFF
+    participant I as API-INTERNAL
+    participant M as MariaDB
+
+    A->>W: GET /admin/content
+    W->>I: GET /internal/admin/content
+    I->>M: seed idempotent si besoin
+    I->>M: lire managed_content_entries
+    I-->>W: liste des contenus
+    W-->>A: table admin
+
+    A->>W: PATCH /api/admin/content/{key}
+    W->>I: PATCH /internal/admin/content/{key}
+    I->>M: upsert managed_content_entries
+    I->>M: audit managed_content.update
+    I-->>W: changed + updatedAt
+    W-->>A: confirmation
+
+    participant V as Visiteur public
+    V->>W: GET /cgv ou /offres/{slug}
+    W->>I: GET /internal/portal/content/{key}
+    I->>M: lire contenu seed/persiste
+    I-->>W: bodyMarkdown + versionLabel
+    W-->>V: rendu Markdown securise
+```
+
+Points clefs :
+
+- le registre de contenus est ferme et partage ;
+- le seed legal lit des fichiers UTF-8 copies dans `SeedContent/` ;
+- les fiches packs sont calculees a partir du manifeste public et du
+  catalogue commercial, puis completees par un bloc editorial libre ;
+- la page `/offres` et la page `/offres/[slug]` ne portent pas le meme
+  contenu : vitrine comparative d'un cote, fiche detaillee de l'autre.
 
 ## Flux réseau autorisés
 

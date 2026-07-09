@@ -94,7 +94,34 @@ Le portail gere maintenant trois rails d'abonnement :
 
 ---
 
-## 3. Journal e-mails - `/admin/email-log`
+## 3. Contenus administrables - `/admin/content`
+
+Menu **Activite commerciale > Contenus**.
+
+- **Perimetre** : CGV, mentions legales, page `A propos` et fiches
+  techniques des packs publics.
+- **Liste** : type, titre, URL publique, version visible et date de mise
+  a jour.
+- **Edition** : ouvrir une ligne pour modifier le `Markdown` et le
+  `libelle de version`. Le titre, le type et l'URL publique ne sont pas
+  editables.
+- **Apercu** : l'editeur affiche un rendu Markdown immediat avec le meme
+  composant que le site public.
+- **Publication** : la sauvegarde est persistante cote API/MariaDB ;
+  aucun redeploiement du site n'est necessaire.
+- **Liens publics** : l'action **Voir la page publique** s'ouvre dans un
+  nouvel onglet pour garder le contexte admin.
+
+Pour les packs :
+
+- `/admin/public-pack-catalog` reste la surface de pilotage de la page
+  comparative `/offres` ;
+- chaque pack y propose aussi un lien **Modifier la fiche technique**
+  vers `/admin/content/pack-sheet:...`.
+
+---
+
+## 4. Journal e-mails - `/admin/email-log`
 
 Menu **Relation client > Journal e-mails**.
 
@@ -111,7 +138,7 @@ Menu **Relation client > Journal e-mails**.
 
 ---
 
-## 4. Demandes d'inscription - `/admin/signups`
+## 5. Demandes d'inscription - `/admin/signups`
 
 Menu **Relation client > Demandes d'inscription**.
 
@@ -126,7 +153,7 @@ Le detail fonctionnel reste documente dans
 
 ---
 
-## 5. Active Directory - `/admin/customers/[ref]/ad`
+## 6. Active Directory - `/admin/customers/[ref]/ad`
 
 Menu **Relation client > Clients** puis fiche client.
 
@@ -142,7 +169,7 @@ Le detail du cadrage AD reste documente dans
 
 ---
 
-## 6. Diagnostic rapide
+## 7. Diagnostic rapide
 
 Quand un client remonte un probleme de panier, paiement ou abonnement :
 

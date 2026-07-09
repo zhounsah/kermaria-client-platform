@@ -10,7 +10,6 @@ const requiredVariables = [
   "ASPNETCORE_ENVIRONMENT",
   "DOTNET_ENVIRONMENT",
   "INTERNAL_API_URL",
-  "ALLOW_LOCAL_INTERNAL_API_URL",
   "SERVICE_AUTH_TOKEN",
   "SESSION_COOKIE_NAME",
   "SESSION_COOKIE_SECURE",
@@ -69,8 +68,17 @@ if (!equalsIgnoreCase(process.env.SQL_PROVIDER, "mariadb")) {
   failures.push("SQL_PROVIDER doit valoir mariadb en staging.");
 }
 
-if (!equalsIgnoreCase(process.env.AD_INTEGRATION_MODE, "disabled")) {
-  failures.push("AD_INTEGRATION_MODE doit rester disabled en staging.");
+const adMode = process.env.AD_INTEGRATION_MODE?.trim().toLowerCase();
+if (!["disabled", "controlled_write"].includes(adMode ?? "")) {
+  failures.push(
+    "AD_INTEGRATION_MODE doit valoir disabled ou controlled_write en staging.",
+  );
+}
+
+if (adMode === "controlled_write") {
+  warnings.push(
+    "AD_INTEGRATION_MODE=controlled_write est accepte en staging si l'OU de test borne les ecritures reelles.",
+  );
 }
 
 if (!equalsIgnoreCase(process.env.SESSION_COOKIE_SECURE, "true")) {

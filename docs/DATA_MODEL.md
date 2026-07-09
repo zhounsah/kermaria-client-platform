@@ -157,6 +157,47 @@ rester référencée par des documents existants. La V0.20.1 ajoute
 `tax_rate_basis_points` et `external_reference` pour l'auto-fill des
 formulaires de ligne et l'import idempotent du catalogue.
 
+## public_pack_catalog_content
+
+Contenu marketing editable de la vitrine packs `/offres` (migration
+`026_public_pack_catalog_content`, V0.33).
+
+| Champ | Type logique | Description |
+|---|---|---|
+| `content_key` | text | Cle stable, actuellement `public-pack-catalog` |
+| `content_json` | json | Hero, cartes packs, comparatif et footnotes publics |
+| `created_at` | timestamp | Date de creation |
+| `updated_at` | timestamp | Derniere modification |
+
+Cette table ne contient pas les CGV, mentions legales ni fiches
+techniques detaillees. Elle pilote uniquement la page comparative
+publique `/offres`.
+
+## managed_content_entries
+
+Contenus administrables V0.33 : CGV, mentions legales, `a-propos` et
+fiches techniques packs.
+
+| Champ | Type logique | Description |
+|---|---|---|
+| `content_key` | text | Cle canonique, ex. `legal:cgv` |
+| `content_type` | text | `legal`, `pack_sheet` ou `page` |
+| `title` | text | Titre public fige par la cle |
+| `public_path` | text | URL publique figee par la cle |
+| `body_markdown` | text | Corps editable en Markdown |
+| `version_label` | text, nullable | Libelle public optionnel |
+| `created_at` | timestamp | Date de creation |
+| `updated_at` | timestamp | Derniere modification |
+
+Contraintes :
+
+- `content_key` est la cle primaire ;
+- registre ferme : aucune cle hors catalogue partage ;
+- `body_markdown` est requis ;
+- `title` et `public_path` sont stockes pour lisibilite et defense en
+  profondeur, mais restent determines par le registre applicatif ;
+- les dates sont stockees en UTC.
+
 ## commercial_documents
 
 Document commercial informatif visible par l'admin puis, après partage, par le
@@ -453,6 +494,8 @@ La V0.8 matérialise ce modèle dans l'adaptateur MariaDB avec les noms suivants
 | sessions | `portal_sessions` |
 | `services` | `customer_services` |
 | `invoices` | `invoices` |
+| vitrine packs publique | `public_pack_catalog_content` |
+| contenus administrables | `managed_content_entries` |
 | catalogue de services | `service_catalog` |
 | `support_requests` | `support_requests` |
 | demandes commerciales | `service_requests` |
