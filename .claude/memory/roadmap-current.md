@@ -1,6 +1,6 @@
 ---
 name: roadmap-current
-description: "Snapshot roadmap kermaria-client-platform (maj 2026-07-09). V0.15→V0.30 partiel + V0.35/.1 livrés. V0.24 : cadrage + infra staging debout (2026-07-03) ; recette Brique 1/2/3 EXÉCUTÉE 2026-07-03→06 mais sur la branche NON MERGÉE claude/priceless-driscoll-a6928d — d'où le docs/V0.24_SUIVI.md vide côté main qui avait fait croire à tort que rien n'était fait. Depuis consolidée (SUIVI rempli + audit sécu + guides). Reste sign-off. V1.0 beta 1 hardware-gated R740xd."
+description: "Snapshot roadmap kermaria-client-platform (maj 2026-07-09 soir). V0.15→V0.30 partiel + V0.35/.1 livrés. V0.24 : DEUX passes de recette contradictoires — passe 1 (07-03, ZH, ~tout [x], ex-branche priceless mergée) vs passe 2 (07-08, auto, prudente, = SUIVI de main = RÉFÉRENCE) qui conteste dont rotation P04/P05 NON FAITE. V0.24 PAS clos. Bug Stripe V0.29-2 corrigé dans main. V1.0 beta 1 hardware-gated R740xd."
 metadata:
   node_type: memory
   type: project
@@ -31,7 +31,13 @@ Source canonique : [docs/ROADMAP.md](docs/ROADMAP.md) et
 - V0.29 Stripe — livré 2026-07-02, rail parallèle PayPal (Checkout Sessions, colonne `rail`).
 - V0.30 partiel (allowlist SMTP `EMAIL_LIVE_ALLOWLIST`) — livré/recetté 2026-07-02, fail-closed.
 
-**V0.24 — cadrage + infra debout, RECETTE EXÉCUTÉE (branche consolidée) :**
+**V0.24 — DEUX passes de recette contradictoires ; PAS clos :**
+
+> Passe 1 (07-03→06, `ZH`, ex-branche priceless consolidée) marque ~tout
+> `[x]`. Passe 2 (07-06→08, `auto`, = `V0.24_SUIVI.md` de `main` = RÉFÉRENCE)
+> est plus prudente et conteste plusieurs `[x]` : **rotation P04/P05 NON
+> FAITE**, validate/backup `[~]`, majorité des cas client V0.17 non re-prouvés.
+> Ne pas se fier à la passe 1. Détail dans `V0.24_ANOMALIES.md`.
 
 Cadrage 2026-07-02 dans [docs/V0.24_STABILISATION.md](docs/V0.24_STABILISATION.md).
 Infra staging montée le 2026-07-03 sur KERMARIA-SRV-01/02/07
@@ -40,22 +46,21 @@ SRV-01 WEBPORTAL Node+IIS split, SRV-02 API dotnet Service natif,
 SRV-07 MariaDB `test_web` (migrations 001-020), compte AD partagé
 `HOME\svc_api_portal_ad`, 1er admin via `--seed-admin`.
 
-Statut réel des 3 briques (preuve = `docs/V0.24_SUIVI.md` **rempli**, rapatrié
-depuis `claude/priceless-driscoll-a6928d`) :
-- **Brique 1 (recette staging)** : **exécutée**, sortie marquée `[~]`
-  (partielle). Couvre V0.17 (28 scén.), V0.20 BPCE mock, V0.21 PayPal,
-  V0.22 souscriptions, V0.29 Stripe `test`, V0.25 AD par référence,
-  V0.26 signup, V0.27 vitrine, V0.30 allowlist SMTP (+ envoi live confirmé),
-  V0.23.2 timezone, transverses T-1..T-4 dont restauration MariaDB. Bloquants
-  tracés : **V0.29-2** (Stripe abo — **corrigé depuis dans `main`**),
-  hCaptcha/ARR et SMTP live (**résolus 2026-07-06**).
-- **Brique 2 (audit sécurité)** : **exécutée** — matrice des 8 secrets
-  renseignée, rotation SQL/AD testée en staging (P04/P05).
+Statut réel des 3 briques (référence = `docs/V0.24_SUIVI.md` de `main` =
+**passe 2 prudente**) :
+- **Brique 1 (recette staging)** : jouée mais **PAS close**. Passe 1 couvrait
+  V0.17, V0.20/21/22, V0.29 Stripe `test`, V0.25 AD par réf, V0.26, V0.27,
+  V0.30 allowlist SMTP, V0.23.2, T-1..T-4 ; passe 2 laisse en `[ ]`/`[~]`
+  validate:staging, backup MariaDB, majorité des cas client V0.17. Seul acquis
+  code ferme : **V0.29-2** (Stripe abo) corrigé dans `main`.
+- **Brique 2 (audit sécurité)** : matrice des 8 secrets renseignée, mais
+  **rotation P04/P05 (mdp AD + `test_web`) = FAITE selon passe 1 / NON FAITE
+  selon passe 2** → à exécuter/confirmer avant sortie de recette.
 - **Brique 3 (doc)** : `docs/PRODUCTION_DEPLOYMENT.md` rédigé (non signé off) ;
-  guides utilisateur `GUIDE_ADMIN.md` / `GUIDE_CLIENT_PAIEMENT.md` rédigés +
-  complément `SECRET_ROTATION.md`.
-- **Reste** : **sign-off** formel de V0.24 (le contenu recette est désormais
-  dans la branche `docs-review-branch-cleanup`, à merger dans `main`).
+  guides `GUIDE_ADMIN.md` / `GUIDE_CLIENT_PAIEMENT.md` + complément
+  `SECRET_ROTATION.md` rédigés et mergés dans `main` (07-09).
+- **Reste** : rotation P04/P05, rejouer les scénarios prudents, puis
+  **sign-off** formel de V0.24.
 
 **Seule tranche réellement travaillée en staging (tracée en Git) —
 signup + email, 2026-07-05/06 :**
