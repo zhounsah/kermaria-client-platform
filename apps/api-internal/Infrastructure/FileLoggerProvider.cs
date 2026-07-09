@@ -142,7 +142,9 @@ public sealed class FileLogger : ILogger, IDisposable
 
         var entry = new
         {
-            Timestamp = KermariaTimeZone.Now.ToString("yyyy-MM-ddTHH:mm:ss.fffzzz"),
+            Timestamp = TimeZoneInfo.ConvertTime(
+                DateTimeOffset.UtcNow,
+                KermariaTimeZone.TimeZone).ToString("yyyy-MM-ddTHH:mm:ss.fffzzz"),
             LogLevel = logLevel.ToString(),
             Category = _category,
             Message = formatter(state, exception),

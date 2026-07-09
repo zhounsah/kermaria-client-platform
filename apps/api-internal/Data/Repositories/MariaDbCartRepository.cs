@@ -58,11 +58,11 @@ public sealed class MariaDbCartRepository : ICartRepository
             INSERT INTO cart_items (
                 id, customer_id, offer_id, quantity, created_at, updated_at
             ) VALUES (
-                @id, @customerId, @offerId, @quantity, NOW(6), NOW(6)
+                @id, @customerId, @offerId, @quantity, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6)
             )
             ON DUPLICATE KEY UPDATE
                 quantity = @quantity,
-                updated_at = NOW(6)
+                updated_at = UTC_TIMESTAMP(6)
             """;
         command.Parameters.AddWithValue("id", Guid.NewGuid().ToString("D"));
         command.Parameters.AddWithValue("customerId", customerId);

@@ -163,5 +163,7 @@ public sealed class MariaDbPublicPackCatalogRepository
     }
 
     private static string ReadDateTime(MySqlDataReader reader, string columnName)
-        => reader.GetDateTime(columnName).ToString("O");
+        => DateTime.SpecifyKind(
+            reader.GetDateTime(columnName),
+            DateTimeKind.Utc).ToString("O");
 }

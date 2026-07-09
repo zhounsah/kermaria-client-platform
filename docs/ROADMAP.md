@@ -665,6 +665,24 @@ fonctionnalite hardware-gated. Elle reste bornee a la phase de tests (mode
 `live` interdit avant V1.0 beta 1) ; recette MariaDB du chemin confirm ->
 emission -> reglement -> provisioning a rejouer.
 
+### V0.35.1 correctif horodatages UTC (NOW → UTC_TIMESTAMP)
+
+Statut : **livre (2026-07-09)**. Documentation dediee :
+[`V0.35.1_TIMEZONE_UTC_FIX.md`](V0.35.1_TIMEZONE_UTC_FIX.md).
+
+3e recidive de la famille « heure locale serveur stockee comme UTC »
+(apres V0.20 BPCE et V0.21 email log) : `MarkDocumentIssued/PaidAsync`
+ecrivaient `updated_at = NOW(6)` (heure de Paris sur nos serveurs) →
+« Mise a jour » affichee +2h sur le portail. Ratissage complet de la
+chaine : `NOW(6)` elimine partout (`commercial_documents`, `cart_items`,
+seeds 006/009), serialisations sans suffixe Z corrigees (managed content,
+pack catalog), titres « Echeance yyyy-MM » et numero mock BPCE passes en
+mois/jour de Paris, defauts `CURRENT_TIMESTAMP` de `signup_pending`
+supprimes (migration `031`), logger fichier a offset Paris explicite.
+`npm run test:timezone` interdit desormais statiquement toute fonction
+SQL d'heure locale dans `Data`/`Services`/`Migrations`. Donnees de la
+recette SRV-07 reparees (-2h sur les lignes concernees).
+
 ## Jalon V1.0 beta 1 test de deploiement sur la cible R740xd
 
 Statut : **bloque, declenche a la livraison du R740xd**. Ex-V0.24b

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Kermaria.ApiInternal.Contracts;
 using Kermaria.ApiInternal.Data.Repositories;
+using Kermaria.ApiInternal.Infrastructure;
 
 namespace Kermaria.ApiInternal.Services;
 
@@ -269,7 +270,7 @@ public sealed class PayPalWebhookService : IPayPalWebhookService
                     5)
             }
             : Array.Empty<SubscriptionBillingDocumentLineRequest>();
-        var title = $"Echeance {DateTime.UtcNow:yyyy-MM} - {subscription.OfferName}";
+        var title = $"Echeance {KermariaTimeZone.Now:yyyy-MM} - {subscription.OfferName}";
 
         var documentId = await _commercial.CreateBillingDocumentForSubscriptionAsync(
             new SubscriptionBillingDocumentRequest(

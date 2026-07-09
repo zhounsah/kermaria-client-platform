@@ -1731,7 +1731,7 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
         cmd.CommandText = """
             UPDATE commercial_documents SET
                 status = 'issued',
-                updated_at = NOW(6)
+                updated_at = UTC_TIMESTAMP(6)
             WHERE id = @documentId
             """;
         cmd.Parameters.AddWithValue("documentId", documentId);
@@ -1752,7 +1752,7 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
             UPDATE commercial_documents SET
                 status = 'paid',
                 payment_method = @paymentMethod,
-                updated_at = NOW(6)
+                updated_at = UTC_TIMESTAMP(6)
             WHERE id = @documentId
             """;
         cmd.Parameters.AddWithValue("documentId", documentId);

@@ -140,6 +140,8 @@ public sealed class InvoiceIssuingService : IInvoiceIssuingService
             doc.CustomerExternalReference,
             cancellationToken);
 
+        // Date fiscale : jour calendaire de Paris, pas UTC (une facture émise
+        // entre 00h et 02h Paris en été doit porter la date du jour Paris).
         var issueDate = KermariaTimeZone.Now.ToString("yyyy-MM-dd");
         var lines = doc.Lines
             .Select(l => new BpceInvoiceLineInput(

@@ -175,8 +175,9 @@ public sealed class MariaDbManagedContentRepository : IManagedContentRepository
         var createdAt = current?.CreatedAt is { Length: > 0 }
             ? DateTime.Parse(
                 current.CreatedAt,
-                provider: null,
-                System.Globalization.DateTimeStyles.RoundtripKind)
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AssumeUniversal
+                    | System.Globalization.DateTimeStyles.AdjustToUniversal)
             : now;
         await using (var writeCommand = connection.CreateCommand())
         {
@@ -257,8 +258,12 @@ public sealed class MariaDbManagedContentRepository : IManagedContentRepository
             reader.GetString("public_path"),
             reader.GetString("body_markdown"),
             ReadNullableString(reader, "version_label"),
-            reader.GetDateTime("created_at").ToString("O"),
-            reader.GetDateTime("updated_at").ToString("O"));
+            DateTime.SpecifyKind(
+                reader.GetDateTime("created_at"),
+                DateTimeKind.Utc).ToString("O"),
+            DateTime.SpecifyKind(
+                reader.GetDateTime("updated_at"),
+                DateTimeKind.Utc).ToString("O"));
 
     private static object DbValue(string? value)
         => value is null ? DBNull.Value : value;

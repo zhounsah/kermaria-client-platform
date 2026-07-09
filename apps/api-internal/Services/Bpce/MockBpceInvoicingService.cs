@@ -1,5 +1,6 @@
 using Kermaria.ApiInternal.Contracts;
 using Kermaria.ApiInternal.Data.Configuration;
+using Kermaria.ApiInternal.Infrastructure;
 
 namespace Kermaria.ApiInternal.Services.Bpce;
 
@@ -111,7 +112,7 @@ public sealed class MockBpceInvoicingService : IBpceInvoicingService
             StatusCodes.Status200OK,
             "BPCE_INVOICE_VALIDATED",
             "Mock BPCE invoice validated.",
-            ($"MOCK-NUM-{DateTime.UtcNow:yyyyMMdd}", "validated")));
+            ($"MOCK-NUM-{KermariaTimeZone.Now:yyyyMMdd}", "validated")));
 
     public Task<BpceServiceResult<byte[]>> GetInvoicePdfAsync(
         string bpceInvoiceId,

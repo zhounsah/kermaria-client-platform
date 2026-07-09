@@ -100,7 +100,7 @@ INSERT INTO commercial_offers (
 SELECT
     UUID(),
     'Sauvegarde dossier personnel',
-    'Sauvegarde informative d’un dossier personnel client. Offre de démonstration commerciale non contractuelle.',
+    'Sauvegarde informative dâ€™un dossier personnel client. Offre de dÃ©monstration commerciale non contractuelle.',
     'Sauvegarde',
     'mois',
     'ht',
@@ -108,8 +108,8 @@ SELECT
     'EUR',
     'active',
     10,
-    NOW(6),
-    NOW(6)
+    UTC_TIMESTAMP(6),
+    UTC_TIMESTAMP(6)
 WHERE NOT EXISTS (
     SELECT 1
     FROM commercial_offers
@@ -149,7 +149,7 @@ SELECT
     19400,
     3880,
     23280,
-    'Document informatif â€” ne constitue pas une facture officielle.',
+    'Document informatif Ã¢â‚¬â€ ne constitue pas une facture officielle.',
     '11000000-0000-0000-0000-000000000001',
     '2026-06-12 10:00:00',
     '2026-06-12 10:30:00',
@@ -204,13 +204,13 @@ SELECT
     NULL,
     'billing_draft',
     'draft',
-    'Préparation de document de suivi',
+    'PrÃ©paration de document de suivi',
     'COM-DEMO-2026-0002',
     'EUR',
     4500,
     0,
     4500,
-    'Document informatif â€” ne constitue pas une facture officielle.',
+    'Document informatif Ã¢â‚¬â€ ne constitue pas une facture officielle.',
     '11000000-0000-0000-0000-000000000001',
     '2026-06-13 08:45:00',
     '2026-06-13 08:45:00',
@@ -255,7 +255,7 @@ SELECT
     '70000000-0000-0000-0000-000000000001',
     NULL,
     'Intervention ponctuelle',
-    'Qualification informative de l''accès VPN envisagé.',
+    'Qualification informative de l''accÃ¨s VPN envisagÃ©.',
     2.00,
     'heure',
     8500,
@@ -297,7 +297,7 @@ SELECT
     '70000000-0000-0000-0000-000000000001',
     NULL,
     'Sauvegarde additionnelle',
-    'Option informative associée à la proposition.',
+    'Option informative associÃ©e Ã  la proposition.',
     1.00,
     'mois',
     2400,

@@ -28,9 +28,10 @@ CREATE TABLE IF NOT EXISTS signup_pending (
     approved_at DATETIME(6) NULL,
     rejected_at DATETIME(6) NULL,
     rejected_reason VARCHAR(500) NULL,
-    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
-        ON UPDATE CURRENT_TIMESTAMP(6),
+    -- Pas de DEFAULT/ON UPDATE CURRENT_TIMESTAMP : heure locale serveur,
+    -- la convention est UTC et le code écrit toujours ces colonnes (031).
+    created_at DATETIME(6) NOT NULL,
+    updated_at DATETIME(6) NOT NULL,
     UNIQUE KEY uk_signup_email_status (email, status),
     KEY idx_signup_status (status),
     KEY idx_signup_created (created_at),

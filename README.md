@@ -27,6 +27,12 @@ self-service (regroupe N options one-shot en une commande unique reglee via
 Stripe / PayPal / virement, cf.
 [`docs/V0.35_CART_ALACARTE.md`](docs/V0.35_CART_ALACARTE.md)).
 
+V0.35.1 (2026-07-09) : correctif transversal des horodatages — plus aucun
+`NOW()`/`CURRENT_TIMESTAMP` (heure locale serveur) en base, serialisation
+API systematiquement en ISO 8601 `Z`, affichage force Europe/Paris ;
+garde-fou statique dans `npm run test:timezone`, cf.
+[`docs/V0.35.1_TIMEZONE_UTC_FIX.md`](docs/V0.35.1_TIMEZONE_UTC_FIX.md).
+
 V0.24 : cadrage redige, **infra staging debout sur KERMARIA-SRV-01/02/07
 depuis 2026-07-03**. Deploiement natif Windows Server 2022 sans VM
 documente dans [`docs/DEPLOYMENT_WINDOWS.md`](docs/DEPLOYMENT_WINDOWS.md).
