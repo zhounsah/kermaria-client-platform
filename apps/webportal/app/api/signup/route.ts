@@ -132,7 +132,7 @@ export async function POST(request: NextRequest) {
 
   const captchaToken =
     typeof body.hcaptchaToken === "string" ? body.hcaptchaToken : null;
-  const captcha = await verifyHCaptcha(captchaToken, identifier);
+  const captcha = await verifyHCaptcha(captchaToken, identifier, correlationId);
   if (!captcha.ok) {
     // Le message client reste générique (non-leak), mais on trace le code
     // interne réel + les error-codes hCaptcha pour pouvoir distinguer une
