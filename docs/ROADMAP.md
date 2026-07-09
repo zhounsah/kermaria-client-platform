@@ -225,8 +225,9 @@ Aucune fonctionnalite metier ajoutee. Aucune dependance hardware.
 
 ## Jalon V0.24 stabilisation testable sur SRV-01 et SRV-02
 
-Statut : **recette Brique 1/2/3 executee du 2026-07-03 au 2026-07-06,
-sign-off restant**. Cadrage detaille :
+Statut : **recette jouee en DEUX passes divergentes ; l'etat de reference
+est la re-verification la plus recente (2026-07-08), plus prudente, qui
+reste OUVERTE**. Cadrage detaille :
 [`V0.24_STABILISATION.md`](V0.24_STABILISATION.md).
 Ex-V0.24a renomme au 2026-06-28 (la phase de validation hardware
 ex-V0.24b devient V1.0 beta 1).
@@ -234,18 +235,25 @@ ex-V0.24b devient V1.0 beta 1).
 Runbook infra : [`DEPLOYMENT_WINDOWS.md`](DEPLOYMENT_WINDOWS.md).
 Fichier de suivi vivant des scenarios OK/KO :
 [`V0.24_SUIVI.md`](V0.24_SUIVI.md).
+Anomalies ouvertes : [`V0.24_ANOMALIES.md`](V0.24_ANOMALIES.md).
 
-> **Note de reconciliation (2026-07-09).** La recette a bien ete jouee du
-> 2026-07-03 au 2026-07-06 ; ses resultats detailles vivaient sur la branche
-> `claude/priceless-driscoll-a6928d` (jamais mergee), d'ou un `V0.24_SUIVI.md`
-> reste quasi vide dans `main` qui avait fait croire a tort que la recette
-> n'avait pas eu lieu. Cette branche (SUIVI rempli, audit securite Brique 2,
-> guides utilisateur Brique 3) est **desormais consolidee**. Sortie de
-> Brique 1 marquee `[~]` (partielle) : bloquant `V0.29-2` (activation abo
-> Stripe, `invoice.paid`) **depuis corrige dans `main`**
+> **Note de reconciliation (2026-07-09, revisee).** Il existe DEUX passes de
+> recette contradictoires. **Passe 1** (2026-07-03→06, operateur `ZH`,
+> manuelle) sur la branche `claude/priceless-driscoll-a6928d` : marque quasi
+> tout `[x]`. Elle etait absente de `main` (SUIVI vide), ce qui avait d'abord
+> fait croire « recette jamais faite » ; elle est maintenant consolidee
+> (audit Brique 2, guides Brique 3, correctif Stripe `V0.29-2` verifie).
+> **Passe 2** (2026-07-06→08, operateur `auto (staging)`) : re-verification
+> nettement **plus prudente**, elle **conteste plusieurs `[x]` de la passe 1**
+> — notamment la **rotation des secrets P04/P05 (mdp AD + `test_web`) marquee
+> NON FAITE**, `validate:staging`/backup MariaDB en `[~]`, et la majorite des
+> scenarios client V0.17 non re-prouves. **C'est la passe 2 (le `V0.24_SUIVI.md`
+> de `main`, + `V0.24_ANOMALIES.md`) qui fait foi pour l'etat reel.** V0.24
+> n'est donc **PAS clos** : rotation P04/P05 a executer, scenarios prudents a
+> rejouer, puis sign-off. Seul acquis ferme cote code : bloquant `V0.29-2`
+> (Stripe `invoice.paid`) corrige dans `main`
 > (`StripeWebhookService.ReadStripeInvoiceSubscriptionId` lit desormais
-> `parent.subscription_details.subscription`) ; hCaptcha/ARR et SMTP live
-> resolus au 2026-07-06. Reste le **sign-off** formel avant de clore V0.24.
+> `parent.subscription_details.subscription`).
 Guides utilisateur livres (Brique 3) :
 [`GUIDE_CLIENT_PAIEMENT.md`](GUIDE_CLIENT_PAIEMENT.md) (client) et
 [`GUIDE_ADMIN.md`](GUIDE_ADMIN.md) (admin : paiements, abonnements, journal
@@ -276,13 +284,14 @@ e-mails, inscriptions, Active Directory). Rotation des secrets etendue :
 - Scripts de deploiement livres : `build-api-config.ps1`,
   `build-webportal-config.ps1`, `start-webportal.ps1`.
 
-**Brique 1 — recette staging executee** (detail dans `V0.24_SUIVI.md`) :
-- recette complete jouee sur le staging interne (couvre V0.17 les
-  28 scenarios, V0.20 BPCE mock, V0.21 PayPal sandbox + e-mail mock,
-  V0.22 souscriptions, V0.25 AD `controlled_write` par reference,
-  V0.26 signup, V0.27 vitrine, V0.29 Stripe `test`, V0.30 partiel
-  allowlist SMTP, V0.23.2 timezone, transverses T-1..T-4) ;
-- restauration MariaDB testee sur instance distincte (`TEST_WEB_RESTORE`).
+**Brique 1 — recette staging jouee, re-verification prudente OUVERTE**
+(etat de reference = passe 2 dans `V0.24_SUIVI.md`) :
+- passe 1 (`ZH`) a couvert V0.17, V0.20 BPCE mock, V0.21 PayPal sandbox,
+  V0.22 souscriptions, V0.25 AD par reference, V0.26 signup, V0.27 vitrine,
+  V0.29 Stripe `test`, V0.30 allowlist SMTP, V0.23.2 timezone, T-1..T-4 ;
+- **mais** la passe 2 (`auto`, plus recente) laisse plusieurs de ces
+  scenarios en `[ ]`/`[~]` (validate:staging, backup MariaDB, majorite des
+  cas client V0.17) : a rejouer/prouver avant de clore.
 
 **Brique 2 — audit securite execute** :
 - audit securite interne : dependances, secrets (couvre
@@ -294,7 +303,10 @@ e-mails, inscriptions, Active Directory). Rotation des secrets etendue :
   refuse deja tout secret commencant par "test", donc a traiter
   avant sortie de recette ;
 - revue accessibilite WCAG AA des parcours critiques (scan axe : 0 violation
-  critique) ; matrice des 8 secrets renseignee, rotation SQL/AD testee.
+  critique) ; matrice des 8 secrets renseignee. **Rotation P04/P05 (mdp AD
+  `svc_api_portal_ad` + user MariaDB `test_web`) : marquee FAITE par la
+  passe 1, mais NON FAITE par la passe 2 (07-08) — a executer/confirmer
+  avant sortie de recette.**
 
 **Brique 3 — documentation redigee** :
 - **procedure formelle de mise en production redigee 2026-07-03**
