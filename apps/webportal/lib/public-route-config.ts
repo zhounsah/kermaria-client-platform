@@ -10,7 +10,7 @@ export const PUBLIC_ROUTES = [
   "/set-password",
 ] as const;
 
-export const PORTFOLIO_URL = "/portfolio/index.html";
+export const PORTFOLIO_URL = "https://portfolio.zacharyhounsa.ovh/";
 
 export function isPublicRoute(pathname: string | null | undefined): boolean {
   if (!pathname) {

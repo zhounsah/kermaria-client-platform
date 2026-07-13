@@ -159,13 +159,13 @@ sur R740xd. N'engage pas la production.
   - PayPal : creer une app `live` distincte, generer
     `PAYPAL_CLIENT_ID` / `PAYPAL_CLIENT_SECRET`. Configurer les
     webhook endpoints avec l'URL cible
-    `https://portail.<domaine>/api/webhooks/paypal`.
+    `https://dashboard.zacharyhounsa.ovh/api/webhooks/paypal`.
   - Stripe : basculer sur les cles `live`, generer un
     `STRIPE_WEBHOOK_SECRET` pour l'endpoint
-    `https://portail.<domaine>/api/webhooks/stripe`.
+    `https://dashboard.zacharyhounsa.ovh/api/webhooks/stripe`.
   - hCaptcha : `HCAPTCHA_SITE_KEY` + `HCAPTCHA_SECRET_KEY` **du meme
     site** (un couple depareille = `sitekey-secret-mismatch`), avec le
-    hostname servant `/signup` (`portail.<domaine>`) dans les hostnames
+    hostname servant `/signup` (`dashboard.zacharyhounsa.ovh`) dans les hostnames
     autorises du site. Recetter avec de **vraies** cles (les cles de
     test ignorent `remoteip` et ne reproduisent pas le comportement).
     Signup **fail-closed** sans cle. Detail : `DEPLOYMENT_WINDOWS.md`
@@ -372,11 +372,15 @@ Suit la sequence 4 du runbook staging avec les deltas suivants :
 Sequence 5 du runbook, avec les hostnames de production finaux.
 Wildcard reutilise ou cert prod dedie selon prerequis TLS.
 
-Deux sites :
+Quatre surfaces IIS :
 
-- `kermaria-vitrine` sur les hostnames publics `www.*`.
-- `kermaria-portal` sur les hostnames backoffice
-  (`portail.*`, `dashboard.*` ou noms retenus).
+- `kermaria-vitrine` sur `www.zacharyhounsa.ovh` (canonique, indexable).
+- `kermaria-home-redirect` sur `www.home.bzh` (redirection vers
+  `www.zacharyhounsa.ovh`).
+- `kermaria-portal` sur `administration.zacharyhounsa.ovh` et
+  `dashboard.zacharyhounsa.ovh` (canonique, noindex).
+- `kermaria-portal-home-redirect` sur `administration.home.bzh` et
+  `dashboard.home.bzh` (redirection vers les hosts canoniques).
 
 ### HSTS progressif
 
@@ -457,7 +461,7 @@ validee est **immuable cote banque**.
 ### 9.3 `PAYPAL_MODE=live`
 
 Prerequis : app PayPal live enregistree, webhook endpoint
-configure sur `https://portail.<domaine>/api/webhooks/paypal`.
+configure sur `https://dashboard.zacharyhounsa.ovh/api/webhooks/paypal`.
 
 Bascule dans `webportal.config.json` **et** `api-internal.config.json`
 en meme temps (les deux composants lisent `PAYPAL_MODE`) :
@@ -484,7 +488,7 @@ associee, l'email de confirmation.
 ### 9.4 `STRIPE_MODE=live`
 
 Prerequis : compte Stripe en mode live, webhook endpoint configure
-sur `https://portail.<domaine>/api/webhooks/stripe`.
+sur `https://dashboard.zacharyhounsa.ovh/api/webhooks/stripe`.
 
 Bascule identique :
 

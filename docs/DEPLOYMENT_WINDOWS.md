@@ -728,14 +728,15 @@ Contenu attendu (extrait typique) :
 >   `sitekey-secret-mismatch` et le siteverify echoue en 400
 >   `CAPTCHA_FAILED` malgre un token valide ;
 > - les **hostnames autorises** du site hCaptcha doivent inclure le
->   domaine servant le formulaire : `portail.home.bzh` (+ `dashboard.home.bzh`
->   et les hosts `*.zacharyhounsa.ovh` si le formulaire y est expose).
+>   domaine servant le formulaire : `dashboard.zacharyhounsa.ovh` (+ `dashboard.home.bzh`
+>   si tu conserves l'alias interne, et les hosts de recette encore exposes
+>   pendant la transition).
 >   Un hostname absent renvoie une reponse siteverify avec le champ
 >   `hostname` non conforme ;
 > - **derriere ARR, ne pas s'appuyer sur `remoteip`.** Le WEBPORTAL ne
 >   transmet `remoteip` a hCaptcha que si l'IP client (premier segment de
 >   `X-Forwarded-For`) est **publique** ; une IP LAN privee (acces interne
->   a `portail.home.bzh`) est volontairement omise, car elle divergerait
+>   a `dashboard.home.bzh`) est volontairement omise, car elle divergerait
 >   de l'IP vue par hCaptcha lors de la resolution du widget et ferait
 >   rejeter le siteverify. Aucune config ARR supplementaire n'est requise.
 >
@@ -901,13 +902,17 @@ New-NetFirewallRule -DisplayName "API-INTERNAL to KERMARIA-SRV-02" `
 
 ## 5. KERMARIA-SRV-01 — IIS + ARR + URL Rewrite
 
-Deux sites IIS distincts sur la meme IP, chacun avec plusieurs
-host headers, tous deux reverse-proxy vers le meme Node loopback :
+La topologie cible garde **un seul process Next.js** derriere IIS, mais
+separe les surfaces par hostname pour clarifier SEO, backoffice et
+portfolio :
 
 | Site | Hostnames | Role | Header noindex |
 |---|---|---|---|
-| `kermaria-vitrine` | `www.home.bzh`, `www.zacharyhounsa.ovh` | Vitrine publique V0.27 (landing, `/offres`, `/contact`, `/portfolio/*`, etc.) | strippe |
-| `kermaria-portal` | `portail.home.bzh`, `dashboard.home.bzh`, `portail.zacharyhounsa.ovh`, `dashboard.zacharyhounsa.ovh` | Backoffice authentifie (`/login`, `/dashboard`, `/admin/*`, `/api/*`) | conserve |
+| `kermaria-vitrine` | `www.zacharyhounsa.ovh` | Vitrine publique canonique | strippe |
+| `kermaria-home-redirect` | `www.home.bzh` | Alias public vers `www.zacharyhounsa.ovh` | n/a |
+| `kermaria-portal` | `administration.zacharyhounsa.ovh`, `dashboard.zacharyhounsa.ovh` | Interfaces canoniques interne/client + `/api/*` | conserve |
+| `kermaria-portal-home-redirect` | `administration.home.bzh`, `dashboard.home.bzh` | Aliases prives vers les hosts canoniques | n/a |
+| `kermaria-portfolio` | `portfolio.zacharyhounsa.ovh` | Portfolio canonique a la racine du sous-domaine | strippe |
 
 Node fait deja le routing par path. Etat actuel : `AppShell.tsx`
 choisit `PublicShell` ou le shell securise via `usePathname()` +
@@ -975,19 +980,19 @@ Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name processModel.identityType -V
 Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name startMode -Value "AlwaysRunning"
 ```
 
-### Site `kermaria-portal` (backoffice)
+### Site `kermaria-portal` (hosts canoniques prives)
 
-Le site backoffice **redirige `/` vers `/login`** pour eviter
-d'exposer la landing marketing aux hostnames `portail.*` /
-`dashboard.*`.
+Le site prive sert les deux hosts canoniques suivants :
+- `administration.zacharyhounsa.ovh` : `/` redirige vers `/admin`
+- `dashboard.zacharyhounsa.ovh` : `/` redirige vers `/login`
 
 ```powershell
 $Ip         = "192.168.100.201"    # IP publique du serveur
 $CertThumb  = "<empreinte du wildcard *.home.bzh + *.zacharyhounsa.ovh>"
 $PortalPath = "C:\inetpub\kermaria"
 $PortalHosts = @(
-    "portail.home.bzh", "dashboard.home.bzh",
-    "portail.zacharyhounsa.ovh", "dashboard.zacharyhounsa.ovh"
+    "administration.zacharyhounsa.ovh",
+    "dashboard.zacharyhounsa.ovh"
 )
 
 New-Item -ItemType Directory -Force -Path $PortalPath | Out-Null
@@ -1033,8 +1038,19 @@ Start-Website -Name "kermaria-portal"
         </rule>
 
         <!-- / → /login pour les hostnames backoffice -->
+        <rule name="RootToAdmin" stopProcessing="true">
+          <match url="^$" />
+          <conditions>
+            <add input="{HTTP_HOST}" pattern="^administration\.zacharyhounsa\.ovh$" />
+          </conditions>
+          <action type="Redirect" url="/admin" redirectType="Found" />
+        </rule>
+
         <rule name="RootToLogin" stopProcessing="true">
           <match url="^$" />
+          <conditions>
+            <add input="{HTTP_HOST}" pattern="^dashboard\.zacharyhounsa\.ovh$" />
+          </conditions>
           <action type="Redirect" url="/login" redirectType="Found" />
         </rule>
 
@@ -1064,16 +1080,17 @@ Start-Website -Name "kermaria-portal"
 </configuration>
 ```
 
-### Site `kermaria-vitrine` (public, indexable)
+### Site `kermaria-vitrine` (public canonique, indexable)
 
-Le site vitrine **strippe le header `X-Robots-Tag`** (envoye par
-Node globalement via `next.config.ts`, heritage V0.23) pour que les
-pages publiques soient indexables. Le backoffice le conserve.
+Le site vitrine canonique **strippe le header `X-Robots-Tag`** (envoye
+par Node globalement via `next.config.ts`, heritage V0.23) pour que
+les pages publiques soient indexables. Il redirige aussi les routes
+`/portfolio/*` vers le sous-domaine portfolio.
 
 ```powershell
 $VitrineSite  = "kermaria-vitrine"
 $VitrinePath  = "C:\inetpub\kermaria-vitrine"
-$VitrineHosts = @("www.home.bzh", "www.zacharyhounsa.ovh")
+$VitrineHosts = @("www.zacharyhounsa.ovh")
 
 New-Item -ItemType Directory -Force -Path $VitrinePath | Out-Null
 
@@ -1116,6 +1133,11 @@ Start-Website -Name $VitrineSite
           <action type="Redirect" url="https://{HTTP_HOST}/{R:1}" redirectType="Permanent" />
         </rule>
 
+        <rule name="PortfolioToDedicatedHost" stopProcessing="true">
+          <match url="^portfolio(?:/(.*))?$" />
+          <action type="Redirect" url="https://portfolio.zacharyhounsa.ovh/{R:1}" redirectType="Permanent" />
+        </rule>
+
         <rule name="ReverseProxyToNext" stopProcessing="true">
           <match url="(.*)" />
           <action type="Rewrite" url="http://127.0.0.1:3000/{R:1}" />
@@ -1151,14 +1173,27 @@ Start-Website -Name $VitrineSite
 </configuration>
 ```
 
+### Sites de redirection et portfolio
+
+- `kermaria-home-redirect` : redirige `www.home.bzh/*` vers
+  `https://www.zacharyhounsa.ovh/*`.
+- `kermaria-portal-home-redirect` : redirige
+  `administration.home.bzh/*` vers
+  `https://administration.zacharyhounsa.ovh/*` et `dashboard.home.bzh/*`
+  vers `https://dashboard.zacharyhounsa.ovh/*`.
+- `kermaria-portfolio` : host indexable `portfolio.zacharyhounsa.ovh`
+  qui rewrite `/` vers `/portfolio/index.html` et `/{path}` vers
+  `/portfolio/{path}` sur le meme Node local.
+
 ### DNS et hostnames
 
 - **`*.home.bzh`** : DNS interne sur le DC AD (SRV-03 dans notre
-  topologie). Ajouter les A records `www`, `portail`, `dashboard`
+  topologie). Ajouter les A records `www`, `administration`,
+  `dashboard`
   → `192.168.100.201`.
 - **`*.zacharyhounsa.ovh`** : DNS public OVH. CNAME ou A records
-  `www`, `portail`, `dashboard` vers l'IP WAN + port forward
-  80/443 vers `192.168.100.201`.
+  `www`, `administration`, `dashboard`, `portfolio` vers l'IP WAN +
+  port forward 80/443 vers `192.168.100.201`.
 
 Le certificat wildcard Let's Encrypt en place couvre deja
 `*.home.bzh`, `*.zacharyhounsa.ovh` et `*.kermaria35580.ovh` — sa
