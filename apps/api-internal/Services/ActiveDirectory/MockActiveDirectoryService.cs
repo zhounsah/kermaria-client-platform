@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using Kermaria.ApiInternal.Contracts;
 using Kermaria.ApiInternal.Data.Configuration;
+using Kermaria.ApiInternal.Services.Provisioning;
 
 namespace Kermaria.ApiInternal.Services.ActiveDirectory;
 
@@ -8,15 +9,19 @@ public sealed class MockActiveDirectoryService : IActiveDirectoryService
 {
     private readonly AdRuntimeConfiguration _configuration;
     private readonly ActiveDirectoryPathScope _scope;
+    private readonly MockAdGroupMembershipStore _provisioningMemberships;
     private readonly Dictionary<string, MockDirectoryObject> _objectsByDn =
         new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, HashSet<string>> _groupMembers =
         new(StringComparer.OrdinalIgnoreCase);
     private readonly object _syncRoot = new();
 
-    public MockActiveDirectoryService(AdRuntimeConfiguration configuration)
+    public MockActiveDirectoryService(
+        AdRuntimeConfiguration configuration,
+        MockAdGroupMembershipStore provisioningMemberships)
     {
         _configuration = configuration;
+        _provisioningMemberships = provisioningMemberships;
         _scope = new ActiveDirectoryPathScope(
             configuration.ClientsOuDn
             ?? "OU=TEST_SITE_WEB,DC=home,DC=bzh");
@@ -35,6 +40,7 @@ public sealed class MockActiveDirectoryService : IActiveDirectoryService
             true,
             _configuration.Domain ?? "home.bzh",
             _scope.ClientsOuDn,
+            _configuration.AllowedRoots,
             _configuration.ConnectTimeoutMs,
             _configuration.QueryTimeoutMs,
             _configuration.MaxResults));
@@ -530,6 +536,24 @@ public sealed class MockActiveDirectoryService : IActiveDirectoryService
                     : null)
                 .Where(groupObject => groupObject is not null)
                 .Select(groupObject => ToSummary(groupObject!))
+                .Concat(_provisioningMemberships
+                    .GetGroupsForUser(resolvedUser.Value.SamAccountName)
+                    .Select(groupSamAccountName =>
+                    {
+                        var existingGroup = _objectsByDn.Values.FirstOrDefault(
+                            candidate =>
+                                candidate.ObjectType == "group"
+                                && candidate.SamAccountName.Equals(
+                                    groupSamAccountName,
+                                    StringComparison.OrdinalIgnoreCase));
+                        return existingGroup is not null
+                            ? ToSummary(existingGroup)
+                            : CreateSyntheticManagedGroupSummary(
+                                groupSamAccountName,
+                                resolvedUser.Value.CustomerReference);
+                    }))
+                .GroupBy(group => group.SamAccountName, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
                 .OrderBy(group => group.SamAccountName, StringComparer.OrdinalIgnoreCase)
                 .Take(_configuration.MaxResults)
                 .ToArray();
@@ -538,9 +562,30 @@ public sealed class MockActiveDirectoryService : IActiveDirectoryService
                 new AdServiceResult<IReadOnlyList<AdDirectoryObjectSummary>>(
                     StatusCodes.Status200OK,
                     "AD_USER_GROUPS_FOUND",
-                    "Active Directory user effective groups resolved in mock mode.",
-                    groups));
+                "Active Directory user effective groups resolved in mock mode.",
+                groups));
         }
+    }
+
+    private AdDirectoryObjectSummary CreateSyntheticManagedGroupSummary(
+        string groupSamAccountName,
+        string customerReference)
+    {
+        var clientsOuDn = _scope.ClientsOuDn;
+        var distinguishedName = string.IsNullOrWhiteSpace(clientsOuDn)
+            ? $"CN={groupSamAccountName}"
+            : $"CN={groupSamAccountName},OU=Security,{clientsOuDn}";
+
+        return new AdDirectoryObjectSummary(
+            ObjectGuid: $"mock-managed-group-{groupSamAccountName.ToLowerInvariant()}",
+            ObjectSid: $"S-1-5-21-mock-{Math.Abs(groupSamAccountName.GetHashCode(StringComparison.OrdinalIgnoreCase))}",
+            ObjectType: "group",
+            SamAccountName: groupSamAccountName,
+            UserPrincipalName: null,
+            DisplayName: groupSamAccountName,
+            DistinguishedName: distinguishedName,
+            CustomerReference: customerReference,
+            IsDisabled: false);
     }
 
     private AdServiceResult<IReadOnlyList<AdDirectoryObjectSummary>> SearchObjects(

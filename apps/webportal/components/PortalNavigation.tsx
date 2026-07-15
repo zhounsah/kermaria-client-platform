@@ -18,6 +18,7 @@ const navigationSections: NavSection[] = [
       { href: "/services", label: "Mes services" },
       { href: "/souscrire", label: "Souscrire" },
       { href: "/profile/subscriptions", label: "Mes souscriptions" },
+      { href: "/downloads", label: "Téléchargements" },
       { href: "/invoices", label: "Documents & factures" },
     ],
   },

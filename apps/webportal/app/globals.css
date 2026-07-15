@@ -1798,6 +1798,230 @@ td {
   gap: 16px;
 }
 
+.downloads-help-card {
+  background:
+    linear-gradient(135deg, rgb(36 89 169 / 10%), rgb(23 107 131 / 8%)),
+    var(--surface);
+}
+
+.downloads-help-card p {
+  max-width: 760px;
+  margin-bottom: 0;
+  color: var(--muted);
+}
+
+.downloads-accordion-list {
+  display: grid;
+  gap: 16px;
+}
+
+.downloads-accordion {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.downloads-accordion summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 22px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.downloads-accordion summary::-webkit-details-marker {
+  display: none;
+}
+
+.downloads-accordion summary strong {
+  display: block;
+  font-size: 1rem;
+}
+
+.downloads-accordion summary span:not(.card-kicker):not(.downloads-count) {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.83rem;
+}
+
+.downloads-count {
+  flex: 0 0 auto;
+  padding: 7px 12px;
+  border: 1px solid rgb(36 89 169 / 14%);
+  border-radius: 999px;
+  color: var(--primary-dark);
+  background: var(--primary-light);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.downloads-card-grid {
+  display: grid;
+  padding: 0 22px 22px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.download-card {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 100%), rgb(247 249 252 / 100%));
+}
+
+.download-card h3,
+.download-card p {
+  margin-bottom: 0;
+}
+
+.download-card p {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.download-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.download-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.download-card-note {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.download-card-note strong {
+  font-size: 0.8rem;
+}
+
+.download-card-actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.admin-download-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.admin-download-main {
+  display: grid;
+  gap: 18px;
+}
+
+.admin-download-sidebar {
+  display: grid;
+  gap: 18px;
+}
+
+.admin-download-section {
+  display: grid;
+  gap: 16px;
+}
+
+.admin-radio-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.admin-radio-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-muted);
+}
+
+.admin-radio-card input {
+  width: auto;
+  margin: 0;
+}
+
+.admin-targeting-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.admin-checkbox-group {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-muted);
+}
+
+.admin-checkbox-group legend {
+  padding-inline: 6px;
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.admin-checkbox-group label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.admin-checkbox-group input {
+  width: auto;
+  margin-top: 2px;
+}
+
+.admin-download-file-panel {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 14px;
+  background: var(--surface-muted);
+}
+
+.admin-download-file-current {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  font-size: 0.82rem;
+}
+
+.admin-download-summary {
+  display: grid;
+  gap: 14px;
+}
+
 .ad-status-grid {
   display: grid;
   gap: 14px;
@@ -2861,6 +3085,25 @@ td {
 
   .profile-details,
   .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .downloads-accordion summary,
+  .download-card-top,
+  .admin-download-layout {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+
+  .downloads-accordion summary {
+    align-items: flex-start;
+  }
+
+  .downloads-count {
+    align-self: flex-start;
+  }
+
+  .downloads-card-grid {
     grid-template-columns: 1fr;
   }
 

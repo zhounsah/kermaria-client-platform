@@ -1,4 +1,4 @@
-import "server-only";
+﻿import "server-only";
 
 import type {
   AdminAdStatus,
@@ -7,6 +7,7 @@ import type {
   AdminActivityOverview,
   AdminAuditLogEntry,
   AdminCustomerDetail,
+  AdminCustomerAdWorkspace,
   AdminCustomerSummary,
   AdminOverview,
   AdminServiceRequestDetail,
@@ -23,7 +24,11 @@ import type {
   CommercialOfferSummary,
   CorrelationId,
   CustomerAdLinkSummary,
+  CustomerAdProvisioningMutationPayload,
+  CustomerAdProvisioningMutationResponse,
+  DownloadCategory,
   DataSource,
+  DownloadResource,
   InvoiceSummary,
   InternalSession,
   InternalSessionCreated,
@@ -34,6 +39,7 @@ import type {
   MockSubmissionResponse,
   NotificationReadResponse,
   PendingPackSelectionSummary,
+  PortalDownloadCategory,
   PortalSummary,
   PortalNotificationSummary,
   PortalServiceRequestDetail,
@@ -518,6 +524,14 @@ export function getClientSubscriptions() {
   );
 }
 
+export function getClientDownloads() {
+  return getPortalData<PortalDownloadCategory[]>(
+    "/internal/portal/downloads",
+    [],
+    [],
+  );
+}
+
 export function getPendingPackSelection() {
   return getPortalData<PendingPackSelectionSummary | null>(
     "/internal/portal/pending-pack-selection",
@@ -967,6 +981,34 @@ export function getAdminCustomerAdLinks(customerReference: string) {
   );
 }
 
+export function getAdminCustomerAdWorkspace(
+  customerReference: string,
+  subscriptionId?: string | null,
+) {
+  const query = subscriptionId
+    ? `?subscriptionId=${encodeURIComponent(subscriptionId)}`
+    : "";
+
+  return getAdminData<AdminCustomerAdWorkspace>(
+    `/internal/admin/customers/${encodeURIComponent(customerReference)}/active-directory${query}`,
+    {
+      customerReference,
+      customerName: customerReference,
+      adStatus: null,
+      links: [],
+      linkedUsers: [],
+      subscriptionContext: null,
+      subscriptions: [],
+      managedGroups: [],
+      provisioningStatus: "not_required",
+      lastResultCode: null,
+      services: [],
+      groups: [],
+      diagnostics: [],
+    },
+  );
+}
+
 export function getAdminCatalog() {
   return getAdminData<CommercialOfferSummary[]>(
     "/internal/admin/catalog",
@@ -995,6 +1037,27 @@ export function getAdminManagedContent(key: ManagedContentKey) {
   );
 }
 
+export function getAdminDownloadCategories() {
+  return getAdminData<DownloadCategory[]>(
+    "/internal/admin/download-categories",
+    [],
+  );
+}
+
+export function getAdminDownloads() {
+  return getAdminData<DownloadResource[]>(
+    "/internal/admin/downloads",
+    [],
+  );
+}
+
+export function getAdminDownload(id: string) {
+  return getAdminData<DownloadResource | null>(
+    `/internal/admin/downloads/${encodeURIComponent(id)}`,
+    null,
+  );
+}
+
 export function getAdminSubscriptions() {
   return getAdminData<SubscriptionSummary[]>(
     "/internal/admin/subscriptions",
@@ -1006,6 +1069,44 @@ export function getAdminSubscription(id: string) {
   return getAdminData<AdminSubscriptionDetail | null>(
     `/internal/admin/subscriptions/${encodeURIComponent(id)}`,
     null,
+  );
+}
+
+export function activateAdminCustomerAdService(
+  customerReference: string,
+  technicalServiceReference: string,
+  payload: CustomerAdProvisioningMutationPayload,
+  sessionToken: string,
+  correlationId = resolveCorrelationId(null),
+) {
+  return mutateInternalAdminData<
+    CustomerAdProvisioningMutationResponse,
+    CustomerAdProvisioningMutationPayload
+  >(
+    `/internal/admin/customers/${encodeURIComponent(customerReference)}/active-directory/services/${encodeURIComponent(technicalServiceReference)}`,
+    "POST",
+    payload,
+    sessionToken,
+    correlationId,
+  );
+}
+
+export function activateAdminCustomerAdGroup(
+  customerReference: string,
+  groupSamAccountName: string,
+  payload: CustomerAdProvisioningMutationPayload,
+  sessionToken: string,
+  correlationId = resolveCorrelationId(null),
+) {
+  return mutateInternalAdminData<
+    CustomerAdProvisioningMutationResponse,
+    CustomerAdProvisioningMutationPayload
+  >(
+    `/internal/admin/customers/${encodeURIComponent(customerReference)}/active-directory/groups/${encodeURIComponent(groupSamAccountName)}`,
+    "POST",
+    payload,
+    sessionToken,
+    correlationId,
   );
 }
 
@@ -1281,3 +1382,4 @@ function logInternalApiFailure(
     surface: "webportal-bff",
   });
 }
+

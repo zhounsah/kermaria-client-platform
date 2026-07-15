@@ -59,9 +59,12 @@ public sealed class DisabledAdGroupProvisioner : IAdGroupProvisioner
 
 public sealed class MockAdGroupProvisioner : IAdGroupProvisioner
 {
-    private readonly object _syncRoot = new();
-    private readonly HashSet<string> _memberships =
-        new(StringComparer.OrdinalIgnoreCase);
+    private readonly MockAdGroupMembershipStore _memberships;
+
+    public MockAdGroupProvisioner(MockAdGroupMembershipStore memberships)
+    {
+        _memberships = memberships;
+    }
 
     public string ModeName => "mock";
 
@@ -92,45 +95,42 @@ public sealed class MockAdGroupProvisioner : IAdGroupProvisioner
         string groupSamAccountName,
         bool shouldAdd)
     {
-        var key = $"{groupSamAccountName}|{user.SamAccountName}";
-        lock (_syncRoot)
+        if (shouldAdd)
         {
-            var exists = _memberships.Contains(key);
-            if (shouldAdd)
-            {
-                if (exists)
-                {
-                    return new AdGroupProvisionerResult(
-                        StatusCodes.Status200OK,
-                        "AD_GROUP_MEMBER_ALREADY_PRESENT",
-                        "Active Directory group membership already exists in mock mode.",
-                        false);
-                }
-
-                _memberships.Add(key);
-                return new AdGroupProvisionerResult(
-                    StatusCodes.Status200OK,
-                    "AD_GROUP_MEMBER_ADDED",
-                    "Active Directory group membership added in mock mode.",
-                    true);
-            }
-
-            if (!exists)
+            if (!_memberships.AddMembership(
+                    groupSamAccountName,
+                    user.SamAccountName))
             {
                 return new AdGroupProvisionerResult(
                     StatusCodes.Status200OK,
-                    "AD_GROUP_MEMBER_ALREADY_ABSENT",
-                    "Active Directory group membership already absent in mock mode.",
+                    "AD_GROUP_MEMBER_ALREADY_PRESENT",
+                    "Active Directory group membership already exists in mock mode.",
                     false);
             }
 
-            _memberships.Remove(key);
             return new AdGroupProvisionerResult(
                 StatusCodes.Status200OK,
-                "AD_GROUP_MEMBER_REMOVED",
-                "Active Directory group membership removed in mock mode.",
+                "AD_GROUP_MEMBER_ADDED",
+                "Active Directory group membership added in mock mode.",
                 true);
         }
+
+        if (!_memberships.RemoveMembership(
+                groupSamAccountName,
+                user.SamAccountName))
+        {
+            return new AdGroupProvisionerResult(
+                StatusCodes.Status200OK,
+                "AD_GROUP_MEMBER_ALREADY_ABSENT",
+                "Active Directory group membership already absent in mock mode.",
+                false);
+        }
+
+        return new AdGroupProvisionerResult(
+            StatusCodes.Status200OK,
+            "AD_GROUP_MEMBER_REMOVED",
+            "Active Directory group membership removed in mock mode.",
+            true);
     }
 }
 

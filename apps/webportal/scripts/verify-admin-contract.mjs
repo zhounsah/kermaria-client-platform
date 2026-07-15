@@ -11,6 +11,12 @@ const adGroupsRoute = await read("app/api/admin/ad/groups/route.ts");
 const adCreateUserRoute = await read(
   "app/api/admin/customers/[customerReference]/ad/users/route.ts",
 );
+const downloadsRoute = await read("app/api/admin/downloads/route.ts");
+const downloadDetailRoute = await read("app/api/admin/downloads/[id]/route.ts");
+const downloadFileRoute = await read("app/api/admin/downloads/[id]/file/route.ts");
+const downloadCategoriesRoute = await read(
+  "app/api/admin/download-categories/route.ts",
+);
 const internalApi = await read("lib/internal-api.ts");
 const appShell = await read("components/AppShell.tsx");
 
@@ -35,8 +41,16 @@ assert.match(adCreateUserRoute, /INVALID_REQUEST/);
 assert.match(internalApi, /import "server-only"/);
 assert.match(internalApi, /\/internal\/admin\//);
 assert.match(internalApi, /getAdminCustomer/);
+assert.match(internalApi, /getAdminDownloads/);
 assert.doesNotMatch(internalApi, /NEXT_PUBLIC_INTERNAL_API_URL/);
 assert.match(appShell, /session\?\.user\.role === "internal_admin"/);
+assert.match(downloadsRoute, /handleAdminGet/);
+assert.match(downloadsRoute, /handleAdminMutation/);
+assert.match(downloadDetailRoute, /handleAdminGet/);
+assert.match(downloadDetailRoute, /handleAdminMutation/);
+assert.match(downloadFileRoute, /hasValidCsrfToken/);
+assert.match(downloadCategoriesRoute, /handleAdminGet/);
+assert.match(downloadCategoriesRoute, /handleAdminMutation/);
 
 for (const route of [
   "overview",
@@ -65,6 +79,10 @@ for (const page of [
   "service-requests/page.tsx",
   "sessions/page.tsx",
   "audit-logs/page.tsx",
+  "downloads/page.tsx",
+  "downloads/new/page.tsx",
+  "downloads/[id]/page.tsx",
+  "downloads/categories/page.tsx",
 ]) {
   const source = await read(`app/admin/${page}`);
   assert.match(

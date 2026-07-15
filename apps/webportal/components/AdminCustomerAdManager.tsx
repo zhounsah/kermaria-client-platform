@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import type {
   AdminAdStatus,
@@ -154,14 +154,14 @@ function describeAdMode(status: AdminAdStatus | null) {
 
   switch (status.mode) {
     case "disabled":
-      return "Aucune connexion Active Directory ni action AD n'est autorisee.";
+      return "Aucune connexion Active Directory ni action AD n'est autorisée.";
     case "mock":
-      return "Les actions AD restent simulees pour les tests et n'ecrivent rien dans l'annuaire.";
+      return "Les actions AD restent simulées pour les tests et n'écrivent rien dans l'annuaire.";
     case "read_only":
-      return "Les recherches AD sont autorisees mais toutes les ecritures sont refusees.";
+      return "Les recherches AD sont autorisées, mais toutes les écritures sont refusées.";
     case "controlled_write":
       return status.writesEnabled
-        ? "Les ecritures AD reelles sont strictement bornees a l'OU de test OU=TEST_SITE_WEB,DC=home,DC=bzh."
+        ? "Les écritures AD réelles sont strictement bornées à l'OU de test OU=TEST_SITE_WEB,DC=home,DC=bzh."
         : "Le mode controlled_write est configuré sans disponibilité d'écriture.";
     default:
       return "Le mode AD n'est pas reconnu par l'interface.";
@@ -779,7 +779,7 @@ async function submitMutation<TPayload>(
             <h2>Administration Active Directory</h2>
             <p>
               {describeAdMode(status)} Client cible : {customerReference}. Aucun
-              hard delete AD n&apos;est expose.
+              hard delete AD n&apos;est exposé.
             </p>
           </div>
           <StatusBadge
@@ -795,10 +795,10 @@ async function submitMutation<TPayload>(
             </div>
             <StatusBadge
               label={status?.writesEnabled
-                ? "Ecriture bornee"
+                ? "Écriture bornée"
                 : status?.readsEnabled
-                  ? "Lecture sans ecriture"
-                  : "AD désactivee"}
+                  ? "Lecture sans écriture"
+                  : "AD désactivée"}
               tone={status?.writesEnabled
                 ? "warning"
                 : status?.readsEnabled
@@ -808,21 +808,21 @@ async function submitMutation<TPayload>(
           </div>
           <div className="security-item">
             <div>
-              <strong>OU racine autorisee</strong>
-              <span>{status?.clientsOuDn ?? "Non resolue"}</span>
+              <strong>OU racine autorisée</strong>
+              <span>{status?.clientsOuDn ?? "Non résolue"}</span>
             </div>
           </div>
           <div className="security-item">
             <div>
               <strong>Domaine</strong>
-              <span>{status?.domain ?? "Non resolu"}</span>
+              <span>{status?.domain ?? "Non résolu"}</span>
             </div>
           </div>
           <div className="security-item">
             <div>
               <strong>Limites</strong>
               <span>
-                Connect {status?.connectTimeoutMs ?? "-"} ms ? Query {status?.queryTimeoutMs ?? "-"} ms ? Max {status?.maxResults ?? "-"}
+                Connexion {status?.connectTimeoutMs ?? "-"} ms · Requête {status?.queryTimeoutMs ?? "-"} ms · Max {status?.maxResults ?? "-"}
               </span>
             </div>
           </div>
@@ -858,7 +858,7 @@ async function submitMutation<TPayload>(
             </div>
           </div>
           {links.length === 0 ? (
-            <p className="field-hint">Aucun objet AD n&apos;est encore lie a ce client.</p>
+            <p className="field-hint">Aucun objet AD n&apos;est encore lié à ce client.</p>
           ) : (
             <div className="stack-list">
               {links.map((link) => (
@@ -866,11 +866,11 @@ async function submitMutation<TPayload>(
                   <div className="stack-row-main">
                     <strong>{link.samAccountName}</strong>
                     <span>
-                      {link.objectType} ? {link.displayName}
+                      {link.objectType} · {link.displayName}
                     </span>
                     <span>{link.distinguishedName}</span>
                     <span>
-                      Lie le {formatDateTime(link.linkedAt)}
+                      Lié le {formatDateTime(link.linkedAt)}
                       {link.linkedBy ? ` par ${link.linkedBy}` : ""}
                     </span>
                   </div>
@@ -880,7 +880,7 @@ async function submitMutation<TPayload>(
                     onClick={() => void handleUnlink(link.id)}
                     type="button"
                   >
-                    Delier
+                    Délier
                   </button>
                 </div>
               ))}
@@ -907,7 +907,7 @@ async function submitMutation<TPayload>(
                 <option value="">Sélectionner un utilisateur ou un groupe</option>
                 {selectableLinkObjects.map((item) => (
                   <option key={item.objectGuid} value={item.objectGuid}>
-                    {item.objectType} ? {item.samAccountName} ? {item.displayName}
+                    {item.objectType} · {item.samAccountName} · {item.displayName}
                   </option>
                 ))}
               </select>
@@ -922,12 +922,12 @@ async function submitMutation<TPayload>(
                 onChange={(event) => setShowAdvancedLinkMode(event.target.checked)}
                 type="checkbox"
               />
-              Afficher le DistinguishedName manuel en mode avance/debug
+              Afficher le DistinguishedName manuel en mode avancé / debug
             </label>
             {!showAdvancedLinkMode ? (
               <p className="field-hint">
                 {linkDn
-                  ? `DistinguishedName selectionne : ${linkDn}`
+                  ? `DistinguishedName sélectionné : ${linkDn}`
                   : "Le DistinguishedName sera rempli automatiquement après sélection d'un objet."}
               </p>
             ) : null}
@@ -997,7 +997,7 @@ async function submitMutation<TPayload>(
           ) : (
             <p className="field-hint">
               Sélectionnez un utilisateur pour pré-remplir les actions de groupe,
-              de désactivation et de deplacement.
+              de désactivation et de déplacement.
             </p>
           )}
           {usersSearchCount === 0 ? (
@@ -1024,7 +1024,7 @@ async function submitMutation<TPayload>(
                 >
                   {selectedUser?.objectGuid === user.objectGuid
                     ? "Sélectionné"
-                    : "Sélectionnér"}
+                    : "Sélectionner"}
                 </button>
                 <StatusBadge
                   label={user.isDisabled ? "Désactive" : "Actif"}
@@ -1105,7 +1105,7 @@ async function submitMutation<TPayload>(
                 >
                   {selectedGroup?.objectGuid === group.objectGuid
                     ? "Sélectionné"
-                    : "Sélectionnér"}
+                    : "Sélectionner"}
                 </button>
                 <StatusBadge label="Groupe" tone="info" />
               </div>
@@ -1377,20 +1377,20 @@ async function submitMutation<TPayload>(
         <h2>Groupes effectifs</h2>
         <p className="field-hint">
           Lecture seule. Liste tous les groupes auxquels l&apos;utilisateur
-          selectionne appartient (directement ou par imbrication). Verrouille
-          au scope du client.
+          sélectionné appartient (directement ou par imbrication). Verrouillée
+          au périmètre AD autorisé.
         </p>
         {selectedUser ? (
           <p className="field-hint">
             Utilisateur cible : <strong>{selectedUser.samAccountName}</strong>
             {effectiveGroupsForUserGuid !== null
               && effectiveGroupsForUserGuid !== selectedUser.objectGuid
-              ? " — les résultats ci-dessous portent sur un autre utilisateur, relancer la recherche."
+              ? " - les résultats ci-dessous portent sur un autre utilisateur. Relancez la recherche."
               : ""}
           </p>
         ) : (
           <p className="field-hint">
-            Sélectionnéz d&apos;abord un utilisateur dans la section de
+            Sélectionnez d&apos;abord un utilisateur dans la section de
             recherche pour activer cette lecture.
           </p>
         )}
@@ -1411,7 +1411,7 @@ async function submitMutation<TPayload>(
           && effectiveGroups.length === 0
           ? (
             <p className="field-hint">
-              Aucun groupe effectif trouve pour cet utilisateur.
+              Aucun groupe effectif trouvé pour cet utilisateur.
             </p>
           )
           : null}
@@ -1438,19 +1438,19 @@ async function submitMutation<TPayload>(
         <SectionCard ariaLabel="Renommer un utilisateur AD">
           <h2>Renommer l&apos;utilisateur</h2>
           <p className="field-hint">
-            Met a jour simultanement CN, sAMAccountName, displayName et UPN.
+            Met à jour simultanément le CN, le sAMAccountName, le displayName et l&apos;UPN.
             L&apos;utilisateur reste dans la même OU. Bornée au scope du
             client courant.
           </p>
           {selectedUser ? (
             <p className="field-hint">
               Utilisateur cible : <strong>{selectedUser.samAccountName}</strong>
-              {" ââ‚¬â€ "}
+              {" - "}
               <span>{selectedUser.displayName}</span>
             </p>
           ) : (
             <p className="field-hint">
-              Sélectionnéz d&apos;abord un utilisateur dans la section de
+              Sélectionnez d&apos;abord un utilisateur dans la section de
               recherche.
             </p>
           )}
@@ -1494,8 +1494,8 @@ async function submitMutation<TPayload>(
             </label>
             <p className="field-hint">
               Format UPN : <code>nom@domaine</code>. Le domaine doit
-              correspondre a <code>AD_DOMAIN</code> (ou
-              <code>AD_ALLOWED_UPN_DOMAINS</code>). Laisser vide pour ne
+              correspondre à <code>AD_DOMAIN</code> (ou
+              <code>AD_ALLOWED_UPN_DOMAINS</code>). Laissez vide pour ne
               pas modifier l&apos;UPN.
             </p>
             <SubmitButton
@@ -1507,29 +1507,29 @@ async function submitMutation<TPayload>(
           </form>
         </SectionCard>
 
-        <SectionCard ariaLabel="D?placer un utilisateur AD">
-          <h2>D?placer l&apos;utilisateur</h2>
+        <SectionCard ariaLabel="Déplacer un utilisateur AD">
+          <h2>Déplacer l&apos;utilisateur</h2>
           <p className="field-hint">
-            D?place l&apos;utilisateur entre Users / Disabled du m?me client,
-            ou cross-client vers un autre client (rare, ex. erreur de saisie
+            Déplace l&apos;utilisateur entre Users / Disabled du même client,
+            ou en cross-client vers un autre client (rare, par exemple après une erreur de saisie
             initiale). Le sAMAccountName et le CN sont préservés ; le DN
             change. Le lien `customer_ad_links` est repris automatiquement.
           </p>
           {selectedUser ? (
             <p className="field-hint">
               Utilisateur cible : <strong>{selectedUser.samAccountName}</strong>
-              {" ââ‚¬â€ "}
+              {" - "}
               <span>DN actuel : {selectedUser.distinguishedName}</span>
             </p>
           ) : (
             <p className="field-hint">
-              Sélectionnéz d&apos;abord un utilisateur dans la section de
+              Sélectionnez d&apos;abord un utilisateur dans la section de
               recherche.
             </p>
           )}
           <form className="form-card compact-form-card" onSubmit={handleMoveUser}>
             <label>
-              Reference client cible
+              Référence client cible
               <input
                 disabled={!selectedUser}
                 onChange={(event) =>
@@ -1573,9 +1573,9 @@ async function submitMutation<TPayload>(
             </fieldset>
             <SubmitButton
               disabled={!selectedUser}
-              idleLabel="D?placer"
+              idleLabel="Déplacer"
               isSubmitting={isSubmitting}
-              submittingLabel="D?placement..."
+              submittingLabel="Déplacement..."
             />
           </form>
         </SectionCard>
@@ -1583,3 +1583,4 @@ async function submitMutation<TPayload>(
     </div>
   );
 }
+

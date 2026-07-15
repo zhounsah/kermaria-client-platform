@@ -38,6 +38,7 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
                 _configuration.WritesEnabled,
                 _configuration.Domain,
                 _scope.ClientsOuDn,
+                _configuration.AllowedRoots,
                 _configuration.ConnectTimeoutMs,
                 _configuration.QueryTimeoutMs,
                 _configuration.MaxResults));
@@ -56,6 +57,7 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
                 _configuration.WritesEnabled,
                 _configuration.Domain,
                 _scope.ClientsOuDn,
+                _configuration.AllowedRoots,
                 _configuration.ConnectTimeoutMs,
                 _configuration.QueryTimeoutMs,
                 _configuration.MaxResults));
@@ -73,6 +75,7 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
                 _configuration.WritesEnabled,
                 _configuration.Domain,
                 _scope.ClientsOuDn,
+                _configuration.AllowedRoots,
                 _configuration.ConnectTimeoutMs,
                 _configuration.QueryTimeoutMs,
                 _configuration.MaxResults));
@@ -638,10 +641,9 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
             using var results = searcher.FindAll();
             var groups = results
                 .Cast<SearchResult>()
-                .Select(result => MapEntry(result.GetDirectoryEntry()))
-                .Where(group => group.CustomerReference.Equals(
-                    resolvedUser.Value.CustomerReference,
-                    StringComparison.OrdinalIgnoreCase))
+                .Select(result => MapEffectiveGroupResult(
+                    result,
+                    resolvedUser.Value.CustomerReference))
                 .OrderBy(group => group.SamAccountName, StringComparer.OrdinalIgnoreCase)
                 .Take(_configuration.MaxResults)
                 .ToArray();
@@ -665,6 +667,53 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
                     "Active Directory is temporarily unavailable.",
                     Array.Empty<AdDirectoryObjectSummary>()));
         }
+    }
+
+    private AdDirectoryObjectSummary MapEffectiveGroupResult(
+        SearchResult result,
+        string fallbackCustomerReference)
+    {
+        var distinguishedName = _scope.NormalizeDistinguishedName(
+            result.Properties["distinguishedName"].Count > 0
+                ? result.Properties["distinguishedName"][0]?.ToString()
+                : null)
+            ?? throw new InvalidOperationException(
+                "The Active Directory group distinguishedName is unavailable.");
+        string samAccountName =
+            (result.Properties["sAMAccountName"].Count > 0
+                ? result.Properties["sAMAccountName"][0]?.ToString()
+                : null)
+            ?? throw new InvalidOperationException(
+                "The Active Directory group sAMAccountName is unavailable.");
+        string displayName =
+            (result.Properties["displayName"].Count > 0
+                ? result.Properties["displayName"][0]?.ToString()
+                : null)
+            ?? samAccountName;
+        var objectGuid =
+            result.Properties["objectGUID"].Count > 0
+            && result.Properties["objectGUID"][0] is byte[] guidBytes
+                ? new Guid(guidBytes).ToString("D")
+                : $"ad-effective-group-{samAccountName.ToLowerInvariant()}";
+        var objectSid =
+            result.Properties["objectSid"].Count > 0
+            && result.Properties["objectSid"][0] is byte[] sidBytes
+                ? new SecurityIdentifier(sidBytes, 0).ToString()
+                : "S-1-0-0";
+        var customerReference =
+            _scope.ExtractCustomerReference(distinguishedName)
+            ?? fallbackCustomerReference;
+
+        return new AdDirectoryObjectSummary(
+            objectGuid,
+            objectSid,
+            "group",
+            samAccountName,
+            null,
+            displayName,
+            distinguishedName,
+            customerReference,
+            false);
     }
 
     private AdServiceResult<IReadOnlyList<AdDirectoryObjectSummary>> SearchDirectory(

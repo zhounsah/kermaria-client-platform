@@ -28,10 +28,14 @@ public interface IAdminService
 public sealed class AdminService : IAdminService
 {
     private readonly IAdminRepository _repository;
+    private readonly IClientServiceCatalogService _serviceCatalogService;
 
-    public AdminService(IAdminRepository repository)
+    public AdminService(
+        IAdminRepository repository,
+        IClientServiceCatalogService serviceCatalogService)
     {
         _repository = repository;
+        _serviceCatalogService = serviceCatalogService;
     }
 
     public bool IsPersistent => _repository.IsPersistent;
@@ -52,10 +56,24 @@ public sealed class AdminService : IAdminService
     public async Task<AdminCustomerDetail> GetCustomerAsync(
         string customerReference,
         CancellationToken cancellationToken)
-        => await _repository.GetCustomerAsync(
-                ValidateCustomerReference(customerReference),
+    {
+        var normalizedCustomerReference = ValidateCustomerReference(
+            customerReference);
+        var customer = await _repository.GetCustomerAsync(
+                normalizedCustomerReference,
                 cancellationToken)
             ?? throw new PortalDataNotFoundException();
+
+        var services = await _serviceCatalogService.GetServicesAsync(
+            BuildAdminProjectionSession(customer),
+            cancellationToken);
+
+        return customer with
+        {
+            ActiveServiceCount = services.Count(service => service.Status == "active"),
+            Services = services
+        };
+    }
 
     public Task<IReadOnlyList<AdminSupportRequestSummary>>
         GetSupportRequestsAsync(CancellationToken cancellationToken)
@@ -91,4 +109,18 @@ public sealed class AdminService : IAdminService
 
         return normalized;
     }
+
+    private static PortalSessionContext BuildAdminProjectionSession(
+        AdminCustomerDetail customer)
+        => new(
+            SessionId: $"admin-projection-{customer.CustomerId}",
+            UserId: "internal-admin",
+            CustomerId: customer.CustomerId,
+            CustomerReference: customer.Identity.CustomerReference,
+            Email: customer.Identity.Email,
+            DisplayName: customer.Identity.ContactName,
+            UserStatus: "active",
+            UserRole: PortalRoles.InternalAdmin,
+            LastLoginAtUtc: null,
+            ExpiresAtUtc: DateTime.UtcNow.AddMinutes(5));
 }

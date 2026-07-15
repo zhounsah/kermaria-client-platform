@@ -104,6 +104,7 @@ public sealed class CartProvisioningTrigger : ICartProvisioningTrigger
                 "cart_payment_reconcile",
                 correlationId,
                 requestedByUserId: null,
+                targetUserSamAccountNames: null,
                 cancellationToken);
             await _audit.RecordAsync(
                 new AuditEvent(

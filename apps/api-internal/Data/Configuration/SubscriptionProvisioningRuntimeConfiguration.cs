@@ -3,6 +3,9 @@ namespace Kermaria.ApiInternal.Data.Configuration;
 public sealed record SubscriptionProvisioningRuntimeConfiguration(
     IReadOnlyDictionary<string, IReadOnlyList<string>>
         GroupsByOfferExternalReference,
+    IReadOnlyDictionary<string, IReadOnlyList<string>>
+        GroupsByTechnicalServiceReference,
+    IReadOnlyDictionary<string, string> ServiceLabelsByTechnicalReference,
     IReadOnlyDictionary<string, string> GroupDistinguishedNamesBySamAccountName,
     int MaxAttempts,
     int RetryDelayMs)
@@ -29,6 +32,61 @@ public sealed record SubscriptionProvisioningRuntimeConfiguration(
             .OrderBy(group => group, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
+    public IReadOnlyList<string> ServiceManagedGroupSamAccountNames =>
+        GroupsByTechnicalServiceReference.Values
+            .SelectMany(groups => groups)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(group => group, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+    public IReadOnlyList<string> ManagedTechnicalServiceReferences =>
+        GroupsByTechnicalServiceReference.Keys
+            .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+    public IReadOnlyList<string> ResolveServiceMappedGroups(
+        string? technicalServiceReference)
+    {
+        if (string.IsNullOrWhiteSpace(technicalServiceReference))
+        {
+            return Array.Empty<string>();
+        }
+
+        return GroupsByTechnicalServiceReference.TryGetValue(
+            technicalServiceReference.Trim(),
+            out var groups)
+            ? groups
+            : Array.Empty<string>();
+    }
+
+    public string ResolveServiceLabel(string? technicalServiceReference)
+    {
+        if (string.IsNullOrWhiteSpace(technicalServiceReference))
+        {
+            return "Service";
+        }
+
+        var normalized = technicalServiceReference.Trim();
+        if (ServiceLabelsByTechnicalReference.TryGetValue(
+                normalized,
+                out var label)
+            && !string.IsNullOrWhiteSpace(label))
+        {
+            return label;
+        }
+
+        var tokens = normalized
+            .Split(['-', '_'], StringSplitOptions.RemoveEmptyEntries)
+            .Select(token => token.ToLowerInvariant())
+            .Select(token => token.Length switch
+            {
+                0 => token,
+                1 => token.ToUpperInvariant(),
+                _ => char.ToUpperInvariant(token[0]) + token[1..]
+            });
+        return string.Join(" ", tokens);
+    }
+
     public bool TryGetGroupDistinguishedName(
         string groupSamAccountName,
         out string distinguishedName)
@@ -40,6 +98,10 @@ public sealed record SubscriptionProvisioningRuntimeConfiguration(
 public static class SubscriptionProvisioningConfigurationResolver
 {
     private const string GroupsSectionName = "SUBSCRIPTION_PROVISIONING_GROUPS";
+    private const string ServiceGroupsSectionName =
+        "SUBSCRIPTION_PROVISIONING_SERVICE_GROUPS";
+    private const string ServiceLabelsSectionName =
+        "SUBSCRIPTION_PROVISIONING_SERVICE_LABELS";
     private const string GroupDnsSectionName = "AD_PROVISIONING_GROUP_DNS";
 
     private static readonly IReadOnlyDictionary<string, string[]>
@@ -67,16 +129,52 @@ public static class SubscriptionProvisioningConfigurationResolver
                 ["RADIO"] = ["GG_Radio"]
             };
 
+    private static readonly IReadOnlyDictionary<string, string[]>
+        DefaultGroupsByTechnicalServiceReference =
+            new Dictionary<string, string[]>(
+                StringComparer.OrdinalIgnoreCase)
+            {
+                ["ACCES-RDS"] = ["GG_RDS"],
+                ["ACCES-VPN"] = ["GG_VPN"],
+                ["NEXTCLOUD"] = ["GG_NextCloud"],
+                ["RADIO"] = ["GG_Radio"]
+            };
+
+    private static readonly IReadOnlyDictionary<string, string>
+        DefaultServiceLabelsByTechnicalReference =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["ACCES-RDS"] = "Bureau Windows / RDS",
+                ["ACCES-VPN"] = "Accès VPN",
+                ["NEXTCLOUD"] = "Nextcloud",
+                ["RADIO"] = "Radio"
+            };
+
     public static SubscriptionProvisioningRuntimeConfiguration Resolve(
         IConfiguration configuration)
     {
         var groupsByOfferExternalReference =
             new Dictionary<string, IReadOnlyList<string>>(
                 StringComparer.OrdinalIgnoreCase);
+        var groupsByTechnicalServiceReference =
+            new Dictionary<string, IReadOnlyList<string>>(
+                StringComparer.OrdinalIgnoreCase);
+        var serviceLabelsByTechnicalReference =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var entry in DefaultGroupsByOfferExternalReference)
         {
             groupsByOfferExternalReference[entry.Key] = entry.Value;
+        }
+
+        foreach (var entry in DefaultGroupsByTechnicalServiceReference)
+        {
+            groupsByTechnicalServiceReference[entry.Key] = entry.Value;
+        }
+
+        foreach (var entry in DefaultServiceLabelsByTechnicalReference)
+        {
+            serviceLabelsByTechnicalReference[entry.Key] = entry.Value;
         }
 
         foreach (var child in ReadSectionEntries(
@@ -90,6 +188,30 @@ public static class SubscriptionProvisioningConfigurationResolver
             }
 
             groupsByOfferExternalReference[child.Key] = groups;
+        }
+
+        foreach (var child in ReadSectionEntries(
+            configuration,
+            ServiceGroupsSectionName))
+        {
+            var groups = SplitGroups(child.Value);
+            if (groups.Count == 0)
+            {
+                continue;
+            }
+
+            groupsByTechnicalServiceReference[child.Key] = groups;
+        }
+
+        foreach (var child in ReadSectionEntries(
+            configuration,
+            ServiceLabelsSectionName))
+        {
+            if (!string.IsNullOrWhiteSpace(child.Value))
+            {
+                serviceLabelsByTechnicalReference[child.Key] =
+                    child.Value.Trim();
+            }
         }
 
         var groupDnsBySamAccountName =
@@ -110,6 +232,8 @@ public static class SubscriptionProvisioningConfigurationResolver
 
         return new SubscriptionProvisioningRuntimeConfiguration(
             groupsByOfferExternalReference,
+            groupsByTechnicalServiceReference,
+            serviceLabelsByTechnicalReference,
             groupDnsBySamAccountName,
             ParseBoundedInt(
                 configuration["SUBSCRIPTION_PROVISIONING_MAX_ATTEMPTS"],

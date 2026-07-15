@@ -22,6 +22,7 @@
     "test:bpce": "node scripts/verify-bpce-invoicing-contract.mjs",
     "test:payments": "node scripts/verify-payment-channels-contract.mjs",
     "test:subscriptions": "node scripts/verify-subscriptions-contract.mjs",
+    "test:downloads": "node scripts/verify-downloads-contract.mjs",
     "test:payments-stripe": "node scripts/verify-stripe-contract.mjs",
     "test:timezone": "node scripts/verify-timezone-contract.mjs",
     "test:signup": "node scripts/verify-signup-contract.mjs",

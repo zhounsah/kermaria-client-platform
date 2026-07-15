@@ -109,6 +109,7 @@ public sealed class MockCommercialStore
 
     public MockCommercialStore()
     {
+        Offers.AddRange(CreateTechnicalServiceOffers());
         Offers.AddRange(CreatePublicPackOffers());
 
         Lines["commercial-doc-mock-001"] =
@@ -412,6 +413,120 @@ public sealed class MockCommercialStore
                 144)
         ];
 
+    private static IReadOnlyList<MockCommercialOffer> CreateTechnicalServiceOffers()
+        =>
+        [
+            CreateTechnicalServiceOffer(
+                "offer-service-storage-32",
+                "Stockage personnel 32 Go",
+                "Socle de stockage nominatif pour les fichiers personnels du client.",
+                "Service technique",
+                "STOCK-PERSO-32",
+                210),
+            CreateTechnicalServiceOffer(
+                "offer-service-backup",
+                "Sauvegarde du stockage personnel",
+                "Sauvegarde régulière associée au stockage personnel.",
+                "Service technique",
+                "SAVE-PERSO",
+                220),
+            CreateTechnicalServiceOffer(
+                "offer-service-vpn",
+                "Accès VPN",
+                "Accès VPN nominatif provisionnable via groupe de sécurité AD.",
+                "Service technique",
+                "ACCES-VPN",
+                230,
+                ["GG_VPN"]),
+            CreateTechnicalServiceOffer(
+                "offer-service-supervision",
+                "Supervision du service",
+                "Supervision et suivi opérationnel du service couvert.",
+                "Service technique",
+                "SUPERV-SERVICE",
+                240),
+            CreateTechnicalServiceOffer(
+                "offer-service-support-l1",
+                "Support niveau 1",
+                "Support de premier niveau associé au service couvert.",
+                "Service technique",
+                "SUPPORT-LV1",
+                250),
+            CreateTechnicalServiceOffer(
+                "offer-service-rds",
+                "Bureau Windows / RDS",
+                "Accès bureau distant Windows provisionnable via groupe de sécurité AD.",
+                "Service technique",
+                "ACCES-RDS",
+                260,
+                ["GG_RDS"]),
+            CreateTechnicalServiceOffer(
+                "offer-service-user-add",
+                "Utilisateur supplémentaire",
+                "Ajout d'un utilisateur supplémentaire au périmètre du client.",
+                "Service technique",
+                "USER-ADD",
+                270),
+            CreateTechnicalServiceOffer(
+                "offer-service-storage-plus",
+                "Stockage supplémentaire 32 Go",
+                "Extension de stockage complémentaire au service principal.",
+                "Service technique",
+                "STOCK-SUP-32",
+                280),
+            CreateTechnicalServiceOffer(
+                "offer-service-doc-tech",
+                "Documentation technique",
+                "Documentation complémentaire rattachée au service couvert.",
+                "Service technique",
+                "DOC-TECH",
+                290),
+            CreateTechnicalServiceOffer(
+                "offer-service-nextcloud",
+                "Nextcloud",
+                "Accès Nextcloud provisionnable via groupe de sécurité AD.",
+                "Service technique",
+                "NEXTCLOUD",
+                300,
+                ["GG_NextCloud"])
+        ];
+
+    private static MockCommercialOffer CreateTechnicalServiceOffer(
+        string id,
+        string name,
+        string description,
+        string category,
+        string externalReference,
+        int displayOrder,
+        IReadOnlyList<string>? provisioningGroups = null)
+        => new(
+            id,
+            name,
+            description,
+            category,
+            "forfait",
+            "ht",
+            0,
+            "EUR",
+            CommercialStatuses.OfferInactive,
+            displayOrder,
+            "2026-07-14T08:00:00Z",
+            "2026-07-14T08:00:00Z",
+            null,
+            CommercialStatuses.CadenceOneTime,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            externalReference,
+            [externalReference],
+            provisioningGroups ?? Array.Empty<string>());
+
     private static MockCommercialOffer CreatePublicPackOffer(
         string id,
         string name,
@@ -451,7 +566,46 @@ public sealed class MockCommercialStore
             null,
             null,
             null,
-            externalReference);
+            externalReference,
+            ResolvePackTechnicalServiceReferences(publicPackCode),
+            Array.Empty<string>());
+
+    private static IReadOnlyList<string> ResolvePackTechnicalServiceReferences(
+        string publicPackCode)
+        => publicPackCode switch
+        {
+            "pack-dossier-securise" =>
+                ["STOCK-PERSO-32", "SAVE-PERSO"],
+            "pack-acces-distance" =>
+                [
+                    "STOCK-PERSO-32",
+                    "SAVE-PERSO",
+                    "ACCES-VPN",
+                    "SUPERV-SERVICE",
+                    "SUPPORT-LV1"
+                ],
+            "pack-bureau-windows-distance" =>
+                [
+                    "STOCK-PERSO-32",
+                    "SAVE-PERSO",
+                    "ACCES-VPN",
+                    "ACCES-RDS",
+                    "SUPERV-SERVICE",
+                    "SUPPORT-LV1"
+                ],
+            "pack-pro-association" =>
+                [
+                    "USER-ADD",
+                    "STOCK-PERSO-32",
+                    "STOCK-SUP-32",
+                    "ACCES-VPN",
+                    "SAVE-PERSO",
+                    "SUPERV-SERVICE",
+                    "SUPPORT-LV1",
+                    "DOC-TECH"
+                ],
+            _ => Array.Empty<string>()
+        };
 }
 
 public sealed class MockCommercialRepository : ICommercialRepository
@@ -525,7 +679,10 @@ public sealed class MockCommercialRepository : ICommercialRepository
                 offer.PayPalPlanIdSandbox,
                 offer.PayPalPlanIdLive,
                 offer.StripePriceIdTest,
-                offer.StripePriceIdLive);
+                offer.StripePriceIdLive,
+                offer.ExternalReference,
+                offer.TechnicalServiceReferences,
+                offer.ProvisioningGroupSamAccountNames);
             _store.Offers.Add(item);
 
             return Task.FromResult(new CommercialOfferMutationResponse(
@@ -562,6 +719,13 @@ public sealed class MockCommercialRepository : ICommercialRepository
                 || current.Category != offer.Category
                 || current.UnitLabel != offer.UnitLabel
                 || current.PriceAmountCents != offer.PriceAmountCents
+                || current.ExternalReference != offer.ExternalReference
+                || !current.TechnicalServiceReferences.SequenceEqual(
+                    offer.TechnicalServiceReferences,
+                    StringComparer.OrdinalIgnoreCase)
+                || !current.ProvisioningGroupSamAccountNames.SequenceEqual(
+                    offer.ProvisioningGroupSamAccountNames,
+                    StringComparer.OrdinalIgnoreCase)
                 || current.Status != offer.Status
                 || current.DisplayOrder != offer.DisplayOrder
                 || current.BillingCadence != offer.BillingCadence
@@ -580,6 +744,10 @@ public sealed class MockCommercialRepository : ICommercialRepository
             current.Category = offer.Category;
             current.UnitLabel = offer.UnitLabel;
             current.PriceAmountCents = offer.PriceAmountCents;
+            current.ExternalReference = offer.ExternalReference;
+            current.TechnicalServiceReferences = offer.TechnicalServiceReferences;
+            current.ProvisioningGroupSamAccountNames =
+                offer.ProvisioningGroupSamAccountNames;
             current.Status = offer.Status;
             current.DisplayOrder = offer.DisplayOrder;
             current.BillingCadence = offer.BillingCadence;
@@ -1436,6 +1604,8 @@ public sealed class MockCommercialRepository : ICommercialRepository
             offer.Currency,
             offer.TaxRateBasisPoints,
             offer.ExternalReference,
+            offer.TechnicalServiceReferences.ToArray(),
+            offer.ProvisioningGroupSamAccountNames.ToArray(),
             offer.Status,
             offer.DisplayOrder,
             offer.BillingCadence,
@@ -1588,7 +1758,9 @@ public sealed record MockCommercialOffer(
     string? InitialPayPalPlanIdLive = null,
     string? InitialStripePriceIdTest = null,
     string? InitialStripePriceIdLive = null,
-    string? InitialExternalReference = null)
+    string? InitialExternalReference = null,
+    IReadOnlyList<string>? InitialTechnicalServiceReferences = null,
+    IReadOnlyList<string>? InitialProvisioningGroupSamAccountNames = null)
 {
     public string Name { get; set; } = InitialName;
     public string Description { get; set; } = InitialDescription;
@@ -1610,6 +1782,10 @@ public sealed record MockCommercialOffer(
     public string? StripePriceIdTest { get; set; } = InitialStripePriceIdTest;
     public string? StripePriceIdLive { get; set; } = InitialStripePriceIdLive;
     public string? ExternalReference { get; set; } = InitialExternalReference;
+    public IReadOnlyList<string> TechnicalServiceReferences { get; set; } =
+        InitialTechnicalServiceReferences ?? Array.Empty<string>();
+    public IReadOnlyList<string> ProvisioningGroupSamAccountNames { get; set; } =
+        InitialProvisioningGroupSamAccountNames ?? Array.Empty<string>();
 }
 
 public sealed record MockCommercialDocument(

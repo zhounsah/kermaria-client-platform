@@ -62,6 +62,11 @@ public static class RuntimeConfigurationValidator
             }
         }
 
+        if (string.IsNullOrWhiteSpace(configuration["DOWNLOAD_STORAGE_ROOT"]))
+        {
+            invalidVariables.Add("DOWNLOAD_STORAGE_ROOT");
+        }
+
         if (string.Equals(
                 configuration["RUN_MARIADB_TESTS"]?.Trim(),
                 "true",

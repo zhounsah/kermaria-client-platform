@@ -84,7 +84,10 @@ public sealed class MariaDbMigrationRunner
                 historyCommand.Transaction = transaction;
                 historyCommand.CommandText =
                     """
-                    INSERT INTO schema_migrations (migration_id, applied_at)
+                    INSERT IGNORE INTO schema_migrations (
+                        migration_id,
+                        applied_at
+                    )
                     VALUES (@migration_id, @applied_at);
                     """;
                 historyCommand.Parameters.AddWithValue(

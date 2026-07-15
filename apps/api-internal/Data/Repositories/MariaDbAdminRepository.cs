@@ -203,6 +203,7 @@ public sealed class MariaDbAdminRepository : IAdminRepository
             cancellationToken);
 
         return new AdminCustomerDetail(
+            snapshot.CustomerId,
             snapshot.Identity,
             snapshot.CreatedAt,
             snapshot.LastActivityAt,

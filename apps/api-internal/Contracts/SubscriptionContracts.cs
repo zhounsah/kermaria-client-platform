@@ -44,6 +44,9 @@ public sealed record SubscriptionProvisioningTargetUserSummary(
     string DisplayName,
     string? UserPrincipalName);
 
+public sealed record SubscriptionProvisioningReconcileRequest(
+    IReadOnlyList<string>? TargetUserSamAccountNames);
+
 public sealed record SubscriptionProvisioningActionSummary(
     string Id,
     string ActionType,

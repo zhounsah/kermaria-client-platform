@@ -40,6 +40,7 @@ public sealed record AdminCustomerSummary(
     string LastActivityAt);
 
 public sealed record AdminCustomerDetail(
+    string CustomerId,
     ClientProfile Identity,
     string CreatedAt,
     string LastActivityAt,

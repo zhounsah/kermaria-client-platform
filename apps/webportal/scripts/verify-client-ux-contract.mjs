@@ -23,6 +23,7 @@ const internalApi = await read("lib/internal-api.ts");
 const styles = await read("app/globals.css");
 const passwordPage = await read("app/password/page.tsx");
 const invoiceTable = await read("components/InvoiceTable.tsx");
+const portalNavigation = await read("components/PortalNavigation.tsx");
 
 assert.match(loadingPage, /LoadingState/);
 assert.match(errorPage, /ErrorState/);
@@ -58,9 +59,11 @@ assert.match(passwordPage, /Aucune communication Active Directory réelle/);
 assert.match(invoiceTable, /className="invoice-table"/);
 assert.match(invoiceTable, /data-label=/);
 assert.match(invoiceTable, /Informations indicatives/);
+assert.match(portalNavigation, /\/downloads/);
 
 for (const page of [
   "dashboard",
+  "downloads",
   "services",
   "invoices",
   "support",

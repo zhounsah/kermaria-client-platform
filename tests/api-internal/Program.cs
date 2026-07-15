@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Data.Common;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Net.Sockets;
 using System.Reflection;
@@ -353,6 +354,12 @@ async Task RunMockTestsAsync()
             .GetString()
             ?? throw new InvalidOperationException(
                 "Le login admin ne retourne aucun token interne.");
+
+        await VerifyDownloadsAsync(
+            client,
+            mockBaseUrl,
+            sessionToken!,
+            adminSessionToken);
 
         foreach (var endpoint in new[]
         {
@@ -2552,6 +2559,410 @@ async Task RunMariaDbReadTestsAsync()
             workflowSupportRequestId,
             workflowServiceRequestId);
         await api.StopAsync();
+    }
+}
+
+async Task VerifyDownloadsAsync(
+    HttpClient client,
+    string baseUrl,
+    string clientSessionToken,
+    string adminSessionToken)
+{
+    using var unauthenticatedResponse = await client.GetAsync(
+        $"{baseUrl}/internal/portal/downloads");
+    Ensure(
+        unauthenticatedResponse.StatusCode == HttpStatusCode.Unauthorized,
+        "Les téléchargements portail doivent refuser l'absence de session.");
+
+    var categories = await GetJsonArrayAsync(
+        CreateSessionRequest(
+            HttpMethod.Get,
+            $"{baseUrl}/internal/admin/download-categories",
+            adminSessionToken),
+        HttpStatusCode.OK,
+        "La liste admin des catégories de téléchargement doit répondre HTTP 200.");
+    Ensure(
+        categories.GetArrayLength() >= 5,
+        "Les catégories de téléchargement par défaut doivent être semées.");
+
+    var defaultCategoryId = categories.EnumerateArray()
+            .FirstOrDefault(category =>
+                category.GetProperty("slug").GetString() == "logiciels")
+            .GetProperty("id")
+            .GetString()
+        ?? throw new InvalidOperationException(
+            "La catégorie par défaut 'logiciels' est introuvable.");
+
+    var hiddenDownloadId = await CreateDownloadAsync(new
+    {
+        categoryId = defaultCategoryId,
+        title = "RDP suspendu",
+        shortDescription =
+            "Fichier réservé à un service suspendu pour le test d'autorisation.",
+        resourceType = "rdp",
+        sourceKind = "external_url",
+        visibilityMode = "targeted",
+        status = "active",
+        externalUrl = "https://downloads.example.invalid/rdp-hidden.rdp",
+        versionLabel = "v1",
+        installationInstructions = "À utiliser uniquement après réactivation.",
+        displayOrder = 10,
+        visibilityRules = new[]
+        {
+            new
+            {
+                targetType = "service_type",
+                targetValue = "rds"
+            }
+        }
+    });
+    var externalDownloadId = await CreateDownloadAsync(new
+    {
+        categoryId = defaultCategoryId,
+        title = "Guide support distant",
+        shortDescription =
+            "Documentation visible pour les services support actifs.",
+        resourceType = "document",
+        sourceKind = "external_url",
+        visibilityMode = "targeted",
+        status = "active",
+        externalUrl = "https://downloads.example.invalid/guide-support.pdf",
+        versionLabel = "2026.07",
+        installationInstructions = "Ouvrir le guide avant la première connexion.",
+        displayOrder = 20,
+        visibilityRules = new[]
+        {
+            new
+            {
+                targetType = "service_type",
+                targetValue = "support"
+            }
+        }
+    });
+    var internalDownloadPayload = new
+    {
+        categoryId = defaultCategoryId,
+        title = "Script support sécurisé",
+        shortDescription =
+            "Script interne visible pour les services support actifs.",
+        resourceType = "script",
+        sourceKind = "internal_file",
+        visibilityMode = "targeted",
+        status = "inactive",
+        externalUrl = (string?)null,
+        versionLabel = "2.0.0",
+        installationInstructions = "Exécuter le script avec les droits habituels.",
+        displayOrder = 30,
+        visibilityRules = new[]
+        {
+            new
+            {
+                targetType = "service_type",
+                targetValue = "support"
+            }
+        }
+    };
+    var internalDownloadId = await CreateDownloadAsync(internalDownloadPayload);
+
+    var internalDetailBeforeUpload = await GetJsonObjectAsync(
+        CreateSessionRequest(
+            HttpMethod.Get,
+            $"{baseUrl}/internal/admin/downloads/{internalDownloadId}",
+            adminSessionToken),
+        HttpStatusCode.OK,
+        "La fiche admin du téléchargement interne doit être lisible.");
+    Ensure(
+        internalDetailBeforeUpload.GetProperty("sourceKind").GetString()
+            == "internal_file"
+        && internalDetailBeforeUpload.GetProperty("status").GetString()
+            == "inactive",
+        "Le téléchargement interne doit démarrer inactif avant upload.");
+
+    await UploadDownloadFileAsync(
+        client,
+        baseUrl,
+        adminSessionToken,
+        internalDownloadId,
+        "support-script-v1.ps1",
+        "Write-Output 'v1'");
+    await UploadDownloadFileAsync(
+        client,
+        baseUrl,
+        adminSessionToken,
+        internalDownloadId,
+        "support-script-v2.ps1",
+        "Write-Output 'v2'");
+
+    using (var activateRequest = CreateSessionRequest(
+               HttpMethod.Patch,
+               $"{baseUrl}/internal/admin/downloads/{internalDownloadId}",
+               adminSessionToken))
+    {
+        activateRequest.Content = JsonContent.Create(new
+        {
+            categoryId = defaultCategoryId,
+            title = "Script support sécurisé",
+            shortDescription =
+                "Script interne visible pour les services support actifs.",
+            resourceType = "script",
+            sourceKind = "internal_file",
+            visibilityMode = "targeted",
+            status = "active",
+            externalUrl = (string?)null,
+            versionLabel = "2.0.1",
+            installationInstructions =
+                "Exécuter le script avec les droits habituels.",
+            displayOrder = 30,
+            visibilityRules = new[]
+            {
+                new
+                {
+                    targetType = "service_type",
+                    targetValue = "support"
+                }
+            }
+        });
+        using var activateResponse = await client.SendAsync(activateRequest);
+        using var activatePayload = JsonDocument.Parse(
+            await activateResponse.Content.ReadAsStringAsync());
+            Ensure(
+            activateResponse.StatusCode == HttpStatusCode.OK,
+            "L'activation du téléchargement interne après upload doit réussir.");
+            Ensure(
+            activatePayload.RootElement.GetProperty("changed").GetBoolean(),
+            "L'activation du téléchargement interne doit être marquée changed.");
+    }
+
+    var adminDownloads = await GetJsonArrayAsync(
+        CreateSessionRequest(
+            HttpMethod.Get,
+            $"{baseUrl}/internal/admin/downloads",
+            adminSessionToken),
+        HttpStatusCode.OK,
+        "La liste admin des téléchargements doit répondre HTTP 200.");
+    Ensure(
+        adminDownloads.EnumerateArray().Any(item =>
+            item.GetProperty("id").GetString() == hiddenDownloadId)
+        && adminDownloads.EnumerateArray().Any(item =>
+            item.GetProperty("id").GetString() == externalDownloadId)
+        && adminDownloads.EnumerateArray().Any(item =>
+            item.GetProperty("id").GetString() == internalDownloadId),
+        "La liste admin doit exposer les téléchargements créés.");
+
+    using (var categoryDeleteRequest = CreateSessionRequest(
+               HttpMethod.Delete,
+               $"{baseUrl}/internal/admin/download-categories/{defaultCategoryId}",
+               adminSessionToken))
+    {
+        using var categoryDeleteResponse = await client.SendAsync(
+            categoryDeleteRequest);
+        var categoryDeleteText = await categoryDeleteResponse.Content
+            .ReadAsStringAsync();
+            Ensure(
+            categoryDeleteResponse.StatusCode == HttpStatusCode.Conflict,
+            "Une catégorie utilisée doit refuser la suppression.");
+            Ensure(
+            categoryDeleteText.TrimStart().StartsWith("{", StringComparison.Ordinal),
+            $"Le refus de suppression de catÃ©gorie doit retourner du JSON. ReÃ§u: {categoryDeleteText}");
+        using var categoryDeletePayload = JsonDocument.Parse(categoryDeleteText);
+        Ensure(
+            categoryDeletePayload.RootElement.GetProperty("code").GetString()
+                == "DOWNLOAD_CATEGORY_NOT_EMPTY",
+            "Le refus de suppression de catégorie doit exposer le code attendu.");
+    }
+
+    var portalDownloads = await GetJsonArrayAsync(
+        CreateSessionRequest(
+            HttpMethod.Get,
+            $"{baseUrl}/internal/portal/downloads",
+            clientSessionToken),
+        HttpStatusCode.OK,
+        "La liste portail des téléchargements doit répondre HTTP 200.");
+    var visibleDownloadIds = portalDownloads.EnumerateArray()
+        .SelectMany(category => category.GetProperty("items").EnumerateArray())
+        .Select(item => item.GetProperty("id").GetString())
+        .Where(id => !string.IsNullOrWhiteSpace(id))
+        .ToHashSet(StringComparer.Ordinal);
+    Ensure(
+        visibleDownloadIds.Contains(externalDownloadId)
+        && visibleDownloadIds.Contains(internalDownloadId)
+        && !visibleDownloadIds.Contains(hiddenDownloadId),
+        "Le portail doit filtrer les téléchargements selon les droits actifs.");
+
+    using (var hiddenFileRequest = CreateSessionRequest(
+               HttpMethod.Get,
+               $"{baseUrl}/internal/portal/downloads/{hiddenDownloadId}/file",
+               clientSessionToken))
+    {
+        using var hiddenFileResponse = await client.SendAsync(hiddenFileRequest);
+        Ensure(
+            hiddenFileResponse.StatusCode == HttpStatusCode.NotFound,
+            "Un téléchargement non autorisé doit répondre HTTP 404.");
+    }
+
+    using (var redirectHandler = new HttpClientHandler
+           {
+               UseProxy = false,
+               AllowAutoRedirect = false
+           })
+    using (var redirectClient = new HttpClient(redirectHandler))
+    using (var externalFileRequest = CreateSessionRequest(
+               HttpMethod.Get,
+               $"{baseUrl}/internal/portal/downloads/{externalDownloadId}/file",
+               clientSessionToken))
+    {
+        using var externalFileResponse = await redirectClient.SendAsync(
+            externalFileRequest);
+        Ensure(
+            externalFileResponse.StatusCode == HttpStatusCode.Redirect,
+            "Un téléchargement externe visible doit répondre par redirection.");
+        Ensure(
+            string.Equals(
+                externalFileResponse.Headers.Location?.ToString(),
+                "https://downloads.example.invalid/guide-support.pdf",
+                StringComparison.Ordinal),
+            "La redirection externe doit conserver l'URL configurée.");
+    }
+
+    using (var internalFileRequest = CreateSessionRequest(
+               HttpMethod.Get,
+               $"{baseUrl}/internal/portal/downloads/{internalDownloadId}/file",
+               clientSessionToken))
+    {
+        using var internalFileResponse = await client.SendAsync(internalFileRequest);
+        Ensure(
+            internalFileResponse.StatusCode == HttpStatusCode.OK,
+            "Le téléchargement interne visible doit répondre HTTP 200.");
+        var internalFileBody = await internalFileResponse.Content.ReadAsStringAsync();
+        Ensure(
+            internalFileBody.Contains("v2", StringComparison.Ordinal),
+            "Le binaire servi doit être le dernier fichier uploadé.");
+    }
+
+    using (var deleteFileRequest = CreateSessionRequest(
+               HttpMethod.Delete,
+               $"{baseUrl}/internal/admin/downloads/{internalDownloadId}/file",
+               adminSessionToken))
+    {
+        using var deleteFileResponse = await client.SendAsync(deleteFileRequest);
+        Ensure(
+            deleteFileResponse.StatusCode == HttpStatusCode.OK,
+            "La suppression du fichier interne doit répondre HTTP 200.");
+    }
+
+    var internalDetailAfterDelete = await GetJsonObjectAsync(
+        CreateSessionRequest(
+            HttpMethod.Get,
+            $"{baseUrl}/internal/admin/downloads/{internalDownloadId}",
+            adminSessionToken),
+        HttpStatusCode.OK,
+        "La fiche admin du téléchargement interne doit rester lisible après suppression du fichier.");
+    Ensure(
+        internalDetailAfterDelete.GetProperty("status").GetString()
+            == "inactive"
+        && internalDetailAfterDelete.GetProperty("fileOriginalName").ValueKind
+            == JsonValueKind.Null,
+        "La suppression du fichier doit désactiver la ressource interne.");
+
+    foreach (var resourceId in new[]
+    {
+        hiddenDownloadId,
+        externalDownloadId,
+        internalDownloadId
+    })
+    {
+        using var deleteRequest = CreateSessionRequest(
+            HttpMethod.Delete,
+            $"{baseUrl}/internal/admin/downloads/{resourceId}",
+            adminSessionToken);
+        using var deleteResponse = await client.SendAsync(deleteRequest);
+        Ensure(
+            deleteResponse.StatusCode == HttpStatusCode.OK,
+            $"La suppression admin du téléchargement {resourceId} doit réussir.");
+    }
+
+    async Task<string> CreateDownloadAsync(object payload)
+    {
+        using var request = CreateSessionRequest(
+            HttpMethod.Post,
+            $"{baseUrl}/internal/admin/downloads",
+            adminSessionToken);
+        request.Content = JsonContent.Create(payload);
+        using var response = await client.SendAsync(request);
+        using var document = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync());
+        Ensure(
+            response.StatusCode == HttpStatusCode.OK,
+            "La création admin d'un téléchargement doit répondre HTTP 200.");
+        return document.RootElement.GetProperty("id").GetString()
+            ?? throw new InvalidOperationException(
+                "La création admin d'un téléchargement ne retourne aucun identifiant.");
+    }
+
+    async Task UploadDownloadFileAsync(
+        HttpClient httpClient,
+        string currentBaseUrl,
+        string currentAdminSessionToken,
+        string resourceId,
+        string fileName,
+        string fileContent)
+    {
+        using var request = CreateSessionRequest(
+            HttpMethod.Post,
+            $"{currentBaseUrl}/internal/admin/downloads/{resourceId}/file",
+            currentAdminSessionToken);
+        using var multipart = new MultipartFormDataContent();
+        using var fileBytes = new ByteArrayContent(
+            Encoding.UTF8.GetBytes(fileContent));
+        fileBytes.Headers.ContentType =
+            new MediaTypeHeaderValue("application/octet-stream");
+        multipart.Add(fileBytes, "file", fileName);
+        request.Content = multipart;
+        using var response = await httpClient.SendAsync(request);
+        using var payload = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync());
+        Ensure(
+            response.StatusCode == HttpStatusCode.OK,
+            "L'upload du fichier de téléchargement doit répondre HTTP 200.");
+        Ensure(
+            payload.RootElement.GetProperty("changed").GetBoolean(),
+            "L'upload du fichier de téléchargement doit être marqué changed.");
+    }
+
+    async Task<JsonElement> GetJsonArrayAsync(
+        HttpRequestMessage request,
+        HttpStatusCode expectedStatusCode,
+        string failureMessage)
+    {
+        using (request)
+        {
+            using var response = await client.SendAsync(request);
+            using var document = JsonDocument.Parse(
+                await response.Content.ReadAsStringAsync());
+            Ensure(response.StatusCode == expectedStatusCode, failureMessage);
+        Ensure(
+            document.RootElement.ValueKind == JsonValueKind.Array,
+            "Le payload JSON attendu doit être un tableau.");
+            return document.RootElement.Clone();
+        }
+    }
+
+    async Task<JsonElement> GetJsonObjectAsync(
+        HttpRequestMessage request,
+        HttpStatusCode expectedStatusCode,
+        string failureMessage)
+    {
+        using (request)
+        {
+            using var response = await client.SendAsync(request);
+            using var document = JsonDocument.Parse(
+                await response.Content.ReadAsStringAsync());
+            Ensure(response.StatusCode == expectedStatusCode, failureMessage);
+        Ensure(
+            document.RootElement.ValueKind == JsonValueKind.Object,
+            "Le payload JSON attendu doit être un objet.");
+            return document.RootElement.Clone();
+        }
     }
 }
 
@@ -4956,6 +5367,18 @@ RunningApi StartApi(
     startInfo.ArgumentList.Add(baseUrl);
     configure(startInfo);
     ApplyChildProcessEnvironmentGuardrails(startInfo);
+    startInfo.Environment.TryGetValue(
+        "DOWNLOAD_STORAGE_ROOT",
+        out var downloadStorageRootValue);
+    if (string.IsNullOrWhiteSpace(downloadStorageRootValue))
+    {
+        var downloadStorageRoot = Path.Combine(
+            Path.GetTempPath(),
+            "kermaria-api-internal-download-tests",
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(downloadStorageRoot);
+        startInfo.Environment["DOWNLOAD_STORAGE_ROOT"] = downloadStorageRoot;
+    }
 
     var logs = new StringBuilder();
     var process = new Process { StartInfo = startInfo };

@@ -28,14 +28,6 @@ export const metadata = {
 
 export const dynamic = "force-dynamic";
 
-const ACTION_STATUS_BADGE = {
-  requested: { label: "Demande", tone: "info" },
-  running: { label: "En cours", tone: "warning" },
-  succeeded: { label: "Succès", tone: "success" },
-  unchanged: { label: "Sans changement", tone: "neutral" },
-  failed: { label: "Échec", tone: "danger" },
-} as const;
-
 export default async function AdminSubscriptionDetailPage({
   params,
 }: {
@@ -68,12 +60,13 @@ export default async function AdminSubscriptionDetailPage({
 
   const { subscription, documents, provisioning } = result.data;
   const status = subscriptionStatus[subscription.status];
-  const provisioningStatus =
-    subscriptionProvisioningStatus[provisioning.status];
+  const provisioningState = subscriptionProvisioningStatus[provisioning.status];
   const cancellable =
     subscription.status !== "cancelled"
     && subscription.status !== "expired"
     && subscription.status !== "pending_cancellation";
+  const customerAdHref =
+    `/admin/customers/${encodeURIComponent(subscription.customerReference)}/active-directory?subscriptionId=${encodeURIComponent(subscription.id)}`;
 
   return (
     <>
@@ -157,7 +150,7 @@ export default async function AdminSubscriptionDetailPage({
               </div>
               <div>
                 <dt>Encaissement</dt>
-                <dd>Stripe, PayPal ou virement depuis la facture</dd>
+                <dd>Stripe, PayPal ou virement à partir de la facture</dd>
               </div>
             </>
           )}
@@ -218,19 +211,20 @@ export default async function AdminSubscriptionDetailPage({
         />
       </SectionCard>
 
-      <SectionCard ariaLabel="Provisioning Active Directory">
+      <SectionCard ariaLabel="Provisionning Active Directory">
         <div className="section-heading">
           <div>
-            <h2>Provisioning Active Directory</h2>
+            <h2>Provisionning Active Directory</h2>
             <p className="field-hint">
-              Réconciliation calculée au niveau du client, sur tous les liens
-              AD utilisateur associés à ce compte.
+              Le provisionning automatique reste piloté par la souscription,
+              mais l&apos;administration manuelle se fait maintenant sur la page
+              Active Directory du client.
             </p>
           </div>
           <div className="badge-stack">
             <StatusBadge
-              label={provisioningStatus.label}
-              tone={provisioningStatus.tone}
+              label={provisioningState.label}
+              tone={provisioningState.tone}
             />
           </div>
         </div>
@@ -257,83 +251,24 @@ export default async function AdminSubscriptionDetailPage({
           </div>
           <div>
             <dt>Dernier résultat</dt>
-            <dd>{provisioning.lastResultCode ?? "—"}</dd>
+            <dd>{describeProvisioningResult(provisioning.lastResultCode)}</dd>
           </div>
         </dl>
-        {provisioning.canRetry ? (
-          <AdminReconcileProvisioningButton subscriptionId={subscription.id} />
-        ) : (
-          <p className="field-hint">
-            Relance indisponible tant que le mapping ou la configuration AD
-            n&apos;est pas exploitable pour cette offre.
-          </p>
-        )}
-
-        <div style={{ marginTop: 18 }}>
-          <h3>Utilisateurs visés</h3>
-          {provisioning.targetUsers.length === 0 ? (
-            <p className="field-hint">
-              Aucun lien AD utilisateur n&apos;est actuellement rattaché à ce
-              client.
-            </p>
-          ) : (
-            <ul className="stack-list">
-              {provisioning.targetUsers.map((user) => (
-                <li className="stack-row" key={user.samAccountName}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <strong>{user.samAccountName}</strong>
-                    <p className="field-hint">
-                      {user.displayName}
-                      {user.userPrincipalName
-                        ? ` - ${user.userPrincipalName}`
-                        : ""}
-                    </p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        <div style={{ marginTop: 18 }}>
-          <h3>Dernières actions</h3>
-          {provisioning.recentActions.length === 0 ? (
-            <p className="field-hint">
-              Aucune action de provisioning enregistrée pour cette souscription.
-            </p>
-          ) : (
-            <ul className="stack-list">
-              {provisioning.recentActions.map((action) => {
-                const actionStatus =
-                  ACTION_STATUS_BADGE[
-                    action.status as keyof typeof ACTION_STATUS_BADGE
-                  ] ?? {
-                    label: action.status,
-                    tone: "neutral" as const,
-                  };
-                return (
-                  <li className="stack-row" key={action.id}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <strong>{action.actionType}</strong>
-                      <p className="field-hint">
-                        {formatDateTime(action.requestedAt)} - corrélation{" "}
-                        {action.correlationId}
-                        {action.resultCode ? ` - ${action.resultCode}` : ""}
-                      </p>
-                    </div>
-                    <StatusBadge
-                      label={action.changed ? "Modifié" : "Idempotent"}
-                      tone={action.changed ? "success" : "neutral"}
-                    />
-                    <StatusBadge
-                      label={actionStatus.label}
-                      tone={actionStatus.tone}
-                    />
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+        <div className="ad-button-row" style={{ marginTop: 18 }}>
+          <AdminReconcileProvisioningButton
+            idleLabel="Réconcilier la souscription"
+            subscriptionId={subscription.id}
+            submittingLabel="Réconciliation..."
+          />
+          <Link className="button" href={customerAdHref}>
+            Gérer dans Active Directory
+          </Link>
+          <Link
+            className="button button-secondary"
+            href={`/admin/customers/${encodeURIComponent(subscription.customerReference)}`}
+          >
+            Ouvrir la fiche client
+          </Link>
         </div>
       </SectionCard>
 
@@ -345,21 +280,24 @@ export default async function AdminSubscriptionDetailPage({
           </p>
         ) : (
           <ul className="stack-list">
-            {documents.map((doc) => {
-              const docStatus = commercialDocumentStatus[doc.status];
+            {documents.map((document) => {
+              const documentStatus = commercialDocumentStatus[document.status];
               return (
-                <li className="stack-row" key={doc.id}>
+                <li className="stack-row" key={document.id}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <strong>{doc.internalReference}</strong>
+                    <strong>{document.internalReference}</strong>
                     <p className="field-hint">
-                      {doc.title} - {formatDateTime(doc.createdAt)}
+                      {document.title} - {formatDateTime(document.createdAt)}
                     </p>
                   </div>
-                  <strong>{formatCurrencyFromCents(doc.totalAmountCents)}</strong>
-                  <StatusBadge label={docStatus.label} tone={docStatus.tone} />
+                  <strong>{formatCurrencyFromCents(document.totalAmountCents)}</strong>
+                  <StatusBadge
+                    label={documentStatus.label}
+                    tone={documentStatus.tone}
+                  />
                   <Link
                     className="button"
-                    href={`/admin/commercial-documents/${doc.id}`}
+                    href={`/admin/commercial-documents/${document.id}`}
                   >
                     Voir
                   </Link>
@@ -376,4 +314,20 @@ export default async function AdminSubscriptionDetailPage({
       />
     </>
   );
+}
+
+function describeProvisioningResult(code: string | null) {
+  if (!code) {
+    return "Aucun résultat récent";
+  }
+
+  if (code === "AD_TARGET_OUTSIDE_ALLOWED_ROOTS") {
+    return "Un utilisateur lié ou un groupe cible est hors du périmètre AD autorisé.";
+  }
+
+  if (code === "PROVISIONING_NO_TARGET_USERS") {
+    return "Aucun utilisateur lié n'est disponible pour le provisionning.";
+  }
+
+  return code;
 }

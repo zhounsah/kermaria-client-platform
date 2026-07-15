@@ -198,6 +198,80 @@ Contraintes :
   profondeur, mais restent determines par le registre applicatif ;
 - les dates sont stockees en UTC.
 
+## download_categories
+
+Categories du centre de telechargements client securise (migration
+`032_secure_downloads`, V0.37).
+
+| Champ | Type logique | Description |
+|---|---|---|
+| `id` | identifier | Cle interne |
+| `slug` | text | Cle stable orientee URL/admin |
+| `title` | text | Libelle client de la categorie |
+| `description` | text, nullable | Texte d'aide optionnel |
+| `status` | text | `active` ou `inactive` |
+| `display_order` | integer | Ordre d'affichage |
+| `created_at` | timestamp | Date de creation |
+| `updated_at` | timestamp | Derniere modification |
+
+Contraintes :
+
+- `slug` est unique ;
+- la suppression est refusee tant qu'une ressource la reference ;
+- seules les categories actives et non vides apparaissent cote client.
+
+## download_resources
+
+Metadonnees d'un telechargement visible depuis `/downloads`.
+
+| Champ | Type logique | Description |
+|---|---|---|
+| `id` | identifier | Cle interne |
+| `category_id` | identifier | Categorie parente |
+| `title` | text | Nom client du telechargement |
+| `short_description` | text | Description courte rassurante |
+| `resource_type` | text | `software`, `script`, `rdp`, `document`, `tool`, `other` |
+| `source_kind` | text | `internal_file` ou `external_url` |
+| `visibility_mode` | text | `all_clients` ou `targeted` |
+| `status` | text | `active` ou `inactive` |
+| `external_url` | text, nullable | URL officielle si la ressource est externe |
+| `version_label` | text, nullable | Version lisible par le client |
+| `installation_instructions` | text, nullable | Consignes courtes |
+| `display_order` | integer | Ordre d'affichage dans la categorie |
+| `internal_file_storage_key` | text, nullable | Nom physique opaque dans le stockage prive |
+| `internal_file_original_name` | text, nullable | Nom de fichier presente au client |
+| `internal_file_content_type` | text, nullable | MIME type stocke |
+| `internal_file_size_bytes` | integer, nullable | Taille du binaire |
+| `internal_file_extension` | text, nullable | Extension normalisee |
+| `created_at` | timestamp | Date de creation |
+| `updated_at` | timestamp | Derniere modification |
+
+Contraintes :
+
+- `source_kind=internal_file` exige un binaire prive avant activation ;
+- `source_kind=external_url` exige une URL absolue valide avant activation ;
+- la ressource n'est jamais exposee par un chemin statique public ;
+- `updated_at` sert aussi de date "mise a jour" affichee cote client.
+
+## download_resource_visibility_rules
+
+Regles de visibilite rattachees a une ressource du centre de telechargements.
+
+| Champ | Type logique | Description |
+|---|---|---|
+| `id` | identifier | Cle interne |
+| `resource_id` | identifier | Ressource cible |
+| `target_type` | text | `public_pack_code`, `offer_external_reference`, `service_type`, reserve `provisioning_group` |
+| `target_value` | text | Valeur comparee aux droits calcules du client |
+| `created_at` | timestamp | Date de creation |
+| `updated_at` | timestamp | Derniere modification |
+
+Contraintes :
+
+- unicite de `(resource_id, target_type, target_value)` ;
+- suppression cascadee avec la ressource ;
+- au moins une regle est requise pour une ressource `targeted`.
+
 ## commercial_documents
 
 Document commercial informatif visible par l'admin puis, après partage, par le
@@ -496,6 +570,9 @@ La V0.8 matérialise ce modèle dans l'adaptateur MariaDB avec les noms suivants
 | `invoices` | `invoices` |
 | vitrine packs publique | `public_pack_catalog_content` |
 | contenus administrables | `managed_content_entries` |
+| categories de telechargements | `download_categories` |
+| ressources telechargeables | `download_resources` |
+| regles de visibilite des telechargements | `download_resource_visibility_rules` |
 | catalogue de services | `service_catalog` |
 | `support_requests` | `support_requests` |
 | demandes commerciales | `service_requests` |

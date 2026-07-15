@@ -104,6 +104,7 @@ export interface AdminCustomerSummary {
 }
 
 export interface AdminCustomerDetail {
+  customerId: string;
   identity: ClientProfile;
   createdAt: string;
   lastActivityAt: string;
@@ -206,17 +207,12 @@ export interface ServiceSummary {
   id: string;
   reference: string;
   name: string;
-  type:
-    | "personal_hosting"
-    | "backup"
-    | "vpn"
-    | "rds"
-    | "support";
+  type: string;
   status: "active" | "pending" | "suspended";
   description: string;
   startedAt: string | null;
   scope: string;
-  commercialTerms: "Selon devis" | "Inclus selon périmètre";
+  commercialTerms: string;
   nextStep?: string;
 }
 
@@ -301,6 +297,10 @@ export interface SubscriptionProvisioningTargetUserSummary {
   userPrincipalName: string | null;
 }
 
+export interface SubscriptionProvisioningReconcilePayload {
+  targetUserSamAccountNames?: string[] | null;
+}
+
 export interface SubscriptionProvisioningActionSummary {
   id: string;
   actionType: string;
@@ -324,6 +324,97 @@ export interface SubscriptionProvisioningSummary {
   recentActions: SubscriptionProvisioningActionSummary[];
 }
 
+export type ManualProvisioningOperation = "activate" | "remove";
+
+export type ProvisionableServiceStatus =
+  | "active"
+  | "partial"
+  | "inactive"
+  | "blocked";
+
+export type AdProvisioningDiagnosticTargetType =
+  | "none"
+  | "user"
+  | "group"
+  | "user_and_group";
+
+export interface AdProvisioningDiagnostic {
+  code: string;
+  message: string;
+  targetType: AdProvisioningDiagnosticTargetType;
+  allowedRoots: string[];
+  affectedUserDistinguishedNames: string[];
+  affectedGroupDistinguishedNames: string[];
+  linkedUserReferences: string[];
+}
+
+export interface AdminCustomerAdSubscriptionContext {
+  id: string;
+  offerName: string;
+  offerExternalReference: string | null;
+  publicPackCode: PublicPackCode | null;
+  status: SubscriptionStatus;
+  mappedGroups: string[];
+  coveredServiceTechnicalReferences: string[];
+}
+
+export interface ProvisionableServiceSummary {
+  technicalServiceReference: string;
+  label: string;
+  groupSamAccountNames: string[];
+  subscriptionIds: string[];
+  coveredSubscriptionIds: string[];
+  isCoveredByActiveSubscription: boolean;
+  isManualEligible: boolean;
+  isOverrideRequired: boolean;
+  currentStatus: ProvisionableServiceStatus;
+  diagnostics: AdProvisioningDiagnostic[];
+}
+
+export interface ProvisionableGroupSummary {
+  groupSamAccountName: string;
+  label: string;
+  technicalServiceReferences: string[];
+  subscriptionIds: string[];
+  coveredSubscriptionIds: string[];
+  isCoveredByActiveSubscription: boolean;
+  isManualEligible: boolean;
+  isOverrideRequired: boolean;
+  currentStatus: ProvisionableServiceStatus;
+  diagnostics: AdProvisioningDiagnostic[];
+}
+
+export interface AdminCustomerAdWorkspace {
+  customerReference: string;
+  customerName: string;
+  adStatus: AdminAdStatus | null;
+  links: CustomerAdLinkSummary[];
+  linkedUsers: SubscriptionProvisioningTargetUserSummary[];
+  subscriptionContext: AdminCustomerAdSubscriptionContext | null;
+  subscriptions: AdminCustomerAdSubscriptionContext[];
+  managedGroups: string[];
+  provisioningStatus: SubscriptionProvisioningStatus | "mixed";
+  lastResultCode: string | null;
+  services: ProvisionableServiceSummary[];
+  groups: ProvisionableGroupSummary[];
+  diagnostics: AdProvisioningDiagnostic[];
+}
+
+export interface CustomerAdProvisioningMutationPayload {
+  operation: ManualProvisioningOperation;
+  targetUserSamAccountNames?: string[] | null;
+  override?: boolean;
+  subscriptionId?: string | null;
+}
+
+export interface CustomerAdProvisioningMutationResponse {
+  code: string;
+  message: string;
+  changed: boolean;
+  correlation_id: CorrelationId;
+  workspace: AdminCustomerAdWorkspace;
+}
+
 export interface AdminSubscriptionDetail {
   subscription: SubscriptionSummary;
   documents: CommercialDocumentSummary[];
@@ -341,6 +432,8 @@ export interface CommercialOfferSummary {
   currency: "EUR";
   taxRateBasisPoints: number | null;
   externalReference: string | null;
+  technicalServiceReferences: string[];
+  provisioningGroupSamAccountNames: string[];
   status: CommercialOfferStatus;
   displayOrder: number;
   billingCadence: CommercialOfferBillingCadence;
@@ -363,6 +456,9 @@ export interface CommercialOfferPayload {
   category: string;
   unitLabel: string;
   priceAmountCents: number;
+  externalReference: string | null;
+  technicalServiceReferences: string[];
+  provisioningGroupSamAccountNames: string[];
   status: CommercialOfferStatus;
   displayOrder: number;
   billingCadence: CommercialOfferBillingCadence;
@@ -414,6 +510,131 @@ export interface ManagedContentPayload {
 
 export interface ManagedContentMutationResponse {
   key: ManagedContentKey;
+  changed: boolean;
+  updatedAt: string;
+  correlation_id: CorrelationId;
+}
+
+export type DownloadStatus = "active" | "inactive";
+
+export type DownloadResourceType =
+  | "software"
+  | "script"
+  | "rdp"
+  | "document"
+  | "tool"
+  | "other";
+
+export type DownloadSourceKind = "internal_file" | "external_url";
+
+export type DownloadVisibilityMode = "all_clients" | "targeted";
+
+export type DownloadVisibilityTargetType =
+  | "public_pack_code"
+  | "offer_external_reference"
+  | "service_type"
+  | "provisioning_group";
+
+export type DownloadServiceType = ServiceSummary["type"];
+
+export interface DownloadCategory {
+  id: string;
+  slug: string;
+  title: string;
+  description: string | null;
+  status: DownloadStatus;
+  displayOrder: number;
+  resourceCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DownloadVisibilityRule {
+  id: string;
+  resourceId: string;
+  targetType: DownloadVisibilityTargetType;
+  targetValue: string;
+}
+
+export interface DownloadResource {
+  id: string;
+  categoryId: string;
+  categoryTitle: string;
+  title: string;
+  shortDescription: string;
+  resourceType: DownloadResourceType;
+  sourceKind: DownloadSourceKind;
+  visibilityMode: DownloadVisibilityMode;
+  status: DownloadStatus;
+  externalUrl: string | null;
+  versionLabel: string | null;
+  installationInstructions: string | null;
+  displayOrder: number;
+  hasInternalFile: boolean;
+  fileOriginalName: string | null;
+  fileContentType: string | null;
+  fileSizeBytes: number | null;
+  fileExtension: string | null;
+  createdAt: string;
+  updatedAt: string;
+  rules: DownloadVisibilityRule[];
+}
+
+export interface PortalDownloadItem {
+  id: string;
+  title: string;
+  shortDescription: string;
+  resourceType: DownloadResourceType;
+  versionLabel: string | null;
+  updatedAt: string | null;
+  installationInstructions: string | null;
+}
+
+export interface PortalDownloadCategory {
+  id: string;
+  slug: string;
+  title: string;
+  description: string | null;
+  items: PortalDownloadItem[];
+}
+
+export interface DownloadCategoryPayload {
+  slug: string;
+  title: string;
+  description: string | null;
+  status: DownloadStatus;
+  displayOrder: number;
+}
+
+export interface DownloadVisibilityRulePayload {
+  targetType: DownloadVisibilityTargetType;
+  targetValue: string;
+}
+
+export interface DownloadResourcePayload {
+  categoryId: string;
+  title: string;
+  shortDescription: string;
+  resourceType: DownloadResourceType;
+  sourceKind: DownloadSourceKind;
+  visibilityMode: DownloadVisibilityMode;
+  status: DownloadStatus;
+  externalUrl: string | null;
+  versionLabel: string | null;
+  installationInstructions: string | null;
+  displayOrder: number;
+  visibilityRules: DownloadVisibilityRulePayload[];
+}
+
+export interface DownloadCategoryMutationResponse {
+  id: string;
+  changed: boolean;
+  updatedAt: string;
+  correlation_id: CorrelationId;
+}
+
+export interface DownloadResourceMutationResponse {
+  id: string;
   changed: boolean;
   updatedAt: string;
   correlation_id: CorrelationId;
@@ -529,6 +750,46 @@ export interface PublicPackCatalogMutationResponse {
   updatedAt: string;
   correlation_id: CorrelationId;
 }
+
+export const DOWNLOAD_RESOURCE_TYPES = [
+  "software",
+  "script",
+  "rdp",
+  "document",
+  "tool",
+  "other",
+] as const satisfies readonly DownloadResourceType[];
+
+export const DOWNLOAD_SOURCE_KINDS = [
+  "internal_file",
+  "external_url",
+] as const satisfies readonly DownloadSourceKind[];
+
+export const DOWNLOAD_VISIBILITY_MODES = [
+  "all_clients",
+  "targeted",
+] as const satisfies readonly DownloadVisibilityMode[];
+
+export const DOWNLOAD_VISIBILITY_TARGET_TYPES = [
+  "public_pack_code",
+  "offer_external_reference",
+  "service_type",
+  "provisioning_group",
+] as const satisfies readonly DownloadVisibilityTargetType[];
+
+export const DOWNLOAD_SERVICE_TYPES = [
+  "personal_hosting",
+  "storage",
+  "backup",
+  "vpn",
+  "rds",
+  "support",
+  "cloud",
+  "documentation",
+  "monitoring",
+  "user",
+  "other",
+] as const satisfies readonly DownloadServiceType[];
 
 export interface ResolvedPublicPackVariant {
   offer: CommercialOfferSummary;
@@ -1371,6 +1632,7 @@ export interface AdminAdStatus {
   writesEnabled: boolean;
   domain: string | null;
   clientsOuDn: string | null;
+  allowedRoots: string[];
   connectTimeoutMs: number;
   queryTimeoutMs: number;
   maxResults: number;

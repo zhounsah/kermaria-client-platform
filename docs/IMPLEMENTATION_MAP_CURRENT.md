@@ -25,6 +25,9 @@ The current repo state is built in layers:
 7. `V0.36_PANIER_UNIFIE_ABONNEMENTS_FACTURES.md`
    Current unified checkout state: one-time cart + billed recurring checkout,
    initial invoice, billing rail renewals, deferred cancellation.
+8. `V0.37_CENTRE_TELECHARGEMENTS_CLIENT.md`
+   Secure client download center: dedicated client page, admin CRUD,
+   private binary storage, entitlement-based visibility.
 
 ## Functional picture
 
@@ -38,6 +41,7 @@ Authenticated client space:
 
 - `/services`: current services + `Finaliser mon pack` block when signup
   approval carried a pack snapshot.
+- `/downloads`: secure download center grouped by category.
 - `/souscrire`: one-time offers, recurring packs, quote-only services.
 - `/panier`: unified summary page.
 - `/commercial-documents/[id]`: payment page for issued invoices.
@@ -48,6 +52,8 @@ Back-office:
 - `/admin/catalog`: billable offers, prices, cadence, PSP ids.
 - `/admin/public-pack-catalog`: public pack presentation editor.
 - `/admin/content/[key]`: legal pages, about page, pack technical sheets.
+- `/admin/downloads`: download list, detail, binary upload, visibility rules.
+- `/admin/downloads/categories`: download categories.
 - `/admin/subscriptions`: subscription list, detail, cancellation,
   provisioning visibility.
 
@@ -62,6 +68,14 @@ Managed editorial content:
 
 - DB table `managed_content_entries`
 - edited from `/admin/content/[key]`
+
+Secure download center:
+
+- DB tables `download_categories`, `download_resources`,
+  `download_resource_visibility_rules`
+- binary payloads stored under private `DOWNLOAD_STORAGE_ROOT`
+- access resolved by `apps/api-internal/Services/DownloadService.cs`
+- edited from `/admin/downloads` and `/admin/downloads/categories`
 
 Billable pack variants:
 
@@ -114,6 +128,15 @@ Recurring checkout:
 - `apps/webportal/app/panier/page.tsx`
 - `apps/webportal/app/souscrire/page.tsx`
 
+Secure downloads:
+
+- `apps/api-internal/Services/DownloadService.cs`
+- `apps/api-internal/Services/DownloadStorageService.cs`
+- `apps/api-internal/Data/Repositories/MariaDbDownloadRepository.cs`
+- `apps/webportal/app/downloads/page.tsx`
+- `apps/webportal/components/AdminDownloadForm.tsx`
+- `apps/webportal/components/AdminDownloadCategoriesManager.tsx`
+
 Commercial document materialization:
 
 - `apps/api-internal/Data/Repositories/MariaDbCommercialRepository.cs`
@@ -134,6 +157,14 @@ Subscription persistence:
 - Renewals for the `billing` rail are driven locally by a background worker,
   not by a PSP subscription plan.
 - Cancellation can become `pending_cancellation` and is finalized at term end.
+- Downloads do not reuse `managed_content_entries`: metadata lives in dedicated
+  SQL tables and binaries never enter `apps/webportal/public`.
+- The client JSON for downloads never exposes physical storage paths or raw
+  external URLs; every button goes through `/api/downloads/{id}/file`.
+- Download visibility is computed from existing active entitlements only:
+  `subscriptions.publicPackCode`, `subscriptions.offerExternalReference`,
+  active `customer_services.service_type`, and provisioned groups reserved for
+  future extension.
 
 ## Practical reading order for a takeover
 
@@ -152,6 +183,14 @@ If you want to understand the current checkout and subscription behavior:
 4. `apps/api-internal/Services/RecurringCheckoutService.cs`
 5. `apps/api-internal/Services/Provisioning/BilledSubscriptionPaymentTrigger.cs`
 6. `apps/api-internal/Services/BillingSubscriptionRenewalWorker.cs`
+
+If you want to understand the secure download center:
+
+1. `docs/V0.37_CENTRE_TELECHARGEMENTS_CLIENT.md`
+2. `apps/api-internal/Services/DownloadService.cs`
+3. `apps/api-internal/Data/Repositories/MariaDbDownloadRepository.cs`
+4. `apps/webportal/app/downloads/page.tsx`
+5. `apps/webportal/components/AdminDownloadForm.tsx`
 
 If you want to debug provisioning:
 

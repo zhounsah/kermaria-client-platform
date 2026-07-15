@@ -36,6 +36,7 @@
     "test:bpce": "npm --prefix apps/webportal run test:bpce",
     "test:payments": "npm --prefix apps/webportal run test:payments",
     "test:subscriptions": "npm --prefix apps/webportal run test:subscriptions",
+    "test:downloads": "npm --prefix apps/webportal run test:downloads",
     "test:payments-stripe": "npm --prefix apps/webportal run test:payments-stripe",
     "test:timezone": "npm --prefix apps/webportal run test:timezone",
     "test:signup": "npm --prefix apps/webportal run test:signup",

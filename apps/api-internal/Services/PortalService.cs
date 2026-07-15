@@ -48,22 +48,38 @@ public interface IPortalService
 public sealed class PortalService : IPortalService
 {
     private readonly IPortalRepository _repository;
+    private readonly IClientServiceCatalogService _serviceCatalogService;
     private readonly ILogger<PortalService> _logger;
 
     public PortalService(
         IPortalRepository repository,
+        IClientServiceCatalogService serviceCatalogService,
         ILogger<PortalService> logger)
     {
         _repository = repository;
+        _serviceCatalogService = serviceCatalogService;
         _logger = logger;
     }
 
     public bool IsPersistent => _repository.IsPersistent;
 
-    public Task<PortalSummary> GetSummaryAsync(
+    public async Task<PortalSummary> GetSummaryAsync(
         PortalSessionContext session,
         CancellationToken cancellationToken)
-        => _repository.GetSummaryAsync(session, cancellationToken);
+    {
+        var summaryTask = _repository.GetSummaryAsync(session, cancellationToken);
+        var servicesTask = _serviceCatalogService.GetServicesAsync(
+            session,
+            cancellationToken);
+        await Task.WhenAll(summaryTask, servicesTask);
+
+        var summary = await summaryTask;
+        var services = await servicesTask;
+        return summary with
+        {
+            ActiveServiceCount = services.Count(service => service.Status == "active")
+        };
+    }
 
     public Task<ClientProfile> GetProfileAsync(
         PortalSessionContext session,
@@ -73,7 +89,7 @@ public sealed class PortalService : IPortalService
     public Task<IReadOnlyList<ServiceSummary>> GetServicesAsync(
         PortalSessionContext session,
         CancellationToken cancellationToken)
-        => _repository.GetServicesAsync(session, cancellationToken);
+        => _serviceCatalogService.GetServicesAsync(session, cancellationToken);
 
     public Task<IReadOnlyList<InvoiceSummary>> GetInvoicesAsync(
         PortalSessionContext session,
@@ -97,9 +113,24 @@ public sealed class PortalService : IPortalService
         CancellationToken cancellationToken)
     {
         ValidateSupportRequest(payload);
+        if (!string.Equals(
+                payload.ServiceId,
+                "account",
+                StringComparison.Ordinal))
+        {
+            var isKnownService = await _serviceCatalogService.IsKnownServiceIdAsync(
+                session,
+                payload.ServiceId!,
+                cancellationToken);
+            if (!isKnownService)
+            {
+                throw new PortalValidationException();
+            }
+        }
+
         var result = await _repository.CreateSupportRequestAsync(
             session,
-            payload,
+            payload with { ServiceId = "account" },
             correlationId,
             sourceAddress,
             cancellationToken);
@@ -192,7 +223,8 @@ public sealed class PortalService : IPortalService
 
         foreach (var character in normalized)
         {
-            if (!char.IsAsciiLetterOrDigit(character) && character != '-')
+            if (!char.IsAsciiLetterOrDigit(character)
+                && character is not '-' and not '_' and not '.')
             {
                 return false;
             }

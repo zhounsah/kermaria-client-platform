@@ -769,7 +769,7 @@ assert.match(
 );
 assert.match(
   adminDetailPage,
-  /Provisioning Active Directory/,
+  /Provisionn?ing Active Directory/,
   "La page admin detail doit afficher la section provisioning.",
 );
 assert.match(

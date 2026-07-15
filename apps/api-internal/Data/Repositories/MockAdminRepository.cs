@@ -101,6 +101,7 @@ public sealed class MockAdminRepository : IAdminRepository
 
         return Task.FromResult<AdminCustomerDetail?>(
             new AdminCustomerDetail(
+                MockPortalData.Profile.CustomerReference,
                 MockPortalData.Profile,
                 "2026-01-01T00:00:00Z",
                 MockPortalData.Summary.LastUpdatedAt,

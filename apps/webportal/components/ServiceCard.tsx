@@ -2,25 +2,18 @@ import type { ServiceSummary } from "@kermaria/shared";
 
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatDate, serviceStatus } from "@/lib/formatters";
+import { getServiceSymbol } from "@/lib/service-display";
 
 type ServiceCardProps = {
   service: ServiceSummary;
 };
 
-const serviceSymbols: Record<ServiceSummary["type"], string> = {
-  personal_hosting: "HDP",
-  backup: "SAV",
-  vpn: "VPN",
-  rds: "RDS",
-  support: "SUP",
-};
-
 const statusGuidance: Record<ServiceSummary["status"], string> = {
-  active: "Service disponible selon le périmètre actuellement convenu.",
+  active: "Service disponible selon le périmètre actuellement couvert.",
   pending:
-    "La demande est en attente d’étude ou de validation. Aucune activation automatique n’est lancée.",
+    "Le service est en attente de paiement, de validation ou d'activation.",
   suspended:
-    "Ce service est temporairement indisponible. Contactez le support si vous avez besoin de précisions.",
+    "Le service est temporairement indisponible. Contactez le support si besoin.",
 };
 
 export function ServiceCard({ service }: ServiceCardProps) {
@@ -30,7 +23,7 @@ export function ServiceCard({ service }: ServiceCardProps) {
     <article className="service-card">
       <div className="service-card-header">
         <div className="service-symbol" aria-hidden="true">
-          {serviceSymbols[service.type]}
+          {getServiceSymbol(service)}
         </div>
         <StatusBadge label={status.label} tone={status.tone} />
       </div>
@@ -45,7 +38,7 @@ export function ServiceCard({ service }: ServiceCardProps) {
           <dd>{service.startedAt ? formatDate(service.startedAt) : "À venir"}</dd>
         </div>
         <div>
-          <dt>Conditions</dt>
+          <dt>Couverture</dt>
           <dd>{service.commercialTerms}</dd>
         </div>
       </dl>

@@ -18,6 +18,7 @@ public interface ISubscriptionProvisioningManager
         string actionType,
         string correlationId,
         string? requestedByUserId,
+        IReadOnlyList<string>? targetUserSamAccountNames,
         CancellationToken cancellationToken);
 }
 
@@ -28,6 +29,7 @@ public sealed class SubscriptionProvisioningManager
     private readonly IActiveDirectoryLinkRepository _links;
     private readonly ISubscriptionProvisioningActionRepository _actions;
     private readonly IProvisioningService _provisioningService;
+    private readonly ICommercialOfferTopologyService _topologyService;
     private readonly SubscriptionProvisioningRuntimeConfiguration _configuration;
     private readonly IAdGroupProvisioner _groupProvisioner;
     private readonly ILogger<SubscriptionProvisioningManager> _logger;
@@ -37,6 +39,7 @@ public sealed class SubscriptionProvisioningManager
         IActiveDirectoryLinkRepository links,
         ISubscriptionProvisioningActionRepository actions,
         IProvisioningService provisioningService,
+        ICommercialOfferTopologyService topologyService,
         SubscriptionProvisioningRuntimeConfiguration configuration,
         IAdGroupProvisioner groupProvisioner,
         ILogger<SubscriptionProvisioningManager> logger)
@@ -45,6 +48,7 @@ public sealed class SubscriptionProvisioningManager
         _links = links;
         _actions = actions;
         _provisioningService = provisioningService;
+        _topologyService = topologyService;
         _configuration = configuration;
         _groupProvisioner = groupProvisioner;
         _logger = logger;
@@ -54,7 +58,10 @@ public sealed class SubscriptionProvisioningManager
         SubscriptionSummary subscription,
         CancellationToken cancellationToken)
     {
-        var context = await BuildContextAsync(subscription, cancellationToken);
+        var context = await BuildContextAsync(
+            subscription,
+            targetUserSamAccountNames: null,
+            cancellationToken);
         var recentActions = await _actions.GetRecentBySubscriptionAsync(
             subscription.Id,
             limit: 10,
@@ -67,16 +74,22 @@ public sealed class SubscriptionProvisioningManager
         string actionType,
         string correlationId,
         string? requestedByUserId,
+        IReadOnlyList<string>? targetUserSamAccountNames,
         CancellationToken cancellationToken)
     {
-        var context = await BuildContextAsync(subscription, cancellationToken);
+        var context = await BuildContextAsync(
+            subscription,
+            targetUserSamAccountNames,
+            cancellationToken);
         var actionId = await _actions.CreateRequestedAsync(
             new SubscriptionProvisioningActionCreateRequest(
                 subscription.Id,
                 subscription.CustomerId,
                 requestedByUserId,
                 actionType,
-                subscription.CustomerReference,
+                ResolveTargetReference(
+                    subscription.CustomerReference,
+                    context.TargetUsers),
                 correlationId,
                 ComputeIdempotencyKeyHash(context),
                 SerializeDetails(context, null)),
@@ -150,6 +163,7 @@ public sealed class SubscriptionProvisioningManager
 
     private async Task<SubscriptionProvisioningContext> BuildContextAsync(
         SubscriptionSummary subscription,
+        IReadOnlyList<string>? targetUserSamAccountNames,
         CancellationToken cancellationToken)
     {
         var customerSubscriptions = await _subscriptions.GetByCustomerAsync(
@@ -161,18 +175,35 @@ public sealed class SubscriptionProvisioningManager
                 "active",
                 StringComparison.Ordinal))
             .ToArray();
-        var mappedGroups = _configuration.ResolveMappedGroups(
-            subscription.OfferExternalReference);
-        var reconciledGroups = activeSubscriptions
-            .SelectMany(candidate => _configuration.ResolveMappedGroups(
-                candidate.OfferExternalReference))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(group => group, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        var mappedGroups = await _topologyService.ResolveMappedGroupsAsync(
+            subscription,
+            cancellationToken);
+        var reconciledGroups = new SortedSet<string>(
+            StringComparer.OrdinalIgnoreCase);
+        foreach (var candidate in activeSubscriptions)
+        {
+            foreach (var group in await _topologyService.ResolveMappedGroupsAsync(
+                         candidate,
+                         cancellationToken))
+            {
+                reconciledGroups.Add(group);
+            }
+        }
         var targetUsers = await _links.GetCustomerUserLinksAsync(
             subscription.CustomerId,
             cancellationToken);
-        var managedGroups = _configuration.ManagedGroupSamAccountNames;
+        var targetUserFilter = targetUserSamAccountNames?
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (targetUserFilter is not null && targetUserFilter.Count > 0)
+        {
+            targetUsers = targetUsers
+                .Where(user => targetUserFilter.Contains(user.SamAccountName))
+                .ToArray();
+        }
+        var managedGroups = await _topologyService.GetManagedGroupSamAccountNamesAsync(
+            cancellationToken);
         var groupDns = managedGroups.ToDictionary(
             group => group,
             group =>
@@ -185,7 +216,7 @@ public sealed class SubscriptionProvisioningManager
         return new SubscriptionProvisioningContext(
             subscription,
             mappedGroups,
-            reconciledGroups,
+            reconciledGroups.ToArray(),
             managedGroups,
             targetUsers,
             groupDns);
@@ -335,6 +366,23 @@ public sealed class SubscriptionProvisioningManager
                     operations = executionResult.Operations
                 }
         });
+    }
+
+    private static string ResolveTargetReference(
+        string customerReference,
+        IReadOnlyList<CustomerAdLinkSummary> targetUsers)
+    {
+        if (targetUsers.Count == 0)
+        {
+            return customerReference;
+        }
+
+        if (targetUsers.Count == 1)
+        {
+            return targetUsers[0].SamAccountName;
+        }
+
+        return customerReference;
     }
 }
 

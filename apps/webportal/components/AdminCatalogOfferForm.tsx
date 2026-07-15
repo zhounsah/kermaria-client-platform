@@ -41,6 +41,16 @@ export function AdminCatalogOfferForm({ offer }: AdminCatalogOfferFormProps) {
   const [description, setDescription] = useState(offer?.description ?? "");
   const [category, setCategory] = useState(offer?.category ?? "");
   const [unitLabel, setUnitLabel] = useState(offer?.unitLabel ?? "");
+  const [externalReference, setExternalReference] = useState(
+    offer?.externalReference ?? "",
+  );
+  const [technicalServiceReferences, setTechnicalServiceReferences] = useState(
+    (offer?.technicalServiceReferences ?? []).join("\n"),
+  );
+  const [
+    provisioningGroupSamAccountNames,
+    setProvisioningGroupSamAccountNames,
+  ] = useState((offer?.provisioningGroupSamAccountNames ?? []).join("\n"));
   const [priceAmountCents, setPriceAmountCents] = useState(
     String(offer?.priceAmountCents ?? 0),
   );
@@ -93,6 +103,11 @@ export function AdminCatalogOfferForm({ offer }: AdminCatalogOfferFormProps) {
       description: description.trim(),
       category: category.trim(),
       unitLabel: unitLabel.trim(),
+      externalReference: externalReference.trim() || null,
+      technicalServiceReferences: splitReferenceList(technicalServiceReferences),
+      provisioningGroupSamAccountNames: splitReferenceList(
+        provisioningGroupSamAccountNames,
+      ),
       priceAmountCents: Number.parseInt(priceAmountCents, 10),
       status,
       displayOrder: Number.parseInt(displayOrder, 10),
@@ -113,6 +128,16 @@ export function AdminCatalogOfferForm({ offer }: AdminCatalogOfferFormProps) {
       || payload.description.length < 3
       || payload.category.length < 2
       || payload.unitLabel.length < 1
+      || (
+        payload.externalReference !== null
+        && !/^[A-Za-z0-9._-]{1,100}$/.test(payload.externalReference)
+      )
+      || payload.technicalServiceReferences.some((entry) =>
+        !/^[A-Za-z0-9._-]{1,100}$/.test(entry)
+      )
+      || payload.provisioningGroupSamAccountNames.some((entry) =>
+        !/^[A-Za-z0-9._-]{1,100}$/.test(entry)
+      )
       || !Number.isInteger(payload.priceAmountCents)
       || payload.priceAmountCents < 0
       || !Number.isInteger(payload.displayOrder)
@@ -231,6 +256,19 @@ export function AdminCatalogOfferForm({ offer }: AdminCatalogOfferFormProps) {
         </label>
       </div>
       <label>
+        Référence externe
+        <input
+          maxLength={100}
+          onChange={(event) => setExternalReference(event.target.value)}
+          placeholder="Ex. ACCES-VPN ou PACK-PRO-1M-MENS"
+          value={externalReference}
+        />
+        <span className="field-hint">
+          Référence stable utilisée par les souscriptions, les options et le
+          provisionning.
+        </span>
+      </label>
+      <label>
         Description courte
         <textarea
           maxLength={1000}
@@ -262,6 +300,40 @@ export function AdminCatalogOfferForm({ offer }: AdminCatalogOfferFormProps) {
               cette offre. Pour changer le prix, créez une nouvelle offre.
             </span>
           ) : null}
+        </label>
+      </div>
+      <div className="form-grid">
+        <label>
+          Services techniques couverts
+          <textarea
+            maxLength={2000}
+            onChange={(event) =>
+              setTechnicalServiceReferences(event.target.value)
+            }
+            placeholder={"Une référence par ligne\nEx. ACCES-VPN"}
+            rows={5}
+            value={technicalServiceReferences}
+          />
+          <span className="field-hint">
+            Pour un pack ou une option composite, listez ici les services
+            techniques activables.
+          </span>
+        </label>
+        <label>
+          Groupes AD provisionnés
+          <textarea
+            maxLength={2000}
+            onChange={(event) =>
+              setProvisioningGroupSamAccountNames(event.target.value)
+            }
+            placeholder={"Un groupe par ligne\nEx. GG_VPN"}
+            rows={5}
+            value={provisioningGroupSamAccountNames}
+          />
+          <span className="field-hint">
+            Pour une offre technique directement provisionnable, listez ici les
+            groupes AD associés.
+          </span>
         </label>
       </div>
       <div className="form-grid">
@@ -416,4 +488,13 @@ export function AdminCatalogOfferForm({ offer }: AdminCatalogOfferFormProps) {
       />
     </form>
   );
+}
+
+function splitReferenceList(value: string) {
+  return Array.from(new Set(
+    value
+      .split(/\r?\n|[,;]/)
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0),
+  ));
 }

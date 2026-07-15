@@ -58,7 +58,7 @@ export default async function ServicesPage() {
             Ajouter un service
           </Link>
         }
-        description="Retrouvez ici les services déjà suivis sur votre compte. Pour souscrire un pack ou prendre une prestation à la carte, ouvrez l'espace « Souscrire »."
+        description="Retrouvez ici les services réellement déduits de vos packs, options et souscriptions. Pour ajouter un service, ouvrez l'espace « Souscrire »."
         eyebrow="Périmètre client"
         title="Mes services"
       />
@@ -126,14 +126,14 @@ export default async function ServicesPage() {
       <section className="request-history-section">
         <SectionHeading
           action={<StatusBadge label="Ajouter un service" tone="info" />}
-          description="Souscrivez un pack grand public clé en main, ou prenez une prestation à la carte sans passer par l'achat d'un pack."
+          description="Souscrivez un pack clé en main ou prenez une option à la carte, sans dépendre d'un mapping technique caché."
           title="Étendre mon périmètre"
         />
         <div className="cta-panel">
           <p>
             L&apos;espace « Souscrire » regroupe les packs grand public et les
             options individuelles. Chaque option à la carte se prend
-            séparément, sans engagement de pack.
+            séparément, sans obligation de pack.
           </p>
           <Link className="button" href="/souscrire">
             Ouvrir l&apos;espace Souscrire

@@ -74,6 +74,9 @@ public sealed record ValidatedCommercialOffer(
     string Category,
     string UnitLabel,
     int PriceAmountCents,
+    string? ExternalReference,
+    IReadOnlyList<string> TechnicalServiceReferences,
+    IReadOnlyList<string> ProvisioningGroupSamAccountNames,
     string Status,
     int DisplayOrder,
     string BillingCadence,
@@ -188,6 +191,7 @@ public sealed partial class CommercialService : ICommercialService
     private const int MaxSortOrder = 100000;
     private const int MaxTaxRateBasisPoints = 10000;
     private const decimal MaxQuantity = 1000000m;
+    private const int MaxReferenceListLength = 50;
     private readonly ICommercialRepository _repository;
 
     public CommercialService(ICommercialRepository repository)
@@ -391,6 +395,15 @@ public sealed partial class CommercialService : ICommercialService
             throw new PortalValidationException();
         }
 
+        var externalReference = ValidateOfferExternalReference(
+            payload.ExternalReference);
+        var technicalServiceReferences = ValidateReferenceList(
+            payload.TechnicalServiceReferences,
+            TechnicalReferencePattern());
+        var provisioningGroupSamAccountNames = ValidateReferenceList(
+            payload.ProvisioningGroupSamAccountNames,
+            GroupSamAccountNamePattern());
+
         var status = Normalize(payload.Status);
         if (status is null || !CommercialStatuses.Offer.Contains(status))
         {
@@ -462,12 +475,23 @@ public sealed partial class CommercialService : ICommercialService
             throw new PortalValidationException();
         }
 
+        if ((publicPackCode is not null
+                || technicalServiceReferences.Count > 0
+                || provisioningGroupSamAccountNames.Count > 0)
+            && externalReference is null)
+        {
+            throw new PortalValidationException();
+        }
+
         return new ValidatedCommercialOffer(
             name,
             description,
             category,
             unitLabel,
             priceAmountCents,
+            externalReference,
+            technicalServiceReferences,
+            provisioningGroupSamAccountNames,
             status,
             displayOrder,
             billingCadence,
@@ -528,6 +552,54 @@ public sealed partial class CommercialService : ICommercialService
         }
 
         return normalized;
+    }
+
+    private static string? ValidateOfferExternalReference(string? value)
+    {
+        var normalized = Normalize(value);
+        if (normalized is null)
+        {
+            return null;
+        }
+
+        if (normalized.Length > 100
+            || !TechnicalReferencePattern().IsMatch(normalized))
+        {
+            throw new PortalValidationException();
+        }
+
+        return normalized;
+    }
+
+    private static IReadOnlyList<string> ValidateReferenceList(
+        IReadOnlyList<string>? values,
+        Regex pattern)
+    {
+        if (values is null || values.Count == 0)
+        {
+            return Array.Empty<string>();
+        }
+
+        if (values.Count > MaxReferenceListLength)
+        {
+            throw new PortalValidationException();
+        }
+
+        var normalized = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var value in values)
+        {
+            var entry = Normalize(value);
+            if (entry is null
+                || entry.Length > 100
+                || !pattern.IsMatch(entry))
+            {
+                throw new PortalValidationException();
+            }
+
+            normalized.Add(entry);
+        }
+
+        return normalized.ToArray();
     }
 
     private static ValidatedCommercialDocument ValidateDocumentPayload(
@@ -721,4 +793,14 @@ public sealed partial class CommercialService : ICommercialService
 
     [GeneratedRegex("^[a-z0-9-]{1,64}$", RegexOptions.CultureInvariant)]
     private static partial Regex PackCodePattern();
+
+    [GeneratedRegex(
+        "^[A-Za-z0-9._-]{1,100}$",
+        RegexOptions.CultureInvariant)]
+    private static partial Regex TechnicalReferencePattern();
+
+    [GeneratedRegex(
+        "^[A-Za-z0-9._-]{1,100}$",
+        RegexOptions.CultureInvariant)]
+    private static partial Regex GroupSamAccountNamePattern();
 }

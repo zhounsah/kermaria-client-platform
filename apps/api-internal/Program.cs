@@ -121,6 +121,9 @@ var stripeConfiguration = StripeConfigurationResolver.Resolve(builder.Configurat
 var signupConfiguration = SignupConfigurationResolver.Resolve(builder.Configuration);
 var subscriptionProvisioningConfiguration =
     SubscriptionProvisioningConfigurationResolver.Resolve(builder.Configuration);
+var downloadStorageConfiguration = DownloadStorageConfigurationResolver.Resolve(
+    builder.Configuration,
+    builder.Environment);
 
 builder.Services.AddSingleton(sqlConfiguration);
 builder.Services.AddSingleton(adConfiguration);
@@ -133,12 +136,15 @@ builder.Services.AddSingleton(paypalConfiguration);
 builder.Services.AddSingleton(stripeConfiguration);
 builder.Services.AddSingleton(signupConfiguration);
 builder.Services.AddSingleton(subscriptionProvisioningConfiguration);
+builder.Services.AddSingleton(downloadStorageConfiguration);
 builder.Services.AddSingleton<IPortalPasswordService, PortalPasswordService>();
 builder.Services.AddSingleton<ISessionTokenService, SessionTokenService>();
+builder.Services.AddSingleton<IDownloadStorageService, DownloadStorageService>();
 builder.Services.AddSingleton<MockAuthenticationStore>();
 builder.Services.AddSingleton<MockRequestWorkflowStore>();
 builder.Services.AddSingleton<MockPortalNotificationStore>();
 builder.Services.AddSingleton<MockCommercialStore>();
+builder.Services.AddSingleton<MockDownloadStore>();
 builder.Services.AddScoped<IPortalRepository>(
     _ => sqlConfiguration.IsPersistent
         ? new MariaDbPortalRepository(sqlConfiguration)
@@ -181,6 +187,11 @@ builder.Services.AddScoped<IManagedContentRepository>(
         ? new MariaDbManagedContentRepository(sqlConfiguration)
         : new MockManagedContentRepository(
             serviceProvider.GetRequiredService<MockManagedContentStore>()));
+builder.Services.AddScoped<IDownloadRepository>(
+    serviceProvider => sqlConfiguration.IsPersistent
+        ? new MariaDbDownloadRepository(sqlConfiguration)
+        : new MockDownloadRepository(
+            serviceProvider.GetRequiredService<MockDownloadStore>()));
 builder.Services.AddSingleton<MockPublicPackCatalogStore>();
 builder.Services.AddScoped<IPublicPackCatalogRepository>(
     serviceProvider => sqlConfiguration.IsPersistent
@@ -231,6 +242,12 @@ builder.Services.AddScoped<
     IPortalNotificationService,
     PortalNotificationService>();
 builder.Services.AddScoped<ICommercialService, CommercialService>();
+builder.Services.AddScoped<
+    ICommercialOfferTopologyService,
+    CommercialOfferTopologyService>();
+builder.Services.AddScoped<
+    IClientServiceCatalogService,
+    ClientServiceCatalogService>();
 builder.Services.AddSingleton<MockCartStore>();
 builder.Services.AddScoped<ICartRepository>(
     serviceProvider => sqlConfiguration.IsPersistent
@@ -246,6 +263,7 @@ builder.Services.AddScoped<IRecurringCheckoutRepository>(
 builder.Services.AddSingleton<
     IBilledRecurringCheckoutSchemaEnsurer,
     BilledRecurringCheckoutSchemaEnsurer>();
+builder.Services.AddSingleton<IDownloadSchemaEnsurer, DownloadSchemaEnsurer>();
 builder.Services.AddScoped<ICartProvisioningTrigger, CartProvisioningTrigger>();
 builder.Services.AddScoped<
     IBilledSubscriptionPaymentTrigger,
@@ -253,12 +271,16 @@ builder.Services.AddScoped<
 builder.Services.AddScoped<ICartService, CartService>();
 builder.Services.AddScoped<IRecurringCheckoutService, RecurringCheckoutService>();
 builder.Services.AddScoped<IManagedContentService, ManagedContentService>();
+builder.Services.AddScoped<IDownloadService, DownloadService>();
 builder.Services.AddScoped<IPublicPackCatalogService, PublicPackCatalogService>();
 builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
 builder.Services.AddScoped<IProvisioningService, ProvisioningService>();
 builder.Services.AddScoped<
     ISubscriptionProvisioningManager,
     SubscriptionProvisioningManager>();
+builder.Services.AddScoped<
+    ICustomerActiveDirectoryAdministrationService,
+    CustomerActiveDirectoryAdministrationService>();
 builder.Services.AddScoped<IPayPalWebhookService, PayPalWebhookService>();
 builder.Services.AddScoped<IStripeWebhookService, StripeWebhookService>();
 builder.Services.AddScoped<IAuditService, AuditService>();
@@ -267,11 +289,14 @@ builder.Services.AddHostedService<BillingSubscriptionRenewalWorker>();
 builder.Services.AddTransient<MariaDbMigrationRunner>();
 builder.Services.AddTransient<MariaDbAdminSeeder>();
 builder.Services.AddSingleton<OperationalReadinessService>();
+builder.Services.AddSingleton<MockAdGroupMembershipStore>();
 builder.Services.AddSingleton<IActiveDirectoryService>(serviceProvider =>
     adConfiguration.Mode switch
     {
         AdIntegrationMode.Mock =>
-            new MockActiveDirectoryService(adConfiguration),
+            new MockActiveDirectoryService(
+                adConfiguration,
+                serviceProvider.GetRequiredService<MockAdGroupMembershipStore>()),
         AdIntegrationMode.ReadOnly or AdIntegrationMode.ControlledWrite =>
             new LdapActiveDirectoryService(
                 adConfiguration,
@@ -282,7 +307,8 @@ builder.Services.AddSingleton<IActiveDirectoryService>(serviceProvider =>
 builder.Services.AddSingleton<IAdGroupProvisioner>(serviceProvider =>
     adConfiguration.Mode switch
     {
-        AdIntegrationMode.Mock => new MockAdGroupProvisioner(),
+        AdIntegrationMode.Mock => new MockAdGroupProvisioner(
+            serviceProvider.GetRequiredService<MockAdGroupMembershipStore>()),
         AdIntegrationMode.ReadOnly or AdIntegrationMode.ControlledWrite =>
             new LdapAdGroupProvisioner(
                 adConfiguration,
@@ -536,6 +562,10 @@ app.UseExceptionHandler(exceptionHandler =>
                 StatusCodes.Status400BadRequest,
                 "INVALID_REQUEST",
                 "La demande est incomplète ou invalide."),
+            DownloadConflictException conflict => (
+                StatusCodes.Status409Conflict,
+                conflict.Code,
+                conflict.Message),
             PortalDataNotFoundException => (
                 StatusCodes.Status404NotFound,
                 "PORTAL_DATA_NOT_FOUND",
@@ -884,6 +914,63 @@ app.MapGet(
             await service.GetProfileAsync(
                 session,
                 context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/portal/downloads",
+    async (
+        HttpContext context,
+        IDownloadService service,
+        IAuthenticationService authenticationService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            context.RequestServices.GetRequiredService<IAuditService>());
+        return DownloadsOk(
+            context,
+            service,
+            await service.GetPortalDownloadsAsync(
+                session,
+                context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/portal/downloads/{id}/file",
+    async (
+        string id,
+        HttpContext context,
+        IDownloadService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            auditService);
+        var delivery = await service.ResolvePortalDownloadAsync(
+            session,
+            id,
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "download.deliver",
+                "success",
+                TargetType: "download_resource",
+                TargetReference: id,
+                CustomerId: session.CustomerId,
+                ActorUserId: session.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+
+        if (delivery.SourceKind == DownloadSourceKinds.ExternalUrl)
+        {
+            return Results.Redirect(delivery.ExternalUrl!);
+        }
+
+        return Results.File(
+            delivery.File!.Stream,
+            delivery.File.ContentType,
+            delivery.File.FileName);
     });
 app.MapGet(
     "/internal/portal/services",
@@ -1749,6 +1836,357 @@ app.MapPatch(
         return ManagedContentOk(context, service, result);
     });
 app.MapGet(
+    "/internal/admin/download-categories",
+    async (
+        HttpContext context,
+        IDownloadService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.downloads.read");
+        return DownloadsOk(
+            context,
+            service,
+            await service.GetAdminCategoriesAsync(context.RequestAborted));
+    });
+app.MapPost(
+    "/internal/admin/download-categories",
+    async (
+        HttpContext context,
+        IDownloadService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.downloads.write");
+        var payload = await ReadPayload<DownloadCategoryPayload>(context)
+            ?? throw new PortalValidationException();
+        DownloadCategoryMutationResponse result;
+        try
+        {
+            result = await service.CreateCategoryAsync(
+                payload,
+                context.GetCorrelationId(),
+                context.RequestAborted);
+        }
+        catch (DownloadConflictException conflict)
+        {
+            return DownloadsError(
+                context,
+                service,
+                StatusCodes.Status409Conflict,
+                conflict.Code,
+                conflict.Message);
+        }
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "download_category.create",
+                result.Changed ? "success" : "unchanged",
+                TargetType: "download_category",
+                TargetReference: result.Id,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return DownloadsOk(context, service, result);
+    });
+app.MapPatch(
+    "/internal/admin/download-categories/{id}",
+    async (
+        string id,
+        HttpContext context,
+        IDownloadService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.downloads.write");
+        var payload = await ReadPayload<DownloadCategoryPayload>(context)
+            ?? throw new PortalValidationException();
+        DownloadCategoryMutationResponse result;
+        try
+        {
+            result = await service.UpdateCategoryAsync(
+                id,
+                payload,
+                context.GetCorrelationId(),
+                context.RequestAborted);
+        }
+        catch (DownloadConflictException conflict)
+        {
+            return DownloadsError(
+                context,
+                service,
+                StatusCodes.Status409Conflict,
+                conflict.Code,
+                conflict.Message);
+        }
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "download_category.update",
+                result.Changed ? "success" : "unchanged",
+                TargetType: "download_category",
+                TargetReference: id,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return DownloadsOk(context, service, result);
+    });
+app.MapDelete(
+    "/internal/admin/download-categories/{id}",
+    async (
+        string id,
+        HttpContext context,
+        IDownloadService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.downloads.write");
+        DownloadCategoryMutationResponse result;
+        try
+        {
+            result = await service.DeleteCategoryAsync(
+                id,
+                context.GetCorrelationId(),
+                context.RequestAborted);
+        }
+        catch (DownloadConflictException conflict)
+        {
+            return DownloadsError(
+                context,
+                service,
+                StatusCodes.Status409Conflict,
+                conflict.Code,
+                conflict.Message);
+        }
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "download_category.delete",
+                result.Changed ? "success" : "unchanged",
+                TargetType: "download_category",
+                TargetReference: id,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return DownloadsOk(context, service, result);
+    });
+app.MapGet(
+    "/internal/admin/downloads",
+    async (
+        HttpContext context,
+        IDownloadService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.downloads.read");
+        return DownloadsOk(
+            context,
+            service,
+            await service.GetAdminDownloadsAsync(context.RequestAborted));
+    });
+app.MapPost(
+    "/internal/admin/downloads",
+    async (
+        HttpContext context,
+        IDownloadService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.downloads.write");
+        var payload = await ReadPayload<DownloadResourcePayload>(context)
+            ?? throw new PortalValidationException();
+        var result = await service.CreateResourceAsync(
+            payload,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "download_resource.create",
+                result.Changed ? "success" : "unchanged",
+                TargetType: "download_resource",
+                TargetReference: result.Id,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return DownloadsOk(context, service, result);
+    });
+app.MapGet(
+    "/internal/admin/downloads/{id}",
+    async (
+        string id,
+        HttpContext context,
+        IDownloadService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.downloads.read");
+        return DownloadsOk(
+            context,
+            service,
+            await service.GetAdminDownloadAsync(
+                id,
+                context.RequestAborted));
+    });
+app.MapPatch(
+    "/internal/admin/downloads/{id}",
+    async (
+        string id,
+        HttpContext context,
+        IDownloadService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.downloads.write");
+        var payload = await ReadPayload<DownloadResourcePayload>(context)
+            ?? throw new PortalValidationException();
+        var result = await service.UpdateResourceAsync(
+            id,
+            payload,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "download_resource.update",
+                result.Changed ? "success" : "unchanged",
+                TargetType: "download_resource",
+                TargetReference: id,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return DownloadsOk(context, service, result);
+    });
+app.MapDelete(
+    "/internal/admin/downloads/{id}",
+    async (
+        string id,
+        HttpContext context,
+        IDownloadService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.downloads.write");
+        var result = await service.DeleteResourceAsync(
+            id,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "download_resource.delete",
+                result.Changed ? "success" : "unchanged",
+                TargetType: "download_resource",
+                TargetReference: id,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return DownloadsOk(context, service, result);
+    });
+app.MapPost(
+    "/internal/admin/downloads/{id}/file",
+    async (
+        string id,
+        HttpContext context,
+        IDownloadService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.downloads.write");
+        var form = await context.Request.ReadFormAsync(context.RequestAborted);
+        var file = form.Files.GetFile("file")
+            ?? throw new PortalValidationException();
+        await using var stream = file.OpenReadStream();
+        var result = await service.UploadResourceFileAsync(
+            id,
+            file.FileName,
+            file.ContentType,
+            stream,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "download_resource.file.upload",
+                result.Changed ? "success" : "unchanged",
+                TargetType: "download_resource",
+                TargetReference: id,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return DownloadsOk(context, service, result);
+    });
+app.MapDelete(
+    "/internal/admin/downloads/{id}/file",
+    async (
+        string id,
+        HttpContext context,
+        IDownloadService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.downloads.write");
+        var result = await service.DeleteResourceFileAsync(
+            id,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "download_resource.file.delete",
+                result.Changed ? "success" : "unchanged",
+                TargetType: "download_resource",
+                TargetReference: id,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return DownloadsOk(context, service, result);
+    });
+app.MapGet(
     "/internal/portal/public-pack-catalog",
     async (
         HttpContext context,
@@ -2472,6 +2910,124 @@ app.MapGet(
             actor.UserId,
             customer.CustomerId);
         return Results.Ok(links);
+    });
+app.MapGet(
+    "/internal/admin/customers/{customerReference}/active-directory",
+    async (
+        string customerReference,
+        HttpContext context,
+        ICustomerActiveDirectoryAdministrationService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.customers.active_directory.read");
+        var workspace = await service.GetWorkspaceAsync(
+            customerReference,
+            context.Request.Query["subscriptionId"].FirstOrDefault(),
+            context.RequestAborted);
+        await RecordAdAuditAsync(
+            context,
+            auditService,
+            "admin.customers.active_directory.read",
+            "success",
+            workspace.LastResultCode ?? workspace.ProvisioningStatus,
+            "customer_active_directory",
+            workspace.CustomerReference,
+            actor.UserId,
+            null);
+        return Results.Ok(workspace);
+    });
+app.MapPost(
+    "/internal/admin/customers/{customerReference}/active-directory/services/{technicalServiceReference}",
+    async (
+        string customerReference,
+        string technicalServiceReference,
+        HttpContext context,
+        CustomerAdProvisioningMutationRequest? request,
+        ICustomerActiveDirectoryAdministrationService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.customers.active_directory.service.write");
+        var result = await service.ApplyServiceActionAsync(
+            customerReference,
+            technicalServiceReference,
+            request,
+            context.GetCorrelationId(),
+            actor.UserId,
+            context.RequestAborted);
+        var statusCode = MapCustomerAdProvisioningStatusCode(result.Code);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                ResolveCustomerAdProvisioningAuditAction(
+                    request?.Operation,
+                    request?.IsOverride ?? false,
+                    "service"),
+                statusCode >= 400
+                    ? "refused"
+                    : result.Changed
+                        ? "success"
+                        : "unchanged",
+                ReasonCode: result.Code,
+                TargetType: "customer_ad_service",
+                TargetReference: technicalServiceReference,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return Results.Json(result, statusCode: statusCode);
+    });
+app.MapPost(
+    "/internal/admin/customers/{customerReference}/active-directory/groups/{groupSamAccountName}",
+    async (
+        string customerReference,
+        string groupSamAccountName,
+        HttpContext context,
+        CustomerAdProvisioningMutationRequest? request,
+        ICustomerActiveDirectoryAdministrationService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.customers.active_directory.group.write");
+        var result = await service.ApplyGroupActionAsync(
+            customerReference,
+            groupSamAccountName,
+            request,
+            context.GetCorrelationId(),
+            actor.UserId,
+            context.RequestAborted);
+        var statusCode = MapCustomerAdProvisioningStatusCode(result.Code);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                ResolveCustomerAdProvisioningAuditAction(
+                    request?.Operation,
+                    request?.IsOverride ?? false,
+                    "group"),
+                statusCode >= 400
+                    ? "refused"
+                    : result.Changed
+                        ? "success"
+                        : "unchanged",
+                ReasonCode: result.Code,
+                TargetType: "customer_ad_group",
+                TargetReference: groupSamAccountName,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return Results.Json(result, statusCode: statusCode);
     });
 app.MapPost(
     "/internal/admin/customers/{customerReference}/ad-links",
@@ -3330,6 +3886,7 @@ app.MapPost(
     async (
         string id,
         HttpContext context,
+        SubscriptionProvisioningReconcileRequest? request,
         ISubscriptionService service,
         IAuthenticationService authenticationService,
         IAuditService auditService) =>
@@ -3341,9 +3898,12 @@ app.MapPost(
             "admin.subscriptions.provisioning.reconcile");
         var result = await service.ReconcileProvisioningAsync(
             id,
-            "subscription.provisioning.manual_reconcile",
+            request?.TargetUserSamAccountNames?.Count == 1
+                ? "subscription.provisioning.manual_reconcile_user"
+                : "subscription.provisioning.manual_reconcile",
             context.GetCorrelationId(),
             actor.UserId,
+            request?.TargetUserSamAccountNames,
             context.RequestAborted);
         await auditService.RecordAsync(
             new AuditEvent(
@@ -3928,6 +4488,30 @@ static IResult ManagedContentOk<T>(
     return Results.Ok(data);
 }
 
+static IResult DownloadsOk<T>(
+    HttpContext context,
+    IDownloadService service,
+    T data)
+{
+    context.Response.Headers["X-Data-Source"] =
+        service.IsPersistent ? "mariadb" : "mock";
+    return Results.Ok(data);
+}
+
+static IResult DownloadsError(
+    HttpContext context,
+    IDownloadService service,
+    int statusCode,
+    string code,
+    string message)
+{
+    context.Response.Headers["X-Data-Source"] =
+        service.IsPersistent ? "mariadb" : "mock";
+    return Results.Json(
+        new ApiError(code, message, context.GetCorrelationId()),
+        statusCode: statusCode);
+}
+
 static IResult PublicPackCatalogOk<T>(
     HttpContext context,
     IPublicPackCatalogService service,
@@ -4471,6 +5055,67 @@ static string? SanitizeDiagnosticValue(
     return sanitized.Length <= maxLength
         ? sanitized
         : sanitized[..maxLength] + "...";
+}
+
+static int MapCustomerAdProvisioningStatusCode(string code)
+{
+    return code switch
+    {
+        "INVALID_REQUEST" => StatusCodes.Status400BadRequest,
+        "PROVISIONING_NO_TARGET_USERS" => StatusCodes.Status400BadRequest,
+        "PROVISIONING_SERVICE_NOT_CONFIGURED" =>
+            StatusCodes.Status400BadRequest,
+        "PROVISIONING_GROUP_NOT_CONFIGURED" =>
+            StatusCodes.Status400BadRequest,
+        "PROVISIONING_OVERRIDE_REQUIRED" =>
+            StatusCodes.Status403Forbidden,
+        "AD_TARGET_OUTSIDE_ALLOWED_ROOTS" =>
+            StatusCodes.Status403Forbidden,
+        "AD_READ_ONLY" => StatusCodes.Status403Forbidden,
+        "AD_CONFIGURATION_INVALID" =>
+            StatusCodes.Status503ServiceUnavailable,
+        "AD_UNAVAILABLE" => StatusCodes.Status503ServiceUnavailable,
+        "AD_ACCESS_DENIED" => StatusCodes.Status403Forbidden,
+        "PROVISIONING_SERVICE_NOT_FOUND" =>
+            StatusCodes.Status404NotFound,
+        _ => code.StartsWith(
+                 "CUSTOMER_AD_",
+                 StringComparison.Ordinal)
+             || code.StartsWith(
+                 "AD_GROUP_MEMBER_",
+                 StringComparison.Ordinal)
+            ? StatusCodes.Status200OK
+            : StatusCodes.Status200OK
+    };
+}
+
+static string ResolveCustomerAdProvisioningAuditAction(
+    string? operation,
+    bool isOverride,
+    string targetKind)
+{
+    var normalizedOperation = operation?.Trim().ToLowerInvariant();
+    var normalizedTargetKind = targetKind.Trim().ToLowerInvariant();
+    return (normalizedTargetKind, normalizedOperation, isOverride) switch
+    {
+        ("service", "activate", true) =>
+            "subscription.provisioning.override_service_activate",
+        ("service", "remove", true) =>
+            "subscription.provisioning.override_service_remove",
+        ("service", "activate", false) =>
+            "subscription.provisioning.manual_service_activate",
+        ("service", "remove", false) =>
+            "subscription.provisioning.manual_service_remove",
+        ("group", "activate", true) =>
+            "subscription.provisioning.override_group_activate",
+        ("group", "remove", true) =>
+            "subscription.provisioning.override_group_remove",
+        ("group", "activate", false) =>
+            "subscription.provisioning.manual_group_activate",
+        ("group", "remove", false) =>
+            "subscription.provisioning.manual_group_remove",
+        _ => "subscription.provisioning.manual_action"
+    };
 }
 
 public partial class Program

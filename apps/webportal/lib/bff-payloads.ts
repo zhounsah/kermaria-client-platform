@@ -8,6 +8,9 @@ import type {
   CommercialDocumentPayload,
   CommercialOfferPaymentMode,
   CommercialOfferPayload,
+  DownloadCategoryPayload,
+  DownloadResourcePayload,
+  DownloadVisibilityRulePayload,
   ManagedContentPayload,
   PublicPackCode,
   PublicPackComparisonValueKind,
@@ -17,6 +20,10 @@ import type {
   SupportRequestPayload,
 } from "@kermaria/shared";
 import {
+  DOWNLOAD_RESOURCE_TYPES,
+  DOWNLOAD_SOURCE_KINDS,
+  DOWNLOAD_VISIBILITY_MODES,
+  DOWNLOAD_VISIBILITY_TARGET_TYPES,
   createDefaultPublicPackCatalogContentPayload,
   getPublicPackManifest,
 } from "@kermaria/shared";
@@ -102,6 +109,15 @@ export function parseCommercialOfferPayload(
     || typeof candidate.category !== "string"
     || typeof candidate.unitLabel !== "string"
     || typeof candidate.priceAmountCents !== "number"
+    || !(
+      typeof candidate.externalReference === "string"
+      || candidate.externalReference === null
+      || candidate.externalReference === undefined
+    )
+    || !Array.isArray(candidate.technicalServiceReferences)
+    || !candidate.technicalServiceReferences.every((entry) => typeof entry === "string")
+    || !Array.isArray(candidate.provisioningGroupSamAccountNames)
+    || !candidate.provisioningGroupSamAccountNames.every((entry) => typeof entry === "string")
     || typeof candidate.status !== "string"
     || typeof candidate.displayOrder !== "number"
     || typeof candidate.billingCadence !== "string"
@@ -190,12 +206,29 @@ export function parseCommercialOfferPayload(
     typeof candidate.publicPackCode === "string"
       ? candidate.publicPackCode.trim() || null
       : null;
+  const externalReference =
+    typeof candidate.externalReference === "string"
+      ? candidate.externalReference.trim() || null
+      : null;
+  const technicalServiceReferences = Array.from(new Set(
+    candidate.technicalServiceReferences
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0),
+  ));
+  const provisioningGroupSamAccountNames = Array.from(new Set(
+    candidate.provisioningGroupSamAccountNames
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0),
+  ));
   const payload: CommercialOfferPayload = {
     name: candidate.name.trim(),
     description: candidate.description.trim(),
     category: candidate.category.trim(),
     unitLabel: candidate.unitLabel.trim(),
     priceAmountCents: Math.trunc(candidate.priceAmountCents),
+    externalReference,
+    technicalServiceReferences,
+    provisioningGroupSamAccountNames,
     status: candidate.status as CommercialOfferPayload["status"],
     displayOrder: Math.trunc(candidate.displayOrder),
     billingCadence:
@@ -225,6 +258,19 @@ export function parseCommercialOfferPayload(
     payload.commitmentMonths === null
     || (Number.isInteger(payload.commitmentMonths)
       && [1, 6, 12].includes(payload.commitmentMonths));
+  const isValidExternalReference =
+    payload.externalReference === null
+    || /^[A-Za-z0-9._-]{1,100}$/.test(payload.externalReference);
+  const isValidTechnicalServiceReferences =
+    payload.technicalServiceReferences.length <= 50
+    && payload.technicalServiceReferences.every((entry) =>
+      /^[A-Za-z0-9._-]{1,100}$/.test(entry)
+    );
+  const isValidProvisioningGroups =
+    payload.provisioningGroupSamAccountNames.length <= 50
+    && payload.provisioningGroupSamAccountNames.every((entry) =>
+      /^[A-Za-z0-9._-]{1,100}$/.test(entry)
+    );
   const isValidPaymentMode =
     payload.paymentMode === null
     || payload.paymentMode === "monthly"
@@ -258,6 +304,9 @@ export function parseCommercialOfferPayload(
     && isValidSetupFee
     && isValidBillingInterval
     && isValidCommitment
+    && isValidExternalReference
+    && isValidTechnicalServiceReferences
+    && isValidProvisioningGroups
     && isValidPaymentMode
     && isValidPublicPackCode
     && (payload.paypalPlanIdSandbox === null
@@ -268,6 +317,12 @@ export function parseCommercialOfferPayload(
       || planIdPattern.test(payload.stripePriceIdTest))
     && (payload.stripePriceIdLive === null
       || planIdPattern.test(payload.stripePriceIdLive))
+    && !(
+      (payload.publicPackCode !== null
+        || payload.technicalServiceReferences.length > 0
+        || payload.provisioningGroupSamAccountNames.length > 0)
+      && payload.externalReference === null
+    )
     && !(
       payload.billingCadence === "one_time"
       && (hasPackMetadata
@@ -447,6 +502,178 @@ export function parseManagedContentPayload(
         bodyMarkdown,
         versionLabel,
       }
+    : null;
+}
+
+export function parseDownloadCategoryPayload(
+  value: unknown,
+): DownloadCategoryPayload | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Partial<DownloadCategoryPayload>;
+  if (
+    typeof candidate.slug !== "string"
+    || typeof candidate.title !== "string"
+    || !(
+      typeof candidate.description === "string"
+      || candidate.description === null
+      || candidate.description === undefined
+    )
+    || typeof candidate.status !== "string"
+    || typeof candidate.displayOrder !== "number"
+  ) {
+    return null;
+  }
+
+  const payload: DownloadCategoryPayload = {
+    slug: candidate.slug.trim().toLowerCase(),
+    title: candidate.title.trim(),
+    description:
+      typeof candidate.description === "string"
+        ? candidate.description.trim() || null
+        : null,
+    status: candidate.status.trim() as DownloadCategoryPayload["status"],
+    displayOrder: Math.trunc(candidate.displayOrder),
+  };
+
+  return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(payload.slug)
+    && payload.slug.length <= 80
+    && payload.title.length >= 2
+    && payload.title.length <= 120
+    && (payload.description === null || payload.description.length <= 280)
+    && ["active", "inactive"].includes(payload.status)
+    && Number.isInteger(payload.displayOrder)
+    && payload.displayOrder >= 0
+    && payload.displayOrder <= 9999
+    ? payload
+    : null;
+}
+
+export function parseDownloadResourcePayload(
+  value: unknown,
+): DownloadResourcePayload | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Partial<DownloadResourcePayload>;
+  if (
+    typeof candidate.categoryId !== "string"
+    || typeof candidate.title !== "string"
+    || typeof candidate.shortDescription !== "string"
+    || typeof candidate.resourceType !== "string"
+    || typeof candidate.sourceKind !== "string"
+    || typeof candidate.visibilityMode !== "string"
+    || typeof candidate.status !== "string"
+    || !(
+      typeof candidate.externalUrl === "string"
+      || candidate.externalUrl === null
+      || candidate.externalUrl === undefined
+    )
+    || !(
+      typeof candidate.versionLabel === "string"
+      || candidate.versionLabel === null
+      || candidate.versionLabel === undefined
+    )
+    || !(
+      typeof candidate.installationInstructions === "string"
+      || candidate.installationInstructions === null
+      || candidate.installationInstructions === undefined
+    )
+    || typeof candidate.displayOrder !== "number"
+    || !Array.isArray(candidate.visibilityRules)
+  ) {
+    return null;
+  }
+
+  const visibilityRules = candidate.visibilityRules
+    .map((rule) => parseDownloadVisibilityRulePayload(rule))
+    .filter((rule): rule is DownloadVisibilityRulePayload => rule !== null);
+  if (visibilityRules.length !== candidate.visibilityRules.length) {
+    return null;
+  }
+
+  const externalUrl =
+    typeof candidate.externalUrl === "string"
+      ? candidate.externalUrl.trim() || null
+      : null;
+  const payload: DownloadResourcePayload = {
+    categoryId: candidate.categoryId.trim(),
+    title: candidate.title.trim(),
+    shortDescription: candidate.shortDescription.trim(),
+    resourceType:
+      candidate.resourceType.trim() as DownloadResourcePayload["resourceType"],
+    sourceKind:
+      candidate.sourceKind.trim() as DownloadResourcePayload["sourceKind"],
+    visibilityMode:
+      candidate.visibilityMode.trim() as DownloadResourcePayload["visibilityMode"],
+    status: candidate.status.trim() as DownloadResourcePayload["status"],
+    externalUrl,
+    versionLabel:
+      typeof candidate.versionLabel === "string"
+        ? candidate.versionLabel.trim() || null
+        : null,
+    installationInstructions:
+      typeof candidate.installationInstructions === "string"
+        ? candidate.installationInstructions.trim() || null
+        : null,
+    displayOrder: Math.trunc(candidate.displayOrder),
+    visibilityRules,
+  };
+
+  const hasValidExternalUrl =
+    payload.externalUrl === null
+    || /^https?:\/\/\S+$/i.test(payload.externalUrl);
+
+  return /^[A-Za-z0-9-]{1,100}$/.test(payload.categoryId)
+    && payload.title.length >= 2
+    && payload.title.length <= 140
+    && payload.shortDescription.length >= 2
+    && payload.shortDescription.length <= 320
+    && DOWNLOAD_RESOURCE_TYPES.includes(payload.resourceType)
+    && DOWNLOAD_SOURCE_KINDS.includes(payload.sourceKind)
+    && DOWNLOAD_VISIBILITY_MODES.includes(payload.visibilityMode)
+    && ["active", "inactive"].includes(payload.status)
+    && hasValidExternalUrl
+    && (payload.versionLabel === null || payload.versionLabel.length <= 80)
+    && (
+      payload.installationInstructions === null
+      || payload.installationInstructions.length <= 4000
+    )
+    && Number.isInteger(payload.displayOrder)
+    && payload.displayOrder >= 0
+    && payload.displayOrder <= 9999
+    ? payload
+    : null;
+}
+
+function parseDownloadVisibilityRulePayload(
+  value: unknown,
+): DownloadVisibilityRulePayload | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Partial<DownloadVisibilityRulePayload>;
+  if (
+    typeof candidate.targetType !== "string"
+    || typeof candidate.targetValue !== "string"
+  ) {
+    return null;
+  }
+
+  const payload: DownloadVisibilityRulePayload = {
+    targetType:
+      candidate.targetType.trim() as DownloadVisibilityRulePayload["targetType"],
+    targetValue: candidate.targetValue.trim(),
+  };
+
+  return DOWNLOAD_VISIBILITY_TARGET_TYPES.includes(payload.targetType)
+    && payload.targetValue.length >= 1
+    && payload.targetValue.length <= 160
+    ? payload
     : null;
 }
 

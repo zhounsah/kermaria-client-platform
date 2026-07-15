@@ -1,6 +1,9 @@
 import "server-only";
 
-import type { SubscriptionProvisioningSummary } from "@kermaria/shared";
+import type {
+  SubscriptionProvisioningReconcilePayload,
+  SubscriptionProvisioningSummary,
+} from "@kermaria/shared";
 import { NextRequest, NextResponse } from "next/server";
 
 import { CORRELATION_HEADER, resolveCorrelationId } from "@/lib/correlation";
@@ -50,13 +53,43 @@ export async function POST(
   }
 
   try {
+    let payload: SubscriptionProvisioningReconcilePayload | undefined;
+    if (request.headers.get("content-type")?.includes("application/json")) {
+      const body = await request.json().catch(() => null);
+      if (body && typeof body === "object" && !Array.isArray(body)) {
+        const candidate = body as Partial<SubscriptionProvisioningReconcilePayload>;
+        if (
+          candidate.targetUserSamAccountNames !== undefined
+          && candidate.targetUserSamAccountNames !== null
+          && (!Array.isArray(candidate.targetUserSamAccountNames)
+            || !candidate.targetUserSamAccountNames.every((value) =>
+              typeof value === "string"
+              && /^[A-Za-z0-9._-]{1,64}$/.test(value)))
+        ) {
+          return NextResponse.json(
+            {
+              code: "INVALID_REQUEST",
+              message: "La liste des utilisateurs AD est invalide.",
+            },
+            { status: 400 },
+          );
+        }
+
+        payload = {
+          targetUserSamAccountNames:
+            candidate.targetUserSamAccountNames?.map((value) => value.trim())
+              .filter(Boolean) ?? null,
+        };
+      }
+    }
+
     const result = await mutateInternalAdminData<
       SubscriptionProvisioningSummary,
-      undefined
+      SubscriptionProvisioningReconcilePayload | undefined
     >(
       `/internal/admin/subscriptions/${encodeURIComponent(id)}/provisioning/reconcile`,
       "POST",
-      undefined,
+      payload,
       sessionToken,
       correlationId,
     );

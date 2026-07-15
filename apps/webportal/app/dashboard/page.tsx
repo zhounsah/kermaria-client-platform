@@ -28,6 +28,7 @@ import {
   getSupportRequests,
   resolveDataSource,
 } from "@/lib/internal-api";
+import { getServiceSymbol } from "@/lib/service-display";
 
 export const metadata = {
   title: "Tableau de bord",
@@ -90,8 +91,8 @@ export default async function DashboardPage() {
         action={<StatusBadge label="Espace authentifié" tone="success" />}
         description={
           summary
-            ? `Référence ${summary.customerReference} - informations actuellement disponibles pour vos services, demandes et documents commerciaux.`
-            : "Votre espace client regroupe les informations actuellement disponibles pour vos services Kermaria."
+            ? `Référence ${summary.customerReference} - informations disponibles sur vos services, demandes et documents commerciaux.`
+            : "Votre espace client regroupe les informations disponibles sur vos services Kermaria."
         }
         eyebrow="Vue d'ensemble"
         title={`Bonjour ${profile?.contactName?.split(" ")[0] ?? "Client"}`}
@@ -100,18 +101,15 @@ export default async function DashboardPage() {
       {partialError ? (
         <ErrorState
           compact
-          description="Une partie du tableau de bord n'a pas pu être chargée. Les autres informations disponibles restent affichées."
+          description="Une partie du tableau de bord n'a pas pu être chargée. Les autres informations restent affichées."
           reference={partialError.correlationId}
           title="Chargement partiel"
         />
       ) : null}
 
-      <section
-        aria-label="Indicateurs du compte"
-        className="metrics-grid"
-      >
+      <section aria-label="Indicateurs du compte" className="metrics-grid">
         <MetricCard
-          detail="Selon le périmètre convenu"
+          detail="Calculés à partir de vos packs et options actifs"
           label="Services actifs"
           tone="green"
           value={String(summary?.activeServiceCount ?? 0)}
@@ -148,7 +146,7 @@ export default async function DashboardPage() {
         <SectionCard ariaLabel="Aperçu des services">
           <SectionHeading
             action={<Link href="/services">Voir tous les services</Link>}
-            description="Services fictifs actuellement associés au compte."
+            description="Services réellement déduits de vos packs, options et souscriptions."
             title="Vos services"
           />
           {servicesResult.error ? (
@@ -171,7 +169,7 @@ export default async function DashboardPage() {
                 return (
                   <article className="stack-row" key={service.id}>
                     <div className="service-symbol" aria-hidden="true">
-                      {service.reference.split("-")[1]}
+                      {getServiceSymbol(service)}
                     </div>
                     <div className="stack-row-main">
                       <strong>{service.name}</strong>

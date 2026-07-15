@@ -140,6 +140,8 @@ const mockTechnicalCommercialOffers: CommercialOfferSummary[] = [
     currency: "EUR",
     taxRateBasisPoints: 2000,
     externalReference: null,
+    technicalServiceReferences: [],
+    provisioningGroupSamAccountNames: [],
     status: "active",
     displayOrder: 10,
     billingCadence: "one_time",
@@ -167,6 +169,8 @@ const mockTechnicalCommercialOffers: CommercialOfferSummary[] = [
     currency: "EUR",
     taxRateBasisPoints: 2000,
     externalReference: null,
+    technicalServiceReferences: [],
+    provisioningGroupSamAccountNames: [],
     status: "active",
     displayOrder: 20,
     billingCadence: "one_time",
@@ -193,6 +197,8 @@ const mockTechnicalCommercialOffers: CommercialOfferSummary[] = [
     currency: "EUR",
     taxRateBasisPoints: 2000,
     externalReference: null,
+    technicalServiceReferences: [],
+    provisioningGroupSamAccountNames: [],
     status: "active",
     displayOrder: 30,
     billingCadence: "one_time",
@@ -208,6 +214,82 @@ const mockTechnicalCommercialOffers: CommercialOfferSummary[] = [
     createdAt: "2026-06-01T09:10:00Z",
     updatedAt: "2026-06-01T09:10:00Z",
   },
+];
+
+const mockCatalogServiceOffers: CommercialOfferSummary[] = [
+  createMockCatalogServiceOffer(
+    "offer-service-storage-32",
+    "Stockage personnel 32 Go",
+    "Socle de stockage nominatif pour les fichiers personnels du client.",
+    "STOCK-PERSO-32",
+    210,
+  ),
+  createMockCatalogServiceOffer(
+    "offer-service-backup",
+    "Sauvegarde du stockage personnel",
+    "Sauvegarde régulière associée au stockage personnel.",
+    "SAVE-PERSO",
+    220,
+  ),
+  createMockCatalogServiceOffer(
+    "offer-service-vpn",
+    "Accès VPN",
+    "Accès VPN nominatif provisionnable via groupe de sécurité AD.",
+    "ACCES-VPN",
+    230,
+    ["GG_VPN"],
+  ),
+  createMockCatalogServiceOffer(
+    "offer-service-supervision",
+    "Supervision du service",
+    "Supervision et suivi opérationnel du service couvert.",
+    "SUPERV-SERVICE",
+    240,
+  ),
+  createMockCatalogServiceOffer(
+    "offer-service-support-l1",
+    "Support niveau 1",
+    "Support de premier niveau associé au service couvert.",
+    "SUPPORT-LV1",
+    250,
+  ),
+  createMockCatalogServiceOffer(
+    "offer-service-rds",
+    "Bureau Windows / RDS",
+    "Accès bureau distant Windows provisionnable via groupe de sécurité AD.",
+    "ACCES-RDS",
+    260,
+    ["GG_RDS"],
+  ),
+  createMockCatalogServiceOffer(
+    "offer-service-user-add",
+    "Utilisateur supplémentaire",
+    "Ajout d'un utilisateur supplémentaire au périmètre du client.",
+    "USER-ADD",
+    270,
+  ),
+  createMockCatalogServiceOffer(
+    "offer-service-storage-plus",
+    "Stockage supplémentaire 32 Go",
+    "Extension de stockage complémentaire au service principal.",
+    "STOCK-SUP-32",
+    280,
+  ),
+  createMockCatalogServiceOffer(
+    "offer-service-doc-tech",
+    "Documentation technique",
+    "Documentation complémentaire rattachée au service couvert.",
+    "DOC-TECH",
+    290,
+  ),
+  createMockCatalogServiceOffer(
+    "offer-service-nextcloud",
+    "Nextcloud",
+    "Accès Nextcloud provisionnable via groupe de sécurité AD.",
+    "NEXTCLOUD",
+    300,
+    ["GG_NextCloud"],
+  ),
 ];
 
 const PUBLIC_PACK_PRICING: Record<
@@ -271,6 +353,8 @@ function createMockPublicPackOffers(): CommercialOfferSummary[] {
         currency: "EUR",
         taxRateBasisPoints: 2000,
         externalReference: variant.externalReference,
+        technicalServiceReferences: [...pack.technicalServiceReferences],
+        provisioningGroupSamAccountNames: [],
         status: "active",
         displayOrder: pack.order + index,
         billingCadence: "monthly",
@@ -292,8 +376,47 @@ function createMockPublicPackOffers(): CommercialOfferSummary[] {
 
 export const mockCommercialOffers: CommercialOfferSummary[] = [
   ...mockTechnicalCommercialOffers,
+  ...mockCatalogServiceOffers,
   ...createMockPublicPackOffers(),
 ];
+
+function createMockCatalogServiceOffer(
+  id: string,
+  name: string,
+  description: string,
+  externalReference: string,
+  displayOrder: number,
+  provisioningGroupSamAccountNames: string[] = [],
+): CommercialOfferSummary {
+  return {
+    id,
+    name,
+    description,
+    category: "Service technique",
+    unitLabel: "forfait",
+    priceKind: "ht",
+    priceAmountCents: 0,
+    currency: "EUR",
+    taxRateBasisPoints: null,
+    externalReference,
+    technicalServiceReferences: [externalReference],
+    provisioningGroupSamAccountNames,
+    status: "inactive",
+    displayOrder,
+    billingCadence: "one_time",
+    setupFeeAmountCents: null,
+    billingIntervalMonths: null,
+    commitmentMonths: null,
+    paymentMode: null,
+    publicPackCode: null,
+    paypalPlanIdSandbox: null,
+    paypalPlanIdLive: null,
+    stripePriceIdTest: null,
+    stripePriceIdLive: null,
+    createdAt: "2026-07-14T08:00:00Z",
+    updatedAt: "2026-07-14T08:00:00Z",
+  };
+}
 
 export const mockCommercialDocuments: CommercialDocumentSummary[] = [
   {

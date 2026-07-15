@@ -1,5 +1,6 @@
 "use client";
 
+import type { SubscriptionProvisioningReconcilePayload } from "@kermaria/shared";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
@@ -8,11 +9,17 @@ import { requestBffJson } from "@/lib/client-api";
 type AdminReconcileProvisioningButtonProps = {
   subscriptionId: string;
   disabled?: boolean;
+  idleLabel?: string;
+  submittingLabel?: string;
+  targetUserSamAccountNames?: string[] | null;
 };
 
 export function AdminReconcileProvisioningButton({
   subscriptionId,
   disabled,
+  idleLabel = "Relancer le provisioning",
+  submittingLabel = "Relance...",
+  targetUserSamAccountNames,
 }: AdminReconcileProvisioningButtonProps) {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -28,9 +35,19 @@ export function AdminReconcileProvisioningButton({
     setIsSubmitting(true);
     setError(null);
     try {
+      const payload: SubscriptionProvisioningReconcilePayload | undefined =
+        targetUserSamAccountNames && targetUserSamAccountNames.length > 0
+          ? { targetUserSamAccountNames }
+          : undefined;
       const result = await requestBffJson(
         `/api/admin/subscriptions/${encodeURIComponent(subscriptionId)}/provisioning/reconcile`,
-        { method: "POST" },
+        payload
+          ? {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            }
+          : { method: "POST" },
       );
 
       if (result.ok) {
@@ -54,7 +71,7 @@ export function AdminReconcileProvisioningButton({
         onClick={handleClick}
         type="button"
       >
-        {isBusy ? "Relance..." : "Relancer le provisioning"}
+        {isBusy ? submittingLabel : idleLabel}
       </button>
       {error ? (
         <p

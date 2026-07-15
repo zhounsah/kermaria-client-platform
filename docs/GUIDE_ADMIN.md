@@ -76,6 +76,12 @@ Le portail gere maintenant trois rails d'abonnement :
   `pending_activation` puis `active`.
 - Les dates `started_at`, `next_billing_at` et `commitment_ends_at` sont
   calculees au moment du paiement reel.
+- La fiche abonnement conserve un resume AD, mais les actions de
+  provisioning detaillees sont desormais regroupees sur une page dediee
+  "Active Directory" de la souscription.
+- Depuis cette page dediee, l'admin peut relancer le provisioning sur tout
+  le client, sur une selection d'utilisateurs lies, ou sur un seul
+  utilisateur.
 
 ### Renouvellements
 
@@ -121,7 +127,45 @@ Pour les packs :
 
 ---
 
-## 4. Journal e-mails - `/admin/email-log`
+## 4. Telechargements - `/admin/downloads`
+
+Menu **Activite commerciale > Telechargements**.
+
+- **Perimetre** : logiciels, scripts, fichiers RDP, documentation et outils
+  complementaires visibles depuis `/downloads` cote client.
+- **Liste** : chaque ressource avec categorie, type, source (`fichier
+  interne` ou `lien externe`), statut et date de mise a jour.
+- **Creation** : choisir une categorie, un titre clair, une description
+  courte, un type de ressource et un mode de visibilite.
+- **Fichier interne** : enregistrer d'abord la fiche, puis utiliser l'upload
+  dedie. Le fichier est stocke cote API sur un chemin prive, jamais dans
+  `public/`.
+- **Lien externe** : renseigner uniquement une URL absolue officielle.
+- **Visibilite** : soit `Tous les clients`, soit des regles ciblees basees sur
+  les packs publics, les offres du catalogue ou les `service_type` actifs.
+- **Activation** : une ressource ne peut pas etre activee sans fichier prive
+  si elle est interne, ni sans URL valide si elle est externe, ni sans regle
+  si elle est ciblee.
+- **Suppression** : la desactivation se fait depuis la liste ; la suppression
+  definitive d'une ressource se fait depuis sa fiche avec confirmation.
+
+Gestion des categories via `/admin/downloads/categories` :
+
+- ajuster le titre, la description, le statut et l'ordre ;
+- conserver des categories clients simples et rassurantes ;
+- une categorie encore utilisee par une ressource ne peut pas etre supprimee.
+
+Verification rapide quand un client ne voit pas un telechargement :
+
+- categorie `active` ;
+- ressource `active` ;
+- fichier interne present ou URL externe valide ;
+- au moins une regle de visibilite qui correspond a un abonnement ou service
+  `active` du client.
+
+---
+
+## 5. Journal e-mails - `/admin/email-log`
 
 Menu **Relation client > Journal e-mails**.
 
@@ -138,7 +182,7 @@ Menu **Relation client > Journal e-mails**.
 
 ---
 
-## 5. Demandes d'inscription - `/admin/signups`
+## 6. Demandes d'inscription - `/admin/signups`
 
 Menu **Relation client > Demandes d'inscription**.
 
@@ -153,7 +197,7 @@ Le detail fonctionnel reste documente dans
 
 ---
 
-## 6. Active Directory - `/admin/customers/[ref]/ad`
+## 7. Active Directory - `/admin/customers/[ref]/ad`
 
 Menu **Relation client > Clients** puis fiche client.
 
@@ -169,9 +213,10 @@ Le detail du cadrage AD reste documente dans
 
 ---
 
-## 7. Diagnostic rapide
+## 8. Diagnostic rapide
 
-Quand un client remonte un probleme de panier, paiement ou abonnement :
+Quand un client remonte un probleme de panier, paiement, abonnement ou
+telechargement :
 
 1. Recuperer la **reference de correlation** affichee.
 2. Verifier le document commercial et son `payment_method`.
@@ -179,3 +224,5 @@ Quand un client remonte un probleme de panier, paiement ou abonnement :
 4. Verifier le journal e-mails pour `invoice_issued` et `payment_confirmed`.
 5. Si le paiement etait un virement, confirmer que l'action **Marquer comme
    paye** a bien ete faite sur le bon document.
+6. Pour un telechargement, verifier aussi la fiche ressource et la regle de
+   visibilite attendue.

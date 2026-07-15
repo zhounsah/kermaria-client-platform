@@ -1,8 +1,7 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { AdminDataTable } from "@/components/AdminDataTable";
-import { AdminCustomerAdManager } from "@/components/AdminCustomerAdManager";
 import { AuditEventBadge } from "@/components/AuditEventBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
@@ -23,9 +22,8 @@ import {
   serviceStatus,
 } from "@/lib/formatters";
 import {
-  getAdminAdStatus,
   getAdminCustomer,
-  getAdminCustomerAdLinks,
+  getAdminCustomerAdWorkspace,
 } from "@/lib/internal-api";
 
 export const metadata = { title: "Fiche client - Administration" };
@@ -38,10 +36,9 @@ export default async function AdminCustomerDetailPage({
 }: PageProps) {
   await requireAdminSession();
   const { customerReference } = await params;
-  const [result, adStatusResult, adLinksResult] = await Promise.all([
+  const [result, adWorkspaceResult] = await Promise.all([
     getAdminCustomer(customerReference),
-    getAdminAdStatus(),
-    getAdminCustomerAdLinks(customerReference),
+    getAdminCustomerAdWorkspace(customerReference),
   ]);
 
   if (result.error) {
@@ -61,11 +58,12 @@ export default async function AdminCustomerDetailPage({
 
   const customer = result.data;
   const identity = customer.identity;
-  const adMode = adStatusResult.data?.mode ?? "indisponible";
-  const adModeLabelFr = localizeAdMode(adStatusResult.data?.mode);
+  const adWorkspace = adWorkspaceResult.data;
+  const adMode = adWorkspace?.adStatus?.mode ?? "indisponible";
+  const adModeLabelFr = localizeAdMode(adWorkspace?.adStatus?.mode);
   const adModeDescription = describeAdMode(
-    adStatusResult.data?.mode,
-    adStatusResult.data?.writesEnabled ?? false,
+    adWorkspace?.adStatus?.mode,
+    adWorkspace?.adStatus?.writesEnabled ?? false,
   );
 
   return (
@@ -195,12 +193,53 @@ export default async function AdminCustomerDetailPage({
               </span>
             </div>
             <StatusBadge
-              label={adStatusResult.data?.writesEnabled
+              label={adWorkspace?.adStatus?.writesEnabled
                 ? "Écriture contrôlée bornée"
                 : "Sans écriture réelle"}
-              tone={adStatusResult.data?.writesEnabled ? "warning" : "info"}
+              tone={adWorkspace?.adStatus?.writesEnabled ? "warning" : "info"}
             />
           </div>
+        </SectionCard>
+
+        <SectionCard ariaLabel="Résumé Active Directory client">
+          <div className="section-heading">
+            <div>
+              <h2>Résumé Active Directory</h2>
+              <p>
+                Les actions AD détaillées sont maintenant regroupées sur une
+                page dédiée pour alléger cette fiche client.
+              </p>
+            </div>
+            <Link
+              className="button"
+              href={`/admin/customers/${encodeURIComponent(identity.customerReference)}/active-directory`}
+            >
+              Gérer Active Directory
+            </Link>
+          </div>
+          <dl className="profile-details">
+            <div>
+              <dt>Statut AD</dt>
+              <dd>{localizeProvisioningStatus(adWorkspace?.provisioningStatus)}</dd>
+            </div>
+            <div>
+              <dt>Mode</dt>
+              <dd>{adModeLabelFr}</dd>
+            </div>
+            <div>
+              <dt>Utilisateurs liés</dt>
+              <dd>{String(adWorkspace?.linkedUsers.length ?? 0)}</dd>
+            </div>
+            <div>
+              <dt>Dernier résultat</dt>
+              <dd>{adWorkspace?.lastResultCode ?? "Aucun résultat"}</dd>
+            </div>
+          </dl>
+          {adWorkspaceResult.error ? (
+            <p className="field-hint">
+              Le résumé AD n&apos;a pas pu être chargé pour le moment.
+            </p>
+          ) : null}
         </SectionCard>
       </div>
 
@@ -463,14 +502,6 @@ export default async function AdminCustomerDetailPage({
         )}
       </SectionCard>
 
-      <AdminCustomerAdManager
-        customerReference={identity.customerReference}
-        initialLinks={adLinksResult.data}
-        initialStatus={adStatusResult.data}
-        linksError={adLinksResult.error?.message ?? null}
-        statusError={adStatusResult.error?.message ?? null}
-      />
-
       <MockNotice
         correlationId={result.correlationId}
         source={result.source}
@@ -510,3 +541,24 @@ function localizeAdMode(mode: string | undefined) {
       return "Indisponible";
   }
 }
+
+function localizeProvisioningStatus(status: string | undefined) {
+  switch (status) {
+    case "succeeded":
+      return "Synchronisé";
+    case "ready":
+      return "Prêt";
+    case "failed":
+      return "En échec";
+    case "mixed":
+      return "État mixte";
+    case "not_required":
+      return "Non requis";
+    case "not_configured":
+      return "À configurer";
+    default:
+      return "Indisponible";
+  }
+}
+
+

@@ -89,6 +89,7 @@ public interface ISubscriptionService
         string actionType,
         string correlationId,
         string? requestedByUserId,
+        IReadOnlyList<string>? targetUserSamAccountNames,
         CancellationToken cancellationToken);
 }
 
@@ -432,6 +433,7 @@ public sealed class SubscriptionService : ISubscriptionService
         string actionType,
         string correlationId,
         string? requestedByUserId,
+        IReadOnlyList<string>? targetUserSamAccountNames,
         CancellationToken cancellationToken)
     {
         var subscription = await GetRequiredSubscriptionAsync(
@@ -442,6 +444,7 @@ public sealed class SubscriptionService : ISubscriptionService
             actionType,
             correlationId,
             requestedByUserId,
+            targetUserSamAccountNames,
             cancellationToken);
     }
 
@@ -502,6 +505,7 @@ public sealed class SubscriptionService : ISubscriptionService
                 actionType,
                 correlationId,
                 requestedByUserId,
+                targetUserSamAccountNames: null,
                 cancellationToken);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)

@@ -4,6 +4,7 @@ using Kermaria.ApiInternal.Data.Configuration;
 using Kermaria.ApiInternal.Services;
 using MySqlConnector;
 using System.Globalization;
+using System.Text.Json;
 
 namespace Kermaria.ApiInternal.Data.Repositories;
 
@@ -39,6 +40,8 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 currency,
                 tax_rate_basis_points,
                 external_reference,
+                technical_service_references,
+                provisioning_group_sam_account_names,
                 status,
                 display_order,
                 billing_cadence,
@@ -86,6 +89,8 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 currency,
                 tax_rate_basis_points,
                 external_reference,
+                technical_service_references,
+                provisioning_group_sam_account_names,
                 status,
                 display_order,
                 billing_cadence,
@@ -133,6 +138,9 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 price_kind,
                 price_amount_cents,
                 currency,
+                external_reference,
+                technical_service_references,
+                provisioning_group_sam_account_names,
                 status,
                 display_order,
                 billing_cadence,
@@ -156,6 +164,9 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 'ht',
                 @price_amount_cents,
                 'EUR',
+                @external_reference,
+                @technical_service_references,
+                @provisioning_group_sam_account_names,
                 @status,
                 @display_order,
                 @billing_cadence,
@@ -178,6 +189,16 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
         command.Parameters.AddWithValue("@category", offer.Category);
         command.Parameters.AddWithValue("@unit_label", offer.UnitLabel);
         command.Parameters.AddWithValue("@price_amount_cents", offer.PriceAmountCents);
+        command.Parameters.AddWithValue(
+            "@external_reference",
+            DbValue(offer.ExternalReference));
+        command.Parameters.AddWithValue(
+            "@technical_service_references",
+            DbValue(SerializeStringList(offer.TechnicalServiceReferences)));
+        command.Parameters.AddWithValue(
+            "@provisioning_group_sam_account_names",
+            DbValue(SerializeStringList(
+                offer.ProvisioningGroupSamAccountNames)));
         command.Parameters.AddWithValue("@status", offer.Status);
         command.Parameters.AddWithValue("@display_order", offer.DisplayOrder);
         command.Parameters.AddWithValue("@billing_cadence", offer.BillingCadence);
@@ -250,6 +271,13 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
             || current.Category != offer.Category
             || current.UnitLabel != offer.UnitLabel
             || current.PriceAmountCents != offer.PriceAmountCents
+            || current.ExternalReference != offer.ExternalReference
+            || !current.TechnicalServiceReferences.SequenceEqual(
+                offer.TechnicalServiceReferences,
+                StringComparer.OrdinalIgnoreCase)
+            || !current.ProvisioningGroupSamAccountNames.SequenceEqual(
+                offer.ProvisioningGroupSamAccountNames,
+                StringComparer.OrdinalIgnoreCase)
             || current.Status != offer.Status
             || current.DisplayOrder != offer.DisplayOrder
             || current.BillingCadence != offer.BillingCadence
@@ -274,6 +302,9 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                     category = @category,
                     unit_label = @unit_label,
                     price_amount_cents = @price_amount_cents,
+                    external_reference = @external_reference,
+                    technical_service_references = @technical_service_references,
+                    provisioning_group_sam_account_names = @provisioning_group_sam_account_names,
                     status = @status,
                     display_order = @display_order,
                     billing_cadence = @billing_cadence,
@@ -295,6 +326,16 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
             command.Parameters.AddWithValue("@category", offer.Category);
             command.Parameters.AddWithValue("@unit_label", offer.UnitLabel);
             command.Parameters.AddWithValue("@price_amount_cents", offer.PriceAmountCents);
+            command.Parameters.AddWithValue(
+                "@external_reference",
+                DbValue(offer.ExternalReference));
+            command.Parameters.AddWithValue(
+                "@technical_service_references",
+                DbValue(SerializeStringList(offer.TechnicalServiceReferences)));
+            command.Parameters.AddWithValue(
+                "@provisioning_group_sam_account_names",
+                DbValue(SerializeStringList(
+                    offer.ProvisioningGroupSamAccountNames)));
             command.Parameters.AddWithValue("@status", offer.Status);
             command.Parameters.AddWithValue("@display_order", offer.DisplayOrder);
             command.Parameters.AddWithValue("@billing_cadence", offer.BillingCadence);
@@ -1065,6 +1106,11 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
             reader.IsDBNull(reader.GetOrdinal("external_reference"))
                 ? null
                 : reader.GetString("external_reference"),
+            ParseStringList(ReadNullableString(reader, "technical_service_references")),
+            ParseStringList(
+                ReadNullableString(
+                    reader,
+                    "provisioning_group_sam_account_names")),
             reader.GetString("status"),
             reader.GetInt32("display_order"),
             reader.GetString("billing_cadence"),
@@ -1211,6 +1257,9 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 commitment_months,
                 payment_mode,
                 public_pack_code,
+                external_reference,
+                technical_service_references,
+                provisioning_group_sam_account_names,
                 paypal_plan_id_sandbox,
                 paypal_plan_id_live,
                 stripe_price_id_test,
@@ -1247,6 +1296,12 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 : reader.GetInt32("commitment_months"),
             ReadNullableString(reader, "payment_mode"),
             ReadNullableString(reader, "public_pack_code"),
+            ReadNullableString(reader, "external_reference"),
+            ParseStringList(ReadNullableString(reader, "technical_service_references")),
+            ParseStringList(
+                ReadNullableString(
+                    reader,
+                    "provisioning_group_sam_account_names")),
             ReadNullableString(reader, "paypal_plan_id_sandbox"),
             ReadNullableString(reader, "paypal_plan_id_live"),
             ReadNullableString(reader, "stripe_price_id_test"),
@@ -1578,6 +1633,57 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
     private static string ToUtcIso(DateTime value)
         => DateTime.SpecifyKind(value, DateTimeKind.Utc).ToString("O");
 
+    private static string? SerializeStringList(IReadOnlyList<string>? values)
+    {
+        if (values is null || values.Count == 0)
+        {
+            return null;
+        }
+
+        return JsonSerializer.Serialize(
+            values
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Select(value => value.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+                .ToArray());
+    }
+
+    private static IReadOnlyList<string> ParseStringList(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return Array.Empty<string>();
+        }
+
+        try
+        {
+            var parsed = JsonSerializer.Deserialize<string[]>(value);
+            if (parsed is not null)
+            {
+                return parsed
+                    .Where(entry => !string.IsNullOrWhiteSpace(entry))
+                    .Select(entry => entry.Trim())
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(entry => entry, StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+            }
+        }
+        catch (JsonException)
+        {
+        }
+
+        return value
+            .Split(
+                [',', ';', '\n', '\r'],
+                StringSplitOptions.RemoveEmptyEntries
+                | StringSplitOptions.TrimEntries)
+            .Where(entry => !string.IsNullOrWhiteSpace(entry))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(entry => entry, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
     private static object DbValue(string? value)
         => value is null ? DBNull.Value : value;
 
@@ -1603,6 +1709,9 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
         int? CommitmentMonths,
         string? PaymentMode,
         string? PublicPackCode,
+        string? ExternalReference,
+        IReadOnlyList<string> TechnicalServiceReferences,
+        IReadOnlyList<string> ProvisioningGroupSamAccountNames,
         string? PayPalPlanIdSandbox,
         string? PayPalPlanIdLive,
         string? StripePriceIdTest,

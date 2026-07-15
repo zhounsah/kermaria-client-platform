@@ -108,6 +108,7 @@ public sealed class BilledSubscriptionPaymentTrigger
                         "subscription.provisioning.reactivated_after_payment",
                         correlationId,
                         requestedByUserId: null,
+                        targetUserSamAccountNames: null,
                         cancellationToken);
                 }
             }

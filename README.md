@@ -12,7 +12,7 @@ browser -> WEBPORTAL / BFF -> API-INTERNAL -> MariaDB
 
 `WEBPORTAL` ne doit jamais acceder directement a MariaDB.
 
-## Etat courant V0.27 + V0.29 Stripe + V0.30 partiel + V0.32/V0.33 packs + V0.35/V0.36 checkout + V0.24 infra debout
+## Etat courant V0.27 + V0.29 Stripe + V0.30 partiel + V0.32/V0.33 packs + V0.35/V0.36 checkout + V0.37 downloads + V0.24 infra debout
 
 Le depot couvre aujourd'hui les jalons V0.9 a V0.31 + V0.35 + V0.36 (voir
 [`docs/ROADMAP.md`](docs/ROADMAP.md)). L'integration BPCE de la V0.20
@@ -46,6 +46,13 @@ facture initiale groupee, choix explicite Stripe / PayPal / virement sur la
 page document, activation automatique au paiement et renouvellement facture
 via worker, cf.
 [`docs/V0.36_PANIER_UNIFIE_ABONNEMENTS_FACTURES.md`](docs/V0.36_PANIER_UNIFIE_ABONNEMENTS_FACTURES.md).
+
+V0.37 (2026-07-13) ajoute un **centre de telechargements client securise**
+sur `/downloads`, avec categories repliables, cartes homogenes cote client,
+CRUD admin sur `/admin/downloads`, regles de visibilite alignees sur les
+packs/offres/services actifs et stockage prive des binaires cote
+`API-INTERNAL` via `DOWNLOAD_STORAGE_ROOT`, cf.
+[`docs/V0.37_CENTRE_TELECHARGEMENTS_CLIENT.md`](docs/V0.37_CENTRE_TELECHARGEMENTS_CLIENT.md).
 
 V0.35.1 (2026-07-09) : correctif transversal des horodatages — plus aucun
 `NOW()`/`CURRENT_TIMESTAMP` (heure locale serveur) en base, serialisation
@@ -509,6 +516,7 @@ npm run test:ad-security     # garde-fous AD
 - [Contenus administrables V0.33](docs/V0.33_CONTENUS_ADMINISTRABLES.md)
 - [Panier one-shot V0.35](docs/V0.35_CART_ALACARTE.md)
 - [Panier unifie et abonnements factures V0.36](docs/V0.36_PANIER_UNIFIE_ABONNEMENTS_FACTURES.md)
+- [Centre de telechargements client securise V0.37](docs/V0.37_CENTRE_TELECHARGEMENTS_CLIENT.md)
 - [Correctif UTC V0.35.1](docs/V0.35.1_TIMEZONE_UTC_FIX.md)
 - [Active Directory security hardening V0.19](docs/V0.19_AD_SECURITY_HARDENING.md)
 - [Active Directory controlled write V0.18](docs/V0.18_ACTIVE_DIRECTORY_CONTROLLED_WRITE.md)

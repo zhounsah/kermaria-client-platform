@@ -175,6 +175,10 @@ export async function POST(
     category: offer.category,
     unitLabel: offer.unitLabel,
     priceAmountCents: offer.priceAmountCents,
+    externalReference: offer.externalReference,
+    technicalServiceReferences: offer.technicalServiceReferences,
+    provisioningGroupSamAccountNames:
+      offer.provisioningGroupSamAccountNames,
     status: offer.status,
     displayOrder: offer.displayOrder,
     billingCadence: offer.billingCadence,

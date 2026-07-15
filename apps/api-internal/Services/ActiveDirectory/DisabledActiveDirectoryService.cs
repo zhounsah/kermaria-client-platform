@@ -24,6 +24,7 @@ public sealed class DisabledActiveDirectoryService : IActiveDirectoryService
             false,
             null,
             null,
+            _configuration.AllowedRoots,
             _configuration.ConnectTimeoutMs,
             _configuration.QueryTimeoutMs,
             _configuration.MaxResults));

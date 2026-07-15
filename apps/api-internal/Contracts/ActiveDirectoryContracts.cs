@@ -10,6 +10,7 @@ public sealed record AdStatusResponse(
     bool WritesEnabled,
     string? Domain,
     string? ClientsOuDn,
+    IReadOnlyList<string> AllowedRoots,
     int ConnectTimeoutMs,
     int QueryTimeoutMs,
     int MaxResults);
@@ -92,3 +93,73 @@ public sealed record AdLinkMutationResponse(
     bool Changed,
     [property: JsonPropertyName("correlation_id")] string CorrelationId,
     AdDirectoryObjectSummary? Object = null);
+
+public sealed record AdProvisioningDiagnostic(
+    string Code,
+    string Message,
+    string TargetType,
+    IReadOnlyList<string> AllowedRoots,
+    IReadOnlyList<string> AffectedUserDistinguishedNames,
+    IReadOnlyList<string> AffectedGroupDistinguishedNames,
+    IReadOnlyList<string> LinkedUserReferences);
+
+public sealed record AdminCustomerAdSubscriptionContext(
+    string Id,
+    string OfferName,
+    string? OfferExternalReference,
+    string? PublicPackCode,
+    string Status,
+    IReadOnlyList<string> MappedGroups,
+    IReadOnlyList<string> CoveredServiceTechnicalReferences);
+
+public sealed record ProvisionableServiceSummary(
+    string TechnicalServiceReference,
+    string Label,
+    IReadOnlyList<string> GroupSamAccountNames,
+    IReadOnlyList<string> SubscriptionIds,
+    IReadOnlyList<string> CoveredSubscriptionIds,
+    bool IsCoveredByActiveSubscription,
+    bool IsManualEligible,
+    bool IsOverrideRequired,
+    string CurrentStatus,
+    IReadOnlyList<AdProvisioningDiagnostic> Diagnostics);
+
+public sealed record ProvisionableGroupSummary(
+    string GroupSamAccountName,
+    string Label,
+    IReadOnlyList<string> TechnicalServiceReferences,
+    IReadOnlyList<string> SubscriptionIds,
+    IReadOnlyList<string> CoveredSubscriptionIds,
+    bool IsCoveredByActiveSubscription,
+    bool IsManualEligible,
+    bool IsOverrideRequired,
+    string CurrentStatus,
+    IReadOnlyList<AdProvisioningDiagnostic> Diagnostics);
+
+public sealed record AdminCustomerAdWorkspace(
+    string CustomerReference,
+    string CustomerName,
+    AdStatusResponse? AdStatus,
+    IReadOnlyList<CustomerAdLinkSummary> Links,
+    IReadOnlyList<SubscriptionProvisioningTargetUserSummary> LinkedUsers,
+    AdminCustomerAdSubscriptionContext? SubscriptionContext,
+    IReadOnlyList<AdminCustomerAdSubscriptionContext> Subscriptions,
+    IReadOnlyList<string> ManagedGroups,
+    string ProvisioningStatus,
+    string? LastResultCode,
+    IReadOnlyList<ProvisionableServiceSummary> Services,
+    IReadOnlyList<ProvisionableGroupSummary> Groups,
+    IReadOnlyList<AdProvisioningDiagnostic> Diagnostics);
+
+public sealed record CustomerAdProvisioningMutationRequest(
+    string? Operation,
+    IReadOnlyList<string>? TargetUserSamAccountNames,
+    [property: JsonPropertyName("override")] bool? IsOverride,
+    string? SubscriptionId);
+
+public sealed record CustomerAdProvisioningMutationResponse(
+    string Code,
+    string Message,
+    bool Changed,
+    [property: JsonPropertyName("correlation_id")] string CorrelationId,
+    AdminCustomerAdWorkspace Workspace);

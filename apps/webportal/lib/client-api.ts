@@ -1,4 +1,4 @@
-import type { ApiError } from "@kermaria/shared";
+﻿import type { ApiError } from "@kermaria/shared";
 
 import {
   CSRF_HEADER_NAME,
@@ -186,7 +186,7 @@ function userMessageFor(
     || code === "SESSION_REVOKED"
     || status === 401
   ) {
-    return "Votre session n’est plus valide. Reconnectez-vous.";
+    return "Votre session n'est plus valide. Reconnectez-vous.";
   }
 
   if (code === "ACCESS_DENIED" || status === 403) {
@@ -194,7 +194,7 @@ function userMessageFor(
       return "La session doit confirmer cette action avant de continuer.";
     }
 
-    return "Vous n’êtes pas autorisé à effectuer cette action.";
+    return "Vous n'êtes pas autorisé à effectuer cette action.";
   }
 
   if (code === "INVALID_REQUEST" || status === 400) {
@@ -256,7 +256,7 @@ function userMessageFor(
 
   return serverMessage
     ? appendCorrelationId(serverMessage, correlationId)
-    : "La demande n’a pas pu être traitée. Réessayez dans quelques instants.";
+    : "La demande n'a pas pu être traitée. Réessayez dans quelques instants.";
 }
 
 function appendCorrelationId(message: string, correlationId?: string) {
@@ -264,3 +264,4 @@ function appendCorrelationId(message: string, correlationId?: string) {
     ? `${message} (Référence: ${correlationId})`
     : message;
 }
+

@@ -30,6 +30,8 @@ Le navigateur accède uniquement à `WEBPORTAL` :
 - `GET /api/commercial-documents`
 - `GET /api/commercial-documents/{id}`
 - `POST /api/commercial-documents/{id}/payment-method`
+- `GET /api/downloads`
+- `GET /api/downloads/{id}/file`
 - `GET /api/admin/overview`
 - `GET /api/admin/activity`
 - `GET /api/admin/customers`
@@ -41,6 +43,17 @@ Le navigateur accède uniquement à `WEBPORTAL` :
 - `GET /api/admin/content`
 - `GET /api/admin/content/{key}`
 - `PATCH /api/admin/content/{key}`
+- `GET /api/admin/download-categories`
+- `POST /api/admin/download-categories`
+- `PATCH /api/admin/download-categories/{id}`
+- `DELETE /api/admin/download-categories/{id}`
+- `GET /api/admin/downloads`
+- `POST /api/admin/downloads`
+- `GET /api/admin/downloads/{id}`
+- `PATCH /api/admin/downloads/{id}`
+- `DELETE /api/admin/downloads/{id}`
+- `POST /api/admin/downloads/{id}/file`
+- `DELETE /api/admin/downloads/{id}/file`
 - `GET /api/admin/commercial-documents`
 - `POST /api/admin/commercial-documents`
 - `GET /api/admin/commercial-documents/{id}`
@@ -90,6 +103,17 @@ publiées par le reverse proxy et jamais appelées directement par le navigateur
 - `GET /internal/admin/content`
 - `GET /internal/admin/content/{key}`
 - `PATCH /internal/admin/content/{key}`
+- `GET /internal/admin/download-categories`
+- `POST /internal/admin/download-categories`
+- `PATCH /internal/admin/download-categories/{id}`
+- `DELETE /internal/admin/download-categories/{id}`
+- `GET /internal/admin/downloads`
+- `POST /internal/admin/downloads`
+- `GET /internal/admin/downloads/{id}`
+- `PATCH /internal/admin/downloads/{id}`
+- `DELETE /internal/admin/downloads/{id}`
+- `POST /internal/admin/downloads/{id}/file`
+- `DELETE /internal/admin/downloads/{id}/file`
 - `GET /internal/admin/commercial-documents`
 - `POST /internal/admin/commercial-documents`
 - `GET /internal/admin/commercial-documents/{id}`
@@ -135,6 +159,8 @@ publiées par le reverse proxy et jamais appelées directement par le navigateur
 - `GET /internal/portal/commercial-documents`
 - `GET /internal/portal/commercial-documents/{id}`
 - `POST /internal/portal/commercial-documents/{id}/payment-method`
+- `GET /internal/portal/downloads`
+- `GET /internal/portal/downloads/{id}/file`
 - `GET /internal/portal/notifications`
 - `POST /internal/portal/notifications/{id}/read`
 - `POST /internal/portal/notifications/read-all`
@@ -263,6 +289,37 @@ Contraintes :
   `/internal/portal/checkout/summary` n'existe pas encore sur le runtime
   cible (`ROUTE_NOT_FOUND`, `SQL_UNAVAILABLE`, `INTERNAL_ERROR`,
   `INTERNAL_API_UNAVAILABLE`, `INVALID_INTERNAL_RESPONSE`).
+
+## Centre de telechargements client V0.37
+
+Le module telechargements reste strictement dans le flux
+`Navigateur -> WEBPORTAL/BFF -> API-INTERNAL -> MariaDB/private storage`.
+
+Contraintes :
+
+- `GET /api/downloads` et `GET /internal/portal/downloads` exigent une
+  session client et exposent uniquement des categories non vides avec leurs
+  cartes client. Le JSON ne contient ni chemin physique ni URL externe brute.
+- `GET /api/downloads/{id}/file` revalide la session client puis appelle
+  `GET /internal/portal/downloads/{id}/file`. Le resultat est soit :
+  - un `attachment` pour un fichier interne ;
+  - une redirection autorisee pour une ressource externe ;
+  - `404` si la ressource est inactive ou non autorisee.
+- Les droits portail sont calcules uniquement a partir des droits actifs :
+  `subscriptions.publicPackCode`, `subscriptions.offerExternalReference` et
+  `customer_services.service_type`. Les statuts non actifs ne publient rien.
+- `GET/POST/PATCH/DELETE /api/admin/downloads*` et
+  `/api/admin/download-categories*` exigent un role `internal_admin`. Les
+  mutations BFF reutilisent la protection CSRF deja en place.
+- `POST /api/admin/downloads/{id}/file` accepte un upload `multipart/form-data`
+  uniquement pour les ressources `internal_file`.
+- `DELETE /api/admin/downloads/{id}/file` supprime le binaire prive et la
+  ressource repasse `inactive` tant qu'aucun nouveau fichier n'est charge.
+- `DELETE /api/admin/download-categories/{id}` renvoie un conflit si la
+  categorie est encore referencee.
+- Les mutations admin journalisent creation, mise a jour, suppression,
+  upload et retrait de binaire ; une delivrance client reussie journalise
+  `download.deliver`.
 
 ## Choix explicite du virement bancaire V0.36
 
