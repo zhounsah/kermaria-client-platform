@@ -3,9 +3,6 @@ using Kermaria.ApiInternal.Contracts;
 
 namespace Kermaria.ApiInternal.Data.Repositories;
 
-// V0.26 : état mémoire partagé du signup (mode développement sans
-// MariaDB). Singleton pour survivre entre les requêtes, comme les autres
-// Mock*Store.
 public sealed class MockSignupRow
 {
     public required string Id { get; set; }
@@ -15,6 +12,8 @@ public sealed class MockSignupRow
     public required string Email { get; set; }
     public string? Phone { get; set; }
     public string? Message { get; set; }
+    public required SignupCustomerData Customer { get; set; }
+    public required SignupUserData PrimaryUser { get; set; }
     public SignupPackSelectionSnapshot? PackSelection { get; set; }
     public string? VerificationTokenHash { get; set; }
     public DateTime? VerificationTokenExpiresAtUtc { get; set; }
@@ -24,7 +23,13 @@ public sealed class MockSignupRow
     public string? UserAgent { get; set; }
     public string? ApprovedUserId { get; set; }
     public string? ApprovedCustomerId { get; set; }
+    public string? ApprovedCustomerReference { get; set; }
     public DateTime? ApprovedAtUtc { get; set; }
+    public string? AdProvisioningStatus { get; set; }
+    public string? LastPasswordSyncStatus { get; set; }
+    public string? KoxoExportStatus { get; set; }
+    public string? ApprovedUserSamAccountName { get; set; }
+    public string? ApprovedUserPrincipalName { get; set; }
     public DateTime? RejectedAtUtc { get; set; }
     public string? RejectedReason { get; set; }
     public DateTime CreatedAtUtc { get; set; }
@@ -37,10 +42,6 @@ public sealed class MockSignupStore
         new(StringComparer.Ordinal);
 }
 
-// L'approbation crée un utilisateur dans le MockAuthenticationStore (sans
-// mot de passe) pour que le flux complet création -> vérification ->
-// approbation -> définition mot de passe -> connexion soit testable en
-// local.
 public sealed class MockSignupRepository : ISignupRepository
 {
     private readonly ConcurrentDictionary<string, MockSignupRow> _rows;
@@ -87,6 +88,8 @@ public sealed class MockSignupRepository : ISignupRepository
             Email = insert.Email,
             Phone = insert.Phone,
             Message = insert.Message,
+            Customer = insert.Customer,
+            PrimaryUser = insert.PrimaryUser,
             PackSelection = insert.PackSelection,
             VerificationTokenHash = insert.VerificationTokenHash,
             VerificationTokenExpiresAtUtc = insert.VerificationTokenExpiresAtUtc,
@@ -140,7 +143,9 @@ public sealed class MockSignupRepository : ISignupRepository
         var records = _rows.Values
             .Where(row => string.IsNullOrWhiteSpace(statusFilter)
                 || string.Equals(
-                    row.Status, statusFilter, StringComparison.Ordinal))
+                    row.Status,
+                    statusFilter,
+                    StringComparison.Ordinal))
             .OrderByDescending(row => row.CreatedAtUtc)
             .Take(capped)
             .Select(ToRecord)
@@ -182,13 +187,19 @@ public sealed class MockSignupRepository : ISignupRepository
             return Task.FromResult<SignupApprovalResult?>(null);
         }
 
-        _authenticationStore.Users[request.BillingEmail] =
+        var email = request.PrimaryUser.Email
+            ?? request.Customer.BillingEmail
+            ?? row.Email;
+        var displayName = request.PrimaryUser.DisplayName
+            ?? row.ContactName;
+
+        _authenticationStore.Users[email] =
             new PortalUserCredential(
                 request.UserId,
                 request.CustomerId,
                 request.CustomerReference,
-                request.BillingEmail,
-                request.ContactName,
+                email,
+                displayName,
                 "active",
                 PortalRoles.ClientUser,
                 null,
@@ -200,9 +211,12 @@ public sealed class MockSignupRepository : ISignupRepository
         row.Status = "approved";
         row.ApprovedUserId = request.UserId;
         row.ApprovedCustomerId = request.CustomerId;
+        row.ApprovedCustomerReference = request.CustomerReference;
         row.ApprovedAtUtc = DateTime.UtcNow;
         row.PasswordSetupTokenHash = request.PasswordSetupTokenHash;
         row.PasswordSetupExpiresAtUtc = request.PasswordSetupExpiresAtUtc;
+        row.Customer = request.Customer;
+        row.PrimaryUser = request.PrimaryUser;
         row.UpdatedAtUtc = DateTime.UtcNow;
 
         return Task.FromResult<SignupApprovalResult?>(new SignupApprovalResult(
@@ -210,8 +224,8 @@ public sealed class MockSignupRepository : ISignupRepository
             request.CustomerId,
             request.CustomerReference,
             request.UserId,
-            request.BillingEmail,
-            request.ContactName));
+            email,
+            displayName));
     }
 
     public Task<bool> RejectAsync(
@@ -253,6 +267,24 @@ public sealed class MockSignupRepository : ISignupRepository
                 row.PasswordSetupExpiresAtUtc));
     }
 
+    public Task RefreshPasswordSetupTokenAsync(
+        string signupId,
+        string passwordSetupTokenHash,
+        DateTime passwordSetupExpiresAtUtc,
+        CancellationToken cancellationToken)
+    {
+        if (_rows.TryGetValue(signupId, out var row)
+            && row.Status == "approved"
+            && row.ApprovedUserId is not null)
+        {
+            row.PasswordSetupTokenHash = passwordSetupTokenHash;
+            row.PasswordSetupExpiresAtUtc = passwordSetupExpiresAtUtc;
+            row.UpdatedAtUtc = DateTime.UtcNow;
+        }
+
+        return Task.CompletedTask;
+    }
+
     public Task SetPasswordAsync(
         string signupId,
         string portalUserId,
@@ -286,14 +318,29 @@ public sealed class MockSignupRepository : ISignupRepository
             row.Email,
             row.Phone,
             row.Message,
+            row.Customer,
+            row.PrimaryUser,
             row.PackSelection,
             row.SourceAddress,
             row.VerificationTokenExpiresAtUtc,
             row.ApprovedUserId,
             row.ApprovedCustomerId,
+            row.ApprovedCustomerReference,
             row.ApprovedAtUtc,
+            row.PasswordSetupExpiresAtUtc,
+            HasDefinedPassword(row),
+            row.AdProvisioningStatus,
+            row.LastPasswordSyncStatus,
+            row.KoxoExportStatus,
+            row.ApprovedUserSamAccountName,
+            row.ApprovedUserPrincipalName,
             row.RejectedAtUtc,
             row.RejectedReason,
             row.CreatedAtUtc,
             row.UpdatedAtUtc);
+
+    private static bool HasDefinedPassword(MockSignupRow row)
+        => row.ApprovedUserId is not null
+            && row.PasswordSetupTokenHash is null
+            && row.PasswordSetupExpiresAtUtc is null;
 }

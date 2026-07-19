@@ -16,7 +16,7 @@ public sealed class ActiveDirectoryPathScope
     public string ClientsOuDn => _clientsOuDn;
 
     public string BuildCustomerOuDn(string customerReference)
-        => $"OU={EscapeRdnValue(customerReference)},OU=10_Customers,{_clientsOuDn}";
+        => $"OU={EscapeRdnValue(customerReference)},{_clientsOuDn}";
 
     public string BuildUsersOuDn(string customerReference)
         => $"OU=Users,{BuildCustomerOuDn(customerReference)}";
@@ -76,21 +76,12 @@ public sealed class ActiveDirectoryPathScope
         }
 
         var prefixLength = parts.Length - _clientsOuParts.Length;
-        if (prefixLength < 2)
+        if (prefixLength < 1)
         {
             return null;
         }
 
-        var customersContainerPart = parts[prefixLength - 1];
-        if (!string.Equals(
-                TryReadOuValue(customersContainerPart),
-                "10_Customers",
-                StringComparison.OrdinalIgnoreCase))
-        {
-            return null;
-        }
-
-        var customerPart = parts[prefixLength - 2];
+        var customerPart = parts[prefixLength - 1];
         return TryReadOuValue(customerPart);
     }
 

@@ -48,7 +48,13 @@ public sealed record CreateAdUserRequest(
     string? GivenName,
     string? Surname,
     string? UserPrincipalName,
-    string? Description);
+    string? Description,
+    string? PersonalTitle,
+    string? Initials,
+    string? Email,
+    string? Phone,
+    string? CompanyName,
+    string? EmployeeNumber);
 
 public sealed record CreateAdGroupRequest(
     string? SamAccountName,

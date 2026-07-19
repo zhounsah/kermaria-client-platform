@@ -28,14 +28,28 @@ The current repo state is built in layers:
 8. `V0.37_CENTRE_TELECHARGEMENTS_CLIENT.md`
    Secure client download center: dedicated client page, admin CRUD,
    private binary storage, entitlement-based visibility.
+9. `V0.39_VITRINE_TUNNEL_PUBLIC.md`
+   Public vitrine refresh: stronger homepage positioning, pack-first offers
+   reading, and contact/signup tunnel continuity.
+
+Identity alignment already documented but not yet implemented:
+
+- `docs/v0.38/V0.38_SITE_AD_ALIGNMENT.md`
+- `docs/v0.38/V0.38_KOXO_SIGNUP_INTEGRATION.md`
+- target domain: `clients.home.bzh`
+- important: current signup remains V0.26 mono-user and does not create AD
 
 ## Functional picture
 
 Public website:
 
+- `/`: public landing page focused on positioning, reassurance, and entry
+  paths.
 - `/offres`: public comparison page for the 4 packs.
 - `/offres/[slug]`: public technical sheet per pack.
-- `/signup`: optional pack preselection snapshot at request time.
+- `/contact`: optional pack-aware contact capture.
+- `/signup`: optional pack preselection snapshot at request time, with
+  explicit activation steps.
 
 Authenticated client space:
 
@@ -101,6 +115,15 @@ Subscription lifecycle:
 - handled by `SubscriptionService`
 - renewed by `BillingSubscriptionRenewalWorker`
 
+Identity and AD baseline:
+
+- current signup persistence: `signup_pending`
+- current customer auth identity: `customers` + `portal_users`
+- current AD link persistence: `customer_ad_links`
+- current configurable AD root: `AD_DOMAIN`, `AD_CLIENTS_OU_DN`,
+  `AD_REQUIRED_OU_ROOT`, `AD_ALLOWED_ROOTS`
+- future alignment target documented in `docs/v0.38/V0.38_SITE_AD_ALIGNMENT.md`
+
 ## Files to open first
 
 Shared model and pack manifest:
@@ -113,9 +136,14 @@ Public pack helpers:
 
 Public pack UI:
 
+- `apps/webportal/app/page.tsx`
 - `apps/webportal/app/offres/page.tsx`
 - `apps/webportal/components/PublicPackComparisonTable.tsx`
 - `apps/webportal/components/PublicPackCard.tsx`
+- `apps/webportal/components/PublicPackOverviewGrid.tsx`
+- `apps/webportal/components/PublicPackSelectionSummary.tsx`
+- `apps/webportal/app/contact/page.tsx`
+- `apps/webportal/app/signup/page.tsx`
 - `apps/webportal/app/admin/public-pack-catalog/page.tsx`
 - `apps/webportal/components/AdminPublicPackCatalogForm.tsx`
 
@@ -145,6 +173,15 @@ Subscription persistence:
 
 - `apps/api-internal/Data/Repositories/MariaDbSubscriptionRepository.cs`
 - `apps/api-internal/Services/SubscriptionService.cs`
+
+Identity, signup, and AD alignment:
+
+- `apps/api-internal/Services/SignupService.cs`
+- `apps/api-internal/Data/Repositories/MariaDbSignupRepository.cs`
+- `apps/api-internal/Data/Configuration/AdRuntimeConfiguration.cs`
+- `apps/api-internal/Services/ActiveDirectory/LdapActiveDirectoryService.cs`
+- `apps/api-internal/Migrations/MariaDb/007_customer_ad_links.sql`
+- `apps/api-internal/Migrations/MariaDb/020_signup_pending.sql`
 
 ## Important implementation decisions
 
@@ -197,3 +234,12 @@ If you want to debug provisioning:
 1. `docs/V0.32_PUBLIC_PACKS.md`
 2. `apps/api-internal/Data/Configuration/SubscriptionProvisioningRuntimeConfiguration.cs`
 3. `apps/api-internal/Services/Provisioning/*`
+
+If you want to work on identity alignment toward `clients.home.bzh`:
+
+1. `docs/v0.38/V0.38_SITE_AD_ALIGNMENT.md`
+2. `docs/v0.38/V0.38_KOXO_SIGNUP_INTEGRATION.md`
+3. `apps/api-internal/Services/SignupService.cs`
+4. `apps/api-internal/Data/Repositories/MariaDbSignupRepository.cs`
+5. `apps/api-internal/Migrations/MariaDb/007_customer_ad_links.sql`
+6. `apps/api-internal/Data/Configuration/AdRuntimeConfiguration.cs`

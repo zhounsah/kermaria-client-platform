@@ -73,7 +73,7 @@ export function SetPasswordForm({ token }: SetPasswordFormProps) {
       setState({
         status: "success",
         message:
-          "Mot de passe défini. Vous pouvez désormais vous connecter à votre espace.",
+          "Mot de passe défini. Connectez-vous maintenant à votre espace : votre tableau de bord vous guidera vers la reprise de votre pack ou la suite de votre activation.",
       });
       setPassword("");
       setConfirmPassword("");
@@ -87,7 +87,7 @@ export function SetPasswordForm({ token }: SetPasswordFormProps) {
       <FormMessage title="Mot de passe défini" tone="success">
         <p>{state.message}</p>
         <p>
-          <Link href="/login">Aller à la page de connexion</Link>
+          <Link href="/login">Se connecter et ouvrir le tableau de bord</Link>
         </p>
       </FormMessage>
     );
@@ -135,7 +135,8 @@ export function SetPasswordForm({ token }: SetPasswordFormProps) {
 
       <p className="set-password-note">
         Choisissez un mot de passe d&apos;au moins {MIN_PASSWORD_LENGTH}{" "}
-        caractères. Ce lien est à usage unique.
+        caractères. Ce lien est à usage unique et constitue la dernière étape
+        avant l&apos;accès à votre espace client.
       </p>
 
       <SubmitButton

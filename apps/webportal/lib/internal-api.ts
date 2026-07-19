@@ -935,6 +935,29 @@ export type SignupAdminSummary = {
   rejectedAt: string | null;
 };
 
+export type SignupCustomerData = {
+  customerType: string | null;
+  displayName: string | null;
+  billingEmail: string | null;
+  phone: string | null;
+  addressLine1: string | null;
+  addressLine2: string | null;
+  postalCode: string | null;
+  city: string | null;
+  country: string | null;
+};
+
+export type SignupUserData = {
+  personalTitle: string | null;
+  givenName: string | null;
+  surname: string | null;
+  initials: string | null;
+  displayName: string | null;
+  email: string | null;
+  phone: string | null;
+  isPrimaryContact: boolean | null;
+};
+
 export type SignupAdminDetail = {
   id: string;
   status: string;
@@ -950,6 +973,20 @@ export type SignupAdminDetail = {
   updatedAt: string;
   approvedAt: string | null;
   rejectedAt: string | null;
+  customer: SignupCustomerData | null;
+  primaryUser: SignupUserData | null;
+  accountAccess: SignupAdminAccountAccess | null;
+};
+
+export type SignupAdminAccountAccess = {
+  customerReference: string | null;
+  passwordDefined: boolean;
+  passwordSetupExpiresAt: string | null;
+  adProvisioningStatus: string | null;
+  lastPasswordSyncStatus: string | null;
+  koxoExportStatus: string | null;
+  samAccountName: string | null;
+  userPrincipalName: string | null;
 };
 
 export function getAdminSignups(status?: string) {

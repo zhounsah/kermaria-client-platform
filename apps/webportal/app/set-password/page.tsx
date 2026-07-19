@@ -22,23 +22,17 @@ export default async function SetPasswordPage({
   const { token } = await searchParams;
   const trimmedToken = token?.trim() || "";
 
-  // Validation au chargement (GET non destructif) : on décide d'afficher le
-  // formulaire ou l'état d'erreur AVANT toute saisie, plutôt que de laisser
-  // l'utilisateur remplir un formulaire voué à l'échec. Le jeton n'est
-  // consommé qu'à la soumission (POST /api/set-password) ; l'anti-rejeu reste
-  // porté par l'API. Un lien vide, invalide ou déjà utilisé retombe sur le
-  // même écran d'erreur.
   const validation = trimmedToken
     ? await validateSetPasswordToken(trimmedToken, resolveCorrelationId(null))
     : {
         ok: false,
         status: 400,
         code: "TOKEN_INVALID",
-        message: "Lien de définition de mot de passe invalide.",
+        message: "Lien de définition de mot de passe invalidé.",
       };
 
   const valid = validation.ok;
-  const expired = validation.code === "TOKEN_EXPIRED";
+  const expiréd = validation.code === "TOKEN_EXPIRED";
   const serviceUnavailable =
     validation.code === "INTERNAL_API_UNAVAILABLE";
 
@@ -49,8 +43,12 @@ export default async function SetPasswordPage({
         <h1>{valid ? "Définir votre mot de passe" : "Définition impossible"}</h1>
         {valid ? (
           <p className="signup-lead">
-            Votre compte a été validé. Choisissez un mot de passe pour
-            activer votre accès à l&apos;espace client.
+            Votre compte a été validé. Choisissez un mot de passe pour activer
+            votre accès à l&apos;espace client. Cette définition du mot de passe
+            finalise aussi l&apos;identité cible dans clients.home.bzh lorsque
+            l&apos;écriture AD est active. Une fois connecté, votre tableau de
+            bord vous guidera vers les prochaines étapes, notamment la
+            finalisation de votre pack si vous en aviez choisi un.
           </p>
         ) : null}
       </header>
@@ -66,7 +64,7 @@ export default async function SetPasswordPage({
               <Link href="/contact">contactez-nous</Link> si le problème
               persiste.
             </p>
-          ) : expired ? (
+          ) : expiréd ? (
             <p>
               Ce lien de définition de mot de passe a expiré. Contactez notre
               équipe pour obtenir un nouveau lien, ou{" "}
@@ -76,9 +74,8 @@ export default async function SetPasswordPage({
           ) : (
             <p>
               Ce lien est invalide ou a déjà été utilisé. Utilisez le lien reçu
-              par e-mail, ou{" "}
-              <Link href="/contact">contactez-nous</Link> si le problème
-              persiste.
+              par e-mail, ou <Link href="/contact">contactez-nous</Link> si le
+              problème persiste.
             </p>
           )}
         </section>

@@ -3,28 +3,21 @@
 import Script from "next/script";
 import { useEffect, useRef, useState } from "react";
 
-import type {
-  CommercialOfferPaymentMode,
-  PublicPackCode,
-  PublicPackCommitmentMonths,
-} from "@kermaria/shared";
+import type { PublicPackCode } from "@kermaria/shared";
 
 import { FormMessage } from "@/components/FormMessage";
+import {
+  PublicPackSelectionSummary,
+  type PublicPackSelectionSummaryInput,
+} from "@/components/PublicPackSelectionSummary";
 import { SubmitButton } from "@/components/SubmitButton";
 import { requestBffJson } from "@/lib/client-api";
-import { formatCurrencyFromCents } from "@/lib/formatters";
 
 type SignupFormProps = {
   hcaptchaSiteKey: string | null;
-  initialPackSelection?: {
+  initialPackSelection?: (PublicPackSelectionSummaryInput & {
     packKey: PublicPackCode;
-    packLabel: string;
-    commitmentMonths: PublicPackCommitmentMonths;
-    paymentMode: CommercialOfferPaymentMode;
-    monthlyPriceAmountCents: number;
-    setupFeeAmountCents: number;
-    firstChargeAmountCents: number;
-  } | null;
+  }) | null;
 };
 
 type SignupState =
@@ -44,8 +37,17 @@ export function SignupForm({
 }: SignupFormProps) {
   const isSubmittingRef = useRef(false);
   const renderedAtRef = useRef<number>(0);
+  const [customerType, setCustomerType] = useState("professional");
   const [companyName, setCompanyName] = useState("");
-  const [contactName, setContactName] = useState("");
+  const [addressLine1, setAddressLine1] = useState("");
+  const [addressLine2, setAddressLine2] = useState("");
+  const [postalCode, setPostalCode] = useState("");
+  const [city, setCity] = useState("");
+  const [country, setCountry] = useState("France");
+  const [personalTitle, setPersonalTitle] = useState("");
+  const [givenName, setGivenName] = useState("");
+  const [surname, setSurname] = useState("");
+  const [initials, setInitials] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [message, setMessage] = useState("");
@@ -82,8 +84,17 @@ export function SignupForm({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          customerType,
           companyName,
-          contactName,
+          addressLine1,
+          addressLine2,
+          postalCode,
+          city,
+          country,
+          personalTitle,
+          givenName,
+          surname,
+          initials,
           email,
           phone,
           message,
@@ -104,8 +115,9 @@ export function SignupForm({
 
       setState({
         status: "success",
-        message:
-          "Demande envoyée. Vérifiez votre boîte mail pour confirmer votre adresse, puis attendez la validation de notre équipe.",
+        message: initialPackSelection
+          ? "Demande envoyée. Vérifiez votre boîte mail pour confirmer votre adresse, puis attendez notre validation avant de définir le mot de passe et de reprendre le pack depuis votre espace client."
+          : "Demande envoyée. Vérifiez votre boîte mail pour confirmer votre adresse, puis attendez notre validation avant de définir votre mot de passe.",
       });
     } finally {
       isSubmittingRef.current = false;
@@ -141,6 +153,26 @@ export function SignupForm({
           </FormMessage>
         ) : null}
 
+        <p className="field-hint">
+          Ces informations alimentent à la fois votre fiche client et le futur
+          compte d'accès rattaché à <code>clients.home.bzh</code> lorsque
+          l'identité est finalisée.
+        </p>
+
+        <label>
+          Type de structure
+          <select
+            name="customerType"
+            onChange={(event) => setCustomerType(event.target.value)}
+            required
+            value={customerType}
+          >
+            <option value="professional">Professionnel</option>
+            <option value="association">Association</option>
+            <option value="individual">Particulier</option>
+          </select>
+        </label>
+
         <label>
           Nom ou raison sociale
           <input
@@ -155,20 +187,128 @@ export function SignupForm({
         </label>
 
         <label>
-          Nom du contact
+          Adresse postale
           <input
-            autoComplete="name"
-            maxLength={200}
-            name="contactName"
-            onChange={(event) => setContactName(event.target.value)}
+            autoComplete="address-line1"
+            maxLength={255}
+            name="addressLine1"
+            onChange={(event) => setAddressLine1(event.target.value)}
             required
             type="text"
-            value={contactName}
+            value={addressLine1}
           />
         </label>
 
         <label>
-          Adresse e-mail
+          Complement d'adresse (facultatif)
+          <input
+            autoComplete="address-line2"
+            maxLength={255}
+            name="addressLine2"
+            onChange={(event) => setAddressLine2(event.target.value)}
+            type="text"
+            value={addressLine2}
+          />
+        </label>
+
+        <label>
+          Code postal
+          <input
+            autoComplete="postal-code"
+            maxLength={32}
+            name="postalCode"
+            onChange={(event) => setPostalCode(event.target.value)}
+            required
+            type="text"
+            value={postalCode}
+          />
+        </label>
+
+        <label>
+          Ville
+          <input
+            autoComplete="address-level2"
+            maxLength={160}
+            name="city"
+            onChange={(event) => setCity(event.target.value)}
+            required
+            type="text"
+            value={city}
+          />
+        </label>
+
+        <label>
+          Pays
+          <input
+            autoComplete="country-name"
+            maxLength={100}
+            name="country"
+            onChange={(event) => setCountry(event.target.value)}
+            required
+            type="text"
+            value={country}
+          />
+        </label>
+
+        <p className="field-hint">
+          Contact principal qui recevra les messages d'ouverture et définira le
+          mot de passe initial.
+        </p>
+
+        <label>
+          Civilité (facultatif)
+          <select
+            autoComplete="honorific-prefix"
+            name="personalTitle"
+            onChange={(event) => setPersonalTitle(event.target.value)}
+            value={personalTitle}
+          >
+            <option value="">Non précisé</option>
+            <option value="madame">Madame</option>
+            <option value="monsieur">Monsieur</option>
+            <option value="autre">Autre</option>
+          </select>
+        </label>
+
+        <label>
+          Prénom
+          <input
+            autoComplete="given-name"
+            maxLength={120}
+            name="givenName"
+            onChange={(event) => setGivenName(event.target.value)}
+            required
+            type="text"
+            value={givenName}
+          />
+        </label>
+
+        <label>
+          Nom
+          <input
+            autoComplete="family-name"
+            maxLength={120}
+            name="surname"
+            onChange={(event) => setSurname(event.target.value)}
+            required
+            type="text"
+            value={surname}
+          />
+        </label>
+
+        <label>
+          Initiales (facultatif)
+          <input
+            maxLength={16}
+            name="initials"
+            onChange={(event) => setInitials(event.target.value)}
+            type="text"
+            value={initials}
+          />
+        </label>
+
+        <label>
+          Adresse e-mail de connexion
           <input
             autoComplete="email"
             maxLength={320}
@@ -198,43 +338,28 @@ export function SignupForm({
             maxLength={2000}
             name="message"
             onChange={(event) => setMessage(event.target.value)}
+            placeholder={
+              initialPackSelection
+                ? "Précisez ce qu'il faut savoir avant l'ouverture du compte ou la reprise du pack."
+                : "Précisez votre contexte, vos contraintes ou ce que vous attendez de l'ouverture du compte."
+            }
             rows={5}
             value={message}
           />
         </label>
 
         {initialPackSelection ? (
-          <section
-            className="content-panel"
-            aria-label="Pack choisi"
-            style={{ marginTop: 8 }}
-          >
-            <h2 style={{ marginTop: 0 }}>{initialPackSelection.packLabel}</h2>
-            <p className="field-hint" style={{ marginTop: 8 }}>
-              Engagement {initialPackSelection.commitmentMonths} mois · paiement{" "}
-              {initialPackSelection.paymentMode === "upfront"
-                ? "comptant"
-                : "mensuel"}
-            </p>
-            <p className="field-hint">
-              Tarif affiché :{" "}
-              {formatCurrencyFromCents(
-                initialPackSelection.monthlyPriceAmountCents,
-              )}{" "}
-              HT / mois
-            </p>
-            <p className="field-hint">
-              Mise en service :{" "}
-              {formatCurrencyFromCents(
-                initialPackSelection.setupFeeAmountCents,
-              )}{" "}
-              HT · première échéance :{" "}
-              {formatCurrencyFromCents(
-                initialPackSelection.firstChargeAmountCents,
-              )}{" "}
-              HT
-            </p>
-          </section>
+          <PublicPackSelectionSummary
+            commitmentMonths={initialPackSelection.commitmentMonths}
+            description="Ce résumé sera repris avec votre demande pour conserver le contexte du pack sélectionné."
+            eyebrow="Pack associé à la demande"
+            firstChargeAmountCents={initialPackSelection.firstChargeAmountCents}
+            monthlyPriceAmountCents={initialPackSelection.monthlyPriceAmountCents}
+            packLabel={initialPackSelection.packLabel}
+            paymentMode={initialPackSelection.paymentMode}
+            setupFeeAmountCents={initialPackSelection.setupFeeAmountCents}
+            title={initialPackSelection.packLabel}
+          />
         ) : null}
 
         {initialPackSelection ? (
@@ -274,9 +399,12 @@ export function SignupForm({
         ) : null}
 
         <p className="signup-form-note">
-          En envoyant ce formulaire, vous demandez la création d&apos;un accès.
-          Un e-mail de confirmation vous sera adressé, puis notre équipe
-          validera votre demande avant l&apos;ouverture du compte.
+          En envoyant ce formulaire, vous demandez l'ouverture d'un accès
+          client. Vous confirmerez d'abord votre adresse e-mail, puis notre
+          équipe validera la demande avant la définition du mot de passe
+          {initialPackSelection
+            ? " et la reprise du pack dans l'espace client."
+            : "."}
         </p>
 
         <SubmitButton

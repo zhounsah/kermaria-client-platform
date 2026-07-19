@@ -14,6 +14,7 @@ public sealed record AdRuntimeConfiguration(
     string? ClientsOuDn,
     string? RequiredOuRoot,
     IReadOnlyList<string> AllowedRoots,
+    bool UseCurrentWindowsCredentials,
     string? ServiceAccountUsername,
     string? ServiceAccountPassword,
     int ConnectTimeoutMs,
@@ -61,6 +62,26 @@ public sealed record AdRuntimeConfiguration(
         return false;
     }
 
+    public string ResolveDomainForDistinguishedName(string? distinguishedName)
+        => AdConfigurationResolver.ExtractDomainFromDn(distinguishedName)
+            ?? Domain
+            ?? string.Empty;
+
+    public string BuildLdapPath(string distinguishedName)
+    {
+        var normalized = NormalizeDistinguishedName(distinguishedName)
+            ?? throw new InvalidOperationException(
+                "The Active Directory distinguished name is unavailable.");
+        var domain = ResolveDomainForDistinguishedName(normalized);
+        if (string.IsNullOrWhiteSpace(domain))
+        {
+            throw new InvalidOperationException(
+                "The Active Directory domain is unavailable.");
+        }
+
+        return $"LDAP://{domain}/{normalized}";
+    }
+
     public string? NormalizeDistinguishedName(string? distinguishedName)
         => AdConfigurationResolver.NormalizeDn(distinguishedName);
 }
@@ -82,6 +103,10 @@ public static class AdConfigurationResolver
             configuration["AD_ALLOWED_ROOTS"],
             requiredOuRoot,
             clientsOuDn);
+        var useCurrentWindowsCredentials = string.Equals(
+            configuration["AD_USE_CURRENT_WINDOWS_CREDENTIALS"]?.Trim(),
+            "true",
+            StringComparison.OrdinalIgnoreCase);
         var serviceAccountUsername = requiresDirectoryConfiguration
             ? NullIfWhiteSpace(configuration["AD_SERVICE_ACCOUNT_USERNAME"])
             : null;
@@ -112,8 +137,13 @@ public static class AdConfigurationResolver
                 && allowedRoots.Count > 0
                 && IsWithinRoot(clientsOuDn, requiredOuRoot)
                 && allowedRoots.All(root => IsWithinRoot(root, requiredOuRoot))
-                && serviceAccountUsername is not null
-                && serviceAccountPassword is not null
+                && (
+                    useCurrentWindowsCredentials
+                    || (
+                        serviceAccountUsername is not null
+                        && serviceAccountPassword is not null
+                    )
+                )
             );
 
         return new AdRuntimeConfiguration(
@@ -122,6 +152,7 @@ public static class AdConfigurationResolver
             clientsOuDn,
             requiredOuRoot,
             allowedRoots,
+            useCurrentWindowsCredentials,
             serviceAccountUsername,
             serviceAccountPassword,
             connectTimeoutMs,
@@ -177,6 +208,23 @@ public static class AdConfigurationResolver
             : string.Join(",", parts);
     }
 
+    internal static string? ExtractDomainFromDn(string? distinguishedName)
+    {
+        var normalized = NormalizeDn(distinguishedName);
+        if (normalized is null)
+        {
+            return null;
+        }
+
+        var components = SplitDn(normalized)
+            .Select(part => TryReadDnValue(part, "DC"))
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToArray();
+        return components.Length == 0
+            ? null
+            : string.Join(".", components);
+    }
+
     private static IReadOnlyList<string> ParseAllowedRoots(
         string? value,
         string? requiredOuRoot,
@@ -222,5 +270,96 @@ public static class AdConfigurationResolver
             || distinguishedName.EndsWith(
                 $",{requiredOuRoot}",
                 StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? TryReadDnValue(string part, string expectedKey)
+    {
+        var separatorIndex = FindUnescapedSeparator(part, '=');
+        if (separatorIndex <= 0)
+        {
+            return null;
+        }
+
+        var key = part[..separatorIndex].Trim();
+        if (!key.Equals(expectedKey, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return part[(separatorIndex + 1)..].Trim();
+    }
+
+    private static string[] SplitDn(string distinguishedName)
+    {
+        var parts = new List<string>();
+        var buffer = new System.Text.StringBuilder();
+        var escaped = false;
+
+        foreach (var character in distinguishedName)
+        {
+            if (escaped)
+            {
+                buffer.Append(character);
+                escaped = false;
+                continue;
+            }
+
+            if (character == '\\')
+            {
+                buffer.Append(character);
+                escaped = true;
+                continue;
+            }
+
+            if (character == ',')
+            {
+                var part = buffer.ToString().Trim();
+                if (part.Length > 0)
+                {
+                    parts.Add(part);
+                }
+
+                buffer.Clear();
+                continue;
+            }
+
+            buffer.Append(character);
+        }
+
+        var lastPart = buffer.ToString().Trim();
+        if (lastPart.Length > 0)
+        {
+            parts.Add(lastPart);
+        }
+
+        return parts.ToArray();
+    }
+
+    private static int FindUnescapedSeparator(string value, char separator)
+    {
+        var escaped = false;
+
+        for (var index = 0; index < value.Length; index++)
+        {
+            var character = value[index];
+            if (escaped)
+            {
+                escaped = false;
+                continue;
+            }
+
+            if (character == '\\')
+            {
+                escaped = true;
+                continue;
+            }
+
+            if (character == separator)
+            {
+                return index;
+            }
+        }
+
+        return -1;
     }
 }

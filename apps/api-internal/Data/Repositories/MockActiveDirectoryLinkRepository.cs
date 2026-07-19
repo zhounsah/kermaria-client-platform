@@ -23,8 +23,15 @@ public sealed class MockActiveDirectoryLinkRepository
                     "CLI-DEMO-0200",
                     "Client Demo 0200")
             };
-    private static readonly Dictionary<string, List<CustomerAdLinkSummary>> LinksByCustomer =
-        new(StringComparer.OrdinalIgnoreCase);
+
+    private static readonly Dictionary<string, List<CustomerAdLinkSummary>>
+        LinksByCustomer =
+            new(StringComparer.OrdinalIgnoreCase);
+
+    private static readonly Dictionary<string, PortalUserAdLinkRecord>
+        PortalLinksByUserId =
+            new(StringComparer.Ordinal);
+
     private static readonly object SyncRoot = new();
 
     public bool IsPersistent => false;
@@ -94,12 +101,7 @@ public sealed class MockActiveDirectoryLinkRepository
     {
         lock (SyncRoot)
         {
-            if (!LinksByCustomer.TryGetValue(customerReference, out var links))
-            {
-                links = [];
-                LinksByCustomer[customerReference] = links;
-            }
-
+            var links = EnsureCustomerLinks(customerReference);
             var existing = links.FirstOrDefault(link =>
                 link.ObjectGuid.Equals(
                     directoryObject.ObjectGuid,
@@ -112,72 +114,99 @@ public sealed class MockActiveDirectoryLinkRepository
             }
 
             var id = Guid.NewGuid().ToString("D");
-            links.Add(new CustomerAdLinkSummary(
+            links.Add(BuildSummary(
                 id,
                 customerReference,
+                directoryObject,
+                linkedAtIso: DateTime.UtcNow.ToString("O"),
+                linkedBy: actorUserId is null ? "API-INTERNAL" : "Administrateur mock"));
+            return Task.FromResult(new CustomerAdLinkUpsertResult(id, true));
+        }
+    }
+
+    public Task<CustomerAdLinkUpsertResult> UpsertPortalUserLinkAsync(
+        string customerReference,
+        string portalUserId,
+        string? actorUserId,
+        AdDirectoryObjectSummary directoryObject,
+        string? adDomain,
+        string? adProvisioningStatus,
+        DateTime? adProvisionedAtUtc,
+        string? lastPasswordSyncStatus,
+        DateTime? lastPasswordSyncAtUtc,
+        string? koxoExportStatus,
+        CancellationToken cancellationToken)
+    {
+        lock (SyncRoot)
+        {
+            PortalLinksByUserId.TryGetValue(portalUserId, out var existingPortalLink);
+            var existingSummary = FindSummaryByObjectGuid(directoryObject.ObjectGuid);
+            var id = existingPortalLink?.Id
+                ?? existingSummary?.Id
+                ?? Guid.NewGuid().ToString("D");
+            var linkedAtIso = existingPortalLink is not null
+                ? DateTime.UtcNow.ToString("O")
+                : existingSummary?.LinkedAt
+                    ?? DateTime.UtcNow.ToString("O");
+            var linkedBy = actorUserId is null ? "API-INTERNAL" : "Administrateur mock";
+
+            RemoveSummary(id);
+            var summary = BuildSummary(
+                id,
+                customerReference,
+                directoryObject,
+                linkedAtIso,
+                linkedBy);
+            EnsureCustomerLinks(customerReference).Add(summary);
+
+            var customerContext = CustomerContexts.TryGetValue(
+                customerReference,
+                out var context)
+                ? context
+                : new AdCustomerContext(
+                    $"mock-{customerReference.ToLowerInvariant()}",
+                    customerReference,
+                    customerReference);
+            PortalLinksByUserId[portalUserId] = new PortalUserAdLinkRecord(
+                id,
+                customerContext.CustomerId,
+                customerReference,
+                portalUserId,
                 directoryObject.ObjectGuid,
                 directoryObject.ObjectSid,
-                directoryObject.ObjectType,
                 directoryObject.SamAccountName,
                 directoryObject.UserPrincipalName,
                 directoryObject.DisplayName,
                 directoryObject.DistinguishedName,
-                DateTime.UtcNow.ToString("O"),
-                actorUserId is null ? "API-INTERNAL" : "Administrateur mock"));
+                adDomain,
+                adProvisioningStatus,
+                adProvisionedAtUtc,
+                lastPasswordSyncAtUtc,
+                lastPasswordSyncStatus,
+                koxoExportStatus);
 
             return Task.FromResult(new CustomerAdLinkUpsertResult(id, true));
         }
     }
 
-    public Task<bool> RefreshCustomerLinkAsync(
-        string targetCustomerReference,
-        AdDirectoryObjectSummary directoryObject,
+    public Task<bool> UpdateUserPasswordSyncStatusAsync(
+        string portalUserId,
+        string status,
+        DateTime changedAtUtc,
         CancellationToken cancellationToken)
     {
         lock (SyncRoot)
         {
-            string? sourceCustomerReference = null;
-            CustomerAdLinkSummary? existing = null;
-            foreach (var entry in LinksByCustomer)
-            {
-                var match = entry.Value.FirstOrDefault(link =>
-                    link.ObjectGuid.Equals(
-                        directoryObject.ObjectGuid,
-                        StringComparison.OrdinalIgnoreCase));
-                if (match is not null)
-                {
-                    sourceCustomerReference = entry.Key;
-                    existing = match;
-                    break;
-                }
-            }
-
-            if (existing is null || sourceCustomerReference is null)
+            if (!PortalLinksByUserId.TryGetValue(portalUserId, out var link))
             {
                 return Task.FromResult(false);
             }
 
-            LinksByCustomer[sourceCustomerReference].Remove(existing);
-            if (!LinksByCustomer.TryGetValue(
-                    targetCustomerReference,
-                    out var targetLinks))
+            PortalLinksByUserId[portalUserId] = link with
             {
-                targetLinks = [];
-                LinksByCustomer[targetCustomerReference] = targetLinks;
-            }
-
-            targetLinks.Add(new CustomerAdLinkSummary(
-                existing.Id,
-                targetCustomerReference,
-                directoryObject.ObjectGuid,
-                directoryObject.ObjectSid,
-                directoryObject.ObjectType,
-                directoryObject.SamAccountName,
-                directoryObject.UserPrincipalName,
-                directoryObject.DisplayName,
-                directoryObject.DistinguishedName,
-                existing.LinkedAt,
-                existing.LinkedBy));
+                LastPasswordSyncAtUtc = changedAtUtc,
+                LastPasswordSyncStatus = status
+            };
             return Task.FromResult(true);
         }
     }
@@ -204,6 +233,62 @@ public sealed class MockActiveDirectoryLinkRepository
         }
     }
 
+    public Task<PortalUserAdLinkRecord?> FindUserLinkByPortalUserIdAsync(
+        string portalUserId,
+        CancellationToken cancellationToken)
+    {
+        lock (SyncRoot)
+        {
+            PortalLinksByUserId.TryGetValue(portalUserId, out var link);
+            return Task.FromResult(link);
+        }
+    }
+
+    public Task<bool> RefreshCustomerLinkAsync(
+        string targetCustomerReference,
+        AdDirectoryObjectSummary directoryObject,
+        CancellationToken cancellationToken)
+    {
+        lock (SyncRoot)
+        {
+            var existing = FindSummaryByObjectGuid(directoryObject.ObjectGuid);
+            if (existing is null)
+            {
+                return Task.FromResult(false);
+            }
+
+            RemoveSummary(existing.Id);
+            EnsureCustomerLinks(targetCustomerReference).Add(BuildSummary(
+                existing.Id,
+                targetCustomerReference,
+                directoryObject,
+                existing.LinkedAt,
+                existing.LinkedBy));
+
+            foreach (var entry in PortalLinksByUserId.ToArray())
+            {
+                if (!entry.Value.ObjectGuid.Equals(
+                        directoryObject.ObjectGuid,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                PortalLinksByUserId[entry.Key] = entry.Value with
+                {
+                    CustomerReference = targetCustomerReference,
+                    ObjectSid = directoryObject.ObjectSid,
+                    SamAccountName = directoryObject.SamAccountName,
+                    UserPrincipalName = directoryObject.UserPrincipalName,
+                    DisplayName = directoryObject.DisplayName,
+                    DistinguishedName = directoryObject.DistinguishedName
+                };
+            }
+
+            return Task.FromResult(true);
+        }
+    }
+
     public Task<bool> DeleteCustomerLinkAsync(
         string customerReference,
         string linkId,
@@ -218,7 +303,77 @@ public sealed class MockActiveDirectoryLinkRepository
 
             var removedCount = links.RemoveAll(link =>
                 link.Id.Equals(linkId, StringComparison.OrdinalIgnoreCase));
-            return Task.FromResult(removedCount > 0);
+            if (removedCount <= 0)
+            {
+                return Task.FromResult(false);
+            }
+
+            foreach (var entry in PortalLinksByUserId.ToArray())
+            {
+                if (entry.Value.Id.Equals(linkId, StringComparison.OrdinalIgnoreCase))
+                {
+                    PortalLinksByUserId.Remove(entry.Key);
+                }
+            }
+
+            return Task.FromResult(true);
+        }
+    }
+
+    private static List<CustomerAdLinkSummary> EnsureCustomerLinks(
+        string customerReference)
+    {
+        if (!LinksByCustomer.TryGetValue(customerReference, out var links))
+        {
+            links = [];
+            LinksByCustomer[customerReference] = links;
+        }
+
+        return links;
+    }
+
+    private static CustomerAdLinkSummary BuildSummary(
+        string id,
+        string customerReference,
+        AdDirectoryObjectSummary directoryObject,
+        string linkedAtIso,
+        string? linkedBy)
+        => new(
+            id,
+            customerReference,
+            directoryObject.ObjectGuid,
+            directoryObject.ObjectSid,
+            directoryObject.ObjectType,
+            directoryObject.SamAccountName,
+            directoryObject.UserPrincipalName,
+            directoryObject.DisplayName,
+            directoryObject.DistinguishedName,
+            linkedAtIso,
+            linkedBy);
+
+    private static CustomerAdLinkSummary? FindSummaryByObjectGuid(
+        string objectGuid)
+    {
+        foreach (var entry in LinksByCustomer)
+        {
+            var match = entry.Value.FirstOrDefault(link =>
+                link.ObjectGuid.Equals(
+                    objectGuid,
+                    StringComparison.OrdinalIgnoreCase));
+            if (match is not null)
+            {
+                return match;
+            }
+        }
+
+        return null;
+    }
+
+    private static void RemoveSummary(string id)
+    {
+        foreach (var entry in LinksByCustomer.Values)
+        {
+            entry.RemoveAll(link => link.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
         }
     }
 }

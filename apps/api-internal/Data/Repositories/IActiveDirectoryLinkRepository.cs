@@ -11,6 +11,24 @@ public sealed record CustomerAdLinkUpsertResult(
     string Id,
     bool Changed);
 
+public sealed record PortalUserAdLinkRecord(
+    string Id,
+    string CustomerId,
+    string CustomerReference,
+    string PortalUserId,
+    string ObjectGuid,
+    string ObjectSid,
+    string SamAccountName,
+    string? UserPrincipalName,
+    string DisplayName,
+    string DistinguishedName,
+    string? AdDomain,
+    string? AdProvisioningStatus,
+    DateTime? AdProvisionedAtUtc,
+    DateTime? LastPasswordSyncAtUtc,
+    string? LastPasswordSyncStatus,
+    string? KoxoExportStatus);
+
 public interface IActiveDirectoryLinkRepository
 {
     bool IsPersistent { get; }
@@ -29,6 +47,23 @@ public interface IActiveDirectoryLinkRepository
         string? actorUserId,
         AdDirectoryObjectSummary directoryObject,
         CancellationToken cancellationToken);
+    Task<CustomerAdLinkUpsertResult> UpsertPortalUserLinkAsync(
+        string customerReference,
+        string portalUserId,
+        string? actorUserId,
+        AdDirectoryObjectSummary directoryObject,
+        string? adDomain,
+        string? adProvisioningStatus,
+        DateTime? adProvisionedAtUtc,
+        string? lastPasswordSyncStatus,
+        DateTime? lastPasswordSyncAtUtc,
+        string? koxoExportStatus,
+        CancellationToken cancellationToken);
+    Task<bool> UpdateUserPasswordSyncStatusAsync(
+        string portalUserId,
+        string status,
+        DateTime changedAtUtc,
+        CancellationToken cancellationToken);
     Task<bool> DeleteCustomerLinkAsync(
         string customerReference,
         string linkId,
@@ -40,5 +75,8 @@ public interface IActiveDirectoryLinkRepository
     Task<CustomerAdLinkSummary?> FindUserLinkByEmailAsync(
         string customerReference,
         string email,
+        CancellationToken cancellationToken);
+    Task<PortalUserAdLinkRecord?> FindUserLinkByPortalUserIdAsync(
+        string portalUserId,
         CancellationToken cancellationToken);
 }

@@ -19,6 +19,11 @@ Le modèle reste conceptuel et indépendant d'un moteur SQL. Il devra pouvoir
 Les types ci-dessous sont logiques : `identifier`, `text`, `timestamp`,
 `decimal`, `boolean` et `json` devront être traduits de manière portable.
 
+> Note 2026-07-18 : le modele courant reste suffisant pour V0.26 et pour
+> les operations AD admin V0.25, mais il n'est pas encore aligne sur le
+> domaine enfant `clients.home.bzh`. Le cadrage d'alignement est dans
+> `docs/v0.38/V0.38_SITE_AD_ALIGNMENT.md`.
+
 ## customers
 
 Représente une organisation ou un client contractuel.
@@ -34,6 +39,10 @@ Représente une organisation ou un client contractuel.
 | `updated_at` | timestamp | Dernière modification |
 
 Contraintes : référence externe unique lorsqu'elle est renseignée.
+
+Evolution cible V0.38 : ajouter un `customer_type` et une adresse
+structuree (`address_line_1`, `address_line_2`, `postal_code`) pour
+aligner les donnees site et AD.
 
 ## users
 
@@ -66,6 +75,11 @@ Le rôle par défaut est `client_user`. Le rôle `internal_admin` permet seuleme
 les vues globales en lecture seule de la V0.8. Le rattachement `customer_id`
 reste présent pour compatibilité du schéma, mais il n'est jamais utilisé comme
 autorité métier pour un administrateur interne.
+
+Evolution cible V0.38 : completer `users` / `portal_users` avec
+`personal_title`, `given_name`, `surname`, `initials`, `phone` et
+`is_primary_contact`, puis lier un compte AD par utilisateur plutot que
+par customer seul.
 
 ## portal_sessions
 

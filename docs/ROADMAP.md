@@ -336,11 +336,10 @@ sequence depuis V0.9 / V0.18, sans encore sortir de l'OU de test :
   progressive de `OU=TEST_SITE_WEB`, prerequis a la mise en prod
   V1.0 RC, voir
   [`AD_PRODUCTION_MIGRATION.md`](AD_PRODUCTION_MIGRATION.md). Point cle
-  identifie : la sortie d'OU exige une PR de code (levee du
-  `RequiredTestOuRoot` hardcode dans
-  `apps/api-internal/Data/Configuration/AdRuntimeConfiguration.cs`),
-  pas seulement une reconfiguration env. Procedure executee en V1.0 RC,
-  pas en V0.25 ;
+  identifie a l'epoque : la sortie d'OU exigeait une levee du
+  garde-fou `RequiredTestOuRoot`, plus tard remplacee dans le code par
+  `AD_REQUIRED_OU_ROOT` + `AD_ALLOWED_ROOTS`. Procedure executee en
+  V1.0 RC, pas en V0.25 ;
 - **brique 1 livree 2026-06-30** : changement de mot de passe AD cote
   client (page `/password`), derriere flag
   `AD_PASSWORD_CHANGE_ENABLED=true|false` (defaut `false`), policy AD
@@ -623,39 +622,62 @@ canal e-mail comme premier vrai canal externe production-grade.
 
 ## Jalon V0.31 provisioning AD reel hors OU de test
 
-Statut : **a cadrer, faisable sans la cible R740xd** (depend de la
-disponibilite de l'AD `home.bzh`, deja utilise en recette V0.25).
+Statut : **base technique deja livree dans le depot, bascule infra encore
+non executee**. Le domaine enfant `clients.home.bzh` existe depuis le
+2026-07-18, mais le rollout hors `OU=TEST_SITE_WEB` reste a jouer.
 
-Execution effective de la procedure documentee en V0.25 brique 3
-(`docs/AD_PRODUCTION_MIGRATION.md`). Sort definitivement de
-`OU=TEST_SITE_WEB,DC=home,DC=bzh` pour cibler une **OU de production**
-validee, sur le meme AD que la recette V0.25.
+Execution effective de la procedure documentee dans
+[`AD_PRODUCTION_MIGRATION.md`](AD_PRODUCTION_MIGRATION.md). Sort
+definitivement de `OU=TEST_SITE_WEB,DC=home,DC=bzh` pour cibler une racine
+validee dans `clients.home.bzh`.
 
-- **PR code de levee** : remplacer
-  `AdRuntimeConfiguration.RequiredTestOuRoot` (`const string` hardcode
-  ligne 41 de `apps/api-internal/Data/Configuration/AdRuntimeConfiguration.cs`)
-  par une variable d'environnement `AD_REQUIRED_OU_ROOT` + allowlist
-  `AD_ALLOWED_ROOTS` (liste blanche de DN racines acceptees) ;
-- **option A** (recommandee par la procedure brique 3) : bascule
-  franche par client, re-provisioning sous nouvelle OU prod,
-  invalidation du `customer_ad_links.distinguished_name` ancien,
-  audit `admin.customers.ad_users.migrate_root` ;
-- **option B** : per-customer `ad_ou_override`, non implementee en
-  V0.31 sauf besoin avere ;
-- tests des 4 modes AD (`disabled`, `mock`, `read_only`,
-  `controlled_write`) sous la nouvelle OU ;
-- recette utilisateur sur 1 client temoin (`CLI-DEMO-0060` ou
-  equivalent) avec rejouage des cas V0.25 (search / create / rename /
-  move / groups / password) ;
-- mise a jour du seed mock pour refleter la nouvelle racine sans
-  casser les tests `read_only` en developpement ;
-- mode `live` AD n'est toujours pas necessaire :
-  `controlled_write` reste le mode cible. La "vraie" production AD est
-  livree quand V0.31 valide la nouvelle OU racine et que V1.0 RC
-  ouvre l'OU au premier client reel.
+- les variables `AD_REQUIRED_OU_ROOT` et `AD_ALLOWED_ROOTS` sont deja
+  supportees par le code courant ;
+- il n'y a plus de PR de levee de garde-fou a preparer avant la bascule ;
+- le travail restant est surtout :
+  - aligner la bascule sur `OU=Clients,DC=clients,DC=home,DC=bzh`
+  - creer/valider le compte de service
+  - verifier les droits sur les groupes `GG_*` du domaine parent
+  - configurer `AD_DOMAIN`, `AD_CLIENTS_OU_DN`, `AD_REQUIRED_OU_ROOT`,
+    `AD_ALLOWED_ROOTS`
+  - rejouer les cas V0.25 sur la nouvelle racine
+- le mode cible reste `controlled_write` ; aucun mode `live` distinct n'est
+  requis.
 
-La V0.31 ne couvre pas le hardware R740xd. Elle valide uniquement que
-le code et la procedure tiennent quand on quitte l'OU de test.
+Limite importante : ce jalon ne couvre encore que les operations AD admin
+de type V0.25. Le modele `customer_ad_links` reste centre sur le customer
+et ne couvre pas encore l'alignement multi-utilisateur V0.38.
+
+## Jalon V0.38 alignement donnees site -> AD `clients.home.bzh`
+
+Statut : **implementation en cours dans le depot**. Le domaine enfant
+existe ; l'alignement du modele de donnees et du signup est maintenant
+branche sur le parcours de definition du mot de passe.
+
+Objectif :
+
+- aligner les donnees `customers`, `portal_users`, `signup_pending` et
+  `customer_ad_links` sur les besoins reels de l'AD cible ;
+- preparer un signup structure et, a terme, multi-utilisateur ;
+- brancher la creation AD au `set-password` plutot qu'a l'approbation admin ;
+- preparer le suivi distinct des etats AD et KoXo.
+
+Points figes :
+
+- domaine cible : `clients.home.bzh`
+- racine cible : `OU=Clients,DC=clients,DC=home,DC=bzh`
+- structure cible : `OU=<CUSTOMER_REFERENCE>/Users|Disabled`
+- groupes de securite cibles : `OU=SecurityGroups,OU=Kermaria,DC=home,DC=bzh`
+- Kermaria reste la source de verite
+- `employeeNumber = customerReference`
+- `userPrincipalName = <sAMAccountName>@clients.home.bzh`
+- creation AD au `set-password`
+
+Point d'entree documentaire :
+
+- `docs/v0.38/V0.38_SITE_AD_ALIGNMENT.md`
+- `docs/v0.38/V0.38_KOXO_SIGNUP_INTEGRATION.md`
+- `docs/v0.38/V0.38_KOXO_DATA_CONTRACTS.md`
 
 ## Jalon V0.33 contenus administrables
 
@@ -793,6 +815,32 @@ Correctifs inclus dans le meme jalon :
 - les erreurs portail sur panier / paiement / resiliation propagent des
   messages plus utiles et la reference de correlation, au lieu du
   message generique uniforme.
+
+## Jalon V0.39 vitrine publique et tunnel de conversion
+
+Statut : **implante dans le depot**. Documentation dediee :
+[`V0.39_VITRINE_TUNNEL_PUBLIC.md`](V0.39_VITRINE_TUNNEL_PUBLIC.md).
+
+La V0.39 ne touche ni le checkout, ni les abonnements, ni le schema SQL.
+Elle reprend le parcours public deja ouvert par V0.27, V0.32 et V0.33 pour
+le rendre plus lisible en acquisition :
+
+- page `/` recentree sur la promesse, la reassurance et les points d'entree ;
+- header public moins centre sur `Connexion` et plus centre sur les offres /
+  l'inscription / le contact selon le contexte ;
+- `/offres` lue d'abord en cartes packs, puis en comparatif detaille ;
+- reprise du contexte pack (`pack`, `commitment`, `payment`, `offer`) jusqu'a
+  `/contact` et `/signup` ;
+- resume du pack visible sur les pages de contact et d'inscription ;
+- etapes du parcours d'ouverture explicitees sur `/signup` ;
+- metadata publiques et JSON-LD renforces.
+
+La V0.39 ne transforme pas le site public en CMS libre :
+
+- aucun nouveau contenu admin-editable n'est ajoute ;
+- les nouveaux blocs de la homepage restent codes en dur ;
+- `managed_content_entries` continue de couvrir uniquement le legal,
+  `a-propos` et les fiches packs V0.33.
 
 ## Jalon V1.0 beta 1 test de deploiement sur la cible R740xd
 

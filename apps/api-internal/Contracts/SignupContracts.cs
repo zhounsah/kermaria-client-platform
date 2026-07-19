@@ -22,15 +22,37 @@ public sealed record PendingPackSelectionSummary(
     string CreatedAt,
     SignupPackSelectionSnapshot Snapshot);
 
-// V0.26 : contrats de l'inscription self-service. La vérification
-// hCaptcha et les rate limits IP sont assurés côté webportal ; l'API ne
-// reçoit que les données métier + l'adresse source pour l'audit.
+public sealed record SignupCustomerData(
+    string? CustomerType,
+    string? DisplayName,
+    string? BillingEmail,
+    string? Phone,
+    string? AddressLine1,
+    string? AddressLine2,
+    string? PostalCode,
+    string? City,
+    string? Country);
+
+public sealed record SignupUserData(
+    string? PersonalTitle,
+    string? GivenName,
+    string? Surname,
+    string? Initials,
+    string? DisplayName,
+    string? Email,
+    string? Phone,
+    bool? IsPrimaryContact);
+
+// V0.38 : l'inscription reste mono-utilisateur a ce stade, mais le contrat
+// public devient structure pour preparer l'alignement site -> AD.
 public sealed record SignupSubmitPayload(
     string? CompanyName,
     string? ContactName,
     string? Email,
     string? Phone,
     string? Message,
+    SignupCustomerData? Customer,
+    SignupUserData? PrimaryUser,
     SignupPackSelectionSnapshot? PackSelection,
     string? SourceAddress,
     string? UserAgent);
@@ -40,6 +62,18 @@ public sealed record SignupVerifyPayload(string? Token);
 public sealed record SignupSetPasswordPayload(string? Token, string? Password);
 
 public sealed record SignupRejectPayload(string? Reason);
+
+public sealed record SignupAdminInitializePasswordPayload(string? Password);
+
+public sealed record SignupAdminAccountAccess(
+    string? CustomerReference,
+    bool PasswordDefined,
+    string? PasswordSetupExpiresAt,
+    string? AdProvisioningStatus,
+    string? LastPasswordSyncStatus,
+    string? KoxoExportStatus,
+    string? SamAccountName,
+    string? UserPrincipalName);
 
 public sealed record SignupAdminSummary(
     string Id,
@@ -66,4 +100,7 @@ public sealed record SignupAdminDetail(
     string CreatedAt,
     string UpdatedAt,
     string? ApprovedAt,
-    string? RejectedAt);
+    string? RejectedAt,
+    SignupCustomerData? Customer,
+    SignupUserData? PrimaryUser,
+    SignupAdminAccountAccess? AccountAccess);

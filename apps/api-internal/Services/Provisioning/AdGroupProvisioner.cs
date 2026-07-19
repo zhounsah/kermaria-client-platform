@@ -136,6 +136,10 @@ public sealed class MockAdGroupProvisioner : IAdGroupProvisioner
 
 public sealed class LdapAdGroupProvisioner : IAdGroupProvisioner
 {
+    private const int AdsGroupTypeGlobal = 0x00000002;
+    private const int AdsGroupTypeDomainLocal = 0x00000004;
+    private const int AdsGroupTypeUniversal = 0x00000008;
+
     private readonly AdRuntimeConfiguration _configuration;
     private readonly ILogger<LdapAdGroupProvisioner> _logger;
 
@@ -233,8 +237,19 @@ public sealed class LdapAdGroupProvisioner : IAdGroupProvisioner
         try
         {
             using var group = BindEntry(normalizedGroupDn);
-            group.RefreshCache(["member"]);
+            group.RefreshCache(["member", "groupType"]);
             var members = group.Properties["member"];
+            var groupScope = ResolveGroupScope(group);
+            var groupDomain = _configuration.ResolveDomainForDistinguishedName(
+                normalizedGroupDn);
+            var userDomain = _configuration.ResolveDomainForDistinguishedName(
+                normalizedUserDn);
+            var isCrossDomainMembership =
+                !string.IsNullOrWhiteSpace(groupDomain)
+                && !string.IsNullOrWhiteSpace(userDomain)
+                && !groupDomain.Equals(
+                    userDomain,
+                    StringComparison.OrdinalIgnoreCase);
             var alreadyPresent = members.Cast<object>()
                 .Any(member => string.Equals(
                     member?.ToString(),
@@ -249,6 +264,17 @@ public sealed class LdapAdGroupProvisioner : IAdGroupProvisioner
                         StatusCodes.Status200OK,
                         "AD_GROUP_MEMBER_ALREADY_PRESENT",
                         "Active Directory group membership already exists.",
+                        false);
+                }
+
+                // Global groups cannot hold direct members from another domain.
+                if (isCrossDomainMembership
+                    && groupScope == AdSecurityGroupScope.Global)
+                {
+                    return new AdGroupProvisionerResult(
+                        StatusCodes.Status409Conflict,
+                        "AD_GROUP_SCOPE_INCOMPATIBLE",
+                        "Cross-domain provisioning requires the target group to be universal or domain-local.",
                         false);
                 }
 
@@ -326,13 +352,53 @@ public sealed class LdapAdGroupProvisioner : IAdGroupProvisioner
 
     private DirectoryEntry BindEntry(string distinguishedName)
     {
+        var ldapPath = _configuration.BuildLdapPath(distinguishedName);
+        if (_configuration.UseCurrentWindowsCredentials)
+        {
+            var entry = new DirectoryEntry(ldapPath);
+            entry.AuthenticationType = AuthenticationTypes.Secure
+                | AuthenticationTypes.Sealing
+                | AuthenticationTypes.Signing;
+            return entry;
+        }
+
         return new DirectoryEntry(
-            $"LDAP://{_configuration.Domain}/{distinguishedName}",
+            ldapPath,
             _configuration.ServiceAccountUsername,
             _configuration.ServiceAccountPassword,
             AuthenticationTypes.Secure
             | AuthenticationTypes.Sealing
             | AuthenticationTypes.Signing);
+    }
+
+    private static AdSecurityGroupScope ResolveGroupScope(
+        DirectoryEntry group)
+    {
+        if (group.Properties["groupType"].Value is null)
+        {
+            return AdSecurityGroupScope.Unknown;
+        }
+
+        var groupType = Convert.ToInt32(
+            group.Properties["groupType"].Value,
+            System.Globalization.CultureInfo.InvariantCulture);
+
+        if ((groupType & AdsGroupTypeUniversal) == AdsGroupTypeUniversal)
+        {
+            return AdSecurityGroupScope.Universal;
+        }
+
+        if ((groupType & AdsGroupTypeDomainLocal) == AdsGroupTypeDomainLocal)
+        {
+            return AdSecurityGroupScope.DomainLocal;
+        }
+
+        if ((groupType & AdsGroupTypeGlobal) == AdsGroupTypeGlobal)
+        {
+            return AdSecurityGroupScope.Global;
+        }
+
+        return AdSecurityGroupScope.Unknown;
     }
 
     private static bool IsDirectoryFailure(Exception exception)
@@ -347,4 +413,12 @@ public sealed class LdapAdGroupProvisioner : IAdGroupProvisioner
     private static bool IsAccessDenied(DirectoryServicesCOMException exception)
         => exception.ErrorCode == unchecked((int)0x80072098)
             || exception.ErrorCode == unchecked((int)0x80070005);
+}
+
+internal enum AdSecurityGroupScope
+{
+    Unknown = 0,
+    DomainLocal = 1,
+    Global = 2,
+    Universal = 3
 }

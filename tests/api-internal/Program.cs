@@ -96,7 +96,7 @@ void VerifyActiveDirectoryPathScope()
             "Le type ActiveDirectoryPathScope est introuvable.");
     var scope = Activator.CreateInstance(
             scopeType,
-            "OU=TEST_SITE_WEB,DC=home,DC=bzh")
+            "OU=Clients,DC=clients,DC=home,DC=bzh")
         ?? throw new InvalidOperationException(
             "Le scope Active Directory ne peut pas etre instancie.");
     var extractCustomerReference = scopeType.GetMethod(
@@ -106,13 +106,13 @@ void VerifyActiveDirectoryPathScope()
 
     var userCustomerReference = extractCustomerReference.Invoke(
         scope,
-        ["CN=test2,OU=Users,OU=CLI-DEMO-0060,OU=10_Customers,OU=TEST_SITE_WEB,DC=home,DC=bzh"]) as string;
+        ["CN=test2,OU=Users,OU=CLI-DEMO-0060,OU=Clients,DC=clients,DC=home,DC=bzh"]) as string;
     var groupCustomerReference = extractCustomerReference.Invoke(
         scope,
-        ["CN=testgroupe1,OU=Groups,OU=CLI-DEMO-0060,OU=10_Customers,OU=TEST_SITE_WEB,DC=home,DC=bzh"]) as string;
+        ["CN=testgroupe1,OU=Groups,OU=CLI-DEMO-0060,OU=Clients,DC=clients,DC=home,DC=bzh"]) as string;
     var disabledCustomerReference = extractCustomerReference.Invoke(
         scope,
-        ["CN=test3,OU=Disabled,OU=CLI-DEMO-0060,OU=10_Customers,OU=TEST_SITE_WEB,DC=home,DC=bzh"]) as string;
+        ["CN=test3,OU=Disabled,OU=CLI-DEMO-0060,OU=Clients,DC=clients,DC=home,DC=bzh"]) as string;
 
     Ensure(
         string.Equals(
@@ -127,7 +127,7 @@ void VerifyActiveDirectoryPathScope()
             disabledCustomerReference,
             "CLI-DEMO-0060",
             StringComparison.Ordinal),
-        "Le scope AD doit extraire la reference client reelle plutot que l'OU 10_Customers.");
+        "Le scope AD doit extraire la reference client reelle directement sous OU=Clients.");
 }
 
 async Task RunMockTestsAsync()
@@ -2975,9 +2975,9 @@ async Task RunMockActiveDirectoryModeTestsAsync()
         {
             ConfigureMockAuthentication(startInfo, "active", "60");
             startInfo.Environment["AD_INTEGRATION_MODE"] = "mock";
-            startInfo.Environment["AD_DOMAIN"] = "home.bzh";
+            startInfo.Environment["AD_DOMAIN"] = "clients.home.bzh";
             startInfo.Environment["AD_CLIENTS_OU_DN"] =
-                "OU=TEST_SITE_WEB,DC=home,DC=bzh";
+                "OU=Clients,DC=clients,DC=home,DC=bzh";
             startInfo.Environment["AD_CONNECT_TIMEOUT_MS"] = "3000";
             startInfo.Environment["AD_QUERY_TIMEOUT_MS"] = "5000";
             startInfo.Environment["AD_MAX_RESULTS"] = "25";
@@ -3243,9 +3243,9 @@ async Task RunReadOnlyActiveDirectoryModeTestsAsync()
         {
             ConfigureMockAuthentication(startInfo, "active", "60");
             startInfo.Environment["AD_INTEGRATION_MODE"] = "read_only";
-            startInfo.Environment["AD_DOMAIN"] = "home.bzh";
+            startInfo.Environment["AD_DOMAIN"] = "clients.home.bzh";
             startInfo.Environment["AD_CLIENTS_OU_DN"] =
-                "OU=TEST_SITE_WEB,DC=home,DC=bzh";
+                "OU=Clients,DC=clients,DC=home,DC=bzh";
             startInfo.Environment["AD_SERVICE_ACCOUNT_USERNAME"] =
                 @"HOME\svc_api_portal_ad";
             startInfo.Environment["AD_SERVICE_ACCOUNT_PASSWORD"] =
@@ -3547,7 +3547,7 @@ async Task VerifyMockActiveDirectoryAdminRoutesAsync(
             "La crÃ©ation AD mock de l'utilisateur ne retourne pas de DN.");
     Ensure(
         createdUserDn.Contains(
-            "OU=Users,OU=CLI-DEMO-0042,OU=10_Customers,OU=TEST_SITE_WEB,DC=home,DC=bzh",
+            "OU=Users,OU=CLI-DEMO-0042,OU=Clients,DC=clients,DC=home,DC=bzh",
             StringComparison.Ordinal),
         "Le DN utilisateur mock doit rester bornÃ© Ã  l'OU autorisÃ©e.");
 
@@ -3677,7 +3677,7 @@ async Task VerifyMockActiveDirectoryAdminRoutesAsync(
             .GetProperty("distinguishedName")
             .GetString()!
             .Contains(
-                "OU=Disabled,OU=CLI-DEMO-0042,OU=10_Customers,OU=TEST_SITE_WEB,DC=home,DC=bzh",
+                "OU=Disabled,OU=CLI-DEMO-0042,OU=Clients,DC=clients,DC=home,DC=bzh",
                 StringComparison.Ordinal),
         "Le dÃ©placement mock vers l'OU Disabled doit rester dans l'OU autorisÃ©e.");
 
@@ -4848,7 +4848,7 @@ async Task<string> InsertCustomerAdLinkAsync(string customerReference)
     var adminUserId = await FindInternalAdminUserIdAsync();
     var samAccountName = $"KERMARIA_{customerReference}_AD_LINK_TEST";
     var distinguishedName =
-        $"CN={samAccountName},OU=Groups,OU={customerReference},OU=10_Customers,OU=TEST_SITE_WEB,DC=home,DC=bzh";
+        $"CN={samAccountName},OU=Groups,OU={customerReference},OU=Clients,DC=clients,DC=home,DC=bzh";
 
     command.CommandText =
         """

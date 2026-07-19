@@ -24,7 +24,7 @@ public sealed class MockActiveDirectoryService : IActiveDirectoryService
         _provisioningMemberships = provisioningMemberships;
         _scope = new ActiveDirectoryPathScope(
             configuration.ClientsOuDn
-            ?? "OU=TEST_SITE_WEB,DC=home,DC=bzh");
+            ?? "OU=Clients,DC=clients,DC=home,DC=bzh");
         SeedFixtures();
     }
 
@@ -508,6 +508,41 @@ public sealed class MockActiveDirectoryService : IActiveDirectoryService
             "Active Directory password changed in mock mode.",
             resolved.Value,
             true));
+    }
+
+    public Task<AdServiceResult<AdDirectoryObjectSummary>> SetUserPasswordAsync(
+        string customerReference,
+        string? samAccountName,
+        string? newPassword,
+        CancellationToken cancellationToken)
+    {
+        var resolved = ResolveBySam(customerReference, samAccountName, "user");
+        if (resolved.Value is null)
+        {
+            return Task.FromResult(resolved);
+        }
+
+        if (string.IsNullOrEmpty(newPassword) || newPassword.Length > 1024)
+        {
+            return Task.FromResult(InvalidObject("INVALID_REQUEST"));
+        }
+
+        lock (_syncRoot)
+        {
+            var current = _objectsByDn[resolved.Value.DistinguishedName];
+            if (current.IsDisabled)
+            {
+                current = current with { IsDisabled = false };
+                _objectsByDn[current.DistinguishedName] = current;
+            }
+
+            return Task.FromResult(new AdServiceResult<AdDirectoryObjectSummary>(
+                StatusCodes.Status200OK,
+                "AD_PASSWORD_SET",
+                "Active Directory password set in mock mode.",
+                ToSummary(current),
+                true));
+        }
     }
 
     public Task<AdServiceResult<IReadOnlyList<AdDirectoryObjectSummary>>> GetUserEffectiveGroupsAsync(

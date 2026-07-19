@@ -11,6 +11,7 @@ using Kermaria.ApiInternal.Services.Bpce;
 using Kermaria.ApiInternal.Services.Email;
 using Kermaria.ApiInternal.Services.Provisioning;
 using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.Identity;
 using MySqlConnector;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -722,7 +723,9 @@ app.MapPost(
         HttpContext context,
         IActiveDirectoryService adService,
         IActiveDirectoryLinkRepository linkRepository,
+        IAuthenticationRepository authenticationRepository,
         IAuthenticationService authenticationService,
+        IPortalPasswordService portalPasswordService,
         IAuditService auditService,
         IAdPasswordRateLimiter rateLimiter,
         AdPasswordRuntimeConfiguration adPasswordConfig) =>
@@ -799,65 +802,92 @@ app.MapPost(
                 statusCode: StatusCodes.Status400BadRequest);
         }
 
-        var link = await linkRepository.FindUserLinkByEmailAsync(
-            session.CustomerReference,
+        var credential = await authenticationRepository.FindUserByEmailAsync(
             session.Email,
             context.RequestAborted);
-        if (link is null)
-        {
-            await RecordAdAuditAsync(
-                context,
-                auditService,
-                "ad.password_change",
-                "refused",
-                "AD_NO_LINK_FOR_USER",
-                "portal_user",
-                session.UserId,
-                session.UserId,
-                session.CustomerId);
-            return Results.Json(
-                new ApiError(
-                    "AD_NO_LINK_FOR_USER",
-                    "Aucun compte Active Directory n'est associe a ce profil.",
-                    context.GetCorrelationId()),
-                statusCode: StatusCodes.Status404NotFound);
-        }
-
-        var result = await adService.ChangeUserPasswordAsync(
-            link.CustomerReference,
-            link.SamAccountName,
-            request.CurrentPassword,
-            request.NewPassword,
-            context.RequestAborted);
-
-        var failed = result.StatusCode >= 400 || !result.Changed;
-        if (failed)
+        if (credential is null
+            || string.IsNullOrWhiteSpace(credential.PasswordHash)
+            || portalPasswordService.Verify(
+                credential.Id,
+                credential.PasswordHash,
+                request.CurrentPassword) == PasswordVerificationResult.Failed)
         {
             rateLimiter.RegisterFailure(session.UserId, now);
-            var locked = rateLimiter.CheckUser(session.UserId, now)
-                == AdPasswordRateLimitDecision.Locked;
             await RecordAdAuditAsync(
                 context,
                 auditService,
                 "ad.password_change",
                 "refused",
-                locked ? "AD_PASSWORD_CHANGE_LOCKED" : result.Code,
+                "INVALID_CURRENT_PASSWORD",
                 "portal_user",
                 session.UserId,
                 session.UserId,
                 session.CustomerId);
-
             return Results.Json(
                 new ApiError(
-                    locked ? "AD_PASSWORD_CHANGE_LOCKED" : "AD_PASSWORD_CHANGE_FAILED",
-                    locked
-                        ? "Trop de tentatives. Reessayez plus tard."
-                        : "Le mot de passe ne respecte pas la politique du domaine ou le mot de passe actuel est incorrect.",
+                    "INVALID_CURRENT_PASSWORD",
+                    "Le mot de passe actuel est incorrect.",
                     context.GetCorrelationId()),
-                statusCode: locked
-                    ? StatusCodes.Status429TooManyRequests
-                    : StatusCodes.Status400BadRequest);
+                statusCode: StatusCodes.Status400BadRequest);
         }
+
+        var link = await linkRepository.FindUserLinkByPortalUserIdAsync(
+            session.UserId,
+            context.RequestAborted);
+        if (link is not null)
+        {
+            var result = await adService.SetUserPasswordAsync(
+                link.CustomerReference,
+                link.SamAccountName,
+                request.NewPassword,
+                context.RequestAborted);
+            var failed = result.StatusCode >= 400 || !result.Changed;
+            if (failed)
+            {
+                rateLimiter.RegisterFailure(session.UserId, now);
+                await linkRepository.UpdateUserPasswordSyncStatusAsync(
+                    session.UserId,
+                    "failed",
+                    now,
+                    context.RequestAborted);
+                var locked = rateLimiter.CheckUser(session.UserId, now)
+                    == AdPasswordRateLimitDecision.Locked;
+                await RecordAdAuditAsync(
+                    context,
+                    auditService,
+                    "ad.password_change",
+                    "refused",
+                    locked ? "AD_PASSWORD_CHANGE_LOCKED" : result.Code,
+                    "portal_user",
+                    session.UserId,
+                    session.UserId,
+                    session.CustomerId);
+
+                return Results.Json(
+                    new ApiError(
+                        locked ? "AD_PASSWORD_CHANGE_LOCKED" : "AD_PASSWORD_CHANGE_FAILED",
+                        locked
+                            ? "Trop de tentatives. Reessayez plus tard."
+                            : "Le mot de passe ne respecte pas la politique du domaine.",
+                        context.GetCorrelationId()),
+                    statusCode: locked
+                        ? StatusCodes.Status429TooManyRequests
+                        : StatusCodes.Status400BadRequest);
+            }
+
+            await linkRepository.UpdateUserPasswordSyncStatusAsync(
+                session.UserId,
+                "succeeded",
+                now,
+                context.RequestAborted);
+        }
+
+        await authenticationRepository.UpdatePasswordHashAsync(
+            session.UserId,
+            portalPasswordService.HashPassword(
+                session.UserId,
+                request.NewPassword),
+            context.RequestAborted);
 
         rateLimiter.Reset(session.UserId);
         await RecordAdAuditAsync(
@@ -873,8 +903,12 @@ app.MapPost(
 
         return Results.Json(
             new AdPasswordChangeResponse(
-                "AD_PASSWORD_CHANGED",
-                "Le mot de passe Active Directory a ete change.",
+                link is null
+                    ? "PORTAL_PASSWORD_CHANGED"
+                    : "AD_PASSWORD_CHANGED",
+                link is null
+                    ? "Le mot de passe du portail a ete change."
+                    : "Le mot de passe du portail a ete change et synchronise avec Active Directory.",
                 adService.ModeName,
                 context.GetCorrelationId()),
             statusCode: StatusCodes.Status200OK);
@@ -2767,6 +2801,104 @@ app.MapPost(
                 new ApiError(
                     result.Code, result.Message, context.GetCorrelationId()),
                 statusCode: statusCode);
+        }
+
+        return Results.Ok(new
+        {
+            code = result.Code,
+            message = result.Message,
+            correlation_id = context.GetCorrelationId()
+        });
+    });
+app.MapPost(
+    "/internal/admin/signups/{id}/initialize-password",
+    async (
+        string id,
+        HttpContext context,
+        ISignupService signupService,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.signups.password_initialize.request");
+        var payload =
+            await ReadPayload<SignupAdminInitializePasswordPayload>(context);
+        var result = await signupService.InitializePasswordAsync(
+            id,
+            payload?.Password,
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "signup.password_initialized",
+                result.Succeeded ? "success" : "refused",
+                ReasonCode: result.Code,
+                TargetType: "signup",
+                TargetReference: id,
+                ActorUserId: actor.UserId,
+                SourceAddress:
+                    context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+
+        if (!result.Succeeded)
+        {
+            return Results.Json(
+                new ApiError(
+                    result.Code,
+                    result.Message,
+                    context.GetCorrelationId()),
+                statusCode: ResolveSignupAdminMutationStatusCode(result.Code));
+        }
+
+        return Results.Ok(new
+        {
+            code = result.Code,
+            message = result.Message,
+            correlation_id = context.GetCorrelationId()
+        });
+    });
+app.MapPost(
+    "/internal/admin/signups/{id}/resend-password-email",
+    async (
+        string id,
+        HttpContext context,
+        ISignupService signupService,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.signups.password_email_resend.request");
+        var result = await signupService.ResendPasswordSetupEmailAsync(
+            id,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "signup.password_email_resent",
+                result.Succeeded ? "success" : "refused",
+                ReasonCode: result.Code,
+                TargetType: "signup",
+                TargetReference: id,
+                ActorUserId: actor.UserId,
+                SourceAddress:
+                    context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+
+        if (!result.Succeeded)
+        {
+            return Results.Json(
+                new ApiError(
+                    result.Code,
+                    result.Message,
+                    context.GetCorrelationId()),
+                statusCode: ResolveSignupAdminMutationStatusCode(result.Code));
         }
 
         return Results.Ok(new
@@ -5014,6 +5146,16 @@ static async Task<T?> ReadPayload<T>(HttpContext context)
     }
 }
 
+static int ResolveSignupAdminMutationStatusCode(string code)
+    => code switch
+    {
+        "SIGNUP_NOT_FOUND" => StatusCodes.Status404NotFound,
+        "INVALID_PASSWORD" or "INVALID_REQUEST" => StatusCodes.Status400BadRequest,
+        _ when code.StartsWith("EMAIL_", StringComparison.Ordinal)
+            => StatusCodes.Status502BadGateway,
+        _ => StatusCodes.Status409Conflict
+    };
+
 static string[] GetDiagnosticSecretValues(IConfiguration configuration)
     => new[]
         {
@@ -5071,6 +5213,8 @@ static int MapCustomerAdProvisioningStatusCode(string code)
             StatusCodes.Status403Forbidden,
         "AD_TARGET_OUTSIDE_ALLOWED_ROOTS" =>
             StatusCodes.Status403Forbidden,
+        "AD_GROUP_SCOPE_INCOMPATIBLE" =>
+            StatusCodes.Status409Conflict,
         "AD_READ_ONLY" => StatusCodes.Status403Forbidden,
         "AD_CONFIGURATION_INVALID" =>
             StatusCodes.Status503ServiceUnavailable,

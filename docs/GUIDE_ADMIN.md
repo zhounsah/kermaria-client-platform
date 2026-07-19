@@ -195,6 +195,12 @@ Menu **Relation client > Demandes d'inscription**.
 Le detail fonctionnel reste documente dans
 [`V0.26_USER_GUIDE_SIGNUP.md`](V0.26_USER_GUIDE_SIGNUP.md).
 
+Important : meme depuis la creation du domaine enfant
+`clients.home.bzh` (2026-07-18), ce workflow reste le workflow V0.26
+actuel : il cree des comptes portail, pas encore des comptes AD
+automatiques. L'alignement des donnees est documente dans
+[`v0.38/V0.38_SITE_AD_ALIGNMENT.md`](v0.38/V0.38_SITE_AD_ALIGNMENT.md).
+
 ---
 
 ## 7. Active Directory - `/admin/customers/[ref]/ad`
@@ -210,6 +216,12 @@ Menu **Relation client > Clients** puis fiche client.
 Le detail du cadrage AD reste documente dans
 [`V0.25_AD_FINALISATION.md`](V0.25_AD_FINALISATION.md) et
 [`AD_PRODUCTION_MIGRATION.md`](AD_PRODUCTION_MIGRATION.md).
+
+Pour la cible `clients.home.bzh` et le futur alignement signup/site/AD,
+voir aussi :
+
+- [`v0.38/V0.38_SITE_AD_ALIGNMENT.md`](v0.38/V0.38_SITE_AD_ALIGNMENT.md)
+- [`v0.38/V0.38_KOXO_SIGNUP_INTEGRATION.md`](v0.38/V0.38_KOXO_SIGNUP_INTEGRATION.md)
 
 ---
 

@@ -20,7 +20,7 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
         _logger = logger;
         _scope = new ActiveDirectoryPathScope(
             configuration.ClientsOuDn
-            ?? "OU=TEST_SITE_WEB,DC=home,DC=bzh");
+            ?? "OU=Clients,DC=clients,DC=home,DC=bzh");
     }
 
     public string ModeName => _configuration.ModeName;
@@ -162,6 +162,9 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
 
         return Task.FromResult(ExecuteWrite(() =>
         {
+            EnsureCustomerContainers(
+                normalizedCustomerReference,
+                includeGroups: false);
             using var parent = BindEntry(
                 _scope.BuildUsersOuDn(normalizedCustomerReference));
             using var user = parent.Children.Add(
@@ -185,6 +188,38 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
             if (!string.IsNullOrWhiteSpace(request.Description))
             {
                 user.Properties["description"].Value = request.Description.Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.PersonalTitle))
+            {
+                user.Properties["title"].Value = request.PersonalTitle.Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Initials))
+            {
+                user.Properties["initials"].Value = request.Initials.Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Email))
+            {
+                user.Properties["mail"].Value = request.Email.Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Phone))
+            {
+                user.Properties["telephoneNumber"].Value =
+                    request.Phone.Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.CompanyName))
+            {
+                user.Properties["company"].Value = request.CompanyName.Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.EmployeeNumber))
+            {
+                user.Properties["employeeNumber"].Value =
+                    request.EmployeeNumber.Trim();
             }
 
             user.CommitChanges();
@@ -228,6 +263,9 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
 
         return Task.FromResult(ExecuteWrite(() =>
         {
+            EnsureCustomerContainers(
+                normalizedCustomerReference,
+                includeGroups: true);
             using var parent = BindEntry(
                 _scope.BuildGroupsOuDn(normalizedCustomerReference));
             using var group = parent.Children.Add(
@@ -377,6 +415,9 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
         var targetDn = $"CN={ActiveDirectoryPathScope.EscapeRdnValue(resolvedUser.Value.SamAccountName)},{targetParentDn}";
         return Task.FromResult(ExecuteWrite(() =>
         {
+            EnsureCustomerContainers(
+                resolvedUser.Value.CustomerReference,
+                includeGroups: false);
             using var user = BindEntry(resolvedUser.Value.DistinguishedName);
             using var targetParent = BindEntry(targetParentDn);
             user.MoveTo(
@@ -520,6 +561,9 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
 
         return Task.FromResult(ExecuteWrite(() =>
         {
+            EnsureCustomerContainers(
+                targetCustomerReference,
+                includeGroups: false);
             using var user = BindEntry(resolvedSummary.DistinguishedName);
             using var targetParent = BindEntry(targetParentDn);
             user.MoveTo(targetParent);
@@ -602,6 +646,73 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
         {
             _logger.LogWarning(
                 "Active Directory password change failed without exposing target details exception_type {ExceptionType}",
+                exception.GetType().Name);
+            return Task.FromResult(new AdServiceResult<AdDirectoryObjectSummary>(
+                StatusCodes.Status503ServiceUnavailable,
+                "AD_UNAVAILABLE",
+                "Active Directory is temporarily unavailable.",
+                resolvedUser.Value,
+                false));
+        }
+    }
+
+    public Task<AdServiceResult<AdDirectoryObjectSummary>> SetUserPasswordAsync(
+        string customerReference,
+        string? samAccountName,
+        string? newPassword,
+        CancellationToken cancellationToken)
+    {
+        if (!_configuration.WritesEnabled)
+        {
+            return Task.FromResult(ReadOnlyResult());
+        }
+
+        var resolvedUser = ResolveBySam(customerReference, samAccountName, "user");
+        if (resolvedUser.Value is null)
+        {
+            return Task.FromResult(resolvedUser);
+        }
+
+        if (string.IsNullOrEmpty(newPassword) || newPassword.Length > 1024)
+        {
+            return Task.FromResult(InvalidObject());
+        }
+
+        try
+        {
+            using var user = BindEntry(resolvedUser.Value.DistinguishedName);
+            user.Invoke("SetPassword", [newPassword]);
+            if (resolvedUser.Value.IsDisabled)
+            {
+                user.Properties["userAccountControl"].Value = 512;
+            }
+
+            user.CommitChanges();
+            user.RefreshCache();
+            return Task.FromResult(new AdServiceResult<AdDirectoryObjectSummary>(
+                StatusCodes.Status200OK,
+                "AD_PASSWORD_SET",
+                "Active Directory password set.",
+                MapEntry(user),
+                true));
+        }
+        catch (System.Reflection.TargetInvocationException exception)
+            when (exception.InnerException is not null)
+        {
+            _logger.LogWarning(
+                "Active Directory password set refused without exposing details exception_type {ExceptionType}",
+                exception.InnerException.GetType().Name);
+            return Task.FromResult(new AdServiceResult<AdDirectoryObjectSummary>(
+                StatusCodes.Status400BadRequest,
+                "AD_PASSWORD_CHANGE_FAILED",
+                "Le mot de passe ne respecte pas la politique du domaine.",
+                resolvedUser.Value,
+                false));
+        }
+        catch (Exception exception) when (IsDirectoryFailure(exception))
+        {
+            _logger.LogWarning(
+                "Active Directory password set failed without exposing target details exception_type {ExceptionType}",
                 exception.GetType().Name);
             return Task.FromResult(new AdServiceResult<AdDirectoryObjectSummary>(
                 StatusCodes.Status503ServiceUnavailable,
@@ -759,6 +870,20 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
             objectType,
             normalizedCustomerReference);
         var filter = BuildSearchFilter(objectType, normalizedQuery);
+        if (!DirectoryObjectExists(rootDn))
+        {
+            _logger.LogInformation(
+                "Active Directory search root does not exist yet root_dn {RootDn}; returning empty result.",
+                rootDn);
+            return new AdServiceResult<IReadOnlyList<AdDirectoryObjectSummary>>(
+                StatusCodes.Status200OK,
+                objectType == "user"
+                    ? "AD_USERS_FOUND"
+                    : "AD_GROUPS_FOUND",
+                "Active Directory search completed.",
+                Array.Empty<AdDirectoryObjectSummary>());
+        }
+
         try
         {
             using var root = BindEntry(rootDn);
@@ -1133,8 +1258,18 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
 
     private DirectoryEntry BindEntry(string distinguishedName)
     {
+        var ldapPath = _configuration.BuildLdapPath(distinguishedName);
+        if (_configuration.UseCurrentWindowsCredentials)
+        {
+            var entry = new DirectoryEntry(ldapPath);
+            entry.AuthenticationType = AuthenticationTypes.Secure
+                | AuthenticationTypes.Sealing
+                | AuthenticationTypes.Signing;
+            return entry;
+        }
+
         return new DirectoryEntry(
-            $"LDAP://{_configuration.Domain}/{distinguishedName}",
+            ldapPath,
             _configuration.ServiceAccountUsername,
             _configuration.ServiceAccountPassword,
             AuthenticationTypes.Secure
@@ -1166,6 +1301,102 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
         searcher.PropertiesToLoad.Add("displayName");
         searcher.PropertiesToLoad.Add("userAccountControl");
         return searcher;
+    }
+
+    private void EnsureCustomerContainers(
+        string customerReference,
+        bool includeGroups)
+    {
+        EnsureOrganizationalUnitExists(_scope.ClientsOuDn);
+        EnsureOrganizationalUnitExists(_scope.BuildCustomerOuDn(customerReference));
+        EnsureOrganizationalUnitExists(_scope.BuildUsersOuDn(customerReference));
+        EnsureOrganizationalUnitExists(_scope.BuildDisabledOuDn(customerReference));
+
+        if (includeGroups)
+        {
+            EnsureOrganizationalUnitExists(_scope.BuildGroupsOuDn(customerReference));
+        }
+    }
+
+    private void EnsureOrganizationalUnitExists(string distinguishedName)
+    {
+        var normalizedDn = _scope.NormalizeDistinguishedName(distinguishedName)
+            ?? throw new InvalidOperationException(
+                "The Active Directory organizational unit distinguishedName is unavailable.");
+        if (DirectoryObjectExists(normalizedDn))
+        {
+            return;
+        }
+
+        var separatorIndex = normalizedDn.IndexOf(',');
+        if (separatorIndex <= 0 || separatorIndex == normalizedDn.Length - 1)
+        {
+            throw new InvalidOperationException(
+                "The Active Directory organizational unit parent scope is unavailable.");
+        }
+
+        var rdn = normalizedDn[..separatorIndex];
+        var ouName = TryReadRdnValue(rdn, "OU")
+            ?? throw new InvalidOperationException(
+                "The Active Directory organizational unit name is unavailable.");
+        var parentDn = normalizedDn[(separatorIndex + 1)..];
+
+        EnsureParentContainerExists(parentDn);
+
+        try
+        {
+            using var parent = BindEntry(parentDn);
+            using var entry = parent.Children.Add(
+                $"OU={ActiveDirectoryPathScope.EscapeRdnValue(ouName)}",
+                "organizationalUnit");
+            entry.CommitChanges();
+        }
+        catch (DirectoryServicesCOMException exception)
+            when (IsAlreadyExists(exception))
+        {
+        }
+    }
+
+    private void EnsureParentContainerExists(string distinguishedName)
+    {
+        var normalizedDn = _scope.NormalizeDistinguishedName(distinguishedName)
+            ?? throw new InvalidOperationException(
+                "The Active Directory parent distinguishedName is unavailable.");
+        if (DirectoryObjectExists(normalizedDn))
+        {
+            return;
+        }
+
+        var separatorIndex = normalizedDn.IndexOf(',');
+        if (separatorIndex <= 0 || separatorIndex == normalizedDn.Length - 1)
+        {
+            throw new InvalidOperationException(
+                "The Active Directory parent scope is unavailable.");
+        }
+
+        var rdn = normalizedDn[..separatorIndex];
+        if (TryReadRdnValue(rdn, "OU") is null)
+        {
+            throw new InvalidOperationException(
+                "The Active Directory parent container is unavailable.");
+        }
+
+        EnsureOrganizationalUnitExists(normalizedDn);
+    }
+
+    private bool DirectoryObjectExists(string distinguishedName)
+    {
+        try
+        {
+            using var entry = BindEntry(distinguishedName);
+            entry.RefreshCache(["distinguishedName"]);
+            return true;
+        }
+        catch (DirectoryServicesCOMException exception)
+            when (IsNoSuchObject(exception))
+        {
+            return false;
+        }
     }
 
     private AdDirectoryObjectSummary MapEntry(DirectoryEntry entry)
@@ -1247,6 +1478,23 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
             or COMException
             or InvalidOperationException
             or UnauthorizedAccessException;
+
+    private static string? TryReadRdnValue(string part, string expectedKey)
+    {
+        var separatorIndex = part.IndexOf('=');
+        if (separatorIndex <= 0 || separatorIndex == part.Length - 1)
+        {
+            return null;
+        }
+
+        var key = part[..separatorIndex].Trim();
+        if (!key.Equals(expectedKey, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return part[(separatorIndex + 1)..].Trim();
+    }
 
     private static bool IsAlreadyExists(DirectoryServicesCOMException exception)
         => exception.ErrorCode == unchecked((int)0x80072035);

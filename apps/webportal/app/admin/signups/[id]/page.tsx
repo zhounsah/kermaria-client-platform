@@ -46,6 +46,12 @@ export default async function AdminSignupDetailPage({ params }: PageProps) {
   }
 
   const signup = result.data;
+  const decisionDescription = signup.status === "approved"
+    ? "Le compte client existe déjà. Tant que le mot de passe initial n'a pas ete défini, vous pouvez l'initialiser vous-même ou renvoyer un nouveau lien. Cette définition de mot de passe finalise aussi l'identité dans clients.home.bzh quand l'écriture AD est active."
+    : "L'approbation créé le client et l'utilisateur portail, puis envoie un lien de définition du mot de passe. L'identité Active Directory n'est creee qu'au moment de cette définition dans clients.home.bzh.";
+  const decisionTitle = signup.status === "approved"
+    ? "Accès en attente"
+    : "Decision";
 
   return (
     <>
@@ -56,7 +62,7 @@ export default async function AdminSignupDetailPage({ params }: PageProps) {
             tone={signupStatusTone(signup.status)}
           />
         }
-        description="Détail de la demande et décision de validation."
+        description="Detail de la demande et trajectoire d'ouverture du compte."
         eyebrow="Relation client"
         title={signup.companyName}
       />
@@ -67,46 +73,96 @@ export default async function AdminSignupDetailPage({ params }: PageProps) {
 
       <SectionCard ariaLabel="Informations de la demande">
         <SectionHeading title="Informations transmises" />
-        <dl className="detail-grid">
-          <div>
-            <dt>Société</dt>
-            <dd>{signup.companyName}</dd>
-          </div>
-          <div>
-            <dt>Contact</dt>
-            <dd>{signup.contactName}</dd>
-          </div>
-          <div>
-            <dt>E-mail</dt>
-            <dd>{signup.email}</dd>
-          </div>
-          <div>
-            <dt>Téléphone</dt>
-            <dd>{signup.phone ?? "—"}</dd>
-          </div>
-          <div>
-            <dt>Adresse IP source</dt>
-            <dd>
-              <code>{signup.sourceAddress ?? "—"}</code>
-            </dd>
-          </div>
-          <div>
-            <dt>Reçue le</dt>
-            <dd>{formatDateTime(signup.createdAt)}</dd>
-          </div>
-          {signup.approvedAt ? (
+
+        <div className="signup-message-block">
+          <h3>Structure cliente</h3>
+          <dl className="detail-grid">
             <div>
-              <dt>Approuvée le</dt>
-              <dd>{formatDateTime(signup.approvedAt)}</dd>
+              <dt>Type</dt>
+              <dd>{localizeCustomerType(signup.customer?.customerType)}</dd>
             </div>
-          ) : null}
-          {signup.rejectedAt ? (
             <div>
-              <dt>Refusée le</dt>
-              <dd>{formatDateTime(signup.rejectedAt)}</dd>
+              <dt>Societe</dt>
+              <dd>{signup.customer?.displayName ?? signup.companyName}</dd>
             </div>
-          ) : null}
-        </dl>
+            <div>
+              <dt>E-mail de facturation</dt>
+              <dd>{signup.customer?.billingEmail ?? signup.email}</dd>
+            </div>
+            <div>
+              <dt>Telephone</dt>
+              <dd>{signup.customer?.phone ?? signup.phone ?? "-"}</dd>
+            </div>
+            <div>
+              <dt>Adresse</dt>
+              <dd>{formatAddress(signup)}</dd>
+            </div>
+            <div>
+              <dt>Adresse IP source</dt>
+              <dd>
+                <code>{signup.sourceAddress ?? "-"}</code>
+              </dd>
+            </div>
+            <div>
+              <dt>Recue le</dt>
+              <dd>{formatDateTime(signup.createdAt)}</dd>
+            </div>
+            <div>
+              <dt>Mise à jour</dt>
+              <dd>{formatDateTime(signup.updatedAt)}</dd>
+            </div>
+            {signup.approvedAt ? (
+              <div>
+                <dt>Approuvee le</dt>
+                <dd>{formatDateTime(signup.approvedAt)}</dd>
+              </div>
+            ) : null}
+            {signup.rejectedAt ? (
+              <div>
+                <dt>Refusee le</dt>
+                <dd>{formatDateTime(signup.rejectedAt)}</dd>
+              </div>
+            ) : null}
+          </dl>
+        </div>
+
+        <div className="signup-message-block">
+          <h3>Utilisateur principal</h3>
+          <dl className="detail-grid">
+            <div>
+              <dt>Nom complet</dt>
+              <dd>{signup.primaryUser?.displayName ?? signup.contactName}</dd>
+            </div>
+            <div>
+              <dt>Civilite</dt>
+              <dd>{localizePersonalTitle(signup.primaryUser?.personalTitle)}</dd>
+            </div>
+            <div>
+              <dt>Prenom</dt>
+              <dd>{signup.primaryUser?.givenName ?? "-"}</dd>
+            </div>
+            <div>
+              <dt>Nom</dt>
+              <dd>{signup.primaryUser?.surname ?? "-"}</dd>
+            </div>
+            <div>
+              <dt>Initiales</dt>
+              <dd>{signup.primaryUser?.initials ?? "-"}</dd>
+            </div>
+            <div>
+              <dt>E-mail de connexion</dt>
+              <dd>{signup.primaryUser?.email ?? signup.email}</dd>
+            </div>
+            <div>
+              <dt>Telephone</dt>
+              <dd>{signup.primaryUser?.phone ?? signup.phone ?? "-"}</dd>
+            </div>
+            <div>
+              <dt>Contact principal</dt>
+              <dd>{localizeBoolean(signup.primaryUser?.isPrimaryContact)}</dd>
+            </div>
+          </dl>
+        </div>
 
         {signup.message ? (
           <div className="signup-message-block">
@@ -124,7 +180,7 @@ export default async function AdminSignupDetailPage({ params }: PageProps) {
                 <dd>{signup.packSelection.packLabel}</dd>
               </div>
               <div>
-                <dt>Référence</dt>
+                <dt>Reference</dt>
                 <dd>{signup.packSelection.offerExternalReference}</dd>
               </div>
               <div>
@@ -136,7 +192,7 @@ export default async function AdminSignupDetailPage({ params }: PageProps) {
                 <dd>
                   {signup.packSelection.paymentMode === "upfront"
                     ? "Comptant"
-                    : "Mensualisé"}
+                    : "Mensualise"}
                 </dd>
               </div>
               <div>
@@ -169,12 +225,69 @@ export default async function AdminSignupDetailPage({ params }: PageProps) {
         ) : null}
       </SectionCard>
 
-      <SectionCard ariaLabel="Décision de validation">
+      <SectionCard ariaLabel="Accès et identité">
         <SectionHeading
-          description="L'approbation crée un compte client (sans Active Directory) et envoie un lien de définition de mot de passe. Aucune création AD automatique."
-          title="Décision"
+          description="Le portail reste la source du mot de passe. Lors de la définition initiale ou d'un changement depuis l'espace client, le mot de passe est aussi synchronisé vers l'identité Active Directory si un lien AD existe ou doit être créé."
+          title="Accès et identité"
         />
-        <AdminSignupActions signupId={signup.id} status={signup.status} />
+
+        {signup.accountAccess ? (
+          <dl className="detail-grid">
+            <div>
+              <dt>Reference client</dt>
+              <dd>{signup.accountAccess.customerReference ?? "-"}</dd>
+            </div>
+            <div>
+              <dt>Mot de passe défini</dt>
+              <dd>{signup.accountAccess.passwordDefined ? "Oui" : "Non"}</dd>
+            </div>
+            <div>
+              <dt>Echeance du lien</dt>
+              <dd>
+                {signup.accountAccess.passwordSetupExpiresAt
+                  ? formatDateTime(signup.accountAccess.passwordSetupExpiresAt)
+                  : "-"}
+              </dd>
+            </div>
+            <div>
+              <dt>Provisioning AD</dt>
+              <dd>{localizeAccessStatus(signup.accountAccess.adProvisioningStatus)}</dd>
+            </div>
+            <div>
+              <dt>Derniere synchro mot de passe</dt>
+              <dd>{localizeAccessStatus(signup.accountAccess.lastPasswordSyncStatus)}</dd>
+            </div>
+            <div>
+              <dt>Export KoXo</dt>
+              <dd>{localizeAccessStatus(signup.accountAccess.koxoExportStatus)}</dd>
+            </div>
+            <div>
+              <dt>sAMAccountName</dt>
+              <dd>{signup.accountAccess.samAccountName ?? "-"}</dd>
+            </div>
+            <div>
+              <dt>User principal name</dt>
+              <dd>{signup.accountAccess.userPrincipalName ?? "-"}</dd>
+            </div>
+          </dl>
+        ) : (
+          <p className="field-hint">
+            Aucun accès n'a encore été créé. Cette section se renseignera après
+            approbation de la demande.
+          </p>
+        )}
+      </SectionCard>
+
+      <SectionCard ariaLabel="Decision de validation">
+        <SectionHeading
+          description={decisionDescription}
+          title={decisionTitle}
+        />
+        <AdminSignupActions
+          accountAccess={signup.accountAccess}
+          signupId={signup.id}
+          status={signup.status}
+        />
       </SectionCard>
 
       <MockNotice
@@ -183,4 +296,81 @@ export default async function AdminSignupDetailPage({ params }: PageProps) {
       />
     </>
   );
+}
+
+function formatAddress(signup: Awaited<ReturnType<typeof getAdminSignup>>["data"]) {
+  if (!signup) {
+    return "-";
+  }
+
+  const lines = [
+    signup.customer?.addressLine1,
+    signup.customer?.addressLine2,
+    [signup.customer?.postalCode, signup.customer?.city]
+      .filter(Boolean)
+      .join(" ")
+      .trim(),
+    signup.customer?.country,
+  ].filter((value): value is string => Boolean(value && value.trim()));
+
+  return lines.length > 0 ? lines.join(", ") : "-";
+}
+
+function localizeCustomerType(value: string | null | undefined) {
+  switch (value) {
+    case "professional":
+      return "Professionnel";
+    case "association":
+      return "Association";
+    case "individual":
+      return "Particulier";
+    default:
+      return "-";
+  }
+}
+
+function localizePersonalTitle(value: string | null | undefined) {
+  switch (value) {
+    case "madame":
+      return "Madame";
+    case "monsieur":
+      return "Monsieur";
+    case "autre":
+      return "Autre";
+    default:
+      return "-";
+  }
+}
+
+function localizeBoolean(value: boolean | null | undefined) {
+  if (value === true) {
+    return "Oui";
+  }
+  if (value === false) {
+    return "Non";
+  }
+  return "-";
+}
+
+function localizeAccessStatus(value: string | null | undefined) {
+  switch (value) {
+    case "succeeded":
+      return "Succes";
+    case "pending":
+      return "En attente";
+    case "koxo_pending":
+      return "En attente KoXo";
+    case "failed":
+      return "En echec";
+    default:
+      return value ? humanizeToken(value) : "-";
+  }
+}
+
+function humanizeToken(value: string) {
+  return value
+    .split(/[_-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }

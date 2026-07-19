@@ -2,9 +2,9 @@ using Kermaria.ApiInternal.Contracts;
 
 namespace Kermaria.ApiInternal.Data.Repositories;
 
-// V0.26 : persistance des demandes d'inscription self-service. Les hash
-// de jeton ne quittent jamais cette couche ; les DTO exposés à l'API et
-// à l'admin n'en contiennent aucun.
+// V0.38 : persistance des demandes d'inscription. Le workflow reste
+// mono-utilisateur, mais la couche stocke maintenant une identite client
+// et utilisateur structuree pour preparer l'alignement AD.
 public sealed record SignupInsert(
     string Id,
     string CompanyName,
@@ -12,6 +12,8 @@ public sealed record SignupInsert(
     string Email,
     string? Phone,
     string? Message,
+    SignupCustomerData Customer,
+    SignupUserData PrimaryUser,
     SignupPackSelectionSnapshot? PackSelection,
     string VerificationTokenHash,
     DateTime VerificationTokenExpiresAtUtc,
@@ -26,12 +28,22 @@ public sealed record SignupPendingRecord(
     string Email,
     string? Phone,
     string? Message,
+    SignupCustomerData Customer,
+    SignupUserData PrimaryUser,
     SignupPackSelectionSnapshot? PackSelection,
     string? SourceAddress,
     DateTime? VerificationTokenExpiresAtUtc,
     string? ApprovedUserId,
     string? ApprovedCustomerId,
+    string? ApprovedCustomerReference,
     DateTime? ApprovedAtUtc,
+    DateTime? PasswordSetupExpiresAtUtc,
+    bool ApprovedUserHasPassword,
+    string? AdProvisioningStatus,
+    string? LastPasswordSyncStatus,
+    string? KoxoExportStatus,
+    string? ApprovedUserSamAccountName,
+    string? ApprovedUserPrincipalName,
     DateTime? RejectedAtUtc,
     string? RejectedReason,
     DateTime CreatedAtUtc,
@@ -46,11 +58,9 @@ public sealed record SignupApprovalRequest(
     string SignupId,
     string CustomerId,
     string CustomerReference,
-    string CompanyName,
-    string BillingEmail,
-    string? Phone,
+    SignupCustomerData Customer,
+    SignupUserData PrimaryUser,
     string UserId,
-    string ContactName,
     string PasswordSetupTokenHash,
     DateTime PasswordSetupExpiresAtUtc);
 
@@ -72,7 +82,7 @@ public interface ISignupRepository
     bool IsPersistent { get; }
 
     // Idempotence + non-leak : true si un compte ou une demande active
-    // existe déjà pour cet e-mail dans la fenêtre donnée.
+    // existe deja pour cet e-mail dans la fenetre donnee.
     Task<bool> HasRecentSignupOrUserAsync(
         string normalizedEmail,
         DateTime windowStartUtc,
@@ -103,9 +113,9 @@ public interface ISignupRepository
         string customerId,
         CancellationToken cancellationToken);
 
-    // Crée customer + portal_user (sans mot de passe) et bascule la
+    // Cree customer + portal_user (sans mot de passe) et bascule la
     // demande en 'approved'. Retourne null si la demande est absente ou
-    // n'est pas en état 'email_verified'.
+    // n'est pas en etat 'email_verified'.
     Task<SignupApprovalResult?> ApproveAsync(
         SignupApprovalRequest request,
         CancellationToken cancellationToken);
@@ -117,6 +127,12 @@ public interface ISignupRepository
 
     Task<SignupPasswordTarget?> FindApprovedByPasswordHashAsync(
         string passwordSetupTokenHash,
+        CancellationToken cancellationToken);
+
+    Task RefreshPasswordSetupTokenAsync(
+        string signupId,
+        string passwordSetupTokenHash,
+        DateTime passwordSetupExpiresAtUtc,
         CancellationToken cancellationToken);
 
     Task SetPasswordAsync(

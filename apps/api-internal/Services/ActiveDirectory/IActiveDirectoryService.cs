@@ -72,4 +72,9 @@ public interface IActiveDirectoryService
         string? currentPassword,
         string? newPassword,
         CancellationToken cancellationToken);
+    Task<AdServiceResult<AdDirectoryObjectSummary>> SetUserPasswordAsync(
+        string customerReference,
+        string? samAccountName,
+        string? newPassword,
+        CancellationToken cancellationToken);
 }

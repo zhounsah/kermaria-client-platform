@@ -27,13 +27,13 @@ export default async function PasswordPage() {
       <PageHeader
         action={
           <StatusBadge
-            label={enabled ? "Active Directory" : "Action indisponible"}
+            label={enabled ? "Portail et identité" : "Action indisponible"}
             tone={enabled ? "info" : "warning"}
           />
         }
         description={
           enabled
-            ? "Modifier le mot de passe Active Directory du compte courant."
+            ? "Modifier le mot de passe du portail et synchroniser l'identité liée lorsqu'un compte Active Directory existe."
             : "Le changement de mot de passe n'est pas disponible dans cette version."
         }
         eyebrow="Sécurité du compte"
@@ -43,12 +43,13 @@ export default async function PasswordPage() {
       {enabled ? (
         <div className="password-layout">
           <section className="content-panel">
-            <h2>Mot de passe Active Directory</h2>
+            <h2>Mot de passe du compte</h2>
             <p className="page-description">
-              La modification est transmise à l&apos;API interne, qui
-              authentifie l&apos;ancien mot de passe avant de demander la mise à
-              jour à Active Directory. Aucun mot de passe n&apos;est stocké côté
-              portail, ni journalisé.
+              La modification est transmise a l&apos;API interne, qui verifie
+              d&apos;abord le mot de passe actuel cote portail. Si votre compte
+              est déjà relié à une identité AD, le nouveau secret est aussi
+              synchronisé vers `clients.home.bzh`. Aucun mot de passe n&apos;est
+              journalise.
             </p>
             <PasswordChangeForm />
             <div className="form-footer">
@@ -61,12 +62,13 @@ export default async function PasswordPage() {
           <aside className="content-panel">
             <h2>Garanties</h2>
             <ul className="check-list">
-              <li>Vérification de l&apos;identité et de la session.</li>
-              <li>Traitement par l&apos;API interne privée uniquement.</li>
-              <li>Politique de complexité déléguée au domaine AD.</li>
-              <li>Aucun mot de passe dans les logs ou la base.</li>
+              <li>Vérification de l'identité et de la session.</li>
+              <li>Traitement par l'API interne privée uniquement.</li>
+              <li>Le portail reste la source de verification du mot de passe actuel.</li>
+              <li>Synchronisation AD effectuée seulement si un lien AD existe.</li>
+              <li>Aucun mot de passe dans les logs.</li>
               <li>Limite de tentatives (3 / 15 min) avant verrouillage temporaire.</li>
-              <li>Journal d&apos;audit sans donnée sensible.</li>
+              <li>Journal d'audit sans donnée sensible.</li>
             </ul>
           </aside>
         </div>
@@ -81,9 +83,9 @@ export default async function PasswordPage() {
             <section className="content-panel">
               <h2>Accès au portail</h2>
               <p className="page-description">
-                Le compte actuellement connecté utilise l&apos;authentification
+                Le compte actuellement connecte utilise l&apos;authentification
                 locale du portail. Aucun parcours de modification ou de
-                récupération automatisée n&apos;est activé.
+                récupération automatisée n&apos;est active.
               </p>
               <div className="form-footer">
                 <Link className="text-link" href="/profile">
@@ -93,12 +95,12 @@ export default async function PasswordPage() {
             </section>
 
             <aside className="content-panel">
-              <h2>Garanties conservées</h2>
+              <h2>Garanties conservees</h2>
               <ul className="check-list">
-                <li>Vérification de l&apos;identité et de la session.</li>
-                <li>Traitement par l&apos;API interne privée uniquement.</li>
-                <li>Aucun mot de passe dans les logs ou la base.</li>
-                <li>Journal d&apos;audit sans donnée sensible.</li>
+                <li>Vérification de l'identité et de la session.</li>
+                <li>Traitement par l'API interne privée uniquement.</li>
+                <li>Aucun mot de passe dans les logs.</li>
+                <li>Journal d'audit sans donnée sensible.</li>
                 <li>Aucune communication Active Directory réelle.</li>
               </ul>
             </aside>

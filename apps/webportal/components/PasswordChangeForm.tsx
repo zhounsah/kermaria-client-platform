@@ -42,7 +42,7 @@ export function PasswordChangeForm() {
     if (newPassword === currentPassword) {
       setMessage({
         tone: "error",
-        text: "Le nouveau mot de passe doit être différent du mot de passe actuel.",
+        text: "Le nouveau mot de passe doit être different du mot de passe actuel.",
       });
       return;
     }
@@ -66,7 +66,7 @@ export function PasswordChangeForm() {
     if (result.ok) {
       setMessage({
         tone: "success",
-        text: "Mot de passe Active Directory mis à jour.",
+        text: result.data.message,
       });
       setCurrentPassword("");
       setNewPassword("");
@@ -115,13 +115,14 @@ export function PasswordChangeForm() {
         />
       </label>
       <p className="field-hint">
-        La politique de complexité et d&apos;historique du mot de passe est
-        contrôlée par votre domaine Active Directory. Aucune règle locale
-        n&apos;est appliquée côté portail.
+        Le portail verifie d&apos;abord votre mot de passe actuel, puis met a
+        jour le mot de passe du compte. Si une identité Active Directory est
+        déjà liée, la synchronisation vers `clients.home.bzh` est faite dans la
+        meme operation.
       </p>
       {message ? (
         <FormMessage
-          title={message.tone === "success" ? "Mot de passe changé" : "Échec"}
+          title={message.tone === "success" ? "Mot de passe change" : "Echec"}
           tone={message.tone}
         >
           <p>{message.text}</p>
