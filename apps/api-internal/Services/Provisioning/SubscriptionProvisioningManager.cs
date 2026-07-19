@@ -4,6 +4,7 @@ using System.Text.Json;
 using Kermaria.ApiInternal.Contracts;
 using Kermaria.ApiInternal.Data.Configuration;
 using Kermaria.ApiInternal.Data.Repositories;
+using Kermaria.ApiInternal.Services.ActiveDirectory;
 
 namespace Kermaria.ApiInternal.Services.Provisioning;
 
@@ -30,6 +31,7 @@ public sealed class SubscriptionProvisioningManager
     private readonly ISubscriptionProvisioningActionRepository _actions;
     private readonly IProvisioningService _provisioningService;
     private readonly ICommercialOfferTopologyService _topologyService;
+    private readonly IActiveDirectoryService _activeDirectory;
     private readonly SubscriptionProvisioningRuntimeConfiguration _configuration;
     private readonly IAdGroupProvisioner _groupProvisioner;
     private readonly ILogger<SubscriptionProvisioningManager> _logger;
@@ -40,6 +42,7 @@ public sealed class SubscriptionProvisioningManager
         ISubscriptionProvisioningActionRepository actions,
         IProvisioningService provisioningService,
         ICommercialOfferTopologyService topologyService,
+        IActiveDirectoryService activeDirectory,
         SubscriptionProvisioningRuntimeConfiguration configuration,
         IAdGroupProvisioner groupProvisioner,
         ILogger<SubscriptionProvisioningManager> logger)
@@ -49,6 +52,7 @@ public sealed class SubscriptionProvisioningManager
         _actions = actions;
         _provisioningService = provisioningService;
         _topologyService = topologyService;
+        _activeDirectory = activeDirectory;
         _configuration = configuration;
         _groupProvisioner = groupProvisioner;
         _logger = logger;
@@ -212,6 +216,10 @@ public sealed class SubscriptionProvisioningManager
                 return (string?)dn;
             },
             StringComparer.OrdinalIgnoreCase);
+        var effectiveGroups = await LoadEffectiveGroupsByUserSamAsync(
+            subscription.CustomerReference,
+            targetUsers,
+            cancellationToken);
 
         return new SubscriptionProvisioningContext(
             subscription,
@@ -219,7 +227,9 @@ public sealed class SubscriptionProvisioningManager
             reconciledGroups.ToArray(),
             managedGroups,
             targetUsers,
-            groupDns);
+            groupDns,
+            effectiveGroups.GroupsByUserSam,
+            effectiveGroups.IsComplete);
     }
 
     private async Task<ProvisioningExecutionResult> ExecuteAsync(
@@ -272,6 +282,10 @@ public sealed class SubscriptionProvisioningManager
         var status = ResolveSummaryStatus(context, lastAction);
         var canRetry = status is not "not_required" and not "not_configured"
             && (context.MappedGroups.Count > 0 || context.ReconciledGroups.Count > 0);
+        var displayResultCode = ResolveDisplayResultCode(
+            context,
+            status,
+            lastAction);
 
         return new SubscriptionProvisioningSummary(
             status,
@@ -284,7 +298,7 @@ public sealed class SubscriptionProvisioningManager
                     user.UserPrincipalName))
                 .ToArray(),
             canRetry,
-            lastAction?.ResultCode,
+            displayResultCode,
             recentActions);
     }
 
@@ -314,12 +328,97 @@ public sealed class SubscriptionProvisioningManager
             return "not_configured";
         }
 
+        if (IsCurrentlySynchronized(context))
+        {
+            return "succeeded";
+        }
+
         return lastAction?.Status switch
         {
             "failed" => "failed",
             "succeeded" or "unchanged" => "succeeded",
             _ => "ready"
         };
+    }
+
+    private async Task<EffectiveGroupSnapshot> LoadEffectiveGroupsByUserSamAsync(
+        string customerReference,
+        IReadOnlyList<CustomerAdLinkSummary> targetUsers,
+        CancellationToken cancellationToken)
+    {
+        if (targetUsers.Count == 0)
+        {
+            return new EffectiveGroupSnapshot(
+                new Dictionary<string, HashSet<string>>(
+                    StringComparer.OrdinalIgnoreCase),
+                IsComplete: true);
+        }
+
+        var adStatus = await _activeDirectory.GetStatusAsync(cancellationToken);
+        if (!adStatus.ReadsEnabled)
+        {
+            return new EffectiveGroupSnapshot(
+                new Dictionary<string, HashSet<string>>(
+                    StringComparer.OrdinalIgnoreCase),
+                IsComplete: false);
+        }
+
+        var groupsByUserSam =
+            new Dictionary<string, HashSet<string>>(
+                StringComparer.OrdinalIgnoreCase);
+        foreach (var user in targetUsers)
+        {
+            var result = await _activeDirectory.GetUserEffectiveGroupsAsync(
+                customerReference,
+                user.SamAccountName,
+                cancellationToken);
+            if (result.StatusCode >= 400 || result.Value is null)
+            {
+                return new EffectiveGroupSnapshot(groupsByUserSam, false);
+            }
+
+            groupsByUserSam[user.SamAccountName] = result.Value
+                .Select(group => group.SamAccountName)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        }
+
+        return new EffectiveGroupSnapshot(groupsByUserSam, true);
+    }
+
+    private static bool IsCurrentlySynchronized(
+        SubscriptionProvisioningContext context)
+    {
+        if (!context.EffectiveGroupsComplete)
+        {
+            return false;
+        }
+
+        if (context.TargetUsers.Count == 0 || context.ReconciledGroups.Count == 0)
+        {
+            return false;
+        }
+
+        return context.TargetUsers.All(user =>
+            context.EffectiveGroupsByUserSam.TryGetValue(
+                user.SamAccountName,
+                out var groups)
+            && context.ReconciledGroups.All(groups.Contains));
+    }
+
+    private static string? ResolveDisplayResultCode(
+        SubscriptionProvisioningContext context,
+        string status,
+        SubscriptionProvisioningActionSummary? lastAction)
+    {
+        if (status == "succeeded"
+            && IsCurrentlySynchronized(context)
+            && lastAction?.Status == "failed")
+        {
+            return "PROVISIONING_SYNCHRONIZED";
+        }
+
+        return lastAction?.ResultCode;
     }
 
     private static string ComputeIdempotencyKeyHash(
@@ -392,4 +491,10 @@ internal sealed record SubscriptionProvisioningContext(
     IReadOnlyList<string> ReconciledGroups,
     IReadOnlyList<string> ManagedGroups,
     IReadOnlyList<CustomerAdLinkSummary> TargetUsers,
-    IReadOnlyDictionary<string, string?> GroupDistinguishedNamesBySamAccountName);
+    IReadOnlyDictionary<string, string?> GroupDistinguishedNamesBySamAccountName,
+    IReadOnlyDictionary<string, HashSet<string>> EffectiveGroupsByUserSam,
+    bool EffectiveGroupsComplete);
+
+internal sealed record EffectiveGroupSnapshot(
+    IReadOnlyDictionary<string, HashSet<string>> GroupsByUserSam,
+    bool IsComplete);

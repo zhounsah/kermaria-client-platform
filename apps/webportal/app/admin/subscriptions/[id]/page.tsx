@@ -316,6 +316,25 @@ export default async function AdminSubscriptionDetailPage({
   );
 }
 
+function describeProvisioningResultLabel(code: string) {
+  switch (code) {
+    case "PROVISIONING_SYNCHRONIZED":
+      return "Les groupes AD sont maintenant synchronises avec la souscription.";
+    case "PROVISIONING_APPLIED":
+      return "Le provisionning AD a été applique avec succes.";
+    case "PROVISIONING_UNCHANGED":
+      return "Aucune modification AD n'etait necessaire.";
+    case "AD_GROUP_SCOPE_INCOMPATIBLE":
+      return "Le groupe AD cible n'accepte pas l'appartenance demandee avec la portee actuelle.";
+    case "PROVISIONING_GROUP_NOT_CONFIGURED":
+      return "Au moins un groupe AD requis n'est pas configure.";
+    case "AD_UNAVAILABLE":
+      return "La lecture ou l'écriture Active Directory est actuellement indisponible.";
+    default:
+      return null;
+  }
+}
+
 function describeProvisioningResult(code: string | null) {
   if (!code) {
     return "Aucun résultat récent";
@@ -329,5 +348,5 @@ function describeProvisioningResult(code: string | null) {
     return "Aucun utilisateur lié n'est disponible pour le provisionning.";
   }
 
-  return code;
+  return describeProvisioningResultLabel(code) ?? code;
 }

@@ -855,10 +855,17 @@ public sealed class CustomerActiveDirectoryAdministrationService
     private static string? ResolveLastResultCode(CustomerAdWorkspaceContext context)
     {
         return context.DisplaySubscriptions
-            .SelectMany(subscription =>
-                context.ProvisioningSummaries[subscription.Id].RecentActions)
-            .OrderByDescending(action => action.RequestedAt, StringComparer.Ordinal)
-            .Select(action => action.ResultCode)
+            .Select(subscription => context.ProvisioningSummaries[subscription.Id])
+            .OrderByDescending(
+                summary => summary.RecentActions.FirstOrDefault()?.RequestedAt,
+                StringComparer.Ordinal)
+            .Select(summary =>
+                !string.IsNullOrWhiteSpace(summary.LastResultCode)
+                    ? summary.LastResultCode
+                    : summary.RecentActions
+                        .Select(action => action.ResultCode)
+                        .FirstOrDefault(resultCode =>
+                            !string.IsNullOrWhiteSpace(resultCode)))
             .FirstOrDefault(resultCode => !string.IsNullOrWhiteSpace(resultCode));
     }
 
