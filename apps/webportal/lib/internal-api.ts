@@ -532,12 +532,115 @@ export function getClientDownloads() {
   );
 }
 
-export function getPendingPackSelection() {
-  return getPortalData<PendingPackSelectionSummary | null>(
-    "/internal/portal/pending-pack-selection",
-    null,
-    null,
-  );
+export async function getPendingPackSelection() {
+  const correlationId = resolveCorrelationId(null);
+  const sessionToken = await readPortalSessionToken();
+
+  if (!sessionToken) {
+    return {
+      data: null,
+      source: "unavailable",
+      correlationId,
+      error: {
+        code: "SESSION_REQUIRED",
+        message: "Une session valide est requise.",
+        correlation_id: correlationId,
+      },
+    } satisfies PortalDataResult<PendingPackSelectionSummary | null>;
+  }
+
+  let internalApiUrl: string | undefined;
+  try {
+    internalApiUrl = getInternalApiUrl();
+  } catch {
+    return {
+      data: null,
+      source: "unavailable",
+      correlationId,
+      error: unavailableError(correlationId),
+    } satisfies PortalDataResult<PendingPackSelectionSummary | null>;
+  }
+
+  if (!internalApiUrl) {
+    if (isDevelopmentFallbackAllowed()) {
+      return {
+        data: null,
+        source: "local-fallback",
+        correlationId,
+      } satisfies PortalDataResult<PendingPackSelectionSummary | null>;
+    }
+
+    return {
+      data: null,
+      source: "unavailable",
+      correlationId,
+      error: unavailableError(correlationId),
+    } satisfies PortalDataResult<PendingPackSelectionSummary | null>;
+  }
+
+  try {
+    const response = await fetch(
+      `${internalApiUrl}/internal/portal/pending-pack-selection`,
+      {
+        cache: "no-store",
+        signal: AbortSignal.timeout(INTERNAL_API_TIMEOUT_MS),
+        headers: {
+          Accept: "application/json",
+          ...getInternalServiceHeaders(),
+          [CORRELATION_HEADER]: correlationId,
+          [PORTAL_SESSION_HEADER]: sessionToken,
+        },
+      },
+    );
+
+    if (!response.ok) {
+      throw await toInternalApiError(response, correlationId);
+    }
+
+    const responseCorrelationId = resolveCorrelationId(
+      response.headers.get(CORRELATION_HEADER),
+    );
+    const source =
+      response.headers.get("X-Data-Source") === "mariadb"
+        ? "api-internal-persistent"
+        : "api-internal-mock";
+    const contentType = response.headers.get("content-type") ?? "";
+    const payloadText = await response.text();
+
+    if (payloadText.trim() === "") {
+      return {
+        data: null,
+        source,
+        correlationId: responseCorrelationId,
+      } satisfies PortalDataResult<PendingPackSelectionSummary | null>;
+    }
+
+    if (!contentType.toLowerCase().includes("application/json")) {
+      throw invalidInternalResponse(responseCorrelationId);
+    }
+
+    try {
+      return {
+        data: JSON.parse(payloadText) as PendingPackSelectionSummary | null,
+        source,
+        correlationId: responseCorrelationId,
+      } satisfies PortalDataResult<PendingPackSelectionSummary | null>;
+    } catch {
+      throw invalidInternalResponse(responseCorrelationId);
+    }
+  } catch (error) {
+    const apiError =
+      error instanceof InternalApiError
+        ? error.apiError
+        : unavailableError(correlationId);
+
+    return {
+      data: null,
+      source: "unavailable",
+      correlationId,
+      error: apiError,
+    } satisfies PortalDataResult<PendingPackSelectionSummary | null>;
+  }
 }
 
 export function getCommercialDocuments() {

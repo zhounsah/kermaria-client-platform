@@ -86,6 +86,7 @@ public sealed class SignupService : ISignupService
     private const int MaxInitialsLength = 16;
 
     private readonly ISignupRepository _repository;
+    private readonly ISubscriptionRepository _subscriptionRepository;
     private readonly IEmailDispatchService _emailDispatch;
     private readonly IPortalPasswordService _passwordService;
     private readonly IActiveDirectoryService _activeDirectoryService;
@@ -97,6 +98,7 @@ public sealed class SignupService : ISignupService
 
     public SignupService(
         ISignupRepository repository,
+        ISubscriptionRepository subscriptionRepository,
         IEmailDispatchService emailDispatch,
         IPortalPasswordService passwordService,
         IActiveDirectoryService activeDirectoryService,
@@ -107,6 +109,7 @@ public sealed class SignupService : ISignupService
         ILogger<SignupService> logger)
     {
         _repository = repository;
+        _subscriptionRepository = subscriptionRepository;
         _emailDispatch = emailDispatch;
         _passwordService = passwordService;
         _activeDirectoryService = activeDirectoryService;
@@ -261,12 +264,66 @@ public sealed class SignupService : ISignupService
             return null;
         }
 
+        var subscriptions = await _subscriptionRepository.GetByCustomerAsync(
+            session.CustomerId,
+            cancellationToken);
+        if (HasMatchingFinalizedSubscription(
+                subscriptions,
+                record.PackSelection))
+        {
+            return null;
+        }
+
         return new PendingPackSelectionSummary(
             record.Id,
             record.Status,
             ToNullableIso(record.ApprovedAtUtc),
             ToIso(record.CreatedAtUtc),
             record.PackSelection);
+    }
+
+    private static bool HasMatchingFinalizedSubscription(
+        IReadOnlyList<SubscriptionSummary> subscriptions,
+        SignupPackSelectionSnapshot snapshot)
+    {
+        return subscriptions.Any(subscription =>
+            IsMatchingPackSubscription(subscription, snapshot)
+            && IsFinalizedPackSubscriptionStatus(subscription));
+    }
+
+    private static bool IsMatchingPackSubscription(
+        SubscriptionSummary subscription,
+        SignupPackSelectionSnapshot snapshot)
+    {
+        return string.Equals(
+                subscription.PublicPackCode,
+                snapshot.PackKey,
+                StringComparison.Ordinal)
+            || string.Equals(
+                subscription.CommercialOfferId,
+                snapshot.OfferId,
+                StringComparison.Ordinal)
+            || string.Equals(
+                subscription.OfferExternalReference,
+                snapshot.OfferExternalReference,
+                StringComparison.Ordinal);
+    }
+
+    private static bool IsFinalizedPackSubscriptionStatus(
+        SubscriptionSummary subscription)
+    {
+        if (subscription.PaidCyclesCount > 0)
+        {
+            return true;
+        }
+
+        return subscription.Status is
+            "pending_activation"
+            or "active"
+            or "suspended"
+            or "pending_cancellation"
+            or "cancelled"
+            or "expired";
     }
 
     public async Task<SignupOperationResult> ApproveAsync(

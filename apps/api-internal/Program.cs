@@ -1780,12 +1780,12 @@ app.MapGet(
             context,
             authenticationService,
             auditService);
+        var pendingSelection = await signupService.GetPendingPackSelectionAsync(
+            session,
+            context.RequestAborted);
         context.Response.Headers["X-Data-Source"] =
             signupService.IsPersistent ? "mariadb" : "mock";
-        return Results.Ok(
-            await signupService.GetPendingPackSelectionAsync(
-                session,
-                context.RequestAborted));
+        return Results.Json(pendingSelection);
     });
 app.MapGet(
     "/internal/portal/content/{key}",

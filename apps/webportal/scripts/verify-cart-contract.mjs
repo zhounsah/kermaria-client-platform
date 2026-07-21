@@ -69,6 +69,9 @@ const recurringCheckoutConfirmRoute = await read(
   "app/api/checkout/subscriptions/confirm/route.ts",
 );
 const souscrirePage = await read("app/souscrire/page.tsx");
+const subscribeCatalogSections = await read(
+  "components/SubscribeCatalogSections.tsx",
+);
 const cartPage = await read("app/panier/page.tsx");
 const appShell = await read("components/AppShell.tsx");
 const addToCartButton = await read("components/AddToCartButton.tsx");
@@ -306,21 +309,21 @@ assert.match(
 
 // --- UI ---
 assert.match(
-  souscrirePage,
+  subscribeCatalogSections,
   /AddToCartButton/,
-  "La page souscrire doit permettre l'ajout au panier.",
+  "L'ecran souscrire doit permettre l'ajout au panier.",
 );
 assert.match(
-  souscrirePage,
-  /PublicPackCard/,
-  "La page souscrire doit afficher les packs recurrents.",
+  subscribeCatalogSections,
+  /AddRecurringCheckoutButton/,
+  "L'ecran souscrire doit afficher les packs recurrents.",
 );
 assert.match(
   souscrirePage,
   /billingCadence === "one_time"/,
   "Seules les offres one-shot sont proposees a l'ajout panier.",
 );
-assert.match(souscrirePage, /href="\/panier"/);
+assert.match(subscribeCatalogSections, /href="\/panier"/);
 assert.match(cartPage, /CartConfirmButton/);
 assert.match(cartPage, /RecurringCheckoutConfirmButton/);
 assert.match(cartPage, /getCheckoutSummary/);
