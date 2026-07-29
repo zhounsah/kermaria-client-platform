@@ -1,4 +1,4 @@
-﻿# Node.js / Next.js
+# Node.js / Next.js
 node_modules/
 dist/
 build/
@@ -38,7 +38,7 @@ coverage/
 test-api-debug.log
 *.tmp
 
-# Backups et exports locaux. Les migrations SQL restent versionnÃ©es.
+# Backups et exports locaux. Les migrations SQL restent versionnées.
 /backups/
 *.dump
 *.bak
@@ -78,4 +78,3 @@ local.env.ps1
 /etat-avant-remise-a-plat.patch
 /etat-index-avant-remise-a-plat.patch
 /result[0-9]*.txt
-
