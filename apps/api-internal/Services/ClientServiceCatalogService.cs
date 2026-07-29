@@ -1,3 +1,4 @@
+using Kermaria.ApiInternal;
 using Kermaria.ApiInternal.Contracts;
 using Kermaria.ApiInternal.Data.Repositories;
 using Kermaria.ApiInternal.Services.Provisioning;
@@ -40,6 +41,12 @@ public sealed class ClientServiceCatalogService : IClientServiceCatalogService
         PortalSessionContext session,
         CancellationToken cancellationToken)
     {
+        if (!_subscriptions.IsPersistent
+            && !_commercialRepository.IsPersistent)
+        {
+            return MockPortalData.Services;
+        }
+
         var catalog = await _commercialRepository.GetAdminCatalogAsync(
             cancellationToken);
         var offersById = catalog.ToDictionary(

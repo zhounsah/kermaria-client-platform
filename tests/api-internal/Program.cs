@@ -926,6 +926,21 @@ async Task RunMockTestsAsync()
             servicesPayload.RootElement[0].GetProperty("name").GetString()
                 == "Hébergement dossier personnel",
             "Le catalogue client mock n'est pas aligné avec l'activité attendue.");
+        Ensure(
+            servicesPayload.RootElement
+                .EnumerateArray()
+                .Select(service =>
+                    $"{service.GetProperty("id").GetString()}|{service.GetProperty("status").GetString()}")
+                .ToHashSet(StringComparer.Ordinal)
+                .SetEquals(new[]
+                {
+                    "svc-personal-hosting-001|active",
+                    "svc-backup-001|active",
+                    "svc-vpn-001|pending",
+                    "svc-rds-001|suspended",
+                    "svc-support-001|active"
+                }),
+            "Le catalogue client mock ne contient pas les couples id/statut attendus.");
 
         using var summaryRequest = CreateSessionRequest(
             HttpMethod.Get,
@@ -2095,6 +2110,12 @@ async Task RunMariaDbReadTestsAsync()
             servicesForWriteRequest);
         using var servicesForWritePayload = JsonDocument.Parse(
             await servicesForWriteResponse.Content.ReadAsStringAsync());
+        Ensure(
+            servicesForWritePayload.RootElement
+                .EnumerateArray()
+                .All(service => service.GetProperty("id").GetString()
+                    != "svc-personal-hosting-001"),
+            "Le catalogue MariaDB ne doit pas contenir le service mock d'hébergement personnel.");
         var serviceId = servicesForWritePayload.RootElement[0]
             .GetProperty("id")
             .GetString()
