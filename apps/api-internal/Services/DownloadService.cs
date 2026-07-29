@@ -692,7 +692,7 @@ public sealed class DownloadService : IDownloadService
         var subscriptions = await _subscriptions.GetByCustomerAsync(
             session.CustomerId,
             cancellationToken);
-        var services = await _serviceCatalogService.GetServicesAsync(
+        var serviceTypes = await _serviceCatalogService.GetActiveServiceTypesAsync(
             session,
             cancellationToken);
 
@@ -710,10 +710,8 @@ public sealed class DownloadService : IDownloadService
             .Where(value => !string.IsNullOrWhiteSpace(value))
             .Select(value => value!)
             .ToHashSet(StringComparer.Ordinal);
-        var serviceTypes = services
-            .Where(service => service.Status == "active")
-            .Select(service => service.Type)
-            .ToHashSet(StringComparer.Ordinal);
+        var scopedServiceTypes =
+            new HashSet<string>(serviceTypes, StringComparer.OrdinalIgnoreCase);
         var provisioningGroups =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var subscription in activeSubscriptions)
@@ -729,7 +727,7 @@ public sealed class DownloadService : IDownloadService
         return new DownloadAccessScope(
             publicPackCodes,
             offerExternalReferences,
-            serviceTypes,
+            scopedServiceTypes,
             provisioningGroups);
     }
 

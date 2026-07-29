@@ -9,9 +9,18 @@ definitive (R740xd), en deux temps :
 - **V1.0 RC** : ouverture publique, premier client reel integre,
   ouverture des signups apres validation juridique.
 
-La procedure est **redigee**, non executee tant que la V0.24 n'est
-pas cloturee et que le R740xd n'est pas livre. Elle sera raffinee
-au fur et a mesure de l'execution.
+La procedure a ete **redigee avant la livraison** du R740xd. Depuis le
+**2026-07-29**, le serveur est livre et initialise, mais cette variante
+reste un document de reference tant que la V0.24 n'est pas cloturee.
+Elle sera raffinee au fur et a mesure de l'execution.
+
+> Statut 2026-07-29 : le contenu ci-dessous conserve la variante
+> historique "mono-hote R740xd". La cible **active** de configuration
+> est maintenant la variante **VM dediees** documentee dans
+> [DEPLOYMENT_R740XD_VM.md](DEPLOYMENT_R740XD_VM.md) :
+> `SRV-11` reverse proxy, `SRV-12` `WEBPORTAL`, `SRV-13`
+> `API-INTERNAL`. Utiliser ce nouveau runbook en premier pour toute
+> mise en configuration future.
 
 Runbook d'installation infrastructure : [`DEPLOYMENT_WINDOWS.md`](DEPLOYMENT_WINDOWS.md).
 Ce document precise uniquement les deltas et l'ordre de bascule

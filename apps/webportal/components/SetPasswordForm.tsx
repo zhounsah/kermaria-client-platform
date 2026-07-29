@@ -9,6 +9,7 @@ import { requestBffJson } from "@/lib/client-api";
 
 type SetPasswordFormProps = {
   token: string;
+  initialError?: string | null;
 };
 
 const MIN_PASSWORD_LENGTH = 12;
@@ -24,11 +25,18 @@ type SetPasswordResponse = {
   correlation_id?: string;
 };
 
-export function SetPasswordForm({ token }: SetPasswordFormProps) {
+export function SetPasswordForm({
+  token,
+  initialError = null,
+}: SetPasswordFormProps) {
   const isSubmittingRef = useRef(false);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [state, setState] = useState<SetPasswordState>({ status: "idle" });
+  const [state, setState] = useState<SetPasswordState>(
+    initialError
+      ? { status: "error", message: initialError }
+      : { status: "idle" },
+  );
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -101,6 +109,8 @@ export function SetPasswordForm({ token }: SetPasswordFormProps) {
       noValidate
       onSubmit={handleSubmit}
     >
+      <input name="token" type="hidden" value={token} />
+
       {state.status === "error" ? (
         <FormMessage title="Définition impossible" tone="error">
           <p>{state.message}</p>
@@ -113,7 +123,12 @@ export function SetPasswordForm({ token }: SetPasswordFormProps) {
           autoComplete="new-password"
           minLength={MIN_PASSWORD_LENGTH}
           name="password"
-          onChange={(event) => setPassword(event.target.value)}
+          onChange={(event) => {
+            setPassword(event.target.value);
+            if (state.status === "error") {
+              setState({ status: "idle" });
+            }
+          }}
           required
           type="password"
           value={password}
@@ -126,7 +141,12 @@ export function SetPasswordForm({ token }: SetPasswordFormProps) {
           autoComplete="new-password"
           minLength={MIN_PASSWORD_LENGTH}
           name="confirmPassword"
-          onChange={(event) => setConfirmPassword(event.target.value)}
+          onChange={(event) => {
+            setConfirmPassword(event.target.value);
+            if (state.status === "error") {
+              setState({ status: "idle" });
+            }
+          }}
           required
           type="password"
           value={confirmPassword}

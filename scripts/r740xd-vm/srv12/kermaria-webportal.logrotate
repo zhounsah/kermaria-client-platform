@@ -1,0 +1,10 @@
+/var/log/kermaria/webportal.stdout.log /var/log/kermaria/webportal.stderr.log {
+    daily
+    rotate 30
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    su kermaria-web kermaria-web
+}

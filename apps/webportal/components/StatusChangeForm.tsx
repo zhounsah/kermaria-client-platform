@@ -43,7 +43,7 @@ export function StatusChangeForm({
     tone: "success" | "error";
     text: string;
   } | null>(null);
-  const definitions = requestType === "support"
+  const définitions = requestType === "support"
     ? supportStatus
     : serviceRequestStatus;
 
@@ -103,9 +103,9 @@ export function StatusChangeForm({
           )}
           value={status}
         >
-          {Object.entries(definitions).map(([value, definition]) => (
+          {Object.entries(définitions).map(([value, définition]) => (
             <option key={value} value={value}>
-              {definition.label}
+              {définition.label}
             </option>
           ))}
         </select>

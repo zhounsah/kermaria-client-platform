@@ -32,7 +32,7 @@ export default function PolitiqueConfidentialitePage() {
       <section>
         <h2>Aucun traceur ni analytique tiers</h2>
         <p>
-          Position de principe : ce site n&apos;utilise{" "}
+          Position de principe : ce site n&apos;utilisé{" "}
           <strong>aucun service d&apos;analytique</strong> (Google Analytics,
           Plausible, Matomo, Cloudflare Insights, Microsoft Clarity ou
           équivalent), <strong>aucun pixel publicitaire</strong> (Meta,

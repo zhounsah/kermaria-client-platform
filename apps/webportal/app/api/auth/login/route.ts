@@ -7,25 +7,31 @@ import {
   createInternalSession,
   getInternalApiError,
 } from "@/lib/internal-api";
+import { getPortalPublicUrlFromHeaders } from "@/lib/public-routes";
 import {
   getSessionCookieName,
   getSessionCookieOptions,
 } from "@/lib/session-config";
+import { resolvePortalRoleUrl } from "@/lib/public-route-config";
 
 export async function POST(request: NextRequest) {
   const correlationId = resolveCorrelationId(
     request.headers.get(CORRELATION_HEADER),
   );
+  const browserFormPost = isBrowserFormPost(request);
+
   let payload: unknown;
 
   try {
-    payload = await request.json();
+    payload = browserFormPost
+      ? await readBrowserFormPayload(request)
+      : await request.json();
   } catch {
-    return invalidCredentials(correlationId);
+    return invalidCredentials(request, correlationId, browserFormPost);
   }
 
   if (!isLoginPayload(payload)) {
-    return invalidCredentials(correlationId);
+    return invalidCredentials(request, correlationId, browserFormPost);
   }
 
   try {
@@ -34,6 +40,26 @@ export async function POST(request: NextRequest) {
       correlationId,
       request.headers.get("user-agent"),
     );
+
+    if (browserFormPost) {
+      const response = NextResponse.redirect(
+        resolvePortalRoleUrl(
+          getPortalPublicUrlFromHeaders(request.headers),
+          session.user.role,
+        ),
+        { status: 303 },
+      );
+      response.cookies.set({
+        name: getSessionCookieName(),
+        value: session.sessionToken,
+        ...getSessionCookieOptions(),
+        expires: new Date(session.expiresAt),
+      });
+      ensureCsrfCookie(request, response);
+      response.headers.set(CORRELATION_HEADER, correlationId);
+      return response;
+    }
+
     const response = NextResponse.json({
       authenticated: true,
       user: session.user,
@@ -51,6 +77,16 @@ export async function POST(request: NextRequest) {
     return response;
   } catch (error) {
     const failure = getInternalApiError(error);
+
+    if (browserFormPost) {
+      return redirectToLogin(
+        request,
+        failure.error.code,
+        getLoginEmail(payload),
+        failure.error.correlation_id,
+      );
+    }
+
     const response = NextResponse.json(failure.error, {
       status: failure.status,
     });
@@ -60,6 +96,26 @@ export async function POST(request: NextRequest) {
     );
     return response;
   }
+}
+
+function isBrowserFormPost(request: NextRequest) {
+  const contentType = request.headers.get("content-type") ?? "";
+
+  return (
+    contentType.includes("application/x-www-form-urlencoded")
+    || contentType.includes("multipart/form-data")
+  );
+}
+
+async function readBrowserFormPayload(
+  request: NextRequest,
+): Promise<Partial<LoginPayload>> {
+  const formData = await request.formData();
+
+  return {
+    email: formData.get("email")?.toString() ?? "",
+    password: formData.get("password")?.toString() ?? "",
+  };
 }
 
 function isLoginPayload(payload: unknown): payload is LoginPayload {
@@ -78,7 +134,24 @@ function isLoginPayload(payload: unknown): payload is LoginPayload {
   );
 }
 
-function invalidCredentials(correlationId: ApiError["correlation_id"]) {
+function getLoginEmail(payload: unknown) {
+  if (!payload || typeof payload !== "object") {
+    return "";
+  }
+
+  const email = (payload as Partial<LoginPayload>).email;
+  return typeof email === "string" ? email.trim() : "";
+}
+
+function invalidCredentials(
+  request: NextRequest,
+  correlationId: ApiError["correlation_id"],
+  browserFormPost: boolean,
+) {
+  if (browserFormPost) {
+    return redirectToLogin(request, "INVALID_CREDENTIALS", "", correlationId);
+  }
+
   const response = NextResponse.json(
     {
       code: "INVALID_CREDENTIALS",
@@ -87,6 +160,26 @@ function invalidCredentials(correlationId: ApiError["correlation_id"]) {
     } satisfies ApiError,
     { status: 401 },
   );
+  response.headers.set(CORRELATION_HEADER, correlationId);
+  return response;
+}
+
+function redirectToLogin(
+  request: NextRequest,
+  errorCode: string,
+  email: string,
+  correlationId: string,
+) {
+  const redirectUrl = new URL(
+    "/login",
+    getPortalPublicUrlFromHeaders(request.headers),
+  );
+  redirectUrl.searchParams.set("error", errorCode);
+  if (email) {
+    redirectUrl.searchParams.set("email", email);
+  }
+
+  const response = NextResponse.redirect(redirectUrl, { status: 303 });
   response.headers.set(CORRELATION_HEADER, correlationId);
   return response;
 }

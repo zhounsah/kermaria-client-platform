@@ -272,7 +272,7 @@ export default async function AdminSignupDetailPage({ params }: PageProps) {
           </dl>
         ) : (
           <p className="field-hint">
-            Aucun accès n'a encore été créé. Cette section se renseignera après
+            Aucun accès n&apos;a encore été créé. Cette section se renseignera après
             approbation de la demande.
           </p>
         )}

@@ -11,11 +11,11 @@ export function SessionStatusBadge({
 }: {
   status: keyof typeof statuses;
 }) {
-  const presentation = statuses[status];
+  const présentation = statuses[status];
   return (
     <StatusBadge
-      label={presentation.label}
-      tone={presentation.tone}
+      label={présentation.label}
+      tone={présentation.tone}
     />
   );
 }

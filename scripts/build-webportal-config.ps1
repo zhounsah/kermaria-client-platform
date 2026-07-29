@@ -72,10 +72,11 @@ $Blocklist = @(
     "SQL_PROVIDER", "SQL_HOST", "SQL_PORT", "SQL_DATABASE",
     "SQL_USERNAME", "SQL_PASSWORD",
     # Active Directory — API seulement
-    "AD_INTEGRATION_MODE", "AD_DOMAIN", "AD_CLIENTS_OU_DN",
+    "AD_INTEGRATION_MODE", "AD_CLIENTS_OU_DN", "AD_REQUIRED_OU_ROOT",
+    "AD_ALLOWED_ROOTS", "AD_USE_CURRENT_WINDOWS_CREDENTIALS",
     "AD_SERVICE_ACCOUNT_USERNAME", "AD_SERVICE_ACCOUNT_PASSWORD",
     "AD_ALLOWED_GROUPS", "AD_CONNECT_TIMEOUT_MS", "AD_QUERY_TIMEOUT_MS",
-    "AD_MAX_RESULTS", "AD_PASSWORD_CHANGE_ENABLED",
+    "AD_MAX_RESULTS",
     # BPCE — API seulement (WEBPORTAL n'appelle jamais BPCE)
     "BPCE_INTEGRATION_MODE", "BPCE_REFRESH_TOKEN", "BPCE_BASE_URL",
     "BPCE_SENDER_ID", "BPCE_REQUEST_TIMEOUT_MS",
@@ -98,6 +99,27 @@ $Blocklist = @(
     "ASPNETCORE_ENVIRONMENT", "DOTNET_ENVIRONMENT",
     "KERMARIA_CONFIG_PATH"
 )
+
+$BlockedPrefixes = @(
+    "SUBSCRIPTION_PROVISIONING_",
+    "AD_PROVISIONING_GROUP_DNS__"
+)
+
+function Test-IsBlockedKey {
+    param([string]$Name)
+
+    if ($Blocklist -contains $Name) {
+        return $true
+    }
+
+    foreach ($prefix in $BlockedPrefixes) {
+        if ($Name.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
+            return $true
+        }
+    }
+
+    return $false
+}
 
 # Auto-détection du fichier source si non fourni.
 if (-not $InputPath) {
@@ -150,7 +172,7 @@ Get-Content -LiteralPath $InputPath | ForEach-Object {
     }
 
     if ($null -ne $key) {
-        if ($Blocklist -contains $key) {
+        if (Test-IsBlockedKey -Name $key) {
             $blocked += $key
         } elseif ([string]::IsNullOrEmpty($value)) {
             $emptyValues += $key
@@ -173,7 +195,7 @@ if (-not $extracted.Contains("PORT"))     { $extracted["PORT"] = "3000" }
 $overridden = @()
 foreach ($key in @($Override.Keys)) {
     $name = [string]$key
-    if ($Blocklist -contains $name) {
+    if (Test-IsBlockedKey -Name $name) {
         throw "Cle '$name' passee en -Override mais blocklistee (server-side/dev only) : refus."
     }
     $extracted[$name] = [string]$Override[$key]

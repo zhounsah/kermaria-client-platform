@@ -3,7 +3,9 @@
 Pour le deploiement concret Windows Server 2022 sans VM (SRV-01
 WEBPORTAL + SRV-02 API-INTERNAL + SRV-07 MariaDB, cible actuelle en
 phase de tests), voir le runbook dedie
-[`DEPLOYMENT_WINDOWS.md`](DEPLOYMENT_WINDOWS.md). Le present
+[`DEPLOYMENT_WINDOWS.md`](DEPLOYMENT_WINDOWS.md). Pour la cible
+R740xd **VM dediees** (`SRV-11/12/13`), voir
+[`DEPLOYMENT_R740XD_VM.md`](DEPLOYMENT_R740XD_VM.md). Le present
 document reste la reference des variables, modes et garde-fous
 generaux.
 
@@ -20,6 +22,7 @@ browser -> WEBPORTAL / BFF -> API-INTERNAL -> MariaDB
 
 | Composant | Cible | Exposition |
 |---|---|---|
+| `REVERSE-PROXY` | Ubuntu Server LTS (`SRV-11`) | HTTPS public uniquement |
 | `WEBPORTAL` | Ubuntu Server LTS | Reverse proxy HTTPS uniquement |
 | `API-INTERNAL` | VM Windows Server Core ou hote interne dedie | Reseau prive uniquement |
 | MariaDB | Serveur existant | `API-INTERNAL` uniquement |
@@ -168,9 +171,11 @@ Secrets :
 
 | Source | Destination | Port |
 |---|---|---|
-| Internet / reverse proxy | `WEBPORTAL` | TCP 443 |
-| `WEBPORTAL` | `API-INTERNAL` | TCP 443 prive |
+| Internet / reverse proxy | `REVERSE-PROXY` | TCP 443 |
+| `REVERSE-PROXY` | `WEBPORTAL` | TCP 3000 prive |
+| `WEBPORTAL` | `API-INTERNAL` | TCP 5000 prive |
 | `API-INTERNAL` | MariaDB | TCP 3306 |
+| Reseau admin / VPN | `REVERSE-PROXY` | SSH |
 | Reseau admin / VPN | `WEBPORTAL` | SSH |
 | Reseau admin / VPN | `API-INTERNAL` | RDP ou WinRM |
 

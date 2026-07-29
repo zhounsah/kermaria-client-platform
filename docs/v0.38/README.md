@@ -49,6 +49,9 @@ anciennes :
 - [../PRODUCTION_DEPLOYMENT.md](../PRODUCTION_DEPLOYMENT.md)
   reste la procedure de bascule infra vers R740xd. V0.38 ajoute les
   prerequis identite/KoXo qui n'y figurent pas encore.
+- [../DEPLOYMENT_R740XD_VM.md](../DEPLOYMENT_R740XD_VM.md)
+  documente la cible active `SRV-11/12/13` retenue au 2026-07-29 ; V0.38
+  y ajoute les exigences AD et `KoXo`.
 
 ## Decisions figees par V0.38
 

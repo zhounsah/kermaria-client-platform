@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import type {
   AdminAdStatus,
@@ -471,7 +471,7 @@ async function submitMutation<TPayload>(
         userPrincipalName: newUser.userPrincipalName?.trim() || null,
         description: newUser.description?.trim() || null,
       } satisfies AdUserCreatePayload,
-      "Utilisateur Active Directory cree et selectionne.",
+      "Utilisateur Active Directory créé et sélectionné.",
       (data) => {
         if (data.object?.objectType === "user") {
           selectUser(data.object);
@@ -507,7 +507,7 @@ async function submitMutation<TPayload>(
         displayName: newGroup.displayName.trim(),
         description: newGroup.description?.trim() || null,
       } satisfies AdGroupCreatePayload,
-      "Groupe Active Directory cree et selectionne.",
+      "Groupe Active Directory créé et sélectionné.",
       (data) => {
         if (data.object?.objectType === "group") {
           selectGroup(data.object);
@@ -538,7 +538,7 @@ async function submitMutation<TPayload>(
         userSamAccountName: membership.userSamAccountName.trim(),
       } satisfies AdGroupMemberPayload,
       (data) => data.code === "AD_GROUP_MEMBER_ALREADY_PRESENT"
-        ? "L'utilisateur etait deja membre du groupe."
+        ? "L'utilisateur était déjà membre du groupe."
         : "Membre ajoute au groupe.",
     );
   }
@@ -577,8 +577,8 @@ async function submitMutation<TPayload>(
       "POST",
       {},
       (data) => data.code === "AD_USER_ALREADY_DISABLED"
-        ? "L'utilisateur etait deja désactive."
-        : "Utilisateur désactive.",
+        ? "L'utilisateur était déjà désactivé."
+        : "Utilisateur désactivé.",
     );
   }
 
@@ -596,7 +596,7 @@ async function submitMutation<TPayload>(
       "POST",
       {},
       (data) => data.code === "AD_USER_ALREADY_IN_DISABLED_OU"
-        ? "L'utilisateur etait deja dans l'OU Disabled."
+        ? "L'utilisateur était déjà dans l'OU Disabled."
         : "Utilisateur deplace vers l'OU Disabled.",
     );
   }
@@ -661,7 +661,7 @@ async function submitMutation<TPayload>(
     if (!/^[A-Za-z0-9._-]{1,64}$/.test(payload.newSamAccountName)) {
       setMessage({
         tone: "error",
-        text: "Le SamAccountName n'accepte que A-Z, 0-9, . _ - (64 caracteres max).",
+        text: "Le SamAccountName n'accepte que A-Z, 0-9, . _ - (64 caractères max).",
       });
       return;
     }
@@ -669,7 +669,7 @@ async function submitMutation<TPayload>(
     if (payload.newDisplayName.length < 3 || payload.newDisplayName.length > 200) {
       setMessage({
         tone: "error",
-        text: "Le DisplayName doit faire entre 3 et 200 caracteres.",
+        text: "Le DisplayName doit faire entre 3 et 200 caractères.",
       });
       return;
     }
@@ -690,7 +690,7 @@ async function submitMutation<TPayload>(
       "POST",
       payload,
       (data) => data.code === "AD_USER_RENAME_NOOP"
-        ? "Aucune modification : l'utilisateur a deja ces attributs."
+        ? "Aucune modification : l'utilisateur a dejà ces attributs."
         : "Utilisateur Active Directory renomme.",
       (data) => {
         if (data.object?.objectType === "user") {
@@ -748,7 +748,7 @@ async function submitMutation<TPayload>(
       "POST",
       payload,
       (data) => data.code === "AD_USER_MOVE_NOOP"
-        ? "Aucune modification : l'utilisateur est deja a cet emplacement."
+        ? "Aucune modification : l'utilisateur est déjà à cet emplacement."
         : "Utilisateur Active Directory deplace.",
       (data) => {
         if (data.object?.objectType === "user") {
@@ -1233,7 +1233,7 @@ async function submitMutation<TPayload>(
               />
             </label>
             <SubmitButton
-              idleLabel="Creer le groupe"
+              idleLabel="Créer le groupe"
               isSubmitting={isSubmitting}
               submittingLabel="Creation..."
             />

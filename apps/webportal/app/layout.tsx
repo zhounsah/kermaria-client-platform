@@ -3,16 +3,17 @@ import type { ReactNode } from "react";
 import { headers } from "next/headers";
 
 import { AppShell } from "@/components/AppShell";
+import { getCurrentPortalSession } from "@/lib/auth";
 import {
   getPortalPublicUrlFromHeaders,
   isSignupEnabled,
 } from "@/lib/public-routes";
-import { getCurrentPortalSession } from "@/lib/auth";
 import "./globals.css";
 
-const SITE_TITLE = "Zachary HOUNSA-HOUNKPA EI - Espace client professionnel";
+const SITE_TITLE =
+  "Zachary HOUNSA-HOUNKPA EI - Solutions informatiques et espace client";
 const SITE_DESCRIPTION =
-  "Espace client professionnel de Zachary HOUNSA-HOUNKPA EI : catalogue d'offres, facturation, paiements et demandes d'assistance.";
+  "Solutions informatiques claires pour petites structures, associations et professionnels : offres, accompagnement, espace client et demandes d'assistance.";
 
 export async function generateMetadata(): Promise<Metadata> {
   const baseUrl = getPortalPublicUrlFromHeaders(await headers());
@@ -31,6 +32,11 @@ export async function generateMetadata(): Promise<Metadata> {
       title: SITE_TITLE,
       description: SITE_DESCRIPTION,
       url: baseUrl,
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: SITE_TITLE,
+      description: SITE_DESCRIPTION,
     },
   };
 }

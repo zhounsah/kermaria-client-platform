@@ -4,12 +4,12 @@ import type {
   AuthMeResponse,
   LoginPayload,
 } from "@kermaria/shared";
-import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
 import { FormMessage } from "@/components/FormMessage";
 import { SubmitButton } from "@/components/SubmitButton";
 import { requestBffJson } from "@/lib/client-api";
+import { resolvePortalRoleUrl } from "@/lib/public-route-config";
 import {
   type FieldErrors,
   hasFieldErrors,
@@ -20,14 +20,27 @@ type LoginState =
   | { status: "idle" | "submitting" }
   | { status: "error"; message: string };
 
-export function LoginForm() {
-  const router = useRouter();
+type LoginFormProps = {
+  baseUrl: string;
+  initialEmail?: string;
+  initialError?: string | null;
+};
+
+export function LoginForm({
+  baseUrl,
+  initialEmail = "",
+  initialError = null,
+}: LoginFormProps) {
   const isSubmittingRef = useRef(false);
   const [payload, setPayload] = useState<LoginPayload>({
-    email: "",
+    email: initialEmail,
     password: "",
   });
-  const [state, setState] = useState<LoginState>({ status: "idle" });
+  const [state, setState] = useState<LoginState>(
+    initialError
+      ? { status: "error", message: initialError }
+      : { status: "idle" },
+  );
   const [fieldErrors, setFieldErrors] = useState<
     FieldErrors<keyof LoginPayload>
   >({});
@@ -73,13 +86,19 @@ export function LoginForm() {
       }
 
       const result = response.data;
+      if (!result.authenticated) {
+        setState({
+          status: "error",
+          message: "Connexion impossible.",
+        });
+        setPayload((current) => ({ ...current, password: "" }));
+        return;
+      }
+
       setPayload({ email: "", password: "" });
-      router.replace(
-        result.authenticated && result.user.role === "internal_admin"
-          ? "/admin"
-          : "/dashboard",
+      window.location.assign(
+        resolvePortalRoleUrl(baseUrl, result.user.role),
       );
-      router.refresh();
     } finally {
       isSubmittingRef.current = false;
     }
@@ -114,6 +133,9 @@ export function LoginForm() {
               ...current,
               email: undefined,
             }));
+            if (state.status === "error") {
+              setState({ status: "idle" });
+            }
             setPayload((current) => ({
               ...current,
               email: event.target.value,
@@ -145,6 +167,9 @@ export function LoginForm() {
               ...current,
               password: undefined,
             }));
+            if (state.status === "error") {
+              setState({ status: "idle" });
+            }
             setPayload((current) => ({
               ...current,
               password: event.target.value,

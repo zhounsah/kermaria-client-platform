@@ -1,334 +1,252 @@
-# Procedure de sortie de `OU=TEST_SITE_WEB` vers une OU de production
+# Procedure de sortie de `OU=TEST_SITE_WEB` vers `clients.home.bzh`
 
-Statut : **document de procedure**, livre dans la V0.25 (brique 3),
-**execute uniquement en V1.0 RC** apres livraison du R740xd et validation
-de la V1.0 beta 1. Aucune action prod ne doit etre prise sur la base de
-ce document avant ces deux prerequis.
+Statut : **document de procedure**, mis a jour le 2026-07-18 apres la
+creation du domaine enfant `clients.home.bzh`. Ce document decrit la
+bascule des **operations AD admin actuelles** hors de l'OU de test. Il ne
+decrit pas, a lui seul, la future refonte V0.38 du signup et du modele de
+donnees.
 
-Document redige le 2026-06-30 a partir du cadrage
-[V0.25_AD_FINALISATION.md](V0.25_AD_FINALISATION.md).
+Documents lies :
 
-## Objet
+- [`V0.25_AD_FINALISATION.md`](V0.25_AD_FINALISATION.md)
+- [`v0.38/V0.38_SITE_AD_ALIGNMENT.md`](v0.38/V0.38_SITE_AD_ALIGNMENT.md)
+- [`v0.38/V0.38_KOXO_SIGNUP_INTEGRATION.md`](v0.38/V0.38_KOXO_SIGNUP_INTEGRATION.md)
 
-Toute l'integration Active Directory en place (V0.18 a V0.25) est bornee
-a l'OU de test :
+## 1. Objet
+
+Jusqu'ici, les operations Active Directory exposees par le portail
+(`search`, `create`, `rename`, `move`, `groups`, `password`) ont ete
+recettees sous :
 
 ```text
 OU=TEST_SITE_WEB,DC=home,DC=bzh
 ```
 
-Sous cette racine, le code attend la convention :
+L'objectif de cette procedure est de faire basculer ces operations vers
+une racine dediee dans :
 
 ```text
-OU=<CUSTOMER_REFERENCE>,OU=10_Customers,OU=TEST_SITE_WEB,DC=home,DC=bzh
-  +-- OU=Users      (utilisateurs actifs)
-  +-- OU=Groups     (groupes du client)
-  +-- OU=Disabled   (utilisateurs desactives)
+OU=Clients,DC=clients,DC=home,DC=bzh
 ```
 
-Cette convention est materialisee dans
-[apps/api-internal/Services/ActiveDirectory/ActiveDirectoryPathScope.cs](../apps/api-internal/Services/ActiveDirectory/ActiveDirectoryPathScope.cs)
-(`BuildCustomerOuDn`, `BuildUsersOuDn`, `BuildGroupsOuDn`,
-`BuildDisabledOuDn`, `ExtractCustomerReference`). La racine
-`OU=TEST_SITE_WEB,DC=home,DC=bzh` est en revanche **hardcodee** dans
-[apps/api-internal/Data/Configuration/AdRuntimeConfiguration.cs](../apps/api-internal/Data/Configuration/AdRuntimeConfiguration.cs)
-sous la forme :
+Important :
 
-```csharp
-private const string RequiredTestOuRoot =
-    "OU=TEST_SITE_WEB,DC=home,DC=bzh";
+- cette procedure concerne d'abord les operations AD admin existantes ;
+- le signup V0.26 reste mono-utilisateur et sans creation AD automatique ;
+- la convergence des donnees site -> AD est traitee a part en V0.38.
+
+## 2. Verite actuelle dans le code
+
+Le depot n'est plus bloque par un garde-fou hardcode "test only".
+
+Le code actuel supporte deja :
+
+- `AD_DOMAIN`
+- `AD_CLIENTS_OU_DN`
+- `AD_REQUIRED_OU_ROOT`
+- `AD_ALLOWED_ROOTS`
+
+Le scope AD est resolu par
+`apps/api-internal/Data/Configuration/AdRuntimeConfiguration.cs`.
+
+Les services AD courants :
+
+- `LdapActiveDirectoryService`
+- `MockActiveDirectoryService`
+
+utilisent encore `OU=TEST_SITE_WEB,DC=home,DC=bzh` comme **fallback** si la
+configuration est absente ou incomplete, mais ce n'est plus une contrainte
+structurelle du code.
+
+Autre limite toujours presente : `customer_ad_links` reste un modele centre
+sur le `customer`, pas sur le `portal_user`. La bascule de racine AD est
+possible, mais elle ne vaut pas encore alignement V0.38 complet.
+
+Autre point important pour la cible retenue : certains chemins admin
+historiques ont ete penses autour de `OU=10_Customers` et de groupes
+locaux par client. L'arborescence documentaire retenue maintenant est plus
+simple (`OU=Clients/<CUSTOMER_REFERENCE>/Users|Disabled`) et suppose
+l'alignement progressif de ces chemins avant activation definitive.
+
+## 3. Cible logique
+
+Le domaine cible est :
+
+```text
+clients.home.bzh
 ```
 
-et le check `configurationValid` refuse toute autre valeur de
-`AD_CLIENTS_OU_DN`. La sortie vers une OU de production passe donc
-**obligatoirement par une modification de code**, pas par une simple
-reconfiguration d'environnement.
+La structure logique retenue est :
 
-## Prerequis
-
-### Hardware
-
-- R740xd livre, racke, alimente, accessible reseau (cf.
-  [README.md](../README.md) section infrastructure et
-  `infra-r740xd-blocker` cote memoire).
-- V1.0 beta 1 livree et validee : services tournent, certificats poses,
-  pare-feu en place, sauvegardes MariaDB en cours.
-
-### AD de production
-
-- une racine OU dediee a l'application est creee dans l'AD prod (ex :
-  `OU=KERMARIA_CLIENTS,DC=<prod-domain>,DC=<tld>`) ;
-- la convention `OU=10_Customers` est reproduite directement sous cette
-  racine (le code n'accepte pas un autre nom de conteneur, cf.
-  `ExtractCustomerReference` qui compare litteralement la chaine
-  `10_Customers`) ;
-- un compte de service prod dedie (different de celui de test) est cree
-  avec les droits :
-  - lecture sur la racine et tous les sous-arbres,
-  - ecriture restreinte sur la racine (create/move/rename
-    user et groupe ; reset de mot de passe utilisateur),
-  - **aucun droit hors de la racine prod**.
-- la racine prod est sauvegardee (snapshot AD) AVANT toute action.
-
-### Logiciel
-
-- branche de release V1.0 RC contenant la modification de code decrite
-  ci-dessous, validee en revue ;
-- `AD_DOMAIN`, `AD_CLIENTS_OU_DN`, `AD_SERVICE_ACCOUNT_USERNAME`,
-  `AD_SERVICE_ACCOUNT_PASSWORD` prepares dans le coffre secrets prod ;
-- `AD_INTEGRATION_MODE` peut etre bascule a `read_only` avant
-  `controlled_write` pour une validation lecture-seule prealable.
-
-## Modifications de code requises avant bascule
-
-Une seule modification structurelle est necessaire. Sans elle, le
-service refuse de demarrer en prod meme si la config est correcte.
-
-### Levee du garde-fou `RequiredTestOuRoot`
-
-Fichier :
-[apps/api-internal/Data/Configuration/AdRuntimeConfiguration.cs](../apps/api-internal/Data/Configuration/AdRuntimeConfiguration.cs).
-
-Remplacer :
-
-```csharp
-private const string RequiredTestOuRoot =
-    "OU=TEST_SITE_WEB,DC=home,DC=bzh";
-
-// ...
-
-var configurationValid = !requiresDirectoryConfiguration
-    || (
-        domain is not null
-        && clientsOuDn is not null
-        && string.Equals(
-            clientsOuDn,
-            RequiredTestOuRoot,
-            StringComparison.OrdinalIgnoreCase)
-        && serviceAccountUsername is not null
-        && serviceAccountPassword is not null
-    );
+```text
+OU=Clients,DC=clients,DC=home,DC=bzh
+  +-- OU=<CUSTOMER_REFERENCE>
+      +-- OU=Users
+      +-- OU=Disabled
 ```
 
-par une variante qui :
+Les groupes de securite restent, eux, dans le domaine parent :
 
-1. enleve le check d'egalite stricte avec `RequiredTestOuRoot` ;
-2. exige que `AD_CLIENTS_OU_DN` soit non vide, normalise, et termine par
-   au moins un `DC=` (regle minimale syntaxique) ;
-3. journalise au demarrage la racine effective utilisee (sans secret) ;
-4. conserve la liste de racines autorisees sous forme d'allowlist
-   explicite (env var `AD_ALLOWED_ROOTS=OU=...` en CSV) plutot qu'une
-   seule valeur hardcodee, pour empecher une mauvaise configuration
-   silencieuse (par exemple un `AD_CLIENTS_OU_DN=DC=home,DC=bzh` qui
-   donnerait acces a tout le domaine).
+```text
+OU=SecurityGroups,OU=Kermaria,DC=home,DC=bzh
+  +-- CN=GG_VPN
+  +-- CN=GG_RDS
+  +-- CN=GG_Radio
+```
 
-La PR de levee de garde-fou est livree avec :
-- tests unitaires `RuntimeConfigurationValidator` couvrant : DN vide,
-  DN syntaxiquement invalide, DN hors allowlist, DN dans l'allowlist ;
-- mise a jour de
-  [docs/V0.19_AD_SECURITY_HARDENING.md](V0.19_AD_SECURITY_HARDENING.md)
-  et de [docs/SECURITY.md](SECURITY.md) pour mentionner la nouvelle
-  variable `AD_ALLOWED_ROOTS` ;
-- mise a jour de
-  [scripts/verify-ad-security-contract.mjs](../scripts/verify-ad-security-contract.mjs)
-  pour valider l'allowlist.
+L'architecture cible suppose donc :
 
-Aucune autre modification du code AD n'est requise :
-`ActiveDirectoryPathScope` est deja parametrable et fonctionne avec
-n'importe quelle racine valide.
+- une segregation par `customerReference`
+- les sous-OUs `Users` et `Disabled`
+- aucune distinction `client pro` / `client simple` dans le nom des OUs
+- des groupes de securite centralises dans le domaine parent
 
-## Strategie de coexistence "test + prod"
+Le DN de racine retenu pour les comptes clients web est :
 
-Decision a prendre avant la bascule : faut-il garder l'OU de test
-operationnelle pour audit/regression pendant que la nouvelle OU prod
-sert les nouveaux clients ?
+```text
+OU=Clients,DC=clients,DC=home,DC=bzh
+```
 
-Deux options :
+## 4. Prequis
 
-### Option A : bascule franche (recommandee)
+### Infrastructure
 
-- A J-bascule, `AD_CLIENTS_OU_DN` est reconfigure vers la racine prod.
-- Les objets de test restent en place dans `OU=TEST_SITE_WEB` (non
-  supprimes pour audit) mais ne sont plus accessibles par
-  l'application : l'application ne lit/ecrit plus que dans la racine
-  prod.
-- Les `customer_ad_links` existantes pointant vers l'OU de test
-  deviennent **orphelines fonctionnellement** : le code resoudra ces
-  liens en echec ("objet AD introuvable dans l'OU configuree") et
-  affichera "lien AD invalide" cote `/admin/customers/[ref]`.
-- Une action admin (script ou ecran "re-lier") est requise pour chaque
-  client deja en prod qui doit avoir un compte AD : reprovisionner ou
-  re-lier dans la nouvelle OU.
+- domaine enfant `clients.home.bzh` cree et resolvable
+- racine `OU=Clients,DC=clients,DC=home,DC=bzh` creee dans ce domaine
+- conteneur de groupes
+  `OU=SecurityGroups,OU=Kermaria,DC=home,DC=bzh` cree ou valide
+- compte de service dedie avec droits limites a cette racine
+- verification des ACL sur la racine et ses sous-arbres
+- verification des ACL de gestion de membres sur les groupes du domaine
+  parent
+- sauvegarde AD avant bascule
 
-**Pour :** simple, pas de double config, pas de logique conditionnelle.
-**Contre :** brutal pour les clients existants ; necessite un script de
-re-provisioning.
+### Application
 
-### Option B : double-OU transitoire (non implementee, evaluer en V1.0 RC)
+- branche de deploiement contenant le code AD courant
+- valeurs de configuration preparees :
+  - `AD_DOMAIN=clients.home.bzh`
+  - `AD_CLIENTS_OU_DN=OU=Clients,DC=clients,DC=home,DC=bzh`
+  - `AD_REQUIRED_OU_ROOT=OU=Clients,DC=clients,DC=home,DC=bzh`
+  - `AD_ALLOWED_ROOTS=OU=Clients,DC=clients,DC=home,DC=bzh`
+- `AD_INTEGRATION_MODE=read_only` disponible pour une validation lecture
+  seule avant passage en `controlled_write`
 
-- ajout d'une colonne `customers.ad_ou_override VARCHAR(1000) NULL`
-  (nouvelle migration `018_customer_ad_ou_override.sql`) ;
-- `ActiveDirectoryPathScope` devient instanciable par appel a partir de
-  la valeur effective `customer.ad_ou_override ?? config.ClientsOuDn` ;
-- les anciens clients gardent leur OU de test, les nouveaux clients
-  arrivent sous la nouvelle OU prod ;
-- migration progressive par lots.
+### Donnees
 
-**Pour :** zero rupture pour les clients existants.
-**Contre :** double config, scope refactore (singleton -> per-request),
-risque accru d'erreur de scope, audit plus complexe.
+- export de `customer_ad_links`
+- export de `customers`
+- export des journaux d'audit utiles
 
-**Decision par defaut : Option A** sauf si, au moment de la bascule, on
-a deja plus de 5 clients prod actifs avec lien AD. Tracer la decision
-dans la PR de bascule.
+## 5. Decision de coexistence
 
-## Procedure de bascule (Option A)
+Deux strategies restent possibles.
 
-A executer fenetre de maintenance annoncee, ordre strict.
+### Option A - bascule franche
 
-### J-7 : preparation
+- l'application pointe uniquement vers `clients.home.bzh`
+- l'ancienne OU de test reste archivee mais n'est plus pilotee
+- les liens AD historiques hors nouvelle racine devront etre re-lies ou
+  re-provisionnes
 
-1. Verifier que la PR "levee `RequiredTestOuRoot`" est mergee et
-   deployee en preprod (sans changer encore `AD_CLIENTS_OU_DN`).
-2. Verifier `npm run test:ad-security` vert sur preprod.
-3. Snapshot AD prod (racine cible).
-4. `mysqldump` complet de la base prod : table `customer_ad_links`,
-   `customers`, `audit_log` au minimum.
-5. Communiquer aux clients existants ayant un lien AD : fenetre de
-   reprovisioning prevue.
+C'est l'option recommandee.
 
-### J-1 : repetition
+### Option B - double racine transitoire
 
-1. Sur l'environnement de preprod :
-   - configurer `AD_CLIENTS_OU_DN` vers une racine prod **factice** de
-     repetition (pas la vraie racine prod) ;
-   - basculer `AD_INTEGRATION_MODE=read_only` ;
-   - redemarrer ;
-   - verifier que l'audit log enregistre l'evenement
-     `ad.startup.root_changed` (a ajouter dans la PR de levee de
-     garde-fou) ;
-   - re-provisionner un client de test, verifier le flux.
-2. Documenter le timing exact de chaque etape.
+- une partie des clients reste en test
+- une partie des clients part sur `clients.home.bzh`
 
-### J0 : bascule prod
+Cette option n'est pas recommandee avec le modele courant, car elle
+complexifie trop le scope AD et la lecture de `customer_ad_links`.
 
-Dans l'ordre, sans sauter :
+## 6. Configuration cible
 
-1. **Mode lecture seule prealable**
-   - `AD_INTEGRATION_MODE=read_only`
-   - `AD_CLIENTS_OU_DN=<nouvelle racine prod>`
-   - `AD_SERVICE_ACCOUNT_USERNAME=<compte prod>`
-   - `AD_SERVICE_ACCOUNT_PASSWORD=<secret prod>` (rotation depuis le
-     coffre)
-   - redemarrage API-INTERNAL
-   - verifier les logs : pas d'exception `RuntimeConfigurationException`,
-     log `ad.startup.root_changed` present
-   - verifier UI `/admin/customers/[ref]` : la section AD affiche "mode
-     read_only" et liste les objets visibles (initialement zero, car la
-     racine prod est vide)
-2. **Re-provisioning des clients prioritaires**
-   - pour chaque client prod existant a re-lier :
-     - admin clique "Provisionner AD" (brique 2 V0.25) qui cree l'objet
-       sous `OU=Users,OU=<REF>,OU=10_Customers,<racine prod>` ;
-     - le lien `customer_ad_links` est mis a jour (nouveau
-       `object_guid`, nouveau DN) ;
-     - audit `ad.user.created` enregistre.
-   - **Note** : passer en `controlled_write` temporairement pour cette
-     etape, repasser en `read_only` immediatement apres si du temps
-     mort est attendu avant l'ouverture aux nouveaux clients.
-3. **Mode normal**
-   - `AD_INTEGRATION_MODE=controlled_write`
-   - redemarrage
-   - smoke test : creation d'un utilisateur, ajout au groupe, reset
-     mot de passe (brique 1 V0.25), desactivation, deplacement.
+Exemple de configuration attendue :
 
-### J+1 a J+7 : surveillance
+```text
+AD_DOMAIN=clients.home.bzh
+AD_CLIENTS_OU_DN=OU=Clients,DC=clients,DC=home,DC=bzh
+AD_REQUIRED_OU_ROOT=OU=Clients,DC=clients,DC=home,DC=bzh
+AD_ALLOWED_ROOTS=OU=Clients,DC=clients,DC=home,DC=bzh
+AD_INTEGRATION_MODE=read_only
+```
 
-- monitoring du nombre d'erreurs `ad.*` dans l'audit log ;
-- check quotidien des liens orphelins :
-  `SELECT customer_id, distinguished_name FROM customer_ad_links
-   WHERE distinguished_name LIKE '%TEST_SITE_WEB%'` ;
-- les orphelins detectes declenchent un ticket ops.
+`AD_ALLOWED_ROOTS` doit rester une allowlist stricte, bornee a
+`OU=Clients,DC=clients,DC=home,DC=bzh`.
 
-## Plan de rollback
+## 7. Procedure de bascule
 
-Si une anomalie bloquante est detectee entre J0 et J+7 :
+### J-7
 
-1. `AD_INTEGRATION_MODE=disabled` (coupe l'integration sans casser le
-   reste de l'application : le portail continue de fonctionner sans
-   acces AD).
-2. Si la cause est identifiee comme la nouvelle racine prod :
-   - re-mettre `AD_CLIENTS_OU_DN=OU=TEST_SITE_WEB,DC=home,DC=bzh`
-   - `AD_INTEGRATION_MODE=read_only` puis `controlled_write` apres
-     validation
-   - les objets re-provisionnes en prod restent en place (non
-     supprimes) ; ils seront repris a la prochaine tentative.
-   - les liens `customer_ad_links` re-pointent automatiquement vers
-     l'OU de test pour les clients dont le lien n'a pas ete touche ;
-     les liens crees pendant la fenetre prod doivent etre nettoyes via
-     SQL :
-     `DELETE FROM customer_ad_links WHERE linked_at >= '<J0>'
-      AND distinguished_name NOT LIKE '%TEST_SITE_WEB%'`
-   - audit `ad.rollback.executed` saisi manuellement.
-3. Communication aux clients impactes.
+1. Creer et valider `OU=Clients,DC=clients,DC=home,DC=bzh`.
+2. Creer et tester le compte de service.
+3. Verifier les ACL de gestion de membres sur `GG_VPN`, `GG_RDS`,
+   `GG_Radio`.
+4. Verifier que `npm run test:ad-security` reste vert.
+5. Exporter `customer_ad_links`, `customers` et les audits utiles.
+6. Snapshot AD de la nouvelle racine.
 
-Le rollback est **degrade** par construction : tout client provisionne
-en prod entre J0 et la decision de rollback perd son lien AD. Ne pas
-sous-estimer.
+### J-1
 
-## Controles avant bascule
+1. Deployer la configuration cible avec `AD_INTEGRATION_MODE=read_only`.
+2. Redemarrer l'API.
+3. Verifier l'etat AD dans l'admin.
+4. Verifier qu'une recherche AD repond depuis la nouvelle racine.
+5. Confirmer qu'aucune operation n'echoue pour cause de scope.
 
-Checklist a cocher dans la PR de bascule (J-7) :
+### J0
 
-- [ ] PR "levee `RequiredTestOuRoot`" mergee, deployee en preprod,
-      tests verts depuis 7 jours minimum.
-- [ ] `AD_ALLOWED_ROOTS` configure et restreint a la racine prod
-      cible (et eventuellement la racine de test pour la fenetre de
-      bascule).
-- [ ] Compte de service prod cree, scope ACL verifie sur la racine
-      prod uniquement (NE PAS donner les droits hors racine).
-- [ ] Mot de passe du compte de service prod stocke dans le coffre
-      secrets prod, jamais en clair dans un repo ou un script.
-- [ ] Snapshot AD prod realise et restauration testee.
-- [ ] `mysqldump` de prod realise et restauration testee.
-- [ ] Sauvegardes MariaDB recentes verifiees
-      (cf. [V0.24_STABILISATION_TESTABLE.md](V0.24_STABILISATION_TESTABLE.md)).
-- [ ] Repetition J-1 executee sur preprod avec racine factice.
-- [ ] Liste des clients a re-provisionner figee et communiquee.
-- [ ] Fenetre de maintenance annoncee.
-- [ ] `npm run test:ad-security` vert sur la branche de release.
+1. Passer en `read_only` sur la nouvelle racine.
+2. Verifier la lecture des objets visibles.
+3. Basculer ensuite en `controlled_write`.
+4. Jouer un client temoin :
+   - recherche
+   - creation user
+   - rattachement a `GG_VPN` / `GG_RDS` / `GG_Radio` dans le domaine parent
+   - rename
+   - move `Users <-> Disabled`
+   - changement de mot de passe si active
+5. Re-lier ou re-provisionner les clients prioritaires deja presents.
 
-## Audit et points de vigilance
+### J+1 a J+7
 
-- **Aucune suppression** d'objet AD dans la fenetre de bascule (ni
-  cote test, ni cote prod). Tout est `Disabled` ou conserve tel quel.
-- **Aucun hard delete** dans `customer_ad_links` sauf dans le cadre
-  strict du rollback decrit ci-dessus.
-- L'audit log doit montrer une trace continue : avant la bascule, on
-  voit des operations sur l'OU de test ; apres, sur la racine prod.
-  L'evenement `ad.startup.root_changed` marque la transition et doit
-  etre present.
-- Les changements de mot de passe AD (brique 1 V0.25) restent disables
-  par defaut (`AD_PASSWORD_CHANGE_ENABLED=false`). Ne pas activer en
-  meme temps que la bascule d'OU : separer en deux fenetres de
-  maintenance distinctes.
-- Le mode `live` PayPal/BPCE/EMAIL n'est pas couple a cette procedure :
-  ils peuvent etre actives independamment (mais idealement apres
-  stabilisation de la bascule AD).
+- surveiller les erreurs `ad.*`
+- lister les `customer_ad_links` encore pointant vers `TEST_SITE_WEB`
+- ouvrir un suivi ops pour chaque lien non migre
 
-## Limites assumees
+## 8. Verification minimale
 
-- Pas de migration automatique d'objets AD (move d'arbres) : la
-  procedure est un **re-provisioning** par client, pas un deplacement
-  AD-side de l'ancienne OU vers la nouvelle. Le deplacement AD natif
-  est theoriquement possible mais hors scope V1.0 RC (risque eleve,
-  GUID/SID change non maitrise selon la methode).
-- Pas de procedure multi-domaine ni de trusts AD : un seul domaine
-  prod.
-- Pas de federation SSO (Azure AD, OIDC) : c'est une migration
-  d'integration LDAP existante, pas un changement d'architecture
-  d'authentification.
-- Pas d'automatisation de la levee de garde-fou `RequiredTestOuRoot` :
-  c'est une PR manuelle, revue, mergee, deployee. Pas de feature flag
-  pour basculer dynamiquement entre racine test et racine prod sur la
-  meme instance (`ActiveDirectoryPathScope` est un singleton).
+La bascule est consideree saine si :
+
+- l'etat AD admin repond sur la nouvelle racine
+- un user temoin peut etre cree dans `clients.home.bzh`
+- un user temoin peut etre rattache a un groupe `GG_*` du domaine parent
+- le lien MariaDB correspondant est coherent
+- aucune operation ne sort des racines autorisees
+
+## 9. Rollback
+
+En cas d'anomalie bloquante :
+
+1. repasser `AD_INTEGRATION_MODE=disabled` ou `read_only`
+2. remettre les variables de racine sur l'OU de test
+3. redemarrer l'API
+4. conserver les objets crees dans `clients.home.bzh` pour analyse
+5. ne nettoyer `customer_ad_links` qu'avec une action volontaire et tracee
+
+Le rollback degrade n'efface pas magiquement les objets crees dans le
+domaine enfant. Il doit etre pilote comme un incident d'exploitation.
+
+## 10. Ce que cette procedure ne couvre pas
+
+- la creation AD automatique depuis le signup
+- le multi-utilisateur pro/association
+- le suivi AD par `portal_user`
+- la synchronisation continue du mot de passe portail -> AD
+- la reprise KoXo
+
+Ces sujets relevent de V0.38 et de :
+
+- [`v0.38/V0.38_SITE_AD_ALIGNMENT.md`](v0.38/V0.38_SITE_AD_ALIGNMENT.md)
+- [`v0.38/V0.38_KOXO_SIGNUP_INTEGRATION.md`](v0.38/V0.38_KOXO_SIGNUP_INTEGRATION.md)
+- [`v0.38/V0.38_KOXO_DATA_CONTRACTS.md`](v0.38/V0.38_KOXO_DATA_CONTRACTS.md)

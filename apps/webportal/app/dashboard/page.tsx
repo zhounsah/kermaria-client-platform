@@ -5,6 +5,7 @@ import { ErrorState } from "@/components/ErrorState";
 import { MetricCard } from "@/components/MetricCard";
 import { MockNotice } from "@/components/MockNotice";
 import { PageHeader } from "@/components/PageHeader";
+import { PublicPackCard } from "@/components/PublicPackCard";
 import { RequestStatusBadge } from "@/components/RequestStatusBadge";
 import { SectionCard } from "@/components/SectionCard";
 import { SectionHeading } from "@/components/SectionHeading";
@@ -22,12 +23,20 @@ import {
   getClientProfile,
   getCommercialDocuments,
   getNotifications,
+  getPendingPackSelection,
   getPortalSummary,
+  getPublicCommercialCatalog,
+  getPublicPackCatalogContent,
   getServices,
   getServiceRequests,
   getSupportRequests,
   resolveDataSource,
 } from "@/lib/internal-api";
+import {
+  findPackPresentation,
+  findPendingPackSelectionForPack,
+  resolvePackCatalog,
+} from "@/lib/public-packs";
 import { getServiceSymbol } from "@/lib/service-display";
 
 export const metadata = {
@@ -46,6 +55,9 @@ export default async function DashboardPage() {
     supportResult,
     serviceRequestsResult,
     notificationsResult,
+    catalogResult,
+    packContentResult,
+    pendingSelectionResult,
   ] = await Promise.all([
     getPortalSummary(),
     getClientProfile(),
@@ -54,6 +66,9 @@ export default async function DashboardPage() {
     getSupportRequests(),
     getServiceRequests(),
     getNotifications(),
+    getPublicCommercialCatalog(),
+    getPublicPackCatalogContent(),
+    getPendingPackSelection(),
   ]);
 
   const summary = summaryResult.data;
@@ -63,6 +78,11 @@ export default async function DashboardPage() {
   const supportRequests = supportResult.data;
   const serviceRequests = serviceRequestsResult.data;
   const notifications = notificationsResult.data;
+  const pendingSelection = pendingSelectionResult.data;
+  const packs = resolvePackCatalog(catalogResult.data, packContentResult.data);
+  const pendingPack = pendingSelection
+    ? packs.find((pack) => pack.key === pendingSelection.snapshot.packKey) ?? null
+    : null;
   const unreadNotificationCount = notifications.filter(
     (item) => !item.isRead,
   ).length;
@@ -74,6 +94,9 @@ export default async function DashboardPage() {
     supportResult.source,
     serviceRequestsResult.source,
     notificationsResult.source,
+    catalogResult.source,
+    packContentResult.source,
+    pendingSelectionResult.source,
   ]);
   const partialError = [
     summaryResult,
@@ -83,15 +106,18 @@ export default async function DashboardPage() {
     supportResult,
     serviceRequestsResult,
     notificationsResult,
+    catalogResult,
+    packContentResult,
+    pendingSelectionResult,
   ].find((result) => result.error);
 
   return (
     <>
       <PageHeader
-        action={<StatusBadge label="Espace authentifié" tone="success" />}
+        action={<StatusBadge label="Espace authentifie" tone="success" />}
         description={
           summary
-            ? `Référence ${summary.customerReference} - informations disponibles sur vos services, demandes et documents commerciaux.`
+            ? `Reference ${summary.customerReference} - informations disponibles sur vos services, demandes et documents commerciaux.`
             : "Votre espace client regroupe les informations disponibles sur vos services Kermaria."
         }
         eyebrow="Vue d'ensemble"
@@ -142,8 +168,50 @@ export default async function DashboardPage() {
         />
       </section>
 
+      {pendingSelection && pendingPack ? (
+        <section className="request-history-section">
+          <SectionHeading
+            action={<StatusBadge label="Priorité du compte" tone="warning" />}
+            description="Votre compte est actif, mais le pack choisi a l'inscription attend encore sa finalisation. Reprenez-le ici pour continuer le parcours annonce sur la vitrine."
+            title="Finaliser mon pack"
+          />
+          <div className="content-panel" style={{ marginBottom: "1.5rem" }}>
+            <p className="request-description" style={{ marginBottom: "0.75rem" }}>
+              Pack repris : <strong>{pendingSelection.snapshot.packLabel}</strong>.
+              La demande d&apos;accès est validée ; il vous reste maintenant à
+              confirmer le pack et son premier règlement depuis l&apos;espace client.
+            </p>
+            <ol
+              className="request-description"
+              style={{ marginBottom: 0, paddingLeft: "1.25rem" }}
+            >
+              <li>reprendre le pack avec la sélection conservée ;</li>
+              <li>confirmer la facture de premier terme ;</li>
+              <li>choisir ensuite le mode de règlement avant activation.</li>
+            </ol>
+          </div>
+          <div className="public-pack-grid">
+            <PublicPackCard
+              key={`dashboard-pending-${pendingPack.key}`}
+              mode="subscribe"
+              pack={pendingPack}
+              initialSelection={findPendingPackSelectionForPack(
+                pendingSelection,
+                pendingPack.key,
+              )}
+              highlightLabel={
+                findPackPresentation(
+                  pendingPack.key,
+                  packContentResult.data,
+                )?.highlightLabel ?? "Sélection reprise"
+              }
+            />
+          </div>
+        </section>
+      ) : null}
+
       <div className="dashboard-layout">
-        <SectionCard ariaLabel="Aperçu des services">
+        <SectionCard ariaLabel="Apercu des services">
           <SectionHeading
             action={<Link href="/services">Voir tous les services</Link>}
             description="Services réellement déduits de vos packs, options et souscriptions."
@@ -158,7 +226,7 @@ export default async function DashboardPage() {
             />
           ) : services.length === 0 ? (
             <EmptyState
-              description="Aucun service n'est actuellement associé à ce compte."
+              description="Aucun service n'est actuellement associé a ce compte."
               title="Aucun service"
             />
           ) : (
@@ -192,7 +260,7 @@ export default async function DashboardPage() {
           />
           <Link className="quick-action" href="/support">
             <span>Créer une demande support</span>
-            <small>Décrire un besoin lié à un service</small>
+            <small>Décrire un besoin lie a un service</small>
           </Link>
           <Link className="quick-action" href="/request-service">
             <span>Demander un service</span>
@@ -214,7 +282,7 @@ export default async function DashboardPage() {
       </div>
 
       <div className="dashboard-layout">
-        <SectionCard ariaLabel="Aperçu des documents commerciaux">
+        <SectionCard ariaLabel="Apercu des documents commerciaux">
           <SectionHeading
             action={<Link href="/invoices">Tous les documents</Link>}
             title="Documents commerciaux récents"

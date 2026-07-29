@@ -23,7 +23,7 @@ export default async function CartPage() {
   await requireClientSession();
   const checkoutResult = await getCheckoutSummary();
   const checkout = checkoutResult.data;
-  const immediateTotal =
+  const immédiateTotal =
     checkout.cart.subtotalCents + checkout.recurring.subtotalCents;
 
   return (
@@ -34,8 +34,8 @@ export default async function CartPage() {
             Continuer mes achats
           </Link>
         }
-        description="Un seul écran de récapitulatif, puis deux confirmations distinctes selon qu'il s'agit d'achats ponctuels ou d'abonnements récurrents."
-        eyebrow="Panier unifié"
+        description="Un récapitulatif commun pour tout voir d'un coup, puis une confirmation adaptée a chaque type d'achat."
+        eyebrow="Récapitulatif des achats"
         title="Mon panier"
       />
 
@@ -61,7 +61,7 @@ export default async function CartPage() {
           <div className="checkout-page-main">
             <section className="request-history-section">
               <SectionHeading
-                description="Ces lignes seront regroupées dans une commande unique, puis payables par Stripe, PayPal ou virement bancaire."
+                description="Ces lignes partent dans une commande unique. Une fois confirmée, elle devient un document payable par Stripe, PayPal ou virement bancaire."
                 title="Achats ponctuels"
               />
               {checkout.cart.itemCount === 0 ? (
@@ -77,7 +77,7 @@ export default async function CartPage() {
                     <thead>
                       <tr>
                         <th scope="col">Prestation</th>
-                        <th scope="col">Qté</th>
+                        <th scope="col">Qte</th>
                         <th scope="col">Prix unitaire HT</th>
                         <th scope="col">Total ligne HT</th>
                         <th scope="col">
@@ -120,7 +120,7 @@ export default async function CartPage() {
 
             <section className="request-history-section">
               <SectionHeading
-                description="Ces sélections créent des souscriptions locales en attente de paiement, puis une facture initiale commune pour choisir ensuite Stripe, PayPal ou virement bancaire."
+                description="Ces selections creent d'abord des souscriptions locales en attente, puis une facture initiale commune a regler avant activation."
                 title="Abonnements récurrents"
               />
               {checkout.recurring.itemCount === 0 ? (
@@ -206,12 +206,12 @@ export default async function CartPage() {
                 </div>
                 <div className="checkout-summary-totals-grand">
                   <dt>Immédiat</dt>
-                  <dd>{formatCurrencyFromCents(immediateTotal)}</dd>
+                  <dd>{formatCurrencyFromCents(immédiateTotal)}</dd>
                 </div>
               </dl>
               <p>
                 Les achats ponctuels et les abonnements restent visibles sur un
-                seul écran, avec une validation adaptée à chaque tunnel.
+                seul écran, mais ne se confirment pas de la même manière.
               </p>
               <div className="checkout-summary-actions">
                 <Link className="button button-ghost" href="/souscrire">

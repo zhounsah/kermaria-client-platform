@@ -8,14 +8,34 @@ sensibles.
 ```text
 Internet
   -> Cloudflare / reverse proxy HTTPS
+  -> REVERSE-PROXY
   -> WEBPORTAL
   -> réseau privé
   -> API-INTERNAL
   -> SQL existant / AD / NAS / RDS / VPN / facturation
 ```
 
-L'architecture comporte au maximum deux VM applicatives. Le serveur SQL existe
-déjà et ne fait pas partie des VM à créer.
+La cible R740xd au 2026-07-29 repose sur trois VM dediees :
+
+- `SRV-11` : reverse proxy `nginx` et terminaison TLS ;
+- `SRV-12` : `WEBPORTAL` / BFF sous Ubuntu ;
+- `SRV-13` : `API-INTERNAL` sensible sous Windows Server.
+
+Le serveur SQL existe deja et ne fait pas partie des VM a creer.
+
+## REVERSE-PROXY
+
+`REVERSE-PROXY` est deploye sur Ubuntu Server LTS et correspond a
+`SRV-11` dans la cible R740xd. Il heberge :
+
+- la terminaison TLS ;
+- les redirections HTTP -> HTTPS ;
+- les journaux d'acces et d'erreur ;
+- la retransmission vers `WEBPORTAL` ;
+- le point d'entree unique public.
+
+Il ne porte aucune logique metier Kermaria et n'accede ni a `MariaDB`, ni a
+`AD`, ni aux outils internes.
 
 ## WEBPORTAL
 
@@ -31,10 +51,10 @@ déjà et ne fait pas partie des VM à créer.
 - les routes publiques du contrat d'API.
 - les health checks publics du portail, sans détail interne.
 
-`WEBPORTAL` est le seul composant applicatif accessible depuis Internet, et
-uniquement au travers de Cloudflare ou du reverse proxy HTTPS. Il ne possède
-aucun accès direct à Active Directory, au NAS, à RDS, au VPN, au serveur SQL ou
-aux outils de facturation internes.
+`WEBPORTAL` n'est jamais expose directement a Internet : il est atteint
+uniquement via `REVERSE-PROXY`. Il ne possede aucun acces direct a Active
+Directory, au NAS, a RDS, au VPN, au serveur SQL ou aux outils de facturation
+internes.
 
 ## API-INTERNAL
 

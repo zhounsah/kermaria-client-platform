@@ -1,7 +1,10 @@
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { LoginForm } from "@/components/LoginForm";
 import { getCurrentPortalSession } from "@/lib/auth";
+import { resolvePortalAreaUrl, resolvePortalRoleUrl } from "@/lib/public-route-config";
+import { getPortalPublicUrlFromHeaders } from "@/lib/public-routes";
 
 export const metadata = {
   title: "Connexion",
@@ -9,16 +12,31 @@ export const metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default async function LoginPage() {
+type LoginPageSearchParams = {
+  error?: string;
+  email?: string;
+};
+
+type LoginPageProps = {
+  searchParams: Promise<LoginPageSearchParams>;
+};
+
+export default async function LoginPage({
+  searchParams,
+}: LoginPageProps) {
+  const baseUrl = getPortalPublicUrlFromHeaders(await headers());
   const session = await getCurrentPortalSession();
 
   if (session) {
-    redirect(
-      session.user.role === "internal_admin"
-        ? "/admin"
-        : "/dashboard",
-    );
+    redirect(resolvePortalRoleUrl(baseUrl, session.user.role));
   }
+
+  const canonicalLoginUrl = resolvePortalAreaUrl(baseUrl, "client", "/login");
+  if (canonicalLoginUrl !== `${baseUrl}/login`) {
+    redirect(canonicalLoginUrl);
+  }
+
+  const { error, email } = await searchParams;
 
   return (
     <section className="login-layout">
@@ -36,7 +54,11 @@ export default async function LoginPage() {
         </ul>
       </div>
       <div>
-        <LoginForm />
+        <LoginForm
+          initialEmail={email?.trim() ?? ""}
+          initialError={getInitialErrorMessage(error)}
+          baseUrl={baseUrl}
+        />
         <p className="login-help">
           La récupération automatisée du mot de passe n&apos;est pas disponible
           dans cette version.
@@ -44,4 +66,19 @@ export default async function LoginPage() {
       </div>
     </section>
   );
+}
+
+function getInitialErrorMessage(errorCode?: string) {
+  switch (errorCode) {
+    case "INVALID_CREDENTIALS":
+    case "LOGIN_FAILED":
+      return "Identifiants invalides.";
+    case "ACCOUNT_LOCKED":
+      return "Identifiants invalides ou connexion temporairement indisponible.";
+    case "INTERNAL_API_UNAVAILABLE":
+    case "INTERNAL_ERROR":
+      return "Le service est temporairement indisponible. Réessayez dans quelques instants.";
+    default:
+      return null;
+  }
 }

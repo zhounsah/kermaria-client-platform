@@ -36,6 +36,7 @@ Identity alignment already documented but not yet implemented:
 
 - `docs/v0.38/V0.38_SITE_AD_ALIGNMENT.md`
 - `docs/v0.38/V0.38_KOXO_SIGNUP_INTEGRATION.md`
+- `docs/DEPLOYMENT_R740XD_VM.md`
 - target domain: `clients.home.bzh`
 - important: current signup remains V0.26 mono-user and does not create AD
 

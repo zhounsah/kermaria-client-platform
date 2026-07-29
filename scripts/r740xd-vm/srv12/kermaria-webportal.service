@@ -1,0 +1,28 @@
+[Unit]
+Description=Kermaria Webportal
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kermaria-web
+Group=kermaria-web
+WorkingDirectory=/opt/kermaria/webportal/apps/webportal
+EnvironmentFile=/etc/kermaria/webportal.env
+Environment=NEXT_TELEMETRY_DISABLED=1
+ExecStart=/opt/kermaria/node/bin/node /opt/kermaria/webportal/apps/webportal/server.js
+Restart=always
+RestartSec=5
+TimeoutStartSec=30
+TimeoutStopSec=20
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/var/log/kermaria /opt/kermaria/webportal/apps/webportal/.next/cache
+StandardOutput=append:/var/log/kermaria/webportal.stdout.log
+StandardError=append:/var/log/kermaria/webportal.stderr.log
+
+[Install]
+WantedBy=multi-user.target

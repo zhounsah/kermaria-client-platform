@@ -61,7 +61,7 @@ export async function POST(
     const session = await getInternalSession(sessionToken, correlationId);
     if (session.user.role !== "internal_admin") {
       return NextResponse.json(
-        { code: "ACCESS_DENIED", message: "Acces refuse." },
+        { code: "ACCESS_DENIED", message: "Accès refusé." },
         { status: 403 },
       );
     }
@@ -129,7 +129,7 @@ export async function POST(
     return NextResponse.json(
       {
         code: "PLAN_ALREADY_EXISTS",
-        message: `Un plan PayPal ${mode} existe deja pour cette offre.`,
+        message: `Un plan PayPal ${mode} existe déjà pour cette offre.`,
       },
       { status: 409 },
     );
@@ -167,7 +167,7 @@ export async function POST(
       {
         code: "PAYPAL_PLAN_ERROR",
         message:
-          "Le produit PayPal a ete cree mais la creation du plan a echoue.",
+          "Le produit PayPal a été créé mais la création du plan a échoué.",
       },
       { status: 502 },
     );
@@ -212,8 +212,8 @@ export async function POST(
       {
         code: "PERSIST_ERROR",
         message:
-          `Le plan PayPal ${mode} ${paypalPlanId} a ete cree chez PayPal `
-          + "mais n'a pas pu etre enregistre localement. Copiez-le et "
+          `Le plan PayPal ${mode} ${paypalPlanId} a été créé chez PayPal `
+          + "mais n'a pas pu être enregistre localement. Copiez-le et "
           + "saisissez-le manuellement.",
       },
       { status: 503 },

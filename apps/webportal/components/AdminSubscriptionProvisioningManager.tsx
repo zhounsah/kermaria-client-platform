@@ -68,7 +68,7 @@ export function AdminSubscriptionProvisioningManager({
               <strong>Provisioning cible</strong>
               <span>
                 {selectedUsers.length > 0
-                  ? `${selectedUsers.length} utilisateur(s) selectionne(s).`
+                  ? `${selectedUsers.length} utilisateur(s) sélectionné(s).`
                   : "Selectionnez un ou plusieurs utilisateurs ci-dessous."}
               </span>
             </div>
@@ -78,7 +78,7 @@ export function AdminSubscriptionProvisioningManager({
               onClick={selectAll}
               type="button"
             >
-              Tout selectionner
+              Tout sélectionnér
             </button>
             <button
               className="button button-secondary"

@@ -61,7 +61,7 @@ export async function POST(
     const session = await getInternalSession(sessionToken, correlationId);
     if (session.user.role !== "internal_admin") {
       return NextResponse.json(
-        { code: "ACCESS_DENIED", message: "Acces refuse." },
+        { code: "ACCESS_DENIED", message: "Accès refusé." },
         { status: 403 },
       );
     }
@@ -129,7 +129,7 @@ export async function POST(
     return NextResponse.json(
       {
         code: "PRICE_ALREADY_EXISTS",
-        message: `Un prix Stripe ${mode} existe deja pour cette offre.`,
+        message: `Un prix Stripe ${mode} existe déjà pour cette offre.`,
       },
       { status: 409 },
     );
@@ -163,7 +163,7 @@ export async function POST(
       {
         code: "STRIPE_PRICE_ERROR",
         message:
-          "Le produit Stripe a ete cree mais la creation du prix a echoue.",
+          "Le produit Stripe a été créé mais la création du prix a échoué.",
       },
       { status: 502 },
     );
@@ -207,8 +207,8 @@ export async function POST(
       {
         code: "PERSIST_ERROR",
         message:
-          `Le prix Stripe ${mode} ${stripePriceId} a ete cree chez Stripe `
-          + "mais n'a pas pu etre enregistre localement. Copiez-le et "
+          `Le prix Stripe ${mode} ${stripePriceId} a été créé chez Stripe `
+          + "mais n'a pas pu être enregistre localement. Copiez-le et "
           + "saisissez-le manuellement.",
       },
       { status: 503 },

@@ -51,7 +51,7 @@ export async function POST(
     const session = await getInternalSession(sessionToken, correlationId);
     if (session.user.role !== "internal_admin") {
       return NextResponse.json(
-        { code: "ACCESS_DENIED", message: "Acces refuse." },
+        { code: "ACCESS_DENIED", message: "Accès refusé." },
         { status: 403 },
       );
     }

@@ -9,6 +9,7 @@ import { requestBffJson } from "@/lib/client-api";
 type ContactFormProps = {
   defaultSubject: string;
   offerReference: string | null;
+  selectedPackLabel?: string | null;
 };
 
 type ContactState =
@@ -29,6 +30,7 @@ type ContactResponse = {
 export function ContactForm({
   defaultSubject,
   offerReference,
+  selectedPackLabel = null,
 }: ContactFormProps) {
   const isSubmittingRef = useRef(false);
   const [name, setName] = useState("");
@@ -49,20 +51,17 @@ export function ContactForm({
     setFieldErrors({});
 
     try {
-      const response = await requestBffJson<ContactResponse>(
-        "/api/contact",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name,
-            email,
-            subject,
-            message,
-            offerReference,
-          }),
-        },
-      );
+      const response = await requestBffJson<ContactResponse>("/api/contact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          email,
+          subject,
+          message,
+          offerReference,
+        }),
+      });
 
       if (!response.ok) {
         const fallbackMessage = response.error.message;
@@ -78,8 +77,9 @@ export function ContactForm({
 
       setState({
         status: "success",
-        message:
-          "Message envoyé. Nous reviendrons vers vous par e-mail.",
+        message: selectedPackLabel
+          ? `Message envoyé. Nous reviendrons vers vous par e-mail à propos du pack ${selectedPackLabel}.`
+          : "Message envoyé. Nous reviendrons vers vous par e-mail.",
       });
       setName("");
       setEmail("");
@@ -114,7 +114,7 @@ export function ContactForm({
         Nom ou raison sociale
         <input
           aria-invalid={Boolean(fieldErrors.name)}
-          autoComplete="name"
+          autoComplete="organization"
           maxLength={120}
           name="name"
           onChange={(event) => setName(event.target.value)}
@@ -166,6 +166,11 @@ export function ContactForm({
           maxLength={5000}
           name="message"
           onChange={(event) => setMessage(event.target.value)}
+          placeholder={
+            selectedPackLabel
+              ? "Précisez votre contexte, vos contraintes ou ce que vous voulez verifier avant ouverture du compte."
+              : "Décrivez votre besoin, vos contraintes ou votre question."
+          }
           required
           rows={7}
           value={message}
@@ -180,8 +185,8 @@ export function ContactForm({
       ) : null}
 
       <p className="contact-form-note">
-        Vos données ne sont utilisées que pour répondre à votre message.
-        Aucun traceur ni cookie de mesure n&apos;est déposé sur ce site.
+        Vos données ne sont utilisées que pour répondre à votre message. Aucun
+        traceur ni cookie de mesure n&apos;est déposé sur ce site.
       </p>
 
       <SubmitButton

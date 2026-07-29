@@ -38,7 +38,7 @@ export default async function DownloadsPage() {
 
       <SectionCard ariaLabel="Aide téléchargements" className="downloads-help-card">
         <span className="card-kicker">Centre de ressources</span>
-        <h2>Tout ce qu'il faut pour démarrer ou retrouver vos accès</h2>
+        <h2>Tout ce qu&apos;il faut pour démarrer ou retrouver vos accès</h2>
         <p>
           Chaque ressource est rangée par usage pour rester simple à parcourir.
           Ouvrez une catégorie, lisez la courte description, puis lancez le

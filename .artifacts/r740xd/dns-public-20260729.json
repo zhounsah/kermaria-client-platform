@@ -1,0 +1,327 @@
+﻿{
+    "CapturedAtUtc":  "2026-07-29T17:59:40.6759652Z",
+    "Resolver":  "1.1.1.1",
+    "Zone":  "zacharyhounsa.ovh",
+    "Results":  [
+                    {
+                        "QueryName":  "zacharyhounsa.ovh",
+                        "QueryType":  "A",
+                        "Status":  "FOUND",
+                        "Records":  [
+                                        {
+                                            "Name":  "zacharyhounsa.ovh",
+                                            "Type":  "A",
+                                            "TTL":  3600,
+                                            "IPAddress":  "82.67.32.172",
+                                            "NameHost":  null,
+                                            "NameExchange":  null,
+                                            "Preference":  null,
+                                            "Strings":  [
+                                                            null
+                                                        ],
+                                            "PrimaryServer":  null,
+                                            "NameAdministrator":  null,
+                                            "SerialNumber":  null
+                                        }
+                                    ]
+                    },
+                    {
+                        "QueryName":  "zacharyhounsa.ovh",
+                        "QueryType":  "AAAA",
+                        "Status":  "NO_RECORD",
+                        "Records":  [
+
+                                    ]
+                    },
+                    {
+                        "QueryName":  "zacharyhounsa.ovh",
+                        "QueryType":  "NS",
+                        "Status":  "FOUND",
+                        "Records":  [
+                                        {
+                                            "Name":  "zacharyhounsa.ovh",
+                                            "Type":  "NS",
+                                            "TTL":  3600,
+                                            "IPAddress":  null,
+                                            "NameHost":  "ns110.ovh.net",
+                                            "NameExchange":  null,
+                                            "Preference":  null,
+                                            "Strings":  [
+                                                            null
+                                                        ],
+                                            "PrimaryServer":  null,
+                                            "NameAdministrator":  null,
+                                            "SerialNumber":  null
+                                        },
+                                        {
+                                            "Name":  "zacharyhounsa.ovh",
+                                            "Type":  "NS",
+                                            "TTL":  3600,
+                                            "IPAddress":  null,
+                                            "NameHost":  "dns110.ovh.net",
+                                            "NameExchange":  null,
+                                            "Preference":  null,
+                                            "Strings":  [
+                                                            null
+                                                        ],
+                                            "PrimaryServer":  null,
+                                            "NameAdministrator":  null,
+                                            "SerialNumber":  null
+                                        }
+                                    ]
+                    },
+                    {
+                        "QueryName":  "zacharyhounsa.ovh",
+                        "QueryType":  "SOA",
+                        "Status":  "FOUND",
+                        "Records":  [
+                                        {
+                                            "Name":  "zacharyhounsa.ovh",
+                                            "Type":  "SOA",
+                                            "TTL":  3600,
+                                            "IPAddress":  null,
+                                            "NameHost":  null,
+                                            "NameExchange":  null,
+                                            "Preference":  null,
+                                            "Strings":  [
+                                                            null
+                                                        ],
+                                            "PrimaryServer":  "dns110.ovh.net",
+                                            "NameAdministrator":  "tech.ovh.net",
+                                            "SerialNumber":  2085067292
+                                        }
+                                    ]
+                    },
+                    {
+                        "QueryName":  "zacharyhounsa.ovh",
+                        "QueryType":  "MX",
+                        "Status":  "FOUND",
+                        "Records":  [
+                                        {
+                                            "Name":  "zacharyhounsa.ovh",
+                                            "Type":  "MX",
+                                            "TTL":  3600,
+                                            "IPAddress":  null,
+                                            "NameHost":  null,
+                                            "NameExchange":  "mx1.mail.ovh.net",
+                                            "Preference":  1,
+                                            "Strings":  [
+                                                            null
+                                                        ],
+                                            "PrimaryServer":  null,
+                                            "NameAdministrator":  null,
+                                            "SerialNumber":  null
+                                        },
+                                        {
+                                            "Name":  "zacharyhounsa.ovh",
+                                            "Type":  "MX",
+                                            "TTL":  3600,
+                                            "IPAddress":  null,
+                                            "NameHost":  null,
+                                            "NameExchange":  "mx2.mail.ovh.net",
+                                            "Preference":  5,
+                                            "Strings":  [
+                                                            null
+                                                        ],
+                                            "PrimaryServer":  null,
+                                            "NameAdministrator":  null,
+                                            "SerialNumber":  null
+                                        },
+                                        {
+                                            "Name":  "zacharyhounsa.ovh",
+                                            "Type":  "MX",
+                                            "TTL":  3600,
+                                            "IPAddress":  null,
+                                            "NameHost":  null,
+                                            "NameExchange":  "mx3.mail.ovh.net",
+                                            "Preference":  100,
+                                            "Strings":  [
+                                                            null
+                                                        ],
+                                            "PrimaryServer":  null,
+                                            "NameAdministrator":  null,
+                                            "SerialNumber":  null
+                                        }
+                                    ]
+                    },
+                    {
+                        "QueryName":  "zacharyhounsa.ovh",
+                        "QueryType":  "TXT",
+                        "Status":  "FOUND",
+                        "Records":  [
+                                        {
+                                            "Name":  "zacharyhounsa.ovh",
+                                            "Type":  "TXT",
+                                            "TTL":  3600,
+                                            "IPAddress":  null,
+                                            "NameHost":  null,
+                                            "NameExchange":  null,
+                                            "Preference":  null,
+                                            "Strings":  [
+                                                            "1|www.zacharyhounsa.ovh"
+                                                        ],
+                                            "PrimaryServer":  null,
+                                            "NameAdministrator":  null,
+                                            "SerialNumber":  null
+                                        },
+                                        {
+                                            "Name":  "zacharyhounsa.ovh",
+                                            "Type":  "TXT",
+                                            "TTL":  3600,
+                                            "IPAddress":  null,
+                                            "NameHost":  null,
+                                            "NameExchange":  null,
+                                            "Preference":  null,
+                                            "Strings":  [
+                                                            "v=spf1 include:mx.ovh.com -all"
+                                                        ],
+                                            "PrimaryServer":  null,
+                                            "NameAdministrator":  null,
+                                            "SerialNumber":  null
+                                        }
+                                    ]
+                    },
+                    {
+                        "QueryName":  "zacharyhounsa.ovh",
+                        "QueryType":  "CAA",
+                        "Status":  "UNSUPPORTED_CLIENT",
+                        "Records":  [
+
+                                    ]
+                    },
+                    {
+                        "QueryName":  "_dmarc.zacharyhounsa.ovh",
+                        "QueryType":  "TXT",
+                        "Status":  "NXDOMAIN",
+                        "Records":  [
+
+                                    ]
+                    },
+                    {
+                        "QueryName":  "default._domainkey.zacharyhounsa.ovh",
+                        "QueryType":  "TXT",
+                        "Status":  "NXDOMAIN",
+                        "Records":  [
+
+                                    ]
+                    },
+                    {
+                        "QueryName":  "ovh._domainkey.zacharyhounsa.ovh",
+                        "QueryType":  "TXT",
+                        "Status":  "NXDOMAIN",
+                        "Records":  [
+
+                                    ]
+                    },
+                    {
+                        "QueryName":  "www.zacharyhounsa.ovh",
+                        "QueryType":  "A",
+                        "Status":  "FOUND",
+                        "Records":  [
+                                        {
+                                            "Name":  "www.zacharyhounsa.ovh",
+                                            "Type":  "A",
+                                            "TTL":  3600,
+                                            "IPAddress":  "82.67.32.172",
+                                            "NameHost":  null,
+                                            "NameExchange":  null,
+                                            "Preference":  null,
+                                            "Strings":  [
+                                                            null
+                                                        ],
+                                            "PrimaryServer":  null,
+                                            "NameAdministrator":  null,
+                                            "SerialNumber":  null
+                                        }
+                                    ]
+                    },
+                    {
+                        "QueryName":  "www.zacharyhounsa.ovh",
+                        "QueryType":  "AAAA",
+                        "Status":  "NO_RECORD",
+                        "Records":  [
+
+                                    ]
+                    },
+                    {
+                        "QueryName":  "dashboard.zacharyhounsa.ovh",
+                        "QueryType":  "A",
+                        "Status":  "NXDOMAIN",
+                        "Records":  [
+
+                                    ]
+                    },
+                    {
+                        "QueryName":  "dashboard.zacharyhounsa.ovh",
+                        "QueryType":  "AAAA",
+                        "Status":  "NXDOMAIN",
+                        "Records":  [
+
+                                    ]
+                    },
+                    {
+                        "QueryName":  "administration.zacharyhounsa.ovh",
+                        "QueryType":  "A",
+                        "Status":  "NXDOMAIN",
+                        "Records":  [
+
+                                    ]
+                    },
+                    {
+                        "QueryName":  "administration.zacharyhounsa.ovh",
+                        "QueryType":  "AAAA",
+                        "Status":  "NXDOMAIN",
+                        "Records":  [
+
+                                    ]
+                    },
+                    {
+                        "QueryName":  "clients.zacharyhounsa.ovh",
+                        "QueryType":  "A",
+                        "Status":  "NXDOMAIN",
+                        "Records":  [
+
+                                    ]
+                    },
+                    {
+                        "QueryName":  "clients.zacharyhounsa.ovh",
+                        "QueryType":  "AAAA",
+                        "Status":  "NXDOMAIN",
+                        "Records":  [
+
+                                    ]
+                    },
+                    {
+                        "QueryName":  "portfolio.zacharyhounsa.ovh",
+                        "QueryType":  "A",
+                        "Status":  "NXDOMAIN",
+                        "Records":  [
+
+                                    ]
+                    },
+                    {
+                        "QueryName":  "portfolio.zacharyhounsa.ovh",
+                        "QueryType":  "AAAA",
+                        "Status":  "NXDOMAIN",
+                        "Records":  [
+
+                                    ]
+                    },
+                    {
+                        "QueryName":  "tests-mail.zacharyhounsa.ovh",
+                        "QueryType":  "A",
+                        "Status":  "NXDOMAIN",
+                        "Records":  [
+
+                                    ]
+                    },
+                    {
+                        "QueryName":  "tests-mail.zacharyhounsa.ovh",
+                        "QueryType":  "AAAA",
+                        "Status":  "NXDOMAIN",
+                        "Records":  [
+
+                                    ]
+                    }
+                ]
+}

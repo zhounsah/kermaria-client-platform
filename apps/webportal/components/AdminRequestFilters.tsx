@@ -20,7 +20,7 @@ export function AdminRequestFilters({
   requestType,
   status,
 }: AdminRequestFiltersProps) {
-  const definitions = requestType === "support"
+  const définitions = requestType === "support"
     ? supportStatus
     : serviceRequestStatus;
 
@@ -30,9 +30,9 @@ export function AdminRequestFilters({
         <label htmlFor="status-filter">Statut</label>
         <select defaultValue={status ?? ""} id="status-filter" name="status">
           <option value="">Tous les statuts</option>
-          {Object.entries(definitions).map(([value, definition]) => (
+          {Object.entries(définitions).map(([value, définition]) => (
             <option key={value} value={value}>
-              {definition.label}
+              {définition.label}
             </option>
           ))}
         </select>

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 
 import type { CartSummary, CheckoutSummary } from "@kermaria/shared";
@@ -35,7 +35,7 @@ export function HeaderCartDrawer() {
   const [summary, setSummary] = useState<CheckoutSummary>(EMPTY_SUMMARY);
   const [error, setError] = useState<string | null>(null);
 
-  function releaseDrawerFocus() {
+  const releaseDrawerFocus = useCallback(() => {
     const activeElement = document.activeElement;
     if (
       activeElement instanceof HTMLElement &&
@@ -43,12 +43,12 @@ export function HeaderCartDrawer() {
     ) {
       activeElement.blur();
     }
-  }
+  }, []);
 
-  function closePinnedDrawer() {
+  const closePinnedDrawer = useCallback(() => {
     setPinnedOpen(false);
     releaseDrawerFocus();
-  }
+  }, [releaseDrawerFocus]);
 
   useEffect(() => {
     let ignore = false;
@@ -96,9 +96,14 @@ export function HeaderCartDrawer() {
   }, [pathname]);
 
   useEffect(() => {
-    setHoverOpen(false);
-    setPinnedOpen(false);
-  }, [pathname]);
+    const handle = window.setTimeout(() => {
+      setHoverOpen(false);
+      setPinnedOpen(false);
+      releaseDrawerFocus();
+    }, 0);
+
+    return () => window.clearTimeout(handle);
+  }, [pathname, releaseDrawerFocus]);
 
   useEffect(() => {
     if (!pinnedOpen) {
@@ -124,7 +129,7 @@ export function HeaderCartDrawer() {
       document.removeEventListener("pointerdown", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [pinnedOpen]);
+  }, [closePinnedDrawer, pinnedOpen]);
 
   const immediateTotal =
     summary.cart.subtotalCents + summary.recurring.subtotalCents;
@@ -188,8 +193,8 @@ export function HeaderCartDrawer() {
 
       <div className="header-cart-drawer" id={drawerId}>
         <div className="header-cart-drawer-banner">
-          <strong>Panier unifié</strong>
-          <span>{summary.totalItemCount} élément(s) en cours</span>
+          <strong>Récapitulatif commun</strong>
+          <span>{summary.totalItemCount} element(s) en cours</span>
         </div>
 
         {error ? (
@@ -204,7 +209,7 @@ export function HeaderCartDrawer() {
                 </div>
                 <p>
                   {summary.cart.itemCount > 0
-                    ? `${summary.cart.itemCount} ligne(s) prêtes à être réglées en une commande.`
+                    ? `${summary.cart.itemCount} ligne(s) pretes a être confirmées en une commande payable.`
                     : "Aucun achat ponctuel pour l'instant."}
                 </p>
                 {cartPreviewItems.length > 0 ? (
@@ -226,7 +231,7 @@ export function HeaderCartDrawer() {
                 </div>
                 <p>
                   {summary.recurring.itemCount > 0
-                    ? `${summary.recurring.itemCount} abonnement(s) avec facture de premier terme.`
+                    ? `${summary.recurring.itemCount} abonnement(s) a confirmer avant facture de premier terme.`
                     : "Aucun abonnement récurrent sélectionné."}
                 </p>
                 {recurringPreviewItems.length > 0 ? (
@@ -245,7 +250,7 @@ export function HeaderCartDrawer() {
             </div>
 
             <div className="header-cart-drawer-total">
-              <span>Total estimatif immédiat</span>
+              <span>Total immédiat estimatif</span>
               <strong>{formatCurrencyFromCents(immediateTotal)}</strong>
             </div>
 

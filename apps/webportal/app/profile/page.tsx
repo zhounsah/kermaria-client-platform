@@ -32,7 +32,7 @@ export default async function ProfilePage() {
     <>
       <PageHeader
         action={<StatusBadge label="Session active" tone="success" />}
-        description="Consultez les informations rattachées au client de la session active."
+        description="Consultez les informations rattachées au client de la session activé."
         eyebrow="Compte"
         title="Mon profil"
       />

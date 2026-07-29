@@ -15,7 +15,10 @@ import {
   formatCurrencyFromCents,
   formatPaymentModeLabel,
 } from "@/lib/formatters";
-import { selectionToQueryString } from "@/lib/public-packs";
+import {
+  selectionToContactQueryString,
+  selectionToQueryString,
+} from "@/lib/public-packs";
 
 type PublicPackComparisonTableProps = {
   content: PublicPackCatalogContent;
@@ -86,7 +89,7 @@ export function PublicPackComparisonTable({
     [packs],
   );
 
-  const presentationByPackCode = useMemo(
+  const présentationByPackCode = useMemo(
     () => new Map(content.packs.map((pack) => [pack.packCode, pack])),
     [content.packs],
   );
@@ -107,7 +110,7 @@ export function PublicPackComparisonTable({
             effectivePaymentMode === "upfront"
             && selectedGroup.upfront !== null,
           highlightLabel:
-            presentationByPackCode.get(pack.key)?.highlightLabel ?? null,
+            présentationByPackCode.get(pack.key)?.highlightLabel ?? null,
           baseMonthlyAmountCents:
             pack.variantsByCommitment[1].monthly.monthlyPriceAmountCents,
         };
@@ -116,7 +119,7 @@ export function PublicPackComparisonTable({
       commitmentMonths,
       effectivePaymentMode,
       orderedPacks,
-      presentationByPackCode,
+      présentationByPackCode,
     ],
   );
 
@@ -314,7 +317,14 @@ export function PublicPackComparisonTable({
                   ) : (
                     <Link
                       className="button"
-                      href={`/contact?offer=${encodeURIComponent(variant.offer.id)}`}
+                      href={`/contact?${selectionToContactQueryString(
+                        {
+                          packKey: pack.key,
+                          commitmentMonths,
+                          paymentMode: isUpfront ? "upfront" : "monthly",
+                        },
+                        variant.offer.id,
+                      )}`}
                     >
                       Demander ce pack
                     </Link>

@@ -27,7 +27,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     return controlledPortalError(
       400,
       "INVALID_REQUEST",
-      "L'identifiant demandÃ© est invalide.",
+      "L'identifiant demandé est invalide.",
       correlationId,
     );
   }
@@ -69,7 +69,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       return controlledPortalError(
         403,
         "ACCESS_DENIED",
-        "L'accÃ¨s Ã  cette ressource est refusÃ©.",
+        "L'accès à cette ressource est refusé.",
         correlationId,
       );
     }
@@ -77,7 +77,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     return controlledPortalError(
       401,
       "SESSION_INVALID",
-      "Session invalide ou expirÃ©e.",
+      "Session invalide ou expirée.",
       correlationId,
     );
   }
@@ -102,7 +102,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       return controlledPortalError(
         503,
         "DOWNLOAD_UNAVAILABLE",
-        "Le tÃ©lÃ©chargement demandÃ© n'est pas disponible.",
+        "Le téléchargement demandé n'est pas disponible.",
         correlationId,
       );
     }
@@ -117,7 +117,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     return controlledPortalError(
       status,
       "DOWNLOAD_UNAVAILABLE",
-      "Le tÃ©lÃ©chargement demandÃ© n'est pas disponible.",
+      "Le téléchargement demandé n'est pas disponible.",
       correlationId,
     );
   }

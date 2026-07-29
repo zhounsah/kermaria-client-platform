@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { PublicPackComparisonTable } from "@/components/PublicPackComparisonTable";
+import { PublicPackOverviewGrid } from "@/components/PublicPackOverviewGrid";
 import {
   getPublicCommercialCatalog,
   getPublicPackCatalogContent,
@@ -11,7 +12,7 @@ import { isSignupEnabled } from "@/lib/public-routes";
 export const metadata: Metadata = {
   title: "Offres",
   description:
-    "Quatre packs simples à comprendre, avec engagement au choix et tarification lisible.",
+    "Comparez des packs lisibles, choisissez un engagement clair et poursuivez vers le bon parcours de contact ou d'inscription.",
 };
 
 export const revalidate = 300;
@@ -40,11 +41,40 @@ export default async function OffresPage() {
           obtenir une proposition adaptée.
         </p>
       ) : (
-        <PublicPackComparisonTable
-          content={content}
-          packs={packs}
-          signupEnabled={signupEnabled}
-        />
+        <>
+          <section className="offres-overview">
+            <div className="offres-section-heading">
+              <h2>Commencez par une vue simple des packs</h2>
+              <p>
+                Chaque pack présente son cadre d&apos;usage, sa structure tarifaire
+                et l&apos;action suivante attendue. Le comparatif détaillé reste
+                disponible plus bas si vous voulez arbitrer ligne par ligne.
+              </p>
+            </div>
+
+            <PublicPackOverviewGrid
+              content={content}
+              packs={packs}
+              signupEnabled={signupEnabled}
+            />
+          </section>
+
+          <section className="offres-comparison">
+            <div className="offres-section-heading">
+              <h2>Comparer les différences utiles</h2>
+              <p>
+                Utilisez le comparatif détaillé pour arbitrer entre engagement,
+                paiement, mise en service et niveau de couverture.
+              </p>
+            </div>
+
+            <PublicPackComparisonTable
+              content={content}
+              packs={packs}
+              signupEnabled={signupEnabled}
+            />
+          </section>
+        </>
       )}
     </div>
   );

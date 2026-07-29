@@ -14,6 +14,8 @@ type PortalRequestLike = Pick<NextRequest, "headers" | "nextUrl">;
 type HeaderLookup = Pick<Headers, "get">;
 
 export { isPublicRoute, PORTFOLIO_URL, PUBLIC_ROUTES };
+// Public signup routes remain exposed through PublicShell: "/signup" and
+// "/set-password".
 
 export function isVitrinePublicEnabled(): boolean {
   return process.env.PUBLIC_VITRINE_ENABLED?.trim().toLowerCase() === "true";

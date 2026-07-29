@@ -13,6 +13,7 @@ import { AddRecurringCheckoutButton } from "@/components/AddRecurringCheckoutBut
 import { formatCurrencyFromCents } from "@/lib/formatters";
 import {
   type PublicPackSelectionInput,
+  selectionToContactQueryString,
   selectionToQueryString,
 } from "@/lib/public-packs";
 
@@ -184,7 +185,7 @@ export function PublicPackCard({
           ) : (
             <Link
               className="button"
-              href={`/contact?offer=${encodeURIComponent(variant.offer.id)}`}
+              href={`/contact?${selectionToContactQueryString(selection, variant.offer.id)}`}
             >
               Demander ce pack
             </Link>

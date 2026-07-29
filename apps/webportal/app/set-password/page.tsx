@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { FormMessage } from "@/components/FormMessage";
 import { SetPasswordForm } from "@/components/SetPasswordForm";
 import { resolveCorrelationId } from "@/lib/correlation";
 import { validateSetPasswordToken } from "@/lib/signup-server";
@@ -12,15 +13,45 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
+type SetPasswordPageSearchParams = {
+  token?: string;
+  status?: string;
+  error?: string;
+};
+
 type SetPasswordPageProps = {
-  searchParams: Promise<{ token?: string }>;
+  searchParams: Promise<SetPasswordPageSearchParams>;
 };
 
 export default async function SetPasswordPage({
   searchParams,
 }: SetPasswordPageProps) {
-  const { token } = await searchParams;
+  const { token, status, error } = await searchParams;
   const trimmedToken = token?.trim() || "";
+  const success = status === "success";
+
+  if (success) {
+    return (
+      <div className="set-password-page">
+        <header className="signup-header">
+          <p className="eyebrow">Activation du compte</p>
+          <h1>Mot de passe défini</h1>
+        </header>
+
+        <FormMessage title="Mot de passe défini" tone="success">
+          <p>
+            Votre mot de passe a bien été enregistré. Vous pouvez maintenant
+            vous connecter à votre espace client.
+          </p>
+          <p>
+            <Link href="/login">
+              Se connecter et ouvrir le tableau de bord
+            </Link>
+          </p>
+        </FormMessage>
+      </div>
+    );
+  }
 
   const validation = trimmedToken
     ? await validateSetPasswordToken(trimmedToken, resolveCorrelationId(null))
@@ -28,13 +59,14 @@ export default async function SetPasswordPage({
         ok: false,
         status: 400,
         code: "TOKEN_INVALID",
-        message: "Lien de définition de mot de passe invalidé.",
+        message: "Lien de définition de mot de passe invalide.",
       };
 
   const valid = validation.ok;
-  const expiréd = validation.code === "TOKEN_EXPIRED";
+  const expired = validation.code === "TOKEN_EXPIRED";
   const serviceUnavailable =
     validation.code === "INTERNAL_API_UNAVAILABLE";
+  const initialError = getInitialErrorMessage(error);
 
   return (
     <div className="set-password-page">
@@ -54,7 +86,7 @@ export default async function SetPasswordPage({
       </header>
 
       {valid ? (
-        <SetPasswordForm token={trimmedToken} />
+        <SetPasswordForm initialError={initialError} token={trimmedToken} />
       ) : (
         <section className="set-password-invalid">
           {serviceUnavailable ? (
@@ -64,7 +96,7 @@ export default async function SetPasswordPage({
               <Link href="/contact">contactez-nous</Link> si le problème
               persiste.
             </p>
-          ) : expiréd ? (
+          ) : expired ? (
             <p>
               Ce lien de définition de mot de passe a expiré. Contactez notre
               équipe pour obtenir un nouveau lien, ou{" "}
@@ -82,4 +114,17 @@ export default async function SetPasswordPage({
       )}
     </div>
   );
+}
+
+function getInitialErrorMessage(errorCode?: string) {
+  switch (errorCode) {
+    case "INVALID_PASSWORD":
+      return "Le mot de passe doit comporter entre 12 et 200 caractères.";
+    case "RATE_LIMITED":
+      return "Trop de tentatives. Réessayez dans quelques minutes.";
+    case "INTERNAL_API_UNAVAILABLE":
+      return "Le service est temporairement indisponible. Réessayez dans quelques instants.";
+    default:
+      return null;
+  }
 }

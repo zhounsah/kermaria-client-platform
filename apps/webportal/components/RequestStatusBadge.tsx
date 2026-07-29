@@ -20,9 +20,9 @@ export function RequestStatusBadge({
   requestType,
   status,
 }: RequestStatusBadgeProps) {
-  const definition = requestType === "support"
+  const définition = requestType === "support"
     ? supportStatus[status as SupportRequestStatus]
     : serviceRequestStatus[status as ServiceRequestStatus];
 
-  return <StatusBadge label={definition.label} tone={definition.tone} />;
+  return <StatusBadge label={définition.label} tone={définition.tone} />;
 }

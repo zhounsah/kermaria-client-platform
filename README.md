@@ -12,7 +12,7 @@ browser -> WEBPORTAL / BFF -> API-INTERNAL -> MariaDB
 
 `WEBPORTAL` ne doit jamais acceder directement a MariaDB.
 
-## Etat courant V0.27 + V0.29 Stripe + V0.30 partiel + V0.32/V0.33 packs + V0.35/V0.36 checkout + V0.37 downloads + V0.24 infra debout
+## Etat courant V0.27 + V0.29 Stripe + V0.30 partiel + V0.32/V0.33 packs + V0.35/V0.36 checkout + V0.37 downloads + V0.39 vitrine/tunnel public + V0.24 infra debout
 
 Le depot couvre aujourd'hui les jalons V0.9 a V0.31 + V0.35 + V0.36 (voir
 [`docs/ROADMAP.md`](docs/ROADMAP.md)). L'integration BPCE de la V0.20
@@ -53,6 +53,13 @@ CRUD admin sur `/admin/downloads`, regles de visibilite alignees sur les
 packs/offres/services actifs et stockage prive des binaires cote
 `API-INTERNAL` via `DOWNLOAD_STORAGE_ROOT`, cf.
 [`docs/V0.37_CENTRE_TELECHARGEMENTS_CLIENT.md`](docs/V0.37_CENTRE_TELECHARGEMENTS_CLIENT.md).
+
+V0.39 recentre la **vitrine publique et le tunnel de conversion** :
+homepage plus orientee acquisition, header public moins centre sur
+`Connexion`, lecture de `/offres` en cartes puis comparatif detaille, et
+continuite du contexte pack jusque dans `/contact` et `/signup` sans
+changer le checkout ni le modele de donnees, cf.
+[`docs/V0.39_VITRINE_TUNNEL_PUBLIC.md`](docs/V0.39_VITRINE_TUNNEL_PUBLIC.md).
 
 V0.35.1 (2026-07-09) : correctif transversal des horodatages — plus aucun
 `NOW()`/`CURRENT_TIMESTAMP` (heure locale serveur) en base, serialisation
@@ -177,6 +184,17 @@ Acquis V0.26 (creation de compte self-service, livre le 2026-07-02,
 - tests contrat `npm run test:signup`. Ouverture des inscriptions
   reservee au test interne tant que `EMAIL_INTEGRATION_MODE=mock`.
 
+Depuis le 2026-07-18, le domaine enfant `clients.home.bzh` existe et
+sert de cible documentaire pour l'alignement identite V0.38. Le depot ne
+cree toutefois **toujours pas** de compte AD automatiquement lors du
+signup V0.26 : le modele de donnees et le workflow a faire converger sont
+documentes dans
+[`docs/v0.38/V0.38_SITE_AD_ALIGNMENT.md`](docs/v0.38/V0.38_SITE_AD_ALIGNMENT.md).
+La cible documentaire retenue est maintenant une arborescence
+`OU=Clients,DC=clients,DC=home,DC=bzh` avec une OU par client puis
+`Users` / `Disabled`, tandis que les groupes de securite restent dans
+`OU=SecurityGroups,OU=Kermaria,DC=home,DC=bzh`.
+
 Acquis V0.29 (Stripe, rail de paiement parallele a PayPal,
 [`docs/V0.29_STRIPE_PAYMENTS.md`](docs/V0.29_STRIPE_PAYMENTS.md)) :
 
@@ -265,7 +283,7 @@ au 2026-06-30) :
   reste a livrer : statuts `email_messages` etendus, sous-domaine
   emetteur dedie, SPF/DKIM/DMARC documentes, recette guidee) ;
 - V0.31 sortie effective de `OU=TEST_SITE_WEB` (procedure V0.25
-  brique 3 executee, levee du `RequiredTestOuRoot` hardcode) ;
+  brique 3 executee, configuration cible `AD_ALLOWED_ROOTS` active) ;
 
 Voir [`docs/ROADMAP.md`](docs/ROADMAP.md) pour le detail.
 
@@ -334,6 +352,8 @@ Variables critiques API-INTERNAL :
 - `AD_INTEGRATION_MODE=disabled|mock|read_only|controlled_write`
 - `AD_DOMAIN`
 - `AD_CLIENTS_OU_DN`
+- `AD_REQUIRED_OU_ROOT`
+- `AD_ALLOWED_ROOTS`
 - `AD_SERVICE_ACCOUNT_USERNAME`
 - `AD_SERVICE_ACCOUNT_PASSWORD`
 - `AD_PASSWORD_CHANGE_ENABLED=true|false` (defaut `false`, V0.25 brique 1)
@@ -490,6 +510,7 @@ npm run test:ad-security     # garde-fous AD
 - [Security](docs/SECURITY.md)
 - [Deployment](docs/DEPLOYMENT.md)
 - [Deploiement Windows Server 2022 (SRV-01/02/07)](docs/DEPLOYMENT_WINDOWS.md)
+- [Deploiement R740xd par VM dediees (SRV-11/12/13)](docs/DEPLOYMENT_R740XD_VM.md)
 - [Procedure de mise en production (R740xd)](docs/PRODUCTION_DEPLOYMENT.md)
 - [Operations](docs/OPERATIONS.md)
 - [Backup and restore](docs/BACKUP_RESTORE.md)
@@ -517,6 +538,9 @@ npm run test:ad-security     # garde-fous AD
 - [Panier one-shot V0.35](docs/V0.35_CART_ALACARTE.md)
 - [Panier unifie et abonnements factures V0.36](docs/V0.36_PANIER_UNIFIE_ABONNEMENTS_FACTURES.md)
 - [Centre de telechargements client securise V0.37](docs/V0.37_CENTRE_TELECHARGEMENTS_CLIENT.md)
+- [Vitrine publique et tunnel de conversion V0.39](docs/V0.39_VITRINE_TUNNEL_PUBLIC.md)
+- [Dossier V0.38 KoXo, AD et R740xd](docs/v0.38/README.md)
+- [Alignement donnees site et AD V0.38](docs/v0.38/V0.38_SITE_AD_ALIGNMENT.md)
 - [Correctif UTC V0.35.1](docs/V0.35.1_TIMEZONE_UTC_FIX.md)
 - [Active Directory security hardening V0.19](docs/V0.19_AD_SECURITY_HARDENING.md)
 - [Active Directory controlled write V0.18](docs/V0.18_ACTIVE_DIRECTORY_CONTROLLED_WRITE.md)

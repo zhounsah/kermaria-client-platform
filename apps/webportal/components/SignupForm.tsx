@@ -155,8 +155,8 @@ export function SignupForm({
 
         <p className="field-hint">
           Ces informations alimentent à la fois votre fiche client et le futur
-          compte d'accès rattaché à <code>clients.home.bzh</code> lorsque
-          l'identité est finalisée.
+          compte d&apos;accès rattaché à <code>clients.home.bzh</code> lorsque
+          l&apos;identité est finalisée.
         </p>
 
         <label>
@@ -200,7 +200,7 @@ export function SignupForm({
         </label>
 
         <label>
-          Complement d'adresse (facultatif)
+          Complement d&apos;adresse (facultatif)
           <input
             autoComplete="address-line2"
             maxLength={255}
@@ -251,7 +251,7 @@ export function SignupForm({
         </label>
 
         <p className="field-hint">
-          Contact principal qui recevra les messages d'ouverture et définira le
+          Contact principal qui recevra les messages d&apos;ouverture et définira le
           mot de passe initial.
         </p>
 
@@ -399,8 +399,8 @@ export function SignupForm({
         ) : null}
 
         <p className="signup-form-note">
-          En envoyant ce formulaire, vous demandez l'ouverture d'un accès
-          client. Vous confirmerez d'abord votre adresse e-mail, puis notre
+          En envoyant ce formulaire, vous demandez l&apos;ouverture d&apos;un accès
+          client. Vous confirmerez d&apos;abord votre adresse e-mail, puis notre
           équipe validera la demande avant la définition du mot de passe
           {initialPackSelection
             ? " et la reprise du pack dans l'espace client."

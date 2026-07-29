@@ -167,6 +167,15 @@ export function selectionToQueryString(selection: PublicPackSelectionInput) {
   return params.toString();
 }
 
+export function selectionToContactQueryString(
+  selection: PublicPackSelectionInput,
+  offerId: string,
+) {
+  const params = new URLSearchParams(selectionToQueryString(selection));
+  params.set("offer", offerId);
+  return params.toString();
+}
+
 export function selectionFromSearchParams(
   params: URLSearchParams | Record<string, string | string[] | undefined>,
 ): PublicPackSelectionInput | null {

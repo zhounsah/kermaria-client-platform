@@ -80,7 +80,7 @@ export default async function SignupPage({
               <li>Vous confirmez votre adresse e-mail.</li>
               <li>Nous validons l&apos;ouverture de votre accès client.</li>
               <li>Vous définissez votre mot de passe et activez votre accès client.</li>
-              <li>Si l'écriture AD est active, l'identité clients.home.bzh est finalisée à ce moment-là.</li>
+              <li>Si l&apos;écriture AD est active, l&apos;identité clients.home.bzh est finalisée à ce moment-là.</li>
               <li>Vous finalisez ensuite le pack depuis l&apos;espace client.</li>
             </ol>
           </section>

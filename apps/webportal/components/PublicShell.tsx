@@ -24,7 +24,7 @@ export function PublicShell({ children, signupEnabled }: PublicShellProps) {
             </span>
             <span className="brand-copy">
               <strong>Zachary HOUNSA-HOUNKPA EI</strong>
-              <small>Espace client professionnel</small>
+              <small>Diagnostic, offres et espace client</small>
             </span>
           </Link>
           <nav className="public-header-nav" aria-label="Navigation principale">
@@ -35,14 +35,21 @@ export function PublicShell({ children, signupEnabled }: PublicShellProps) {
               <Link href="/contact">Contact</Link>
             </div>
             <div className="public-header-actions">
+              <Link className="public-header-signup" href="/offres">
+                Voir les offres
+              </Link>
+              {signupEnabled ? (
+                <Link className="public-header-primary" href="/signup">
+                  Inscription
+                </Link>
+              ) : (
+                <Link className="public-header-primary" href="/contact">
+                  Demander un échange
+                </Link>
+              )}
               <Link className="public-header-login" href="/login">
                 Connexion
               </Link>
-              {signupEnabled ? (
-                <Link className="public-header-signup" href="/signup">
-                  Inscription
-                </Link>
-              ) : null}
             </div>
           </nav>
         </div>
@@ -54,7 +61,7 @@ export function PublicShell({ children, signupEnabled }: PublicShellProps) {
         <div className="public-footer-inner">
           <div className="public-footer-brand">
             <strong>Zachary HOUNSA-HOUNKPA EI</strong>
-            <p>Site public, offres et espace client professionnel.</p>
+            <p>Site public, diagnostic de besoin, offres et espace client.</p>
           </div>
           <nav className="public-footer-nav" aria-label="Liens légaux">
             <Link href="/mentions-legales">Mentions légales</Link>

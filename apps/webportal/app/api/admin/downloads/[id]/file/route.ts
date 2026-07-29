@@ -27,7 +27,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return controlledAdminError(
       400,
       "INVALID_REQUEST",
-      "Le tÃ©lÃ©chargement demandÃ© est invalide.",
+      "Le téléchargement demandé est invalide.",
       correlationId,
     );
   }
@@ -46,7 +46,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return controlledAdminError(
       403,
       "CSRF_FORBIDDEN",
-      "La requete d'administration doit etre confirmee par un jeton CSRF valide.",
+      "La requete d'administration doit être confirmée par un jeton CSRF valide.",
       correlationId,
     );
   }
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return controlledAdminError(
         403,
         "ACCESS_DENIED",
-        "L'accÃ¨s Ã  cette ressource est refusÃ©.",
+        "L'accès à cette ressource est refusé.",
         correlationId,
       );
     }
@@ -78,7 +78,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return controlledAdminError(
         400,
         "INVALID_REQUEST",
-        "Un fichier doit Ãªtre envoyÃ©.",
+        "Un fichier doit être envoyé.",
         correlationId,
       );
     }
@@ -144,7 +144,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     return controlledAdminError(
       400,
       "INVALID_REQUEST",
-      "Le tÃ©lÃ©chargement demandÃ© est invalide.",
+      "Le téléchargement demandé est invalide.",
       correlationId,
     );
   }

@@ -97,6 +97,12 @@ $Blocklist = @(
     "LOG_FILE_DIRECTORY"
 )
 
+# Certaines cles machine-specifiques sont refusees depuis le fichier source,
+# mais restent autorisees en override explicite pour une cible de deploiement.
+$OverrideAllowedFromBlocklist = @(
+    "LOG_FILE_DIRECTORY"
+)
+
 # Auto-détection du fichier source si non fourni.
 if (-not $InputPath) {
     $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
@@ -170,7 +176,8 @@ if (-not $extracted.Contains("LOG_FILE_DIRECTORY")) {
 $overridden = @()
 foreach ($key in @($Override.Keys)) {
     $name = [string]$key
-    if ($Blocklist -contains $name) {
+    if (($Blocklist -contains $name) -and
+        ($OverrideAllowedFromBlocklist -notcontains $name)) {
         throw "Cle '$name' passee en -Override mais blocklistee (DEMO_*/dev/env) : refus."
     }
     $extracted[$name] = [string]$Override[$key]

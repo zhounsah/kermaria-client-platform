@@ -75,10 +75,10 @@ function eventTitle(
     return "Statut mis à jour";
   }
 
-  const definition = requestType === "support"
+  const définition = requestType === "support"
     ? supportStatus[status as keyof typeof supportStatus]
     : serviceRequestStatus[status as keyof typeof serviceRequestStatus];
-  return definition
-    ? `Statut : ${definition.label}`
+  return définition
+    ? `Statut : ${définition.label}`
     : "Statut mis à jour";
 }
