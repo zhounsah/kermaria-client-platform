@@ -2637,6 +2637,29 @@ async Task VerifyDownloadsAsync(
             }
         }
     });
+    var unauthorizedServiceDownloadId = await CreateDownloadAsync(new
+    {
+        categoryId = defaultCategoryId,
+        title = "Outil de supervision",
+        shortDescription =
+            "Outil réservé à un service de supervision absent des droits du client.",
+        resourceType = "software",
+        sourceKind = "external_url",
+        visibilityMode = "targeted",
+        status = "active",
+        externalUrl = "https://downloads.example.invalid/monitoring-tool.exe",
+        versionLabel = "v1",
+        installationInstructions = "Installer uniquement pour un service supervisé.",
+        displayOrder = 15,
+        visibilityRules = new[]
+        {
+            new
+            {
+                targetType = "service_type",
+                targetValue = "monitoring"
+            }
+        }
+    });
     var externalDownloadId = await CreateDownloadAsync(new
     {
         categoryId = defaultCategoryId,
@@ -2765,6 +2788,8 @@ async Task VerifyDownloadsAsync(
         adminDownloads.EnumerateArray().Any(item =>
             item.GetProperty("id").GetString() == hiddenDownloadId)
         && adminDownloads.EnumerateArray().Any(item =>
+            item.GetProperty("id").GetString() == unauthorizedServiceDownloadId)
+        && adminDownloads.EnumerateArray().Any(item =>
             item.GetProperty("id").GetString() == externalDownloadId)
         && adminDownloads.EnumerateArray().Any(item =>
             item.GetProperty("id").GetString() == internalDownloadId),
@@ -2807,7 +2832,8 @@ async Task VerifyDownloadsAsync(
     Ensure(
         visibleDownloadIds.Contains(externalDownloadId)
         && visibleDownloadIds.Contains(internalDownloadId)
-        && !visibleDownloadIds.Contains(hiddenDownloadId),
+        && !visibleDownloadIds.Contains(hiddenDownloadId)
+        && !visibleDownloadIds.Contains(unauthorizedServiceDownloadId),
         "Le portail doit filtrer les téléchargements selon les droits actifs.");
 
     using (var hiddenFileRequest = CreateSessionRequest(
@@ -2819,6 +2845,18 @@ async Task VerifyDownloadsAsync(
         Ensure(
             hiddenFileResponse.StatusCode == HttpStatusCode.NotFound,
             "Un téléchargement non autorisé doit répondre HTTP 404.");
+    }
+
+    using (var unauthorizedServiceFileRequest = CreateSessionRequest(
+               HttpMethod.Get,
+               $"{baseUrl}/internal/portal/downloads/{unauthorizedServiceDownloadId}/file",
+               clientSessionToken))
+    {
+        using var unauthorizedServiceFileResponse = await client.SendAsync(
+            unauthorizedServiceFileRequest);
+        Ensure(
+            unauthorizedServiceFileResponse.StatusCode == HttpStatusCode.NotFound,
+            "Un téléchargement ciblé sur un service absent des droits du client doit répondre HTTP 404.");
     }
 
     using (var redirectHandler = new HttpClientHandler
@@ -2888,6 +2926,7 @@ async Task VerifyDownloadsAsync(
     foreach (var resourceId in new[]
     {
         hiddenDownloadId,
+        unauthorizedServiceDownloadId,
         externalDownloadId,
         internalDownloadId
     })

@@ -5,8 +5,170 @@ async function read(path) {
   return readFile(new URL(`../${path}`, import.meta.url), "utf8");
 }
 
+function scanCSharpCharacterEnd(source, start) {
+  let index = start + 1;
+  while (index < source.length) {
+    if (source[index] === "\\") {
+      index += 2;
+    } else if (source[index] === "'") {
+      return index + 1;
+    } else {
+      index += 1;
+    }
+  }
+  return source.length;
+}
+
+function scanCSharpStringEnd(source, start) {
+  let quoteCount = 1;
+  while (source[start + quoteCount] === '"') {
+    quoteCount += 1;
+  }
+  if (quoteCount >= 3) {
+    const delimiter = '"'.repeat(quoteCount);
+    const end = source.indexOf(delimiter, start + quoteCount);
+    return end === -1 ? source.length : end + quoteCount;
+  }
+
+  const verbatim =
+    source[start - 1] === "@" ||
+    (source[start - 1] === "$" && source[start - 2] === "@");
+  const interpolated =
+    source[start - 1] === "$" ||
+    (source[start - 1] === "@" && source[start - 2] === "$" && source[start - 3] !== "$" );
+  let interpolationDepth = 0;
+  let index = start + 1;
+
+  while (index < source.length) {
+    if (interpolationDepth === 0) {
+      if (!verbatim && source[index] === "\\") {
+        index += 2;
+      } else if (verbatim && source.startsWith('""', index)) {
+        index += 2;
+      } else if (source[index] === '"') {
+        return index + 1;
+      } else if (interpolated && source[index] === "{" && source[index + 1] !== "{") {
+        interpolationDepth = 1;
+        index += 1;
+      } else if (
+        interpolated &&
+        (source.startsWith("{{", index) || source.startsWith("}}", index))
+      ) {
+        index += 2;
+      } else {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (source.startsWith("//", index)) {
+      const end = source.indexOf("\n", index + 2);
+      index = end === -1 ? source.length : end;
+    } else if (source.startsWith("/*", index)) {
+      const end = source.indexOf("*/", index + 2);
+      index = end === -1 ? source.length : end + 2;
+    } else if (source[index] === '"') {
+      index = scanCSharpStringEnd(source, index);
+    } else if (source[index] === "'") {
+      index = scanCSharpCharacterEnd(source, index);
+    } else if (source[index] === "{") {
+      interpolationDepth += 1;
+      index += 1;
+    } else if (source[index] === "}") {
+      interpolationDepth -= 1;
+      index += 1;
+    } else {
+      index += 1;
+    }
+  }
+  return source.length;
+}
+
+function neutralizeCSharpTriviaAndLiterals(source) {
+  const cleaned = source.split("");
+  const blank = (start, end) => {
+    for (let index = start; index < end; index += 1) {
+      if (cleaned[index] !== "\r" && cleaned[index] !== "\n") {
+        cleaned[index] = " ";
+      }
+    }
+  };
+
+  let index = 0;
+  while (index < source.length) {
+    let end = index + 1;
+    if (source.startsWith("//", index)) {
+      const newline = source.indexOf("\n", index + 2);
+      end = newline === -1 ? source.length : newline;
+    } else if (source.startsWith("/*", index)) {
+      const commentEnd = source.indexOf("*/", index + 2);
+      end = commentEnd === -1 ? source.length : commentEnd + 2;
+    } else if (source[index] === '"') {
+      end = scanCSharpStringEnd(source, index);
+    } else if (source[index] === "'") {
+      end = scanCSharpCharacterEnd(source, index);
+    } else {
+      index += 1;
+      continue;
+    }
+    blank(index, end);
+    index = end;
+  }
+
+  return cleaned.join("");
+}
+
+function extractCSharpMethodBody(source, signature) {
+  const cleaned = neutralizeCSharpTriviaAndLiterals(source);
+  const match = cleaned.match(signature);
+  assert.ok(match, `Signature C# publique introuvable: ${signature}`);
+
+  let openingBrace = match.index + match[0].length;
+  while (/\s/.test(cleaned[openingBrace] ?? "")) {
+    openingBrace += 1;
+  }
+  assert.equal(
+    cleaned[openingBrace],
+    "{",
+    `Corps C# avec accolade attendu immediatement apres: ${signature}`,
+  );
+
+  let depth = 0;
+  for (let index = openingBrace; index < cleaned.length; index += 1) {
+    if (cleaned[index] === "{") {
+      depth += 1;
+    } else if (cleaned[index] === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return cleaned.slice(openingBrace + 1, index);
+      }
+    }
+  }
+
+  assert.fail(`Accolades C# non equilibrees: ${signature}`);
+}
+
+const getActiveServiceTypesSignature =
+  /\bpublic\s+async\s+Task<IReadOnlySet<string>>\s+GetActiveServiceTypesAsync\(\s*PortalSessionContext\s+session,\s*CancellationToken\s+cancellationToken\s*\)/;
+const getServicesSignature =
+  /\bpublic\s+async\s+Task<IReadOnlyList<ServiceSummary>>\s+GetServicesAsync\(\s*PortalSessionContext\s+session,\s*CancellationToken\s+cancellationToken\s*\)/;
+const buildAccessScopeSignature =
+  /\bprivate\s+async\s+Task<DownloadAccessScope>\s+BuildAccessScopeAsync\(\s*PortalSessionContext\s+session,\s*CancellationToken\s+cancellationToken\s*\)/;
+const getServicesCall =
+  /\bGetServicesAsync\(\s*session,\s*cancellationToken\s*\)/;
+const getSubscriptionsByCustomerCall =
+  /\b_subscriptions\.GetByCustomerAsync\(\s*session\.CustomerId,\s*cancellationToken\s*\)/;
+const getActiveServiceTypesCall =
+  /\b_serviceCatalogService\.GetActiveServiceTypesAsync\(\s*session,\s*cancellationToken\s*\)/;
+
 const sharedTypes = await read("../../packages/shared/src/index.ts");
 const internalApi = await read("lib/internal-api.ts");
+const downloadService = await read(
+  "../api-internal/Services/DownloadService.cs",
+);
+const clientServiceCatalogService = await read(
+  "../api-internal/Services/ClientServiceCatalogService.cs",
+);
 const payloads = await read("lib/bff-payloads.ts");
 const portalNav = await read("components/PortalNavigation.tsx");
 const adminNav = await read("components/AdminNavigation.tsx");
@@ -49,6 +211,75 @@ assert.match(internalApi, /getAdminDownload\(/);
 assert.match(internalApi, /\/internal\/portal\/downloads/);
 assert.match(internalApi, /\/internal\/admin\/download-categories/);
 assert.match(internalApi, /\/internal\/admin\/downloads/);
+
+assert.match(
+  extractCSharpMethodBody(downloadService, buildAccessScopeSignature),
+  getActiveServiceTypesCall,
+);
+assert.match(
+  extractCSharpMethodBody(
+    clientServiceCatalogService,
+    getActiveServiceTypesSignature,
+  ),
+  getServicesCall,
+);
+assert.match(
+  extractCSharpMethodBody(clientServiceCatalogService, getServicesSignature),
+  getSubscriptionsByCustomerCall,
+);
+
+const commentAndLiteralDecoys = `
+public async Task<IReadOnlySet<string>> GetActiveServiceTypesAsync(
+    PortalSessionContext session,
+    CancellationToken cancellationToken)
+{
+    // GetServicesAsync(session, cancellationToken); }
+    var decoy = "GetServicesAsync(session, cancellationToken); }";
+    return new HashSet<string>();
+}
+`;
+assert.doesNotMatch(
+  extractCSharpMethodBody(
+    commentAndLiteralDecoys,
+    getActiveServiceTypesSignature,
+  ),
+  getServicesCall,
+);
+
+const expressionBodyFollowedByDecoy = `
+public async Task<IReadOnlySet<string>> GetActiveServiceTypesAsync(
+    PortalSessionContext session,
+    CancellationToken cancellationToken)
+    => new HashSet<string>();
+
+private void Decoy()
+{
+    GetServicesAsync(session, cancellationToken);
+}
+`;
+assert.throws(
+  () =>
+    extractCSharpMethodBody(
+      expressionBodyFollowedByDecoy,
+      getActiveServiceTypesSignature,
+    ),
+  /Corps C# avec accolade attendu immediatement apres/,
+);
+
+const buildAccessScopeDecoys = `
+private async Task<DownloadAccessScope> BuildAccessScopeAsync(
+    PortalSessionContext session,
+    CancellationToken cancellationToken)
+{
+    // _serviceCatalogService.GetActiveServiceTypesAsync(session, cancellationToken); }
+    var decoy = "_serviceCatalogService.GetActiveServiceTypesAsync(session, cancellationToken); }";
+    return new DownloadAccessScope();
+}
+`;
+assert.doesNotMatch(
+  extractCSharpMethodBody(buildAccessScopeDecoys, buildAccessScopeSignature),
+  getActiveServiceTypesCall,
+);
 
 assert.match(payloads, /parseDownloadCategoryPayload/);
 assert.match(payloads, /parseDownloadResourcePayload/);
