@@ -11,7 +11,7 @@
   "requiresCommit": true,
   "commitMessage": "fix(webportal): restaurer une baseline lint propre",
   "allowedPaths": [
-    "apps/webportal/app/admin/signups/[id]/page.tsx",
+    "apps/webportal/app/admin/signups/`[id`]/page.tsx",
     "apps/webportal/app/downloads/page.tsx",
     "apps/webportal/app/password/page.tsx",
     "apps/webportal/app/signup/page.tsx",
