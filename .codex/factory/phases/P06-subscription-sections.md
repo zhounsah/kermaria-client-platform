@@ -3,10 +3,10 @@
 ```factory-phase
 {
   "id": "P06",
-  "order": 6,
+  "order": 7,
   "title": "Mutualisation des sections de souscription",
   "kind": "application",
-  "dependencies": ["P05"],
+  "dependencies": ["P06A"],
   "initialStatus": "PENDING",
   "requiresCommit": true,
   "commitMessage": "refactor(webportal): mutualiser les sections de souscription",

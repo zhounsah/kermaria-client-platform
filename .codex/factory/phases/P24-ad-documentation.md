@@ -3,7 +3,7 @@
 ```factory-phase
 {
   "id": "P24",
-  "order": 24,
+  "order": 25,
   "title": "Alignement documentaire Active Directory",
   "kind": "documentation",
   "dependencies": ["P19", "P23"],

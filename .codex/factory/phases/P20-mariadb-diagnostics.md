@@ -3,7 +3,7 @@
 ```factory-phase
 {
   "id": "P20",
-  "order": 20,
+  "order": 21,
   "title": "Diagnostics MariaDB assainis",
   "kind": "infrastructure-source",
   "dependencies": ["P18"],

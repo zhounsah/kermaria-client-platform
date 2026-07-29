@@ -3,7 +3,7 @@
 ```factory-phase
 {
   "id": "P26",
-  "order": 26,
+  "order": 27,
   "title": "Clarification des sources juridiques canoniques",
   "kind": "legal-documentation",
   "dependencies": ["P22"],

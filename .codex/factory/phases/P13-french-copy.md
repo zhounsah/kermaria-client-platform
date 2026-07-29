@@ -3,7 +3,7 @@
 ```factory-phase
 {
   "id": "P13",
-  "order": 13,
+  "order": 14,
   "title": "Corrections ciblées des textes français",
   "kind": "application",
   "dependencies": ["P12"],

@@ -37,27 +37,28 @@ Git et les documents versionnés du dépôt restent la source de vérité.
 | 03 | P03 — Catalogue mock | DONE | P02 | Services mock disponibles lorsque les deux repositories sont non persistants. |
 | 04 | P04 — Refus `PortalService` HTTP 403 | PENDING, prochaine | P03 | Un service hors périmètre client produit un refus d'accès 403, avec test ciblé. |
 | 05 | P05 — Droits de téléchargement | PENDING | P04 | Autorisation fondée sur les services actifs, sans élargissement d'accès. |
-| 06 | P06 — Mutualisation de la souscription | PENDING | P05 | Sections de souscription réutilisées sans changement de contrat. |
-| 07 | P07 — Routage canonique des portails | PENDING | P06 | `www`, `dashboard` et `administration` convergent vers leur zone canonique. |
-| 08 | P08 — Connexion native sans JavaScript | PENDING | P07 | POST formulaire et JSON sûrs, redirections bornées, cookies inchangés. |
-| 09 | P09 — `set-password` natif | PENDING | P08 | Présentation 303 sûre des succès et erreurs de formulaire natif. |
-| 10 | P10 — Vitrine et tunnel pack/contact | PENDING | P09 | Sélection de pack conservée jusqu'au contact ou au signup. |
-| 11 | P11 — Reprise du pack dans le dashboard | PENDING | P10 | Sélection en attente reprise sans masquer les erreurs partielles. |
-| 12 | P12 — Tiroir panier | PENDING | P11 | Navigation, fermeture et focus stabilisés. |
-| 13 | P13 — Textes français et mojibake | PENDING | P12 | Corrections visibles ciblées, aucun identifiant technique accentué. |
-| 14 | P14 — Séparation des configurations | PENDING | P13 | Générateurs API et WEBPORTAL empêchent toute fuite de configuration interne. |
-| 15 | P15 — Baseline Linux R740xd | PENDING | P14 | Scripts paramétrés, idempotents et sûrs pour réseau, temps et reboot. |
-| 16 | P16 — Reverse proxy SRV-11 | PENDING | P15 | Bootstrap nginx/TLS vérifiable avec rollback documenté. |
-| 17 | P17 — Packaging et service SRV-12 | PENDING | P16 | Archive WEBPORTAL reproductible et unité de service vérifiable hors déploiement. |
-| 18 | P18 — Installation API SRV-13 | PENDING | P15 | Installation .NET/service bornée, compte dédié et rollback vérifiable. |
-| 19 | P19 — Préparation KoXo | PENDING | P18 | Source prospective sûre ; toute action réelle reste sous porte humaine. |
-| 20 | P20 — Diagnostics MariaDB | PENDING | P18 | Outils de diagnostic à erreurs assainies et politique TLS explicite. |
-| 21 | P21 — Snapshot DNS | PENDING | P16 | Script source uniquement ; aucun snapshot daté versionné. |
-| 22 | P22 — Documentation V0.39 | PENDING | P10, P11, P13 | Documentation alignée sur le comportement effectivement réintégré. |
-| 23 | P23 — Documentation R740xd | PENDING | P15 à P21 | Cible, état courant et actions futures distingués sans ambiguïté. |
-| 24 | P24 — Documentation AD | PENDING | P19, P23 | Modèle `clients.home.bzh` aligné sur le code et les décisions humaines. |
-| 25 | P25 — Exemple de configuration AD | PENDING | P24 | Exemple cohérent avec DN, ACL et groupes validés ; aucune valeur réelle. |
-| 26 | P26 — Sources juridiques canoniques | PENDING | P22 | Doublons racine traités après validation du propriétaire juridique. |
+| 06 | P06A — Baseline lint web | PENDING, corrective préalable | P05 | Les sept diagnostics web préexistants sont corrigés sans changement fonctionnel ni contournement du lint. |
+| 07 | P06 — Mutualisation de la souscription | PENDING | P06A | Sections de souscription réutilisées sans changement de contrat. |
+| 08 | P07 — Routage canonique des portails | PENDING | P06 | `www`, `dashboard` et `administration` convergent vers leur zone canonique. |
+| 09 | P08 — Connexion native sans JavaScript | PENDING | P07 | POST formulaire et JSON sûrs, redirections bornées, cookies inchangés. |
+| 10 | P09 — `set-password` natif | PENDING | P08 | Présentation 303 sûre des succès et erreurs de formulaire natif. |
+| 11 | P10 — Vitrine et tunnel pack/contact | PENDING | P09 | Sélection de pack conservée jusqu'au contact ou au signup. |
+| 12 | P11 — Reprise du pack dans le dashboard | PENDING | P10 | Sélection en attente reprise sans masquer les erreurs partielles. |
+| 13 | P12 — Tiroir panier | PENDING | P11 | Navigation, fermeture et focus stabilisés. |
+| 14 | P13 — Textes français et mojibake | PENDING | P12 | Corrections visibles ciblées, aucun identifiant technique accentué. |
+| 15 | P14 — Séparation des configurations | PENDING | P13 | Générateurs API et WEBPORTAL empêchent toute fuite de configuration interne. |
+| 16 | P15 — Baseline Linux R740xd | PENDING | P14 | Scripts paramétrés, idempotents et sûrs pour réseau, temps et reboot. |
+| 17 | P16 — Reverse proxy SRV-11 | PENDING | P15 | Bootstrap nginx/TLS vérifiable avec rollback documenté. |
+| 18 | P17 — Packaging et service SRV-12 | PENDING | P16 | Archive WEBPORTAL reproductible et unité de service vérifiable hors déploiement. |
+| 19 | P18 — Installation API SRV-13 | PENDING | P15 | Installation .NET/service bornée, compte dédié et rollback vérifiable. |
+| 20 | P19 — Préparation KoXo | PENDING | P18 | Source prospective sûre ; toute action réelle reste sous porte humaine. |
+| 21 | P20 — Diagnostics MariaDB | PENDING | P18 | Outils de diagnostic à erreurs assainies et politique TLS explicite. |
+| 22 | P21 — Snapshot DNS | PENDING | P16 | Script source uniquement ; aucun snapshot daté versionné. |
+| 23 | P22 — Documentation V0.39 | PENDING | P10, P11, P13 | Documentation alignée sur le comportement effectivement réintégré. |
+| 24 | P23 — Documentation R740xd | PENDING | P15 à P21 | Cible, état courant et actions futures distingués sans ambiguïté. |
+| 25 | P24 — Documentation AD | PENDING | P19, P23 | Modèle `clients.home.bzh` aligné sur le code et les décisions humaines. |
+| 26 | P25 — Exemple de configuration AD | PENDING | P24 | Exemple cohérent avec DN, ACL et groupes validés ; aucune valeur réelle. |
+| 27 | P26 — Sources juridiques canoniques | PENDING | P22 | Doublons racine traités après validation du propriétaire juridique. |
 
 Chaque phase possède une définition exécutable dans `phases/`. L'ordre est
 strict : même si deux phases seraient techniquement indépendantes, le passage à
@@ -80,7 +81,7 @@ Les éléments suivants ne constituent pas des phases de restauration :
 
 L'usine peut entrer en audit final uniquement si :
 
-1. toutes les phases P00 à P26 sont `DONE` dans `STATE.json` ;
+1. toutes les phases P00 à P26, incluant P06A, sont `DONE` dans `STATE.json` ;
 2. chaque phase nécessitant du code ou de la documentation possède un commit
    local atomique et validé ;
 3. aucun blocker ni porte humaine n'est actif ;

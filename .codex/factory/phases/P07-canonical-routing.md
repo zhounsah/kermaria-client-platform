@@ -3,7 +3,7 @@
 ```factory-phase
 {
   "id": "P07",
-  "order": 7,
+  "order": 8,
   "title": "Routage canonique www dashboard administration",
   "kind": "application",
   "dependencies": ["P06"],

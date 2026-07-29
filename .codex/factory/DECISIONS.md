@@ -47,6 +47,28 @@ stable `D-YYYYMMDD-NN`, la preuve, la portée et les conséquences.
 - Justification : l'état doit enregistrer le hash du commit qui vient d'être
   créé sans rendre le commit autoréférent.
 
+## D-20260729-07 — Phase corrective préalable P06A
+
+- Phase : P06A, préalable à P06.
+- Contexte : la validation obligatoire `check:web` de P06 échoue sur 27 erreurs
+  et un avertissement préexistants dans sept fichiers tous hors de l'allowlist
+  fonctionnelle P06. L'empreinte du blocker est
+  `P06-BASELINE-LINT-43a5c096`.
+- Options : élargir P06, affaiblir sa validation, corriger prématurément les
+  fichiers dans son commit, ou isoler la remise au vert dans une phase dédiée.
+- Décision : créer P06A avec les sept seuls fichiers responsables, conserver
+  `check:web` intégral et maintenir le diff fonctionnel P06 dans un checkpoint
+  séparé jusqu'à la fin de P06A.
+- Conséquences : P06 dépend de P06A ; P06A ne corrige que la baseline lint sans
+  changement fonctionnel volontaire et utilise le commit local atomique
+  `fix(webportal): restaurer une baseline lint propre`. Toute nécessité de
+  changer un comportement, un contrat public, une règle lint ou un fichier hors
+  allowlist déclenche une nouvelle porte humaine. Le diff P06 est parqué dans
+  le stash ciblé `f4d0584eacffaf945bb0328e840bd1cb2b948de5`, empreinte de patch
+  `687d448fd17bff2e88ce4588d71d26c344fc806e`, limité aux deux fichiers P06.
+- Auteur/validation humaine : décision explicite de l'utilisateur du
+  29 juillet 2026.
+
 ## Modèle d'entrée
 
 ```text

@@ -3,7 +3,7 @@
 ```factory-phase
 {
   "id": "P09",
-  "order": 9,
+  "order": 10,
   "title": "Fallback natif set-password",
   "kind": "application",
   "dependencies": ["P08"],
