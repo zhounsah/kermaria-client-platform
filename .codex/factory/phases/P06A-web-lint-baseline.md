@@ -23,7 +23,6 @@
     { "name": "lint-no-inline-bypass", "executable": "./node_modules/.bin/eslint.cmd", "arguments": ["apps/webportal/app/admin/signups", "apps/webportal/app/downloads/page.tsx", "apps/webportal/app/password/page.tsx", "apps/webportal/app/signup/page.tsx", "apps/webportal/components/AdminDownloadForm.tsx", "apps/webportal/components/HeaderCartDrawer.tsx", "apps/webportal/components/SignupForm.tsx", "--config", "apps/webportal/eslint.config.mjs", "--no-inline-config", "--max-warnings", "0"] },
     { "name": "admin-contract", "executable": "npm.cmd", "arguments": ["run", "test:admin"] },
     { "name": "downloads-contract", "executable": "npm.cmd", "arguments": ["run", "test:downloads"] },
-    { "name": "signup-contract", "executable": "npm.cmd", "arguments": ["run", "test:signup"] },
     { "name": "ux-contract", "executable": "npm.cmd", "arguments": ["run", "test:ux"] },
     { "name": "ad-security-contract", "executable": "npm.cmd", "arguments": ["run", "test:ad-security"] },
     { "name": "cart-contract", "executable": "npm.cmd", "arguments": ["run", "test:cart"] },

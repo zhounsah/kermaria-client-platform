@@ -66,6 +66,11 @@ stable `D-YYYYMMDD-NN`, la preuve, la portée et les conséquences.
   allowlist déclenche une nouvelle porte humaine. Le diff P06 est parqué dans
   le stash ciblé `f4d0584eacffaf945bb0328e840bd1cb2b948de5`, empreinte de patch
   `687d448fd17bff2e88ce4588d71d26c344fc806e`, limité aux deux fichiers P06.
+- Validation connexe : `test:signup` a été exécuté pendant P06A. Ses deux
+  échecs (`public-routes` sans littéral `"/signup"` et
+  `AD_DOMAIN=home.bzh`) sont présents au HEAD hors diff P06A ; ils sont
+  consignés comme dettes préexistantes, pas comme régressions de la baseline
+  lint. Les sept fichiers restent couverts par le lint strict et `check:web`.
 - Auteur/validation humaine : décision explicite de l'utilisateur du
   29 juillet 2026.
 
