@@ -3,7 +3,7 @@
 ```factory-phase
 {
   "id": "P15",
-  "order": 16,
+  "order": 17,
   "title": "Baseline Linux R740xd",
   "kind": "infrastructure-source",
   "dependencies": ["P14"],

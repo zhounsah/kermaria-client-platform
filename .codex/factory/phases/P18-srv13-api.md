@@ -3,7 +3,7 @@
 ```factory-phase
 {
   "id": "P18",
-  "order": 19,
+  "order": 20,
   "title": "Installation API et service SRV-13",
   "kind": "infrastructure-source",
   "dependencies": ["P15"],

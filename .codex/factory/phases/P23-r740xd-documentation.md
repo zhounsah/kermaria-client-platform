@@ -3,7 +3,7 @@
 ```factory-phase
 {
   "id": "P23",
-  "order": 24,
+  "order": 25,
   "title": "Documentation cohérente de la cible R740xd",
   "kind": "documentation",
   "dependencies": ["P15", "P16", "P17", "P18", "P19", "P20", "P21"],

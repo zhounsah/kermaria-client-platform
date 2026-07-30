@@ -3,7 +3,7 @@
 ```factory-phase
 {
   "id": "P22",
-  "order": 23,
+  "order": 24,
   "title": "Documentation V0.39 et audit localhost",
   "kind": "documentation",
   "dependencies": ["P10", "P11", "P13"],

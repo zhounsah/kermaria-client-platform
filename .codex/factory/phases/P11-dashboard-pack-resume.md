@@ -3,7 +3,7 @@
 ```factory-phase
 {
   "id": "P11",
-  "order": 12,
+  "order": 13,
   "title": "Reprise du pack en attente dans le dashboard",
   "kind": "application",
   "dependencies": ["P10"],

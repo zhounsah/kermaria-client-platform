@@ -3,7 +3,7 @@
 ```factory-phase
 {
   "id": "P19",
-  "order": 20,
+  "order": 21,
   "title": "Préparation KoXo prospective",
   "kind": "infrastructure-source",
   "dependencies": ["P18"],

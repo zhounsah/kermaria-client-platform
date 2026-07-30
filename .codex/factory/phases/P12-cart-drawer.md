@@ -3,7 +3,7 @@
 ```factory-phase
 {
   "id": "P12",
-  "order": 13,
+  "order": 14,
   "title": "Navigation et accessibilité du tiroir panier",
   "kind": "application",
   "dependencies": ["P11"],

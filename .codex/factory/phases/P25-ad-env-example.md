@@ -3,7 +3,7 @@
 ```factory-phase
 {
   "id": "P25",
-  "order": 26,
+  "order": 27,
   "title": "Exemple de configuration Active Directory",
   "kind": "configuration",
   "dependencies": ["P24"],
