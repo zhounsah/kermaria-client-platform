@@ -858,19 +858,20 @@ export const PUBLIC_PACKS: ReadonlyArray<PublicPackManifest> = [
     slug: "dossier-securise",
     label: "Pack Dossier Sécurisé",
     shortLabel: "Dossier Sécurisé",
-    headline: "Vos fichiers essentiels restent accessibles et sauvegardés.",
-    audience: "Pour une personne qui veut un dossier personnel simple et protégé.",
+    headline: "Une copie distante pour garder vos documents importants à portée de main.",
+    audience:
+      "Pour un particulier, un indépendant ou une petite structure qui veut un dossier de secours numérique simple.",
     description:
-      "Un espace de fichiers à distance, sécurisé et sauvegardé, sans jargon technique à gérer.",
+      "Un espace documentaire distant pour conserver vos fichiers importants avec sauvegarde planifiée, sans jargon technique inutile.",
     highlights: [
-      "Dossier personnel sécurisé 32 Go",
-      "Accès à distance aux fichiers",
+      "Dossier de secours numérique 32 Go",
+      "Accès à distance aux documents",
       "Sauvegarde régulière",
       "Support de base",
     ],
     included: [
       "32 Go de stockage personnel",
-      "Accès distant à vos documents",
+      "Copie distante de vos documents importants",
       "Sauvegardes planifiées",
       "Aide de base en cas de besoin",
     ],
@@ -884,10 +885,11 @@ export const PUBLIC_PACKS: ReadonlyArray<PublicPackManifest> = [
     slug: "acces-distance",
     label: "Pack Accès à Distance",
     shortLabel: "Accès à Distance",
-    headline: "Travaillez à distance avec un accès privé supervisé.",
-    audience: "Pour une personne qui veut retrouver ses fichiers via un accès plus encadré.",
+    headline: "Retrouvez vos fichiers et votre accès privé même loin de vos équipements.",
+    audience:
+      "Pour une personne qui veut un dossier distant avec un accès plus encadré et un meilleur confort de reprise.",
     description:
-      "La base du dossier sécurisé, enrichie d'un accès VPN personnel et d'une supervision légère.",
+      "La base du dossier de secours numérique, enrichie d'un accès VPN personnel et d'une supervision légère.",
     highlights: [
       "Tout le pack Dossier Sécurisé",
       "Accès VPN personnel",
@@ -895,7 +897,7 @@ export const PUBLIC_PACKS: ReadonlyArray<PublicPackManifest> = [
       "Support niveau 1",
     ],
     included: [
-      "Stockage personnel et sauvegarde",
+      "Stockage personnel, sauvegarde et accès distant",
       "VPN personnel pour se connecter",
       "Supervision du service",
       "Support niveau 1",
@@ -916,10 +918,11 @@ export const PUBLIC_PACKS: ReadonlyArray<PublicPackManifest> = [
     slug: "bureau-windows-distance",
     label: "Pack Bureau Windows à Distance",
     shortLabel: "Bureau Windows",
-    headline: "Un environnement Windows distant prêt à l'emploi.",
-    audience: "Pour retrouver un bureau Windows complet depuis l'extérieur.",
+    headline: "Un environnement Windows distant pour continuer à travailler plus facilement.",
+    audience:
+      "Pour retrouver un bureau Windows complet depuis l'extérieur et limiter les ruptures d'usage.",
     description:
-      "Un bureau Windows à distance avec accès VPN, stockage, sauvegarde et suivi du service.",
+      "Un bureau Windows à distance avec accès VPN, stockage, sauvegarde et suivi du service pour reprendre plus sereinement.",
     highlights: [
       "Bureau Windows à distance",
       "Accès VPN personnel",
@@ -949,18 +952,19 @@ export const PUBLIC_PACKS: ReadonlyArray<PublicPackManifest> = [
     slug: "pro-association",
     label: "Pack Pro / Association",
     shortLabel: "Pro / Association",
-    headline: "Une base complète pour une petite structure ou une association.",
-    audience: "Pour une petite équipe qui veut une offre plus large et encadrée.",
+    headline: "Une base plus complète pour sécuriser la continuité d'une petite structure.",
+    audience:
+      "Pour une petite équipe qui veut une offre plus large, avec sauvegarde, accès et cadre documentaire simplifié.",
     description:
-      "Une formule plus complète pour une petite structure, avec plus de capacité et une documentation simplifiée.",
+      "Une formule plus complète pour une petite structure ou une association, avec plus de capacité et des repères utiles à la reprise.",
     highlights: [
       "2 utilisateurs et 64 Go de stockage",
       "Accès VPN personnel",
       "Sauvegarde et supervision",
-      "Support niveau 1 et documentation simplifiée",
+      "Support niveau 1 et documentation utile à la reprise",
     ],
     included: [
-      "Base de stockage et capacité additionnelle",
+      "Base de stockage, capacité additionnelle et repères documentaires",
       "VPN personnel",
       "Sauvegarde et supervision",
       "Support niveau 1 et documentation",
@@ -1229,14 +1233,14 @@ function createComparisonValue(
 
 export const DEFAULT_PUBLIC_PACK_CATALOG_CONTENT: PublicPackCatalogContentPayload = {
   pageEyebrow: "Catalogue packs",
-  pageTitle: "Des packs simples, lisibles et prêts à activer",
+  pageTitle: "Des packs simples pour sauvegarder, stocker et reprendre plus vite",
   pageDescription:
-    "Comparez les packs, choisissez votre durée d'engagement, puis lancez votre demande sans avoir à comprendre les briques techniques internes.",
-  comparisonColumnLabel: "Fonctionnalités clés",
+    "Comparez les packs destinés à protéger vos documents importants, vos sauvegardes et la continuité d'une petite activité sans devoir arbitrer des briques techniques internes.",
+  comparisonColumnLabel: "Repères utiles",
   footnotePrimary:
-    "Les tarifs affichés sont hors taxes et correspondent au catalogue public actuel. Le détail technique reste géré en interne pour le provisionnement et le support.",
+    "Les tarifs affichés sont hors taxes et correspondent au catalogue public actuel. Le détail technique reste géré en interne pour le provisionnement, le support et l'explication du cadre retenu.",
   footnoteSecondary:
-    "Besoin d'un accompagnement spécifique ? Passez par le formulaire de contact.",
+    "Besoin d'un dossier de secours numérique ou d'un accompagnement spécifique ? Passez par le formulaire de contact.",
   packs: PUBLIC_PACKS.map((pack) => ({
     packCode: pack.key,
     label: pack.label,
@@ -1252,7 +1256,7 @@ export const DEFAULT_PUBLIC_PACK_CATALOG_CONTENT: PublicPackCatalogContentPayloa
   comparisonRows: [
     {
       id: "storage",
-      label: "Stockage sécurisé inclus",
+      label: "Espace documentaire distant inclus",
       sortOrder: 10,
       values: {
         "pack-dossier-securise": createComparisonValue("text", "32 Go"),
@@ -1263,7 +1267,7 @@ export const DEFAULT_PUBLIC_PACK_CATALOG_CONTENT: PublicPackCatalogContentPayloa
     },
     {
       id: "remote-files",
-      label: "Accès distant aux fichiers",
+      label: "Accès distant aux documents",
       sortOrder: 20,
       values: {
         "pack-dossier-securise": createComparisonValue("included"),
@@ -1285,7 +1289,7 @@ export const DEFAULT_PUBLIC_PACK_CATALOG_CONTENT: PublicPackCatalogContentPayloa
     },
     {
       id: "backup",
-      label: "Sauvegarde régulière",
+      label: "Sauvegarde planifiée",
       sortOrder: 40,
       values: {
         "pack-dossier-securise": createComparisonValue("included"),

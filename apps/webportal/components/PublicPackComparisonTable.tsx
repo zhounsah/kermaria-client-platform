@@ -15,7 +15,11 @@ import {
   formatCurrencyFromCents,
   formatPaymentModeLabel,
 } from "@/lib/formatters";
-import { selectionToQueryString } from "@/lib/public-packs";
+import {
+  normalizeCommitmentMonths,
+  selectionToContactQueryString,
+  selectionToQueryString,
+} from "@/lib/public-packs";
 
 type PublicPackComparisonTableProps = {
   content: PublicPackCatalogContent;
@@ -25,7 +29,9 @@ type PublicPackComparisonTableProps = {
 
 type SelectedPackColumn = {
   pack: ResolvedPublicPackManifest;
-  variant: ResolvedPublicPackManifest["variantsByCommitment"][1]["monthly"];
+  variant:
+    | ResolvedPublicPackManifest["variantsByCommitment"][1]["monthly"]
+    | null;
   isUpfront: boolean;
   highlightLabel: string | null;
   baseMonthlyAmountCents: number;
@@ -95,17 +101,16 @@ export function PublicPackComparisonTable({
     () =>
       orderedPacks.map((pack) => {
         const selectedGroup = pack.variantsByCommitment[commitmentMonths];
+        const isUpfront = effectivePaymentMode === "upfront";
         const variant =
-          effectivePaymentMode === "upfront" && selectedGroup.upfront
+          isUpfront
             ? selectedGroup.upfront
             : selectedGroup.monthly;
 
         return {
           pack,
           variant,
-          isUpfront:
-            effectivePaymentMode === "upfront"
-            && selectedGroup.upfront !== null,
+          isUpfront,
           highlightLabel:
             presentationByPackCode.get(pack.key)?.highlightLabel ?? null,
           baseMonthlyAmountCents:
@@ -127,10 +132,12 @@ export function PublicPackComparisonTable({
           <span className="public-pack-compare-label">Engagement</span>
           <select
             onChange={(event) => {
-              const nextCommitmentMonths = Number.parseInt(
+              const nextCommitmentMonths = normalizeCommitmentMonths(
                 event.target.value,
-                10,
-              ) as PublicPackCommitmentMonths;
+              );
+              if (!nextCommitmentMonths) {
+                return;
+              }
               setCommitmentMonths(nextCommitmentMonths);
               if (nextCommitmentMonths === 1) {
                 setPaymentMode("monthly");
@@ -166,7 +173,10 @@ export function PublicPackComparisonTable({
           </div>
         )}
 
-        <div className="public-pack-compare-fixed-choice public-pack-compare-fixed-choice-summary">
+        <div
+          aria-live="polite"
+          className="public-pack-compare-fixed-choice public-pack-compare-fixed-choice-summary"
+        >
           <span className="public-pack-compare-label">Sélection</span>
           <strong>
             {formatCommitmentMonths(commitmentMonths)}{" "}
@@ -179,37 +189,105 @@ export function PublicPackComparisonTable({
 
       <div className="public-pack-compare-wrap">
         <div
+          aria-colcount={selectedColumns.length + 1}
+          aria-label="Comparatif des packs publics"
+          aria-rowcount={rows.length + 1}
           className="public-pack-compare-table"
+          role="table"
           style={{
             gridTemplateColumns: `minmax(270px, 0.95fr) repeat(${selectedColumns.length}, minmax(310px, 1fr))`,
           }}
         >
-          <div className="public-pack-compare-feature-head">
-            {content.pageEyebrow.trim() ? (
-              <span className="public-pack-compare-overline">
-                {content.pageEyebrow}
-              </span>
-            ) : null}
-            <h2>{content.comparisonColumnLabel}</h2>
-            <p>
-              Comparez les différences utiles avant de choisir votre pack. Les
-              prix, remises et premières échéances s&apos;ajustent selon la durée
-              d&apos;engagement choisie.
-            </p>
-            <div className="public-pack-compare-legend">
-              <span>
-                <IncludedIcon />
-                Inclus
-              </span>
-              <span>
-                <ExcludedIcon />
-                Non inclus
-              </span>
+          <div className="public-pack-compare-row" role="row">
+            <div
+              className="public-pack-compare-feature-head"
+              role="columnheader"
+            >
+              {content.pageEyebrow.trim() ? (
+                <span className="public-pack-compare-overline">
+                  {content.pageEyebrow}
+                </span>
+              ) : null}
+              <h2>{content.comparisonColumnLabel}</h2>
+              <p>
+                Comparez les différences utiles avant de choisir votre pack. Les
+                prix, remises et premières échéances s&apos;ajustent selon la durée
+                d&apos;engagement choisie.
+              </p>
+              <div className="public-pack-compare-legend">
+                <span>
+                  <IncludedIcon />
+                  Inclus
+                </span>
+                <span>
+                  <ExcludedIcon />
+                  Non inclus
+                </span>
+              </div>
             </div>
-          </div>
 
-          {selectedColumns.map(
-            ({ pack, variant, isUpfront, highlightLabel, baseMonthlyAmountCents }) => {
+            {selectedColumns.map(
+              ({ pack, variant, isUpfront, highlightLabel, baseMonthlyAmountCents }) => {
+              if (!variant) {
+                return (
+                  <article
+                    className={`public-pack-compare-column${highlightLabel ? " is-featured" : ""}`}
+                    key={pack.key}
+                    role="columnheader"
+                  >
+                    <div className="public-pack-compare-column-head">
+                      <div className="public-pack-compare-badge-slot">
+                        {highlightLabel ? (
+                          <span className="public-pack-compare-badge">
+                            {highlightLabel}
+                          </span>
+                        ) : (
+                          <span
+                            aria-hidden="true"
+                            className="public-pack-compare-badge-spacer"
+                          />
+                        )}
+                      </div>
+                      <h3>{pack.label}</h3>
+                      <p className="public-pack-compare-audience">
+                        {pack.audience}
+                      </p>
+                      <p className="public-pack-compare-headline">
+                        {pack.headline}
+                      </p>
+                    </div>
+
+                    <div className="public-pack-compare-price">
+                      <strong>Indisponible</strong>
+                      <span className="public-pack-compare-price-caption">
+                        Paiement comptant non disponible pour ce pack
+                      </span>
+                    </div>
+
+                    <ul className="public-pack-compare-highlights">
+                      {pack.highlights.slice(0, 4).map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+
+                    <dl className="public-pack-compare-metrics">
+                      <div>
+                        <dt>Engagement</dt>
+                        <dd>{formatCommitmentMonths(commitmentMonths)}</dd>
+                      </div>
+                      <div>
+                        <dt>Paiement</dt>
+                        <dd>Comptant - indisponible</dd>
+                      </div>
+                    </dl>
+
+                    <Link className="text-link" href={`/offres/${pack.slug}`}>
+                      Voir la fiche technique
+                    </Link>
+                  </article>
+                );
+              }
+
               const displayedPriceAmountCents = isUpfront
                 ? variant.billingPriceAmountCents
                 : variant.monthlyPriceAmountCents;
@@ -221,6 +299,7 @@ export function PublicPackComparisonTable({
                 <article
                   className={`public-pack-compare-column${highlightLabel ? " is-featured" : ""}`}
                   key={pack.key}
+                  role="columnheader"
                 >
                   <div className="public-pack-compare-column-head">
                     <div className="public-pack-compare-badge-slot">
@@ -314,7 +393,14 @@ export function PublicPackComparisonTable({
                   ) : (
                     <Link
                       className="button"
-                      href={`/contact?offer=${encodeURIComponent(variant.offer.id)}`}
+                      href={`/contact?${selectionToContactQueryString(
+                        {
+                          packKey: pack.key,
+                          commitmentMonths,
+                          paymentMode: isUpfront ? "upfront" : "monthly",
+                        },
+                        variant.offer.id,
+                      )}`}
                     >
                       Demander ce pack
                     </Link>
@@ -324,13 +410,15 @@ export function PublicPackComparisonTable({
                   </Link>
                 </article>
               );
-            },
-          )}
+              },
+            )}
+          </div>
 
           {rows.map((row, rowIndex) => (
-            <div className="public-pack-compare-row" key={row.id}>
+            <div className="public-pack-compare-row" key={row.id} role="row">
               <div
                 className={`public-pack-compare-feature-cell ${rowIndex % 2 === 0 ? "is-even" : "is-odd"}`}
+                role="rowheader"
               >
                 <span>{row.label}</span>
               </div>
@@ -340,6 +428,7 @@ export function PublicPackComparisonTable({
                   <div
                     className={`public-pack-compare-value-cell ${rowIndex % 2 === 0 ? "is-even" : "is-odd"}`}
                     key={`${row.id}-${pack.key}`}
+                    role="cell"
                   >
                     {value.kind === "included" ? (
                       <span

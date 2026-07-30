@@ -22,6 +22,91 @@ export type PublicPackSelectionInput = {
   paymentMode: CommercialOfferPaymentMode;
 };
 
+export type PublicPackSelectionOverride = PublicPackSelectionInput & {
+  baseFingerprint: string;
+};
+
+export function isPackSelectionUnavailable(
+  pack: ResolvedPublicPackManifest,
+  selection: PublicPackSelectionInput | null,
+) {
+  return Boolean(
+    selection?.packKey === pack.key
+      && selection.paymentMode === "upfront"
+      && !pack.variantsByCommitment[selection.commitmentMonths].upfront,
+  );
+}
+
+export function buildPublicPackSelectionBaseFingerprint(
+  pack: ResolvedPublicPackManifest,
+  initialSelection: PublicPackSelectionInput | null,
+) {
+  const baseSelection =
+    initialSelection?.packKey === pack.key
+      ? {
+          packKey: initialSelection.packKey,
+          commitmentMonths: initialSelection.commitmentMonths,
+          paymentMode: initialSelection.paymentMode,
+        }
+      : {
+          packKey: pack.key,
+          commitmentMonths: 1 as const,
+          paymentMode: "monthly" as const,
+        };
+
+  return JSON.stringify({
+    baseSelection,
+    variants: ([1, 6, 12] as const).map((commitmentMonths) => {
+      const variants = pack.variantsByCommitment[commitmentMonths];
+      return {
+        commitmentMonths,
+        monthlyOfferId: variants.monthly.offer.id,
+        upfrontOfferId: variants.upfront?.offer.id ?? null,
+      };
+    }),
+  });
+}
+
+export function resolvePublicPackCardSelection(
+  pack: ResolvedPublicPackManifest,
+  initialSelection: PublicPackSelectionInput | null,
+  selectionOverride: PublicPackSelectionOverride | null,
+) {
+  const baseFingerprint = buildPublicPackSelectionBaseFingerprint(
+    pack,
+    initialSelection,
+  );
+  const baseSelection: PublicPackSelectionInput =
+    initialSelection?.packKey === pack.key
+      ? {
+          packKey: initialSelection.packKey,
+          commitmentMonths: initialSelection.commitmentMonths,
+          paymentMode: initialSelection.paymentMode,
+        }
+      : {
+          packKey: pack.key,
+          commitmentMonths: 1,
+          paymentMode: "monthly",
+        };
+  const activeOverride =
+    selectionOverride?.baseFingerprint === baseFingerprint
+    && selectionOverride.packKey === pack.key
+      ? selectionOverride
+      : null;
+
+  return {
+    baseFingerprint,
+    hasActiveOverride: activeOverride !== null,
+    selection: activeOverride
+      ? {
+          packKey: activeOverride.packKey,
+          commitmentMonths: activeOverride.commitmentMonths,
+          paymentMode: activeOverride.paymentMode,
+        }
+      : baseSelection,
+  };
+}
+
 export function normalizePublicPackKey(value: unknown): PublicPackCode | null {
   if (typeof value !== "string") {
     return null;
@@ -36,15 +121,18 @@ export function normalizePublicPackKey(value: unknown): PublicPackCode | null {
 export function normalizeCommitmentMonths(
   value: unknown,
 ): PublicPackCommitmentMonths | null {
-  const parsed =
-    typeof value === "number"
-      ? value
-      : typeof value === "string"
-        ? Number.parseInt(value, 10)
-        : Number.NaN;
-  return parsed === 1 || parsed === 6 || parsed === 12
-    ? (parsed as PublicPackCommitmentMonths)
-    : null;
+  if (value === 1 || value === 6 || value === 12) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    if (normalized === "1" || normalized === "6" || normalized === "12") {
+      return Number(normalized) as PublicPackCommitmentMonths;
+    }
+  }
+
+  return null;
 }
 
 export function normalizePaymentMode(
@@ -56,7 +144,7 @@ export function normalizePaymentMode(
   }
 
   if (commitmentMonths === 1) {
-    return "monthly";
+    return value === "monthly" ? value : null;
   }
 
   if (value === "monthly" || value === "upfront") {
@@ -88,8 +176,9 @@ export function resolvePackCatalog(
   content: PublicPackCatalogContent | null = null,
 ): ResolvedPublicPackManifest[] {
   const presentationByCode = buildPackPresentationMap(content);
+  const activeCatalog = catalog.filter((offer) => offer.status === "active");
 
-  return resolvePublicPackCatalog(catalog)
+  return resolvePublicPackCatalog(activeCatalog)
     .filter((pack) =>
       Object.values(pack.variantsByCommitment).every(
         (variants) => variants.monthly.offer.status === "active",
@@ -119,7 +208,7 @@ export function resolvePackSelection(
   selection: PublicPackSelectionInput,
 ): ResolvedPublicPackVariant | null {
   return resolvePublicPackVariantFromCatalog(
-    catalog,
+    catalog.filter((offer) => offer.status === "active"),
     selection.packKey,
     selection.commitmentMonths,
     selection.paymentMode,
@@ -167,16 +256,26 @@ export function selectionToQueryString(selection: PublicPackSelectionInput) {
   return params.toString();
 }
 
+export function selectionToContactQueryString(
+  selection: PublicPackSelectionInput,
+  offerId: string,
+) {
+  const params = new URLSearchParams(selectionToQueryString(selection));
+  params.set("offer", offerId);
+  return params.toString();
+}
+
 export function selectionFromSearchParams(
   params: URLSearchParams | Record<string, string | string[] | undefined>,
 ): PublicPackSelectionInput | null {
   const read = (key: string) => {
     if (params instanceof URLSearchParams) {
-      return params.get(key);
+      const values = params.getAll(key);
+      return values.length === 1 ? values[0] : null;
     }
 
     const value = params[key];
-    return Array.isArray(value) ? value[0] : value ?? null;
+    return Array.isArray(value) ? null : value ?? null;
   };
 
   const packKey = normalizePublicPackKey(read("pack"));
