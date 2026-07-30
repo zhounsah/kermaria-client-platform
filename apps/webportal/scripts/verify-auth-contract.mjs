@@ -245,7 +245,16 @@ assert.match(homePage, /notFound\(\)/);
 assert.match(homePage, /resolvePortalRoleUrl/);
 assert.match(homePage, /isPortalRoleAllowed/);
 assert.doesNotMatch(homePage, /redirect\("\/(?:login|dashboard|admin)"\)/);
-assert.match(loginPage, /query\.error === "PORTAL_ROLE_MISMATCH"/);
+for (const presentationCode of [
+  "INVALID_CREDENTIALS",
+  "LOGIN_REQUEST_TOO_LARGE",
+  "LOGIN_UNAVAILABLE",
+  "PORTAL_ROLE_MISMATCH",
+]) {
+  assert.match(loginPage, new RegExp(presentationCode));
+}
+assert.match(loginPage, /Object\.hasOwn\(LOGIN_ERROR_MESSAGES, errorCode\)/);
+assert.doesNotMatch(loginPage, /query\.email|initialEmail/);
 assert.match(loginPage, /initialError=\{initialError\}/);
 assert.match(loginPage, /portalArea=\{area\}/);
 assert.match(loginPage, /notFound\(\)/);
@@ -258,6 +267,8 @@ assert.match(loginForm, /"Content-Type":\s*"application\/json"/);
 assert.match(loginForm, /JSON\.stringify\(validation\.payload\)/);
 assert.match(loginForm, /isSubmittingRef\.current/);
 assert.match(loginForm, /aria-invalid/);
+assert.match(loginForm, /acceptCharset="UTF-8"/);
+assert.match(loginForm, /encType="application\/x-www-form-urlencoded"/);
 assert.match(loginForm, /resolvePortalRoleUrl\(origin, result\.user\.role\)/);
 assert.match(loginForm, /"\/login\?error=PORTAL_ROLE_MISMATCH"/);
 assert.match(loginForm, /window\.location\.assign\(target\)/);
@@ -271,14 +282,39 @@ assert.match(loginRoute, /export async function POST\(/);
 assert.match(loginRoute, /getPortalRequestOriginFromHeaders/);
 assert.match(loginRoute, /status:\s*403/);
 assert.match(loginRoute, /code:\s*"PORTAL_LOGIN_FORBIDDEN"/);
+assert.match(loginRoute, /MAX_LOGIN_BODY_BYTES\s*=\s*16\s*\*\s*1024/);
+assert.match(loginRoute, /application\/json/);
+assert.match(loginRoute, /application\/x-www-form-urlencoded/);
+assert.match(loginRoute, /status:\s*413/);
+assert.match(loginRoute, /status:\s*415/);
+assert.match(loginRoute, /new TextDecoder\("utf-8", \{ fatal: true \}\)/);
+assert.match(loginRoute, /request\.body\.getReader\(\)/);
+assert.match(loginRoute, /new URLSearchParams\(body\)/);
+assert.match(loginRoute, /form\.getAll\("email"\)/);
+assert.match(loginRoute, /form\.getAll\("password"\)/);
+assert.match(loginRoute, /isSameOriginFormPost\(request, origin\)/);
+assert.match(loginRoute, /url\.origin === origin/);
+assert.match(loginRoute, /NextResponse\.redirect\(target, \{ status: 303 \}\)/);
+assert.match(loginRoute, /`\/login\?error=\$\{code\}`/);
 assert.match(loginRoute, /getSessionCookieOptions\(\)/);
 assert.match(loginRoute, /ensureCsrfCookie/);
 assert.match(loginRoute, /authenticated:\s*false/);
 assert.doesNotMatch(loginRoute, /sessionToken\s*[:,]\s*session\.sessionToken/);
-assert.doesNotMatch(loginRoute, /FormData|URLSearchParams/);
+assert.doesNotMatch(loginRoute, /request\.formData\(|multipart\/form-data/);
+assert.doesNotMatch(
+  loginRoute,
+  /searchParams\.set\(|[?&](?:email|password|token|correlation_id)=/i,
+);
 
 const classifyIndex = loginRoute.indexOf("const area = getPortalArea(origin)");
-const readPayloadIndex = loginRoute.indexOf("await request.json()");
+const portalGuardIndex = loginRoute.indexOf(
+  'if (!origin || !area || area === "public")',
+);
+const formatIndex = loginRoute.indexOf("const format = getLoginRequestFormat");
+const formOriginIndex = loginRoute.indexOf(
+  'format === "form" && !isSameOriginFormPost',
+);
+const readPayloadIndex = loginRoute.indexOf("await readBoundedLoginBody");
 const createSessionIndex = loginRoute.indexOf("await createInternalSession");
 const allowRoleIndex = loginRoute.indexOf("isPortalRoleAllowed(area");
 const revokeSessionIndex = loginRoute.indexOf("await revokeInternalSession");
@@ -286,7 +322,10 @@ const setCookieIndex = loginRoute.indexOf("response.cookies.set");
 const setCsrfIndex = loginRoute.indexOf("ensureCsrfCookie(request, response)");
 for (const [label, index] of [
   ["classification de zone", classifyIndex],
-  ["lecture JSON", readPayloadIndex],
+  ["refus de portail", portalGuardIndex],
+  ["classification du format", formatIndex],
+  ["contrôle Origin du formulaire", formOriginIndex],
+  ["lecture bornée du corps", readPayloadIndex],
   ["création de session", createSessionIndex],
   ["contrôle du rôle", allowRoleIndex],
   ["révocation", revokeSessionIndex],
@@ -295,8 +334,11 @@ for (const [label, index] of [
 ]) {
   assert.notEqual(index, -1, `${label} introuvable dans la route de login.`);
 }
-assert.ok(classifyIndex < readPayloadIndex, "La zone doit précéder la lecture JSON.");
-assert.ok(readPayloadIndex < createSessionIndex, "Le JSON doit précéder l'authentification.");
+assert.ok(classifyIndex < portalGuardIndex, "La zone doit précéder son refus.");
+assert.ok(portalGuardIndex < formatIndex, "Le portail doit être refusé avant le format.");
+assert.ok(formatIndex < formOriginIndex, "Le format doit précéder le contrôle Origin.");
+assert.ok(formOriginIndex < readPayloadIndex, "Origin doit précéder la lecture du corps.");
+assert.ok(readPayloadIndex < createSessionIndex, "Le corps doit précéder l'authentification.");
 assert.ok(createSessionIndex < allowRoleIndex, "Le rôle est contrôlé après authentification.");
 assert.ok(allowRoleIndex < revokeSessionIndex, "Le refus doit déclencher la révocation.");
 assert.ok(revokeSessionIndex < setCookieIndex, "La révocation doit précéder tout cookie.");

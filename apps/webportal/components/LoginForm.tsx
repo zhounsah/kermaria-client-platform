@@ -135,8 +135,10 @@ export function LoginForm({
 
   return (
     <form
+      acceptCharset="UTF-8"
       action="/api/auth/login"
       className="form-card login-form"
+      encType="application/x-www-form-urlencoded"
       method="post"
       noValidate
       onSubmit={handleSubmit}

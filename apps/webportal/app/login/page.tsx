@@ -21,8 +21,12 @@ type LoginPageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
-const ROLE_MISMATCH_MESSAGE =
-  "Ce compte doit être connecté depuis l’autre portail.";
+const LOGIN_ERROR_MESSAGES = {
+  INVALID_CREDENTIALS: "Identifiants invalides.",
+  LOGIN_REQUEST_TOO_LARGE: "La demande de connexion est trop volumineuse.",
+  LOGIN_UNAVAILABLE: "La connexion est momentanément indisponible.",
+  PORTAL_ROLE_MISMATCH: "Ce compte doit être connecté depuis l’autre portail.",
+} as const;
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   const origin = getPortalRequestOriginFromHeaders(await headers());
@@ -62,8 +66,9 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   }
 
   const query = await searchParams;
-  const initialError = query.error === "PORTAL_ROLE_MISMATCH"
-    ? ROLE_MISMATCH_MESSAGE
+  const errorCode = typeof query.error === "string" ? query.error : "";
+  const initialError = Object.hasOwn(LOGIN_ERROR_MESSAGES, errorCode)
+    ? LOGIN_ERROR_MESSAGES[errorCode as keyof typeof LOGIN_ERROR_MESSAGES]
     : null;
 
   return (
