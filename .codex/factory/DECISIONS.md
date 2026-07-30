@@ -74,6 +74,30 @@ stable `D-YYYYMMDD-NN`, la preuve, la portée et les conséquences.
 - Auteur/validation humaine : décision explicite de l'utilisateur du
   29 juillet 2026.
 
+## D-20260730-08 — Connexions strictement séparées par zone
+
+- Phase : P07.
+- Contexte : les redirections canoniques entre `dashboard.*` et
+  `administration.*` ne peuvent pas conserver une session portée par un cookie
+  host-only. Partager le cookie au domaine parent élargirait la surface de
+  session ; un ticket de transfert introduirait un nouveau contrat et de
+  nouveaux endpoints.
+- Options : login strict par zone ; cookie parent-domain ; ticket de transfert
+  one-shot.
+- Décision : retenir le login strict par zone. `dashboard.*` authentifie les
+  clients et `administration.*` les administrateurs. Une authentification
+  valide sur la mauvaise zone ne pose aucun cookie, révoque la session interne
+  créée, puis réoriente vers le login canonique ; une nouvelle authentification
+  est requise. Le login public converge vers la zone client. Les environnements
+  loopback restent mono-hôte pour les tests locaux.
+- Conséquences : le cookie reste host-only ; aucun partage inter-sous-domaines
+  ni handoff n'est ajouté. Les hôtes inconnus et chemins absolus ou
+  protocol-relative ne peuvent pas devenir des cibles de redirection. Le
+  comportement est appliqué immédiatement, sans période de compatibilité pour
+  une connexion initiée depuis la mauvaise zone.
+- Auteur/validation humaine : choix explicite de l'option 1 par l'utilisateur
+  le 30 juillet 2026.
+
 ## Modèle d'entrée
 
 ```text

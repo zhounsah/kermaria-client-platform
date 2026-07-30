@@ -49,7 +49,7 @@ humaine suit exclusivement `HUMAN_GATES.md`.
   `5fd8ce49f4aef7a1bda51c765dccdcab726977dc` (`fix(webportal): restaurer une
   baseline lint propre`). P06A est `DONE` et P06 reprend à `PRECHECK`.
 
-## B-20260730-02 — OPEN — Continuité de session entre portails canoniques
+## B-20260730-02 — RESOLVED — Continuité de session entre portails canoniques
 
 - Phase et étape : P07 / ANALYSIS
 - Type/code : HUMAN_GATE / HG-PUBLIC-CONTRACT
@@ -71,4 +71,6 @@ humaine suit exclusivement `HUMAN_GATES.md`.
 - Options : login strict séparé par zone avec refus/réorientation du mauvais
   rôle ; cookie partagé au domaine parent ; ticket de transfert one-shot entre
   portails.
-- Résolution : OPEN, décision humaine requise.
+- Résolution : `D-20260730-08` retient les logins strictement séparés par zone,
+  sans cookie partagé ni mécanisme de handoff. P07 reprend depuis son checkpoint
+  d'analyse avec cette règle et les tests de matrice correspondants.
