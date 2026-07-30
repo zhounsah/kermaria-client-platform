@@ -41,7 +41,7 @@ Git et les documents versionnés du dépôt restent la source de vérité.
 | 07 | P06 — Mutualisation de la souscription | DONE | P06A | Sections de souscription réutilisées sans changement de contrat. |
 | 08 | P07 — Routage canonique des portails | DONE | P06 | `www`, `dashboard` et `administration` convergent vers leur zone canonique. |
 | 09 | P08 — Connexion native sans JavaScript | DONE | P07 | POST formulaire et JSON sûrs, redirections bornées, cookies inchangés. |
-| 10 | P09 — `set-password` natif | ACTIVE / ANALYSIS | P08 | Présentation 303 sûre des succès et erreurs de formulaire natif. |
+| 10 | P09 — `set-password` natif | DONE | P08 | Présentation 303 sûre des succès et erreurs de formulaire natif. |
 | 11 | P10 — Vitrine et tunnel pack/contact | PENDING | P09 | Sélection de pack conservée jusqu'au contact ou au signup. |
 | 12 | P11 — Reprise du pack dans le dashboard | PENDING | P10 | Sélection en attente reprise sans masquer les erreurs partielles. |
 | 13 | P12 — Tiroir panier | PENDING | P11 | Navigation, fermeture et focus stabilisés. |
