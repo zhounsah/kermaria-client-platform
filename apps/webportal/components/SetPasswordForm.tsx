@@ -12,6 +12,7 @@ type SetPasswordFormProps = {
 };
 
 const MIN_PASSWORD_LENGTH = 12;
+const MAX_PASSWORD_LENGTH = 200;
 
 type SetPasswordState =
   | { status: "idle" | "submitting" }
@@ -95,12 +96,16 @@ export function SetPasswordForm({ token }: SetPasswordFormProps) {
 
   return (
     <form
+      acceptCharset="UTF-8"
       action="/api/set-password"
       className="form-card set-password-form"
+      encType="application/x-www-form-urlencoded"
       method="post"
       noValidate
       onSubmit={handleSubmit}
     >
+      <input name="token" type="hidden" value={token} />
+
       {state.status === "error" ? (
         <FormMessage title="Définition impossible" tone="error">
           <p>{state.message}</p>
@@ -111,6 +116,7 @@ export function SetPasswordForm({ token }: SetPasswordFormProps) {
         Nouveau mot de passe
         <input
           autoComplete="new-password"
+          maxLength={MAX_PASSWORD_LENGTH}
           minLength={MIN_PASSWORD_LENGTH}
           name="password"
           onChange={(event) => setPassword(event.target.value)}
@@ -124,6 +130,7 @@ export function SetPasswordForm({ token }: SetPasswordFormProps) {
         Confirmez le mot de passe
         <input
           autoComplete="new-password"
+          maxLength={MAX_PASSWORD_LENGTH}
           minLength={MIN_PASSWORD_LENGTH}
           name="confirmPassword"
           onChange={(event) => setConfirmPassword(event.target.value)}

@@ -6,6 +6,7 @@ async function read(path) {
 }
 
 const publicRoutes = await read("lib/public-routes.ts");
+const publicRouteConfig = await read("lib/public-route-config.ts");
 const signupServerLib = await read("lib/signup-server.ts");
 const signupStatusLib = await read("lib/signup-status.ts");
 const signupRoute = await read("app/api/signup/route.ts");
@@ -30,6 +31,7 @@ const adminNavigation = await read("components/AdminNavigation.tsx");
 const signupPage = await read("app/signup/page.tsx");
 const verifyPage = await read("app/signup/verify/page.tsx");
 const setPasswordPage = await read("app/set-password/page.tsx");
+const passwordPage = await read("app/password/page.tsx");
 const adminSignupsPage = await read("app/admin/signups/page.tsx");
 const internalApi = await read("lib/internal-api.ts");
 
@@ -212,6 +214,113 @@ check("hCaptcha verifie cote serveur, fail-closed en production", () => {
 });
 check("BFF set-password relaie vers l'API interne", () => {
   assert.match(setPasswordRoute, /\/internal\/signup\/set-password/);
+  assert.match(setPasswordRoute, /NextResponse\.json/);
+});
+check("BFF set-password conserve JSON et accepte le formulaire natif borne", () => {
+  assert.match(setPasswordRoute, /application\/json/);
+  assert.match(setPasswordRoute, /application\/x-www-form-urlencoded/);
+  assert.match(setPasswordRoute, /JSON\.parse\(body\)/);
+  assert.match(setPasswordRoute, /new URLSearchParams\(body\)/);
+  assert.match(setPasswordRoute, /form\.getAll\("token"\)/);
+  assert.match(setPasswordRoute, /form\.getAll\("password"\)/);
+  assert.match(setPasswordRoute, /form\.getAll\("confirmPassword"\)/);
+  assert.match(setPasswordRoute, /MAX_SET_PASSWORD_BODY_BYTES\s*=\s*16\s*\*\s*1024/);
+  assert.match(setPasswordRoute, /request\.body\.getReader\(\)/);
+  assert.match(
+    setPasswordRoute,
+    /new TextDecoder\("utf-8", \{ fatal: true \}\)/,
+  );
+  assert.match(setPasswordRoute, /\b413\b/);
+  assert.match(setPasswordRoute, /\b415\b/);
+  assert.match(
+    setPasswordRoute,
+    /result\.ok \? 200 : result\.status >= 500 \? 502 : result\.status/,
+  );
+  assert.match(setPasswordRoute, /\{ token, password \}/);
+});
+check("BFF set-password protege le POST natif et ses redirections", () => {
+  assert.match(setPasswordRoute, /getPortalRequestOriginFromHeaders/);
+  assert.match(setPasswordRoute, /getPortalArea\(origin\)/);
+  assert.match(
+    setPasswordRoute,
+    /area !== "public"\s*&&\s*area !== "client"\s*&&\s*area !== "local"/,
+  );
+  for (const canonicalClientHost of [
+    "dashboard.zacharyhounsa.ovh",
+    "dashboard.home.bzh",
+  ]) {
+    assert.match(
+      publicRouteConfig,
+      new RegExp(`client:\\s*"${canonicalClientHost.replaceAll(".", "\\.")}"`),
+    );
+  }
+  assert.match(setPasswordRoute, /request\.headers\.get\("origin"\)/);
+  assert.match(setPasswordRoute, /url\.origin === origin/);
+  assert.match(setPasswordRoute, /status:\s*303/);
+  assert.match(
+    setPasswordRoute,
+    /Location:\s*`\/set-password\?result=\$\{code\}`/,
+  );
+  assert.match(setPasswordRoute, /"Cache-Control", "no-store"/);
+  assert.doesNotMatch(setPasswordRoute, /request\.formData\(|multipart\/form-data/i);
+  assert.doesNotMatch(
+    setPasswordRoute,
+    /[?&](?:token|password|confirmPassword|correlation_id)=/i,
+  );
+  assert.doesNotMatch(
+    setPasswordRoute,
+    /\.cookies\.set\(|["']Set-Cookie["']/i,
+  );
+  assert.match(
+    setPasswordRoute,
+    /if\s*\(ok\)\s*\{\s*return code === "PASSWORD_SET"\s*\?\s*"PASSWORD_SET"\s*:\s*"SET_PASSWORD_UNAVAILABLE";\s*\}/s,
+  );
+  assert.doesNotMatch(
+    setPasswordRoute,
+    /if\s*\(ok\)\s*\{\s*return "PASSWORD_SET"/s,
+  );
+
+  for (const resultCode of [
+    "PASSWORD_SET",
+    "TOKEN_INVALID",
+    "TOKEN_EXPIRED",
+    "INVALID_PASSWORD",
+    "INVALID_REQUEST",
+    "RATE_LIMITED",
+    "SET_PASSWORD_REQUEST_TOO_LARGE",
+    "SET_PASSWORD_UNAVAILABLE",
+  ]) {
+    assert.match(setPasswordRoute, new RegExp(resultCode));
+  }
+
+  const formatIndex = setPasswordRoute.indexOf(
+    "const format = getSetPasswordRequestFormat",
+  );
+  const originIndex = setPasswordRoute.indexOf(
+    'format === "form" && !isAllowedFormPost',
+  );
+  const rateLimitIndex = setPasswordRoute.indexOf(
+    "const rateDecision = checkRateLimit",
+  );
+  const bodyIndex = setPasswordRoute.indexOf(
+    "await readBoundedSetPasswordBody(request)",
+  );
+  const upstreamIndex = setPasswordRoute.indexOf(
+    "const result = await callInternalSignup",
+  );
+  for (const [label, index] of [
+    ["classification du format", formatIndex],
+    ["controle Origin", originIndex],
+    ["rate-limit", rateLimitIndex],
+    ["lecture bornee", bodyIndex],
+    ["appel upstream", upstreamIndex],
+  ]) {
+    assert.notEqual(index, -1, `${label} introuvable dans la route set-password.`);
+  }
+  assert.ok(formatIndex < originIndex);
+  assert.ok(originIndex < rateLimitIndex);
+  assert.ok(rateLimitIndex < bodyIndex);
+  assert.ok(bodyIndex < upstreamIndex);
 });
 check("lien set-password valide au chargement (GET non destructif)", () => {
   assert.match(
@@ -234,8 +343,9 @@ check("routes admin signup cablees", () => {
 });
 
 check("routes signup publiques via PublicShell", () => {
-  assert.match(publicRoutes, /"\/signup"/);
-  assert.match(publicRoutes, /"\/set-password"/);
+  assert.match(publicRouteConfig, /"\/signup"/);
+  assert.match(publicRouteConfig, /"\/set-password"/);
+  assert.match(publicRoutes, /PUBLIC_ROUTES/);
   assert.match(publicRoutes, /isSignupEnabled/);
 });
 check("formulaire signup garde honeypot + hCaptcha et champs structures", () => {
@@ -248,7 +358,59 @@ check("formulaire signup garde honeypot + hCaptcha et champs structures", () => 
 });
 check("formulaire mot de passe impose la longueur + confirmation", () => {
   assert.match(setPasswordForm, /MIN_PASSWORD_LENGTH\s*=\s*12/);
+  assert.match(setPasswordForm, /MAX_PASSWORD_LENGTH\s*=\s*200/);
   assert.match(setPasswordForm, /confirmPassword/);
+  assert.match(setPasswordForm, /name="token"/);
+  assert.match(setPasswordForm, /type="hidden"/);
+  assert.match(setPasswordForm, /acceptCharset="UTF-8"/);
+  assert.match(
+    setPasswordForm,
+    /encType="application\/x-www-form-urlencoded"/,
+  );
+  assert.match(setPasswordForm, /action="\/api\/set-password"/);
+  assert.match(setPasswordForm, /method="post"/);
+  assert.match(setPasswordForm, /event\.preventDefault\(\)/);
+  assert.match(setPasswordForm, /requestBffJson<SetPasswordResponse>/);
+  assert.match(setPasswordForm, /"Content-Type": "application\/json"/);
+  assert.match(setPasswordForm, /JSON\.stringify\(\{ token, password \}\)/);
+  assert.doesNotMatch(setPasswordForm, /FormData|URLSearchParams/i);
+});
+check("page set-password presente uniquement des resultats natifs finis", () => {
+  for (const resultCode of [
+    "PASSWORD_SET",
+    "TOKEN_INVALID",
+    "TOKEN_EXPIRED",
+    "INVALID_PASSWORD",
+    "INVALID_REQUEST",
+    "RATE_LIMITED",
+    "SET_PASSWORD_REQUEST_TOO_LARGE",
+    "SET_PASSWORD_UNAVAILABLE",
+  ]) {
+    assert.match(setPasswordPage, new RegExp(resultCode));
+  }
+  assert.match(
+    setPasswordPage,
+    /Object\.hasOwn\(SET_PASSWORD_RESULTS, resultCode\)/,
+  );
+  assert.match(setPasswordPage, /<Link href="\/login">/);
+  assert.doesNotMatch(setPasswordPage, /dangerouslySetInnerHTML/);
+
+  const presentationIndex = setPasswordPage.indexOf("if (presentation)");
+  const tokenValidationIndex = setPasswordPage.indexOf(
+    "validateSetPasswordToken(trimmedToken",
+  );
+  assert.notEqual(presentationIndex, -1);
+  assert.notEqual(tokenValidationIndex, -1);
+  assert.ok(
+    presentationIndex < tokenValidationIndex,
+    "Un resultat POST reconnu doit etre presente avant toute validation du token.",
+  );
+});
+check("page password reste separee du fallback set-password", () => {
+  assert.match(passwordPage, /await requireClientSession\(\)/);
+  assert.match(passwordPage, /AD_PASSWORD_CHANGE_ENABLED/);
+  assert.match(passwordPage, /<PasswordChangeForm \/>/);
+  assert.doesNotMatch(passwordPage, /action="\/api\/set-password"/);
 });
 check("actions admin approuver, refuser et relancer l'acces presentes", () => {
   assert.match(adminSignupActions, /approve/);
@@ -275,11 +437,84 @@ check(".env.example documente les variables signup + hCaptcha", () => {
   assert.match(envExample, /HCAPTCHA_SITE_KEY=/);
   assert.match(envExample, /HCAPTCHA_SECRET_KEY=/);
 });
-check(".env.example cible clients.home.bzh", () => {
-  assert.match(envExample, /AD_DOMAIN=clients\.home\.bzh/);
-  assert.match(envExample, /AD_CLIENTS_OU_DN=OU=Clients,DC=clients,DC=home,DC=bzh/);
-  assert.match(envExample, /AD_REQUIRED_OU_ROOT=DC=home,DC=bzh/);
-  assert.match(envExample, /AD_ALLOWED_ROOTS=OU=Clients,DC=clients,DC=home,DC=bzh;OU=SecurityGroups,OU=Kermaria,DC=home,DC=bzh/);
+check(".env.example borne explicitement le perimetre AD", () => {
+  function readEnvValue(name) {
+    const match = envExample.match(new RegExp(`^${name}=([^\\r\\n]+)$`, "m"));
+    assert.ok(match, `${name} doit etre renseignee.`);
+    return match[1].trim();
+  }
+
+  function assertOuUnderRoot(value, requiredRoot, label) {
+    const suffix = `,${requiredRoot}`;
+    assert.ok(
+      value.toLowerCase().endsWith(suffix.toLowerCase()),
+      `${label} doit etre sous AD_REQUIRED_OU_ROOT.`,
+    );
+    const ouPrefix = value.slice(0, -suffix.length);
+    assert.match(
+      ouPrefix,
+      /^OU=[^,=]+(?:,OU=[^,=]+)*$/i,
+      `${label} doit etre une suite de composantes OU non vides.`,
+    );
+  }
+
+  const domain = readEnvValue("AD_DOMAIN");
+  const requiredRoot = readEnvValue("AD_REQUIRED_OU_ROOT");
+  const clientsOu = readEnvValue("AD_CLIENTS_OU_DN");
+  const allowedRoots = readEnvValue("AD_ALLOWED_ROOTS")
+    .split(";")
+    .map((value) => value.trim());
+
+  assert.ok(domain.length <= 253, "AD_DOMAIN depasse la longueur DNS maximale.");
+  const domainLabels = domain.split(".");
+  assert.ok(domainLabels.length >= 2, "AD_DOMAIN doit etre un domaine DNS qualifie.");
+  for (const label of domainLabels) {
+    assert.match(
+      label,
+      /^(?=.{1,63}$)[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i,
+      `Label DNS invalide dans AD_DOMAIN: ${label}`,
+    );
+  }
+  const domainDn = domainLabels.map((label) => `DC=${label}`).join(",");
+
+  const rootComponents = requiredRoot.split(",");
+  assert.ok(rootComponents.length >= 2, "AD_REQUIRED_OU_ROOT doit etre un DN DC qualifie.");
+  const rootLabels = rootComponents.map((component) => {
+    const match = component.match(/^DC=([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)$/i);
+    assert.ok(match, `Composante DC invalide: ${component}`);
+    return match[1];
+  });
+  const rootDomain = rootLabels.join(".");
+  assert.ok(
+    domain.toLowerCase() === rootDomain.toLowerCase()
+      || domain.toLowerCase().endsWith(`.${rootDomain.toLowerCase()}`),
+    `${domainDn} doit etre egal ou enfant de ${requiredRoot}.`,
+  );
+
+  assertOuUnderRoot(clientsOu, requiredRoot, "AD_CLIENTS_OU_DN");
+  assert.ok(
+    allowedRoots.length >= 2,
+    "AD_ALLOWED_ROOTS doit contenir au moins deux OUs.",
+  );
+  assert.equal(
+    new Set(allowedRoots.map((value) => value.toLowerCase())).size,
+    allowedRoots.length,
+    "AD_ALLOWED_ROOTS ne doit pas contenir de doublon.",
+  );
+  for (const [index, allowedRoot] of allowedRoots.entries()) {
+    assertOuUnderRoot(
+      allowedRoot,
+      requiredRoot,
+      `AD_ALLOWED_ROOTS[${index}]`,
+    );
+  }
+  assert.equal(
+    allowedRoots.filter(
+      (allowedRoot) => allowedRoot.toLowerCase() === clientsOu.toLowerCase(),
+    ).length,
+    1,
+    "AD_ALLOWED_ROOTS doit contenir exactement AD_CLIENTS_OU_DN.",
+  );
 });
 
 let failures = 0;
