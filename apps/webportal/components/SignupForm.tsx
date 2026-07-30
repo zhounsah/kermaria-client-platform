@@ -45,6 +45,7 @@ export function SignupForm({
   const [city, setCity] = useState("");
   const [country, setCountry] = useState("France");
   const [personalTitle, setPersonalTitle] = useState("");
+  const [birthDate, setBirthDate] = useState("");
   const [givenName, setGivenName] = useState("");
   const [surname, setSurname] = useState("");
   const [initials, setInitials] = useState("");
@@ -92,6 +93,7 @@ export function SignupForm({
           city,
           country,
           personalTitle,
+          birthDate,
           givenName,
           surname,
           initials,
@@ -200,7 +202,7 @@ export function SignupForm({
         </label>
 
         <label>
-          Complement d&apos;adresse (facultatif)
+          Complément d&apos;adresse (facultatif)
           <input
             autoComplete="address-line2"
             maxLength={255}
@@ -256,18 +258,30 @@ export function SignupForm({
         </p>
 
         <label>
-          Civilité (facultatif)
+          Civilité
           <select
             autoComplete="honorific-prefix"
             name="personalTitle"
             onChange={(event) => setPersonalTitle(event.target.value)}
+            required
             value={personalTitle}
           >
-            <option value="">Non précisé</option>
+            <option value="">Sélectionnez</option>
             <option value="madame">Madame</option>
             <option value="monsieur">Monsieur</option>
-            <option value="autre">Autre</option>
           </select>
+        </label>
+
+        <label>
+          Date de naissance
+          <input
+            max={new Date().toISOString().slice(0, 10)}
+            name="birthDate"
+            onChange={(event) => setBirthDate(event.target.value)}
+            required
+            type="date"
+            value={birthDate}
+          />
         </label>
 
         <label>

@@ -1052,6 +1052,7 @@ export type SignupCustomerData = {
 
 export type SignupUserData = {
   personalTitle: string | null;
+  birthDate: string | null;
   givenName: string | null;
   surname: string | null;
   initials: string | null;
@@ -1092,6 +1093,53 @@ export type SignupAdminAccountAccess = {
   userPrincipalName: string | null;
 };
 
+export type KoxoExportUser = {
+  civilite: string;
+  nom: string;
+  prenom: string;
+  dateNaissance: string;
+  identifiantUnique: string;
+  groupeSecondaire: string;
+  email: string;
+};
+
+export type KoxoInvalidUser = {
+  identifiantUnique: string | null;
+  portalUserId: string;
+  fields: string[];
+};
+
+export type KoxoExportPayload = {
+  schemaVersion: number;
+  generatedAt: string;
+  userCount: number;
+  users: KoxoExportUser[];
+};
+
+export type KoxoRunSummary = {
+  createdAt: string;
+  source: string;
+  status: string;
+  schemaVersion: number | null;
+  userCount: number;
+  invalidUserCount: number;
+  correlationId: string;
+  sourceAddress: string | null;
+  summaryMessage: string;
+  generatedAt: string | null;
+};
+
+export type KoxoAdminDashboard = {
+  exportableUserCount: number;
+  invalidUserCount: number;
+  lastApiCallAt: string | null;
+  lastRequestedStatus: string | null;
+  schemaVersion: number;
+  preview: KoxoExportPayload | null;
+  validationErrors: KoxoInvalidUser[];
+  lastRun: KoxoRunSummary | null;
+};
+
 export function getAdminSignups(status?: string) {
   const suffix = status ? `?status=${encodeURIComponent(status)}` : "";
   return getAdminData<SignupAdminSummary[]>(
@@ -1103,6 +1151,13 @@ export function getAdminSignups(status?: string) {
 export function getAdminSignup(id: string) {
   return getAdminData<SignupAdminDetail | null>(
     `/internal/admin/signups/${encodeURIComponent(id)}`,
+    null,
+  );
+}
+
+export function getAdminKoxoDashboard() {
+  return getAdminData<KoxoAdminDashboard | null>(
+    "/internal/admin/koxo",
     null,
   );
 }

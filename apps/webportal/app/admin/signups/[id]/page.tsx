@@ -138,6 +138,10 @@ export default async function AdminSignupDetailPage({ params }: PageProps) {
               <dd>{localizePersonalTitle(signup.primaryUser?.personalTitle)}</dd>
             </div>
             <div>
+              <dt>Date de naissance</dt>
+              <dd>{signup.primaryUser?.birthDate ?? "-"}</dd>
+            </div>
+            <div>
               <dt>Prenom</dt>
               <dd>{signup.primaryUser?.givenName ?? "-"}</dd>
             </div>
@@ -335,8 +339,6 @@ function localizePersonalTitle(value: string | null | undefined) {
       return "Madame";
     case "monsieur":
       return "Monsieur";
-    case "autre":
-      return "Autre";
     default:
       return "-";
   }

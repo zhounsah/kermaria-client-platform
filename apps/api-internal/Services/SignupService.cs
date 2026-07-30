@@ -84,6 +84,12 @@ public sealed class SignupService : ISignupService
     private const int MaxCountryLength = 100;
     private const int MaxShortNameLength = 120;
     private const int MaxInitialsLength = 16;
+    private static readonly HashSet<string> AllowedPersonalTitles =
+        new(StringComparer.Ordinal)
+        {
+            "madame",
+            "monsieur"
+        };
 
     private readonly ISignupRepository _repository;
     private readonly ISubscriptionRepository _subscriptionRepository;
@@ -1010,9 +1016,9 @@ public sealed class SignupService : ISignupService
             payload.PrimaryUser?.Initials,
             givenName,
             surname);
-        var personalTitle = NormalizeOptional(
-            payload.PrimaryUser?.PersonalTitle,
-            MaxCustomerTypeLength);
+        var personalTitle = NormalizePersonalTitle(
+            payload.PrimaryUser?.PersonalTitle);
+        var birthDate = NormalizeBirthDate(payload.PrimaryUser?.BirthDate);
 
         if (companyName is null
             || customerType is null
@@ -1023,8 +1029,10 @@ public sealed class SignupService : ISignupService
             || postalCode is null
             || city is null
             || country is null
+            || personalTitle is null
             || givenName is null
-            || surname is null)
+            || surname is null
+            || birthDate is null)
         {
             return null;
         }
@@ -1043,6 +1051,7 @@ public sealed class SignupService : ISignupService
             personalTitle,
             givenName,
             surname,
+            birthDate,
             initials,
             displayName,
             email,
@@ -1101,6 +1110,33 @@ public sealed class SignupService : ISignupService
         }
 
         return $"{char.ToUpperInvariant(givenName[0])}{char.ToUpperInvariant(surname[0])}";
+    }
+
+    private static string? NormalizePersonalTitle(string? value)
+    {
+        var normalized = NormalizeOptional(value, MaxCustomerTypeLength)
+            ?.ToLowerInvariant();
+        return normalized is not null && AllowedPersonalTitles.Contains(normalized)
+            ? normalized
+            : null;
+    }
+
+    private static string? NormalizeBirthDate(string? value)
+    {
+        var normalized = NormalizeOptional(value, 10);
+        if (normalized is null)
+        {
+            return null;
+        }
+
+        return DateOnly.TryParseExact(
+                normalized,
+                "yyyy-MM-dd",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out var birthDate)
+            ? birthDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+            : null;
     }
 
     private static (string? givenName, string? surname) SplitLegacyName(

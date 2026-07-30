@@ -8,6 +8,9 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Kermaria.ApiInternal.Contracts;
+using Kermaria.ApiInternal.Data.Repositories;
+using Kermaria.ApiInternal.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
@@ -68,6 +71,8 @@ async Task<int> RunAsync(string[] arguments)
         await RunUnavailableReadinessTestAsync();
         await RunProductionConfigurationValidationTestsAsync();
         await RunServiceAuthenticationGuardTestsAsync();
+        await RunKoxoExportHttpTestsAsync();
+        await RunKoxoExportServiceTestsAsync();
         await RunDisabledAccountTestAsync();
         await RunExpiredSessionTestAsync();
         await RunLockoutResetTestAsync();
@@ -3026,6 +3031,326 @@ async Task VerifyDownloadsAsync(
     }
 }
 
+async Task RunKoxoExportHttpTestsAsync()
+{
+    var baseUrl = SmokeTestRuntimeHelpers.CreateLoopbackBaseUrl();
+    const string serviceAuthToken = "NOT_A_REAL_KOXO_SERVICE_AUTH_VALUE_V040";
+    using var api = StartApi(
+        baseUrl,
+        startInfo =>
+        {
+            startInfo.Environment["ASPNETCORE_ENVIRONMENT"] = "Staging";
+            startInfo.Environment["DOTNET_ENVIRONMENT"] = "Staging";
+            startInfo.Environment["SQL_PROVIDER"] = "mariadb";
+            startInfo.Environment["SQL_HOST"] = "127.0.0.1";
+            startInfo.Environment["SQL_PORT"] = "3306";
+            startInfo.Environment["SQL_DATABASE"] = "koxo-auth-guard";
+            startInfo.Environment["SQL_USERNAME"] = "koxo-auth-guard";
+            startInfo.Environment["SQL_PASSWORD"] =
+                "NOT_A_REAL_SQL_KOXO_AUTH_VALUE_V040";
+            startInfo.Environment["SERVICE_AUTH_TOKEN"] = serviceAuthToken;
+            startInfo.Environment["SESSION_COOKIE_SECURE"] = "true";
+            startInfo.Environment["AD_INTEGRATION_MODE"] = "disabled";
+            foreach (var variable in new[]
+            {
+                "DEMO_PORTAL_EMAIL",
+                "DEMO_PORTAL_PASSWORD",
+                "DEMO_PORTAL_STATUS",
+                "DEMO_INTERNAL_ADMIN_EMAIL",
+                "DEMO_INTERNAL_ADMIN_PASSWORD"
+            })
+            {
+                startInfo.Environment.Remove(variable);
+            }
+        });
+    using var handler = new HttpClientHandler { UseProxy = false };
+    using var client = new HttpClient(handler);
+
+    try
+    {
+        using var healthResponse = await WaitForHealthAsync(
+            client,
+            api.Process,
+            baseUrl,
+            api.Logs);
+        Ensure(
+            healthResponse.IsSuccessStatusCode,
+            "Le health check staging doit repondre pour tester l'export KoXo.");
+
+        using var missingHeaderResponse = await client.GetAsync(
+            $"{baseUrl}/internal/koxo/users");
+        using var missingHeaderPayload = JsonDocument.Parse(
+            await missingHeaderResponse.Content.ReadAsStringAsync());
+        Ensure(
+            missingHeaderResponse.StatusCode == HttpStatusCode.Unauthorized
+            && missingHeaderPayload.RootElement.GetProperty("code").GetString()
+                == "SERVICE_AUTH_REQUIRED",
+            "L'export KoXo prive doit exiger X-Service-Auth hors Development.");
+
+        using var invalidHeaderRequest = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"{baseUrl}/internal/koxo/users");
+        invalidHeaderRequest.Headers.Add(
+            serviceAuthHeader,
+            "NOT_A_REAL_INVALID_KOXO_SERVICE_AUTH_V040");
+        using var invalidHeaderResponse = await client.SendAsync(
+            invalidHeaderRequest);
+        using var invalidHeaderPayload = JsonDocument.Parse(
+            await invalidHeaderResponse.Content.ReadAsStringAsync());
+        Ensure(
+            invalidHeaderResponse.StatusCode == HttpStatusCode.Unauthorized
+            && invalidHeaderPayload.RootElement.GetProperty("code").GetString()
+                == "SERVICE_AUTH_REQUIRED",
+            "Un X-Service-Auth invalide doit etre refuse sur /internal/koxo/users.");
+
+        using var validHeaderRequest = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"{baseUrl}/internal/koxo/users");
+        validHeaderRequest.Headers.Add(serviceAuthHeader, serviceAuthToken);
+        validHeaderRequest.Headers.Add(correlationHeader, "v0.40-koxo-http");
+        using var validHeaderResponse = await client.SendAsync(validHeaderRequest);
+        var validHeaderText = await validHeaderResponse.Content.ReadAsStringAsync();
+        Ensure(
+            !validHeaderText.Contains(
+                "SERVICE_AUTH_REQUIRED",
+                StringComparison.Ordinal)
+            && !validHeaderText.Contains(
+                "password",
+                StringComparison.OrdinalIgnoreCase),
+            "Un X-Service-Auth valide ne doit pas etre rejete par le garde KoXo ni exposer de mot de passe.");
+    }
+    finally
+    {
+        await api.StopAsync();
+    }
+}
+
+async Task RunKoxoExportServiceTestsAsync()
+{
+    var sortableRepository = new InMemoryKoxoRepository(
+    [
+        new KoxoExportCandidate(
+            "portal-user-2",
+            "CLI-Z",
+            "CLI-000002",
+            "madame",
+            "Beta",
+            "Anne",
+            "1988-03-12",
+            "anne.beta@example.invalid"),
+        new KoxoExportCandidate(
+            "portal-user-1",
+            "CLI-A",
+            "CLI-000010",
+            "monsieur",
+            "Alpha",
+            "Zed",
+            "1981-01-07",
+            "zed.alpha@example.invalid"),
+        new KoxoExportCandidate(
+            "portal-user-3",
+            "CLI-A",
+            "CLI-000001",
+            "madame",
+            "Aardvark",
+            "Zoe",
+            "1992-10-02",
+            "zoe.aardvark@example.invalid")
+    ]);
+    var sortableService = new KoxoExportService(sortableRepository);
+    var sortablePayload = await sortableService.ExportAsync(
+        "api",
+        "v0.40-koxo-sort",
+        "127.0.0.1",
+        CancellationToken.None);
+
+    Ensure(
+        sortablePayload.SchemaVersion == 1
+        && sortablePayload.UserCount == 3
+        && sortablePayload.Users.Count == 3
+        && DateTimeOffset.TryParse(sortablePayload.GeneratedAt, out _),
+        "Le payload KoXo valide doit exposer schemaVersion=1, un generatedAt ISO et un userCount exact.");
+    EnsureSequenceEqual(
+        sortablePayload.Users.Select(user => user.IdentifiantUnique).ToArray(),
+        ["CLI-000001", "CLI-000010", "CLI-000002"],
+        "Le tri KoXo doit etre deterministe par groupe secondaire puis identifiant unique.");
+    Ensure(
+        !JsonSerializer.Serialize(sortablePayload)
+            .Contains("password", StringComparison.OrdinalIgnoreCase),
+        "Le payload KoXo ne doit jamais exposer de mot de passe.");
+
+    var secondPayload = await sortableService.ExportAsync(
+        "api",
+        "v0.40-koxo-sort-repeat",
+        "127.0.0.1",
+        CancellationToken.None);
+    EnsureSequenceEqual(
+        secondPayload.Users.Select(user => user.IdentifiantUnique).ToArray(),
+        sortablePayload.Users.Select(user => user.IdentifiantUnique).ToArray(),
+        "Un export KoXo repete ne doit pas recalculer les identifiants uniques.");
+
+    var invalidRepository = new InMemoryKoxoRepository(
+    [
+        new KoxoExportCandidate(
+            "portal-user-4",
+            "CLI-B",
+            "CLI-000111",
+            "madame",
+            "Valide",
+            "Alice",
+            "1990-04-15",
+            "alice.valide@example.invalid"),
+        new KoxoExportCandidate(
+            "portal-user-5",
+            "CLI-B",
+            "CLI-000111",
+            "monsieur",
+            "Doublon",
+            "Bob",
+            "1989-06-20",
+            "bob.doublon@example.invalid"),
+        new KoxoExportCandidate(
+            "portal-user-6",
+            "CLI-C",
+            "CLI-000222",
+            "autre",
+            "SansDate",
+            "Charlie",
+            null,
+            "charlie.sansdate@example.invalid")
+    ]);
+    var invalidService = new KoxoExportService(invalidRepository);
+    KoxoValidationException? validationException = null;
+    try
+    {
+        await invalidService.ExportAsync(
+            "api",
+            "v0.40-koxo-invalid",
+            "127.0.0.1",
+            CancellationToken.None);
+    }
+    catch (KoxoValidationException exception)
+    {
+        validationException = exception;
+    }
+
+    Ensure(
+        validationException is not null
+        && validationException.InvalidUsers.Count == 3
+        && validationException.InvalidUsers.Count(user =>
+            user.Fields.Contains("identifiantUnique", StringComparer.Ordinal)) == 2
+        && validationException.InvalidUsers.Any(user =>
+            user.Fields.Contains("civilite", StringComparer.Ordinal)
+            && user.Fields.Contains("dateNaissance", StringComparer.Ordinal)),
+        "Les doublons et invalidites KoXo doivent bloquer globalement l'export avec une erreur structuree.");
+
+    var invalidDashboard = await invalidService.ValidateAndRecordAsync(
+        "v0.40-koxo-dashboard",
+        "127.0.0.1",
+        CancellationToken.None);
+    Ensure(
+        invalidDashboard.InvalidUserCount == 3
+        && invalidDashboard.ExportableUserCount == 0
+        && invalidDashboard.LastRun is not null
+        && string.Equals(
+            invalidDashboard.LastRun.Status,
+            "validation_failed",
+            StringComparison.Ordinal)
+        && invalidDashboard.Preview is null,
+        "La validation KoXo admin doit enregistrer un audit persistant et refuser toute reponse partielle.");
+
+    var configuration = new ConfigurationBuilder()
+        .AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["DEMO_PORTAL_EMAIL"] = mockEmail,
+            ["DEMO_PORTAL_PASSWORD"] = mockPassword,
+            ["DEMO_PORTAL_STATUS"] = "active",
+            ["DEMO_INTERNAL_ADMIN_EMAIL"] = mockAdminEmail,
+            ["DEMO_INTERNAL_ADMIN_PASSWORD"] = mockAdminPassword
+        })
+        .Build();
+    var authStore = new MockAuthenticationStore(
+        configuration,
+        new PortalPasswordService());
+    var signupStore = new MockSignupStore();
+    var signupRepository = new MockSignupRepository(signupStore, authStore);
+    const string signupId = "signup-v040-koxo";
+    await signupRepository.InsertPendingAsync(
+        new SignupInsert(
+            signupId,
+            "Client test KoXo",
+            "Alice Stable",
+            "alice.stable@example.invalid",
+            "0102030405",
+            "Validation KoXo",
+            new SignupCustomerData(
+                "professionnel",
+                "Client test KoXo",
+                "alice.stable@example.invalid",
+                "0102030405",
+                "1 rue de la Stabilite",
+                null,
+                "29000",
+                "Quimper",
+                "France"),
+            new SignupUserData(
+                "madame",
+                "Alice",
+                "Stable",
+                "1991-09-14",
+                "AS",
+                "Alice Stable",
+                "alice.stable@example.invalid",
+                "0102030405",
+                true),
+            null,
+            "verification-hash",
+            DateTime.UtcNow.AddHours(4),
+            "127.0.0.1",
+            "SmokeTests"),
+        CancellationToken.None);
+    await signupRepository.MarkEmailVerifiedAsync(signupId, CancellationToken.None);
+    var approval = await signupRepository.ApproveAsync(
+        new SignupApprovalRequest(
+            signupId,
+            "customer-v040-koxo",
+            "CLI-DEMO-0042",
+            new SignupCustomerData(
+                "professionnel",
+                "Client test KoXo",
+                "alice.stable@example.invalid",
+                "0102030405",
+                "1 rue de la Stabilite",
+                null,
+                "29000",
+                "Quimper",
+                "France"),
+            new SignupUserData(
+                "madame",
+                "Alice",
+                "Stable",
+                "1991-09-14",
+                "AS",
+                "Alice Stable",
+                "alice.stable@example.invalid",
+                "0102030405",
+                true),
+            "portal-user-v040-koxo",
+            "password-hash",
+            DateTime.UtcNow.AddHours(24)),
+        CancellationToken.None);
+    Ensure(
+        approval is not null
+        && string.Equals(
+            approval.KoxoUniqueIdentifier,
+            signupStore.Rows[signupId].ApprovedUserKoxoUniqueIdentifier,
+            StringComparison.Ordinal)
+        && approval.KoxoUniqueIdentifier.StartsWith(
+            "CLI-",
+            StringComparison.Ordinal),
+        "L'identifiant unique KoXo doit etre attribue une fois a l'approbation et conserve en persistance.");
+}
+
 async Task RunMockActiveDirectoryModeTestsAsync()
 {
     var mockBaseUrl = SmokeTestRuntimeHelpers.CreateLoopbackBaseUrl();
@@ -5366,6 +5691,17 @@ static string InvokeIdentifier(
             $"Le mapping de l'identifiant {columnName} n'a pas retourné de chaîne.");
 }
 
+static void EnsureSequenceEqual(
+    IReadOnlyList<string> actual,
+    IReadOnlyList<string> expected,
+    string message)
+{
+    Ensure(
+        actual.Count == expected.Count
+        && actual.SequenceEqual(expected, StringComparer.Ordinal),
+        message);
+}
+
 HttpRequestMessage CreateSessionRequest(
     HttpMethod method,
     string url,
@@ -5710,6 +6046,51 @@ sealed class ApiRuntime : IDisposable
         {
         }
     }
+}
+
+sealed class InMemoryKoxoRepository : IKoxoRepository
+{
+    private readonly List<KoxoExportCandidate> _candidates;
+    private readonly List<KoxoRunSummary> _runs = [];
+
+    public InMemoryKoxoRepository(IEnumerable<KoxoExportCandidate> candidates)
+    {
+        _candidates = candidates.ToList();
+    }
+
+    public bool IsPersistent => false;
+
+    public Task<IReadOnlyList<KoxoExportCandidate>> ListExportCandidatesAsync(
+        CancellationToken cancellationToken)
+        => Task.FromResult<IReadOnlyList<KoxoExportCandidate>>(_candidates);
+
+    public Task InsertRunAsync(
+        KoxoRunInsert run,
+        CancellationToken cancellationToken)
+    {
+        _runs.Insert(0, new KoxoRunSummary(
+            DateTime.UtcNow.ToString("O"),
+            run.Source,
+            run.Status,
+            run.SchemaVersion,
+            run.UserCount,
+            run.InvalidUserCount,
+            run.CorrelationId,
+            run.SourceAddress,
+            run.SummaryMessage,
+            run.GeneratedAtUtc?.ToString("O")));
+        return Task.CompletedTask;
+    }
+
+    public Task<KoxoRunSummary?> GetLatestRunAsync(CancellationToken cancellationToken)
+        => Task.FromResult(_runs.FirstOrDefault());
+
+    public Task<KoxoRunSummary?> GetLatestRunBySourceAsync(
+        string source,
+        CancellationToken cancellationToken)
+        => Task.FromResult(
+            _runs.FirstOrDefault(run =>
+                string.Equals(run.Source, source, StringComparison.Ordinal)));
 }
 
 sealed class RuntimeConfigurationContracts

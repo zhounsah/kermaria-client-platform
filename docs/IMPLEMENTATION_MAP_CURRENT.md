@@ -31,13 +31,19 @@ The current repo state is built in layers:
 9. `V0.39_VITRINE_TUNNEL_PUBLIC.md`
    Public vitrine refresh: stronger homepage positioning, pack-first offers
    reading, and contact/signup tunnel continuity.
+10. `koxo-sync.md`
+   Private KoXo synchronization chain: validated JSON export, admin checks,
+   PowerShell CSV generation, SRV-21 execution, and guarded KoXo launch.
 
-Identity alignment already documented but not yet implemented:
+Identity alignment and KoXo export are now partially implemented:
 
 - `docs/v0.38/V0.38_SITE_AD_ALIGNMENT.md`
 - `docs/v0.38/V0.38_KOXO_SIGNUP_INTEGRATION.md`
+- `docs/koxo-sync.md`
 - target domain: `clients.home.bzh`
-- important: current signup remains V0.26 mono-user and does not create AD
+- important: signup remains mono-user, but civilite and birth date are now
+  enforced for KoXo export, `koxo_unique_identifier` is persisted on
+  `portal_users`, and the KoXo chain is executed from SRV-21 through CSV/XML
 
 ## Functional picture
 
@@ -120,6 +126,8 @@ Identity and AD baseline:
 - current signup persistence: `signup_pending`
 - current customer auth identity: `customers` + `portal_users`
 - current AD link persistence: `customer_ad_links`
+- current KoXo run persistence: `koxo_export_runs`
+- current KoXo unique user identifier: `portal_users.koxo_unique_identifier`
 - current configurable AD root: `AD_DOMAIN`, `AD_CLIENTS_OU_DN`,
   `AD_REQUIRED_OU_ROOT`, `AD_ALLOWED_ROOTS`
 - future alignment target documented in `docs/v0.38/V0.38_SITE_AD_ALIGNMENT.md`
@@ -178,10 +186,17 @@ Identity, signup, and AD alignment:
 
 - `apps/api-internal/Services/SignupService.cs`
 - `apps/api-internal/Data/Repositories/MariaDbSignupRepository.cs`
+- `apps/api-internal/Services/KoxoExportService.cs`
+- `apps/api-internal/Data/Repositories/MariaDbKoxoRepository.cs`
+- `apps/webportal/app/api/internal/koxo/users/route.ts`
+- `apps/webportal/app/admin/koxo/page.tsx`
+- `scripts/koxo/Sync-KoXoClients.ps1`
+- `scripts/koxo/KoxoSync.Common.psm1`
 - `apps/api-internal/Data/Configuration/AdRuntimeConfiguration.cs`
 - `apps/api-internal/Services/ActiveDirectory/LdapActiveDirectoryService.cs`
 - `apps/api-internal/Migrations/MariaDb/007_customer_ad_links.sql`
 - `apps/api-internal/Migrations/MariaDb/020_signup_pending.sql`
+- `apps/api-internal/Migrations/MariaDb/035_v040_koxo_sync.sql`
 
 ## Important implementation decisions
 

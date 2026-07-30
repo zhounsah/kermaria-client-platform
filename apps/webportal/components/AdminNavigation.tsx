@@ -15,6 +15,7 @@ const navigationSections: NavSection[] = [
     label: "Pilotage",
     items: [
       { href: "/admin", label: "Vue d'ensemble", exact: true },
+      { href: "/admin/koxo", label: "KoXo" },
       { href: "/admin/activity", label: "Flux d'activité" },
       { href: "/admin/audit-logs", label: "Journal d'audit" },
     ],

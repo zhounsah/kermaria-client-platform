@@ -235,9 +235,14 @@ builder.Services.AddScoped<ISignupRepository>(
         : new MockSignupRepository(
             serviceProvider.GetRequiredService<MockSignupStore>(),
             serviceProvider.GetRequiredService<MockAuthenticationStore>()));
+builder.Services.AddScoped<IKoxoRepository>(
+    _ => sqlConfiguration.IsPersistent
+        ? new MariaDbKoxoRepository(sqlConfiguration)
+        : new MockKoxoRepository());
 builder.Services.AddScoped<IPortalService, PortalService>();
 builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
 builder.Services.AddScoped<IAdminService, AdminService>();
+builder.Services.AddScoped<IKoxoExportService, KoxoExportService>();
 builder.Services.AddScoped<IRequestWorkflowService, RequestWorkflowService>();
 builder.Services.AddScoped<
     IPortalNotificationService,
@@ -2603,6 +2608,56 @@ app.MapPost(
 app.MapPost(
     "/internal/portal/service-requests",
     CreateServiceRequest);
+app.MapGet(
+    "/internal/koxo/users",
+    async (
+        HttpContext context,
+        IKoxoExportService service,
+        IAuditService auditService) =>
+    {
+        var correlationId = context.GetCorrelationId();
+        var sourceAddress =
+            context.Request.Headers["X-Koxo-Source-Address"].FirstOrDefault()
+            ?? context.Connection.RemoteIpAddress?.ToString();
+
+        try
+        {
+            var payload = await service.ExportAsync(
+                "api",
+                correlationId,
+                sourceAddress,
+                context.RequestAborted);
+            context.Response.Headers["X-Data-Source"] =
+                service.IsPersistent ? "mariadb" : "mock";
+            await auditService.RecordAsync(
+                new AuditEvent(
+                    correlationId,
+                    "koxo.export.read",
+                    "success",
+                    TargetType: "koxo_export",
+                    SourceAddress: sourceAddress),
+                context.RequestAborted);
+            return Results.Ok(payload);
+        }
+        catch (KoxoValidationException exception)
+        {
+            await auditService.RecordAsync(
+                new AuditEvent(
+                    correlationId,
+                    "koxo.export.read",
+                    "refused",
+                    "KOXO_EXPORT_VALIDATION_FAILED",
+                    "koxo_export",
+                    SourceAddress: sourceAddress),
+                context.RequestAborted);
+            return Results.Json(
+                new KoxoValidationFailurePayload(
+                    "KOXO_EXPORT_VALIDATION_FAILED",
+                    "Un ou plusieurs utilisateurs sont invalides.",
+                    exception.InvalidUsers),
+                statusCode: StatusCodes.Status422UnprocessableEntity);
+        }
+    });
 
 app.MapGet(
     "/internal/admin/overview",
@@ -2662,6 +2717,44 @@ app.MapGet(
             service,
             await service.GetCustomerAsync(
                 customerReference,
+                context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/admin/koxo",
+    async (
+        HttpContext context,
+        IKoxoExportService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.koxo.read");
+        context.Response.Headers["X-Data-Source"] =
+            service.IsPersistent ? "mariadb" : "mock";
+        return Results.Ok(await service.GetDashboardAsync(context.RequestAborted));
+    });
+app.MapPost(
+    "/internal/admin/koxo/validate",
+    async (
+        HttpContext context,
+        IKoxoExportService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.koxo.validate");
+        context.Response.Headers["X-Data-Source"] =
+            service.IsPersistent ? "mariadb" : "mock";
+        return Results.Ok(
+            await service.ValidateAndRecordAsync(
+                context.GetCorrelationId(),
+                context.Connection.RemoteIpAddress?.ToString(),
                 context.RequestAborted));
     });
 

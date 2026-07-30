@@ -37,6 +37,7 @@ public sealed record SignupUserData(
     string? PersonalTitle,
     string? GivenName,
     string? Surname,
+    string? BirthDate,
     string? Initials,
     string? DisplayName,
     string? Email,

@@ -25,6 +25,7 @@ type SignupRequestBody = {
   city?: unknown;
   country?: unknown;
   personalTitle?: unknown;
+  birthDate?: unknown;
   givenName?: unknown;
   surname?: unknown;
   initials?: unknown;
@@ -61,6 +62,8 @@ const allowedCustomerTypes = new Set([
   "association",
   "individual",
 ]);
+const allowedPersonalTitles = new Set(["madame", "monsieur"]);
+const birthDatePattern = /^\d{4}-\d{2}-\d{2}$/;
 
 const ACCEPTED_BODY = {
   code: "SIGNUP_ACCEPTED",
@@ -258,6 +261,8 @@ function validateSignupPayload(body: SignupRequestBody) {
     typeof body.country === "string" ? body.country.trim() : "";
   const personalTitle =
     typeof body.personalTitle === "string" ? body.personalTitle.trim() : "";
+  const birthDate =
+    typeof body.birthDate === "string" ? body.birthDate.trim() : "";
   const givenName =
     typeof body.givenName === "string" ? body.givenName.trim() : "";
   const surname =
@@ -309,8 +314,21 @@ function validateSignupPayload(body: SignupRequestBody) {
     errors.country = `Champ limité à ${MAX_COUNTRY_LENGTH} caractères.`;
   }
 
-  if (personalTitle.length > MAX_TITLE_LENGTH) {
+  if (!personalTitle) {
+    errors.personalTitle = "La civilite est requise.";
+  } else if (personalTitle.length > MAX_TITLE_LENGTH) {
     errors.personalTitle = `Champ limité à ${MAX_TITLE_LENGTH} caractères.`;
+  } else if (!allowedPersonalTitles.has(personalTitle.toLowerCase())) {
+    errors.personalTitle = "Selectionnez une civilite exportable.";
+  }
+
+  if (!birthDate) {
+    errors.birthDate = "La date de naissance est requise.";
+  } else if (
+    !birthDatePattern.test(birthDate)
+    || Number.isNaN(Date.parse(`${birthDate}T00:00:00Z`))
+  ) {
+    errors.birthDate = "La date de naissance est invalide.";
   }
 
   if (!givenName) {
@@ -370,7 +388,8 @@ function validateSignupPayload(body: SignupRequestBody) {
         country,
       },
       primaryUser: {
-        personalTitle: personalTitle || null,
+        personalTitle,
+        birthDate,
         givenName,
         surname,
         initials: initials || null,

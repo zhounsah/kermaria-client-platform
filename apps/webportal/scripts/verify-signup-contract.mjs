@@ -25,6 +25,9 @@ const adminSignupResendPasswordEmailRoute = await read(
   "app/api/admin/signups/[id]/resend-password-email/route.ts",
 );
 const signupForm = await read("components/SignupForm.tsx");
+const packSelectionSummary = await read(
+  "components/PublicPackSelectionSummary.tsx",
+);
 const setPasswordForm = await read("components/SetPasswordForm.tsx");
 const adminSignupActions = await read("components/AdminSignupActions.tsx");
 const adminNavigation = await read("components/AdminNavigation.tsx");
@@ -33,6 +36,7 @@ const verifyPage = await read("app/signup/verify/page.tsx");
 const setPasswordPage = await read("app/set-password/page.tsx");
 const passwordPage = await read("app/password/page.tsx");
 const adminSignupsPage = await read("app/admin/signups/page.tsx");
+const adminSignupDetailPage = await read("app/admin/signups/[id]/page.tsx");
 const internalApi = await read("lib/internal-api.ts");
 
 const envExample = await read("../../.env.example");
@@ -41,6 +45,9 @@ const migration020 = await read(
 );
 const migration034 = await read(
   "../../apps/api-internal/Migrations/MariaDb/034_v038_identity_alignment.sql",
+);
+const migration035 = await read(
+  "../../apps/api-internal/Migrations/MariaDb/035_v040_koxo_sync.sql",
 );
 const signupConfig = await read(
   "../../apps/api-internal/Data/Configuration/SignupRuntimeConfiguration.cs",
@@ -87,6 +94,16 @@ check("migration v0.38 aligne signup et liens AD", () => {
   assert.match(migration034, /ad_provisioning_status/);
   assert.match(migration034, /koxo_export_status/);
 });
+check("migration v0.40 ajoute birth_date et l'identifiant KoXo immuable", () => {
+  assert.match(migration035, /signup_pending[\s\S]*birth_date DATE NULL/);
+  assert.match(migration035, /portal_users[\s\S]*birth_date DATE NULL/);
+  assert.match(migration035, /koxo_unique_identifier VARCHAR\(32\) NULL/);
+  assert.match(
+    migration035,
+    /CREATE UNIQUE INDEX IF NOT EXISTS uk_portal_users_koxo_unique_identifier/,
+  );
+  assert.match(migration035, /CREATE TABLE IF NOT EXISTS koxo_identifier_counters/);
+});
 
 check("SIGNUP_ENABLED defaut false", () => {
   assert.match(
@@ -125,6 +142,13 @@ check("v0.38 normalise des donnees customer + primaryUser", () => {
   assert.match(signupService, /SignupCustomerData/);
   assert.match(signupService, /SignupUserData/);
   assert.match(signupService, /BuildSamAccountNameBase/);
+});
+check("v0.40 impose civilite exportable et date de naissance", () => {
+  assert.match(signupService, /AllowedPersonalTitles/);
+  assert.match(signupService, /NormalizePersonalTitle/);
+  assert.match(signupService, /NormalizeBirthDate/);
+  assert.match(signupService, /DateOnly\.TryParseExact/);
+  assert.match(signupContracts, /string\?\s+BirthDate/);
 });
 check("set-password branche la creation et la synchro AD", () => {
   assert.match(signupService, /ProvisionActiveDirectoryAsync/);
@@ -198,14 +222,51 @@ check("BFF signup transporte la structure v0.38", () => {
   assert.match(signupRoute, /customerType/);
   assert.match(signupRoute, /addressLine1/);
   assert.match(signupRoute, /givenName/);
+  assert.match(signupRoute, /birthDate/);
   assert.match(signupRoute, /customer:\s*\{/);
   assert.match(signupRoute, /primaryUser:\s*\{/);
+});
+check("BFF signup restreint la civilite et exige la date de naissance", () => {
+  assert.match(signupRoute, /allowedPersonalTitles/);
+  assert.match(signupRoute, /birthDatePattern/);
+  assert.match(signupRoute, /errors\.personalTitle = "La civilite est requise\."/);
+  assert.match(signupRoute, /Selectionnez une civilite exportable\./);
+  assert.match(signupRoute, /errors\.birthDate = "La date de naissance est requise\."/);
+  assert.match(signupRoute, /La date de naissance est invalide\./);
 });
 check("BFF signup ignore les packs null ou vides", () => {
   assert.match(signupRoute, /hasProvidedPackValue\(body\.packKey\)/);
   assert.match(signupRoute, /hasProvidedPackValue\(body\.commitmentMonths\)/);
   assert.match(signupRoute, /hasProvidedPackValue\(body\.paymentMode\)/);
   assert.match(signupRoute, /value === null \|\| value === undefined/);
+});
+check("BFF signup valide puis fige la selection publique", () => {
+  assert.match(signupRoute, /resolvePackSelectionInput\(\{/);
+  assert.match(signupRoute, /packKey:\s*body\.packKey/);
+  assert.match(signupRoute, /commitmentMonths:\s*body\.commitmentMonths/);
+  assert.match(signupRoute, /paymentMode:\s*body\.paymentMode/);
+  assert.match(signupRoute, /getPublicCommercialCatalog\(\)/);
+  assert.match(signupRoute, /getPublicPackCatalogContent\(\)/);
+  assert.match(signupRoute, /buildSignupPackSnapshot\(/);
+  assert.match(signupRoute, /code:\s*"INVALID_PACK_SELECTION"/);
+  assert.match(signupRoute, /code:\s*"PACK_SELECTION_UNAVAILABLE"/);
+  assert.match(signupRoute, /packSelection,/);
+
+  const resolveIndex = signupRoute.indexOf("resolvePackSelectionInput({");
+  const catalogIndex = signupRoute.indexOf("getPublicCommercialCatalog()");
+  const snapshotIndex = signupRoute.indexOf("buildSignupPackSnapshot(");
+  const upstreamIndex = signupRoute.indexOf("const result = await callInternalSignup");
+  for (const [label, index] of [
+    ["validation de selection", resolveIndex],
+    ["chargement du catalogue", catalogIndex],
+    ["creation du snapshot", snapshotIndex],
+    ["appel signup interne", upstreamIndex],
+  ]) {
+    assert.notEqual(index, -1, `${label} introuvable dans la route signup.`);
+  }
+  assert.ok(resolveIndex < catalogIndex);
+  assert.ok(catalogIndex < snapshotIndex);
+  assert.ok(snapshotIndex < upstreamIndex);
 });
 check("hCaptcha verifie cote serveur, fail-closed en production", () => {
   assert.match(signupServerLib, /hcaptcha\.com\/siteverify/);
@@ -355,6 +416,73 @@ check("formulaire signup garde honeypot + hCaptcha et champs structures", () => 
   assert.match(signupForm, /customerType/);
   assert.match(signupForm, /addressLine1/);
   assert.match(signupForm, /givenName/);
+});
+check("formulaire signup V0.40 impose une civilite exportable et birthDate", () => {
+  assert.match(signupForm, /name="personalTitle"/);
+  assert.match(signupForm, /value="madame"/);
+  assert.match(signupForm, /value="monsieur"/);
+  assert.doesNotMatch(signupForm, /value="autre"/);
+  assert.match(signupForm, /name="birthDate"/);
+  assert.match(signupForm, /type="date"/);
+  assert.match(signupForm, /required/);
+});
+check("les vues admin signup affichent la date de naissance", () => {
+  assert.match(adminSignupsPage, /Demandes d'inscription|Demandes d’inscription/);
+  assert.match(internalApi, /birthDate:\s*string \| null/);
+  assert.match(adminSignupDetailPage, /Date de naissance/);
+});
+check("page signup reprend uniquement un snapshot catalogue valide", () => {
+  assert.match(signupPage, /selectionFromSearchParams\(await searchParams\)/);
+  assert.match(signupPage, /getPublicCommercialCatalog\(\)/);
+  assert.match(signupPage, /getPublicPackCatalogContent\(\)/);
+  assert.match(signupPage, /buildSignupPackSnapshot\(/);
+  assert.match(signupPage, /<PublicPackSelectionSummary/);
+  assert.match(signupPage, /initialPackSelection=\{packSelection/);
+  for (const field of [
+    "packKey",
+    "packLabel",
+    "commitmentMonths",
+    "paymentMode",
+    "monthlyPriceAmountCents",
+    "setupFeeAmountCents",
+    "firstChargeAmountCents",
+  ]) {
+    assert.match(
+      signupPage,
+      new RegExp(`${field}:\\s*packSelection\\.${field}`),
+      `Le snapshot signup doit transmettre ${field}.`,
+    );
+  }
+  assert.doesNotMatch(
+    signupPage,
+    /method:\s*["'](?:POST|PUT|PATCH|DELETE)["']|requestBffJson|callInternalSignup/,
+    "Le rendu GET de signup ne doit effectuer aucune mutation.",
+  );
+});
+check("formulaire signup transporte et affiche le snapshot sans le recalculer", () => {
+  for (const field of ["packKey", "commitmentMonths", "paymentMode"]) {
+    assert.match(
+      signupForm,
+      new RegExp(`${field}:\\s*initialPackSelection\\?\\.${field} \\?\\? null`),
+      `Le POST signup doit transporter ${field}.`,
+    );
+    assert.match(
+      signupForm,
+      new RegExp(`name=["']${field}["']`),
+      `Le fallback natif doit conserver ${field}.`,
+    );
+  }
+  assert.match(signupForm, /<PublicPackSelectionSummary/);
+  assert.match(signupForm, /initialPackSelection\.packLabel/);
+  assert.doesNotMatch(
+    signupForm,
+    /normalizeCommitmentMonths|normalizePaymentMode|resolvePackSelectionInput/,
+    "Le formulaire ne doit pas reinterpretter un snapshot valide cote serveur.",
+  );
+  assert.match(packSelectionSummary, /aria-label=\{`[^`]*\$\{packLabel\}`\}/);
+  assert.match(packSelectionSummary, /<dt>Engagement<\/dt>/);
+  assert.match(packSelectionSummary, /<dt>Paiement<\/dt>/);
+  assert.match(packSelectionSummary, /<dt>Tarif affich/u);
 });
 check("formulaire mot de passe impose la longueur + confirmation", () => {
   assert.match(setPasswordForm, /MIN_PASSWORD_LENGTH\s*=\s*12/);
@@ -534,4 +662,4 @@ if (failures > 0) {
   process.exit(1);
 }
 
-console.log(`\nContrat signup V0.38 valide (${checks.length} verifications).`);
+console.log(`\nContrat signup V0.40 valide (${checks.length} verifications).`);
