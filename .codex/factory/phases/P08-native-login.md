@@ -12,7 +12,7 @@
   "commitMessage": "fix(webportal): restaurer le formulaire natif de connexion",
   "allowedPaths": ["apps/webportal/app/api/auth/login/route.ts", "apps/webportal/app/login/page.tsx", "apps/webportal/components/LoginForm.tsx", "apps/webportal/scripts/verify-auth-contract.mjs"],
   "validations": [
-    { "name": "auth-contract", "executable": "npm.cmd", "arguments": ["run", "test:auth"] },
+    { "name": "auth-contract", "executable": "npm.cmd", "arguments": ["--prefix", "apps/webportal", "run", "test:auth"] },
     { "name": "forms-contract", "executable": "npm.cmd", "arguments": ["--prefix", "apps/webportal", "run", "test:forms"] },
     { "name": "web-check", "executable": "npm.cmd", "arguments": ["run", "check:web"] },
     { "name": "diff-check", "executable": "git", "arguments": ["diff", "--check"] }
