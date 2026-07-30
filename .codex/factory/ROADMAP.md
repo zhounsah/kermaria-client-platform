@@ -43,7 +43,7 @@ Git et les documents versionnés du dépôt restent la source de vérité.
 | 09 | P08 — Connexion native sans JavaScript | DONE | P07 | POST formulaire et JSON sûrs, redirections bornées, cookies inchangés. |
 | 10 | P09 — `set-password` natif | DONE | P08 | Présentation 303 sûre des succès et erreurs de formulaire natif. |
 | 11 | P10A — Validation serveur de l'offre contact | DONE | P09 | Toute référence fournie est une offre publique active ou reçoit HTTP 400. |
-| 12 | P10 — Vitrine et tunnel pack/contact | PENDING / PRECHECK | P10A | Sélection de pack conservée jusqu'au contact ou au signup. |
+| 12 | P10 — Vitrine et tunnel pack/contact | ACTIVE / ANALYSIS | P10A | Sélection de pack conservée jusqu'au contact ou au signup. |
 | 13 | P11 — Reprise du pack dans le dashboard | PENDING | P10 | Sélection en attente reprise sans masquer les erreurs partielles. |
 | 14 | P12 — Tiroir panier | PENDING | P11 | Navigation, fermeture et focus stabilisés. |
 | 15 | P13 — Textes français et mojibake | PENDING | P12 | Corrections visibles ciblées, aucun identifiant technique accentué. |
