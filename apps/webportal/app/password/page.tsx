@@ -62,13 +62,13 @@ export default async function PasswordPage() {
           <aside className="content-panel">
             <h2>Garanties</h2>
             <ul className="check-list">
-              <li>Vérification de l'identité et de la session.</li>
-              <li>Traitement par l'API interne privée uniquement.</li>
+              <li>Vérification de l&apos;identité et de la session.</li>
+              <li>Traitement par l&apos;API interne privée uniquement.</li>
               <li>Le portail reste la source de verification du mot de passe actuel.</li>
               <li>Synchronisation AD effectuée seulement si un lien AD existe.</li>
               <li>Aucun mot de passe dans les logs.</li>
               <li>Limite de tentatives (3 / 15 min) avant verrouillage temporaire.</li>
-              <li>Journal d'audit sans donnée sensible.</li>
+              <li>Journal d&apos;audit sans donnée sensible.</li>
             </ul>
           </aside>
         </div>
@@ -97,10 +97,10 @@ export default async function PasswordPage() {
             <aside className="content-panel">
               <h2>Garanties conservees</h2>
               <ul className="check-list">
-                <li>Vérification de l'identité et de la session.</li>
-                <li>Traitement par l'API interne privée uniquement.</li>
+                <li>Vérification de l&apos;identité et de la session.</li>
+                <li>Traitement par l&apos;API interne privée uniquement.</li>
                 <li>Aucun mot de passe dans les logs.</li>
-                <li>Journal d'audit sans donnée sensible.</li>
+                <li>Journal d&apos;audit sans donnée sensible.</li>
                 <li>Aucune communication Active Directory réelle.</li>
               </ul>
             </aside>

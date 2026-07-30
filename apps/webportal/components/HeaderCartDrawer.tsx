@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 
 import type { CartSummary, CheckoutSummary } from "@kermaria/shared";
@@ -30,12 +30,22 @@ export function HeaderCartDrawer() {
   const pathname = usePathname();
   const drawerId = useId();
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const [hoverOpen, setHoverOpen] = useState(false);
-  const [pinnedOpen, setPinnedOpen] = useState(false);
+  const [previousPathname, setPreviousPathname] = useState(pathname);
+  const [hoverOpenPathname, setHoverOpenPathname] = useState<string | null>(null);
+  const [pinnedOpenPathname, setPinnedOpenPathname] = useState<string | null>(null);
   const [summary, setSummary] = useState<CheckoutSummary>(EMPTY_SUMMARY);
   const [error, setError] = useState<string | null>(null);
 
-  function releaseDrawerFocus() {
+  if (previousPathname !== pathname) {
+    setPreviousPathname(pathname);
+    setHoverOpenPathname(null);
+    setPinnedOpenPathname(null);
+  }
+
+  const hoverOpen = hoverOpenPathname === pathname;
+  const pinnedOpen = pinnedOpenPathname === pathname;
+
+  const releaseDrawerFocus = useCallback(() => {
     const activeElement = document.activeElement;
     if (
       activeElement instanceof HTMLElement &&
@@ -43,12 +53,28 @@ export function HeaderCartDrawer() {
     ) {
       activeElement.blur();
     }
-  }
+  }, []);
 
-  function closePinnedDrawer() {
-    setPinnedOpen(false);
+  const closePinnedDrawer = useCallback(() => {
+    setPinnedOpenPathname(null);
     releaseDrawerFocus();
-  }
+  }, [releaseDrawerFocus]);
+
+  const closeHoverDrawer = useCallback(() => {
+    setHoverOpenPathname(null);
+  }, []);
+
+  const openHoverDrawer = useCallback(() => {
+    setHoverOpenPathname(pathname);
+  }, [pathname]);
+
+  const togglePinnedDrawer = useCallback(() => {
+    if (pinnedOpen) {
+      releaseDrawerFocus();
+    }
+
+    setPinnedOpenPathname(pinnedOpen ? null : pathname);
+  }, [pathname, pinnedOpen, releaseDrawerFocus]);
 
   useEffect(() => {
     let ignore = false;
@@ -96,11 +122,6 @@ export function HeaderCartDrawer() {
   }, [pathname]);
 
   useEffect(() => {
-    setHoverOpen(false);
-    setPinnedOpen(false);
-  }, [pathname]);
-
-  useEffect(() => {
     if (!pinnedOpen) {
       return;
     }
@@ -124,7 +145,7 @@ export function HeaderCartDrawer() {
       document.removeEventListener("pointerdown", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [pinnedOpen]);
+  }, [closePinnedDrawer, pinnedOpen]);
 
   const immediateTotal =
     summary.cart.subtotalCents + summary.recurring.subtotalCents;
@@ -140,11 +161,11 @@ export function HeaderCartDrawer() {
           return;
         }
 
-        setHoverOpen(false);
+        closeHoverDrawer();
       }}
-      onFocusCapture={() => setHoverOpen(true)}
-      onMouseEnter={() => setHoverOpen(true)}
-      onMouseLeave={() => setHoverOpen(false)}
+      onFocusCapture={openHoverDrawer}
+      onMouseEnter={openHoverDrawer}
+      onMouseLeave={closeHoverDrawer}
       ref={containerRef}
     >
       <button
@@ -152,15 +173,7 @@ export function HeaderCartDrawer() {
         aria-expanded={open}
         aria-label="Voir le panier"
         className="header-cart-trigger"
-        onClick={() =>
-          setPinnedOpen((current) => {
-            if (current) {
-              releaseDrawerFocus();
-            }
-
-            return !current;
-          })
-        }
+        onClick={togglePinnedDrawer}
         type="button"
       >
         <span className="header-cart-icon" aria-hidden="true">
