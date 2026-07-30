@@ -4,7 +4,6 @@ import type {
   AuthMeResponse,
   LoginPayload,
 } from "@kermaria/shared";
-import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
 import { FormMessage } from "@/components/FormMessage";
@@ -15,19 +14,37 @@ import {
   hasFieldErrors,
   validateLoginPayload,
 } from "@/lib/form-validation";
+import {
+  type PortalArea,
+  resolvePortalAreaUrl,
+  resolvePortalRoleUrl,
+} from "@/lib/public-route-config";
 
 type LoginState =
   | { status: "idle" | "submitting" }
   | { status: "error"; message: string };
 
-export function LoginForm() {
-  const router = useRouter();
+type LoginFormProps = {
+  initialError: string | null;
+  origin: string;
+  portalArea: Exclude<PortalArea, "public">;
+};
+
+export function LoginForm({
+  initialError,
+  origin,
+  portalArea,
+}: LoginFormProps) {
   const isSubmittingRef = useRef(false);
   const [payload, setPayload] = useState<LoginPayload>({
     email: "",
     password: "",
   });
-  const [state, setState] = useState<LoginState>({ status: "idle" });
+  const [state, setState] = useState<LoginState>(() => (
+    initialError
+      ? { status: "error", message: initialError }
+      : { status: "idle" }
+  ));
   const [fieldErrors, setFieldErrors] = useState<
     FieldErrors<keyof LoginPayload>
   >({});
@@ -74,12 +91,43 @@ export function LoginForm() {
 
       const result = response.data;
       setPayload({ email: "", password: "" });
-      router.replace(
-        result.authenticated && result.user.role === "internal_admin"
-          ? "/admin"
-          : "/dashboard",
-      );
-      router.refresh();
+
+      if (!result.authenticated) {
+        const oppositeArea = portalArea === "client"
+          ? "admin"
+          : portalArea === "admin"
+            ? "client"
+            : null;
+        const target = oppositeArea
+          ? resolvePortalAreaUrl(
+              origin,
+              oppositeArea,
+              "/login?error=PORTAL_ROLE_MISMATCH",
+            )
+          : null;
+
+        if (!target) {
+          setState({
+            status: "error",
+            message: "Impossible de déterminer le portail de connexion.",
+          });
+          return;
+        }
+
+        window.location.assign(target);
+        return;
+      }
+
+      const target = resolvePortalRoleUrl(origin, result.user.role);
+      if (!target) {
+        setState({
+          status: "error",
+          message: "Impossible de déterminer l'espace de destination.",
+        });
+        return;
+      }
+
+      window.location.assign(target);
     } finally {
       isSubmittingRef.current = false;
     }

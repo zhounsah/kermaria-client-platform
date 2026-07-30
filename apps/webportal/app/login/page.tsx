@@ -1,7 +1,15 @@
-import { redirect } from "next/navigation";
+import { headers } from "next/headers";
+import { notFound, redirect } from "next/navigation";
 
 import { LoginForm } from "@/components/LoginForm";
 import { getCurrentPortalSession } from "@/lib/auth";
+import {
+  getPortalArea,
+  isPortalRoleAllowed,
+  resolvePortalAreaUrl,
+  resolvePortalRoleUrl,
+} from "@/lib/public-route-config";
+import { getPortalRequestOriginFromHeaders } from "@/lib/public-routes";
 
 export const metadata = {
   title: "Connexion",
@@ -9,16 +17,54 @@ export const metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default async function LoginPage() {
+type LoginPageProps = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
+
+const ROLE_MISMATCH_MESSAGE =
+  "Ce compte doit être connecté depuis l’autre portail.";
+
+export default async function LoginPage({ searchParams }: LoginPageProps) {
+  const origin = getPortalRequestOriginFromHeaders(await headers());
+  const area = getPortalArea(origin);
+
+  if (!origin || !area) {
+    notFound();
+  }
+
+  if (area === "public") {
+    const clientLoginUrl = resolvePortalAreaUrl(origin, "client", "/login");
+    if (!clientLoginUrl) {
+      notFound();
+    }
+    redirect(clientLoginUrl);
+  }
+
+  const canonicalLoginUrl = resolvePortalAreaUrl(origin, area, "/login");
+  if (!canonicalLoginUrl) {
+    notFound();
+  }
+  if (new URL(canonicalLoginUrl).origin !== origin) {
+    redirect(canonicalLoginUrl);
+  }
+
   const session = await getCurrentPortalSession();
 
-  if (session) {
-    redirect(
-      session.user.role === "internal_admin"
-        ? "/admin"
-        : "/dashboard",
-    );
+  if (
+    session
+    && (area === "local" || isPortalRoleAllowed(area, session.user.role))
+  ) {
+    const landingUrl = resolvePortalRoleUrl(origin, session.user.role);
+    if (!landingUrl) {
+      notFound();
+    }
+    redirect(landingUrl);
   }
+
+  const query = await searchParams;
+  const initialError = query.error === "PORTAL_ROLE_MISMATCH"
+    ? ROLE_MISMATCH_MESSAGE
+    : null;
 
   return (
     <section className="login-layout">
@@ -36,7 +82,11 @@ export default async function LoginPage() {
         </ul>
       </div>
       <div>
-        <LoginForm />
+        <LoginForm
+          initialError={initialError}
+          origin={origin}
+          portalArea={area}
+        />
         <p className="login-help">
           La récupération automatisée du mot de passe n&apos;est pas disponible
           dans cette version.

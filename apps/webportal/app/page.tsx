@@ -1,13 +1,19 @@
 import Link from "next/link";
 import { headers } from "next/headers";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import { getCurrentPortalSession } from "@/lib/auth";
 import {
   PORTFOLIO_URL,
-  getPortalPublicUrlFromHeaders,
   isVitrinePublicEnabled,
+  getPortalRequestOriginFromHeaders,
 } from "@/lib/public-routes";
+import {
+  getPortalArea,
+  isPortalRoleAllowed,
+  resolvePortalAreaUrl,
+  resolvePortalRoleUrl,
+} from "@/lib/public-route-config";
 
 function organizationJsonLd(baseUrl: string) {
   return {
@@ -95,19 +101,63 @@ const TRUST_POINTS = [
 ];
 
 export default async function HomePage() {
+  const origin = getPortalRequestOriginFromHeaders(await headers());
+  const area = getPortalArea(origin);
+
+  if (!origin || !area) {
+    notFound();
+  }
+
   const session = await getCurrentPortalSession();
-  const baseUrl = getPortalPublicUrlFromHeaders(await headers());
+  if (area === "public") {
+    if (session) {
+      const loginUrl = resolvePortalRoleUrl(origin, session.user.role, "/login");
+      if (!loginUrl) {
+        notFound();
+      }
+      redirect(loginUrl);
+    }
 
-  if (session?.user.role === "client_user") {
-    redirect("/dashboard");
+    if (!isVitrinePublicEnabled()) {
+      const loginUrl = resolvePortalAreaUrl(origin, "client", "/login");
+      if (!loginUrl) {
+        notFound();
+      }
+      redirect(loginUrl);
+    }
+  } else if (area === "local") {
+    if (session) {
+      const landingUrl = resolvePortalRoleUrl(origin, session.user.role);
+      if (!landingUrl) {
+        notFound();
+      }
+      redirect(landingUrl);
+    }
+
+    if (!isVitrinePublicEnabled()) {
+      const loginUrl = resolvePortalAreaUrl(origin, "local", "/login");
+      if (!loginUrl) {
+        notFound();
+      }
+      redirect(loginUrl);
+    }
+  } else if (session && isPortalRoleAllowed(area, session.user.role)) {
+    const landingUrl = resolvePortalRoleUrl(origin, session.user.role);
+    if (!landingUrl) {
+      notFound();
+    }
+    redirect(landingUrl);
+  } else {
+    const loginUrl = resolvePortalAreaUrl(origin, area, "/login");
+    if (!loginUrl) {
+      notFound();
+    }
+    redirect(loginUrl);
   }
 
-  if (session?.user.role === "internal_admin") {
-    redirect("/admin");
-  }
-
-  if (!isVitrinePublicEnabled()) {
-    redirect("/login");
+  const baseUrl = resolvePortalAreaUrl(origin, "public");
+  if (!baseUrl) {
+    notFound();
   }
 
   return (

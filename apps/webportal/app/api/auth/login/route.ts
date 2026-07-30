@@ -1,4 +1,4 @@
-import type { ApiError, LoginPayload } from "@kermaria/shared";
+import type { ApiError, AuthMeResponse, LoginPayload } from "@kermaria/shared";
 import { NextRequest, NextResponse } from "next/server";
 
 import { CORRELATION_HEADER, resolveCorrelationId } from "@/lib/correlation";
@@ -6,16 +6,29 @@ import { ensureCsrfCookie } from "@/lib/csrf-server";
 import {
   createInternalSession,
   getInternalApiError,
+  revokeInternalSession,
 } from "@/lib/internal-api";
+import {
+  getPortalArea,
+  isPortalRoleAllowed,
+} from "@/lib/public-route-config";
+import { getPortalRequestOriginFromHeaders } from "@/lib/public-routes";
 import {
   getSessionCookieName,
   getSessionCookieOptions,
 } from "@/lib/session-config";
 
 export async function POST(request: NextRequest) {
+  const origin = getPortalRequestOriginFromHeaders(request.headers);
+  const area = getPortalArea(origin);
   const correlationId = resolveCorrelationId(
     request.headers.get(CORRELATION_HEADER),
   );
+
+  if (!area || area === "public") {
+    return portalLoginForbidden(correlationId);
+  }
+
   let payload: unknown;
 
   try {
@@ -34,6 +47,16 @@ export async function POST(request: NextRequest) {
       correlationId,
       request.headers.get("user-agent"),
     );
+
+    if (!isPortalRoleAllowed(area, session.user.role)) {
+      await revokeInternalSession(session.sessionToken, correlationId);
+      const response = NextResponse.json({
+        authenticated: false,
+      } satisfies AuthMeResponse);
+      response.headers.set(CORRELATION_HEADER, correlationId);
+      return response;
+    }
+
     const response = NextResponse.json({
       authenticated: true,
       user: session.user,
@@ -86,6 +109,19 @@ function invalidCredentials(correlationId: ApiError["correlation_id"]) {
       correlation_id: correlationId,
     } satisfies ApiError,
     { status: 401 },
+  );
+  response.headers.set(CORRELATION_HEADER, correlationId);
+  return response;
+}
+
+function portalLoginForbidden(correlationId: ApiError["correlation_id"]) {
+  const response = NextResponse.json(
+    {
+      code: "PORTAL_LOGIN_FORBIDDEN",
+      message: "La connexion n'est pas autorisée depuis ce portail.",
+      correlation_id: correlationId,
+    } satisfies ApiError,
+    { status: 403 },
   );
   response.headers.set(CORRELATION_HEADER, correlationId);
   return response;
