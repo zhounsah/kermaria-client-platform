@@ -29,7 +29,7 @@ n'est utilisé qu'après trois cycles de correction consécutifs sans progrès, 
 quand aucune action sûre ne peut avancer sans changement externe. Une porte
 humaine suit exclusivement `HUMAN_GATES.md`.
 
-## B-20260729-01 — OPEN — Validation web P06 incompatible avec son allowlist
+## B-20260729-01 — RESOLVED — Validation web P06 incompatible avec son allowlist
 
 - Phase et étape : P06 / FIX
 - Type/code : TECHNICAL / TECHNICAL_BLOCKER
@@ -42,4 +42,9 @@ humaine suit exclusivement `HUMAN_GATES.md`.
 - Défaut secondaire non bloquant pour P06 : `npm run test:cart`, qui n'est pas une validation P06, exige encore `AddRecurringCheckoutButton` directement dans `SubscribeCatalogSections.tsx`. La mise à jour de `apps/webportal/scripts/verify-cart-contract.mjs` est autorisée et planifiée en P12.
 - Contrôle du checkpoint : `STATE.json` reste syntaxiquement valide, mais `validate-global.ps1 -FactoryOnly` en mode `Resume` refuse le diff P06 et `BLOCKERS.md`, car ce mode n'autorise que `STATE.json` entre deux commits. Le processus exige pourtant de conserver le blocker lisible et interdit le commit d'une phase non validée.
 - Décision reçue : `D-20260729-07` impose une phase corrective P06A distincte, sans élargir P06 ni affaiblir `check:web`. Le blocker reste ouvert jusqu'à la validation et au commit atomique de P06A.
-- Résolution : OPEN.
+- Résolution : P06A a corrigé uniquement les sept fichiers identifiés, sans
+  désactivation de règle ni extension de l'allowlist P06. Les neuf validations
+  de phase, dont `npm run check:web`, la QA indépendante et l'audit de sécurité
+  sont verts. Commit atomique :
+  `5fd8ce49f4aef7a1bda51c765dccdcab726977dc` (`fix(webportal): restaurer une
+  baseline lint propre`). P06A est `DONE` et P06 reprend à `PRECHECK`.

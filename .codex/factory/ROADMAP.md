@@ -37,7 +37,7 @@ Git et les documents versionnés du dépôt restent la source de vérité.
 | 03 | P03 — Catalogue mock | DONE | P02 | Services mock disponibles lorsque les deux repositories sont non persistants. |
 | 04 | P04 — Refus `PortalService` HTTP 403 | PENDING, prochaine | P03 | Un service hors périmètre client produit un refus d'accès 403, avec test ciblé. |
 | 05 | P05 — Droits de téléchargement | PENDING | P04 | Autorisation fondée sur les services actifs, sans élargissement d'accès. |
-| 06 | P06A — Baseline lint web | PENDING, corrective préalable | P05 | Les sept diagnostics web préexistants sont corrigés sans changement fonctionnel ni contournement du lint. |
+| 06 | P06A — Baseline lint web | DONE | P05 | Les sept diagnostics web préexistants sont corrigés sans changement fonctionnel ni contournement du lint. |
 | 07 | P06 — Mutualisation de la souscription | PENDING | P06A | Sections de souscription réutilisées sans changement de contrat. |
 | 08 | P07 — Routage canonique des portails | PENDING | P06 | `www`, `dashboard` et `administration` convergent vers leur zone canonique. |
 | 09 | P08 — Connexion native sans JavaScript | PENDING | P07 | POST formulaire et JSON sûrs, redirections bornées, cookies inchangés. |
