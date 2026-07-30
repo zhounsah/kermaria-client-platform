@@ -65,9 +65,9 @@ humaine suit exclusivement `HUMAN_GATES.md`.
   workspace `test:auth`, `typecheck:webportal`, `test:forms` et `test:ux` sont
   vertes. Les cibles futures devront rejeter les hôtes inconnus et les chemins
   absolus ou protocol-relative.
-- Défaut technique secondaire : la validation P07 appelle un script racine
-  absent (`npm.cmd run test:auth`) ; après résolution de la porte, la définition
-  devra utiliser `npm.cmd --prefix apps/webportal run test:auth`.
+- Correction technique indépendante : la définition P07 utilise désormais
+  `npm.cmd --prefix apps/webportal run test:auth`, commande rejouée avec succès.
+  Cette correction de métadonnées ne préjuge pas de la décision contractuelle.
 - Options : login strict séparé par zone avec refus/réorientation du mauvais
   rôle ; cookie partagé au domaine parent ; ticket de transfert one-shot entre
   portails.
