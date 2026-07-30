@@ -39,7 +39,7 @@ Git et les documents versionnés du dépôt restent la source de vérité.
 | 05 | P05 — Droits de téléchargement | DONE | P04 | Autorisation fondée sur les services actifs, sans élargissement d'accès. |
 | 06 | P06A — Baseline lint web | DONE | P05 | Les sept diagnostics web préexistants sont corrigés sans changement fonctionnel ni contournement du lint. |
 | 07 | P06 — Mutualisation de la souscription | DONE | P06A | Sections de souscription réutilisées sans changement de contrat. |
-| 08 | P07 — Routage canonique des portails | PENDING | P06 | `www`, `dashboard` et `administration` convergent vers leur zone canonique. |
+| 08 | P07 — Routage canonique des portails | HUMAN_GATE / ANALYSIS | P06 | `www`, `dashboard` et `administration` convergent vers leur zone canonique. |
 | 09 | P08 — Connexion native sans JavaScript | PENDING | P07 | POST formulaire et JSON sûrs, redirections bornées, cookies inchangés. |
 | 10 | P09 — `set-password` natif | PENDING | P08 | Présentation 303 sûre des succès et erreurs de formulaire natif. |
 | 11 | P10 — Vitrine et tunnel pack/contact | PENDING | P09 | Sélection de pack conservée jusqu'au contact ou au signup. |

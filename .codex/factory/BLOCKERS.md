@@ -48,3 +48,27 @@ humaine suit exclusivement `HUMAN_GATES.md`.
   sont verts. Commit atomique :
   `5fd8ce49f4aef7a1bda51c765dccdcab726977dc` (`fix(webportal): restaurer une
   baseline lint propre`). P06A est `DONE` et P06 reprend à `PRECHECK`.
+
+## B-20260730-02 — OPEN — Continuité de session entre portails canoniques
+
+- Phase et étape : P07 / ANALYSIS
+- Type/code : HUMAN_GATE / HG-PUBLIC-CONTRACT
+- Première occurrence : 2026-07-30T05:24:08.8561317Z
+- Empreinte : `P07-CANONICAL-SESSION-HOSTONLY-20260730`
+- Preuves : les redirections relatives actuelles conservent le mauvais hôte,
+  mais `getSessionCookieOptions()` crée un cookie host-only. Une authentification
+  administrateur sur `dashboard.*` suivie d'une redirection canonique vers
+  `administration.*` perd donc la session. Le snapshot historique qui effectue
+  cette redirection reproduit ce défaut et reflète aussi les hôtes non reconnus.
+- Portée sécurisée : aucune modification applicative P07 n'a été réalisée ; le
+  worktree contient uniquement `STATE.json` et ce journal/roadmap. Les baselines
+  workspace `test:auth`, `typecheck:webportal`, `test:forms` et `test:ux` sont
+  vertes. Les cibles futures devront rejeter les hôtes inconnus et les chemins
+  absolus ou protocol-relative.
+- Défaut technique secondaire : la validation P07 appelle un script racine
+  absent (`npm.cmd run test:auth`) ; après résolution de la porte, la définition
+  devra utiliser `npm.cmd --prefix apps/webportal run test:auth`.
+- Options : login strict séparé par zone avec refus/réorientation du mauvais
+  rôle ; cookie partagé au domaine parent ; ticket de transfert one-shot entre
+  portails.
+- Résolution : OPEN, décision humaine requise.
