@@ -74,3 +74,35 @@ humaine suit exclusivement `HUMAN_GATES.md`.
 - Résolution : `D-20260730-08` retient les logins strictement séparés par zone,
   sans cookie partagé ni mécanisme de handoff. P07 reprend depuis son checkpoint
   d'analyse avec cette règle et les tests de matrice correspondants.
+
+## B-20260730-03 — RESOLVED — Référence d'offre du contact non vérifiée côté serveur
+
+- Phase et étape : P10 / ANALYSIS
+- Type/code : HUMAN_GATE / HG-PUBLIC-CONTRACT (avec conséquence HG-BUSINESS)
+- Première occurrence : 2026-07-30T07:32:58.9236978Z
+- Dernière occurrence : 2026-07-30T07:32:58.9236978Z
+- Empreinte : `P10-CONTACT-OFFER-CONTRACT-20260730`
+- Preuves : `apps/webportal/app/api/contact/route.ts` accepte actuellement toute
+  chaîne `offerReference` de 64 caractères ou moins et la relaie à l'API interne
+  sans vérifier qu'elle correspond à une offre publique active. La page et le
+  formulaire P10 peuvent produire une référence validée, mais un POST forgé peut
+  contourner cette validation d'interface. Cette route est hors de l'allowlist
+  P10, alors que la définition de phase exige des paramètres contact bornés aux
+  offres publiques connues.
+- Portée sécurisée : aucune production P10 n'a commencé. Le checkpoint est
+  `P10 / ANALYSIS`; le worktree applicatif est intact. La baseline officielle
+  P10 est entièrement verte : contrats commercial, signup et managed-content,
+  lint, typecheck, build Next.js de 57 pages et diff-check.
+- Constats non bloquants dans l'allowlist actuelle : parsing strict des
+  engagements/paiements, refus des doublons, variantes actives seulement,
+  cohérence pack/offre, accessibilité du comparatif et tunnel contact/signup.
+- Décision attendue : choisir entre (1) une phase corrective préalable P10A qui
+  valide côté serveur et rejette une référence inconnue avec HTTP 400 ; (2) une
+  P10A qui neutralise silencieusement la référence inconnue vers `null` pour
+  préserver le statut du formulaire ; (3) conserver l'allowlist P10 et accepter
+  explicitement que la sélection pack du contact reste une aide d'interface non
+  fiable côté POST, avec le risque résiduel documenté.
+- Résolution : `D-20260730-09` retient l'option 1. Une phase corrective P10A
+  distincte valide côté serveur toute `offerReference` fournie contre le
+  catalogue public actif et rejette les références inconnues ou inactives avec
+  HTTP 400. P10 reste hors production et dépend désormais de P10A.

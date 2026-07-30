@@ -98,6 +98,27 @@ stable `D-YYYYMMDD-NN`, la preuve, la portée et les conséquences.
 - Auteur/validation humaine : choix explicite de l'option 1 par l'utilisateur
   le 30 juillet 2026.
 
+## D-20260730-09 — Rejet strict des références d'offre contact inconnues
+
+- Phase : P10A, préalable à P10.
+- Contexte : `apps/webportal/app/api/contact/route.ts` accepte et relaie toute
+  `offerReference` de 64 caractères ou moins, sans vérifier qu'elle correspond
+  à une offre publique active. La route est hors de l'allowlist P10 et un POST
+  forgé peut contourner la validation de la page contact.
+- Options : créer P10A avec rejet HTTP 400 ; créer P10A avec neutralisation
+  silencieuse vers `null` ; accepter le risque résiduel sans correction serveur.
+- Décision : retenir l'option 1. P10A valide côté serveur toute référence
+  fournie contre le catalogue public actif et rejette une référence inconnue ou
+  inactive avec HTTP 400. Une référence absente reste autorisée ; une
+  indisponibilité du catalogue ne doit pas être présentée comme une référence
+  invalide.
+- Conséquences : P10 dépend de P10A et reprend à `PRECHECK` seulement après la
+  validation et le commit atomique de P10A. P10A est limitée à la route contact
+  et au vérificateur de contrat strictement nécessaire, sans élargir
+  l'allowlist fonctionnelle P10.
+- Auteur/validation humaine : choix explicite de l'option 1 par l'utilisateur
+  le 30 juillet 2026.
+
 ## Modèle d'entrée
 
 ```text

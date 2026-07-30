@@ -42,23 +42,24 @@ Git et les documents versionnés du dépôt restent la source de vérité.
 | 08 | P07 — Routage canonique des portails | DONE | P06 | `www`, `dashboard` et `administration` convergent vers leur zone canonique. |
 | 09 | P08 — Connexion native sans JavaScript | DONE | P07 | POST formulaire et JSON sûrs, redirections bornées, cookies inchangés. |
 | 10 | P09 — `set-password` natif | DONE | P08 | Présentation 303 sûre des succès et erreurs de formulaire natif. |
-| 11 | P10 — Vitrine et tunnel pack/contact | ACTIVE / ANALYSIS | P09 | Sélection de pack conservée jusqu'au contact ou au signup. |
-| 12 | P11 — Reprise du pack dans le dashboard | PENDING | P10 | Sélection en attente reprise sans masquer les erreurs partielles. |
-| 13 | P12 — Tiroir panier | PENDING | P11 | Navigation, fermeture et focus stabilisés. |
-| 14 | P13 — Textes français et mojibake | PENDING | P12 | Corrections visibles ciblées, aucun identifiant technique accentué. |
-| 15 | P14 — Séparation des configurations | PENDING | P13 | Générateurs API et WEBPORTAL empêchent toute fuite de configuration interne. |
-| 16 | P15 — Baseline Linux R740xd | PENDING | P14 | Scripts paramétrés, idempotents et sûrs pour réseau, temps et reboot. |
-| 17 | P16 — Reverse proxy SRV-11 | PENDING | P15 | Bootstrap nginx/TLS vérifiable avec rollback documenté. |
-| 18 | P17 — Packaging et service SRV-12 | PENDING | P16 | Archive WEBPORTAL reproductible et unité de service vérifiable hors déploiement. |
-| 19 | P18 — Installation API SRV-13 | PENDING | P15 | Installation .NET/service bornée, compte dédié et rollback vérifiable. |
-| 20 | P19 — Préparation KoXo | PENDING | P18 | Source prospective sûre ; toute action réelle reste sous porte humaine. |
-| 21 | P20 — Diagnostics MariaDB | PENDING | P18 | Outils de diagnostic à erreurs assainies et politique TLS explicite. |
-| 22 | P21 — Snapshot DNS | PENDING | P16 | Script source uniquement ; aucun snapshot daté versionné. |
-| 23 | P22 — Documentation V0.39 | PENDING | P10, P11, P13 | Documentation alignée sur le comportement effectivement réintégré. |
-| 24 | P23 — Documentation R740xd | PENDING | P15 à P21 | Cible, état courant et actions futures distingués sans ambiguïté. |
-| 25 | P24 — Documentation AD | PENDING | P19, P23 | Modèle `clients.home.bzh` aligné sur le code et les décisions humaines. |
-| 26 | P25 — Exemple de configuration AD | PENDING | P24 | Exemple cohérent avec DN, ACL et groupes validés ; aucune valeur réelle. |
-| 27 | P26 — Sources juridiques canoniques | PENDING | P22 | Doublons racine traités après validation du propriétaire juridique. |
+| 11 | P10A — Validation serveur de l'offre contact | ACTIVE / ANALYSIS | P09 | Toute référence fournie est une offre publique active ou reçoit HTTP 400. |
+| 12 | P10 — Vitrine et tunnel pack/contact | PENDING | P10A | Sélection de pack conservée jusqu'au contact ou au signup. |
+| 13 | P11 — Reprise du pack dans le dashboard | PENDING | P10 | Sélection en attente reprise sans masquer les erreurs partielles. |
+| 14 | P12 — Tiroir panier | PENDING | P11 | Navigation, fermeture et focus stabilisés. |
+| 15 | P13 — Textes français et mojibake | PENDING | P12 | Corrections visibles ciblées, aucun identifiant technique accentué. |
+| 16 | P14 — Séparation des configurations | PENDING | P13 | Générateurs API et WEBPORTAL empêchent toute fuite de configuration interne. |
+| 17 | P15 — Baseline Linux R740xd | PENDING | P14 | Scripts paramétrés, idempotents et sûrs pour réseau, temps et reboot. |
+| 18 | P16 — Reverse proxy SRV-11 | PENDING | P15 | Bootstrap nginx/TLS vérifiable avec rollback documenté. |
+| 19 | P17 — Packaging et service SRV-12 | PENDING | P16 | Archive WEBPORTAL reproductible et unité de service vérifiable hors déploiement. |
+| 20 | P18 — Installation API SRV-13 | PENDING | P15 | Installation .NET/service bornée, compte dédié et rollback vérifiable. |
+| 21 | P19 — Préparation KoXo | PENDING | P18 | Source prospective sûre ; toute action réelle reste sous porte humaine. |
+| 22 | P20 — Diagnostics MariaDB | PENDING | P18 | Outils de diagnostic à erreurs assainies et politique TLS explicite. |
+| 23 | P21 — Snapshot DNS | PENDING | P16 | Script source uniquement ; aucun snapshot daté versionné. |
+| 24 | P22 — Documentation V0.39 | PENDING | P10, P11, P13 | Documentation alignée sur le comportement effectivement réintégré. |
+| 25 | P23 — Documentation R740xd | PENDING | P15 à P21 | Cible, état courant et actions futures distingués sans ambiguïté. |
+| 26 | P24 — Documentation AD | PENDING | P19, P23 | Modèle `clients.home.bzh` aligné sur le code et les décisions humaines. |
+| 27 | P25 — Exemple de configuration AD | PENDING | P24 | Exemple cohérent avec DN, ACL et groupes validés ; aucune valeur réelle. |
+| 28 | P26 — Sources juridiques canoniques | PENDING | P22 | Doublons racine traités après validation du propriétaire juridique. |
 
 Chaque phase possède une définition exécutable dans `phases/`. L'ordre est
 strict : même si deux phases seraient techniquement indépendantes, le passage à
@@ -81,7 +82,7 @@ Les éléments suivants ne constituent pas des phases de restauration :
 
 L'usine peut entrer en audit final uniquement si :
 
-1. toutes les phases P00 à P26, incluant P06A, sont `DONE` dans `STATE.json` ;
+1. toutes les phases P00 à P26, incluant P06A et P10A, sont `DONE` dans `STATE.json` ;
 2. chaque phase nécessitant du code ou de la documentation possède un commit
    local atomique et validé ;
 3. aucun blocker ni porte humaine n'est actif ;

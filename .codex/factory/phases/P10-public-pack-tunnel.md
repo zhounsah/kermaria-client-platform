@@ -3,10 +3,10 @@
 ```factory-phase
 {
   "id": "P10",
-  "order": 11,
+  "order": 12,
   "title": "Vitrine et tunnel pack contact signup",
   "kind": "application",
-  "dependencies": ["P09"],
+  "dependencies": ["P10A"],
   "initialStatus": "PENDING",
   "requiresCommit": true,
   "commitMessage": "feat(webportal): restaurer le tunnel public des packs",
