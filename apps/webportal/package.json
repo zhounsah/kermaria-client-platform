@@ -1,6 +1,6 @@
 {
   "name": "@kermaria/webportal",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -31,7 +31,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@kermaria/shared": "0.1.0",
+    "@kermaria/shared": "1.0.0",
     "next": "16.2.9",
     "react": "19.2.7",
     "react-dom": "19.2.7",

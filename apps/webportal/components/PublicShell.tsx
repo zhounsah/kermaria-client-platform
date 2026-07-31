@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { APP_VERSION } from "@/lib/app-version";
 import { PORTFOLIO_URL } from "@/lib/public-route-config";
 
 type PublicShellProps = {
@@ -55,6 +56,7 @@ export function PublicShell({ children, signupEnabled }: PublicShellProps) {
           <div className="public-footer-brand">
             <strong>Zachary HOUNSA-HOUNKPA EI</strong>
             <p>Site public, offres et espace client professionnel.</p>
+            <p>Version {APP_VERSION}</p>
           </div>
           <nav className="public-footer-nav" aria-label="Liens légaux">
             <Link href="/mentions-legales">Mentions légales</Link>

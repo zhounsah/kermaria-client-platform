@@ -10,6 +10,7 @@ import { AdminNavigation } from "@/components/AdminNavigation";
 import { HeaderCartDrawer } from "@/components/HeaderCartDrawer";
 import { PortalNavigation } from "@/components/PortalNavigation";
 import { PublicShell } from "@/components/PublicShell";
+import { APP_VERSION } from "@/lib/app-version";
 import { isPublicRoute } from "@/lib/public-route-config";
 
 type AppShellProps = {
@@ -86,6 +87,7 @@ export function AppShell({
         <div>
           <strong>Zachary HOUNSA-HOUNKPA EI</strong>
           <p>Portail client authentifié et administration interne contrôlée.</p>
+          <p>Version {APP_VERSION}</p>
         </div>
         <p>Aucun AD réel, paiement ou facturation réelle.</p>
       </footer>
