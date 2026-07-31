@@ -19,12 +19,14 @@ import { callInternalSignup, verifyHCaptcha } from "@/lib/signup-server";
 type SignupRequestBody = {
   customerType?: unknown;
   companyName?: unknown;
+  userSize?: unknown;
   addressLine1?: unknown;
   addressLine2?: unknown;
   postalCode?: unknown;
   city?: unknown;
   country?: unknown;
   personalTitle?: unknown;
+  birthDate?: unknown;
   givenName?: unknown;
   surname?: unknown;
   initials?: unknown;
@@ -51,6 +53,7 @@ const MAX_COUNTRY_LENGTH = 100;
 const MAX_TITLE_LENGTH = 32;
 const MAX_SHORT_NAME_LENGTH = 120;
 const MAX_INITIALS_LENGTH = 16;
+const MAX_USER_SIZE_LENGTH = 32;
 const RATE_LIMIT_MAX = 3;
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
 const MIN_FILL_MS = 2_000;
@@ -61,6 +64,18 @@ const allowedCustomerTypes = new Set([
   "association",
   "individual",
 ]);
+const allowedPersonalTitles = new Set(["madame", "monsieur"]);
+const allowedUserSizes = new Set([
+  "1",
+  "2-4",
+  "5-9",
+  "10-24",
+  "25-49",
+  "50-249",
+  "250-999",
+  "1000+",
+]);
+const birthDatePattern = /^\d{4}-\d{2}-\d{2}$/;
 
 const ACCEPTED_BODY = {
   code: "SIGNUP_ACCEPTED",
@@ -247,6 +262,8 @@ function validateSignupPayload(body: SignupRequestBody) {
       : "";
   const companyName =
     typeof body.companyName === "string" ? body.companyName.trim() : "";
+  const userSize =
+    typeof body.userSize === "string" ? body.userSize.trim() : "";
   const addressLine1 =
     typeof body.addressLine1 === "string" ? body.addressLine1.trim() : "";
   const addressLine2 =
@@ -258,6 +275,8 @@ function validateSignupPayload(body: SignupRequestBody) {
     typeof body.country === "string" ? body.country.trim() : "";
   const personalTitle =
     typeof body.personalTitle === "string" ? body.personalTitle.trim() : "";
+  const birthDate =
+    typeof body.birthDate === "string" ? body.birthDate.trim() : "";
   const givenName =
     typeof body.givenName === "string" ? body.givenName.trim() : "";
   const surname =
@@ -269,15 +288,24 @@ function validateSignupPayload(body: SignupRequestBody) {
   const message =
     typeof body.message === "string" ? body.message.trim() : "";
   const contactName = [givenName, surname].filter(Boolean).join(" ").trim();
+  const isIndividual = customerType === "individual";
 
   if (!allowedCustomerTypes.has(customerType)) {
     errors.customerType = "Selectionnez un type de structure valide.";
   }
 
-  if (!companyName) {
+  if (!isIndividual && !companyName) {
     errors.companyName = "Le nom ou la raison sociale est requis.";
   } else if (companyName.length > MAX_COMPANY_LENGTH) {
     errors.companyName = `Champ limité à ${MAX_COMPANY_LENGTH} caractères.`;
+  }
+
+  if (!isIndividual && !userSize) {
+    errors.userSize = "Sélectionnez une tranche d'utilisateurs.";
+  } else if (userSize.length > MAX_USER_SIZE_LENGTH) {
+    errors.userSize = `Champ limité à ${MAX_USER_SIZE_LENGTH} caractères.`;
+  } else if (userSize && !allowedUserSizes.has(userSize)) {
+    errors.userSize = "Sélectionnez une tranche d'utilisateurs valide.";
   }
 
   if (!addressLine1) {
@@ -309,8 +337,21 @@ function validateSignupPayload(body: SignupRequestBody) {
     errors.country = `Champ limité à ${MAX_COUNTRY_LENGTH} caractères.`;
   }
 
-  if (personalTitle.length > MAX_TITLE_LENGTH) {
+  if (!personalTitle) {
+    errors.personalTitle = "La civilite est requise.";
+  } else if (personalTitle.length > MAX_TITLE_LENGTH) {
     errors.personalTitle = `Champ limité à ${MAX_TITLE_LENGTH} caractères.`;
+  } else if (!allowedPersonalTitles.has(personalTitle.toLowerCase())) {
+    errors.personalTitle = "Selectionnez une civilite exportable.";
+  }
+
+  if (!birthDate) {
+    errors.birthDate = "La date de naissance est requise.";
+  } else if (
+    !birthDatePattern.test(birthDate)
+    || Number.isNaN(Date.parse(`${birthDate}T00:00:00Z`))
+  ) {
+    errors.birthDate = "La date de naissance est invalide.";
   }
 
   if (!givenName) {
@@ -350,17 +391,21 @@ function validateSignupPayload(body: SignupRequestBody) {
     errors.message = `Message limité à ${MAX_MESSAGE_LENGTH} caractères.`;
   }
 
+  const effectiveCompanyName = isIndividual ? contactName : companyName;
+  const effectiveUserSize = isIndividual ? "" : userSize;
+  const effectiveMessage = buildSignupMessage(message, effectiveUserSize);
+
   return {
     errors,
     payload: {
-      companyName,
+      companyName: effectiveCompanyName,
       contactName,
       email,
       phone: phone || null,
-      message: message || null,
+      message: effectiveMessage,
       customer: {
         customerType,
-        displayName: companyName,
+        displayName: effectiveCompanyName,
         billingEmail: email,
         phone: phone || null,
         addressLine1,
@@ -370,7 +415,8 @@ function validateSignupPayload(body: SignupRequestBody) {
         country,
       },
       primaryUser: {
-        personalTitle: personalTitle || null,
+        personalTitle,
+        birthDate,
         givenName,
         surname,
         initials: initials || null,
@@ -381,6 +427,20 @@ function validateSignupPayload(body: SignupRequestBody) {
       },
     },
   };
+}
+
+function buildSignupMessage(message: string, userSize: string) {
+  const parts: string[] = [];
+
+  if (userSize) {
+    parts.push(`Tranche d'utilisateurs : ${userSize}`);
+  }
+
+  if (message) {
+    parts.push(message);
+  }
+
+  return parts.length > 0 ? parts.join("\n\n") : null;
 }
 
 function hasProvidedPackValue(value: unknown) {

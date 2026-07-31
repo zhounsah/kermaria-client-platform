@@ -16,7 +16,7 @@ import { isSignupEnabled } from "@/lib/public-routes";
 export const metadata: Metadata = {
   title: "Créer un compte",
   description:
-    "Demandez l'ouverture de votre accès client et reprenez, si besoin, le pack déjà selectionné sur la vitrine.",
+    "Demandez l'ouverture de votre accès client et reprenez, si besoin, le pack déjà sélectionné sur la vitrine.",
 };
 
 export const dynamic = "force-dynamic";
@@ -56,9 +56,7 @@ export default async function SignupPage({
           Renseignez vos informations pour demander l&apos;ouverture de votre accès
           client. Le parcours reste simple et assume : confirmation de votre
           adresse e-mail, validation de votre demande par notre équipe, puis
-          définition du mot de passe avant la finalisation du pack choisi. Avec
-          v0.38, cette étape prepare aussi l&apos;identité cible sous
-          <code> clients.home.bzh</code>.
+          définition du mot de passe avant la finalisation du pack choisi.
         </p>
       </header>
 
@@ -66,7 +64,7 @@ export default async function SignupPage({
         <div className="signup-selection-stack">
           <PublicPackSelectionSummary
             commitmentMonths={packSelection.commitmentMonths}
-            description="Le pack selectionné reste attaché à cette demande. Le paiement ne se fait pas sur cet écran : vous retrouverez ensuite ce contexte dans l'espace client."
+            description="Le pack sélectionné reste attaché à cette demande. Le paiement ne se fait pas sur cet écran : vous retrouverez ensuite ce contexte dans l'espace client."
             eyebrow="Pack repris"
             firstChargeAmountCents={packSelection.firstChargeAmountCents}
             monthlyPriceAmountCents={packSelection.monthlyPriceAmountCents}

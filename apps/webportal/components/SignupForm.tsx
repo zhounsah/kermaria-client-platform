@@ -31,6 +31,17 @@ type SignupResponse = {
   correlation_id?: string;
 };
 
+const USER_SIZE_OPTIONS = [
+  { value: "1", label: "1 utilisateur" },
+  { value: "2-4", label: "2 à 4 utilisateurs" },
+  { value: "5-9", label: "5 à 9 utilisateurs" },
+  { value: "10-24", label: "10 à 24 utilisateurs" },
+  { value: "25-49", label: "25 à 49 utilisateurs" },
+  { value: "50-249", label: "50 à 249 utilisateurs" },
+  { value: "250-999", label: "250 à 999 utilisateurs" },
+  { value: "1000+", label: "1000 utilisateurs ou plus" },
+] as const;
+
 export function SignupForm({
   hcaptchaSiteKey,
   initialPackSelection = null,
@@ -39,12 +50,14 @@ export function SignupForm({
   const renderedAtRef = useRef<number>(0);
   const [customerType, setCustomerType] = useState("professional");
   const [companyName, setCompanyName] = useState("");
+  const [userSize, setUserSize] = useState("");
   const [addressLine1, setAddressLine1] = useState("");
   const [addressLine2, setAddressLine2] = useState("");
   const [postalCode, setPostalCode] = useState("");
   const [city, setCity] = useState("");
   const [country, setCountry] = useState("France");
   const [personalTitle, setPersonalTitle] = useState("");
+  const [birthDate, setBirthDate] = useState("");
   const [givenName, setGivenName] = useState("");
   const [surname, setSurname] = useState("");
   const [initials, setInitials] = useState("");
@@ -52,6 +65,10 @@ export function SignupForm({
   const [phone, setPhone] = useState("");
   const [message, setMessage] = useState("");
   const [state, setState] = useState<SignupState>({ status: "idle" });
+
+  const isIndividual = customerType === "individual";
+  const displayCompanyField = !isIndividual;
+  const displayUserSizeField = !isIndividual;
 
   useEffect(() => {
     renderedAtRef.current = Date.now();
@@ -86,12 +103,14 @@ export function SignupForm({
         body: JSON.stringify({
           customerType,
           companyName,
+          userSize,
           addressLine1,
           addressLine2,
           postalCode,
           city,
           country,
           personalTitle,
+          birthDate,
           givenName,
           surname,
           initials,
@@ -153,200 +172,257 @@ export function SignupForm({
           </FormMessage>
         ) : null}
 
-        <p className="field-hint">
-          Ces informations alimentent à la fois votre fiche client et le futur
-          compte d&apos;accès rattaché à <code>clients.home.bzh</code> lorsque
-          l&apos;identité est finalisée.
-        </p>
+        <div className="signup-form-intro">
+          <p className="field-hint">
+            Ces informations alimentent à la fois votre fiche client et le futur
+            compte d&apos;accès rattaché lorsque l&apos;identité est finalisée.
+          </p>
+        </div>
 
-        <label>
-          Type de structure
-          <select
-            name="customerType"
-            onChange={(event) => setCustomerType(event.target.value)}
-            required
-            value={customerType}
-          >
-            <option value="professional">Professionnel</option>
-            <option value="association">Association</option>
-            <option value="individual">Particulier</option>
-          </select>
-        </label>
+        <div className="signup-form-layout">
+          <section className="signup-form-panel" aria-labelledby="signup-structure-heading">
+            <div className="signup-form-panel-header">
+              <p className="signup-form-panel-kicker">Structure</p>
+              <h2 id="signup-structure-heading">Structure et besoin</h2>
+              <p className="field-hint">
+                Renseignez ici les informations liées à votre structure, à
+                l&apos;adresse postale et au contexte de votre demande.
+              </p>
+            </div>
 
-        <label>
-          Nom ou raison sociale
-          <input
-            autoComplete="organization"
-            maxLength={200}
-            name="companyName"
-            onChange={(event) => setCompanyName(event.target.value)}
-            required
-            type="text"
-            value={companyName}
-          />
-        </label>
+            <div className="signup-form-fields">
+              <label>
+                Type de structure
+                <select
+                  name="customerType"
+                  onChange={(event) => setCustomerType(event.target.value)}
+                  required
+                  value={customerType}
+                >
+                  <option value="professional">Professionnel</option>
+                  <option value="association">Association</option>
+                  <option value="individual">Particulier</option>
+                </select>
+              </label>
 
-        <label>
-          Adresse postale
-          <input
-            autoComplete="address-line1"
-            maxLength={255}
-            name="addressLine1"
-            onChange={(event) => setAddressLine1(event.target.value)}
-            required
-            type="text"
-            value={addressLine1}
-          />
-        </label>
+              {displayCompanyField ? (
+                <label>
+                  Raison sociale
+                  <input
+                    autoComplete="organization"
+                    maxLength={200}
+                    name="companyName"
+                    onChange={(event) => setCompanyName(event.target.value)}
+                    required={displayCompanyField}
+                    type="text"
+                    value={companyName}
+                  />
+                </label>
+              ) : null}
 
-        <label>
-          Complement d&apos;adresse (facultatif)
-          <input
-            autoComplete="address-line2"
-            maxLength={255}
-            name="addressLine2"
-            onChange={(event) => setAddressLine2(event.target.value)}
-            type="text"
-            value={addressLine2}
-          />
-        </label>
+              {displayUserSizeField ? (
+                <label>
+                  Tranche d&apos;utilisateurs
+                  <select
+                    name="userSize"
+                    onChange={(event) => setUserSize(event.target.value)}
+                    required={displayUserSizeField}
+                    value={userSize}
+                  >
+                    <option value="">Sélectionnez une tranche</option>
+                    {USER_SIZE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
 
-        <label>
-          Code postal
-          <input
-            autoComplete="postal-code"
-            maxLength={32}
-            name="postalCode"
-            onChange={(event) => setPostalCode(event.target.value)}
-            required
-            type="text"
-            value={postalCode}
-          />
-        </label>
+              <label className="signup-form-field-span-2">
+                Adresse postale
+                <input
+                  autoComplete="address-line1"
+                  maxLength={255}
+                  name="addressLine1"
+                  onChange={(event) => setAddressLine1(event.target.value)}
+                  required
+                  type="text"
+                  value={addressLine1}
+                />
+              </label>
 
-        <label>
-          Ville
-          <input
-            autoComplete="address-level2"
-            maxLength={160}
-            name="city"
-            onChange={(event) => setCity(event.target.value)}
-            required
-            type="text"
-            value={city}
-          />
-        </label>
+              <label className="signup-form-field-span-2">
+                Complément d&apos;adresse (facultatif)
+                <input
+                  autoComplete="address-line2"
+                  maxLength={255}
+                  name="addressLine2"
+                  onChange={(event) => setAddressLine2(event.target.value)}
+                  type="text"
+                  value={addressLine2}
+                />
+              </label>
 
-        <label>
-          Pays
-          <input
-            autoComplete="country-name"
-            maxLength={100}
-            name="country"
-            onChange={(event) => setCountry(event.target.value)}
-            required
-            type="text"
-            value={country}
-          />
-        </label>
+              <label>
+                Code postal
+                <input
+                  autoComplete="postal-code"
+                  maxLength={32}
+                  name="postalCode"
+                  onChange={(event) => setPostalCode(event.target.value)}
+                  required
+                  type="text"
+                  value={postalCode}
+                />
+              </label>
 
-        <p className="field-hint">
-          Contact principal qui recevra les messages d&apos;ouverture et définira le
-          mot de passe initial.
-        </p>
+              <label>
+                Ville
+                <input
+                  autoComplete="address-level2"
+                  maxLength={160}
+                  name="city"
+                  onChange={(event) => setCity(event.target.value)}
+                  required
+                  type="text"
+                  value={city}
+                />
+              </label>
 
-        <label>
-          Civilité (facultatif)
-          <select
-            autoComplete="honorific-prefix"
-            name="personalTitle"
-            onChange={(event) => setPersonalTitle(event.target.value)}
-            value={personalTitle}
-          >
-            <option value="">Non précisé</option>
-            <option value="madame">Madame</option>
-            <option value="monsieur">Monsieur</option>
-            <option value="autre">Autre</option>
-          </select>
-        </label>
+              <label className="signup-form-field-span-2">
+                Pays
+                <input
+                  autoComplete="country-name"
+                  maxLength={100}
+                  name="country"
+                  onChange={(event) => setCountry(event.target.value)}
+                  required
+                  type="text"
+                  value={country}
+                />
+              </label>
 
-        <label>
-          Prénom
-          <input
-            autoComplete="given-name"
-            maxLength={120}
-            name="givenName"
-            onChange={(event) => setGivenName(event.target.value)}
-            required
-            type="text"
-            value={givenName}
-          />
-        </label>
+              <label className="signup-form-field-span-2">
+                Votre besoin (facultatif)
+                <textarea
+                  maxLength={2000}
+                  name="message"
+                  onChange={(event) => setMessage(event.target.value)}
+                  placeholder={
+                    initialPackSelection
+                      ? "Précisez ce qu'il faut savoir avant l'ouverture du compte ou la reprise du pack."
+                      : "Précisez votre contexte, vos contraintes ou ce que vous attendez de l'ouverture du compte."
+                  }
+                  rows={5}
+                  value={message}
+                />
+              </label>
+            </div>
+          </section>
 
-        <label>
-          Nom
-          <input
-            autoComplete="family-name"
-            maxLength={120}
-            name="surname"
-            onChange={(event) => setSurname(event.target.value)}
-            required
-            type="text"
-            value={surname}
-          />
-        </label>
+          <section className="signup-form-panel" aria-labelledby="signup-contact-heading">
+            <div className="signup-form-panel-header">
+              <p className="signup-form-panel-kicker">Contact principal</p>
+              <h2 id="signup-contact-heading">Informations client</h2>
+              <p className="field-hint">
+                Ce contact principal recevra les messages d&apos;ouverture et
+                définira le mot de passe initial.
+              </p>
+            </div>
 
-        <label>
-          Initiales (facultatif)
-          <input
-            maxLength={16}
-            name="initials"
-            onChange={(event) => setInitials(event.target.value)}
-            type="text"
-            value={initials}
-          />
-        </label>
+            <div className="signup-form-fields">
+              <label>
+                Civilité
+                <select
+                  autoComplete="honorific-prefix"
+                  name="personalTitle"
+                  onChange={(event) => setPersonalTitle(event.target.value)}
+                  required
+                  value={personalTitle}
+                >
+                  <option value="">Sélectionnez</option>
+                  <option value="madame">Madame</option>
+                  <option value="monsieur">Monsieur</option>
+                </select>
+              </label>
 
-        <label>
-          Adresse e-mail de connexion
-          <input
-            autoComplete="email"
-            maxLength={320}
-            name="email"
-            onChange={(event) => setEmail(event.target.value)}
-            required
-            type="email"
-            value={email}
-          />
-        </label>
+              <label>
+                Date de naissance
+                <input
+                  max={new Date().toISOString().slice(0, 10)}
+                  name="birthDate"
+                  onChange={(event) => setBirthDate(event.target.value)}
+                  required
+                  type="date"
+                  value={birthDate}
+                />
+              </label>
 
-        <label>
-          Téléphone (facultatif)
-          <input
-            autoComplete="tel"
-            maxLength={40}
-            name="phone"
-            onChange={(event) => setPhone(event.target.value)}
-            type="tel"
-            value={phone}
-          />
-        </label>
+              <label>
+                Prénom
+                <input
+                  autoComplete="given-name"
+                  maxLength={120}
+                  name="givenName"
+                  onChange={(event) => setGivenName(event.target.value)}
+                  required
+                  type="text"
+                  value={givenName}
+                />
+              </label>
 
-        <label>
-          Votre besoin (facultatif)
-          <textarea
-            maxLength={2000}
-            name="message"
-            onChange={(event) => setMessage(event.target.value)}
-            placeholder={
-              initialPackSelection
-                ? "Précisez ce qu'il faut savoir avant l'ouverture du compte ou la reprise du pack."
-                : "Précisez votre contexte, vos contraintes ou ce que vous attendez de l'ouverture du compte."
-            }
-            rows={5}
-            value={message}
-          />
-        </label>
+              <label>
+                Nom
+                <input
+                  autoComplete="family-name"
+                  maxLength={120}
+                  name="surname"
+                  onChange={(event) => setSurname(event.target.value)}
+                  required
+                  type="text"
+                  value={surname}
+                />
+              </label>
+
+              <label>
+                Initiales (facultatif)
+                <input
+                  maxLength={16}
+                  name="initials"
+                  onChange={(event) => setInitials(event.target.value)}
+                  type="text"
+                  value={initials}
+                />
+              </label>
+
+              <label>
+                Téléphone (facultatif)
+                <input
+                  autoComplete="tel"
+                  maxLength={40}
+                  name="phone"
+                  onChange={(event) => setPhone(event.target.value)}
+                  type="tel"
+                  value={phone}
+                />
+              </label>
+
+              <label className="signup-form-field-span-2">
+                Adresse e-mail de connexion
+                <input
+                  autoComplete="email"
+                  maxLength={320}
+                  name="email"
+                  onChange={(event) => setEmail(event.target.value)}
+                  required
+                  type="email"
+                  value={email}
+                />
+              </label>
+            </div>
+          </section>
+        </div>
 
         {initialPackSelection ? (
           <PublicPackSelectionSummary
