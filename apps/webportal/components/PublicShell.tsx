@@ -5,6 +5,8 @@ import type { ReactNode } from "react";
 
 import { PORTFOLIO_URL } from "@/lib/public-route-config";
 
+const CLIENT_PORTAL_LOGIN_URL = "https://dashboard.zacharyhounsa.ovh/login";
+
 type PublicShellProps = {
   children: ReactNode;
   signupEnabled: boolean;
@@ -35,9 +37,12 @@ export function PublicShell({ children, signupEnabled }: PublicShellProps) {
               <Link href="/contact">Contact</Link>
             </div>
             <div className="public-header-actions">
-              <Link className="public-header-login" href="/login">
+              <a
+                className="public-header-login"
+                href={CLIENT_PORTAL_LOGIN_URL}
+              >
                 Connexion
-              </Link>
+              </a>
               {signupEnabled ? (
                 <Link className="public-header-signup" href="/signup">
                   Inscription
@@ -62,7 +67,7 @@ export function PublicShell({ children, signupEnabled }: PublicShellProps) {
               Politique de confidentialité
             </Link>
             <Link href="/cgv">CGV</Link>
-            <Link href="/login">Connexion</Link>
+            <a href={CLIENT_PORTAL_LOGIN_URL}>Connexion</a>
             {signupEnabled ? <Link href="/signup">Inscription</Link> : null}
           </nav>
         </div>

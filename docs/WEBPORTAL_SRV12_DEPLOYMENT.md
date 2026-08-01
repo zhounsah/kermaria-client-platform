@@ -6,6 +6,15 @@ sans toucher `api-internal`.
 Objectif principal : ne plus basculer un artefact dont le contenu public ne
 correspond pas a la ref Git attendue.
 
+Mapping canonique valide en production le 1er aout 2026 :
+
+- `www.zacharyhounsa.ovh` = vitrine publique canonique
+- `dashboard.zacharyhounsa.ovh` = portail client canonique + endpoints webhook
+- `administration.zacharyhounsa.ovh` = portail admin canonique
+- `www.home.bzh` = alias public, redirige vers `www.zacharyhounsa.ovh`
+- `dashboard.home.bzh` et `portail.home.bzh` = aliases client, redirigent vers `dashboard.zacharyhounsa.ovh`
+- `administration.home.bzh` = alias admin, redirige vers `administration.zacharyhounsa.ovh`
+
 ## 1. Principe
 
 Le redeploiement doit toujours valider trois points avant la bascule :
@@ -108,16 +117,24 @@ readlink -f /opt/kermaria/webportal
 Verifier la sante :
 
 ```powershell
-curl.exe -k https://www.home.bzh/api/health/ready
+curl.exe -k https://dashboard.zacharyhounsa.ovh/api/health/ready
 ```
 
 Verifier le hero public attendu :
 
 ```powershell
 npm run assert:webportal:home -- `
-  --url https://www.home.bzh/ `
+  --url https://www.zacharyhounsa.ovh/ `
   --must-match "Un sinistre peut" `
   --must-not-match "Informatique claire et utile\\."
+```
+
+Verifier aussi les redirections d'alias :
+
+```powershell
+curl.exe -k -I https://www.home.bzh/
+curl.exe -k -I https://dashboard.home.bzh/login
+curl.exe -k -I https://administration.home.bzh/admin
 ```
 
 Le script normalise le HTML :
@@ -131,7 +148,8 @@ Le script normalise le HTML :
 La bascule n'est validee que si :
 
 - la ref Git du manifest est celle attendue ;
-- `assert-webportal-home.mjs` passe sur l'URL publique ;
+- `assert-webportal-home.mjs` passe sur l'URL publique canonique ;
+- les aliases `*.home.bzh` redirigent bien vers les hosts `*.zacharyhounsa.ovh` attendus ;
 - le marqueur precedent est absent.
 
 Si une de ces trois conditions echoue, rollback immediat.

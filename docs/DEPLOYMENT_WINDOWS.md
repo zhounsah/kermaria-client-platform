@@ -911,7 +911,7 @@ portfolio :
 | `kermaria-vitrine` | `www.zacharyhounsa.ovh` | Vitrine publique canonique | strippe |
 | `kermaria-home-redirect` | `www.home.bzh` | Alias public vers `www.zacharyhounsa.ovh` | n/a |
 | `kermaria-portal` | `administration.zacharyhounsa.ovh`, `dashboard.zacharyhounsa.ovh` | Interfaces canoniques interne/client + `/api/*` | conserve |
-| `kermaria-portal-home-redirect` | `administration.home.bzh`, `dashboard.home.bzh` | Aliases prives vers les hosts canoniques | n/a |
+| `kermaria-portal-home-redirect` | `administration.home.bzh`, `dashboard.home.bzh`, `portail.home.bzh` | Aliases vers les hosts canoniques client/admin | n/a |
 | `kermaria-portfolio` | `portfolio.zacharyhounsa.ovh` | Portfolio canonique a la racine du sous-domaine | strippe |
 
 Node fait deja le routing par path. Etat actuel : `AppShell.tsx`
@@ -1179,7 +1179,8 @@ Start-Website -Name $VitrineSite
   `https://www.zacharyhounsa.ovh/*`.
 - `kermaria-portal-home-redirect` : redirige
   `administration.home.bzh/*` vers
-  `https://administration.zacharyhounsa.ovh/*` et `dashboard.home.bzh/*`
+  `https://administration.zacharyhounsa.ovh/*`, `dashboard.home.bzh/*`
+  vers `https://dashboard.zacharyhounsa.ovh/*` et `portail.home.bzh/*`
   vers `https://dashboard.zacharyhounsa.ovh/*`.
 - `kermaria-portfolio` : host indexable `portfolio.zacharyhounsa.ovh`
   qui rewrite `/` vers `/portfolio/index.html` et `/{path}` vers
@@ -1208,14 +1209,14 @@ file ou le DNS interne resolvant les hostnames sur `192.168.100.201` :
 ```powershell
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
 
-# Backoffice : / → /login
+# Alias client : redirection vers l'hote canonique client
 $b = Invoke-WebRequest -Uri "https://portail.home.bzh/" `
   -MaximumRedirection 0 -UseBasicParsing
-$b.StatusCode                        # 302
-$b.Headers.Location                  # https://portail.home.bzh/login
+$b.StatusCode                        # 301
+$b.Headers.Location                  # https://dashboard.zacharyhounsa.ovh/
 
-# Vitrine : landing V0.27 avec X-Robots-Tag strippe
-$v = Invoke-WebRequest -Uri "https://www.home.bzh/" -UseBasicParsing
+# Vitrine canonique : landing publique indexable
+$v = Invoke-WebRequest -Uri "https://www.zacharyhounsa.ovh/" -UseBasicParsing
 $v.StatusCode                        # 200
 $v.Headers['X-Robots-Tag']           # vide → outbound rule OK
 $v.Content -match "claire et utile"  # True (hero V0.27)
