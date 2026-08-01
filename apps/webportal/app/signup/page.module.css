@@ -1,9 +1,9 @@
 .page {
-  width: min(1120px, calc(100vw - 32px));
+  width: min(1320px, calc(100vw - 40px));
 }
 
 .header {
-  max-width: 860px;
+  max-width: 980px;
 }
 
 .selectionStack {
