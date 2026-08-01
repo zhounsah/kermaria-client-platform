@@ -12,11 +12,12 @@ import {
   selectionFromSearchParams,
 } from "@/lib/public-packs";
 import { isSignupEnabled } from "@/lib/public-routes";
+import styles from "./page.module.css";
 
 export const metadata: Metadata = {
   title: "Créer un compte",
   description:
-    "Demandez l'ouverture de votre accès client et reprenez, si besoin, le pack déjà selectionné sur la vitrine.",
+    "Demandez l'ouverture de votre accès client et reprenez, si besoin, le pack déjà sélectionné sur la vitrine.",
 };
 
 export const dynamic = "force-dynamic";
@@ -44,29 +45,27 @@ export default async function SignupPage({
     : null;
 
   return (
-    <div className="signup-page">
+    <div className={`signup-page ${styles.page}`}>
       <Link className="back-link" href="/">
         <span aria-hidden="true">{"<-"}</span> Retour à l&apos;accueil
       </Link>
 
-      <header className="signup-header">
+      <header className={`signup-header ${styles.header}`}>
         <p className="eyebrow">Inscription</p>
         <h1>Créer un compte client</h1>
         <p className="signup-lead">
           Renseignez vos informations pour demander l&apos;ouverture de votre accès
           client. Le parcours reste simple et assume : confirmation de votre
           adresse e-mail, validation de votre demande par notre équipe, puis
-          définition du mot de passe avant la finalisation du pack choisi. Avec
-          v0.38, cette étape prepare aussi l&apos;identité cible sous
-          <code> clients.home.bzh</code>.
+          définition du mot de passe avant la finalisation du pack choisi.
         </p>
       </header>
 
       {packSelection ? (
-        <div className="signup-selection-stack">
+        <div className={styles.selectionStack}>
           <PublicPackSelectionSummary
             commitmentMonths={packSelection.commitmentMonths}
-            description="Le pack selectionné reste attaché à cette demande. Le paiement ne se fait pas sur cet écran : vous retrouverez ensuite ce contexte dans l'espace client."
+            description="Le pack sélectionné reste attaché à cette demande. Le paiement ne se fait pas sur cet écran : vous retrouverez ensuite ce contexte dans l'espace client."
             eyebrow="Pack repris"
             firstChargeAmountCents={packSelection.firstChargeAmountCents}
             monthlyPriceAmountCents={packSelection.monthlyPriceAmountCents}
@@ -74,7 +73,7 @@ export default async function SignupPage({
             paymentMode={packSelection.paymentMode}
             setupFeeAmountCents={packSelection.setupFeeAmountCents}
           />
-          <section className="signup-steps-card" aria-label="Étapes d'ouverture">
+          <section className={styles.stepsCard} aria-label="Étapes d'ouverture">
             <h2>Ce qui se passe ensuite</h2>
             <ol>
               <li>Vous confirmez votre adresse e-mail.</li>

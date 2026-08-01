@@ -1,0 +1,84 @@
+.page {
+  width: min(1120px, calc(100vw - 32px));
+}
+
+.header {
+  max-width: 860px;
+}
+
+.selectionStack {
+  display: grid;
+  gap: 18px;
+  margin-bottom: 22px;
+}
+
+.selectionStack :global(.public-pack-selection-summary),
+.stepsCard {
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 100%), rgb(247 250 253 / 100%));
+  box-shadow: var(--shadow-sm);
+}
+
+.selectionStack :global(.public-pack-selection-summary-header) {
+  display: grid;
+  gap: 8px;
+}
+
+.selectionStack :global(.public-pack-selection-summary-header h2) {
+  margin: 0;
+  font-size: 1.25rem;
+  letter-spacing: -0.03em;
+}
+
+.selectionStack :global(.public-pack-selection-summary-description) {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.selectionStack :global(.public-pack-selection-summary-grid) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin: 18px 0 0;
+}
+
+.selectionStack :global(.public-pack-selection-summary-grid div) {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  border-radius: 14px;
+  background: rgb(244 247 251 / 100%);
+}
+
+.selectionStack :global(.public-pack-selection-summary-grid dt) {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 760;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.selectionStack :global(.public-pack-selection-summary-grid dd) {
+  margin: 0;
+  font-weight: 720;
+}
+
+.stepsCard h2 {
+  margin: 0 0 12px;
+  font-size: 1.1rem;
+}
+
+.stepsCard ol {
+  margin: 0;
+  padding-left: 1.2rem;
+  color: var(--text);
+  line-height: 1.65;
+}
+
+.stepsCard li + li {
+  margin-top: 0.45rem;
+}
