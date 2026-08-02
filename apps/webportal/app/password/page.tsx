@@ -45,11 +45,11 @@ export default async function PasswordPage() {
           <section className="content-panel">
             <h2>Mot de passe du compte</h2>
             <p className="page-description">
-              La modification est transmise a l&apos;API interne, qui verifie
-              d&apos;abord le mot de passe actuel cote portail. Si votre compte
+              La modification est transmise à l&apos;API interne, qui vérifie
+              d&apos;abord le mot de passe actuel côté portail. Si votre compte
               est déjà relié à une identité AD, le nouveau secret est aussi
               synchronisé vers `clients.home.bzh`. Aucun mot de passe n&apos;est
-              journalise.
+              journalisé.
             </p>
             <PasswordChangeForm />
             <div className="form-footer">
@@ -64,7 +64,7 @@ export default async function PasswordPage() {
             <ul className="check-list">
               <li>Vérification de l&apos;identité et de la session.</li>
               <li>Traitement par l&apos;API interne privée uniquement.</li>
-              <li>Le portail reste la source de verification du mot de passe actuel.</li>
+              <li>Le portail reste la source de vérification du mot de passe actuel.</li>
               <li>Synchronisation AD effectuée seulement si un lien AD existe.</li>
               <li>Aucun mot de passe dans les logs.</li>
               <li>Limite de tentatives (3 / 15 min) avant verrouillage temporaire.</li>
@@ -83,9 +83,9 @@ export default async function PasswordPage() {
             <section className="content-panel">
               <h2>Accès au portail</h2>
               <p className="page-description">
-                Le compte actuellement connecte utilise l&apos;authentification
+                Le compte actuellement connecté utilise l&apos;authentification
                 locale du portail. Aucun parcours de modification ou de
-                récupération automatisée n&apos;est active.
+                récupération automatisée n&apos;est actif.
               </p>
               <div className="form-footer">
                 <Link className="text-link" href="/profile">
@@ -95,7 +95,7 @@ export default async function PasswordPage() {
             </section>
 
             <aside className="content-panel">
-              <h2>Garanties conservees</h2>
+              <h2>Garanties conservées</h2>
               <ul className="check-list">
                 <li>Vérification de l&apos;identité et de la session.</li>
                 <li>Traitement par l&apos;API interne privée uniquement.</li>

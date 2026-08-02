@@ -10,6 +10,7 @@ import type {
   ServiceCatalogItem,
 } from "@kermaria/shared";
 
+import { AddRecurringCheckoutButton } from "@/components/AddRecurringCheckoutButton";
 import { AddToCartButton } from "@/components/AddToCartButton";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
@@ -18,7 +19,12 @@ import { PageHeader } from "@/components/PageHeader";
 import { PublicPackCard } from "@/components/PublicPackCard";
 import { SectionHeading } from "@/components/SectionHeading";
 import { StatusBadge } from "@/components/StatusBadge";
-import { formatCurrencyFromCents } from "@/lib/formatters";
+import {
+  formatBillingIntervalMonths,
+  formatCommitmentMonths,
+  formatCurrencyFromCents,
+  formatPaymentModeLabel,
+} from "@/lib/formatters";
 import { findPackPresentation } from "@/lib/public-packs";
 
 type SubscribeCatalogSectionsProps = {
@@ -34,6 +40,7 @@ type SubscribeCatalogSectionsProps = {
   serviceCatalogCorrelationId?: CorrelationId;
   serviceCatalogError: boolean;
   source: DataSource;
+  standaloneRecurringOffers: CommercialOfferSummary[];
 };
 
 export function SubscribeCatalogSections({
@@ -49,6 +56,7 @@ export function SubscribeCatalogSections({
   serviceCatalogCorrelationId,
   serviceCatalogError,
   source,
+  standaloneRecurringOffers,
 }: SubscribeCatalogSectionsProps) {
   return (
     <>
@@ -66,7 +74,8 @@ export function SubscribeCatalogSections({
       {checkout.totalItemCount > 0 ? (
         <section className="checkout-access-banner">
           <div>
-            <span className="card-kicker">Panier unifié</span>
+            <span className="card-kicker">Panier unifie</span>
+            
             <h2>
               {checkout.cart.itemCount} achat(s) ponctuel(s) et{" "}
               {checkout.recurring.itemCount} abonnement(s) en cours
@@ -118,6 +127,53 @@ export function SubscribeCatalogSections({
                 mode="subscribe"
                 pack={pack}
               />
+            ))}
+          </section>
+        )}
+      </section>
+
+      <section className="request-history-section">
+        <SectionHeading
+          action={<StatusBadge label="Abonnements directs" tone="info" />}
+          description="Ces offres récurrentes se souscrivent à l'unité, sans passer par un pack grand public."
+          title="Abonnements à l'unité"
+        />
+        {commercialCatalogError ? (
+          <ErrorState
+            compact
+            description="Impossible de charger les abonnements à l'unité pour le moment."
+            reference={commercialCatalogCorrelationId}
+            title="Abonnements indisponibles"
+          />
+        ) : standaloneRecurringOffers.length === 0 ? (
+          <EmptyState
+            description="Aucun abonnement récurrent hors pack n'est actuellement proposé."
+            title="Catalogue vide"
+          />
+        ) : (
+          <section
+            className="catalog-grid"
+            aria-label="Abonnements récurrents à l'unité"
+          >
+            {standaloneRecurringOffers.map((offer) => (
+              <article className="catalog-card" key={offer.id}>
+                <span className="card-kicker">{offer.category}</span>
+                <h2>{offer.name}</h2>
+                <p className="multiline-text">{offer.description}</p>
+                <div className="catalog-scope">
+                  <strong>
+                    {formatCurrencyFromCents(offer.priceAmountCents)} HT
+                  </strong>
+                  <span>
+                    {formatBillingIntervalMonths(offer.billingIntervalMonths)}
+                  </span>
+                </div>
+                <p className="field-hint">
+                  {formatPaymentModeLabel(offer.paymentMode)} · engagement{" "}
+                  {formatCommitmentMonths(offer.commitmentMonths)}
+                </p>
+                <AddRecurringCheckoutButton offerId={offer.id} />
+              </article>
             ))}
           </section>
         )}

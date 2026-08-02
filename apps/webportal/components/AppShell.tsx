@@ -11,6 +11,9 @@ import { HeaderCartDrawer } from "@/components/HeaderCartDrawer";
 import { PortalNavigation } from "@/components/PortalNavigation";
 import { PublicShell } from "@/components/PublicShell";
 import { isPublicRoute } from "@/lib/public-route-config";
+import appPackage from "../../../package.json";
+
+const APP_VERSION_LABEL = `Version v${appPackage.version}`;
 
 type AppShellProps = {
   children: ReactNode;
@@ -86,8 +89,9 @@ export function AppShell({
         <div>
           <strong>Zachary HOUNSA-HOUNKPA EI</strong>
           <p>Portail client authentifié et administration interne contrôlée.</p>
+          <p>{APP_VERSION_LABEL}</p>
         </div>
-        <p>Aucun AD réel, paiement ou facturation réelle.</p>
+        <p>Accès client sécurisé, gestion des documents et suivi des services.</p>
       </footer>
     </>
   );

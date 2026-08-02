@@ -60,7 +60,7 @@ export async function handleAdminGet<T>(
     return controlledAdminError(
       403,
       "CSRF_FORBIDDEN",
-      "La requete d'administration doit etre confirmee par un jeton CSRF valide.",
+      "La requête d'administration doit être confirmée par un jeton CSRF valide.",
       correlationId,
     );
   }

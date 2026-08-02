@@ -156,7 +156,7 @@ export function AdminCustomerActiveDirectoryWorkbench({
           <div>
             <h2>Workbench Active Directory</h2>
             <p>
-              Cette page regroupe le provisionning automatique, la
+              Cette page regroupe le provisionnement automatique, la
               réconciliation manuelle et l&apos;activation service par service pour
               <strong> {workspace.customerName}</strong>.
             </p>
@@ -328,7 +328,7 @@ export function AdminCustomerActiveDirectoryWorkbench({
           {workspace.linkedUsers.length === 0 ? (
             <FormMessage title="Aucun utilisateur lié" tone="error">
               <p>
-                Le provisionning AD est bloqué tant qu&apos;aucun utilisateur lié
+                Le provisionnement AD est bloqué tant qu&apos;aucun utilisateur lié
                 n&apos;est rattaché à ce client.
               </p>
             </FormMessage>
@@ -363,7 +363,7 @@ export function AdminCustomerActiveDirectoryWorkbench({
       </div>
 
       <div className="request-detail-layout">
-        <SectionCard ariaLabel="Provisionning manuel et garde-fous">
+        <SectionCard ariaLabel="Provisionnement manuel et garde-fous">
           <h2>Maintenance et garde-fous</h2>
           <p className="field-hint">
             La réconciliation globale sert au rattrapage. Les actions
@@ -686,15 +686,15 @@ function describeScope(
 function describeResultCodeLabel(code: string) {
   switch (code) {
     case "PROVISIONING_SYNCHRONIZED":
-      return "Les groupes AD sont maintenant synchronises avec la souscription.";
+      return "Les groupes AD sont maintenant synchronisés avec la souscription.";
     case "PROVISIONING_APPLIED":
-      return "Le provisionning AD a été applique avec succes.";
+      return "Le provisionnement AD a été appliqué avec succès.";
     case "PROVISIONING_UNCHANGED":
-      return "Aucune modification AD n'etait necessaire.";
+      return "Aucune modification AD n'était nécessaire.";
     case "AD_GROUP_SCOPE_INCOMPATIBLE":
-      return "Le groupe AD cible n'accepte pas l'appartenance demandee avec la portee actuelle.";
+      return "Le groupe AD cible n'accepte pas l'appartenance demandée avec la portée actuelle.";
     case "PROVISIONING_GROUP_NOT_CONFIGURED":
-      return "Au moins un groupe AD requis n'est pas configure.";
+      return "Au moins un groupe AD requis n'est pas configuré.";
     case "AD_UNAVAILABLE":
       return "La lecture ou l'écriture Active Directory est actuellement indisponible.";
     default:
@@ -712,7 +712,7 @@ function describeResultCode(code: string | null) {
   }
 
   if (code === "PROVISIONING_NO_TARGET_USERS") {
-    return "Aucun utilisateur lié n'est disponible pour le provisionning.";
+    return "Aucun utilisateur lié n'est disponible pour le provisionnement.";
   }
 
   return describeResultCodeLabel(code) ?? code;

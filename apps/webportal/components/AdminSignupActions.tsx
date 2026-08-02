@@ -121,16 +121,16 @@ export function AdminSignupActions({
         {status === "approved" && accountAccess?.passwordDefined ? (
           <p className="signup-actions-done">
             Le mot de passe a déjà été défini sur ce compte. Aucune action
-            supplementaire n&apos;est necessaire ici.
+            supplémentaire n&apos;est nécessaire ici.
           </p>
         ) : status === "approved" ? (
           <p className="signup-actions-done">
-            Ce compte approuve n&apos;expose pas d&apos;action supplementaire
+            Ce compte approuvé n&apos;expose pas d&apos;action supplémentaire
             depuis cette fiche.
           </p>
         ) : (
           <p className="signup-actions-done">
-            Cette demande est cloturee : aucune action supplementaire
+            Cette demande est clôturée : aucune action supplémentaire
             n&apos;est possible.
           </p>
         )}
@@ -164,7 +164,7 @@ export function AdminSignupActions({
           }
           type="button"
         >
-          Approuver et creer le compte
+          Approuver et créer le compte
         </button>
       ) : null}
 
@@ -193,7 +193,7 @@ export function AdminSignupActions({
               run(
                 `/api/admin/signups/${encodeURIComponent(signupId)}/reject`,
                 { reason: reason.trim() || null },
-                "Refuser cette demande ? Le demandeur en sera informe par e-mail.",
+                "Refuser cette demande ? Le demandeur en sera informé par e-mail.",
               )
             }
             type="button"
@@ -250,9 +250,9 @@ export function AdminSignupActions({
               />
             </label>
             <p className="field-hint">
-              Le mot de passe n&apos;est jamais stocke en clair. Cette action
+              Le mot de passe n&apos;est jamais stocké en clair. Cette action
               invalide aussi l&apos;ancien lien de définition s&apos;il existait
-              encore et declenche la synchronisation AD quand elle est active.
+              encore et déclenche la synchronisation AD quand elle est active.
             </p>
             <button className="button" disabled={isWorking} type="submit">
               Initialiser le mot de passe
@@ -261,10 +261,10 @@ export function AdminSignupActions({
 
           <div className="signup-password-email">
             <p className="field-hint">
-              Si vous preferez laisser le client choisir lui-meme son mot de
+              Si vous préférez laisser le client choisir lui-même son mot de
               passe, vous pouvez renvoyer un nouveau lien à usage unique. La
               création ou la synchronisation vers clients.home.bzh se fera au
-              moment ou il définira ce mot de passe.
+              moment où il définira ce mot de passe.
             </p>
             <button
               className="button button-secondary"

@@ -4,6 +4,29 @@ Purpose: give a fast handoff for a human or another AI agent.
 
 Read this file first, then open the versioned documents listed below.
 
+## 1.0.0 navigation
+
+Current documentation entrypoint:
+
+- [`V1.0.0_DOCUMENTATION.md`](V1.0.0_DOCUMENTATION.md)
+
+Functional overview:
+
+- [`V1.0.0_FUNCTIONAL_REFERENCE.md`](V1.0.0_FUNCTIONAL_REFERENCE.md)
+
+Operational truth:
+
+- [`OPERATIONS.md`](OPERATIONS.md)
+- [`DEPLOYMENT.md`](DEPLOYMENT.md)
+
+Important:
+
+- treat the Git tag `v1.0.0` plus the current repo state as the main version
+  truth;
+- do not infer the platform version only from `package.json` fields;
+- keep the hard boundary `browser -> WEBPORTAL / BFF -> API-INTERNAL ->
+  MariaDB`.
+
 ## What exists today
 
 The current repo state is built in layers:
@@ -28,10 +51,7 @@ The current repo state is built in layers:
 8. `V0.37_CENTRE_TELECHARGEMENTS_CLIENT.md`
    Secure client download center: dedicated client page, admin CRUD,
    private binary storage, entitlement-based visibility.
-9. `V0.39_VITRINE_TUNNEL_PUBLIC.md`
-   Public vitrine refresh: stronger homepage positioning, pack-first offers
-   reading, and contact/signup tunnel continuity.
-10. `koxo-sync.md`
+9. `koxo-sync.md`
    Private KoXo synchronization chain: validated JSON export, admin checks,
    PowerShell CSV generation, SRV-21 execution, and guarded KoXo launch.
 

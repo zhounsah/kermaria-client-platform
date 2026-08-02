@@ -60,13 +60,33 @@
 }
 
 @media (max-width: 900px) {
+  .form {
+    gap: 22px;
+    padding: 24px 18px;
+  }
+
   .layout {
     grid-template-columns: 1fr;
+    gap: 22px;
+  }
+
+  .panel {
+    gap: 18px;
+    padding: 22px 18px;
+  }
+
+  .fields {
+    grid-template-columns: 1fr;
+    gap: 16px;
   }
 }
 
 @media (max-width: 640px) {
-  .fields {
-    grid-template-columns: 1fr;
+  .form {
+    padding-inline: 14px;
+  }
+
+  .panel {
+    padding: 18px 14px;
   }
 }

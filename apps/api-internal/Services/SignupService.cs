@@ -97,6 +97,7 @@ public sealed class SignupService : ISignupService
     private readonly IPortalPasswordService _passwordService;
     private readonly IActiveDirectoryService _activeDirectoryService;
     private readonly IActiveDirectoryLinkRepository _activeDirectoryLinkRepository;
+    private readonly IKoxoSyncWebhookTriggerService _koxoSyncWebhookTriggerService;
     private readonly SignupRuntimeConfiguration _configuration;
     private readonly EmailRuntimeConfiguration _emailConfiguration;
     private readonly AdRuntimeConfiguration _adConfiguration;
@@ -109,6 +110,7 @@ public sealed class SignupService : ISignupService
         IPortalPasswordService passwordService,
         IActiveDirectoryService activeDirectoryService,
         IActiveDirectoryLinkRepository activeDirectoryLinkRepository,
+        IKoxoSyncWebhookTriggerService koxoSyncWebhookTriggerService,
         SignupRuntimeConfiguration configuration,
         EmailRuntimeConfiguration emailConfiguration,
         AdRuntimeConfiguration adConfiguration,
@@ -120,6 +122,7 @@ public sealed class SignupService : ISignupService
         _passwordService = passwordService;
         _activeDirectoryService = activeDirectoryService;
         _activeDirectoryLinkRepository = activeDirectoryLinkRepository;
+        _koxoSyncWebhookTriggerService = koxoSyncWebhookTriggerService;
         _configuration = configuration;
         _emailConfiguration = emailConfiguration;
         _adConfiguration = adConfiguration;
@@ -669,7 +672,56 @@ public sealed class SignupService : ISignupService
             record.ApprovedUserId,
             passwordHash,
             cancellationToken);
+        await TriggerKoxoSyncWebhookAsync(record, cancellationToken);
         return null;
+    }
+
+    private async Task TriggerKoxoSyncWebhookAsync(
+        SignupPendingRecord record,
+        CancellationToken cancellationToken)
+    {
+        if (!_adConfiguration.WritesEnabled
+            || record.ApprovedUserId is null
+            || string.IsNullOrWhiteSpace(record.ApprovedCustomerReference))
+        {
+            return;
+        }
+
+        var link = await _activeDirectoryLinkRepository.FindUserLinkByPortalUserIdAsync(
+            record.ApprovedUserId,
+            cancellationToken);
+        if (link is null
+            || !string.Equals(
+                link.KoxoExportStatus,
+                "koxo_pending",
+                StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var correlationId = Guid.NewGuid().ToString("D");
+        try
+        {
+            await _koxoSyncWebhookTriggerService.TriggerAsync(
+                new KoxoSyncWebhookTriggerRequest(
+                    record.Id,
+                    record.ApprovedUserId,
+                    record.ApprovedCustomerReference,
+                    "password_set",
+                    correlationId,
+                    DateTime.UtcNow.ToString("O")),
+                cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(
+                exception,
+                "KoXo sync webhook trigger failed for signup_id {SignupId}, portal_user_id {PortalUserId}, customer_reference {CustomerReference}, correlation_id {CorrelationId}",
+                record.Id,
+                record.ApprovedUserId,
+                record.ApprovedCustomerReference,
+                correlationId);
+        }
     }
 
     private async Task<SignupOperationResult?> ProvisionActiveDirectoryAsync(

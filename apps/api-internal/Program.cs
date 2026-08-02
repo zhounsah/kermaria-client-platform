@@ -120,6 +120,8 @@ var authConfiguration = AuthConfigurationResolver.Resolve(
 var paypalConfiguration = PayPalConfigurationResolver.Resolve(builder.Configuration);
 var stripeConfiguration = StripeConfigurationResolver.Resolve(builder.Configuration);
 var signupConfiguration = SignupConfigurationResolver.Resolve(builder.Configuration);
+var koxoSyncWebhookConfiguration = KoxoSyncWebhookConfigurationResolver.Resolve(
+    builder.Configuration);
 var subscriptionProvisioningConfiguration =
     SubscriptionProvisioningConfigurationResolver.Resolve(builder.Configuration);
 var downloadStorageConfiguration = DownloadStorageConfigurationResolver.Resolve(
@@ -136,6 +138,7 @@ builder.Services.AddSingleton(authConfiguration);
 builder.Services.AddSingleton(paypalConfiguration);
 builder.Services.AddSingleton(stripeConfiguration);
 builder.Services.AddSingleton(signupConfiguration);
+builder.Services.AddSingleton(koxoSyncWebhookConfiguration);
 builder.Services.AddSingleton(subscriptionProvisioningConfiguration);
 builder.Services.AddSingleton(downloadStorageConfiguration);
 builder.Services.AddSingleton<IPortalPasswordService, PortalPasswordService>();
@@ -329,8 +332,22 @@ builder.Services.AddHttpClient(
         client.Timeout =
             TimeSpan.FromMilliseconds(bpceConfiguration.RequestTimeoutMs);
     });
+builder.Services.AddHttpClient(
+    KoxoSyncWebhookTriggerService.HttpClientName,
+    client =>
+    {
+        client.Timeout = koxoSyncWebhookConfiguration.Timeout;
+    });
 builder.Services.AddSingleton<IBpceTokenCache, BpceTokenCache>();
 builder.Services.AddSingleton<IBpceApiClient, BpceApiClient>();
+builder.Services.AddSingleton<IKoxoSyncWebhookTriggerService>(serviceProvider =>
+    koxoSyncWebhookConfiguration.Enabled
+        ? new KoxoSyncWebhookTriggerService(
+            koxoSyncWebhookConfiguration,
+            serviceProvider.GetRequiredService<IHttpClientFactory>(),
+            serviceProvider.GetRequiredService<
+                ILogger<KoxoSyncWebhookTriggerService>>())
+        : new DisabledKoxoSyncWebhookTriggerService());
 builder.Services.AddSingleton<IBpceInvoicingService>(serviceProvider =>
     bpceConfiguration.Mode switch
     {

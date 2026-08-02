@@ -1,18 +1,23 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 import type {
   CommercialOfferPaymentMode,
-  PublicPackCommitmentMonths,
   ResolvedPublicPackManifest,
 } from "@kermaria/shared";
 
 import { AddRecurringCheckoutButton } from "@/components/AddRecurringCheckoutButton";
 import { formatCurrencyFromCents } from "@/lib/formatters";
 import {
+  buildPublicPackSelectionBaseFingerprint,
+  isPackSelectionUnavailable,
+  normalizeCommitmentMonths,
+  resolvePublicPackCardSelection,
   type PublicPackSelectionInput,
+  type PublicPackSelectionOverride,
+  selectionToContactQueryString,
   selectionToQueryString,
 } from "@/lib/public-packs";
 
@@ -24,42 +29,38 @@ type PublicPackCardProps = {
   highlightLabel?: string | null;
 };
 
-export function PublicPackCard({
+export function PublicPackCard(props: PublicPackCardProps) {
+  const baseFingerprint = buildPublicPackSelectionBaseFingerprint(
+    props.pack,
+    props.initialSelection ?? null,
+  );
+
+  return <StatefulPublicPackCard {...props} key={baseFingerprint} />;
+}
+
+function StatefulPublicPackCard({
   pack,
   mode,
   signupEnabled = true,
   initialSelection = null,
   highlightLabel = null,
 }: PublicPackCardProps) {
-  const [commitmentMonths, setCommitmentMonths] =
-    useState<PublicPackCommitmentMonths>(
-      initialSelection?.packKey === pack.key
-        ? initialSelection.commitmentMonths
-        : 1,
-    );
-  const [paymentMode, setPaymentMode] = useState<CommercialOfferPaymentMode>(
-    initialSelection?.packKey === pack.key
-      ? initialSelection.paymentMode
-      : "monthly",
+  const [selectionOverride, setSelectionOverride] =
+    useState<PublicPackSelectionOverride | null>(null);
+  const cardSelection = resolvePublicPackCardSelection(
+    pack,
+    initialSelection,
+    selectionOverride,
   );
-  const rawPaymentMode = commitmentMonths === 1 ? "monthly" : paymentMode;
+  const { commitmentMonths, paymentMode } = cardSelection.selection;
 
   const variantGroup = pack.variantsByCommitment[commitmentMonths];
-  const variant =
-    rawPaymentMode === "upfront" && variantGroup.upfront
+  const variant = isPackSelectionUnavailable(pack, cardSelection.selection)
+    ? null
+    : paymentMode === "upfront"
       ? variantGroup.upfront
       : variantGroup.monthly;
-  const effectivePaymentMode =
-    rawPaymentMode === "upfront" && variantGroup.upfront ? "upfront" : "monthly";
-
-  const selection = useMemo<PublicPackSelectionInput>(
-    () => ({
-      packKey: pack.key,
-      commitmentMonths,
-      paymentMode: effectivePaymentMode,
-    }),
-    [commitmentMonths, effectivePaymentMode, pack.key],
-  );
+  const selection = cardSelection.selection;
 
   return (
     <article className="public-pack-card">
@@ -82,14 +83,22 @@ export function PublicPackCard({
           <span className="public-pack-control-label">Engagement</span>
           <select
             onChange={(event) => {
-              const nextCommitmentMonths = Number.parseInt(
+              const nextCommitmentMonths = normalizeCommitmentMonths(
                 event.target.value,
-                10,
-              ) as PublicPackCommitmentMonths;
-              setCommitmentMonths(nextCommitmentMonths);
-              if (nextCommitmentMonths === 1) {
-                setPaymentMode("monthly");
+              );
+              if (!nextCommitmentMonths) {
+                return;
               }
+              setSelectionOverride({
+                baseFingerprint: cardSelection.baseFingerprint,
+                packKey: pack.key,
+                commitmentMonths: nextCommitmentMonths,
+                paymentMode:
+                  nextCommitmentMonths === 1
+                  || !pack.variantsByCommitment[nextCommitmentMonths].upfront
+                    ? "monthly"
+                    : paymentMode,
+              });
             }}
             value={String(commitmentMonths)}
           >
@@ -99,16 +108,25 @@ export function PublicPackCard({
           </select>
         </label>
 
-        {commitmentMonths > 1 ? (
+        {!variant ? (
+          <div className="public-pack-fixed-choice">
+            <span className="public-pack-control-label">Paiement</span>
+            <strong>Comptant (indisponible)</strong>
+          </div>
+        ) : commitmentMonths > 1 && variantGroup.upfront ? (
           <label>
             <span className="public-pack-control-label">Paiement</span>
             <select
-              onChange={(event) =>
-                setPaymentMode(
-                  event.target.value as CommercialOfferPaymentMode,
-                )
-              }
-              value={effectivePaymentMode}
+              onChange={(event) => {
+                setSelectionOverride({
+                  baseFingerprint: cardSelection.baseFingerprint,
+                  packKey: pack.key,
+                  commitmentMonths,
+                  paymentMode:
+                    event.target.value as CommercialOfferPaymentMode,
+                });
+              }}
+              value={paymentMode}
             >
               <option value="monthly">Mensuel</option>
               <option value="upfront">Comptant</option>
@@ -117,12 +135,37 @@ export function PublicPackCard({
         ) : (
           <div className="public-pack-fixed-choice">
             <span className="public-pack-control-label">Paiement</span>
-            <strong>Mensuel</strong>
+            <strong>
+              Mensuel
+              {commitmentMonths > 1 ? " (comptant indisponible)" : ""}
+            </strong>
           </div>
         )}
       </div>
 
-      <div className="public-pack-pricing">
+      {!variant ? (
+        <div className="public-pack-pricing">
+          <div className="public-pack-price-main">
+            <strong>Indisponible</strong>
+            <span>La sélection comptant n&apos;est plus proposée.</span>
+          </div>
+          <button
+            className="button button-secondary"
+            onClick={() => {
+              setSelectionOverride({
+                baseFingerprint: cardSelection.baseFingerprint,
+                packKey: pack.key,
+                commitmentMonths,
+                paymentMode: "monthly",
+              });
+            }}
+            type="button"
+          >
+            Passer au mensuel
+          </button>
+        </div>
+      ) : (
+        <div className="public-pack-pricing">
         <div className="public-pack-price-main">
           <strong>{formatCurrencyFromCents(variant.monthlyPriceAmountCents)}</strong>
           <span>HT / mois</span>
@@ -132,9 +175,11 @@ export function PublicPackCard({
             ? `Remise ${variant.discountPercent}%`
             : "Sans remise"}
         </span>
-      </div>
+        </div>
+      )}
 
-      <dl className="public-pack-facts">
+      {!variant ? null : (
+        <dl className="public-pack-facts">
         <div>
           <dt>Mise en service</dt>
           <dd>{formatCurrencyFromCents(variant.setupFeeAmountCents)} HT</dd>
@@ -142,7 +187,7 @@ export function PublicPackCard({
         <div>
           <dt>Facturation</dt>
           <dd>
-            {effectivePaymentMode === "upfront"
+            {paymentMode === "upfront"
               ? `${formatCurrencyFromCents(variant.billingPriceAmountCents)} HT tous les ${variant.billingIntervalMonths} mois`
               : `${formatCurrencyFromCents(variant.billingPriceAmountCents)} HT/mois`}
           </dd>
@@ -151,7 +196,8 @@ export function PublicPackCard({
           <dt>Première échéance</dt>
           <dd>{formatCurrencyFromCents(variant.firstChargeAmountCents)} HT</dd>
         </div>
-      </dl>
+        </dl>
+      )}
 
       <div className="public-pack-columns">
         <div>
@@ -173,7 +219,7 @@ export function PublicPackCard({
       </div>
 
       <div className="public-pack-cta">
-        {mode === "signup" ? (
+        {!variant ? null : mode === "signup" ? (
           signupEnabled ? (
             <Link
               className="button"
@@ -184,7 +230,10 @@ export function PublicPackCard({
           ) : (
             <Link
               className="button"
-              href={`/contact?offer=${encodeURIComponent(variant.offer.id)}`}
+              href={`/contact?${selectionToContactQueryString(
+                selection,
+                variant.offer.id,
+              )}`}
             >
               Demander ce pack
             </Link>

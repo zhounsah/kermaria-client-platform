@@ -1,5 +1,10 @@
 # Exploitation V0.21
 
+> Navigation 1.0.0 : ce document reste le runbook principal pour lancer,
+> verifier, superviser et rollbacker la plateforme. Revenir a
+> [`V1.0.0_DOCUMENTATION.md`](V1.0.0_DOCUMENTATION.md) pour la vue
+> d'ensemble et les autres points d'entree.
+
 ## Objectif
 
 Ce runbook couvre l'installation, la validation, le demarrage, la supervision

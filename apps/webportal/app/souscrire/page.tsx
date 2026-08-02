@@ -49,6 +49,15 @@ export default async function SubscribePage() {
         && offer.priceAmountCents > 0,
     )
     .sort((a, b) => a.displayOrder - b.displayOrder);
+  const standaloneRecurringOffers = commercialCatalogResult.data
+    .filter(
+      (offer) =>
+        offer.status === "active"
+        && offer.billingCadence === "monthly"
+        && offer.publicPackCode === null
+        && offer.priceAmountCents > 0,
+    )
+    .sort((a, b) => a.displayOrder - b.displayOrder);
   const checkout = checkoutResult.data;
 
   return (
@@ -65,6 +74,7 @@ export default async function SubscribePage() {
       serviceCatalogCorrelationId={serviceCatalogResult.correlationId}
       serviceCatalogError={Boolean(serviceCatalogResult.error)}
       source={source}
+      standaloneRecurringOffers={standaloneRecurringOffers}
     />
   );
 }

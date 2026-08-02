@@ -265,7 +265,7 @@ export function AdminCatalogOfferForm({ offer }: AdminCatalogOfferFormProps) {
         />
         <span className="field-hint">
           Référence stable utilisée par les souscriptions, les options et le
-          provisionning.
+          provisionnement.
         </span>
       </label>
       <label>
@@ -417,7 +417,7 @@ export function AdminCatalogOfferForm({ offer }: AdminCatalogOfferFormProps) {
             </div>
           </dl>
           <p className="field-hint">
-            Ces metadonnees sont preservees automatiquement lors des mises a
+            Ces métadonnées sont préservées automatiquement lors des mises à
             jour de la fiche.
           </p>
         </div>

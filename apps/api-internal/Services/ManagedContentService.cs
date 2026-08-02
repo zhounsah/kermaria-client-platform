@@ -74,6 +74,13 @@ public sealed class ManagedContentService : IManagedContentService
             10,
             SeedFileName: "cgv.md"),
         new(
+            "legal:politique-confidentialite",
+            "legal",
+            "Politique de confidentialité",
+            "/politique-confidentialite",
+            15,
+            SeedFileName: "politique-confidentialite.md"),
+        new(
             "legal:mentions-legales",
             "legal",
             "Mentions légales",

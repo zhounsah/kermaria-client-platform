@@ -64,7 +64,7 @@ export default async function AdminCatalogPage({
           className="button button-secondary"
           href="/admin/public-pack-catalog"
         >
-          Gerer la vitrine packs
+          Gérer la vitrine packs
         </Link>
       </p>
 

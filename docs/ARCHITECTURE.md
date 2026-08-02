@@ -1,5 +1,10 @@
 # Architecture
 
+> Navigation 1.0.0 : commencer par
+> [`V1.0.0_DOCUMENTATION.md`](V1.0.0_DOCUMENTATION.md), puis revenir ici pour
+> la topologie et les flux autorises. Pour le fonctionnel, voir
+> [`V1.0.0_FUNCTIONAL_REFERENCE.md`](V1.0.0_FUNCTIONAL_REFERENCE.md).
+
 ## Vue d'ensemble
 
 La plateforme sépare strictement l'exposition publique des opérations internes

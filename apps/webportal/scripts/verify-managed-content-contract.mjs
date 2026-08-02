@@ -17,6 +17,7 @@ const adminContentPage = await read("app/admin/content/page.tsx");
 const adminContentDetailPage = await read("app/admin/content/[key]/page.tsx");
 const adminPackCatalogPage = await read("app/admin/public-pack-catalog/page.tsx");
 const cgvPage = await read("app/cgv/page.tsx");
+const privacyPage = await read("app/politique-confidentialite/page.tsx");
 const mentionsPage = await read("app/mentions-legales/page.tsx");
 const aProposPage = await read("app/a-propos/page.tsx");
 const packSheetPage = await read("app/offres/[slug]/page.tsx");
@@ -61,9 +62,14 @@ assert.match(
 );
 
 assert.match(cgvPage, /getPublicManagedContent\("legal:cgv"\)/);
+assert.match(
+  privacyPage,
+  /getPublicManagedContent\("legal:politique-confidentialite"\)/,
+);
 assert.match(mentionsPage, /getPublicManagedContent\("legal:mentions-legales"\)/);
 assert.match(aProposPage, /getPublicManagedContent\("page:a-propos"\)/);
 assert.doesNotMatch(cgvPage, /placeholder/i);
+assert.doesNotMatch(privacyPage, /placeholder/i);
 assert.doesNotMatch(mentionsPage, /placeholder/i);
 assert.doesNotMatch(aProposPage, /placeholder/i);
 

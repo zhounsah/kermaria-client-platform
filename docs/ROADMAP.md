@@ -1,5 +1,16 @@
 # Feuille de route
 
+> Lecture 1.0.0 : cette feuille de route sert a comprendre l'historique et les
+> jalons V0.xx. Pour l'etat courant et les points d'entree actuels, commencer
+> par [`V1.0.0_DOCUMENTATION.md`](V1.0.0_DOCUMENTATION.md).
+
+## Point de repere version 1.0.0
+
+- Le tag Git `v1.0.0` existe dans le depot.
+- Certains manifests techniques restent encore en `0.1.0`.
+- La lecture 1.0.0 doit donc s'appuyer sur le tag, le code courant et les
+  garde-fous documentes, plutot que sur les seuls numeros de package.
+
 ## Phase de tests : principe
 
 Tant que le serveur cible **R740xd** n'est pas livre, le projet reste en

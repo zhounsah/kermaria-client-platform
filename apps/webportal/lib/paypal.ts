@@ -75,7 +75,7 @@ export async function createPayPalOrder(
       purchase_units: [
         {
           reference_id: invoiceReference,
-          description: `Reglement facture ${invoiceReference}`,
+          description: `Règlement facture ${invoiceReference}`,
           amount: {
             currency_code: currency,
             value: amount,
@@ -312,7 +312,7 @@ export async function cancelPayPalSubscription(
 
   const err = await response.text();
   throw new Error(
-    `Annulation souscription PayPal echouee : ${response.status} ${err}`,
+    `Annulation souscription PayPal échouée : ${response.status} ${err}`,
   );
 }
 
@@ -347,7 +347,7 @@ export async function createPayPalSubscription(
   if (!response.ok) {
     const err = await response.text();
     throw new Error(
-      `Creation souscription PayPal echouee : ${response.status} ${err}`,
+      `Création souscription PayPal échouée : ${response.status} ${err}`,
     );
   }
 

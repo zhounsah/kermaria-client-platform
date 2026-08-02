@@ -1,5 +1,10 @@
 # Deploiement
 
+> Navigation 1.0.0 : pour l'ordre de lecture global, voir
+> [`V1.0.0_DOCUMENTATION.md`](V1.0.0_DOCUMENTATION.md). Pour les commandes
+> quotidiennes, validations et rollback, voir d'abord
+> [`OPERATIONS.md`](OPERATIONS.md).
+
 Pour le deploiement concret Windows Server 2022 sans VM (SRV-01
 WEBPORTAL + SRV-02 API-INTERNAL + SRV-07 MariaDB, cible actuelle en
 phase de tests), voir le runbook dedie

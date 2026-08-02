@@ -104,10 +104,10 @@ export function AdminSubscriptionProvisioningManager({
       )}
 
       <div style={{ marginTop: 18 }}>
-        <h3>Utilisateurs vises</h3>
+        <h3>Utilisateurs visés</h3>
         {targetUsers.length === 0 ? (
           <p className="field-hint">
-            Aucun lien AD utilisateur n&apos;est actuellement rattache a ce client.
+            Aucun lien AD utilisateur n&apos;est actuellement rattaché à ce client.
           </p>
         ) : (
           <ul className="stack-list">

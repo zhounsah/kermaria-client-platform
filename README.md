@@ -12,6 +12,36 @@ browser -> WEBPORTAL / BFF -> API-INTERNAL -> MariaDB
 
 `WEBPORTAL` ne doit jamais acceder directement a MariaDB.
 
+## Documentation 1.0.0
+
+Le point d'entree documentaire courant est
+[`docs/V1.0.0_DOCUMENTATION.md`](docs/V1.0.0_DOCUMENTATION.md).
+
+Pour une prise en main rapide :
+
+1. [`docs/V1.0.0_DOCUMENTATION.md`](docs/V1.0.0_DOCUMENTATION.md)
+2. [`docs/IMPLEMENTATION_MAP_CURRENT.md`](docs/IMPLEMENTATION_MAP_CURRENT.md)
+3. [`docs/V1.0.0_FUNCTIONAL_REFERENCE.md`](docs/V1.0.0_FUNCTIONAL_REFERENCE.md)
+4. [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+5. [`docs/OPERATIONS.md`](docs/OPERATIONS.md)
+
+Navigation par besoin :
+
+- vue d'ensemble : [`docs/V1.0.0_DOCUMENTATION.md`](docs/V1.0.0_DOCUMENTATION.md)
+- architecture et frontieres : [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+- parcours fonctionnels : [`docs/V1.0.0_FUNCTIONAL_REFERENCE.md`](docs/V1.0.0_FUNCTIONAL_REFERENCE.md)
+- exploitation, validation, rollback : [`docs/OPERATIONS.md`](docs/OPERATIONS.md)
+- deploiement et variables : [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)
+- securite : [`docs/SECURITY.md`](docs/SECURITY.md)
+- historique des versions : [`docs/ROADMAP.md`](docs/ROADMAP.md)
+
+Repere de version important :
+
+- le tag Git `v1.0.0` existe ;
+- certains manifests techniques restent en `0.1.0` ;
+- la reference de verite est donc le tag Git et l'etat reel du depot, pas les
+  seuls champs `version` des packages.
+
 ## Etat courant V0.27 + V0.29 Stripe + V0.30 partiel + V0.32/V0.33 packs + V0.35/V0.36 checkout + V0.37 downloads + V0.24 infra debout
 
 Le depot couvre aujourd'hui les jalons V0.9 a V0.31 + V0.35 + V0.36 (voir

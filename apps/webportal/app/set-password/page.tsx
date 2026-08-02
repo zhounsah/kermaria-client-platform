@@ -112,7 +112,7 @@ export default async function SetPasswordPage({
       };
 
   const valid = validation.ok;
-  const expiréd = validation.code === "TOKEN_EXPIRED";
+  const expired = validation.code === "TOKEN_EXPIRED";
   const serviceUnavailable =
     validation.code === "INTERNAL_API_UNAVAILABLE";
 
@@ -144,7 +144,7 @@ export default async function SetPasswordPage({
               <Link href="/contact">contactez-nous</Link> si le problème
               persiste.
             </p>
-          ) : expiréd ? (
+          ) : expired ? (
             <p>
               Ce lien de définition de mot de passe a expiré. Contactez notre
               équipe pour obtenir un nouveau lien, ou{" "}
