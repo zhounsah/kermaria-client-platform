@@ -1,0 +1,248 @@
+$modulePath = Join-Path (Split-Path -Parent $PSScriptRoot) 'KoxoSync.Common.psm1'
+Import-Module $modulePath -Force
+
+function New-KoxoTestPayload {
+    param(
+        [string]$Identifier = 'CLI-000001'
+    )
+
+    [pscustomobject]@{
+        schemaVersion = 1
+        generatedAt = '2026-07-30T08:00:00.0000000Z'
+        userCount = 1
+        users = @(
+            [pscustomobject]@{
+                civilite = 'Mme'
+                nom = 'Hounsa'
+                prenom = 'Zoe'
+                dateNaissance = '1994-03-22'
+                identifiantUnique = $Identifier
+                groupeSecondaire = 'CLI-DEMO-0042'
+                email = 'zoe.hounsa@example.invalid'
+            }
+        )
+    }
+}
+
+Describe 'Test-KoxoExportPayload' {
+    It 'validates the expected JSON contract' {
+        $result = Test-KoxoExportPayload -Payload (New-KoxoTestPayload)
+        $result.IsValid | Should Be $true
+        $result.Errors.Count | Should Be 0
+    }
+
+    It 'rejects invalid payloads globally' {
+        $payload = New-KoxoTestPayload
+        $payload.userCount = 2
+        $payload.users[0].dateNaissance = '22/03/1994'
+        $payload.users[0].civilite = 'Autre'
+        $result = Test-KoxoExportPayload -Payload $payload
+        $result.IsValid | Should Be $false
+        @($result.Errors | Where-Object { $_.Field -eq 'userCount' }).Count | Should Be 1
+        @($result.Errors | Where-Object { $_.Field -eq 'dateNaissance' }).Count | Should Be 1
+        @($result.Errors | Where-Object { $_.Field -eq 'civilite' }).Count | Should Be 1
+    }
+}
+
+Describe 'ConvertTo-KoxoCsvContent' {
+    It 'generates 13 semicolon-separated columns' {
+        $content = ConvertTo-KoxoCsvContent -Users (New-KoxoTestPayload).users
+        ($content -split "`r`n")[0] | Should Be 'Civilite;Nom;Prenom;DateNaissance;IdentifiantUnique;GroupeSecondaire;Email;Telephone;TelephoneMobile;Fax;PageWeb;ChampLibre;Fonction'
+        $root = Join-Path $env:TEMP ('koxo-csv-' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        $path = Join-Path $root 'users.csv'
+        Write-KoxoTextFile -Path $path -Content $content -EncodingName 'utf8'
+        { Test-KoxoCsvFile -Path $path } | Should Not Throw
+    }
+
+    It 'preserves accents, quotes, and separators through escaping' {
+        $payload = New-KoxoTestPayload
+        $payload.users[0].nom = 'Le "Grand"; Hôtel'
+        $payload.users[0].prenom = 'Élise'
+        $content = ConvertTo-KoxoCsvContent -Users $payload.users
+        $content | Should Match '""Grand""; Hôtel'
+
+        $root = Join-Path $env:TEMP ('koxo-encoding-' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        $path = Join-Path $root 'users.csv'
+        Write-KoxoTextFile -Path $path -Content $content -EncodingName 'unicode'
+        { Test-KoxoCsvFile -Path $path } | Should Not Throw
+        ([System.IO.File]::ReadAllBytes($path)[0]) | Should Be 255
+    }
+}
+
+Describe 'Invoke-KoxoSafeReplacement' {
+    It 'replaces safely and keeps backups' {
+        $root = Join-Path $env:TEMP ('koxo-replace-' + [guid]::NewGuid().ToString('N'))
+        $backup = Join-Path $root 'backups'
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        $target = Join-Path $root 'users.csv'
+        $temp = Join-Path $root 'users.csv.tmp'
+        Set-Content -LiteralPath $target -Value 'old' -Encoding UTF8
+        Set-Content -LiteralPath $temp -Value 'new' -Encoding UTF8
+
+        $result = Invoke-KoxoSafeReplacement -TempPath $temp -TargetPath $target -BackupDirectory $backup -RetentionCount 2
+        (Get-Content -LiteralPath $target -Raw) | Should Match 'new'
+        $result.BackupPath | Should Not BeNullOrEmpty
+        Test-Path -LiteralPath $result.BackupPath | Should Be $true
+    }
+}
+
+Describe 'Acquire-KoxoFileLock' {
+    It 'prevents concurrent runs' {
+        $root = Join-Path $env:TEMP ('koxo-lock-' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        $path = Join-Path $root 'sync.lock'
+        $first = Acquire-KoxoFileLock -LockPath $path
+        try {
+            { Acquire-KoxoFileLock -LockPath $path } | Should Throw
+        }
+        finally {
+            Release-KoxoFileLock -LockHandle $first
+        }
+    }
+}
+
+Describe 'Test-KoxoApiUrl' {
+    It 'rejects insecure HTTP outside local execution by default' {
+        { Test-KoxoApiUrl -ApiUrl 'http://172.16.90.1:3000/api/internal/koxo/users' } | Should Throw
+    }
+
+    It 'accepts insecure HTTP outside local execution only with explicit override' {
+        { Test-KoxoApiUrl -ApiUrl 'http://172.16.90.1:3000/api/internal/koxo/users' -AllowInsecureHttp } | Should Not Throw
+    }
+}
+
+Describe 'Test-KoxoLogOutcome' {
+    It 'accepts a recent KoXo log with accepted parameter and end marker' {
+        $root = Join-Path $env:TEMP ('koxo-log-' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        $logPath = Join-Path $root 'CLIENTS-20260730.log'
+        @'
+Parametre accepte : /Synchro=CLIENTS.xml
+Ajout/Modification de l'utilisateur
+Fin de l'operation
+'@ | Set-Content -LiteralPath $logPath -Encoding UTF8
+
+        $result = Test-KoxoLogOutcome -GlobPattern (Join-Path $root '*') -NotBeforeUtc (Get-Date).ToUniversalTime().AddMinutes(-1)
+        $result.HasRecentLog | Should Be $true
+        $result.IsSuccessful | Should Be $true
+        $result.AcceptedMarker | Should Be $true
+        $result.CompletionMarker | Should Be $true
+        $result.BlockingError | Should Be $false
+    }
+
+}
+
+Describe 'Invoke-KoxoSync' {
+    It 'supports DryRun without touching the target file or logging the token' {
+        $root = Join-Path $env:TEMP ('koxo-dryrun-' + [guid]::NewGuid().ToString('N'))
+        $targetRoot = Join-Path $root 'target'
+        $workRoot = Join-Path $root 'work'
+        New-Item -ItemType Directory -Path $targetRoot -Force | Out-Null
+        New-Item -ItemType Directory -Path $workRoot -Force | Out-Null
+        $target = Join-Path $targetRoot 'users.csv'
+        $token = 'TOPSECRET-TOKEN-DO-NOT-LOG'
+
+        $result = Invoke-KoxoSync `
+            -CsvTargetPath $target `
+            -WorkingDirectory $workRoot `
+            -DryRun `
+            -Overrides @{
+                KOXO_API_URL = 'https://localhost/api/internal/koxo/users'
+                KOXO_API_TOKEN = $token
+                KOXO_ALLOW_INSECURE_HTTP = 'false'
+                KOXO_CSV_ENCODING = 'utf8'
+                KOXO_MIN_USER_COUNT = '0'
+                KOXO_MAX_USER_DROP_PERCENT = '100'
+                KOXO_SYNC_TIMEOUT_SECONDS = '10'
+                KOXO_LOG_DIRECTORY = (Join-Path $workRoot 'logs')
+                KOXO_KOXO_LOG_GLOB = ''
+                KOXO_BACKUP_RETENTION_COUNT = '2'
+            } `
+            -PayloadObject (New-KoxoTestPayload)
+
+        $result.Status | Should Be 'dry_run'
+        Test-Path -LiteralPath $target | Should Be $false
+        (Get-Content -LiteralPath $result.LogPath -Raw) | Should Not Match $token
+    }
+
+    It 'can launch a post-sync process when explicitly requested' {
+        $root = Join-Path $env:TEMP ('koxo-launch-' + [guid]::NewGuid().ToString('N'))
+        $targetRoot = Join-Path $root 'target'
+        $workRoot = Join-Path $root 'work'
+        New-Item -ItemType Directory -Path $targetRoot -Force | Out-Null
+        New-Item -ItemType Directory -Path $workRoot -Force | Out-Null
+        $target = Join-Path $targetRoot 'users.csv'
+
+        $result = Invoke-KoxoSync `
+            -CsvTargetPath $target `
+            -WorkingDirectory $workRoot `
+            -LaunchKoxo `
+            -KoxoExecutablePath $env:ComSpec `
+            -KoxoWorkingDirectory $targetRoot `
+            -KoxoSyncArgument '/c exit 0' `
+            -Overrides @{
+                KOXO_API_URL = 'https://localhost/api/internal/koxo/users'
+                KOXO_API_TOKEN = 'LOCAL-TEST-TOKEN'
+                KOXO_ALLOW_INSECURE_HTTP = 'false'
+                KOXO_CSV_ENCODING = 'utf8'
+                KOXO_MIN_USER_COUNT = '0'
+                KOXO_MAX_USER_DROP_PERCENT = '100'
+                KOXO_SYNC_TIMEOUT_SECONDS = '10'
+                KOXO_LOG_DIRECTORY = (Join-Path $workRoot 'logs')
+                KOXO_KOXO_LOG_GLOB = ''
+                KOXO_BACKUP_RETENTION_COUNT = '2'
+            } `
+            -PayloadObject (New-KoxoTestPayload)
+
+        $result.Status | Should Be 'synchronized_and_launched'
+        $result.KoxoLaunch.Status | Should Be 'completed'
+        $result.KoxoLaunch.ExitCode | Should Be 0
+        Test-Path -LiteralPath $target | Should Be $true
+    }
+
+    It 'accepts a non-zero KoXo exit code when the recent KoXo log proves success' {
+        $root = Join-Path $env:TEMP ('koxo-launch-log-' + [guid]::NewGuid().ToString('N'))
+        $targetRoot = Join-Path $root 'target'
+        $workRoot = Join-Path $root 'work'
+        $koxoLogRoot = Join-Path $root 'koxo-logs'
+        New-Item -ItemType Directory -Path $targetRoot -Force | Out-Null
+        New-Item -ItemType Directory -Path $workRoot -Force | Out-Null
+        New-Item -ItemType Directory -Path $koxoLogRoot -Force | Out-Null
+        $target = Join-Path $targetRoot 'users.csv'
+        $logPath = Join-Path $koxoLogRoot 'CLIENTS-20260730.log'
+        @'
+Parametre accepte : /Synchro=CLIENTS.xml
+Ajout/Modification de l'utilisateur
+Fin de l'operation
+'@ | Set-Content -LiteralPath $logPath -Encoding UTF8
+
+        $result = Invoke-KoxoSync `
+            -CsvTargetPath $target `
+            -WorkingDirectory $workRoot `
+            -LaunchKoxo `
+            -KoxoExecutablePath $env:ComSpec `
+            -KoxoWorkingDirectory $targetRoot `
+            -KoxoSyncArgument '/c exit 1' `
+            -Overrides @{
+                KOXO_API_URL = 'https://localhost/api/internal/koxo/users'
+                KOXO_API_TOKEN = 'LOCAL-TEST-TOKEN'
+                KOXO_ALLOW_INSECURE_HTTP = 'false'
+                KOXO_CSV_ENCODING = 'utf8'
+                KOXO_MIN_USER_COUNT = '0'
+                KOXO_MAX_USER_DROP_PERCENT = '100'
+                KOXO_SYNC_TIMEOUT_SECONDS = '10'
+                KOXO_LOG_DIRECTORY = (Join-Path $workRoot 'logs')
+                KOXO_KOXO_LOG_GLOB = (Join-Path $koxoLogRoot '*')
+                KOXO_BACKUP_RETENTION_COUNT = '2'
+            } `
+            -PayloadObject (New-KoxoTestPayload)
+
+        $result.Status | Should Be 'synchronized_and_launched'
+        $result.KoxoLaunch.Status | Should Be 'completed_with_nonzero_exit'
+        $result.KoxoLaunch.ExitCode | Should Be 1
+        $result.KoxoLaunch.LogSuccessful | Should Be $true
+        Test-Path -LiteralPath $target | Should Be $true
+    }
+}

@@ -319,13 +319,13 @@ export default async function AdminSubscriptionDetailPage({
 function describeProvisioningResultLabel(code: string) {
   switch (code) {
     case "PROVISIONING_SYNCHRONIZED":
-      return "Les groupes AD sont maintenant synchronises avec la souscription.";
+      return "Les groupes AD sont maintenant synchronisés avec la souscription.";
     case "PROVISIONING_APPLIED":
-      return "Le provisionning AD a été applique avec succes.";
+      return "Le provisionnement AD a été appliqué avec succès.";
     case "PROVISIONING_UNCHANGED":
-      return "Aucune modification AD n'etait necessaire.";
+      return "Aucune modification AD n'était nécessaire.";
     case "AD_GROUP_SCOPE_INCOMPATIBLE":
-      return "Le groupe AD cible n'accepte pas l'appartenance demandee avec la portee actuelle.";
+      return "Le groupe AD cible n'accepte pas l'appartenance demandée avec la portée actuelle.";
     case "PROVISIONING_GROUP_NOT_CONFIGURED":
       return "Au moins un groupe AD requis n'est pas configure.";
     case "AD_UNAVAILABLE":
@@ -345,7 +345,7 @@ function describeProvisioningResult(code: string | null) {
   }
 
   if (code === "PROVISIONING_NO_TARGET_USERS") {
-    return "Aucun utilisateur lié n'est disponible pour le provisionning.";
+    return "Aucun utilisateur lié n'est disponible pour le provisionnement.";
   }
 
   return describeProvisioningResultLabel(code) ?? code;

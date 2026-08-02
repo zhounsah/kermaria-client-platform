@@ -441,7 +441,7 @@ export function AdminDownloadForm({
               <div>
                 <span className="card-kicker">Métadonnées</span>
                 <h2>Présentation client</h2>
-                <p>Nom, description, catégorie et ordre d'affichage.</p>
+                <p>Nom, description, catégorie et ordre d&apos;affichage.</p>
               </div>
             </div>
 
@@ -461,7 +461,7 @@ export function AdminDownloadForm({
               </label>
 
               <label>
-                Ordre d'affichage
+                Ordre d&apos;affichage
                 <input
                   inputMode="numeric"
                   onChange={(event) =>
@@ -588,7 +588,7 @@ export function AdminDownloadForm({
                 </label>
                 <p className="field-hint">
                   Le fichier est stocké côté API interne, hors web root, puis servi
-                  uniquement après contrôle d'accès.
+                  uniquement après contrôle d&apos;accès.
                 </p>
                 {download?.hasInternalFile ? (
                   <div className="admin-download-file-current">
@@ -617,7 +617,7 @@ export function AdminDownloadForm({
             <div className="section-heading">
               <div>
                 <span className="card-kicker">Visibilité</span>
-                <h2>Règles d'accès</h2>
+                <h2>Règles d&apos;accès</h2>
                 <p>Réservez la ressource à certains packs, offres ou services actifs.</p>
               </div>
             </div>
@@ -660,11 +660,11 @@ export function AdminDownloadForm({
                   <legend>Offres catalogue</legend>
                   {!offerCatalogAvailable ? (
                     <FormMessage title="Catalogue temporairement indisponible" tone="info">
-                      Aucune offre catalogue avec référence externe n'est encore disponible.
+                      Aucune offre catalogue avec référence externe n&apos;est encore disponible.
                     </FormMessage>
                   ) : offerOptions.length === 0 ? (
                     <p className="field-hint">
-                      Aucune offre catalogue avec rÃ©fÃ©rence externe n'est encore disponible.
+                      Aucune offre catalogue avec rÃ©fÃ©rence externe n&apos;est encore disponible.
                     </p>
                   ) : (
                     offerOptions.map((offer) => (
@@ -715,7 +715,7 @@ export function AdminDownloadForm({
               <div>
                 <span className="card-kicker">Compléments</span>
                 <h2>Informations optionnelles</h2>
-                <p>Version, date implicite via mise à jour, et consignes d'installation.</p>
+                <p>Version, date implicite via mise à jour, et consignes d&apos;installation.</p>
               </div>
             </div>
 
@@ -734,7 +734,7 @@ export function AdminDownloadForm({
             </div>
 
             <label>
-              Consignes d'installation
+              Consignes d&apos;installation
               <textarea
                 maxLength={4000}
                 onChange={(event) =>
@@ -786,7 +786,7 @@ export function AdminDownloadForm({
               <h2>Actions sensibles</h2>
               <p>
                 Retirez le binaire interne ou supprimez définitivement la ressource
-                si elle n'est plus utilisée.
+                si elle n&apos;est plus utilisée.
               </p>
               <div className="stack-row">
                 {download.hasInternalFile ? (

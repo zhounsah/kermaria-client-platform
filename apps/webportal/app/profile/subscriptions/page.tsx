@@ -33,7 +33,7 @@ const FLASH_MESSAGES: Record<
     tone: "success",
     label: "Souscription approuvée",
     text:
-      "Votre souscription est en cours d'activation. Le provisioning démarrera automatiquement après validation.",
+      "Votre souscription est en cours d'activation. Le provisionnement démarrera automatiquement après validation.",
   },
   cancelled: {
     tone: "warning",
@@ -201,7 +201,7 @@ export default async function ProfileSubscriptionsPage({
                       <dd>{item.offerExternalReference ?? "—"}</dd>
                     </div>
                     <div>
-                      <dt>Identifiant paiement</dt>
+                        <dt>Identifiant de paiement</dt>
                       <dd>
                         {item.rail === "stripe"
                           ? item.stripeSubscriptionId ?? "—"

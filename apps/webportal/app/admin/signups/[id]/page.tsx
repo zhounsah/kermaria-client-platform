@@ -47,11 +47,11 @@ export default async function AdminSignupDetailPage({ params }: PageProps) {
 
   const signup = result.data;
   const decisionDescription = signup.status === "approved"
-    ? "Le compte client existe déjà. Tant que le mot de passe initial n'a pas ete défini, vous pouvez l'initialiser vous-même ou renvoyer un nouveau lien. Cette définition de mot de passe finalise aussi l'identité dans clients.home.bzh quand l'écriture AD est active."
-    : "L'approbation créé le client et l'utilisateur portail, puis envoie un lien de définition du mot de passe. L'identité Active Directory n'est creee qu'au moment de cette définition dans clients.home.bzh.";
+    ? "Le compte client existe déjà. Tant que le mot de passe initial n'a pas été défini, vous pouvez l'initialiser vous-même ou renvoyer un nouveau lien. Cette définition de mot de passe finalise aussi l'identité dans clients.home.bzh quand l'écriture AD est active."
+    : "L'approbation crée le client et l'utilisateur portail, puis envoie un lien de définition du mot de passe. L'identité Active Directory n'est créée qu'au moment de cette définition dans clients.home.bzh.";
   const decisionTitle = signup.status === "approved"
     ? "Accès en attente"
-    : "Decision";
+    : "Décision";
 
   return (
     <>
@@ -62,7 +62,7 @@ export default async function AdminSignupDetailPage({ params }: PageProps) {
             tone={signupStatusTone(signup.status)}
           />
         }
-        description="Detail de la demande et trajectoire d'ouverture du compte."
+        description="Détail de la demande et trajectoire d'ouverture du compte."
         eyebrow="Relation client"
         title={signup.companyName}
       />
@@ -82,7 +82,7 @@ export default async function AdminSignupDetailPage({ params }: PageProps) {
               <dd>{localizeCustomerType(signup.customer?.customerType)}</dd>
             </div>
             <div>
-              <dt>Societe</dt>
+              <dt>Société</dt>
               <dd>{signup.customer?.displayName ?? signup.companyName}</dd>
             </div>
             <div>
@@ -90,7 +90,7 @@ export default async function AdminSignupDetailPage({ params }: PageProps) {
               <dd>{signup.customer?.billingEmail ?? signup.email}</dd>
             </div>
             <div>
-              <dt>Telephone</dt>
+              <dt>Téléphone</dt>
               <dd>{signup.customer?.phone ?? signup.phone ?? "-"}</dd>
             </div>
             <div>
@@ -104,7 +104,7 @@ export default async function AdminSignupDetailPage({ params }: PageProps) {
               </dd>
             </div>
             <div>
-              <dt>Recue le</dt>
+              <dt>Reçue le</dt>
               <dd>{formatDateTime(signup.createdAt)}</dd>
             </div>
             <div>
@@ -113,13 +113,13 @@ export default async function AdminSignupDetailPage({ params }: PageProps) {
             </div>
             {signup.approvedAt ? (
               <div>
-                <dt>Approuvee le</dt>
+                <dt>Approuvée le</dt>
                 <dd>{formatDateTime(signup.approvedAt)}</dd>
               </div>
             ) : null}
             {signup.rejectedAt ? (
               <div>
-                <dt>Refusee le</dt>
+                <dt>Refusée le</dt>
                 <dd>{formatDateTime(signup.rejectedAt)}</dd>
               </div>
             ) : null}
@@ -134,11 +134,15 @@ export default async function AdminSignupDetailPage({ params }: PageProps) {
               <dd>{signup.primaryUser?.displayName ?? signup.contactName}</dd>
             </div>
             <div>
-              <dt>Civilite</dt>
+              <dt>Civilité</dt>
               <dd>{localizePersonalTitle(signup.primaryUser?.personalTitle)}</dd>
             </div>
             <div>
-              <dt>Prenom</dt>
+              <dt>Date de naissance</dt>
+              <dd>{signup.primaryUser?.birthDate ?? "-"}</dd>
+            </div>
+            <div>
+              <dt>Prénom</dt>
               <dd>{signup.primaryUser?.givenName ?? "-"}</dd>
             </div>
             <div>
@@ -154,7 +158,7 @@ export default async function AdminSignupDetailPage({ params }: PageProps) {
               <dd>{signup.primaryUser?.email ?? signup.email}</dd>
             </div>
             <div>
-              <dt>Telephone</dt>
+              <dt>Téléphone</dt>
               <dd>{signup.primaryUser?.phone ?? signup.phone ?? "-"}</dd>
             </div>
             <div>
@@ -180,7 +184,7 @@ export default async function AdminSignupDetailPage({ params }: PageProps) {
                 <dd>{signup.packSelection.packLabel}</dd>
               </div>
               <div>
-                <dt>Reference</dt>
+                <dt>Référence</dt>
                 <dd>{signup.packSelection.offerExternalReference}</dd>
               </div>
               <div>
@@ -192,7 +196,7 @@ export default async function AdminSignupDetailPage({ params }: PageProps) {
                 <dd>
                   {signup.packSelection.paymentMode === "upfront"
                     ? "Comptant"
-                    : "Mensualise"}
+                    : "Mensualisé"}
                 </dd>
               </div>
               <div>
@@ -234,7 +238,7 @@ export default async function AdminSignupDetailPage({ params }: PageProps) {
         {signup.accountAccess ? (
           <dl className="detail-grid">
             <div>
-              <dt>Reference client</dt>
+              <dt>Référence client</dt>
               <dd>{signup.accountAccess.customerReference ?? "-"}</dd>
             </div>
             <div>
@@ -242,7 +246,7 @@ export default async function AdminSignupDetailPage({ params }: PageProps) {
               <dd>{signup.accountAccess.passwordDefined ? "Oui" : "Non"}</dd>
             </div>
             <div>
-              <dt>Echeance du lien</dt>
+              <dt>Échéance du lien</dt>
               <dd>
                 {signup.accountAccess.passwordSetupExpiresAt
                   ? formatDateTime(signup.accountAccess.passwordSetupExpiresAt)
@@ -254,7 +258,7 @@ export default async function AdminSignupDetailPage({ params }: PageProps) {
               <dd>{localizeAccessStatus(signup.accountAccess.adProvisioningStatus)}</dd>
             </div>
             <div>
-              <dt>Derniere synchro mot de passe</dt>
+              <dt>Dernière synchro mot de passe</dt>
               <dd>{localizeAccessStatus(signup.accountAccess.lastPasswordSyncStatus)}</dd>
             </div>
             <div>
@@ -272,13 +276,13 @@ export default async function AdminSignupDetailPage({ params }: PageProps) {
           </dl>
         ) : (
           <p className="field-hint">
-            Aucun accès n'a encore été créé. Cette section se renseignera après
+            Aucun accès n&apos;a encore été créé. Cette section se renseignera après
             approbation de la demande.
           </p>
         )}
       </SectionCard>
 
-      <SectionCard ariaLabel="Decision de validation">
+      <SectionCard ariaLabel="Décision de validation">
         <SectionHeading
           description={decisionDescription}
           title={decisionTitle}
@@ -335,8 +339,6 @@ function localizePersonalTitle(value: string | null | undefined) {
       return "Madame";
     case "monsieur":
       return "Monsieur";
-    case "autre":
-      return "Autre";
     default:
       return "-";
   }
@@ -355,13 +357,13 @@ function localizeBoolean(value: boolean | null | undefined) {
 function localizeAccessStatus(value: string | null | undefined) {
   switch (value) {
     case "succeeded":
-      return "Succes";
+      return "Succès";
     case "pending":
       return "En attente";
     case "koxo_pending":
       return "En attente KoXo";
     case "failed":
-      return "En echec";
+      return "En échec";
     default:
       return value ? humanizeToken(value) : "-";
   }

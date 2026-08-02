@@ -382,6 +382,14 @@ Quatre surfaces IIS :
 - `kermaria-portal-home-redirect` sur `administration.home.bzh` et
   `dashboard.home.bzh` (redirection vers les hosts canoniques).
 
+Convention canonique retenue :
+
+- public : `www.zacharyhounsa.ovh`
+- client : `dashboard.zacharyhounsa.ovh`
+- admin : `administration.zacharyhounsa.ovh`
+- `portail.home.bzh` est un alias historique a rediriger vers
+  `dashboard.zacharyhounsa.ovh`, pas un host canonique
+
 ### HSTS progressif
 
 Ne **pas** activer HSTS `preload` au premier boot. Ajouter dans

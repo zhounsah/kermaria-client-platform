@@ -692,7 +692,7 @@ public sealed class DownloadService : IDownloadService
         var subscriptions = await _subscriptions.GetByCustomerAsync(
             session.CustomerId,
             cancellationToken);
-        var services = await _serviceCatalogService.GetServicesAsync(
+        var activeServiceTypes = await _serviceCatalogService.GetActiveServiceTypesAsync(
             session,
             cancellationToken);
 
@@ -710,10 +710,9 @@ public sealed class DownloadService : IDownloadService
             .Where(value => !string.IsNullOrWhiteSpace(value))
             .Select(value => value!)
             .ToHashSet(StringComparer.Ordinal);
-        var serviceTypes = services
-            .Where(service => service.Status == "active")
-            .Select(service => service.Type)
-            .ToHashSet(StringComparer.Ordinal);
+        var serviceTypes = new HashSet<string>(
+            activeServiceTypes,
+            StringComparer.OrdinalIgnoreCase);
         var provisioningGroups =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var subscription in activeSubscriptions)

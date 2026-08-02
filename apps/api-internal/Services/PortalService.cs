@@ -124,7 +124,7 @@ public sealed class PortalService : IPortalService
                 cancellationToken);
             if (!isKnownService)
             {
-                throw new PortalValidationException();
+                throw new PortalAccessDeniedException();
             }
         }
 

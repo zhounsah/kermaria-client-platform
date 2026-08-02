@@ -87,6 +87,31 @@ export function getInternalServiceHeaders(): Record<string, string> {
     : {};
 }
 
+export function getKoxoExportApiToken() {
+  const token = process.env.KOXO_EXPORT_API_TOKEN?.trim();
+  if (!token || isPlaceholderSecret(token)) {
+    throw new ServerRuntimeConfigurationError("KOXO_EXPORT_API_TOKEN");
+  }
+
+  return token;
+}
+
+export function getKoxoExportAllowedIps() {
+  return (process.env.KOXO_EXPORT_ALLOWED_IPS ?? "")
+    .split(/[;,\r\n]+/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+export function shouldRequireKoxoExportHttps() {
+  const configured = process.env.KOXO_EXPORT_REQUIRE_HTTPS?.trim().toLowerCase();
+  if (!configured) {
+    return process.env.NODE_ENV === "production";
+  }
+
+  return configured !== "false";
+}
+
 export function validateServerRuntimeConfiguration() {
   getInternalApiUrl();
   getInternalServiceHeaders();

@@ -1,5 +1,10 @@
 # Contrat d'API
 
+> Navigation 1.0.0 : utiliser
+> [`V1.0.0_DOCUMENTATION.md`](V1.0.0_DOCUMENTATION.md) comme index principal.
+> Ce document decrit surtout les surfaces et contrats techniques, pas toute la
+> lecture produit.
+
 ## Surfaces
 
 Le navigateur accède uniquement à `WEBPORTAL` :

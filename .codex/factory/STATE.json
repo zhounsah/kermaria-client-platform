@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 1,
+  "roadmapVersion": "2026-07-29",
+  "updatedAt": "2026-07-29T19:18:09Z",
+  "repository": {
+    "root": ".",
+    "expectedBranch": "chore/remise-a-plat-agentique",
+    "baseRef": "origin/main",
+    "baseCommit": "c470f56bfb99453d1454ab3685ef456ab44d0e45",
+    "snapshotRef": "backup/snapshot-avant-remise-a-plat-2026-07-29",
+    "snapshotCommit": "7fceb0d141b84ad08306fb8dbe4dad7dc880201d",
+    "snapshotPolicy": "reference_only"
+  },
+  "runStatus": "READY_TO_RUN",
+  "currentPhase": "P04",
+  "currentStep": "PRECHECK",
+  "attempts": {
+    "qaRuns": 0,
+    "correctionCycles": 0,
+    "noProgressCycles": 0,
+    "lastFailureFingerprint": null
+  },
+  "completedPhases": [
+    {
+      "id": "P00",
+      "commits": [
+        "7c07b05ee33539c79f4ec49c7ac744adae3caed8",
+        "e60a609d8b7f9d04bb2840d4c2f8203f9764d71f",
+        "0c2be86dc52e89b239588128553a4da66399ee3d"
+      ],
+      "completedAt": "2026-07-29T18:59:06Z"
+    },
+    {
+      "id": "P01",
+      "commits": [
+        "8d7125ee2dd6e72119031926958f38194a2fb79a"
+      ],
+      "completedAt": "2026-07-29T18:55:28Z"
+    },
+    {
+      "id": "P02",
+      "commits": [
+        "65d3087fa5cbcfbea62807b11079963f703da053"
+      ],
+      "completedAt": "2026-07-29T18:55:43Z"
+    },
+    {
+      "id": "P03",
+      "commits": [
+        "3286578e3b651f228fadd373da8e4aa445b09aa4"
+      ],
+      "completedAt": "2026-07-29T19:18:09Z"
+    }
+  ],
+  "lastValidatedCommit": "3286578e3b651f228fadd373da8e4aa445b09aa4",
+  "blocker": {
+    "active": false,
+    "type": null,
+    "code": null,
+    "phase": null,
+    "step": null,
+    "reason": null,
+    "fingerprint": null,
+    "since": null
+  },
+  "interruption": {
+    "active": false,
+    "reason": null,
+    "at": null,
+    "previousRunStatus": null,
+    "previousStep": null
+  },
+  "finalAudit": {
+    "status": "PENDING",
+    "validatedAt": null,
+    "report": null
+  },
+  "phases": [
+    { "id": "P00", "status": "DONE", "commit": "0c2be86dc52e89b239588128553a4da66399ee3d", "startedAt": null, "completedAt": "2026-07-29T18:59:06Z" },
+    { "id": "P01", "status": "DONE", "commit": "8d7125ee2dd6e72119031926958f38194a2fb79a", "startedAt": null, "completedAt": "2026-07-29T18:55:28Z" },
+    { "id": "P02", "status": "DONE", "commit": "65d3087fa5cbcfbea62807b11079963f703da053", "startedAt": null, "completedAt": "2026-07-29T18:55:43Z" },
+    { "id": "P03", "status": "DONE", "commit": "3286578e3b651f228fadd373da8e4aa445b09aa4", "startedAt": null, "completedAt": "2026-07-29T19:18:09Z" },
+    { "id": "P04", "status": "PENDING", "commit": null, "startedAt": null, "completedAt": null },
+    { "id": "P05", "status": "PENDING", "commit": null, "startedAt": null, "completedAt": null },
+    { "id": "P06", "status": "PENDING", "commit": null, "startedAt": null, "completedAt": null },
+    { "id": "P07", "status": "PENDING", "commit": null, "startedAt": null, "completedAt": null },
+    { "id": "P08", "status": "PENDING", "commit": null, "startedAt": null, "completedAt": null },
+    { "id": "P09", "status": "PENDING", "commit": null, "startedAt": null, "completedAt": null },
+    { "id": "P10", "status": "PENDING", "commit": null, "startedAt": null, "completedAt": null },
+    { "id": "P11", "status": "PENDING", "commit": null, "startedAt": null, "completedAt": null },
+    { "id": "P12", "status": "PENDING", "commit": null, "startedAt": null, "completedAt": null },
+    { "id": "P13", "status": "PENDING", "commit": null, "startedAt": null, "completedAt": null },
+    { "id": "P14", "status": "PENDING", "commit": null, "startedAt": null, "completedAt": null },
+    { "id": "P15", "status": "PENDING", "commit": null, "startedAt": null, "completedAt": null },
+    { "id": "P16", "status": "PENDING", "commit": null, "startedAt": null, "completedAt": null },
+    { "id": "P17", "status": "PENDING", "commit": null, "startedAt": null, "completedAt": null },
+    { "id": "P18", "status": "PENDING", "commit": null, "startedAt": null, "completedAt": null },
+    { "id": "P19", "status": "PENDING", "commit": null, "startedAt": null, "completedAt": null },
+    { "id": "P20", "status": "PENDING", "commit": null, "startedAt": null, "completedAt": null },
+    { "id": "P21", "status": "PENDING", "commit": null, "startedAt": null, "completedAt": null },
+    { "id": "P22", "status": "PENDING", "commit": null, "startedAt": null, "completedAt": null },
+    { "id": "P23", "status": "PENDING", "commit": null, "startedAt": null, "completedAt": null },
+    { "id": "P24", "status": "PENDING", "commit": null, "startedAt": null, "completedAt": null },
+    { "id": "P25", "status": "PENDING", "commit": null, "startedAt": null, "completedAt": null },
+    { "id": "P26", "status": "PENDING", "commit": null, "startedAt": null, "completedAt": null }
+  ],
+  "history": []
+}

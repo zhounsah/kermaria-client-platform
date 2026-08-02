@@ -24,6 +24,7 @@ public sealed class MockSignupRow
     public string? ApprovedUserId { get; set; }
     public string? ApprovedCustomerId { get; set; }
     public string? ApprovedCustomerReference { get; set; }
+    public string? ApprovedUserKoxoUniqueIdentifier { get; set; }
     public DateTime? ApprovedAtUtc { get; set; }
     public string? AdProvisioningStatus { get; set; }
     public string? LastPasswordSyncStatus { get; set; }
@@ -40,17 +41,21 @@ public sealed class MockSignupStore
 {
     public ConcurrentDictionary<string, MockSignupRow> Rows { get; } =
         new(StringComparer.Ordinal);
+
+    public long NextKoxoSequenceSeed = 1;
 }
 
 public sealed class MockSignupRepository : ISignupRepository
 {
     private readonly ConcurrentDictionary<string, MockSignupRow> _rows;
     private readonly MockAuthenticationStore _authenticationStore;
+    private readonly MockSignupStore _store;
 
     public MockSignupRepository(
         MockSignupStore store,
         MockAuthenticationStore authenticationStore)
     {
+        _store = store;
         _rows = store.Rows;
         _authenticationStore = authenticationStore;
     }
@@ -192,6 +197,9 @@ public sealed class MockSignupRepository : ISignupRepository
             ?? row.Email;
         var displayName = request.PrimaryUser.DisplayName
             ?? row.ContactName;
+        var nextKoxoSequenceValue = Interlocked.Increment(
+            ref _store.NextKoxoSequenceSeed);
+        var koxoUniqueIdentifier = $"CLI-{nextKoxoSequenceValue - 1:D6}";
 
         _authenticationStore.Users[email] =
             new PortalUserCredential(
@@ -212,6 +220,7 @@ public sealed class MockSignupRepository : ISignupRepository
         row.ApprovedUserId = request.UserId;
         row.ApprovedCustomerId = request.CustomerId;
         row.ApprovedCustomerReference = request.CustomerReference;
+        row.ApprovedUserKoxoUniqueIdentifier = koxoUniqueIdentifier;
         row.ApprovedAtUtc = DateTime.UtcNow;
         row.PasswordSetupTokenHash = request.PasswordSetupTokenHash;
         row.PasswordSetupExpiresAtUtc = request.PasswordSetupExpiresAtUtc;
@@ -224,6 +233,7 @@ public sealed class MockSignupRepository : ISignupRepository
             request.CustomerId,
             request.CustomerReference,
             request.UserId,
+            koxoUniqueIdentifier,
             email,
             displayName));
     }

@@ -83,6 +83,11 @@ public static class RuntimeConfigurationValidator
             configuration,
             "SERVICE_AUTH_TOKEN",
             invalidVariables);
+        ValidateOptionalWebhook(
+            configuration,
+            "KOXO_SYNC_WEBHOOK_URL",
+            "KOXO_SYNC_WEBHOOK_TOKEN",
+            invalidVariables);
 
         if (string.Equals(
                 configuration["SESSION_COOKIE_SECURE"]?.Trim(),
@@ -209,6 +214,32 @@ public static class RuntimeConfigurationValidator
         if (IsPlaceholderSecret(configuration[variableName]))
         {
             invalidVariables.Add(variableName);
+        }
+    }
+
+    private static void ValidateOptionalWebhook(
+        IConfiguration configuration,
+        string urlVariableName,
+        string tokenVariableName,
+        ISet<string> invalidVariables)
+    {
+        var hasUrl = !string.IsNullOrWhiteSpace(configuration[urlVariableName]);
+        var token = configuration[tokenVariableName];
+        var hasToken = !string.IsNullOrWhiteSpace(token);
+
+        if (!hasUrl && !hasToken)
+        {
+            return;
+        }
+
+        if (!hasUrl)
+        {
+            invalidVariables.Add(urlVariableName);
+        }
+
+        if (!hasToken || IsPlaceholderSecret(token))
+        {
+            invalidVariables.Add(tokenVariableName);
         }
     }
 

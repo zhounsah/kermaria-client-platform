@@ -538,8 +538,8 @@ async function submitMutation<TPayload>(
         userSamAccountName: membership.userSamAccountName.trim(),
       } satisfies AdGroupMemberPayload,
       (data) => data.code === "AD_GROUP_MEMBER_ALREADY_PRESENT"
-        ? "L'utilisateur etait deja membre du groupe."
-        : "Membre ajoute au groupe.",
+        ? "L'utilisateur était déjà membre du groupe."
+        : "Membre ajouté au groupe.",
     );
   }
 
@@ -557,8 +557,8 @@ async function submitMutation<TPayload>(
       "DELETE",
       undefined,
       (data) => data.code === "AD_GROUP_MEMBER_ALREADY_ABSENT"
-        ? "L'utilisateur n'etait pas membre du groupe."
-        : "Membre retire du groupe.",
+        ? "L'utilisateur n'était pas membre du groupe."
+        : "Membre retiré du groupe.",
     );
   }
 
@@ -577,8 +577,8 @@ async function submitMutation<TPayload>(
       "POST",
       {},
       (data) => data.code === "AD_USER_ALREADY_DISABLED"
-        ? "L'utilisateur etait deja désactive."
-        : "Utilisateur désactive.",
+        ? "L'utilisateur était déjà désactivé."
+        : "Utilisateur désactivé.",
     );
   }
 
@@ -596,8 +596,8 @@ async function submitMutation<TPayload>(
       "POST",
       {},
       (data) => data.code === "AD_USER_ALREADY_IN_DISABLED_OU"
-        ? "L'utilisateur etait deja dans l'OU Disabled."
-        : "Utilisateur deplace vers l'OU Disabled.",
+        ? "L'utilisateur était déjà dans l'OU Disabled."
+        : "Utilisateur déplacé vers l'OU Disabled.",
     );
   }
 
@@ -661,7 +661,7 @@ async function submitMutation<TPayload>(
     if (!/^[A-Za-z0-9._-]{1,64}$/.test(payload.newSamAccountName)) {
       setMessage({
         tone: "error",
-        text: "Le SamAccountName n'accepte que A-Z, 0-9, . _ - (64 caracteres max).",
+        text: "Le SamAccountName n'accepte que A-Z, 0-9, . _ - (64 caractères max).",
       });
       return;
     }
@@ -669,7 +669,7 @@ async function submitMutation<TPayload>(
     if (payload.newDisplayName.length < 3 || payload.newDisplayName.length > 200) {
       setMessage({
         tone: "error",
-        text: "Le DisplayName doit faire entre 3 et 200 caracteres.",
+        text: "Le DisplayName doit faire entre 3 et 200 caractères.",
       });
       return;
     }
@@ -690,8 +690,8 @@ async function submitMutation<TPayload>(
       "POST",
       payload,
       (data) => data.code === "AD_USER_RENAME_NOOP"
-        ? "Aucune modification : l'utilisateur a deja ces attributs."
-        : "Utilisateur Active Directory renomme.",
+        ? "Aucune modification : l'utilisateur a déjà ces attributs."
+        : "Utilisateur Active Directory renommé.",
       (data) => {
         if (data.object?.objectType === "user") {
           selectUser(data.object);
@@ -722,7 +722,7 @@ async function submitMutation<TPayload>(
     if (!payload.targetCustomerReference) {
       setMessage({
         tone: "error",
-        text: "La reference client cible est obligatoire.",
+        text: "La référence client cible est obligatoire.",
       });
       return;
     }
@@ -736,7 +736,7 @@ async function submitMutation<TPayload>(
       : true;
     if (isCrossCustomer) {
       const confirmed = window.confirm(
-        `D?placement CROSS-CLIENT vers ${payload.targetCustomerReference} (${payload.targetContainer}). Confirmer ?`,
+        `Déplacement CROSS-CLIENT vers ${payload.targetCustomerReference} (${payload.targetContainer}). Confirmer ?`,
       );
       if (!confirmed) {
         return;
@@ -748,8 +748,8 @@ async function submitMutation<TPayload>(
       "POST",
       payload,
       (data) => data.code === "AD_USER_MOVE_NOOP"
-        ? "Aucune modification : l'utilisateur est deja a cet emplacement."
-        : "Utilisateur Active Directory deplace.",
+        ? "Aucune modification : l'utilisateur est déjà à cet emplacement."
+        : "Utilisateur Active Directory déplacé.",
       (data) => {
         if (data.object?.objectType === "user") {
           selectUser(data.object);
@@ -767,7 +767,7 @@ async function submitMutation<TPayload>(
       `/api/admin/customers/${encodeURIComponent(customerReference)}/ad-links/${encodeURIComponent(linkId)}`,
       "DELETE",
       undefined,
-      "Lien Active Directory supprime de la table de liaison.",
+      "Lien Active Directory supprimé de la table de liaison.",
     );
   }
 

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Kermaria.ApiInternal.Contracts;
 using Kermaria.ApiInternal.Data.Configuration;
@@ -74,6 +75,7 @@ public sealed class MariaDbSignupRepository : ISignupRepository
                 personal_title,
                 given_name,
                 surname,
+                birth_date,
                 initials,
                 is_primary_contact,
                 pack_selection_snapshot_json,
@@ -100,6 +102,7 @@ public sealed class MariaDbSignupRepository : ISignupRepository
                 @personal_title,
                 @given_name,
                 @surname,
+                @birth_date,
                 @initials,
                 @is_primary_contact,
                 @pack_selection_snapshot_json,
@@ -144,6 +147,9 @@ public sealed class MariaDbSignupRepository : ISignupRepository
         command.Parameters.AddWithValue(
             "@surname",
             DbValue(insert.PrimaryUser.Surname));
+        command.Parameters.AddWithValue(
+            "@birth_date",
+            DbDateValue(insert.PrimaryUser.BirthDate));
         command.Parameters.AddWithValue(
             "@initials",
             DbValue(insert.PrimaryUser.Initials));
@@ -311,6 +317,10 @@ public sealed class MariaDbSignupRepository : ISignupRepository
         await connection.OpenAsync(cancellationToken);
         await using var transaction =
             await connection.BeginTransactionAsync(cancellationToken);
+        var koxoUniqueIdentifier = await AllocateKoxoUniqueIdentifierAsync(
+            connection,
+            transaction,
+            cancellationToken);
 
         await using (var guard = connection.CreateCommand())
         {
@@ -427,6 +437,8 @@ public sealed class MariaDbSignupRepository : ISignupRepository
                     personal_title,
                     given_name,
                     surname,
+                    birth_date,
+                    koxo_unique_identifier,
                     initials,
                     phone,
                     is_primary_contact,
@@ -444,6 +456,8 @@ public sealed class MariaDbSignupRepository : ISignupRepository
                     @personal_title,
                     @given_name,
                     @surname,
+                    @birth_date,
+                    @koxo_unique_identifier,
                     @initials,
                     @phone,
                     @is_primary_contact,
@@ -467,6 +481,12 @@ public sealed class MariaDbSignupRepository : ISignupRepository
             userCommand.Parameters.AddWithValue(
                 "@surname",
                 DbValue(request.PrimaryUser.Surname));
+            userCommand.Parameters.AddWithValue(
+                "@birth_date",
+                DbDateValue(request.PrimaryUser.BirthDate));
+            userCommand.Parameters.AddWithValue(
+                "@koxo_unique_identifier",
+                koxoUniqueIdentifier);
             userCommand.Parameters.AddWithValue(
                 "@initials",
                 DbValue(request.PrimaryUser.Initials));
@@ -513,6 +533,7 @@ public sealed class MariaDbSignupRepository : ISignupRepository
             request.CustomerId,
             request.CustomerReference,
             request.UserId,
+            koxoUniqueIdentifier,
             billingEmail,
             portalDisplayName);
     }
@@ -673,6 +694,7 @@ public sealed class MariaDbSignupRepository : ISignupRepository
                 ReadNullableString(reader, "personal_title"),
                 ReadNullableString(reader, "given_name"),
                 ReadNullableString(reader, "surname"),
+                ReadNullableDate(reader, "birth_date"),
                 ReadNullableString(reader, "initials"),
                 reader.GetString("contact_name"),
                 reader.GetString("email"),
@@ -719,6 +741,7 @@ public sealed class MariaDbSignupRepository : ISignupRepository
                 signup_pending.personal_title AS personal_title,
                 signup_pending.given_name AS given_name,
                 signup_pending.surname AS surname,
+                signup_pending.birth_date AS birth_date,
                 signup_pending.initials AS initials,
                 signup_pending.is_primary_contact AS is_primary_contact,
                 signup_pending.pack_selection_snapshot_json AS pack_selection_snapshot_json,
@@ -759,6 +782,45 @@ public sealed class MariaDbSignupRepository : ISignupRepository
         => snapshot is null
             ? DBNull.Value
             : JsonSerializer.Serialize(snapshot, JsonOptions);
+
+    private static async Task<string> AllocateKoxoUniqueIdentifierAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var selectCommand = connection.CreateCommand();
+        selectCommand.Transaction = transaction;
+        selectCommand.CommandText =
+            """
+            SELECT next_value
+            FROM koxo_identifier_counters
+            WHERE counter_name = 'portal_user'
+            FOR UPDATE;
+            """;
+        var rawCurrentValue = await selectCommand.ExecuteScalarAsync(cancellationToken);
+        var currentValue = rawCurrentValue is null || rawCurrentValue == DBNull.Value
+            ? 1L
+            : Convert.ToInt64(rawCurrentValue, CultureInfo.InvariantCulture);
+
+        await using var upsertCommand = connection.CreateCommand();
+        upsertCommand.Transaction = transaction;
+        upsertCommand.CommandText =
+            """
+            INSERT INTO koxo_identifier_counters (
+                counter_name,
+                next_value
+            ) VALUES (
+                'portal_user',
+                @next_value
+            )
+            ON DUPLICATE KEY UPDATE
+                next_value = @next_value;
+            """;
+        upsertCommand.Parameters.AddWithValue("@next_value", currentValue + 1);
+        await upsertCommand.ExecuteNonQueryAsync(cancellationToken);
+
+        return $"CLI-{currentValue.ToString("D6", CultureInfo.InvariantCulture)}";
+    }
 
     private static SignupPackSelectionSnapshot? DeserializeSnapshot(
         MySqlDataReader reader,
@@ -816,6 +878,14 @@ public sealed class MariaDbSignupRepository : ISignupRepository
             ? null
             : MariaDbIdentifierReader.ReadRequired(reader, columnName);
 
+    private static string? ReadNullableDate(
+        MySqlDataReader reader,
+        string columnName)
+        => reader.IsDBNull(reader.GetOrdinal(columnName))
+            ? null
+            : reader.GetDateTime(columnName)
+                .ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
     private static DateTime? ReadNullableUtc(
         MySqlDataReader reader,
         string columnName)
@@ -825,4 +895,12 @@ public sealed class MariaDbSignupRepository : ISignupRepository
 
     private static object DbValue(string? value)
         => value is null ? DBNull.Value : value;
+
+    private static object DbDateValue(string? value)
+        => string.IsNullOrWhiteSpace(value)
+            ? DBNull.Value
+            : DateTime.ParseExact(
+                value,
+                "yyyy-MM-dd",
+                CultureInfo.InvariantCulture);
 }

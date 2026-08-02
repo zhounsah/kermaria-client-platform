@@ -69,3 +69,12 @@ local.env.ps1
 
 # Claude Code worktrees (transient checkouts, never commit)
 .claude/worktrees/
+/.artifacts/
+/.codex-tmp/
+/tmp/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+/etat-avant-remise-a-plat.patch
+/etat-index-avant-remise-a-plat.patch
+/result[0-9]*.txt

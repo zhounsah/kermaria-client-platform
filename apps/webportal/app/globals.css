@@ -4960,6 +4960,38 @@ td {
   }
 }
 
+@media (max-width: 900px) {
+  .signup-form {
+    gap: 22px;
+    padding: 24px 18px;
+  }
+
+  .signup-form-layout {
+    grid-template-columns: 1fr;
+    gap: 22px;
+  }
+
+  .signup-form-panel {
+    gap: 18px;
+    padding: 22px 18px;
+  }
+
+  .signup-form-fields {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .public-footer-inner {
+    width: min(100% - 24px, 1180px);
+    gap: 18px;
+    padding-block: 24px;
+  }
+
+  .public-footer-nav {
+    gap: 8px 16px;
+  }
+}
+
 @media (max-width: 520px) {
   .public-pack-card {
     padding: 20px;
@@ -4978,8 +5010,26 @@ td {
     grid-template-columns: 1fr;
   }
 
+  .signup-form {
+    padding-inline: 14px;
+  }
+
+  .signup-form-panel {
+    padding: 18px 14px;
+  }
+
   .signup-form-fields {
-    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .public-footer-inner {
+    width: min(100% - 20px, 1180px);
+  }
+
+  .public-footer-nav {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
   }
 }
 
@@ -5151,6 +5201,30 @@ td {
 .public-footer-nav a:hover {
   color: var(--primary);
   text-decoration: underline;
+}
+
+@media (max-width: 900px) {
+  .public-footer-inner {
+    width: min(100% - 24px, 1180px);
+    gap: 18px;
+    padding-block: 24px;
+  }
+
+  .public-footer-nav {
+    gap: 8px 16px;
+  }
+}
+
+@media (max-width: 520px) {
+  .public-footer-inner {
+    width: min(100% - 20px, 1180px);
+  }
+
+  .public-footer-nav {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
 }
 
 .legal-page {
@@ -5436,6 +5510,42 @@ td {
 
 .signup-form-field-span-2 {
   grid-column: 1 / -1;
+}
+
+@media (max-width: 900px) {
+  .signup-form {
+    gap: 22px;
+    padding: 24px 18px;
+  }
+
+  .signup-form-layout {
+    grid-template-columns: 1fr;
+    gap: 22px;
+  }
+
+  .signup-form-panel {
+    gap: 18px;
+    padding: 22px 18px;
+  }
+
+  .signup-form-fields {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+}
+
+@media (max-width: 520px) {
+  .signup-form {
+    padding-inline: 14px;
+  }
+
+  .signup-form-panel {
+    padding: 18px 14px;
+  }
+
+  .signup-form-fields {
+    gap: 14px;
+  }
 }
 
 /* Honeypot anti-bot : retiré du flux visuel et de la tabulation. */

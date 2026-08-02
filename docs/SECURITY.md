@@ -1,5 +1,10 @@
 # Securite
 
+> Navigation 1.0.0 : lire
+> [`V1.0.0_DOCUMENTATION.md`](V1.0.0_DOCUMENTATION.md) pour la carte complete
+> de la documentation. Ce document decrit les frontieres, garde-fous et
+> secrets de la plateforme.
+
 ## Modele de menace
 
 Actifs principaux :

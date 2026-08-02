@@ -687,6 +687,35 @@ function createMockManagedContentDetail(
         ].join("\n"),
         ...baseTimestamps,
       };
+    case "legal:politique-confidentialite":
+      return {
+        ...entry,
+        versionLabel: "Version du : 07 juillet 2026",
+        bodyMarkdown: [
+          "La presente politique de confidentialite decrit les traitements de donnees personnelles realises dans le cadre du site et de l'espace client de Zachary HOUNSA-HOUNKPA EI.",
+          "",
+          "## Donnees collectees",
+          "",
+          "Les donnees necessaires a la gestion de la relation commerciale et contractuelle peuvent inclure l'identite, les coordonnees, l'historique des demandes, les commandes, les factures et les echanges de support.",
+          "",
+          "## Finalites",
+          "",
+          "Ces donnees sont utilisees pour gerer la relation client, assurer l'execution des services, produire les documents commerciaux, traiter les demandes et securiser l'acces a l'espace client.",
+          "",
+          "## Cookies et traceurs",
+          "",
+          "Le site n'utilise pas de traceurs publicitaires ni de solution d'analytique tierce. Seuls les cookies strictement necessaires au fonctionnement du service peuvent etre emis, notamment pour la session authentifiee, la protection CSRF et, si active, la verification hCaptcha.",
+          "",
+          "## Conservation",
+          "",
+          "Les donnees sont conservees pendant la duree necessaire a la relation contractuelle, puis pendant les durees legales applicables, notamment pour les obligations comptables et de facturation.",
+          "",
+          "## Vos droits",
+          "",
+          "Conformement au RGPD, vous disposez d'un droit d'acces, de rectification, d'effacement, d'opposition, de limitation et, selon les cas, de portabilite. Pour exercer vos droits, vous pouvez contacter **[zhounsah@home.bzh](mailto:zhounsah@home.bzh)**.",
+        ].join("\n"),
+        ...baseTimestamps,
+      };
     case "legal:mentions-legales":
       return {
         ...entry,

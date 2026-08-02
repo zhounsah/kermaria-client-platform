@@ -42,7 +42,7 @@ export function PasswordChangeForm() {
     if (newPassword === currentPassword) {
       setMessage({
         tone: "error",
-        text: "Le nouveau mot de passe doit être different du mot de passe actuel.",
+        text: "Le nouveau mot de passe doit être différent du mot de passe actuel.",
       });
       return;
     }
@@ -115,14 +115,14 @@ export function PasswordChangeForm() {
         />
       </label>
       <p className="field-hint">
-        Le portail verifie d&apos;abord votre mot de passe actuel, puis met a
+        Le portail vérifie d&apos;abord votre mot de passe actuel, puis met à
         jour le mot de passe du compte. Si une identité Active Directory est
         déjà liée, la synchronisation vers `clients.home.bzh` est faite dans la
-        meme operation.
+        même opération.
       </p>
       {message ? (
         <FormMessage
-          title={message.tone === "success" ? "Mot de passe change" : "Echec"}
+          title={message.tone === "success" ? "Mot de passe changé" : "Échec"}
           tone={message.tone}
         >
           <p>{message.text}</p>

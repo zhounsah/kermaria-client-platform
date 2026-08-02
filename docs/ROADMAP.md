@@ -1,5 +1,16 @@
 # Feuille de route
 
+> Lecture 1.0.0 : cette feuille de route sert a comprendre l'historique et les
+> jalons V0.xx. Pour l'etat courant et les points d'entree actuels, commencer
+> par [`V1.0.0_DOCUMENTATION.md`](V1.0.0_DOCUMENTATION.md).
+
+## Point de repere version 1.0.0
+
+- Le tag Git `v1.0.0` existe dans le depot.
+- Certains manifests techniques restent encore en `0.1.0`.
+- La lecture 1.0.0 doit donc s'appuyer sur le tag, le code courant et les
+  garde-fous documentes, plutot que sur les seuls numeros de package.
+
 ## Phase de tests : principe
 
 Tant que le serveur cible **R740xd** n'est pas livre, le projet reste en
@@ -218,6 +229,31 @@ Livre :
 - **Tests** : `npm run test:timezone` (nouveau
   `apps/webportal/scripts/verify-timezone-contract.mjs`) combine
   assertions statiques sur les 5 fichiers touches + assertions runtime
+
+## Jalon V0.40 synchronisation KoXo privee
+
+Statut : **implemente dans le depot**. Documentation dediee :
+[`koxo-sync.md`](koxo-sync.md).
+
+Perimetre :
+
+- export JSON prive `webportal -> api-internal` pour les utilisateurs KoXo ;
+- validation bloquante des donnees exportees ;
+- script PowerShell local SRV-21 pour generer `clients.csv`, proteger le
+  remplacement, puis lancer `KoXoAdm.exe /Synchro=CLIENTS.xml` ;
+- observabilite admin `/admin/koxo` et audit des executions.
+
+### V0.40.1 clarification mot de passe
+
+Statut : **documente dans le depot**.
+
+- aucun mot de passe n'est transporte vers KoXo ;
+- KoXo n'est pas une source de verite pour les secrets d'authentification ;
+- la base SQL conserve uniquement `password_hash`, non reversible, pour
+  l'authentification portail ;
+- l'alignement du mot de passe avec l'environnement Windows reste porte par
+  les flux `set-password` et, a terme, par les flux dedies portail <-> AD,
+  jamais par l'export KoXo.
   `Intl.DateTimeFormat` sur trois inputs UTC (ete, hiver, bascule
   2026-03-29) validant la conversion DST automatique.
 

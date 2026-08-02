@@ -19,43 +19,43 @@ const ruleElements = {
 const strengthScale = [
   {
     max: 24,
-    label: "Tres faible",
+    label: "Très faible",
     level: "Critique",
-    risk: "Exposition immediate",
+    risk: "Exposition immédiate",
     recommendation:
-      "Allonger fortement le mot de passe et ajouter plusieurs types de caracteres.",
+      "Allonger fortement le mot de passe et ajouter plusieurs types de caractères.",
   },
   {
     max: 49,
     label: "Faible",
     level: "Fragile",
-    risk: "Facile a deviner",
+    risk: "Facile à deviner",
     recommendation:
-      "Ajouter de la longueur ainsi qu'un melange de majuscules, chiffres et symboles.",
+      "Ajouter de la longueur ainsi qu'un mélange de majuscules, chiffres et symboles.",
   },
   {
     max: 74,
     label: "Correct",
-    level: "Intermediaire",
-    risk: "Peut etre ameliore",
+    level: "Intermédiaire",
+    risk: "Peut être amélioré",
     recommendation:
-      "Renforcer encore la longueur et eviter les suites trop simples ou repetitives.",
+      "Renforcer encore la longueur et éviter les suites trop simples ou répétitives.",
   },
   {
     max: 89,
     label: "Solide",
     level: "Bon niveau",
-    risk: "Bonne resistance",
+    risk: "Bonne résistance",
     recommendation:
-      "Le mot de passe est coherent. Vous pouvez encore augmenter sa longueur pour plus de marge.",
+      "Le mot de passe est cohérent. Vous pouvez encore augmenter sa longueur pour plus de marge.",
   },
   {
     max: 100,
     label: "Excellent",
-    level: "Tres bon niveau",
+    level: "Très bon niveau",
     risk: "Faible risque",
     recommendation:
-      "Mot de passe robuste. Conservez un usage unique et pensez a un gestionnaire si besoin.",
+      "Mot de passe robuste. Conservez un usage unique et pensez à un gestionnaire si besoin.",
   },
 ];
 
@@ -106,15 +106,15 @@ const updateAnalyzer = (value) => {
   strengthLabel.textContent = strength.label;
   scoreValue.textContent = `${score}/100`;
   scoreBar.style.width = `${score}%`;
-  lengthValue.textContent = `${value.length} caractere${value.length > 1 ? "s" : ""}`;
+  lengthValue.textContent = `${value.length} caractère${value.length > 1 ? "s" : ""}`;
   levelValue.textContent = strength.level;
   riskValue.textContent = strength.risk;
   recommendationText.textContent = value
     ? strength.recommendation
-    : "Saisir un mot de passe pour afficher une analyse detaillee.";
+    : "Saisir un mot de passe pour afficher une analyse détaillée.";
 
   if (!value) {
-    strengthLabel.textContent = "A analyser";
+    strengthLabel.textContent = "À analyser";
     levelValue.textContent = "Insuffisant";
     riskValue.textContent = "Trop faible";
   }

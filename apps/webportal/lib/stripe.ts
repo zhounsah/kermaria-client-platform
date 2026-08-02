@@ -68,7 +68,7 @@ export async function createStripeOneShotCheckoutSession(
   );
 
   if (!data.url) {
-    throw new Error("Stripe n'a pas retourne d'URL de paiement.");
+    throw new Error("Stripe n'a pas retourné d'URL de paiement.");
   }
 
   return { sessionId: data.id, approveUrl: data.url };
@@ -118,7 +118,7 @@ export async function createStripeSubscriptionCheckoutSession({
   );
 
   if (!data.url) {
-    throw new Error("Stripe n'a pas retourne d'URL de souscription.");
+    throw new Error("Stripe n'a pas retourné d'URL de souscription.");
   }
 
   return { sessionId: data.id, approveUrl: data.url };
@@ -213,6 +213,6 @@ export async function cancelStripeSubscription(
 
   const err = await response.text();
   throw new Error(
-    `Annulation souscription Stripe echouee : ${response.status} ${err}`,
+    `Annulation souscription Stripe échouée : ${response.status} ${err}`,
   );
 }

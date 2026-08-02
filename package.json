@@ -1,6 +1,6 @@
 {
   "name": "kermaria-client-platform",
-  "version": "1.0.0",
+  "version": "1.0.0.6",
   "private": true,
   "workspaces": [
     "apps/webportal",
@@ -23,7 +23,9 @@
     "check:health": "node scripts/check-health.mjs",
     "check:secrets": "node scripts/check-secrets.mjs",
     "backup:mariadb": "powershell -ExecutionPolicy Bypass -File .\\scripts\\backup-mariadb.ps1",
+    "pack:webportal:release": "powershell -ExecutionPolicy Bypass -File .\\scripts\\pack-webportal-release.ps1",
     "restore:mariadb": "powershell -ExecutionPolicy Bypass -File .\\scripts\\restore-mariadb.ps1",
+    "assert:webportal:home": "node .\\scripts\\assert-webportal-home.mjs",
     "test:operations": "npm --prefix apps/webportal run test:operations",
     "test:ux": "npm --prefix apps/webportal run test:ux",
     "test:workflow": "npm --prefix apps/webportal run test:workflow",

@@ -12,6 +12,7 @@ import {
   selectionFromSearchParams,
 } from "@/lib/public-packs";
 import { isSignupEnabled } from "@/lib/public-routes";
+import styles from "./page.module.css";
 
 export const metadata: Metadata = {
   title: "Créer un compte",
@@ -44,12 +45,12 @@ export default async function SignupPage({
     : null;
 
   return (
-    <div className="signup-page">
+    <div className={`signup-page ${styles.page}`}>
       <Link className="back-link" href="/">
         <span aria-hidden="true">{"<-"}</span> Retour à l&apos;accueil
       </Link>
 
-      <header className="signup-header">
+      <header className={`signup-header ${styles.header}`}>
         <p className="eyebrow">Inscription</p>
         <h1>Créer un compte client</h1>
         <p className="signup-lead">
@@ -61,7 +62,7 @@ export default async function SignupPage({
       </header>
 
       {packSelection ? (
-        <div className="signup-selection-stack">
+        <div className={styles.selectionStack}>
           <PublicPackSelectionSummary
             commitmentMonths={packSelection.commitmentMonths}
             description="Le pack sélectionné reste attaché à cette demande. Le paiement ne se fait pas sur cet écran : vous retrouverez ensuite ce contexte dans l'espace client."
@@ -72,7 +73,7 @@ export default async function SignupPage({
             paymentMode={packSelection.paymentMode}
             setupFeeAmountCents={packSelection.setupFeeAmountCents}
           />
-          <section className="signup-steps-card" aria-label="Étapes d'ouverture">
+          <section className={styles.stepsCard} aria-label="Étapes d'ouverture">
             <h2>Ce qui se passe ensuite</h2>
             <ol>
               <li>Vous confirmez votre adresse e-mail.</li>

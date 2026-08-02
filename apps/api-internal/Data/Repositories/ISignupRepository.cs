@@ -69,6 +69,7 @@ public sealed record SignupApprovalResult(
     string CustomerId,
     string CustomerReference,
     string UserId,
+    string KoxoUniqueIdentifier,
     string Email,
     string ContactName);
 

@@ -485,6 +485,7 @@ export type ManagedContentType = "legal" | "pack_sheet" | "page";
 
 export type ManagedContentKey =
   | "legal:cgv"
+  | "legal:politique-confidentialite"
   | "legal:mentions-legales"
   | "page:a-propos"
   | `pack-sheet:${PublicPackCode}`;
@@ -1024,6 +1025,7 @@ export function buildPackSheetPublicPath(packCode: PublicPackCode): string {
 export function isManagedContentKey(value: unknown): value is ManagedContentKey {
   return typeof value === "string"
     && (value === "legal:cgv"
+      || value === "legal:politique-confidentialite"
       || value === "legal:mentions-legales"
       || value === "page:a-propos"
       || PUBLIC_PACKS.some(
@@ -1039,6 +1041,14 @@ export function getManagedContentRegistry(): readonly ManagedContentRegistryEntr
       title: "Conditions générales de vente",
       publicPath: "/cgv",
       sortOrder: 10,
+      packCode: null,
+    },
+    {
+      key: "legal:politique-confidentialite",
+      contentType: "legal",
+      title: "Politique de confidentialité",
+      publicPath: "/politique-confidentialite",
+      sortOrder: 15,
       packCode: null,
     },
     {

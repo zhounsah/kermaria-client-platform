@@ -11,6 +11,7 @@ import {
   getInternalApiUrl,
   getInternalServiceHeaders,
 } from "@/lib/runtime-config";
+import { getPublicCommercialCatalog } from "@/lib/internal-api";
 
 type ContactRequestBody = {
   name?: unknown;
@@ -73,7 +74,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { errors, payload } = validateContactPayload(body);
+  const { errors, payload: contactPayload } = validateContactPayload(body);
   if (Object.keys(errors).length > 0) {
     return NextResponse.json(
       {
@@ -85,6 +86,42 @@ export async function POST(request: NextRequest) {
       { status: 400 },
     );
   }
+
+  const offerReference = normalizeOfferReference(body.offerReference);
+  if (!offerReference.valid) {
+    return invalidOfferReference(correlationId);
+  }
+
+  if (offerReference.value) {
+    let catalogResult;
+    try {
+      catalogResult = await getPublicCommercialCatalog();
+    } catch {
+      return serviceUnavailable(correlationId);
+    }
+
+    if (
+      catalogResult.error
+      || catalogResult.source === "unavailable"
+      || !Array.isArray(catalogResult.data)
+      || !catalogResult.data.every(isCatalogOfferReference)
+    ) {
+      return serviceUnavailable(correlationId);
+    }
+
+    const isActiveOffer = catalogResult.data.some(
+      (offer) =>
+        offer.id === offerReference.value && offer.status === "active",
+    );
+    if (!isActiveOffer) {
+      return invalidOfferReference(correlationId);
+    }
+  }
+
+  const payload = {
+    ...contactPayload,
+    offerReference: offerReference.value,
+  };
 
   let internalApiUrl: string | undefined;
   try {
@@ -175,6 +212,32 @@ function serviceUnavailable(correlationId: string) {
   );
 }
 
+function invalidOfferReference(correlationId: string) {
+  return NextResponse.json(
+    {
+      code: "INVALID_OFFER_REFERENCE",
+      message: "La référence d'offre est invalide.",
+      correlation_id: correlationId,
+    },
+    { status: 400 },
+  );
+}
+
+function isCatalogOfferReference(
+  value: unknown,
+): value is { id: string; status: "active" | "inactive" } {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const offer = value as Record<string, unknown>;
+  return (
+    typeof offer.id === "string"
+    && offer.id.trim().length > 0
+    && (offer.status === "active" || offer.status === "inactive")
+  );
+}
+
 async function safeReadJson(
   response: Response,
 ): Promise<Record<string, unknown> | null> {
@@ -197,11 +260,6 @@ function validateContactPayload(body: ContactRequestBody) {
     typeof body.subject === "string" ? body.subject.trim() : "";
   const message =
     typeof body.message === "string" ? body.message.trim() : "";
-  const offerReferenceRaw =
-    typeof body.offerReference === "string"
-      ? body.offerReference.trim()
-      : "";
-
   if (!name) {
     errors.name = "Le nom est requis.";
   } else if (name.length > MAX_NAME_LENGTH) {
@@ -224,9 +282,6 @@ function validateContactPayload(body: ContactRequestBody) {
     errors.message = `Le message ne peut dépasser ${MAX_MESSAGE_LENGTH} caractères.`;
   }
 
-  const offerReference =
-    offerReferenceRaw.length > 64 ? null : offerReferenceRaw || null;
-
   return {
     errors,
     payload: {
@@ -234,7 +289,27 @@ function validateContactPayload(body: ContactRequestBody) {
       email,
       subject,
       message,
-      offerReference,
     },
   };
+}
+
+function normalizeOfferReference(value: unknown) {
+  if (value === undefined || value === null) {
+    return { valid: true as const, value: null };
+  }
+
+  if (typeof value !== "string") {
+    return { valid: false as const, value: null };
+  }
+
+  const normalized = value.trim();
+  if (!normalized) {
+    return { valid: true as const, value: null };
+  }
+
+  if (normalized.length > 64) {
+    return { valid: false as const, value: null };
+  }
+
+  return { valid: true as const, value: normalized };
 }

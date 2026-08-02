@@ -12,6 +12,7 @@ import {
 } from "@/components/PublicPackSelectionSummary";
 import { SubmitButton } from "@/components/SubmitButton";
 import { requestBffJson } from "@/lib/client-api";
+import styles from "./SignupForm.module.css";
 
 type SignupFormProps = {
   hcaptchaSiteKey: string | null;
@@ -161,7 +162,7 @@ export function SignupForm({
       ) : null}
       <form
         action="/api/signup"
-        className="form-card signup-form"
+        className={`form-card ${styles.form}`}
         method="post"
         noValidate
         onSubmit={handleSubmit}
@@ -172,17 +173,17 @@ export function SignupForm({
           </FormMessage>
         ) : null}
 
-        <div className="signup-form-intro">
+        <div className={styles.intro}>
           <p className="field-hint">
             Ces informations alimentent à la fois votre fiche client et le futur
             compte d&apos;accès rattaché lorsque l&apos;identité est finalisée.
           </p>
         </div>
 
-        <div className="signup-form-layout">
-          <section className="signup-form-panel" aria-labelledby="signup-structure-heading">
-            <div className="signup-form-panel-header">
-              <p className="signup-form-panel-kicker">Structure</p>
+        <div className={styles.layout}>
+          <section className={styles.panel} aria-labelledby="signup-structure-heading">
+            <div className={styles.panelHeader}>
+              <p className={styles.panelKicker}>Structure</p>
               <h2 id="signup-structure-heading">Structure et besoin</h2>
               <p className="field-hint">
                 Renseignez ici les informations liées à votre structure, à
@@ -190,7 +191,7 @@ export function SignupForm({
               </p>
             </div>
 
-            <div className="signup-form-fields">
+            <div className={styles.fields}>
               <label>
                 Type de structure
                 <select
@@ -239,7 +240,7 @@ export function SignupForm({
                 </label>
               ) : null}
 
-              <label className="signup-form-field-span-2">
+              <label className={styles.fieldSpan2}>
                 Adresse postale
                 <input
                   autoComplete="address-line1"
@@ -252,7 +253,7 @@ export function SignupForm({
                 />
               </label>
 
-              <label className="signup-form-field-span-2">
+              <label className={styles.fieldSpan2}>
                 Complément d&apos;adresse (facultatif)
                 <input
                   autoComplete="address-line2"
@@ -290,7 +291,7 @@ export function SignupForm({
                 />
               </label>
 
-              <label className="signup-form-field-span-2">
+              <label className={styles.fieldSpan2}>
                 Pays
                 <input
                   autoComplete="country-name"
@@ -303,7 +304,7 @@ export function SignupForm({
                 />
               </label>
 
-              <label className="signup-form-field-span-2">
+              <label className={styles.fieldSpan2}>
                 Votre besoin (facultatif)
                 <textarea
                   maxLength={2000}
@@ -321,9 +322,9 @@ export function SignupForm({
             </div>
           </section>
 
-          <section className="signup-form-panel" aria-labelledby="signup-contact-heading">
-            <div className="signup-form-panel-header">
-              <p className="signup-form-panel-kicker">Contact principal</p>
+          <section className={styles.panel} aria-labelledby="signup-contact-heading">
+            <div className={styles.panelHeader}>
+              <p className={styles.panelKicker}>Contact principal</p>
               <h2 id="signup-contact-heading">Informations client</h2>
               <p className="field-hint">
                 Ce contact principal recevra les messages d&apos;ouverture et
@@ -331,7 +332,7 @@ export function SignupForm({
               </p>
             </div>
 
-            <div className="signup-form-fields">
+            <div className={styles.fields}>
               <label>
                 Civilité
                 <select
@@ -408,7 +409,7 @@ export function SignupForm({
                 />
               </label>
 
-              <label className="signup-form-field-span-2">
+              <label className={styles.fieldSpan2}>
                 Adresse e-mail de connexion
                 <input
                   autoComplete="email"

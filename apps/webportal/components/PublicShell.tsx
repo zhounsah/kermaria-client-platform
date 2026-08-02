@@ -3,8 +3,11 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { APP_VERSION } from "@/lib/app-version";
 import { PORTFOLIO_URL } from "@/lib/public-route-config";
+import appPackage from "../../../package.json";
+
+const CLIENT_PORTAL_LOGIN_URL = "https://dashboard.zacharyhounsa.ovh/login";
+const APP_VERSION_LABEL = `Version v${appPackage.version}`;
 
 type PublicShellProps = {
   children: ReactNode;
@@ -36,9 +39,12 @@ export function PublicShell({ children, signupEnabled }: PublicShellProps) {
               <Link href="/contact">Contact</Link>
             </div>
             <div className="public-header-actions">
-              <Link className="public-header-login" href="/login">
+              <a
+                className="public-header-login"
+                href={CLIENT_PORTAL_LOGIN_URL}
+              >
                 Connexion
-              </Link>
+              </a>
               {signupEnabled ? (
                 <Link className="public-header-signup" href="/signup">
                   Inscription
@@ -56,7 +62,7 @@ export function PublicShell({ children, signupEnabled }: PublicShellProps) {
           <div className="public-footer-brand">
             <strong>Zachary HOUNSA-HOUNKPA EI</strong>
             <p>Site public, offres et espace client professionnel.</p>
-            <p>Version {APP_VERSION}</p>
+            <p>{APP_VERSION_LABEL}</p>
           </div>
           <nav className="public-footer-nav" aria-label="Liens légaux">
             <Link href="/mentions-legales">Mentions légales</Link>
@@ -64,7 +70,7 @@ export function PublicShell({ children, signupEnabled }: PublicShellProps) {
               Politique de confidentialité
             </Link>
             <Link href="/cgv">CGV</Link>
-            <Link href="/login">Connexion</Link>
+            <a href={CLIENT_PORTAL_LOGIN_URL}>Connexion</a>
             {signupEnabled ? <Link href="/signup">Inscription</Link> : null}
           </nav>
         </div>

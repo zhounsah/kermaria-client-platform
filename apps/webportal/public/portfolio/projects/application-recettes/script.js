@@ -1,53 +1,53 @@
 const recipes = [
   {
-    title: "Bowl energie fruits rouges",
-    category: "Petit-dejeuner",
+    title: "Bowl énergie fruits rouges",
+    category: "Petit-déjeuner",
     duration: "10 min",
     level: "Facile",
     description:
-      "Un petit-dejeuner rapide avec yaourt, granola maison et fruits rouges pour commencer la journee.",
-    tags: ["Frais", "Rapide", "Equilibre"],
+      "Un petit-déjeuner rapide avec yaourt, granola maison et fruits rouges pour commencer la journée.",
+    tags: ["Frais", "Rapide", "Équilibre"],
     ingredients: ["Yaourt", "Granola", "Fruits rouges"],
   },
   {
-    title: "Tartine avocat oeuf mollet",
-    category: "Petit-dejeuner",
+    title: "Tartine avocat œuf mollet",
+    category: "Petit-déjeuner",
     duration: "15 min",
     level: "Facile",
     description:
-      "Une tartine complete avec avocat, oeuf mollet et graines pour une assiette simple et nourrissante.",
-    tags: ["Sale", "Brunch", "Protein"],
-    ingredients: ["Pain", "Avocat", "Oeuf"],
+      "Une tartine complète avec avocat, œuf mollet et graines pour une assiette simple et nourrissante.",
+    tags: ["Salé", "Brunch", "Protéiné"],
+    ingredients: ["Pain", "Avocat", "Œuf"],
   },
   {
-    title: "Poulet roti citron herbes",
+    title: "Poulet rôti citron herbes",
     category: "Plat",
     duration: "45 min",
-    level: "Intermediaire",
+    level: "Intermédiaire",
     description:
-      "Un plat principal parfume avec citron, ail et herbes fraiches, accompagne de legumes rotis.",
+      "Un plat principal parfumé avec citron, ail et herbes fraîches, accompagné de légumes rôtis.",
     tags: ["Four", "Familial", "Poulet"],
     ingredients: ["Poulet", "Citron", "Herbes"],
   },
   {
-    title: "Pates creme champignons",
+    title: "Pâtes crème champignons",
     category: "Plat",
     duration: "25 min",
     level: "Facile",
     description:
-      "Recette reconfortante avec sauce cremeuse, champignons poeles et finition au parmesan.",
-    tags: ["Pates", "Confort", "Vegetarien"],
-    ingredients: ["Pates", "Champignons", "Creme"],
+      "Recette réconfortante avec sauce crémeuse, champignons poêlés et finition au parmesan.",
+    tags: ["Pâtes", "Confort", "Végétarien"],
+    ingredients: ["Pâtes", "Champignons", "Crème"],
   },
   {
     title: "Tarte pommes cannelle",
     category: "Dessert",
     duration: "50 min",
-    level: "Intermediaire",
+    level: "Intermédiaire",
     description:
-      "Dessert classique avec pommes fines, pate croustillante et note de cannelle.",
+      "Dessert classique avec pommes fines, pâte croustillante et note de cannelle.",
     tags: ["Dessert", "Four", "Classique"],
-    ingredients: ["Pommes", "Pate", "Cannelle"],
+    ingredients: ["Pommes", "Pâte", "Cannelle"],
   },
   {
     title: "Mousse chocolat intense",
@@ -55,9 +55,9 @@ const recipes = [
     duration: "20 min",
     level: "Facile",
     description:
-      "Une mousse chocolat aerienne a preparer rapidement pour terminer un repas sur une note gourmande.",
+      "Une mousse chocolat aérienne à préparer rapidement pour terminer un repas sur une note gourmande.",
     tags: ["Chocolat", "Sans cuisson", "Express"],
-    ingredients: ["Chocolat", "Oeufs", "Sucre"],
+    ingredients: ["Chocolat", "Œufs", "Sucre"],
   },
 ];
 
@@ -88,10 +88,10 @@ const createRecipeCard = (recipe) => {
       <span>${recipe.duration}</span>
       <span>${recipe.level}</span>
     </div>
-    <ul class="recipe-tags" aria-label="Mots cles de la recette">
+    <ul class="recipe-tags" aria-label="Mots-clés de la recette">
       ${tags}
     </ul>
-    <ul class="recipe-ingredients" aria-label="Ingredients principaux">
+    <ul class="recipe-ingredients" aria-label="Ingrédients principaux">
       ${ingredients}
     </ul>
   `;
@@ -119,7 +119,7 @@ const renderRecipes = () => {
   if (filteredRecipes.length === 0) {
     const emptyState = document.createElement("div");
     emptyState.className = "empty-state";
-    emptyState.textContent = "Aucune recette ne correspond a la recherche actuelle.";
+    emptyState.textContent = "Aucune recette ne correspond à la recherche actuelle.";
     recipesGrid.appendChild(emptyState);
   } else {
     filteredRecipes.forEach((recipe) => {

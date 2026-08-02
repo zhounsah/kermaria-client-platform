@@ -110,7 +110,7 @@ export default async function AdminCatalogOfferPage({ params }: PageProps) {
               </dd>
             </div>
             <div>
-              <dt>Reference produit</dt>
+              <dt>Référence produit</dt>
               <dd>{offer.externalReference ?? "—"}</dd>
             </div>
           </dl>

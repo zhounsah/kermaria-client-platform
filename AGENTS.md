@@ -11,6 +11,32 @@ Ce fichier s'applique a tout le depot `kermaria-client-platform`.
 - L'architecture applicative reste limitee aux VM `WEBPORTAL` et `API-INTERNAL` ; utiliser le serveur SQL existant, ne pas ajouter de VM SQL.
 - `API-INTERNAL` n'est pas exposee a Internet ; `/internal/*` exige `X-Service-Auth` hors `Development`.
 
+## Git Et Orchestration Des Agents
+
+- Git est la seule source de vérité du projet.
+- Toute tâche commence par vérifier la racine du dépôt, la branche, l’index et
+  le worktree.
+- Ne jamais travailler en HEAD détachée.
+- Une conversation ou une mémoire d’agent ne remplace pas la documentation
+  versionnée.
+- Les analyses architecture, tests, sécurité et documentation peuvent être
+  parallélisées en lecture seule.
+- Un seul agent d’écriture intervient sur un même groupe fonctionnel.
+- Ne jamais lancer plusieurs agents modifiant les mêmes fichiers.
+- Ne jamais restaurer globalement un snapshot, un patch ou une branche de
+  sauvegarde.
+- Restaurer les comportements groupe par groupe, avec tests et commits
+  atomiques.
+- Tout constat de revue doit être classé VALIDE, FAUX POSITIF ou INCERTAIN
+  avant correction.
+- Aucun agent ne commit, push, merge, rebase, tague ou déploie sans demande
+  explicite.
+- Avant de terminer une tâche, exécuter les validations applicables puis
+  examiner :
+  - git diff --check
+  - git status --short
+  - git diff
+
 ## Toolchain
 
 - Node.js `>=24` avec npm et `package-lock.json` ; utiliser `npm install`, pas pnpm/yarn.

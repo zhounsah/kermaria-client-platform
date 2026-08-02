@@ -8,9 +8,17 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Kermaria.ApiInternal.Contracts;
+using Kermaria.ApiInternal.Data.Configuration;
+using Kermaria.ApiInternal.Data.Repositories;
+using Kermaria.ApiInternal.Services;
+using Kermaria.ApiInternal.Services.ActiveDirectory;
+using Kermaria.ApiInternal.Services.Email;
+using Kermaria.ApiInternal.Services.Provisioning;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 const string correlationHeader = "X-Correlation-Id";
 const string dataSourceHeader = "X-Data-Source";
@@ -68,6 +76,10 @@ async Task<int> RunAsync(string[] arguments)
         await RunUnavailableReadinessTestAsync();
         await RunProductionConfigurationValidationTestsAsync();
         await RunServiceAuthenticationGuardTestsAsync();
+        await RunKoxoExportHttpTestsAsync();
+        await RunKoxoExportServiceTestsAsync();
+        await RunKoxoSyncWebhookTriggerServiceTestsAsync();
+        await RunSignupKoxoWebhookTriggerTestsAsync();
         await RunDisabledAccountTestAsync();
         await RunExpiredSessionTestAsync();
         await RunLockoutResetTestAsync();
@@ -926,6 +938,21 @@ async Task RunMockTestsAsync()
             servicesPayload.RootElement[0].GetProperty("name").GetString()
                 == "Hébergement dossier personnel",
             "Le catalogue client mock n'est pas aligné avec l'activité attendue.");
+        Ensure(
+            servicesPayload.RootElement
+                .EnumerateArray()
+                .Select(service =>
+                    $"{service.GetProperty("id").GetString()}|{service.GetProperty("status").GetString()}")
+                .ToHashSet(StringComparer.Ordinal)
+                .SetEquals(new[]
+                {
+                    "svc-personal-hosting-001|active",
+                    "svc-backup-001|active",
+                    "svc-vpn-001|pending",
+                    "svc-rds-001|suspended",
+                    "svc-support-001|active"
+                }),
+            "Le catalogue client mock ne contient pas les couples id/statut attendus.");
 
         using var summaryRequest = CreateSessionRequest(
             HttpMethod.Get,
@@ -2095,6 +2122,12 @@ async Task RunMariaDbReadTestsAsync()
             servicesForWriteRequest);
         using var servicesForWritePayload = JsonDocument.Parse(
             await servicesForWriteResponse.Content.ReadAsStringAsync());
+        Ensure(
+            servicesForWritePayload.RootElement
+                .EnumerateArray()
+                .All(service => service.GetProperty("id").GetString()
+                    != "svc-personal-hosting-001"),
+            "Le catalogue MariaDB ne doit pas contenir le service mock d'hébergement personnel.");
         var serviceId = servicesForWritePayload.RootElement[0]
             .GetProperty("id")
             .GetString()
@@ -2616,6 +2649,29 @@ async Task VerifyDownloadsAsync(
             }
         }
     });
+    var unauthorizedServiceDownloadId = await CreateDownloadAsync(new
+    {
+        categoryId = defaultCategoryId,
+        title = "Outil de supervision",
+        shortDescription =
+            "Outil réservé à un service de supervision absent des droits du client.",
+        resourceType = "software",
+        sourceKind = "external_url",
+        visibilityMode = "targeted",
+        status = "active",
+        externalUrl = "https://downloads.example.invalid/monitoring-tool.exe",
+        versionLabel = "v1",
+        installationInstructions = "Installer uniquement pour un service supervisé.",
+        displayOrder = 15,
+        visibilityRules = new[]
+        {
+            new
+            {
+                targetType = "service_type",
+                targetValue = "monitoring"
+            }
+        }
+    });
     var externalDownloadId = await CreateDownloadAsync(new
     {
         categoryId = defaultCategoryId,
@@ -2744,6 +2800,8 @@ async Task VerifyDownloadsAsync(
         adminDownloads.EnumerateArray().Any(item =>
             item.GetProperty("id").GetString() == hiddenDownloadId)
         && adminDownloads.EnumerateArray().Any(item =>
+            item.GetProperty("id").GetString() == unauthorizedServiceDownloadId)
+        && adminDownloads.EnumerateArray().Any(item =>
             item.GetProperty("id").GetString() == externalDownloadId)
         && adminDownloads.EnumerateArray().Any(item =>
             item.GetProperty("id").GetString() == internalDownloadId),
@@ -2786,7 +2844,8 @@ async Task VerifyDownloadsAsync(
     Ensure(
         visibleDownloadIds.Contains(externalDownloadId)
         && visibleDownloadIds.Contains(internalDownloadId)
-        && !visibleDownloadIds.Contains(hiddenDownloadId),
+        && !visibleDownloadIds.Contains(hiddenDownloadId)
+        && !visibleDownloadIds.Contains(unauthorizedServiceDownloadId),
         "Le portail doit filtrer les téléchargements selon les droits actifs.");
 
     using (var hiddenFileRequest = CreateSessionRequest(
@@ -2798,6 +2857,18 @@ async Task VerifyDownloadsAsync(
         Ensure(
             hiddenFileResponse.StatusCode == HttpStatusCode.NotFound,
             "Un téléchargement non autorisé doit répondre HTTP 404.");
+    }
+
+    using (var unauthorizedServiceFileRequest = CreateSessionRequest(
+               HttpMethod.Get,
+               $"{baseUrl}/internal/portal/downloads/{unauthorizedServiceDownloadId}/file",
+               clientSessionToken))
+    {
+        using var unauthorizedServiceFileResponse = await client.SendAsync(
+            unauthorizedServiceFileRequest);
+        Ensure(
+            unauthorizedServiceFileResponse.StatusCode == HttpStatusCode.NotFound,
+            "Un téléchargement ciblé sur un service absent des droits du client doit répondre HTTP 404.");
     }
 
     using (var redirectHandler = new HttpClientHandler
@@ -2867,6 +2938,7 @@ async Task VerifyDownloadsAsync(
     foreach (var resourceId in new[]
     {
         hiddenDownloadId,
+        unauthorizedServiceDownloadId,
         externalDownloadId,
         internalDownloadId
     })
@@ -2964,6 +3036,533 @@ async Task VerifyDownloadsAsync(
             return document.RootElement.Clone();
         }
     }
+}
+
+async Task RunKoxoExportHttpTestsAsync()
+{
+    var baseUrl = SmokeTestRuntimeHelpers.CreateLoopbackBaseUrl();
+    const string serviceAuthToken = "NOT_A_REAL_KOXO_SERVICE_AUTH_VALUE_V040";
+    using var api = StartApi(
+        baseUrl,
+        startInfo =>
+        {
+            startInfo.Environment["ASPNETCORE_ENVIRONMENT"] = "Staging";
+            startInfo.Environment["DOTNET_ENVIRONMENT"] = "Staging";
+            startInfo.Environment["SQL_PROVIDER"] = "mariadb";
+            startInfo.Environment["SQL_HOST"] = "127.0.0.1";
+            startInfo.Environment["SQL_PORT"] = "3306";
+            startInfo.Environment["SQL_DATABASE"] = "koxo-auth-guard";
+            startInfo.Environment["SQL_USERNAME"] = "koxo-auth-guard";
+            startInfo.Environment["SQL_PASSWORD"] =
+                "NOT_A_REAL_SQL_KOXO_AUTH_VALUE_V040";
+            startInfo.Environment["SERVICE_AUTH_TOKEN"] = serviceAuthToken;
+            startInfo.Environment["SESSION_COOKIE_SECURE"] = "true";
+            startInfo.Environment["AD_INTEGRATION_MODE"] = "disabled";
+            foreach (var variable in new[]
+            {
+                "DEMO_PORTAL_EMAIL",
+                "DEMO_PORTAL_PASSWORD",
+                "DEMO_PORTAL_STATUS",
+                "DEMO_INTERNAL_ADMIN_EMAIL",
+                "DEMO_INTERNAL_ADMIN_PASSWORD"
+            })
+            {
+                startInfo.Environment.Remove(variable);
+            }
+        });
+    using var handler = new HttpClientHandler { UseProxy = false };
+    using var client = new HttpClient(handler);
+
+    try
+    {
+        using var healthResponse = await WaitForHealthAsync(
+            client,
+            api.Process,
+            baseUrl,
+            api.Logs);
+        Ensure(
+            healthResponse.IsSuccessStatusCode,
+            "Le health check staging doit repondre pour tester l'export KoXo.");
+
+        using var missingHeaderResponse = await client.GetAsync(
+            $"{baseUrl}/internal/koxo/users");
+        using var missingHeaderPayload = JsonDocument.Parse(
+            await missingHeaderResponse.Content.ReadAsStringAsync());
+        Ensure(
+            missingHeaderResponse.StatusCode == HttpStatusCode.Unauthorized
+            && missingHeaderPayload.RootElement.GetProperty("code").GetString()
+                == "SERVICE_AUTH_REQUIRED",
+            "L'export KoXo prive doit exiger X-Service-Auth hors Development.");
+
+        using var invalidHeaderRequest = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"{baseUrl}/internal/koxo/users");
+        invalidHeaderRequest.Headers.Add(
+            serviceAuthHeader,
+            "NOT_A_REAL_INVALID_KOXO_SERVICE_AUTH_V040");
+        using var invalidHeaderResponse = await client.SendAsync(
+            invalidHeaderRequest);
+        using var invalidHeaderPayload = JsonDocument.Parse(
+            await invalidHeaderResponse.Content.ReadAsStringAsync());
+        Ensure(
+            invalidHeaderResponse.StatusCode == HttpStatusCode.Unauthorized
+            && invalidHeaderPayload.RootElement.GetProperty("code").GetString()
+                == "SERVICE_AUTH_REQUIRED",
+            "Un X-Service-Auth invalide doit etre refuse sur /internal/koxo/users.");
+
+        using var validHeaderRequest = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"{baseUrl}/internal/koxo/users");
+        validHeaderRequest.Headers.Add(serviceAuthHeader, serviceAuthToken);
+        validHeaderRequest.Headers.Add(correlationHeader, "v0.40-koxo-http");
+        using var validHeaderResponse = await client.SendAsync(validHeaderRequest);
+        var validHeaderText = await validHeaderResponse.Content.ReadAsStringAsync();
+        Ensure(
+            !validHeaderText.Contains(
+                "SERVICE_AUTH_REQUIRED",
+                StringComparison.Ordinal)
+            && !validHeaderText.Contains(
+                "password",
+                StringComparison.OrdinalIgnoreCase),
+            "Un X-Service-Auth valide ne doit pas etre rejete par le garde KoXo ni exposer de mot de passe.");
+    }
+    finally
+    {
+        await api.StopAsync();
+    }
+}
+
+async Task RunKoxoExportServiceTestsAsync()
+{
+    var sortableRepository = new InMemoryKoxoRepository(
+    [
+        new KoxoExportCandidate(
+            "portal-user-2",
+            "CLI-Z",
+            "CLI-000002",
+            "madame",
+            "Beta",
+            "Anne",
+            "1988-03-12",
+            "anne.beta@example.invalid"),
+        new KoxoExportCandidate(
+            "portal-user-1",
+            "CLI-A",
+            "CLI-000010",
+            "monsieur",
+            "Alpha",
+            "Zed",
+            "1981-01-07",
+            "zed.alpha@example.invalid"),
+        new KoxoExportCandidate(
+            "portal-user-3",
+            "CLI-A",
+            "CLI-000001",
+            "madame",
+            "Aardvark",
+            "Zoe",
+            "1992-10-02",
+            "zoe.aardvark@example.invalid")
+    ]);
+    var sortableService = new KoxoExportService(sortableRepository);
+    var sortablePayload = await sortableService.ExportAsync(
+        "api",
+        "v0.40-koxo-sort",
+        "127.0.0.1",
+        CancellationToken.None);
+
+    Ensure(
+        sortablePayload.SchemaVersion == 1
+        && sortablePayload.UserCount == 3
+        && sortablePayload.Users.Count == 3
+        && DateTimeOffset.TryParse(sortablePayload.GeneratedAt, out _),
+        "Le payload KoXo valide doit exposer schemaVersion=1, un generatedAt ISO et un userCount exact.");
+    EnsureSequenceEqual(
+        sortablePayload.Users.Select(user => user.IdentifiantUnique).ToArray(),
+        ["CLI-000001", "CLI-000010", "CLI-000002"],
+        "Le tri KoXo doit etre deterministe par groupe secondaire puis identifiant unique.");
+    Ensure(
+        !JsonSerializer.Serialize(sortablePayload)
+            .Contains("password", StringComparison.OrdinalIgnoreCase),
+        "Le payload KoXo ne doit jamais exposer de mot de passe.");
+
+    var secondPayload = await sortableService.ExportAsync(
+        "api",
+        "v0.40-koxo-sort-repeat",
+        "127.0.0.1",
+        CancellationToken.None);
+    EnsureSequenceEqual(
+        secondPayload.Users.Select(user => user.IdentifiantUnique).ToArray(),
+        sortablePayload.Users.Select(user => user.IdentifiantUnique).ToArray(),
+        "Un export KoXo repete ne doit pas recalculer les identifiants uniques.");
+
+    var invalidRepository = new InMemoryKoxoRepository(
+    [
+        new KoxoExportCandidate(
+            "portal-user-4",
+            "CLI-B",
+            "CLI-000111",
+            "madame",
+            "Valide",
+            "Alice",
+            "1990-04-15",
+            "alice.valide@example.invalid"),
+        new KoxoExportCandidate(
+            "portal-user-5",
+            "CLI-B",
+            "CLI-000111",
+            "monsieur",
+            "Doublon",
+            "Bob",
+            "1989-06-20",
+            "bob.doublon@example.invalid"),
+        new KoxoExportCandidate(
+            "portal-user-6",
+            "CLI-C",
+            "CLI-000222",
+            "autre",
+            "SansDate",
+            "Charlie",
+            null,
+            "charlie.sansdate@example.invalid")
+    ]);
+    var invalidService = new KoxoExportService(invalidRepository);
+    KoxoValidationException? validationException = null;
+    try
+    {
+        await invalidService.ExportAsync(
+            "api",
+            "v0.40-koxo-invalid",
+            "127.0.0.1",
+            CancellationToken.None);
+    }
+    catch (KoxoValidationException exception)
+    {
+        validationException = exception;
+    }
+
+    Ensure(
+        validationException is not null
+        && validationException.InvalidUsers.Count == 3
+        && validationException.InvalidUsers.Count(user =>
+            user.Fields.Contains("identifiantUnique", StringComparer.Ordinal)) == 2
+        && validationException.InvalidUsers.Any(user =>
+            user.Fields.Contains("civilite", StringComparer.Ordinal)
+            && user.Fields.Contains("dateNaissance", StringComparer.Ordinal)),
+        "Les doublons et invalidites KoXo doivent bloquer globalement l'export avec une erreur structuree.");
+
+    var invalidDashboard = await invalidService.ValidateAndRecordAsync(
+        "v0.40-koxo-dashboard",
+        "127.0.0.1",
+        CancellationToken.None);
+    Ensure(
+        invalidDashboard.InvalidUserCount == 3
+        && invalidDashboard.ExportableUserCount == 0
+        && invalidDashboard.LastRun is not null
+        && string.Equals(
+            invalidDashboard.LastRun.Status,
+            "validation_failed",
+            StringComparison.Ordinal)
+        && invalidDashboard.Preview is null,
+        "La validation KoXo admin doit enregistrer un audit persistant et refuser toute reponse partielle.");
+
+    var configuration = new ConfigurationBuilder()
+        .AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["DEMO_PORTAL_EMAIL"] = mockEmail,
+            ["DEMO_PORTAL_PASSWORD"] = mockPassword,
+            ["DEMO_PORTAL_STATUS"] = "active",
+            ["DEMO_INTERNAL_ADMIN_EMAIL"] = mockAdminEmail,
+            ["DEMO_INTERNAL_ADMIN_PASSWORD"] = mockAdminPassword
+        })
+        .Build();
+    var authStore = new MockAuthenticationStore(
+        configuration,
+        new PortalPasswordService());
+    var signupStore = new MockSignupStore();
+    var signupRepository = new MockSignupRepository(signupStore, authStore);
+    const string signupId = "signup-v040-koxo";
+    await signupRepository.InsertPendingAsync(
+        new SignupInsert(
+            signupId,
+            "Client test KoXo",
+            "Alice Stable",
+            "alice.stable@example.invalid",
+            "0102030405",
+            "Validation KoXo",
+            new SignupCustomerData(
+                "professionnel",
+                "Client test KoXo",
+                "alice.stable@example.invalid",
+                "0102030405",
+                "1 rue de la Stabilite",
+                null,
+                "29000",
+                "Quimper",
+                "France"),
+            new SignupUserData(
+                "madame",
+                "Alice",
+                "Stable",
+                "1991-09-14",
+                "AS",
+                "Alice Stable",
+                "alice.stable@example.invalid",
+                "0102030405",
+                true),
+            null,
+            "verification-hash",
+            DateTime.UtcNow.AddHours(4),
+            "127.0.0.1",
+            "SmokeTests"),
+        CancellationToken.None);
+    await signupRepository.MarkEmailVerifiedAsync(signupId, CancellationToken.None);
+    var approval = await signupRepository.ApproveAsync(
+        new SignupApprovalRequest(
+            signupId,
+            "customer-v040-koxo",
+            "CLI-DEMO-0042",
+            new SignupCustomerData(
+                "professionnel",
+                "Client test KoXo",
+                "alice.stable@example.invalid",
+                "0102030405",
+                "1 rue de la Stabilite",
+                null,
+                "29000",
+                "Quimper",
+                "France"),
+            new SignupUserData(
+                "madame",
+                "Alice",
+                "Stable",
+                "1991-09-14",
+                "AS",
+                "Alice Stable",
+                "alice.stable@example.invalid",
+                "0102030405",
+                true),
+            "portal-user-v040-koxo",
+            "password-hash",
+            DateTime.UtcNow.AddHours(24)),
+        CancellationToken.None);
+    Ensure(
+        approval is not null
+        && string.Equals(
+            approval.KoxoUniqueIdentifier,
+            signupStore.Rows[signupId].ApprovedUserKoxoUniqueIdentifier,
+            StringComparison.Ordinal)
+        && approval.KoxoUniqueIdentifier.StartsWith(
+            "CLI-",
+            StringComparison.Ordinal),
+        "L'identifiant unique KoXo doit etre attribue une fois a l'approbation et conserve en persistance.");
+}
+
+async Task RunKoxoSyncWebhookTriggerServiceTestsAsync()
+{
+    var captured = new CapturedRequestHandler((request, body) =>
+    {
+        var payload = JsonDocument.Parse(body);
+        Ensure(
+            request.Method == HttpMethod.Post,
+            "Le webhook KoXo doit utiliser POST.");
+        Ensure(
+            request.RequestUri?.AbsoluteUri
+                == "https://srv-21.example.invalid/internal/koxo/sync",
+            "Le webhook KoXo doit viser l'URL configuree.");
+        Ensure(
+            request.Headers.Authorization?.Scheme == "Bearer"
+            && request.Headers.Authorization.Parameter
+                == "NOT_A_REAL_KOXO_SYNC_WEBHOOK_TOKEN_V041",
+            "Le webhook KoXo doit porter un bearer token dedie.");
+        Ensure(
+            payload.RootElement.GetProperty("trigger").GetString()
+                == "password_set"
+            && payload.RootElement.GetProperty("portalUserId").GetString()
+                == "portal-user-v041-koxo",
+            "Le payload du webhook KoXo doit contenir le contexte du compte.");
+        Ensure(
+            !body.Contains("NOT_A_REAL_PASSWORD", StringComparison.Ordinal),
+            "Le webhook KoXo ne doit jamais exposer le mot de passe.");
+    });
+    using var client = new HttpClient(captured);
+    var loggerFactory = LoggerFactory.Create(_ => { });
+    var service = new KoxoSyncWebhookTriggerService(
+        new KoxoSyncWebhookRuntimeConfiguration(
+            new Uri("https://srv-21.example.invalid/internal/koxo/sync"),
+            "NOT_A_REAL_KOXO_SYNC_WEBHOOK_TOKEN_V041",
+            TimeSpan.FromSeconds(5),
+            false),
+        new SingleHttpClientFactory(client),
+        loggerFactory.CreateLogger<KoxoSyncWebhookTriggerService>());
+
+    await service.TriggerAsync(
+        new KoxoSyncWebhookTriggerRequest(
+            "signup-v041-koxo",
+            "portal-user-v041-koxo",
+            "CLI-DEMO-0041",
+            "password_set",
+            "corr-v041-koxo",
+            DateTime.UtcNow.ToString("O")),
+        CancellationToken.None);
+
+    Ensure(
+        captured.RequestCount == 1,
+        "Le service webhook KoXo doit emettre exactement une requete.");
+}
+
+async Task RunSignupKoxoWebhookTriggerTestsAsync()
+{
+    var configuration = new ConfigurationBuilder()
+        .AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["DEMO_PORTAL_EMAIL"] = mockEmail,
+            ["DEMO_PORTAL_PASSWORD"] = mockPassword,
+            ["DEMO_PORTAL_STATUS"] = "active",
+            ["DEMO_INTERNAL_ADMIN_EMAIL"] = mockAdminEmail,
+            ["DEMO_INTERNAL_ADMIN_PASSWORD"] = mockAdminPassword
+        })
+        .Build();
+    var authStore = new MockAuthenticationStore(
+        configuration,
+        new PortalPasswordService());
+    var signupStore = new MockSignupStore();
+    var signupRepository = new MockSignupRepository(signupStore, authStore);
+    var trigger = new RecordingKoxoSyncWebhookTriggerService();
+    const string signupId = "signup-v041-koxo-trigger";
+    const string userId = "portal-user-v041-koxo-trigger";
+    const string customerId = "customer-v041-koxo-trigger";
+    const string customerReference = "CLI-DEMO-0042";
+    const string passwordToken = "token-v041-koxo-trigger";
+
+    await signupRepository.InsertPendingAsync(
+        new SignupInsert(
+            signupId,
+            "Client trigger KoXo",
+            "Alice Trigger",
+            "alice.trigger@example.invalid",
+            "0102030405",
+            "Trigger KoXo",
+            new SignupCustomerData(
+                "professionnel",
+                "Client trigger KoXo",
+                "alice.trigger@example.invalid",
+                "0102030405",
+                "1 rue du Trigger",
+                null,
+                "29000",
+                "Quimper",
+                "France"),
+            new SignupUserData(
+                "madame",
+                "Alice",
+                "Trigger",
+                "1990-01-02",
+                "AT",
+                "Alice Trigger",
+                "alice.trigger@example.invalid",
+                "0102030405",
+                true),
+            null,
+            "verification-hash-trigger",
+            DateTime.UtcNow.AddHours(4),
+            "127.0.0.1",
+            "SmokeTests"),
+        CancellationToken.None);
+    await signupRepository.MarkEmailVerifiedAsync(signupId, CancellationToken.None);
+    await signupRepository.ApproveAsync(
+        new SignupApprovalRequest(
+            signupId,
+            customerId,
+            customerReference,
+            new SignupCustomerData(
+                "professionnel",
+                "Client trigger KoXo",
+                "alice.trigger@example.invalid",
+                "0102030405",
+                "1 rue du Trigger",
+                null,
+                "29000",
+                "Quimper",
+                "France"),
+            new SignupUserData(
+                "madame",
+                "Alice",
+                "Trigger",
+                "1990-01-02",
+                "AT",
+                "Alice Trigger",
+                "alice.trigger@example.invalid",
+                "0102030405",
+                true),
+            userId,
+            HashTokenForTests(passwordToken),
+            DateTime.UtcNow.AddHours(24)),
+        CancellationToken.None);
+
+    var adConfiguration = new AdRuntimeConfiguration(
+        AdIntegrationMode.Mock,
+        "clients.home.bzh",
+        "OU=Clients,DC=clients,DC=home,DC=bzh",
+        "OU=Clients,DC=clients,DC=home,DC=bzh",
+        ["OU=Clients,DC=clients,DC=home,DC=bzh"],
+        false,
+        null,
+        null,
+        3000,
+        5000,
+        25,
+        true);
+    var service = new SignupService(
+        signupRepository,
+        new MockSubscriptionRepository(new MockSubscriptionStore()),
+        new TestEmailDispatchService(),
+        new PortalPasswordService(),
+        new MockActiveDirectoryService(
+            adConfiguration,
+            new MockAdGroupMembershipStore()),
+        new MockActiveDirectoryLinkRepository(),
+        trigger,
+        new SignupRuntimeConfiguration(true, 3, 1, 24, 24, false),
+        new EmailRuntimeConfiguration(
+            EmailIntegrationMode.Mock,
+            "smtp.example.invalid",
+            25,
+            false,
+            null,
+            null,
+            "noreply@example.invalid",
+            "Kermaria",
+            "https://portal.example.invalid",
+            "contact@example.invalid",
+            10000,
+            false,
+            Array.Empty<string>(),
+            true),
+        adConfiguration,
+        LoggerFactory.Create(_ => { }).CreateLogger<SignupService>());
+
+    var result = await service.SetPasswordAsync(
+        passwordToken,
+        "NOT_A_REAL_PASSWORD_V041",
+        CancellationToken.None);
+
+    Ensure(
+        result.Succeeded
+        && result.Code == "PASSWORD_SET",
+        "Le mot de passe doit rester defini meme si le webhook KoXo est un effet de bord.");
+    Ensure(
+        trigger.Requests.Count == 1
+        && trigger.Requests[0].SignupId == signupId
+        && trigger.Requests[0].PortalUserId == userId
+        && trigger.Requests[0].CustomerReference == customerReference,
+        "Le set-password doit declencher exactement une notification KoXo pour SRV-21.");
+}
+
+static string HashTokenForTests(string token)
+{
+    var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(token));
+    return Convert.ToHexString(bytes).ToLowerInvariant();
 }
 
 async Task RunMockActiveDirectoryModeTestsAsync()
@@ -5306,6 +5905,17 @@ static string InvokeIdentifier(
             $"Le mapping de l'identifiant {columnName} n'a pas retourné de chaîne.");
 }
 
+static void EnsureSequenceEqual(
+    IReadOnlyList<string> actual,
+    IReadOnlyList<string> expected,
+    string message)
+{
+    Ensure(
+        actual.Count == expected.Count
+        && actual.SequenceEqual(expected, StringComparer.Ordinal),
+        message);
+}
+
 HttpRequestMessage CreateSessionRequest(
     HttpMethod method,
     string url,
@@ -5652,6 +6262,51 @@ sealed class ApiRuntime : IDisposable
     }
 }
 
+sealed class InMemoryKoxoRepository : IKoxoRepository
+{
+    private readonly List<KoxoExportCandidate> _candidates;
+    private readonly List<KoxoRunSummary> _runs = [];
+
+    public InMemoryKoxoRepository(IEnumerable<KoxoExportCandidate> candidates)
+    {
+        _candidates = candidates.ToList();
+    }
+
+    public bool IsPersistent => false;
+
+    public Task<IReadOnlyList<KoxoExportCandidate>> ListExportCandidatesAsync(
+        CancellationToken cancellationToken)
+        => Task.FromResult<IReadOnlyList<KoxoExportCandidate>>(_candidates);
+
+    public Task InsertRunAsync(
+        KoxoRunInsert run,
+        CancellationToken cancellationToken)
+    {
+        _runs.Insert(0, new KoxoRunSummary(
+            DateTime.UtcNow.ToString("O"),
+            run.Source,
+            run.Status,
+            run.SchemaVersion,
+            run.UserCount,
+            run.InvalidUserCount,
+            run.CorrelationId,
+            run.SourceAddress,
+            run.SummaryMessage,
+            run.GeneratedAtUtc?.ToString("O")));
+        return Task.CompletedTask;
+    }
+
+    public Task<KoxoRunSummary?> GetLatestRunAsync(CancellationToken cancellationToken)
+        => Task.FromResult(_runs.FirstOrDefault());
+
+    public Task<KoxoRunSummary?> GetLatestRunBySourceAsync(
+        string source,
+        CancellationToken cancellationToken)
+        => Task.FromResult(
+            _runs.FirstOrDefault(run =>
+                string.Equals(run.Source, source, StringComparison.Ordinal)));
+}
+
 sealed class RuntimeConfigurationContracts
 {
     public RuntimeConfigurationContracts(
@@ -5675,6 +6330,109 @@ sealed class RuntimeConfigurationContracts
             ?? throw new InvalidOperationException(
                 "La liste des variables invalides est introuvable.");
     }
+}
+
+sealed class SingleHttpClientFactory : IHttpClientFactory
+{
+    private readonly HttpClient _client;
+
+    public SingleHttpClientFactory(HttpClient client)
+    {
+        _client = client;
+    }
+
+    public HttpClient CreateClient(string name) => _client;
+}
+
+sealed class CapturedRequestHandler : HttpMessageHandler
+{
+    private readonly Action<HttpRequestMessage, string> _assertion;
+
+    public CapturedRequestHandler(Action<HttpRequestMessage, string> assertion)
+    {
+        _assertion = assertion;
+    }
+
+    public int RequestCount { get; private set; }
+
+    protected override async Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request,
+        CancellationToken cancellationToken)
+    {
+        RequestCount++;
+        var body = request.Content is null
+            ? string.Empty
+            : await request.Content.ReadAsStringAsync(cancellationToken);
+        _assertion(request, body);
+        return new HttpResponseMessage(HttpStatusCode.Accepted)
+        {
+            Content = JsonContent.Create(new { status = "queued" })
+        };
+    }
+}
+
+sealed class RecordingKoxoSyncWebhookTriggerService : IKoxoSyncWebhookTriggerService
+{
+    public List<KoxoSyncWebhookTriggerRequest> Requests { get; } = [];
+
+    public Task TriggerAsync(
+        KoxoSyncWebhookTriggerRequest request,
+        CancellationToken cancellationToken)
+    {
+        Requests.Add(request);
+        return Task.CompletedTask;
+    }
+}
+
+sealed class TestEmailDispatchService : IEmailDispatchService
+{
+    public Task<EmailDispatchResult> SendInvoiceIssuedAsync(
+        string documentId,
+        string correlationId,
+        CancellationToken cancellationToken)
+        => Task.FromResult(new EmailDispatchResult(true, "noop", string.Empty));
+
+    public Task<EmailDispatchResult> SendPaymentReminderAsync(
+        string documentId,
+        string correlationId,
+        CancellationToken cancellationToken)
+        => Task.FromResult(new EmailDispatchResult(true, "noop", string.Empty));
+
+    public Task<EmailDispatchResult> SendPaymentConfirmedAsync(
+        string documentId,
+        string correlationId,
+        CancellationToken cancellationToken)
+        => Task.FromResult(new EmailDispatchResult(true, "noop", string.Empty));
+
+    public Task<EmailDispatchResult> SendContactFormAsync(
+        ContactFormSubmission submission,
+        string correlationId,
+        CancellationToken cancellationToken)
+        => Task.FromResult(new EmailDispatchResult(true, "noop", string.Empty));
+
+    public Task<EmailDispatchResult> SendSignupVerificationAsync(
+        string email,
+        string contactName,
+        string verificationUrl,
+        string correlationId,
+        CancellationToken cancellationToken)
+        => Task.FromResult(new EmailDispatchResult(true, "noop", string.Empty));
+
+    public Task<EmailDispatchResult> SendAccountApprovedAsync(
+        string email,
+        string contactName,
+        string setPasswordUrl,
+        string correlationId,
+        CancellationToken cancellationToken)
+        => Task.FromResult(new EmailDispatchResult(true, "noop", string.Empty));
+
+    public Task<EmailDispatchResult> SendAccountRejectedAsync(
+        string email,
+        string contactName,
+        string? reason,
+        string correlationId,
+        CancellationToken cancellationToken)
+        => Task.FromResult(new EmailDispatchResult(true, "noop", string.Empty));
 }
 
 static class SmokeTestRuntimeHelpers
