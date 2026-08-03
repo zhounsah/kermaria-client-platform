@@ -952,6 +952,11 @@ Lots livres :
   revocation et purge a l'echeance via service de fond **et** tache
   planifiee Windows.
 
+Correctif **`v1.1.2`** : les colonnes d'identifiant `CHAR(36)` sont lues via
+`ReadIdentifier` et non `GetString`, MySqlConnector les materialisant en `Guid`.
+La liste des profils de demonstration renvoyait sinon une erreur 500 en base
+reelle. Non detectable par les smoke tests, qui s'executent en persistance mock.
+
 Le **lot 4** (conversion essai vers reel) est livre sous le tag **`v1.1.1`** :
 bascule sur place, l'identite AD est deplacee hors du perimetre de demo et le
 contenu est conserve. L'annuaire est traite avant la base, de sorte qu'un echec
