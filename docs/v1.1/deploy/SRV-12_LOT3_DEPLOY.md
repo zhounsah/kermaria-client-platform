@@ -8,10 +8,14 @@
 | | |
 |---|---|
 | **Cible** | `KERMARIA-SRV-12` (webportal), dossier `C:\apps\webportal\` |
-| **Paquet** | `kermaria-webportal-v1.1-lot3.zip` (6,36 Mo — 24 Mo décompressé) |
-| **SHA256** | `0F4788C1D5209CF61782048524BAE7128CC8ED2ECCA23526FF47163015951049` |
+| **Paquet** | `kermaria-webportal-v1.1.0.zip` (6,36 Mo — 24 Mo décompressé) — tag **`v1.1.0`** |
+| **SHA256** | `C500688598C4CE42EC76301D0E708CEF5E319EB62BDCCECBB8900B2466B6B451` |
 | **Type** | Next.js `output: "standalone"`, layout monorepo-aware |
 | **Dépendance** | ⚠️ Suppose l'API SRV-13 **déjà déployée** (les écrans appellent ses endpoints) |
+
+> **Ce paquet contient aussi la remise à plat agentique** (ex-releases 1.0.0.7/1.0.0.8) :
+> politique de sauvegarde affichée sur les packs publics (`PublicPackCard`), styles
+> `globals.css`, données mock associées. Ce n'est donc pas une livraison « démo » seule.
 
 ## 1. Ce que ce paquet ajoute
 

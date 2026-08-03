@@ -9,25 +9,38 @@
 | | |
 |---|---|
 | **Cible** | `KERMARIA-SRV-13` (api-internal), dossier `C:\apps\api-internal\` |
-| **Paquet** | `out/kermaria-api-internal-v1.1-lot3.zip` (1,38 Mo, 53 fichiers) |
-| **SHA256** | `ABB508FBB4AACEA46840E5293F90C1C58DAE46684914DEA09C5194D26805AC8A` |
+| **Paquet** | `out/kermaria-api-internal-v1.1.0.zip` (1,38 Mo) — construit depuis le tag **`v1.1.0`** |
+| **SHA256** | `60BA324D9CE6EE1BEC0722EAED3554362C5D14109566289A277882F8A0D9974B` |
 | **Type** | .NET 10 **framework-dependent** win-x64, avec apphost (`Kermaria.ApiInternal.exe`) |
-| **Base de données** | ✅ **Migrations déjà appliquées** en prod le 2026-08-03 — rien à faire |
-| **Hors périmètre** | L'écran admin (SRV-12 / webportal) — voir §6 |
+| **Base de données** | ⚠️ **Une migration reste à appliquer** (`031_backup_policy…`) — voir §1 |
+| **Ordre** | Déployer **SRV-13 avant SRV-12** — voir [`V1.1.0_DEPLOY.md`](V1.1.0_DEPLOY.md) |
 
-## 1. État déjà acquis (ne pas refaire)
+> **Le tag `v1.1.0` ne contient pas que les comptes de démo** : il intègre aussi la
+> remise à plat agentique (ex-releases 1.0.0.7/1.0.0.8) — CGV et politique de
+> confidentialité au 03 août 2026, politique de sauvegarde des packs, scripts KoXo.
+> Le paquet embarque le `SeedContent` à jour.
 
-- ✅ Migrations `036` / `037` / `038` **appliquées sur la base prod `kermaria`@SRV-06**
-  (2026-08-03). Vérifié : 4 lignes dans `demo_profiles`, tous les `customers`
-  existants en `is_demo = 0`.
+## 1. État de la base
+
+- ✅ Migrations `036` / `037` / `038` **déjà appliquées sur la base prod
+  `kermaria`@SRV-06** (2026-08-03). Vérifié : 4 lignes dans `demo_profiles`, tous les
+  `customers` existants en `is_demo = 0`.
+- ⚠️ **`031_backup_policy_public_copy_refresh.sql` est EN ATTENTE** : elle vient de la
+  remise à plat et n'était pas présente lors du passage du 2026-08-03. Il faut donc
+  **lancer `--apply-migrations`** (voir la procédure du runbook §« Appliquer les
+  migrations » : bascule temporaire sur `kermaria_migrator` + `--environment
+  Development`, le process quitte tout seul). Les `036`/`037`/`038` seront
+  automatiquement ignorées, le runner les trace dans `schema_migrations`.
+  Cette migration est un `UPDATE` idempotent sur la description de l'offre `SAVE-PERSO`.
 - ✅ Groupes AD `GG_DEMO_NEXTCLOUD` / `GG_DEMO_RDS` / `GG_DEMO_VPN` créés dans
   `OU=Groupes_TEST,DC=clients,DC=home,DC=bzh`.
 - ✅ OU des comptes démo : `OU=CLI-DEMO,OU=CLIENTS,OU=Utilisateurs,OU=KoXoAdm,DC=clients,DC=home,DC=bzh`
   (créée automatiquement par la chaîne KoXo).
 - ✅ FSRM, collection RDS Clients-1, VLAN 64 (`10.35.64.0/24`, GW `10.35.64.254`).
 
-> Les migrations sont additives et idempotentes ; le runner les trace dans
-> `schema_migrations`. Il n'est **pas** nécessaire de lancer `--apply-migrations`.
+- ✅ Groupes AD, OU `CLI-DEMO`, FSRM, RDS et VLAN 64 : voir la liste ci-dessus.
+
+> Toutes ces migrations sont additives et idempotentes : les rejouer est sans risque.
 
 ## 2. Configuration à ajouter (⚠️ étape bloquante)
 
