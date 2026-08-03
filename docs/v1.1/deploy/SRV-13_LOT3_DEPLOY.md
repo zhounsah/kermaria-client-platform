@@ -86,21 +86,72 @@ $env:AD_ALLOWED_GROUPS = "TEST_SITE_WEB,GG_DEMO_RDS,GG_DEMO_VPN,GG_DEMO_NEXTCLOU
 `svc_api_portal_ad` doit pouvoir **modifier l'appartenance** des `GG_DEMO_*` dans
 `OU=Groupes_TEST` et **désactiver** les comptes de `OU=CLI-DEMO`.
 
+> ⚠️ **`AD_USE_CURRENT_WINDOWS_CREDENTIALS` doit valoir `false`.**
+> À `true`, le code **ignore purement et simplement**
+> `AD_SERVICE_ACCOUNT_USERNAME` et se lie à l'annuaire sous l'identité du
+> service Windows (`HOME\svc-kermaria`), qui n'a aucune délégation sur les
+> `GG_DEMO_*`. Symptôme : `AD_ACCESS_DENIED` /
+> `UnauthorizedAccessException` à l'ajout de groupe, alors que la délégation
+> est correctement posée sur `svc_api_portal_ad` — ce qui rend le diagnostic
+> trompeur. Constaté en production le 2026-08-03.
+>
+> Corriger aux **deux** endroits, sinon la prochaine régénération de
+> configuration annule le correctif :
+> `<repo-parent>/kermaria-client-platform.local.env.ps1` (la source) **et**
+> `C:\ProgramData\Kermaria\api-internal.config.json` (le fichier déployé).
+
 ## 3. Déploiement du binaire
 
-Procédure standard du runbook : copie en `-staging` **puis** bascule (jamais d'écrasement direct).
+### 3.1 Fabrication du paquet — le piège de l'apphost
 
-```powershell
-Expand-Archive -Path .\kermaria-api-internal-v1.1-lot3.zip -DestinationPath C:\apps\api-internal-staging -Force
+Le csproj porte `<UseAppHost>false</UseAppHost>` : un `dotnet publish` nu **ne
+produit pas** `Kermaria.ApiInternal.exe`. Or le service démarre précisément
+dessus :
+
+```
+C:\apps\api-internal\Kermaria.ApiInternal.exe --environment Production --urls http://192.168.100.213:5000
 ```
 
-Puis arrêt du service, bascule du dossier, redémarrage :
+Déployer sans l'apphost laisse donc le service **sans exécutable**. La commande
+correcte :
 
 ```powershell
-Stop-Service KermariaApiInternal; Move-Item C:\apps\api-internal C:\apps\api-internal-old -Force; Move-Item C:\apps\api-internal-staging C:\apps\api-internal -Force; Start-Service KermariaApiInternal
+dotnet publish apps/api-internal/Kermaria.ApiInternal.csproj -c Release -r win-x64 --self-contained false -p:UseAppHost=true -o out/api-internal
 ```
 
-Réappliquer les ACL et recréer `logs\` si le dossier a été remplacé (cf. runbook §3).
+Contrôle : **56 fichiers**, dont `Kermaria.ApiInternal.exe`.
+
+### 3.2 Bascule (WinRM/Kerberos depuis RDC-07, sans mot de passe)
+
+Copie dans un répertoire d'arrivée **horodaté** — cela évite tout `Remove-Item`
+préalable — puis bascule.
+
+```powershell
+$s = New-PSSession -ComputerName KERMARIA-SRV-13
+$stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+Invoke-Command -Session $s -ArgumentList $stamp -ScriptBlock { param($stamp) New-Item -ItemType Directory "C:\apps\_incoming-$stamp" | Out-Null }
+Copy-Item -Path 'C:\kmw\out\api-internal\*' -Destination "C:\apps\_incoming-$stamp" -ToSession $s -Recurse -Force
+Invoke-Command -Session $s -ArgumentList $stamp -ScriptBlock {
+  param($stamp)
+  Stop-Service KermariaApiInternal -Force
+  (Get-Service KermariaApiInternal).WaitForStatus('Stopped','00:01:00')
+  $acl = Get-Acl 'C:\apps\api-internal'          # AVANT le renommage
+  Rename-Item 'C:\apps\api-internal' "C:\apps\api-internal-old-$stamp"
+  Rename-Item "C:\apps\_incoming-$stamp" 'C:\apps\api-internal'
+  Set-Acl -Path 'C:\apps\api-internal' -AclObject $acl
+  Start-Service KermariaApiInternal
+}
+Remove-PSSession $s
+```
+
+Points à respecter :
+
+- **Compter les fichiers** transférés et les comparer au local avant de toucher
+  au service.
+- **Relever l'ACL avant le renommage** : elle porte l'héritage désactivé et les
+  quatre ACE (`Système` RX, `Administrateurs` FC, `svc_api_portal_ad` Modify,
+  `svc-kermaria` Modify). `Set-Acl` la restaure à l'identique.
+- Convention de sauvegarde : `api-internal-old-<yyyyMMdd-HHmmss>`.
 
 > ⚠️ **Le service démarre `DemoAccountExpirationWorker`** (balayage au démarrage puis
 > horaire). C'est sans effet aujourd'hui : aucun `customers.is_demo = TRUE` en base, et
@@ -132,21 +183,50 @@ L'argument `--run-demo-expiration` n'ouvre aucun port et ne demande aucune authe
    `DEMO_PROVISIONING_PENDING_IDENTITY` (identité KoXo pas encore créée — normal, rejoué),
    `DEMO_REVOCATION_APPLIED`, `DEMO_REVOCATION_PARTIAL` (réessayé au balayage suivant).
 
+### Lecture des journaux JSON
+
+Le journal est en JSON par ligne, dans
+`C:\apps\api-internal\logs\api-internal-<date>.log`.
+
+> ⚠️ **Ne jamais filtrer sur `Error|Exception`** : chaque ligne contient
+> `"Exception":null`, donc **tout** correspond. Filtrer sur le niveau :
+> `'"LogLevel":"(Error|Warning|Critical)"'`.
+
+Quand l'interface affiche une erreur, elle donne une **Référence** : c'est le
+`correlation_id`. Une seule recherche donne la trace complète :
+
+```powershell
+Get-Content $log | Select-String -SimpleMatch '<reference>'
+```
+
+Si le `correlation_id` est **absent** du journal, la requête n'a pas atteint
+l'API — chercher du côté du webportal ou d'un redémarrage concomitant, pas du
+côté métier.
+
 ## 6. Hors de ce paquet — SRV-12 (webportal)
 
-L'écran d'administration (`/admin/demo`, `/admin/demo/profiles`, entrée de navigation,
-colonne « Statut ») vit dans le **webportal** et n'est **pas** inclus ici. Sans lui,
-l'API est fonctionnelle mais les comptes démo ne sont pilotables que par appel direct
-aux endpoints internes.
+L'écran d'administration vit dans le **webportal** et n'est **pas** inclus ici.
+Sans lui, l'API est fonctionnelle mais les comptes démo ne sont pilotables que
+par appel direct aux endpoints internes. Voir
+[`SRV-12_LOT3_DEPLOY.md`](SRV-12_LOT3_DEPLOY.md).
 
-⚠️ `build:web` **ne peut pas** être lancé depuis le worktree (limite MAX_PATH Windows) :
-le build du webportal doit se faire depuis le **checkout principal**, après merge de la
-branche `claude/custom-demo-accounts-3b4e59`.
+> **Correction (2026-08-03)** : la limite MAX_PATH précédemment invoquée ne
+> venait **pas** du worktree mais de la **longueur du chemin**. `build:web`
+> fonctionne parfaitement dans un worktree monté sur un chemin court
+> (`git worktree add C:/kmw main`, `npm ci`, `npm run build:web`).
 
 ## 7. Retour arrière
 
+Le renommage étant réversible, il suffit de reprendre la sauvegarde horodatée.
+
 ```powershell
-Stop-Service KermariaApiInternal; Remove-Item C:\apps\api-internal -Recurse -Force; Move-Item C:\apps\api-internal-old C:\apps\api-internal -Force; Start-Service KermariaApiInternal
+Invoke-Command -ComputerName KERMARIA-SRV-13 -ScriptBlock {
+  Stop-Service KermariaApiInternal -Force
+  (Get-Service KermariaApiInternal).WaitForStatus('Stopped','00:01:00')
+  Rename-Item 'C:\apps\api-internal' 'C:\apps\api-internal-ko'
+  Rename-Item 'C:\apps\api-internal-old-<horodatage>' 'C:\apps\api-internal'
+  Start-Service KermariaApiInternal
+}
 ```
 
 Le schéma n'a pas besoin d'être défait : les migrations sont **additives** (colonnes

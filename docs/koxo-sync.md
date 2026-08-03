@@ -62,6 +62,52 @@ La premiere ligne contient l'en-tete exact KoXo :
 
 `Civilite;Nom;Prenom;DateNaissance;IdentifiantUnique;GroupeSecondaire;Email;Telephone;TelephoneMobile;Fax;PageWeb;ChampLibre;Fonction`
 
+## Ce que KoXo fait de ces champs (verifie en reel le 2026-08-03)
+
+### `groupeSecondaire` pilote l'OU — et la cree si besoin
+
+KoXo place l'identite dans l'OU nommee d'apres ce champ, **et cree cette OU si
+elle n'existe pas**. C'est le seul levier de placement annuaire : l'application
+ne deplace aucune identite elle-meme.
+
+| Cas | Valeur publiee |
+|---|---|
+| Essai de demonstration en cours | `CLI-DEMO` |
+| Compte converti en client reel | le code `CLI-XXXXXX` reserve a la creation |
+| Client reel ordinaire | sa reference client, qui nomme deja son OU |
+
+### `identifiantUnique` revient dans `employeeNumber`
+
+KoXo reporte l'identifiant du CSV (`CLI-NNNNNN`) dans l'attribut AD
+**`employeeNumber`**. C'est la **seule cle de rattachement fiable** entre une
+identite creee par KoXo et l'utilisateur portail : le nom subit une
+translitteration et le `sAMAccountName` est derive par KoXo, donc aucun des deux
+n'est predictible cote application. `DemoProvisioningService` s'en sert pour
+ecrire le lien `customer_ad_links` manquant.
+
+### Le CSV fait autorite, mais ne porte pas les permissions
+
+Une synchronisation reconcilie l'annuaire sur le CSV. **Retirer une ligne est
+donc une instruction** : KoXo desactive les comptes absents du fichier. En
+revanche l'appartenance aux groupes `GG_*` n'est **pas** pilotee par le CSV,
+elle reste du ressort de l'API — une synchronisation ne peut donc pas defaire
+une revocation d'essai echu.
+
+### Autres attributs renseignes
+
+`sn`, `givenName`, `displayName`, `mail`, `userPrincipalName`,
+`personalTitle` (`Mme` / `M.`), `pager` (date de naissance),
+`physicalDeliveryOfficeName` / `division` / `department` (groupe secondaire),
+`homeDirectory`, `homeDrive`, `scriptPath`, et l'appartenance au groupe portant
+le nom du groupe secondaire.
+
+### Code de sortie
+
+`KoXoAdm.exe` renvoie **1 meme en cas de succes** (defaut connu, non corrige ;
+en interactif il faut valider deux ou trois fois). **Ne pas se fier au code de
+sortie** : le script s'appuie sur les marqueurs `LogSuccessful`,
+`LogAcceptedMarker`, `LogCompletionMarker` et `LogBlockingError` du journal KoXo.
+
 ## Variables d'environnement
 
 ### Webportal / BFF
@@ -179,7 +225,17 @@ Valeurs supportees par le module :
 - `ascii`
 - `latin1`
 
-Le choix doit etre valide avec KoXo avant mise en production controlee.
+**Valeur retenue : `utf8bom`** (verifie le 2026-08-03). Le defaut `utf8` sans
+marque d'ordre d'octets est relu en ANSI par KoXo : `LAUMAILLÉ` arrivait dans
+l'annuaire sous la forme `LAUMAILLA‰`. Avec `utf8bom`, les accents minuscules
+sont corrects.
+
+> ⚠️ **Limite subsistante** : les accents **majuscules** sont **supprimes** par
+> KoXo (`LAUMAILLÉ` → `sn=LAUMAILLE`). Le caractere n'est pas corrompu, il est
+> translittere. C'est un comportement KoXo, hors de portee de l'application.
+> Contournement : saisir les noms en casse normale (`Laumaillé`) plutot qu'en
+> capitales. Le `sAMAccountName` reste de toute facon translittere en ASCII
+> (`roselyne.laumailla`), ce qui est le comportement voulu.
 
 ## Permissions minimales
 

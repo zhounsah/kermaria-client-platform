@@ -66,7 +66,9 @@ Ce fichier s'applique a tout le depot `kermaria-client-platform`.
 - Session : token brut uniquement dans cookie `HttpOnly` ; jamais de token/cookie en `localStorage` ou `sessionStorage`.
 - `SERVICE_AUTH_TOKEN` doit correspondre entre WEBPORTAL et API-INTERNAL ; le BFF propage aussi `X-Portal-Session` et `X-Correlation-Id`.
 - Non-`Development` refuse placeholders, `DEMO_*`, `SESSION_COOKIE_SECURE=false`, `RUN_MARIADB_TESTS=true` et SQL non MariaDB.
-- `AD_INTEGRATION_MODE=disabled` par defaut ; `controlled_write` reste borne a `OU=TEST_SITE_WEB,DC=home,DC=bzh` ; pas de hard delete AD, reset password, OU production ou compte Domain Admin.
+- `AD_INTEGRATION_MODE=disabled` par defaut ; pas de hard delete AD, reset password, OU production ou compte Domain Admin.
+- En production (SRV-13), `controlled_write` est borne par `AD_ALLOWED_ROOTS` = `OU=KoXoAdm,DC=clients,DC=home,DC=bzh` et `OU=Groupes_TEST,DC=clients,DC=home,DC=bzh` sur le domaine `clients.home.bzh`. L'ancienne mention `OU=TEST_SITE_WEB,DC=home,DC=bzh` etait obsolete.
+- `AD_USE_CURRENT_WINDOWS_CREDENTIALS` doit valoir `false` : a `true`, le code ignore `AD_SERVICE_ACCOUNT_USERNAME` et se lie sous l'identite du service Windows, qui n'a aucune delegation. Symptome trompeur : `AD_ACCESS_DENIED` alors que la delegation est correctement posee.
 - `BPCE_INTEGRATION_MODE=live`, `PAYPAL_MODE=live` et `EMAIL_INTEGRATION_MODE=live` demandent validation explicite ; en phase de tests, pas de client reel, email externe reel ni prelevement recurrent actif.
 - Ne pas journaliser tokens, cookies, mots de passe, chaines de connexion, `BPCE_REFRESH_TOKEN`, `PAYPAL_CLIENT_SECRET` ni montants complets de facture.
 
@@ -84,6 +86,42 @@ Ce fichier s'applique a tout le depot `kermaria-client-platform`.
 - `npm run validate:staging` exige `NODE_ENV=production`, `ASPNETCORE_ENVIRONMENT=Staging`, `DOTNET_ENVIRONMENT=Staging`, `SQL_PROVIDER=mariadb`, `AD_INTEGRATION_MODE=disabled`, `SESSION_COOKIE_SECURE=true` et aucun `DEMO_*`.
 - `npm run validate:preprod` exige `ASPNETCORE_ENVIRONMENT=Production` et `DOTNET_ENVIRONMENT=Production` avec les memes garde-fous.
 - Ces validateurs appellent `git ls-files` ; les lancer depuis la racine d'un clone Git, pas depuis une archive.
+
+## Exploitation — Topologie Reelle Et Pieges
+
+Faits verifies en production, valables pour **tout** agent. Detail complet dans
+`docs/v1.1/deploy/` et `docs/koxo-sync.md`.
+
+### SRV-12 (webportal) — Ubuntu, pas Windows
+
+- **Ubuntu 26.04**, hors domaine, **SSH par cle uniquement** (pas de WinRM, 445 ferme).
+- Service systemd `kermaria-webportal.service` ; `/opt/kermaria/webportal` est un **lien symbolique** vers `/opt/kermaria/releases/<horodatage>-<version>`.
+- Ecoute sur `192.168.100.212:3000`, **pas** sur `localhost`.
+- **Livrer en `.tar.gz`, jamais en `.zip`** : un zip fabrique sous Windows porte des separateurs `\` qui deviennent des noms de fichiers litteraux a l'extraction, d'ou une arborescence a plat, `status=226/NAMESPACE` et un **502 nginx** trompeur.
+- `.next/cache` n'est pas dans l'archive : le creer au deploiement, proprietaire `kermaria-web`, sinon meme panne.
+- `sudo` exige un mot de passe : les etapes privilegiees reviennent a l'exploitant.
+
+### SRV-13 (api-internal) — Windows
+
+- Service `KermariaApiInternal`, compte `HOME\svc-kermaria`, dossier `C:\apps\api-internal`, sauvegardes `api-internal-old-<yyyyMMdd-HHmmss>`.
+- Joignable en **WinRM/Kerberos depuis RDC-07 sans mot de passe**. Double saut : une requete LDAP **depuis** une session WinRM echoue — lancer l'ADSI en local sur RDC-07.
+- Le csproj porte `<UseAppHost>false</UseAppHost>` : publier avec **`-p:UseAppHost=true`**, sinon `Kermaria.ApiInternal.exe` manque et le service n'a plus d'executable.
+- Configuration : JSON **plat** `C:\ProgramData\Kermaria\api-internal.config.json`, UTF-8 **sans BOM**, valeurs en chaines. Genere depuis `<repo-parent>/kermaria-client-platform.local.env.ps1` par `scripts/build-api-config.ps1` : corriger un reglage **aux deux endroits**, sinon la regeneration l'annule.
+- Journaux JSON dans `C:\apps\api-internal\logs\` : **ne pas filtrer sur `Error|Exception`** (chaque ligne contient `"Exception":null`), filtrer sur `"LogLevel":"(Error|Warning|Critical)"`. La « Reference » affichee dans l'interface est le `correlation_id`.
+
+### Migrations en base reelle
+
+- `.local.env.ps1` definit aussi `SQL_USERNAME`/`SQL_PASSWORD` (compte `kermaria_api`, **sans DDL**) : le charger **d'abord**, surcharger `kermaria_migrator` **ensuite**, sinon `CREATE command denied`.
+- Passer `--project <chemin absolu>` : lance depuis une autre racine, le runner applique le mauvais checkout.
+- MySqlConnector materialise les colonnes `CHAR(36)` en **`Guid`**, pas en `string` : utiliser le helper `ReadIdentifier`, jamais `reader.GetString`. Les smoke tests tournant en persistance **mock**, cette classe de bug leur est structurellement invisible.
+
+### Chaine KoXo
+
+- Le **CSV fait autorite** a la synchronisation : retirer une ligne **desactive** le compte AD correspondant. En revanche il **ne porte pas les permissions** — les groupes restent pilotes par l'API.
+- `GroupeSecondaire` designe l'OU cible et KoXo **la cree si elle n'existe pas**.
+- `identifiantUnique` est reporte dans l'attribut AD **`employeeNumber`** : seule cle fiable pour rattacher une identite creee par KoXo (le nom est translittere, le `sAMAccountName` est derive par KoXo).
+- `KOXO_CSV_ENCODING=utf8bom`. Les accents **majuscules** restent supprimes par KoXo — comportement externe, non corrigeable cote application.
+- `KoXoAdm.exe` sort en **code 1 meme en succes** : se fier aux marqueurs de journal, pas au code de sortie.
 
 ## Conventions De Code Et Docs
 

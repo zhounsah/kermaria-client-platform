@@ -1,92 +1,155 @@
-# Déploiement SRV-12 — V1.1 Lot 3 (écran d'administration des comptes de démo)
+# Déploiement SRV-12 — webportal V1.1
 
-> Fiche de passation destinée à l'opérateur du déploiement (Codex).
-> Complément de [`SRV-13_LOT3_DEPLOY.md`](SRV-13_LOT3_DEPLOY.md) — **déployer SRV-13 d'abord**.
+> ⚠️ **Fiche entièrement réécrite le 2026-08-03.** La version précédente décrivait
+> une procédure **Windows** (`C:\apps\webportal\`, `Stop-Service`, archive `.zip`) :
+> elle était **fausse de bout en bout**. SRV-12 est un **Ubuntu 26.04** piloté par
+> systemd. Suivre uniquement cette version.
 
 ## 0. Résumé
 
 | | |
 |---|---|
-| **Cible** | `KERMARIA-SRV-12` (webportal), dossier `C:\apps\webportal\` |
-| **Paquet** | `kermaria-webportal-v1.1.0.zip` (6,36 Mo — 24 Mo décompressé) — tag **`v1.1.0`** |
-| **SHA256** | `C500688598C4CE42EC76301D0E708CEF5E319EB62BDCCECBB8900B2466B6B451` |
-| **Type** | Next.js `output: "standalone"`, layout monorepo-aware |
-| **Dépendance** | ⚠️ Suppose l'API SRV-13 **déjà déployée** (les écrans appellent ses endpoints) |
+| **Cible** | `kermaria-srv-12` — **Ubuntu 26.04**, hors domaine |
+| **Accès** | **SSH par clé uniquement** (port 22). Pas de WinRM, pas de SMB (445 fermé). |
+| **Service** | `kermaria-webportal.service` (systemd), utilisateur `kermaria-web` |
+| **Application** | `/opt/kermaria/webportal` → **lien symbolique** vers `/opt/kermaria/releases/<horodatage>-<version>` |
+| **Runtime** | `/opt/kermaria/node/bin/node` |
+| **Environnement** | `/etc/kermaria/webportal.env` |
+| **Écoute** | `192.168.100.212:3000` (**pas** `localhost` — un `curl localhost:3000` échoue en exit 7) |
+| **Format de paquet** | **`.tar.gz` obligatoire** (voir §1) |
+| **Privilèges** | `sudo` exige un mot de passe : les étapes privilégiées reviennent à l'exploitant |
 
-> **Ce paquet contient aussi la remise à plat agentique** (ex-releases 1.0.0.7/1.0.0.8) :
-> politique de sauvegarde affichée sur les packs publics (`PublicPackCard`), styles
-> `globals.css`, données mock associées. Ce n'est donc pas une livraison « démo » seule.
+## 1. Pourquoi `.tar.gz` et jamais `.zip`
 
-## 1. Ce que ce paquet ajoute
+Un zip fabriqué sous Windows porte des séparateurs `\` dans ses entrées. Sous
+Linux, `python3 -m zipfile -e` les prend pour des **noms de fichiers littéraux** :
+l'extraction produit des milliers de fichiers **à plat** nommés
+`apps\webportal\.next\BUILD_ID` au lieu d'une arborescence.
 
-- `/admin/demo` — liste des comptes de démo (avec colonne **Statut** : actif /
-  expiré / révoqué) et formulaire de création (profil, nom, e-mail, mot de passe,
-  durée, composition à la carte par cases à cocher).
-- `/admin/demo/profiles` — CRUD du registre `demo_profiles`.
-- Routes BFF `/api/admin/demo/accounts`, `/api/admin/demo/profiles`,
-  `/api/admin/demo/profiles/[key]`.
-- Entrée de navigation « Comptes démo » (section Relation client).
+Conséquence observée en production le 2026-08-03 :
+`apps/webportal/.next/cache` n'existe pas, or le service le déclare en
+`ReadWritePaths=` ; systemd échoue alors à monter son espace de noms
+(**`status=226/NAMESPACE`**), boucle sur les redémarrages, et nginx renvoie
+**502 Bad Gateway**. Le diagnostic pointe à tort vers le reverse proxy SRV-11.
 
-Aucune variable d'environnement **nouvelle** côté webportal : les écrans passent par
-le BFF existant, qui parle à l'API interne avec la configuration déjà en place.
+> **Diagnostic rapide** : `ls -la` sur le répertoire de release. Un **compte de
+> liens égal à 2** signale l'absence totale de sous-répertoire, donc ce défaut.
 
-## 2. Contenu vérifié du paquet
+`tar` préserve en outre les permissions et les liens symboliques, que le zip perd.
 
-Le layout standalone de Next.js **n'inclut jamais** `.next/static` ni `public` : ils ont
-été réintégrés manuellement, conformément au runbook. Contrôles passés à la construction :
+Fabrication du paquet, depuis le poste de build :
 
-| Contrôle | Attendu |
-|---|---|
-| `apps\webportal\server.js` | présent |
-| `apps\webportal\.next\static\` | présent (chunks client) |
-| `apps\webportal\public\portfolio\` | présent (portfolio embarqué V0.27) |
-| `node_modules\next\` | présent |
-| `.next\server\app\admin\demo\**\page.js` | 2 pages compilées |
-
-## 3. Déploiement
-
-Copie en `-staging` puis bascule — jamais d'écrasement direct d'un déploiement vivant.
-
-```powershell
-Expand-Archive -Path .\kermaria-webportal-v1.1-lot3.zip -DestinationPath C:\apps\webportal-staging -Force
+```bash
+cd out/webportal-vXXX && tar -czf ../kermaria-webportal-vX.Y.Z.tar.gz apps node_modules
 ```
 
-Puis arrêt, bascule, redémarrage du service :
+Contrôle avant transfert — les entrées doivent utiliser `/` :
 
-```powershell
-Stop-Service KermariaWebportal; Move-Item C:\apps\webportal C:\apps\webportal-old -Force; Move-Item C:\apps\webportal-staging C:\apps\webportal -Force; Start-Service KermariaWebportal
+```bash
+tar -tzf kermaria-webportal-vX.Y.Z.tar.gz | head -3
 ```
 
-Réappliquer les ACL du runbook si le dossier a été remplacé.
+## 2. Composition du paquet
 
-## 4. Vérification
+Le layout `standalone` de Next.js **n'inclut jamais** `.next/static` ni `public`.
+Le répertoire de préparation doit donc être composé ainsi :
 
-1. Le service démarre et le portail répond.
-2. Connexion admin → l'entrée **« Comptes démo »** apparaît dans la navigation.
-3. `/admin/demo` charge la liste **et** les listes déroulantes de profils
-   (4 profils attendus : 3 `showcase` + `trial-ad-koxo`).
-   Une liste de profils vide signale que l'API SRV-13 ne répond pas ou n'est pas à jour.
-4. `/admin/demo/profiles` affiche le registre et permet l'édition.
+```
+<staging>/
+├── apps/webportal/          (depuis .next/standalone/, + .next/static + public)
+└── node_modules/            (depuis .next/standalone/)
+```
 
-> Le bandeau `MockNotice` ne doit **pas** apparaître : sa présence indiquerait que
-> l'API répond en mode mock au lieu de la base réelle.
+## 3. Transfert
 
-## 5. Recette fonctionnelle (après SRV-12 + SRV-13)
+```bash
+scp -i ~/.ssh/kermaria_srv12 kermaria-webportal-vX.Y.Z.tar.gz zhounsah@kermaria-srv-12:~/
+ssh -i ~/.ssh/kermaria_srv12 zhounsah@kermaria-srv-12 'sha256sum ~/kermaria-webportal-vX.Y.Z.tar.gz'
+```
 
-Dans cet ordre, impérativement :
+Comparer la somme à celle calculée au build **avant** de poursuivre.
 
-1. **`showcase-tpe`** — inerte par garde-fou dur dans le code : aucun AD, aucun KoXo,
-   aucun e-mail, aucun paiement, quelle que soit la configuration globale. Valide la
-   création, le contenu semé et l'affichage sans le moindre effet réel.
-2. **`trial-ad-koxo`** — durée de vie **très courte**. Vérifier l'ajout aux
-   `GG_DEMO_*`, puis la révocation (retrait des groupes + désactivation du compte)
-   et la purge au balayage suivant.
+## 4. Déploiement (étapes privilégiées)
+
+```bash
+REL=/opt/kermaria/releases/$(date +%Y%m%d-%H%M%S)-vX.Y.Z
+sudo mkdir -p "$REL"
+sudo tar -xzf ~/kermaria-webportal-vX.Y.Z.tar.gz -C "$REL"
+sudo chown -R root:root "$REL"
+sudo install -d -o kermaria-web -g kermaria-web -m 750 "$REL/apps/webportal/.next/cache"
+sudo ln -sfn "$REL" /opt/kermaria/webportal
+sudo systemctl restart kermaria-webportal
+systemctl is-active kermaria-webportal
+```
+
+> ⚠️ **La ligne `install -d` n'est pas optionnelle.** `.next/cache` n'est pas dans
+> l'archive : il est créé au déploiement et doit appartenir à `kermaria-web`,
+> puisque le service le déclare en `ReadWritePaths=`. L'omettre provoque le même
+> `226/NAMESPACE` qu'au §1, **même avec une archive saine**.
+
+## 5. Contrôles
+
+```bash
+systemctl is-active kermaria-webportal
+curl -s -o /dev/null -w "%{http_code}\n" http://192.168.100.212:3000/
+curl -s http://192.168.100.212:3000/ | grep -o "Version v[0-9.]*" | head -1
+ls -ld /opt/kermaria/webportal/apps/webportal/.next/cache
+```
+
+Attendu : `active`, `200`, la version déployée, et un `cache` appartenant à
+`kermaria-web` en mode `750`.
+
+> **Le pied de page est le contrôle le plus fiable d'un déploiement obsolète.**
+> Il affiche `Version v${version}` lue dans le `package.json` **racine au moment
+> du build**. Corollaire : **toujours bumper la version avant de reconstruire**,
+> sinon le libellé ment. Le nom du répertoire de release, lui, peut mentir — un
+> dossier `…-v1.1.0` a déjà contenu un build `1.0.0.6`.
 
 ## 6. Retour arrière
 
-```powershell
-Stop-Service KermariaWebportal; Remove-Item C:\apps\webportal -Recurse -Force; Move-Item C:\apps\webportal-old C:\apps\webportal -Force; Start-Service KermariaWebportal
+Le déploiement par lien symbolique rend le repli immédiat : il suffit de
+repointer vers la release précédente, toujours présente sur disque.
+
+```bash
+ls -la /opt/kermaria/releases/
+sudo ln -sfn /opt/kermaria/releases/<release-precedente> /opt/kermaria/webportal
+sudo systemctl restart kermaria-webportal
 ```
 
-Sans cet écran, l'API reste fonctionnelle : les comptes de démo ne sont simplement
-plus pilotables que par appel direct aux endpoints internes.
+## 7. Diagnostic
+
+```bash
+systemctl status kermaria-webportal --no-pager | head -20
+journalctl -u kermaria-webportal -n 50 --no-pager
+sudo tail -50 /var/log/kermaria/webportal.stderr.log
+```
+
+| Symptôme | Cause probable |
+|---|---|
+| `status=226/NAMESPACE` | `.next/cache` absent — archive à plat (§1) ou `install -d` oublié (§4) |
+| **502** nginx | Le service boucle sur les redémarrages ; la configuration SRV-11 est rarement en cause |
+| Pied de page à l'ancienne version | Version non bumpée avant le build, ou lien symbolique non basculé |
+| `curl localhost:3000` en échec (exit 7) | Le service écoute sur `192.168.100.212:3000`, pas sur la boucle locale |
+
+## 8. Ce que la V1.1 ajoute côté webportal
+
+- `/admin/demo` — liste des comptes de démonstration (colonne **Statut**, actions
+  **Convertir** et **Supprimer**) et formulaire de création. Les champs d'état
+  civil (civilité, prénom, nom, date de naissance) n'apparaissent que pour un
+  profil **`trial`** : une vitrine n'étant jamais exportée vers KoXo, la
+  contrainte y serait sans objet.
+- `/admin/demo/profiles` — CRUD du registre `demo_profiles`.
+- Routes BFF `/api/admin/demo/accounts`, `/api/admin/demo/accounts/[reference]`
+  (DELETE), `/api/admin/demo/accounts/[reference]/convert`,
+  `/api/admin/demo/profiles`, `/api/admin/demo/profiles/[key]`.
+
+Aucune variable d'environnement nouvelle : le BFF utilise la configuration déjà
+en place.
+
+## 9. Dépendance
+
+Les écrans appellent l'API interne : **déployer SRV-13 d'abord**
+(voir [`SRV-13_LOT3_DEPLOY.md`](SRV-13_LOT3_DEPLOY.md)). Une liste de profils
+vide signale que l'API ne répond pas ou n'est pas à jour. Le bandeau `MockNotice`
+ne doit **pas** apparaître : sa présence indiquerait une réponse en mode mock au
+lieu de la base réelle.

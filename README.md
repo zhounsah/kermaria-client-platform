@@ -36,6 +36,14 @@ Navigation par besoin :
 - historique des versions : [`docs/ROADMAP.md`](docs/ROADMAP.md)
 - comptes de demonstration et d'essai (V1.1) :
   [`docs/v1.1/V1.1_CUSTOM_DEMO_ACCOUNTS.md`](docs/v1.1/V1.1_CUSTOM_DEMO_ACCOUNTS.md)
+- deploiement des serveurs applicatifs :
+  [`docs/v1.1/deploy/SRV-12_LOT3_DEPLOY.md`](docs/v1.1/deploy/SRV-12_LOT3_DEPLOY.md)
+  (webportal, **Ubuntu/systemd**) et
+  [`docs/v1.1/deploy/SRV-13_LOT3_DEPLOY.md`](docs/v1.1/deploy/SRV-13_LOT3_DEPLOY.md)
+  (api-internal, Windows)
+- synchronisation KoXo : [`docs/koxo-sync.md`](docs/koxo-sync.md)
+- pieges d'exploitation verifies en production : section « Exploitation » de
+  [`AGENTS.md`](AGENTS.md)
 
 Repere de version important :
 
