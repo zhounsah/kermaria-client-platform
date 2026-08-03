@@ -149,6 +149,14 @@ public sealed class DemoAccountService : IDemoAccountService
         var customerId = Guid.NewGuid().ToString("D");
         var portalUserId = Guid.NewGuid().ToString("D");
         var externalReference = $"DEMO-{Guid.NewGuid():N}"[..24];
+        // Code de groupe definitif, alloue des maintenant mais RETENU : tant que
+        // le compte est en demonstration, l'export KoXo publie « CLI-DEMO » et
+        // l'identite reste dans l'OU commune. La conversion se contente de
+        // publier ce code, et KoXo cree alors l'OU cible. Reserver ici evite de
+        // renommer la reference client a la conversion (cascade factures /
+        // documents / abonnements).
+        var koxoGroupReference = await ReserveGroupReferenceAsync(
+            cancellationToken);
         var userDisplayName = string.IsNullOrWhiteSpace(request.UserDisplayName)
             ? displayName
             : RequireText(request.UserDisplayName, 200);
@@ -188,7 +196,8 @@ public sealed class DemoAccountService : IDemoAccountService
             email,
             passwordHash,
             userDisplayName,
-            services);
+            services,
+            koxoGroupReference);
 
         await _accounts.CreateDemoAccountAsync(spec, cancellationToken);
 
@@ -408,6 +417,13 @@ public sealed class DemoAccountService : IDemoAccountService
         var normalized = value?.Trim().ToLowerInvariant();
         return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
     }
+
+    private async Task<string> ReserveGroupReferenceAsync(
+        CancellationToken cancellationToken)
+        => await _accounts.TryReserveGroupReferenceAsync(cancellationToken)
+            ?? throw new DemoConflictException(
+                "DEMO_GROUP_REFERENCE_UNAVAILABLE",
+                "Impossible de réserver un code de groupe unique pour ce compte.");
 
     private static string RequireText(string? value, int maxLength)
     {

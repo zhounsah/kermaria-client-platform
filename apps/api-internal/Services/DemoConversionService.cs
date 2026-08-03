@@ -177,6 +177,24 @@ public sealed class DemoConversionService : IDemoConversionService
             }
         }
 
+        // Rattrapage des comptes crees avant la reservation systematique : sans
+        // code reserve, l'export republierait la reference DEMO-* et KoXo
+        // creerait une OU a ce nom. L'ecriture est conditionnee a l'absence de
+        // code, donc sans effet sur un compte deja reserve.
+        var reservedGroupReference =
+            await _accounts.TryReserveGroupReferenceAsync(cancellationToken);
+        if (reservedGroupReference is null)
+        {
+            throw new DemoConflictException(
+                "DEMO_GROUP_REFERENCE_UNAVAILABLE",
+                "Impossible de réserver un code de groupe unique pour ce compte.");
+        }
+
+        await _accounts.SetKoxoGroupReferenceAsync(
+            candidate.CustomerId,
+            reservedGroupReference,
+            cancellationToken);
+
         await _accounts.MarkConvertedAsync(
             candidate.CustomerId,
             DateTime.UtcNow,

@@ -35,7 +35,9 @@ public sealed class MariaDbKoxoRepository : IKoxoRepository
                 portal_user.given_name AS given_name,
                 portal_user.surname AS surname,
                 portal_user.birth_date AS birth_date,
-                portal_user.email AS email
+                portal_user.email AS email,
+                customer.is_demo AS is_demo,
+                customer.koxo_group_reference AS koxo_group_reference
             FROM portal_users portal_user
             INNER JOIN customers customer
                 ON customer.id = portal_user.customer_id
@@ -44,6 +46,10 @@ public sealed class MariaDbKoxoRepository : IKoxoRepository
                AND ad_link.object_type = 'user'
             WHERE portal_user.status = 'active'
               AND customer.status = 'active'
+              -- Une vitrine est inerte par construction : elle ne doit jamais
+              -- atteindre le pipeline d'identites reelles. Seuls les essais
+              -- (trial), qui ont besoin d'une identite AD, sont exportes.
+              AND NOT (customer.is_demo = TRUE AND customer.demo_kind = 'showcase')
             ORDER BY
                 customer.external_reference ASC,
                 portal_user.koxo_unique_identifier ASC,
@@ -61,7 +67,9 @@ public sealed class MariaDbKoxoRepository : IKoxoRepository
                 ReadNullableString(reader, "given_name"),
                 ReadNullableString(reader, "surname"),
                 ReadNullableDate(reader, "birth_date"),
-                reader.GetString("email")));
+                reader.GetString("email"),
+                reader.GetBoolean("is_demo"),
+                ReadNullableString(reader, "koxo_group_reference")));
         }
 
         return items;

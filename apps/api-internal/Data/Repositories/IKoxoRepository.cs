@@ -2,6 +2,15 @@ using Kermaria.ApiInternal.Contracts;
 
 namespace Kermaria.ApiInternal.Data.Repositories;
 
+/// <param name="IsDemo">
+/// Compte encore en demonstration : son identite doit rester dans l'OU de
+/// demonstration commune, quel que soit le code de groupe deja reserve.
+/// </param>
+/// <param name="KoxoGroupReference">
+/// Code de groupe reserve a la creation d'un compte de demo, publie seulement
+/// apres conversion. Null pour un client reel ordinaire, dont l'OU est nommee
+/// d'apres sa reference.
+/// </param>
 public sealed record KoxoExportCandidate(
     string PortalUserId,
     string CustomerReference,
@@ -10,7 +19,9 @@ public sealed record KoxoExportCandidate(
     string? GivenName,
     string? Surname,
     string? BirthDate,
-    string Email);
+    string Email,
+    bool IsDemo = false,
+    string? KoxoGroupReference = null);
 
 public sealed record KoxoRunInsert(
     string Id,

@@ -18,6 +18,17 @@ public sealed class MockDemoAccountRepository : IDemoAccountRepository
         CancellationToken cancellationToken = default)
         => Task.CompletedTask;
 
+    public Task<bool> CustomerReferenceTakenAsync(
+        string reference,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult(false);
+
+    public Task SetKoxoGroupReferenceAsync(
+        string customerId,
+        string groupReference,
+        CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
+
     public Task<IReadOnlyList<DemoAccountSummary>> ListDemoAccountsAsync(
         CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyList<DemoAccountSummary>>(

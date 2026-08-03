@@ -67,7 +67,8 @@ public sealed record DemoAccountCreationSpec(
     string Email,
     string PasswordHash,
     string UserDisplayName,
-    IReadOnlyList<DemoServiceSeed> Services);
+    IReadOnlyList<DemoServiceSeed> Services,
+    string? KoxoGroupReference = null);
 
 /// <summary>
 /// Cycle de vie des comptes de demonstration/essai (V1.1).
@@ -82,6 +83,25 @@ public interface IDemoAccountRepository
     /// <summary>Materialise un compte de demo (customer + portal_user + services).</summary>
     Task CreateDemoAccountAsync(
         DemoAccountCreationSpec spec,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Indique si une reference <c>CLI-XXXXXX</c> est deja prise, que ce soit
+    /// comme reference client effective ou comme code de groupe reserve pour un
+    /// compte de demo. Les deux espaces sont confondus : un code reserve devient
+    /// une reference d'OU a la conversion.
+    /// </summary>
+    Task<bool> CustomerReferenceTakenAsync(
+        string reference,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Attribue apres coup un code de groupe reserve a un compte de demo qui n'en
+    /// a pas (comptes crees avant le lot 5).
+    /// </summary>
+    Task SetKoxoGroupReferenceAsync(
+        string customerId,
+        string groupReference,
         CancellationToken cancellationToken = default);
 
     /// <summary>Liste les comptes de demo pour la vue admin dediee.</summary>

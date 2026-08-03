@@ -993,17 +993,7 @@ public sealed class SignupService : ISignupService
     }
 
     private static string GenerateCustomerReference()
-    {
-        const string alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-        Span<char> buffer = stackalloc char[6];
-        for (var index = 0; index < buffer.Length; index++)
-        {
-            buffer[index] = alphabet[
-                RandomNumberGenerator.GetInt32(alphabet.Length)];
-        }
-
-        return $"CLI-{new string(buffer)}";
-    }
+        => CustomerReferenceGenerator.Generate();
 
     private static NormalizedSignupSubmission? NormalizeSubmission(
         SignupSubmitPayload payload)

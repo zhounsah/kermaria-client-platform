@@ -357,6 +357,51 @@ public sealed class MariaDbDemoAccountRepository : IDemoAccountRepository
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    public async Task<bool> CustomerReferenceTakenAsync(
+        string reference,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = new MySqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        // Les deux colonnes partagent le meme espace de noms : un code reserve
+        // devient la reference d'OU du client a la conversion.
+        command.CommandText =
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM customers
+                WHERE external_reference = @reference
+                   OR koxo_group_reference = @reference
+            );
+            """;
+        command.Parameters.AddWithValue("@reference", reference);
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return Convert.ToBoolean(result, CultureInfo.InvariantCulture);
+    }
+
+    public async Task SetKoxoGroupReferenceAsync(
+        string customerId,
+        string groupReference,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = new MySqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        // Rattrapage seulement : on n'ecrase jamais un code deja reserve, sous
+        // peine de deplacer une OU deja creee par KoXo.
+        command.CommandText =
+            """
+            UPDATE customers
+            SET koxo_group_reference = @group_reference
+            WHERE id = @id
+              AND koxo_group_reference IS NULL;
+            """;
+        command.Parameters.AddWithValue("@group_reference", groupReference);
+        command.Parameters.AddWithValue("@id", customerId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     private async Task MarkTrialTimestampAsync(
         string column,
         string customerId,
@@ -499,11 +544,13 @@ public sealed class MariaDbDemoAccountRepository : IDemoAccountRepository
             INSERT INTO customers (
                 id, external_reference, display_name, status, customer_type,
                 is_demo, demo_profile_id, demo_kind, demo_expires_at,
-                demo_created_by_user_id, created_at, updated_at
+                demo_created_by_user_id, koxo_group_reference,
+                created_at, updated_at
             ) VALUES (
                 @id, @external_reference, @display_name, 'active', @customer_type,
                 TRUE, @demo_profile_id, @demo_kind, @demo_expires_at,
-                @demo_created_by_user_id, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6)
+                @demo_created_by_user_id, @koxo_group_reference,
+                UTC_TIMESTAMP(6), UTC_TIMESTAMP(6)
             );
             """;
         command.Parameters.AddWithValue("@id", spec.CustomerId);
@@ -520,6 +567,9 @@ public sealed class MariaDbDemoAccountRepository : IDemoAccountRepository
         command.Parameters.AddWithValue(
             "@demo_created_by_user_id",
             (object?)spec.DemoCreatedByUserId ?? DBNull.Value);
+        command.Parameters.AddWithValue(
+            "@koxo_group_reference",
+            (object?)spec.KoxoGroupReference ?? DBNull.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 

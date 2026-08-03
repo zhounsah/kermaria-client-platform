@@ -40,6 +40,10 @@ public sealed class KoxoExportService : IKoxoExportService
 {
     private const int SchemaVersion = 1;
     private const int PreviewLimit = 5;
+
+    /// <summary>OU commune hebergeant les identites de demonstration.</summary>
+    public const string DemoGroupReference = "CLI-DEMO";
+
     private static readonly Regex EmailPattern =
         new("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$", RegexOptions.Compiled);
     private static readonly Regex IdentifierPattern =
@@ -98,6 +102,26 @@ public sealed class KoxoExportService : IKoxoExportService
         return await BuildDashboardAsync(prepared, cancellationToken);
     }
 
+    /// <summary>
+    /// Determine l'OU cible cote KoXo, qui la cree si elle n'existe pas.
+    /// </summary>
+    /// <remarks>
+    /// Trois cas :
+    /// <list type="bullet">
+    /// <item>essai en cours : <see cref="DemoGroupReference"/>, l'identite reste
+    /// dans l'OU de demonstration commune et le code reserve n'est pas publie ;</item>
+    /// <item>compte converti : le code reserve a la creation, ce qui fait creer
+    /// l'OU definitive a KoXo sans renommer la reference client ;</item>
+    /// <item>client reel ordinaire : sa reference, qui nomme deja son OU.</item>
+    /// </list>
+    /// C'est le seul levier de la conversion cote annuaire : l'application ne
+    /// deplace aucune identite elle-meme.
+    /// </remarks>
+    private static string ResolveGroupeSecondaire(KoxoExportCandidate candidate)
+        => candidate.IsDemo
+            ? DemoGroupReference
+            : candidate.KoxoGroupReference ?? candidate.CustomerReference;
+
     private async Task<KoxoPreparedExport> PrepareAsync(
         CancellationToken cancellationToken)
     {
@@ -143,7 +167,8 @@ public sealed class KoxoExportService : IKoxoExportService
                 fields.Add("identifiantUnique");
             }
 
-            var groupeSecondaire = NormalizeRequired(candidate.CustomerReference);
+            var groupeSecondaire = NormalizeRequired(
+                ResolveGroupeSecondaire(candidate));
             if (groupeSecondaire is null)
             {
                 fields.Add("groupeSecondaire");

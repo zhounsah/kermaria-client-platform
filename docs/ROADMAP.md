@@ -963,6 +963,20 @@ contenu est conserve. L'annuaire est traite avant la base, de sorte qu'un echec
 AD laisse l'operation rejouable telle quelle. Voir la section 16 de la
 conception. La V1.1 est donc complete cote code, ses quatre lots livres.
 
+Le **lot 5** (`v1.1.3`, migration `040`) remplace le deplacement d'OU par
+l'application : celui-ci est delegue a KoXo via le champ `GroupeSecondaire` de
+l'export, KoXo creant l'OU cible si elle n'existe pas. Un code definitif
+`CLI-XXXXXX` est reserve des la creation du compte de demo puis **retenu** —
+l'export publie `CLI-DEMO` tant que le compte est en demonstration — et la
+conversion se contente de le publier. La reference client ne change donc jamais,
+ce qui evite d'en cascader le renommage sur les factures, documents et
+abonnements. Partage des roles : l'API reste seule maitresse des **permissions**
+(groupes), KoXo de l'**arborescence** ; le CSV fait autorite a la synchronisation
+mais ne porte pas les permissions, une synchronisation ne peut donc pas defaire
+une revocation. Corrige au passage un defaut de l'export, qui transmettait les
+comptes **vitrine** au pipeline d'identites reelles. Voir la section 17 de la
+conception.
+
 Ancrage infra (R740xd) : groupes dans `OU=Groupes_TEST`, comptes dans
 `OU=CLI-DEMO`, quota FSRM, collection RDS Clients-1 filtree par groupe,
 VLAN 64 `10.35.64.0/24`. Deploiement SRV-13 :
