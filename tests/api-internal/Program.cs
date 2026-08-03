@@ -4669,7 +4669,7 @@ async Task VerifyManagedContentAsync(
         && publicLegalPayload.RootElement
             .GetProperty("versionLabel")
             .GetString()
-            ?.Contains("07 juillet 2026", StringComparison.Ordinal) == true
+            ?.Contains("03 août 2026", StringComparison.Ordinal) == true
         && publicLegalPayload.RootElement
             .GetProperty("bodyMarkdown")
             .GetString()
