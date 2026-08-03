@@ -2,6 +2,7 @@
 param(
     [string]$Prefix = 'http://+:8041/internal/koxo/sync/',
     [string]$SyncScriptPath = (Join-Path $PSScriptRoot 'Sync-KoXoClients.ps1'),
+    [string]$WebhookSyncLauncherPath = (Join-Path $PSScriptRoot 'Invoke-KoxoSyncFromWebhook.ps1'),
     [string]$CsvTargetPath = 'C:\Program Files\KoXo Dev\KoXoAdm\Data\CSVSynchro\clients.csv',
     [string]$WorkingDirectory = 'C:\Program Files\KoXo Dev\KoXoAdm\Data\CSVSynchro\work',
     [string]$KoxoExecutablePath = 'C:\Program Files\KoXo Dev\KoXoAdm\KoXoAdm.exe',
@@ -29,6 +30,7 @@ if ([string]::IsNullOrWhiteSpace($resolvedToken)) {
 }
 
 $resolvedSyncScriptPath = [System.IO.Path]::GetFullPath($SyncScriptPath)
+$resolvedWebhookSyncLauncherPath = [System.IO.Path]::GetFullPath($WebhookSyncLauncherPath)
 $resolvedCsvTargetPath = [System.IO.Path]::GetFullPath($CsvTargetPath)
 $resolvedWorkingDirectory = [System.IO.Path]::GetFullPath($WorkingDirectory)
 $resolvedKoxoExecutablePath = [System.IO.Path]::GetFullPath($KoxoExecutablePath)
@@ -140,29 +142,23 @@ try {
             $stdoutPath = Join-Path $LogDirectory ('koxo-sync-child-{0}.stdout.log' -f $correlationId)
             $stderrPath = Join-Path $LogDirectory ('koxo-sync-child-{0}.stderr.log' -f $correlationId)
 
-            $syncCommand = @(
-                '&',
-                ('"{0}"' -f $resolvedSyncScriptPath),
-                '-CsvTargetPath',
-                ('"{0}"' -f $resolvedCsvTargetPath),
-                '-WorkingDirectory',
-                ('"{0}"' -f $resolvedWorkingDirectory),
-                '-LaunchKoxo',
-                '-KoxoExecutablePath',
-                ('"{0}"' -f $resolvedKoxoExecutablePath),
-                '-KoxoWorkingDirectory',
-                ('"{0}"' -f $resolvedKoxoWorkingDirectory),
-                '-KoxoSyncArgument',
-                ('"{0}"' -f $KoxoSyncArgument)
-            ) -join ' '
+            $syncArguments = (
+                '-NoProfile -NonInteractive -ExecutionPolicy Bypass ' +
+                '-File "{0}" -SyncScriptPath "{1}" -CsvTargetPath "{2}" ' +
+                '-WorkingDirectory "{3}" -KoxoExecutablePath "{4}" ' +
+                '-KoxoWorkingDirectory "{5}" -KoxoSyncArgument "{6}"'
+            ) -f (
+                $resolvedWebhookSyncLauncherPath,
+                $resolvedSyncScriptPath,
+                $resolvedCsvTargetPath,
+                $resolvedWorkingDirectory,
+                $resolvedKoxoExecutablePath,
+                $resolvedKoxoWorkingDirectory,
+                $KoxoSyncArgument
+            )
 
             $process = Start-Process -FilePath 'powershell.exe' `
-                -ArgumentList @(
-                    '-NoProfile',
-                    '-NonInteractive',
-                    '-ExecutionPolicy', 'Bypass',
-                    '-Command', $syncCommand
-                ) `
+                -ArgumentList $syncArguments `
                 -RedirectStandardOutput $stdoutPath `
                 -RedirectStandardError $stderrPath `
                 -WorkingDirectory $resolvedKoxoWorkingDirectory `

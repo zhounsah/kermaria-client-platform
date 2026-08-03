@@ -665,13 +665,21 @@ function createMockManagedContentDetail(
     case "legal:cgv":
       return {
         ...entry,
-        versionLabel: "Version du : 07 juillet 2026",
+        versionLabel: "Version du : 03 août 2026",
         bodyMarkdown: [
           "Les présentes Conditions Générales de Vente s'appliquent aux prestations proposées par Zachary IT.",
           "",
           "## Objet",
           "",
           "Les prestations couvertes comprennent notamment l'hébergement de dossiers, la sauvegarde, l'accès distant, le support et les interventions informatiques décrites dans les devis ou propositions commerciales.",
+          "",
+          "## Sauvegarde, restauration, suppression et localisation",
+          "",
+          "Les données couvertes par le service de sauvegarde font l'objet d'une sauvegarde automatique quotidienne. Les versions sauvegardées sont conservées pendant 31 jours glissants. Les données créées ou modifiées depuis la dernière sauvegarde réussie peuvent ne pas être récupérables.",
+          "",
+          "Les caches, paramètres de session, données temporaires et autres éléments techniques reproductibles peuvent faire l'objet de politiques de conservation différentes. Ils ne sont pas assimilés aux fichiers personnels ou aux données métier du Client.",
+          "",
+          "Les données et leurs sauvegardes sont hébergées sur une infrastructure exploitée en Bretagne, en France. Sauf engagement contractuel spécifique, aucune copie sur un second site géographiquement distinct n'est garantie.",
           "",
           "## Commandes et exécution",
           "",
@@ -690,7 +698,7 @@ function createMockManagedContentDetail(
     case "legal:politique-confidentialite":
       return {
         ...entry,
-        versionLabel: "Version du : 07 juillet 2026",
+        versionLabel: "Version du : 03 août 2026",
         bodyMarkdown: [
           "La presente politique de confidentialite decrit les traitements de donnees personnelles realises dans le cadre du site et de l'espace client de Zachary HOUNSA-HOUNKPA EI.",
           "",
@@ -701,6 +709,8 @@ function createMockManagedContentDetail(
           "## Finalites",
           "",
           "Ces donnees sont utilisees pour gerer la relation client, assurer l'execution des services, produire les documents commerciaux, traiter les demandes et securiser l'acces a l'espace client.",
+          "",
+          "Les caracteristiques commerciales ou operationnelles des sauvegardes client relevent des CGV, de l'offre souscrite ou des conditions techniques applicables. Les caches, parametres de session et donnees temporaires peuvent suivre des politiques distinctes et ne sont pas assimiles aux fichiers personnels ou aux donnees metier du client.",
           "",
           "## Cookies et traceurs",
           "",

@@ -1,6 +1,6 @@
 # Conditions Générales de Vente - Zachary IT
 
-**Version du : 07 juillet 2026**
+**Version du : 03 août 2026**
 
 Les présentes Conditions Générales de Vente, ci-après les « CGV », s’appliquent aux prestations proposées par :
 
@@ -132,12 +132,12 @@ Sauf mention contraire écrite, les noms de domaine, licences de thèmes, extens
 
 ## 6. Packs, abonnements et engagements
 
-Le Prestataire peut proposer des offres sous forme de packs, par exemple :
+Le Prestataire peut proposer des offres sous forme de packs, notamment :
 
-* **Pack Simple** : dossier personnel, accès VPN, sauvegarde en option ;
-* **Pack Plus** : Pack Simple avec accès bureau distant/RDS et débit VPN supérieur ;
-* **Pack Premium** : Pack Plus avec débit VPN supérieur ;
-* **Pack Entreprise** : offre renforcée avec débit, stockage, support ou services adaptés.
+* **Pack Dossier Sécurisé** ;
+* **Pack Accès à Distance** ;
+* **Pack Bureau Windows à Distance** ;
+* **Pack Pro / Association**.
 
 Les caractéristiques exactes de chaque pack sont précisées dans la grille tarifaire, le devis, la facture ou la proposition commerciale.
 
@@ -149,13 +149,7 @@ Le Client peut choisir, selon les offres disponibles :
 * un paiement mensuel ;
 * un paiement anticipé pour toute la durée d’engagement.
 
-Sauf mention contraire dans l’offre commerciale, les réductions d’engagement peuvent être les suivantes :
-
-* engagement 1 mois : tarif de référence, soit 100 % ;
-* engagement 6 mois : tarif réduit à 85 % du tarif de référence ;
-* engagement 12 mois : tarif réduit à 75 % du tarif de référence.
-
-Ces réductions s’appliquent uniquement si elles sont expressément indiquées sur le devis, la facture, la grille tarifaire ou l’offre acceptée.
+Les éventuelles réductions d’engagement, remises ou modalités de paiement anticipé s’appliquent uniquement si elles sont expressément indiquées sur le devis, la facture, la grille tarifaire, le portail client ou l’offre acceptée.
 
 À la fin de la durée d’engagement, le service peut être renouvelé, prolongé ou arrêté selon les conditions précisées dans l’offre. À défaut de précision, le service se poursuit mensuellement au tarif sans engagement applicable, sauf résiliation par l’une des parties.
 
@@ -381,23 +375,56 @@ Le Client doit informer le Prestataire avant toute utilisation des services pour
 
 ---
 
-## 19. Sauvegarde et restauration
+## 19. Sauvegarde, restauration, suppression et localisation
 
-Lorsque le service inclut une sauvegarde, le périmètre sauvegardé est celui défini dans l’offre, le devis ou la configuration validée.
+Lorsque le service inclut une sauvegarde ou qu’une option de sauvegarde est activée, le périmètre sauvegardé est celui défini dans l’offre, le devis, le portail client ou la configuration validée.
 
-Sauf mention contraire écrite, le Prestataire ne garantit pas :
+Les paramètres opérationnels publiés ou communiqués au Client, notamment la fréquence de sauvegarde, la durée de rétention, la suppression après fin de service et la localisation d’hébergement, ne valent engagement contractuel que s’ils sont confirmés comme applicables dans l’offre active, le devis, le portail client ou un écrit contractuel en vigueur.
+
+### 19.1 Sauvegardes
+
+Les services pour lesquels une sauvegarde est expressément incluse ou souscrite font l’objet d’une sauvegarde automatique quotidienne des données couvertes par le service. Les versions sauvegardées sont conservées pendant 31 jours glissants. En l’absence d’une option de sauvegarde active, le Prestataire ne garantit pas la possibilité de récupérer les données après leur suppression, leur altération ou la défaillance du support principal.
+
+Sauf mention contraire écrite confirmée dans l’offre active, le Prestataire ne garantit pas :
 
 * la sauvegarde de tous les fichiers du Client ;
 * la restauration parfaite de toutes les données ;
 * l’absence totale de perte de données ;
 * la conservation illimitée des versions ;
-* la restauration dans un délai garanti.
+* la restauration dans un délai garanti ;
+* l’existence d’une copie sur un second site géographiquement distinct.
+
+Les données créées ou modifiées depuis la dernière sauvegarde réussie peuvent ne pas être récupérables. Le nombre de points de restauration disponibles peut varier en cas d’échec, de maintenance, d’interruption technique ou de corruption constatée.
+
+Les caches, paramètres de session, données temporaires et autres éléments techniques reproductibles peuvent faire l’objet de politiques de conservation différentes. Ils ne sont pas assimilés aux fichiers personnels ou aux données métier du Client.
+
+Une sauvegarde réduit le risque de perte de données, mais ne constitue pas une garantie absolue de récupération intégrale dans toutes les circonstances.
+
+### 19.2 Restaurations
 
 Le Client doit signaler rapidement toute perte ou altération de données.
 
-Une restauration peut être facturée si elle n’est pas incluse dans l’offre souscrite ou si elle résulte d’une erreur du Client.
+Les restaurations rendues nécessaires par un incident relevant de l’infrastructure exploitée par le Prestataire sont réalisées sans frais supplémentaires dans le périmètre normal du service souscrit.
 
-Le Prestataire peut supprimer les sauvegardes après résiliation du service, expiration du délai de conservation ou défaut de paiement prolongé, sous réserve d’en informer le Client lorsque cela est raisonnablement possible.
+Lorsqu’une sauvegarde est active, une restauration peut être incluse ou facturée selon les conditions de l’offre active. Une demande supplémentaire, complexe ou portant sur un volume important peut faire l’objet d’un devis préalable.
+
+Sauf engagement écrit spécifique, le Prestataire peut indiquer un délai cible de prise en charge, mais ne garantit aucun délai déterminé de rétablissement.
+
+### 19.3 Fin du service et suppression
+
+Le Client doit récupérer les données qu’il souhaite conserver avant l’expiration de son accès.
+
+Les données actives hébergées pour le compte du Client sont supprimées selon les modalités confirmées dans l’offre active, le devis, le portail client ou un écrit contractuel en vigueur.
+
+Les copies résiduelles présentes dans les sauvegardes cessent d’être utilisées à des fins opérationnelles après la fin du service et sont supprimées automatiquement à l’expiration de leur période de rétention applicable.
+
+Les documents comptables, contractuels, techniques ou probatoires soumis à une obligation légale de conservation peuvent être archivés séparément pendant la durée applicable.
+
+### 19.4 Localisation
+
+Les données et leurs sauvegardes sont hébergées sur une infrastructure exploitée en Bretagne, en France.
+
+Sauf engagement contractuel spécifique, aucune copie sur un second site géographiquement distinct n’est garantie.
 
 ---
 
@@ -545,9 +572,7 @@ En cas de résiliation pour faute du Client, les sommes déjà dues restent exig
 
 ## 27. Fin de service et restitution des données
 
-À la fin d’un service d’hébergement, de sauvegarde ou de bureau distant, le Client doit récupérer ses données dans le délai indiqué par le Prestataire.
-
-À défaut de délai spécifique, les données peuvent être conservées pendant une durée maximale de 30 jours après la fin du service, puis supprimées.
+À la fin d’un service d’hébergement, de sauvegarde ou de bureau distant, le Client doit récupérer ses données dans le délai indiqué par le Prestataire ou confirmé dans l’offre active.
 
 Le Prestataire peut facturer une prestation d’export, de migration ou d’assistance à la récupération des données si celle-ci dépasse le cadre normal du service.
 

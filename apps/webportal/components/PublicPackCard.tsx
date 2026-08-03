@@ -7,6 +7,7 @@ import type {
   CommercialOfferPaymentMode,
   ResolvedPublicPackManifest,
 } from "@kermaria/shared";
+import { getPublicPackBackupPolicySummary } from "@kermaria/shared";
 
 import { AddRecurringCheckoutButton } from "@/components/AddRecurringCheckoutButton";
 import { formatCurrencyFromCents } from "@/lib/formatters";
@@ -53,6 +54,7 @@ function StatefulPublicPackCard({
     selectionOverride,
   );
   const { commitmentMonths, paymentMode } = cardSelection.selection;
+  const backupPolicy = getPublicPackBackupPolicySummary(pack);
 
   const variantGroup = pack.variantsByCommitment[commitmentMonths];
   const variant = isPackSelectionUnavailable(pack, cardSelection.selection)
@@ -216,6 +218,16 @@ function StatefulPublicPackCard({
             ))}
           </ul>
         </div>
+      </div>
+
+      <div className="public-pack-policy">
+        <p className="public-pack-policy-kicker">
+          {backupPolicy.included ? "Sauvegarde incluse" : "Sauvegarde en option"}
+        </p>
+        <p className="public-pack-policy-text">{backupPolicy.summary}</p>
+        <Link className="text-link" href={backupPolicy.detailsHref}>
+          {backupPolicy.detailsLabel}
+        </Link>
       </div>
 
       <div className="public-pack-cta">
