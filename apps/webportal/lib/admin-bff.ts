@@ -138,7 +138,10 @@ export async function handleAdminMutation<
       sessionToken,
       correlationId,
     ) as TResponse;
-    const response = NextResponse.json(data);
+    // Une reponse 204 remonte ici en `undefined` : la serialiser produirait un
+    // corps invalide, donc une erreur affichee a l'admin alors que la mutation
+    // a reussi. On normalise en objet vide.
+    const response = NextResponse.json(data ?? {});
     const responseCorrelationId =
       typeof data === "object"
       && data !== null

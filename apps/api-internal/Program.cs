@@ -2985,7 +2985,10 @@ app.MapDelete(
                 ActorUserId: actor.UserId,
                 SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
             context.RequestAborted);
-        return Results.NoContent();
+        // Corps JSON plutot que 204 : le BFF serialise systematiquement la
+        // reponse, et un corps vide y devient un echec alors que la suppression
+        // a bien eu lieu.
+        return Results.Ok(new { deleted = true });
     });
 app.MapPost(
     "/internal/admin/demo/expire",

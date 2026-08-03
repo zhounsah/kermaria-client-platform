@@ -1004,6 +1004,12 @@ invisible depuis le lot 1 parce qu'aucun compte n'avait encore expire, la
 methode n'etant appelee que dans la boucle des comptes echus. Les neuf autres
 tables du garde-fou ont ete verifiees.
 
+Correctif **`v1.1.7`** : la suppression d'un compte de demonstration reussissait
+mais affichait une erreur. L'endpoint repondait `204 No Content`, que le BFF
+serialisait en corps invalide. L'endpoint renvoie desormais un corps JSON, et le
+BFF normalise une reponse vide en objet vide — un `204` de n'importe quelle
+mutation aurait produit le meme faux negatif.
+
 Ancrage infra (R740xd) : groupes dans `OU=Groupes_TEST`, comptes dans
 `OU=CLI-DEMO`, quota FSRM, collection RDS Clients-1 filtree par groupe,
 VLAN 64 `10.35.64.0/24`. Deploiement SRV-13 :
