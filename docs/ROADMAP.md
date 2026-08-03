@@ -996,6 +996,14 @@ revoque avant suppression, de sorte qu'un echec laisse l'operation rejouable
 plutot qu'une identite AD orpheline membre des groupes de demonstration. Le
 garde-fou de contenu metier de la purge est repris tel quel.
 
+Correctif **`v1.1.6`** : le garde-fou de contenu metier interrogeait une table
+`recurring_checkout` qui n'a jamais existe — la migration `029` cree
+`recurring_checkout_items`. La purge des comptes de demonstration echues aurait
+donc echoue en `SQL_UNAVAILABLE` a la premiere echeance ; le defaut est reste
+invisible depuis le lot 1 parce qu'aucun compte n'avait encore expire, la
+methode n'etant appelee que dans la boucle des comptes echus. Les neuf autres
+tables du garde-fou ont ete verifiees.
+
 Ancrage infra (R740xd) : groupes dans `OU=Groupes_TEST`, comptes dans
 `OU=CLI-DEMO`, quota FSRM, collection RDS Clients-1 filtree par groupe,
 VLAN 64 `10.35.64.0/24`. Deploiement SRV-13 :

@@ -756,7 +756,7 @@ public sealed class MariaDbDemoAccountRepository : IDemoAccountRepository
               + (SELECT COUNT(*) FROM ad_actions WHERE customer_id = @id)
               + (SELECT COUNT(*) FROM bpce_customers WHERE customer_id = @id)
               + (SELECT COUNT(*) FROM cart_items WHERE customer_id = @id)
-              + (SELECT COUNT(*) FROM recurring_checkout WHERE customer_id = @id)
+              + (SELECT COUNT(*) FROM recurring_checkout_items WHERE customer_id = @id)
               + (SELECT COUNT(*) FROM portal_notifications WHERE customer_id = @id)
                 AS content_count;
             """;
