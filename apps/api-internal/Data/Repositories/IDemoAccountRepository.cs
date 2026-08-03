@@ -97,6 +97,15 @@ public interface IDemoAccountRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Identifiant unique KoXo (<c>CLI-NNNNNN</c>) d'un utilisateur portail.
+    /// KoXo le reporte dans l'attribut <c>employeeNumber</c> de l'identite qu'il
+    /// cree : c'est la cle qui permet de rattacher les deux apres coup.
+    /// </summary>
+    Task<string?> GetKoxoUniqueIdentifierAsync(
+        string portalUserId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Supprime un compte de demo a la demande (hors echeance), avec le meme
     /// garde-fou que la purge : un compte portant du contenu metier hors cascade
     /// est conserve plutot que supprime a moitie.

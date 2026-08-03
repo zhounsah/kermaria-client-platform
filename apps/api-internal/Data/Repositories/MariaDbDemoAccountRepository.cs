@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text.Json;
 using Kermaria.ApiInternal.Contracts;
 using Kermaria.ApiInternal.Data.Configuration;
@@ -355,6 +355,26 @@ public sealed class MariaDbDemoAccountRepository : IDemoAccountRepository
         command.Parameters.AddWithValue("@actor", actorUserId);
         command.Parameters.AddWithValue("@id", customerId);
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task<string?> GetKoxoUniqueIdentifierAsync(
+        string portalUserId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = new MySqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT koxo_unique_identifier
+            FROM portal_users
+            WHERE id = @id;
+            """;
+        command.Parameters.AddWithValue("@id", portalUserId);
+        var value = await command.ExecuteScalarAsync(cancellationToken);
+        return value is null || value == DBNull.Value
+            ? null
+            : Convert.ToString(value, CultureInfo.InvariantCulture);
     }
 
     public async Task<DemoAccountDeletionOutcome> DeleteDemoAccountAsync(

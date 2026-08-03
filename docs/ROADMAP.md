@@ -1010,6 +1010,15 @@ serialisait en corps invalide. L'endpoint renvoie desormais un corps JSON, et le
 BFF normalise une reponse vide en objet vide — un `204` de n'importe quelle
 mutation aurait produit le meme faux negatif.
 
+Correctif **`v1.1.8`** : dernier maillon de la chaine de demonstration.
+L'identite etait bien creee par KoXo, mais l'essai restait en
+`PENDING_IDENTITY` et n'obtenait jamais ses groupes : l'API cherche l'identite
+dans `customer_ad_links`, or rien n'ecrit ce lien quand le compte est cree par
+KoXo et non par l'application. Le provisioning resout desormais l'identite par
+`employeeNumber`, ou KoXo reporte l'identifiant unique du CSV, puis ecrit le
+lien. Recherche bornee aux racines autorisees ; une correspondance multiple est
+traitee comme une absence.
+
 Ancrage infra (R740xd) : groupes dans `OU=Groupes_TEST`, comptes dans
 `OU=CLI-DEMO`, quota FSRM, collection RDS Clients-1 filtree par groupe,
 VLAN 64 `10.35.64.0/24`. Deploiement SRV-13 :

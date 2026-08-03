@@ -1,5 +1,7 @@
-using System.DirectoryServices;
+﻿using System.DirectoryServices;
+using System.Globalization;
 using System.Runtime.InteropServices;
+using System.Security.Principal;
 using Kermaria.ApiInternal.Contracts;
 using Kermaria.ApiInternal.Data.Configuration;
 
@@ -27,6 +29,25 @@ public interface IAdGroupProvisioner
         string groupSamAccountName,
         string? groupDistinguishedName,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Retrouve dans l'annuaire l'identite portant cet <c>employeeNumber</c>,
+    /// ou <c>null</c> si elle n'existe pas.
+    /// </summary>
+    /// <remarks>
+    /// KoXo inscrit l'identifiant unique du CSV (<c>CLI-NNNNNN</c>) dans
+    /// <c>employeeNumber</c>. C'est la seule cle de rattachement fiable entre un
+    /// compte cree par KoXo et l'utilisateur portail : le nom subit une
+    /// translitteration (accents supprimes) et le sAMAccountName est derive par
+    /// KoXo, donc ni l'un ni l'autre n'est predictible cote application.
+    ///
+    /// La recherche est bornee aux racines autorisees, et une correspondance
+    /// multiple est traitee comme une absence : rattacher la mauvaise identite
+    /// donnerait des droits reels au mauvais compte.
+    /// </remarks>
+    Task<AdDirectoryObjectSummary?> ResolveUserByEmployeeNumberAsync(
+        string employeeNumber,
+        CancellationToken cancellationToken);
 }
 
 public sealed class DisabledAdGroupProvisioner : IAdGroupProvisioner
@@ -34,6 +55,11 @@ public sealed class DisabledAdGroupProvisioner : IAdGroupProvisioner
     public string ModeName => "disabled";
 
     public bool RequiresConfiguredGroupDistinguishedNames => false;
+
+    public Task<AdDirectoryObjectSummary?> ResolveUserByEmployeeNumberAsync(
+        string employeeNumber,
+        CancellationToken cancellationToken)
+        => Task.FromResult<AdDirectoryObjectSummary?>(null);
 
     public Task<AdGroupProvisionerResult> AddUserToGroupAsync(
         CustomerAdLinkSummary user,
@@ -69,6 +95,12 @@ public sealed class MockAdGroupProvisioner : IAdGroupProvisioner
     public string ModeName => "mock";
 
     public bool RequiresConfiguredGroupDistinguishedNames => false;
+
+    // Le mock ne simule pas d'annuaire peuple : aucune identite a rattacher.
+    public Task<AdDirectoryObjectSummary?> ResolveUserByEmployeeNumberAsync(
+        string employeeNumber,
+        CancellationToken cancellationToken)
+        => Task.FromResult<AdDirectoryObjectSummary?>(null);
 
     public Task<AdGroupProvisionerResult> AddUserToGroupAsync(
         CustomerAdLinkSummary user,
@@ -136,6 +168,7 @@ public sealed class MockAdGroupProvisioner : IAdGroupProvisioner
 
 public sealed class LdapAdGroupProvisioner : IAdGroupProvisioner
 {
+    private const int AdsAccountDisabled = 0x00000002;
     private const int AdsGroupTypeGlobal = 0x00000002;
     private const int AdsGroupTypeDomainLocal = 0x00000004;
     private const int AdsGroupTypeUniversal = 0x00000008;
@@ -152,6 +185,149 @@ public sealed class LdapAdGroupProvisioner : IAdGroupProvisioner
     }
 
     public string ModeName => _configuration.ModeName;
+
+    public Task<AdDirectoryObjectSummary?> ResolveUserByEmployeeNumberAsync(
+        string employeeNumber,
+        CancellationToken cancellationToken)
+    {
+        if (!_configuration.ConfigurationValid
+            || string.IsNullOrWhiteSpace(employeeNumber))
+        {
+            return Task.FromResult<AdDirectoryObjectSummary?>(null);
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        try
+        {
+            var matches = new List<AdDirectoryObjectSummary>();
+            foreach (var root in _configuration.AllowedRoots)
+            {
+                matches.AddRange(SearchRoot(root, employeeNumber));
+                if (matches.Count > 1)
+                {
+                    break;
+                }
+            }
+
+            if (matches.Count != 1)
+            {
+                if (matches.Count > 1)
+                {
+                    // Rattacher la mauvaise identite donnerait des droits reels
+                    // au mauvais compte : on refuse plutot que de choisir.
+                    _logger.LogWarning(
+                        "Several Active Directory identities carry employeeNumber {EmployeeNumber}; refusing to link.",
+                        employeeNumber);
+                }
+
+                return Task.FromResult<AdDirectoryObjectSummary?>(null);
+            }
+
+            return Task.FromResult<AdDirectoryObjectSummary?>(matches[0]);
+        }
+        catch (COMException exception)
+        {
+            _logger.LogWarning(
+                exception,
+                "Active Directory lookup by employeeNumber {EmployeeNumber} failed.",
+                employeeNumber);
+            return Task.FromResult<AdDirectoryObjectSummary?>(null);
+        }
+    }
+
+    private IEnumerable<AdDirectoryObjectSummary> SearchRoot(
+        string rootDistinguishedName,
+        string employeeNumber)
+    {
+        using var rootEntry = BindEntry(rootDistinguishedName);
+        using var searcher = new DirectorySearcher(rootEntry)
+        {
+            Filter =
+                "(&(objectClass=user)(objectCategory=person)(employeeNumber="
+                + EscapeLdapValue(employeeNumber)
+                + "))",
+            SearchScope = SearchScope.Subtree,
+            SizeLimit = 2,
+            PageSize = 2
+        };
+        searcher.PropertiesToLoad.Add("sAMAccountName");
+        searcher.PropertiesToLoad.Add("displayName");
+        searcher.PropertiesToLoad.Add("userPrincipalName");
+        searcher.PropertiesToLoad.Add("distinguishedName");
+        searcher.PropertiesToLoad.Add("objectGUID");
+        searcher.PropertiesToLoad.Add("objectSid");
+        searcher.PropertiesToLoad.Add("userAccountControl");
+
+        using var results = searcher.FindAll();
+        var summaries = new List<AdDirectoryObjectSummary>();
+        foreach (SearchResult result in results)
+        {
+            var distinguishedName = ReadSingle(result, "distinguishedName");
+            // Ceinture et bretelles : la racine de recherche est deja autorisee,
+            // mais une reference LDAP pourrait renvoyer un objet hors perimetre.
+            if (distinguishedName is null
+                || !_configuration.IsWithinAllowedRoots(distinguishedName))
+            {
+                continue;
+            }
+
+            var samAccountName = ReadSingle(result, "sAMAccountName");
+            if (samAccountName is null)
+            {
+                continue;
+            }
+
+            var objectGuid =
+                result.Properties["objectGUID"].Count > 0
+                && result.Properties["objectGUID"][0] is byte[] guidBytes
+                    ? new Guid(guidBytes).ToString("D")
+                    : null;
+            var objectSid =
+                result.Properties["objectSid"].Count > 0
+                && result.Properties["objectSid"][0] is byte[] sidBytes
+                    ? new SecurityIdentifier(sidBytes, 0).ToString()
+                    : null;
+            if (objectGuid is null || objectSid is null)
+            {
+                continue;
+            }
+
+            var userAccountControl =
+                result.Properties["userAccountControl"].Count > 0
+                    ? Convert.ToInt32(
+                        result.Properties["userAccountControl"][0],
+                        CultureInfo.InvariantCulture)
+                    : 0;
+
+            summaries.Add(new AdDirectoryObjectSummary(
+                objectGuid,
+                objectSid,
+                "user",
+                samAccountName,
+                ReadSingle(result, "userPrincipalName"),
+                ReadSingle(result, "displayName") ?? samAccountName,
+                distinguishedName,
+                string.Empty,
+                (userAccountControl & AdsAccountDisabled) != 0));
+        }
+
+        return summaries;
+    }
+
+    private static string? ReadSingle(SearchResult result, string propertyName)
+        => result.Properties[propertyName].Count > 0
+            ? result.Properties[propertyName][0]?.ToString()
+            : null;
+
+    /// <summary>Echappe les caracteres speciaux d'un filtre LDAP (RFC 4515).</summary>
+    private static string EscapeLdapValue(string value)
+        => value
+            .Replace("\\", "\\5c", StringComparison.Ordinal)
+            .Replace("*", "\\2a", StringComparison.Ordinal)
+            .Replace("(", "\\28", StringComparison.Ordinal)
+            .Replace(")", "\\29", StringComparison.Ordinal)
+            .Replace("\0", "\\00", StringComparison.Ordinal);
 
     public bool RequiresConfiguredGroupDistinguishedNames => true;
 

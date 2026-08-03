@@ -1,4 +1,4 @@
-using Kermaria.ApiInternal.Contracts;
+﻿using Kermaria.ApiInternal.Contracts;
 using Kermaria.ApiInternal.Data.Configuration;
 using Kermaria.ApiInternal.Data.Repositories;
 using Kermaria.ApiInternal.Services.ActiveDirectory;
@@ -85,6 +85,7 @@ public sealed class DemoProvisioningService : IDemoProvisioningService
     private readonly SubscriptionProvisioningRuntimeConfiguration
         _provisioningConfiguration;
     private readonly IActiveDirectoryLinkRepository _links;
+    private readonly IDemoAccountRepository _accounts;
     private readonly IKoxoSyncWebhookTriggerService _koxoTrigger;
     private readonly AdRuntimeConfiguration _adConfiguration;
     private readonly ILogger<DemoProvisioningService> _logger;
@@ -94,6 +95,7 @@ public sealed class DemoProvisioningService : IDemoProvisioningService
         IAdGroupProvisioner groupProvisioner,
         SubscriptionProvisioningRuntimeConfiguration provisioningConfiguration,
         IActiveDirectoryLinkRepository links,
+        IDemoAccountRepository accounts,
         IKoxoSyncWebhookTriggerService koxoTrigger,
         AdRuntimeConfiguration adConfiguration,
         ILogger<DemoProvisioningService> logger)
@@ -102,6 +104,7 @@ public sealed class DemoProvisioningService : IDemoProvisioningService
         _groupProvisioner = groupProvisioner;
         _provisioningConfiguration = provisioningConfiguration;
         _links = links;
+        _accounts = accounts;
         _koxoTrigger = koxoTrigger;
         _adConfiguration = adConfiguration;
         _logger = logger;
@@ -147,6 +150,21 @@ public sealed class DemoProvisioningService : IDemoProvisioningService
         var link = await _links.FindUserLinkByPortalUserIdAsync(
             portalUserId,
             cancellationToken);
+
+        // 4 bis) Rattrapage du lien quand l'identite a ete creee par KoXo.
+        //    A l'inscription, c'est l'application qui cree le compte AD et ecrit
+        //    le lien dans la foulee. Ici l'identite vient de KoXo, et RIEN
+        //    n'ecrit ce lien : sans ce rattrapage, l'essai resterait
+        //    indefiniment en pending_identity et n'obtiendrait jamais ses
+        //    groupes. On retrouve l'identite par l'identifiant unique KoXo, que
+        //    KoXo reporte dans employeeNumber.
+        if (link is null)
+        {
+            link = await TryAdoptKoxoIdentityAsync(
+                customerReference,
+                portalUserId,
+                cancellationToken);
+        }
 
         var applied = new List<string>();
         var identityPending = link is null;
@@ -313,6 +331,58 @@ public sealed class DemoProvisioningService : IDemoProvisioningService
                 : "DEMO_REVOCATION_PARTIAL",
             removed,
             userDisabled);
+    }
+
+    /// <summary>
+    /// Retrouve l'identite creee par KoXo et ecrit le lien manquant.
+    /// </summary>
+    /// <remarks>
+    /// Renvoie <c>null</c> tant que l'identite n'existe pas — la synchronisation
+    /// KoXo est asynchrone et semi-manuelle, l'absence est donc un etat normal
+    /// et non une erreur. Le rattrapage sera retente au balayage suivant.
+    /// </remarks>
+    private async Task<PortalUserAdLinkRecord?> TryAdoptKoxoIdentityAsync(
+        string customerReference,
+        string portalUserId,
+        CancellationToken cancellationToken)
+    {
+        var koxoIdentifier = await _accounts.GetKoxoUniqueIdentifierAsync(
+            portalUserId,
+            cancellationToken);
+        if (string.IsNullOrWhiteSpace(koxoIdentifier))
+        {
+            return null;
+        }
+
+        var directoryObject = await _groupProvisioner
+            .ResolveUserByEmployeeNumberAsync(koxoIdentifier, cancellationToken);
+        if (directoryObject is null)
+        {
+            return null;
+        }
+
+        await _links.UpsertPortalUserLinkAsync(
+            customerReference,
+            portalUserId,
+            actorUserId: null,
+            directoryObject with { CustomerReference = customerReference },
+            _adConfiguration.Domain,
+            "succeeded",
+            DateTime.UtcNow,
+            lastPasswordSyncStatus: null,
+            lastPasswordSyncAtUtc: null,
+            "koxo_provisioned",
+            cancellationToken);
+
+        _logger.LogInformation(
+            "Adopted KoXo-created identity {SamAccountName} ({EmployeeNumber}) for {CustomerReference}.",
+            directoryObject.SamAccountName,
+            koxoIdentifier,
+            customerReference);
+
+        return await _links.FindUserLinkByPortalUserIdAsync(
+            portalUserId,
+            cancellationToken);
     }
 
     private async Task<bool> TriggerKoxoAsync(

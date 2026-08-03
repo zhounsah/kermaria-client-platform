@@ -1,4 +1,4 @@
-using Kermaria.ApiInternal.Contracts;
+﻿using Kermaria.ApiInternal.Contracts;
 
 namespace Kermaria.ApiInternal.Data.Repositories;
 
@@ -17,6 +17,11 @@ public sealed class MockDemoAccountRepository : IDemoAccountRepository
         DemoAccountCreationSpec spec,
         CancellationToken cancellationToken = default)
         => Task.CompletedTask;
+
+    public Task<string?> GetKoxoUniqueIdentifierAsync(
+        string portalUserId,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult<string?>(null);
 
     public Task<DemoAccountDeletionOutcome> DeleteDemoAccountAsync(
         string customerId,
