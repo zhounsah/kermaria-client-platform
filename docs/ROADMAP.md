@@ -952,8 +952,11 @@ Lots livres :
   revocation et purge a l'echeance via service de fond **et** tache
   planifiee Windows.
 
-Reste : **Lot 4** — conversion essai vers reel (bascule sur place,
-migration de l'identite AD hors du perimetre de demo, contenu conserve).
+Le **lot 4** (conversion essai vers reel) est livre sous le tag **`v1.1.1`** :
+bascule sur place, l'identite AD est deplacee hors du perimetre de demo et le
+contenu est conserve. L'annuaire est traite avant la base, de sorte qu'un echec
+AD laisse l'operation rejouable telle quelle. Voir la section 16 de la
+conception. La V1.1 est donc complete cote code, ses quatre lots livres.
 
 Ancrage infra (R740xd) : groupes dans `OU=Groupes_TEST`, comptes dans
 `OU=CLI-DEMO`, quota FSRM, collection RDS Clients-1 filtree par groupe,
