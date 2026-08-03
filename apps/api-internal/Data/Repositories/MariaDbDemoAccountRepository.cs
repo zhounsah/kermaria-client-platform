@@ -579,6 +579,14 @@ public sealed class MariaDbDemoAccountRepository : IDemoAccountRepository
         DemoAccountCreationSpec spec,
         CancellationToken cancellationToken)
     {
+        // Identifiant KoXo alloue comme a l'inscription : sans lui, le compte est
+        // rejete par la validation de l'export et bloque la synchronisation
+        // globale — il ne pourrait donc jamais recevoir d'identite AD.
+        var koxoUniqueIdentifier = await KoxoIdentifierAllocator.AllocateAsync(
+            connection,
+            transaction,
+            cancellationToken);
+
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText =
@@ -586,11 +594,13 @@ public sealed class MariaDbDemoAccountRepository : IDemoAccountRepository
             INSERT INTO portal_users (
                 id, customer_id, identity_provider_subject, email,
                 password_hash, display_name, status, role,
-                created_at, updated_at
+                personal_title, given_name, surname, birth_date,
+                koxo_unique_identifier, created_at, updated_at
             ) VALUES (
                 @id, @customer_id, @subject, @email,
                 @password_hash, @display_name, 'active', @role,
-                UTC_TIMESTAMP(6), UTC_TIMESTAMP(6)
+                @personal_title, @given_name, @surname, @birth_date,
+                @koxo_unique_identifier, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6)
             );
             """;
         command.Parameters.AddWithValue("@id", spec.PortalUserId);
@@ -602,6 +612,23 @@ public sealed class MariaDbDemoAccountRepository : IDemoAccountRepository
         command.Parameters.AddWithValue("@password_hash", spec.PasswordHash);
         command.Parameters.AddWithValue("@display_name", spec.UserDisplayName);
         command.Parameters.AddWithValue("@role", PortalRoles.ClientUser);
+        command.Parameters.AddWithValue(
+            "@personal_title",
+            (object?)spec.PersonalTitle ?? DBNull.Value);
+        command.Parameters.AddWithValue(
+            "@given_name",
+            (object?)spec.GivenName ?? DBNull.Value);
+        command.Parameters.AddWithValue(
+            "@surname",
+            (object?)spec.Surname ?? DBNull.Value);
+        command.Parameters.AddWithValue(
+            "@birth_date",
+            spec.BirthDate.HasValue
+                ? spec.BirthDate.Value.ToDateTime(TimeOnly.MinValue)
+                : (object)DBNull.Value);
+        command.Parameters.AddWithValue(
+            "@koxo_unique_identifier",
+            koxoUniqueIdentifier);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 

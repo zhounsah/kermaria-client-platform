@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text.Json;
 using Kermaria.ApiInternal.Contracts;
 using Kermaria.ApiInternal.Data.Configuration;
@@ -783,44 +783,14 @@ public sealed class MariaDbSignupRepository : ISignupRepository
             ? DBNull.Value
             : JsonSerializer.Serialize(snapshot, JsonOptions);
 
-    private static async Task<string> AllocateKoxoUniqueIdentifierAsync(
+    private static Task<string> AllocateKoxoUniqueIdentifierAsync(
         MySqlConnection connection,
         MySqlTransaction transaction,
         CancellationToken cancellationToken)
-    {
-        await using var selectCommand = connection.CreateCommand();
-        selectCommand.Transaction = transaction;
-        selectCommand.CommandText =
-            """
-            SELECT next_value
-            FROM koxo_identifier_counters
-            WHERE counter_name = 'portal_user'
-            FOR UPDATE;
-            """;
-        var rawCurrentValue = await selectCommand.ExecuteScalarAsync(cancellationToken);
-        var currentValue = rawCurrentValue is null || rawCurrentValue == DBNull.Value
-            ? 1L
-            : Convert.ToInt64(rawCurrentValue, CultureInfo.InvariantCulture);
-
-        await using var upsertCommand = connection.CreateCommand();
-        upsertCommand.Transaction = transaction;
-        upsertCommand.CommandText =
-            """
-            INSERT INTO koxo_identifier_counters (
-                counter_name,
-                next_value
-            ) VALUES (
-                'portal_user',
-                @next_value
-            )
-            ON DUPLICATE KEY UPDATE
-                next_value = @next_value;
-            """;
-        upsertCommand.Parameters.AddWithValue("@next_value", currentValue + 1);
-        await upsertCommand.ExecuteNonQueryAsync(cancellationToken);
-
-        return $"CLI-{currentValue.ToString("D6", CultureInfo.InvariantCulture)}";
-    }
+        => KoxoIdentifierAllocator.AllocateAsync(
+            connection,
+            transaction,
+            cancellationToken);
 
     private static SignupPackSelectionSnapshot? DeserializeSnapshot(
         MySqlDataReader reader,

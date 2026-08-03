@@ -1068,6 +1068,28 @@ export function parseDemoAccountCreateRequest(
       .slice(0, 50);
   }
 
+  const personalTitleRaw =
+    typeof candidate.personalTitle === "string"
+      ? candidate.personalTitle.trim().toLowerCase()
+      : "";
+  const personalTitle =
+    personalTitleRaw === "madame" || personalTitleRaw === "monsieur"
+      ? personalTitleRaw
+      : null;
+  const givenName =
+    typeof candidate.givenName === "string"
+      ? candidate.givenName.trim() || null
+      : null;
+  const surname =
+    typeof candidate.surname === "string"
+      ? candidate.surname.trim() || null
+      : null;
+  const birthDateRaw =
+    typeof candidate.birthDate === "string" ? candidate.birthDate.trim() : "";
+  const birthDate = /^\d{4}-\d{2}-\d{2}$/.test(birthDateRaw)
+    ? birthDateRaw
+    : null;
+
   const isValid =
     profileKey.length > 0
     && profileKey.length <= 64
@@ -1079,6 +1101,8 @@ export function parseDemoAccountCreateRequest(
     && initialPassword.length >= 8
     && initialPassword.length <= 200
     && (userDisplayName === null || userDisplayName.length <= 200)
+    && (givenName === null || givenName.length <= 100)
+    && (surname === null || surname.length <= 100)
     && (lifetimeDaysOverride === null
       || (Number.isInteger(lifetimeDaysOverride)
         && lifetimeDaysOverride >= 0
@@ -1096,6 +1120,10 @@ export function parseDemoAccountCreateRequest(
     userDisplayName,
     lifetimeDaysOverride,
     selectedServiceNames,
+    personalTitle,
+    givenName,
+    surname,
+    birthDate,
   };
 }
 

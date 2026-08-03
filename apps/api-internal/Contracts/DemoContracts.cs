@@ -81,6 +81,11 @@ public sealed record DemoContentTemplateSummary(
 /// template dont le nom figure dans la liste sont retenus (liste vide = aucun
 /// service).
 /// </remarks>
+/// <param name="PersonalTitle">
+/// <c>madame</c> ou <c>monsieur</c> — seules valeurs que l'export KoXo sait
+/// traduire en civilite.
+/// </param>
+/// <param name="BirthDate">Format <c>yyyy-MM-dd</c>, exige par l'export KoXo.</param>
 public sealed record DemoAccountCreateRequest(
     string? ProfileKey,
     string? DisplayName,
@@ -88,7 +93,11 @@ public sealed record DemoAccountCreateRequest(
     string? InitialPassword,
     string? UserDisplayName,
     int? LifetimeDaysOverride,
-    IReadOnlyList<string>? SelectedServiceNames);
+    IReadOnlyList<string>? SelectedServiceNames,
+    string? PersonalTitle = null,
+    string? GivenName = null,
+    string? Surname = null,
+    string? BirthDate = null);
 
 /// <summary>Conflit fonctionnel sur un compte de demo (ex. e-mail deja utilise).</summary>
 public sealed class DemoConflictException : Exception

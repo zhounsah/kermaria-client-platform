@@ -68,7 +68,11 @@ public sealed record DemoAccountCreationSpec(
     string PasswordHash,
     string UserDisplayName,
     IReadOnlyList<DemoServiceSeed> Services,
-    string? KoxoGroupReference = null);
+    string? KoxoGroupReference = null,
+    string? PersonalTitle = null,
+    string? GivenName = null,
+    string? Surname = null,
+    DateOnly? BirthDate = null);
 
 /// <summary>
 /// Cycle de vie des comptes de demonstration/essai (V1.1).

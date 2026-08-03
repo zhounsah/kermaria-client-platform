@@ -39,6 +39,10 @@ export function DemoAccountCreateForm({
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [initialPassword, setInitialPassword] = useState("");
+  const [personalTitle, setPersonalTitle] = useState("");
+  const [givenName, setGivenName] = useState("");
+  const [surname, setSurname] = useState("");
+  const [birthDate, setBirthDate] = useState("");
   const [lifetimeOverride, setLifetimeOverride] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -108,6 +112,10 @@ export function DemoAccountCreateForm({
           displayName,
           email,
           initialPassword,
+          personalTitle: personalTitle === "" ? null : personalTitle,
+          givenName: givenName.trim() === "" ? null : givenName.trim(),
+          surname: surname.trim() === "" ? null : surname.trim(),
+          birthDate: birthDate === "" ? null : birthDate,
           lifetimeDaysOverride:
             trimmedOverride === "" ? null : Number(trimmedOverride),
           selectedServiceNames:
@@ -223,6 +231,64 @@ export function DemoAccountCreateForm({
           Au moins 8 caractères. À communiquer au prospect pour sa connexion.
         </p>
       </div>
+
+      {selectedProfile?.kind === "trial" ? (
+        <>
+          <div className="form-field">
+            <label htmlFor="demo-title">Civilité</label>
+            <select
+              id="demo-title"
+              onChange={(event) => setPersonalTitle(event.target.value)}
+              required
+              value={personalTitle}
+            >
+              <option value="">—</option>
+              <option value="madame">Madame</option>
+              <option value="monsieur">Monsieur</option>
+            </select>
+            <p className="form-hint">
+              État civil requis pour l&apos;essai réel : il alimente la synchronisation
+              KoXo qui crée l&apos;identité Active Directory. Un champ manquant
+              bloquerait l&apos;export pour tous les comptes.
+            </p>
+          </div>
+
+          <div className="form-field">
+            <label htmlFor="demo-given-name">Prénom</label>
+            <input
+              id="demo-given-name"
+              maxLength={100}
+              onChange={(event) => setGivenName(event.target.value)}
+              required
+              type="text"
+              value={givenName}
+            />
+          </div>
+
+          <div className="form-field">
+            <label htmlFor="demo-surname">Nom</label>
+            <input
+              id="demo-surname"
+              maxLength={100}
+              onChange={(event) => setSurname(event.target.value)}
+              required
+              type="text"
+              value={surname}
+            />
+          </div>
+
+          <div className="form-field">
+            <label htmlFor="demo-birth-date">Date de naissance</label>
+            <input
+              id="demo-birth-date"
+              onChange={(event) => setBirthDate(event.target.value)}
+              required
+              type="date"
+              value={birthDate}
+            />
+          </div>
+        </>
+      ) : null}
 
       <div className="form-field">
         <label htmlFor="demo-lifetime">Durée de vie (jours, optionnel)</label>

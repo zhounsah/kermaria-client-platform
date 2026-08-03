@@ -1985,6 +1985,12 @@ export interface DemoAccountCreateRequest {
   userDisplayName?: string | null;
   lifetimeDaysOverride?: number | null;
   selectedServiceNames?: string[] | null;
+  /** `madame` | `monsieur` — seules valeurs acceptees par l'export KoXo. */
+  personalTitle?: string | null;
+  givenName?: string | null;
+  surname?: string | null;
+  /** Format `yyyy-MM-dd`. */
+  birthDate?: string | null;
 }
 
 export interface DemoProfilePayload {

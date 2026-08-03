@@ -41,11 +41,35 @@ public sealed class MariaDbKoxoRepository : IKoxoRepository
             FROM portal_users portal_user
             INNER JOIN customers customer
                 ON customer.id = portal_user.customer_id
-            INNER JOIN customer_ad_links ad_link
+            -- LEFT et non INNER : un essai de demonstration n'a pas encore
+            -- d'identite AD, et c'est justement KoXo qui doit la creer. Avec une
+            -- jointure stricte il serait exclu du CSV, donc jamais cree, donc
+            -- toujours exclu — l'impasse qui laissait OU=CLI-DEMO vide.
+            LEFT JOIN customer_ad_links ad_link
                 ON ad_link.portal_user_id = portal_user.id
                AND ad_link.object_type = 'user'
             WHERE portal_user.status = 'active'
               AND customer.status = 'active'
+              -- La regle stricte reste la norme : seuls les essais de demo sont
+              -- exportes sans identite prealable, pour qu'aucun vrai client dont
+              -- le provisioning AD a echoue ne parte dans le CSV par accident.
+              --
+              -- L'etat civil complet est exige pour ce cas : un compte incomplet
+              -- serait rejete par la validation de l'export, or un seul invalide
+              -- bloque l'export GLOBAL. Le laisser dehors le maintient en attente
+              -- sans jamais casser la synchronisation des autres comptes.
+              AND (
+                    ad_link.portal_user_id IS NOT NULL
+                 OR (
+                        customer.is_demo = TRUE
+                    AND customer.demo_kind = 'trial'
+                    AND portal_user.personal_title IS NOT NULL
+                    AND portal_user.given_name IS NOT NULL
+                    AND portal_user.surname IS NOT NULL
+                    AND portal_user.birth_date IS NOT NULL
+                    AND portal_user.koxo_unique_identifier IS NOT NULL
+                 )
+              )
               -- Une vitrine est inerte par construction : elle ne doit jamais
               -- atteindre le pipeline d'identites reelles. Seuls les essais
               -- (trial), qui ont besoin d'une identite AD, sont exportes.

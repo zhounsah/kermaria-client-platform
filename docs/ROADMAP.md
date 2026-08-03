@@ -977,6 +977,17 @@ une revocation. Corrige au passage un defaut de l'export, qui transmettait les
 comptes **vitrine** au pipeline d'identites reelles. Voir la section 17 de la
 conception.
 
+Correctif **`v1.1.4`** : l'identite Active Directory d'un compte d'essai ne
+pouvait pas etre creee. L'export joignait les utilisateurs a leur identite en
+`INNER JOIN`, si bien qu'un compte sans identite — celui que KoXo doit justement
+creer — etait exclu du CSV, donc jamais cree, donc toujours exclu. La conception
+supposait que KoXo creait les identites, alors que pour un client reel c'est
+l'API qui le fait a l'inscription. La jointure passe en `LEFT`, limitee aux
+essais de demonstration. La creation d'un compte de demo saisit desormais l'etat
+civil (civilite, nom, prenom, date de naissance) et alloue un
+`koxo_unique_identifier`, faute de quoi le compte serait rejete par la validation
+de l'export — et un seul rejet bloque l'export global. Sans migration.
+
 Ancrage infra (R740xd) : groupes dans `OU=Groupes_TEST`, comptes dans
 `OU=CLI-DEMO`, quota FSRM, collection RDS Clients-1 filtree par groupe,
 VLAN 64 `10.35.64.0/24`. Deploiement SRV-13 :

@@ -129,6 +129,28 @@ public sealed class DemoAccountService : IDemoAccountService
             throw new PortalValidationException();
         }
 
+        // Etat civil : exige pour un essai reel seulement. C'est ce que l'export
+        // KoXo valide avant de creer l'identite AD ; un champ manquant ferait
+        // basculer le compte en « invalide », ce qui bloque l'export GLOBAL et
+        // donc la synchronisation de tout le monde. Une vitrine n'etant jamais
+        // exportee, la contrainte serait ici une friction gratuite.
+        var isTrial = string.Equals(
+            profile.Kind,
+            DemoKinds.Trial,
+            StringComparison.Ordinal);
+        var personalTitle = NormalizePersonalTitle(request.PersonalTitle);
+        var givenName = NormalizeOptionalText(request.GivenName, 100);
+        var surname = NormalizeOptionalText(request.Surname, 100);
+        var birthDate = ParseOptionalBirthDate(request.BirthDate);
+        if (isTrial
+            && (personalTitle is null
+                || givenName is null
+                || surname is null
+                || birthDate is null))
+        {
+            throw new PortalValidationException();
+        }
+
         if (await _accounts.EmailExistsAsync(email, cancellationToken))
         {
             throw new DemoConflictException(
@@ -197,7 +219,11 @@ public sealed class DemoAccountService : IDemoAccountService
             passwordHash,
             userDisplayName,
             services,
-            koxoGroupReference);
+            koxoGroupReference,
+            personalTitle,
+            givenName,
+            surname,
+            birthDate);
 
         await _accounts.CreateDemoAccountAsync(spec, cancellationToken);
 
@@ -416,6 +442,48 @@ public sealed class DemoAccountService : IDemoAccountService
     {
         var normalized = value?.Trim().ToLowerInvariant();
         return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+    }
+
+    /// <summary>
+    /// Ramene la civilite aux deux seules valeurs que l'export KoXo sait
+    /// traduire (<c>Mme</c> / <c>M.</c>). Toute autre valeur est refusee ici
+    /// plutot que de produire un compte invalide a l'export.
+    /// </summary>
+    private static string? NormalizePersonalTitle(string? value)
+        => value?.Trim().ToLowerInvariant() switch
+        {
+            "madame" => "madame",
+            "monsieur" => "monsieur",
+            _ => null
+        };
+
+    private static string? NormalizeOptionalText(string? value, int maxLength)
+    {
+        var normalized = value?.Trim();
+        if (string.IsNullOrWhiteSpace(normalized) || normalized.Length > maxLength)
+        {
+            return null;
+        }
+
+        return normalized;
+    }
+
+    private static DateOnly? ParseOptionalBirthDate(string? value)
+    {
+        var normalized = value?.Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return null;
+        }
+
+        return DateOnly.TryParseExact(
+                normalized,
+                "yyyy-MM-dd",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out var parsed)
+            ? parsed
+            : null;
     }
 
     private async Task<string> ReserveGroupReferenceAsync(
