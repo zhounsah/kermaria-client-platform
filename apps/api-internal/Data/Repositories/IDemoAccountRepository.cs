@@ -21,6 +21,22 @@ public sealed record DemoExpiredTrial(
     string PortalUserId,
     IReadOnlyList<string> AdGroups);
 
+/// <summary>
+/// Compte de demo candidat a la conversion en client reel (Lot 4).
+/// </summary>
+/// <param name="AlreadyConverted">
+/// Vrai si <c>demo_converted_at</c> est deja renseigne : la conversion a deja
+/// eu lieu, il ne faut pas la rejouer.
+/// </param>
+public sealed record DemoConversionCandidate(
+    string CustomerId,
+    string CustomerReference,
+    string PortalUserId,
+    string DemoKind,
+    string? ProfileKey,
+    IReadOnlyList<string> AdGroups,
+    bool AlreadyConverted);
+
 /// <summary>Specification complete d'un compte de demo a materialiser.</summary>
 public sealed record DemoAccountCreationSpec(
     string CustomerId,
@@ -75,6 +91,27 @@ public interface IDemoAccountRepository
     Task MarkTrialRevokedAsync(
         string customerId,
         DateTime revokedAtUtc,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Retrouve un compte de demo par sa reference externe, avec les groupes
+    /// <c>GG_DEMO_*</c> de son profil. Renvoie <c>null</c> si la reference ne
+    /// designe pas un compte de demo.
+    /// </summary>
+    Task<DemoConversionCandidate?> FindConversionCandidateAsync(
+        string customerReference,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Bascule le compte en client reel : <c>is_demo = FALSE</c>, marqueurs de
+    /// demo remis a NULL (ce qui le sort du balayage d'expiration et de la
+    /// purge), provenance conservee dans <c>demo_source_profile_key</c>.
+    /// </summary>
+    Task MarkConvertedAsync(
+        string customerId,
+        DateTime convertedAtUtc,
+        string? actorUserId,
+        string? sourceProfileKey,
         CancellationToken cancellationToken = default);
 
     /// <summary>

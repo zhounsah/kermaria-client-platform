@@ -69,9 +69,23 @@ public sealed record RenameAdUserRequest(
     string? NewDisplayName,
     string? NewUserPrincipalName);
 
+/// <summary>
+/// Deplacement d'un compte AD.
+///
+/// <para>
+/// Deux modes exclusifs. Le mode historique cible un conteneur du schema
+/// applicatif (<c>Users</c> / <c>Disabled</c>) reconstruit a partir de
+/// <paramref name="TargetCustomerReference"/>. Le mode
+/// <paramref name="TargetOrganizationalUnitDn"/> (V1.1 Lot 4) cible une OU
+/// arbitraire par son DN complet : indispensable pour les arborescences que
+/// l'application ne genere pas elle-meme (OU=CLI-DEMO cote KoXo). Le DN est
+/// valide contre <c>AD_ALLOWED_ROOTS</c>, comme les DN de groupes.
+/// </para>
+/// </summary>
 public sealed record MoveAdUserRequest(
     string? TargetCustomerReference,
-    string? TargetContainer);
+    string? TargetContainer,
+    string? TargetOrganizationalUnitDn = null);
 
 public sealed record ChangeAdPasswordRequest(
     string? CurrentPassword,

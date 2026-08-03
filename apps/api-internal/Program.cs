@@ -256,6 +256,9 @@ builder.Services.AddScoped<IAdminService, AdminService>();
 builder.Services.AddScoped<
     IDemoProvisioningService,
     DemoProvisioningService>();
+builder.Services.AddSingleton(
+    DemoConversionRuntimeConfiguration.Resolve(builder.Configuration));
+builder.Services.AddScoped<IDemoConversionService, DemoConversionService>();
 builder.Services.AddScoped<IDemoAccountService, DemoAccountService>();
 builder.Services.AddScoped<IKoxoExportService, KoxoExportService>();
 builder.Services.AddScoped<IRequestWorkflowService, RequestWorkflowService>();
@@ -2915,6 +2918,41 @@ app.MapPost(
                 context.GetCorrelationId(),
                 "demo_account.create",
                 "success",
+                TargetType: "demo_account",
+                TargetReference: result.CustomerReference,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return DemoOk(context, service, result);
+    });
+app.MapPost(
+    "/internal/admin/demo/accounts/{reference}/convert",
+    async (
+        string reference,
+        HttpContext context,
+        IDemoAccountService service,
+        IDemoConversionService conversionService,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.demo.write");
+        var payload = await ReadPayload<DemoConversionRequest>(context)
+            ?? new DemoConversionRequest(null);
+        var result = await conversionService.ConvertAsync(
+            reference,
+            payload,
+            actor.UserId,
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "demo_account.convert",
+                result.Converted ? "success" : "partial",
+                result.ResultCode,
                 TargetType: "demo_account",
                 TargetReference: result.CustomerReference,
                 ActorUserId: actor.UserId,

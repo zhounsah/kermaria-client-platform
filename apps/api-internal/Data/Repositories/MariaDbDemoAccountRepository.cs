@@ -208,6 +208,96 @@ public sealed class MariaDbDemoAccountRepository : IDemoAccountRepository
             revokedAtUtc,
             cancellationToken);
 
+    public async Task<DemoConversionCandidate?> FindConversionCandidateAsync(
+        string customerReference,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = new MySqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        // LEFT JOIN : un compte deja converti n'a plus de demo_profile_id, il
+        // doit malgre tout etre retrouve pour repondre « deja converti ».
+        command.CommandText =
+            """
+            SELECT c.id,
+                   c.external_reference,
+                   c.demo_kind,
+                   c.demo_converted_at,
+                   dp.profile_key,
+                   dp.ad_groups_json,
+                   (
+                       SELECT pu.id FROM portal_users pu
+                       WHERE pu.customer_id = c.id
+                       ORDER BY pu.created_at
+                       LIMIT 1
+                   ) AS portal_user_id
+            FROM customers c
+            LEFT JOIN demo_profiles dp ON dp.id = c.demo_profile_id
+            WHERE c.external_reference = @reference
+              AND (c.is_demo = TRUE OR c.demo_converted_at IS NOT NULL)
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("@reference", customerReference);
+
+        await using var reader = await command.ExecuteReaderAsync(
+            cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var convertedOrdinal = reader.GetOrdinal("demo_converted_at");
+        var kindOrdinal = reader.GetOrdinal("demo_kind");
+        var profileOrdinal = reader.GetOrdinal("profile_key");
+        var groupsOrdinal = reader.GetOrdinal("ad_groups_json");
+        var userOrdinal = reader.GetOrdinal("portal_user_id");
+
+        return new DemoConversionCandidate(
+            reader.GetString("id"),
+            reader.GetString("external_reference"),
+            reader.IsDBNull(userOrdinal) ? string.Empty : reader.GetString(userOrdinal),
+            reader.IsDBNull(kindOrdinal) ? string.Empty : reader.GetString(kindOrdinal),
+            reader.IsDBNull(profileOrdinal) ? null : reader.GetString(profileOrdinal),
+            ParseAdGroups(
+                reader.IsDBNull(groupsOrdinal)
+                    ? null
+                    : reader.GetString(groupsOrdinal)),
+            !reader.IsDBNull(convertedOrdinal));
+    }
+
+    public async Task MarkConvertedAsync(
+        string customerId,
+        DateTime convertedAtUtc,
+        string? actorUserId,
+        string? sourceProfileKey,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = new MySqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        // Bascule sur place : on leve les marqueurs de demo (ce qui sort le
+        // compte du balayage d'expiration et de la purge) en conservant la
+        // provenance. Le contenu et l'historique ne sont pas touches.
+        command.CommandText =
+            """
+            UPDATE customers
+            SET is_demo = FALSE,
+                demo_source_profile_key = @source_profile_key,
+                demo_profile_id = NULL,
+                demo_kind = NULL,
+                demo_expires_at = NULL,
+                demo_converted_at = @converted_at,
+                demo_converted_by_user_id = @actor
+            WHERE id = @id
+              AND demo_converted_at IS NULL;
+            """;
+        command.Parameters.AddWithValue("@source_profile_key", sourceProfileKey);
+        command.Parameters.AddWithValue("@converted_at", convertedAtUtc);
+        command.Parameters.AddWithValue("@actor", actorUserId);
+        command.Parameters.AddWithValue("@id", customerId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     private async Task MarkTrialTimestampAsync(
         string column,
         string customerId,

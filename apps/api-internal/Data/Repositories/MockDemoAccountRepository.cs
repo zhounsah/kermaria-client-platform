@@ -41,6 +41,19 @@ public sealed class MockDemoAccountRepository : IDemoAccountRepository
         CancellationToken cancellationToken = default)
         => Task.CompletedTask;
 
+    public Task<DemoConversionCandidate?> FindConversionCandidateAsync(
+        string customerReference,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult<DemoConversionCandidate?>(null);
+
+    public Task MarkConvertedAsync(
+        string customerId,
+        DateTime convertedAtUtc,
+        string? actorUserId,
+        string? sourceProfileKey,
+        CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
+
     public Task<DemoPurgeResult> PurgeExpiredDemoCustomersAsync(
         DateTime nowUtc,
         CancellationToken cancellationToken = default)

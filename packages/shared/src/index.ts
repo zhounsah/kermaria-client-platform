@@ -1952,6 +1952,26 @@ export interface DemoLifecycleSweepResult {
   revokeFailures: string[];
 }
 
+/** Conversion d'un compte d'essai en client réel (V1.1 Lot 4). */
+export interface DemoConversionRequest {
+  /**
+   * Offre réelle dont les groupes AD remplacent les `GG_DEMO_*`. Facultative :
+   * sans elle, la conversion se contente de retirer l'accès de démonstration.
+   */
+  offerExternalReference?: string | null;
+}
+
+export interface DemoConversionResult {
+  converted: boolean;
+  /** Vrai si le compte avait déjà été converti : l'opération est idempotente. */
+  alreadyConverted: boolean;
+  resultCode: string;
+  customerReference: string;
+  demoGroupsRemoved: string[];
+  realGroupsGranted: string[];
+  identityMoved: boolean;
+}
+
 export interface DemoAccountCreateRequest {
   profileKey: string;
   displayName: string;

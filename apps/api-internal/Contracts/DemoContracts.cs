@@ -10,6 +10,28 @@ public static class DemoKinds
         => value is Showcase or Trial;
 }
 
+/// <summary>Demande de conversion d'un compte d'essai en client reel (Lot 4).</summary>
+/// <param name="OfferExternalReference">
+/// Offre reelle dont les groupes AD remplacent les <c>GG_DEMO_*</c>. Facultative :
+/// sans elle, la conversion se contente de retirer l'acces de demonstration.
+/// </param>
+public sealed record DemoConversionRequest(string? OfferExternalReference);
+
+/// <summary>Issue d'une conversion essai -> reel.</summary>
+/// <param name="Converted">
+/// Vrai si le compte est desormais un client reel (y compris s'il l'etait deja :
+/// la conversion est idempotente).
+/// </param>
+/// <param name="AlreadyConverted">Vrai si la conversion avait deja ete faite.</param>
+public sealed record DemoConversionResult(
+    bool Converted,
+    bool AlreadyConverted,
+    string ResultCode,
+    string CustomerReference,
+    IReadOnlyList<string> DemoGroupsRemoved,
+    IReadOnlyList<string> RealGroupsGranted,
+    bool IdentityMoved);
+
 /// <summary>Matrice de capacites (axe B) d'un profil de demo.</summary>
 public sealed record DemoCapabilities(
     string EmailMode,

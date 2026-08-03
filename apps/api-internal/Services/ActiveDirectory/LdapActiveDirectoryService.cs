@@ -531,20 +531,46 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
             return Task.FromResult(resolvedUser);
         }
 
-        var targetCustomerReference =
-            ActiveDirectoryInputValidator.NormalizeCustomerReference(
-                request?.TargetCustomerReference);
-        var targetContainer = ActiveDirectoryInputValidator.NormalizeMoveContainer(
-            request?.TargetContainer);
-        if (targetCustomerReference is null || targetContainer is null)
-        {
-            return Task.FromResult(InvalidObject());
-        }
-
         var resolvedSummary = resolvedUser.Value;
-        var targetParentDn = targetContainer == "Users"
-            ? _scope.BuildUsersOuDn(targetCustomerReference)
-            : _scope.BuildDisabledOuDn(targetCustomerReference);
+
+        // Mode OU explicite (Lot 4) : le DN est fourni tel quel, car
+        // l'arborescence cible n'est pas generee par le schema applicatif.
+        // Il doit rester dans les racines autorisees, meme garde-fou que les
+        // groupes partages.
+        var explicitOuDn = _configuration.NormalizeDistinguishedName(
+            request?.TargetOrganizationalUnitDn);
+        string targetParentDn;
+        string? targetCustomerReference = null;
+        if (explicitOuDn is not null)
+        {
+            if (!_configuration.IsWithinAllowedRoots(explicitOuDn))
+            {
+                return Task.FromResult(
+                    new AdServiceResult<AdDirectoryObjectSummary>(
+                        StatusCodes.Status403Forbidden,
+                        "AD_TARGET_OUTSIDE_ALLOWED_ROOTS",
+                        "The Active Directory target is outside the configured allowed roots."));
+            }
+
+            targetParentDn = explicitOuDn;
+        }
+        else
+        {
+            targetCustomerReference =
+                ActiveDirectoryInputValidator.NormalizeCustomerReference(
+                    request?.TargetCustomerReference);
+            var targetContainer =
+                ActiveDirectoryInputValidator.NormalizeMoveContainer(
+                    request?.TargetContainer);
+            if (targetCustomerReference is null || targetContainer is null)
+            {
+                return Task.FromResult(InvalidObject());
+            }
+
+            targetParentDn = targetContainer == "Users"
+                ? _scope.BuildUsersOuDn(targetCustomerReference)
+                : _scope.BuildDisabledOuDn(targetCustomerReference);
+        }
         var currentParentDn = resolvedSummary.DistinguishedName[
             (resolvedSummary.DistinguishedName.IndexOf(',') + 1)..];
         if (currentParentDn.Equals(targetParentDn, StringComparison.OrdinalIgnoreCase))
@@ -561,9 +587,15 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
 
         return Task.FromResult(ExecuteWrite(() =>
         {
-            EnsureCustomerContainers(
-                targetCustomerReference,
-                includeGroups: false);
+            // En mode OU explicite, l'OU cible preexiste (creee par KoXo ou par
+            // l'administrateur) : on ne cree aucun conteneur.
+            if (targetCustomerReference is not null)
+            {
+                EnsureCustomerContainers(
+                    targetCustomerReference,
+                    includeGroups: false);
+            }
+
             using var user = BindEntry(resolvedSummary.DistinguishedName);
             using var targetParent = BindEntry(targetParentDn);
             user.MoveTo(targetParent);
