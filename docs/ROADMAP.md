@@ -921,8 +921,13 @@ V1.1 ou plus tard, jamais ajoutee en derniere minute a V1.0 RC.
 
 ## Jalon V1.1 comptes de demonstration et d'essai personnalises
 
-Statut : **lots 1 a 3 livres** (code + schema). Conception complete :
+Statut : **lots 1 a 3 livres** (code + schema), publies sous le tag
+**`v1.1.0`**. Conception complete :
 [`v1.1/V1.1_CUSTOM_DEMO_ACCOUNTS.md`](v1.1/V1.1_CUSTOM_DEMO_ACCOUNTS.md).
+
+La `v1.1.0` integre egalement la remise a plat agentique (ex-releases
+1.0.0.7 et 1.0.0.8) : CGV et politique de confidentialite revisees au
+03 aout 2026, politique de sauvegarde des packs publics, scripts KoXo.
 
 Deux axes separes : le **contenu** du compte (templates de demo ou
 composition a la carte) et ses **capacites** (matrice par compte, du mode
