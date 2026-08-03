@@ -1,0 +1,535 @@
+using System.Globalization;
+using System.Text.Json;
+using Kermaria.ApiInternal.Contracts;
+using Kermaria.ApiInternal.Data.Configuration;
+using MySqlConnector;
+
+namespace Kermaria.ApiInternal.Data.Repositories;
+
+public sealed class MariaDbDemoAccountRepository : IDemoAccountRepository
+{
+    private readonly string _connectionString;
+
+    public MariaDbDemoAccountRepository(SqlRuntimeConfiguration configuration)
+    {
+        _connectionString = configuration.ConnectionString
+            ?? throw new InvalidOperationException(
+                "MariaDB connection configuration is unavailable.");
+    }
+
+    public async Task<bool> EmailExistsAsync(
+        string email,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = new MySqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT 1 FROM portal_users WHERE LOWER(email) = @email LIMIT 1;";
+        command.Parameters.AddWithValue("@email", email.ToLowerInvariant());
+        var value = await command.ExecuteScalarAsync(cancellationToken);
+        return value is not null;
+    }
+
+    public async Task CreateDemoAccountAsync(
+        DemoAccountCreationSpec spec,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = new MySqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction =
+            await connection.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            await InsertCustomerAsync(
+                connection,
+                transaction,
+                spec,
+                cancellationToken);
+            await InsertPortalUserAsync(
+                connection,
+                transaction,
+                spec,
+                cancellationToken);
+            foreach (var service in spec.Services)
+            {
+                await InsertServiceAsync(
+                    connection,
+                    transaction,
+                    spec.CustomerId,
+                    service,
+                    cancellationToken);
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+    }
+
+    public async Task<IReadOnlyList<DemoAccountSummary>> ListDemoAccountsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var accounts = new List<DemoAccountSummary>();
+        await using var connection = new MySqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT
+                c.external_reference,
+                c.display_name,
+                c.demo_kind,
+                c.demo_expires_at,
+                c.demo_revoked_at,
+                c.created_at,
+                dp.profile_key,
+                (
+                    SELECT COUNT(*)
+                    FROM customer_services s
+                    WHERE s.customer_id = c.id
+                ) AS service_count
+            FROM customers c
+            LEFT JOIN demo_profiles dp ON dp.id = c.demo_profile_id
+            WHERE c.is_demo = TRUE
+            ORDER BY c.created_at DESC
+            LIMIT 200;
+            """;
+        await using var reader = await command.ExecuteReaderAsync(
+            cancellationToken);
+        var kindOrdinal = reader.GetOrdinal("demo_kind");
+        var expiresOrdinal = reader.GetOrdinal("demo_expires_at");
+        var revokedOrdinal = reader.GetOrdinal("demo_revoked_at");
+        var profileOrdinal = reader.GetOrdinal("profile_key");
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            accounts.Add(new DemoAccountSummary(
+                reader.GetString("external_reference"),
+                reader.GetString("display_name"),
+                reader.IsDBNull(kindOrdinal)
+                    ? DemoKinds.Showcase
+                    : reader.GetString(kindOrdinal),
+                reader.IsDBNull(profileOrdinal)
+                    ? null
+                    : reader.GetString(profileOrdinal),
+                reader.GetInt32("service_count"),
+                ToUtcIso(reader.GetDateTime("created_at")),
+                reader.IsDBNull(expiresOrdinal)
+                    ? null
+                    : ToUtcIso(reader.GetDateTime(expiresOrdinal)),
+                reader.IsDBNull(revokedOrdinal)
+                    ? null
+                    : ToUtcIso(reader.GetDateTime(revokedOrdinal))));
+        }
+
+        return accounts;
+    }
+
+    public async Task<IReadOnlyList<DemoExpiredTrial>> ListExpiredTrialsToRevokeAsync(
+        DateTime nowUtc,
+        CancellationToken cancellationToken = default)
+    {
+        var results = new List<DemoExpiredTrial>();
+        await using var connection = new MySqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT
+                c.id,
+                c.external_reference,
+                dp.ad_groups_json,
+                (
+                    SELECT pu.id
+                    FROM portal_users pu
+                    WHERE pu.customer_id = c.id
+                    ORDER BY pu.created_at
+                    LIMIT 1
+                ) AS portal_user_id
+            FROM customers c
+            INNER JOIN demo_profiles dp ON dp.id = c.demo_profile_id
+            WHERE c.is_demo = TRUE
+              AND c.demo_kind = 'trial'
+              AND c.demo_revoked_at IS NULL
+              AND c.demo_expires_at IS NOT NULL
+              AND c.demo_expires_at < @now
+              AND dp.ad_provisioning_mode = 'real_scoped'
+            ORDER BY c.demo_expires_at;
+            """;
+        command.Parameters.AddWithValue("@now", nowUtc);
+
+        await using var reader = await command.ExecuteReaderAsync(
+            cancellationToken);
+        var groupsOrdinal = reader.GetOrdinal("ad_groups_json");
+        var userOrdinal = reader.GetOrdinal("portal_user_id");
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            // Un trial provisionne porte toujours une identite portail ; on
+            // ignore une ligne sans portal_user (etat incoherent) plutot que
+            // de tenter une revocation sans cible.
+            if (reader.IsDBNull(userOrdinal))
+            {
+                continue;
+            }
+
+            results.Add(new DemoExpiredTrial(
+                reader.GetString("id"),
+                reader.GetString("external_reference"),
+                reader.GetString(userOrdinal),
+                ParseAdGroups(
+                    reader.IsDBNull(groupsOrdinal)
+                        ? null
+                        : reader.GetString(groupsOrdinal))));
+        }
+
+        return results;
+    }
+
+    public async Task MarkTrialProvisionedAsync(
+        string customerId,
+        DateTime provisionedAtUtc,
+        CancellationToken cancellationToken = default)
+        => await MarkTrialTimestampAsync(
+            "demo_provisioned_at",
+            customerId,
+            provisionedAtUtc,
+            cancellationToken);
+
+    public async Task MarkTrialRevokedAsync(
+        string customerId,
+        DateTime revokedAtUtc,
+        CancellationToken cancellationToken = default)
+        => await MarkTrialTimestampAsync(
+            "demo_revoked_at",
+            customerId,
+            revokedAtUtc,
+            cancellationToken);
+
+    private async Task MarkTrialTimestampAsync(
+        string column,
+        string customerId,
+        DateTime valueUtc,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        // Nom de colonne issu d'un litteral controle (jamais d'entree externe).
+        command.CommandText =
+            $"UPDATE customers SET {column} = @value WHERE id = @id AND is_demo = TRUE;";
+        command.Parameters.AddWithValue("@value", valueUtc);
+        command.Parameters.AddWithValue("@id", customerId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static IReadOnlyList<string> ParseAdGroups(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return Array.Empty<string>();
+        }
+
+        try
+        {
+            var parsed = JsonSerializer.Deserialize<string[]>(json);
+            if (parsed is null)
+            {
+                return Array.Empty<string>();
+            }
+
+            return parsed
+                .Where(group => !string.IsNullOrWhiteSpace(group))
+                .Select(group => group.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+        catch (JsonException)
+        {
+            return Array.Empty<string>();
+        }
+    }
+
+    public async Task<DemoPurgeResult> PurgeExpiredDemoCustomersAsync(
+        DateTime nowUtc,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = new MySqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        var expired = await ListExpiredDemoCustomersAsync(
+            connection,
+            nowUtc,
+            cancellationToken);
+
+        var purgedCount = 0;
+        var skipped = new List<string>();
+
+        foreach (var (customerId, externalReference) in expired)
+        {
+            if (await HasUncoveredBusinessContentAsync(
+                    connection,
+                    customerId,
+                    cancellationToken))
+            {
+                // Garde-fou : ne jamais lever une erreur FK ni supprimer a
+                // moitie un compte qui porte du contenu hors cascade actuelle.
+                skipped.Add(externalReference);
+                continue;
+            }
+
+            await using var transaction =
+                await connection.BeginTransactionAsync(cancellationToken);
+            try
+            {
+                await DeleteDemoCustomerAsync(
+                    connection,
+                    transaction,
+                    customerId,
+                    cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                purgedCount++;
+            }
+            catch
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        }
+
+        return new DemoPurgeResult(purgedCount, skipped);
+    }
+
+    private static async Task InsertCustomerAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        DemoAccountCreationSpec spec,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            INSERT INTO customers (
+                id, external_reference, display_name, status, customer_type,
+                is_demo, demo_profile_id, demo_kind, demo_expires_at,
+                demo_created_by_user_id, created_at, updated_at
+            ) VALUES (
+                @id, @external_reference, @display_name, 'active', @customer_type,
+                TRUE, @demo_profile_id, @demo_kind, @demo_expires_at,
+                @demo_created_by_user_id, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6)
+            );
+            """;
+        command.Parameters.AddWithValue("@id", spec.CustomerId);
+        command.Parameters.AddWithValue(
+            "@external_reference",
+            spec.ExternalReference);
+        command.Parameters.AddWithValue("@display_name", spec.DisplayName);
+        command.Parameters.AddWithValue("@customer_type", spec.CustomerType);
+        command.Parameters.AddWithValue("@demo_profile_id", spec.DemoProfileId);
+        command.Parameters.AddWithValue("@demo_kind", spec.DemoKind);
+        command.Parameters.AddWithValue(
+            "@demo_expires_at",
+            (object?)spec.DemoExpiresAtUtc ?? DBNull.Value);
+        command.Parameters.AddWithValue(
+            "@demo_created_by_user_id",
+            (object?)spec.DemoCreatedByUserId ?? DBNull.Value);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task InsertPortalUserAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        DemoAccountCreationSpec spec,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            INSERT INTO portal_users (
+                id, customer_id, identity_provider_subject, email,
+                password_hash, display_name, status, role,
+                created_at, updated_at
+            ) VALUES (
+                @id, @customer_id, @subject, @email,
+                @password_hash, @display_name, 'active', @role,
+                UTC_TIMESTAMP(6), UTC_TIMESTAMP(6)
+            );
+            """;
+        command.Parameters.AddWithValue("@id", spec.PortalUserId);
+        command.Parameters.AddWithValue("@customer_id", spec.CustomerId);
+        command.Parameters.AddWithValue(
+            "@subject",
+            $"demo-{spec.PortalUserId}");
+        command.Parameters.AddWithValue("@email", spec.Email);
+        command.Parameters.AddWithValue("@password_hash", spec.PasswordHash);
+        command.Parameters.AddWithValue("@display_name", spec.UserDisplayName);
+        command.Parameters.AddWithValue("@role", PortalRoles.ClientUser);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task InsertServiceAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        string customerId,
+        DemoServiceSeed service,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            INSERT INTO customer_services (
+                id, customer_id, external_reference, service_type, name,
+                status, description, started_at, scope, commercial_terms,
+                created_at, updated_at
+            ) VALUES (
+                @id, @customer_id, @external_reference, @service_type, @name,
+                'active', @description, UTC_TIMESTAMP(6), @scope,
+                @commercial_terms, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6)
+            );
+            """;
+        command.Parameters.AddWithValue("@id", Guid.NewGuid().ToString("D"));
+        command.Parameters.AddWithValue("@customer_id", customerId);
+        command.Parameters.AddWithValue(
+            "@external_reference",
+            $"DEMO-{Guid.NewGuid():N}"[..24]);
+        command.Parameters.AddWithValue("@service_type", service.ServiceType);
+        command.Parameters.AddWithValue("@name", service.Name);
+        command.Parameters.AddWithValue("@description", service.Description);
+        command.Parameters.AddWithValue("@scope", service.Scope);
+        command.Parameters.AddWithValue(
+            "@commercial_terms",
+            service.CommercialTerms);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<IReadOnlyList<(string CustomerId, string ExternalReference)>>
+        ListExpiredDemoCustomersAsync(
+            MySqlConnection connection,
+            DateTime nowUtc,
+            CancellationToken cancellationToken)
+    {
+        var results = new List<(string, string)>();
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT id, external_reference
+            FROM customers
+            WHERE is_demo = TRUE
+              AND demo_expires_at IS NOT NULL
+              AND demo_expires_at < @now
+            ORDER BY demo_expires_at;
+            """;
+        command.Parameters.AddWithValue("@now", nowUtc);
+
+        await using var reader = await command.ExecuteReaderAsync(
+            cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            results.Add((
+                reader.GetString("id"),
+                reader.GetString("external_reference")));
+        }
+
+        return results;
+    }
+
+    private static async Task<bool> HasUncoveredBusinessContentAsync(
+        MySqlConnection connection,
+        string customerId,
+        CancellationToken cancellationToken)
+    {
+        // customer_services est desormais gere par la cascade ; on ne compte
+        // donc que le contenu metier NON encore couvert. Toute valeur > 0
+        // -> on saute ce compte plutot que de risquer une erreur FK.
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT
+                (SELECT COUNT(*) FROM invoices WHERE customer_id = @id)
+              + (SELECT COUNT(*) FROM support_requests WHERE customer_id = @id)
+              + (SELECT COUNT(*) FROM service_requests WHERE customer_id = @id)
+              + (SELECT COUNT(*) FROM commercial_documents WHERE customer_id = @id)
+              + (SELECT COUNT(*) FROM subscriptions WHERE customer_id = @id)
+              + (SELECT COUNT(*) FROM ad_actions WHERE customer_id = @id)
+              + (SELECT COUNT(*) FROM bpce_customers WHERE customer_id = @id)
+              + (SELECT COUNT(*) FROM cart_items WHERE customer_id = @id)
+              + (SELECT COUNT(*) FROM recurring_checkout WHERE customer_id = @id)
+              + (SELECT COUNT(*) FROM portal_notifications WHERE customer_id = @id)
+                AS content_count;
+            """;
+        command.Parameters.AddWithValue("@id", customerId);
+        var value = await command.ExecuteScalarAsync(cancellationToken);
+        return Convert.ToInt64(value) > 0;
+    }
+
+    private static async Task DeleteDemoCustomerAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        string customerId,
+        CancellationToken cancellationToken)
+    {
+        // Ordre FK-safe : sessions -> services -> liens AD -> users -> client.
+        await ExecuteAsync(
+            connection,
+            transaction,
+            """
+            DELETE ps
+            FROM portal_sessions ps
+            INNER JOIN portal_users pu ON pu.id = ps.user_id
+            WHERE pu.customer_id = @id;
+            """,
+            customerId,
+            cancellationToken);
+
+        await ExecuteAsync(
+            connection,
+            transaction,
+            "DELETE FROM customer_services WHERE customer_id = @id;",
+            customerId,
+            cancellationToken);
+
+        await ExecuteAsync(
+            connection,
+            transaction,
+            "DELETE FROM customer_ad_links WHERE customer_id = @id;",
+            customerId,
+            cancellationToken);
+
+        await ExecuteAsync(
+            connection,
+            transaction,
+            "DELETE FROM portal_users WHERE customer_id = @id;",
+            customerId,
+            cancellationToken);
+
+        await ExecuteAsync(
+            connection,
+            transaction,
+            "DELETE FROM customers WHERE id = @id;",
+            customerId,
+            cancellationToken);
+    }
+
+    private static async Task ExecuteAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        string sql,
+        string customerId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = sql;
+        command.Parameters.AddWithValue("@id", customerId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static string ToUtcIso(DateTime value)
+        => DateTime.SpecifyKind(value, DateTimeKind.Utc)
+            .ToString("yyyy-MM-ddTHH:mm:ss.ffffffZ", CultureInfo.InvariantCulture);
+}

@@ -1863,3 +1863,87 @@ export interface CheckoutRecurringConfirmResponse {
   subscriptionIds: string[];
   correlation_id: CorrelationId;
 }
+
+export type DemoKind = "showcase" | "trial";
+
+export interface DemoCapabilities {
+  emailMode: string;
+  bpceMode: string;
+  paymentMode: string;
+  adProvisioningMode: string;
+  adGroups: string[];
+  storageQuotaGo: number | null;
+  rdsSessionMode: string;
+}
+
+export interface DemoProfileSummary {
+  key: string;
+  label: string;
+  kind: DemoKind;
+  contentTemplateKey: string | null;
+  lifetimeDays: number;
+  status: string;
+  capabilities: DemoCapabilities;
+}
+
+export interface DemoContentTemplateSummary {
+  key: string;
+  label: string;
+  serviceNames: string[];
+}
+
+export interface DemoAccountSummary {
+  customerReference: string;
+  displayName: string;
+  kind: string;
+  profileKey: string | null;
+  serviceCount: number;
+  createdAt: string;
+  expiresAt: string | null;
+  /**
+   * Renseigné quand le balayage d'expiration a révoqué l'accès réel de cet essai
+   * (retrait des groupes GG_DEMO_* + désactivation AD) avant purge (V1.1 Lot 3).
+   */
+  revokedAt: string | null;
+}
+
+/** Résultat d'un balayage du cycle de vie des comptes de démo (V1.1 Lot 3). */
+export interface DemoLifecycleSweepResult {
+  revokedCount: number;
+  purgedCount: number;
+  skippedReferences: string[];
+  revokeFailures: string[];
+}
+
+export interface DemoAccountCreateRequest {
+  profileKey: string;
+  displayName: string;
+  email: string;
+  initialPassword: string;
+  userDisplayName?: string | null;
+  lifetimeDaysOverride?: number | null;
+  selectedServiceNames?: string[] | null;
+}
+
+export interface DemoProfilePayload {
+  key: string;
+  label: string;
+  kind: DemoKind;
+  contentTemplateKey?: string | null;
+  emailMode?: string | null;
+  bpceMode?: string | null;
+  paymentMode?: string | null;
+  adProvisioningMode?: string | null;
+  adGroups?: string[] | null;
+  storageQuotaGo?: number | null;
+  rdsSessionMode?: string | null;
+  lifetimeDays?: number | null;
+  status?: string | null;
+}
+
+export interface DemoAccountCreatedResponse {
+  customerReference: string;
+  email: string;
+  kind: string;
+  expiresAt: string | null;
+}

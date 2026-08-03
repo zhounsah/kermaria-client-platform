@@ -1624,3 +1624,98 @@ delta suivants :
 Voir aussi [`DEPLOYMENT.md`](DEPLOYMENT.md), [`SECURITY.md`](SECURITY.md),
 [`SECRET_ROTATION.md`](SECRET_ROTATION.md), [`OPERATIONS.md`](OPERATIONS.md),
 [`BACKUP_RESTORE.md`](BACKUP_RESTORE.md).
+
+## 15. Comptes de démonstration / essai — V1.1 Lot 3 (essai réel)
+
+Conception : [`v1.1/V1.1_CUSTOM_DEMO_ACCOUNTS.md`](v1.1/V1.1_CUSTOM_DEMO_ACCOUNTS.md).
+Le code applique l'ajout/retrait des groupes `GG_DEMO_*` (AD direct SRV-13),
+déclenche la chaîne KoXo (trial only) et balaie les échéances (service de fond +
+tâche planifiée). L'infra ci-dessous doit être provisionnée pour un **essai réel**
+(`trial` + `real_scoped`). Les comptes **vitrine** (`showcase`) ne requièrent
+**rien** de ce qui suit — ils restent inertes par le code.
+
+### 15.1 Active Directory — `clients.home.bzh` (SRV-21)
+
+- Groupes de démo **Domain-Local** (jamais Global du parent `home.bzh`), dans
+  l'OU **`OU=Groupes_TEST,DC=clients,DC=home,DC=bzh`** (emplacement réel confirmé,
+  cohérent avec le groupe `TEST_SITE_WEB` déjà présent) :
+  - `CN=GG_DEMO_NEXTCLOUD,OU=Groupes_TEST,DC=clients,DC=home,DC=bzh`
+  - `CN=GG_DEMO_RDS,OU=Groupes_TEST,DC=clients,DC=home,DC=bzh`
+  - `CN=GG_DEMO_VPN,OU=Groupes_TEST,DC=clients,DC=home,DC=bzh`
+- OU des **comptes** démo (créée automatiquement par la chaîne KoXo) :
+  `OU=CLI-DEMO,OU=CLIENTS,OU=Utilisateurs,OU=KoXoAdm,DC=clients,DC=home,DC=bzh`.
+  Elle est **sous** `AD_CLIENTS_OU_DN` : côté utilisateur, **rien à changer**.
+- ⚠️ **Seuls les groupes sortent du périmètre** : `OU=Groupes_TEST` n'est pas sous
+  `AD_CLIENTS_OU_DN`. Or le garde-fou d'écriture (`LdapAdGroupProvisioner` /
+  `IsWithinAllowedRoots`) valide **le DN du groupe ET celui de l'utilisateur**.
+  Il faut donc **ajouter** (sans retirer l'existant) le root des groupes :
+  - `AD_ALLOWED_ROOTS` = `<AD_CLIENTS_OU_DN>` **+** `OU=Groupes_TEST,DC=clients,DC=home,DC=bzh`
+    (séparateur `;`). Le contrat `verify-signup-contract.mjs` impose déjà ≥ 2 roots
+    et exige que `AD_CLIENTS_OU_DN` y figure **exactement une fois** — ne le retirez pas.
+  - `AD_REQUIRED_OU_ROOT = DC=clients,DC=home,DC=bzh` (racine commune, **composantes
+    DC uniquement** comme l'exige le contrat) : chaque allowed-root doit être sous
+    ce root, sinon `ConfigurationValid` retombe à faux et toute écriture AD est
+    refusée en bloc.
+  - ⚠️ Élargir `AD_REQUIRED_OU_ROOT` ne relâche pas la sécurité d'exécution : le
+    contrôle réel des écritures reste `AD_ALLOWED_ROOTS` (liste fermée).
+- Droits : `svc_api_portal_ad` autorisé à modifier l'appartenance des `GG_DEMO_*`
+  (dans `OU=Groupes_TEST`) et à désactiver les comptes de `OU=CLI-DEMO`.
+
+### 15.2 Configuration API interne (env SRV-13)
+
+```powershell
+# DN des groupes de démo (résolution AD directe pour l'ajout/retrait).
+# Emplacement réel : OU=Groupes_TEST (frère de OU=Clients).
+AD_PROVISIONING_GROUP_DNS__GG_DEMO_RDS = 'CN=GG_DEMO_RDS,OU=Groupes_TEST,DC=clients,DC=home,DC=bzh'
+AD_PROVISIONING_GROUP_DNS__GG_DEMO_VPN = 'CN=GG_DEMO_VPN,OU=Groupes_TEST,DC=clients,DC=home,DC=bzh'
+AD_PROVISIONING_GROUP_DNS__GG_DEMO_NEXTCLOUD = 'CN=GG_DEMO_NEXTCLOUD,OU=Groupes_TEST,DC=clients,DC=home,DC=bzh'
+
+# Whitelist d'écriture AD : SANS ces entrées, le garde-fou refuse l'ajout.
+# Compléter la liste existante (ex. TEST_SITE_WEB) — ne pas la remplacer.
+AD_ALLOWED_GROUPS = 'TEST_SITE_WEB,GG_DEMO_RDS,GG_DEMO_VPN,GG_DEMO_NEXTCLOUD'
+
+# Roots autorisés : AJOUTER le root des groupes à la valeur existante — ne jamais
+# retirer AD_CLIENTS_OU_DN (le contrat exige qu'il y figure exactement une fois).
+# Les comptes démo (OU=CLI-DEMO,...) sont déjà sous AD_CLIENTS_OU_DN : rien à ajouter
+# pour eux. Remonter AD_REQUIRED_OU_ROOT à la racine commune (composantes DC seules),
+# sinon ConfigurationValid = faux et TOUTE écriture AD est refusée — cf. §15.1.
+AD_ALLOWED_ROOTS = '<valeur_actuelle_AD_CLIENTS_OU_DN>;OU=Groupes_TEST,DC=clients,DC=home,DC=bzh'
+AD_REQUIRED_OU_ROOT = 'DC=clients,DC=home,DC=bzh'
+```
+
+Contrôler la cohérence de ces variables avant redémarrage (le contrat vérifie
+notamment les roots AD) :
+
+```bash
+npm --prefix apps/webportal run test:signup
+```
+
+Redémarrer le service après toute modification de configuration.
+
+### 15.3 Tâche planifiée d'expiration (filet de sécurité)
+
+Le service de fond `DemoAccountExpirationWorker` balaie déjà au démarrage puis
+toutes les heures. La tâche planifiée est un doublon de secours :
+
+```powershell
+# Depuis le dossier de publication, en admin :
+.\docs\v1.1\deploy\Register-DemoExpirationTask.ps1 `
+    -AppDll 'C:\apps\api-internal\Kermaria.ApiInternal.dll' `
+    -RunAsUser 'CLIENTS\svc_api_portal'
+# Test manuel : Start-ScheduledTask -TaskName 'Kermaria-Demo-Expiration'
+```
+
+L'argument `--run-demo-expiration` rejoue le même balayage (révocation des essais
+échus + purge) puis quitte ; aucun port, aucune auth HTTP. Inerte en mode mock.
+
+### 15.4 Stockage, RDS, réseau (enforcement infra)
+
+- **FSRM** : quota sur le volume « Stockage dossiers personnels » (RAID1) pour le
+  dossier du compte démo, valeur = `storage_quota_go` du profil (5 Go par défaut).
+- **RDS** : RemoteApp/bureau Clients-1 (SRV-30) gated `GG_DEMO_RDS` + GPO de
+  session (durée max, inactivité, fin de session déconnectée) ; RD Gateway SRV-27
+  (RD CAP/RAP limitant `GG_DEMO_RDS`) ; profil plafonné via UPD (SRV-28).
+- **Réseau** : VLAN 64 **`10.35.64.0/24` « Clients Démo »** (paramètres confirmés :
+  masque `255.255.255.0`, passerelle `10.35.64.254`, broadcast `10.35.64.255`,
+  plage utilisable `10.35.64.1 – 10.35.64.254`, 253 IP). Firewall limité aux seules
+  ressources de démo, isolé des VLAN clients (240) / serveurs (100).

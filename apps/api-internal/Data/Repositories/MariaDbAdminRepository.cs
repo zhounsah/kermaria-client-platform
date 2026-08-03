@@ -42,27 +42,40 @@ public sealed class MariaDbAdminRepository : IAdminRepository
         command.CommandText =
             """
             SELECT
-                (SELECT COUNT(*) FROM customers) AS customer_count,
                 (
                     SELECT COUNT(*)
-                    FROM portal_users
-                    WHERE status = 'active'
+                    FROM customers
+                    WHERE is_demo = FALSE
+                ) AS customer_count,
+                (
+                    SELECT COUNT(*)
+                    FROM portal_users pu
+                    INNER JOIN customers c ON c.id = pu.customer_id
+                    WHERE pu.status = 'active'
+                      AND c.is_demo = FALSE
                 ) AS active_user_count,
                 (
                     SELECT COUNT(*)
-                    FROM portal_sessions
-                    WHERE revoked_at IS NULL
-                      AND expires_at > UTC_TIMESTAMP(6)
+                    FROM portal_sessions ps
+                    INNER JOIN portal_users pu ON pu.id = ps.user_id
+                    INNER JOIN customers c ON c.id = pu.customer_id
+                    WHERE ps.revoked_at IS NULL
+                      AND ps.expires_at > UTC_TIMESTAMP(6)
+                      AND c.is_demo = FALSE
                 ) AS active_session_count,
                 (
                     SELECT COUNT(*)
-                    FROM support_requests
-                    WHERE status <> 'closed'
+                    FROM support_requests sr
+                    INNER JOIN customers c ON c.id = sr.customer_id
+                    WHERE sr.status <> 'closed'
+                      AND c.is_demo = FALSE
                 ) AS open_support_count,
                 (
                     SELECT COUNT(*)
-                    FROM service_requests
-                    WHERE created_at >= UTC_TIMESTAMP(6) - INTERVAL 30 DAY
+                    FROM service_requests r
+                    INNER JOIN customers c ON c.id = r.customer_id
+                    WHERE r.created_at >= UTC_TIMESTAMP(6) - INTERVAL 30 DAY
+                      AND c.is_demo = FALSE
                 ) AS recent_service_request_count;
             """;
 
@@ -131,6 +144,7 @@ public sealed class MariaDbAdminRepository : IAdminRepository
                     ), c.updated_at)
                 ) AS last_activity_at
             FROM customers c
+            WHERE c.is_demo = FALSE
             ORDER BY c.display_name
             LIMIT 100;
             """;
@@ -248,6 +262,7 @@ public sealed class MariaDbAdminRepository : IAdminRepository
             LEFT JOIN customer_services s
                 ON s.id = sr.service_id
                 AND s.customer_id = sr.customer_id
+            WHERE c.is_demo = FALSE
             ORDER BY sr.created_at DESC
             LIMIT 100;
             """;
@@ -295,6 +310,7 @@ public sealed class MariaDbAdminRepository : IAdminRepository
             INNER JOIN customers c ON c.id = r.customer_id
             INNER JOIN service_catalog catalog
                 ON catalog.id = r.catalog_item_id
+            WHERE c.is_demo = FALSE
             ORDER BY r.created_at DESC
             LIMIT 100;
             """;
@@ -345,6 +361,7 @@ public sealed class MariaDbAdminRepository : IAdminRepository
             FROM portal_sessions s
             INNER JOIN portal_users u ON u.id = s.user_id
             LEFT JOIN customers c ON c.id = u.customer_id
+            WHERE COALESCE(c.is_demo, FALSE) = FALSE
             ORDER BY s.created_at DESC
             LIMIT 100;
             """;

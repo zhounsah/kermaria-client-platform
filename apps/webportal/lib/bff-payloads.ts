@@ -8,6 +8,8 @@ import type {
   CommercialDocumentPayload,
   CommercialOfferPaymentMode,
   CommercialOfferPayload,
+  DemoAccountCreateRequest,
+  DemoProfilePayload,
   DownloadCategoryPayload,
   DownloadResourcePayload,
   DownloadVisibilityRulePayload,
@@ -1023,4 +1025,180 @@ function getAllowedAdUserPrincipalNameDomains() {
 
   const configuredDomain = process.env.AD_DOMAIN?.trim().toLowerCase();
   return [configuredDomain || "home.bzh"];
+}
+
+export function parseDemoAccountCreateRequest(
+  value: unknown,
+): DemoAccountCreateRequest | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Partial<DemoAccountCreateRequest>;
+  if (
+    typeof candidate.profileKey !== "string"
+    || typeof candidate.displayName !== "string"
+    || typeof candidate.email !== "string"
+    || typeof candidate.initialPassword !== "string"
+  ) {
+    return null;
+  }
+
+  const profileKey = candidate.profileKey.trim().toLowerCase();
+  const displayName = candidate.displayName.trim();
+  const email = candidate.email.trim().toLowerCase();
+  const initialPassword = candidate.initialPassword;
+  const userDisplayName =
+    typeof candidate.userDisplayName === "string"
+      ? candidate.userDisplayName.trim() || null
+      : null;
+  const lifetimeDaysOverride =
+    typeof candidate.lifetimeDaysOverride === "number"
+      ? Math.trunc(candidate.lifetimeDaysOverride)
+      : null;
+
+  let selectedServiceNames: string[] | null = null;
+  if (Array.isArray(candidate.selectedServiceNames)) {
+    if (!candidate.selectedServiceNames.every((name) => typeof name === "string")) {
+      return null;
+    }
+    selectedServiceNames = candidate.selectedServiceNames
+      .map((name) => name.trim())
+      .filter((name) => name.length > 0 && name.length <= 200)
+      .slice(0, 50);
+  }
+
+  const isValid =
+    profileKey.length > 0
+    && profileKey.length <= 64
+    && displayName.length >= 2
+    && displayName.length <= 200
+    && email.length >= 3
+    && email.length <= 254
+    && email.includes("@")
+    && initialPassword.length >= 8
+    && initialPassword.length <= 200
+    && (userDisplayName === null || userDisplayName.length <= 200)
+    && (lifetimeDaysOverride === null
+      || (Number.isInteger(lifetimeDaysOverride)
+        && lifetimeDaysOverride >= 0
+        && lifetimeDaysOverride <= 365));
+
+  if (!isValid) {
+    return null;
+  }
+
+  return {
+    profileKey,
+    displayName,
+    email,
+    initialPassword,
+    userDisplayName,
+    lifetimeDaysOverride,
+    selectedServiceNames,
+  };
+}
+
+const DEMO_KINDS = ["showcase", "trial"] as const;
+const DEMO_MODES = ["off", "mock", "real_scoped"] as const;
+const DEMO_SIMPLE_MODES = ["off", "internal_only", "fake", "native"] as const;
+const DEMO_STATUSES = ["active", "inactive"] as const;
+
+export function parseDemoProfilePayload(
+  value: unknown,
+): DemoProfilePayload | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Partial<DemoProfilePayload>;
+  if (
+    typeof candidate.key !== "string"
+    || typeof candidate.label !== "string"
+    || typeof candidate.kind !== "string"
+  ) {
+    return null;
+  }
+
+  const key = candidate.key.trim().toLowerCase();
+  const label = candidate.label.trim();
+  const kind = candidate.kind.trim().toLowerCase();
+  if (!DEMO_KINDS.includes(kind as (typeof DEMO_KINDS)[number])) {
+    return null;
+  }
+
+  const optionalString = (input: unknown) =>
+    typeof input === "string" && input.trim().length > 0
+      ? input.trim()
+      : null;
+  const optionalMode = (input: unknown, allowed: readonly string[]) => {
+    const normalized = optionalString(input)?.toLowerCase() ?? null;
+    if (normalized !== null && !allowed.includes(normalized)) {
+      return undefined;
+    }
+    return normalized;
+  };
+
+  const adProvisioningMode = optionalMode(candidate.adProvisioningMode, DEMO_MODES);
+  const rdsSessionMode = optionalMode(candidate.rdsSessionMode, DEMO_SIMPLE_MODES);
+  const status = optionalMode(candidate.status, DEMO_STATUSES);
+  if (
+    adProvisioningMode === undefined
+    || rdsSessionMode === undefined
+    || status === undefined
+  ) {
+    return null;
+  }
+
+  const adGroups = Array.isArray(candidate.adGroups)
+    ? candidate.adGroups
+        .filter((group): group is string => typeof group === "string")
+        .map((group) => group.trim())
+        .filter((group) => group.length > 0 && group.length <= 64)
+        .slice(0, 20)
+    : null;
+
+  const lifetimeDays =
+    typeof candidate.lifetimeDays === "number"
+      ? Math.trunc(candidate.lifetimeDays)
+      : null;
+  const storageQuotaGo =
+    typeof candidate.storageQuotaGo === "number"
+      ? Math.trunc(candidate.storageQuotaGo)
+      : null;
+
+  const isValid =
+    key.length > 0
+    && key.length <= 64
+    && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(key)
+    && label.length >= 2
+    && label.length <= 200
+    && (lifetimeDays === null
+      || (Number.isInteger(lifetimeDays)
+        && lifetimeDays >= 0
+        && lifetimeDays <= 365))
+    && (storageQuotaGo === null
+      || (Number.isInteger(storageQuotaGo)
+        && storageQuotaGo >= 0
+        && storageQuotaGo <= 100000));
+
+  if (!isValid) {
+    return null;
+  }
+
+  return {
+    key,
+    label,
+    kind: kind as DemoProfilePayload["kind"],
+    contentTemplateKey: optionalString(candidate.contentTemplateKey),
+    emailMode: optionalString(candidate.emailMode),
+    bpceMode: optionalString(candidate.bpceMode),
+    paymentMode: optionalString(candidate.paymentMode),
+    adProvisioningMode,
+    adGroups,
+    storageQuotaGo,
+    rdsSessionMode,
+    lifetimeDays,
+    status,
+  };
 }

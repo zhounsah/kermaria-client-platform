@@ -919,6 +919,42 @@ La V1.0 RC ne marque pas la fin du produit. Toute fonctionnalite
 supplementaire identifiee pendant V0.27 ou V1.0 beta 1 est isolee en
 V1.1 ou plus tard, jamais ajoutee en derniere minute a V1.0 RC.
 
+## Jalon V1.1 comptes de demonstration et d'essai personnalises
+
+Statut : **lots 1 a 3 livres** (code + schema). Conception complete :
+[`v1.1/V1.1_CUSTOM_DEMO_ACCOUNTS.md`](v1.1/V1.1_CUSTOM_DEMO_ACCOUNTS.md).
+
+Deux axes separes : le **contenu** du compte (templates de demo ou
+composition a la carte) et ses **capacites** (matrice par compte, du mode
+inerte a l'acces reel plafonne). Deux natures de compte :
+
+- `showcase` : vitrine commerciale ou interne, **totalement inerte**
+  (aucun BPCE, aucun SMTP, aucun paiement, aucun provisioning AD ni KoXo).
+  L'inertie est imposee par le code, pas par un mode global ;
+- `trial` : essai reel restreint, avec groupes AD dedies `GG_DEMO_*`,
+  quota de stockage et limites de session RDS natives.
+
+Lots livres :
+
+- **Lot 1** — socle et isolation : migration `036`, indicateur `is_demo`
+  et champs de cycle de vie, table administrable `demo_profiles`,
+  exclusion des comptes de demo des vues metier reelles, purge par lot ;
+- **Lot 2** — templates et creation admin : migration `037` (profils par
+  defaut), registre de contenu, ecran d'administration, composition a la
+  carte, CRUD des profils ;
+- **Lot 3** — essai reel : migration `038`, provisioning cadre des groupes
+  `GG_DEMO_*` et declenchement de la chaine KoXo (`trial` uniquement),
+  revocation et purge a l'echeance via service de fond **et** tache
+  planifiee Windows.
+
+Reste : **Lot 4** — conversion essai vers reel (bascule sur place,
+migration de l'identite AD hors du perimetre de demo, contenu conserve).
+
+Ancrage infra (R740xd) : groupes dans `OU=Groupes_TEST`, comptes dans
+`OU=CLI-DEMO`, quota FSRM, collection RDS Clients-1 filtree par groupe,
+VLAN 64 `10.35.64.0/24`. Deploiement SRV-13 :
+[`v1.1/deploy/SRV-13_LOT3_DEPLOY.md`](v1.1/deploy/SRV-13_LOT3_DEPLOY.md).
+
 ## Hors sequence
 
 Reserves, non programmes (ni dans V0.24, ni dans V0.28-V0.31, ni dans

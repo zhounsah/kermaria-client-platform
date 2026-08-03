@@ -34,6 +34,8 @@ Navigation par besoin :
 - deploiement et variables : [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)
 - securite : [`docs/SECURITY.md`](docs/SECURITY.md)
 - historique des versions : [`docs/ROADMAP.md`](docs/ROADMAP.md)
+- comptes de demonstration et d'essai (V1.1) :
+  [`docs/v1.1/V1.1_CUSTOM_DEMO_ACCOUNTS.md`](docs/v1.1/V1.1_CUSTOM_DEMO_ACCOUNTS.md)
 
 Repere de version important :
 

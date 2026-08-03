@@ -163,6 +163,14 @@ builder.Services.AddScoped<IAdminRepository>(
         ? new MariaDbAdminRepository(sqlConfiguration)
         : new MockAdminRepository(
             serviceProvider.GetRequiredService<MockAuthenticationStore>()));
+builder.Services.AddScoped<IDemoAccountRepository>(
+    _ => sqlConfiguration.IsPersistent
+        ? new MariaDbDemoAccountRepository(sqlConfiguration)
+        : new MockDemoAccountRepository());
+builder.Services.AddScoped<IDemoProfileRepository>(
+    _ => sqlConfiguration.IsPersistent
+        ? new MariaDbDemoProfileRepository(sqlConfiguration)
+        : new MockDemoProfileRepository());
 builder.Services.AddScoped<IRequestWorkflowRepository>(
     serviceProvider => sqlConfiguration.IsPersistent
         ? new MariaDbRequestWorkflowRepository(sqlConfiguration)
@@ -245,6 +253,10 @@ builder.Services.AddScoped<IKoxoRepository>(
 builder.Services.AddScoped<IPortalService, PortalService>();
 builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
 builder.Services.AddScoped<IAdminService, AdminService>();
+builder.Services.AddScoped<
+    IDemoProvisioningService,
+    DemoProvisioningService>();
+builder.Services.AddScoped<IDemoAccountService, DemoAccountService>();
 builder.Services.AddScoped<IKoxoExportService, KoxoExportService>();
 builder.Services.AddScoped<IRequestWorkflowService, RequestWorkflowService>();
 builder.Services.AddScoped<
@@ -295,6 +307,7 @@ builder.Services.AddScoped<IStripeWebhookService, StripeWebhookService>();
 builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddHostedService<PayPalPendingCancellationWorker>();
 builder.Services.AddHostedService<BillingSubscriptionRenewalWorker>();
+builder.Services.AddHostedService<DemoAccountExpirationWorker>();
 builder.Services.AddTransient<MariaDbMigrationRunner>();
 builder.Services.AddTransient<MariaDbAdminSeeder>();
 builder.Services.AddSingleton<OperationalReadinessService>();
@@ -431,6 +444,29 @@ if (args.Contains("--apply-migrations", StringComparer.OrdinalIgnoreCase))
         scope.ServiceProvider.GetRequiredService<MariaDbMigrationRunner>();
     await migrationRunner.ApplyAsync(
         args.Contains("--seed-demo-data", StringComparer.OrdinalIgnoreCase));
+    return;
+}
+
+if (args.Contains("--run-demo-expiration", StringComparer.OrdinalIgnoreCase))
+{
+    // Filet de securite invoque par la tache planifiee Windows (SRV-13) : rejoue
+    // le meme balayage que le service de fond (revocation des essais echus +
+    // purge), puis quitte. Inerte en persistance mock.
+    await using var scope = app.Services.CreateAsyncScope();
+    var demoService =
+        scope.ServiceProvider.GetRequiredService<IDemoAccountService>();
+    if (demoService.IsPersistent)
+    {
+        var sweep = await demoService.RunExpirationSweepAsync(
+            CancellationToken.None);
+        app.Logger.LogInformation(
+            "Demo expiration (scheduled task): revoked={Revoked} purged={Purged} skipped={Skipped} revokeFailures={Failures}",
+            sweep.RevokedCount,
+            sweep.PurgedCount,
+            sweep.SkippedReferences.Count,
+            sweep.RevokeFailures.Count);
+    }
+
     return;
 }
 
@@ -586,6 +622,10 @@ app.UseExceptionHandler(exceptionHandler =>
                 "INVALID_REQUEST",
                 "La demande est incomplète ou invalide."),
             DownloadConflictException conflict => (
+                StatusCodes.Status409Conflict,
+                conflict.Code,
+                conflict.Message),
+            DemoConflictException conflict => (
                 StatusCodes.Status409Conflict,
                 conflict.Code,
                 conflict.Message),
@@ -2737,6 +2777,179 @@ app.MapGet(
                 context.RequestAborted));
     });
 app.MapGet(
+    "/internal/admin/demo/profiles",
+    async (
+        HttpContext context,
+        IDemoAccountService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.demo.read");
+        return DemoOk(
+            context,
+            service,
+            await service.ListProfilesAsync(context.RequestAborted));
+    });
+app.MapPost(
+    "/internal/admin/demo/profiles",
+    async (
+        HttpContext context,
+        IDemoAccountService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.demo.write");
+        var payload = await ReadPayload<DemoProfilePayload>(context)
+            ?? throw new PortalValidationException();
+        var result = await service.UpsertProfileAsync(
+            payload,
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "demo_profile.upsert",
+                "success",
+                TargetType: "demo_profile",
+                TargetReference: result.Key,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return DemoOk(context, service, result);
+    });
+app.MapDelete(
+    "/internal/admin/demo/profiles/{key}",
+    async (
+        string key,
+        HttpContext context,
+        IDemoAccountService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.demo.write");
+        var deleted = await service.DeleteProfileAsync(
+            key,
+            context.RequestAborted);
+        if (!deleted)
+        {
+            throw new PortalDataNotFoundException();
+        }
+
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "demo_profile.delete",
+                "success",
+                TargetType: "demo_profile",
+                TargetReference: key,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return DemoOk(context, service, new { deleted = true });
+    });
+app.MapGet(
+    "/internal/admin/demo/content-templates",
+    async (
+        HttpContext context,
+        IDemoAccountService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.demo.read");
+        return DemoOk(context, service, service.GetContentTemplates());
+    });
+app.MapGet(
+    "/internal/admin/demo/accounts",
+    async (
+        HttpContext context,
+        IDemoAccountService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.demo.read");
+        return DemoOk(
+            context,
+            service,
+            await service.ListAccountsAsync(context.RequestAborted));
+    });
+app.MapPost(
+    "/internal/admin/demo/accounts",
+    async (
+        HttpContext context,
+        IDemoAccountService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.demo.write");
+        var payload = await ReadPayload<DemoAccountCreateRequest>(context)
+            ?? throw new PortalValidationException();
+        var result = await service.CreateAccountAsync(
+            payload,
+            actor.UserId,
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "demo_account.create",
+                "success",
+                TargetType: "demo_account",
+                TargetReference: result.CustomerReference,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return DemoOk(context, service, result);
+    });
+app.MapPost(
+    "/internal/admin/demo/expire",
+    async (
+        HttpContext context,
+        IDemoAccountService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.demo.write");
+        var result = await service.RunExpirationSweepAsync(context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "demo_account.expire_sweep",
+                "success",
+                TargetType: "demo_account",
+                TargetReference:
+                    $"revoked={result.RevokedCount};purged={result.PurgedCount}",
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return DemoOk(context, service, result);
+    });
+app.MapGet(
     "/internal/admin/koxo",
     async (
         HttpContext context,
@@ -4693,6 +4906,16 @@ static IResult AdminOk<T>(
 static IResult WorkflowOk<T>(
     HttpContext context,
     IRequestWorkflowService service,
+    T data)
+{
+    context.Response.Headers["X-Data-Source"] =
+        service.IsPersistent ? "mariadb" : "mock";
+    return Results.Ok(data);
+}
+
+static IResult DemoOk<T>(
+    HttpContext context,
+    IDemoAccountService service,
     T data)
 {
     context.Response.Headers["X-Data-Source"] =

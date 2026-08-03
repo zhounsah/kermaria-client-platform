@@ -55,6 +55,9 @@ import type {
   AdminSubscriptionDetail,
   SupportRequestPayload,
   SupportRequestSummary,
+  DemoAccountSummary,
+  DemoContentTemplateSummary,
+  DemoProfileSummary,
 } from "@kermaria/shared";
 import { createDefaultPublicPackCatalogContent } from "@kermaria/shared";
 
@@ -1222,6 +1225,27 @@ export function getAdminManagedContentList() {
   return getAdminData<ManagedContentSummary[]>(
     "/internal/admin/content",
     mockManagedContentSummaries,
+  );
+}
+
+export function getAdminDemoProfiles() {
+  return getAdminData<DemoProfileSummary[]>(
+    "/internal/admin/demo/profiles",
+    [],
+  );
+}
+
+export function getAdminDemoContentTemplates() {
+  return getAdminData<DemoContentTemplateSummary[]>(
+    "/internal/admin/demo/content-templates",
+    [],
+  );
+}
+
+export function getAdminDemoAccounts() {
+  return getAdminData<DemoAccountSummary[]>(
+    "/internal/admin/demo/accounts",
+    [],
   );
 }
 
