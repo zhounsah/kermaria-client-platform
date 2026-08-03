@@ -381,9 +381,11 @@ Le Client doit informer le Prestataire avant toute utilisation des services pour
 
 ---
 
-## 19. Sauvegarde et restauration
+## 19. Sauvegarde, restauration, suppression et localisation
 
 Lorsque le service inclut une sauvegarde, le périmètre sauvegardé est celui défini dans l’offre, le devis ou la configuration validée.
+
+Les services pour lesquels une sauvegarde est expressément incluse ou souscrite font l’objet d’une sauvegarde automatique quotidienne des données couvertes par le service. Les versions sauvegardées sont conservées pendant 31 jours glissants.
 
 Sauf mention contraire écrite, le Prestataire ne garantit pas :
 
@@ -391,13 +393,20 @@ Sauf mention contraire écrite, le Prestataire ne garantit pas :
 * la restauration parfaite de toutes les données ;
 * l’absence totale de perte de données ;
 * la conservation illimitée des versions ;
-* la restauration dans un délai garanti.
+* la restauration dans un délai garanti ;
+* l’existence d’une copie sur un second site géographiquement distinct.
+
+Les données créées ou modifiées depuis la dernière sauvegarde réussie peuvent ne pas être récupérables. Le nombre de points de restauration disponibles peut varier en cas d’échec, de maintenance, d’interruption technique ou de corruption constatée.
+
+Les caches, paramètres de session, données temporaires et autres éléments techniques reproductibles peuvent faire l’objet de politiques de conservation différentes. Ils ne sont pas assimilés aux fichiers personnels ou aux données métier du Client.
 
 Le Client doit signaler rapidement toute perte ou altération de données.
 
 Une restauration peut être facturée si elle n’est pas incluse dans l’offre souscrite ou si elle résulte d’une erreur du Client.
 
 Le Prestataire peut supprimer les sauvegardes après résiliation du service, expiration du délai de conservation ou défaut de paiement prolongé, sous réserve d’en informer le Client lorsque cela est raisonnablement possible.
+
+Les données et leurs sauvegardes sont hébergées sur une infrastructure exploitée en Bretagne, en France. Sauf engagement contractuel spécifique, aucune copie sur un second site géographiquement distinct n’est garantie.
 
 ---
 

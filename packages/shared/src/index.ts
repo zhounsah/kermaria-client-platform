@@ -816,6 +816,15 @@ export interface ResolvedPublicPackManifest extends PublicPackManifest {
   >;
 }
 
+export const PUBLIC_BACKUP_POLICY_DETAILS_PATH = "/cgv";
+
+export interface PublicPackBackupPolicySummary {
+  included: boolean;
+  summary: string;
+  detailsHref: string;
+  detailsLabel: string;
+}
+
 const PUBLIC_PACK_VARIANTS_BY_TERM: ReadonlyArray<PublicPackVariantManifest> = [
   {
     commitmentMonths: 1,
@@ -1376,6 +1385,34 @@ export function createDefaultPublicPackCatalogContent(): PublicPackCatalogConten
   return {
     ...createDefaultPublicPackCatalogContentPayload(),
     updatedAt: null,
+  };
+}
+
+export function packIncludesBackup(
+  pack: Pick<PublicPackManifest, "technicalServiceReferences">,
+): boolean {
+  return pack.technicalServiceReferences.includes("SAVE-PERSO");
+}
+
+export function getPublicPackBackupPolicySummary(
+  pack: Pick<PublicPackManifest, "technicalServiceReferences">,
+): PublicPackBackupPolicySummary {
+  if (packIncludesBackup(pack)) {
+    return {
+      included: true,
+      summary:
+        "Les données couvertes par le service de sauvegarde font l'objet d'une sauvegarde automatique quotidienne. Les versions sauvegardées sont conservées pendant 31 jours glissants. Les données créées ou modifiées depuis la dernière sauvegarde réussie peuvent ne pas être récupérables.",
+      detailsHref: PUBLIC_BACKUP_POLICY_DETAILS_PATH,
+      detailsLabel: "Voir les conditions détaillées",
+    };
+  }
+
+  return {
+    included: false,
+    summary:
+      "Sauvegarde disponible en option. Sans option active, la récupération des données après suppression, altération ou défaillance n'est pas garantie.",
+    detailsHref: PUBLIC_BACKUP_POLICY_DETAILS_PATH,
+    detailsLabel: "Voir les conditions détaillées",
   };
 }
 

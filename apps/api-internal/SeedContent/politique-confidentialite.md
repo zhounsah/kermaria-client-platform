@@ -1,6 +1,6 @@
 # Politique de confidentialité
 
-**Version du : 07 juillet 2026**
+**Version du : 03 août 2026**
 
 La présente politique de confidentialité décrit les traitements de données personnelles réalisés dans le cadre du site et de l'espace client de Zachary HOUNSA-HOUNKPA EI.
 
@@ -34,6 +34,8 @@ Ces données sont utilisées pour :
 * sécuriser l'accès à l'espace client ;
 * respecter les obligations légales, comptables et réglementaires.
 
+Les caractéristiques commerciales ou opérationnelles des sauvegardes client, notamment la fréquence, la rétention, les conditions de restauration, la suppression après résiliation et la localisation d'hébergement, relèvent des CGV, de l'offre souscrite ou des conditions techniques applicables, et non de la présente politique de confidentialité. Les éléments techniques reproductibles, comme les caches, paramètres de session ou données temporaires, peuvent suivre des politiques distinctes et ne sont pas assimilés aux fichiers personnels ou aux données métier du client.
+
 ## Base juridique
 
 Les traitements sont fondés, selon les cas :
@@ -65,6 +67,8 @@ Des prestataires techniques peuvent intervenir en qualité de sous-traitants lor
 Les données sont conservées pendant la durée nécessaire à la relation contractuelle, puis pendant les durées légales applicables, notamment pour les obligations comptables et de facturation.
 
 Les journaux techniques et événements de sécurité sont conservés pendant une durée proportionnée aux besoins d'administration, de traçabilité et de sécurité.
+
+Les données hébergées ou sauvegardées pour le compte du client dans le cadre d'un service souscrit suivent, pour leur cycle opérationnel, les conditions contractuelles et techniques applicables au service concerné. La présente politique vise uniquement la conservation des données personnelles et administratives traitées par Zachary IT pour gérer le site, l'espace client et la relation commerciale.
 
 ## Vos droits
 

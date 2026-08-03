@@ -1,6 +1,6 @@
 {
   "name": "kermaria-client-platform",
-  "version": "1.0.0.8",
+  "version": "1.0.0.7",
   "private": true,
   "workspaces": [
     "apps/webportal",
