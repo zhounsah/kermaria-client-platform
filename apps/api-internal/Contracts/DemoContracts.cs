@@ -127,11 +127,16 @@ public sealed record DemoAccountSummary(
 /// References des trials dont la revocation AD a echoue (a reessayer au prochain
 /// passage) ; le compte n'est ni marque revoque ni purge.
 /// </param>
+/// <param name="ReprovisionedCount">
+/// Essais dont l'acces reel a ete applique lors de cette passe, l'identite AD
+/// n'ayant pas encore existe au moment de la creation.
+/// </param>
 public sealed record DemoLifecycleSweepResult(
     int RevokedCount,
     int PurgedCount,
     IReadOnlyList<string> SkippedReferences,
-    IReadOnlyList<string> RevokeFailures);
+    IReadOnlyList<string> RevokeFailures,
+    int ReprovisionedCount);
 
 /// <summary>Reponse retournee apres creation d'un compte de demo.</summary>
 public sealed record DemoAccountCreatedResponse(

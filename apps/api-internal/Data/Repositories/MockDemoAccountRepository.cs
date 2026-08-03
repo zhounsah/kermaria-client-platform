@@ -41,6 +41,13 @@ public sealed class MockDemoAccountRepository : IDemoAccountRepository
         CancellationToken cancellationToken = default)
         => Task.CompletedTask;
 
+    public Task<IReadOnlyList<DemoTrialProvisioningTarget>>
+        ListTrialsForProvisioningRetryAsync(
+            DateTime nowUtc,
+            CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<DemoTrialProvisioningTarget>>(
+            Array.Empty<DemoTrialProvisioningTarget>());
+
     public Task<DemoConversionCandidate?> FindConversionCandidateAsync(
         string customerReference,
         CancellationToken cancellationToken = default)

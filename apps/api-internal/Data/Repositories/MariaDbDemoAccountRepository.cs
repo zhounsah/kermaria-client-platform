@@ -188,6 +188,63 @@ public sealed class MariaDbDemoAccountRepository : IDemoAccountRepository
         return results;
     }
 
+    public async Task<IReadOnlyList<DemoTrialProvisioningTarget>>
+        ListTrialsForProvisioningRetryAsync(
+            DateTime nowUtc,
+            CancellationToken cancellationToken = default)
+    {
+        var results = new List<DemoTrialProvisioningTarget>();
+        await using var connection = new MySqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        // Essais encore vivants : ni revoques, ni echus. Ceux qui n'ont pas
+        // encore d'identite AD sont simplement ignores plus haut.
+        command.CommandText =
+            """
+            SELECT c.id,
+                   c.external_reference,
+                   dp.ad_groups_json,
+                   (
+                       SELECT pu.id FROM portal_users pu
+                       WHERE pu.customer_id = c.id
+                       ORDER BY pu.created_at
+                       LIMIT 1
+                   ) AS portal_user_id
+            FROM customers c
+            INNER JOIN demo_profiles dp ON dp.id = c.demo_profile_id
+            WHERE c.is_demo = TRUE
+              AND c.demo_kind = 'trial'
+              AND c.demo_revoked_at IS NULL
+              AND dp.ad_provisioning_mode = 'real_scoped'
+              AND (c.demo_expires_at IS NULL OR c.demo_expires_at >= @now)
+            ORDER BY c.demo_expires_at;
+            """;
+        command.Parameters.AddWithValue("@now", nowUtc);
+
+        await using var reader = await command.ExecuteReaderAsync(
+            cancellationToken);
+        var groupsOrdinal = reader.GetOrdinal("ad_groups_json");
+        var userOrdinal = reader.GetOrdinal("portal_user_id");
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            if (reader.IsDBNull(userOrdinal))
+            {
+                continue;
+            }
+
+            results.Add(new DemoTrialProvisioningTarget(
+                ReadIdentifier(reader, "id"),
+                reader.GetString("external_reference"),
+                ReadIdentifier(reader, userOrdinal),
+                ParseAdGroups(
+                    reader.IsDBNull(groupsOrdinal)
+                        ? null
+                        : reader.GetString(groupsOrdinal))));
+        }
+
+        return results;
+    }
+
     public async Task MarkTrialProvisionedAsync(
         string customerId,
         DateTime provisionedAtUtc,

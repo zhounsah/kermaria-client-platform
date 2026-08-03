@@ -22,6 +22,22 @@ public sealed record DemoExpiredTrial(
     IReadOnlyList<string> AdGroups);
 
 /// <summary>
+/// Essai actif dont l'appartenance aux groupes <c>GG_DEMO_*</c> doit etre
+/// (re)tentee.
+/// </summary>
+/// <remarks>
+/// A la creation, l'identite AD n'existe generalement pas encore : elle est creee
+/// par la chaine KoXo, semi-manuelle. Le provisioning ressort alors en
+/// <c>PENDING_IDENTITY</c> sans aucun groupe applique. Sans reprise, l'essai
+/// resterait sans acces reel jusqu'a son expiration.
+/// </remarks>
+public sealed record DemoTrialProvisioningTarget(
+    string CustomerId,
+    string CustomerReference,
+    string PortalUserId,
+    IReadOnlyList<string> AdGroups);
+
+/// <summary>
 /// Compte de demo candidat a la conversion en client reel (Lot 4).
 /// </summary>
 /// <param name="AlreadyConverted">
@@ -80,6 +96,15 @@ public interface IDemoAccountRepository
     Task<IReadOnlyList<DemoExpiredTrial>> ListExpiredTrialsToRevokeAsync(
         DateTime nowUtc,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Liste les essais <b>actifs</b> (non revoques, non echus) en acces reel
+    /// cadre, dont l'appartenance aux groupes doit etre (re)tentee.
+    /// </summary>
+    Task<IReadOnlyList<DemoTrialProvisioningTarget>>
+        ListTrialsForProvisioningRetryAsync(
+            DateTime nowUtc,
+            CancellationToken cancellationToken = default);
 
     /// <summary>Horodate le provisioning reel d'un trial (declenchement KoXo/AD).</summary>
     Task MarkTrialProvisionedAsync(

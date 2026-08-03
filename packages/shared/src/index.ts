@@ -1950,6 +1950,11 @@ export interface DemoLifecycleSweepResult {
   purgedCount: number;
   skippedReferences: string[];
   revokeFailures: string[];
+  /**
+   * Essais dont l'accès réel a été appliqué lors de cette passe, l'identité AD
+   * n'ayant pas encore existé au moment de la création (chaîne KoXo).
+   */
+  reprovisionedCount: number;
 }
 
 /** Conversion d'un compte d'essai en client réel (V1.1 Lot 4). */

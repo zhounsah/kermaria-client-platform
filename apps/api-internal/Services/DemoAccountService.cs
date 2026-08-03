@@ -44,8 +44,9 @@ public interface IDemoAccountService
 
 public sealed class DemoAccountService : IDemoAccountService
 {
+    private const string RealScopedProvisioningMode = "real_scoped";
     private static readonly string[] ProvisioningModes =
-        ["off", "mock", "real_scoped"];
+        ["off", "mock", RealScopedProvisioningMode];
     private static readonly string[] StatusValues = ["active", "inactive"];
 
     private readonly IDemoProfileRepository _profiles;
@@ -238,6 +239,40 @@ public sealed class DemoAccountService : IDemoAccountService
     {
         var nowUtc = DateTime.UtcNow;
 
+        // 0) Reprise du provisioning des essais encore vivants. A la creation,
+        //    l'identite AD n'existe generalement pas encore (chaine KoXo
+        //    semi-manuelle) : le provisioning ressort en PENDING_IDENTITY sans
+        //    aucun groupe. Sans cette reprise, l'essai n'obtiendrait jamais son
+        //    acces reel. L'operation est idempotente (une appartenance deja
+        //    presente renvoie ALREADY_PRESENT) et ne redeclenche pas KoXo.
+        var reprovisionedCount = 0;
+        var pendingTrials = await _accounts.ListTrialsForProvisioningRetryAsync(
+            nowUtc,
+            cancellationToken);
+        foreach (var trial in pendingTrials)
+        {
+            var outcome = await _provisioning.ProvisionTrialAsync(
+                trial.CustomerReference,
+                trial.PortalUserId,
+                DemoKinds.Trial,
+                RealScopedProvisioningMode,
+                trial.AdGroups,
+                cancellationToken,
+                triggerKoxo: false);
+            if (outcome.RealAccessApplied)
+            {
+                await _accounts.MarkTrialProvisionedAsync(
+                    trial.CustomerId,
+                    nowUtc,
+                    cancellationToken);
+                reprovisionedCount++;
+                _logger.LogInformation(
+                    "Demo trial {CustomerReference}: real access applied on retry ({GroupCount} group(s)).",
+                    trial.CustomerReference,
+                    outcome.GroupsApplied.Count);
+            }
+        }
+
         // 1) Revocation de l'acces reel des essais echus (avant purge).
         var expiredTrials = await _accounts.ListExpiredTrialsToRevokeAsync(
             nowUtc,
@@ -276,7 +311,8 @@ public sealed class DemoAccountService : IDemoAccountService
             revokedCount,
             purge.PurgedCustomerCount,
             purge.SkippedCustomerReferences,
-            revokeFailures);
+            revokeFailures,
+            reprovisionedCount);
     }
 
     private DemoProfile BuildProfile(DemoProfilePayload payload)

@@ -55,13 +55,19 @@ public sealed record DemoRevocationOutcome(
 /// </summary>
 public interface IDemoProvisioningService
 {
+    /// <param name="triggerKoxo">
+    /// Faux lors d'une <b>reprise</b> : la chaine KoXo a deja ete declenchee a la
+    /// creation, la rejouer a chaque passage du balayage inonderait le pipeline
+    /// semi-manuel de SRV-21.
+    /// </param>
     Task<DemoProvisioningOutcome> ProvisionTrialAsync(
         string customerReference,
         string portalUserId,
         string demoKind,
         string adProvisioningMode,
         IReadOnlyList<string> adGroups,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        bool triggerKoxo = true);
 
     Task<DemoRevocationOutcome> RevokeTrialAsync(
         string customerReference,
@@ -107,7 +113,8 @@ public sealed class DemoProvisioningService : IDemoProvisioningService
         string demoKind,
         string adProvisioningMode,
         IReadOnlyList<string> adGroups,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool triggerKoxo = true)
     {
         // 1) Garde-fou dur : vitrine = totalement inerte, aucun effet reel.
         if (!string.Equals(demoKind, DemoKinds.Trial, StringComparison.Ordinal))
@@ -184,11 +191,13 @@ public sealed class DemoProvisioningService : IDemoProvisioningService
             }
         }
 
-        // 5) Declenchement de la chaine KoXo (identites/metadonnees) — trial only.
-        var koxoTriggered = await TriggerKoxoAsync(
-            customerReference,
-            portalUserId,
-            cancellationToken);
+        // 5) Declenchement de la chaine KoXo (identites/metadonnees) — trial only,
+        //    et jamais lors d'une reprise (deja declenchee a la creation).
+        var koxoTriggered = triggerKoxo
+            && await TriggerKoxoAsync(
+                customerReference,
+                portalUserId,
+                cancellationToken);
 
         var resultCode = identityPending
             ? "DEMO_PROVISIONING_PENDING_IDENTITY"
