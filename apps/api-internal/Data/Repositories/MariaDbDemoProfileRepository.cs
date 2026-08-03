@@ -160,6 +160,41 @@ public sealed class MariaDbDemoProfileRepository : IDemoProfileRepository
             lifetime_days, status
         """;
 
+    /// <summary>
+    /// Lit une colonne d'identifiant <c>CHAR(36)</c>.
+    /// </summary>
+    /// <remarks>
+    /// MySqlConnector materialise ces colonnes en <see cref="Guid"/> et non en
+    /// <see cref="string"/> : un <c>GetString</c> direct leve
+    /// <see cref="InvalidCastException"/>. Meme convention que
+    /// <c>MariaDbDownloadRepository</c>.
+    /// </remarks>
+    private static string ReadIdentifier(
+        MySqlDataReader reader,
+        string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        if (reader.IsDBNull(ordinal))
+        {
+            throw new InvalidOperationException(
+                $"The identifier column '{columnName}' cannot be null.");
+        }
+
+        return ReadIdentifier(reader, ordinal);
+    }
+
+    private static string ReadIdentifier(MySqlDataReader reader, int ordinal)
+        => reader.GetValue(ordinal) switch
+        {
+            Guid guid => guid.ToString("D"),
+            byte[] bytes when bytes.Length == 16 => new Guid(bytes).ToString("D"),
+            byte[] bytes => System.Text.Encoding.UTF8.GetString(bytes),
+            var raw => Convert.ToString(
+                    raw,
+                    System.Globalization.CultureInfo.InvariantCulture)
+                ?? string.Empty
+        };
+
     private static DemoProfile Map(MySqlDataReader reader)
     {
         var adGroupsOrdinal = reader.GetOrdinal("ad_groups_json");
@@ -170,7 +205,7 @@ public sealed class MariaDbDemoProfileRepository : IDemoProfileRepository
         var quotaOrdinal = reader.GetOrdinal("storage_quota_go");
 
         return new DemoProfile(
-            reader.GetString("id"),
+            ReadIdentifier(reader, "id"),
             reader.GetString("profile_key"),
             reader.GetString("label"),
             reader.GetString("kind"),
