@@ -44,6 +44,13 @@ public sealed record DemoTrialProvisioningTarget(
 /// Vrai si <c>demo_converted_at</c> est deja renseigne : la conversion a deja
 /// eu lieu, il ne faut pas la rejouer.
 /// </param>
+/// <summary>Issue d'une suppression de compte de demo a la demande.</summary>
+/// <param name="Skipped">
+/// Vrai si le compte a ete conserve parce qu'il porte du contenu metier hors
+/// cascade de suppression.
+/// </param>
+public sealed record DemoAccountDeletionOutcome(bool Deleted, bool Skipped);
+
 public sealed record DemoConversionCandidate(
     string CustomerId,
     string CustomerReference,
@@ -87,6 +94,15 @@ public interface IDemoAccountRepository
     /// <summary>Materialise un compte de demo (customer + portal_user + services).</summary>
     Task CreateDemoAccountAsync(
         DemoAccountCreationSpec spec,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Supprime un compte de demo a la demande (hors echeance), avec le meme
+    /// garde-fou que la purge : un compte portant du contenu metier hors cascade
+    /// est conserve plutot que supprime a moitie.
+    /// </summary>
+    Task<DemoAccountDeletionOutcome> DeleteDemoAccountAsync(
+        string customerId,
         CancellationToken cancellationToken = default);
 
     /// <summary>

@@ -40,6 +40,14 @@ public interface IDemoAccountService
     /// </summary>
     Task<DemoLifecycleSweepResult> RunExpirationSweepAsync(
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Supprime un compte de demo avant son echeance, en revoquant d'abord son
+    /// acces reel s'il en a un.
+    /// </summary>
+    Task DeleteAccountAsync(
+        string customerReference,
+        CancellationToken cancellationToken);
 }
 
 public sealed class DemoAccountService : IDemoAccountService
@@ -101,6 +109,52 @@ public sealed class DemoAccountService : IDemoAccountService
     public Task<IReadOnlyList<DemoAccountSummary>> ListAccountsAsync(
         CancellationToken cancellationToken)
         => _accounts.ListDemoAccountsAsync(cancellationToken);
+
+    public async Task DeleteAccountAsync(
+        string customerReference,
+        CancellationToken cancellationToken)
+    {
+        var candidate = await _accounts.FindConversionCandidateAsync(
+            customerReference,
+            cancellationToken)
+            ?? throw new PortalDataNotFoundException();
+
+        // Annuaire d'abord, base ensuite — meme ordre que la conversion. Si la
+        // revocation echoue, le compte reste en base et l'operation est
+        // rejouable ; l'inverse laisserait une identite AD membre des groupes
+        // GG_DEMO_* sans plus aucune trace applicative pour la retrouver.
+        if (string.Equals(candidate.DemoKind, DemoKinds.Trial, StringComparison.Ordinal))
+        {
+            var revocation = await _provisioning.RevokeTrialAsync(
+                candidate.CustomerReference,
+                candidate.PortalUserId,
+                candidate.AdGroups,
+                cancellationToken);
+            if (!revocation.Succeeded)
+            {
+                throw new DemoConflictException(
+                    "DEMO_DELETION_REVOKE_FAILED",
+                    "L'accès Active Directory n'a pas pu être révoqué ; "
+                        + "le compte est conservé pour que l'opération reste rejouable.");
+            }
+        }
+
+        var outcome = await _accounts.DeleteDemoAccountAsync(
+            candidate.CustomerId,
+            cancellationToken);
+        if (outcome.Skipped)
+        {
+            throw new DemoConflictException(
+                "DEMO_DELETION_HAS_CONTENT",
+                "Ce compte porte du contenu métier qui n'est pas couvert par la "
+                    + "suppression ; il doit être traité manuellement.");
+        }
+
+        _logger.LogInformation(
+            "Demo account {CustomerReference} deleted on request (kind={Kind}).",
+            candidate.CustomerReference,
+            candidate.DemoKind);
+    }
 
     public Task<DemoPurgeResult> PurgeExpiredAccountsAsync(
         CancellationToken cancellationToken)

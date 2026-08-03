@@ -1704,6 +1704,15 @@ td .button {
   white-space: nowrap;
 }
 
+/* Plusieurs actions sur une meme ligne : garde un ecart franc pour eviter le
+   clic malencontreux sur une action destructrice voisine. */
+.table-actions {
+  display: inline-flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: flex-end;
+}
+
 .admin-table tr td:last-child,
 .invoice-table tr td:last-child {
   text-align: right;

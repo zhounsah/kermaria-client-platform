@@ -1,4 +1,4 @@
-# Feuille de route
+﻿# Feuille de route
 
 > Lecture 1.0.0 : cette feuille de route sert a comprendre l'historique et les
 > jalons V0.xx. Pour l'etat courant et les points d'entree actuels, commencer
@@ -987,6 +987,14 @@ essais de demonstration. La creation d'un compte de demo saisit desormais l'etat
 civil (civilite, nom, prenom, date de naissance) et alloue un
 `koxo_unique_identifier`, faute de quoi le compte serait rejete par la validation
 de l'export — et un seul rejet bloque l'export global. Sans migration.
+
+Ajout **`v1.1.5`** : suppression d'un compte de demonstration a la demande
+(`DELETE /internal/admin/demo/accounts/{reference}` et bouton dans la liste).
+Il n'existait aucun moyen de retirer un compte cree par erreur avant son
+echeance. L'annuaire est traite avant la base — pour un essai, l'acces reel est
+revoque avant suppression, de sorte qu'un echec laisse l'operation rejouable
+plutot qu'une identite AD orpheline membre des groupes de demonstration. Le
+garde-fou de contenu metier de la purge est repris tel quel.
 
 Ancrage infra (R740xd) : groupes dans `OU=Groupes_TEST`, comptes dans
 `OU=CLI-DEMO`, quota FSRM, collection RDS Clients-1 filtree par groupe,

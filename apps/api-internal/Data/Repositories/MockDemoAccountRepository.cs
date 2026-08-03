@@ -18,6 +18,11 @@ public sealed class MockDemoAccountRepository : IDemoAccountRepository
         CancellationToken cancellationToken = default)
         => Task.CompletedTask;
 
+    public Task<DemoAccountDeletionOutcome> DeleteDemoAccountAsync(
+        string customerId,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult(new DemoAccountDeletionOutcome(false, false));
+
     public Task<bool> CustomerReferenceTakenAsync(
         string reference,
         CancellationToken cancellationToken = default)

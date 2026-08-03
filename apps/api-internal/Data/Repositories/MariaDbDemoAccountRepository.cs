@@ -357,6 +357,43 @@ public sealed class MariaDbDemoAccountRepository : IDemoAccountRepository
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    public async Task<DemoAccountDeletionOutcome> DeleteDemoAccountAsync(
+        string customerId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = new MySqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        // Meme garde-fou que la purge a l'echeance : plutot conserver un compte
+        // porteur de contenu metier que lever une erreur de cle etrangere ou le
+        // supprimer a moitie.
+        if (await HasUncoveredBusinessContentAsync(
+                connection,
+                customerId,
+                cancellationToken))
+        {
+            return new DemoAccountDeletionOutcome(false, true);
+        }
+
+        await using var transaction =
+            await connection.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            await DeleteDemoCustomerAsync(
+                connection,
+                transaction,
+                customerId,
+                cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return new DemoAccountDeletionOutcome(true, false);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+    }
+
     public async Task<bool> CustomerReferenceTakenAsync(
         string reference,
         CancellationToken cancellationToken = default)

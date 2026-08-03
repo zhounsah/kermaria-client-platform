@@ -2960,6 +2960,33 @@ app.MapPost(
             context.RequestAborted);
         return DemoOk(context, service, result);
     });
+app.MapDelete(
+    "/internal/admin/demo/accounts/{reference}",
+    async (
+        string reference,
+        HttpContext context,
+        IDemoAccountService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.demo.write");
+        await service.DeleteAccountAsync(reference, context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "demo_account.delete",
+                "success",
+                TargetType: "demo_account",
+                TargetReference: reference,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return Results.NoContent();
+    });
 app.MapPost(
     "/internal/admin/demo/expire",
     async (

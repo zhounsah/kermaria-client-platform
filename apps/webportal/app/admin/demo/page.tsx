@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { AdminDataTable } from "@/components/AdminDataTable";
 import { DemoAccountConvertButton } from "@/components/DemoAccountConvertButton";
+import { DemoAccountDeleteButton } from "@/components/DemoAccountDeleteButton";
 import { DemoAccountCreateForm } from "@/components/DemoAccountCreateForm";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
@@ -121,17 +122,24 @@ export default async function AdminDemoAccountsPage() {
               <span key={`${account.customerReference}-lifecycle`}>
                 {lifecycleBadge(account.expiresAt, account.revokedAt)}
               </span>,
-              // Seul un essai se convertit : une vitrine n'a aucun accès réel
-              // à basculer (l'API refuserait de toute façon).
-              account.kind === "trial" ? (
-                <DemoAccountConvertButton
+              <span
+                className="table-actions"
+                key={`${account.customerReference}-actions`}
+              >
+                {/* Seul un essai se convertit : une vitrine n'a aucun accès réel
+                    à basculer (l'API refuserait de toute façon). */}
+                {account.kind === "trial" ? (
+                  <DemoAccountConvertButton
+                    customerReference={account.customerReference}
+                    displayName={account.displayName}
+                  />
+                ) : null}
+                <DemoAccountDeleteButton
                   customerReference={account.customerReference}
                   displayName={account.displayName}
-                  key={`${account.customerReference}-convert`}
+                  kind={account.kind}
                 />
-              ) : (
-                "—"
-              ),
+              </span>,
             ])}
           />
         )}
