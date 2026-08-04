@@ -1019,6 +1019,21 @@ KoXo et non par l'application. Le provisioning resout desormais l'identite par
 lien. Recherche bornee aux racines autorisees ; une correspondance multiple est
 traitee comme une absence.
 
+Correctif **`v1.1.9.2`** : la rubrique « Telechargements » (administration et
+espace client) etait integralement indisponible en production. Avant chaque
+lecture, `DownloadSchemaEnsurer` lancait le runner de migrations
+(`MariaDbMigrationRunner.ApplyAsync`), donc du DDL au fil des requetes, alors
+que le compte applicatif `kermaria_api` n'a deliberement aucun droit de schema :
+la requete echouait en `MySqlException` et l'API repondait `SQL_UNAVAILABLE`.
+Le garde-fou devient une verification en lecture seule des trois tables de la
+migration `032` via `information_schema.tables`, sur le modele de
+`BilledRecurringCheckoutSchemaEnsurer` ; leur absence donne desormais un
+`503 DOWNLOADS_SCHEMA_UNAVAILABLE` explicite au lieu d'une panne opaque. Le
+centre de telechargements etait le seul point du code a executer du DDL hors
+`--apply-migrations`, et les smoke tests tournant en persistance mock, cette
+classe de defaut leur reste invisible : un garde-fou statique est ajoute au
+contrat `test:downloads`.
+
 Ancrage infra (R740xd) : groupes dans `OU=Groupes_TEST`, comptes dans
 `OU=CLI-DEMO`, quota FSRM, collection RDS Clients-1 filtree par groupe,
 VLAN 64 `10.35.64.0/24`. Deploiement SRV-13 :

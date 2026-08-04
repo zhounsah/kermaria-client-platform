@@ -169,6 +169,10 @@ const downloadService = await read(
 const clientServiceCatalogService = await read(
   "../api-internal/Services/ClientServiceCatalogService.cs",
 );
+const downloadSchemaEnsurer = await read(
+  "../api-internal/Services/DownloadSchemaEnsurer.cs",
+);
+const apiProgram = await read("../api-internal/Program.cs");
 const payloads = await read("lib/bff-payloads.ts");
 const portalNav = await read("components/PortalNavigation.tsx");
 const adminNav = await read("components/AdminNavigation.tsx");
@@ -316,6 +320,20 @@ assert.match(adminDownloadFileRoute, /getInternalSession/);
 assert.match(adminCategoriesRoute, /handleAdminGet<DownloadCategory\[]>/);
 assert.match(adminCategoriesRoute, /handleAdminMutation/);
 assert.match(adminCategoryDetailRoute, /handleAdminMutation/);
+
+// Garde-fou V1.1.9.2 : le centre de téléchargements ne doit exécuter aucun DDL
+// au fil des requêtes. Le compte applicatif MariaDB n'a pas les droits de
+// schéma ; appeler le runner de migrations depuis une requête rendait toute la
+// rubrique indisponible en `SQL_UNAVAILABLE`.
+assert.doesNotMatch(downloadSchemaEnsurer, /MariaDbMigrationRunner/);
+assert.doesNotMatch(
+  downloadSchemaEnsurer,
+  /\b(CREATE|ALTER|DROP)\s+(TABLE|INDEX)\b/i,
+);
+assert.match(downloadSchemaEnsurer, /information_schema\.tables/);
+assert.match(downloadSchemaEnsurer, /DownloadSchemaUnavailableException/);
+assert.match(apiProgram, /DownloadSchemaUnavailableException => \(/);
+assert.match(apiProgram, /"DOWNLOADS_SCHEMA_UNAVAILABLE"/);
 
 assert.match(styles, /\.downloads-accordion/);
 assert.match(styles, /\.download-card/);

@@ -636,6 +636,10 @@ app.UseExceptionHandler(exceptionHandler =>
                 StatusCodes.Status404NotFound,
                 "PORTAL_DATA_NOT_FOUND",
                 "La ressource demandée est introuvable."),
+            DownloadSchemaUnavailableException => (
+                StatusCodes.Status503ServiceUnavailable,
+                "DOWNLOADS_SCHEMA_UNAVAILABLE",
+                "Le centre de téléchargements n'est pas initialisé en base de données."),
             MySqlException => (
                 StatusCodes.Status503ServiceUnavailable,
                 "SQL_UNAVAILABLE",

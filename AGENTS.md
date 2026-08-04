@@ -78,6 +78,7 @@ Ce fichier s'applique a tout le depot `kermaria-client-platform`.
 - Les migrations sont `apps/api-internal/Migrations/MariaDb/[0-9]*.sql` et sont separees par `-- statement-break`.
 - Les migrations ne s'executent pas au demarrage normal ; commande explicite `Development` : `dotnet run --project apps/api-internal/Kermaria.ApiInternal.csproj -- --apply-migrations`.
 - Le seed fictif exige aussi `--seed-demo-data` et les variables `DEMO_PORTAL_*` / `DEMO_INTERNAL_ADMIN_*` ; il est ignore hors `Development`.
+- Aucun code de requete ne doit appliquer de migration ni executer de DDL : le compte applicatif (`kermaria_api`) n'a pas les droits de schema, la requete echoue en `MySqlException` et l'API repond `SQL_UNAVAILABLE`. Verifier une precondition de schema en lecture seule (`information_schema.tables` ou `schema_migrations`) et remonter une erreur explicite.
 - Avant une migration reelle : `npm run backup:mariadb` ; ne jamais versionner un dump.
 - Tests MariaDB opt-in : fournir `SQL_*`, `SERVICE_AUTH_TOKEN`, `DEMO_*`, puis `npm run validate:mariadb` ; le script pose `RUN_MARIADB_TESTS=true`.
 
