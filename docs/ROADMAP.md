@@ -504,10 +504,11 @@ Variables d'environnement nouvelles : `PUBLIC_VITRINE_ENABLED` (defaut
 `false`), `CONTACT_FORM_RECIPIENT` (destinataire interne du formulaire
 contact).
 
-A traiter avant V1.0 RC : raffiner le header
-`X-Robots-Tag: noindex, nofollow` defini dans `next.config.ts`
-(actuellement applique a toutes les routes, heritage V0.23) pour qu'il
-ne couvre que les routes privees une fois la vitrine activee.
+Fait (2026-08-04) : le header `X-Robots-Tag: noindex, nofollow` defini
+dans `next.config.ts` ne couvre plus toutes les routes (heritage V0.23)
+mais uniquement les prefixes prives de `NOINDEX_ROUTE_PREFIXES`. La
+vitrine publique est donc indexable sans dependre d'un strip au niveau
+du reverse proxy. Garde-fou : `npm run test:seo`.
 
 La V0.27 separe clairement le public anonyme (vitrine) et l'espace
 authentifie (portail + admin). Elle est realisee avant la bascule

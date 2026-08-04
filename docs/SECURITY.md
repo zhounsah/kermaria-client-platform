@@ -197,10 +197,17 @@ WEBPORTAL applique :
 - `Referrer-Policy: strict-origin-when-cross-origin` ;
 - `Permissions-Policy: camera=(), geolocation=(), microphone=()` ;
 - `Cross-Origin-Opener-Policy: same-origin` ;
-- `Cross-Origin-Resource-Policy: same-site` ;
-- `X-Robots-Tag: noindex, nofollow`.
+- `Cross-Origin-Resource-Policy: same-site`.
 
-`robots.txt` bloque aussi l'indexation du portail prive.
+`X-Robots-Tag: noindex, nofollow` n'est **pas** global : il est servi
+uniquement sur les prefixes prives listes par `NOINDEX_ROUTE_PREFIXES`
+(`next.config.ts`) — espaces authentifies, `/api` et pages
+transactionnelles a jeton. Les pages de la vitrine publique n'en
+portent aucun, sinon elles sortent de l'index des moteurs.
+
+`robots.txt` bloque aussi l'indexation du portail prive, mais l'en-tete
+HTTP prime sur `robots.txt` et sur les metadonnees `robots` des pages.
+Garde-fou automatise : `npm run test:seo`.
 
 ## MariaDB
 

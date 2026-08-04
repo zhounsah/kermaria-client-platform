@@ -140,7 +140,9 @@ WEBPORTAL :
 - `SERVICE_AUTH_TOKEN` identique a l'API ;
 - cookie `HttpOnly`, `Secure`, `SameSite` verifie ;
 - headers de securite servis ;
-- `X-Robots-Tag: noindex, nofollow`.
+- `X-Robots-Tag: noindex, nofollow` present sur les routes privees
+  (`/admin`, `/dashboard`, `/login`, `/api`, ...) et **absent** sur les
+  pages publiques de la vitrine.
 
 API-INTERNAL :
 

@@ -45,6 +45,9 @@ assert.match(nextConfig, /Cross-Origin-Opener-Policy/);
 assert.match(nextConfig, /Cross-Origin-Resource-Policy/);
 assert.match(nextConfig, /X-Robots-Tag/);
 assert.match(nextConfig, /noindex, nofollow/);
+// Le `noindex` est reserve aux zones privees : le detail du contrat
+// d'indexabilite est verifie par `npm run test:seo`.
+assert.match(nextConfig, /NOINDEX_ROUTE_PREFIXES/);
 
 assert.match(robots, /disallow:\s*"\/"/);
 

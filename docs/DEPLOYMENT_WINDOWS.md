@@ -1082,10 +1082,17 @@ Start-Website -Name "kermaria-portal"
 
 ### Site `kermaria-vitrine` (public canonique, indexable)
 
-Le site vitrine canonique **strippe le header `X-Robots-Tag`** (envoye
-par Node globalement via `next.config.ts`, heritage V0.23) pour que
-les pages publiques soient indexables. Il redirige aussi les routes
-`/portfolio/*` vers le sous-domaine portfolio.
+Depuis 2026-08-04, Node n'envoie plus `X-Robots-Tag` que sur les
+prefixes prives (`NOINDEX_ROUTE_PREFIXES` dans `next.config.ts`) : les
+pages publiques sont indexables **sans** intervention du proxy. La
+regle sortante `StripXRobotsTag` ci-dessous devient donc une simple
+ceinture-bretelle ; elle reste inoffensive mais n'est plus le mecanisme
+qui garantit l'indexabilite. Ne pas s'appuyer dessus : tout front qui
+ne la porte pas (nginx, ARR d'un autre serveur) laissait auparavant
+fuiter un `noindex` global sur la vitrine.
+
+Le site redirige aussi les routes `/portfolio/*` vers le sous-domaine
+portfolio.
 
 ```powershell
 $VitrineSite  = "kermaria-vitrine"
