@@ -1050,6 +1050,26 @@ seulement un dump vide. La restauration portait le meme defaut avec une
 consequence plus grave : une coupure en cours de `source` aurait laisse la base
 dans un etat partiel.
 
+Correctif **`v1.1.10.2`** : `https://www.zacharyhounsa.ovh/` servait quatre
+en-tetes de securite en double, emis a la fois par l'application et par nginx
+sur SRV-11, dont deux valeurs contradictoires — `X-Frame-Options: DENY` cote
+Node et `SAMEORIGIN` cote proxy. Verification empirique sous Chromium plutot
+que lecture de specification : une reponse portant les deux valeurs sans CSP,
+chargee dans une iframe same-origin ou `SAMEORIGIN` seul autoriserait le
+cadrage, est **bloquee**, alors que le temoin sans `X-Frame-Options` charge. Un
+`X-Frame-Options` multivalue et incoherent est donc traite en echec ferme, il
+n'est pas ignore ; s'y ajoute `frame-ancestors 'none'`, qui prime sur
+`X-Frame-Options` dans tout navigateur moderne. Aucune perte de protection
+anti-clickjacking, le risque residuel se limitant aux navigateurs sans support
+de `frame-ancestors`. La source de verite unique devient **l'application**,
+comme pour `X-Robots-Tag` : son tableau `SECURITY_HEADERS` est exhaustif (7
+en-tetes contre 4 cote nginx) et versionne avec le code. `test:operations` et
+`test:seo` lisant le code source, aucun garde-fou ne couvrait le proxy : le
+nouveau `npm run assert:security:headers` compare la reponse livree au contrat
+de `next.config.ts` et refuse tout doublon ou tout `X-Robots-Tag` sur la
+vitrine. Decision, ecart releve et procedure de retrait cote SRV-11 :
+[`SECURITY.md`](SECURITY.md) et [`OPERATIONS.md`](OPERATIONS.md).
+
 Ancrage infra (R740xd) : groupes dans `OU=Groupes_TEST`, comptes dans
 `OU=CLI-DEMO`, quota FSRM, collection RDS Clients-1 filtree par groupe,
 VLAN 64 `10.35.64.0/24`. Deploiement SRV-13 :

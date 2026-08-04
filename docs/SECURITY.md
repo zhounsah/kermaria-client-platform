@@ -225,6 +225,8 @@ prefixe (voir plus bas).
 
 ### Anomalie du 2026-08-04 — en-tetes dupliques par SRV-11
 
+Tracee en `v1.1.10.2` ([`ROADMAP.md`](ROADMAP.md)).
+
 Constatee sur `https://www.zacharyhounsa.ovh/` : quatre en-tetes emis en double,
 dont deux valeurs **contradictoires**.
 
