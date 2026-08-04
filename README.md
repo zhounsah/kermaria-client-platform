@@ -510,6 +510,19 @@ npm run test:activity        # flux activite admin
 npm run test:ad-security     # garde-fous AD
 ```
 
+Controle en ligne des en-tetes de securite (necessite le site joignable) :
+
+```powershell
+npm run assert:security:headers -- --url https://www.zacharyhounsa.ovh/
+```
+
+Les tests contrat lisent le code source : ils ne voient pas le reverse proxy.
+Seul ce controle compare la reponse **livree** au contrat de `next.config.ts`,
+et refuse un en-tete duplique par un intermediaire ou un `X-Robots-Tag` sur la
+vitrine publique. Source de verite et procedure :
+[`docs/SECURITY.md`](docs/SECURITY.md) et
+[`docs/OPERATIONS.md`](docs/OPERATIONS.md).
+
 ## Contraintes permanentes
 
 - ne pas changer l'architecture ;
