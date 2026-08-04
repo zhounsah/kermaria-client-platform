@@ -57,7 +57,13 @@ function Write-WebhookLog {
         $payload[$key] = $Data[$key]
     }
 
-    Add-Content -LiteralPath $path -Value (($payload | ConvertTo-Json -Compress))
+    # `-Encoding UTF8` explicite, comme `Write-KoxoSyncLog` dans le module :
+    # sans lui, Add-Content ecrit dans la page de codes ANSI du systeme alors
+    # que le fichier est relu en UTF-8. Les accents des messages d'exception y
+    # devenaient illisibles, et surtout `Get-Content -Tail`, qui cherche les
+    # fins de ligne a rebours avec l'encodage demande, se desalignait et rendait
+    # une ligne tronquee en plein milieu d'un horodatage.
+    Add-Content -LiteralPath $path -Value (($payload | ConvertTo-Json -Compress)) -Encoding UTF8
 }
 
 function Get-WebhookPayloadValue {
