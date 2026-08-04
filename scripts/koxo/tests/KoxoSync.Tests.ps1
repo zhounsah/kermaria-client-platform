@@ -208,6 +208,47 @@ Describe 'Start-KoxoSyncWebhookReceiver-8042.cmd' {
     }
 }
 
+Describe 'Start-KoxoSyncWebhookReceiver.ps1' {
+    # Le script ouvre un HttpListener des son chargement : on ne peut pas le
+    # sourcer. On extrait donc ses fonctions de l'arbre syntaxique.
+    $receiver = Join-Path (Split-Path -Parent $PSScriptRoot) 'Start-KoxoSyncWebhookReceiver.ps1'
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile($receiver, [ref]$null, [ref]$null)
+    foreach ($nom in @('Get-WebhookPayloadValue', 'ConvertTo-SafeFileNameFragment')) {
+        $definition = $ast.FindAll(
+            {
+                param($node)
+                $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $nom
+            }, $true) | Select-Object -First 1
+        Invoke-Expression $definition.Extent.Text
+    }
+
+    It 'returns null for a property the payload does not carry' {
+        # Sous Set-StrictMode, l'ancien `$payload.trigger` levait ici — et il
+        # levait APRES le lancement de la synchro, rendant un 500 pour une
+        # synchronisation reellement demarree.
+        $payload = '{"correlationId":"abc"}' | ConvertFrom-Json
+        Get-WebhookPayloadValue -Payload $payload -Name 'trigger' | Should BeNullOrEmpty
+        Get-WebhookPayloadValue -Payload $payload -Name 'portalUserId' | Should BeNullOrEmpty
+        Get-WebhookPayloadValue -Payload $payload -Name 'customerReference' | Should BeNullOrEmpty
+    }
+
+    It 'returns the value when the payload carries it' {
+        $payload = '{"trigger":"demo","portalUserId":"u-1"}' | ConvertFrom-Json
+        Get-WebhookPayloadValue -Payload $payload -Name 'trigger' | Should Be 'demo'
+        Get-WebhookPayloadValue -Payload $payload -Name 'portalUserId' | Should Be 'u-1'
+    }
+
+    It 'tolerates an absent payload' {
+        Get-WebhookPayloadValue -Payload $null -Name 'trigger' | Should BeNullOrEmpty
+    }
+
+    It 'neutralises path characters in the correlation identifier' {
+        ConvertTo-SafeFileNameFragment -Value '..\..\evasion' | Should Be '.._.._evasion'
+        ConvertTo-SafeFileNameFragment -Value 'a/b:c*d' | Should Be 'a_b_c_d'
+        ConvertTo-SafeFileNameFragment -Value 'validation-bascule-lanceur' | Should Be 'validation-bascule-lanceur'
+    }
+}
+
 Describe 'Invoke-KoxoSafeReplacement' {
     It 'replaces safely and keeps backups' {
         $root = Join-Path $env:TEMP ('koxo-replace-' + [guid]::NewGuid().ToString('N'))

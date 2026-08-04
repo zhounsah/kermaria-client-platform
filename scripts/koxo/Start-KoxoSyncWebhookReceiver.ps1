@@ -60,6 +60,33 @@ function Write-WebhookLog {
     Add-Content -LiteralPath $path -Value (($payload | ConvertTo-Json -Compress))
 }
 
+function Get-WebhookPayloadValue {
+    param($Payload, [string]$Name)
+
+    # Sous Set-StrictMode, `$payload.trigger` leve quand la propriete est
+    # absente. Passer par PSObject.Properties rend un champ manquant
+    # indistinguable d'un champ vide, ce qui est le comportement attendu ici :
+    # ces trois champs ne servent qu'a la journalisation.
+    if ($null -eq $Payload) {
+        return $null
+    }
+
+    $property = $Payload.PSObject.Properties[$Name]
+    if ($null -eq $property -or $null -eq $property.Value) {
+        return $null
+    }
+
+    [string]$property.Value
+}
+
+function ConvertTo-SafeFileNameFragment {
+    param([string]$Value)
+
+    # L'identifiant de correlation vient de l'appelant et nomme un fichier :
+    # tout ce qui n'est pas alphanumerique, tiret ou soulignement est neutralise.
+    ($Value -replace '[^A-Za-z0-9._-]', '_')
+}
+
 function Read-BearerToken {
     param([System.Net.HttpListenerRequest]$Request)
 
@@ -133,14 +160,22 @@ try {
                 $body | ConvertFrom-Json
             }
 
-            $correlationId = if ($payload -and $payload.correlationId) {
-                [string]$payload.correlationId
-            } else {
-                [guid]::NewGuid().ToString('D')
+            # Tout ce qui est tire de la charge est resolu AVANT le lancement :
+            # une lecture qui leve apres `Start-Process` rendrait un echec a
+            # l'appelant pour une synchronisation reellement demarree, et
+            # l'appelant pourrait rejouer contre le verrou.
+            $correlationId = Get-WebhookPayloadValue -Payload $payload -Name 'correlationId'
+            if ([string]::IsNullOrWhiteSpace($correlationId)) {
+                $correlationId = [guid]::NewGuid().ToString('D')
             }
 
-            $stdoutPath = Join-Path $LogDirectory ('koxo-sync-child-{0}.stdout.log' -f $correlationId)
-            $stderrPath = Join-Path $LogDirectory ('koxo-sync-child-{0}.stderr.log' -f $correlationId)
+            $trigger = Get-WebhookPayloadValue -Payload $payload -Name 'trigger'
+            $portalUserId = Get-WebhookPayloadValue -Payload $payload -Name 'portalUserId'
+            $customerReference = Get-WebhookPayloadValue -Payload $payload -Name 'customerReference'
+
+            $fileFragment = ConvertTo-SafeFileNameFragment -Value $correlationId
+            $stdoutPath = Join-Path $LogDirectory ('koxo-sync-child-{0}.stdout.log' -f $fileFragment)
+            $stderrPath = Join-Path $LogDirectory ('koxo-sync-child-{0}.stderr.log' -f $fileFragment)
 
             $syncArguments = (
                 '-NoProfile -NonInteractive -ExecutionPolicy Bypass ' +
@@ -165,14 +200,20 @@ try {
                 -WindowStyle Hidden `
                 -PassThru
 
-            Write-WebhookLog -Level 'info' -Message 'KoXo webhook sync queued.' -Data @{
-                correlation_id = $correlationId
-                trigger = if ($payload -and $payload.trigger) { [string]$payload.trigger } else { $null }
-                portal_user_id = if ($payload -and $payload.portalUserId) { [string]$payload.portalUserId } else { $null }
-                customer_reference = if ($payload -and $payload.customerReference) { [string]$payload.customerReference } else { $null }
-                process_id = $process.Id
-                stdout_path = $stdoutPath
-                stderr_path = $stderrPath
+            # La synchronisation tourne deja : un incident de journalisation ne
+            # doit pas la faire remonter comme un echec a l'appelant.
+            try {
+                Write-WebhookLog -Level 'info' -Message 'KoXo webhook sync queued.' -Data @{
+                    correlation_id = $correlationId
+                    trigger = $trigger
+                    portal_user_id = $portalUserId
+                    customer_reference = $customerReference
+                    process_id = $process.Id
+                    stdout_path = $stdoutPath
+                    stderr_path = $stderrPath
+                }
+            }
+            catch {
             }
 
             Write-JsonResponse -Response $response -StatusCode 202 -Body @{
