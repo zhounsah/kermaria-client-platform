@@ -100,7 +100,32 @@ $NormalizedHashBody = {
 
 function Get-KoxoNormalizedHash {
     param([string]$Path)
-    & $script:NormalizedHashBody $Path
+    # Sans prefixe de portee : le script est appele normalement en exploitation
+    # et source par les tests, et la recherche dynamique trouve la variable
+    # dans les deux cas.
+    & $NormalizedHashBody $Path
+}
+
+# Analyse syntaxique des seuls fichiers PowerShell. `@($null).Count` vaut 1 :
+# compter sans avoir analyse declarerait fautif tout fichier non PowerShell.
+$SyntaxErrorCountBody = {
+    param([string]$Path)
+    if ($Path -notmatch '\.psm?1$') {
+        return 0
+    }
+
+    $parseErrors = $null
+    [void][System.Management.Automation.Language.Parser]::ParseFile($Path, [ref]$null, [ref]$parseErrors)
+    if ($null -eq $parseErrors) {
+        return 0
+    }
+
+    return @($parseErrors).Count
+}
+
+function Get-KoxoSyntaxErrorCount {
+    param([string]$Path)
+    & $SyntaxErrorCountBody $Path
 }
 
 function Get-KoxoDeployManifest {
@@ -249,18 +274,15 @@ try {
         }
 
         # --- 4. verification d'integrite et de syntaxe -----------------------
-        $checks = Invoke-Command -Session $session -ArgumentList $DestinationPath, @($toCopy.Name) -ScriptBlock {
-            param($Destination, $Names)
+        $checks = Invoke-Command -Session $session -ArgumentList $DestinationPath, @($toCopy.Name), $SyntaxErrorCountBody.ToString() -ScriptBlock {
+            param($Destination, $Names, $SyntaxBody)
+            $syntaxCount = [scriptblock]::Create($SyntaxBody)
             foreach ($name in $Names) {
                 $path = Join-Path $Destination $name
-                $errors = $null
-                if ($name -match '\.ps(m?)1$') {
-                    [void][System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$null, [ref]$errors)
-                }
                 [pscustomobject]@{
                     Name = $name
                     Sha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
-                    SyntaxErrors = @($errors).Count
+                    SyntaxErrors = (& $syntaxCount $path)
                 }
             }
         }
@@ -375,7 +397,10 @@ try {
         DestinationPath = $DestinationPath
         DryRun = [bool]$DryRun
         Plan = $plan
-        Copied = @($toCopy.Name)
+        # Pas `$toCopy.Name` : sous Set-StrictMode, acceder a une propriete sur
+        # un tableau vide leve — c'est-a-dire exactement quand tout est deja a
+        # jour, le cas le plus frequent en exploitation.
+        Copied = @($toCopy | ForEach-Object { $_.Name })
         Unmanaged = $remoteState.Unmanaged
         BackupDirectory = $backupDirectory
         SettingsChanged = $settingsChanged

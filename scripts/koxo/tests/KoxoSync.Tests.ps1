@@ -162,6 +162,23 @@ Describe 'Deploy-KoxoScripts' {
         $names = @(& $deployScript -ListOnly | ForEach-Object { $_.Name })
         $names -contains 'Start-KoxoSyncWebhookReceiver-8042.cmd' | Should Be $true
     }
+
+    It 'counts syntax errors only for PowerShell files' {
+        # `@($null).Count` vaut 1 : compter sans avoir analyse declarait fautif
+        # tout fichier non PowerShell, et le deploiement echouait sur le `.cmd`
+        # apres l'avoir deja copie.
+        $koxoRoot = Split-Path -Parent $PSScriptRoot
+        # Sourcer le script y importe ses fonctions, mais `$PSScriptRoot` y
+        # devient le dossier de ce fichier de test : passer la racine reelle.
+        . $deployScript -ListOnly -SourcePath $koxoRoot | Out-Null
+
+        Get-KoxoSyntaxErrorCount -Path (Join-Path $koxoRoot 'Start-KoxoSyncWebhookReceiver-8042.cmd') | Should Be 0
+        Get-KoxoSyntaxErrorCount -Path (Join-Path $koxoRoot 'KoxoSync.Common.psm1') | Should Be 0
+
+        $bad = Join-Path $env:TEMP ('koxo-mauvais-' + [guid]::NewGuid().ToString('N') + '.ps1')
+        Set-Content -LiteralPath $bad -Value 'function {' -Encoding UTF8
+        Get-KoxoSyntaxErrorCount -Path $bad | Should BeGreaterThan 0
+    }
 }
 
 Describe 'Start-KoxoSyncWebhookReceiver-8042.cmd' {
