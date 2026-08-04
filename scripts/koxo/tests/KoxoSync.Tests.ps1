@@ -213,7 +213,7 @@ Describe 'Start-KoxoSyncWebhookReceiver.ps1' {
     # sourcer. On extrait donc ses fonctions de l'arbre syntaxique.
     $receiver = Join-Path (Split-Path -Parent $PSScriptRoot) 'Start-KoxoSyncWebhookReceiver.ps1'
     $ast = [System.Management.Automation.Language.Parser]::ParseFile($receiver, [ref]$null, [ref]$null)
-    foreach ($nom in @('Get-WebhookPayloadValue', 'ConvertTo-SafeFileNameFragment')) {
+    foreach ($nom in @('Get-WebhookPayloadValue', 'ConvertTo-SafeFileNameFragment', 'Write-WebhookLog')) {
         $definition = $ast.FindAll(
             {
                 param($node)
@@ -246,6 +246,28 @@ Describe 'Start-KoxoSyncWebhookReceiver.ps1' {
         ConvertTo-SafeFileNameFragment -Value '..\..\evasion' | Should Be '.._.._evasion'
         ConvertTo-SafeFileNameFragment -Value 'a/b:c*d' | Should Be 'a_b_c_d'
         ConvertTo-SafeFileNameFragment -Value 'validation-bascule-lanceur' | Should Be 'validation-bascule-lanceur'
+    }
+
+    It 'writes its log in UTF-8, readable line by line' {
+        # Sans `-Encoding UTF8`, Add-Content ecrit en page de codes ANSI. Le
+        # fichier etait alors relu de travers : accents illisibles, et
+        # `Get-Content -Tail` desaligne rendant une ligne tronquee.
+        $LogDirectory = Join-Path $env:TEMP ('koxo-webhook-log-' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $LogDirectory -Force | Out-Null
+        $accent = [char]0x00E9
+
+        Write-WebhookLog -Level 'error' -Message ("propri{0}t{0} absente" -f $accent) -Data @{ correlation_id = 'test' }
+
+        $fichier = Get-ChildItem $LogDirectory -Filter 'koxo-webhook-*.log' | Select-Object -First 1
+        $octets = [System.IO.File]::ReadAllBytes($fichier.FullName)
+        # « é » en UTF-8 = c3 a9 ; en ANSI il vaudrait e9 tout seul.
+        $sequence = ($octets | ForEach-Object { $_.ToString('x2') }) -join ' '
+        $sequence.Contains('c3 a9') | Should Be $true
+
+        $entree = (Get-Content -LiteralPath $fichier.FullName -Tail 1 -Encoding UTF8) | ConvertFrom-Json
+        $entree.level | Should Be 'error'
+        $entree.message | Should Be ("propri{0}t{0} absente" -f $accent)
+        $entree.correlation_id | Should Be 'test'
     }
 }
 
