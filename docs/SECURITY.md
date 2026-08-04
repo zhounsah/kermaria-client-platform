@@ -258,12 +258,25 @@ Correction retenue : **retirer les `add_header` de securite des vhosts
 kermaria sur SRV-11**, conformement a la regle ci-dessus. Procedure et
 verification : `docs/OPERATIONS.md`, section « En-tetes de securite ».
 
-Fait dans la source le 2026-08-05 :
-`scripts/r740xd-vm/srv11/kermaria-nginx.conf` ne porte plus aucun
-`add_header`. Ce fichier dormait sur la branche `codex/r740xd-automation` —
-d'ou l'affirmation erronee, en `v1.1.10.2`, que la configuration nginx n'etait
-pas versionnee : seul `main` avait ete regarde. **Le serveur, lui, sert encore
-l'ancienne configuration** tant que le vhost corrige n'y est pas depose.
+**Applique et verifie le 2026-08-05.** Les huit `add_header` de
+`/etc/nginx/sites-available/kermaria` (quatre par bloc TLS) ont ete retires sur
+SRV-11, sauvegarde `kermaria.bak-20260804T230719Z`, `nginx -t` puis rechargement.
+Controle : `npm run assert:security:headers` passe, les sept en-tetes sont
+servis une seule fois, `X-Frame-Options: DENY` sans contradiction.
+
+Non-regression relevee dans la foulee : `portfolio.zacharyhounsa.ovh` et
+`dashboard.zacharyhounsa.ovh` en `200`, `noindex` conserve sur `/login`, aucun
+`X-Robots-Tag` sur `/offres`.
+
+Cote depot, `scripts/r740xd-vm/srv11/kermaria-nginx.conf` ne porte plus aucun
+`add_header` non plus. Ce fichier dormait sur la branche
+`codex/r740xd-automation` — d'ou l'affirmation erronee, en `v1.1.10.2`, que la
+configuration nginx n'etait pas versionnee : seul `main` avait ete regarde. Il
+reste toutefois un **gabarit perime**, non deployable tel quel (voir l'entete du
+fichier et `OPERATIONS.md`).
+
+Reste ouvert : `kermaria-tls.pending`, inactif, porte encore les quatre
+directives.
 
 Garde-fou : `npm run assert:security:headers -- --url https://www.zacharyhounsa.ovh/`
 compare la reponse **livree** au contrat de `next.config.ts` et echoue sur tout

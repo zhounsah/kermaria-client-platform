@@ -213,6 +213,10 @@ Il echoue si un en-tete est absent, duplique par un intermediaire, ou si
 
 ### Retirer un add_header en trop sur SRV-11
 
+> **Applique le 2026-08-05.** Les huit directives ont ete retirees et nginx
+> recharge ; le controle en ligne passe. La procedure ci-dessous reste le
+> mode operatoire de reference si l'ecart reapparait.
+
 Constat brut :
 
 ```bash
