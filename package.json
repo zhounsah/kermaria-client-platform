@@ -26,6 +26,7 @@
     "pack:webportal:release": "powershell -ExecutionPolicy Bypass -File .\\scripts\\pack-webportal-release.ps1",
     "restore:mariadb": "powershell -ExecutionPolicy Bypass -File .\\scripts\\restore-mariadb.ps1",
     "assert:webportal:home": "node .\\scripts\\assert-webportal-home.mjs",
+    "assert:security:headers": "node .\\scripts\\assert-security-headers.mjs",
     "test:operations": "npm --prefix apps/webportal run test:operations",
     "test:seo": "npm --prefix apps/webportal run test:seo",
     "test:ux": "npm --prefix apps/webportal run test:ux",

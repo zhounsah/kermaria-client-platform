@@ -199,6 +199,68 @@ WEBPORTAL applique :
 - `Cross-Origin-Opener-Policy: same-origin` ;
 - `Cross-Origin-Resource-Policy: same-site`.
 
+### Source de verite unique : l'application
+
+**L'application est seule source de verite pour les en-tetes de securite.**
+Le reverse proxy nginx (SRV-11) ne doit emettre **aucun** `add_header` de
+securite sur les vhosts kermaria : il relaie ceux de l'amont sans y toucher.
+
+Motifs :
+
+- le tableau `SECURITY_HEADERS` de `apps/webportal/next.config.ts` est deja
+  exhaustif (7 en-tetes, contre 4 cote nginx) et versionne avec le code ;
+- il est couvert par `npm run test:operations` ;
+- `nginx` ne remplace jamais un en-tete amont : `add_header` **ajoute** une
+  seconde ligne. Toute valeur definie des deux cotes produit un doublon.
+
+Regle d'ecriture nginx : si une valeur doit un jour etre imposee par le proxy,
+utiliser `proxy_hide_header <nom>;` **puis** `add_header <nom> <valeur> always;`
+dans le meme bloc — jamais `add_header` seul. Attention aussi a l'heritage :
+un `add_header` dans un bloc `location` annule tous ceux herites de `server`
+et `http`.
+
+⚠️ Ne jamais ajouter `add_header X-Robots-Tag ...` cote nginx : la vitrine
+publique doit rester indexable et l'application gere seule cet en-tete par
+prefixe (voir plus bas).
+
+### Anomalie du 2026-08-04 — en-tetes dupliques par SRV-11
+
+Constatee sur `https://www.zacharyhounsa.ovh/` : quatre en-tetes emis en double,
+dont deux valeurs **contradictoires**.
+
+| En-tete | Application | nginx SRV-11 |
+|---|---|---|
+| `X-Frame-Options` | `DENY` | `SAMEORIGIN` — **contradictoire** |
+| `X-Content-Type-Options` | `nosniff` | `nosniff` — identique |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` | identique |
+| `Permissions-Policy` | `camera=(), geolocation=(), microphone=()` | memes directives, ordre different |
+
+Impact reel evalue : **aucune perte de protection anti-clickjacking.**
+
+1. `Content-Security-Policy: frame-ancestors 'none'` est emis par
+   l'application et prime sur `X-Frame-Options` dans tous les navigateurs
+   modernes ;
+2. verification empirique (Chromium, 2026-08-04, reproduction locale d'une
+   reponse portant `DENY` **et** `SAMEORIGIN` sans CSP) : le navigateur
+   **bloque** le cadrage. Un `X-Frame-Options` multivalue et incoherent est
+   traite en echec ferme, pas ignore. Le temoin sans `X-Frame-Options`
+   chargeait bien dans le meme cadre.
+
+Le risque residuel est donc limite aux navigateurs anciens sans support de
+`frame-ancestors`, hors perimetre supporte. La correction reste requise au
+titre de la coherence de configuration : deux sources de verite divergentes
+sont un piege de maintenance, et le prochain ecart pourrait, lui, etre
+ouvrant.
+
+Correction retenue : **retirer les `add_header` de securite des vhosts
+kermaria sur SRV-11**, conformement a la regle ci-dessus. Procedure et
+verification : `docs/OPERATIONS.md`, section « En-tetes de securite ».
+
+Garde-fou : `npm run assert:security:headers -- --url https://www.zacharyhounsa.ovh/`
+compare la reponse **livree** au contrat de `next.config.ts` et echoue sur tout
+doublon. Les tests `test:operations` et `test:seo` lisent le code source et ne
+voient pas le proxy : seul ce controle en ligne couvre SRV-11.
+
 `X-Robots-Tag: noindex, nofollow` n'est **pas** global : il est servi
 uniquement sur les prefixes prives listes par `NOINDEX_ROUTE_PREFIXES`
 (`next.config.ts`) — espaces authentifies, `/api` et pages

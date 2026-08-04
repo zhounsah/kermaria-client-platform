@@ -167,6 +167,57 @@ Attendus :
 - `X-Correlation-Id` present ;
 - reponse JSON sans contenu sensible.
 
+## En-tetes de securite
+
+Source de verite unique : **l'application** (`SECURITY_HEADERS` dans
+`apps/webportal/next.config.ts`). Le reverse proxy SRV-11 relaie sans ajouter.
+Justification et regle d'ecriture nginx : `docs/SECURITY.md`.
+
+Controle en ligne (le seul qui voie le proxy — `test:operations` et `test:seo`
+lisent le code source) :
+
+```bash
+npm run assert:security:headers -- --url https://www.zacharyhounsa.ovh/
+```
+
+Il echoue si un en-tete est absent, duplique par un intermediaire, ou si
+`X-Robots-Tag` reapparait sur la vitrine publique.
+
+### Retirer un add_header en trop sur SRV-11
+
+Constat brut :
+
+```bash
+curl -sSk -o /dev/null -D - https://www.zacharyhounsa.ovh/
+```
+
+Un en-tete affiche deux fois vient du proxy : `add_header` **n'ecrase pas**
+la valeur amont, il en ajoute une seconde.
+
+Localiser puis corriger sur SRV-11 (`192.168.100.211`) :
+
+```bash
+sudo grep -rn "add_header" /etc/nginx/sites-available/ /etc/nginx/conf.d/ /etc/nginx/nginx.conf
+```
+
+Commenter les `add_header` de securite des vhosts kermaria — en verifiant que
+le bloc `location` traite ne perd pas d'autres `add_header` legitimes par
+heritage — puis :
+
+```bash
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Verifier enfin depuis le poste de build :
+
+```bash
+npm run assert:security:headers -- --url https://www.zacharyhounsa.ovh/
+```
+
+Rollback : restaurer la sauvegarde du vhost, `nginx -t`, `systemctl reload
+nginx`. Le retrait est sans effet fonctionnel — les memes protections restent
+servies par l'application.
+
 ## Logs
 
 Surveiller au minimum :
