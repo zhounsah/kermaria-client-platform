@@ -12,7 +12,7 @@
 | **Paquet** | `out/kermaria-api-internal-v1.1.0.zip` (1,38 Mo) — construit depuis le tag **`v1.1.0`** |
 | **SHA256** | `60BA324D9CE6EE1BEC0722EAED3554362C5D14109566289A277882F8A0D9974B` |
 | **Type** | .NET 10 **framework-dependent** win-x64, avec apphost (`Kermaria.ApiInternal.exe`) |
-| **Base de données** | ⚠️ **Une migration reste à appliquer** (`031_backup_policy…`) — voir §1 |
+| **Base de données** | ✅ **À jour** : `030` à `041` toutes appliquées (vérifié le 2026-08-04) — voir §1 |
 | **Ordre** | Déployer **SRV-13 avant SRV-12** — voir [`V1.1.0_DEPLOY.md`](V1.1.0_DEPLOY.md) |
 
 > **Le tag `v1.1.0` ne contient pas que les comptes de démo** : il intègre aussi la
@@ -25,13 +25,25 @@
 - ✅ Migrations `036` / `037` / `038` **déjà appliquées sur la base prod
   `kermaria`@SRV-06** (2026-08-03). Vérifié : 4 lignes dans `demo_profiles`, tous les
   `customers` existants en `is_demo = 0`.
-- ⚠️ **`031_backup_policy_public_copy_refresh.sql` est EN ATTENTE** : elle vient de la
-  remise à plat et n'était pas présente lors du passage du 2026-08-03. Il faut donc
-  **lancer `--apply-migrations`** (voir la procédure du runbook §« Appliquer les
-  migrations » : bascule temporaire sur `kermaria_migrator` + `--environment
-  Development`, le process quitte tout seul). Les `036`/`037`/`038` seront
-  automatiquement ignorées, le runner les trace dans `schema_migrations`.
-  Cette migration est un `UPDATE` idempotent sur la description de l'offre `SAVE-PERSO`.
+- ✅ **`031_backup_policy_public_copy_refresh.sql` est APPLIQUÉE** depuis le
+  **2026-08-03 16:19:28**, malgré ce que cette fiche a longtemps annoncé.
+  Rectifié le 2026-08-04 en lisant `schema_migrations` : la ligne y figure, et
+  l'offre `SAVE-PERSO` porte bien la description issue de la migration
+  (`updated_at` du 2026-08-03 13:34). Une exécution de `--apply-migrations` faite
+  ce jour-là a donc été un no-op.
+- ✅ **Aucune migration en attente au 2026-08-04.** Vérifié en base : `030` à
+  `041` sont toutes tracées, `041_client_solutions_portal` incluse
+  (appliquée le 2026-08-04 16:24).
+
+> Contrôle en lecture seule, avec le compte applicatif (aucun droit DDL requis) :
+>
+> ```sql
+> SELECT migration_id, applied_at FROM schema_migrations ORDER BY migration_id;
+> ```
+>
+> **Ne jamais déduire l'état de la base d'une fiche de déploiement** : c'est la
+> table qui fait foi. L'écart constaté ici a duré un jour et a provoqué une
+> opération inutile sous `kermaria_migrator`.
 - ✅ Groupes AD `GG_DEMO_NEXTCLOUD` / `GG_DEMO_RDS` / `GG_DEMO_VPN` créés dans
   `OU=Groupes_TEST,DC=clients,DC=home,DC=bzh`.
 - ✅ OU des comptes démo : `OU=CLI-DEMO,OU=CLIENTS,OU=Utilisateurs,OU=KoXoAdm,DC=clients,DC=home,DC=bzh`
@@ -152,6 +164,33 @@ Points à respecter :
   quatre ACE (`Système` RX, `Administrateurs` FC, `svc_api_portal_ad` Modify,
   `svc-kermaria` Modify). `Set-Acl` la restaure à l'identique.
 - Convention de sauvegarde : `api-internal-old-<yyyyMMdd-HHmmss>`.
+
+> ⚠️ **Le renommage peut échouer en « accès refusé » sans qu'aucun verrou ne soit
+> visible.** Constaté le 2026-08-04 : service arrêté, processus sorti en moins
+> d'une seconde, aucun handle SMB, droits `FullControl` — et pourtant quinze
+> tentatives de `Rename-Item` refusées, alors que renommer n'importe quel autre
+> dossier de `C:\apps` passait. Cause : un processus dont le **répertoire
+> courant** est `C:\apps\api-internal` bloque le renommage du dossier sans
+> apparaître dans les handles ni dans les modules chargés. Sur SRV-13 traînaient
+> un `cmd` ouvert depuis le 29 juillet et deux `powershell` plus anciens que la
+> bascule.
+>
+> Ne pas insister sur le renommage : basculer **par recopie sur place**, qui
+> n'est pas concernée par ce blocage. Sauvegarder d'abord, puisque le dossier
+> d'origine n'est plus déplacé :
+>
+> ```powershell
+> Stop-Service KermariaApiInternal -Force
+> (Get-Service KermariaApiInternal).WaitForStatus('Stopped','00:02:00')
+> robocopy 'C:\apps\api-internal' "C:\apps\api-internal-old-$stamp" /E /XD logs
+> Copy-Item "C:\apps\_incoming-$stamp\*" 'C:\apps\api-internal' -Recurse -Force
+> Start-Service KermariaApiInternal
+> ```
+>
+> Avantage annexe : l'ACL du dossier applicatif n'est pas touchée, donc pas de
+> `Get-Acl`/`Set-Acl` à réussir, et les journaux restent en place (`/XD logs`).
+> Inconvénient assumé : les fichiers retirés d'une version à l'autre survivent —
+> comparer le nombre de fichiers après bascule.
 
 > ⚠️ **Le service démarre `DemoAccountExpirationWorker`** (balayage au démarrage puis
 > horaire). C'est sans effet aujourd'hui : aucun `customers.is_demo = TRUE` en base, et
