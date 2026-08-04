@@ -66,7 +66,8 @@ $DeployableFiles = @(
     'Start-KoxoSyncWebhookReceiver.ps1',
     'Install-KoxoSyncWebhookReceiverTask.ps1',
     'Install-KoXoScheduledTask.ps1',
-    'Test-KoxoAccentHandling.ps1'
+    'Test-KoxoAccentHandling.ps1',
+    'Start-KoxoSyncWebhookReceiver-8042.cmd'
 )
 
 # Jamais ecrasables : propriete du serveur ou de KoXo.

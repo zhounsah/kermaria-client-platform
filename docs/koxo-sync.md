@@ -352,9 +352,25 @@ Ce que le script garantit :
 - **validation finale** par une synchronisation `-DryRun` qui prouve que le
   deploiement est vivant, et rend l'encodage et la presence du BOM ;
 - **inventaire de la derive** : les scripts presents sur la cible mais absents du
-  depot sont listes. C'est ainsi qu'apparait
-  `Start-KoxoSyncWebhookReceiver-8042.cmd`, qui n'existe aujourd'hui que sur le
-  serveur et devrait rejoindre le depot ou etre genere par l'installateur.
+  depot sont listes. C'est ainsi qu'a ete repere
+  `Start-KoxoSyncWebhookReceiver-8042.cmd`, depuis rapatrie.
+
+### `Start-KoxoSyncWebhookReceiver-8042.cmd`
+
+Lanceur manuel du receveur : il lit `koxo-webhook-token.txt` place a cote et
+demarre `Start-KoxoSyncWebhookReceiver.ps1`. Le port se passe en premier
+argument, `8042` par defaut. Les chemins viennent de `%~dp0`, il fonctionne donc
+aussi bien depuis le depot que depuis le dossier cible.
+
+> La tache planifiee `Kermaria-KoXoWebhookReceiver-8042` **n'appelle pas** ce
+> fichier : elle invoque `powershell.exe` directement. Le lanceur sert aux
+> demarrages manuels et de reference pour reconstruire la tache.
+
+La version qui trainait sur SRV-21 etait **inoperante** : elle portait `` `$t ``
+au lieu de `$t`, fuite d'echappement PowerShell de l'outil qui l'avait generee.
+`` `$ `` etant un dollar litteral, la variable n'etait jamais creee et le jeton
+transmis valait la chaine « $t ». La version du depot est corrigee et un test
+Pester interdit la reapparition de cet echappement.
 
 ## Permissions minimales
 

@@ -157,6 +157,38 @@ Describe 'Deploy-KoxoScripts' {
     It 'refuses a manifest naming a file absent from the repository' {
         { & $deployScript -ListOnly -Include @('Absent-DuDepot.ps1') } | Should Throw
     }
+
+    It 'ships the webhook launcher' {
+        $names = @(& $deployScript -ListOnly | ForEach-Object { $_.Name })
+        $names -contains 'Start-KoxoSyncWebhookReceiver-8042.cmd' | Should Be $true
+    }
+}
+
+Describe 'Start-KoxoSyncWebhookReceiver-8042.cmd' {
+    $launcher = Join-Path (Split-Path -Parent $PSScriptRoot) 'Start-KoxoSyncWebhookReceiver-8042.cmd'
+    # Les commentaires du lanceur decrivent le bug d'echappement et citent le
+    # chemin cible : les garde-fous ci-dessous portent sur les instructions.
+    $commands = @(
+        Get-Content -LiteralPath $launcher |
+            Where-Object { $_.Trim() -notmatch '^rem\b' -and $_.Trim() -ne '' }
+    ) -join "`n"
+
+    It 'never escapes the PowerShell dollar sign' {
+        # La version deployee sur SRV-21 portait « `$t » : `$ est un dollar
+        # litteral, la variable n'etait jamais creee et le jeton transmis
+        # valait la chaine « $t ». Le receveur ne pouvait pas demarrer.
+        $commands.Contains('`$') | Should Be $false
+    }
+
+    It 'resolves its own directory instead of hard-coding the target path' {
+        $commands | Should Match '%~dp0'
+        $commands.Contains('C:\Program Files\KoXo Dev') | Should Be $false
+    }
+
+    It 'reads the token from the file rather than embedding it' {
+        $commands | Should Match 'koxo-webhook-token\.txt'
+        $commands | Should Match '\-Token \$t'
+    }
 }
 
 Describe 'Invoke-KoxoSafeReplacement' {
