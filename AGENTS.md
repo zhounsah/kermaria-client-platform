@@ -43,6 +43,7 @@ Ce fichier s'applique a tout le depot `kermaria-client-platform`.
 - .NET SDK fixe par `global.json` : `10.0.301` avec `rollForward: latestFeature` ; projets `net10.0`.
 - `NuGet.Config` restaure dans `.nuget/packages` et lit aussi `.nuget-local` ; ne pas remplacer par une config globale.
 - Sous PowerShell restrictif, remplacer `npm` par `npm.cmd`.
+- Windows PowerShell 5.1 transforme chaque ligne stderr d'un executable natif en `ErrorRecord` : avec `$ErrorActionPreference = "Stop"`, un simple avertissement (le client MariaDB 12.x en emet un a chaque appel) coupe le processus en pleine execution. Dans un script, encadrer l'appel natif d'un `$ErrorActionPreference = "Continue"` et ne juger que sur `$LASTEXITCODE`.
 
 ## Commandes
 

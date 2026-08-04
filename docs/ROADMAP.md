@@ -1034,6 +1034,21 @@ centre de telechargements etait le seul point du code a executer du DDL hors
 classe de defaut leur reste invisible : un garde-fou statique est ajoute au
 contrat `test:downloads`.
 
+Correctif **`v1.1.10.1`** : les scripts de sauvegarde et de restauration MariaDB
+etaient inoperants sous Windows PowerShell 5.1. Leur `$ErrorActionPreference =
+"Stop"` transformait la moindre ligne stderr d'un executable natif en erreur
+terminante, or le client MariaDB 12.x emet un avertissement TLS a chaque appel :
+`mysqldump` etait coupe des sa premiere ligne et laissait un fichier de 0 octet
+que le garde-fou d'integrite, place apres l'appel, n'atteignait jamais. Constate
+le 2026-08-04 : la derniere sauvegarde exploitable datait du 2026-07-07, celle du
+07-07 19:16:05 ayant deja echoue silencieusement de la meme facon. Les deux
+scripts passent desormais par un `Invoke-NativeCommand` qui ne juge que sur
+`$LASTEXITCODE`, verifient la presence du client avant connexion, et la
+sauvegarde refuse un dump tronque (marqueur `-- Dump completed` absent) et pas
+seulement un dump vide. La restauration portait le meme defaut avec une
+consequence plus grave : une coupure en cours de `source` aurait laisse la base
+dans un etat partiel.
+
 Ancrage infra (R740xd) : groupes dans `OU=Groupes_TEST`, comptes dans
 `OU=CLI-DEMO`, quota FSRM, collection RDS Clients-1 filtree par groupe,
 VLAN 64 `10.35.64.0/24`. Deploiement SRV-13 :

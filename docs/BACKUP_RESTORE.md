@@ -23,11 +23,20 @@ npm run backup:mariadb
 
 Le script :
 
+- vérifie que le client `mysqldump` est joignable avant toute connexion ;
 - lit `SQL_HOST`, `SQL_PORT`, `SQL_DATABASE` et `SQL_USERNAME` ;
 - demande `SQL_PASSWORD` localement si besoin ;
 - génère un dump horodaté ;
+- refuse un dump vide **ou tronqué** (marqueur `-- Dump completed` absent) ;
 - calcule un hash SHA-256 ;
 - n'écrit jamais le mot de passe dans le dépôt.
+
+> ⚠️ **Un dump n'est valide que si le script se termine sans erreur.** Le client
+> MariaDB 12.x écrit un avertissement TLS sur stderr à chaque appel ; sous
+> Windows PowerShell 5.1, cette ligne devenait une erreur terminante qui coupait
+> `mysqldump` en pleine écriture et laissait un fichier de 0 octet passant pour
+> une sauvegarde. Corrigé en V1.1.10.1 (seul le code de sortie fait foi), mais le
+> réflexe reste valable : contrôler la taille et le marqueur de fin.
 
 Linux :
 

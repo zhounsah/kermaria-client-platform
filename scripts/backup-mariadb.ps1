@@ -8,6 +8,36 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+function Invoke-NativeCommand {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FilePath,
+        [Parameter(Mandatory = $true)]
+        [string[]]$Arguments,
+        [Parameter(Mandatory = $true)]
+        [string]$FailureMessage
+    )
+
+    # Sous Windows PowerShell 5.1, chaque ligne ecrite sur stderr par un
+    # executable natif devient un ErrorRecord ; avec $ErrorActionPreference a
+    # "Stop" elle interrompt le processus en pleine execution. Le client
+    # MariaDB 12.x emet systematiquement un avertissement TLS sur stderr : le
+    # dump etait donc coupe des la premiere ligne et laissait un fichier de
+    # 0 octet. Seul le code de sortie fait foi.
+    $previousErrorAction = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & $FilePath @Arguments
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorAction
+    }
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "$FailureMessage (code $LASTEXITCODE)."
+    }
+}
+
 function Get-RequiredValue {
     param(
         [Parameter(Mandatory = $true)]
@@ -40,6 +70,10 @@ if ($resolvedOutputDirectory.StartsWith($repoRoot, [System.StringComparison]::Or
     Write-Warning "Stockez de preference les dumps hors du depot Git."
 }
 
+if (-not (Get-Command $MySqlDumpPath -ErrorAction SilentlyContinue)) {
+    throw "Client mysqldump introuvable: $MySqlDumpPath."
+}
+
 $sqlHost = Get-RequiredValue -Name "SQL_HOST"
 $sqlPort = Get-RequiredValue -Name "SQL_PORT"
 $sqlDatabase = Get-RequiredValue -Name "SQL_DATABASE"
@@ -66,10 +100,10 @@ $previousMysqlPwd = [Environment]::GetEnvironmentVariable("MYSQL_PWD")
 
 try {
     $env:MYSQL_PWD = $sqlPassword
-    & $MySqlDumpPath @arguments
-    if ($LASTEXITCODE -ne 0) {
-        throw "mysqldump a retourne le code $LASTEXITCODE."
-    }
+    Invoke-NativeCommand `
+        -FilePath $MySqlDumpPath `
+        -Arguments $arguments `
+        -FailureMessage "mysqldump a echoue"
 }
 finally {
     if ([string]::IsNullOrWhiteSpace($previousMysqlPwd)) {
@@ -83,6 +117,13 @@ finally {
 $dumpFile = Get-Item -LiteralPath $dumpPath
 if ($dumpFile.Length -le 0) {
     throw "Le dump genere est vide: $dumpPath."
+}
+
+# Un dump interrompu n'est pas vide pour autant : seul le marqueur de fin
+# ecrit par mysqldump prouve que la sauvegarde est complete.
+$lastLine = Get-Content -LiteralPath $dumpPath -Tail 1
+if ($lastLine -notmatch "^-- Dump completed") {
+    throw "Le dump genere est incomplet (marqueur de fin absent): $dumpPath."
 }
 
 $hash = Get-FileHash -LiteralPath $dumpPath -Algorithm SHA256

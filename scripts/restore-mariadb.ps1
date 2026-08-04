@@ -10,6 +10,36 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+function Invoke-NativeCommand {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FilePath,
+        [Parameter(Mandatory = $true)]
+        [string[]]$Arguments,
+        [Parameter(Mandatory = $true)]
+        [string]$FailureMessage
+    )
+
+    # Sous Windows PowerShell 5.1, chaque ligne ecrite sur stderr par un
+    # executable natif devient un ErrorRecord ; avec $ErrorActionPreference a
+    # "Stop" elle interrompt le processus en pleine execution. Le client
+    # MariaDB 12.x emet systematiquement un avertissement TLS sur stderr : une
+    # restauration aurait ete coupee en cours de route, laissant la base dans
+    # un etat partiel. Seul le code de sortie fait foi.
+    $previousErrorAction = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & $FilePath @Arguments
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorAction
+    }
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "$FailureMessage (code $LASTEXITCODE)."
+    }
+}
+
 function Get-RequiredValue {
     param(
         [Parameter(Mandatory = $true)]
@@ -40,6 +70,10 @@ if ([string]::IsNullOrWhiteSpace($TargetDatabase)) {
     throw "TargetDatabase est requis."
 }
 
+if (-not (Get-Command $MySqlPath -ErrorAction SilentlyContinue)) {
+    throw "Client mysql introuvable: $MySqlPath."
+}
+
 $resolvedDumpPath = (Resolve-Path -LiteralPath $DumpPath).Path
 $normalizedDumpPath = $resolvedDumpPath.Replace("\", "/")
 $sqlHost = Get-RequiredValue -Name "SQL_HOST"
@@ -58,10 +92,10 @@ $arguments = @(
 
 try {
     $env:MYSQL_PWD = $sqlPassword
-    & $MySqlPath @arguments
-    if ($LASTEXITCODE -ne 0) {
-        throw "mysql a retourne le code $LASTEXITCODE pendant la restauration."
-    }
+    Invoke-NativeCommand `
+        -FilePath $MySqlPath `
+        -Arguments $arguments `
+        -FailureMessage "mysql a echoue pendant la restauration"
 
     if ($VerifySchema) {
         $verifyArguments = @(
@@ -74,10 +108,10 @@ try {
             "--skip-column-names",
             "--execute=SELECT COUNT(*) FROM schema_migrations;"
         )
-        $migrationCount = & $MySqlPath @verifyArguments
-        if ($LASTEXITCODE -ne 0) {
-            throw "Verification schema_migrations en echec."
-        }
+        $migrationCount = Invoke-NativeCommand `
+            -FilePath $MySqlPath `
+            -Arguments $verifyArguments `
+            -FailureMessage "Verification schema_migrations en echec"
 
         Write-Output "Migrations detectees apres restauration: $migrationCount"
     }
