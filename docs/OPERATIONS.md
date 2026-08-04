@@ -194,19 +194,37 @@ curl -sSk -o /dev/null -D - https://www.zacharyhounsa.ovh/
 Un en-tete affiche deux fois vient du proxy : `add_header` **n'ecrase pas**
 la valeur amont, il en ajoute une seconde.
 
-**La source est versionnee** : `scripts/r740xd-vm/srv11/kermaria-nginx.conf`.
-Les quatre `add_header` en ont ete retires le 2026-08-05. Corriger le serveur
-sans redeployer ce fichier laisserait l'ecart revenir au prochain deploiement.
+⚠️ **Ne jamais ecraser le vhost de production avec le gabarit du depot.**
+`scripts/r740xd-vm/srv11/kermaria-nginx.conf` a diverge : 83 lignes et 2 blocs
+`server` contre 148 lignes et 4 blocs en production, TLS sur `443` contre
+`127.0.0.1:8443 ssl proxy_protocol`, et le vhost `portfolio.zacharyhounsa.ovh`
+absent du gabarit. Un `cp` ferait perdre le portfolio et l'ecoute derriere le
+frontal PROXY protocol. **Editer le fichier en place**, jamais le remplacer.
 
-Verifier d'abord que le vhost en place correspond bien a ce fichier :
+Etat releve sur SRV-11 le 2026-08-05 : les quatre `add_header` apparaissent
+**deux fois** dans `/etc/nginx/sites-available/kermaria`, une fois par bloc TLS
+(lignes 70-73 pour les trois FQDN principaux, 114-117 pour `portfolio`). Ils
+figurent aussi dans `kermaria-tls.pending`, inactif. Le vhost
+`nextcloud.home.bzh` a ses propres `add_header`, **hors perimetre**, a ne pas
+toucher.
+
+Reperer :
 
 ```bash
 sudo grep -rn "add_header" /etc/nginx/sites-available/ /etc/nginx/conf.d/ /etc/nginx/nginx.conf
 ```
 
-Si des `add_header` subsistent, deposer la version corrigee du depot (ou les
-commenter a la main en verifiant qu'aucun bloc `location` ne perd d'autres
-`add_header` legitimes par heritage), puis :
+Sauvegarder puis retirer les quatre directives du seul vhost kermaria :
+
+```bash
+sudo cp -a /etc/nginx/sites-available/kermaria /etc/nginx/sites-available/kermaria.bak-$(date -u +%Y%m%dT%H%M%SZ)
+```
+
+```bash
+sudo sed -i '/add_header X-Frame-Options "SAMEORIGIN" always;/d; /add_header X-Content-Type-Options "nosniff" always;/d; /add_header Referrer-Policy "strict-origin-when-cross-origin" always;/d; /add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;/d' /etc/nginx/sites-available/kermaria
+```
+
+Puis :
 
 ```bash
 sudo nginx -t && sudo systemctl reload nginx
