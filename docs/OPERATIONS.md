@@ -194,15 +194,19 @@ curl -sSk -o /dev/null -D - https://www.zacharyhounsa.ovh/
 Un en-tete affiche deux fois vient du proxy : `add_header` **n'ecrase pas**
 la valeur amont, il en ajoute une seconde.
 
-Localiser puis corriger sur SRV-11 (`192.168.100.211`) :
+**La source est versionnee** : `scripts/r740xd-vm/srv11/kermaria-nginx.conf`.
+Les quatre `add_header` en ont ete retires le 2026-08-05. Corriger le serveur
+sans redeployer ce fichier laisserait l'ecart revenir au prochain deploiement.
+
+Verifier d'abord que le vhost en place correspond bien a ce fichier :
 
 ```bash
 sudo grep -rn "add_header" /etc/nginx/sites-available/ /etc/nginx/conf.d/ /etc/nginx/nginx.conf
 ```
 
-Commenter les `add_header` de securite des vhosts kermaria — en verifiant que
-le bloc `location` traite ne perd pas d'autres `add_header` legitimes par
-heritage — puis :
+Si des `add_header` subsistent, deposer la version corrigee du depot (ou les
+commenter a la main en verifiant qu'aucun bloc `location` ne perd d'autres
+`add_header` legitimes par heritage), puis :
 
 ```bash
 sudo nginx -t && sudo systemctl reload nginx

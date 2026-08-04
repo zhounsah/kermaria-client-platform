@@ -258,6 +258,13 @@ Correction retenue : **retirer les `add_header` de securite des vhosts
 kermaria sur SRV-11**, conformement a la regle ci-dessus. Procedure et
 verification : `docs/OPERATIONS.md`, section « En-tetes de securite ».
 
+Fait dans la source le 2026-08-05 :
+`scripts/r740xd-vm/srv11/kermaria-nginx.conf` ne porte plus aucun
+`add_header`. Ce fichier dormait sur la branche `codex/r740xd-automation` —
+d'ou l'affirmation erronee, en `v1.1.10.2`, que la configuration nginx n'etait
+pas versionnee : seul `main` avait ete regarde. **Le serveur, lui, sert encore
+l'ancienne configuration** tant que le vhost corrige n'y est pas depose.
+
 Garde-fou : `npm run assert:security:headers -- --url https://www.zacharyhounsa.ovh/`
 compare la reponse **livree** au contrat de `next.config.ts` et echoue sur tout
 doublon. Les tests `test:operations` et `test:seo` lisent le code source et ne
