@@ -164,6 +164,7 @@ function Invoke-KoxoSync {
                 WorkingDirectory = $KoxoWorkingDirectory
                 Arguments = $KoxoSyncArgument
                 ExitCode = $null
+                TimedOut = $false
                 DurationSeconds = 0
             }
         }
@@ -175,6 +176,7 @@ function Invoke-KoxoSync {
                 WorkingDirectory = $KoxoWorkingDirectory
                 Arguments = $KoxoSyncArgument
                 ExitCode = $null
+                TimedOut = $false
                 DurationSeconds = 0
             }
         }
@@ -200,6 +202,7 @@ function Invoke-KoxoSync {
             backup_path = $backupPath
             koxo_launch_status = $koxoLaunch.Status
             koxo_exit_code = $koxoLaunch.ExitCode
+            koxo_timed_out = $koxoLaunch.TimedOut
         }
 
         $result
@@ -657,7 +660,14 @@ function Invoke-KoxoProcess {
     }
 
     $timeoutMilliseconds = [math]::Max(5000, ($Configuration.SyncTimeoutSeconds * 1000))
+    $timedOut = $false
+
+    # KoXoAdm.exe peut terminer son travail puis ne jamais rendre la main.
+    # Le depassement de delai n'est donc pas une preuve d'echec : on tue le
+    # processus, puis on tranche sur le journal KoXo comme pour un code de
+    # sortie non nul.
     if (-not $process.WaitForExit($timeoutMilliseconds)) {
+        $timedOut = $true
         try {
             if (-not $process.HasExited) {
                 $process.Kill()
@@ -666,22 +676,54 @@ function Invoke-KoxoProcess {
         }
         catch {
         }
-
-        throw ("KoXo process timed out after {0} seconds." -f $Configuration.SyncTimeoutSeconds)
     }
 
     $durationSeconds = [math]::Round(((Get-Date) - $startedAt).TotalSeconds, 2)
     $process.Refresh()
     $logOutcome = Test-KoxoLogOutcome -GlobPattern $Configuration.KoxoLogGlob -NotBeforeUtc $startedAtUtc.AddSeconds(-5)
 
-    if ($process.ExitCode -ne 0 -and -not $logOutcome.IsSuccessful) {
-        throw ("KoXo process failed with exit code {0}." -f $process.ExitCode)
+    $exitCode = $null
+    try {
+        $exitCode = $process.ExitCode
+    }
+    catch {
     }
 
-    Write-KoxoSyncLog -Configuration $Configuration -Level 'info' -Message 'KoXo process completed.' -Data @{
+    if ($timedOut) {
+        if (-not $logOutcome.IsSuccessful) {
+            Write-KoxoSyncLog -Configuration $Configuration -Level 'error' -Message 'KoXo process timed out without any proof of completion in the KoXo log.' -Data @{
+                executable_path = $resolvedExecutablePath
+                arguments = $Arguments
+                timeout_seconds = $Configuration.SyncTimeoutSeconds
+                duration_seconds = $durationSeconds
+                koxo_log_path = $logOutcome.LogPath
+                koxo_log_has_recent = $logOutcome.HasRecentLog
+                koxo_log_accepted_marker = $logOutcome.AcceptedMarker
+                koxo_log_completion_marker = $logOutcome.CompletionMarker
+                koxo_log_blocking_error = $logOutcome.BlockingError
+            }
+
+            throw ("KoXo process timed out after {0} seconds." -f $Configuration.SyncTimeoutSeconds)
+        }
+    }
+    elseif ($exitCode -ne 0 -and -not $logOutcome.IsSuccessful) {
+        throw ("KoXo process failed with exit code {0}." -f $exitCode)
+    }
+
+    $completionLevel = if ($timedOut) { 'warning' } else { 'info' }
+    $completionMessage = if ($timedOut) {
+        'KoXo process timed out but the recent KoXo log proves the operation completed.'
+    }
+    else {
+        'KoXo process completed.'
+    }
+
+    Write-KoxoSyncLog -Configuration $Configuration -Level $completionLevel -Message $completionMessage -Data @{
         executable_path = $resolvedExecutablePath
         arguments = $Arguments
-        exit_code = $process.ExitCode
+        exit_code = $exitCode
+        timed_out = $timedOut
+        timeout_seconds = $Configuration.SyncTimeoutSeconds
         duration_seconds = $durationSeconds
         koxo_log_path = $logOutcome.LogPath
         koxo_log_success = $logOutcome.IsSuccessful
@@ -693,11 +735,12 @@ function Invoke-KoxoProcess {
 
     [pscustomobject]@{
         Requested = $true
-        Status = if ($process.ExitCode -eq 0) { 'completed' } else { 'completed_with_nonzero_exit' }
+        Status = if ($timedOut) { 'completed_after_timeout' } elseif ($exitCode -eq 0) { 'completed' } else { 'completed_with_nonzero_exit' }
         ExecutablePath = $resolvedExecutablePath
         WorkingDirectory = $resolvedWorkingDirectory
         Arguments = $Arguments
-        ExitCode = $process.ExitCode
+        ExitCode = $exitCode
+        TimedOut = $timedOut
         DurationSeconds = $durationSeconds
         LogPath = $logOutcome.LogPath
         LogSuccessful = $logOutcome.IsSuccessful

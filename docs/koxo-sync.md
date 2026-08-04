@@ -101,12 +101,30 @@ une revocation d'essai echu.
 `homeDirectory`, `homeDrive`, `scriptPath`, et l'appartenance au groupe portant
 le nom du groupe secondaire.
 
-### Code de sortie
+### Code de sortie et fin de processus
 
 `KoXoAdm.exe` renvoie **1 meme en cas de succes** (defaut connu, non corrige ;
 en interactif il faut valider deux ou trois fois). **Ne pas se fier au code de
 sortie** : le script s'appuie sur les marqueurs `LogSuccessful`,
 `LogAcceptedMarker`, `LogCompletionMarker` et `LogBlockingError` du journal KoXo.
+
+**Ne pas se fier davantage a la fin du processus.** `KoXoAdm.exe` peut terminer
+son travail — journal complet, `Fin de l'operation` ecrite — puis **ne jamais
+rendre la main**. Constate sur SRV-21 le 2026-08-04 a 21:32 : le journal portait
+`Parametre accepte`, l'`Ajout/Modification` des deux utilisateurs et
+`Fin de l'operation` a 21:32:27, mais le processus tournait toujours ; le script
+l'a tue au bout de 90 s et a journalise `KoXo sync failed` alors que la
+synchronisation avait reussi. Le receveur webhook remontait donc un echec pour
+une synchronisation correcte.
+
+Le depassement de `KOXO_SYNC_TIMEOUT_SECONDS` est donc traite **exactement comme
+un code de sortie non nul** : le processus est tue, puis le journal KoXo recent
+est consulte.
+
+| Journal recent | Resultat |
+|---|---|
+| prouve le succes (marqueurs attendus, pas d'erreur bloquante) | statut `completed_after_timeout`, `TimedOut = $true`, journalisation en niveau `warning`, la synchronisation est un succes |
+| ne prouve rien (absent, incomplet ou erreur bloquante) | erreur `KoXo process timed out after N seconds.` apres une journalisation de niveau `error` |
 
 ## Variables d'environnement
 
@@ -182,6 +200,8 @@ Quand `-LaunchKoxo` est active :
 - le script attend la fin du processus avec le timeout configure
 - un code retour non nul reste tolere si le journal KoXo recent prouve une
   fin d'operation correcte avec les marqueurs attendus
+- un depassement du timeout reste tolere aux memes conditions : le processus est
+  tue, puis le journal tranche (`completed_after_timeout` en niveau `warning`)
 - les journaux KoXo recents peuvent etre relus via `KOXO_KOXO_LOG_GLOB`
 
 ## Procedure cible SRV-21

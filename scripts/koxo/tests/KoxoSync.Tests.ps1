@@ -365,4 +365,85 @@ Fin de l'operation
         $result.KoxoLaunch.LogSuccessful | Should Be $true
         Test-Path -LiteralPath $target | Should Be $true
     }
+
+    It 'accepts a KoXo timeout when the recent KoXo log proves success' {
+        $root = Join-Path $env:TEMP ('koxo-launch-timeout-' + [guid]::NewGuid().ToString('N'))
+        $targetRoot = Join-Path $root 'target'
+        $workRoot = Join-Path $root 'work'
+        $koxoLogRoot = Join-Path $root 'koxo-logs'
+        New-Item -ItemType Directory -Path $targetRoot -Force | Out-Null
+        New-Item -ItemType Directory -Path $workRoot -Force | Out-Null
+        New-Item -ItemType Directory -Path $koxoLogRoot -Force | Out-Null
+        $target = Join-Path $targetRoot 'users.csv'
+        $logPath = Join-Path $koxoLogRoot 'CLIENTS-20260804.log'
+        @'
+Parametre accepte : /Synchro=CLIENTS.xml
+Ajout/Modification de l'utilisateur
+Fin de l'operation
+'@ | Set-Content -LiteralPath $logPath -Encoding UTF8
+
+        # KoXoAdm.exe peut finir son travail sans rendre la main : le faux
+        # executable dort bien au-dela de KOXO_SYNC_TIMEOUT_SECONDS.
+        $result = Invoke-KoxoSync `
+            -CsvTargetPath $target `
+            -WorkingDirectory $workRoot `
+            -LaunchKoxo `
+            -KoxoExecutablePath $env:ComSpec `
+            -KoxoWorkingDirectory $targetRoot `
+            -KoxoSyncArgument '/c ping -n 60 127.0.0.1 >nul' `
+            -Overrides @{
+                KOXO_API_URL = 'https://localhost/api/internal/koxo/users'
+                KOXO_API_TOKEN = 'LOCAL-TEST-TOKEN'
+                KOXO_ALLOW_INSECURE_HTTP = 'false'
+                KOXO_CSV_ENCODING = 'utf8'
+                KOXO_MIN_USER_COUNT = '0'
+                KOXO_MAX_USER_DROP_PERCENT = '100'
+                KOXO_SYNC_TIMEOUT_SECONDS = '5'
+                KOXO_LOG_DIRECTORY = (Join-Path $workRoot 'logs')
+                KOXO_KOXO_LOG_GLOB = (Join-Path $koxoLogRoot '*')
+                KOXO_BACKUP_RETENTION_COUNT = '2'
+            } `
+            -PayloadObject (New-KoxoTestPayload)
+
+        $result.Status | Should Be 'synchronized_and_launched'
+        $result.KoxoLaunch.Status | Should Be 'completed_after_timeout'
+        $result.KoxoLaunch.TimedOut | Should Be $true
+        $result.KoxoLaunch.LogSuccessful | Should Be $true
+        Test-Path -LiteralPath $target | Should Be $true
+        (Get-Content -LiteralPath $result.LogPath -Raw) | Should Match '"level":"warning"'
+    }
+
+    It 'still fails on a KoXo timeout when no recent KoXo log proves success' {
+        $root = Join-Path $env:TEMP ('koxo-launch-timeout-fail-' + [guid]::NewGuid().ToString('N'))
+        $targetRoot = Join-Path $root 'target'
+        $workRoot = Join-Path $root 'work'
+        $koxoLogRoot = Join-Path $root 'koxo-logs'
+        New-Item -ItemType Directory -Path $targetRoot -Force | Out-Null
+        New-Item -ItemType Directory -Path $workRoot -Force | Out-Null
+        New-Item -ItemType Directory -Path $koxoLogRoot -Force | Out-Null
+        $target = Join-Path $targetRoot 'users.csv'
+
+        {
+            Invoke-KoxoSync `
+                -CsvTargetPath $target `
+                -WorkingDirectory $workRoot `
+                -LaunchKoxo `
+                -KoxoExecutablePath $env:ComSpec `
+                -KoxoWorkingDirectory $targetRoot `
+                -KoxoSyncArgument '/c ping -n 60 127.0.0.1 >nul' `
+                -Overrides @{
+                    KOXO_API_URL = 'https://localhost/api/internal/koxo/users'
+                    KOXO_API_TOKEN = 'LOCAL-TEST-TOKEN'
+                    KOXO_ALLOW_INSECURE_HTTP = 'false'
+                    KOXO_CSV_ENCODING = 'utf8'
+                    KOXO_MIN_USER_COUNT = '0'
+                    KOXO_MAX_USER_DROP_PERCENT = '100'
+                    KOXO_SYNC_TIMEOUT_SECONDS = '5'
+                    KOXO_LOG_DIRECTORY = (Join-Path $workRoot 'logs')
+                    KOXO_KOXO_LOG_GLOB = (Join-Path $koxoLogRoot '*')
+                    KOXO_BACKUP_RETENTION_COUNT = '2'
+                } `
+                -PayloadObject (New-KoxoTestPayload)
+        } | Should Throw 'KoXo process timed out after 5 seconds.'
+    }
 }
