@@ -173,6 +173,34 @@ Source de verite unique : **l'application** (`SECURITY_HEADERS` dans
 `apps/webportal/next.config.ts`). Le reverse proxy SRV-11 relaie sans ajouter.
 Justification et regle d'ecriture nginx : `docs/SECURITY.md`.
 
+### Chaine reelle devant WEBPORTAL (relevee le 2026-08-05)
+
+```text
+Internet -> 82.67.32.172 (NAT) -> SRV-11 :443
+                                     |
+                              HAProxy (mode tcp, routage SNI)
+                                     |-- rdgateway.home.bzh --> SRV-27:443 (TLS brut)
+                                     `-- defaut --------------> 127.0.0.1:8443 (PROXY v2)
+                                                                     |
+                                                              nginx (terminaison TLS)
+                                                                     |
+                                                              SRV-12:3000 (Node)
+```
+
+Consequence pour les en-tetes : **HAProxy est en `mode tcp`**, il ne lit pas le
+HTTP et ne peut donc ni ajouter ni modifier un en-tete. Sur ce chemin, nginx
+est le seul intermediaire capable d'en emettre — ce qui rend le diagnostic
+sans ambiguite.
+
+`cloudflared` tourne aussi sur SRV-11, mais avec un tunnel a jeton : ses
+regles d'ingress vivent dans le tableau de bord Cloudflare, pas sur la machine.
+Il ne sert pas `www.zacharyhounsa.ovh` : le DNS public de ce nom pointe
+`82.67.32.172`, pas une adresse Cloudflare.
+
+⚠️ Le DNS interne est en vue dedoublee (SRV-19 rend `192.168.100.211`). Un
+`curl` depuis le LAN mesure donc le chemin direct. Ici les deux chemins se
+rejoignent sur le meme nginx, mais ne pas generaliser pour un autre nom.
+
 Controle en ligne (le seul qui voie le proxy — `test:operations` et `test:seo`
 lisent le code source) :
 
