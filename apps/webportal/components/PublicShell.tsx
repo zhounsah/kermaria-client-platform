@@ -34,6 +34,7 @@ export function PublicShell({ children, signupEnabled }: PublicShellProps) {
           <nav className="public-header-nav" aria-label="Navigation principale">
             <div className="public-header-links">
               <Link href="/offres">Offres</Link>
+              <Link href="/solutions">Solutions</Link>
               <a href={PORTFOLIO_URL}>Portfolio</a>
               <Link href="/a-propos">À propos</Link>
               <Link href="/contact">Contact</Link>

@@ -286,6 +286,49 @@ Contraintes :
 - suppression cascadee avec la ressource ;
 - au moins une regle est requise pour une ressource `targeted`.
 
+## client_solution_portal_settings
+
+En-tete administrable de la page vitrine `/solutions` (migration
+`041_client_solutions_portal`, V1.1). Table a ligne unique, cle `default`.
+
+| Champ | Type logique | Description |
+|---|---|---|
+| `settings_key` | text | Toujours `default` |
+| `eyebrow` | text, nullable | Surtitre affiche au-dessus du titre |
+| `title` | text | Titre de la page |
+| `description` | text, nullable | Paragraphe d'introduction |
+| `footer_note` | text, nullable | Note affichee sous la grille |
+| `created_at` | timestamp | Date de creation |
+| `updated_at` | timestamp | Derniere modification |
+
+## client_solutions
+
+Tuiles d'acces publiees sur `/solutions`.
+
+| Champ | Type logique | Description |
+|---|---|---|
+| `id` | identifier | Cle interne |
+| `slug` | text | Cle stable orientee URL/admin |
+| `title` | text | Nom affiche sur la tuile |
+| `tagline` | text, nullable | Phrase courte optionnelle |
+| `target_url` | text | Lien absolu `http`/`https` ouvert au clic |
+| `opens_in_new_tab` | boolean | Ouverture dans un nouvel onglet |
+| `status` | text | `published` ou `draft` |
+| `display_order` | integer | Ordre d'affichage |
+| `logo_bytes` | binary, nullable | Logo stocke en base (512 Ko max) |
+| `logo_content_type` | text, nullable | Type MIME du logo |
+| `logo_original_name` | text, nullable | Nom de fichier d'origine |
+| `logo_size_bytes` | integer, nullable | Taille du logo |
+| `logo_updated_at` | timestamp, nullable | Derniere mise a jour du logo |
+| `created_at` | timestamp | Date de creation |
+| `updated_at` | timestamp | Derniere modification |
+
+Contraintes :
+
+- `slug` est unique ;
+- seules les entrees `published` sont exposees cote vitrine, logo compris ;
+- sans logo, l'affichage retombe sur les initiales du titre.
+
 ## commercial_documents
 
 Document commercial informatif visible par l'admin puis, après partage, par le

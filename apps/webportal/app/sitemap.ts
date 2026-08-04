@@ -17,6 +17,7 @@ type PublicRouteEntry = {
 const PUBLIC_ROUTE_ENTRIES: PublicRouteEntry[] = [
   { path: "/", changeFrequency: "monthly", priority: 1 },
   { path: "/offres", changeFrequency: "weekly", priority: 0.9 },
+  { path: "/solutions", changeFrequency: "weekly", priority: 0.8 },
   { path: "/a-propos", changeFrequency: "monthly", priority: 0.7 },
   { path: "/contact", changeFrequency: "monthly", priority: 0.7 },
   { path: "/mentions-legales", changeFrequency: "yearly", priority: 0.3 },

@@ -8,6 +8,8 @@ import type {
   CommercialDocumentPayload,
   CommercialOfferPaymentMode,
   CommercialOfferPayload,
+  ClientSolutionPayload,
+  ClientSolutionPortalSettingsPayload,
   DemoAccountCreateRequest,
   DemoProfilePayload,
   DownloadCategoryPayload,
@@ -22,6 +24,7 @@ import type {
   SupportRequestPayload,
 } from "@kermaria/shared";
 import {
+  CLIENT_SOLUTION_STATUSES,
   DOWNLOAD_RESOURCE_TYPES,
   DOWNLOAD_SOURCE_KINDS,
   DOWNLOAD_VISIBILITY_MODES,
@@ -549,6 +552,116 @@ export function parseDownloadCategoryPayload(
     && Number.isInteger(payload.displayOrder)
     && payload.displayOrder >= 0
     && payload.displayOrder <= 9999
+    ? payload
+    : null;
+}
+
+const clientSolutionSlugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+function isAbsoluteWebUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      (url.protocol === "http:" || url.protocol === "https:")
+      && !url.username
+      && !url.password
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function parseClientSolutionPayload(
+  value: unknown,
+): ClientSolutionPayload | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Partial<ClientSolutionPayload>;
+  if (
+    typeof candidate.title !== "string"
+    || typeof candidate.targetUrl !== "string"
+    || typeof candidate.status !== "string"
+    || typeof candidate.opensInNewTab !== "boolean"
+    || typeof candidate.displayOrder !== "number"
+    || !(
+      typeof candidate.slug === "string"
+      || candidate.slug === null
+      || candidate.slug === undefined
+    )
+    || !(
+      typeof candidate.tagline === "string"
+      || candidate.tagline === null
+      || candidate.tagline === undefined
+    )
+  ) {
+    return null;
+  }
+
+  const payload: ClientSolutionPayload = {
+    slug:
+      typeof candidate.slug === "string"
+        ? candidate.slug.trim().toLowerCase() || null
+        : null,
+    title: candidate.title.trim(),
+    tagline:
+      typeof candidate.tagline === "string"
+        ? candidate.tagline.trim() || null
+        : null,
+    targetUrl: candidate.targetUrl.trim(),
+    opensInNewTab: candidate.opensInNewTab,
+    status: candidate.status.trim() as ClientSolutionPayload["status"],
+    displayOrder: Math.trunc(candidate.displayOrder),
+  };
+
+  return payload.title.length >= 2
+    && payload.title.length <= 120
+    && (payload.tagline === null || payload.tagline.length <= 280)
+    && (
+      payload.slug === null
+      || (
+        payload.slug.length >= 2
+        && payload.slug.length <= 80
+        && clientSolutionSlugPattern.test(payload.slug)
+      )
+    )
+    && payload.targetUrl.length <= 2048
+    && isAbsoluteWebUrl(payload.targetUrl)
+    && CLIENT_SOLUTION_STATUSES.includes(payload.status)
+    && Number.isInteger(payload.displayOrder)
+    && payload.displayOrder >= 0
+    && payload.displayOrder <= 9999
+    ? payload
+    : null;
+}
+
+export function parseClientSolutionPortalSettingsPayload(
+  value: unknown,
+): ClientSolutionPortalSettingsPayload | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Partial<ClientSolutionPortalSettingsPayload>;
+  if (typeof candidate.title !== "string") {
+    return null;
+  }
+
+  const optional = (input: unknown) =>
+    typeof input === "string" ? input.trim() || null : null;
+  const payload: ClientSolutionPortalSettingsPayload = {
+    eyebrow: optional(candidate.eyebrow),
+    title: candidate.title.trim(),
+    description: optional(candidate.description),
+    footerNote: optional(candidate.footerNote),
+  };
+
+  return payload.title.length >= 2
+    && payload.title.length <= 160
+    && (payload.eyebrow === null || payload.eyebrow.length <= 120)
+    && (payload.description === null || payload.description.length <= 600)
+    && (payload.footerNote === null || payload.footerNote.length <= 600)
     ? payload
     : null;
 }

@@ -165,6 +165,33 @@ Verification rapide quand un client ne voit pas un telechargement :
 
 ---
 
+## 4 bis. Portail solutions - `/admin/solutions`
+
+Menu **Activite commerciale > Portail solutions**. Documentation dediee :
+[`v1.1/V1.1_PORTAIL_SOLUTIONS.md`](v1.1/V1.1_PORTAIL_SOLUTIONS.md).
+
+- **Perimetre** : les tuiles de la page publique `/solutions`, consultable
+  sans compte depuis le site vitrine.
+- **En-tete de page** : surtitre, titre, introduction et note de bas de page
+  se modifient directement en haut de l'ecran.
+- **Creation** : nom affiche, lien du service (URL absolue `https`), phrase
+  courte optionnelle, ordre d'affichage et logo.
+- **Logo** : PNG, JPEG, WebP ou SVG, 512 Ko maximum. Il est stocke en base et
+  couvert par la sauvegarde MariaDB. Sans logo, la tuile affiche les
+  initiales du nom.
+- **Etat** : `Brouillon` masque totalement la tuile (logo compris) ;
+  `Publiee` la rend visible. Creer en brouillon, verifier, puis publier.
+- **Suppression** : depuis la fiche de la solution, avec confirmation. Pour
+  masquer sans perdre la fiche, repasser en brouillon.
+
+Verification rapide quand une tuile n'apparait pas sur `/solutions` :
+
+- solution en etat `Publiee` ;
+- lien renseigne en `http`/`https` absolu ;
+- ordre d'affichage coherent avec les autres tuiles.
+
+---
+
 ## 5. Journal e-mails - `/admin/email-log`
 
 Menu **Relation client > Journal e-mails**.

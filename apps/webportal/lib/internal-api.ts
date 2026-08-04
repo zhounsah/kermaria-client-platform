@@ -15,8 +15,10 @@ import type {
   AdminSessionSummary,
   AdminSupportRequestDetail,
   AdminSupportRequestSummary,
+  AdminClientSolutionPortal,
   ApiError,
   ClientProfile,
+  ClientSolution,
   CartSummary,
   CheckoutSummary,
   CommercialDocumentDetail,
@@ -44,6 +46,7 @@ import type {
   PortalNotificationSummary,
   PortalServiceRequestDetail,
   PortalSupportRequestDetail,
+  PublicClientSolutionPortal,
   PublicPackCatalogContent,
   RequestMutationResponse,
   ServiceCatalogItem,
@@ -59,7 +62,11 @@ import type {
   DemoContentTemplateSummary,
   DemoProfileSummary,
 } from "@kermaria/shared";
-import { createDefaultPublicPackCatalogContent } from "@kermaria/shared";
+import {
+  createDefaultAdminClientSolutionPortal,
+  createDefaultClientSolutionPortal,
+  createDefaultPublicPackCatalogContent,
+} from "@kermaria/shared";
 
 import { CORRELATION_HEADER, resolveCorrelationId } from "@/lib/correlation";
 import {
@@ -506,6 +513,14 @@ export function getPublicPackCatalogContent() {
     "/internal/portal/public-pack-catalog",
     createDefaultPublicPackCatalogContent(),
     createDefaultPublicPackCatalogContent(),
+  );
+}
+
+export function getPublicClientSolutionPortal() {
+  return getPublicData<PublicClientSolutionPortal>(
+    "/internal/portal/client-solutions",
+    createDefaultClientSolutionPortal(),
+    createDefaultClientSolutionPortal(),
   );
 }
 
@@ -1253,6 +1268,20 @@ export function getAdminManagedContent(key: ManagedContentKey) {
   return getAdminData<ManagedContentDetail | null>(
     `/internal/admin/content/${encodeURIComponent(key)}`,
     getMockManagedContent(key),
+  );
+}
+
+export function getAdminClientSolutionPortal() {
+  return getAdminData<AdminClientSolutionPortal>(
+    "/internal/admin/client-solutions",
+    createDefaultAdminClientSolutionPortal(),
+  );
+}
+
+export function getAdminClientSolution(id: string) {
+  return getAdminData<ClientSolution | null>(
+    `/internal/admin/client-solutions/${encodeURIComponent(id)}`,
+    null,
   );
 }
 

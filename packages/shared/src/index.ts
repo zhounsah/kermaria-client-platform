@@ -641,6 +641,86 @@ export interface DownloadResourceMutationResponse {
   correlation_id: CorrelationId;
 }
 
+export type ClientSolutionStatus = "published" | "draft";
+
+export interface ClientSolutionPortalSettings {
+  eyebrow: string | null;
+  title: string;
+  description: string | null;
+  footerNote: string | null;
+  updatedAt: string | null;
+}
+
+export interface PublicClientSolution {
+  id: string;
+  slug: string;
+  title: string;
+  tagline: string | null;
+  targetUrl: string;
+  opensInNewTab: boolean;
+  hasLogo: boolean;
+  logoUpdatedAt: string | null;
+  displayOrder: number;
+}
+
+export interface PublicClientSolutionPortal {
+  settings: ClientSolutionPortalSettings;
+  solutions: PublicClientSolution[];
+}
+
+export interface ClientSolution {
+  id: string;
+  slug: string;
+  title: string;
+  tagline: string | null;
+  targetUrl: string;
+  opensInNewTab: boolean;
+  status: ClientSolutionStatus;
+  displayOrder: number;
+  hasLogo: boolean;
+  logoOriginalName: string | null;
+  logoContentType: string | null;
+  logoSizeBytes: number | null;
+  logoUpdatedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminClientSolutionPortal {
+  settings: ClientSolutionPortalSettings;
+  solutions: ClientSolution[];
+}
+
+export interface ClientSolutionPayload {
+  slug: string | null;
+  title: string;
+  tagline: string | null;
+  targetUrl: string;
+  opensInNewTab: boolean;
+  status: ClientSolutionStatus;
+  displayOrder: number;
+}
+
+export interface ClientSolutionPortalSettingsPayload {
+  eyebrow: string | null;
+  title: string;
+  description: string | null;
+  footerNote: string | null;
+}
+
+export interface ClientSolutionMutationResponse {
+  id: string;
+  changed: boolean;
+  updatedAt: string;
+  correlation_id: CorrelationId;
+}
+
+export interface ClientSolutionPortalMutationResponse {
+  changed: boolean;
+  updatedAt: string;
+  correlation_id: CorrelationId;
+}
+
 export interface ManagedContentRegistryEntry {
   key: ManagedContentKey;
   contentType: ManagedContentType;
@@ -751,6 +831,20 @@ export interface PublicPackCatalogMutationResponse {
   updatedAt: string;
   correlation_id: CorrelationId;
 }
+
+export const CLIENT_SOLUTION_STATUSES = [
+  "published",
+  "draft",
+] as const satisfies readonly ClientSolutionStatus[];
+
+export const CLIENT_SOLUTION_LOGO_CONTENT_TYPES = [
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/svg+xml",
+] as const;
+
+export const CLIENT_SOLUTION_LOGO_MAX_SIZE_BYTES = 512 * 1024;
 
 export const DOWNLOAD_RESOURCE_TYPES = [
   "software",
@@ -1385,6 +1479,32 @@ export function createDefaultPublicPackCatalogContent(): PublicPackCatalogConten
   return {
     ...createDefaultPublicPackCatalogContentPayload(),
     updatedAt: null,
+  };
+}
+
+export function createDefaultClientSolutionPortalSettings(): ClientSolutionPortalSettings {
+  return {
+    eyebrow: "Portail de services",
+    title: "Accéder à mes solutions",
+    description:
+      "Retrouvez ici les accès directs aux services mis à votre disposition. "
+      + "Cliquez sur une tuile pour ouvrir le service correspondant.",
+    footerNote: null,
+    updatedAt: null,
+  };
+}
+
+export function createDefaultClientSolutionPortal(): PublicClientSolutionPortal {
+  return {
+    settings: createDefaultClientSolutionPortalSettings(),
+    solutions: [],
+  };
+}
+
+export function createDefaultAdminClientSolutionPortal(): AdminClientSolutionPortal {
+  return {
+    settings: createDefaultClientSolutionPortalSettings(),
+    solutions: [],
   };
 }
 

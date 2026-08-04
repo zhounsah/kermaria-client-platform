@@ -36,6 +36,9 @@ Navigation par besoin :
 - historique des versions : [`docs/ROADMAP.md`](docs/ROADMAP.md)
 - comptes de demonstration et d'essai (V1.1) :
   [`docs/v1.1/V1.1_CUSTOM_DEMO_ACCOUNTS.md`](docs/v1.1/V1.1_CUSTOM_DEMO_ACCOUNTS.md)
+- portail public des solutions client `/solutions`, administrable depuis le
+  back-office (V1.1) :
+  [`docs/v1.1/V1.1_PORTAIL_SOLUTIONS.md`](docs/v1.1/V1.1_PORTAIL_SOLUTIONS.md)
 - deploiement des serveurs applicatifs :
   [`docs/v1.1/deploy/SRV-12_LOT3_DEPLOY.md`](docs/v1.1/deploy/SRV-12_LOT3_DEPLOY.md)
   (webportal, **Ubuntu/systemd**) et

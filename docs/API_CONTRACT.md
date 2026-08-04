@@ -119,6 +119,14 @@ publiées par le reverse proxy et jamais appelées directement par le navigateur
 - `DELETE /internal/admin/downloads/{id}`
 - `POST /internal/admin/downloads/{id}/file`
 - `DELETE /internal/admin/downloads/{id}/file`
+- `GET /internal/admin/client-solutions`
+- `PATCH /internal/admin/client-solutions/settings`
+- `POST /internal/admin/client-solutions`
+- `GET /internal/admin/client-solutions/{id}`
+- `PATCH /internal/admin/client-solutions/{id}`
+- `DELETE /internal/admin/client-solutions/{id}`
+- `POST /internal/admin/client-solutions/{id}/logo`
+- `DELETE /internal/admin/client-solutions/{id}/logo`
 - `GET /internal/admin/commercial-documents`
 - `POST /internal/admin/commercial-documents`
 - `GET /internal/admin/commercial-documents/{id}`
@@ -325,6 +333,34 @@ Contraintes :
 - Les mutations admin journalisent creation, mise a jour, suppression,
   upload et retrait de binaire ; une delivrance client reussie journalise
   `download.deliver`.
+
+## Portail public des solutions V1.1
+
+Documentation dediee :
+[`v1.1/V1.1_PORTAIL_SOLUTIONS.md`](v1.1/V1.1_PORTAIL_SOLUTIONS.md).
+
+Contraintes :
+
+- `GET /internal/portal/client-solutions` est public (aucune session) et ne
+  renvoie que les entrees `published`, triees par `display_order` puis titre.
+  Le JSON expose l'en-tete de page administrable et les tuiles.
+- `GET /api/solutions/{id}/logo` et
+  `GET /internal/portal/client-solutions/{id}/logo` servent le logo d'une
+  solution **publiee** uniquement (`404` sinon), avec
+  `X-Content-Type-Options: nosniff`, `Content-Disposition: inline` et
+  `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox`.
+- `GET/POST/PATCH/DELETE /api/admin/client-solutions*` exigent un role
+  `internal_admin` et la protection CSRF deja en place.
+- `POST /api/admin/client-solutions/{id}/logo` accepte un upload
+  `multipart/form-data` (champ `logo`) limite a 512 Ko et aux types
+  `image/png`, `image/jpeg`, `image/webp`, `image/svg+xml`.
+- `target_url` doit etre une URL absolue `http`/`https` sans identifiants
+  integres ; toute autre valeur est refusee en `400`.
+- Un `slug` deja utilise renvoie `409 CLIENT_SOLUTION_SLUG_TAKEN`.
+- Les mutations admin journalisent `client_solution.create`,
+  `client_solution.update`, `client_solution.delete`,
+  `client_solution.logo.upload`, `client_solution.logo.delete` et
+  `client_solution_portal.update`.
 
 ## Choix explicite du virement bancaire V0.36
 

@@ -204,6 +204,12 @@ builder.Services.AddScoped<IDownloadRepository>(
         ? new MariaDbDownloadRepository(sqlConfiguration)
         : new MockDownloadRepository(
             serviceProvider.GetRequiredService<MockDownloadStore>()));
+builder.Services.AddSingleton<MockClientSolutionStore>();
+builder.Services.AddScoped<IClientSolutionRepository>(
+    serviceProvider => sqlConfiguration.IsPersistent
+        ? new MariaDbClientSolutionRepository(sqlConfiguration)
+        : new MockClientSolutionRepository(
+            serviceProvider.GetRequiredService<MockClientSolutionStore>()));
 builder.Services.AddSingleton<MockPublicPackCatalogStore>();
 builder.Services.AddScoped<IPublicPackCatalogRepository>(
     serviceProvider => sqlConfiguration.IsPersistent
@@ -288,6 +294,9 @@ builder.Services.AddSingleton<
     IBilledRecurringCheckoutSchemaEnsurer,
     BilledRecurringCheckoutSchemaEnsurer>();
 builder.Services.AddSingleton<IDownloadSchemaEnsurer, DownloadSchemaEnsurer>();
+builder.Services.AddSingleton<
+    IClientSolutionSchemaEnsurer,
+    ClientSolutionSchemaEnsurer>();
 builder.Services.AddScoped<ICartProvisioningTrigger, CartProvisioningTrigger>();
 builder.Services.AddScoped<
     IBilledSubscriptionPaymentTrigger,
@@ -296,6 +305,7 @@ builder.Services.AddScoped<ICartService, CartService>();
 builder.Services.AddScoped<IRecurringCheckoutService, RecurringCheckoutService>();
 builder.Services.AddScoped<IManagedContentService, ManagedContentService>();
 builder.Services.AddScoped<IDownloadService, DownloadService>();
+builder.Services.AddScoped<IClientSolutionService, ClientSolutionService>();
 builder.Services.AddScoped<IPublicPackCatalogService, PublicPackCatalogService>();
 builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
 builder.Services.AddScoped<IProvisioningService, ProvisioningService>();
@@ -628,6 +638,10 @@ app.UseExceptionHandler(exceptionHandler =>
                 StatusCodes.Status409Conflict,
                 conflict.Code,
                 conflict.Message),
+            ClientSolutionConflictException conflict => (
+                StatusCodes.Status409Conflict,
+                conflict.Code,
+                conflict.Message),
             DemoConflictException conflict => (
                 StatusCodes.Status409Conflict,
                 conflict.Code,
@@ -640,6 +654,10 @@ app.UseExceptionHandler(exceptionHandler =>
                 StatusCodes.Status503ServiceUnavailable,
                 "DOWNLOADS_SCHEMA_UNAVAILABLE",
                 "Le centre de téléchargements n'est pas initialisé en base de données."),
+            ClientSolutionSchemaUnavailableException => (
+                StatusCodes.Status503ServiceUnavailable,
+                "CLIENT_SOLUTIONS_SCHEMA_UNAVAILABLE",
+                "Le portail des solutions n'est pas initialisé en base de données."),
             MySqlException => (
                 StatusCodes.Status503ServiceUnavailable,
                 "SQL_UNAVAILABLE",
@@ -692,10 +710,14 @@ app.UseExceptionHandler(exceptionHandler =>
                 exception.StackTrace,
                 diagnosticSecretValues,
                 6000);
+            // Kestrel refuse les en-tetes non ASCII : un message metier
+            // accentue ferait echouer l'ecriture de la reponse et le
+            // ExceptionHandlerMiddleware relancerait l'exception d'origine
+            // (erreur 500 brute au lieu du code metier attendu).
             context.Response.Headers["X-Debug-Exception-Type"] =
-                exceptionType;
+                ToHeaderSafeValue(exceptionType);
             context.Response.Headers["X-Debug-Exception-Message"] =
-                exceptionMessage ?? "<none>";
+                ToHeaderSafeValue(exceptionMessage) ?? "<none>";
             context.Response.Headers["X-Debug-Correlation-Id"] =
                 correlationId;
             await context.Response.WriteAsJsonAsync(
@@ -2288,6 +2310,266 @@ app.MapDelete(
                 SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
             context.RequestAborted);
         return DownloadsOk(context, service, result);
+    });
+app.MapGet(
+    "/internal/portal/client-solutions",
+    async (
+        HttpContext context,
+        IClientSolutionService service) =>
+    {
+        return ClientSolutionsOk(
+            context,
+            service,
+            await service.GetPublicPortalAsync(context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/portal/client-solutions/{id}/logo",
+    async (
+        string id,
+        HttpContext context,
+        IClientSolutionService service) =>
+    {
+        var logo = await service.GetPublicLogoAsync(id, context.RequestAborted);
+        // Un logo est un media administre : on neutralise tout script embarque
+        // (cas du SVG) et on empeche la reinterpretation du type MIME.
+        context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+        context.Response.Headers["Content-Security-Policy"] =
+            "default-src 'none'; style-src 'unsafe-inline'; sandbox";
+        context.Response.Headers["Cache-Control"] = "public, max-age=300";
+        return Results.File(
+            logo.Bytes,
+            logo.ContentType,
+            enableRangeProcessing: false);
+    });
+app.MapGet(
+    "/internal/admin/client-solutions",
+    async (
+        HttpContext context,
+        IClientSolutionService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.client_solutions.read");
+        return ClientSolutionsOk(
+            context,
+            service,
+            await service.GetAdminPortalAsync(context.RequestAborted));
+    });
+app.MapPatch(
+    "/internal/admin/client-solutions/settings",
+    async (
+        HttpContext context,
+        IClientSolutionService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.client_solutions.write");
+        var payload =
+            await ReadPayload<ClientSolutionPortalSettingsPayload>(context)
+            ?? throw new PortalValidationException();
+        var result = await service.UpdateSettingsAsync(
+            payload,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "client_solution_portal.update",
+                result.Changed ? "success" : "unchanged",
+                TargetType: "client_solution_portal",
+                TargetReference: "default",
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return ClientSolutionsOk(context, service, result);
+    });
+app.MapPost(
+    "/internal/admin/client-solutions",
+    async (
+        HttpContext context,
+        IClientSolutionService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.client_solutions.write");
+        var payload = await ReadPayload<ClientSolutionPayload>(context)
+            ?? throw new PortalValidationException();
+        var result = await service.CreateSolutionAsync(
+            payload,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "client_solution.create",
+                result.Changed ? "success" : "unchanged",
+                TargetType: "client_solution",
+                TargetReference: result.Id,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return ClientSolutionsOk(context, service, result);
+    });
+app.MapGet(
+    "/internal/admin/client-solutions/{id}",
+    async (
+        string id,
+        HttpContext context,
+        IClientSolutionService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.client_solutions.read");
+        return ClientSolutionsOk(
+            context,
+            service,
+            await service.GetAdminSolutionAsync(id, context.RequestAborted));
+    });
+app.MapPatch(
+    "/internal/admin/client-solutions/{id}",
+    async (
+        string id,
+        HttpContext context,
+        IClientSolutionService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.client_solutions.write");
+        var payload = await ReadPayload<ClientSolutionPayload>(context)
+            ?? throw new PortalValidationException();
+        var result = await service.UpdateSolutionAsync(
+            id,
+            payload,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "client_solution.update",
+                result.Changed ? "success" : "unchanged",
+                TargetType: "client_solution",
+                TargetReference: id,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return ClientSolutionsOk(context, service, result);
+    });
+app.MapDelete(
+    "/internal/admin/client-solutions/{id}",
+    async (
+        string id,
+        HttpContext context,
+        IClientSolutionService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.client_solutions.write");
+        var result = await service.DeleteSolutionAsync(
+            id,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "client_solution.delete",
+                result.Changed ? "success" : "unchanged",
+                TargetType: "client_solution",
+                TargetReference: id,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return ClientSolutionsOk(context, service, result);
+    });
+app.MapPost(
+    "/internal/admin/client-solutions/{id}/logo",
+    async (
+        string id,
+        HttpContext context,
+        IClientSolutionService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.client_solutions.write");
+        var form = await context.Request.ReadFormAsync(context.RequestAborted);
+        var file = form.Files.GetFile("logo")
+            ?? throw new PortalValidationException();
+        await using var stream = file.OpenReadStream();
+        var result = await service.UploadLogoAsync(
+            id,
+            file.FileName,
+            file.ContentType,
+            stream,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "client_solution.logo.upload",
+                result.Changed ? "success" : "unchanged",
+                TargetType: "client_solution",
+                TargetReference: id,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return ClientSolutionsOk(context, service, result);
+    });
+app.MapDelete(
+    "/internal/admin/client-solutions/{id}/logo",
+    async (
+        string id,
+        HttpContext context,
+        IClientSolutionService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.client_solutions.write");
+        var result = await service.DeleteLogoAsync(
+            id,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "client_solution.logo.delete",
+                result.Changed ? "success" : "unchanged",
+                TargetType: "client_solution",
+                TargetReference: id,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return ClientSolutionsOk(context, service, result);
     });
 app.MapGet(
     "/internal/portal/public-pack-catalog",
@@ -5035,6 +5317,16 @@ static IResult DownloadsOk<T>(
     return Results.Ok(data);
 }
 
+static IResult ClientSolutionsOk<T>(
+    HttpContext context,
+    IClientSolutionService service,
+    T data)
+{
+    context.Response.Headers["X-Data-Source"] =
+        service.IsPersistent ? "mariadb" : "mock";
+    return Results.Ok(data);
+}
+
 static IResult DownloadsError(
     HttpContext context,
     IDownloadService service,
@@ -5602,6 +5894,23 @@ static string? SanitizeDiagnosticValue(
     return sanitized.Length <= maxLength
         ? sanitized
         : sanitized[..maxLength] + "...";
+}
+
+static string? ToHeaderSafeValue(string? value)
+{
+    if (string.IsNullOrEmpty(value))
+    {
+        return value;
+    }
+
+    var builder = new System.Text.StringBuilder(value.Length);
+    foreach (var character in value)
+    {
+        builder.Append(
+            character is >= ' ' and <= '~' ? character : '?');
+    }
+
+    return builder.ToString();
 }
 
 static int MapCustomerAdProvisioningStatusCode(string code)

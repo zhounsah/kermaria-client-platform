@@ -1,6 +1,6 @@
 {
   "name": "kermaria-client-platform",
-  "version": "1.1.9.2",
+  "version": "1.1.10",
   "private": true,
   "workspaces": [
     "apps/webportal",
@@ -44,7 +44,8 @@
     "test:signup": "npm --prefix apps/webportal run test:signup",
     "test:email-live": "npm --prefix apps/webportal run test:email-live",
     "test:cart": "npm --prefix apps/webportal run test:cart",
-    "validate": "npm run check:secrets && npm run lint:web && npm run typecheck:shared && npm run typecheck:webportal && npm run build:web && npm run build:api && npm run test:api && npm --prefix apps/webportal run test:forms && npm --prefix apps/webportal run test:auth && npm --prefix apps/webportal run test:admin && npm run test:operations && npm run test:ux && npm run test:workflow && npm run test:notifications && npm run test:replies && npm run test:activity && npm run test:commercial && npm run test:managed-content && npm run test:ad-security && npm run test:bpce && npm run test:cart",
+    "test:client-solutions": "npm --prefix apps/webportal run test:client-solutions",
+    "validate": "npm run check:secrets && npm run lint:web && npm run typecheck:shared && npm run typecheck:webportal && npm run build:web && npm run build:api && npm run test:api && npm --prefix apps/webportal run test:forms && npm --prefix apps/webportal run test:auth && npm --prefix apps/webportal run test:admin && npm run test:operations && npm run test:ux && npm run test:workflow && npm run test:notifications && npm run test:replies && npm run test:activity && npm run test:commercial && npm run test:managed-content && npm run test:ad-security && npm run test:bpce && npm run test:cart && npm run test:client-solutions",
     "validate:mariadb": "node scripts/validate-mariadb.mjs",
     "validate:preprod": "node scripts/validate-preprod.mjs",
     "validate:staging": "node scripts/validate-staging.mjs"

@@ -1039,6 +1039,31 @@ Ancrage infra (R740xd) : groupes dans `OU=Groupes_TEST`, comptes dans
 VLAN 64 `10.35.64.0/24`. Deploiement SRV-13 :
 [`v1.1/deploy/SRV-13_LOT3_DEPLOY.md`](v1.1/deploy/SRV-13_LOT3_DEPLOY.md).
 
+## Jalon V1.1 portail public des solutions client
+
+Statut : **livre** (code + schema + test de contrat). Documentation dediee :
+[`v1.1/V1.1_PORTAIL_SOLUTIONS.md`](v1.1/V1.1_PORTAIL_SOLUTIONS.md).
+
+Page vitrine `/solutions` en libre service : une grille de tuiles
+cliquables (nom, logo, phrase courte) qui ouvrent chacune le service
+correspondant. Aucune session n'est requise pour consulter la page.
+
+- migration `041_client_solutions_portal.sql` : `client_solutions` et
+  `client_solution_portal_settings` ;
+- back-office **Administration > Portail solutions** : ajout, modification,
+  suppression, ordre d'affichage, logo, etat publie/brouillon, et texte
+  d'en-tete de la page ;
+- logos stockes en base (512 Ko max, PNG/JPEG/WebP/SVG), servis par une
+  route publique sans script possible (`default-src 'none'`, `nosniff`,
+  `sandbox`) ;
+- seules les entrees `published` sortent cote vitrine, logo compris ;
+- mutations tracees dans l'audit et protegees par session admin + CSRF ;
+- precondition de schema verifiee en lecture seule
+  (`information_schema.tables`), aucun DDL au fil des requetes, conformement
+  a la regle remontee dans `AGENTS.md` en 1.1.9.2 ; absence des tables =
+  `503 CLIENT_SOLUTIONS_SCHEMA_UNAVAILABLE` ;
+- verification : `npm run test:client-solutions`.
+
 ## Hors sequence
 
 Reserves, non programmes (ni dans V0.24, ni dans V0.28-V0.31, ni dans
