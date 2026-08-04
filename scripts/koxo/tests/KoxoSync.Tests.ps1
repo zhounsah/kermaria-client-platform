@@ -123,6 +123,42 @@ Describe 'Encodage du CSV' {
     }
 }
 
+Describe 'Deploy-KoxoScripts' {
+    $deployScript = Join-Path (Split-Path -Parent $PSScriptRoot) 'Deploy-KoxoScripts.ps1'
+
+    It 'lists a manifest without contacting the target' {
+        $manifest = @(& $deployScript -ListOnly)
+        $manifest.Count | Should BeGreaterThan 0
+        foreach ($item in $manifest) {
+            Test-Path -LiteralPath $item.SourcePath | Should Be $true
+            $item.Sha256.Length | Should Be 64
+        }
+    }
+
+    It 'never lists a file owned by the server or by KoXo' {
+        $names = @(& $deployScript -ListOnly | ForEach-Object { $_.Name })
+        foreach ($protected in @('CLIENTS.xml', 'clients.csv', 'koxo-webhook-token.txt')) {
+            $names -contains $protected | Should Be $false
+        }
+    }
+
+    It 'ships the sync module and its entry points' {
+        $names = @(& $deployScript -ListOnly | ForEach-Object { $_.Name })
+        foreach ($expected in @('KoxoSync.Common.psm1', 'Sync-KoXoClients.ps1', 'Invoke-KoxoSyncFromWebhook.ps1')) {
+            $names -contains $expected | Should Be $true
+        }
+    }
+
+    It 'refuses a manifest that would overwrite a protected name' {
+        { & $deployScript -ListOnly -Include @('CLIENTS.xml') } | Should Throw
+        { & $deployScript -ListOnly -Include @('koxo-webhook-token.txt') } | Should Throw
+    }
+
+    It 'refuses a manifest naming a file absent from the repository' {
+        { & $deployScript -ListOnly -Include @('Absent-DuDepot.ps1') } | Should Throw
+    }
+}
+
 Describe 'Invoke-KoxoSafeReplacement' {
     It 'replaces safely and keeps backups' {
         $root = Join-Path $env:TEMP ('koxo-replace-' + [guid]::NewGuid().ToString('N'))

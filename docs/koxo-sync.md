@@ -311,6 +311,51 @@ ligne. Une identite creee avant une correction d'encodage conserve son
 `sAMAccountName` d'origine : la comparer sans rejouer une synchronisation donne
 un faux positif.
 
+## Deploiement des scripts sur la machine de synchronisation
+
+`scripts/koxo/Deploy-KoxoScripts.ps1` remplace la copie manuelle fichier par
+fichier, qui avait laisse le 2026-08-04 un module vieux de cinq jours sur SRV-21
+pendant que la documentation decrivait l'etat du depot.
+
+```powershell
+# Voir ce qui divergerait, sans rien ecrire
+.\scripts\koxo\Deploy-KoxoScripts.ps1 -DryRun
+
+# Deployer, poser les variables et relancer le receveur
+.\scripts\koxo\Deploy-KoxoScripts.ps1 `
+  -Settings @{ KOXO_CSV_ENCODING = 'utf8bom' } `
+  -RestartReceiver
+```
+
+Ce que le script garantit :
+
+- **liste explicite** de fichiers deployes. Le dossier cible heberge aussi
+  `CLIENTS.xml` (configuration de KoXo), `koxo-webhook-token.txt` (le secret),
+  `clients.csv`, `backups\`, `Logs\` et `work\` : une copie en bloc les
+  detruirait. Ces noms sont **proteges**, le script refuse de demarrer si la
+  liste a deployer en contient un ;
+- **comparaison insensible aux fins de ligne**. `*.ps1` n'est pas couvert par
+  `.gitattributes` : git rend du CRLF a la sortie alors que la cible peut porter
+  du LF. Comparer les octets bruts signalerait une derive permanente sur des
+  fichiers identiques ;
+- **sauvegarde horodatee** dans `backups\deploy-<horodatage>\` avant tout
+  ecrasement ;
+- **verification apres copie** : empreinte exacte **et** analyse syntaxique du
+  fichier arrive, pour attraper une copie tronquee ;
+- **variables Machine `KOXO_*`** posees et verifiees, car elles priment sur les
+  defauts du module — deployer le module sans corriger la variable ne change
+  rien au comportement. Les valeurs dont le nom contient `TOKEN`, `SECRET` ou
+  `PASSWORD` ne sont jamais affichees ;
+- **redemarrage du receveur** via `-RestartReceiver`. Sans lui, un changement de
+  variable reste sans effet : le processus garde son bloc d'environnement, et le
+  script emet un avertissement explicite dans ce cas ;
+- **validation finale** par une synchronisation `-DryRun` qui prouve que le
+  deploiement est vivant, et rend l'encodage et la presence du BOM ;
+- **inventaire de la derive** : les scripts presents sur la cible mais absents du
+  depot sont listes. C'est ainsi qu'apparait
+  `Start-KoxoSyncWebhookReceiver-8042.cmd`, qui n'existe aujourd'hui que sur le
+  serveur et devrait rejoindre le depot ou etre genere par l'installateur.
+
 ## Permissions minimales
 
 - lecture HTTPS sur le BFF prive
