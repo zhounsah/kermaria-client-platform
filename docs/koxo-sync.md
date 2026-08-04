@@ -121,7 +121,8 @@ sortie** : le script s'appuie sur les marqueurs `LogSuccessful`,
 - `KOXO_API_URL`
 - `KOXO_API_TOKEN`
 - `KOXO_ALLOW_INSECURE_HTTP` optionnelle, `false` par defaut, reservee a la recette technique hors HTTPS
-- `KOXO_CSV_ENCODING`
+- `KOXO_CSV_ENCODING` optionnelle, `utf8bom` par defaut ; toute autre valeur
+  expose a une perte d'accents, voir la section « Encodage »
 - `KOXO_MIN_USER_COUNT`
 - `KOXO_MAX_USER_DROP_PERCENT`
 - `KOXO_SYNC_TIMEOUT_SECONDS`
@@ -225,17 +226,90 @@ Valeurs supportees par le module :
 - `ascii`
 - `latin1`
 
-**Valeur retenue : `utf8bom`** (verifie le 2026-08-03). Le defaut `utf8` sans
-marque d'ordre d'octets est relu en ANSI par KoXo : `LAUMAILLÉ` arrivait dans
-l'annuaire sous la forme `LAUMAILLA‰`. Avec `utf8bom`, les accents minuscules
-sont corrects.
+**Valeur par defaut du module : `utf8bom`** (2026-08-04). Le defaut precedent
+`utf8` sans marque d'ordre d'octets est relu en ANSI par KoXo : `LAUMAILLÉ`
+arrive alors dans l'annuaire sous la forme `LAUMAILLÃ‰`. Le defaut est
+desormais sur par lui-meme : `KOXO_CSV_ENCODING` absente de l'environnement
+d'execution ne peut plus reintroduire la corruption.
 
-> ⚠️ **Limite subsistante** : les accents **majuscules** sont **supprimes** par
-> KoXo (`LAUMAILLÉ` → `sn=LAUMAILLE`). Le caractere n'est pas corrompu, il est
-> translittere. C'est un comportement KoXo, hors de portee de l'application.
-> Contournement : saisir les noms en casse normale (`Laumaillé`) plutot qu'en
-> capitales. Le `sAMAccountName` reste de toute facon translittere en ASCII
-> (`roselyne.laumailla`), ce qui est le comportement voulu.
+Deux garde-fous accompagnent ce defaut :
+
+- `Write-KoxoTextFile` relit le fichier avec le meme encodage et **echoue** si
+  un caractere a ete perdu — `ascii` et `latin1` remplacent silencieusement par
+  `?` ce qu'ils ne savent pas representer ;
+- l'encodage effectivement utilise est journalise (`csv_encoding`) et renvoye
+  dans le resultat de `Invoke-KoxoSync` (`CsvEncoding`).
+
+### Diagnostiquer une majuscule accentuee perdue
+
+Deux causes distinctes, qui **se cumulent** et se distinguent a la signature :
+
+| Constat | `LAUMAILLÉ` devient | Cause | Correction |
+|---|---|---|---|
+| `corrompu_encodage` | `LAUMAILLÃ‰` | CSV relu en ANSI par KoXo | `KOXO_CSV_ENCODING=utf8bom` cote machine de synchronisation |
+| `translittere` | `LAUMAILLE` | KoXo normalise le caractere | reglage KoXo, ou reprise de `sn` apres synchronisation |
+| `corrompu_puis_translittere` | `LAUMAILLA‰` | les deux : ANSI donne `Ã‰`, puis KoXo retire l'accent du `Ã` | corriger l'encodage **d'abord**, le reste ne se mesure qu'ensuite |
+
+Mesure sur SRV-21 le 2026-08-04, avant puis apres correction de l'encodage :
+
+| | `KOXO_CSV_ENCODING` | journal KoXo | `sn` | constat |
+|---|---|---|---|---|
+| 21:08 | `utf8` | `Roselyne LAUMAILLA‰` | `4c … 41 e2 80 b0` | `corrompu_puis_translittere` |
+| 21:32 | `utf8bom` | `Roselyne LAUMAILLE` | `LAUMAILLE` | `translittere` |
+
+La valeur `utf8bom` documentee le 2026-08-03 n'avait jamais ete appliquee sur le
+serveur : `KOXO_CSV_ENCODING` y valait toujours `utf8` en variable **Machine**,
+qui prime sur le defaut du module.
+
+**Conclusion, desormais mesuree et non plus supposee** : encodage corrige, KoXo
+translittere les majuscules accentuees (`LAUMAILLÉ` → `sn=LAUMAILLE`). Aucune
+option de `CLIENTS.xml` ne pilote ce comportement.
+
+### Aucun reglage du CSV ne conserve un accent
+
+Six essais reels le 2026-08-04, tous aboutissant a `sn=LAUMAILLE` :
+
+| CSV envoye | encodage | octets de l'accent | `sn` obtenu |
+|---|---|---|---|
+| `LAUMAILLÉ` | `utf8bom` | `c3 89` | `LAUMAILLE` |
+| `LAUMAILLÉ` | `latin1` | `c9` (ANSI natif) | `LAUMAILLE` |
+| `LAUMAILLÉ` | `unicode` | `c9 00` (UTF-16LE) | `LAUMAILLE` |
+| `Laumaillé` | `utf8bom` | `c3 a9` | `LAUMAILLE` |
+
+Deux enseignements :
+
+- **l'encodage est hors de cause** : `latin1` ne fait intervenir aucune
+  conversion UTF-8, l'accent y est un caractere natif du jeu ANSI, et il est
+  rabote quand meme. La translitteration est **en aval du decodage**, dans le
+  traitement du nom par KoXo ;
+- **KoXo force la majuscule sur le champ `Nom`** : envoye en casse normale,
+  `Laumaillé` ressort en `LAUMAILLE`. C'est cette mise en capitales qui
+  desaccentue. Le contournement « saisir les noms en casse normale », propose
+  dans les versions precedentes de ce document, **ne fonctionne pas** — il n'a
+  jamais ete teste.
+
+Conserver une majuscule accentuee dans l'annuaire ne peut donc **pas** se jouer
+sur le contenu ni sur l'encodage du CSV. Le seul levier restant est de reprendre
+`sn` / `displayName` **apres** la synchronisation, l'identite etant retrouvable
+par son `employeeNumber`.
+
+Le `sAMAccountName` reste de toute facon translittere en ASCII par KoXo
+(`roselyne.laumaille`), ce qui est le comportement voulu et ne prejuge pas de la
+valeur de `sn`.
+
+Pour trancher sur donnees reelles, sans rien ecrire ni dans le CSV ni dans
+l'annuaire :
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\koxo\Test-KoxoAccentHandling.ps1 `
+  -CsvPath "C:\Program Files\KoXo Dev\KoXoAdm\Data\CSVSynchro\clients.csv"
+```
+
+Le script relit le CSV consomme par KoXo, retrouve chaque identite par son
+`employeeNumber`, affiche les octets reellement ecrits et rend un constat par
+ligne. Une identite creee avant une correction d'encodage conserve son
+`sAMAccountName` d'origine : la comparer sans rejouer une synchronisation donne
+un faux positif.
 
 ## Permissions minimales
 

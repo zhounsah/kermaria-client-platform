@@ -71,6 +71,58 @@ Describe 'ConvertTo-KoxoCsvContent' {
     }
 }
 
+Describe 'Encodage du CSV' {
+    # Construit depuis les points de code : ce fichier de test est lui-meme lu
+    # avec l'encodage de la console, un litteral accentue ne prouverait rien.
+    $accentedSurname = 'LAUMAILL' + [char]0x00C9
+
+    It 'defaults to utf8bom so KoXo never relit le fichier en ANSI' {
+        $root = Join-Path $env:TEMP ('koxo-default-encoding-' + [guid]::NewGuid().ToString('N'))
+        $configuration = Get-KoxoSyncConfiguration `
+            -CsvTargetPath (Join-Path $root 'users.csv') `
+            -WorkingDirectory (Join-Path $root 'work') `
+            -Overrides @{
+                KOXO_API_URL = 'https://localhost/api/internal/koxo/users'
+                KOXO_API_TOKEN = 'LOCAL-TEST-TOKEN'
+                KOXO_CSV_ENCODING = ''
+                KOXO_LOG_DIRECTORY = (Join-Path $root 'logs')
+            }
+
+        $configuration.CsvEncoding | Should Be 'utf8bom'
+    }
+
+    It 'keeps accented capitals byte-for-byte in utf8bom' {
+        $root = Join-Path $env:TEMP ('koxo-accents-' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        $path = Join-Path $root 'users.csv'
+
+        Write-KoxoTextFile -Path $path -Content $accentedSurname -EncodingName 'utf8bom'
+
+        $bytes = [System.IO.File]::ReadAllBytes($path)
+        $bytes[0] | Should Be 239
+        $bytes[1] | Should Be 187
+        $bytes[2] | Should Be 191
+        $bytes[$bytes.Length - 2] | Should Be 195
+        $bytes[$bytes.Length - 1] | Should Be 137
+        [System.IO.File]::ReadAllText($path, [System.Text.Encoding]::UTF8) | Should Be $accentedSurname
+    }
+
+    It 'refuses an encoding that cannot represent the content' {
+        $root = Join-Path $env:TEMP ('koxo-lossy-' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        $path = Join-Path $root 'users.csv'
+
+        { Write-KoxoTextFile -Path $path -Content $accentedSurname -EncodingName 'ascii' } |
+            Should Throw
+    }
+
+    It 'names the characters lost by a narrower encoding' {
+        # OE ligature : absente de l'ISO-8859-1, donc silencieusement remplacee.
+        $lost = Get-KoxoLostCharacters -Source ('C' + [char]0x0152 + 'UR') -RoundTrip 'C?UR'
+        $lost | Should Match ([regex]::Escape([string][char]0x0152))
+    }
+}
+
 Describe 'Invoke-KoxoSafeReplacement' {
     It 'replaces safely and keeps backups' {
         $root = Join-Path $env:TEMP ('koxo-replace-' + [guid]::NewGuid().ToString('N'))

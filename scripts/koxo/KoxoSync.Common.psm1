@@ -33,7 +33,11 @@ function Get-KoxoSyncConfiguration {
         ApiUrl = Get-KoxoSetting -Name 'KOXO_API_URL' -Required -Overrides $Overrides
         ApiToken = Get-KoxoSetting -Name 'KOXO_API_TOKEN' -Required -Overrides $Overrides
         AllowInsecureHttp = Test-KoxoBooleanSetting -Name 'KOXO_ALLOW_INSECURE_HTTP' -Overrides $Overrides
-        CsvEncoding = (Get-KoxoSetting -Name 'KOXO_CSV_ENCODING' -DefaultValue 'utf8' -Overrides $Overrides).ToLowerInvariant()
+        # utf8bom et non utf8 : sans marque d'ordre d'octets, KoXo relit le
+        # fichier en ANSI et « LAUMAILLÉ » arrive dans l'annuaire sous la forme
+        # « LAUMAILLÃ‰ ». Le défaut doit donc être sûr par lui-même, la variable
+        # d'environnement ne servant qu'à en sortir volontairement.
+        CsvEncoding = (Get-KoxoSetting -Name 'KOXO_CSV_ENCODING' -DefaultValue 'utf8bom' -Overrides $Overrides).ToLowerInvariant()
         MinUserCount = [int](Get-KoxoSetting -Name 'KOXO_MIN_USER_COUNT' -DefaultValue '0' -Overrides $Overrides)
         MaxUserDropPercent = [int](Get-KoxoSetting -Name 'KOXO_MAX_USER_DROP_PERCENT' -DefaultValue '100' -Overrides $Overrides)
         SyncTimeoutSeconds = [int](Get-KoxoSetting -Name 'KOXO_SYNC_TIMEOUT_SECONDS' -DefaultValue '90' -Overrides $Overrides)
@@ -104,6 +108,7 @@ function Invoke-KoxoSync {
             dry_run = [bool]$DryRun
             api_url = $configuration.ApiUrl
             target_path = $configuration.CsvTargetPath
+            csv_encoding = $configuration.CsvEncoding
         }
 
         if ($null -eq $PayloadObject) {
@@ -134,7 +139,7 @@ function Invoke-KoxoSync {
 
         $tempPath = Join-Path $tempDirectory ("koxo-users-{0}.csv.tmp" -f ([guid]::NewGuid().ToString('N')))
         Write-KoxoTextFile -Path $tempPath -Content $csvContent -EncodingName $configuration.CsvEncoding
-        Test-KoxoCsvFile -Path $tempPath | Out-Null
+        Test-KoxoCsvFile -Path $tempPath -EncodingName $configuration.CsvEncoding | Out-Null
 
         $backupPath = $null
         if (-not $DryRun) {
@@ -178,6 +183,7 @@ function Invoke-KoxoSync {
         $result = [pscustomobject]@{
             Status = if ($DryRun) { 'dry_run' } elseif ($LaunchKoxo) { 'synchronized_and_launched' } else { 'synchronized' }
             UserCount = [int]$payload.userCount
+            CsvEncoding = $configuration.CsvEncoding
             Hash = $fileHash
             TempPath = $tempPath
             TargetPath = $configuration.CsvTargetPath
@@ -385,11 +391,14 @@ function Test-KoxoCsvFile {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
-        [string]$Path
+        [string]$Path,
+
+        [string]$EncodingName = 'utf8bom'
     )
 
     Add-Type -AssemblyName Microsoft.VisualBasic | Out-Null
-    $parser = New-Object Microsoft.VisualBasic.FileIO.TextFieldParser($Path)
+    $encoding = Get-KoxoEncoding -Name $EncodingName
+    $parser = New-Object Microsoft.VisualBasic.FileIO.TextFieldParser($Path, $encoding)
     $parser.SetDelimiters(';')
     $parser.HasFieldsEnclosedInQuotes = $true
 
@@ -854,6 +863,51 @@ function Write-KoxoTextFile {
 
     $encoding = Get-KoxoEncoding -Name $EncodingName
     [System.IO.File]::WriteAllText($Path, $Content, $encoding)
+
+    # `ascii` et `latin1` remplacent silencieusement par « ? » tout caractere
+    # hors de leur jeu : une majuscule accentuee perdue ici ne serait plus
+    # rattrapable en aval. On relit donc immediatement avec le meme encodage et
+    # on refuse d'aller plus loin en cas de perte.
+    $roundTrip = [System.IO.File]::ReadAllText($Path, $encoding)
+    if ($roundTrip -cne $Content) {
+        $lost = Get-KoxoLostCharacters -Source $Content -RoundTrip $roundTrip
+        throw (
+            "L'encodage {0} ne peut pas representer le contenu ecrit dans {1}{2}." -f
+            $EncodingName,
+            $Path,
+            $lost
+        )
+    }
+}
+
+function Get-KoxoLostCharacters {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$Source,
+
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$RoundTrip
+    )
+
+    if ($Source.Length -ne $RoundTrip.Length) {
+        return ''
+    }
+
+    $lost = New-Object System.Collections.Generic.List[string]
+    for ($index = 0; $index -lt $Source.Length; $index++) {
+        if ($Source[$index] -cne $RoundTrip[$index] -and -not $lost.Contains([string]$Source[$index])) {
+            $lost.Add([string]$Source[$index])
+        }
+    }
+
+    if ($lost.Count -eq 0) {
+        return ''
+    }
+
+    ' (caracteres perdus : ' + ($lost -join ' ') + ')'
 }
 
 function Get-KoxoEncoding {
@@ -987,6 +1041,7 @@ Export-ModuleMember -Function `
     ConvertTo-KoxoCsvContent, `
     Escape-KoxoCsvField, `
     Get-KoxoEncoding, `
+    Get-KoxoLostCharacters, `
     Get-KoxoRecentApplicationLogs, `
     Get-KoxoLatestExternalLog, `
     Get-KoxoSha256Hex, `

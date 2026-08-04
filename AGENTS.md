@@ -122,7 +122,9 @@ Faits verifies en production, valables pour **tout** agent. Detail complet dans
 - Le **CSV fait autorite** a la synchronisation : retirer une ligne **desactive** le compte AD correspondant. En revanche il **ne porte pas les permissions** — les groupes restent pilotes par l'API.
 - `GroupeSecondaire` designe l'OU cible et KoXo **la cree si elle n'existe pas**.
 - `identifiantUnique` est reporte dans l'attribut AD **`employeeNumber`** : seule cle fiable pour rattacher une identite creee par KoXo (le nom est translittere, le `sAMAccountName` est derive par KoXo).
-- `KOXO_CSV_ENCODING=utf8bom`. Les accents **majuscules** restent supprimes par KoXo — comportement externe, non corrigeable cote application.
+- `KOXO_CSV_ENCODING` vaut **`utf8bom` par defaut** dans le module : sans BOM, KoXo relit le CSV en ANSI et `LAUMAILLÉ` devient `LAUMAILLÃ‰`, puis sa mise en capitales rabote le `Ã` en `A` — d'ou le `LAUMAILLA‰` observe dans l'annuaire. Diagnostic : `scripts/koxo/Test-KoxoAccentHandling.ps1`, a lancer **hors session WinRM** (la requete LDAP y echoue par double saut).
+- **Aucun accent ne survit dans `sn`, quoi qu'on mette dans le CSV** (6 essais reels le 2026-08-04) : `utf8bom`, `latin1` et `unicode` donnent tous `LAUMAILLE`, et `Laumaillé` envoye en casse normale ressort en `LAUMAILLE`. KoXo **force la majuscule** sur le champ `Nom` et desaccentue en le faisant. Ne pas rouvrir le sujet par un changement d'encodage ni par la casse de saisie : c'est mesure, c'est en aval du decodage. Seul levier : reprendre `sn`/`displayName` apres synchronisation via `employeeNumber`.
+- Le `sAMAccountName` est derive du nom **a la creation** : une resynchronisation ne le change pas, mais supprimer le compte et resynchroniser le regenere (constate le 2026-08-04 : `mariececil.gouzerhle` → `zachary.hounsahou`).
 - `KoXoAdm.exe` sort en **code 1 meme en succes** : se fier aux marqueurs de journal, pas au code de sortie.
 
 ## Conventions De Code Et Docs
