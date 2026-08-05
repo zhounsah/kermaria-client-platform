@@ -14,6 +14,7 @@ export const metadata: Metadata = {
   title: "Offres",
   description:
     "Quatre packs conçus pour la sauvegarde distante, le stockage documentaire et la continuité d'activité des particuliers et petites structures.",
+  alternates: { canonical: "/offres" },
 };
 
 export const revalidate = 300;

@@ -7,6 +7,7 @@ import { getPublicManagedContent } from "@/lib/internal-api";
 export const metadata: Metadata = {
   title: "Mentions légales",
   description: "Mentions légales de Zachary HOUNSA-HOUNKPA EI.",
+  alternates: { canonical: "/mentions-legales" },
 };
 
 export const revalidate = 300;

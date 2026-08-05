@@ -20,6 +20,7 @@ export const metadata: Metadata = {
   title: "Sauvegarde distante et continuité d'activité",
   description:
     "Sauvegarde distante et stockage documentaire à Guichen pour les particuliers, associations et petites entreprises : une copie de vos fichiers importants conservée hors de vos locaux.",
+  alternates: { canonical: "/" },
 };
 
 function organizationJsonLd(baseUrl: string) {

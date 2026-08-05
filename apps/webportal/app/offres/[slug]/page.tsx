@@ -31,6 +31,7 @@ export async function generateMetadata({
   const pack = getPublicPackManifestBySlug(slug);
 
   if (!pack) {
+    // Pas de canonical sur une 404 : la page appelle `notFound()`.
     return {
       title: "Offre introuvable",
     };
@@ -39,6 +40,9 @@ export async function generateMetadata({
   return {
     title: `Fiche technique - ${pack.label}`,
     description: pack.description,
+    // `pack.slug` et non le `slug` de l'URL : si un alias de slug est un jour
+    // accepte, la canonical continue de pointer la forme unique.
+    alternates: { canonical: `/offres/${pack.slug}` },
   };
 }
 

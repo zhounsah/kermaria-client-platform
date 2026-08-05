@@ -8,6 +8,7 @@ export const metadata: Metadata = {
   title: "À propos",
   description:
     "Présentation de Zachary HOUNSA-HOUNKPA EI et de ses domaines d'intervention.",
+  alternates: { canonical: "/a-propos" },
 };
 
 export const revalidate = 300;

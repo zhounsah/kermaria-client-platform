@@ -8,6 +8,7 @@ export const metadata: Metadata = {
   title: "Politique de confidentialité",
   description:
     "Politique de confidentialité et utilisation des cookies sur l'espace client.",
+  alternates: { canonical: "/politique-confidentialite" },
 };
 
 export const revalidate = 300;

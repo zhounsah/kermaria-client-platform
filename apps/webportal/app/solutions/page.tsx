@@ -9,6 +9,7 @@ export const metadata: Metadata = {
   title: "Solutions",
   description:
     "Portail d'accès aux solutions mises à disposition des clients : cliquez sur une tuile pour ouvrir le service correspondant.",
+  alternates: { canonical: "/solutions" },
 };
 
 export const revalidate = 300;
