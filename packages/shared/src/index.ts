@@ -1876,6 +1876,24 @@ export interface PortalPasswordChangePayload {
   newPassword: string;
 }
 
+/** Champs du profil que le client peut corriger lui-meme depuis le portail.
+ *  L'organisation, la reference client, l'e-mail (identifiant de connexion)
+ *  et le statut restent geres cote back-office. */
+export interface PortalProfileUpdatePayload {
+  contactName: string;
+  phone: string;
+  address: string;
+  city: string;
+  country: string;
+}
+
+export interface PortalProfileUpdateResponse {
+  code: string;
+  message: string;
+  profile: ClientProfile;
+  correlation_id: CorrelationId;
+}
+
 export interface PortalPasswordChangeResponse {
   code: string;
   message: string;

@@ -1040,6 +1040,58 @@ app.MapGet(
                 session,
                 context.RequestAborted));
     });
+app.MapPost(
+    "/internal/portal/profile",
+    async (
+        HttpContext context,
+        IPortalService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            auditService);
+
+        var payload = await ReadPayload<ClientProfileUpdate>(context);
+        if (payload is null
+            || string.IsNullOrWhiteSpace(payload.ContactName))
+        {
+            await RecordProfileAuditAsync(
+                context,
+                auditService,
+                session,
+                "refused",
+                "INVALID_REQUEST");
+            return Results.Json(
+                new ApiError(
+                    "INVALID_REQUEST",
+                    "Le nom du contact principal est obligatoire.",
+                    context.GetCorrelationId()),
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var profile = await service.UpdateProfileAsync(
+            session,
+            payload,
+            context.RequestAborted);
+
+        await RecordProfileAuditAsync(
+            context,
+            auditService,
+            session,
+            "success",
+            null);
+
+        return PortalOk(
+            context,
+            service,
+            new ClientProfileUpdateResult(
+                "PROFILE_UPDATED",
+                "Vos coordonnées ont été enregistrées.",
+                profile,
+                context.GetCorrelationId()));
+    });
 app.MapGet(
     "/internal/portal/downloads",
     async (
@@ -5800,6 +5852,29 @@ static async Task<IResult> CompleteAdMutationAsync(
             context.GetCorrelationId(),
             result.Value),
         statusCode: result.StatusCode);
+}
+
+// Journal d'audit de la correction de coordonnees : jamais de valeur de champ,
+// uniquement les identifiants techniques et l'issue de l'operation.
+static async Task RecordProfileAuditAsync(
+    HttpContext context,
+    IAuditService auditService,
+    PortalSessionContext session,
+    string outcome,
+    string? reasonCode)
+{
+    await auditService.RecordAsync(
+        new AuditEvent(
+            context.GetCorrelationId(),
+            "portal.profile_update",
+            outcome,
+            reasonCode,
+            "portal_user",
+            session.UserId,
+            session.CustomerId,
+            session.UserId,
+            context.Connection.RemoteIpAddress?.ToString()),
+        context.RequestAborted);
 }
 
 static async Task RecordAdAuditAsync(

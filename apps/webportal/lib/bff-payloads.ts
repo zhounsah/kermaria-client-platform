@@ -16,6 +16,7 @@ import type {
   DownloadResourcePayload,
   DownloadVisibilityRulePayload,
   ManagedContentPayload,
+  PortalProfileUpdatePayload,
   PublicPackCode,
   PublicPackComparisonValueKind,
   PublicPackCatalogContentPayload,
@@ -96,6 +97,45 @@ export function parseServiceRequestPayload(
     && payload.subject.length <= 160
     && payload.description.length >= 10
     && payload.description.length <= 4000
+    ? payload
+    : null;
+}
+
+/** Coordonnées corrigées par le client depuis son espace. Les bornes reprennent
+ *  celles appliquées par l'API interne, pour refuser au plus tôt une saisie que
+ *  la base tronquerait. */
+export function parseProfileUpdatePayload(
+  value: unknown,
+): PortalProfileUpdatePayload | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Partial<PortalProfileUpdatePayload>;
+  if (
+    typeof candidate.contactName !== "string"
+    || typeof candidate.phone !== "string"
+    || typeof candidate.address !== "string"
+    || typeof candidate.city !== "string"
+    || typeof candidate.country !== "string"
+  ) {
+    return null;
+  }
+
+  const payload: PortalProfileUpdatePayload = {
+    contactName: candidate.contactName.trim(),
+    phone: candidate.phone.trim(),
+    address: candidate.address.trim(),
+    city: candidate.city.trim(),
+    country: candidate.country.trim(),
+  };
+
+  return payload.contactName.length >= 2
+    && payload.contactName.length <= 200
+    && payload.phone.length <= 40
+    && payload.address.length <= 255
+    && payload.city.length <= 160
+    && payload.country.length <= 100
     ? payload
     : null;
 }

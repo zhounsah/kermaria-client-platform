@@ -115,9 +115,8 @@ export function PasswordChangeForm() {
         />
       </label>
       <p className="field-hint">
-        Le portail vérifie d&apos;abord votre mot de passe actuel, puis met à
-        jour le mot de passe du compte. Si une identité Active Directory est
-        déjà liée, la synchronisation vers `clients.home.bzh` est faite dans la
+        Votre mot de passe actuel est vérifié avant l&apos;enregistrement du
+        nouveau. Les accès rattachés à votre compte sont mis à jour dans la
         même opération.
       </p>
       {message ? (
