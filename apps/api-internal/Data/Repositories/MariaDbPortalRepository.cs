@@ -139,6 +139,88 @@ public sealed class MariaDbPortalRepository : IPortalRepository
             reader.GetString("status"));
     }
 
+    public async Task<ClientProfile> UpdateProfileAsync(
+        PortalSessionContext session,
+        ClientProfileUpdate update,
+        CancellationToken cancellationToken)
+    {
+        // Horodatage applicatif en UTC : les serveurs tournent a l'heure de
+        // Paris, NOW() ecrirait donc une heure locale dans une base UTC.
+        var now = DateTime.UtcNow;
+
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(
+            cancellationToken);
+
+        await using (var customerCommand = connection.CreateCommand())
+        {
+            customerCommand.Transaction = transaction;
+            customerCommand.CommandText =
+                """
+                UPDATE customers
+                SET
+                    phone = @phone,
+                    address = @address,
+                    city = @city,
+                    country = @country,
+                    updated_at = @now
+                WHERE id = @customer_id;
+                """;
+            customerCommand.Parameters.AddWithValue(
+                "@phone",
+                NullIfEmpty(update.Phone));
+            customerCommand.Parameters.AddWithValue(
+                "@address",
+                NullIfEmpty(update.Address));
+            customerCommand.Parameters.AddWithValue(
+                "@city",
+                NullIfEmpty(update.City));
+            customerCommand.Parameters.AddWithValue(
+                "@country",
+                NullIfEmpty(update.Country));
+            customerCommand.Parameters.AddWithValue("@now", now);
+            customerCommand.Parameters.AddWithValue(
+                "@customer_id",
+                session.CustomerId);
+
+            var affected = await customerCommand.ExecuteNonQueryAsync(
+                cancellationToken);
+            if (affected == 0)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw new PortalDataNotFoundException();
+            }
+        }
+
+        // Le contact principal affiche est le nom de l'utilisateur connecte
+        // (portal_users.display_name), pas la raison sociale du client.
+        await using (var userCommand = connection.CreateCommand())
+        {
+            userCommand.Transaction = transaction;
+            userCommand.CommandText =
+                """
+                UPDATE portal_users
+                SET
+                    display_name = @display_name,
+                    updated_at = @now
+                WHERE id = @user_id AND customer_id = @customer_id;
+                """;
+            userCommand.Parameters.AddWithValue(
+                "@display_name",
+                update.ContactName);
+            userCommand.Parameters.AddWithValue("@now", now);
+            userCommand.Parameters.AddWithValue("@user_id", session.UserId);
+            userCommand.Parameters.AddWithValue(
+                "@customer_id",
+                session.CustomerId);
+            await userCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+
+        return await GetProfileAsync(session, cancellationToken);
+    }
+
     public async Task<IReadOnlyList<ServiceSummary>> GetServicesAsync(
         PortalSessionContext session,
         CancellationToken cancellationToken)
@@ -541,6 +623,14 @@ public sealed class MariaDbPortalRepository : IPortalRepository
         await connection.OpenAsync(cancellationToken);
         return connection;
     }
+
+    // Les colonnes de coordonnees sont NULLables : un champ vide doit revenir a
+    // NULL et non a une chaine vide, pour rester coherent avec les COALESCE de
+    // lecture et avec les enregistrements crees par le back-office.
+    private static object NullIfEmpty(string value)
+        => string.IsNullOrWhiteSpace(value)
+            ? DBNull.Value
+            : value;
 
     private static async Task<string> ResolveServiceIdAsync(
         MySqlConnection connection,

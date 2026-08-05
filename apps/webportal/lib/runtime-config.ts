@@ -18,6 +18,15 @@ export function isStripeConfigured(): boolean {
   );
 }
 
+/** Ouvre le parcours de changement de mot de passe. Le drapeau est lu au même
+ *  endroit par la page /password et par le profil, pour que l'espace client
+ *  n'annonce jamais un parcours que l'API interne refusera. */
+export function isPasswordChangeEnabled(): boolean {
+  return (
+    process.env.AD_PASSWORD_CHANGE_ENABLED?.trim().toLowerCase() === "true"
+  );
+}
+
 export function getBillingConfig() {
   return {
     iban: process.env.BILLING_IBAN?.trim() || null,

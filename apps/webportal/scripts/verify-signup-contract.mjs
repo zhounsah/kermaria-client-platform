@@ -536,7 +536,9 @@ check("page set-password presente uniquement des resultats natifs finis", () => 
 });
 check("page password reste separee du fallback set-password", () => {
   assert.match(passwordPage, /await requireClientSession\(\)/);
-  assert.match(passwordPage, /AD_PASSWORD_CHANGE_ENABLED/);
+  // Le drapeau AD_PASSWORD_CHANGE_ENABLED est lu via runtime-config, partage
+  // avec la page profil qui annonce ou non le parcours.
+  assert.match(passwordPage, /isPasswordChangeEnabled\(\)/);
   assert.match(passwordPage, /<PasswordChangeForm \/>/);
   assert.doesNotMatch(passwordPage, /action="\/api\/set-password"/);
 });

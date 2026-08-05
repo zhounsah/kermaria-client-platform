@@ -13,6 +13,10 @@ public interface IPortalRepository
     Task<ClientProfile> GetProfileAsync(
         PortalSessionContext session,
         CancellationToken cancellationToken);
+    Task<ClientProfile> UpdateProfileAsync(
+        PortalSessionContext session,
+        ClientProfileUpdate update,
+        CancellationToken cancellationToken);
     Task<IReadOnlyList<ServiceSummary>> GetServicesAsync(
         PortalSessionContext session,
         CancellationToken cancellationToken);
