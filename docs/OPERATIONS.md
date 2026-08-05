@@ -211,6 +211,34 @@ npm run assert:security:headers -- --url https://www.zacharyhounsa.ovh/
 Il echoue si un en-tete est absent, duplique par un intermediaire, ou si
 `X-Robots-Tag` reapparait sur la vitrine publique.
 
+### Canonicalisation de la vitrine, robots.txt et sitemap
+
+Un seul hote public doit repondre `200` : `www.zacharyhounsa.ovh`. L'apex
+`zacharyhounsa.ovh` est redirige en **301 permanent** par `proxy.ts`, chemin
+et query string conserves ; `/.well-known/acme-challenge/` en est exempte pour
+ne pas casser le renouvellement des certificats.
+
+```bash
+curl -sS -o /dev/null -w '%{http_code} %{redirect_url}\n' \
+  "https://zacharyhounsa.ovh/offres?utm_source=test"
+curl -sS https://www.zacharyhounsa.ovh/robots.txt
+curl -sS -o /dev/null -w '%{http_code} %{content_type}\n' \
+  https://www.zacharyhounsa.ovh/sitemap.xml
+```
+
+Attendu : `301 https://www.zacharyhounsa.ovh/offres?utm_source=test`, un
+`robots.txt` sans directive `Host` (non standard) dont la seule ligne
+`Sitemap:` pointe `https://www.zacharyhounsa.ovh/sitemap.xml`, et un sitemap en
+`200 application/xml`. Ces deux ressources restent publiques : ni session, ni
+`X-Robots-Tag`.
+
+Dans le sitemap, `lastmod` n'apparait que sur les pages adossees a un contenu
+administrable (`updatedAt` en base) — pages legales, `/a-propos`, fiches de
+pack. Les pages purement statiques n'en portent pas : mieux vaut omettre la
+date que la recalculer a chaque requete, ce qui annonce a tort tout le site
+comme modifie a chaque passage du robot. Garde-fou statique : `npm run
+test:seo`.
+
 ### Retirer un add_header en trop sur SRV-11
 
 > **Applique le 2026-08-05.** Les huit directives ont ete retirees et nginx

@@ -14,6 +14,7 @@ import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 
 import nextConfig, { NOINDEX_ROUTE_PREFIXES } from "../next.config.ts";
+import { resolveCanonicalPublicUrl } from "../lib/public-route-config.ts";
 
 // Le meme moteur de correspondance que celui utilise par Next pour
 // resoudre les `source` de `headers()` : on teste le comportement reel,
@@ -152,6 +153,160 @@ for (const pathname of sitemapPaths) {
     robotsTagFor(pathname),
     [],
     `${pathname} est publie dans le sitemap mais servi en noindex.`,
+  );
+}
+
+// 7. `robots.txt` ne publie que `Sitemap`. La directive `Host` n'est pas
+//    standard : elle est ignoree par les robots et remontee en erreur par
+//    les validateurs.
+assert.doesNotMatch(
+  robotsSource,
+  /^\s*host\s*:/mi,
+  "robots.txt ne doit plus emettre la directive non standard `Host`.",
+);
+assert.match(
+  robotsSource,
+  /sitemap:\s*resolveSitemapUrl\(baseUrl\)/,
+  "robots.txt doit publier l'URL du sitemap sur l'hote canonique.",
+);
+
+// 8. La redirection canonique 301 des alias publics (apex sans `www`)
+//    conserve chemin et query string.
+for (const [host, pathname, search, expected] of [
+  ["zacharyhounsa.ovh", "/", "", "https://www.zacharyhounsa.ovh/"],
+  [
+    "zacharyhounsa.ovh",
+    "/offres/dossier-securise",
+    "?utm_source=google&utm_medium=cpc",
+    "https://www.zacharyhounsa.ovh/offres/dossier-securise"
+      + "?utm_source=google&utm_medium=cpc",
+  ],
+  [
+    "zacharyhounsa.ovh:8443",
+    "/sitemap.xml",
+    "",
+    "https://www.zacharyhounsa.ovh/sitemap.xml",
+  ],
+  [
+    "ZACHARYHOUNSA.OVH",
+    "/robots.txt",
+    "",
+    "https://www.zacharyhounsa.ovh/robots.txt",
+  ],
+  ["home.bzh", "/cgv", "?print=1", "https://www.home.bzh/cgv?print=1"],
+]) {
+  assert.equal(
+    resolveCanonicalPublicUrl(host, pathname, search),
+    expected,
+    `${host}${pathname}${search} doit etre redirige en 301.`,
+  );
+}
+
+// 9. Aucun 301 sur l'hote canonique lui-meme (boucle de redirection), sur
+//    les portails, en local, sur un hote inconnu ou hostile.
+for (const host of [
+  "www.zacharyhounsa.ovh",
+  "www.home.bzh",
+  "portail.home.bzh",
+  "dashboard.zacharyhounsa.ovh",
+  "administration.zacharyhounsa.ovh",
+  "localhost:3000",
+  "127.0.0.1:3000",
+  "[::1]:3000",
+  "unknown.example",
+  "zacharyhounsa.ovh.evil.example",
+  "zacharyhounsa.ovh/evil.example",
+  "user@zacharyhounsa.ovh",
+  "",
+  null,
+  undefined,
+]) {
+  assert.equal(
+    resolveCanonicalPublicUrl(host, "/", ""),
+    null,
+    `${String(host)} ne doit declencher aucune redirection.`,
+  );
+}
+
+// 10. La redirection ne detourne ni les validations ACME ni un chemin
+//     ouvrant une redirection vers un domaine tiers.
+for (const pathname of [
+  "/.well-known/acme-challenge/jeton",
+  "//evil.example",
+  "/\\evil.example",
+  "/%2fevil.example",
+  "/%5cevil.example",
+  "/%0alogin",
+  "login",
+]) {
+  assert.equal(
+    resolveCanonicalPublicUrl("zacharyhounsa.ovh", pathname, ""),
+    null,
+    `${pathname} ne doit pas etre redirige.`,
+  );
+}
+
+// 11. Le 301 canonique est pose par le proxy, avant tout rendu, et laisse
+//     `robots.txt` / `sitemap.xml` dans son matcher.
+const proxySource = await read("proxy.ts");
+const redirectIndex = proxySource.indexOf("NextResponse.redirect(canonicalUrl");
+const passthroughIndex = proxySource.indexOf("NextResponse.next(");
+assert.match(
+  proxySource,
+  /NextResponse\.redirect\(canonicalUrl,\s*301\)/,
+  "Le proxy doit rediriger les alias publics en 301 permanent.",
+);
+assert.match(proxySource, /resolveCanonicalPublicUrl\(/);
+assert.match(proxySource, /request\.nextUrl\.search/);
+assert.notEqual(passthroughIndex, -1, "Le passe-plat du proxy a disparu.");
+assert.ok(
+  redirectIndex !== -1 && redirectIndex < passthroughIndex,
+  "Le 301 canonique doit precedeer le rendu de la page.",
+);
+const proxyMatcher = proxySource.match(/matcher:\s*\["([^"]+)"\]/);
+assert.ok(proxyMatcher, "Matcher du proxy introuvable.");
+for (const pathname of ["/", "/robots.txt", "/sitemap.xml", "/offres"]) {
+  assert.match(
+    pathname,
+    new RegExp(`^${proxyMatcher[1]}$`),
+    `${pathname} doit rester couvert par le matcher du proxy.`,
+  );
+}
+
+// 12. `sitemap.xml` ne fabrique plus de `lastmod` a l'heure de la requete :
+//     soit une date reelle de contenu administrable, soit rien.
+assert.doesNotMatch(
+  sitemapSource,
+  /const now = new Date\(\)|lastModified:\s*now/,
+  "Le sitemap ne doit pas horodater les pages a l'heure de la requete.",
+);
+assert.match(
+  sitemapSource,
+  /result\.data\?\.updatedAt/,
+  "Le sitemap doit lire `updatedAt` du contenu administrable.",
+);
+assert.match(
+  sitemapSource,
+  /\.\.\.\(lastModified \? \{ lastModified \} : \{\}\)/,
+  "`lastmod` doit etre omis quand aucune date fiable n'existe.",
+);
+assert.match(sitemapSource, /Number\.isNaN\(lastModified\.getTime\(\)\)/);
+
+// 13. `robots.txt` et `sitemap.xml` restent publics : aucune session
+//     requise, aucun `noindex` pose sur ces deux routes.
+for (const [label, source] of [
+  ["app/robots.ts", robotsSource],
+  ["app/sitemap.ts", sitemapSource],
+]) {
+  assert.doesNotMatch(
+    source,
+    /requireClientSession|requireAdminSession|requireSession|getSessionCookieName/,
+    `${label} doit rester accessible sans authentification.`,
+  );
+  assert.doesNotMatch(
+    source,
+    /["'`]noindex|X-Robots-Tag/i,
+    `${label} ne doit poser aucun noindex.`,
   );
 }
 

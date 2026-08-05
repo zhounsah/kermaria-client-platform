@@ -1070,6 +1070,26 @@ de `next.config.ts` et refuse tout doublon ou tout `X-Robots-Tag` sur la
 vitrine. Decision, ecart releve et procedure de retrait cote SRV-11 :
 [`SECURITY.md`](SECURITY.md) et [`OPERATIONS.md`](OPERATIONS.md).
 
+Correctif **`v1.1.10.3`** : trois defauts d'indexation constates sur
+`https://www.zacharyhounsa.ovh/`. `robots.txt` emettait une directive `Host`,
+qui n'appartient pas au standard — ignoree par les robots et remontee en erreur
+par les validateurs ; seule la ligne `Sitemap:` subsiste, resolue sur l'hote
+canonique. L'apex `zacharyhounsa.ovh` servait les routes en `200` au lieu de
+rediriger, ce qui diluait l'indexation sur deux domaines : `proxy.ts` pose
+desormais un **301 permanent** vers `www`, chemin et query string conserves,
+avant tout rendu et en exemptant `/.well-known/acme-challenge/`. Enfin
+`sitemap.ts` horodatait **toutes** les pages a `new Date()`, donc a l'heure de
+la requete : chaque passage du robot voyait l'integralite du site modifiee, ce
+qui vide `lastmod` de son sens. La date provient maintenant du `updatedAt` du
+contenu administrable pour les pages qui en ont un (legales, `/a-propos`,
+fiches de pack) et `lastmod` est **omis** partout ailleurs, faute de source
+fiable. Les alias canoniques vivent dans `PORTAL_FAMILIES`
+(`lib/public-route-config.ts`), a cote des hotes client/admin deja declares.
+`test:seo` couvre la disparition de `Host`, la table de redirection 301 (y
+compris les hotes qui ne doivent **pas** rediriger, pour ecarter toute boucle),
+l'absence d'horodatage a la requete et le caractere public des deux routes.
+Verification en ligne : [`OPERATIONS.md`](OPERATIONS.md).
+
 Ancrage infra (R740xd) : groupes dans `OU=Groupes_TEST`, comptes dans
 `OU=CLI-DEMO`, quota FSRM, collection RDS Clients-1 filtree par groupe,
 VLAN 64 `10.35.64.0/24`. Deploiement SRV-13 :

@@ -21,16 +21,28 @@ const PORTAL_FAMILIES = {
   "zacharyhounsa.ovh": {
     public: "www.zacharyhounsa.ovh",
     publicAliases: new Set(["zacharyhounsa.ovh", "www.zacharyhounsa.ovh"]),
+    // Alias publics servis en 301 vers `public` : un seul hote doit
+    // repondre 200, sinon l'indexation se dilue sur deux domaines.
+    canonicalRedirects: new Set(["zacharyhounsa.ovh"]),
     client: "dashboard.zacharyhounsa.ovh",
     admin: "administration.zacharyhounsa.ovh",
   },
   "home.bzh": {
     public: "www.home.bzh",
     publicAliases: new Set(["home.bzh", "www.home.bzh", "portail.home.bzh"]),
+    canonicalRedirects: new Set(["home.bzh"]),
     client: "dashboard.home.bzh",
     admin: "administration.home.bzh",
   },
 } as const;
+
+/**
+ * Les validations ACME restent servies par l'hote interroge : les sites de
+ * redirection IIS et nginx appliquent deja cette exemption.
+ */
+const ACME_CHALLENGE_PREFIX = "/.well-known/acme-challenge/";
+
+const UNSAFE_HOST_CHARACTER = /[/\\?#@\u0000-\u001f\u007f]/;
 
 type PortalFamilyName = keyof typeof PORTAL_FAMILIES;
 
@@ -144,6 +156,60 @@ export function resolvePortalAreaUrl(
   }
 
   return `https://${PORTAL_FAMILIES[familyName][area]}${pathname}`;
+}
+
+function parseRequestHostname(host: string | null | undefined): string | null {
+  if (!host) {
+    return null;
+  }
+
+  const trimmed = host.trim();
+  if (!trimmed || UNSAFE_HOST_CHARACTER.test(trimmed)) {
+    return null;
+  }
+
+  const url = parsePortalUrl(`https://${trimmed}`);
+  return url?.hostname ? normalizeHostname(url.hostname) : null;
+}
+
+/**
+ * URL canonique absolue vers laquelle rediriger un alias public non
+ * canonique (apex sans `www`), chemin et query conserves.
+ *
+ * Retourne `null` quand l'hote est deja canonique, local, inconnu, ou
+ * quand la requete ne doit pas etre redirigee : l'appelant sert alors la
+ * reponse normalement.
+ */
+export function resolveCanonicalPublicUrl(
+  host: string | null | undefined,
+  pathname: string,
+  search = "",
+): string | null {
+  const hostname = parseRequestHostname(host);
+  if (
+    !hostname
+    || !isSafePortalPath(pathname)
+    || pathname.startsWith(ACME_CHALLENGE_PREFIX)
+    || RAW_CONTROL_CHARACTER.test(search)
+  ) {
+    return null;
+  }
+
+  const familyName = getPortalFamily(hostname);
+  if (!familyName) {
+    return null;
+  }
+
+  const family = PORTAL_FAMILIES[familyName];
+  if (!family.canonicalRedirects.has(hostname as never)) {
+    return null;
+  }
+
+  const query = search && search !== "?"
+    ? (search.startsWith("?") ? search : `?${search}`)
+    : "";
+
+  return `https://${family.public}${pathname}${query}`;
 }
 
 export function resolvePortalRoleUrl(
