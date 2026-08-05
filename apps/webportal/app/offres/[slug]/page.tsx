@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import {
   buildPackSheetContentKey,
@@ -17,8 +18,12 @@ import {
   getPublicManagedContent,
   getPublicPackCatalogContent,
 } from "@/lib/internal-api";
-import { isSignupEnabled } from "@/lib/public-routes";
+import {
+  getPortalPublicUrlFromHeaders,
+  isSignupEnabled,
+} from "@/lib/public-routes";
 import { resolvePackCatalog } from "@/lib/public-packs";
+import { JsonLd, breadcrumbJsonLd, packServiceJsonLd } from "@/lib/seo";
 
 type PageProps = {
   params: Promise<{ slug: string }>;
@@ -55,6 +60,14 @@ export default async function PublicPackSheetPage({ params }: PageProps) {
   if (!manifest) {
     notFound();
   }
+
+  // Le balisage schema.org exige des URL absolues, donc l'hote reel de la
+  // requete (`www.zacharyhounsa.ovh` en production, `www.home.bzh` en
+  // recette). Cet appel rend la page dynamique et neutralise le
+  // `revalidate` ci-dessus — sans consequence tant que le layout racine
+  // impose deja le rendu dynamique a tout l'arbre (cf. le TODO ISR dans
+  // `app/layout.tsx`), mais a reprendre en meme temps que ce chantier.
+  const baseUrl = getPortalPublicUrlFromHeaders(await headers());
 
   const contentKey = buildPackSheetContentKey(manifest.key);
   const [catalogResult, catalogContentResult, managedContentResult] =
@@ -104,6 +117,20 @@ export default async function PublicPackSheetPage({ params }: PageProps) {
 
   return (
     <div className="offres-page managed-pack-sheet-page">
+      <JsonLd
+        data={packServiceJsonLd(baseUrl, {
+          slug: manifest.slug,
+          label: pack.label,
+          description: pack.description,
+        })}
+      />
+      <JsonLd
+        data={breadcrumbJsonLd(baseUrl, [
+          { name: "Offres", path: "/offres" },
+          { name: pack.label, path: `/offres/${manifest.slug}` },
+        ])}
+      />
+
       <header className="offres-header managed-pack-sheet-header">
         <p className="eyebrow">Fiche technique pack</p>
         <h1>{pack.label}</h1>
