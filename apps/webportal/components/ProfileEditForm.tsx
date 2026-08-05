@@ -140,11 +140,6 @@ export function ProfileEditForm({ profile }: ProfileEditFormProps) {
           />
         </label>
       </div>
-      <p className="field-hint">
-        L&apos;organisation, la référence client et l&apos;adresse e-mail de
-        connexion ne sont pas modifiables ici : ouvrez une demande de support
-        pour toute correction.
-      </p>
       {message ? (
         <FormMessage
           title={

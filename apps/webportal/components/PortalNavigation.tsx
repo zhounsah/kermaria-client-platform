@@ -7,7 +7,15 @@ import { LogoutButton } from "@/components/LogoutButton";
 
 type NavSection = {
   label: string;
-  items: { href: string; label: string; exact?: boolean }[];
+  items: {
+    href: string;
+    label: string;
+    exact?: boolean;
+    // Sous-pages qui gardent l'entree active alors que `exact` interdit le
+    // prefixe (ex. /profile ne doit pas s'allumer sur /profile/subscriptions,
+    // qui a sa propre entree, mais doit rester actif sur /profile/edit).
+    activePaths?: string[];
+  }[];
 };
 
 const navigationSections: NavSection[] = [
@@ -33,7 +41,12 @@ const navigationSections: NavSection[] = [
     label: "Suivi",
     items: [
       { href: "/notifications", label: "Notifications" },
-      { href: "/profile", label: "Profil", exact: true },
+      {
+        href: "/profile",
+        label: "Profil",
+        exact: true,
+        activePaths: ["/profile/edit"],
+      },
       { href: "/password", label: "Mot de passe" },
     ],
   },
@@ -60,9 +73,11 @@ export function PortalNavigation({ displayName }: PortalNavigationProps) {
             <span className="app-sidebar-section-label">{section.label}</span>
             <ul className="app-sidebar-list">
               {section.items.map((item) => {
-                const isActive = item.exact
-                  ? pathname === item.href
-                  : pathname === item.href || pathname.startsWith(`${item.href}/`);
+                const isActive = item.activePaths?.includes(pathname)
+                  || (item.exact
+                    ? pathname === item.href
+                    : pathname === item.href
+                      || pathname.startsWith(`${item.href}/`));
 
                 return (
                   <li key={item.href}>

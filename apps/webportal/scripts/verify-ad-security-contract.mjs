@@ -135,10 +135,14 @@ assert.match(
 
 // Aucun nom d'hote ou chemin interne ne doit fuiter dans les pages client.
 const profilePage = await read("app/profile/page.tsx");
+const profileEditPage = await read("app/profile/edit/page.tsx");
+const profileEditForm = await read("components/ProfileEditForm.tsx");
 for (const [label, source] of [
   ["la page mot de passe", passwordPage],
   ["le formulaire de mot de passe", passwordForm],
   ["la page profil", profilePage],
+  ["la page de modification du profil", profileEditPage],
+  ["le formulaire de profil", profileEditForm],
 ]) {
   assert.doesNotMatch(
     source,

@@ -2972,14 +2972,6 @@ fieldset.form-field > .form-hint {
   font-weight: 650;
 }
 
-/* Sépare, dans le panneau « Mon profil », l'identité en lecture seule du
-   formulaire de coordonnées : les lignes de `.profile-details` n'ont qu'une
-   bordure haute, ce trait ferme donc la liste avant le formulaire. */
-.profile-edit-block {
-  padding-top: 20px;
-  border-top: 1px solid var(--border);
-}
-
 .security-panel {
   align-self: start;
 }
