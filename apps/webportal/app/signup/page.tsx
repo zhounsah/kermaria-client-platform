@@ -18,6 +18,11 @@ export const metadata: Metadata = {
   title: "Créer un compte",
   description:
     "Demandez l'ouverture de votre accès client et reprenez, si besoin, le pack déjà sélectionné sur la vitrine.",
+  // Seule route non publique qui n'avait ni `X-Robots-Tag` (via
+  // NOINDEX_ROUTE_PREFIXES dans `next.config.ts`) ni `Disallow`. Comme
+  // `robots.txt` n'empeche pas l'indexation d'une URL decouverte par un
+  // lien externe, le `noindex` est pose ici, ou il est contraignant.
+  robots: { index: false, follow: true },
 };
 
 export const dynamic = "force-dynamic";
