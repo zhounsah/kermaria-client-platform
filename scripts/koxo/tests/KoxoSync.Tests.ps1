@@ -527,3 +527,100 @@ Fin de l'operation
         } | Should Throw 'KoXo process timed out after 5 seconds.'
     }
 }
+
+Describe 'Test-KoxoGuardRails' {
+    function New-KoxoGuardConfiguration {
+        param(
+            [int]$MaxDrop = 20,
+            [int]$MinUsers = 0,
+            [bool]$AllowDrop = $false
+        )
+
+        [pscustomobject]@{
+            MinUserCount = $MinUsers
+            MaxUserDropPercent = $MaxDrop
+            AllowUserDrop = $AllowDrop
+        }
+    }
+
+    function New-KoxoGuardPayload {
+        param([int]$UserCount)
+        [pscustomobject]@{ userCount = $UserCount }
+    }
+
+    It 'defaults to a threshold that can actually fire' {
+        # Regression : le defaut valait 100, or la comparaison est strictement
+        # superieure et une chute ne peut pas depasser 100 %. Le garde-fou ne
+        # pouvait donc JAMAIS se declencher.
+        $configuration = Get-KoxoSyncConfiguration -CsvTargetPath 'C:\tmp\clients.csv' -Overrides @{
+            KOXO_API_URL = 'https://localhost/api'
+            KOXO_API_TOKEN = 'T'
+        }
+        $configuration.MaxUserDropPercent | Should BeLessThan 100
+    }
+
+    It 'blocks a drop beyond the threshold' {
+        {
+            Test-KoxoGuardRails `
+                -Configuration (New-KoxoGuardConfiguration -MaxDrop 20) `
+                -Payload (New-KoxoGuardPayload -UserCount 5) `
+                -State ([pscustomobject]@{ lastUserCount = 10 })
+        } | Should Throw 'exceeds KOXO_MAX_USER_DROP_PERCENT'
+    }
+
+    It 'names the escape hatch in the refusal message' {
+        # Un refus sans issue documentee pousse a desactiver le garde-fou en
+        # bricolant, ce qui le supprime durablement.
+        {
+            Test-KoxoGuardRails `
+                -Configuration (New-KoxoGuardConfiguration -MaxDrop 20) `
+                -Payload (New-KoxoGuardPayload -UserCount 5) `
+                -State ([pscustomobject]@{ lastUserCount = 10 })
+        } | Should Throw 'KOXO_ALLOW_USER_DROP'
+    }
+
+    It 'allows a drop within the threshold' {
+        $result = Test-KoxoGuardRails `
+            -Configuration (New-KoxoGuardConfiguration -MaxDrop 20) `
+            -Payload (New-KoxoGuardPayload -UserCount 9) `
+            -State ([pscustomobject]@{ lastUserCount = 10 })
+        $result.DropPercent | Should Be 10
+        $result.Bypassed | Should Be $false
+    }
+
+    It 'lets an explicit override through and flags it as bypassed' {
+        $result = Test-KoxoGuardRails `
+            -Configuration (New-KoxoGuardConfiguration -MaxDrop 20 -AllowDrop $true) `
+            -Payload (New-KoxoGuardPayload -UserCount 1) `
+            -State ([pscustomobject]@{ lastUserCount = 10 })
+        $result.Bypassed | Should Be $true
+        $result.DropPercent | Should Be 90
+    }
+
+    It 'does not block the very first run, which has no baseline' {
+        $result = Test-KoxoGuardRails `
+            -Configuration (New-KoxoGuardConfiguration -MaxDrop 20) `
+            -Payload (New-KoxoGuardPayload -UserCount 3) `
+            -State $null
+        $result.BaselineUserCount | Should Be 0
+        $result.DropPercent | Should Be 0
+    }
+
+    It 'survives a state file that predates lastUserCount' {
+        # StrictMode : lire une propriete absente sur un PSCustomObject leve.
+        $result = Test-KoxoGuardRails `
+            -Configuration (New-KoxoGuardConfiguration -MaxDrop 20) `
+            -Payload (New-KoxoGuardPayload -UserCount 3) `
+            -State ([pscustomobject]@{ hash = 'abc' })
+        $result.BaselineUserCount | Should Be 0
+    }
+
+    It 'still enforces the absolute floor' {
+        {
+            Test-KoxoGuardRails `
+                -Configuration (New-KoxoGuardConfiguration -MinUsers 2) `
+                -Payload (New-KoxoGuardPayload -UserCount 1) `
+                -State $null
+        } | Should Throw 'KOXO_MIN_USER_COUNT'
+    }
+}

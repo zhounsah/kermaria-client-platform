@@ -93,6 +93,29 @@ revanche l'appartenance aux groupes `GG_*` n'est **pas** pilotee par le CSV,
 elle reste du ressort de l'API — une synchronisation ne peut donc pas defaire
 une revocation d'essai echu.
 
+#### Garde-fou de volumetrie
+
+Consequence directe : un export **partiel mais valide** — requete interrompue,
+client filtre par erreur — coupe l'acces de vrais clients sans lever la moindre
+erreur. La validation du CSV protege d'un fichier *corrompu*, pas d'un fichier
+*incomplet*.
+
+`KOXO_MAX_USER_DROP_PERCENT` (defaut `20`) refuse donc la synchronisation quand
+le nombre de lignes chute de plus de ce pourcentage par rapport au dernier
+export reussi, memorise dans `koxo-sync.state.json`. Le premier passage, qui n'a
+pas de reference, ne bloque jamais.
+
+Pour une baisse legitime, `KOXO_ALLOW_USER_DROP=true` laisse passer et marque le
+passage `bypassed` dans le journal. Le releve (`user_count`,
+`baseline_user_count`, `drop_percent`) est ecrit a **chaque** execution, y
+compris quand le controle passe : un garde-fou muet ne se distingue pas d'un
+garde-fou absent le jour ou l'on cherche a comprendre une desactivation en
+masse.
+
+> Le defaut valait `100` jusqu'a la V0.41, ce qui le rendait inoperant : la
+> comparaison est strictement superieure et une chute ne peut pas depasser
+> 100 %.
+
 ### Autres attributs renseignes
 
 `sn`, `givenName`, `displayName`, `mail`, `userPrincipalName`,
@@ -142,7 +165,8 @@ est consulte.
 - `KOXO_CSV_ENCODING` optionnelle, `utf8bom` par defaut ; toute autre valeur
   expose a une perte d'accents, voir la section « Encodage »
 - `KOXO_MIN_USER_COUNT`
-- `KOXO_MAX_USER_DROP_PERCENT`
+- `KOXO_MAX_USER_DROP_PERCENT` optionnelle, **`20` par defaut**
+- `KOXO_ALLOW_USER_DROP` optionnelle, `false` par defaut
 - `KOXO_SYNC_TIMEOUT_SECONDS`
 - `KOXO_LOG_DIRECTORY`
 - `KOXO_KOXO_LOG_GLOB`

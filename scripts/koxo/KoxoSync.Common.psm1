@@ -39,7 +39,17 @@ function Get-KoxoSyncConfiguration {
         # d'environnement ne servant qu'à en sortir volontairement.
         CsvEncoding = (Get-KoxoSetting -Name 'KOXO_CSV_ENCODING' -DefaultValue 'utf8bom' -Overrides $Overrides).ToLowerInvariant()
         MinUserCount = [int](Get-KoxoSetting -Name 'KOXO_MIN_USER_COUNT' -DefaultValue '0' -Overrides $Overrides)
-        MaxUserDropPercent = [int](Get-KoxoSetting -Name 'KOXO_MAX_USER_DROP_PERCENT' -DefaultValue '100' -Overrides $Overrides)
+        # 20 et non 100 : à 100 le garde-fou ne pouvait pas se déclencher, la
+        # comparaison étant STRICTEMENT supérieure et une chute ne pouvant pas
+        # dépasser 100 %. Il était donc décoratif. Or retirer une ligne du CSV
+        # vaut ordre de désactivation côté KoXo (DisableOrphanedAccounts) : un
+        # export partiel — requête interrompue, client filtré par erreur —
+        # coupe l'accès de vrais clients sans qu'aucune erreur ne soit levée.
+        MaxUserDropPercent = [int](Get-KoxoSetting -Name 'KOXO_MAX_USER_DROP_PERCENT' -DefaultValue '20' -Overrides $Overrides)
+        # Sortie de secours pour une baisse légitime (résiliations groupées).
+        # Explicite et journalisée : on veut que contourner le garde-fou soit
+        # un geste conscient, pas un effet de bord d'une variable oubliée.
+        AllowUserDrop = Test-KoxoBooleanSetting -Name 'KOXO_ALLOW_USER_DROP' -Overrides $Overrides
         SyncTimeoutSeconds = [int](Get-KoxoSetting -Name 'KOXO_SYNC_TIMEOUT_SECONDS' -DefaultValue '90' -Overrides $Overrides)
         LogDirectory = $logDirectory
         KoxoLogGlob = Get-KoxoSetting -Name 'KOXO_KOXO_LOG_GLOB' -DefaultValue '' -Overrides $Overrides
@@ -128,7 +138,14 @@ function Invoke-KoxoSync {
         }
 
         $state = Read-KoxoSyncState -StatePath $configuration.StatePath
-        Test-KoxoGuardRails -Configuration $configuration -Payload $payload -State $state
+        $guardRails = Test-KoxoGuardRails -Configuration $configuration -Payload $payload -State $state
+        Write-KoxoSyncLog -Configuration $configuration -Level 'info' -Message 'KoXo guardrails evaluated.' -Data @{
+            user_count = $guardRails.UserCount
+            baseline_user_count = $guardRails.BaselineUserCount
+            drop_percent = $guardRails.DropPercent
+            max_drop_percent = $guardRails.MaxDropPercent
+            bypassed = $guardRails.Bypassed
+        }
 
         $csvContent = ConvertTo-KoxoCsvContent -Users $payload.users
         $fileHash = Get-KoxoSha256Hex -Text $csvContent
@@ -835,11 +852,33 @@ function Test-KoxoGuardRails {
         throw ("userCount {0} is below KOXO_MIN_USER_COUNT ({1})." -f $userCount, $Configuration.MinUserCount)
     }
 
-    if ($State -and $State.lastUserCount -gt 0 -and $userCount -lt $State.lastUserCount) {
-        $dropPercent = [math]::Round((($State.lastUserCount - $userCount) / [double]$State.lastUserCount) * 100, 2)
+    $baseline = 0
+    if ($State -and (Get-KoxoPropertyNames -InputObject $State) -contains 'lastUserCount') {
+        $baseline = [int]$State.lastUserCount
+    }
+
+    $dropPercent = 0
+    $bypassed = $false
+    if ($baseline -gt 0 -and $userCount -lt $baseline) {
+        $dropPercent = [math]::Round((($baseline - $userCount) / [double]$baseline) * 100, 2)
         if ($dropPercent -gt $Configuration.MaxUserDropPercent) {
-            throw ("userCount drop {0}% exceeds KOXO_MAX_USER_DROP_PERCENT ({1})." -f $dropPercent, $Configuration.MaxUserDropPercent)
+            if (-not $Configuration.AllowUserDrop) {
+                throw ("userCount drop {0}% (from {1} to {2}) exceeds KOXO_MAX_USER_DROP_PERCENT ({3}). Set KOXO_ALLOW_USER_DROP=true to proceed deliberately." -f $dropPercent, $baseline, $userCount, $Configuration.MaxUserDropPercent)
+            }
+
+            $bypassed = $true
         }
+    }
+
+    # Rendu à l'appelant pour être journalisé à CHAQUE passage, y compris quand
+    # le contrôle passe : un garde-fou muet ne se distingue pas d'un garde-fou
+    # absent le jour où l'on cherche à comprendre une désactivation en masse.
+    [pscustomobject]@{
+        UserCount = $userCount
+        BaselineUserCount = $baseline
+        DropPercent = $dropPercent
+        MaxDropPercent = $Configuration.MaxUserDropPercent
+        Bypassed = $bypassed
     }
 }
 
