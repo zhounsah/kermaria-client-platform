@@ -141,4 +141,18 @@ public interface ISignupRepository
         string portalUserId,
         string passwordHash,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Identifiant <c>CLI-NNNNNN</c> publie dans le CSV KoXo pour cet
+    /// utilisateur, ou <c>null</c> s'il n'en a pas.
+    /// </summary>
+    /// <remarks>
+    /// KoXo le reporte dans l'attribut <c>employeeNumber</c> de l'identite
+    /// qu'il cree. C'est la seule cle de rattachement fiable : le nom subit une
+    /// translitteration et le <c>sAMAccountName</c> est derive par KoXo, donc
+    /// aucun des deux n'est predictible cote application.
+    /// </remarks>
+    Task<string?> GetKoxoUniqueIdentifierAsync(
+        string portalUserId,
+        CancellationToken cancellationToken);
 }

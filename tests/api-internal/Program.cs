@@ -3513,6 +3513,7 @@ async Task RunSignupKoxoWebhookTriggerTestsAsync()
         5000,
         25,
         true);
+    var adMembershipStore = new MockAdGroupMembershipStore();
     var service = new SignupService(
         signupRepository,
         new MockSubscriptionRepository(new MockSubscriptionStore()),
@@ -3520,8 +3521,9 @@ async Task RunSignupKoxoWebhookTriggerTestsAsync()
         new PortalPasswordService(),
         new MockActiveDirectoryService(
             adConfiguration,
-            new MockAdGroupMembershipStore()),
+            adMembershipStore),
         new MockActiveDirectoryLinkRepository(),
+        new MockAdGroupProvisioner(adMembershipStore),
         trigger,
         new SignupRuntimeConfiguration(true, 3, 1, 24, 24, false),
         new EmailRuntimeConfiguration(
