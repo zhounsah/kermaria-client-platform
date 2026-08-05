@@ -2955,6 +2955,13 @@ fieldset.form-field > .form-hint {
   gap: 0 26px;
 }
 
+/* La marge basse ne sert qu'a detacher la liste de ce qui la suit (aide,
+   boutons). Quand la liste ferme son panneau, comme sur la fiche profil, elle
+   ne produit qu'un vide sous la derniere ligne. */
+.profile-details:last-child {
+  margin-bottom: 0;
+}
+
 .profile-details div {
   padding: 15px 0;
   border-top: 1px solid var(--border);
