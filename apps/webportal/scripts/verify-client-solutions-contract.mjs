@@ -80,8 +80,22 @@ assert.match(payloads, /isAbsoluteWebUrl\(payload\.targetUrl\)/);
 // Exposition publique
 assert.match(publicRouteConfig, /"\/solutions"/);
 assert.match(publicShell, /href="\/solutions"/);
-assert.match(sitemap, /path: "\/solutions"/);
 assert.match(adminNav, /\/admin\/solutions/);
+
+// La page reste publique et atteignable, mais volontairement hors index :
+// c'est un portail d'acces client, pas une page vitrine (audit SEO du
+// 5 aout 2026). Elle sort donc du sitemap et porte un `noindex, follow`.
+// Le detail de la coherence avec `robots.txt` est verifie par `test:seo`.
+assert.doesNotMatch(
+  sitemap,
+  /path: "\/solutions"/,
+  "/solutions est hors index : elle ne doit plus figurer au sitemap.",
+);
+assert.match(
+  solutionsPage,
+  /robots:\s*\{\s*index:\s*false,\s*follow:\s*true\s*\}/,
+  "/solutions doit rester hors index via ses metadonnees `robots`.",
+);
 
 // Page vitrine
 assert.match(solutionsPage, /getPublicClientSolutionPortal/);
