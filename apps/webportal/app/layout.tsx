@@ -44,6 +44,9 @@ export async function generateMetadata(): Promise<Metadata> {
       description: SITE_DESCRIPTION,
       url: baseUrl,
     },
+    // `summary` sans image n'a aucun interet : l'`opengraph-image` de la
+    // racine fournit desormais le visuel, dont `twitter:image` herite.
+    twitter: { card: "summary_large_image" },
   };
 }
 
