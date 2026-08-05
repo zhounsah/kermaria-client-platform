@@ -107,7 +107,7 @@ export default async function ProfilePage() {
             </dl>
           </section>
 
-          <aside className="content-panel security-panel">
+          <aside className="content-panel">
             <SectionHeading
               description="État de la session et actions de sécurité disponibles."
               title="Sécurité du compte"

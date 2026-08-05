@@ -2972,8 +2972,12 @@ fieldset.form-field > .form-hint {
   font-weight: 650;
 }
 
-.security-panel {
-  align-self: start;
+/* Les deux colonnes du profil ont des hauteurs tres inegales : la fiche de
+   coordonnees est courte, le panneau de securite long. Sans `start`, la grille
+   etire la colonne la plus courte et laisse un grand vide sous sa derniere
+   ligne. Regle portee par la grille pour valoir dans les deux sens. */
+.profile-layout {
+  align-items: start;
 }
 
 .session-action {
