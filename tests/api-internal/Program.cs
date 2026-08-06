@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Data.Common;
 using System.Net;
 using System.Net.Http.Headers;
@@ -78,6 +78,7 @@ async Task<int> RunAsync(string[] arguments)
         await RunServiceAuthenticationGuardTestsAsync();
         await RunKoxoExportHttpTestsAsync();
         await RunKoxoExportServiceTestsAsync();
+        await RunKoxoPendingPasswordTestsAsync();
         await RunKoxoSyncWebhookTriggerServiceTestsAsync();
         await RunSignupKoxoWebhookTriggerTestsAsync();
         await RunDisabledAccountTestAsync();
@@ -3164,7 +3165,7 @@ async Task RunKoxoExportServiceTestsAsync()
             "1992-10-02",
             "zoe.aardvark@example.invalid")
     ]);
-    var sortableService = new KoxoExportService(sortableRepository);
+    var sortableService = new KoxoExportService(sortableRepository, NewPendingPasswordStore());
     var sortablePayload = await sortableService.ExportAsync(
         "api",
         "v0.40-koxo-sort",
@@ -3226,7 +3227,7 @@ async Task RunKoxoExportServiceTestsAsync()
             null,
             "charlie.sansdate@example.invalid")
     ]);
-    var invalidService = new KoxoExportService(invalidRepository);
+    var invalidService = new KoxoExportService(invalidRepository, NewPendingPasswordStore());
     KoxoValidationException? validationException = null;
     try
     {
@@ -3524,6 +3525,7 @@ async Task RunSignupKoxoWebhookTriggerTestsAsync()
             adMembershipStore),
         new MockActiveDirectoryLinkRepository(),
         new MockAdGroupProvisioner(adMembershipStore),
+        NewPendingPasswordStore(),
         trigger,
         new SignupRuntimeConfiguration(true, 3, 1, 24, 24, false),
         new EmailRuntimeConfiguration(
@@ -3559,6 +3561,63 @@ async Task RunSignupKoxoWebhookTriggerTestsAsync()
         && trigger.Requests[0].PortalUserId == userId
         && trigger.Requests[0].CustomerReference == customerReference,
         "Le set-password doit declencher exactement une notification KoXo pour SRV-21.");
+}
+
+static KoxoPendingPasswordStore NewPendingPasswordStore()
+    => new(LoggerFactory.Create(_ => { }).CreateLogger<KoxoPendingPasswordStore>());
+
+async Task RunKoxoPendingPasswordTestsAsync()
+{
+    var repository = new InMemoryKoxoRepository(
+    [
+        new KoxoExportCandidate(
+            "portal-user-1",
+            "CLI-A",
+            "CLI-000001",
+            "madame",
+            "Aardvark",
+            "Zoe",
+            "1992-10-02",
+            "zoe.aardvark@example.invalid")
+    ]);
+    var store = NewPendingPasswordStore();
+    var service = new KoxoExportService(repository, store);
+
+    store.Publish("portal-user-1", "NOT_A_REAL_PASSWORD_V041");
+
+    // Le tableau de bord rejoue la preparation a la demande. S'il consommait
+    // l'entree, le mot de passe disparaitrait avant d'atteindre KoXo — et
+    // serait au passage affiche a l'administrateur dans l'apercu.
+    var dashboard = await service.GetDashboardAsync(CancellationToken.None);
+    Ensure(
+        dashboard.Preview is not null
+        && dashboard.Preview.Users.All(user => user.MotDePasse is null),
+        "L'apercu admin ne doit jamais porter de mot de passe.");
+
+    var exported = await service.ExportAsync(
+        "api",
+        "v0.41-koxo-password",
+        "127.0.0.1",
+        CancellationToken.None);
+    Ensure(
+        exported.Users.Single().MotDePasse == "NOT_A_REAL_PASSWORD_V041",
+        "L'export reel doit publier le mot de passe en attente.");
+
+    // Usage unique : un second export ne doit pas republier le mot de passe,
+    // sinon KoXo le reappliquerait indefiniment a chaque synchronisation et
+    // annulerait tout changement ulterieur.
+    var again = await service.ExportAsync(
+        "api",
+        "v0.41-koxo-password-2",
+        "127.0.0.1",
+        CancellationToken.None);
+    Ensure(
+        again.Users.Single().MotDePasse is null,
+        "Le mot de passe en attente doit etre a usage unique.");
+
+    Ensure(
+        store.Consume("portal-user-inconnu") is null,
+        "Un identifiant sans mot de passe en attente doit rendre null.");
 }
 
 static string HashTokenForTests(string token)

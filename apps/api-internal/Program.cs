@@ -266,6 +266,12 @@ builder.Services.AddSingleton(
     DemoConversionRuntimeConfiguration.Resolve(builder.Configuration));
 builder.Services.AddScoped<IDemoConversionService, DemoConversionService>();
 builder.Services.AddScoped<IDemoAccountService, DemoAccountService>();
+// Singleton : le mot de passe est publie par une requete (set-password) et
+// consomme par une autre (l'export declenche dans la foulee). Un enregistrement
+// scoped le perdrait entre les deux.
+builder.Services.AddSingleton<IKoxoPendingPasswordStore>(serviceProvider =>
+    new KoxoPendingPasswordStore(
+        serviceProvider.GetRequiredService<ILogger<KoxoPendingPasswordStore>>()));
 builder.Services.AddScoped<IKoxoExportService, KoxoExportService>();
 builder.Services.AddScoped<IRequestWorkflowService, RequestWorkflowService>();
 builder.Services.AddScoped<

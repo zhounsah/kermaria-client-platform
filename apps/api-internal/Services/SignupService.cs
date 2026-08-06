@@ -99,6 +99,7 @@ public sealed class SignupService : ISignupService
     private readonly IActiveDirectoryService _activeDirectoryService;
     private readonly IActiveDirectoryLinkRepository _activeDirectoryLinkRepository;
     private readonly IAdGroupProvisioner _adGroupProvisioner;
+    private readonly IKoxoPendingPasswordStore _pendingPasswords;
     private readonly IKoxoSyncWebhookTriggerService _koxoSyncWebhookTriggerService;
     private readonly SignupRuntimeConfiguration _configuration;
     private readonly EmailRuntimeConfiguration _emailConfiguration;
@@ -113,6 +114,7 @@ public sealed class SignupService : ISignupService
         IActiveDirectoryService activeDirectoryService,
         IActiveDirectoryLinkRepository activeDirectoryLinkRepository,
         IAdGroupProvisioner adGroupProvisioner,
+        IKoxoPendingPasswordStore pendingPasswords,
         IKoxoSyncWebhookTriggerService koxoSyncWebhookTriggerService,
         SignupRuntimeConfiguration configuration,
         EmailRuntimeConfiguration emailConfiguration,
@@ -126,6 +128,7 @@ public sealed class SignupService : ISignupService
         _activeDirectoryService = activeDirectoryService;
         _activeDirectoryLinkRepository = activeDirectoryLinkRepository;
         _adGroupProvisioner = adGroupProvisioner;
+        _pendingPasswords = pendingPasswords;
         _koxoSyncWebhookTriggerService = koxoSyncWebhookTriggerService;
         _configuration = configuration;
         _emailConfiguration = emailConfiguration;
@@ -855,23 +858,42 @@ public sealed class SignupService : ISignupService
             adUserObject = adUser.directoryObject;
         }
 
-        var passwordResult = await _activeDirectoryService.SetUserPasswordAsync(
-            record.ApprovedCustomerReference,
-            adUserObject!.SamAccountName,
-            password,
-            cancellationToken);
-        if (passwordResult.StatusCode >= 400 || passwordResult.Value is null)
+        if (_adConfiguration.KoxoOwnsDirectory)
         {
-            return MapAdProvisioningFailure(
-                passwordResult,
-                "Le mot de passe Active Directory n'a pas pu etre applique.");
+            // On n'ecrit PAS le mot de passe par LDAP. Avec ForcePasswords=1,
+            // KoXo reecrit le mot de passe de l'annuaire a chaque
+            // synchronisation depuis la colonne 14 du CSV : une ecriture LDAP
+            // serait ecrasee au passage suivant et le client perdrait
+            // NextCloud, RDS et le VPN sans aucune erreur visible. On publie
+            // donc le mot de passe pour l'export, et le declenchement qui suit
+            // dans ApplyPasswordAsync le fait appliquer par KoXo.
+            _pendingPasswords.Publish(record.ApprovedUserId, password);
+        }
+        else
+        {
+            // Mode Mock : aucun KoXo derriere, c'est bien a l'application
+            // d'appliquer le mot de passe, sans quoi le compte simule resterait
+            // desactive et sans mot de passe.
+            var passwordResult = await _activeDirectoryService.SetUserPasswordAsync(
+                record.ApprovedCustomerReference,
+                adUserObject!.SamAccountName,
+                password,
+                cancellationToken);
+            if (passwordResult.StatusCode >= 400 || passwordResult.Value is null)
+            {
+                return MapAdProvisioningFailure(
+                    passwordResult,
+                    "Le mot de passe Active Directory n'a pas pu etre applique.");
+            }
+
+            adUserObject = passwordResult.Value;
         }
 
         await _activeDirectoryLinkRepository.UpsertPortalUserLinkAsync(
             record.ApprovedCustomerReference,
             record.ApprovedUserId,
             actorUserId: null,
-            passwordResult.Value,
+            adUserObject!,
             _adConfiguration.Domain,
             "succeeded",
             now,

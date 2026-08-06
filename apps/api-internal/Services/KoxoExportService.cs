@@ -50,10 +50,14 @@ public sealed class KoxoExportService : IKoxoExportService
         new("^CLI-\\d{6}$", RegexOptions.Compiled);
 
     private readonly IKoxoRepository _repository;
+    private readonly IKoxoPendingPasswordStore _pendingPasswords;
 
-    public KoxoExportService(IKoxoRepository repository)
+    public KoxoExportService(
+        IKoxoRepository repository,
+        IKoxoPendingPasswordStore pendingPasswords)
     {
         _repository = repository;
+        _pendingPasswords = pendingPasswords;
     }
 
     public bool IsPersistent => _repository.IsPersistent;
@@ -64,7 +68,9 @@ public sealed class KoxoExportService : IKoxoExportService
         string? sourceAddress,
         CancellationToken cancellationToken)
     {
-        var prepared = await PrepareAsync(cancellationToken);
+        var prepared = await PrepareAsync(
+            consumePendingPasswords: true,
+            cancellationToken);
         await PersistRunAsync(
             source,
             correlationId,
@@ -83,7 +89,9 @@ public sealed class KoxoExportService : IKoxoExportService
     public async Task<KoxoAdminDashboard> GetDashboardAsync(
         CancellationToken cancellationToken)
     {
-        var prepared = await PrepareAsync(cancellationToken);
+        var prepared = await PrepareAsync(
+            consumePendingPasswords: false,
+            cancellationToken);
         return await BuildDashboardAsync(prepared, cancellationToken);
     }
 
@@ -92,7 +100,9 @@ public sealed class KoxoExportService : IKoxoExportService
         string? sourceAddress,
         CancellationToken cancellationToken)
     {
-        var prepared = await PrepareAsync(cancellationToken);
+        var prepared = await PrepareAsync(
+            consumePendingPasswords: false,
+            cancellationToken);
         await PersistRunAsync(
             "admin_validation",
             correlationId,
@@ -122,7 +132,15 @@ public sealed class KoxoExportService : IKoxoExportService
             ? DemoGroupReference
             : candidate.KoxoGroupReference ?? candidate.CustomerReference;
 
+    /// <param name="consumePendingPasswords">
+    /// Vrai pour le seul export reel. Le tableau de bord et la validation
+    /// admin passent faux : ils rejouent <see cref="PrepareAsync"/> a la
+    /// demande, et consommer la un mot de passe a usage unique le ferait
+    /// disparaitre avant d'atteindre KoXo — en plus de l'exposer dans
+    /// l'apercu montre a l'administrateur.
+    /// </param>
     private async Task<KoxoPreparedExport> PrepareAsync(
+        bool consumePendingPasswords,
         CancellationToken cancellationToken)
     {
         var candidates = (await _repository.ListExportCandidatesAsync(cancellationToken))
@@ -193,7 +211,10 @@ public sealed class KoxoExportService : IKoxoExportService
                 birthDate!,
                 identifiantUnique!,
                 groupeSecondaire!,
-                email!));
+                email!,
+                consumePendingPasswords
+                    ? _pendingPasswords.Consume(candidate.PortalUserId)
+                    : null));
         }
 
         foreach (var duplicate in candidates

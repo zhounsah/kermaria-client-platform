@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Kermaria.ApiInternal.Contracts;
 
 public sealed record KoxoExportUser(
@@ -7,7 +9,12 @@ public sealed record KoxoExportUser(
     string DateNaissance,
     string IdentifiantUnique,
     string GroupeSecondaire,
-    string Email);
+    string Email,
+    // Alimente la colonne 14 du CSV, que KoXo applique a l'annuaire. Omis du
+    // JSON quand il n'y a rien a publier : KoXo conserve alors le mot de passe
+    // qu'il connait deja, au lieu de le remplacer par une valeur vide.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? MotDePasse = null);
 
 public sealed record KoxoInvalidUser(
     string? IdentifiantUnique,

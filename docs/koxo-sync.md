@@ -73,6 +73,33 @@ Un huitieme champ **facultatif** peut s'y ajouter :
   journalise : `Write-KoxoSyncLog` ecarte toute cle nommee `token`, `password`,
   `motdepasse` ou `secret`.
 
+### Comment le mot de passe atteint l'export
+
+L'export est un instantane complet regenere a la demande, alors que le mot de
+passe n'existe en clair qu'a l'instant ou le client le saisit. Il faut donc le
+retenir entre les deux, et c'est le role de
+`Services/KoxoPendingPasswordStore.cs` :
+
+- **en memoire**, pas en base. Persister le mot de passe en clair dans MariaDB
+  creerait un magasin de secrets durable pour un besoin qui dure quelques
+  secondes ;
+- **a usage unique**. Un second export ne republie pas le mot de passe, sinon
+  KoXo le reappliquerait a chaque synchronisation et annulerait tout changement
+  ulterieur ;
+- **a duree bornee** (15 min), et une entree qui expire sans etre consommee est
+  journalisee en avertissement — la divergence portail/annuaire ne doit pas
+  etre silencieuse.
+
+Seul l'export **reel** consomme l'entree. Le tableau de bord admin et la
+validation rejouent la preparation a la demande : ils passent
+`consumePendingPasswords: false`, faute de quoi un simple affichage ferait
+disparaitre le mot de passe avant KoXo, et l'exposerait dans l'apercu.
+
+**Limite assumee** : un redemarrage de l'API, ou un deploiement multi-instances
+sans affinite de session, perd l'entree. Le mot de passe du portail reste
+correct, seul l'alignement annuaire est manque, et le client peut redefinir son
+mot de passe pour relancer le cycle.
+
 Le CSV genere 14 colonnes avec `;` comme separateur :
 
 1. `civilite`
