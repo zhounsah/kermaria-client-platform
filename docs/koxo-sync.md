@@ -77,7 +77,13 @@ Chaque utilisateur exporte contient exactement 8 champs JSON :
 Un neuvieme champ **facultatif** peut s'y ajouter :
 
 - `motDePasse` — alimente la colonne 14. Publie, KoXo l'applique a l'annuaire ;
-  absent, KoXo conserve le mot de passe qu'il connait deja. Il n'est jamais
+  **absent, KoXo reapplique le mot de passe qu'il detient dans sa propre base**.
+  Nuance mesuree le 2026-08-06, et elle compte : avec `ForcePasswords=1` le
+  journal affiche « Mot de passe force » et `pwdLastSet` change **meme quand la
+  colonne 14 est vide** — KoXo ne s'abstient pas, il reecrit ce qu'il sait. Le
+  compte reste donc authentifiable avec son mot de passe courant, mais c'est
+  KoXo, et non l'annuaire, qui fait autorite. Une valeur perdue de sa base
+  serait perdue tout court. Il n'est jamais
   journalise : `Write-KoxoSyncLog` ecarte toute cle nommee `token`, `password`,
   `motdepasse` ou `secret`.
 
@@ -183,6 +189,26 @@ L'argument le plus fort n'est pas le quota : avec un CSV unique et
 desactive de vrais clients payants**. Separer cloisonne le rayon d'action de
 chaque synchronisation.
 
+**L'ordre des profils compte.** Le lanceur passe `CLIENTS` puis `CLIENTS DÉMO`,
+ce qui est correct pour le sens habituel (conversion demo -> payant) : le profil
+de destination reprend l'identite avant que celui d'origine ne balaye ses
+orphelins. Pour une migration en sens inverse, il faut passer le profil de
+destination **d'abord**, a la main, sinon l'identite est supprimee par le premier
+passage avant d'avoir ete reprise par le second.
+
+**Ce qu'une migration entre groupes primaires conserve et ce qu'elle perd**
+(mesure sur un compte reel le 2026-08-06) :
+
+| Conserve | Perdu |
+|---|---|
+| mot de passe (authentification verifiee apres coup) | **appartenance aux groupes `GG_*`** — a reappliquer |
+| `allowLogon` (RDS), `sAMAccountName`, `employeeNumber` | |
+| compte actif, `HomeDirectory` / `HomeDrive` | |
+
+La perte des `GG_*` corrige une note anterieure : une synchronisation ordinaire
+ne les touche pas — verifie — mais **un deplacement entre groupes primaires les
+efface**.
+
 Points de vigilance verifies en reel :
 
 - le **groupe primaire doit preexister** — l'IHM le cree, le CSV non. Un profil
@@ -227,6 +253,23 @@ donc une instruction** : KoXo desactive les comptes absents du fichier. En
 revanche l'appartenance aux groupes `GG_*` n'est **pas** pilotee par le CSV,
 elle reste du ressort de l'API — une synchronisation ne peut donc pas defaire
 une revocation d'essai echu.
+
+> ### Un compte retire du CSV est SUPPRIME, pas desactive
+>
+> Mesure en reel le 2026-08-06 : deux identites absentes du CSV ont disparu de
+> l'annuaire, introuvables par `sAMAccountName`. Les profils portent
+> `<SyncDoNotDeleteUsers>0</SyncDoNotDeleteUsers>`, qui l'emporte sur le nom
+> rassurant de `DisableOrphanedAccounts`. `BackupDeletedUsersData=1` sauvegarde
+> les donnees, **pas le compte**.
+>
+> La suppression est irreversible et le compte recree recevra un **SID
+> different** : les ACL de fichiers, les acces RDS et tout ce qui reference le
+> SID sont perdus. Partout ou ce document dit « desactive », lire « supprime ».
+> C'est ce qui donne leur portee reelle aux garde-fous ci-dessous.
+>
+> **Recommandation** : passer `SyncDoNotDeleteUsers` a `1` sur les deux profils,
+> pour que l'oubli d'une ligne coute une desactivation reversible plutot qu'une
+> suppression definitive. Non applique a ce jour — c'est une decision produit.
 
 #### Garde-fou de volumetrie
 
