@@ -44,7 +44,10 @@ Navigation par besoin :
   (webportal, **Ubuntu/systemd**) et
   [`docs/v1.1/deploy/SRV-13_LOT3_DEPLOY.md`](docs/v1.1/deploy/SRV-13_LOT3_DEPLOY.md)
   (api-internal, Windows)
-- synchronisation KoXo : [`docs/koxo-sync.md`](docs/koxo-sync.md)
+- synchronisation KoXo : [`docs/koxo-sync.md`](docs/koxo-sync.md) — **KoXo est
+  maitre de l'annuaire depuis la V0.41** : il cree les identites et porte les
+  mots de passe, l'API adopte les comptes par `employeeNumber` et n'ecrit plus
+  par LDAP. Deux profils separes, `CLIENTS` et `CLIENTS DÉMO`
 - pieges d'exploitation verifies en production : section « Exploitation » de
   [`AGENTS.md`](AGENTS.md)
 
