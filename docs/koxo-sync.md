@@ -267,9 +267,29 @@ une revocation d'essai echu.
 > SID sont perdus. Partout ou ce document dit « desactive », lire « supprime ».
 > C'est ce qui donne leur portee reelle aux garde-fous ci-dessous.
 >
-> **Recommandation** : passer `SyncDoNotDeleteUsers` a `1` sur les deux profils,
-> pour que l'oubli d'une ligne coute une desactivation reversible plutot qu'une
-> suppression definitive. Non applique a ce jour — c'est une decision produit.
+> **Applique le 2026-08-06** : `SyncDoNotDeleteUsers` vaut desormais `1` sur les
+> deux profils. Un orphelin est **desactive**, plus supprime. Ce qui precede
+> reste ecrit ici parce que le drapeau peut se defaire, et que son nom ne dit pas
+> ce qu'il fait.
+
+#### Le cycle desabonnement / reabonnement
+
+Mesure de bout en bout le 2026-08-06, avec les profils reels :
+
+| Passage | CSV | Etat du compte |
+|---|---|---|
+| A | identite presente | cree, actif |
+| B | identite retiree | **desactive**, toujours present |
+| C | identite de retour | **reactive automatiquement** |
+
+Le compte qui revient conserve son `SID`, son `sAMAccountName`, son
+`employeeNumber`, son dossier personnel et **son mot de passe** — verifie par
+authentification reelle. Rien n'est a refaire cote annuaire, et l'adoption par
+`employeeNumber` cote API retrouve le compte tel quel.
+
+C'est ce qui rend le reabonnement possible sans renommer ni recreer : une
+suppression aurait donne un SID different, donc des ACL de fichiers et des acces
+RDS perdus.
 
 #### Garde-fou de volumetrie
 
