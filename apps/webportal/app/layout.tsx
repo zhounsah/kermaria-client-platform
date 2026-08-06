@@ -14,6 +14,18 @@ const SITE_TITLE = "Zachary HOUNSA-HOUNKPA EI - Espace client professionnel";
 const SITE_DESCRIPTION =
   "Espace client professionnel de Zachary HOUNSA-HOUNKPA EI : catalogue d'offres, facturation, paiements et demandes d'assistance.";
 
+/**
+ * TODO (chantier ISR, hors passe SEO du 5 aout 2026) — `await headers()` ici
+ * et `getCurrentPortalSession()` dans le composant sont des Dynamic APIs.
+ * Appelees dans le layout RACINE, elles basculent l'arbre entier en rendu
+ * par requete : les `export const revalidate = 300` de `/offres`,
+ * `/a-propos`, `/cgv`, `/mentions-legales`, `/politique-confidentialite` et
+ * `/offres/[slug]` n'ont aucun effet, et la production repond
+ * `cache-control: private, no-cache, no-store` sur toutes les pages
+ * publiques. Corriger suppose de sortir la session d'`AppShell` et de tenir
+ * l'hote public autrement que par les en-tetes : ca touche l'architecture,
+ * pas seulement les metadonnees.
+ */
 export async function generateMetadata(): Promise<Metadata> {
   const baseUrl = getPortalPublicUrlFromHeaders(await headers());
 
@@ -32,6 +44,9 @@ export async function generateMetadata(): Promise<Metadata> {
       description: SITE_DESCRIPTION,
       url: baseUrl,
     },
+    // `summary` sans image n'a aucun interet : l'`opengraph-image` de la
+    // racine fournit desormais le visuel, dont `twitter:image` herite.
+    twitter: { card: "summary_large_image" },
   };
 }
 

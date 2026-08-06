@@ -239,6 +239,51 @@ date que la recalculer a chaque requete, ce qui annonce a tort tout le site
 comme modifie a chaque passage du robot. Garde-fou statique : `npm run
 test:seo`.
 
+### Canonical, balisage schema.org et hors-index (v1.1.12)
+
+Les six controles se font sur le **HTML servi**, pas sur le code. Depuis un
+poste qui atteint la vitrine :
+
+```bash
+for p in / /offres /solutions /a-propos /contact /cgv /mentions-legales \
+         /politique-confidentialite /offres/dossier-securise; do
+  printf '%-34s ' "$p"
+  curl -sS "https://www.zacharyhounsa.ovh$p" \
+    | grep -o '<link rel="canonical"[^>]*>'
+done
+
+curl -sS https://www.zacharyhounsa.ovh/cgv | grep -c '<h1'
+curl -sS https://www.zacharyhounsa.ovh/ \
+  | grep -oE '<meta [^>]*(og:image|twitter:card)[^>]*>'
+curl -sS https://www.zacharyhounsa.ovh/solutions \
+  | grep -o '<meta name="robots"[^>]*>'
+curl -sS https://www.zacharyhounsa.ovh/sitemap.xml | grep -c '<loc>'
+```
+
+Attendu : **une** canonical par page et une seule ; `1` sur le compte de
+`<h1>` de `/cgv` comme de `/politique-confidentialite` ; `og:image` present
+et `twitter:card` a `summary_large_image` ; `noindex, follow` sur
+`/solutions` comme sur `/signup` ; `11` URL au sitemap, sans `/solutions`.
+
+Deux pieges verifies en recette, a ne pas prendre pour des regressions :
+
+- la canonical de l'accueil est `https://www.zacharyhounsa.ovh` **sans**
+  slash final, alors que le sitemap ecrit `…/`. Next normalise ainsi tout
+  chemin racine (`resolve-url.js`, branche `pathname === "/"`) et seul
+  `trailingSlash: true` changerait ce comportement. Les deux formes designent
+  la meme URL (RFC 3986 §6.2.3, chemin vide equivalent a `/`) ;
+- `/solutions` et `/signup` sont hors index **par leurs metadonnees**, et
+  volontairement absentes du `Disallow` de `robots.txt` : une URL bloquee au
+  crawl n'est jamais exploree, donc son `noindex` ne serait jamais lu.
+  Ajouter l'une de ces routes au `Disallow` annulerait la desindexation.
+  `npm run test:seo` echoue si les deux directives se contredisent.
+
+Le balisage se controle sur <https://validator.schema.org/> : quatre blocs
+attendus, `LocalBusiness` et `WebSite` sur l'accueil, `Service` et
+`BreadcrumbList` sur chaque fiche de pack. Le detail de ce qui est publie
+— et de ce qui ne l'est volontairement pas — est dans
+[`v1.1/V1.1.12_SEO_BALISAGE.md`](v1.1/V1.1.12_SEO_BALISAGE.md).
+
 ### Retirer un add_header en trop sur SRV-11
 
 > **Applique le 2026-08-05.** Les huit directives ont ete retirees et nginx

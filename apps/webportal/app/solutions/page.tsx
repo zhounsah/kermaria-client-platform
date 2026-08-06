@@ -9,6 +9,16 @@ export const metadata: Metadata = {
   title: "Solutions",
   description:
     "Portail d'accès aux solutions mises à disposition des clients : cliquez sur une tuile pour ouvrir le service correspondant.",
+  alternates: { canonical: "/solutions" },
+  // Portail d'acces client, pas une page vitrine : ~115 mots, aucun `h2`,
+  // aucun trafic a en attendre, et elle tire vers le bas la qualite moyenne
+  // percue du site. `follow` reste actif pour que les liens sortants
+  // continuent de transmettre.
+  //
+  // Volontairement PAS de `Disallow` dans `robots.ts` : une URL bloquee au
+  // crawl n'est jamais exploree, donc ce `noindex` ne serait jamais lu. Les
+  // deux directives sont contradictoires.
+  robots: { index: false, follow: true },
 };
 
 export const revalidate = 300;

@@ -8,6 +8,7 @@ export const metadata: Metadata = {
   title: "Conditions générales de vente",
   description:
     "Conditions générales de vente applicables aux prestations de Zachary HOUNSA-HOUNKPA EI.",
+  alternates: { canonical: "/cgv" },
 };
 
 export const revalidate = 300;

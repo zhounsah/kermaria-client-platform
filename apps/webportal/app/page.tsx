@@ -15,22 +15,14 @@ import {
   resolvePortalAreaUrl,
   resolvePortalRoleUrl,
 } from "@/lib/public-route-config";
+import { JsonLd, localBusinessJsonLd, webSiteJsonLd } from "@/lib/seo";
 
 export const metadata: Metadata = {
   title: "Sauvegarde distante et continuité d'activité",
   description:
     "Sauvegarde distante et stockage documentaire à Guichen pour les particuliers, associations et petites entreprises : une copie de vos fichiers importants conservée hors de vos locaux.",
+  alternates: { canonical: "/" },
 };
-
-function organizationJsonLd(baseUrl: string) {
-  return {
-    "@context": "https://schema.org",
-    "@type": "Organization",
-    name: "Zachary HOUNSA-HOUNKPA EI",
-    url: baseUrl,
-    sameAs: [],
-  };
-}
 
 const METHOD_STEPS = [
   {
@@ -150,13 +142,8 @@ export default async function HomePage() {
 
   return (
     <>
-      <script
-        type="application/ld+json"
-        // Schema.org structured data - safe inlined JSON, generated server-side.
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify(organizationJsonLd(baseUrl)),
-        }}
-      />
+      <JsonLd data={localBusinessJsonLd(baseUrl)} />
+      <JsonLd data={webSiteJsonLd(baseUrl)} />
 
       <section className="vitrine-hero">
         <p className="eyebrow">Zachary IT — Guichen</p>

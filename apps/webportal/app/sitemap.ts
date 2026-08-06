@@ -29,7 +29,10 @@ type PublicRouteEntry = {
 const PUBLIC_ROUTE_ENTRIES: PublicRouteEntry[] = [
   { path: "/", changeFrequency: "monthly", priority: 1 },
   { path: "/offres", changeFrequency: "weekly", priority: 0.9 },
-  { path: "/solutions", changeFrequency: "weekly", priority: 0.8 },
+  // `/solutions` est volontairement absente : portail d'acces client et non
+  // page vitrine, elle est retiree de l'index par ses metadonnees `robots`
+  // (`app/solutions/page.tsx`). Un sitemap qui declare une URL non
+  // indexable envoie deux signaux contraires.
   {
     path: "/a-propos",
     changeFrequency: "monthly",
@@ -95,7 +98,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         const lastModified = await resolveLastModified(contentKey);
 
         return {
-          url: `${baseUrl}${path === "/" ? "" : path}`,
+          // `new URL` et non une concatenation : l'accueil sortait
+          // `https://www.zacharyhounsa.ovh` sans slash final la ou la
+          // canonical de la page vaut `…/`. Deux chaines pour une meme
+          // page, donc deux URL du point de vue de Google.
+          url: new URL(path, baseUrl).toString(),
           ...(lastModified ? { lastModified } : {}),
           changeFrequency,
           priority,

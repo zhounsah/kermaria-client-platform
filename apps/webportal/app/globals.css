@@ -5612,9 +5612,13 @@ fieldset.form-field > .form-hint {
   margin-bottom: 0;
 }
 
+/* Le decalage des niveaux dans `ManagedMarkdown` fait descendre les titres
+   les plus profonds jusqu'a h6 : la regle doit couvrir toute la plage. */
 .managed-markdown h2,
 .managed-markdown h3,
-.managed-markdown h4 {
+.managed-markdown h4,
+.managed-markdown h5,
+.managed-markdown h6 {
   margin: 1.8rem 0 0.7rem;
   letter-spacing: -0.02em;
 }

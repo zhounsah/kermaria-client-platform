@@ -16,6 +16,7 @@ export const metadata: Metadata = {
   title: "Contact",
   description:
     "Formulaire de contact pour échanger sur la sauvegarde distante, le dossier de secours numérique et les services Zachary IT.",
+  alternates: { canonical: "/contact" },
 };
 
 type ContactPageProps = {

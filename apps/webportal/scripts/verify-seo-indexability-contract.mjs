@@ -32,15 +32,41 @@ const PUBLIC_PATHS = [
   "/",
   "/offres",
   "/offres/pack-essentiel",
-  "/solutions",
   "/a-propos",
   "/contact",
   "/mentions-legales",
   "/politique-confidentialite",
   "/cgv",
-  "/signup",
   "/robots.txt",
   "/sitemap.xml",
+];
+
+/**
+ * Routes retirees de l'index par les metadonnees `robots` de leur page, et
+ * non par un en-tete ni par `robots.txt`.
+ *
+ * La distinction est le coeur du correctif : une URL en `Disallow` n'est
+ * jamais exploree, donc la directive de la page n'est jamais lue. Les deux
+ * mecanismes se contredisent, et c'est le blocage qui l'emporte.
+ */
+const METADATA_NOINDEX_PAGES = [
+  ["/solutions", "app/solutions/page.tsx"],
+  ["/signup", "app/signup/page.tsx"],
+];
+
+/**
+ * Pages publiques a canonical statique, et fichier qui doit la declarer.
+ * `/offres/[slug]` est traitee a part : sa canonical est dynamique.
+ */
+const CANONICAL_PAGES = [
+  ["/", "app/page.tsx"],
+  ["/offres", "app/offres/page.tsx"],
+  ["/solutions", "app/solutions/page.tsx"],
+  ["/a-propos", "app/a-propos/page.tsx"],
+  ["/contact", "app/contact/page.tsx"],
+  ["/mentions-legales", "app/mentions-legales/page.tsx"],
+  ["/politique-confidentialite", "app/politique-confidentialite/page.tsx"],
+  ["/cgv", "app/cgv/page.tsx"],
 ];
 
 const matcherCache = new Map();
@@ -307,6 +333,106 @@ for (const [label, source] of [
     source,
     /["'`]noindex|X-Robots-Tag/i,
     `${label} ne doit poser aucun noindex.`,
+  );
+}
+
+// 14. Chaque page publique declare sa propre canonical.
+for (const [pathname, file] of CANONICAL_PAGES) {
+  const source = await read(file);
+  assert.match(
+    source,
+    new RegExp(
+      `alternates:\\s*\\{\\s*canonical:\\s*"${pathname.replace("/", "\\/")}"`,
+    ),
+    `${file} doit declarer \`alternates: { canonical: "${pathname}" }\`.`,
+  );
+}
+
+// 15. La fiche de pack canonicalise depuis `pack.slug`, pas depuis le `slug`
+//     de l'URL : la canonical reste unique si un alias est un jour accepte.
+const packSheetSource = await read("app/offres/[slug]/page.tsx");
+assert.match(
+  packSheetSource,
+  /alternates:\s*\{\s*canonical:\s*`\/offres\/\$\{pack\.slug\}`\s*\}/,
+  "La fiche de pack doit canonicaliser depuis `pack.slug`.",
+);
+
+// 16. Aucune canonical dans le layout racine. Les metadonnees Next.js sont
+//     heritees : une canonical posee la servirait de repli, et toute page
+//     qui oublierait la sienne heriterait silencieusement de `/`.
+const layoutSource = await read("app/layout.tsx");
+assert.doesNotMatch(
+  layoutSource,
+  /alternates\s*:/,
+  "Le layout racine ne doit declarer aucune canonical de repli.",
+);
+
+// 17. Les routes retirees de l'index le sont par leurs metadonnees, sans
+//     `Disallow` qui empecherait la directive d'etre lue.
+for (const [pathname, file] of METADATA_NOINDEX_PAGES) {
+  const source = await read(file);
+  assert.match(
+    source,
+    /robots:\s*\{\s*index:\s*false,\s*follow:\s*true\s*\}/,
+    `${file} doit poser \`robots: { index: false, follow: true }\`.`,
+  );
+
+  assert.ok(
+    !disallowed.some(
+      (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+    ),
+    `${pathname} est en Disallow : sa directive de page ne sera jamais lue.`,
+  );
+
+  assert.ok(
+    !sitemapPaths.includes(pathname),
+    `${pathname} est retiree de l'index mais publiee dans le sitemap.`,
+  );
+}
+
+// 18. Le sitemap normalise ses URL : l'accueil sortait sans slash final la
+//     ou sa canonical en porte un, soit deux chaines pour une meme page.
+assert.match(
+  sitemapSource,
+  /url:\s*new URL\(path, baseUrl\)\.toString\(\)/,
+  "Le sitemap doit batir ses URL avec `new URL(path, baseUrl)`.",
+);
+assert.doesNotMatch(
+  sitemapSource,
+  /path === "\/" \? "" : path/,
+  "L'accueil ne doit plus etre concatene sans slash final.",
+);
+
+// 19. Une image Open Graph par defaut existe a la racine, et la carte
+//     Twitter l'exploite : `summary` sans image n'a aucun interet.
+const ogImageSource = await read("app/opengraph-image.tsx");
+for (const field of ["alt", "size", "contentType"]) {
+  assert.match(
+    ogImageSource,
+    new RegExp(`export const ${field}\\b`),
+    `app/opengraph-image.tsx doit exporter \`${field}\`.`,
+  );
+}
+assert.match(
+  layoutSource,
+  /twitter:\s*\{\s*card:\s*"summary_large_image"\s*\}/,
+  "Le layout racine doit declarer une carte Twitter avec image.",
+);
+
+// 20. Le markdown administrable ne peut plus emettre de `h1` concurrent de
+//     celui de la page : les niveaux sont decales au rendu.
+const managedMarkdownSource = await read("components/ManagedMarkdown.tsx");
+for (const [from, to] of [
+  ["h1", "h2"],
+  ["h2", "h3"],
+  ["h3", "h4"],
+  ["h4", "h5"],
+  ["h5", "h6"],
+]) {
+  assert.match(
+    managedMarkdownSource,
+    new RegExp(`${from}:\\s*"${to}"`),
+    `ManagedMarkdown doit rendre \`${from}\` en \`${to}\`.`,
   );
 }
 

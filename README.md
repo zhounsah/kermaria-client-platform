@@ -39,6 +39,9 @@ Navigation par besoin :
 - portail public des solutions client `/solutions`, administrable depuis le
   back-office (V1.1) :
   [`docs/v1.1/V1.1_PORTAIL_SOLUTIONS.md`](docs/v1.1/V1.1_PORTAIL_SOLUTIONS.md)
+- referencement de la vitrine — canonical, balisage schema.org, image Open
+  Graph et routes hors index (v1.1.12) :
+  [`docs/v1.1/V1.1.12_SEO_BALISAGE.md`](docs/v1.1/V1.1.12_SEO_BALISAGE.md)
 - deploiement des serveurs applicatifs :
   [`docs/v1.1/deploy/SRV-12_LOT3_DEPLOY.md`](docs/v1.1/deploy/SRV-12_LOT3_DEPLOY.md)
   (webportal, **Ubuntu/systemd**) et
