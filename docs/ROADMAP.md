@@ -1138,6 +1138,38 @@ compris les hotes qui ne doivent **pas** rediriger, pour ecarter toute boucle),
 l'absence d'horodatage a la requete et le caractere public des deux routes.
 Verification en ligne : [`OPERATIONS.md`](OPERATIONS.md).
 
+Correctif **`v1.1.12`** : les six defauts restants du meme audit. Documentation
+dediee : [`v1.1/V1.1.12_SEO_BALISAGE.md`](v1.1/V1.1.12_SEO_BALISAGE.md).
+**Aucune** page n'emettait de `<link rel="canonical">` alors que
+`metadataBase` etait correct — le 301 apex couvre la variante d'hote, pas les
+variantes de query string (`?utm_source=`, `?fbclid=`), qui sont autant d'URL
+distinctes. La canonical est declaree page par page et **jamais** dans le
+layout racine : les metadata Next.js sont heritees, une canonical posee la
+servirait de repli et toute page qui oublierait la sienne heriterait
+silencieusement de `/` ; `test:seo` interdit desormais tout `alternates` dans
+`app/layout.tsx`. Le balisage schema.org passe d'un `Organization` quasi vide
+a quatre blocs — `LocalBusiness` et `WebSite` sur l'accueil, `Service` et
+`BreadcrumbList` sur chaque fiche de pack — centralises dans `lib/seo.tsx` ;
+`ProfessionalService` est ecarte, schema.org l'a **deprecie** pour cause de
+confusion avec `Service`. Rien n'y est invente : adresse, e-mail et SIRET
+viennent des mentions legales publiees, le telephone a ete confirme par
+l'editeur et ne figure nulle part dans le depot (`lib/mock-data.ts` n'en a
+qu'un gabarit), `openingHoursSpecification` et `priceRange` restent **absents**
+faute de valeur fiable — un `sameAs` mort ou un tarif invente sont des motifs
+d'action manuelle. `/cgv` emettait 4 `<h1>` et `/politique-confidentialite` 2 :
+`ManagedMarkdown` decale desormais les niveaux **au rendu** (h1 vers h2,
+jusqu'a h5 vers h6), corriger le markdown en base aurait saute a la premiere
+edition depuis le back-office. Une `og:image` 1200x630 est generee par
+`ImageResponse` plutot que committee en binaire, sans nom d'hote en dur pour
+rester juste sur `home.bzh` comme sur `zacharyhounsa.ovh`, et `twitter:card`
+passe a `summary_large_image`. Enfin `/solutions` (portail d'acces client,
+~115 mots) et `/signup` sortent de l'index par leurs **metadonnees** et non par
+`robots.txt` : une URL en `Disallow` n'est jamais exploree, donc son `noindex`
+n'est jamais lu — les deux directives sont contradictoires et `test:seo` echoue
+si elles se croisent. Le chantier ISR reste **hors perimetre** : `headers()` et
+`getCurrentPortalSession()` dans le layout racine neutralisent tous les
+`revalidate = 300`, un `TODO` le documente sur place.
+
 Ancrage infra (R740xd) : groupes dans `OU=Groupes_TEST`, comptes dans
 `OU=CLI-DEMO`, quota FSRM, collection RDS Clients-1 filtree par groupe,
 VLAN 64 `10.35.64.0/24`. Deploiement SRV-13 :
