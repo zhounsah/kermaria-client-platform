@@ -3173,11 +3173,11 @@ async Task RunKoxoExportServiceTestsAsync()
         CancellationToken.None);
 
     Ensure(
-        sortablePayload.SchemaVersion == 1
+        sortablePayload.SchemaVersion == 2
         && sortablePayload.UserCount == 3
         && sortablePayload.Users.Count == 3
         && DateTimeOffset.TryParse(sortablePayload.GeneratedAt, out _),
-        "Le payload KoXo valide doit exposer schemaVersion=1, un generatedAt ISO et un userCount exact.");
+        "Le payload KoXo valide doit exposer schemaVersion=2, un generatedAt ISO et un userCount exact.");
     EnsureSequenceEqual(
         sortablePayload.Users.Select(user => user.IdentifiantUnique).ToArray(),
         ["CLI-000001", "CLI-000010", "CLI-000002"],
@@ -3196,6 +3196,77 @@ async Task RunKoxoExportServiceTestsAsync()
         secondPayload.Users.Select(user => user.IdentifiantUnique).ToArray(),
         sortablePayload.Users.Select(user => user.IdentifiantUnique).ToArray(),
         "Un export KoXo repete ne doit pas recalculer les identifiants uniques.");
+
+    var splitRepository = new InMemoryKoxoRepository(
+    [
+        new KoxoExportCandidate(
+            "portal-user-paying",
+            "CLI-000001",
+            "CLI-000001",
+            "monsieur",
+            "Payant",
+            "Paul",
+            "1980-01-02",
+            "paul.payant@example.invalid"),
+        new KoxoExportCandidate(
+            "portal-user-trial",
+            "DEMO-abcdef0123456789abcdef",
+            "CLI-000002",
+            "madame",
+            "Essai",
+            "Emma",
+            "1990-05-06",
+            "emma.essai@example.invalid",
+            IsDemo: true,
+            KoxoGroupReference: "CLI-000042"),
+        new KoxoExportCandidate(
+            "portal-user-legacy-trial",
+            "DEMO-fedcba9876543210fedcba",
+            "CLI-000003",
+            "madame",
+            "Ancienne",
+            "Alice",
+            "1975-11-30",
+            "alice.ancienne@example.invalid",
+            IsDemo: true)
+    ]);
+    var splitService = new KoxoExportService(splitRepository, NewPendingPasswordStore());
+    var splitPayload = await splitService.ExportAsync(
+        "api",
+        "v1.1-koxo-split",
+        "127.0.0.1",
+        CancellationToken.None);
+
+    var payingUser = splitPayload.Users.Single(user =>
+        user.IdentifiantUnique == "CLI-000001");
+    var trialUser = splitPayload.Users.Single(user =>
+        user.IdentifiantUnique == "CLI-000002");
+    var legacyTrialUser = splitPayload.Users.Single(user =>
+        user.IdentifiantUnique == "CLI-000003");
+
+    Ensure(
+        payingUser.GroupePrimaire == "CLIENTS"
+        && trialUser.GroupePrimaire == "CLIENTS DÉMO"
+        && legacyTrialUser.GroupePrimaire == "CLIENTS DÉMO",
+        "L'export KoXo doit aiguiller chaque identite vers le groupe primaire de son profil.");
+
+    Ensure(
+        splitPayload.Users.All(user =>
+            user.GroupePrimaire is "CLIENTS" or "CLIENTS DÉMO"),
+        "Aucune identite ne doit porter un groupe primaire inconnu : elle n'atteindrait aucun CSV, donc passerait pour orpheline et serait desactivee.");
+
+    // Le prefixe n'est pas decoratif : KoXo ne cree un groupe secondaire que
+    // s'il est nouveau pour sa propre base. Avec le meme nom des deux cotes de
+    // la separation, l'identite migree perd son groupe DEFINITIVEMENT.
+    Ensure(
+        trialUser.GroupeSecondaire == "DEMO-CLI-000042"
+        && payingUser.GroupeSecondaire == "CLI-000001"
+        && trialUser.GroupeSecondaire != payingUser.GroupeSecondaire,
+        "Le groupe secondaire d'un essai doit deriver du code reserve avec un prefixe qui le distingue de l'OU definitive.");
+
+    Ensure(
+        legacyTrialUser.GroupeSecondaire == "DEMO-CLI-DEMO",
+        "Un essai cree avant la reservation systematique d'un code doit retomber sur l'OU commune, prefixee — l'exclure le ferait passer pour orphelin.");
 
     var invalidRepository = new InMemoryKoxoRepository(
     [

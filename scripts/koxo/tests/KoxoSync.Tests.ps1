@@ -1,13 +1,20 @@
 $modulePath = Join-Path (Split-Path -Parent $PSScriptRoot) 'KoxoSync.Common.psm1'
 Import-Module $modulePath -Force
 
+# Ce fichier n'a pas de marque d'ordre d'octets et PowerShell 5.1 le relirait
+# alors en ANSI : le nom du groupe primaire de demonstration s'ecrit donc par
+# code de caractere, jamais litteralement.
+$script:PrimaryGroupClients = 'CLIENTS'
+$script:PrimaryGroupDemo = 'CLIENTS D' + [char]0x00C9 + 'MO'
+
 function New-KoxoTestPayload {
     param(
-        [string]$Identifier = 'CLI-000001'
+        [string]$Identifier = 'CLI-000001',
+        [string]$PrimaryGroup = 'CLIENTS'
     )
 
     [pscustomobject]@{
-        schemaVersion = 1
+        schemaVersion = 2
         generatedAt = '2026-07-30T08:00:00.0000000Z'
         userCount = 1
         users = @(
@@ -19,6 +26,37 @@ function New-KoxoTestPayload {
                 identifiantUnique = $Identifier
                 groupeSecondaire = 'CLI-DEMO-0042'
                 email = 'zoe.hounsa@example.invalid'
+                groupePrimaire = $PrimaryGroup
+            }
+        )
+    }
+}
+
+function New-KoxoSplitTestPayload {
+    [pscustomobject]@{
+        schemaVersion = 2
+        generatedAt = '2026-08-06T08:00:00.0000000Z'
+        userCount = 2
+        users = @(
+            [pscustomobject]@{
+                civilite = 'M.'
+                nom = 'Payant'
+                prenom = 'Paul'
+                dateNaissance = '1980-01-02'
+                identifiantUnique = 'CLI-000001'
+                groupeSecondaire = 'CLI-000001'
+                email = 'paul.payant@example.invalid'
+                groupePrimaire = $script:PrimaryGroupClients
+            },
+            [pscustomobject]@{
+                civilite = 'Mme'
+                nom = 'Essai'
+                prenom = 'Emma'
+                dateNaissance = '1990-05-06'
+                identifiantUnique = 'CLI-000002'
+                groupeSecondaire = 'DEMO-CLI-000042'
+                email = 'emma.essai@example.invalid'
+                groupePrimaire = $script:PrimaryGroupDemo
             }
         )
     }
@@ -786,5 +824,252 @@ Describe 'Garde-fou zero identite traitee' {
         $r = Test-KoxoLogOutcome -GlobPattern (Join-Path $root '*') -ExpectedUserCount 1
         $r.ProcessedUserCount | Should Be 1
         $r.IsSuccessful | Should Be $true
+    }
+}
+
+Describe 'Separation des groupes primaires' {
+    $configurationOverrides = @{
+        KOXO_API_URL = 'https://localhost/api'
+        KOXO_API_TOKEN = 'T'
+    }
+
+    It 'exige groupePrimaire sur chaque utilisateur' {
+        $payload = New-KoxoTestPayload
+        $payload.users[0].PSObject.Properties.Remove('groupePrimaire')
+        $result = Test-KoxoExportPayload -Payload $payload
+        $result.IsValid | Should Be $false
+        (@($result.Errors | Where-Object { $_.Field -eq 'groupePrimaire' })).Count | Should Be 1
+    }
+
+    It 'refuse un export de schema 1, qui aiguille personne' {
+        # Refus symetrique volontaire : un payload sans groupePrimaire laisserait
+        # ce script ranger les identites au hasard entre deux CSV.
+        $payload = New-KoxoTestPayload
+        $payload.schemaVersion = 1
+        $result = Test-KoxoExportPayload -Payload $payload
+        $result.IsValid | Should Be $false
+        (@($result.Errors | Where-Object { $_.Field -eq 'schemaVersion' })).Count | Should Be 1
+    }
+
+    It 'enumere les groupes primaires publies' {
+        $groupes = @(Get-KoxoPayloadPrimaryGroups -Payload (New-KoxoSplitTestPayload))
+        $groupes.Count | Should Be 2
+        ($groupes -contains $script:PrimaryGroupClients) | Should Be $true
+        ($groupes -contains $script:PrimaryGroupDemo) | Should Be $true
+    }
+
+    It 'ne retient que les identites du groupe primaire demande' {
+        $filtre = Select-KoxoPayloadByPrimaryGroup -Payload (New-KoxoSplitTestPayload) -PrimaryGroup $script:PrimaryGroupClients
+        $filtre.userCount | Should Be 1
+        $filtre.users[0].identifiantUnique | Should Be 'CLI-000001'
+        $filtre.schemaVersion | Should Be 2
+    }
+
+    It 'produit deux sous-ensembles DISJOINTS et COMPLETS' {
+        # C est la propriete qui remplace la relecture des CSV voisins : si elle
+        # tient, aucun identifiant est revendique deux fois et aucun ne
+        # disparait, donc aucun passe pour orphelin, donc aucun est desactive.
+        $payload = New-KoxoSplitTestPayload
+        $payants = @((Select-KoxoPayloadByPrimaryGroup -Payload $payload -PrimaryGroup $script:PrimaryGroupClients).users)
+        $demos = @((Select-KoxoPayloadByPrimaryGroup -Payload $payload -PrimaryGroup $script:PrimaryGroupDemo).users)
+        ($payants.Count + $demos.Count) | Should Be 2
+        $communs = @($payants | Where-Object { $demos.identifiantUnique -contains $_.identifiantUnique })
+        $communs.Count | Should Be 0
+    }
+
+    It 'distingue accent dans le nom du groupe primaire' {
+        # CLIENTS DEMO sans accent ne designe AUCUN groupe existant cote KoXo,
+        # et une synchro qui vise un groupe primaire inexistant reussit sans rien
+        # faire. Le filtre ne doit donc pas etre indulgent la-dessus.
+        $filtre = Select-KoxoPayloadByPrimaryGroup -Payload (New-KoxoSplitTestPayload) -PrimaryGroup 'CLIENTS DEMO'
+        $filtre.userCount | Should Be 0
+    }
+
+    It 'tolere en revanche une difference de casse' {
+        $filtre = Select-KoxoPayloadByPrimaryGroup -Payload (New-KoxoSplitTestPayload) -PrimaryGroup 'clients'
+        $filtre.userCount | Should Be 1
+    }
+
+    It 'refuse un groupe primaire que personne ne prend en charge' {
+        {
+            Test-KoxoProfileRouting -Payload (New-KoxoSplitTestPayload) -PrimaryGroups @('CLIENTS')
+        } | Should Throw 'No KoXo profile claims primary group'
+    }
+
+    It 'refuse deux profils qui revendiquent le meme groupe primaire' {
+        {
+            Test-KoxoProfileRouting -Payload (New-KoxoSplitTestPayload) -PrimaryGroups @('CLIENTS', 'CLIENTS')
+        } | Should Throw 'claimed by more than one'
+    }
+
+    It 'accepte un aiguillage complet' {
+        $routing = Test-KoxoProfileRouting `
+            -Payload (New-KoxoSplitTestPayload) `
+            -PrimaryGroups @($script:PrimaryGroupClients, $script:PrimaryGroupDemo)
+        @($routing.ClaimedGroups).Count | Should Be 2
+    }
+
+    It 'donne un fichier etat PAR PROFIL' {
+        # Un etat partage ferait alterner deux volumetries differentes et le
+        # garde-fou de chute se declencherait a chaque passage.
+        $c1 = Get-KoxoSyncConfiguration -CsvTargetPath 'C:\tmp\clients.csv' -Overrides $configurationOverrides
+        $c2 = Get-KoxoSyncConfiguration -CsvTargetPath 'C:\tmp\clients-demo.csv' -Overrides $configurationOverrides
+        $c1.StatePath | Should Not Be $c2.StatePath
+    }
+
+    It 'garde en revanche un verrou COMMUN' {
+        # KoXoAdm.exe ne supporte pas deux instances : les profils doivent
+        # attendre leur tour.
+        $c1 = Get-KoxoSyncConfiguration -CsvTargetPath 'C:\tmp\clients.csv' -Overrides $configurationOverrides
+        $c2 = Get-KoxoSyncConfiguration -CsvTargetPath 'C:\tmp\clients-demo.csv' -Overrides $configurationOverrides
+        $c1.LockPath | Should Be $c2.LockPath
+    }
+
+    It 'refuse par defaut de vider un CSV' {
+        $configuration = Get-KoxoSyncConfiguration -CsvTargetPath 'C:\tmp\clients.csv' -Overrides $configurationOverrides
+        $configuration.AllowEmptyCsv | Should Be $false
+    }
+
+    It 'laisse intact le CSV un profil vide et ne lance pas KoXo' {
+        $racine = Join-Path $env:TEMP ('koxo-vide-' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $racine -Force | Out-Null
+        $cible = Join-Path $racine 'clients-demo.csv'
+        Write-KoxoTextFile -Path $cible -Content 'CONTENU-EXISTANT' -EncodingName 'utf8'
+
+        $resultat = Invoke-KoxoSync `
+            -CsvTargetPath $cible `
+            -WorkingDirectory (Join-Path $racine 'work') `
+            -Overrides $configurationOverrides `
+            -LaunchKoxo `
+            -PrimaryGroup $script:PrimaryGroupDemo `
+            -PayloadObject (New-KoxoTestPayload -PrimaryGroup $script:PrimaryGroupClients)
+
+        $resultat.Status | Should Be 'skipped_empty_profile'
+        $resultat.UserCount | Should Be 0
+        # Le fichier existant doit rester INTACT : ecraser par un CSV vide
+        # vaudrait ordre de desactivation de toute la branche.
+        (Get-Content -LiteralPath $cible -Raw) | Should Match 'CONTENU-EXISTANT'
+    }
+
+    It 'refuse un export multi-groupes sans aiguillage' {
+        $racine = Join-Path $env:TEMP ('koxo-multi-' + [guid]::NewGuid().ToString('N'))
+        {
+            Invoke-KoxoSync `
+                -CsvTargetPath (Join-Path $racine 'clients.csv') `
+                -WorkingDirectory (Join-Path $racine 'work') `
+                -Overrides $configurationOverrides `
+                -DryRun `
+                -PayloadObject (New-KoxoSplitTestPayload)
+        } | Should Throw 'no -PrimaryGroup was given'
+    }
+
+    It 'ecrit un CSV a 14 colonnes ne contenant que le groupe demande' {
+        $racine = Join-Path $env:TEMP ('koxo-filtre-' + [guid]::NewGuid().ToString('N'))
+        $resultat = Invoke-KoxoSync `
+            -CsvTargetPath (Join-Path $racine 'clients-demo.csv') `
+            -WorkingDirectory (Join-Path $racine 'work') `
+            -Overrides $configurationOverrides `
+            -PrimaryGroup $script:PrimaryGroupDemo `
+            -PayloadObject (New-KoxoSplitTestPayload)
+
+        $resultat.Status | Should Be 'synchronized'
+        $resultat.UserCount | Should Be 1
+        $contenu = Get-Content -LiteralPath $resultat.TargetPath -Raw
+        $contenu | Should Match 'CLI-000002'
+        $contenu | Should Not Match 'CLI-000001'
+        # Le groupe primaire aiguille, il ne ecrit pas : il est porte par le
+        # profil KoXo, et une 15e colonne decalerait toute la ligne.
+        $contenu | Should Not Match 'CLIENTS'
+        Test-KoxoCsvFile -Path $resultat.TargetPath | Should Be $true
+    }
+
+    It 'donne au groupe secondaire de demo un nom DIFFERENT du definitif' {
+        # Mesure en reel : avec le meme nom des deux cotes, KoXo croit le groupe
+        # deja existant, ne le cree pas dans la nouvelle branche, et identite
+        # migree perd son groupe definitivement.
+        $payload = New-KoxoSplitTestPayload
+        $demo = $payload.users | Where-Object { $_.groupePrimaire -eq $script:PrimaryGroupDemo }
+        $payant = $payload.users | Where-Object { $_.groupePrimaire -eq $script:PrimaryGroupClients }
+        $demo.groupeSecondaire | Should Not Be $payant.groupeSecondaire
+        $demo.groupeSecondaire.StartsWith('DEMO-') | Should Be $true
+    }
+}
+
+Describe 'Invoke-KoxoSyncProfiles' {
+    $configurationOverrides = @{
+        KOXO_API_URL = 'https://localhost/api'
+        KOXO_API_TOKEN = 'T'
+    }
+
+    It 'ecrit un CSV par profil a partir un SEUL export' {
+        $racine = Join-Path $env:TEMP ('koxo-profils-' + [guid]::NewGuid().ToString('N'))
+        $resultats = @(Invoke-KoxoSyncProfiles `
+            -Profiles @(
+                @{ PrimaryGroup = $script:PrimaryGroupClients; CsvTargetPath = (Join-Path $racine 'clients.csv'); KoxoSyncArgument = '/Synchro=CLIENTS.xml' },
+                @{ PrimaryGroup = $script:PrimaryGroupDemo; CsvTargetPath = (Join-Path $racine 'clients-demo.csv'); KoxoSyncArgument = '/Synchro=CLIENTS-DEMO.xml' }
+            ) `
+            -WorkingDirectory (Join-Path $racine 'work') `
+            -Overrides $configurationOverrides `
+            -PayloadObject (New-KoxoSplitTestPayload))
+
+        $resultats.Count | Should Be 2
+        $resultats[0].UserCount | Should Be 1
+        $resultats[1].UserCount | Should Be 1
+        (Get-Content -LiteralPath $resultats[0].TargetPath -Raw) | Should Match 'CLI-000001'
+        (Get-Content -LiteralPath $resultats[1].TargetPath -Raw) | Should Match 'CLI-000002'
+    }
+
+    It 'refuse de demarrer si une identite est prise par aucun profil' {
+        # Sans ce controle identite disparaitrait de tous les CSV, donc
+        # passerait pour orpheline, donc serait desactivee.
+        $racine = Join-Path $env:TEMP ('koxo-orphelin-' + [guid]::NewGuid().ToString('N'))
+        {
+            Invoke-KoxoSyncProfiles `
+                -Profiles @(
+                    @{ PrimaryGroup = $script:PrimaryGroupClients; CsvTargetPath = (Join-Path $racine 'clients.csv'); KoxoSyncArgument = '/Synchro=CLIENTS.xml' }
+                ) `
+                -WorkingDirectory (Join-Path $racine 'work') `
+                -Overrides $configurationOverrides `
+                -PayloadObject (New-KoxoSplitTestPayload)
+        } | Should Throw 'No KoXo profile claims primary group'
+    }
+
+    It 'exige que chaque profil soit completement decrit' {
+        $racine = Join-Path $env:TEMP ('koxo-incomplet-' + [guid]::NewGuid().ToString('N'))
+        {
+            Invoke-KoxoSyncProfiles `
+                -Profiles @(
+                    @{ PrimaryGroup = 'CLIENTS'; CsvTargetPath = (Join-Path $racine 'clients.csv') }
+                ) `
+                -WorkingDirectory (Join-Path $racine 'work') `
+                -Overrides $configurationOverrides `
+                -PayloadObject (New-KoxoTestPayload)
+        } | Should Throw 'missing KoxoSyncArgument'
+    }
+
+    It 'neutralise la relecture des CSV voisins, perimes en cours de passage' {
+        # Un client qui vient de changer de branche figure dans le nouveau
+        # fichier ET encore dans ancien tant que celui-ci a pas ete reecrit.
+        # Le controle par fichiers le prendrait pour un conflit et bloquerait
+        # exactement la conversion que on cherche a rendre possible.
+        $racine = Join-Path $env:TEMP ('koxo-voisins-' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $racine -Force | Out-Null
+        $demo = Join-Path $racine 'clients-demo.csv'
+        Write-KoxoTextFile `
+            -Path $demo `
+            -Content "Civilite;Nom;Prenom;DateNaissance;IdentifiantUnique;GroupeSecondaire;Email;A;B;C;D;E;F;G`r`nM.;Payant;Paul;1980-01-02;CLI-000001;DEMO-CLI-000042;p@x.invalid;;;;;;;`r`n" `
+            -EncodingName 'utf8bom'
+
+        $resultats = @(Invoke-KoxoSyncProfiles `
+            -Profiles @(
+                @{ PrimaryGroup = $script:PrimaryGroupClients; CsvTargetPath = (Join-Path $racine 'clients.csv'); KoxoSyncArgument = '/Synchro=CLIENTS.xml' },
+                @{ PrimaryGroup = $script:PrimaryGroupDemo; CsvTargetPath = $demo; KoxoSyncArgument = '/Synchro=CLIENTS-DEMO.xml' }
+            ) `
+            -WorkingDirectory (Join-Path $racine 'work') `
+            -Overrides ($configurationOverrides + @{ KOXO_OTHER_CSV_PATHS = $demo }) `
+            -PayloadObject (New-KoxoSplitTestPayload))
+
+        $resultats.Count | Should Be 2
+        $resultats[0].UserCount | Should Be 1
     }
 }

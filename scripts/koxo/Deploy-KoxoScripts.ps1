@@ -73,7 +73,9 @@ $DeployableFiles = @(
 # Jamais ecrasables : propriete du serveur ou de KoXo.
 $ProtectedNames = @(
     'CLIENTS.xml',
+    'CLIENTS-DEMO.xml',
     'clients.csv',
+    'clients-demo.csv',
     'koxo-webhook-token.txt',
     'backups',
     'Logs',
@@ -365,13 +367,24 @@ try {
                 Set-Item -Path ("env:{0}" -f $k) -Value $machine[$k]
             }
 
+            # -PrimaryGroup obligatoire depuis la separation : l'export publie
+            # deux groupes primaires, et une synchro sans aiguillage est
+            # desormais refusee — c'est justement ce qu'on veut verifier ici.
+            # Le nom s'ecrit par code de caractere, la session distante ne
+            # garantissant pas l'encodage de ce bloc de script.
             $result = & (Join-Path $Destination 'Sync-KoXoClients.ps1') `
                 -CsvTargetPath (Join-Path $Destination 'clients.csv') `
                 -WorkingDirectory (Join-Path $Destination 'work') `
+                -PrimaryGroup 'CLIENTS' `
                 -DryRun
 
-            $bytes = [System.IO.File]::ReadAllBytes($result.TempPath)
-            Remove-Item -LiteralPath $result.TempPath -Force -ErrorAction SilentlyContinue
+            # TempPath vaut $null quand le profil est saute faute d'identite a
+            # publier : la validation doit le dire, pas planter dessus.
+            $bytes = @()
+            if ($result.TempPath) {
+                $bytes = [System.IO.File]::ReadAllBytes($result.TempPath)
+                Remove-Item -LiteralPath $result.TempPath -Force -ErrorAction SilentlyContinue
+            }
 
             [pscustomobject]@{
                 Status = $result.Status

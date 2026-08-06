@@ -79,8 +79,11 @@ check("service KoXo impose un schema ferme et une validation bloquante", () => {
   assert.match(koxoContracts, /string DateNaissance/);
   assert.match(koxoContracts, /string IdentifiantUnique/);
   assert.match(koxoContracts, /string GroupeSecondaire/);
+  // Aiguillage vers le bon profil KoXo, donc vers le bon CSV : sans lui, un
+  // fichier unique melangerait payants et demonstrations sous un seul modele.
+  assert.match(koxoContracts, /string GroupePrimaire/);
   assert.match(koxoContracts, /string Email/);
-  assert.match(koxoService, /SchemaVersion = 1/);
+  assert.match(koxoService, /SchemaVersion = 2/);
   assert.match(koxoService, /IdentifierPattern/);
   assert.match(koxoService, /KoxoValidationException/);
   assert.match(koxoService, /validation_failed/);

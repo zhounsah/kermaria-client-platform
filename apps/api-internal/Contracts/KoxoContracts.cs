@@ -10,6 +10,13 @@ public sealed record KoxoExportUser(
     string IdentifiantUnique,
     string GroupeSecondaire,
     string Email,
+    // N'alimente AUCUNE colonne du CSV : le groupe primaire est porte par le
+    // profil KoXo (le XML), pas par le fichier. Ce champ sert uniquement a
+    // AIGUILLER chaque identite vers le bon profil, donc vers le bon CSV. Sans
+    // lui, un seul fichier melangerait payants et demos, et le modele KoXo — qui
+    // ne s'associe qu'a un unique groupe primaire — appliquerait le quota des uns
+    // aux autres.
+    string GroupePrimaire,
     // Alimente la colonne 14 du CSV, que KoXo applique a l'annuaire. Omis du
     // JSON quand il n'y a rien a publier : KoXo conserve alors le mot de passe
     // qu'il connait deja, au lieu de le remplacer par une valeur vide.

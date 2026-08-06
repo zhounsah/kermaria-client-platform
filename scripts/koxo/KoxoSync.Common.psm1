@@ -50,6 +50,13 @@ function Get-KoxoSyncConfiguration {
         # Explicite et journalisée : on veut que contourner le garde-fou soit
         # un geste conscient, pas un effet de bord d'une variable oubliée.
         AllowUserDrop = Test-KoxoBooleanSetting -Name 'KOXO_ALLOW_USER_DROP' -Overrides $Overrides
+        # Un CSV vide n'est pas un CSV « sans changement » : avec
+        # DisableOrphanedAccounts, il vaut ordre de désactivation de TOUTES les
+        # identités de la branche. Le garde-fou de volumétrie ne couvre pas ce
+        # cas au premier passage, où la référence vaut zéro. Par défaut on saute
+        # donc le profil en laissant son fichier en l'état — périmé vaut mieux
+        # que destructeur — et il faut ce drapeau pour vider délibérément.
+        AllowEmptyCsv = Test-KoxoBooleanSetting -Name 'KOXO_ALLOW_EMPTY_CSV' -Overrides $Overrides
         # Les autres CSV de la meme installation, separes par « ; ». Sert a
         # verifier qu'aucun IdentifiantUnique n'est revendique par deux profils.
         OtherCsvPaths = @(
@@ -64,7 +71,15 @@ function Get-KoxoSyncConfiguration {
         CsvTargetPath = $targetPath
         WorkingDirectory = $workRoot
         BackupDirectory = Join-Path $targetDirectory 'backups'
-        StatePath = Join-Path $logDirectory 'koxo-sync.state.json'
+        # Un état PAR PROFIL, nommé d'après son CSV. Un état partagé ferait
+        # alterner les références de deux profils de tailles différentes : la
+        # baisse apparente déclencherait le garde-fou de volumétrie à chaque
+        # passage, sur une variation qui n'existe pas.
+        StatePath = Join-Path $logDirectory (
+            'koxo-sync.state.{0}.json' -f [System.IO.Path]::GetFileNameWithoutExtension($targetPath)
+        )
+        # Le verrou, lui, reste COMMUN à tous les profils, et c'est voulu :
+        # KoXoAdm.exe ne supporte pas deux instances concurrentes.
         LockPath = Join-Path $logDirectory 'koxo-sync.lock'
         LogPath = Join-Path $logDirectory ("koxo-sync-{0}.log" -f (Get-Date -Format 'yyyyMMdd'))
     }
@@ -113,6 +128,13 @@ function Invoke-KoxoSync {
 
         [string]$KoxoSyncArgument = '/Synchro=CLIENTS.xml',
 
+        # Groupe primaire pris en charge par ce profil. Seules les identites qui
+        # le portent atteignent le CSV. Facultatif pour rester utilisable sur une
+        # installation mono-profil, mais un export qui en publie plusieurs sans
+        # aiguillage est refuse : ecrire les deux populations dans le meme
+        # fichier ferait appliquer le modele et le quota des uns aux autres.
+        [string]$PrimaryGroup,
+
         $PayloadObject
     )
 
@@ -142,6 +164,47 @@ function Invoke-KoxoSync {
                 errors = $validation.Errors
             }
             throw (New-Object System.InvalidOperationException('KOXO_EXPORT_VALIDATION_FAILED'))
+        }
+
+        $payloadGroups = @(Get-KoxoPayloadPrimaryGroups -Payload $payload)
+        if ($PrimaryGroup) {
+            $payload = Select-KoxoPayloadByPrimaryGroup -Payload $payload -PrimaryGroup $PrimaryGroup
+            Write-KoxoSyncLog -Configuration $configuration -Level 'info' -Message 'KoXo payload filtered on its primary group.' -Data @{
+                primary_group = $PrimaryGroup
+                selected_user_count = [int]$payload.userCount
+                payload_primary_groups = $payloadGroups
+            }
+        }
+        elseif ($payloadGroups.Count -gt 1) {
+            throw (
+                "Payload publishes {0} primary groups ({1}) but no -PrimaryGroup was given. A single CSV cannot serve two KoXo profiles." -f
+                $payloadGroups.Count,
+                ($payloadGroups -join ', ')
+            )
+        }
+
+        # Avant tout le reste : un profil sans identite laisse son CSV EN L'ETAT
+        # et ne lance pas KoXo. Ecrire un fichier vide reviendrait a declarer
+        # orpheline chaque identite de la branche, donc a les desactiver toutes.
+        if ([int]$payload.userCount -eq 0 -and -not $configuration.AllowEmptyCsv) {
+            Write-KoxoSyncLog -Configuration $configuration -Level 'warning' -Message 'KoXo profile skipped: the export publishes no identity for it.' -Data @{
+                primary_group = $PrimaryGroup
+                target_path = $configuration.CsvTargetPath
+            }
+
+            return [pscustomobject]@{
+                Status = 'skipped_empty_profile'
+                UserCount = 0
+                PrimaryGroup = $PrimaryGroup
+                CsvEncoding = $configuration.CsvEncoding
+                Hash = $null
+                TempPath = $null
+                TargetPath = $configuration.CsvTargetPath
+                BackupPath = $null
+                LogPath = $configuration.LogPath
+                KoxoLaunch = $null
+                ApplicationLogs = @()
+            }
         }
 
         $state = Read-KoxoSyncState -StatePath $configuration.StatePath
@@ -219,6 +282,7 @@ function Invoke-KoxoSync {
         $result = [pscustomobject]@{
             Status = if ($DryRun) { 'dry_run' } elseif ($LaunchKoxo) { 'synchronized_and_launched' } else { 'synchronized' }
             UserCount = [int]$payload.userCount
+            PrimaryGroup = $PrimaryGroup
             CsvEncoding = $configuration.CsvEncoding
             Hash = $fileHash
             TempPath = $tempPath
@@ -254,6 +318,106 @@ function Invoke-KoxoSync {
             Release-KoxoFileLock -LockHandle $lock
         }
     }
+}
+
+function Invoke-KoxoSyncProfiles {
+    [CmdletBinding()]
+    param(
+        # Un profil par entree : @{ PrimaryGroup = ...; CsvTargetPath = ...;
+        # KoxoSyncArgument = ... }.
+        [Parameter(Mandatory = $true)]
+        [object[]]$Profiles,
+
+        [string]$WorkingDirectory = (Join-Path $PSScriptRoot 'work'),
+
+        [hashtable]$Overrides = @{},
+
+        [switch]$DryRun,
+
+        [switch]$LaunchKoxo,
+
+        [string]$KoxoExecutablePath = 'C:\Program Files\KoXo Dev\KoXoAdm\KoXoAdm.exe',
+
+        [string]$KoxoWorkingDirectory = 'C:\Program Files\KoXo Dev\KoXoAdm',
+
+        $PayloadObject
+    )
+
+    if ($Profiles.Count -eq 0) {
+        throw 'At least one KoXo profile must be declared.'
+    }
+
+    foreach ($profil in $Profiles) {
+        foreach ($cle in @('PrimaryGroup', 'CsvTargetPath', 'KoxoSyncArgument')) {
+            if (-not $profil.ContainsKey($cle) -or [string]::IsNullOrWhiteSpace([string]$profil[$cle])) {
+                throw ("KoXo profile entry is missing {0}." -f $cle)
+            }
+        }
+    }
+
+    # L'export n'est appele QU'UNE FOIS, et le meme objet sert tous les profils.
+    # Ce n'est pas une optimisation : l'API ne detient les mots de passe en clair
+    # que le temps d'un export, et les consomme en les publiant. Un second appel
+    # rendrait un payload sans colonne 14, et le profil servi en second
+    # n'appliquerait aucun mot de passe.
+    $configurationAmorce = Get-KoxoSyncConfiguration `
+        -CsvTargetPath ([string]$Profiles[0].CsvTargetPath) `
+        -WorkingDirectory $WorkingDirectory `
+        -Overrides $Overrides
+
+    if ($null -eq $PayloadObject) {
+        $payload = Invoke-KoxoApiRequest -Configuration $configurationAmorce
+    }
+    else {
+        $payload = $PayloadObject
+    }
+
+    $validation = Test-KoxoExportPayload -Payload $payload
+    if (-not $validation.IsValid) {
+        Write-KoxoSyncLog -Configuration $configurationAmorce -Level 'error' -Message 'KoXo payload validation failed.' -Data @{
+            code = 'KOXO_EXPORT_VALIDATION_FAILED'
+            errors = $validation.Errors
+        }
+        throw (New-Object System.InvalidOperationException('KOXO_EXPORT_VALIDATION_FAILED'))
+    }
+
+    $routing = Test-KoxoProfileRouting `
+        -Payload $payload `
+        -PrimaryGroups @($Profiles | ForEach-Object { [string]$_.PrimaryGroup })
+    Write-KoxoSyncLog -Configuration $configurationAmorce -Level 'info' -Message 'KoXo profile routing verified.' -Data @{
+        claimed_groups = $routing.ClaimedGroups
+        payload_groups = $routing.PayloadGroups
+    }
+
+    # KOXO_OTHER_CSV_PATHS est neutralise ici, et il le faut : ce controle relit
+    # les CSV VOISINS SUR DISQUE, or ils sont periment tant que leur profil n'est
+    # pas passe. Une identite qui vient de changer de branche figurerait donc
+    # dans le nouveau fichier et encore dans l'ancien, et serait signalee comme
+    # un conflit alors qu'elle n'en est pas un. Test-KoxoProfileRouting ci-dessus
+    # verifie la meme propriete sur la SOURCE, ou elle est exacte : un export
+    # decoupe par groupe primaire produit des sous-ensembles disjoints.
+    $surcharges = $Overrides.Clone()
+    $surcharges['KOXO_OTHER_CSV_PATHS'] = ''
+
+    $resultats = New-Object System.Collections.Generic.List[object]
+    foreach ($profil in $Profiles) {
+        $resultats.Add((Invoke-KoxoSync `
+            -CsvTargetPath ([string]$profil.CsvTargetPath) `
+            -WorkingDirectory $WorkingDirectory `
+            -Overrides $surcharges `
+            -DryRun:$DryRun `
+            -LaunchKoxo:$LaunchKoxo `
+            -KoxoExecutablePath $KoxoExecutablePath `
+            -KoxoWorkingDirectory $KoxoWorkingDirectory `
+            -KoxoSyncArgument ([string]$profil.KoxoSyncArgument) `
+            -PrimaryGroup ([string]$profil.PrimaryGroup) `
+            -PayloadObject $payload))
+    }
+
+    # ToArray() et non @(...) : sur PowerShell 5.1, envelopper une
+    # List[object] d'objets composes leve « Les types des arguments ne
+    # correspondent pas ». Ne pas « simplifier » en @($resultats).
+    $resultats.ToArray()
 }
 
 function Invoke-KoxoApiRequest {
@@ -309,7 +473,8 @@ function Test-KoxoExportPayload {
         'dateNaissance',
         'identifiantUnique',
         'groupeSecondaire',
-        'email'
+        'email',
+        'groupePrimaire'
     )
 
     # motDePasse est ACCEPTE mais FACULTATIF, et volontairement hors de la liste
@@ -333,8 +498,12 @@ function Test-KoxoExportPayload {
         }
     }
 
-    if ((Get-KoxoPropertyValue -InputObject $Payload -Name 'schemaVersion') -ne 1) {
-        $errors += [pscustomobject]@{ Scope = 'payload'; Field = 'schemaVersion'; Message = 'schemaVersion must be 1.' }
+    # Version 2 : chaque utilisateur porte groupePrimaire. Le refus est
+    # volontairement symetrique — un export de version 1 n'aiguille personne, et
+    # ce script ne saurait pas dans quel CSV ranger les identites. Mieux vaut
+    # echouer fermé qu'ecrire un fichier au petit bonheur.
+    if ((Get-KoxoPropertyValue -InputObject $Payload -Name 'schemaVersion') -ne 2) {
+        $errors += [pscustomobject]@{ Scope = 'payload'; Field = 'schemaVersion'; Message = 'schemaVersion must be 2.' }
     }
 
     $generatedAt = Get-KoxoPropertyValue -InputObject $Payload -Name 'generatedAt'
@@ -394,6 +563,97 @@ function Test-KoxoExportPayload {
     [pscustomobject]@{
         IsValid = ($errors.Count -eq 0)
         Errors = @($errors)
+    }
+}
+
+function Get-KoxoPayloadPrimaryGroups {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        $Payload
+    )
+
+    $groupes = New-Object System.Collections.Generic.List[string]
+    foreach ($user in @(Get-KoxoPropertyValue -InputObject $Payload -Name 'users')) {
+        $valeur = [string](Get-KoxoPropertyValue -InputObject $user -Name 'groupePrimaire')
+        if (-not [string]::IsNullOrWhiteSpace($valeur) -and -not $groupes.Contains($valeur.Trim())) {
+            $groupes.Add($valeur.Trim())
+        }
+    }
+
+    @($groupes)
+}
+
+function Select-KoxoPayloadByPrimaryGroup {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        $Payload,
+
+        [Parameter(Mandatory = $true)]
+        [string]$PrimaryGroup
+    )
+
+    # Comparaison insensible a la CASSE mais pas aux ACCENTS : « clients demo »
+    # doit passer, « CLIENTS DEMO » sans accent non. C'est exactement la
+    # distinction utile ici, la graphie accentuee devant correspondre au bit pres
+    # a celle saisie dans l'IHM KoXo sous peine de no-op silencieux.
+    $retenus = @(
+        @(Get-KoxoPropertyValue -InputObject $Payload -Name 'users') |
+            Where-Object {
+                [string](Get-KoxoPropertyValue -InputObject $_ -Name 'groupePrimaire') -eq $PrimaryGroup
+            }
+    )
+
+    [pscustomobject]@{
+        schemaVersion = (Get-KoxoPropertyValue -InputObject $Payload -Name 'schemaVersion')
+        generatedAt = (Get-KoxoPropertyValue -InputObject $Payload -Name 'generatedAt')
+        userCount = $retenus.Count
+        users = $retenus
+    }
+}
+
+function Test-KoxoProfileRouting {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        $Payload,
+
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [string[]]$PrimaryGroups
+    )
+
+    # Une identite absente de TOUS les CSV n'est pas « ignoree » : elle devient
+    # orpheline pour le profil qui la portait, donc desactivee. Un groupe
+    # primaire publie par l'API mais reclame par aucun profil doit donc arreter
+    # la synchronisation, pas la laisser passer en silence.
+    $revendiques = New-Object System.Collections.Generic.HashSet[string] ([StringComparer]::Ordinal)
+    foreach ($groupe in $PrimaryGroups) {
+        if ([string]::IsNullOrWhiteSpace($groupe)) {
+            throw 'Each KoXo profile must declare a non-empty primary group.'
+        }
+
+        if (-not $revendiques.Add($groupe.Trim())) {
+            throw ("Primary group {0} is claimed by more than one KoXo profile." -f $groupe.Trim())
+        }
+    }
+
+    $orphelins = @(
+        Get-KoxoPayloadPrimaryGroups -Payload $Payload |
+            Where-Object { -not $revendiques.Contains($_) }
+    )
+    if ($orphelins.Count -gt 0) {
+        throw (
+            "No KoXo profile claims primary group(s): {0}. Declared profiles: {1}." -f
+            ($orphelins -join ', '),
+            (@($revendiques) -join ', ')
+        )
+    }
+
+    [pscustomobject]@{
+        ClaimedGroups = @($revendiques)
+        PayloadGroups = @(Get-KoxoPayloadPrimaryGroups -Payload $Payload)
     }
 }
 
@@ -1305,6 +1565,10 @@ Export-ModuleMember -Function `
     Invoke-KoxoProcess, `
     Invoke-KoxoSafeReplacement, `
     Invoke-KoxoSync, `
+    Invoke-KoxoSyncProfiles, `
+    Get-KoxoPayloadPrimaryGroups, `
+    Select-KoxoPayloadByPrimaryGroup, `
+    Test-KoxoProfileRouting, `
     Read-KoxoSyncState, `
     Release-KoxoFileLock, `
     Test-KoxoCsvFile, `
