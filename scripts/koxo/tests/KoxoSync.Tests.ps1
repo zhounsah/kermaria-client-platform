@@ -45,14 +45,50 @@ Describe 'Test-KoxoExportPayload' {
 }
 
 Describe 'ConvertTo-KoxoCsvContent' {
-    It 'generates 13 semicolon-separated columns' {
+    It 'generates 14 semicolon-separated columns' {
         $content = ConvertTo-KoxoCsvContent -Users (New-KoxoTestPayload).users
-        ($content -split "`r`n")[0] | Should Be 'Civilite;Nom;Prenom;DateNaissance;IdentifiantUnique;GroupeSecondaire;Email;Telephone;TelephoneMobile;Fax;PageWeb;ChampLibre;Fonction'
+        ($content -split "`r`n")[0] | Should Be 'Civilite;Nom;Prenom;DateNaissance;IdentifiantUnique;GroupeSecondaire;Email;Telephone;TelephoneMobile;Fax;PageWeb;ChampLibre;Fonction;MotDePasse'
         $root = Join-Path $env:TEMP ('koxo-csv-' + [guid]::NewGuid().ToString('N'))
         New-Item -ItemType Directory -Path $root -Force | Out-Null
         $path = Join-Path $root 'users.csv'
         Write-KoxoTextFile -Path $path -Content $content -EncodingName 'utf8'
         { Test-KoxoCsvFile -Path $path } | Should Not Throw
+    }
+
+    It 'keeps every line at the same width, header included' {
+        # Une largeur variable decale l'IdentifiantUnique de la colonne 5, et
+        # KoXo ecrit alors l'identite et le mot de passe d'un client sur le
+        # compte d'un autre. Constate en reel le 2026-08-06.
+        $payload = New-KoxoTestPayload
+        $payload.users[0] | Add-Member -NotePropertyName 'motDePasse' -NotePropertyValue 'Secret-2026!aB' -Force
+        $content = ConvertTo-KoxoCsvContent -Users $payload.users
+        $largeurs = ($content -split "`r`n" | Where-Object { $_ }) | ForEach-Object { ($_ -split ';', -1).Count }
+        @($largeurs | Sort-Object -Unique).Count | Should Be 1
+        @($largeurs | Sort-Object -Unique)[0] | Should Be 14
+    }
+
+    It 'publishes the password in column 14' {
+        $payload = New-KoxoTestPayload
+        $payload.users[0] | Add-Member -NotePropertyName 'motDePasse' -NotePropertyValue 'Secret-2026!aB' -Force
+        $content = ConvertTo-KoxoCsvContent -Users $payload.users
+        (($content -split "`r`n")[1] -split ';', -1)[13] | Should Be 'Secret-2026!aB'
+    }
+
+    It 'leaves column 14 empty when no password is published' {
+        # Retrocompatible : un payload sans motDePasse reste valide et laisse
+        # KoXo conserver le mot de passe qu'il connait deja.
+        $content = ConvertTo-KoxoCsvContent -Users (New-KoxoTestPayload).users
+        (($content -split "`r`n")[1] -split ';', -1)[13] | Should Be ''
+    }
+
+    It 'refuses a row whose width does not match' {
+        $root = Join-Path $env:TEMP ('koxo-csv-' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        $path = Join-Path $root 'users.csv'
+        $entete = 'Civilite;Nom;Prenom;DateNaissance;IdentifiantUnique;GroupeSecondaire;Email;Telephone;TelephoneMobile;Fax;PageWeb;ChampLibre;Fonction;MotDePasse'
+        $ligne13 = 'Mme;HOUNSA;Zoe;1994-03-22;CLI-000001;CLI-DEMO;zoe@example.invalid;;;;;;'
+        Write-KoxoTextFile -Path $path -Content ($entete + "`r`n" + $ligne13 + "`r`n") -EncodingName 'utf8'
+        { Test-KoxoCsvFile -Path $path -EncodingName 'utf8' } | Should Throw 'must contain exactly 14 columns'
     }
 
     It 'preserves accents, quotes, and separators through escaping' {
@@ -622,5 +658,32 @@ Describe 'Test-KoxoGuardRails' {
                 -Payload (New-KoxoGuardPayload -UserCount 1) `
                 -State $null
         } | Should Throw 'KOXO_MIN_USER_COUNT'
+    }
+}
+
+Describe 'Confidentialite du mot de passe' {
+    It 'accepts motDePasse in the JSON contract' {
+        $payload = New-KoxoTestPayload
+        $payload.users[0] | Add-Member -NotePropertyName 'motDePasse' -NotePropertyValue 'Secret-2026!aB' -Force
+        $result = Test-KoxoExportPayload -Payload $payload
+        $result.IsValid | Should Be $true
+    }
+
+    It 'never writes a password into the sync log' {
+        # Le journal survit au CSV : il est archive et relu longtemps apres.
+        $root = Join-Path $env:TEMP ('koxo-log-' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        $configuration = [pscustomobject]@{ LogPath = (Join-Path $root 'koxo-sync.log') }
+        Write-KoxoSyncLog -Configuration $configuration -Level 'info' -Message 'essai' -Data @{
+            user_count = 2
+            motDePasse = 'NE-DOIT-PAS-APPARAITRE'
+            api_token = 'NI-CELUI-LA'
+            password = 'NI-CELUI-CI'
+        }
+        $contenu = Get-ChildItem $root -Filter '*.log' | ForEach-Object { Get-Content $_.FullName -Raw }
+        $contenu | Should Match 'user_count'
+        $contenu | Should Not Match 'NE-DOIT-PAS-APPARAITRE'
+        $contenu | Should Not Match 'NI-CELUI-LA'
+        $contenu | Should Not Match 'NI-CELUI-CI'
     }
 }

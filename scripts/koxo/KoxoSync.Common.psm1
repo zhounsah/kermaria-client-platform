@@ -295,6 +295,14 @@ function Test-KoxoExportPayload {
         'email'
     )
 
+    # motDePasse est ACCEPTE mais FACULTATIF, et volontairement hors de la liste
+    # ci-dessus, qui sert aussi de liste des champs OBLIGATOIRES : l'API ne
+    # detient le mot de passe en clair qu'a l'instant ou le client le saisit,
+    # elle ne peut donc pas le publier a chaque export. Publie, il alimente la
+    # colonne 14 que KoXo applique a l'annuaire quand ForcePasswords vaut 1 ;
+    # absent, KoXo conserve le mot de passe qu'il connait deja.
+    $optionalUserFields = @('motDePasse')
+
     $rootNames = @(Get-KoxoPropertyNames -InputObject $Payload)
     foreach ($name in $rootNames) {
         if ($name -notin $expectedRootFields) {
@@ -328,7 +336,7 @@ function Test-KoxoExportPayload {
         $user = $users[$index]
         $names = @(Get-KoxoPropertyNames -InputObject $user)
         foreach ($name in $names) {
-            if ($name -notin $expectedUserFields) {
+            if ($name -notin $expectedUserFields -and $name -notin $optionalUserFields) {
                 $errors += [pscustomobject]@{ Scope = 'user'; Index = $index; Field = $name; Message = 'Unexpected user field.' }
             }
         }
@@ -379,8 +387,15 @@ function ConvertTo-KoxoCsvContent {
         [object[]]$Users
     )
 
+    # 14 colonnes et non 13 : le profil KoXo lit le mot de passe dans
+    # « Field 14 » (<Password>Field 14</Password>). Un fichier a 13 colonnes
+    # ferait lire un mot de passe vide, et un fichier a nombre de colonnes
+    # VARIABLE decale les champs — c'est ce qui a fait appliquer l'identite et
+    # le mot de passe de Jean DUPONT sur le compte de Zachary le 2026-08-06,
+    # KoXo rapprochant les lignes par l'IdentifiantUnique de la colonne 5.
+    # La largeur doit donc etre constante, ligne d'en-tete comprise.
     $lines = New-Object System.Collections.Generic.List[string]
-    $lines.Add('Civilite;Nom;Prenom;DateNaissance;IdentifiantUnique;GroupeSecondaire;Email;Telephone;TelephoneMobile;Fax;PageWeb;ChampLibre;Fonction')
+    $lines.Add('Civilite;Nom;Prenom;DateNaissance;IdentifiantUnique;GroupeSecondaire;Email;Telephone;TelephoneMobile;Fax;PageWeb;ChampLibre;Fonction;MotDePasse')
     foreach ($user in $Users) {
         $fields = @(
             [string](Get-KoxoPropertyValue -InputObject $user -Name 'civilite'),
@@ -395,7 +410,8 @@ function ConvertTo-KoxoCsvContent {
             '',
             '',
             '',
-            ''
+            '',
+            [string](Get-KoxoPropertyValue -InputObject $user -Name 'motDePasse')
         )
 
         $escaped = foreach ($field in $fields) {
@@ -422,11 +438,20 @@ function Test-KoxoCsvFile {
     $parser.SetDelimiters(';')
     $parser.HasFieldsEnclosedInQuotes = $true
 
+    # Toute ligne doit avoir exactement 14 champs, en-tete comprise. Une largeur
+    # variable n'est pas un detail cosmetique : KoXo rapproche les lignes par
+    # l'IdentifiantUnique de la colonne 5, donc un champ manquant decale cette
+    # colonne et fait ecrire l'identite ET le mot de passe d'un client sur le
+    # compte d'un autre. C'est arrive le 2026-08-06 sur un CSV assemble a la
+    # main. Ce controle est la derniere barriere avant l'annuaire.
+    $expectedColumnCount = 14
+    $lineNumber = 0
     try {
         while (-not $parser.EndOfData) {
+            $lineNumber++
             $row = $parser.ReadFields()
-            if ($row.Count -ne 13) {
-                throw ("CSV row must contain exactly 13 columns. Found {0}." -f $row.Count)
+            if ($row.Count -ne $expectedColumnCount) {
+                throw ("CSV row {0} must contain exactly {1} columns. Found {2}." -f $lineNumber, $expectedColumnCount, $row.Count)
             }
         }
     }
@@ -788,8 +813,11 @@ function Write-KoxoSyncLog {
         message = $Message
     }
 
+    # Depuis que la colonne 14 transporte un mot de passe en clair, filtrer le
+    # seul mot « token » ne suffit plus : le journal survit au CSV, il est
+    # archive et relu longtemps apres.
     foreach ($key in $Data.Keys) {
-        if ($key -match 'token') {
+        if ($key -match '(?i)token|password|motdepasse|secret') {
             continue
         }
         $entry[$key] = $Data[$key]

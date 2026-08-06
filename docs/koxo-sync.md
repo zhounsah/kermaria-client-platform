@@ -6,15 +6,39 @@ V0.40 ajoute une chaine privee `webportal -> api-internal -> PowerShell -> CSV -
 sans SMB cote site, sans secret reel dans le depot, sans execution KoXo cote site,
 et sans creation automatique de la vraie tache planifiee.
 
-V0.40.1 fige explicitement la regle mot de passe :
+> **La regle mot de passe de la V0.40.1 est REVOQUEE depuis le 2026-08-06.**
+> Elle disait « aucun mot de passe n'est exporte vers KoXo » et confiait
+> l'alignement a un flux portail -> AD direct. Mesures a l'appui, cette voie ne
+> tient pas : avec `ForcePasswords=1`, KoXo **reecrit** le mot de passe de
+> l'annuaire a chaque synchronisation depuis la colonne 14, donc tout mot de
+> passe pose par LDAP serait ecrase au passage suivant. Les deux mecanismes sont
+> exclusifs.
 
-- aucun mot de passe n'est exporte vers KoXo, ni dans le JSON, ni dans le CSV ;
-- `password_hash` en base SQL reste un hash local non reversible ;
-- l'alignement du mot de passe avec l'infrastructure Windows continue a se faire
-  au moment du `set-password` puis, pour les evolutions futures, via les flux
-  dedies portail <-> AD, pas via KoXo ;
-- KoXo reste limite a la synchronisation des identites et metadonnees
-  utilisateurs.
+Regle en vigueur : **KoXo est maitre du mot de passe.**
+
+- le mot de passe voyage dans la colonne 14 du CSV, champ JSON `motDePasse` ;
+- `password_hash` en base SQL reste un hash local non reversible, sans rapport ;
+- l'API ne peut publier le mot de passe qu'a l'instant ou le client le saisit,
+  puisqu'elle n'en conserve pas de forme reversible : le champ est donc
+  **facultatif**, et son absence laisse KoXo conserver ce qu'il connait ;
+- l'API n'ecrit plus le mot de passe dans l'annuaire par LDAP quand KoXo fait
+  autorite.
+
+Consequence assumee : le mot de passe transite en clair par `clients.csv`, ses
+sauvegardes et la base XML de KoXo. Ces emplacements doivent etre traites comme
+un magasin de secrets.
+
+Trois reglages KoXo conditionnent le fonctionnement, tous dans `Config.xml` et
+non dans le profil de synchro :
+
+| Reglage | Valeur requise | Effet si mal regle |
+|---|---|---|
+| `ForcePasswords` | `1` | a `0`, KoXo lit la colonne 14 et met a jour sa propre base, mais **n'ecrit rien dans l'AD** |
+| `PurifyImportedPassword` | `0` | a `1`, les caracteres speciaux sont **silencieusement supprimes** : `Ker-maria!2026#xY` devient `Kermaria2026xY` |
+| `DoNotWritePasswordsInActiveDirectory` | `0` | a `1`, le compte est cree desactive avec `pwdLastSet = 0` |
+
+`DoNotUpdateNotMovedUsers` n'a **aucun effet** sur le mot de passe : teste le
+2026-08-06 a `0` dans le profil puis dans les defauts globaux, sans changement.
 
 ## Architecture retenue
 
@@ -25,7 +49,7 @@ V0.40.1 fige explicitement la regle mot de passe :
 3. `apps/api-internal/Services/KoxoExportService.cs` charge, trie, valide et audite le
    payload JSON KoXo sans reparation silencieuse.
 4. `scripts/koxo/Sync-KoXoClients.ps1` consomme le JSON prive, applique les garde-fous,
-   genere un CSV 13 colonnes, calcule le hash, valide la relecture, remplace la cible
+   genere un CSV 14 colonnes, calcule le hash, valide la relecture, remplace la cible
    de facon sure, puis peut lancer `KoXoAdm.exe /Synchro=CLIENTS.xml`.
 5. `scripts/koxo/Install-KoXoScheduledTask.ps1` documente et simule la tache planifiee ;
    aucune creation reelle n'est effectuee depuis le depot.
@@ -42,7 +66,14 @@ Chaque utilisateur exporte contient exactement 7 champs JSON :
 - `groupeSecondaire`
 - `email`
 
-Le CSV genere 13 colonnes avec `;` comme separateur :
+Un huitieme champ **facultatif** peut s'y ajouter :
+
+- `motDePasse` — alimente la colonne 14. Publie, KoXo l'applique a l'annuaire ;
+  absent, KoXo conserve le mot de passe qu'il connait deja. Il n'est jamais
+  journalise : `Write-KoxoSyncLog` ecarte toute cle nommee `token`, `password`,
+  `motdepasse` ou `secret`.
+
+Le CSV genere 14 colonnes avec `;` comme separateur :
 
 1. `civilite`
 2. `nom`
@@ -57,10 +88,25 @@ Le CSV genere 13 colonnes avec `;` comme separateur :
 11. vide
 12. vide
 13. vide
+14. `motDePasse` (vide si non publie)
 
 La premiere ligne contient l'en-tete exact KoXo :
 
-`Civilite;Nom;Prenom;DateNaissance;IdentifiantUnique;GroupeSecondaire;Email;Telephone;TelephoneMobile;Fax;PageWeb;ChampLibre;Fonction`
+`Civilite;Nom;Prenom;DateNaissance;IdentifiantUnique;GroupeSecondaire;Email;Telephone;TelephoneMobile;Fax;PageWeb;ChampLibre;Fonction;MotDePasse`
+
+### La largeur est constante, et ce n'est pas cosmetique
+
+`Test-KoxoCsvFile` exige **exactement 14 champs sur chaque ligne**, en-tete
+comprise, et nomme la ligne fautive. Motif : KoXo rapproche les lignes par
+l'`IdentifiantUnique` de la **colonne 5** (`UseUniqueIDFirst=1`). Un champ
+manquant decale cette colonne, et KoXo ecrit alors l'identite **et le mot de
+passe** d'un client sur le compte d'un autre.
+
+Ce n'est pas theorique : le 2026-08-06, un `clients.csv` assemble a la main
+melangeait des lignes a 13 et 14 champs. Le journal KoXo porte la trace de
+`Ajout/Modification de Jean DUPONT (zachary.hounsahou)` suivi de
+`Mot de passe force pour "zachary.hounsahou"` — l'identite de test appliquee
+sur un compte reel, mot de passe compris.
 
 ## Ce que KoXo fait de ces champs (verifie en reel le 2026-08-03)
 
