@@ -2955,6 +2955,13 @@ fieldset.form-field > .form-hint {
   gap: 0 26px;
 }
 
+/* La marge basse ne sert qu'a detacher la liste de ce qui la suit (aide,
+   boutons). Quand la liste ferme son panneau, comme sur la fiche profil, elle
+   ne produit qu'un vide sous la derniere ligne. */
+.profile-details:last-child {
+  margin-bottom: 0;
+}
+
 .profile-details div {
   padding: 15px 0;
   border-top: 1px solid var(--border);
@@ -2972,8 +2979,12 @@ fieldset.form-field > .form-hint {
   font-weight: 650;
 }
 
-.security-panel {
-  align-self: start;
+/* Les deux colonnes du profil ont des hauteurs tres inegales : la fiche de
+   coordonnees est courte, le panneau de securite long. Sans `start`, la grille
+   etire la colonne la plus courte et laisse un grand vide sous sa derniere
+   ligne. Regle portee par la grille pour valoir dans les deux sens. */
+.profile-layout {
+  align-items: start;
 }
 
 .session-action {

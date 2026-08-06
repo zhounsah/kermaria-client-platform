@@ -13,6 +13,22 @@ public sealed record ClientProfile(
     string Country,
     string AccountStatus);
 
+// Coordonnees modifiables par le client depuis son espace. L'organisation, la
+// reference client, l'e-mail (identifiant de connexion) et le statut ne sont
+// volontairement pas exposes ici : ils restent pilotes par le back-office.
+public sealed record ClientProfileUpdate(
+    string ContactName,
+    string Phone,
+    string Address,
+    string City,
+    string Country);
+
+public sealed record ClientProfileUpdateResult(
+    string Code,
+    string Message,
+    ClientProfile Profile,
+    [property: JsonPropertyName("correlation_id")] string CorrelationId);
+
 public sealed record PortalSummary(
     string CustomerReference,
     string ContactName,

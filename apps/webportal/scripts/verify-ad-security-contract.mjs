@@ -118,11 +118,37 @@ assert.doesNotMatch(
   "Le formulaire ne doit pas stocker le mot de passe en local/sessionStorage.",
 );
 
+// Le drapeau est lu dans runtime-config (partage avec la page profil, qui
+// annonce ou non le parcours) ; la page doit passer par ce meme helper.
+assert.match(
+  runtimeConfig,
+  /AD_PASSWORD_CHANGE_ENABLED/,
+  "isPasswordChangeEnabled doit lire le flag AD_PASSWORD_CHANGE_ENABLED.",
+);
+
 const passwordPage = await read("app/password/page.tsx");
 assert.match(
   passwordPage,
-  /AD_PASSWORD_CHANGE_ENABLED/,
+  /isPasswordChangeEnabled/,
   "La page doit verifier le flag AD_PASSWORD_CHANGE_ENABLED avant de rendre le formulaire.",
 );
+
+// Aucun nom d'hote ou chemin interne ne doit fuiter dans les pages client.
+const profilePage = await read("app/profile/page.tsx");
+const profileEditPage = await read("app/profile/edit/page.tsx");
+const profileEditForm = await read("components/ProfileEditForm.tsx");
+for (const [label, source] of [
+  ["la page mot de passe", passwordPage],
+  ["le formulaire de mot de passe", passwordForm],
+  ["la page profil", profilePage],
+  ["la page de modification du profil", profileEditPage],
+  ["le formulaire de profil", profileEditForm],
+]) {
+  assert.doesNotMatch(
+    source,
+    /clients\.home\.bzh|\/internal\//,
+    `Aucun chemin ou domaine interne ne doit apparaitre dans ${label}.`,
+  );
+}
 
 console.log("Vérification du contrat sécurité AD V0.19 + V0.25 briques 1/2a/2b/2c réussie.");

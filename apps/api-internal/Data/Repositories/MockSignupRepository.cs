@@ -319,6 +319,13 @@ public sealed class MockSignupRepository : ISignupRepository
         return Task.CompletedTask;
     }
 
+    public Task<string?> GetKoxoUniqueIdentifierAsync(
+        string portalUserId,
+        CancellationToken cancellationToken)
+        => Task.FromResult(_rows.Values
+            .FirstOrDefault(row => row.ApprovedUserId == portalUserId)
+            ?.ApprovedUserKoxoUniqueIdentifier);
+
     private static SignupPendingRecord ToRecord(MockSignupRow row)
         => new(
             row.Id,

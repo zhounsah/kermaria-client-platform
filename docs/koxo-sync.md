@@ -6,15 +6,39 @@ V0.40 ajoute une chaine privee `webportal -> api-internal -> PowerShell -> CSV -
 sans SMB cote site, sans secret reel dans le depot, sans execution KoXo cote site,
 et sans creation automatique de la vraie tache planifiee.
 
-V0.40.1 fige explicitement la regle mot de passe :
+> **La regle mot de passe de la V0.40.1 est REVOQUEE depuis le 2026-08-06.**
+> Elle disait « aucun mot de passe n'est exporte vers KoXo » et confiait
+> l'alignement a un flux portail -> AD direct. Mesures a l'appui, cette voie ne
+> tient pas : avec `ForcePasswords=1`, KoXo **reecrit** le mot de passe de
+> l'annuaire a chaque synchronisation depuis la colonne 14, donc tout mot de
+> passe pose par LDAP serait ecrase au passage suivant. Les deux mecanismes sont
+> exclusifs.
 
-- aucun mot de passe n'est exporte vers KoXo, ni dans le JSON, ni dans le CSV ;
-- `password_hash` en base SQL reste un hash local non reversible ;
-- l'alignement du mot de passe avec l'infrastructure Windows continue a se faire
-  au moment du `set-password` puis, pour les evolutions futures, via les flux
-  dedies portail <-> AD, pas via KoXo ;
-- KoXo reste limite a la synchronisation des identites et metadonnees
-  utilisateurs.
+Regle en vigueur : **KoXo est maitre du mot de passe.**
+
+- le mot de passe voyage dans la colonne 14 du CSV, champ JSON `motDePasse` ;
+- `password_hash` en base SQL reste un hash local non reversible, sans rapport ;
+- l'API ne peut publier le mot de passe qu'a l'instant ou le client le saisit,
+  puisqu'elle n'en conserve pas de forme reversible : le champ est donc
+  **facultatif**, et son absence laisse KoXo conserver ce qu'il connait ;
+- l'API n'ecrit plus le mot de passe dans l'annuaire par LDAP quand KoXo fait
+  autorite.
+
+Consequence assumee : le mot de passe transite en clair par `clients.csv`, ses
+sauvegardes et la base XML de KoXo. Ces emplacements doivent etre traites comme
+un magasin de secrets.
+
+Trois reglages KoXo conditionnent le fonctionnement, tous dans `Config.xml` et
+non dans le profil de synchro :
+
+| Reglage | Valeur requise | Effet si mal regle |
+|---|---|---|
+| `ForcePasswords` | `1` | a `0`, KoXo lit la colonne 14 et met a jour sa propre base, mais **n'ecrit rien dans l'AD** |
+| `PurifyImportedPassword` | `0` | a `1`, les caracteres speciaux sont **silencieusement supprimes** : `Ker-maria!2026#xY` devient `Kermaria2026xY` |
+| `DoNotWritePasswordsInActiveDirectory` | `0` | a `1`, le compte est cree desactive avec `pwdLastSet = 0` |
+
+`DoNotUpdateNotMovedUsers` n'a **aucun effet** sur le mot de passe : teste le
+2026-08-06 a `0` dans le profil puis dans les defauts globaux, sans changement.
 
 ## Architecture retenue
 
@@ -25,14 +49,18 @@ V0.40.1 fige explicitement la regle mot de passe :
 3. `apps/api-internal/Services/KoxoExportService.cs` charge, trie, valide et audite le
    payload JSON KoXo sans reparation silencieuse.
 4. `scripts/koxo/Sync-KoXoClients.ps1` consomme le JSON prive, applique les garde-fous,
-   genere un CSV 13 colonnes, calcule le hash, valide la relecture, remplace la cible
-   de facon sure, puis peut lancer `KoXoAdm.exe /Synchro=CLIENTS.xml`.
+   genere un CSV 14 colonnes, calcule le hash, valide la relecture, remplace la cible
+   de facon sure, puis peut lancer `KoXoAdm.exe /Synchro=CLIENTS.xml`. Il ne pilote
+   **qu'un profil** : `-PrimaryGroup` dit lequel.
+4bis. `Invoke-KoxoSyncProfiles` (dans `KoxoSync.Common.psm1`) enchaine les deux
+   profils — `CLIENTS` et `CLIENTS DÉMO` — sur un **unique** appel a l'API. C'est ce
+   que declenche `Invoke-KoxoSyncFromWebhook.ps1`.
 5. `scripts/koxo/Install-KoXoScheduledTask.ps1` documente et simule la tache planifiee ;
    aucune creation reelle n'est effectuee depuis le depot.
 
 ## Donnees exportees
 
-Chaque utilisateur exporte contient exactement 7 champs JSON :
+Chaque utilisateur exporte contient exactement 8 champs JSON :
 
 - `civilite`
 - `nom`
@@ -41,8 +69,52 @@ Chaque utilisateur exporte contient exactement 7 champs JSON :
 - `identifiantUnique`
 - `groupeSecondaire`
 - `email`
+- `groupePrimaire` — **n'alimente aucune colonne du CSV.** Le groupe primaire est
+  porte par le profil KoXo (le XML), pas par le fichier. Ce champ sert uniquement
+  a aiguiller chaque identite vers le bon profil, donc vers le bon CSV. Voir
+  « Separation des groupes primaires » ci-dessous.
 
-Le CSV genere 13 colonnes avec `;` comme separateur :
+Un neuvieme champ **facultatif** peut s'y ajouter :
+
+- `motDePasse` — alimente la colonne 14. Publie, KoXo l'applique a l'annuaire ;
+  **absent, KoXo reapplique le mot de passe qu'il detient dans sa propre base**.
+  Nuance mesuree le 2026-08-06, et elle compte : avec `ForcePasswords=1` le
+  journal affiche « Mot de passe force » et `pwdLastSet` change **meme quand la
+  colonne 14 est vide** — KoXo ne s'abstient pas, il reecrit ce qu'il sait. Le
+  compte reste donc authentifiable avec son mot de passe courant, mais c'est
+  KoXo, et non l'annuaire, qui fait autorite. Une valeur perdue de sa base
+  serait perdue tout court. Il n'est jamais
+  journalise : `Write-KoxoSyncLog` ecarte toute cle nommee `token`, `password`,
+  `motdepasse` ou `secret`.
+
+### Comment le mot de passe atteint l'export
+
+L'export est un instantane complet regenere a la demande, alors que le mot de
+passe n'existe en clair qu'a l'instant ou le client le saisit. Il faut donc le
+retenir entre les deux, et c'est le role de
+`Services/KoxoPendingPasswordStore.cs` :
+
+- **en memoire**, pas en base. Persister le mot de passe en clair dans MariaDB
+  creerait un magasin de secrets durable pour un besoin qui dure quelques
+  secondes ;
+- **a usage unique**. Un second export ne republie pas le mot de passe, sinon
+  KoXo le reappliquerait a chaque synchronisation et annulerait tout changement
+  ulterieur ;
+- **a duree bornee** (15 min), et une entree qui expire sans etre consommee est
+  journalisee en avertissement — la divergence portail/annuaire ne doit pas
+  etre silencieuse.
+
+Seul l'export **reel** consomme l'entree. Le tableau de bord admin et la
+validation rejouent la preparation a la demande : ils passent
+`consumePendingPasswords: false`, faute de quoi un simple affichage ferait
+disparaitre le mot de passe avant KoXo, et l'exposerait dans l'apercu.
+
+**Limite assumee** : un redemarrage de l'API, ou un deploiement multi-instances
+sans affinite de session, perd l'entree. Le mot de passe du portail reste
+correct, seul l'alignement annuaire est manque, et le client peut redefinir son
+mot de passe pour relancer le cycle.
+
+Le CSV genere 14 colonnes avec `;` comme separateur :
 
 1. `civilite`
 2. `nom`
@@ -57,10 +129,25 @@ Le CSV genere 13 colonnes avec `;` comme separateur :
 11. vide
 12. vide
 13. vide
+14. `motDePasse` (vide si non publie)
 
 La premiere ligne contient l'en-tete exact KoXo :
 
-`Civilite;Nom;Prenom;DateNaissance;IdentifiantUnique;GroupeSecondaire;Email;Telephone;TelephoneMobile;Fax;PageWeb;ChampLibre;Fonction`
+`Civilite;Nom;Prenom;DateNaissance;IdentifiantUnique;GroupeSecondaire;Email;Telephone;TelephoneMobile;Fax;PageWeb;ChampLibre;Fonction;MotDePasse`
+
+### La largeur est constante, et ce n'est pas cosmetique
+
+`Test-KoxoCsvFile` exige **exactement 14 champs sur chaque ligne**, en-tete
+comprise, et nomme la ligne fautive. Motif : KoXo rapproche les lignes par
+l'`IdentifiantUnique` de la **colonne 5** (`UseUniqueIDFirst=1`). Un champ
+manquant decale cette colonne, et KoXo ecrit alors l'identite **et le mot de
+passe** d'un client sur le compte d'un autre.
+
+Ce n'est pas theorique : le 2026-08-06, un `clients.csv` assemble a la main
+melangeait des lignes a 13 et 14 champs. Le journal KoXo porte la trace de
+`Ajout/Modification de Jean DUPONT (zachary.hounsahou)` suivi de
+`Mot de passe force pour "zachary.hounsahou"` — l'identite de test appliquee
+sur un compte reel, mot de passe compris.
 
 ## Ce que KoXo fait de ces champs (verifie en reel le 2026-08-03)
 
@@ -72,9 +159,83 @@ ne deplace aucune identite elle-meme.
 
 | Cas | Valeur publiee |
 |---|---|
-| Essai de demonstration en cours | `CLI-DEMO` |
-| Compte converti en client reel | le code `CLI-XXXXXX` reserve a la creation |
+| Essai de demonstration en cours | `DEMO-` + le code `CLI-XXXXXX` reserve a la creation |
+| Essai anterieur a la reservation systematique | `DEMO-CLI-DEMO`, l'OU commune historique |
+| Compte converti en client reel | le meme code, **sans prefixe** |
 | Client reel ordinaire | sa reference client, qui nomme deja son OU |
+
+Le prefixe n'est pas cosmetique. **KoXo ne cree un groupe secondaire dans
+l'annuaire que s'il est nouveau pour sa propre base.** Si les deux cotes de la
+separation portent le meme nom, il croit le groupe deja existant, ne le cree
+jamais dans la nouvelle branche, et l'identite migree **perd son groupe
+definitivement** — mesure en reel le 2026-08-06, ni un troisieme passage ni la
+suppression de la coquille d'origine ne l'ont retabli. Le changement de nom entre
+l'essai et le compte definitif est donc ce qui rend la conversion possible.
+
+### Separation des groupes primaires
+
+Un modele KoXo ne s'associe qu'a **un seul groupe primaire**, et c'est lui qui
+porte le quota (32 Go pour un client payant, 5 Go pour un essai) et le modele de
+compte. La population est donc scindee en deux profils, chacun avec son XML, son
+CSV et son fichier d'etat :
+
+| Groupe primaire | CSV | Profil |
+|---|---|---|
+| `CLIENTS` | `clients.csv` | `/Synchro=CLIENTS.xml` |
+| `CLIENTS DÉMO` | `clients-demo.csv` | `/Synchro=CLIENTS-DEMO.xml` |
+
+L'argument le plus fort n'est pas le quota : avec un CSV unique et
+`DisableOrphanedAccounts` actif, **une anomalie d'export cote demonstration
+desactive de vrais clients payants**. Separer cloisonne le rayon d'action de
+chaque synchronisation.
+
+**L'ordre des profils compte.** Le lanceur passe `CLIENTS` puis `CLIENTS DÉMO`,
+ce qui est correct pour le sens habituel (conversion demo -> payant) : le profil
+de destination reprend l'identite avant que celui d'origine ne balaye ses
+orphelins. Pour une migration en sens inverse, il faut passer le profil de
+destination **d'abord**, a la main, sinon l'identite est supprimee par le premier
+passage avant d'avoir ete reprise par le second.
+
+**Ce qu'une migration entre groupes primaires conserve et ce qu'elle perd**
+(mesure sur un compte reel le 2026-08-06) :
+
+| Conserve | Perdu |
+|---|---|
+| mot de passe (authentification verifiee apres coup) | **appartenance aux groupes `GG_*`** — a reappliquer |
+| `allowLogon` (RDS), `sAMAccountName`, `employeeNumber` | |
+| compte actif, `HomeDirectory` / `HomeDrive` | |
+
+La perte des `GG_*` corrige une note anterieure : une synchronisation ordinaire
+ne les touche pas — verifie — mais **un deplacement entre groupes primaires les
+efface**.
+
+Points de vigilance verifies en reel :
+
+- le **groupe primaire doit preexister** — l'IHM le cree, le CSV non. Un profil
+  qui vise un groupe inexistant sort en trois lignes de journal, avec les deux
+  marqueurs de succes, **sans toucher personne**. C'est ce que detecte le
+  garde-fou « zero traite » ;
+- la graphie doit correspondre **au bit pres** : `CLIENTS DÉMO` vaut
+  `43 4c 49 45 4e 54 53 20 44 c3 89 4d 4f` en UTF-8. Cote code, le nom s'ecrit
+  toujours par sequence d'echappement (`É` en C#, `[char]0x00C9` en
+  PowerShell), jamais litteralement : les `.ps1` du depot n'ont pas de marque
+  d'ordre d'octets et PowerShell 5.1 les relirait en ANSI ;
+- le **fichier d'etat est par profil** (`koxo-sync.state.<csv>.json`). Un etat
+  partage ferait alterner deux volumetries differentes, et le garde-fou de chute
+  se declencherait a chaque passage sur une variation inexistante ;
+- le **verrou reste commun** : `KoXoAdm.exe` ne supporte pas deux instances, les
+  profils doivent s'attendre.
+
+`Invoke-KoxoSyncFromWebhook.ps1` appelle `Invoke-KoxoSyncProfiles`, qui
+**n'interroge l'API qu'une fois** et sert les deux profils depuis le meme
+payload. Ce n'est pas une optimisation : l'export **consomme** les mots de passe
+en attente, un second appel rendrait un payload sans colonne 14 et le profil
+servi en second laisserait ses comptes sur un mot de passe obsolete.
+
+Avant d'ecrire quoi que ce soit, `Test-KoxoProfileRouting` verifie qu'aucun
+groupe primaire publie par l'API n'est laisse sans profil. Une identite qui
+n'atteint aucun CSV n'est pas « ignoree » : elle devient orpheline pour le profil
+qui la portait, donc desactivee.
 
 ### `identifiantUnique` revient dans `employeeNumber`
 
@@ -92,6 +253,113 @@ donc une instruction** : KoXo desactive les comptes absents du fichier. En
 revanche l'appartenance aux groupes `GG_*` n'est **pas** pilotee par le CSV,
 elle reste du ressort de l'API — une synchronisation ne peut donc pas defaire
 une revocation d'essai echu.
+
+> ### Un compte retire du CSV est SUPPRIME, pas desactive
+>
+> Mesure en reel le 2026-08-06 : deux identites absentes du CSV ont disparu de
+> l'annuaire, introuvables par `sAMAccountName`. Les profils portent
+> `<SyncDoNotDeleteUsers>0</SyncDoNotDeleteUsers>`, qui l'emporte sur le nom
+> rassurant de `DisableOrphanedAccounts`. `BackupDeletedUsersData=1` sauvegarde
+> les donnees, **pas le compte**.
+>
+> La suppression est irreversible et le compte recree recevra un **SID
+> different** : les ACL de fichiers, les acces RDS et tout ce qui reference le
+> SID sont perdus. Partout ou ce document dit « desactive », lire « supprime ».
+> C'est ce qui donne leur portee reelle aux garde-fous ci-dessous.
+>
+> **Applique le 2026-08-06** : `SyncDoNotDeleteUsers` vaut desormais `1` sur les
+> deux profils. Un orphelin est **desactive**, plus supprime. Ce qui precede
+> reste ecrit ici parce que le drapeau peut se defaire, et que son nom ne dit pas
+> ce qu'il fait.
+
+#### Le cycle desabonnement / reabonnement
+
+Mesure de bout en bout le 2026-08-06, avec les profils reels :
+
+| Passage | CSV | Etat du compte |
+|---|---|---|
+| A | identite presente | cree, actif |
+| B | identite retiree | **desactive**, toujours present |
+| C | identite de retour | **reactive automatiquement** |
+
+Le compte qui revient conserve son `SID`, son `sAMAccountName`, son
+`employeeNumber`, son dossier personnel et **son mot de passe** — verifie par
+authentification reelle. Rien n'est a refaire cote annuaire, et l'adoption par
+`employeeNumber` cote API retrouve le compte tel quel.
+
+C'est ce qui rend le reabonnement possible sans renommer ni recreer : une
+suppression aurait donne un SID different, donc des ACL de fichiers et des acces
+RDS perdus.
+
+#### Garde-fou de volumetrie
+
+Consequence directe : un export **partiel mais valide** — requete interrompue,
+client filtre par erreur — coupe l'acces de vrais clients sans lever la moindre
+erreur. La validation du CSV protege d'un fichier *corrompu*, pas d'un fichier
+*incomplet*.
+
+`KOXO_MAX_USER_DROP_PERCENT` (defaut `20`) refuse donc la synchronisation quand
+le nombre de lignes chute de plus de ce pourcentage par rapport au dernier
+export reussi, memorise dans `koxo-sync.state.<csv>.json` — **un fichier par
+profil**. Le premier passage, qui n'a pas de reference, ne bloque jamais.
+
+C'est justement ce trou du premier passage que couvre `KOXO_ALLOW_EMPTY_CSV`
+(defaut `false`) : un CSV **vide** vaut ordre de desactivation de toute la
+branche, et une reference a zero ne pourrait pas s'y opposer. Par defaut, un
+profil sans identite a publier est donc **saute**, son fichier laisse intact et
+KoXo pas lance — perime vaut mieux que destructeur.
+
+> Attention : le defaut du module ne fait pas foi en exploitation. Une variable
+> Machine `KOXO_*` posee sur SRV-21 prime, et `KOXO_MAX_USER_DROP_PERCENT` y est
+> restee a `100` apres la correction du defaut, laissant le garde-fou inoperant
+> en production jusqu'au 2026-08-06. Corriger le code ne suffit pas : il faut
+> repasser par `Deploy-KoxoScripts.ps1 -Settings`.
+
+Pour une baisse legitime, `KOXO_ALLOW_USER_DROP=true` laisse passer et marque le
+passage `bypassed` dans le journal. Le releve (`user_count`,
+`baseline_user_count`, `drop_percent`) est ecrit a **chaque** execution, y
+compris quand le controle passe : un garde-fou muet ne se distingue pas d'un
+garde-fou absent le jour ou l'on cherche a comprendre une desactivation en
+masse.
+
+> Le defaut valait `100` jusqu'a la V0.41, ce qui le rendait inoperant : la
+> comparaison est strictement superieure et une chute ne peut pas depasser
+> 100 %.
+
+#### Un identifiant n'appartient qu'a un seul CSV
+
+Des qu'il y a plusieurs profils de synchronisation — typiquement `CLIENTS` et
+`CLIENTS DEMO` —, un meme `IdentifiantUnique` present dans deux CSV est
+revendique par deux moteurs de reconciliation : la derniere synchro executee
+reprend l'identite, et le retrait du premier fichier la fait passer pour
+orpheline, donc **desactivee**.
+
+`KOXO_OTHER_CSV_PATHS` (chemins separes par `;`, vide par defaut) liste les
+autres CSV de l'installation. Avant d'ecrire quoi que ce soit,
+`Test-KoxoIdentifierOwnership` refuse la synchronisation si un identifiant y
+figure deja, et nomme le fichier fautif.
+
+**Ce controle ne vaut que pour une invocation isolee**, typiquement une synchro
+manuelle d'un seul profil. `Invoke-KoxoSyncProfiles` le neutralise
+deliberement : il relit les CSV **sur disque**, or ils sont perimes tant que
+leur profil n'est pas passe. Un client qui vient de changer de branche figurerait
+dans le nouveau fichier *et* encore dans l'ancien, et serait signale comme un
+conflit alors qu'il n'en est pas un — bloquant exactement la conversion qu'on
+cherche a rendre possible. L'orchestrateur verifie la meme propriete sur la
+**source**, ou elle est exacte : un export decoupe par groupe primaire produit
+des sous-ensembles disjoints par construction.
+
+#### Une synchro qui ne traite personne n'est pas un succes
+
+Un profil visant un groupe primaire **inexistant** sort en trois lignes :
+parametre accepte, fin de l'operation. Les deux marqueurs de succes sont donc
+presents alors que KoXo n'a touche personne — mesure en reel le 2026-08-06.
+
+`Test-KoxoLogOutcome` compte desormais les identites traitees dans le journal
+KoXo et **echoue si ce compte est nul alors que le CSV en publie**. Le controle
+ne compare pas les nombres exacts : un deplacement d'identite entre groupes
+primaires ne journalise aucun utilisateur au premier passage, et ce passage est
+legitime. Seul le zero absolu est traite comme un echec.
 
 ### Autres attributs renseignes
 
@@ -142,7 +410,14 @@ est consulte.
 - `KOXO_CSV_ENCODING` optionnelle, `utf8bom` par defaut ; toute autre valeur
   expose a une perte d'accents, voir la section « Encodage »
 - `KOXO_MIN_USER_COUNT`
-- `KOXO_MAX_USER_DROP_PERCENT`
+- `KOXO_MAX_USER_DROP_PERCENT` optionnelle, **`20` par defaut**
+- `KOXO_ALLOW_USER_DROP` optionnelle, `false` par defaut
+- `KOXO_ALLOW_EMPTY_CSV` optionnelle, `false` par defaut ; sans elle, un profil
+  sans identite a publier est **saute**, son CSV laisse en l'etat
+- `KOXO_OTHER_CSV_PATHS` optionnelle, vide par defaut ; chemins separes par `;`.
+  **Sans effet depuis le lanceur `Invoke-KoxoSyncFromWebhook.ps1`**, qui la vide
+  volontairement : l'exclusivite des identifiants s'y verifie sur l'export, pas
+  sur des fichiers voisins encore perimes en cours de passage
 - `KOXO_SYNC_TIMEOUT_SECONDS`
 - `KOXO_LOG_DIRECTORY`
 - `KOXO_KOXO_LOG_GLOB`

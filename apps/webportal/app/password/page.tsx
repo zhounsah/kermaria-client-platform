@@ -5,18 +5,13 @@ import { PageHeader } from "@/components/PageHeader";
 import { PasswordChangeForm } from "@/components/PasswordChangeForm";
 import { StatusBadge } from "@/components/StatusBadge";
 import { requireClientSession } from "@/lib/auth";
+import { isPasswordChangeEnabled } from "@/lib/runtime-config";
 
 export const metadata = {
   title: "Mot de passe",
 };
 
 export const dynamic = "force-dynamic";
-
-function isPasswordChangeEnabled() {
-  return (
-    process.env.AD_PASSWORD_CHANGE_ENABLED?.trim().toLowerCase() === "true"
-  );
-}
 
 export default async function PasswordPage() {
   await requireClientSession();
@@ -33,8 +28,8 @@ export default async function PasswordPage() {
         }
         description={
           enabled
-            ? "Modifier le mot de passe du portail et synchroniser l'identité liée lorsqu'un compte Active Directory existe."
-            : "Le changement de mot de passe n'est pas disponible dans cette version."
+            ? "Modifier le mot de passe de votre espace client et des accès associés."
+            : "Le changement de mot de passe n'est pas disponible pour le moment."
         }
         eyebrow="Sécurité du compte"
         title="Changer mon mot de passe"
@@ -45,11 +40,9 @@ export default async function PasswordPage() {
           <section className="content-panel">
             <h2>Mot de passe du compte</h2>
             <p className="page-description">
-              La modification est transmise à l&apos;API interne, qui vérifie
-              d&apos;abord le mot de passe actuel côté portail. Si votre compte
-              est déjà relié à une identité AD, le nouveau secret est aussi
-              synchronisé vers `clients.home.bzh`. Aucun mot de passe n&apos;est
-              journalisé.
+              Votre mot de passe actuel est vérifié avant tout changement. Le
+              nouveau mot de passe s&apos;applique immédiatement à votre espace
+              client et aux accès qui y sont rattachés.
             </p>
             <PasswordChangeForm />
             <div className="form-footer">
@@ -63,9 +56,12 @@ export default async function PasswordPage() {
             <h2>Garanties</h2>
             <ul className="check-list">
               <li>Vérification de l&apos;identité et de la session.</li>
-              <li>Traitement par l&apos;API interne privée uniquement.</li>
-              <li>Le portail reste la source de vérification du mot de passe actuel.</li>
-              <li>Synchronisation AD effectuée seulement si un lien AD existe.</li>
+              <li>Traitement sur nos serveurs privés uniquement.</li>
+              <li>Le mot de passe actuel est systématiquement revérifié.</li>
+              <li>
+                Les accès rattachés à votre compte sont mis à jour dans la même
+                opération.
+              </li>
               <li>Aucun mot de passe dans les logs.</li>
               <li>Limite de tentatives (3 / 15 min) avant verrouillage temporaire.</li>
               <li>Journal d&apos;audit sans donnée sensible.</li>
@@ -75,8 +71,8 @@ export default async function PasswordPage() {
       ) : (
         <>
           <DisabledActionNotice
-            description="Aucun mot de passe ne peut être saisi ou transmis depuis cette page. L'intégration Active Directory réelle reste désactivée."
-            title="Le changement de mot de passe n'est pas disponible dans cette version."
+            description="Aucun mot de passe ne peut être saisi ou transmis depuis cette page pour le moment."
+            title="Le changement de mot de passe n'est pas disponible pour le moment."
           />
 
           <div className="password-layout">
@@ -98,10 +94,10 @@ export default async function PasswordPage() {
               <h2>Garanties conservées</h2>
               <ul className="check-list">
                 <li>Vérification de l&apos;identité et de la session.</li>
-                <li>Traitement par l&apos;API interne privée uniquement.</li>
+                <li>Traitement sur nos serveurs privés uniquement.</li>
                 <li>Aucun mot de passe dans les logs.</li>
                 <li>Journal d&apos;audit sans donnée sensible.</li>
-                <li>Aucune communication Active Directory réelle.</li>
+                <li>Aucun accès rattaché n&apos;est modifié.</li>
               </ul>
             </aside>
           </div>

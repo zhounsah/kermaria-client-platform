@@ -671,6 +671,27 @@ public sealed class MariaDbSignupRepository : ISignupRepository
         await transaction.CommitAsync(cancellationToken);
     }
 
+    public async Task<string?> GetKoxoUniqueIdentifierAsync(
+        string portalUserId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(
+            _configuration.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT koxo_unique_identifier
+            FROM portal_users
+            WHERE id = @id;
+            """;
+        command.Parameters.AddWithValue("@id", portalUserId);
+        var value = await command.ExecuteScalarAsync(cancellationToken);
+        return value is null || value == DBNull.Value
+            ? null
+            : Convert.ToString(value, CultureInfo.InvariantCulture);
+    }
+
     private static SignupPendingRecord ReadRecord(MySqlDataReader reader)
         => new(
             MariaDbIdentifierReader.ReadRequired(reader, "id"),

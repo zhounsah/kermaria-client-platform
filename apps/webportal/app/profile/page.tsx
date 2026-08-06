@@ -1,6 +1,5 @@
 import Link from "next/link";
 
-import { DisabledActionNotice } from "@/components/DisabledActionNotice";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { LogoutButton } from "@/components/LogoutButton";
@@ -12,6 +11,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { requireClientSession } from "@/lib/auth";
 import { formatDateTime } from "@/lib/formatters";
 import { getClientProfile } from "@/lib/internal-api";
+import { isPasswordChangeEnabled } from "@/lib/runtime-config";
 
 export const metadata = {
   title: "Profil",
@@ -27,6 +27,7 @@ export default async function ProfilePage() {
   const session = await requireClientSession();
   const result = await getClientProfile();
   const profile = result.data;
+  const passwordChangeEnabled = isPasswordChangeEnabled();
 
   return (
     <>
@@ -47,6 +48,7 @@ export default async function ProfilePage() {
         <div className="profile-layout">
           <section className="content-panel">
             <SectionHeading
+              action={<Link href="/profile/edit">Modifier mon profil</Link>}
               description="Informations principales du contact et de l'organisation."
               title="Coordonnées"
             />
@@ -103,15 +105,11 @@ export default async function ProfilePage() {
                 </dd>
               </div>
             </dl>
-            <DisabledActionNotice
-              description="Les informations du profil sont consultables uniquement. Toute correction doit être vérifiée avant d’être appliquée."
-              title="Modification en ligne indisponible"
-            />
           </section>
 
-          <aside className="content-panel security-panel">
+          <aside className="content-panel">
             <SectionHeading
-              description="Fonctions prévues pour les prochaines phases."
+              description="État de la session et actions de sécurité disponibles."
               title="Sécurité du compte"
             />
             <div className="security-item">
@@ -158,9 +156,17 @@ export default async function ProfilePage() {
             <div className="security-item">
               <div>
                 <strong>Mot de passe</strong>
-                <span>Changement indisponible dans cette version</span>
+                <span>
+                  {passwordChangeEnabled
+                    ? "Modifiable depuis votre espace"
+                    : "Changement indisponible pour le moment"}
+                </span>
               </div>
-              <Link href="/password">Voir le parcours</Link>
+              <Link href="/password">
+                {passwordChangeEnabled
+                  ? "Changer mon mot de passe"
+                  : "Voir le parcours"}
+              </Link>
             </div>
             <RevokeOtherSessionsButton />
             <div className="profile-logout">

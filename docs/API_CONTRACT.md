@@ -151,6 +151,7 @@ publiées par le reverse proxy et jamais appelées directement par le navigateur
 - `GET /internal/admin/audit-logs`
 - `GET /internal/portal/summary`
 - `GET /internal/portal/profile`
+- `POST /internal/portal/profile`
 - `GET /internal/portal/services`
 - `GET /internal/portal/invoices`
 - `GET /internal/portal/service-catalog`

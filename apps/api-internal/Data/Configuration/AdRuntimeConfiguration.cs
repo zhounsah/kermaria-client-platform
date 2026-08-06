@@ -38,6 +38,19 @@ public sealed record AdRuntimeConfiguration(
         AdIntegrationMode.Mock
         or AdIntegrationMode.ControlledWrite;
 
+    /// <summary>
+    /// Vrai quand KoXo est reellement en place et fait autorite sur l'annuaire :
+    /// l'application adopte alors l'identite qu'il a creee au lieu d'en creer une.
+    /// </summary>
+    /// <remarks>
+    /// Faux en mode <see cref="AdIntegrationMode.Mock"/> : il n'y a pas de KoXo
+    /// derriere, donc personne ne creerait l'identite et le parcours de
+    /// definition du mot de passe resterait bloque. Le mock continue donc de
+    /// creer, ce qui n'expose a aucun doublon puisqu'aucun KoXo ne synchronise
+    /// en face.
+    /// </remarks>
+    public bool KoxoOwnsDirectory => Mode is AdIntegrationMode.ControlledWrite;
+
     public bool IsWithinAllowedRoots(string? distinguishedName)
     {
         var normalized = NormalizeDistinguishedName(distinguishedName);

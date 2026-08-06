@@ -13,7 +13,11 @@ param(
 
     [string]$KoxoWorkingDirectory = 'C:\Program Files\KoXo Dev\KoXoAdm',
 
-    [string]$KoxoSyncArgument = '/Synchro=CLIENTS.xml'
+    [string]$KoxoSyncArgument = '/Synchro=CLIENTS.xml',
+
+    # Groupe primaire pris en charge par ce profil. Laisser vide n'est valable
+    # que si l'export ne publie qu'un seul groupe primaire.
+    [string]$PrimaryGroup = ''
 )
 
 Set-StrictMode -Version Latest
@@ -27,5 +31,6 @@ $result = Invoke-KoxoSync `
     -LaunchKoxo:$LaunchKoxo `
     -KoxoExecutablePath $KoxoExecutablePath `
     -KoxoWorkingDirectory $KoxoWorkingDirectory `
-    -KoxoSyncArgument $KoxoSyncArgument
+    -KoxoSyncArgument $KoxoSyncArgument `
+    -PrimaryGroup $PrimaryGroup
 $result

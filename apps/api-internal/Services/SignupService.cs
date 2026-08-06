@@ -6,6 +6,7 @@ using Kermaria.ApiInternal.Data.Configuration;
 using Kermaria.ApiInternal.Data.Repositories;
 using Kermaria.ApiInternal.Services.ActiveDirectory;
 using Kermaria.ApiInternal.Services.Email;
+using Kermaria.ApiInternal.Services.Provisioning;
 using Microsoft.Extensions.Logging;
 
 namespace Kermaria.ApiInternal.Services;
@@ -97,6 +98,8 @@ public sealed class SignupService : ISignupService
     private readonly IPortalPasswordService _passwordService;
     private readonly IActiveDirectoryService _activeDirectoryService;
     private readonly IActiveDirectoryLinkRepository _activeDirectoryLinkRepository;
+    private readonly IAdGroupProvisioner _adGroupProvisioner;
+    private readonly IKoxoPendingPasswordStore _pendingPasswords;
     private readonly IKoxoSyncWebhookTriggerService _koxoSyncWebhookTriggerService;
     private readonly SignupRuntimeConfiguration _configuration;
     private readonly EmailRuntimeConfiguration _emailConfiguration;
@@ -110,6 +113,8 @@ public sealed class SignupService : ISignupService
         IPortalPasswordService passwordService,
         IActiveDirectoryService activeDirectoryService,
         IActiveDirectoryLinkRepository activeDirectoryLinkRepository,
+        IAdGroupProvisioner adGroupProvisioner,
+        IKoxoPendingPasswordStore pendingPasswords,
         IKoxoSyncWebhookTriggerService koxoSyncWebhookTriggerService,
         SignupRuntimeConfiguration configuration,
         EmailRuntimeConfiguration emailConfiguration,
@@ -122,6 +127,8 @@ public sealed class SignupService : ISignupService
         _passwordService = passwordService;
         _activeDirectoryService = activeDirectoryService;
         _activeDirectoryLinkRepository = activeDirectoryLinkRepository;
+        _adGroupProvisioner = adGroupProvisioner;
+        _pendingPasswords = pendingPasswords;
         _koxoSyncWebhookTriggerService = koxoSyncWebhookTriggerService;
         _configuration = configuration;
         _emailConfiguration = emailConfiguration;
@@ -379,6 +386,16 @@ public sealed class SignupService : ISignupService
                 "INVALID_STATE",
                 "La demande n'a pas pu etre approuvee dans son etat actuel.");
         }
+
+        // Des l'approbation, pour que KoXo ait cree l'identite quand le client
+        // suivra son lien. Sans ce declenchement, le set-password arriverait
+        // avant l'identite et repondrait AD_IDENTITY_NOT_READY.
+        await SendKoxoSyncTriggerAsync(
+            result.SignupId,
+            result.UserId,
+            result.CustomerReference,
+            "signup_approved",
+            cancellationToken);
 
         var setPasswordUrl = BuildUrl("/set-password", passwordToken);
         var delivery = await _emailDispatch.SendAccountApprovedAsync(
@@ -676,25 +693,45 @@ public sealed class SignupService : ISignupService
         return null;
     }
 
-    private async Task TriggerKoxoSyncWebhookAsync(
+    private Task TriggerKoxoSyncWebhookAsync(
         SignupPendingRecord record,
+        CancellationToken cancellationToken)
+        => SendKoxoSyncTriggerAsync(record, "password_set", cancellationToken);
+
+    private Task SendKoxoSyncTriggerAsync(
+        SignupPendingRecord record,
+        string trigger,
+        CancellationToken cancellationToken)
+        => SendKoxoSyncTriggerAsync(
+            record.Id,
+            record.ApprovedUserId,
+            record.ApprovedCustomerReference,
+            trigger,
+            cancellationToken);
+
+    /// <summary>
+    /// Notifie KoXo qu'une donnee exportee a change, pour qu'il applique le
+    /// changement a l'annuaire.
+    /// </summary>
+    /// <remarks>
+    /// Plus de filtre sur <c>koxo_export_status</c> : ne declencher que sur
+    /// <c>koxo_pending</c> revenait a ne notifier QUE la premiere creation, si
+    /// bien que toute modification ulterieure restait invisible de l'annuaire
+    /// jusqu'a la synchronisation planifiee suivante.
+    ///
+    /// L'echec est journalise sans etre propage : la synchronisation est un
+    /// rattrapage, pas une condition de succes de l'operation appelante.
+    /// </remarks>
+    private async Task SendKoxoSyncTriggerAsync(
+        string signupId,
+        string? portalUserId,
+        string? customerReference,
+        string trigger,
         CancellationToken cancellationToken)
     {
         if (!_adConfiguration.WritesEnabled
-            || record.ApprovedUserId is null
-            || string.IsNullOrWhiteSpace(record.ApprovedCustomerReference))
-        {
-            return;
-        }
-
-        var link = await _activeDirectoryLinkRepository.FindUserLinkByPortalUserIdAsync(
-            record.ApprovedUserId,
-            cancellationToken);
-        if (link is null
-            || !string.Equals(
-                link.KoxoExportStatus,
-                "koxo_pending",
-                StringComparison.Ordinal))
+            || portalUserId is null
+            || string.IsNullOrWhiteSpace(customerReference))
         {
             return;
         }
@@ -704,10 +741,10 @@ public sealed class SignupService : ISignupService
         {
             await _koxoSyncWebhookTriggerService.TriggerAsync(
                 new KoxoSyncWebhookTriggerRequest(
-                    record.Id,
-                    record.ApprovedUserId,
-                    record.ApprovedCustomerReference,
-                    "password_set",
+                    signupId,
+                    portalUserId,
+                    customerReference,
+                    trigger,
                     correlationId,
                     DateTime.UtcNow.ToString("O")),
                 cancellationToken);
@@ -716,10 +753,11 @@ public sealed class SignupService : ISignupService
         {
             _logger.LogWarning(
                 exception,
-                "KoXo sync webhook trigger failed for signup_id {SignupId}, portal_user_id {PortalUserId}, customer_reference {CustomerReference}, correlation_id {CorrelationId}",
-                record.Id,
-                record.ApprovedUserId,
-                record.ApprovedCustomerReference,
+                "KoXo sync webhook trigger failed for signup_id {SignupId}, portal_user_id {PortalUserId}, customer_reference {CustomerReference}, trigger {Trigger}, correlation_id {CorrelationId}",
+                signupId,
+                portalUserId,
+                customerReference,
+                trigger,
                 correlationId);
         }
     }
@@ -786,31 +824,76 @@ public sealed class SignupService : ISignupService
             return null;
         }
 
-        var adUser = await EnsurePortalAdUserAsync(
-            record,
-            cancellationToken);
-        if (adUser.error is not null)
+        // Quand KoXo est reellement en place, c'est LUI qui cree l'identite :
+        // l'application se contente de l'adopter via son employeeNumber.
+        // Creer nous-memes produirait un DOUBLON, le sAMAccountName derive ici
+        // (initiale + 6 lettres du nom) differant de celui derive par KoXo
+        // (prenom.nom) — le mot de passe du client atterrirait alors sur le
+        // compte dont les services ne se servent pas.
+        //
+        // En mode Mock il n'y a pas de KoXo derriere, donc on continue de creer :
+        // sans cela plus personne ne creerait l'identite et le parcours de
+        // definition du mot de passe resterait bloque.
+        AdDirectoryObjectSummary? adUserObject;
+        if (_adConfiguration.KoxoOwnsDirectory)
         {
-            return adUser.error;
+            var adoption = await AdoptKoxoIdentityAsync(record, cancellationToken);
+            if (adoption.error is not null)
+            {
+                return adoption.error;
+            }
+
+            adUserObject = adoption.directoryObject;
+        }
+        else
+        {
+            var adUser = await EnsurePortalAdUserAsync(
+                record,
+                cancellationToken);
+            if (adUser.error is not null)
+            {
+                return adUser.error;
+            }
+
+            adUserObject = adUser.directoryObject;
         }
 
-        var passwordResult = await _activeDirectoryService.SetUserPasswordAsync(
-            record.ApprovedCustomerReference,
-            adUser.directoryObject!.SamAccountName,
-            password,
-            cancellationToken);
-        if (passwordResult.StatusCode >= 400 || passwordResult.Value is null)
+        if (_adConfiguration.KoxoOwnsDirectory)
         {
-            return MapAdProvisioningFailure(
-                passwordResult,
-                "Le mot de passe Active Directory n'a pas pu etre applique.");
+            // On n'ecrit PAS le mot de passe par LDAP. Avec ForcePasswords=1,
+            // KoXo reecrit le mot de passe de l'annuaire a chaque
+            // synchronisation depuis la colonne 14 du CSV : une ecriture LDAP
+            // serait ecrasee au passage suivant et le client perdrait
+            // NextCloud, RDS et le VPN sans aucune erreur visible. On publie
+            // donc le mot de passe pour l'export, et le declenchement qui suit
+            // dans ApplyPasswordAsync le fait appliquer par KoXo.
+            _pendingPasswords.Publish(record.ApprovedUserId, password);
+        }
+        else
+        {
+            // Mode Mock : aucun KoXo derriere, c'est bien a l'application
+            // d'appliquer le mot de passe, sans quoi le compte simule resterait
+            // desactive et sans mot de passe.
+            var passwordResult = await _activeDirectoryService.SetUserPasswordAsync(
+                record.ApprovedCustomerReference,
+                adUserObject!.SamAccountName,
+                password,
+                cancellationToken);
+            if (passwordResult.StatusCode >= 400 || passwordResult.Value is null)
+            {
+                return MapAdProvisioningFailure(
+                    passwordResult,
+                    "Le mot de passe Active Directory n'a pas pu etre applique.");
+            }
+
+            adUserObject = passwordResult.Value;
         }
 
         await _activeDirectoryLinkRepository.UpsertPortalUserLinkAsync(
             record.ApprovedCustomerReference,
             record.ApprovedUserId,
             actorUserId: null,
-            passwordResult.Value,
+            adUserObject!,
             _adConfiguration.Domain,
             "succeeded",
             now,
@@ -820,6 +903,49 @@ public sealed class SignupService : ISignupService
             cancellationToken);
 
         return null;
+    }
+
+    /// <summary>
+    /// Retrouve l'identite creee par KoXo au lieu d'en creer une.
+    /// </summary>
+    /// <remarks>
+    /// L'absence n'est pas une erreur mais un etat d'attente : la
+    /// synchronisation KoXo est asynchrone. On la relance et on invite a
+    /// reessayer, plutot que de creer un doublon sous un sAMAccountName que
+    /// KoXo n'utiliserait pas.
+    /// </remarks>
+    private async Task<(AdDirectoryObjectSummary? directoryObject, SignupOperationResult? error)>
+        AdoptKoxoIdentityAsync(
+            SignupPendingRecord record,
+            CancellationToken cancellationToken)
+    {
+        var koxoIdentifier = await _repository.GetKoxoUniqueIdentifierAsync(
+            record.ApprovedUserId!,
+            cancellationToken);
+        if (string.IsNullOrWhiteSpace(koxoIdentifier))
+        {
+            return (
+                null,
+                new SignupOperationResult(
+                    false,
+                    "INVALID_STATE",
+                    "Le compte approuve n'a pas d'identifiant de synchronisation."));
+        }
+
+        var directoryObject = await _adGroupProvisioner
+            .ResolveUserByEmployeeNumberAsync(koxoIdentifier, cancellationToken);
+        if (directoryObject is not null)
+        {
+            return (directoryObject, null);
+        }
+
+        await SendKoxoSyncTriggerAsync(record, "identity_missing", cancellationToken);
+        return (
+            null,
+            new SignupOperationResult(
+                false,
+                "AD_IDENTITY_NOT_READY",
+                "Votre espace est en cours de creation. Merci de reessayer dans une minute."));
     }
 
     private async Task<(AdDirectoryObjectSummary? directoryObject, SignupOperationResult? error)>

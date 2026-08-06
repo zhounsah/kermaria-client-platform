@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Data.Common;
 using System.Net;
 using System.Net.Http.Headers;
@@ -78,6 +78,7 @@ async Task<int> RunAsync(string[] arguments)
         await RunServiceAuthenticationGuardTestsAsync();
         await RunKoxoExportHttpTestsAsync();
         await RunKoxoExportServiceTestsAsync();
+        await RunKoxoPendingPasswordTestsAsync();
         await RunKoxoSyncWebhookTriggerServiceTestsAsync();
         await RunSignupKoxoWebhookTriggerTestsAsync();
         await RunDisabledAccountTestAsync();
@@ -3164,7 +3165,7 @@ async Task RunKoxoExportServiceTestsAsync()
             "1992-10-02",
             "zoe.aardvark@example.invalid")
     ]);
-    var sortableService = new KoxoExportService(sortableRepository);
+    var sortableService = new KoxoExportService(sortableRepository, NewPendingPasswordStore());
     var sortablePayload = await sortableService.ExportAsync(
         "api",
         "v0.40-koxo-sort",
@@ -3172,11 +3173,11 @@ async Task RunKoxoExportServiceTestsAsync()
         CancellationToken.None);
 
     Ensure(
-        sortablePayload.SchemaVersion == 1
+        sortablePayload.SchemaVersion == 2
         && sortablePayload.UserCount == 3
         && sortablePayload.Users.Count == 3
         && DateTimeOffset.TryParse(sortablePayload.GeneratedAt, out _),
-        "Le payload KoXo valide doit exposer schemaVersion=1, un generatedAt ISO et un userCount exact.");
+        "Le payload KoXo valide doit exposer schemaVersion=2, un generatedAt ISO et un userCount exact.");
     EnsureSequenceEqual(
         sortablePayload.Users.Select(user => user.IdentifiantUnique).ToArray(),
         ["CLI-000001", "CLI-000010", "CLI-000002"],
@@ -3195,6 +3196,77 @@ async Task RunKoxoExportServiceTestsAsync()
         secondPayload.Users.Select(user => user.IdentifiantUnique).ToArray(),
         sortablePayload.Users.Select(user => user.IdentifiantUnique).ToArray(),
         "Un export KoXo repete ne doit pas recalculer les identifiants uniques.");
+
+    var splitRepository = new InMemoryKoxoRepository(
+    [
+        new KoxoExportCandidate(
+            "portal-user-paying",
+            "CLI-000001",
+            "CLI-000001",
+            "monsieur",
+            "Payant",
+            "Paul",
+            "1980-01-02",
+            "paul.payant@example.invalid"),
+        new KoxoExportCandidate(
+            "portal-user-trial",
+            "DEMO-abcdef0123456789abcdef",
+            "CLI-000002",
+            "madame",
+            "Essai",
+            "Emma",
+            "1990-05-06",
+            "emma.essai@example.invalid",
+            IsDemo: true,
+            KoxoGroupReference: "CLI-000042"),
+        new KoxoExportCandidate(
+            "portal-user-legacy-trial",
+            "DEMO-fedcba9876543210fedcba",
+            "CLI-000003",
+            "madame",
+            "Ancienne",
+            "Alice",
+            "1975-11-30",
+            "alice.ancienne@example.invalid",
+            IsDemo: true)
+    ]);
+    var splitService = new KoxoExportService(splitRepository, NewPendingPasswordStore());
+    var splitPayload = await splitService.ExportAsync(
+        "api",
+        "v1.1-koxo-split",
+        "127.0.0.1",
+        CancellationToken.None);
+
+    var payingUser = splitPayload.Users.Single(user =>
+        user.IdentifiantUnique == "CLI-000001");
+    var trialUser = splitPayload.Users.Single(user =>
+        user.IdentifiantUnique == "CLI-000002");
+    var legacyTrialUser = splitPayload.Users.Single(user =>
+        user.IdentifiantUnique == "CLI-000003");
+
+    Ensure(
+        payingUser.GroupePrimaire == "CLIENTS"
+        && trialUser.GroupePrimaire == "CLIENTS DÉMO"
+        && legacyTrialUser.GroupePrimaire == "CLIENTS DÉMO",
+        "L'export KoXo doit aiguiller chaque identite vers le groupe primaire de son profil.");
+
+    Ensure(
+        splitPayload.Users.All(user =>
+            user.GroupePrimaire is "CLIENTS" or "CLIENTS DÉMO"),
+        "Aucune identite ne doit porter un groupe primaire inconnu : elle n'atteindrait aucun CSV, donc passerait pour orpheline et serait desactivee.");
+
+    // Le prefixe n'est pas decoratif : KoXo ne cree un groupe secondaire que
+    // s'il est nouveau pour sa propre base. Avec le meme nom des deux cotes de
+    // la separation, l'identite migree perd son groupe DEFINITIVEMENT.
+    Ensure(
+        trialUser.GroupeSecondaire == "DEMO-CLI-000042"
+        && payingUser.GroupeSecondaire == "CLI-000001"
+        && trialUser.GroupeSecondaire != payingUser.GroupeSecondaire,
+        "Le groupe secondaire d'un essai doit deriver du code reserve avec un prefixe qui le distingue de l'OU definitive.");
+
+    Ensure(
+        legacyTrialUser.GroupeSecondaire == "DEMO-CLI-DEMO",
+        "Un essai cree avant la reservation systematique d'un code doit retomber sur l'OU commune, prefixee — l'exclure le ferait passer pour orphelin.");
 
     var invalidRepository = new InMemoryKoxoRepository(
     [
@@ -3226,7 +3298,7 @@ async Task RunKoxoExportServiceTestsAsync()
             null,
             "charlie.sansdate@example.invalid")
     ]);
-    var invalidService = new KoxoExportService(invalidRepository);
+    var invalidService = new KoxoExportService(invalidRepository, NewPendingPasswordStore());
     KoxoValidationException? validationException = null;
     try
     {
@@ -3513,6 +3585,7 @@ async Task RunSignupKoxoWebhookTriggerTestsAsync()
         5000,
         25,
         true);
+    var adMembershipStore = new MockAdGroupMembershipStore();
     var service = new SignupService(
         signupRepository,
         new MockSubscriptionRepository(new MockSubscriptionStore()),
@@ -3520,8 +3593,10 @@ async Task RunSignupKoxoWebhookTriggerTestsAsync()
         new PortalPasswordService(),
         new MockActiveDirectoryService(
             adConfiguration,
-            new MockAdGroupMembershipStore()),
+            adMembershipStore),
         new MockActiveDirectoryLinkRepository(),
+        new MockAdGroupProvisioner(adMembershipStore),
+        NewPendingPasswordStore(),
         trigger,
         new SignupRuntimeConfiguration(true, 3, 1, 24, 24, false),
         new EmailRuntimeConfiguration(
@@ -3557,6 +3632,63 @@ async Task RunSignupKoxoWebhookTriggerTestsAsync()
         && trigger.Requests[0].PortalUserId == userId
         && trigger.Requests[0].CustomerReference == customerReference,
         "Le set-password doit declencher exactement une notification KoXo pour SRV-21.");
+}
+
+static KoxoPendingPasswordStore NewPendingPasswordStore()
+    => new(LoggerFactory.Create(_ => { }).CreateLogger<KoxoPendingPasswordStore>());
+
+async Task RunKoxoPendingPasswordTestsAsync()
+{
+    var repository = new InMemoryKoxoRepository(
+    [
+        new KoxoExportCandidate(
+            "portal-user-1",
+            "CLI-A",
+            "CLI-000001",
+            "madame",
+            "Aardvark",
+            "Zoe",
+            "1992-10-02",
+            "zoe.aardvark@example.invalid")
+    ]);
+    var store = NewPendingPasswordStore();
+    var service = new KoxoExportService(repository, store);
+
+    store.Publish("portal-user-1", "NOT_A_REAL_PASSWORD_V041");
+
+    // Le tableau de bord rejoue la preparation a la demande. S'il consommait
+    // l'entree, le mot de passe disparaitrait avant d'atteindre KoXo — et
+    // serait au passage affiche a l'administrateur dans l'apercu.
+    var dashboard = await service.GetDashboardAsync(CancellationToken.None);
+    Ensure(
+        dashboard.Preview is not null
+        && dashboard.Preview.Users.All(user => user.MotDePasse is null),
+        "L'apercu admin ne doit jamais porter de mot de passe.");
+
+    var exported = await service.ExportAsync(
+        "api",
+        "v0.41-koxo-password",
+        "127.0.0.1",
+        CancellationToken.None);
+    Ensure(
+        exported.Users.Single().MotDePasse == "NOT_A_REAL_PASSWORD_V041",
+        "L'export reel doit publier le mot de passe en attente.");
+
+    // Usage unique : un second export ne doit pas republier le mot de passe,
+    // sinon KoXo le reappliquerait indefiniment a chaque synchronisation et
+    // annulerait tout changement ulterieur.
+    var again = await service.ExportAsync(
+        "api",
+        "v0.41-koxo-password-2",
+        "127.0.0.1",
+        CancellationToken.None);
+    Ensure(
+        again.Users.Single().MotDePasse is null,
+        "Le mot de passe en attente doit etre a usage unique.");
+
+    Ensure(
+        store.Consume("portal-user-inconnu") is null,
+        "Un identifiant sans mot de passe en attente doit rendre null.");
 }
 
 static string HashTokenForTests(string token)

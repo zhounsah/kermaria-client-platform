@@ -54,7 +54,9 @@ assert.match(styles, /\.loading-state/);
 assert.match(styles, /\.error-state/);
 
 assert.doesNotMatch(passwordPage, /type="password"|getAdHealth/);
-assert.match(passwordPage, /Aucune communication Active Directory réelle/);
+// Parcours ferme : la page doit continuer d'annoncer qu'aucun acces rattache
+// n'est touche. Formule cote client, sans nommer l'annuaire sous-jacent.
+assert.match(passwordPage, /Aucun accès rattaché n&apos;est modifié/);
 
 assert.match(invoiceTable, /className="invoice-table"/);
 assert.match(invoiceTable, /data-label=/);

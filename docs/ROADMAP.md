@@ -229,6 +229,8 @@ Livre :
 - **Tests** : `npm run test:timezone` (nouveau
   `apps/webportal/scripts/verify-timezone-contract.mjs`) combine
   assertions statiques sur les 5 fichiers touches + assertions runtime
+  `Intl.DateTimeFormat` sur trois inputs UTC (ete, hiver, bascule
+  2026-03-29) validant la conversion DST automatique.
 
 ## Jalon V0.40 synchronisation KoXo privee
 
@@ -245,7 +247,9 @@ Perimetre :
 
 ### V0.40.1 clarification mot de passe
 
-Statut : **documente dans le depot**.
+Statut : **REVOQUE par la V0.41** (voir ci-dessous). Conserve ici parce que la
+regle a ete vraie, et qu'un lecteur qui la retrouverait ailleurs doit savoir
+qu'elle ne l'est plus.
 
 - aucun mot de passe n'est transporte vers KoXo ;
 - KoXo n'est pas une source de verite pour les secrets d'authentification ;
@@ -254,10 +258,54 @@ Statut : **documente dans le depot**.
 - l'alignement du mot de passe avec l'environnement Windows reste porte par
   les flux `set-password` et, a terme, par les flux dedies portail <-> AD,
   jamais par l'export KoXo.
-  `Intl.DateTimeFormat` sur trois inputs UTC (ete, hiver, bascule
-  2026-03-29) validant la conversion DST automatique.
 
 Aucune fonctionnalite metier ajoutee. Aucune dependance hardware.
+
+## Jalon V0.41 KoXo maitre de l'annuaire
+
+Statut : **livre et verifie en production le 2026-08-06** (SRV-13 + SRV-21).
+Documentation dediee : [`koxo-sync.md`](koxo-sync.md).
+
+Ce jalon **revoque la regle de la V0.40.1**. Le client definit un seul mot de
+passe, qui doit ouvrir son espace client *et* les services (NextCloud, RDS,
+VPN) : il faut donc bien qu'il atteigne l'annuaire. Le choix retenu est que
+**KoXo reste maitre**, l'API ne touchant plus a l'AD par LDAP.
+
+Perimetre :
+
+- le mot de passe transite par la **colonne 14** du CSV, depuis un stock en
+  memoire a usage unique (15 min) alimente par `set-password`. Il n'est jamais
+  journalise ni persiste en clair ;
+- l'API **ne cree plus** d'identite AD quand KoXo est maitre : elle **adopte**
+  le compte cree par KoXo, par `employeeNumber` ;
+- la largeur du CSV est **constante a 14 colonnes**, en-tete comprise. Une
+  largeur variable decale l'`IdentifiantUnique` de la colonne 5 et fait ecrire
+  l'identite et le mot de passe d'un client sur le compte d'un autre — arrive
+  en reel le 2026-08-06 ;
+- **separation des groupes primaires** `CLIENTS` / `CLIENTS DÉMO` : l'export
+  publie `groupePrimaire` (schema **2**), et un orchestrateur sert les deux
+  profils sur un **unique** appel a l'API, l'export consommant les mots de
+  passe en attente.
+
+Garde-fous, tous verifies en production et non seulement en test :
+
+- volumetrie effective (le defaut valait `100`, donc inoperant ; la variable
+  Machine de SRV-21 aussi, corrigee le 2026-08-06) ;
+- un identifiant n'appartient qu'a un seul CSV ;
+- une synchronisation qui ne traite personne est un echec, pas un succes —
+  c'est la signature d'un profil visant un groupe primaire inexistant ;
+- un profil sans identite est **saute**, son CSV laisse intact ;
+- aucun groupe primaire publie ne peut rester sans profil.
+
+Sort des orphelins : `SyncDoNotDeleteUsers=1`, donc **desactivation** et non
+suppression. Le cycle desabonnement / reabonnement a ete mesure de bout en
+bout — le compte qui revient est **reactive automatiquement** et conserve SID,
+`sAMAccountName`, `employeeNumber`, dossier personnel et mot de passe.
+
+Consequence a retenir : la presence dans le CSV suffit a rouvrir un compte. Le
+verrou d'un essai echu est donc la **revocation des groupes `GG_*`**, que la
+synchronisation ne touche pas — le compte actif n'est plus un signal fiable
+d'acces.
 
 ## Jalon V0.24 stabilisation testable sur SRV-01 et SRV-02
 

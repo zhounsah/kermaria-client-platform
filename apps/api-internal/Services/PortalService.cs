@@ -20,6 +20,10 @@ public interface IPortalService
     Task<ClientProfile> GetProfileAsync(
         PortalSessionContext session,
         CancellationToken cancellationToken);
+    Task<ClientProfile> UpdateProfileAsync(
+        PortalSessionContext session,
+        ClientProfileUpdate update,
+        CancellationToken cancellationToken);
     Task<IReadOnlyList<ServiceSummary>> GetServicesAsync(
         PortalSessionContext session,
         CancellationToken cancellationToken);
@@ -85,6 +89,50 @@ public sealed class PortalService : IPortalService
         PortalSessionContext session,
         CancellationToken cancellationToken)
         => _repository.GetProfileAsync(session, cancellationToken);
+
+    public async Task<ClientProfile> UpdateProfileAsync(
+        PortalSessionContext session,
+        ClientProfileUpdate update,
+        CancellationToken cancellationToken)
+    {
+        var normalized = NormalizeProfileUpdate(update);
+        if (!IsValidProfileUpdate(normalized))
+        {
+            throw new PortalValidationException();
+        }
+
+        var profile = await _repository.UpdateProfileAsync(
+            session,
+            normalized,
+            cancellationToken);
+
+        // Aucune valeur de coordonnee dans le journal : seuls les
+        // identifiants techniques y figurent.
+        _logger.LogInformation(
+            "Portal profile updated for user {UserId} of customer {CustomerId}.",
+            session.UserId,
+            session.CustomerId);
+
+        return profile;
+    }
+
+    private static ClientProfileUpdate NormalizeProfileUpdate(
+        ClientProfileUpdate update)
+        => new(
+            (update.ContactName ?? string.Empty).Trim(),
+            (update.Phone ?? string.Empty).Trim(),
+            (update.Address ?? string.Empty).Trim(),
+            (update.City ?? string.Empty).Trim(),
+            (update.Country ?? string.Empty).Trim());
+
+    // Bornes calees sur le schema (customers.phone/address/city/country,
+    // portal_users.display_name) : un depassement serait tronque par MariaDB.
+    private static bool IsValidProfileUpdate(ClientProfileUpdate update)
+        => update.ContactName.Length is >= 2 and <= 200
+            && update.Phone.Length <= 40
+            && update.Address.Length <= 255
+            && update.City.Length <= 160
+            && update.Country.Length <= 100;
 
     public Task<IReadOnlyList<ServiceSummary>> GetServicesAsync(
         PortalSessionContext session,

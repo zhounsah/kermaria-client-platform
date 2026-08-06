@@ -5,6 +5,12 @@ namespace Kermaria.ApiInternal.Data.Repositories;
 
 public sealed class MockPortalRepository : IPortalRepository
 {
+    // Corrections de coordonnees appliquees en memoire, par utilisateur. Le
+    // mode mock ne persiste rien : l'overlay disparait au redemarrage, mais il
+    // permet de rejouer le parcours complet sans MariaDB.
+    private static readonly Dictionary<string, ClientProfileUpdate> ProfileOverlay =
+        new(StringComparer.Ordinal);
+
     public bool IsPersistent => false;
 
     public Task<PortalSummary> GetSummaryAsync(
@@ -19,12 +25,20 @@ public sealed class MockPortalRepository : IPortalRepository
     public Task<ClientProfile> GetProfileAsync(
         PortalSessionContext session,
         CancellationToken cancellationToken)
-        => Task.FromResult(MockPortalData.Profile with
+        => Task.FromResult(BuildProfile(session));
+
+    public Task<ClientProfile> UpdateProfileAsync(
+        PortalSessionContext session,
+        ClientProfileUpdate update,
+        CancellationToken cancellationToken)
+    {
+        lock (ProfileOverlay)
         {
-            CustomerReference = session.CustomerReference,
-            ContactName = session.DisplayName,
-            Email = session.Email
-        });
+            ProfileOverlay[session.UserId] = update;
+        }
+
+        return Task.FromResult(BuildProfile(session));
+    }
 
     public Task<IReadOnlyList<ServiceSummary>> GetServicesAsync(
         PortalSessionContext session,
@@ -92,6 +106,33 @@ public sealed class MockPortalRepository : IPortalRepository
         AuditEvent auditEvent,
         CancellationToken cancellationToken)
         => Task.CompletedTask;
+
+    private static ClientProfile BuildProfile(PortalSessionContext session)
+    {
+        var profile = MockPortalData.Profile with
+        {
+            CustomerReference = session.CustomerReference,
+            ContactName = session.DisplayName,
+            Email = session.Email
+        };
+
+        ClientProfileUpdate? overlay;
+        lock (ProfileOverlay)
+        {
+            ProfileOverlay.TryGetValue(session.UserId, out overlay);
+        }
+
+        return overlay is null
+            ? profile
+            : profile with
+            {
+                ContactName = overlay.ContactName,
+                Phone = overlay.Phone,
+                Address = overlay.Address,
+                City = overlay.City,
+                Country = overlay.Country
+            };
+    }
 
     private static string CreateReference(string prefix)
         => $"{prefix}-MOCK-{Guid.NewGuid():N}"[..22].ToUpperInvariant();
