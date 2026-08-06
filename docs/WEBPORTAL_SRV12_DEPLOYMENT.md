@@ -86,9 +86,11 @@ Depuis la machine locale :
 scp C:/Users/zhounsah/Documents/Dev/_artifacts/webportal-sinistre.tar.gz <user>@KERMARIA-SRV-12.home.bzh:/tmp/webportal-release.tar.gz
 ```
 
-Sur `SRV-12` :
+Sur `SRV-12`. **Passer le bloc a `bash` via un heredoc, ne jamais le coller
+directement dans la session** — voir l'avertissement juste apres :
 
 ```bash
+bash <<'DEPLOY'
 set -euo pipefail
 
 release="$(date -u +%Y%m%d-%H%M%S)-manual-webportal"
@@ -110,9 +112,36 @@ systemctl is-active kermaria-webportal
 echo "PREVIOUS=$current_target"
 echo "CURRENT=$release_dir"
 readlink -f /opt/kermaria/webportal
+DEPLOY
 ```
 
+> **`set -euo pipefail` colle dans une session interactive ferme PuTTY.**
+> Vecu le 2026-08-06 lors de la bascule `v1.1.12`.
+>
+> `set -e` fait quitter le shell des qu'une commande renvoie un code non
+> nul. Dans un shell de **login**, « quitter » veut dire fermer la session :
+> la fenetre PuTTY disparait, sans message, et ca ressemble a un plantage du
+> client. `set -u` fait la meme chose au premier `$VARIABLE` non definie —
+> une completion ou un prompt suffit. La session reste armee **apres** la
+> bascule, donc c'est souvent la commande *suivante*, anodine, qui la tue.
+>
+> Le heredoc ci-dessus resout le probleme sans rien perdre : les options
+> restent actives pour le bloc, dans un `bash` fils, et la session de login
+> n'est jamais concernee.
+>
+> Si une session a deja ete armee, `set +e +u +o pipefail` la desarme. Une
+> fois la fenetre fermee, il n'y a qu'a se reconnecter — aucune bascule
+> n'est laissee a moitie faite, le symlink n'etant bascule qu'apres
+> extraction complete.
+
 ## 6. Verification post-deploiement
+
+> **Toute cette section s'execute depuis le poste local, pas sur SRV-12.**
+> Se deconnecter de la session SSH avant de continuer. `SRV-12` ne porte que
+> le build standalone : ni `package.json` racine, ni
+> `scripts/assert-webportal-home.mjs`, ni npm. Lancer `npm run` la-bas sort
+> en code non nul — et si la session est encore armee par `set -e`, elle se
+> ferme (cf. l'avertissement du paragraphe 5).
 
 Verifier la sante :
 
@@ -128,6 +157,10 @@ npm run assert:webportal:home -- `
   --must-match "Un sinistre peut" `
   --must-not-match "Informatique claire et utile\\."
 ```
+
+Puis les six controles SEO livres en `v1.1.12` — canonical unique par page,
+`h1` unique, `og:image`, routes hors index, sitemap : section « Canonical,
+balisage schema.org et hors-index » d'[`OPERATIONS.md`](OPERATIONS.md).
 
 Verifier aussi les redirections d'alias :
 
