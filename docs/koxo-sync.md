@@ -189,6 +189,31 @@ masse.
 > comparaison est strictement superieure et une chute ne peut pas depasser
 > 100 %.
 
+#### Un identifiant n'appartient qu'a un seul CSV
+
+Des qu'il y a plusieurs profils de synchronisation — typiquement `CLIENTS` et
+`CLIENTS DEMO` —, un meme `IdentifiantUnique` present dans deux CSV est
+revendique par deux moteurs de reconciliation : la derniere synchro executee
+reprend l'identite, et le retrait du premier fichier la fait passer pour
+orpheline, donc **desactivee**.
+
+`KOXO_OTHER_CSV_PATHS` (chemins separes par `;`, vide par defaut) liste les
+autres CSV de l'installation. Avant d'ecrire quoi que ce soit,
+`Test-KoxoIdentifierOwnership` refuse la synchronisation si un identifiant y
+figure deja, et nomme le fichier fautif.
+
+#### Une synchro qui ne traite personne n'est pas un succes
+
+Un profil visant un groupe primaire **inexistant** sort en trois lignes :
+parametre accepte, fin de l'operation. Les deux marqueurs de succes sont donc
+presents alors que KoXo n'a touche personne — mesure en reel le 2026-08-06.
+
+`Test-KoxoLogOutcome` compte desormais les identites traitees dans le journal
+KoXo et **echoue si ce compte est nul alors que le CSV en publie**. Le controle
+ne compare pas les nombres exacts : un deplacement d'identite entre groupes
+primaires ne journalise aucun utilisateur au premier passage, et ce passage est
+legitime. Seul le zero absolu est traite comme un echec.
+
 ### Autres attributs renseignes
 
 `sn`, `givenName`, `displayName`, `mail`, `userPrincipalName`,
@@ -240,6 +265,7 @@ est consulte.
 - `KOXO_MIN_USER_COUNT`
 - `KOXO_MAX_USER_DROP_PERCENT` optionnelle, **`20` par defaut**
 - `KOXO_ALLOW_USER_DROP` optionnelle, `false` par defaut
+- `KOXO_OTHER_CSV_PATHS` optionnelle, vide par defaut ; chemins separes par `;`
 - `KOXO_SYNC_TIMEOUT_SECONDS`
 - `KOXO_LOG_DIRECTORY`
 - `KOXO_KOXO_LOG_GLOB`

@@ -687,3 +687,104 @@ Describe 'Confidentialite du mot de passe' {
         $contenu | Should Not Match 'NI-CELUI-CI'
     }
 }
+
+Describe 'Test-KoxoIdentifierOwnership' {
+    function New-KoxoOtherCsv {
+        param([string[]]$Identifiers)
+        $root = Join-Path $env:TEMP ('koxo-own-' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        $path = Join-Path $root 'autre.csv'
+        $lignes = @('Civilite;Nom;Prenom;DateNaissance;IdentifiantUnique;GroupeSecondaire;Email;Telephone;TelephoneMobile;Fax;PageWeb;ChampLibre;Fonction;MotDePasse')
+        foreach ($id in $Identifiers) {
+            $lignes += ('M.;NOM;Prenom;1990-01-01;' + $id + ';GRP;a@b.invalid;;;;;;;')
+        }
+        Write-KoxoTextFile -Path $path -Content (($lignes -join "`r`n") + "`r`n") -EncodingName 'utf8bom'
+        $path
+    }
+
+    It 'refuses an identifier claimed by two CSV files' {
+        # Revendique par deux moteurs de reconciliation, l'utilisateur est
+        # repris par la derniere synchro et desactive des qu'on le retire du
+        # premier fichier (DisableOrphanedAccounts).
+        $autre = New-KoxoOtherCsv -Identifiers @('CLI-000003')
+        {
+            Test-KoxoIdentifierOwnership -Identifiers @('CLI-000001','CLI-000003') -OtherCsvPaths @($autre)
+        } | Should Throw 'CLI-000003'
+    }
+
+    It 'names the conflicting file in the refusal' {
+        $autre = New-KoxoOtherCsv -Identifiers @('CLI-000003')
+        {
+            Test-KoxoIdentifierOwnership -Identifiers @('CLI-000003') -OtherCsvPaths @($autre)
+        } | Should Throw 'autre.csv'
+    }
+
+    It 'accepts disjoint CSV files' {
+        $autre = New-KoxoOtherCsv -Identifiers @('CLI-000003')
+        $r = Test-KoxoIdentifierOwnership -Identifiers @('CLI-000001','CLI-000002') -OtherCsvPaths @($autre)
+        $r.PublishedCount | Should Be 2
+    }
+
+    It 'ignores a path that does not exist' {
+        $r = Test-KoxoIdentifierOwnership -Identifiers @('CLI-000001') -OtherCsvPaths @('C:\aucun\fichier.csv')
+        $r.CheckedFiles.Count | Should Be 0
+    }
+}
+
+Describe 'Garde-fou zero identite traitee' {
+    $journalNoOp = @(
+        '[CMD] [06/08/2026 11:37:45] {Ligne de commande} Parametre 1 : "/Synchro=CLIENTS-DEMO.xml"',
+        '[CMD] [06/08/2026 11:37:45] {Ligne de commande} Parametre accepte : /Synchro=CLIENTS-DEMO.xml',
+        '[CMD] [06/08/2026 11:37:45] {Ligne de commande} Fin de l''operation'
+    )
+    $journalReel = $journalNoOp + @(
+        '[OK] [06/08/2026 11:37:46] {Synchronisation a partir d''un fichier CSV} Ajout/Modification de Roselyne LAUMAILLE (roselyne.laumaille)',
+        '[ADSI] [06/08/2026 11:37:46] {Synchronisation a partir d''un fichier CSV} Mot de passe forc pour "roselyne.laumaille"'
+    )
+
+    It 'counts nobody in a silent no-op' {
+        Get-KoxoProcessedUserCount -Lines $journalNoOp | Should Be 0
+    }
+
+    It 'counts each identity once despite several mentions' {
+        Get-KoxoProcessedUserCount -Lines $journalReel | Should Be 1
+    }
+
+    It 'recognises the creation form of the log line' {
+        $lignes = @("[OK] [06/08/2026 08:36:08] {Ajout d'un utilisateur} Ajout jean.dupont")
+        Get-KoxoProcessedUserCount -Lines $lignes | Should Be 1
+    }
+
+    It 'stays inactive when no user count is expected' {
+        # ExpectedUserCount a zero : le controle ne doit rien declencher.
+        $root = Join-Path $env:TEMP ('koxo-log-' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        $log = Join-Path $root 'koxo.log'
+        Write-KoxoTextFile -Path $log -Content (($journalNoOp -join "`r`n") + "`r`n") -EncodingName 'utf8'
+        $r = Test-KoxoLogOutcome -GlobPattern (Join-Path $root '*') -ExpectedUserCount 0
+        $r.NoUserProcessed | Should Be $false
+        $r.IsSuccessful | Should Be $true
+    }
+
+    It 'fails a run that processed nobody while the CSV published some' {
+        $root = Join-Path $env:TEMP ('koxo-log-' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        $log = Join-Path $root 'koxo.log'
+        Write-KoxoTextFile -Path $log -Content (($journalNoOp -join "`r`n") + "`r`n") -EncodingName 'utf8'
+        $r = Test-KoxoLogOutcome -GlobPattern (Join-Path $root '*') -ExpectedUserCount 3
+        $r.AcceptedMarker | Should Be $true
+        $r.CompletionMarker | Should Be $true
+        $r.NoUserProcessed | Should Be $true
+        $r.IsSuccessful | Should Be $false
+    }
+
+    It 'accepts a run that processed identities' {
+        $root = Join-Path $env:TEMP ('koxo-log-' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        $log = Join-Path $root 'koxo.log'
+        Write-KoxoTextFile -Path $log -Content (($journalReel -join "`r`n") + "`r`n") -EncodingName 'utf8'
+        $r = Test-KoxoLogOutcome -GlobPattern (Join-Path $root '*') -ExpectedUserCount 1
+        $r.ProcessedUserCount | Should Be 1
+        $r.IsSuccessful | Should Be $true
+    }
+}

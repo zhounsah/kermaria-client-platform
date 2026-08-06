@@ -50,6 +50,13 @@ function Get-KoxoSyncConfiguration {
         # Explicite et journalisée : on veut que contourner le garde-fou soit
         # un geste conscient, pas un effet de bord d'une variable oubliée.
         AllowUserDrop = Test-KoxoBooleanSetting -Name 'KOXO_ALLOW_USER_DROP' -Overrides $Overrides
+        # Les autres CSV de la meme installation, separes par « ; ». Sert a
+        # verifier qu'aucun IdentifiantUnique n'est revendique par deux profils.
+        OtherCsvPaths = @(
+            (Get-KoxoSetting -Name 'KOXO_OTHER_CSV_PATHS' -DefaultValue '' -Overrides $Overrides) -split ';' |
+                ForEach-Object { $_.Trim() } |
+                Where-Object { $_ }
+        )
         SyncTimeoutSeconds = [int](Get-KoxoSetting -Name 'KOXO_SYNC_TIMEOUT_SECONDS' -DefaultValue '90' -Overrides $Overrides)
         LogDirectory = $logDirectory
         KoxoLogGlob = Get-KoxoSetting -Name 'KOXO_KOXO_LOG_GLOB' -DefaultValue '' -Overrides $Overrides
@@ -147,6 +154,15 @@ function Invoke-KoxoSync {
             bypassed = $guardRails.Bypassed
         }
 
+        $ownership = Test-KoxoIdentifierOwnership `
+            -Identifiers @($payload.users | ForEach-Object { [string](Get-KoxoPropertyValue -InputObject $_ -Name 'identifiantUnique') }) `
+            -OtherCsvPaths $configuration.OtherCsvPaths `
+            -EncodingName $configuration.CsvEncoding
+        Write-KoxoSyncLog -Configuration $configuration -Level 'info' -Message 'KoXo identifier ownership verified.' -Data @{
+            published_count = $ownership.PublishedCount
+            checked_files = $ownership.CheckedFiles
+        }
+
         $csvContent = ConvertTo-KoxoCsvContent -Users $payload.users
         $fileHash = Get-KoxoSha256Hex -Text $csvContent
         $tempDirectory = if ($DryRun) { $configuration.WorkingDirectory } else { Split-Path -Parent $configuration.CsvTargetPath }
@@ -171,7 +187,8 @@ function Invoke-KoxoSync {
                 -Configuration $configuration `
                 -ExecutablePath $KoxoExecutablePath `
                 -WorkingDirectory $KoxoWorkingDirectory `
-                -Arguments $KoxoSyncArgument
+                -Arguments $KoxoSyncArgument `
+                -ExpectedUserCount @($payload.users).Count
         }
         elseif ($LaunchKoxo) {
             $koxoLaunch = [pscustomobject]@{
@@ -598,6 +615,47 @@ function Get-KoxoLatestExternalLog {
     $items[0]
 }
 
+function Get-KoxoProcessedUserCount {
+    [CmdletBinding()]
+    param(
+        [string[]]$Lines = @()
+    )
+
+    # Motifs volontairement SANS accent : le journal KoXo est relu sans encodage
+    # impose et « forcé » peut arriver mutile. Ce qui precede l'accent suffit.
+    #
+    # Le login n'est pas toujours extractible ; une ligne « Ajout/Modification
+    # de ... » atteste malgre tout d'un traitement. On compte donc des CLES :
+    # le login quand on sait le lire — ce qui dedoublonne les mentions
+    # multiples d'une meme identite — sinon le rang de la ligne.
+    $patterns = @(
+        'Ajout/Modification de .*\(([^()]+)\)',   # synchro d'une identite existante
+        'Ajout/Modification de',                  # meme evenement, login illisible
+        '\}\s*Ajout\s+([^\s]+)\s*$',              # {Ajout d'un utilisateur} Ajout <login>
+        'Mot de passe forc.*"([^"]+)"'            # mot de passe applique a <login>
+    )
+
+    $keys = New-Object System.Collections.Generic.HashSet[string] ([StringComparer]::OrdinalIgnoreCase)
+    for ($i = 0; $i -lt $Lines.Count; $i++) {
+        $line = [string]$Lines[$i]
+        foreach ($pattern in $patterns) {
+            $m = [regex]::Match($line, $pattern)
+            if (-not $m.Success) { continue }
+
+            if ($m.Groups.Count -gt 1 -and $m.Groups[1].Success -and $m.Groups[1].Value.Trim()) {
+                [void]$keys.Add($m.Groups[1].Value.Trim())
+            }
+            else {
+                [void]$keys.Add("ligne:$i")
+            }
+
+            break
+        }
+    }
+
+    $keys.Count
+}
+
 function Test-KoxoLogOutcome {
     [CmdletBinding()]
     param(
@@ -605,7 +663,10 @@ function Test-KoxoLogOutcome {
 
         [datetime]$NotBeforeUtc = [datetime]::MinValue,
 
-        [int]$Tail = 200
+        [int]$Tail = 200,
+
+        # Nombre d'identites que le CSV publie. A zero, le controle est inactif.
+        [int]$ExpectedUserCount = 0
     )
 
     $logFile = Get-KoxoLatestExternalLog -GlobPattern $GlobPattern -NotBeforeUtc $NotBeforeUtc
@@ -617,6 +678,8 @@ function Test-KoxoLogOutcome {
             AcceptedMarker = $false
             CompletionMarker = $false
             BlockingError = $false
+            ProcessedUserCount = 0
+            NoUserProcessed = $false
             TailLines = @()
         }
     }
@@ -643,14 +706,76 @@ function Test-KoxoLogOutcome {
         $joined.Contains('echec fatal') -or
         $joined.Contains('fatal error')
 
+    # Garde-fou « zero traite ». Un profil qui vise un groupe primaire
+    # inexistant sort en trois lignes : parametre accepte, fin de l'operation.
+    # Les deux marqueurs de succes sont donc presents alors que KoXo n'a
+    # touche personne — mesure en reel le 2026-08-06. On ne compare pas le
+    # compte exact (un deplacement d'identite ne journalise aucun utilisateur
+    # au premier passage, et ce passage est legitime) : seul le zero absolu,
+    # alors que le CSV publie des identites, est traite comme un echec.
+    $processedUserCount = Get-KoxoProcessedUserCount -Lines $tailLines
+    $noUserProcessed = ($ExpectedUserCount -gt 0 -and $processedUserCount -eq 0)
+
     [pscustomobject]@{
-        IsSuccessful = ($acceptedMarker -and $completionMarker -and -not $blockingError)
+        IsSuccessful = ($acceptedMarker -and $completionMarker -and -not $blockingError -and -not $noUserProcessed)
         HasRecentLog = $true
         LogPath = $logFile.FullName
         AcceptedMarker = $acceptedMarker
         CompletionMarker = $completionMarker
         BlockingError = $blockingError
+        ProcessedUserCount = $processedUserCount
+        NoUserProcessed = $noUserProcessed
         TailLines = $tailLines
+    }
+}
+
+function Test-KoxoIdentifierOwnership {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [string[]]$Identifiers,
+
+        [string[]]$OtherCsvPaths = @(),
+
+        [string]$EncodingName = 'utf8bom'
+    )
+
+    # Un IdentifiantUnique ne doit appartenir qu'a UN seul profil. Present dans
+    # deux CSV, il est revendique par deux moteurs de reconciliation : la
+    # derniere synchro executee reprend l'identite, et le retrait du premier
+    # fichier la fait passer pour orpheline — donc desactivee, puisque
+    # DisableOrphanedAccounts est actif. Constate en reel le 2026-08-06.
+    $conflicts = New-Object System.Collections.Generic.List[string]
+    $publies = New-Object System.Collections.Generic.HashSet[string] ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($id in $Identifiers) {
+        if (-not [string]::IsNullOrWhiteSpace($id)) { [void]$publies.Add($id.Trim()) }
+    }
+
+    foreach ($path in $OtherCsvPaths) {
+        if ([string]::IsNullOrWhiteSpace($path) -or -not (Test-Path -LiteralPath $path)) {
+            continue
+        }
+
+        $encoding = Get-KoxoEncoding -Name $EncodingName
+        $lignes = [System.IO.File]::ReadAllLines($path, $encoding)
+        for ($i = 1; $i -lt $lignes.Length; $i++) {
+            $champs = $lignes[$i] -split ';', -1
+            if ($champs.Count -lt 5) { continue }
+            $autre = $champs[4].Trim()
+            if ($autre -and $publies.Contains($autre)) {
+                $conflicts.Add(("{0} (aussi dans {1})" -f $autre, (Split-Path -Leaf $path)))
+            }
+        }
+    }
+
+    if ($conflicts.Count -gt 0) {
+        throw ("Identifiers must belong to a single CSV. Conflicts: {0}." -f ($conflicts -join ', '))
+    }
+
+    [pscustomobject]@{
+        PublishedCount = $publies.Count
+        CheckedFiles = @($OtherCsvPaths | Where-Object { $_ -and (Test-Path -LiteralPath $_) })
     }
 }
 
@@ -667,7 +792,9 @@ function Invoke-KoxoProcess {
         [string]$WorkingDirectory,
 
         [Parameter(Mandatory = $true)]
-        [string]$Arguments
+        [string]$Arguments,
+
+        [int]$ExpectedUserCount = 0
     )
 
     $resolvedExecutablePath = [System.IO.Path]::GetFullPath($ExecutablePath)
@@ -722,13 +849,31 @@ function Invoke-KoxoProcess {
 
     $durationSeconds = [math]::Round(((Get-Date) - $startedAt).TotalSeconds, 2)
     $process.Refresh()
-    $logOutcome = Test-KoxoLogOutcome -GlobPattern $Configuration.KoxoLogGlob -NotBeforeUtc $startedAtUtc.AddSeconds(-5)
+    $logOutcome = Test-KoxoLogOutcome `
+        -GlobPattern $Configuration.KoxoLogGlob `
+        -NotBeforeUtc $startedAtUtc.AddSeconds(-5) `
+        -ExpectedUserCount $ExpectedUserCount
 
     $exitCode = $null
     try {
         $exitCode = $process.ExitCode
     }
     catch {
+    }
+
+    # Controle avant tout autre : un code de sortie nul et les deux marqueurs de
+    # succes ne prouvent RIEN si KoXo n'a touche personne. C'est exactement ce
+    # que produit un profil visant un groupe primaire inexistant.
+    if ($logOutcome.NoUserProcessed) {
+        Write-KoxoSyncLog -Configuration $Configuration -Level 'error' -Message 'KoXo reported no processed identity while the CSV published some.' -Data @{
+            executable_path = $resolvedExecutablePath
+            arguments = $Arguments
+            expected_user_count = $ExpectedUserCount
+            processed_user_count = $logOutcome.ProcessedUserCount
+            koxo_log_path = $logOutcome.LogPath
+        }
+
+        throw ("KoXo processed no identity while the CSV published {0}. Check that the profile's primary group exists." -f $ExpectedUserCount)
     }
 
     if ($timedOut) {
@@ -1166,6 +1311,8 @@ Export-ModuleMember -Function `
     Test-KoxoBooleanSetting, `
     Test-KoxoApiUrl, `
     Test-KoxoLogOutcome, `
+    Test-KoxoIdentifierOwnership, `
+    Get-KoxoProcessedUserCount, `
     Test-KoxoExportPayload, `
     Test-KoxoGuardRails, `
     Write-KoxoSyncState, `
