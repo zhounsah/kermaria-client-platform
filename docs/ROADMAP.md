@@ -229,6 +229,8 @@ Livre :
 - **Tests** : `npm run test:timezone` (nouveau
   `apps/webportal/scripts/verify-timezone-contract.mjs`) combine
   assertions statiques sur les 5 fichiers touches + assertions runtime
+  `Intl.DateTimeFormat` sur trois inputs UTC (ete, hiver, bascule
+  2026-03-29) validant la conversion DST automatique.
 
 ## Jalon V0.40 synchronisation KoXo privee
 
@@ -256,8 +258,6 @@ qu'elle ne l'est plus.
 - l'alignement du mot de passe avec l'environnement Windows reste porte par
   les flux `set-password` et, a terme, par les flux dedies portail <-> AD,
   jamais par l'export KoXo.
-  `Intl.DateTimeFormat` sur trois inputs UTC (ete, hiver, bascule
-  2026-03-29) validant la conversion DST automatique.
 
 Aucune fonctionnalite metier ajoutee. Aucune dependance hardware.
 
