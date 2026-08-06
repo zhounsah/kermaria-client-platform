@@ -41,17 +41,18 @@ function normalizeBaseUrl(baseUrl: string): string {
  * l'infogerance ou de la sauvegarde de donnees : rester sur `LocalBusiness`.
  *
  * Champs volontairement absents, faute de valeur fiable dans le depot — ne
- * rien inventer, un `telephone` faux ou des horaires imaginaires sont des
+ * rien inventer, des horaires imaginaires ou un tarif invente sont des
  * motifs d'action manuelle :
- *   - `telephone` : seul un gabarit `+33 0 00 00 00 00` existe
- *     (`lib/mock-data.ts`), il n'est pas publiable.
  *   - `openingHoursSpecification` : aucune plage horaire n'est publiee.
  *   - `priceRange` : les tarifs vivent dans le catalogue, pas sous forme
  *     de fourchette.
  *
- * L'adresse, elle, provient des mentions legales publiees
+ * L'adresse et le SIRET proviennent des mentions legales publiees
  * (`mentions-légales.txt`, repris a l'identique dans le contenu
- * administrable `legal:mentions-legales`).
+ * administrable `legal:mentions-legales`). Le numero de telephone a ete
+ * confirme par l'editeur : il ne figure nulle part dans le depot, ne pas
+ * le « corriger » depuis `lib/mock-data.ts`, qui n'en contient qu'un
+ * gabarit (`+33 0 00 00 00 00`).
  */
 export function localBusinessJsonLd(baseUrl: string) {
   const base = normalizeBaseUrl(baseUrl);
@@ -65,6 +66,10 @@ export function localBusinessJsonLd(baseUrl: string) {
     url: `${base}/`,
     description: BUSINESS_DESCRIPTION,
     email: "zhounsah@home.bzh",
+    // E.164, sans espaces ni separateurs : c'est le format attendu par
+    // Google pour un `telephone`, et le seul qui reste non ambigu hors de
+    // France.
+    telephone: "+33695153452",
     address: {
       "@type": "PostalAddress",
       streetAddress: "3 Kermaria",
@@ -83,9 +88,10 @@ export function localBusinessJsonLd(baseUrl: string) {
     // profil qui n'existe pas : un `sameAs` mort est pire que pas de
     // `sameAs`.
     sameAs: [PORTFOLIO_URL],
-    // taxID: "10511152000018",  // SIRET, deja publie dans les mentions
-    //                           // legales : a decommenter si tu veux le
-    //                           // publier aussi dans le balisage.
+    // SIRET (14 chiffres, sans espaces), confirme par l'editeur et deja
+    // publie dans les mentions legales. `taxID` et non `vatID` : l'EI est
+    // en franchise en base, il n'y a pas de numero de TVA a declarer.
+    taxID: "10511152000018",
   };
 }
 
