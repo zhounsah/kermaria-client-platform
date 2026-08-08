@@ -55,7 +55,7 @@ export default async function BackupDetailPage({ params }: PageProps) {
             Retour aux sauvegardes
           </Link>
         }
-        description="Historique metier des executions remontees par le collecteur interne Veeam."
+        description="Historique metier des executions remontees par le collecteur interne de sauvegarde."
         eyebrow="Protection des donnees"
         title="Detail sauvegarde"
       />
@@ -124,7 +124,7 @@ export default async function BackupDetailPage({ params }: PageProps) {
 
           <section className="request-history-section">
             <SectionHeading
-              description="Une demande cree un ticket traite manuellement par Zachary IT. Aucun acces direct a Veeam n'est ouvert."
+              description="Une demande cree un ticket traite manuellement par Zachary IT. Aucun acces direct a l'infrastructure de sauvegarde n'est ouvert."
               title="Demander une restauration"
             />
             <BackupRestoreRequestForm backupJobId={detail.job.id} />

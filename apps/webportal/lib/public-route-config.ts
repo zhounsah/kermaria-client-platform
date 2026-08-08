@@ -3,6 +3,7 @@ export const PUBLIC_ROUTES = [
   "/portfolio",
   "/offres",
   "/diagnostic",
+  "/decouvrir-espace-client",
   "/configurer",
   "/solutions",
   "/a-propos",
