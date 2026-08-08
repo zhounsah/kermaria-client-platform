@@ -34,6 +34,7 @@ export function PublicShell({ children, signupEnabled }: PublicShellProps) {
           <nav className="public-header-nav" aria-label="Navigation principale">
             <div className="public-header-links">
               <Link href="/offres">Offres</Link>
+              <Link href="/decouvrir-espace-client">Démo espace client</Link>
               <Link href="/diagnostic">Diagnostic</Link>
               <Link href="/solutions">Solutions</Link>
               <a href={PORTFOLIO_URL}>Portfolio</a>
@@ -72,6 +73,7 @@ export function PublicShell({ children, signupEnabled }: PublicShellProps) {
               Politique de confidentialité
             </Link>
             <Link href="/cgv">CGV</Link>
+            <Link href="/decouvrir-espace-client">Démo espace client</Link>
             <Link href="/diagnostic">Diagnostic</Link>
             <a href={CLIENT_PORTAL_LOGIN_URL}>Connexion</a>
             {signupEnabled ? <Link href="/signup">Inscription</Link> : null}

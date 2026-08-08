@@ -55,9 +55,9 @@ export default async function BackupDetailPage({ params }: PageProps) {
             Retour aux sauvegardes
           </Link>
         }
-        description="Historique metier des executions remontees par le collecteur interne de sauvegarde."
-        eyebrow="Protection des donnees"
-        title="Detail sauvegarde"
+        description="Historique métier des exécutions remontées par le collecteur interne de sauvegarde."
+        eyebrow="Protection des données"
+        title="Détail sauvegarde"
       />
 
       {result.error || !detail ? (
@@ -81,19 +81,19 @@ export default async function BackupDetailPage({ params }: PageProps) {
             </div>
             <dl className="profile-details">
               <div>
-                <dt>Derniere execution</dt>
+                <dt>Dernière exécution</dt>
                 <dd>{detail.job.lastRunAt ? formatDateTime(detail.job.lastRunAt) : "Indisponible"}</dd>
               </div>
               <div>
-                <dt>Derniere reussite</dt>
+                <dt>Dernière réussite</dt>
                 <dd>{detail.job.lastSuccessAt ? formatDateTime(detail.job.lastSuccessAt) : "Indisponible"}</dd>
               </div>
               <div>
                 <dt>Resultat</dt>
-                <dd>{detail.job.lastResultLabel ?? "Etat inconnu"}</dd>
+                <dd>{detail.job.lastResultLabel ?? "État inconnu"}</dd>
               </div>
               <div>
-                <dt>Donnees protegees</dt>
+                <dt>Données protégées</dt>
                 <dd>{formatBytes(detail.job.protectedBytes)}</dd>
               </div>
               <div>
@@ -105,7 +105,7 @@ export default async function BackupDetailPage({ params }: PageProps) {
                 <dd>{detail.job.retentionDays ? `${detail.job.retentionDays} jours` : "Selon configuration"}</dd>
               </div>
               <div>
-                <dt>Prochaine execution</dt>
+                <dt>Prochaine exécution</dt>
                 <dd>{detail.job.nextRunAt ? formatDateTime(detail.job.nextRunAt) : "Indisponible"}</dd>
               </div>
               <div>
@@ -124,7 +124,7 @@ export default async function BackupDetailPage({ params }: PageProps) {
 
           <section className="request-history-section">
             <SectionHeading
-              description="Une demande cree un ticket traite manuellement par Zachary IT. Aucun acces direct a l'infrastructure de sauvegarde n'est ouvert."
+              description="Une demande crée un ticket traité manuellement par Zachary IT. Aucun accès direct à l'infrastructure de sauvegarde n'est ouvert."
               title="Demander une restauration"
             />
             <BackupRestoreRequestForm backupJobId={detail.job.id} />

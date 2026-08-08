@@ -9,16 +9,16 @@ import { getPortalPublicUrlFromHeaders } from "@/lib/public-routes";
 export const dynamic = "force-static";
 
 export const metadata: Metadata = {
-  title: "Decouvrez l'espace client Zachary IT",
+  title: "Découvrez l'espace client Zachary IT",
   description:
-    "Decouvrez en demonstration l'espace client Zachary IT : sauvegardes, stockage, utilisateurs, facturation, assistance et securite.",
+    "Découvrez en démonstration l'espace client Zachary IT : sauvegardes, stockage, utilisateurs, facturation, assistance et sécurité.",
   alternates: {
     canonical: "/decouvrir-espace-client",
   },
   openGraph: {
-    title: "Decouvrez l'espace client Zachary IT",
+    title: "Découvrez l'espace client Zachary IT",
     description:
-      "Parcourez un compte client fictif Pack Pro / Association, sans authentification ni donnees reelles.",
+      "Parcourez un compte client fictif Pack Pro / Association, sans authentification ni données réelles.",
     url: "/decouvrir-espace-client",
     type: "website",
   },
@@ -38,7 +38,7 @@ export default async function DemoClientSpacePage({ params }: PageProps) {
       <JsonLd
         data={breadcrumbJsonLd(baseUrl, [
           {
-            name: "Decouvrir l'espace client",
+            name: "Découvrir l'espace client",
             path: "/decouvrir-espace-client",
           },
         ])}

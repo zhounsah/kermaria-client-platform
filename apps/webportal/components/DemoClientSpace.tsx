@@ -61,12 +61,12 @@ export function DemoClientSpace({ section }: DemoClientSpaceProps) {
     <div className="demo-client-page">
       <header className="demo-client-hero">
         <div>
-          <span className="demo-client-mode">Compte de demonstration</span>
-          <h1>Decouvrez l&apos;espace client Zachary IT</h1>
+          <span className="demo-client-mode">Compte de démonstration</span>
+          <h1>Découvrez l&apos;espace client Zachary IT</h1>
           <p>
             Parcourez un compte fictif actif pour comprendre le suivi disponible
-            apres souscription : services, sauvegardes, stockage, factures,
-            assistance et securite.
+            après souscription : services, sauvegardes, stockage, factures,
+            assistance et sécurité.
           </p>
         </div>
         <div className="demo-client-identity" aria-label="Compte affiche">
@@ -100,16 +100,16 @@ export function DemoClientSpace({ section }: DemoClientSpaceProps) {
             ))}
           </ul>
           <div className="demo-client-sidebar-footer">
-            <Link href="/offres">Decouvrir les offres</Link>
+            <Link href="/offres">Découvrir les offres</Link>
             <Link href="/contact">Nous contacter</Link>
           </div>
         </nav>
 
         <main className="demo-client-content">
           <div className="demo-client-warning" role="note">
-            Mode DEMO : donnees fictives, lecture seule, aucune connexion a
-            une plateforme de facturation, un systeme de sauvegarde,
-            l&apos;authentification ou une API client reelle.
+            Mode DEMO : données fictives, lecture seule, aucune connexion à
+            une plateforme de facturation, un système de sauvegarde,
+            l&apos;authentification ou une API client réelle.
           </div>
           {section === "dashboard" ? (
             <DashboardSection onOpen={setModal} />
@@ -148,13 +148,13 @@ export function DemoClientSpace({ section }: DemoClientSpaceProps) {
           <span className="card-kicker">Pack Pro / Association</span>
           <h2>Vous souhaitez disposer de cet espace pour votre organisation ?</h2>
           <p>
-            La demo montre un compte fictif. Les offres et conditions reelles se
+            La démo montre un compte fictif. Les offres et conditions réelles se
             consultent depuis la vitrine Zachary IT.
           </p>
         </div>
         <div className="button-row">
           <Link className="button" href="/offres">
-            Decouvrir les offres
+            Découvrir les offres
           </Link>
           <Link className="button button-secondary" href="/contact">
             Nous contacter
@@ -189,21 +189,21 @@ function DashboardSection({ onOpen }: { onOpen: (modal: ModalState) => void }) {
           value={String(data.summary.activeServices)}
         />
         <MetricCard
-          detail="Comptes fictifs rattaches"
+          detail="Comptes fictifs rattachés"
           label="Utilisateurs"
           value={String(data.summary.users)}
         />
         <MetricCard
           detail={`${data.summary.storageUsed} / ${data.summary.storageTotal}`}
-          label="Stockage utilise"
+          label="Stockage utilisé"
           tone="amber"
           value={`${data.summary.storagePercent} %`}
         />
         <MetricCard
-          detail={`Derniere sauvegarde : ${data.summary.lastBackup}`}
+          detail={`Dernière sauvegarde : ${data.summary.lastBackup}`}
           label="Sauvegarde"
           tone="green"
-          value="Protege"
+          value="Protégé"
         />
       </section>
 
@@ -211,7 +211,7 @@ function DashboardSection({ onOpen }: { onOpen: (modal: ModalState) => void }) {
         <SectionCard ariaLabel="Services actifs">
           <SectionHeading
             action={<Link href={sectionPath.services}>Tout voir</Link>}
-            description="Les benefices du pack sont visibles avant les details techniques."
+            description="Les bénéfices du pack sont visibles avant les détails techniques."
             title="Services disponibles"
           />
           <div className="demo-client-service-list">
@@ -249,10 +249,10 @@ function DashboardSection({ onOpen }: { onOpen: (modal: ModalState) => void }) {
         </SectionCard>
       </div>
 
-      <SectionCard ariaLabel="Activite recente">
+      <SectionCard ariaLabel="Activité récente">
         <SectionHeading
           action={<Link href={sectionPath.activity}>Voir l&apos;activite</Link>}
-          title="Activite recente"
+          title="Activité récente"
         />
         <Timeline items={data.activity.slice(0, 5)} />
       </SectionCard>
@@ -296,14 +296,14 @@ function SubscriptionSection({ onOpen }: { onOpen: (modal: ModalState) => void }
       <SectionCard ariaLabel="Abonnement">
         <SectionHeading
           action={<StatusBadge label="✓ Actif" tone="success" />}
-          description="Abonnement fictif, sans lien avec une plateforme de paiement ou une facturation reelle."
+          description="Abonnement fictif, sans lien avec une plateforme de paiement ou une facturation réelle."
           title={subscription.plan}
         />
         <dl className="profile-details">
           <Detail label="Statut" value={subscription.status} />
           <Detail label="Cycle" value={subscription.cycle} />
           <Detail label="Date de souscription" value={subscription.subscribedAt} />
-          <Detail label="Prochaine echeance" value={subscription.nextBillingAt} />
+          <Detail label="Prochaine échéance" value={subscription.nextBillingAt} />
           <Detail label="Stockage inclus" value={subscription.storageIncluded} />
           <Detail label="Utilisateurs" value={subscription.users} />
           <Detail label="Mensualite" value={subscription.monthlyPrice} />
@@ -345,19 +345,19 @@ function InvoicesSection({ onOpen }: { onOpen: (modal: ModalState) => void }) {
     <>
       <section className="metrics-grid metrics-grid-three demo-client-metrics">
         <MetricCard
-          detail="Factures fictives affichees"
+          detail="Factures fictives affichées"
           label="Factures"
           value={String(demoClientSpace.invoices.length)}
         />
         <MetricCard
-          detail="Aucune action de paiement reelle"
+          detail="Aucune action de paiement réelle"
           label="A payer"
           tone="green"
           value="0 EUR"
         />
         <MetricCard
           detail="Cycle mensuel du pack"
-          label="Derniere facture"
+          label="Dernière facture"
           tone="amber"
           value="39,90 EUR"
         />
@@ -366,7 +366,7 @@ function InvoicesSection({ onOpen }: { onOpen: (modal: ModalState) => void }) {
         <table className="invoice-table">
           <thead>
             <tr>
-              <th>Reference</th>
+              <th>Référence</th>
               <th>Date</th>
               <th>Objet</th>
               <th>Statut</th>
@@ -377,11 +377,11 @@ function InvoicesSection({ onOpen }: { onOpen: (modal: ModalState) => void }) {
           <tbody>
             {demoClientSpace.invoices.map((invoice) => (
               <tr key={invoice.reference}>
-                <td data-label="Reference">{invoice.reference}</td>
+                <td data-label="Référence">{invoice.reference}</td>
                 <td data-label="Date">{invoice.date}</td>
                 <td data-label="Objet">{invoice.title}</td>
                 <td data-label="Statut">
-                  <StatusBadge label="Payee" tone="success" />
+                  <StatusBadge label="Payée" tone="success" />
                 </td>
                 <td data-label="Montant">{invoice.amount}</td>
                 <td data-label="Document">
@@ -407,13 +407,13 @@ function StorageSection() {
 
   return (
     <>
-      <SectionCard ariaLabel="Stockage utilise">
+      <SectionCard ariaLabel="Stockage utilisé">
         <SectionHeading
-          description={`${storage.used} utilises sur ${storage.total}, soit ${storage.percent} %.`}
-          title="Stockage utilise"
+          description={`${storage.used} utilisés sur ${storage.total}, soit ${storage.percent} %.`}
+          title="Stockage utilisé"
         />
         <div
-          aria-label={`Stockage utilise ${storage.percent} pour cent`}
+          aria-label={`Stockage utilisé ${storage.percent} pour cent`}
           className="demo-client-progress"
           role="img"
         >
@@ -421,7 +421,7 @@ function StorageSection() {
         </div>
         <dl className="profile-details">
           <Detail label="Capacite totale" value={storage.total} />
-          <Detail label="Espace utilise" value={storage.used} />
+          <Detail label="Espace utilisé" value={storage.used} />
           <Detail label="Disponible" value={storage.available} />
           <Detail label="Dossiers principaux" value={String(storage.folders.length)} />
         </dl>
@@ -476,25 +476,25 @@ function BackupsSection({
 
   return (
     <>
-      <SectionCard ariaLabel="Etat sauvegarde">
+      <SectionCard ariaLabel="État sauvegarde">
         <SectionHeading
-          action={<StatusBadge label="✓ Protege" tone="success" />}
-          description="Simulation de suivi de sauvegarde : aucune interrogation d'une infrastructure reelle."
-          title="Vos donnees sont protegees"
+          action={<StatusBadge label="✓ Protégé" tone="success" />}
+          description="Simulation de suivi de sauvegarde : aucune interrogation d'une infrastructure réelle."
+          title="Vos données sont protégées"
         />
         <dl className="profile-details">
-          <Detail label="Derniere execution" value={backups.lastRun} />
-          <Detail label="Derniere reussite" value={backups.lastSuccess} />
-          <Detail label="Donnees protegees" value={backups.protectedData} />
+          <Detail label="Dernière exécution" value={backups.lastRun} />
+          <Detail label="Dernière réussite" value={backups.lastSuccess} />
+          <Detail label="Données protégées" value={backups.protectedData} />
           <Detail label="Retention" value={backups.retention} />
-          <Detail label="Prochaine execution" value={backups.nextRun} />
-          <Detail label="Verification" value={backups.verification} />
+          <Detail label="Prochaine exécution" value={backups.nextRun} />
+          <Detail label="Vérification" value={backups.verification} />
         </dl>
       </SectionCard>
 
       <SectionCard ariaLabel="Demande restauration">
         <SectionHeading
-          description="La soumission est simulee en local et ne cree aucun ticket reel."
+          description="La soumission est simulée en local et ne crée aucun ticket réel."
           title="Demander une restauration"
         />
         <form
@@ -506,7 +506,7 @@ function BackupsSection({
         >
           <label>
             Element a restaurer
-            <input defaultValue="Comptabilite / Factures 2026" name="item" />
+            <input defaultValue="Comptabilité / Factures 2026" name="item" />
           </label>
           <label>
             Date souhaitee
@@ -522,7 +522,7 @@ function BackupsSection({
           <label className="backup-restore-form-wide">
             Description
             <textarea
-              defaultValue="Fichier supprime accidentellement."
+              defaultValue="Fichier supprimé accidentellement."
               name="description"
             />
           </label>
@@ -532,7 +532,7 @@ function BackupsSection({
             </button>
             {restoreConfirmation ? (
               <p className="demo-client-confirmation" role="status">
-                Demande de demonstration enregistree. Dans un veritable espace
+                Demande de démonstration enregistrée. Dans un véritable espace
                 client, votre demande serait transmise au support Zachary IT.
               </p>
             ) : null}
@@ -589,7 +589,7 @@ function UsersSection({ onOpen }: { onOpen: (modal: ModalState) => void }) {
     <SectionCard ariaLabel="Utilisateurs">
       <SectionHeading
         action={<StatusBadge label="6 actifs" tone="success" />}
-        description="Personnes fictives creees uniquement pour la demonstration."
+        description="Personnes fictives créées uniquement pour la démonstration."
         title="Utilisateurs"
       />
       <div className="demo-client-card-grid">
@@ -598,7 +598,7 @@ function UsersSection({ onOpen }: { onOpen: (modal: ModalState) => void }) {
             <StatusBadge label={user.status} tone="success" />
             <h3>{user.name}</h3>
             <p>{user.role}</p>
-            <p className="field-hint">Derniere connexion : {user.lastLogin}</p>
+            <p className="field-hint">Dernière connexion : {user.lastLogin}</p>
             <button
               className="button button-secondary button-compact"
               onClick={() => onOpen({ type: "user", user })}
@@ -624,9 +624,9 @@ function SupportSection({
 }) {
   return (
     <>
-      <SectionCard ariaLabel="Creer une demande support">
+      <SectionCard ariaLabel="Créer une demande support">
         <SectionHeading
-          description="Formulaire simule : aucun ticket reel n'est cree."
+          description="Formulaire simulé : aucun ticket réel n'est créé."
           title="Nouvelle demande"
         />
         <form
@@ -645,7 +645,7 @@ function SupportSection({
             </select>
           </label>
           <label>
-            Priorite
+            Priorité
             <select defaultValue="Normale" name="priority">
               <option>Normale</option>
               <option>Haute</option>
@@ -657,15 +657,15 @@ function SupportSection({
           </label>
           <label className="backup-restore-form-wide">
             Description
-            <textarea defaultValue="Je souhaite verifier une version sauvegardee." />
+            <textarea defaultValue="Je souhaite vérifier une version sauvegardée." />
           </label>
           <div className="backup-restore-actions">
             <button className="button" type="submit">
-              Creer une demande demo
+              Créer une demande démo
             </button>
             {ticketConfirmation ? (
               <p className="demo-client-confirmation" role="status">
-                Ticket de demonstration prepare. Dans le vrai portail, il serait
+                Ticket de démonstration préparé. Dans le vrai portail, il serait
                 transmis au support Zachary IT.
               </p>
             ) : null}
@@ -709,10 +709,10 @@ function SupportSection({
 function SecuritySection() {
   return (
     <>
-      <SectionCard ariaLabel="Securite du compte">
+      <SectionCard ariaLabel="Sécurité du compte">
         <SectionHeading
           action={<StatusBadge label="Aucune alerte" tone="success" />}
-          title="Securite du compte"
+          title="Sécurité du compte"
         />
         <ul className="demo-client-security-list">
           {demoClientSpace.security.checks.map((check) => (
@@ -720,8 +720,8 @@ function SecuritySection() {
           ))}
         </ul>
       </SectionCard>
-      <SectionCard ariaLabel="Connexions recentes">
-        <SectionHeading title="Connexions recentes" />
+      <SectionCard ariaLabel="Connexions récentes">
+        <SectionHeading title="Connexions récentes" />
         <div className="stack-list">
           {demoClientSpace.security.logins.map((login) => (
             <article className="stack-row" key={`${login.date}-${login.ip}`}>
@@ -740,10 +740,10 @@ function SecuritySection() {
 
 function ActivitySection() {
   return (
-    <SectionCard ariaLabel="Activite recente">
+    <SectionCard ariaLabel="Activité récente">
       <SectionHeading
-        description="Evenements fictifs pour donner un apercu d'un compte utilise depuis plusieurs mois."
-        title="Activite recente"
+        description="Événements fictifs pour donner un aperçu d'un compte utilisé depuis plusieurs mois."
+        title="Activité récente"
       />
       <Timeline items={demoClientSpace.activity} />
     </SectionCard>
@@ -754,18 +754,18 @@ function ProfileSection({ onOpen }: { onOpen: (modal: ModalState) => void }) {
   const customer = demoClientSpace.customer;
 
   return (
-    <SectionCard ariaLabel="Profil de demonstration">
+    <SectionCard ariaLabel="Profil de démonstration">
       <SectionHeading
-        action={<StatusBadge label="Profil demo" tone="info" />}
+        action={<StatusBadge label="Profil démo" tone="info" />}
         title={customer.organization}
       />
       <dl className="profile-details">
         <Detail label="Type" value={customer.type} />
-        <Detail label="Reference client" value={customer.reference} />
+        <Detail label="Référence client" value={customer.reference} />
         <Detail label="Pack" value={customer.pack} />
         <Detail label="Statut" value={customer.status} />
         <Detail label="Adresse" value={customer.address} />
-        <Detail label="Telephone" value={customer.phone} />
+        <Detail label="Téléphone" value={customer.phone} />
         <Detail label="E-mail" value={customer.email} />
         <Detail label="Client depuis" value={customer.since} />
       </dl>
@@ -824,13 +824,13 @@ function DemoModal({
     content = (
       <>
         <p>
-          Apercu fictif de facture de demonstration. Aucun PDF de paiement ou
-          document de production n&apos;est charge.
+          Aperçu fictif de facture de démonstration. Aucun PDF de paiement ou
+          document de production n&apos;est chargé.
         </p>
         <dl className="profile-details">
           <Detail label="Date" value={modal.invoice.date} />
           <Detail label="Objet" value={modal.invoice.title} />
-          <Detail label="Statut" value="Payee" />
+          <Detail label="Statut" value="Payée" />
           <Detail label="Montant" value={modal.invoice.amount} />
         </dl>
       </>
@@ -859,9 +859,9 @@ function DemoModal({
     content = (
       <>
         <dl className="profile-details">
-          <Detail label="Role" value={modal.user.role} />
+          <Detail label="Rôle" value={modal.user.role} />
           <Detail label="Statut" value={modal.user.status} />
-          <Detail label="Derniere connexion" value={modal.user.lastLogin} />
+          <Detail label="Dernière connexion" value={modal.user.lastLogin} />
           <Detail label="Services" value={modal.user.services.join(", ")} />
         </dl>
         <button
@@ -884,7 +884,7 @@ function DemoModal({
     title = modal.action;
     content = (
       <p>
-        Cette action est desactivee dans le compte de demonstration.
+        Cette action est désactivée dans le compte de démonstration.
       </p>
     );
   }
