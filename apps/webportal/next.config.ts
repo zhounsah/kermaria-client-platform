@@ -14,6 +14,7 @@ export const NOINDEX_ROUTE_PREFIXES = [
   "/access-denied",
   "/admin",
   "/api",
+  "/backups",
   "/commercial-documents",
   "/dashboard",
   "/downloads",

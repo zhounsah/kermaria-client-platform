@@ -15,6 +15,11 @@ import type {
   AdminSessionSummary,
   AdminSupportRequestDetail,
   AdminSupportRequestSummary,
+  BackupIntegrationPayload,
+  BackupIntegrationSummary,
+  BackupJobDetail,
+  BackupJobSummary,
+  BackupRestoreRequestPayload,
   AdminClientSolutionPortal,
   ApiError,
   ClientProfile,
@@ -404,6 +409,22 @@ export function getServices() {
   );
 }
 
+export function getBackups() {
+  return getPortalData<BackupJobSummary[]>(
+    "/internal/portal/backups",
+    [],
+    [],
+  );
+}
+
+export function getBackup(id: string) {
+  return getPortalData<BackupJobDetail | null>(
+    `/internal/portal/backups/${encodeURIComponent(id)}`,
+    null,
+    null,
+  );
+}
+
 export function getInvoices() {
   return getPortalData<InvoiceSummary[]>(
     "/internal/portal/invoices",
@@ -752,6 +773,20 @@ export function createServiceRequest(
   );
 }
 
+export function createBackupRestoreRequest(
+  backupJobId: string,
+  payload: BackupRestoreRequestPayload,
+  correlationId: CorrelationId,
+  sessionToken: string,
+) {
+  return postPortalData(
+    `/internal/portal/backups/${encodeURIComponent(backupJobId)}/restore-requests`,
+    payload,
+    correlationId,
+    sessionToken,
+  );
+}
+
 export async function createInternalSession(
   payload: LoginPayload,
   correlationId: CorrelationId,
@@ -938,6 +973,30 @@ export async function mutateInternalAdminData<
         ? {}
         : { body: JSON.stringify(payload) }),
     },
+    correlationId,
+  );
+}
+
+export function getAdminBackupIntegrations() {
+  return getAdminData<BackupIntegrationSummary[]>(
+    "/internal/admin/backups/integrations",
+    [],
+  );
+}
+
+export function upsertInternalBackupIntegration(
+  payload: BackupIntegrationPayload,
+  sessionToken: string,
+  correlationId = resolveCorrelationId(null),
+) {
+  return mutateInternalAdminData<
+    BackupIntegrationSummary,
+    BackupIntegrationPayload
+  >(
+    "/internal/admin/backups/integrations",
+    "POST",
+    payload,
+    sessionToken,
     correlationId,
   );
 }

@@ -153,6 +153,38 @@ export function formatDateTime(value: string) {
   }).format(new Date(value));
 }
 
+export function formatBytes(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return "Indisponible";
+  }
+
+  const units = ["o", "Ko", "Mo", "Go", "To"];
+  let size = value;
+  let unitIndex = 0;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+
+  return `${new Intl.NumberFormat("fr-FR", {
+    maximumFractionDigits: unitIndex === 0 ? 0 : 1,
+  }).format(size)} ${units[unitIndex]}`;
+}
+
+export function formatDurationSeconds(value: number | null | undefined) {
+  if (!value || value < 1) {
+    return "Indisponible";
+  }
+
+  const hours = Math.floor(value / 3600);
+  const minutes = Math.floor((value % 3600) / 60);
+  if (hours > 0) {
+    return `${hours} h ${minutes.toString().padStart(2, "0")}`;
+  }
+
+  return `${minutes || 1} min`;
+}
+
 export function formatCurrency(value: number) {
   return new Intl.NumberFormat("fr-FR", {
     style: "currency",

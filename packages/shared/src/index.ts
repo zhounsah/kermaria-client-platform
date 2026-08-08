@@ -216,6 +216,96 @@ export interface ServiceSummary {
   nextStep?: string;
 }
 
+export type BackupProtectionStatus =
+  | "protected"
+  | "warning"
+  | "critical"
+  | "unknown";
+
+export type BackupRunResult =
+  | "success"
+  | "warning"
+  | "failed"
+  | "running"
+  | "unknown";
+
+export interface BackupRunSummary {
+  id: string;
+  startedAt: string;
+  finishedAt: string | null;
+  result: BackupRunResult;
+  resultLabel: string;
+  protectedBytes: number | null;
+  durationSeconds: number | null;
+  publicMessage: string | null;
+}
+
+export interface BackupJobSummary {
+  id: string;
+  serviceId: string;
+  serviceName: string;
+  provider: "veeam";
+  status: string;
+  protectionStatus: BackupProtectionStatus;
+  protectionStatusLabel: string;
+  lastRunAt: string | null;
+  lastSuccessAt: string | null;
+  lastResult: BackupRunResult | null;
+  lastResultLabel: string | null;
+  protectedBytes: number | null;
+  durationSeconds: number | null;
+  retentionDays: number | null;
+  nextRunAt: string | null;
+  lastErrorPublic: string | null;
+  collectedAt: string | null;
+  lastVerifiedAt: string | null;
+  verificationStatus: string | null;
+}
+
+export interface BackupJobDetail {
+  job: BackupJobSummary;
+  runs: BackupRunSummary[];
+}
+
+export interface BackupRestoreRequestPayload {
+  itemPath: string;
+  desiredRestoreAt?: string;
+  description: string;
+  priority: "low" | "normal" | "high";
+}
+
+export interface BackupIntegrationSummary {
+  id: string;
+  provider: "veeam";
+  externalJobId: string;
+  customerId: string;
+  customerReference: string;
+  customerName: string;
+  serviceId: string;
+  serviceName: string;
+  enabled: boolean;
+  expectedIntervalMinutes: number;
+  criticalAfterMinutes: number;
+  staleAfterMinutes: number;
+  lastCollectedAt: string | null;
+  lastCollectionStatus: string | null;
+  lastCollectionMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BackupIntegrationPayload {
+  id?: string;
+  provider: "veeam";
+  externalJobId: string;
+  customerId: string;
+  serviceId: string;
+  enabled: boolean;
+  expectedIntervalMinutes: number;
+  criticalAfterMinutes: number;
+  staleAfterMinutes: number;
+}
+
 export interface InvoiceSummary {
   id: string;
   number: string;

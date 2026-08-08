@@ -41,6 +41,7 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
         "/access-denied",
         "/admin",
         "/api",
+        "/backups",
         "/commercial-documents",
         "/dashboard",
         "/downloads",

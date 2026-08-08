@@ -147,6 +147,7 @@ builder.Services.AddSingleton<IDownloadStorageService, DownloadStorageService>()
 builder.Services.AddSingleton<MockAuthenticationStore>();
 builder.Services.AddSingleton<MockRequestWorkflowStore>();
 builder.Services.AddSingleton<MockPortalNotificationStore>();
+builder.Services.AddSingleton<MockBackupStore>();
 builder.Services.AddSingleton<MockCommercialStore>();
 builder.Services.AddSingleton<MockDownloadStore>();
 builder.Services.AddScoped<IPortalRepository>(
@@ -182,6 +183,16 @@ builder.Services.AddScoped<IPortalNotificationRepository>(
         ? new MariaDbPortalNotificationRepository(sqlConfiguration)
         : new MockPortalNotificationRepository(
             serviceProvider.GetRequiredService<MockPortalNotificationStore>()));
+builder.Services.AddScoped<IBackupRepository>(
+    serviceProvider => sqlConfiguration.IsPersistent
+        ? new MariaDbBackupRepository(
+            sqlConfiguration,
+            serviceProvider.GetRequiredService<IBackupProtectionService>(),
+            serviceProvider.GetRequiredService<
+                ILogger<MariaDbBackupRepository>>())
+        : new MockBackupRepository(
+            serviceProvider.GetRequiredService<MockBackupStore>(),
+            serviceProvider.GetRequiredService<IBackupProtectionService>()));
 builder.Services.AddSingleton<MockBpceInvoicingRepository>();
 builder.Services.AddScoped<IBpceInvoicingRepository>(
     serviceProvider => sqlConfiguration.IsPersistent
@@ -259,6 +270,8 @@ builder.Services.AddScoped<IKoxoRepository>(
 builder.Services.AddScoped<IPortalService, PortalService>();
 builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
 builder.Services.AddScoped<IAdminService, AdminService>();
+builder.Services.AddScoped<IBackupProtectionService, BackupProtectionService>();
+builder.Services.AddScoped<IBackupService, BackupService>();
 builder.Services.AddScoped<
     IDemoProvisioningService,
     DemoProvisioningService>();
@@ -1176,6 +1189,72 @@ app.MapGet(
             await service.GetServicesAsync(
                 session,
                 context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/portal/backups",
+    async (
+        HttpContext context,
+        IBackupService service,
+        IAuthenticationService authenticationService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            context.RequestServices.GetRequiredService<IAuditService>());
+        return BackupOk(
+            context,
+            service,
+            await service.GetClientBackupsAsync(
+                session,
+                context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/portal/backups/{id}",
+    async (
+        string id,
+        HttpContext context,
+        IBackupService service,
+        IAuthenticationService authenticationService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            context.RequestServices.GetRequiredService<IAuditService>());
+        return BackupOk(
+            context,
+            service,
+            await service.GetClientBackupAsync(
+                session,
+                id,
+                context.RequestAborted));
+    });
+app.MapPost(
+    "/internal/portal/backups/{id}/restore-requests",
+    async (
+        string id,
+        HttpContext context,
+        IBackupService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            auditService);
+        var payload = await ReadPayload<BackupRestoreRequestPayload>(context);
+        if (payload is null)
+        {
+            throw new PortalValidationException();
+        }
+
+        var result = await service.CreateRestoreRequestAsync(
+            session,
+            id,
+            payload,
+            context.GetCorrelationId(),
+            context.Connection.RemoteIpAddress?.ToString(),
+            context.RequestAborted);
+        return BackupOk(context, service, result);
     });
 app.MapGet(
     "/internal/portal/invoices",
@@ -2871,6 +2950,32 @@ app.MapPost(
             : Results.Ok(response);
     });
 
+app.MapPost(
+    "/internal/backups/report",
+    async (
+        HttpContext context,
+        IBackupService service,
+        IAuditService auditService) =>
+    {
+        var payload = await ReadPayload<BackupReportPayload>(context)
+            ?? throw new PortalValidationException();
+        var result = await service.IngestReportAsync(
+            payload,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "backup.report.ingest",
+                result.Mapped ? "success" : "refused",
+                result.Mapped ? null : "BACKUP_MAPPING_NOT_FOUND",
+                "backup_report",
+                result.BackupJobId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return BackupOk(context, service, result);
+    });
+
 app.MapGet(
     "/internal/portal/support-requests",
     async (
@@ -4429,6 +4534,47 @@ app.MapGet(
             await service.GetAdminActivityAsync(context.RequestAborted));
     });
 app.MapGet(
+    "/internal/admin/backups/integrations",
+    async (
+        HttpContext context,
+        IBackupService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.backups.integrations.read");
+        return BackupOk(
+            context,
+            service,
+            await service.GetAdminIntegrationsAsync(context.RequestAborted));
+    });
+app.MapPost(
+    "/internal/admin/backups/integrations",
+    async (
+        HttpContext context,
+        IBackupService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.backups.integrations.write");
+        var payload = await ReadPayload<BackupIntegrationPayload>(context)
+            ?? throw new PortalValidationException();
+        return BackupOk(
+            context,
+            service,
+            await service.UpsertAdminIntegrationAsync(
+                payload,
+                context.GetCorrelationId(),
+                context.RequestAborted));
+    });
+app.MapGet(
     "/internal/admin/service-requests",
     async (
         HttpContext context,
@@ -5343,6 +5489,16 @@ static IResult AdminOk<T>(
 static IResult WorkflowOk<T>(
     HttpContext context,
     IRequestWorkflowService service,
+    T data)
+{
+    context.Response.Headers["X-Data-Source"] =
+        service.IsPersistent ? "mariadb" : "mock";
+    return Results.Ok(data);
+}
+
+static IResult BackupOk<T>(
+    HttpContext context,
+    IBackupService service,
     T data)
 {
     context.Response.Headers["X-Data-Source"] =

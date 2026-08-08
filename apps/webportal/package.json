@@ -32,6 +32,7 @@
     "test:email-live": "node scripts/verify-email-live-contract.mjs",
     "test:cart": "node scripts/verify-cart-contract.mjs",
     "test:client-solutions": "node scripts/verify-client-solutions-contract.mjs",
+    "test:backups": "node scripts/verify-backups-contract.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

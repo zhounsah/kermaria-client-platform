@@ -54,9 +54,14 @@ export default async function ServicesPage() {
     <>
       <PageHeader
         action={
-          <Link className="button" href="/souscrire">
-            Ajouter un service
-          </Link>
+          <div className="button-row">
+            <Link className="button button-secondary" href="/backups">
+              Voir mes sauvegardes
+            </Link>
+            <Link className="button" href="/souscrire">
+              Ajouter un service
+            </Link>
+          </div>
         }
         description="Retrouvez ici les services réellement déduits de vos packs, options et souscriptions. Pour ajouter un service, ouvrez l'espace « Souscrire »."
         eyebrow="Périmètre client"

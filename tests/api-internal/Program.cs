@@ -67,6 +67,7 @@ async Task<int> RunAsync(string[] arguments)
     try
     {
         VerifyIdentifierMapping();
+        VerifyBackupProtectionService();
         VerifyActiveDirectoryPathScope();
         VerifyChildProcessEnvironmentGuardrails();
         await VerifySignupRecalculatesCatalogConfigurationAsync();
@@ -142,6 +143,68 @@ void VerifyActiveDirectoryPathScope()
             "CLI-DEMO-0060",
             StringComparison.Ordinal),
         "Le scope AD doit extraire la reference client reelle directement sous OU=Clients.");
+}
+
+void VerifyBackupProtectionService()
+{
+    var service = new BackupProtectionService();
+    var now = new DateTime(2026, 8, 8, 10, 0, 0, DateTimeKind.Utc);
+
+    Ensure(
+        service.ComputeProtectionStatus(
+            now,
+            now.AddHours(-2),
+            "success",
+            now.AddMinutes(-10),
+            1440,
+            2160,
+            180) == BackupProtectionStatuses.Protected,
+        "Une sauvegarde reussie recente doit etre protegee.");
+    Ensure(
+        service.ComputeProtectionStatus(
+            now,
+            now.AddHours(-2),
+            "warning",
+            now.AddMinutes(-10),
+            1440,
+            2160,
+            180) == BackupProtectionStatuses.Warning,
+        "Un dernier job en Warning doit afficher Attention.");
+    Ensure(
+        service.ComputeProtectionStatus(
+            now,
+            now.AddHours(-40),
+            "success",
+            now.AddMinutes(-10),
+            1440,
+            2160,
+            180) == BackupProtectionStatuses.Critical,
+        "Une derniere reussite trop ancienne doit etre critique.");
+    Ensure(
+        service.ComputeProtectionStatus(
+            now,
+            null,
+            "unknown",
+            now.AddMinutes(-10),
+            1440,
+            2160,
+            180) == BackupProtectionStatuses.Unknown,
+        "Des donnees Veeam manquantes doivent rester inconnues.");
+    Ensure(
+        service.ComputeProtectionStatus(
+            now,
+            now.AddHours(-2),
+            "success",
+            now.AddHours(-4),
+            1440,
+            2160,
+            180) == BackupProtectionStatuses.Unknown,
+        "Un collecteur silencieux ne doit pas laisser un etat protege.");
+    Ensure(
+        BackupProtectionService.SanitizePublicMessage(
+            @"\\192.168.100.201\KoXoDATA$ repository01")
+        .Contains("avertissement technique", StringComparison.Ordinal),
+        "Les messages publics doivent masquer les details techniques Veeam.");
 }
 
 async Task VerifySignupRecalculatesCatalogConfigurationAsync()
