@@ -15,6 +15,8 @@ public sealed record CartItemResponse(
     string UnitLabel,
     int UnitPriceCents,
     int? TaxRateBasisPoints,
+    string FiscalRegime,
+    string FiscalMention,
     int Quantity,
     int LineTotalCents);
 

@@ -5,6 +5,8 @@ namespace Kermaria.ApiInternal.Data.Repositories;
 
 public sealed class MockCommercialStore
 {
+    private static readonly IFiscalPolicy FiscalPolicy = new FiscalPolicy();
+
     public object SyncRoot { get; } = new();
 
     public List<MockCommercialOffer> Offers { get; } =
@@ -123,8 +125,8 @@ public sealed class MockCommercialStore
                 2m,
                 "heure",
                 8500,
-                2000,
-                20400,
+                null,
+                17000,
                 10,
                 "2026-06-12T10:00:00Z",
                 "2026-06-12T10:00:00Z"),
@@ -137,8 +139,8 @@ public sealed class MockCommercialStore
                 1m,
                 "mois",
                 2400,
-                2000,
-                2880,
+                null,
+                2400,
                 20,
                 "2026-06-12T10:05:00Z",
                 "2026-06-12T10:05:00Z")
@@ -180,13 +182,9 @@ public sealed class MockCommercialStore
     }
 
     private static int CalculateTaxAmount(MockCommercialDocumentLine line)
-        => line.TaxRateBasisPoints is null
-            ? 0
-            : (int)decimal.Round(
-                line.LineTotalCents
-                * (line.TaxRateBasisPoints.Value / 10000m),
-                0,
-                MidpointRounding.AwayFromZero);
+        => FiscalPolicy.CalculateTaxAmount(
+            line.LineTotalCents,
+            line.TaxRateBasisPoints);
 
     private static IReadOnlyList<MockCommercialOffer> CreatePublicPackOffers()
         =>
@@ -610,6 +608,8 @@ public sealed class MockCommercialStore
 
 public sealed class MockCommercialRepository : ICommercialRepository
 {
+    private static readonly IFiscalPolicy FiscalPolicy = new FiscalPolicy();
+
     private readonly MockCommercialStore _store;
 
     public MockCommercialRepository(MockCommercialStore store)
@@ -1076,19 +1076,7 @@ public sealed class MockCommercialRepository : ICommercialRepository
 
             var lines = LinesFor(documentId)
                 .OrderBy(l => l.SortOrder)
-                .Select(l => new CommercialDocumentLine(
-                    l.Id,
-                    l.OfferId,
-                    l.Label,
-                    l.Description,
-                    l.Quantity,
-                    l.UnitLabel,
-                    l.UnitPriceCents,
-                    l.TaxRateBasisPoints,
-                    l.LineTotalCents,
-                    l.SortOrder,
-                    l.CreatedAt,
-                    l.UpdatedAt))
+                .Select(ToLine)
                 .ToArray();
 
             return Task.FromResult<DocumentForIssuing?>(new DocumentForIssuing(
@@ -1553,13 +1541,9 @@ public sealed class MockCommercialRepository : ICommercialRepository
     }
 
     private static int CalculateTaxAmount(MockCommercialDocumentLine line)
-        => line.TaxRateBasisPoints is null
-            ? 0
-            : (int)decimal.Round(
-                line.LineTotalCents
-                * (line.TaxRateBasisPoints.Value / 10000m),
-                0,
-                MidpointRounding.AwayFromZero);
+        => FiscalPolicy.CalculateTaxAmount(
+            line.LineTotalCents,
+            line.TaxRateBasisPoints);
 
     private static void EnsureKnownCustomer(string? customerReference)
     {
@@ -1593,7 +1577,9 @@ public sealed class MockCommercialRepository : ICommercialRepository
         => serviceRequestId is null ? null : "SRV-MOCK-ADMIN-001";
 
     private static CommercialOfferSummary ToOfferSummary(MockCommercialOffer offer)
-        => new(
+    {
+        var fiscal = FiscalPolicy.Resolve(offer.TaxRateBasisPoints);
+        return new CommercialOfferSummary(
             offer.Id,
             offer.Name,
             offer.Description,
@@ -1602,7 +1588,9 @@ public sealed class MockCommercialRepository : ICommercialRepository
             offer.PriceKind,
             offer.PriceAmountCents,
             offer.Currency,
-            offer.TaxRateBasisPoints,
+            fiscal.TaxRateBasisPoints,
+            fiscal.FiscalRegime,
+            fiscal.FiscalMention,
             offer.ExternalReference,
             offer.TechnicalServiceReferences.ToArray(),
             offer.ProvisioningGroupSamAccountNames.ToArray(),
@@ -1620,6 +1608,7 @@ public sealed class MockCommercialRepository : ICommercialRepository
             offer.StripePriceIdLive,
             offer.CreatedAt,
             offer.UpdatedAt);
+    }
 
     private CommercialDocumentDetail ToClientDetail(MockCommercialDocument document)
         => new(
@@ -1715,7 +1704,9 @@ public sealed class MockCommercialRepository : ICommercialRepository
             document.CustomerName);
 
     private static CommercialDocumentLine ToLine(MockCommercialDocumentLine line)
-        => new(
+    {
+        var fiscal = FiscalPolicy.Resolve(line.TaxRateBasisPoints);
+        return new CommercialDocumentLine(
             line.Id,
             line.OfferId,
             line.Label,
@@ -1723,11 +1714,14 @@ public sealed class MockCommercialRepository : ICommercialRepository
             line.Quantity,
             line.UnitLabel,
             line.UnitPriceCents,
-            line.TaxRateBasisPoints,
+            fiscal.TaxRateBasisPoints,
+            fiscal.FiscalRegime,
+            fiscal.FiscalMention,
             line.LineTotalCents,
             line.SortOrder,
             line.CreatedAt,
             line.UpdatedAt);
+    }
 
     private static string CreateReference()
         => $"COM-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid():N}"[..17]

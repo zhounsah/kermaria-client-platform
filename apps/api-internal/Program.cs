@@ -277,7 +277,11 @@ builder.Services.AddScoped<IRequestWorkflowService, RequestWorkflowService>();
 builder.Services.AddScoped<
     IPortalNotificationService,
     PortalNotificationService>();
+builder.Services.AddSingleton<IFiscalPolicy, FiscalPolicy>();
 builder.Services.AddScoped<ICommercialService, CommercialService>();
+builder.Services.AddScoped<
+    ICatalogConfigurationService,
+    CatalogConfigurationService>();
 builder.Services.AddScoped<
     ICommercialOfferTopologyService,
     CommercialOfferTopologyService>();
@@ -1223,6 +1227,27 @@ app.MapGet(
 
 // V0.35 : panier / commande groupée à la carte (offres one-shot). Session
 // client requise ; le panier est strictement borné au customer de la session.
+app.MapPost(
+    "/internal/portal/configuration/resolve",
+    async (
+        HttpContext context,
+        ICatalogConfigurationService service) =>
+    {
+        var payload = await ReadPayload<CatalogConfigurationInput>(context);
+        if (payload is null)
+        {
+            return Results.Json(
+                new ApiError(
+                    "INVALID_REQUEST",
+                    "Le corps de la requete est invalide.",
+                    context.GetCorrelationId()),
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        return Results.Ok(
+            await service.ResolveAsync(payload, context.RequestAborted));
+    });
+
 app.MapGet(
     "/internal/portal/cart",
     async (

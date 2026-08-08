@@ -13,6 +13,8 @@ public sealed record SignupPackSelectionSnapshot(
     int BillingPriceAmountCents,
     int SetupFeeAmountCents,
     int FirstChargeAmountCents,
+    string FiscalRegime,
+    string FiscalMention,
     string Currency);
 
 public sealed record PendingPackSelectionSummary(
@@ -55,6 +57,7 @@ public sealed record SignupSubmitPayload(
     SignupCustomerData? Customer,
     SignupUserData? PrimaryUser,
     SignupPackSelectionSnapshot? PackSelection,
+    CatalogConfigurationInput? CatalogConfiguration,
     string? SourceAddress,
     string? UserAgent);
 
@@ -96,6 +99,7 @@ public sealed record SignupAdminDetail(
     string? Phone,
     string? Message,
     SignupPackSelectionSnapshot? PackSelection,
+    CatalogConfigurationSnapshot? CatalogConfiguration,
     string? SourceAddress,
     string? RejectedReason,
     string CreatedAt,

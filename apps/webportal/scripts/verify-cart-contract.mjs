@@ -151,8 +151,12 @@ assert.match(
 // --- Contrats C# ---
 assert.match(cartContracts, /record CartSummaryResponse/);
 assert.match(cartContracts, /record CartConfirmResponse/);
+assert.match(cartContracts, /FiscalRegime/);
+assert.match(cartContracts, /FiscalMention/);
 assert.match(checkoutContracts, /record CheckoutSummaryResponse/);
 assert.match(checkoutContracts, /record CheckoutRecurringConfirmResponse/);
+assert.match(checkoutContracts, /FiscalRegime/);
+assert.match(checkoutContracts, /FiscalMention/);
 assert.match(
   cartContracts,
   /record CartAddRequest\(string\? OfferId, int\? Quantity\)/,
@@ -217,6 +221,10 @@ assert.match(
   /CartOfferNotEligibleException/,
   "Une exception dediee doit sanctionner les offres non eligibles.",
 );
+assert.match(cartService, /IFiscalPolicy/);
+assert.match(cartService, /FiscalRegime/);
+assert.match(recurringCheckoutService, /IFiscalPolicy/);
+assert.match(recurringCheckoutService, /FiscalRegime/);
 assert.match(
   cartService,
   /EmptyCartException/,
@@ -325,6 +333,8 @@ assert.match(
 );
 assert.match(subscribeCatalogSections, /href="\/panier"/);
 assert.match(cartPage, /CartConfirmButton/);
+assert.match(cartPage, /formatCommercialAmountFromCents/);
+assert.match(cartPage, /Total initial estim/);
 assert.match(cartPage, /RecurringCheckoutConfirmButton/);
 assert.match(cartPage, /getCheckoutSummary/);
 assert.match(appShell, /HeaderCartDrawer/);

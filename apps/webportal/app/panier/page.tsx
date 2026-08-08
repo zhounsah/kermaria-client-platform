@@ -10,6 +10,7 @@ import { RecurringCheckoutConfirmButton } from "@/components/RecurringCheckoutCo
 import { RecurringCheckoutItemRemoveButton } from "@/components/RecurringCheckoutItemRemoveButton";
 import { SectionHeading } from "@/components/SectionHeading";
 import { requireClientSession } from "@/lib/auth";
+import { formatCommercialAmountFromCents } from "@/lib/fiscal-formatters";
 import { formatCurrencyFromCents } from "@/lib/formatters";
 import { getCheckoutSummary } from "@/lib/internal-api";
 
@@ -78,8 +79,8 @@ export default async function CartPage() {
                       <tr>
                         <th scope="col">Prestation</th>
                         <th scope="col">Qté</th>
-                        <th scope="col">Prix unitaire HT</th>
-                        <th scope="col">Total ligne HT</th>
+                        <th scope="col">Prix unitaire</th>
+                        <th scope="col">Total ligne</th>
                         <th scope="col">
                           <span className="visually-hidden">Actions</span>
                         </th>
@@ -95,8 +96,18 @@ export default async function CartPage() {
                             </span>
                           </td>
                           <td>{item.quantity}</td>
-                          <td>{formatCurrencyFromCents(item.unitPriceCents)}</td>
-                          <td>{formatCurrencyFromCents(item.lineTotalCents)}</td>
+                          <td>
+                            {formatCommercialAmountFromCents(
+                              item.unitPriceCents,
+                              { fiscalRegime: item.fiscalRegime },
+                            )}
+                          </td>
+                          <td>
+                            {formatCommercialAmountFromCents(
+                              item.lineTotalCents,
+                              { fiscalRegime: item.fiscalRegime },
+                            )}
+                          </td>
                           <td>
                             <CartItemRemoveButton offerId={item.offerId} />
                           </td>
@@ -109,7 +120,7 @@ export default async function CartPage() {
                       <strong>Sous-total achats ponctuels</strong>
                       <p>
                         {checkout.cart.itemCount} article(s) pour{" "}
-                        {formatCurrencyFromCents(checkout.cart.subtotalCents)} HT
+                        {formatCurrencyFromCents(checkout.cart.subtotalCents)}
                       </p>
                     </div>
                     <CartConfirmButton />
@@ -149,27 +160,45 @@ export default async function CartPage() {
                             <dt>Facturation</dt>
                             <dd>
                               {item.paymentMode === "upfront"
-                                ? `${formatCurrencyFromCents(item.priceAmountCents)} HT tous les ${item.billingIntervalMonths} mois`
-                                : `${formatCurrencyFromCents(item.priceAmountCents)} HT / mois`}
+                                ? `${formatCommercialAmountFromCents(
+                                    item.priceAmountCents,
+                                    { fiscalRegime: item.fiscalRegime },
+                                  )} tous les ${item.billingIntervalMonths} mois`
+                                : formatCommercialAmountFromCents(
+                                    item.priceAmountCents,
+                                    {
+                                      fiscalRegime: item.fiscalRegime,
+                                      suffix: " / mois",
+                                    },
+                                  )}
                             </dd>
                           </div>
                           <div>
                             <dt>Mise en service</dt>
                             <dd>
-                              {formatCurrencyFromCents(item.setupFeeAmountCents)} HT
+                              {formatCommercialAmountFromCents(
+                                item.setupFeeAmountCents,
+                                { fiscalRegime: item.fiscalRegime },
+                              )}
                             </dd>
                           </div>
                           <div>
-                            <dt>Première échéance</dt>
+                            <dt>Total initial estimé</dt>
                             <dd>
-                              {formatCurrencyFromCents(item.firstChargeAmountCents)} HT
+                              {formatCommercialAmountFromCents(
+                                item.firstChargeAmountCents,
+                                { fiscalRegime: item.fiscalRegime },
+                              )}
                             </dd>
                           </div>
                         </dl>
                       </div>
                       <div className="checkout-recurring-item-actions">
                         <strong>
-                          {formatCurrencyFromCents(item.firstChargeAmountCents)}
+                          {formatCommercialAmountFromCents(
+                            item.firstChargeAmountCents,
+                            { fiscalRegime: item.fiscalRegime },
+                          )}
                         </strong>
                         <RecurringCheckoutItemRemoveButton offerId={item.offerId} />
                       </div>
@@ -181,7 +210,7 @@ export default async function CartPage() {
                       <strong>Sous-total abonnements</strong>
                       <p>
                         {checkout.recurring.itemCount} abonnement(s) pour{" "}
-                        {formatCurrencyFromCents(checkout.recurring.subtotalCents)} HT
+                        {formatCurrencyFromCents(checkout.recurring.subtotalCents)}
                       </p>
                     </div>
                     <RecurringCheckoutConfirmButton />

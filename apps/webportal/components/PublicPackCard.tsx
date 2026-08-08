@@ -10,7 +10,10 @@ import type {
 import { getPublicPackBackupPolicySummary } from "@kermaria/shared";
 
 import { AddRecurringCheckoutButton } from "@/components/AddRecurringCheckoutButton";
-import { formatCurrencyFromCents } from "@/lib/formatters";
+import {
+  formatCommercialAmountFromCents,
+  formatFiscalMention,
+} from "@/lib/fiscal-formatters";
 import {
   buildPublicPackSelectionBaseFingerprint,
   isPackSelectionUnavailable,
@@ -169,8 +172,21 @@ function StatefulPublicPackCard({
       ) : (
         <div className="public-pack-pricing">
         <div className="public-pack-price-main">
-          <strong>{formatCurrencyFromCents(variant.monthlyPriceAmountCents)}</strong>
-          <span>HT / mois</span>
+          <strong>
+            {formatCommercialAmountFromCents(
+              variant.monthlyPriceAmountCents,
+              {
+                fiscalRegime: variant.offer.fiscalRegime,
+                suffix: " / mois",
+              },
+            )}
+          </strong>
+          <span>
+            {formatFiscalMention(
+              variant.offer.fiscalRegime,
+              variant.offer.fiscalMention,
+            )}
+          </span>
         </div>
         <span className="public-pack-discount">
           {variant.discountPercent > 0
@@ -184,19 +200,36 @@ function StatefulPublicPackCard({
         <dl className="public-pack-facts">
         <div>
           <dt>Mise en service</dt>
-          <dd>{formatCurrencyFromCents(variant.setupFeeAmountCents)} HT</dd>
+          <dd>
+            {formatCommercialAmountFromCents(variant.setupFeeAmountCents, {
+              fiscalRegime: variant.offer.fiscalRegime,
+            })}
+          </dd>
         </div>
         <div>
           <dt>Facturation</dt>
           <dd>
             {paymentMode === "upfront"
-              ? `${formatCurrencyFromCents(variant.billingPriceAmountCents)} HT tous les ${variant.billingIntervalMonths} mois`
-              : `${formatCurrencyFromCents(variant.billingPriceAmountCents)} HT/mois`}
+              ? `${formatCommercialAmountFromCents(
+                  variant.billingPriceAmountCents,
+                  { fiscalRegime: variant.offer.fiscalRegime },
+                )} tous les ${variant.billingIntervalMonths} mois`
+              : formatCommercialAmountFromCents(
+                  variant.billingPriceAmountCents,
+                  {
+                    fiscalRegime: variant.offer.fiscalRegime,
+                    suffix: " / mois",
+                  },
+                )}
           </dd>
         </div>
         <div>
-          <dt>Première échéance</dt>
-          <dd>{formatCurrencyFromCents(variant.firstChargeAmountCents)} HT</dd>
+          <dt>Total initial estimé</dt>
+          <dd>
+            {formatCommercialAmountFromCents(variant.firstChargeAmountCents, {
+              fiscalRegime: variant.offer.fiscalRegime,
+            })}
+          </dd>
         </div>
         </dl>
       )}
@@ -256,6 +289,14 @@ function StatefulPublicPackCard({
             offerId={variant.offer.id}
           />
         )}
+        {!variant ? null : mode === "signup" ? (
+          <Link
+            className="button button-secondary"
+            href={`/configurer?${selectionToQueryString(selection)}`}
+          >
+            Personnaliser
+          </Link>
+        ) : null}
         <Link className="text-link" href={`/offres/${pack.slug}`}>
           Voir la fiche technique
         </Link>

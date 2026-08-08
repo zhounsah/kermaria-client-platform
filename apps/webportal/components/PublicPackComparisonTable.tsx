@@ -10,9 +10,9 @@ import type {
   ResolvedPublicPackManifest,
 } from "@kermaria/shared";
 
+import { formatCommercialAmountFromCents } from "@/lib/fiscal-formatters";
 import {
   formatCommitmentMonths,
-  formatCurrencyFromCents,
   formatPaymentModeLabel,
 } from "@/lib/formatters";
 import {
@@ -324,7 +324,10 @@ export function PublicPackComparisonTable({
                       {variant.discountPercent > 0 ? (
                         <>
                           <span className="public-pack-compare-old-price">
-                            {formatCurrencyFromCents(referencePriceAmountCents)}
+                            {formatCommercialAmountFromCents(
+                              referencePriceAmountCents,
+                              { fiscalRegime: variant.offer.fiscalRegime },
+                            )}
                           </span>
                           <span className="public-pack-compare-save">
                             -{variant.discountPercent}%
@@ -332,15 +335,20 @@ export function PublicPackComparisonTable({
                         </>
                       ) : (
                         <span className="public-pack-compare-price-kicker">
-                          Tarif public HT
+                          Tarif public
                         </span>
                       )}
                     </div>
-                    <strong>{formatCurrencyFromCents(displayedPriceAmountCents)}</strong>
+                    <strong>
+                      {formatCommercialAmountFromCents(displayedPriceAmountCents, {
+                        fiscalRegime: variant.offer.fiscalRegime,
+                        suffix: isUpfront
+                          ? ` / ${commitmentMonths} mois`
+                          : " / mois",
+                      })}
+                    </strong>
                     <span className="public-pack-compare-price-caption">
-                      {isUpfront
-                        ? `HT / ${commitmentMonths} mois`
-                        : "HT / mois"}
+                      {variant.offer.fiscalMention}
                     </span>
                   </div>
 
@@ -350,8 +358,17 @@ export function PublicPackComparisonTable({
                       : "Sans remise"}
                     {" - "}
                     {isUpfront
-                      ? `${formatCurrencyFromCents(variant.monthlyPriceAmountCents)} / mois équivalent`
-                      : `${formatCurrencyFromCents(variant.billingPriceAmountCents)} par échéance`}
+                      ? formatCommercialAmountFromCents(
+                          variant.monthlyPriceAmountCents,
+                          {
+                            fiscalRegime: variant.offer.fiscalRegime,
+                            suffix: " / mois équivalent",
+                          },
+                        )
+                      : `${formatCommercialAmountFromCents(
+                          variant.billingPriceAmountCents,
+                          { fiscalRegime: variant.offer.fiscalRegime },
+                        )} par échéance`}
                   </p>
 
                   <ul className="public-pack-compare-highlights">
@@ -371,11 +388,21 @@ export function PublicPackComparisonTable({
                     </div>
                     <div>
                       <dt>Mise en service</dt>
-                      <dd>{formatCurrencyFromCents(variant.setupFeeAmountCents)}</dd>
+                      <dd>
+                        {formatCommercialAmountFromCents(
+                          variant.setupFeeAmountCents,
+                          { fiscalRegime: variant.offer.fiscalRegime },
+                        )}
+                      </dd>
                     </div>
                     <div>
-                      <dt>1re échéance</dt>
-                      <dd>{formatCurrencyFromCents(variant.firstChargeAmountCents)}</dd>
+                      <dt>Total initial estimé</dt>
+                      <dd>
+                        {formatCommercialAmountFromCents(
+                          variant.firstChargeAmountCents,
+                          { fiscalRegime: variant.offer.fiscalRegime },
+                        )}
+                      </dd>
                     </div>
                   </dl>
 

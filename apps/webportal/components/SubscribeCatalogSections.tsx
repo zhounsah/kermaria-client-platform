@@ -19,6 +19,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { PublicPackCard } from "@/components/PublicPackCard";
 import { SectionHeading } from "@/components/SectionHeading";
 import { StatusBadge } from "@/components/StatusBadge";
+import { formatCommercialAmountFromCents } from "@/lib/fiscal-formatters";
 import {
   formatBillingIntervalMonths,
   formatCommitmentMonths,
@@ -162,7 +163,9 @@ export function SubscribeCatalogSections({
                 <p className="multiline-text">{offer.description}</p>
                 <div className="catalog-scope">
                   <strong>
-                    {formatCurrencyFromCents(offer.priceAmountCents)} HT
+                    {formatCommercialAmountFromCents(offer.priceAmountCents, {
+                      fiscalRegime: offer.fiscalRegime,
+                    })}
                   </strong>
                   <span>
                     {formatBillingIntervalMonths(offer.billingIntervalMonths)}
@@ -209,7 +212,9 @@ export function SubscribeCatalogSections({
                 <p className="multiline-text">{offer.description}</p>
                 <div className="catalog-scope">
                   <strong>
-                    {formatCurrencyFromCents(offer.priceAmountCents)} HT
+                    {formatCommercialAmountFromCents(offer.priceAmountCents, {
+                      fiscalRegime: offer.fiscalRegime,
+                    })}
                   </strong>
                   <span>{offer.unitLabel}</span>
                 </div>

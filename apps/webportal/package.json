@@ -18,6 +18,7 @@
     "test:replies": "node scripts/verify-client-replies-contract.mjs",
     "test:activity": "node scripts/verify-admin-activity-contract.mjs",
     "test:commercial": "node scripts/verify-commercial-foundation-contract.mjs",
+    "test:diagnostic-configurator": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-diagnostic-configurator-contract.mjs",
     "test:managed-content": "node scripts/verify-managed-content-contract.mjs",
     "test:ad-security": "node scripts/verify-ad-security-contract.mjs",
     "test:bpce": "node scripts/verify-bpce-invoicing-contract.mjs",

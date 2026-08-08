@@ -306,6 +306,16 @@ assert.match(
 );
 assert.match(
   sharedTypes,
+  /fiscalRegime: FiscalRegime;/,
+  "SubscriptionSummary doit exposer fiscalRegime.",
+);
+assert.match(
+  sharedTypes,
+  /fiscalMention: string;/,
+  "SubscriptionSummary doit exposer fiscalMention.",
+);
+assert.match(
+  sharedTypes,
   /billingIntervalMonths: number;/,
   "SubscriptionSummary doit exposer billingIntervalMonths.",
 );

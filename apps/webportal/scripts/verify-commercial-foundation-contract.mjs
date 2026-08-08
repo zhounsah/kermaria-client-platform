@@ -735,7 +735,7 @@ assert.doesNotMatch(
 );
 assert.match(
   publicPackCard,
-  /!variant\s*\?\s*\([\s\S]*?<strong>Indisponible<\/strong>[\s\S]*?Passer au mensuel[\s\S]*?\)\s*:\s*\([\s\S]*?formatCurrencyFromCents\(variant\.monthlyPriceAmountCents\)/,
+  /!variant\s*\?\s*\([\s\S]*?<strong>Indisponible<\/strong>[\s\S]*?Passer au mensuel[\s\S]*?\)\s*:\s*\([\s\S]*?formatCommercialAmountFromCents\(\s*variant\.monthlyPriceAmountCents/,
   "Le prix mensuel ne doit etre affiche que hors de l'etat historique indisponible.",
 );
 assert.match(

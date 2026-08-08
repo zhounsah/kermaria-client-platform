@@ -45,9 +45,11 @@ export function CommercialDocumentLineTable({
                   {formatCurrencyFromCents(line.unitPriceCents)}
                 </td>
                 <td data-label="TVA">
-                  {line.taxRateBasisPoints === null
-                    ? "Non précisée"
-                    : `${line.taxRateBasisPoints / 100}%`}
+                  {line.fiscalRegime === "franchise_base"
+                    ? "Non applicable"
+                    : line.taxRateBasisPoints === null
+                      ? line.fiscalMention
+                      : `${line.taxRateBasisPoints / 100}%`}
                 </td>
                 <td data-label="Total ligne">
                   <strong>{formatCurrencyFromCents(line.lineTotalCents)}</strong>

@@ -69,6 +69,7 @@ async Task<int> RunAsync(string[] arguments)
         VerifyIdentifierMapping();
         VerifyActiveDirectoryPathScope();
         VerifyChildProcessEnvironmentGuardrails();
+        await VerifySignupRecalculatesCatalogConfigurationAsync();
         await RunMockTestsAsync();
         await RunMockActiveDirectoryModeTestsAsync();
         await RunMockBpceIssuingTestsAsync();
@@ -141,6 +142,213 @@ void VerifyActiveDirectoryPathScope()
             "CLI-DEMO-0060",
             StringComparison.Ordinal),
         "Le scope AD doit extraire la reference client reelle directement sous OU=Clients.");
+}
+
+async Task VerifySignupRecalculatesCatalogConfigurationAsync()
+{
+    var commercialStore = new MockCommercialStore();
+    var commercialService = new CommercialService(
+        new MockCommercialRepository(commercialStore));
+    var fiscalPolicy = new FiscalPolicy();
+    var configurationService = new CatalogConfigurationService(
+        commercialService,
+        fiscalPolicy);
+    var requestedConfiguration = new CatalogConfigurationInput(
+        "pack-dossier-securise",
+        1,
+        "monthly",
+        1,
+        8,
+        false,
+        false);
+
+    var initialResolution = await configurationService.ResolveAsync(
+        requestedConfiguration,
+        CancellationToken.None);
+    Ensure(
+        initialResolution.PriceSimulation?.MonthlyPriceExVatCents == 900,
+        "Le prix mock initial du Pack Dossier Securise doit rester connu.");
+    var initialSimulation = initialResolution.PriceSimulation
+        ?? throw new InvalidOperationException(
+            "Le resolver catalogue ne retourne aucune simulation initiale.");
+    Ensure(
+        initialResolution.Status == "ok"
+        && initialSimulation.MonthlyPriceIncVatCents == 900
+        && initialSimulation.SetupPriceExVatCents == 1500
+        && initialSimulation.SetupPriceIncVatCents == 1500
+        && initialSimulation.FirstChargeExVatCents == 2400
+        && initialSimulation.FirstChargeIncVatCents == 2400
+        && initialSimulation.VatRateBasisPoints is null
+        && initialSimulation.FiscalRegime == FiscalRegimes.FranchiseBase
+        && initialSimulation.FiscalMention.Contains("TVA non applicable")
+        && initialSimulation.RecurringItems.Count == 1
+        && initialSimulation.OneTimeItems.Count == 1,
+        "Le calcul prix doit appliquer la franchise en base sans ajouter de TVA.");
+
+    var vpnResolution = await configurationService.ResolveAsync(
+        requestedConfiguration with { NeedsVpn = true },
+        CancellationToken.None);
+    Ensure(
+        vpnResolution.Status == "requires_different_offer"
+        && vpnResolution.SuggestedPackKey == "pack-acces-distance"
+        && vpnResolution.PriceSimulation?.MonthlyPriceExVatCents == 1900,
+        "Une demande VPN doit proposer le pack Acces a Distance vendable.");
+
+    var bureauResolution = await configurationService.ResolveAsync(
+        requestedConfiguration with
+        {
+            PackKey = "pack-bureau-windows-distance",
+            StorageGb = 32,
+            NeedsVpn = false,
+            NeedsWindowsDesktop = false
+        },
+        CancellationToken.None);
+    Ensure(
+        bureauResolution.Status == "ok"
+        && bureauResolution.ResolvedConfiguration?.NeedsVpn == true
+        && bureauResolution.ResolvedConfiguration.NeedsWindowsDesktop == true,
+        "Le pack Bureau Windows doit conserver VPN et bureau distant inclus meme si le client tente de les desactiver.");
+
+    var bureauStorageQuote = await configurationService.ResolveAsync(
+        requestedConfiguration with
+        {
+            PackKey = "pack-bureau-windows-distance",
+            StorageGb = 64,
+            NeedsVpn = false,
+            NeedsWindowsDesktop = true
+        },
+        CancellationToken.None);
+    Ensure(
+        bureauStorageQuote.Status == "requires_quote"
+        && bureauStorageQuote.PriceSimulation is null
+        && bureauStorageQuote.RequestedConfiguration.Users == 1
+        && bureauStorageQuote.RequestedConfiguration.NeedsVpn == true
+        && bureauStorageQuote.Warnings.Contains("windows_storage_not_standard")
+        && !bureauStorageQuote.Warnings.Contains("windows_team_not_standard"),
+        "Un bureau Windows 1 utilisateur avec 64 Go doit cadrer le volume, pas afficher un motif multi-utilisateurs.");
+
+    var quotedResolution = await configurationService.ResolveAsync(
+        requestedConfiguration with { Users = 6 },
+        CancellationToken.None);
+    Ensure(
+        quotedResolution.Status == "requires_quote"
+        && quotedResolution.PriceSimulation is null
+        && quotedResolution.Warnings.Contains("users_not_standard"),
+        "Un nombre d'utilisateurs hors standard doit demander un cadrage.");
+
+    try
+    {
+        _ = await configurationService.ResolveAsync(
+            requestedConfiguration with { StorageGb = 12 },
+            CancellationToken.None);
+        throw new InvalidOperationException(
+            "Un stockage arbitraire a ete accepte par le configurateur.");
+    }
+    catch (PortalValidationException)
+    {
+        // attendu : seules les capacites vendables sont acceptees.
+    }
+
+    lock (commercialStore.SyncRoot)
+    {
+        var dossierOffer = commercialStore.Offers.Single(offer =>
+            offer.Id == "offer-pack-dossier-1m-monthly");
+        dossierOffer.PriceAmountCents = 1234;
+    }
+
+    var authStore = CreateMockAuthenticationStore();
+    var signupStore = new MockSignupStore();
+    var disabledAdConfiguration = CreateDisabledAdConfiguration();
+    var adMembershipStore = new MockAdGroupMembershipStore();
+    var signupService = new SignupService(
+        new MockSignupRepository(signupStore, authStore),
+        new MockSubscriptionRepository(new MockSubscriptionStore()),
+        new TestEmailDispatchService(),
+        new PortalPasswordService(),
+        new MockActiveDirectoryService(disabledAdConfiguration, adMembershipStore),
+        new MockActiveDirectoryLinkRepository(),
+        new MockAdGroupProvisioner(adMembershipStore),
+        NewPendingPasswordStore(),
+        new RecordingKoxoSyncWebhookTriggerService(),
+        configurationService,
+        new SignupRuntimeConfiguration(true, 3, 10, 24, 24, false),
+        CreateMockEmailConfiguration(),
+        disabledAdConfiguration,
+        LoggerFactory.Create(_ => { }).CreateLogger<SignupService>());
+
+    var tamperedPackSelection = new SignupPackSelectionSnapshot(
+        "pack-dossier-securise",
+        "Pack Dossier Securise",
+        "offer-pack-dossier-1m-monthly",
+        "PACK-DOSSIER-1M-MENS",
+        1,
+        "monthly",
+        1,
+        0,
+        1,
+        1,
+        0,
+        1,
+        FiscalRegimes.Standard,
+        "TVA client falsifiee",
+        "EUR");
+
+    var result = await signupService.SubmitAsync(
+        new SignupSubmitPayload(
+            "Societe Recalcul",
+            "Alice Martin",
+            "catalog-recalc@example.invalid",
+            "0102030405",
+            "Test de recalcul catalogue.",
+            new SignupCustomerData(
+                "professional",
+                "Societe Recalcul",
+                "billing-recalc@example.invalid",
+                "0102030405",
+                "1 rue du Test",
+                null,
+                "75001",
+                "Paris",
+                "FR"),
+            new SignupUserData(
+                "madame",
+                "Alice",
+                "Martin",
+                "1990-01-02",
+                null,
+                "Alice Martin",
+                "catalog-recalc@example.invalid",
+                "0102030405",
+                true),
+            tamperedPackSelection,
+            requestedConfiguration,
+            "127.0.0.1",
+            "api-smoke-test"),
+        "catalog-config-recalc-test",
+        CancellationToken.None);
+
+    Ensure(
+        result.Succeeded,
+        "Le signup avec configuration catalogue valide doit etre accepte.");
+
+    var storedSignup = signupStore.Rows.Values.Single();
+    Ensure(
+        storedSignup.PackSelection?.MonthlyPriceAmountCents == 1234
+        && storedSignup.PackSelection.FirstChargeAmountCents == 2734
+        && storedSignup.PackSelection.FiscalRegime == FiscalRegimes.FranchiseBase,
+        "Le signup doit ignorer le prix navigateur et recalculer le pack contre le catalogue courant.");
+    Ensure(
+        storedSignup.CatalogConfiguration?.Resolution.PriceSimulation
+            ?.MonthlyPriceExVatCents == 1234
+        && storedSignup.CatalogConfiguration.Resolution.PriceSimulation
+            .MonthlyPriceIncVatCents == 1234
+        && storedSignup.CatalogConfiguration.Resolution.PriceSimulation
+            .FirstChargeIncVatCents == 2734
+        && storedSignup.CatalogConfiguration.Resolution.PriceSimulation
+            .FiscalRegime == FiscalRegimes.FranchiseBase
+        && storedSignup.CatalogConfiguration.RequestedConfiguration.PackKey
+            == "pack-dossier-securise",
+        "Le snapshot catalogue stocke doit separer la demande et le tarif resolu au signup.");
 }
 
 async Task RunMockTestsAsync()
@@ -3383,6 +3591,7 @@ async Task RunKoxoExportServiceTestsAsync()
                 "0102030405",
                 true),
             null,
+            null,
             "verification-hash",
             DateTime.UtcNow.AddHours(4),
             "127.0.0.1",
@@ -3536,6 +3745,7 @@ async Task RunSignupKoxoWebhookTriggerTestsAsync()
                 "0102030405",
                 true),
             null,
+            null,
             "verification-hash-trigger",
             DateTime.UtcNow.AddHours(4),
             "127.0.0.1",
@@ -3598,6 +3808,10 @@ async Task RunSignupKoxoWebhookTriggerTestsAsync()
         new MockAdGroupProvisioner(adMembershipStore),
         NewPendingPasswordStore(),
         trigger,
+        new CatalogConfigurationService(
+            new CommercialService(
+                new MockCommercialRepository(new MockCommercialStore())),
+            new FiscalPolicy()),
         new SignupRuntimeConfiguration(true, 3, 1, 24, 24, false),
         new EmailRuntimeConfiguration(
             EmailIntegrationMode.Mock,
@@ -3636,6 +3850,55 @@ async Task RunSignupKoxoWebhookTriggerTestsAsync()
 
 static KoxoPendingPasswordStore NewPendingPasswordStore()
     => new(LoggerFactory.Create(_ => { }).CreateLogger<KoxoPendingPasswordStore>());
+
+static AdRuntimeConfiguration CreateDisabledAdConfiguration()
+    => new(
+        AdIntegrationMode.Disabled,
+        null,
+        null,
+        null,
+        [],
+        false,
+        null,
+        null,
+        3000,
+        5000,
+        25,
+        true);
+
+static EmailRuntimeConfiguration CreateMockEmailConfiguration()
+    => new(
+        EmailIntegrationMode.Mock,
+        "smtp.example.invalid",
+        25,
+        false,
+        null,
+        null,
+        "noreply@example.invalid",
+        "Kermaria",
+        "https://portal.example.invalid",
+        "contact@example.invalid",
+        10000,
+        false,
+        [],
+        true);
+
+static MockAuthenticationStore CreateMockAuthenticationStore()
+{
+    var configuration = new ConfigurationBuilder()
+        .AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["DEMO_PORTAL_EMAIL"] = mockEmail,
+            ["DEMO_PORTAL_PASSWORD"] = mockPassword,
+            ["DEMO_PORTAL_STATUS"] = "active",
+            ["DEMO_INTERNAL_ADMIN_EMAIL"] = mockAdminEmail,
+            ["DEMO_INTERNAL_ADMIN_PASSWORD"] = mockAdminPassword
+        })
+        .Build();
+    return new MockAuthenticationStore(
+        configuration,
+        new PortalPasswordService());
+}
 
 async Task RunKoxoPendingPasswordTestsAsync()
 {
@@ -4993,6 +5256,17 @@ async Task VerifyCommercialFoundationAsync(
             == expectedDataSource
         && clientCatalogPayload.RootElement.GetArrayLength() >= 1,
         "Le catalogue commercial client doit être accessible.");
+    var firstCatalogOffer = clientCatalogPayload.RootElement
+        .EnumerateArray()
+        .First();
+    Ensure(
+        firstCatalogOffer.GetProperty("taxRateBasisPoints").ValueKind
+            == JsonValueKind.Null
+        && firstCatalogOffer.GetProperty("fiscalRegime").GetString()
+            == FiscalRegimes.FranchiseBase
+        && firstCatalogOffer.GetProperty("fiscalMention").GetString()
+            ?.Contains("TVA non applicable", StringComparison.Ordinal) == true,
+        "Le catalogue commercial courant doit appliquer la franchise en base sans ajouter de TVA.");
 
     using var adminCatalogRequest = CreateSessionRequest(
         HttpMethod.Get,

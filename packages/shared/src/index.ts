@@ -262,6 +262,9 @@ export interface SubscriptionSummary {
   status: SubscriptionStatus;
   priceAmountCents: number;
   setupFeeAmountCents: number;
+  taxRateBasisPoints: number | null;
+  fiscalRegime: FiscalRegime;
+  fiscalMention: string;
   billingIntervalMonths: number;
   commitmentMonths: number;
   paymentMode: CommercialOfferPaymentMode;
@@ -421,6 +424,8 @@ export interface AdminSubscriptionDetail {
   provisioning: SubscriptionProvisioningSummary;
 }
 
+export type FiscalRegime = "franchise_base" | "standard";
+
 export interface CommercialOfferSummary {
   id: string;
   name: string;
@@ -431,6 +436,8 @@ export interface CommercialOfferSummary {
   priceAmountCents: number;
   currency: "EUR";
   taxRateBasisPoints: number | null;
+  fiscalRegime: FiscalRegime;
+  fiscalMention: string;
   externalReference: string | null;
   technicalServiceReferences: string[];
   provisioningGroupSamAccountNames: string[];
@@ -743,6 +750,8 @@ export interface SignupPackSelectionSnapshot {
   billingPriceAmountCents: number;
   setupFeeAmountCents: number;
   firstChargeAmountCents: number;
+  fiscalRegime: FiscalRegime;
+  fiscalMention: string;
   currency: "EUR";
 }
 
@@ -754,10 +763,105 @@ export interface PendingPackSelectionSummary {
   snapshot: SignupPackSelectionSnapshot;
 }
 
+export type DiagnosticCustomerType =
+  | "individual"
+  | "business"
+  | "association"
+  | "other";
+
+export type DiagnosticRecoveryImportance = "low" | "normal" | "high";
+
+export type DiagnosticDataKind =
+  | "personal_documents"
+  | "business_documents"
+  | "photos"
+  | "association_data"
+  | "work_files"
+  | "other_important_files";
+
+export type DiagnosticBackupFrequency =
+  | "daily"
+  | "weekly"
+  | "monthly"
+  | "rarely"
+  | "unknown";
+
+export type DiagnosticRestoreTestRecency =
+  | "less_than_3_months"
+  | "less_than_12_months"
+  | "more_than_12_months"
+  | "never"
+  | "unknown";
+
+export type DiagnosticContinuityPlan = "yes" | "partial" | "no" | "unknown";
+
+export interface DiagnosticAnswers {
+  customerType: DiagnosticCustomerType;
+  users: number | null;
+  dataKinds: readonly DiagnosticDataKind[];
+  estimatedStorageGb: number | null;
+  needsRemoteFiles: boolean | null;
+  needsVpn: boolean | null;
+  needsWindowsDesktop: boolean | null;
+  recoveryImportance: DiagnosticRecoveryImportance;
+  backupFrequency: DiagnosticBackupFrequency;
+  restoreTestRecency: DiagnosticRestoreTestRecency;
+  continuityPlan: DiagnosticContinuityPlan;
+}
+
+export type DiagnosticRecommendationReasonCode =
+  | "simple_backup"
+  | "needs_remote_files"
+  | "needs_vpn"
+  | "needs_windows_desktop"
+  | "team_or_structure"
+  | "association_context"
+  | "storage_within_pack"
+  | "strong_recovery_need";
+
+export type DiagnosticRecommendationWarningCode =
+  | "storage_unknown"
+  | "backup_frequency_unknown"
+  | "storage_requires_quote"
+  | "users_require_quote"
+  | "windows_storage_requires_quote"
+  | "windows_team_requires_quote"
+  | "other_structure_requires_review"
+  | "no_recent_restore_test"
+  | "no_continuity_plan";
+
+export type DiagnosticRecommendationStatus =
+  | "standard"
+  | "requires_quote";
+
+export interface DiagnosticRecommendation {
+  status: DiagnosticRecommendationStatus;
+  offerId: PublicPackCode | null;
+  reasons: readonly DiagnosticRecommendationReasonCode[];
+  warnings: readonly DiagnosticRecommendationWarningCode[];
+  suggestedOptions: readonly string[];
+  configuration: CatalogConfigurationInput | null;
+}
+
 export interface PublicPackVariantManifest {
   commitmentMonths: PublicPackCommitmentMonths;
   paymentMode: CommercialOfferPaymentMode;
   externalReference: string;
+}
+
+export type PublicPackAudienceScope =
+  | "individual"
+  | "business"
+  | "association";
+
+export interface PublicPackCapabilities {
+  includedUsers: number;
+  includedStorageGb: number;
+  supportsRemoteFiles: boolean;
+  supportsVpn: boolean;
+  supportsWindowsDesktop: boolean;
+  supportsBackup: boolean;
+  audienceScopes: readonly PublicPackAudienceScope[];
 }
 
 export interface PublicPackManifest {
@@ -772,8 +876,82 @@ export interface PublicPackManifest {
   included: readonly string[];
   technicalServiceReferences: readonly string[];
   provisioningGroupSamAccountNames: readonly string[];
+  capabilities: PublicPackCapabilities;
   order: number;
   variants: readonly PublicPackVariantManifest[];
+}
+
+export type CatalogConfigurationResolutionStatus =
+  | "ok"
+  | "requires_different_offer"
+  | "requires_quote";
+
+export type CatalogConfigurationWarningCode =
+  | "storage_unknown"
+  | "storage_not_standard"
+  | "users_not_standard"
+  | "windows_storage_not_standard"
+  | "windows_team_not_standard"
+  | "requested_pack_adjusted"
+  | "variant_unavailable";
+
+export interface CatalogConfigurationInput {
+  packKey: PublicPackCode;
+  commitmentMonths: PublicPackCommitmentMonths;
+  paymentMode: CommercialOfferPaymentMode;
+  users: number | null;
+  storageGb: number | null;
+  needsVpn: boolean | null;
+  needsWindowsDesktop: boolean | null;
+}
+
+export interface CatalogConfigurationRequestSnapshot
+  extends CatalogConfigurationInput {
+  requestedAt: string;
+}
+
+export interface CatalogPriceLine {
+  label: string;
+  offerId: string;
+  offerExternalReference: string;
+  quantity: number;
+  unitPriceExVatCents: number;
+  unitPriceIncVatCents: number;
+  totalPriceExVatCents: number;
+  totalPriceIncVatCents: number;
+  taxRateBasisPoints: number | null;
+  fiscalRegime: FiscalRegime;
+  fiscalMention: string;
+}
+
+export interface CatalogPriceSimulation {
+  monthlyPriceExVatCents: number;
+  monthlyPriceIncVatCents: number;
+  setupPriceExVatCents: number;
+  setupPriceIncVatCents: number;
+  firstChargeExVatCents: number;
+  firstChargeIncVatCents: number;
+  vatRateBasisPoints: number | null;
+  fiscalRegime: FiscalRegime;
+  fiscalMention: string;
+  recurringItems: readonly CatalogPriceLine[];
+  oneTimeItems: readonly CatalogPriceLine[];
+  warnings: readonly CatalogConfigurationWarningCode[];
+}
+
+export interface CatalogConfigurationResolution {
+  status: CatalogConfigurationResolutionStatus;
+  requestedConfiguration: CatalogConfigurationInput;
+  resolvedConfiguration: CatalogConfigurationInput | null;
+  suggestedPackKey: PublicPackCode | null;
+  packSelection: SignupPackSelectionSnapshot | null;
+  priceSimulation: CatalogPriceSimulation | null;
+  warnings: readonly CatalogConfigurationWarningCode[];
+}
+
+export interface CatalogConfigurationSnapshot {
+  requestedConfiguration: CatalogConfigurationRequestSnapshot;
+  resolution: CatalogConfigurationResolution;
 }
 
 export type PublicPackComparisonValueKind = "included" | "excluded" | "text";
@@ -966,7 +1144,7 @@ export const PUBLIC_PACKS: ReadonlyArray<PublicPackManifest> = [
     audience:
       "Pour un particulier, un indépendant ou une petite structure qui veut un dossier de secours numérique simple.",
     description:
-      "Un espace documentaire distant pour conserver vos fichiers importants avec sauvegarde planifiée, sans jargon technique inutile.",
+      "Un espace documentaire distant pour conserver vos fichiers importants avec sauvegarde quotidienne, sans jargon technique inutile.",
     highlights: [
       "Dossier de secours numérique 32 Go",
       "Accès à distance aux documents",
@@ -976,11 +1154,20 @@ export const PUBLIC_PACKS: ReadonlyArray<PublicPackManifest> = [
     included: [
       "32 Go de stockage personnel",
       "Copie distante de vos documents importants",
-      "Sauvegardes planifiées",
+      "Sauvegardes quotidiennes",
       "Aide de base en cas de besoin",
     ],
     technicalServiceReferences: ["STOCK-PERSO-32", "SAVE-PERSO"],
     provisioningGroupSamAccountNames: [],
+    capabilities: {
+      includedUsers: 1,
+      includedStorageGb: 32,
+      supportsRemoteFiles: true,
+      supportsVpn: false,
+      supportsWindowsDesktop: false,
+      supportsBackup: true,
+      audienceScopes: ["individual", "business"],
+    },
     order: 10,
     variants: withVariantPrefix("PACK-DOSSIER"),
   },
@@ -1014,6 +1201,15 @@ export const PUBLIC_PACKS: ReadonlyArray<PublicPackManifest> = [
       "SUPPORT-LV1",
     ],
     provisioningGroupSamAccountNames: ["GG_VPN"],
+    capabilities: {
+      includedUsers: 1,
+      includedStorageGb: 32,
+      supportsRemoteFiles: true,
+      supportsVpn: true,
+      supportsWindowsDesktop: false,
+      supportsBackup: true,
+      audienceScopes: ["individual", "business"],
+    },
     order: 20,
     variants: withVariantPrefix("PACK-ACCES"),
   },
@@ -1048,6 +1244,15 @@ export const PUBLIC_PACKS: ReadonlyArray<PublicPackManifest> = [
       "SUPPORT-LV1",
     ],
     provisioningGroupSamAccountNames: ["GG_VPN", "GG_RDS"],
+    capabilities: {
+      includedUsers: 1,
+      includedStorageGb: 32,
+      supportsRemoteFiles: true,
+      supportsVpn: true,
+      supportsWindowsDesktop: true,
+      supportsBackup: true,
+      audienceScopes: ["individual", "business"],
+    },
     order: 30,
     variants: withVariantPrefix("PACK-BUREAU"),
   },
@@ -1084,6 +1289,15 @@ export const PUBLIC_PACKS: ReadonlyArray<PublicPackManifest> = [
       "DOC-TECH",
     ],
     provisioningGroupSamAccountNames: ["GG_VPN"],
+    capabilities: {
+      includedUsers: 2,
+      includedStorageGb: 64,
+      supportsRemoteFiles: true,
+      supportsVpn: true,
+      supportsWindowsDesktop: false,
+      supportsBackup: true,
+      audienceScopes: ["business", "association"],
+    },
     order: 40,
     variants: withVariantPrefix("PACK-PRO"),
   },
@@ -1319,6 +1533,8 @@ export function createSignupPackSelectionSnapshot(
     billingPriceAmountCents: variant.billingPriceAmountCents,
     setupFeeAmountCents: variant.setupFeeAmountCents,
     firstChargeAmountCents: variant.firstChargeAmountCents,
+    fiscalRegime: variant.offer.fiscalRegime,
+    fiscalMention: variant.offer.fiscalMention,
     currency: variant.currency,
   };
 }
@@ -1402,7 +1618,7 @@ export const DEFAULT_PUBLIC_PACK_CATALOG_CONTENT: PublicPackCatalogContentPayloa
     },
     {
       id: "backup",
-      label: "Sauvegarde planifiée",
+      label: "Sauvegarde quotidienne",
       sortOrder: 40,
       values: {
         "pack-dossier-securise": createComparisonValue("included"),
@@ -1558,6 +1774,8 @@ export interface CommercialDocumentLine {
   unitLabel: string;
   unitPriceCents: number;
   taxRateBasisPoints: number | null;
+  fiscalRegime: FiscalRegime;
+  fiscalMention: string;
   lineTotalCents: number;
   sortOrder: number;
   createdAt: string;
@@ -1964,6 +2182,8 @@ export interface CartItem {
   unitLabel: string;
   unitPriceCents: number;
   taxRateBasisPoints: number | null;
+  fiscalRegime: FiscalRegime;
+  fiscalMention: string;
   quantity: number;
   lineTotalCents: number;
 }
@@ -2002,6 +2222,8 @@ export interface RecurringCheckoutItem {
   priceAmountCents: number;
   setupFeeAmountCents: number;
   firstChargeAmountCents: number;
+  fiscalRegime: FiscalRegime;
+  fiscalMention: string;
   billingIntervalMonths: number;
   commitmentMonths: number;
   paymentMode: CommercialOfferPaymentMode;

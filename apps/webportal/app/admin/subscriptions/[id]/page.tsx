@@ -10,6 +10,10 @@ import { SectionCard } from "@/components/SectionCard";
 import { StatusBadge } from "@/components/StatusBadge";
 import { requireAdminSession } from "@/lib/auth";
 import {
+  formatCommercialAmountFromCents,
+  formatFiscalMention,
+} from "@/lib/fiscal-formatters";
+import {
   commercialDocumentStatus,
   formatBillingIntervalMonths,
   formatCommitmentMonths,
@@ -93,12 +97,31 @@ export default async function AdminSubscriptionDetailPage({
             <dd>{subscription.publicPackCode ?? "—"}</dd>
           </div>
           <div>
-            <dt>Prix par échéance HT</dt>
-            <dd>{formatCurrencyFromCents(subscription.priceAmountCents)}</dd>
+            <dt>Prix par échéance</dt>
+            <dd>
+              {formatCommercialAmountFromCents(
+                subscription.priceAmountCents,
+                { fiscalRegime: subscription.fiscalRegime },
+              )}
+            </dd>
           </div>
           <div>
             <dt>Mise en service</dt>
-            <dd>{formatCurrencyFromCents(subscription.setupFeeAmountCents)} HT</dd>
+            <dd>
+              {formatCommercialAmountFromCents(
+                subscription.setupFeeAmountCents,
+                { fiscalRegime: subscription.fiscalRegime },
+              )}
+            </dd>
+          </div>
+          <div>
+            <dt>Fiscalité</dt>
+            <dd>
+              {formatFiscalMention(
+                subscription.fiscalRegime,
+                subscription.fiscalMention,
+              )}
+            </dd>
           </div>
           <div>
             <dt>Cadence</dt>

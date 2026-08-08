@@ -101,6 +101,7 @@ public sealed class SignupService : ISignupService
     private readonly IAdGroupProvisioner _adGroupProvisioner;
     private readonly IKoxoPendingPasswordStore _pendingPasswords;
     private readonly IKoxoSyncWebhookTriggerService _koxoSyncWebhookTriggerService;
+    private readonly ICatalogConfigurationService _catalogConfigurationService;
     private readonly SignupRuntimeConfiguration _configuration;
     private readonly EmailRuntimeConfiguration _emailConfiguration;
     private readonly AdRuntimeConfiguration _adConfiguration;
@@ -116,6 +117,7 @@ public sealed class SignupService : ISignupService
         IAdGroupProvisioner adGroupProvisioner,
         IKoxoPendingPasswordStore pendingPasswords,
         IKoxoSyncWebhookTriggerService koxoSyncWebhookTriggerService,
+        ICatalogConfigurationService catalogConfigurationService,
         SignupRuntimeConfiguration configuration,
         EmailRuntimeConfiguration emailConfiguration,
         AdRuntimeConfiguration adConfiguration,
@@ -130,6 +132,7 @@ public sealed class SignupService : ISignupService
         _adGroupProvisioner = adGroupProvisioner;
         _pendingPasswords = pendingPasswords;
         _koxoSyncWebhookTriggerService = koxoSyncWebhookTriggerService;
+        _catalogConfigurationService = catalogConfigurationService;
         _configuration = configuration;
         _emailConfiguration = emailConfiguration;
         _adConfiguration = adConfiguration;
@@ -153,7 +156,7 @@ public sealed class SignupService : ISignupService
                 "Les inscriptions ne sont pas ouvertes.");
         }
 
-        var normalized = NormalizeSubmission(payload);
+        var normalized = await NormalizeSubmissionAsync(payload, cancellationToken);
         if (normalized is null)
         {
             return new SignupOperationResult(
@@ -186,6 +189,7 @@ public sealed class SignupService : ISignupService
             normalized.Customer,
             normalized.PrimaryUser,
             normalized.PackSelection,
+            normalized.CatalogConfiguration,
             HashToken(token),
             DateTime.UtcNow.AddHours(_configuration.VerificationTokenTtlHours),
             NormalizeOptional(payload.SourceAddress, 45),
@@ -1121,8 +1125,9 @@ public sealed class SignupService : ISignupService
     private static string GenerateCustomerReference()
         => CustomerReferenceGenerator.Generate();
 
-    private static NormalizedSignupSubmission? NormalizeSubmission(
-        SignupSubmitPayload payload)
+    private async Task<NormalizedSignupSubmission?> NormalizeSubmissionAsync(
+        SignupSubmitPayload payload,
+        CancellationToken cancellationToken)
     {
         var customerType = NormalizeCustomerType(
             payload.Customer?.CustomerType,
@@ -1226,6 +1231,28 @@ public sealed class SignupService : ISignupService
             primaryPhone ?? customerPhone,
             payload.PrimaryUser?.IsPrimaryContact ?? true);
 
+        CatalogConfigurationSnapshot? catalogConfiguration = null;
+        SignupPackSelectionSnapshot? packSelection;
+        if (payload.CatalogConfiguration is not null)
+        {
+            var resolution = await _catalogConfigurationService.ResolveAsync(
+                payload.CatalogConfiguration,
+                cancellationToken);
+            if (!string.Equals(resolution.Status, "ok", StringComparison.Ordinal)
+                || resolution.PackSelection is null)
+            {
+                return null;
+            }
+
+            catalogConfiguration =
+                _catalogConfigurationService.CreateSnapshot(resolution);
+            packSelection = catalogConfiguration.Resolution.PackSelection;
+        }
+        else
+        {
+            packSelection = ValidatePackSelection(payload.PackSelection);
+        }
+
         return new NormalizedSignupSubmission(
             companyName,
             displayName,
@@ -1234,7 +1261,8 @@ public sealed class SignupService : ISignupService
             message,
             customer,
             primaryUser,
-            ValidatePackSelection(payload.PackSelection));
+            packSelection,
+            catalogConfiguration);
     }
 
     private static string? NormalizeCustomerType(
@@ -1478,6 +1506,7 @@ public sealed class SignupService : ISignupService
             record.Phone,
             record.Message,
             record.PackSelection,
+            record.CatalogConfiguration,
             record.SourceAddress,
             record.RejectedReason,
             ToIso(record.CreatedAtUtc),
@@ -1511,6 +1540,16 @@ public sealed class SignupService : ISignupService
         var offerId = snapshot.OfferId?.Trim();
         var offerExternalReference = snapshot.OfferExternalReference?.Trim();
         var paymentMode = snapshot.PaymentMode?.Trim();
+        var fiscalRegime =
+            string.IsNullOrWhiteSpace(snapshot.FiscalRegime)
+                ? FiscalRegimes.FranchiseBase
+                : snapshot.FiscalRegime.Trim();
+        var fiscalMention =
+            string.IsNullOrWhiteSpace(snapshot.FiscalMention)
+                ? fiscalRegime == FiscalRegimes.Standard
+                    ? FiscalPolicy.StandardMention
+                    : FiscalPolicy.FranchiseBaseMention
+                : snapshot.FiscalMention.Trim();
         var currency = snapshot.Currency?.Trim().ToUpperInvariant();
 
         if (string.IsNullOrWhiteSpace(packKey)
@@ -1518,6 +1557,9 @@ public sealed class SignupService : ISignupService
             || string.IsNullOrWhiteSpace(offerId)
             || string.IsNullOrWhiteSpace(offerExternalReference)
             || string.IsNullOrWhiteSpace(paymentMode)
+            || fiscalRegime is not FiscalRegimes.FranchiseBase
+                and not FiscalRegimes.Standard
+            || string.IsNullOrWhiteSpace(fiscalMention)
             || string.IsNullOrWhiteSpace(currency)
             || snapshot.CommitmentMonths is not 1 and not 6 and not 12
             || snapshot.BillingIntervalMonths is < 1 or > 12
@@ -1538,6 +1580,8 @@ public sealed class SignupService : ISignupService
             OfferId = offerId,
             OfferExternalReference = offerExternalReference,
             PaymentMode = paymentMode,
+            FiscalRegime = fiscalRegime,
+            FiscalMention = fiscalMention,
             Currency = currency
         };
     }
@@ -1561,5 +1605,6 @@ public sealed class SignupService : ISignupService
         string? Message,
         SignupCustomerData Customer,
         SignupUserData PrimaryUser,
-        SignupPackSelectionSnapshot? PackSelection);
+        SignupPackSelectionSnapshot? PackSelection,
+        CatalogConfigurationSnapshot? CatalogConfiguration);
 }

@@ -3,7 +3,7 @@
 import Script from "next/script";
 import { useEffect, useRef, useState } from "react";
 
-import type { PublicPackCode } from "@kermaria/shared";
+import type { CatalogConfigurationInput, PublicPackCode } from "@kermaria/shared";
 
 import { FormMessage } from "@/components/FormMessage";
 import {
@@ -19,6 +19,7 @@ type SignupFormProps = {
   initialPackSelection?: (PublicPackSelectionSummaryInput & {
     packKey: PublicPackCode;
   }) | null;
+  initialCatalogConfiguration?: CatalogConfigurationInput | null;
 };
 
 type SignupState =
@@ -46,6 +47,7 @@ const USER_SIZE_OPTIONS = [
 export function SignupForm({
   hcaptchaSiteKey,
   initialPackSelection = null,
+  initialCatalogConfiguration = null,
 }: SignupFormProps) {
   const isSubmittingRef = useRef(false);
   const renderedAtRef = useRef<number>(0);
@@ -121,6 +123,11 @@ export function SignupForm({
           packKey: initialPackSelection?.packKey ?? null,
           commitmentMonths: initialPackSelection?.commitmentMonths ?? null,
           paymentMode: initialPackSelection?.paymentMode ?? null,
+          users: initialCatalogConfiguration?.users ?? null,
+          storageGb: initialCatalogConfiguration?.storageGb ?? null,
+          needsVpn: initialCatalogConfiguration?.needsVpn ?? null,
+          needsWindowsDesktop:
+            initialCatalogConfiguration?.needsWindowsDesktop ?? null,
           hcaptchaToken: hcaptchaToken || null,
           website: honeypot,
           formRenderedAt: renderedAtRef.current,
@@ -430,6 +437,8 @@ export function SignupForm({
             commitmentMonths={initialPackSelection.commitmentMonths}
             description="Ce résumé sera repris avec votre demande pour conserver le contexte du pack sélectionné."
             eyebrow="Pack associé à la demande"
+            fiscalMention={initialPackSelection.fiscalMention}
+            fiscalRegime={initialPackSelection.fiscalRegime}
             firstChargeAmountCents={initialPackSelection.firstChargeAmountCents}
             monthlyPriceAmountCents={initialPackSelection.monthlyPriceAmountCents}
             packLabel={initialPackSelection.packLabel}
@@ -437,6 +446,41 @@ export function SignupForm({
             setupFeeAmountCents={initialPackSelection.setupFeeAmountCents}
             title={initialPackSelection.packLabel}
           />
+        ) : null}
+
+        {initialCatalogConfiguration ? (
+          <section
+            aria-label="Configuration demandee"
+            className="catalog-configuration-summary"
+          >
+            <h2>Configuration demandee</h2>
+            <dl>
+              <div>
+                <dt>Utilisateurs</dt>
+                <dd>{initialCatalogConfiguration.users ?? "A preciser"}</dd>
+              </div>
+              <div>
+                <dt>Stockage</dt>
+                <dd>
+                  {initialCatalogConfiguration.storageGb
+                    ? `${initialCatalogConfiguration.storageGb} Go`
+                    : "A preciser"}
+                </dd>
+              </div>
+              <div>
+                <dt>VPN</dt>
+                <dd>{formatBooleanNeed(initialCatalogConfiguration.needsVpn)}</dd>
+              </div>
+              <div>
+                <dt>Bureau Windows distant</dt>
+                <dd>
+                  {formatBooleanNeed(
+                    initialCatalogConfiguration.needsWindowsDesktop,
+                  )}
+                </dd>
+              </div>
+            </dl>
+          </section>
         ) : null}
 
         {initialPackSelection ? (
@@ -456,6 +500,34 @@ export function SignupForm({
               type="hidden"
               value={initialPackSelection.paymentMode}
             />
+            {initialCatalogConfiguration ? (
+              <>
+                <input
+                  name="users"
+                  type="hidden"
+                  value={String(initialCatalogConfiguration.users ?? "")}
+                />
+                <input
+                  name="storageGb"
+                  type="hidden"
+                  value={String(initialCatalogConfiguration.storageGb ?? "")}
+                />
+                <input
+                  name="needsVpn"
+                  type="hidden"
+                  value={formatNullableBooleanValue(
+                    initialCatalogConfiguration.needsVpn,
+                  )}
+                />
+                <input
+                  name="needsWindowsDesktop"
+                  type="hidden"
+                  value={formatNullableBooleanValue(
+                    initialCatalogConfiguration.needsWindowsDesktop,
+                  )}
+                />
+              </>
+            ) : null}
           </>
         ) : null}
 
@@ -492,6 +564,26 @@ export function SignupForm({
       </form>
     </>
   );
+}
+
+function formatBooleanNeed(value: boolean | null) {
+  if (value === true) {
+    return "Oui";
+  }
+  if (value === false) {
+    return "Non";
+  }
+  return "A preciser";
+}
+
+function formatNullableBooleanValue(value: boolean | null) {
+  if (value === true) {
+    return "yes";
+  }
+  if (value === false) {
+    return "no";
+  }
+  return "";
 }
 
 function resetCaptcha() {

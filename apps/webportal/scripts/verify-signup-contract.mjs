@@ -49,11 +49,17 @@ const migration034 = await read(
 const migration035 = await read(
   "../../apps/api-internal/Migrations/MariaDb/035_v040_koxo_sync.sql",
 );
+const migration042 = await read(
+  "../../apps/api-internal/Migrations/MariaDb/042_signup_catalog_configuration.sql",
+);
 const signupConfig = await read(
   "../../apps/api-internal/Data/Configuration/SignupRuntimeConfiguration.cs",
 );
 const signupService = await read(
   "../../apps/api-internal/Services/SignupService.cs",
+);
+const catalogConfigurationService = await read(
+  "../../apps/api-internal/Services/CatalogConfigurationService.cs",
 );
 const signupRepoInterface = await read(
   "../../apps/api-internal/Data/Repositories/ISignupRepository.cs",
@@ -104,6 +110,16 @@ check("migration v0.40 ajoute birth_date et l'identifiant KoXo immuable", () => 
   );
   assert.match(migration035, /CREATE TABLE IF NOT EXISTS koxo_identifier_counters/);
 });
+check("migration stocke le snapshot de configuration catalogue separement", () => {
+  assert.match(
+    migration042,
+    /catalog_configuration_snapshot_json LONGTEXT NULL/,
+  );
+  assert.match(
+    migration042,
+    /AFTER pack_selection_snapshot_json/,
+  );
+});
 
 check("SIGNUP_ENABLED defaut false", () => {
   assert.match(
@@ -142,6 +158,24 @@ check("v0.38 normalise des donnees customer + primaryUser", () => {
   assert.match(signupService, /SignupCustomerData/);
   assert.match(signupService, /SignupUserData/);
   assert.match(signupService, /BuildSamAccountNameBase/);
+});
+check("signup recalcule la configuration catalogue cote API interne", () => {
+  assert.match(signupContracts, /CatalogConfigurationInput\? CatalogConfiguration/);
+  assert.match(signupContracts, /CatalogConfigurationSnapshot\? CatalogConfiguration/);
+  assert.match(signupService, /ICatalogConfigurationService/);
+  assert.match(signupService, /_catalogConfigurationService\.ResolveAsync/);
+  assert.match(signupService, /_catalogConfigurationService\.CreateSnapshot/);
+  assert.match(signupService, /resolution\.Status,\s*"ok"/);
+  assert.match(signupRepoInterface, /CatalogConfigurationSnapshot\? CatalogConfiguration/);
+  assert.match(signupRepoMaria, /catalog_configuration_snapshot_json/);
+  assert.match(signupRepoMock, /CatalogConfigurationSnapshot\? CatalogConfiguration/);
+  assert.match(catalogConfigurationService, /GetClientCatalogAsync/);
+  assert.match(catalogConfigurationService, /PriceAmountCents/);
+  assert.doesNotMatch(
+    catalogConfigurationService,
+    /1900|3500|4900|900/,
+    "Les prix commerciaux ne doivent pas etre hardcodes dans le resolver.",
+  );
 });
 check("v0.40 impose civilite exportable et date de naissance", () => {
   assert.match(signupService, /AllowedPersonalTitles/);
@@ -240,31 +274,40 @@ check("BFF signup ignore les packs null ou vides", () => {
   assert.match(signupRoute, /hasProvidedPackValue\(body\.paymentMode\)/);
   assert.match(signupRoute, /value === null \|\| value === undefined/);
 });
-check("BFF signup valide puis fige la selection publique", () => {
+check("BFF signup valide la forme puis transmet une configuration a recalculer", () => {
   assert.match(signupRoute, /resolvePackSelectionInput\(\{/);
   assert.match(signupRoute, /packKey:\s*body\.packKey/);
   assert.match(signupRoute, /commitmentMonths:\s*body\.commitmentMonths/);
   assert.match(signupRoute, /paymentMode:\s*body\.paymentMode/);
+  assert.match(signupRoute, /normalizeCatalogConfigurationInput\(\{/);
+  assert.match(signupRoute, /users:\s*body\.users/);
+  assert.match(signupRoute, /storageGb:\s*body\.storageGb/);
   assert.match(signupRoute, /getPublicCommercialCatalog\(\)/);
   assert.match(signupRoute, /getPublicPackCatalogContent\(\)/);
   assert.match(signupRoute, /buildSignupPackSnapshot\(/);
   assert.match(signupRoute, /code:\s*"INVALID_PACK_SELECTION"/);
   assert.match(signupRoute, /code:\s*"PACK_SELECTION_UNAVAILABLE"/);
-  assert.match(signupRoute, /packSelection,/);
+  assert.match(signupRoute, /catalogConfiguration,/);
+  assert.match(signupRoute, /packSelection:\s*catalogConfiguration \? null : packSelection/);
 
   const resolveIndex = signupRoute.indexOf("resolvePackSelectionInput({");
+  const configurationIndex = signupRoute.indexOf(
+    "catalogConfiguration = normalizeCatalogConfigurationInput",
+  );
   const catalogIndex = signupRoute.indexOf("getPublicCommercialCatalog()");
   const snapshotIndex = signupRoute.indexOf("buildSignupPackSnapshot(");
   const upstreamIndex = signupRoute.indexOf("const result = await callInternalSignup");
   for (const [label, index] of [
     ["validation de selection", resolveIndex],
+    ["normalisation configuration", configurationIndex],
     ["chargement du catalogue", catalogIndex],
-    ["creation du snapshot", snapshotIndex],
+    ["controle du snapshot public", snapshotIndex],
     ["appel signup interne", upstreamIndex],
   ]) {
     assert.notEqual(index, -1, `${label} introuvable dans la route signup.`);
   }
-  assert.ok(resolveIndex < catalogIndex);
+  assert.ok(resolveIndex < configurationIndex);
+  assert.ok(configurationIndex < catalogIndex);
   assert.ok(catalogIndex < snapshotIndex);
   assert.ok(snapshotIndex < upstreamIndex);
 });
@@ -432,12 +475,15 @@ check("les vues admin signup affichent la date de naissance", () => {
   assert.match(adminSignupDetailPage, /Date de naissance/);
 });
 check("page signup reprend uniquement un snapshot catalogue valide", () => {
-  assert.match(signupPage, /selectionFromSearchParams\(await searchParams\)/);
+  assert.match(signupPage, /configurationFromSearchParams\(rawSearchParams\)/);
+  assert.match(signupPage, /resolveCatalogConfiguration\(catalogConfiguration\)/);
+  assert.match(signupPage, /selectionFromSearchParams\(rawSearchParams\)/);
   assert.match(signupPage, /getPublicCommercialCatalog\(\)/);
   assert.match(signupPage, /getPublicPackCatalogContent\(\)/);
   assert.match(signupPage, /buildSignupPackSnapshot\(/);
   assert.match(signupPage, /<PublicPackSelectionSummary/);
   assert.match(signupPage, /initialPackSelection=\{packSelection/);
+  assert.match(signupPage, /initialCatalogConfiguration=\{resolvedConfiguration\}/);
   for (const field of [
     "packKey",
     "packLabel",
@@ -446,6 +492,8 @@ check("page signup reprend uniquement un snapshot catalogue valide", () => {
     "monthlyPriceAmountCents",
     "setupFeeAmountCents",
     "firstChargeAmountCents",
+    "fiscalRegime",
+    "fiscalMention",
   ]) {
     assert.match(
       signupPage,
@@ -472,6 +520,24 @@ check("formulaire signup transporte et affiche le snapshot sans le recalculer", 
       `Le fallback natif doit conserver ${field}.`,
     );
   }
+  for (const field of ["users", "storageGb", "needsVpn"]) {
+    assert.match(
+      signupForm,
+      new RegExp(`${field}:\\s*initialCatalogConfiguration\\?\\.${field} \\?\\? null`),
+      `Le POST signup doit transporter ${field}.`,
+    );
+    assert.match(
+      signupForm,
+      new RegExp(`name=["']${field}["']`),
+      `Le fallback natif doit conserver ${field}.`,
+    );
+  }
+  assert.match(
+    signupForm,
+    /needsWindowsDesktop:\s*initialCatalogConfiguration\?\.needsWindowsDesktop \?\? null/,
+  );
+  assert.match(signupForm, /name=["']needsWindowsDesktop["']/);
+  assert.match(signupForm, /catalog-configuration-summary/);
   assert.match(signupForm, /<PublicPackSelectionSummary/);
   assert.match(signupForm, /initialPackSelection\.packLabel/);
   assert.doesNotMatch(
@@ -483,6 +549,10 @@ check("formulaire signup transporte et affiche le snapshot sans le recalculer", 
   assert.match(packSelectionSummary, /<dt>Engagement<\/dt>/);
   assert.match(packSelectionSummary, /<dt>Paiement<\/dt>/);
   assert.match(packSelectionSummary, /<dt>Tarif affich/u);
+  assert.match(packSelectionSummary, /<dt>Total initial estim/u);
+  assert.match(packSelectionSummary, /<dt>Fiscalit/u);
+  assert.match(packSelectionSummary, /fiscalRegime/);
+  assert.match(packSelectionSummary, /fiscalMention/);
 });
 check("formulaire mot de passe impose la longueur + confirmation", () => {
   assert.match(setPasswordForm, /MIN_PASSWORD_LENGTH\s*=\s*12/);

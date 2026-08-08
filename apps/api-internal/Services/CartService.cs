@@ -45,6 +45,7 @@ public sealed partial class CartService : ICartService
     private readonly ICommercialService _catalog;
     private readonly ICommercialRepository _commercial;
     private readonly IInvoiceIssuingService _issuing;
+    private readonly IFiscalPolicy _fiscalPolicy;
     private readonly ILogger<CartService> _logger;
 
     public CartService(
@@ -52,12 +53,14 @@ public sealed partial class CartService : ICartService
         ICommercialService catalog,
         ICommercialRepository commercial,
         IInvoiceIssuingService issuing,
+        IFiscalPolicy fiscalPolicy,
         ILogger<CartService> logger)
     {
         _cart = cart;
         _catalog = catalog;
         _commercial = commercial;
         _issuing = issuing;
+        _fiscalPolicy = fiscalPolicy;
         _logger = logger;
     }
 
@@ -68,7 +71,7 @@ public sealed partial class CartService : ICartService
         CancellationToken cancellationToken)
     {
         var items = await ResolveItemsAsync(customerId, cancellationToken);
-        return BuildSummary(items);
+        return BuildSummary(items, _fiscalPolicy);
     }
 
     public async Task<CartSummaryResponse> AddItemAsync(
@@ -119,7 +122,7 @@ public sealed partial class CartService : ICartService
             cancellationToken);
 
         var items = await ResolveItemsAsync(customerId, cancellationToken);
-        return BuildSummary(items);
+        return BuildSummary(items, _fiscalPolicy);
     }
 
     public async Task<CartSummaryResponse> RemoveItemAsync(
@@ -130,7 +133,7 @@ public sealed partial class CartService : ICartService
         var normalizedOfferId = ValidateIdentifier(offerId);
         await _cart.RemoveItemAsync(customerId, normalizedOfferId, cancellationToken);
         var items = await ResolveItemsAsync(customerId, cancellationToken);
-        return BuildSummary(items);
+        return BuildSummary(items, _fiscalPolicy);
     }
 
     public async Task<CartConfirmResponse> ConfirmAsync(
@@ -248,7 +251,8 @@ public sealed partial class CartService : ICartService
     }
 
     private static CartSummaryResponse BuildSummary(
-        List<(CommercialOfferSummary Offer, int Quantity)> items)
+        List<(CommercialOfferSummary Offer, int Quantity)> items,
+        IFiscalPolicy fiscalPolicy)
     {
         var responses = new List<CartItemResponse>(items.Count);
         var subtotal = 0;
@@ -256,6 +260,7 @@ public sealed partial class CartService : ICartService
         foreach (var (offer, quantity) in items)
         {
             var lineTotal = offer.PriceAmountCents * quantity;
+            var fiscal = fiscalPolicy.Resolve(offer.TaxRateBasisPoints);
             subtotal += lineTotal;
             itemCount += quantity;
             responses.Add(new CartItemResponse(
@@ -265,7 +270,9 @@ public sealed partial class CartService : ICartService
                 offer.Category,
                 offer.UnitLabel,
                 offer.PriceAmountCents,
-                offer.TaxRateBasisPoints,
+                fiscal.TaxRateBasisPoints,
+                fiscal.FiscalRegime,
+                fiscal.FiscalMention,
                 quantity,
                 lineTotal));
         }

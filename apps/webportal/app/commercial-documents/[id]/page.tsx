@@ -9,6 +9,7 @@ import { PayButton } from "@/components/PayButton";
 import { SectionCard } from "@/components/SectionCard";
 import { StatusBadge } from "@/components/StatusBadge";
 import { requireClientSession } from "@/lib/auth";
+import { formatFiscalMention } from "@/lib/fiscal-formatters";
 import {
   commercialDocumentStatus,
   commercialDocumentType,
@@ -89,6 +90,12 @@ export default async function CommercialDocumentDetailPage({
     document.paymentMethod === "manual"
       ? document.paymentMethod
       : null;
+  const isFranchiseBaseDocument =
+    document.lines.length > 0
+    && document.lines.every((line) => line.fiscalRegime === "franchise_base");
+  const fiscalMention =
+    document.lines.find((line) => line.fiscalRegime === "franchise_base")
+      ?.fiscalMention;
 
   return (
     <>
@@ -153,8 +160,15 @@ export default async function CommercialDocumentDetailPage({
         <SectionCard ariaLabel="Synthèse financière">
           <h2>{isIssued ? "Montants facturés" : "Synthèse indicative"}</h2>
           <dl className="request-details">
-            <div><dt>Sous-total HT</dt><dd>{formatCurrencyFromCents(document.subtotalAmountCents)}</dd></div>
-            <div><dt>Taxes</dt><dd>{formatCurrencyFromCents(document.taxAmountCents)}</dd></div>
+            <div><dt>{isFranchiseBaseDocument ? "Sous-total" : "Sous-total HT"}</dt><dd>{formatCurrencyFromCents(document.subtotalAmountCents)}</dd></div>
+            <div>
+              <dt>{isFranchiseBaseDocument ? "Fiscalité" : "Taxes"}</dt>
+              <dd>
+                {isFranchiseBaseDocument
+                  ? formatFiscalMention("franchise_base", fiscalMention)
+                  : formatCurrencyFromCents(document.taxAmountCents)}
+              </dd>
+            </div>
             <div><dt>Total {isIssued ? "facturé" : "indicatif"}</dt><dd>{formatCurrencyFromCents(document.totalAmountCents)}</dd></div>
             <div><dt>Devise</dt><dd>{document.currency}</dd></div>
           </dl>

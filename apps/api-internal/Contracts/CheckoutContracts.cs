@@ -12,6 +12,8 @@ public sealed record RecurringCheckoutItemResponse(
     [property: JsonPropertyName("priceAmountCents")] int PriceAmountCents,
     [property: JsonPropertyName("setupFeeAmountCents")] int SetupFeeAmountCents,
     [property: JsonPropertyName("firstChargeAmountCents")] int FirstChargeAmountCents,
+    [property: JsonPropertyName("fiscalRegime")] string FiscalRegime,
+    [property: JsonPropertyName("fiscalMention")] string FiscalMention,
     [property: JsonPropertyName("billingIntervalMonths")] int BillingIntervalMonths,
     [property: JsonPropertyName("commitmentMonths")] int CommitmentMonths,
     [property: JsonPropertyName("paymentMode")] string PaymentMode,

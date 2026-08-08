@@ -9,7 +9,8 @@ import { SectionCard } from "@/components/SectionCard";
 import { SectionHeading } from "@/components/SectionHeading";
 import { StatusBadge } from "@/components/StatusBadge";
 import { requireAdminSession } from "@/lib/auth";
-import { formatCurrencyFromCents, formatDateTime } from "@/lib/formatters";
+import { formatCommercialAmountFromCents } from "@/lib/fiscal-formatters";
+import { formatDateTime } from "@/lib/formatters";
 import { getAdminSignup } from "@/lib/internal-api";
 import {
   localizeSignupStatus,
@@ -46,6 +47,11 @@ export default async function AdminSignupDetailPage({ params }: PageProps) {
   }
 
   const signup = result.data;
+  const catalogConfigurationSnapshot = signup.catalogConfiguration;
+  const resolvedCatalogConfiguration =
+    catalogConfigurationSnapshot?.resolution.resolvedConfiguration ?? null;
+  const catalogPriceSimulation =
+    catalogConfigurationSnapshot?.resolution.priceSimulation ?? null;
   const decisionDescription = signup.status === "approved"
     ? "Le compte client existe déjà. Tant que le mot de passe initial n'a pas été défini, vous pouvez l'initialiser vous-même ou renvoyer un nouveau lien. Cette définition de mot de passe finalise aussi l'identité dans clients.home.bzh quand l'écriture AD est active."
     : "L'approbation crée le client et l'utilisateur portail, puis envoie un lien de définition du mot de passe. L'identité Active Directory n'est créée qu'au moment de cette définition dans clients.home.bzh.";
@@ -202,19 +208,80 @@ export default async function AdminSignupDetailPage({ params }: PageProps) {
               <div>
                 <dt>Mensuel affiché</dt>
                 <dd>
-                  {formatCurrencyFromCents(
+                  {formatCommercialAmountFromCents(
                     signup.packSelection.monthlyPriceAmountCents,
-                  )}{" "}
-                  HT
+                    { fiscalRegime: signup.packSelection.fiscalRegime },
+                  )}
                 </dd>
               </div>
               <div>
-                <dt>Première échéance</dt>
+                <dt>Total initial estimé</dt>
                 <dd>
-                  {formatCurrencyFromCents(
+                  {formatCommercialAmountFromCents(
                     signup.packSelection.firstChargeAmountCents,
-                  )}{" "}
-                  HT
+                    { fiscalRegime: signup.packSelection.fiscalRegime },
+                  )}
+                </dd>
+              </div>
+              <div>
+                <dt>Fiscalité</dt>
+                <dd>{signup.packSelection.fiscalMention}</dd>
+              </div>
+            </dl>
+          </div>
+        ) : null}
+
+        {catalogConfigurationSnapshot
+        && resolvedCatalogConfiguration
+        && catalogPriceSimulation ? (
+          <div className="signup-message-block">
+            <h3>Configuration demandee</h3>
+            <dl className="profile-details">
+              <div>
+                <dt>Pack resolu</dt>
+                <dd>{resolvedCatalogConfiguration.packKey}</dd>
+              </div>
+              <div>
+                <dt>Utilisateurs demandes</dt>
+                <dd>{catalogConfigurationSnapshot.requestedConfiguration.users}</dd>
+              </div>
+              <div>
+                <dt>Stockage demande</dt>
+                <dd>
+                  {catalogConfigurationSnapshot.requestedConfiguration.storageGb
+                    ? `${catalogConfigurationSnapshot.requestedConfiguration.storageGb} Go`
+                    : "A preciser"}
+                </dd>
+              </div>
+              <div>
+                <dt>Mensuel recalcule</dt>
+                <dd>
+                  {formatCommercialAmountFromCents(
+                    catalogPriceSimulation.monthlyPriceIncVatCents,
+                    { fiscalRegime: catalogPriceSimulation.fiscalRegime },
+                  )}
+                </dd>
+              </div>
+              <div>
+                <dt>Mise en service recalculee</dt>
+                <dd>
+                  {formatCommercialAmountFromCents(
+                    catalogPriceSimulation.setupPriceIncVatCents,
+                    { fiscalRegime: catalogPriceSimulation.fiscalRegime },
+                  )}
+                </dd>
+              </div>
+              <div>
+                <dt>Fiscalité</dt>
+                <dd>{catalogPriceSimulation.fiscalMention}</dd>
+              </div>
+              <div>
+                <dt>Catalogue resolu le</dt>
+                <dd>
+                  {formatDateTime(
+                    catalogConfigurationSnapshot.requestedConfiguration
+                      .requestedAt,
+                  )}
                 </dd>
               </div>
             </dl>

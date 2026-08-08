@@ -2,10 +2,11 @@
 
 import type {
   CommercialOfferPaymentMode,
+  FiscalRegime,
   PublicPackCommitmentMonths,
 } from "@kermaria/shared";
 
-import { formatCurrencyFromCents } from "@/lib/formatters";
+import { formatCommercialAmountFromCents } from "@/lib/fiscal-formatters";
 
 export type PublicPackSelectionSummaryInput = {
   packLabel: string;
@@ -14,6 +15,8 @@ export type PublicPackSelectionSummaryInput = {
   monthlyPriceAmountCents: number;
   setupFeeAmountCents: number;
   firstChargeAmountCents: number;
+  fiscalRegime: FiscalRegime;
+  fiscalMention: string;
 };
 
 type PublicPackSelectionSummaryProps = PublicPackSelectionSummaryInput & {
@@ -33,13 +36,15 @@ export function PublicPackSelectionSummary({
   monthlyPriceAmountCents,
   setupFeeAmountCents,
   firstChargeAmountCents,
-  eyebrow = "Pack selectionné",
+  fiscalRegime,
+  fiscalMention,
+  eyebrow = "Pack sélectionné",
   title,
   description,
 }: PublicPackSelectionSummaryProps) {
   return (
     <section
-      aria-label={`Resume du pack ${packLabel}`}
+      aria-label={`Résumé du pack ${packLabel}`}
       className="public-pack-selection-summary"
     >
       <div className="public-pack-selection-summary-header">
@@ -63,15 +68,32 @@ export function PublicPackSelectionSummary({
         </div>
         <div>
           <dt>Tarif affiché</dt>
-          <dd>{formatCurrencyFromCents(monthlyPriceAmountCents)} HT / mois</dd>
+          <dd>
+            {formatCommercialAmountFromCents(monthlyPriceAmountCents, {
+              fiscalRegime,
+              suffix: " / mois",
+            })}
+          </dd>
         </div>
         <div>
           <dt>Mise en service</dt>
-          <dd>{formatCurrencyFromCents(setupFeeAmountCents)} HT</dd>
+          <dd>
+            {formatCommercialAmountFromCents(setupFeeAmountCents, {
+              fiscalRegime,
+            })}
+          </dd>
         </div>
         <div>
-          <dt>Première échéance</dt>
-          <dd>{formatCurrencyFromCents(firstChargeAmountCents)} HT</dd>
+          <dt>Total initial estimé</dt>
+          <dd>
+            {formatCommercialAmountFromCents(firstChargeAmountCents, {
+              fiscalRegime,
+            })}
+          </dd>
+        </div>
+        <div>
+          <dt>Fiscalité</dt>
+          <dd>{fiscalMention}</dd>
         </div>
       </dl>
     </section>

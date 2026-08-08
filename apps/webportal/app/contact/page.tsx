@@ -94,6 +94,8 @@ export default async function ContactPage({ searchParams }: ContactPageProps) {
             commitmentMonths={packSelection.commitmentMonths}
             description="Votre choix est repris dans le formulaire ci-dessous. Précisez votre contexte ou vos questions dans le message libre."
             eyebrow="Pack repris"
+            fiscalMention={packSelection.fiscalMention}
+            fiscalRegime={packSelection.fiscalRegime}
             firstChargeAmountCents={packSelection.firstChargeAmountCents}
             monthlyPriceAmountCents={packSelection.monthlyPriceAmountCents}
             packLabel={packSelection.packLabel}

@@ -3,10 +3,15 @@ import Link from "next/link";
 
 import { PublicPackSelectionSummary } from "@/components/PublicPackSelectionSummary";
 import { SignupForm } from "@/components/SignupForm";
+import { resolveCatalogConfiguration } from "@/lib/catalog-configuration-server";
 import {
   getPublicCommercialCatalog,
   getPublicPackCatalogContent,
 } from "@/lib/internal-api";
+import {
+  configurationFromSearchParams,
+  configurationFromSelection,
+} from "@/lib/public-configurator";
 import {
   buildSignupPackSnapshot,
   selectionFromSearchParams,
@@ -34,20 +39,46 @@ export default async function SignupPage({
 }) {
   const enabled = isSignupEnabled();
   const hcaptchaSiteKey = process.env.HCAPTCHA_SITE_KEY?.trim() || null;
-  const selection = selectionFromSearchParams(await searchParams);
-  const [catalogResult, packContentResult] = selection
+  const rawSearchParams = await searchParams;
+  const catalogConfiguration =
+    configurationFromSearchParams(rawSearchParams);
+  const selection =
+    catalogConfiguration
+      ? {
+          packKey: catalogConfiguration.packKey,
+          commitmentMonths: catalogConfiguration.commitmentMonths,
+          paymentMode: catalogConfiguration.paymentMode,
+        }
+      : selectionFromSearchParams(rawSearchParams);
+  const configurationResult = catalogConfiguration
+    ? await resolveCatalogConfiguration(catalogConfiguration)
+    : null;
+  const resolvedConfiguration =
+    configurationResult?.ok
+    && configurationResult.data.status === "ok"
+    && configurationResult.data.resolvedConfiguration
+      ? configurationResult.data.resolvedConfiguration
+      : !catalogConfiguration && selection
+        ? configurationFromSelection(selection)
+        : null;
+  const [catalogResult, packContentResult] = selection && !catalogConfiguration
     ? await Promise.all([
         getPublicCommercialCatalog(),
         getPublicPackCatalogContent(),
       ])
     : [null, null];
-  const packSelection = selection && catalogResult
-    ? buildSignupPackSnapshot(
-        catalogResult.data,
-        selection,
-        packContentResult?.data ?? null,
-      )
-    : null;
+  const packSelection =
+    configurationResult?.ok
+    && configurationResult.data.status === "ok"
+    && configurationResult.data.packSelection
+      ? configurationResult.data.packSelection
+      : selection && catalogResult
+        ? buildSignupPackSnapshot(
+            catalogResult.data,
+            selection,
+            packContentResult?.data ?? null,
+          )
+        : null;
 
   return (
     <div className={`signup-page ${styles.page}`}>
@@ -72,6 +103,8 @@ export default async function SignupPage({
             commitmentMonths={packSelection.commitmentMonths}
             description="Le pack sélectionné reste attaché à cette demande. Le paiement ne se fait pas sur cet écran : vous retrouverez ensuite ce contexte dans l'espace client."
             eyebrow="Pack repris"
+            fiscalMention={packSelection.fiscalMention}
+            fiscalRegime={packSelection.fiscalRegime}
             firstChargeAmountCents={packSelection.firstChargeAmountCents}
             monthlyPriceAmountCents={packSelection.monthlyPriceAmountCents}
             packLabel={packSelection.packLabel}
@@ -91,6 +124,20 @@ export default async function SignupPage({
         </div>
       ) : null}
 
+      {catalogConfiguration && configurationResult && !configurationResult.ok ? (
+        <section className={styles.stepsCard} aria-label="Configuration indisponible">
+          <h2>Configuration a verifier</h2>
+          <p>
+            La configuration transmise n&apos;a pas pu etre recalculée pour
+            l&apos;instant. Revenez au configurateur pour obtenir une estimation
+            a jour avant de poursuivre.
+          </p>
+          <Link className="button button-secondary" href="/configurer">
+            Reprendre la configuration
+          </Link>
+        </section>
+      ) : null}
+
       {enabled ? (
         <SignupForm
           hcaptchaSiteKey={hcaptchaSiteKey}
@@ -103,8 +150,11 @@ export default async function SignupPage({
                 monthlyPriceAmountCents: packSelection.monthlyPriceAmountCents,
                 setupFeeAmountCents: packSelection.setupFeeAmountCents,
                 firstChargeAmountCents: packSelection.firstChargeAmountCents,
+                fiscalRegime: packSelection.fiscalRegime,
+                fiscalMention: packSelection.fiscalMention,
               }
             : null}
+          initialCatalogConfiguration={resolvedConfiguration}
         />
       ) : (
         <section className="signup-closed">

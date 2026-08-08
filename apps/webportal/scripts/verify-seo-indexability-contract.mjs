@@ -32,6 +32,7 @@ const PUBLIC_PATHS = [
   "/",
   "/offres",
   "/offres/pack-essentiel",
+  "/diagnostic",
   "/a-propos",
   "/contact",
   "/mentions-legales",
@@ -52,6 +53,7 @@ const PUBLIC_PATHS = [
 const METADATA_NOINDEX_PAGES = [
   ["/solutions", "app/solutions/page.tsx"],
   ["/signup", "app/signup/page.tsx"],
+  ["/configurer", "app/configurer/page.tsx"],
 ];
 
 /**
@@ -61,7 +63,9 @@ const METADATA_NOINDEX_PAGES = [
 const CANONICAL_PAGES = [
   ["/", "app/page.tsx"],
   ["/offres", "app/offres/page.tsx"],
+  ["/diagnostic", "app/diagnostic/page.tsx"],
   ["/solutions", "app/solutions/page.tsx"],
+  ["/configurer", "app/configurer/page.tsx"],
   ["/a-propos", "app/a-propos/page.tsx"],
   ["/contact", "app/contact/page.tsx"],
   ["/mentions-legales", "app/mentions-legales/page.tsx"],

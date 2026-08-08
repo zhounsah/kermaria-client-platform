@@ -62,6 +62,7 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   output: "standalone",
   transpilePackages: ["@kermaria/shared"],
+  allowedDevOrigins: ["*.trycloudflare.com"],
   async headers() {
     return [
       {

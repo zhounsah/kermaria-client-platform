@@ -12,6 +12,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { SectionCard } from "@/components/SectionCard";
 import { StatusBadge } from "@/components/StatusBadge";
 import { requireAdminSession } from "@/lib/auth";
+import { formatFiscalMention } from "@/lib/fiscal-formatters";
 import {
   commercialDocumentStatus,
   commercialDocumentType,
@@ -66,6 +67,12 @@ export default async function AdminCommercialDocumentDetailPage({
   }
 
   const document = documentResult.data;
+  const isFranchiseBaseDocument =
+    document.lines.length > 0
+    && document.lines.every((line) => line.fiscalRegime === "franchise_base");
+  const fiscalMention =
+    document.lines.find((line) => line.fiscalRegime === "franchise_base")
+      ?.fiscalMention;
   const status = commercialDocumentStatus[document.status] ?? {
     label: document.status,
     tone: "slate",
@@ -124,7 +131,15 @@ export default async function AdminCommercialDocumentDetailPage({
             <div><dt>Mise à jour</dt><dd>{formatDateTime(document.updatedAt)}</dd></div>
             <div><dt>Partagé le</dt><dd>{document.sharedAt ? formatDateTime(document.sharedAt) : "Non partagé"}</dd></div>
             <div><dt>Demande liée</dt><dd>{document.serviceRequestId && document.serviceRequestReference ? <Link href={`/admin/service-requests/${encodeURIComponent(document.serviceRequestId)}`}>{document.serviceRequestReference}</Link> : "Aucune"}</dd></div>
-            <div><dt>Sous-total HT</dt><dd>{formatCurrencyFromCents(document.subtotalAmountCents)}</dd></div>
+            <div><dt>{isFranchiseBaseDocument ? "Sous-total" : "Sous-total HT"}</dt><dd>{formatCurrencyFromCents(document.subtotalAmountCents)}</dd></div>
+            <div>
+              <dt>{isFranchiseBaseDocument ? "FiscalitÃ©" : "Taxes"}</dt>
+              <dd>
+                {isFranchiseBaseDocument
+                  ? formatFiscalMention("franchise_base", fiscalMention)
+                  : formatCurrencyFromCents(document.taxAmountCents)}
+              </dd>
+            </div>
             <div><dt>Total informatif</dt><dd>{formatCurrencyFromCents(document.totalAmountCents)}</dd></div>
           </dl>
           <p className="request-description">{document.disclaimer}</p>

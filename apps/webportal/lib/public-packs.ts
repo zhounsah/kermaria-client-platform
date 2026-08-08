@@ -243,6 +243,8 @@ export function buildSignupPackSnapshot(
     billingPriceAmountCents: variant.billingPriceAmountCents,
     setupFeeAmountCents: variant.setupFeeAmountCents,
     firstChargeAmountCents: variant.firstChargeAmountCents,
+    fiscalRegime: variant.offer.fiscalRegime,
+    fiscalMention: variant.offer.fiscalMention,
     currency: variant.currency,
   };
 }

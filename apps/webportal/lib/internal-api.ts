@@ -20,6 +20,7 @@ import type {
   ClientProfile,
   ClientSolution,
   CartSummary,
+  CatalogConfigurationSnapshot,
   CheckoutSummary,
   CommercialDocumentDetail,
   CommercialDocumentSummary,
@@ -1089,6 +1090,7 @@ export type SignupAdminDetail = {
   phone: string | null;
   message: string | null;
   packSelection: SignupPackSelectionSnapshot | null;
+  catalogConfiguration: CatalogConfigurationSnapshot | null;
   sourceAddress: string | null;
   rejectedReason: string | null;
   createdAt: string;
@@ -1630,4 +1632,3 @@ function logInternalApiFailure(
     surface: "webportal-bff",
   });
 }
-

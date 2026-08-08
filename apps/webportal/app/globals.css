@@ -5998,3 +5998,459 @@ fieldset.form-field > .form-hint {
   margin: 0;
   color: var(--text);
 }
+
+.diagnostic-page,
+.configurator-page {
+  width: min(1120px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 40px 0 72px;
+}
+
+.diagnostic-header,
+.configurator-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+  margin: 24px 0 32px;
+}
+
+.diagnostic-header h1,
+.configurator-header h1 {
+  max-width: 820px;
+  margin: 0;
+  font-size: clamp(2rem, 5vw, 4rem);
+  line-height: 1.02;
+}
+
+.diagnostic-header p,
+.configurator-header p {
+  max-width: 760px;
+  color: var(--muted);
+}
+
+.diagnostic-benefits {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.diagnostic-benefits article,
+.diagnostic-wizard,
+.diagnostic-result,
+.configurator-controls,
+.configurator-summary,
+.catalog-configuration-summary {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.diagnostic-benefits article {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 10px;
+  padding: 14px 16px;
+}
+
+.diagnostic-benefits span {
+  color: var(--success);
+  font-weight: 800;
+}
+
+.diagnostic-benefits h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.diagnostic-benefits p {
+  grid-column: 2;
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+.diagnostic-wizard {
+  padding: 24px;
+}
+
+.diagnostic-progress {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.diagnostic-progress span {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  color: var(--muted);
+  font-size: 0.88rem;
+  text-align: center;
+}
+
+.diagnostic-progress .is-active {
+  border-color: var(--primary);
+  color: var(--text);
+  font-weight: 700;
+}
+
+.diagnostic-progress .is-done {
+  color: var(--success);
+}
+
+.diagnostic-step {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.diagnostic-step legend {
+  margin-bottom: 18px;
+  scroll-margin-top: 96px;
+  font-size: 1.35rem;
+  font-weight: 800;
+}
+
+.diagnostic-step legend:focus-visible {
+  border-radius: 6px;
+  outline: 3px solid rgb(36 89 169 / 28%);
+  outline-offset: 4px;
+}
+
+.diagnostic-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.diagnostic-options label,
+.diagnostic-yes-no label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  cursor: pointer;
+}
+
+.diagnostic-options-multi {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.diagnostic-field,
+.configurator-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 18px;
+  color: var(--text);
+  font-weight: 700;
+}
+
+.diagnostic-field select,
+.configurator-field select {
+  min-height: 46px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 12px;
+  color: var(--text);
+  background: var(--surface);
+  font: inherit;
+}
+
+.diagnostic-inline-question {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.diagnostic-inline-question > span {
+  font-weight: 700;
+}
+
+.diagnostic-inline-question .field-hint {
+  margin: -4px 0 0;
+}
+
+.diagnostic-yes-no {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.diagnostic-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.diagnostic-result {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.75fr);
+  gap: 24px;
+  padding: 24px;
+}
+
+.diagnostic-result h2,
+.diagnostic-result h3,
+.configurator-summary h3 {
+  margin: 0 0 12px;
+}
+
+.diagnostic-price,
+.configurator-price-box dl,
+.catalog-configuration-summary dl {
+  display: grid;
+  gap: 12px;
+  margin: 18px 0;
+}
+
+.diagnostic-price div,
+.configurator-price-box dl div,
+.catalog-configuration-summary dl div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.diagnostic-price dt,
+.configurator-price-box dt,
+.catalog-configuration-summary dt {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.diagnostic-price dd,
+.configurator-price-box dd,
+.catalog-configuration-summary dd {
+  margin: 0;
+  text-align: right;
+}
+
+.diagnostic-price span,
+.configurator-price-box span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.diagnostic-result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+}
+
+.diagnostic-before-after {
+  display: grid;
+  gap: 14px;
+  margin-top: 22px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 16px;
+}
+
+.diagnostic-before-after-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.diagnostic-before-after-heading h3,
+.diagnostic-before-after-grid h4 {
+  margin: 0;
+}
+
+.diagnostic-before-after-heading span {
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.diagnostic-before-after-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.diagnostic-before-after-grid > div {
+  display: grid;
+  gap: 10px;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+.diagnostic-before-after-grid h4 {
+  color: var(--text);
+  font-size: 0.92rem;
+}
+
+.diagnostic-before-after-grid ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.diagnostic-before-after-grid li {
+  position: relative;
+  padding-left: 16px;
+}
+
+.diagnostic-before-after-grid li::before {
+  position: absolute;
+  left: 0;
+  color: var(--accent);
+  content: "•";
+}
+
+.diagnostic-warning-list,
+.configurator-warnings {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0 20px;
+  padding-left: 18px;
+  color: var(--muted);
+}
+
+.diagnostic-warning-list li {
+  display: grid;
+  gap: 3px;
+}
+
+.diagnostic-warning-list strong {
+  color: var(--text);
+}
+
+.configurator-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.7fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.configurator-controls,
+.configurator-summary,
+.catalog-configuration-summary {
+  padding: 24px;
+}
+
+.configurator-section-heading h2 {
+  margin: 0 0 8px;
+}
+
+.configurator-section-heading p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.configurator-grid-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px 16px;
+}
+
+.configurator-static-value {
+  display: flex;
+  align-items: center;
+  min-height: 46px;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 12px;
+  color: var(--muted);
+  background: var(--surface-muted);
+  font-weight: 650;
+}
+
+.configurator-summary {
+  position: sticky;
+  top: 20px;
+}
+
+.configurator-price-box {
+  margin: 18px 0;
+}
+
+.catalog-configuration-summary {
+  margin: 18px 0;
+}
+
+.catalog-configuration-summary h2 {
+  margin: 0 0 12px;
+}
+
+@media (min-width: 860px) {
+  .diagnostic-header {
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 0.65fr);
+    align-items: end;
+  }
+
+  .diagnostic-benefits {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}
+
+@media (max-width: 820px) {
+  .diagnostic-benefits,
+  .diagnostic-options,
+  .diagnostic-options-multi,
+  .diagnostic-yes-no,
+  .diagnostic-result,
+  .diagnostic-before-after-grid,
+  .configurator-shell,
+  .configurator-grid-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .diagnostic-progress {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .configurator-summary {
+    position: static;
+  }
+}
+
+@media (max-width: 560px) {
+  .diagnostic-page,
+  .configurator-page {
+    width: min(100% - 20px, 1120px);
+    padding-top: 24px;
+  }
+
+  .diagnostic-wizard,
+  .diagnostic-result,
+  .configurator-controls,
+  .configurator-summary {
+    padding: 18px;
+  }
+
+  .diagnostic-actions {
+    flex-direction: column-reverse;
+  }
+
+  .diagnostic-actions .button,
+  .diagnostic-result-actions .button {
+    width: 100%;
+  }
+
+  .diagnostic-before-after-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

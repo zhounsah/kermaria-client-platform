@@ -10,6 +10,8 @@ namespace Kermaria.ApiInternal.Data.Repositories;
 
 public sealed class MariaDbCommercialRepository : ICommercialRepository
 {
+    private static readonly IFiscalPolicy FiscalPolicy = new FiscalPolicy();
+
     private readonly string _connectionString;
 
     public MariaDbCommercialRepository(SqlRuntimeConfiguration configuration)
@@ -1091,7 +1093,14 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
     }
 
     private static CommercialOfferSummary ReadOffer(MySqlDataReader reader)
-        => new(
+    {
+        var taxRateBasisPoints =
+            reader.IsDBNull(reader.GetOrdinal("tax_rate_basis_points"))
+                ? (int?)null
+                : reader.GetInt32("tax_rate_basis_points");
+        var fiscal = FiscalPolicy.Resolve(taxRateBasisPoints);
+
+        return new CommercialOfferSummary(
             MariaDbIdentifierReader.ReadRequired(reader, "id"),
             reader.GetString("name"),
             reader.GetString("description"),
@@ -1100,9 +1109,9 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
             reader.GetString("price_kind"),
             reader.GetInt32("price_amount_cents"),
             reader.GetString("currency"),
-            reader.IsDBNull(reader.GetOrdinal("tax_rate_basis_points"))
-                ? null
-                : reader.GetInt32("tax_rate_basis_points"),
+            fiscal.TaxRateBasisPoints,
+            fiscal.FiscalRegime,
+            fiscal.FiscalMention,
             reader.IsDBNull(reader.GetOrdinal("external_reference"))
                 ? null
                 : reader.GetString("external_reference"),
@@ -1131,6 +1140,7 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
             ReadNullableString(reader, "stripe_price_id_live"),
             ToUtcIso(reader.GetDateTime("created_at")),
             ToUtcIso(reader.GetDateTime("updated_at")));
+    }
 
     private static CommercialDocumentSummary ReadDocumentSummary(
         MySqlDataReader reader)
@@ -1213,6 +1223,11 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
+            var taxRateBasisPoints =
+                reader.IsDBNull(reader.GetOrdinal("tax_rate_basis_points"))
+                    ? (int?)null
+                    : reader.GetInt32("tax_rate_basis_points");
+            var fiscal = FiscalPolicy.Resolve(taxRateBasisPoints);
             lines.Add(new CommercialDocumentLine(
                 MariaDbIdentifierReader.ReadRequired(reader, "id"),
                 ReadNullableString(reader, "offer_id"),
@@ -1221,9 +1236,9 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
                 reader.GetDecimal("quantity"),
                 reader.GetString("unit_label"),
                 reader.GetInt32("unit_price_cents"),
-                reader.IsDBNull(reader.GetOrdinal("tax_rate_basis_points"))
-                    ? null
-                    : reader.GetInt32("tax_rate_basis_points"),
+                fiscal.TaxRateBasisPoints,
+                fiscal.FiscalRegime,
+                fiscal.FiscalMention,
                 reader.GetInt32("line_total_cents"),
                 reader.GetInt32("sort_order"),
                 ToUtcIso(reader.GetDateTime("created_at")),

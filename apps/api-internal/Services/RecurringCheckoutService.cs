@@ -43,6 +43,7 @@ public sealed partial class RecurringCheckoutService : IRecurringCheckoutService
     private readonly ICommercialRepository _commercial;
     private readonly IInvoiceIssuingService _issuing;
     private readonly IBilledRecurringCheckoutSchemaEnsurer _schemaEnsurer;
+    private readonly IFiscalPolicy _fiscalPolicy;
     private readonly ILogger<RecurringCheckoutService> _logger;
 
     public RecurringCheckoutService(
@@ -53,6 +54,7 @@ public sealed partial class RecurringCheckoutService : IRecurringCheckoutService
         ICommercialRepository commercial,
         IInvoiceIssuingService issuing,
         IBilledRecurringCheckoutSchemaEnsurer schemaEnsurer,
+        IFiscalPolicy fiscalPolicy,
         ILogger<RecurringCheckoutService> logger)
     {
         _repository = repository;
@@ -62,6 +64,7 @@ public sealed partial class RecurringCheckoutService : IRecurringCheckoutService
         _commercial = commercial;
         _issuing = issuing;
         _schemaEnsurer = schemaEnsurer;
+        _fiscalPolicy = fiscalPolicy;
         _logger = logger;
     }
 
@@ -89,7 +92,7 @@ public sealed partial class RecurringCheckoutService : IRecurringCheckoutService
     {
         await _schemaEnsurer.EnsureAsync(cancellationToken);
         var items = await ResolveItemsAsync(customerId, cancellationToken);
-        return BuildRecurringSummary(items);
+        return BuildRecurringSummary(items, _fiscalPolicy);
     }
 
     public async Task<CheckoutRecurringMutationResponse> AddItemAsync(
@@ -291,7 +294,8 @@ public sealed partial class RecurringCheckoutService : IRecurringCheckoutService
     }
 
     private static CheckoutBucketResponse<RecurringCheckoutItemResponse> BuildRecurringSummary(
-        IReadOnlyList<ResolvedRecurringCheckoutItem> items)
+        IReadOnlyList<ResolvedRecurringCheckoutItem> items,
+        IFiscalPolicy fiscalPolicy)
     {
         var responses = new List<RecurringCheckoutItemResponse>(items.Count);
         var subtotal = 0;
@@ -300,6 +304,7 @@ public sealed partial class RecurringCheckoutService : IRecurringCheckoutService
             var offer = item.Offer;
             var setupFeeAmountCents = offer.SetupFeeAmountCents ?? 0;
             var firstChargeAmountCents = offer.PriceAmountCents + setupFeeAmountCents;
+            var fiscal = fiscalPolicy.Resolve(offer.TaxRateBasisPoints);
             subtotal += firstChargeAmountCents;
             responses.Add(new RecurringCheckoutItemResponse(
                 offer.Id,
@@ -311,6 +316,8 @@ public sealed partial class RecurringCheckoutService : IRecurringCheckoutService
                 offer.PriceAmountCents,
                 setupFeeAmountCents,
                 firstChargeAmountCents,
+                fiscal.FiscalRegime,
+                fiscal.FiscalMention,
                 offer.BillingIntervalMonths ?? 1,
                 offer.CommitmentMonths ?? offer.BillingIntervalMonths ?? item.CommitmentMonths,
                 offer.PaymentMode ?? item.PaymentMode,

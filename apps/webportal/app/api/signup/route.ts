@@ -12,6 +12,7 @@ import {
   buildSignupPackSnapshot,
   resolvePackSelectionInput,
 } from "@/lib/public-packs";
+import { normalizeCatalogConfigurationInput } from "@/lib/public-configurator";
 import { isSignupEnabled } from "@/lib/public-routes";
 import { checkRateLimit, getRequestIdentifier } from "@/lib/rate-limit";
 import { callInternalSignup, verifyHCaptcha } from "@/lib/signup-server";
@@ -36,6 +37,10 @@ type SignupRequestBody = {
   packKey?: unknown;
   commitmentMonths?: unknown;
   paymentMode?: unknown;
+  users?: unknown;
+  storageGb?: unknown;
+  needsVpn?: unknown;
+  needsWindowsDesktop?: unknown;
   hcaptchaToken?: unknown;
   website?: unknown;
   formRenderedAt?: unknown;
@@ -187,7 +192,14 @@ export async function POST(request: NextRequest) {
     hasProvidedPackValue(body.packKey)
     || hasProvidedPackValue(body.commitmentMonths)
     || hasProvidedPackValue(body.paymentMode);
+  const hasCatalogConfiguration =
+    hasPackSelection
+    || hasProvidedPackValue(body.users)
+    || hasProvidedPackValue(body.storageGb)
+    || hasProvidedPackValue(body.needsVpn)
+    || hasProvidedPackValue(body.needsWindowsDesktop);
   let packSelection = null;
+  let catalogConfiguration = null;
   if (hasPackSelection) {
     const selection = resolvePackSelectionInput({
       packKey: body.packKey,
@@ -199,6 +211,26 @@ export async function POST(request: NextRequest) {
         {
           code: "INVALID_PACK_SELECTION",
           message: "Le pack choisi n'est pas valide.",
+          correlation_id: correlationId,
+        },
+        { status: 400 },
+      );
+    }
+
+    catalogConfiguration = normalizeCatalogConfigurationInput({
+      packKey: body.packKey,
+      commitmentMonths: body.commitmentMonths,
+      paymentMode: body.paymentMode,
+      users: body.users,
+      storageGb: body.storageGb,
+      needsVpn: body.needsVpn,
+      needsWindowsDesktop: body.needsWindowsDesktop,
+    });
+    if (!catalogConfiguration) {
+      return NextResponse.json(
+        {
+          code: "INVALID_CONFIGURATION",
+          message: "La configuration choisie n'est pas valide.",
           correlation_id: correlationId,
         },
         { status: 400 },
@@ -224,13 +256,23 @@ export async function POST(request: NextRequest) {
         { status: 409 },
       );
     }
+  } else if (hasCatalogConfiguration) {
+    return NextResponse.json(
+      {
+        code: "INVALID_CONFIGURATION",
+        message: "La configuration choisie n'est pas complete.",
+        correlation_id: correlationId,
+      },
+      { status: 400 },
+    );
   }
 
   const result = await callInternalSignup(
     "/internal/signup",
     {
       ...payload,
-      packSelection,
+      packSelection: catalogConfiguration ? null : packSelection,
+      catalogConfiguration,
       sourceAddress: identifier === "unknown" ? null : identifier,
       userAgent: request.headers.get("user-agent")?.slice(0, 500) ?? null,
     },

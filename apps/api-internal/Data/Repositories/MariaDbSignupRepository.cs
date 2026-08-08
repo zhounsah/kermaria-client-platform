@@ -79,6 +79,7 @@ public sealed class MariaDbSignupRepository : ISignupRepository
                 initials,
                 is_primary_contact,
                 pack_selection_snapshot_json,
+                catalog_configuration_snapshot_json,
                 verification_token_hash,
                 verification_token_expires_at,
                 source_address,
@@ -106,6 +107,7 @@ public sealed class MariaDbSignupRepository : ISignupRepository
                 @initials,
                 @is_primary_contact,
                 @pack_selection_snapshot_json,
+                @catalog_configuration_snapshot_json,
                 @verification_token_hash,
                 @verification_token_expires_at,
                 @source_address,
@@ -159,6 +161,9 @@ public sealed class MariaDbSignupRepository : ISignupRepository
         command.Parameters.AddWithValue(
             "@pack_selection_snapshot_json",
             SerializeSnapshot(insert.PackSelection));
+        command.Parameters.AddWithValue(
+            "@catalog_configuration_snapshot_json",
+            SerializeCatalogConfiguration(insert.CatalogConfiguration));
         command.Parameters.AddWithValue(
             "@verification_token_hash",
             insert.VerificationTokenHash);
@@ -722,6 +727,9 @@ public sealed class MariaDbSignupRepository : ISignupRepository
                 ReadNullableString(reader, "phone"),
                 reader.GetBoolean("is_primary_contact")),
             DeserializeSnapshot(reader, "pack_selection_snapshot_json"),
+            DeserializeCatalogConfiguration(
+                reader,
+                "catalog_configuration_snapshot_json"),
             ReadNullableString(reader, "source_address"),
             ReadNullableUtc(reader, "verification_token_expires_at"),
             ReadNullableIdentifier(reader, "approved_user_id"),
@@ -766,6 +774,7 @@ public sealed class MariaDbSignupRepository : ISignupRepository
                 signup_pending.initials AS initials,
                 signup_pending.is_primary_contact AS is_primary_contact,
                 signup_pending.pack_selection_snapshot_json AS pack_selection_snapshot_json,
+                signup_pending.catalog_configuration_snapshot_json AS catalog_configuration_snapshot_json,
                 signup_pending.source_address AS source_address,
                 signup_pending.verification_token_expires_at AS verification_token_expires_at,
                 signup_pending.approved_user_id AS approved_user_id,
@@ -804,6 +813,12 @@ public sealed class MariaDbSignupRepository : ISignupRepository
             ? DBNull.Value
             : JsonSerializer.Serialize(snapshot, JsonOptions);
 
+    private static object SerializeCatalogConfiguration(
+        CatalogConfigurationSnapshot? snapshot)
+        => snapshot is null
+            ? DBNull.Value
+            : JsonSerializer.Serialize(snapshot, JsonOptions);
+
     private static Task<string> AllocateKoxoUniqueIdentifierAsync(
         MySqlConnection connection,
         MySqlTransaction transaction,
@@ -831,6 +846,33 @@ public sealed class MariaDbSignupRepository : ISignupRepository
         try
         {
             return JsonSerializer.Deserialize<SignupPackSelectionSnapshot>(
+                raw,
+                JsonOptions);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static CatalogConfigurationSnapshot? DeserializeCatalogConfiguration(
+        MySqlDataReader reader,
+        string columnName)
+    {
+        if (reader.IsDBNull(reader.GetOrdinal(columnName)))
+        {
+            return null;
+        }
+
+        var raw = reader.GetString(columnName);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<CatalogConfigurationSnapshot>(
                 raw,
                 JsonOptions);
         }

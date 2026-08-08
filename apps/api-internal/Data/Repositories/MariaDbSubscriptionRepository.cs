@@ -7,6 +7,7 @@ namespace Kermaria.ApiInternal.Data.Repositories;
 
 public sealed class MariaDbSubscriptionRepository : ISubscriptionRepository
 {
+    private static readonly IFiscalPolicy FiscalPolicy = new FiscalPolicy();
     private readonly string _connectionString;
 
     public MariaDbSubscriptionRepository(SqlRuntimeConfiguration configuration)
@@ -391,6 +392,7 @@ public sealed class MariaDbSubscriptionRepository : ISubscriptionRepository
                 offer.setup_fee_amount_cents,
                 0
             ) AS setup_fee_amount_cents,
+            offer.tax_rate_basis_points,
             COALESCE(
                 subscription.billing_interval_months,
                 offer.billing_interval_months,
@@ -426,7 +428,14 @@ public sealed class MariaDbSubscriptionRepository : ISubscriptionRepository
         """;
 
     private static SubscriptionSummary Read(MySqlDataReader reader)
-        => new(
+    {
+        var taxRateBasisPoints =
+            reader.IsDBNull(reader.GetOrdinal("tax_rate_basis_points"))
+                ? (int?)null
+                : reader.GetInt32("tax_rate_basis_points");
+        var fiscal = FiscalPolicy.Resolve(taxRateBasisPoints);
+
+        return new(
             MariaDbIdentifierReader.ReadRequired(reader, "id"),
             MariaDbIdentifierReader.ReadRequired(reader, "customer_id"),
             reader.GetString("customer_reference"),
@@ -443,6 +452,9 @@ public sealed class MariaDbSubscriptionRepository : ISubscriptionRepository
             reader.GetString("status"),
             reader.GetInt32("price_amount_cents"),
             reader.GetInt32("setup_fee_amount_cents"),
+            fiscal.TaxRateBasisPoints,
+            fiscal.FiscalRegime,
+            fiscal.FiscalMention,
             reader.GetInt32("billing_interval_months"),
             reader.GetInt32("commitment_months"),
             reader.GetString("payment_mode"),
@@ -456,6 +468,7 @@ public sealed class MariaDbSubscriptionRepository : ISubscriptionRepository
             ReadNullableIso(reader, "cancelled_at"),
             ToIso(reader.GetDateTime("created_at")),
             ToIso(reader.GetDateTime("updated_at")));
+    }
 
     private static string? ReadNullableString(
         MySqlDataReader reader,

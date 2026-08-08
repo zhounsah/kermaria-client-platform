@@ -8,10 +8,10 @@ import { PageHeader } from "@/components/PageHeader";
 import { SectionHeading } from "@/components/SectionHeading";
 import { StatusBadge } from "@/components/StatusBadge";
 import { requireClientSession } from "@/lib/auth";
+import { formatCommercialAmountFromCents } from "@/lib/fiscal-formatters";
 import {
   formatBillingIntervalMonths,
   formatCommitmentMonths,
-  formatCurrencyFromCents,
   formatDateTime,
   formatPaymentModeLabel,
   formatSubscriptionRailLabel,
@@ -143,7 +143,10 @@ export default async function ProfileSubscriptionsPage({
                       </span>
                       <h2>{item.offerName}</h2>
                       <p>
-                        {formatCurrencyFromCents(item.priceAmountCents)} HT ·{" "}
+                        {formatCommercialAmountFromCents(
+                          item.priceAmountCents,
+                          { fiscalRegime: item.fiscalRegime },
+                        )} ·{" "}
                         {formatBillingIntervalMonths(item.billingIntervalMonths)}
                       </p>
                     </div>
@@ -174,7 +177,12 @@ export default async function ProfileSubscriptionsPage({
                     </div>
                     <div>
                       <dt>Mise en service</dt>
-                      <dd>{formatCurrencyFromCents(item.setupFeeAmountCents)} HT</dd>
+                      <dd>
+                        {formatCommercialAmountFromCents(
+                          item.setupFeeAmountCents,
+                          { fiscalRegime: item.fiscalRegime },
+                        )}
+                      </dd>
                     </div>
                     <div>
                       <dt>Prochaine échéance</dt>

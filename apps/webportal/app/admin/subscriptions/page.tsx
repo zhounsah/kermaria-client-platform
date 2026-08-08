@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { SectionCard } from "@/components/SectionCard";
 import { StatusBadge } from "@/components/StatusBadge";
 import { requireAdminSession } from "@/lib/auth";
+import { formatCommercialAmountFromCents } from "@/lib/fiscal-formatters";
 import {
   formatBillingIntervalMonths,
   formatCommitmentMonths,
@@ -106,7 +107,7 @@ export default async function AdminSubscriptionsPage({
           value={String(activeCount)}
         />
         <MetricCard
-          detail="Équivalent mensuel HT sur les souscriptions actives"
+          detail="Équivalent mensuel sur les souscriptions actives"
           label="Revenu mensuel équivalent"
           tone="amber"
           value={formatCurrencyFromCents(monthlyEquivalentCents)}
@@ -183,7 +184,10 @@ export default async function AdminSubscriptionsPage({
                     </span>
                     <h2>{item.offerName}</h2>
                     <p>
-                      {formatCurrencyFromCents(item.priceAmountCents)} HT ·{" "}
+                      {formatCommercialAmountFromCents(
+                        item.priceAmountCents,
+                        { fiscalRegime: item.fiscalRegime },
+                      )} ·{" "}
                       {formatBillingIntervalMonths(item.billingIntervalMonths)}
                     </p>
                   </div>
@@ -201,7 +205,10 @@ export default async function AdminSubscriptionsPage({
                 <p className="field-hint">
                   {formatCommitmentMonths(item.commitmentMonths)} ·{" "}
                   {formatPaymentModeLabel(item.paymentMode)} · mise en service{" "}
-                  {formatCurrencyFromCents(item.setupFeeAmountCents)} HT
+                  {formatCommercialAmountFromCents(
+                    item.setupFeeAmountCents,
+                    { fiscalRegime: item.fiscalRegime },
+                  )}
                 </p>
                 <p className="field-hint">
                   {item.rail === "stripe"
