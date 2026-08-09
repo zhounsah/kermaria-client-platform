@@ -87,6 +87,11 @@ assert.match(markdown, /managed-markdown-table-scroll/);
 
 assert.match(routeConfig, /WIKI_PUBLIC_HOST = "wiki\.zacharyhounsa\.ovh"/);
 assert.match(routeConfig, /WIKI_INTERNAL_HOST = "wiki\.home\.bzh"/);
+assert.match(
+  routeConfig,
+  /pathname === "\/wiki" \|\| pathname\.startsWith\("\/wiki\/"\)/,
+  "Un chemin deja prefixe /wiki sur le hostname Wiki ne doit pas devenir /wiki/wiki.",
+);
 assert.match(proxy, /resolveWikiRewritePath/);
 assert.match(proxy, /x-wiki-host-kind/);
 assert.match(robots, /getWikiHostKind/);

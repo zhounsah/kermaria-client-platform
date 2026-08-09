@@ -208,6 +208,10 @@ export function resolveWikiRewritePath(pathname: string): string | null {
     return "/wiki";
   }
 
+  if (pathname === "/wiki" || pathname.startsWith("/wiki/")) {
+    return pathname;
+  }
+
   return `/wiki${pathname}`;
 }
 
