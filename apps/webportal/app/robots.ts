@@ -2,7 +2,11 @@ import type { MetadataRoute } from "next";
 import { headers } from "next/headers";
 import { connection } from "next/server";
 
-import { resolveCanonicalPublicUrl } from "@/lib/public-route-config";
+import {
+  getWikiHostKind,
+  resolveCanonicalPublicUrl,
+  WIKI_PUBLIC_HOST,
+} from "@/lib/public-route-config";
 import {
   getPortalPublicUrlFromHeaders,
   isVitrinePublicEnabled,
@@ -21,7 +25,20 @@ function resolveSitemapUrl(baseUrl: string): string {
 
 export default async function robots(): Promise<MetadataRoute.Robots> {
   await connection();
-  const baseUrl = getPortalPublicUrlFromHeaders(await headers());
+  const headerList = await headers();
+  const host = headerList.get("x-forwarded-host") ?? headerList.get("host");
+  const wikiHostKind = getWikiHostKind(host);
+  if (wikiHostKind) {
+    return {
+      rules: {
+        userAgent: "*",
+        allow: "/",
+      },
+      sitemap: `https://${WIKI_PUBLIC_HOST}/sitemap.xml`,
+    };
+  }
+
+  const baseUrl = getPortalPublicUrlFromHeaders(headerList);
 
   if (!isVitrinePublicEnabled()) {
     return {

@@ -16,9 +16,12 @@ export const PUBLIC_ROUTES = [
 ] as const;
 
 export const PORTFOLIO_URL = "https://portfolio.zacharyhounsa.ovh/";
+export const WIKI_PUBLIC_HOST = "wiki.zacharyhounsa.ovh";
+export const WIKI_INTERNAL_HOST = "wiki.home.bzh";
 
 export type PortalArea = "public" | "client" | "admin" | "local";
 export type PortalRole = "client_user" | "internal_admin";
+export type WikiHostKind = "canonical" | "internal";
 
 const PORTAL_FAMILIES = {
   "zacharyhounsa.ovh": {
@@ -173,6 +176,39 @@ function parseRequestHostname(host: string | null | undefined): string | null {
 
   const url = parsePortalUrl(`https://${trimmed}`);
   return url?.hostname ? normalizeHostname(url.hostname) : null;
+}
+
+export function getWikiHostKind(
+  host: string | null | undefined,
+): WikiHostKind | null {
+  const hostname = parseRequestHostname(host);
+  if (hostname === WIKI_PUBLIC_HOST) {
+    return "canonical";
+  }
+  if (hostname === WIKI_INTERNAL_HOST) {
+    return "internal";
+  }
+  return null;
+}
+
+export function resolveWikiCanonicalUrl(pathname: string, search = ""): string {
+  const safePath = isSafePortalPath(pathname) ? pathname : "/";
+  const query = search && search !== "?"
+    ? (search.startsWith("?") ? search : `?${search}`)
+    : "";
+  return `https://${WIKI_PUBLIC_HOST}${safePath}${query}`;
+}
+
+export function resolveWikiRewritePath(pathname: string): string | null {
+  if (!isSafePortalPath(pathname)) {
+    return null;
+  }
+
+  if (pathname === "/") {
+    return "/wiki";
+  }
+
+  return `/wiki${pathname}`;
 }
 
 /**

@@ -7,7 +7,11 @@ import {
   PUBLIC_PACKS,
 } from "@kermaria/shared";
 
-import { getPublicManagedContent } from "@/lib/internal-api";
+import {
+  getPublicEditorialSitemap,
+  getPublicManagedContent,
+} from "@/lib/internal-api";
+import { WIKI_PUBLIC_HOST } from "@/lib/public-route-config";
 import {
   getPortalPublicUrlFromHeaders,
   isVitrinePublicEnabled,
@@ -87,6 +91,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   }
 
   const baseUrl = getPortalPublicUrlFromHeaders(await headers());
+  const editorialEntries = await getPublicEditorialSitemap();
   const packEntries: PublicRouteEntry[] = PUBLIC_PACKS.map((pack) => ({
     path: `/offres/${pack.slug}`,
     changeFrequency: "weekly" as const,
@@ -94,7 +99,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     contentKey: buildPackSheetContentKey(pack.key),
   }));
 
-  return Promise.all(
+  const staticEntries = await Promise.all(
     [...PUBLIC_ROUTE_ENTRIES, ...packEntries].map(
       async ({ path, changeFrequency, priority, contentKey }) => {
         const lastModified = await resolveLastModified(contentKey);
@@ -112,4 +117,24 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       },
     ),
   );
+
+  return [
+    ...staticEntries,
+    ...editorialEntries.data
+      .filter((entry) => entry.publicPath)
+      .map((entry) => {
+        const url = entry.contentType === "wiki_article"
+          ? new URL(entry.publicPath!, `https://${WIKI_PUBLIC_HOST}`).toString()
+          : new URL(entry.publicPath!, baseUrl).toString();
+        const updatedAt = new Date(entry.updatedAt);
+        return {
+          url,
+          ...(Number.isNaN(updatedAt.getTime())
+            ? {}
+            : { lastModified: updatedAt }),
+          changeFrequency: "weekly" as const,
+          priority: entry.contentType === "wiki_article" ? 0.6 : 0.7,
+        };
+      }),
+  ];
 }

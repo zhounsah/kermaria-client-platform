@@ -15,6 +15,8 @@ import type {
   DownloadCategoryPayload,
   DownloadResourcePayload,
   DownloadVisibilityRulePayload,
+  EditorialCategoryPayload,
+  EditorialContentPayload,
   ManagedContentPayload,
   PortalProfileUpdatePayload,
   PublicPackCode,
@@ -35,6 +37,9 @@ import {
 } from "@kermaria/shared";
 
 const adUserPrincipalNamePattern = /^[^\s@]+@[^\s@]+$/;
+const editorialSlugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const editorialTypes = ["wiki_article", "seo_page", "faq"] as const;
+const editorialStatuses = ["draft", "published", "archived", "scheduled"] as const;
 
 export function parseSupportRequestPayload(
   value: unknown,
@@ -547,6 +552,155 @@ export function parseManagedContentPayload(
         bodyMarkdown,
         versionLabel,
       }
+    : null;
+}
+
+export function parseEditorialContentPayload(
+  value: unknown,
+): EditorialContentPayload | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Partial<EditorialContentPayload>;
+  if (
+    typeof candidate.contentType !== "string"
+    || typeof candidate.title !== "string"
+    || typeof candidate.slug !== "string"
+    || typeof candidate.bodyMarkdown !== "string"
+    || typeof candidate.status !== "string"
+    || typeof candidate.noIndex !== "boolean"
+    || typeof candidate.sortOrder !== "number"
+    || !(
+      typeof candidate.summary === "string"
+      || candidate.summary === null
+      || candidate.summary === undefined
+    )
+    || !(
+      typeof candidate.categoryId === "string"
+      || candidate.categoryId === null
+      || candidate.categoryId === undefined
+    )
+    || !(
+      typeof candidate.seoTitle === "string"
+      || candidate.seoTitle === null
+      || candidate.seoTitle === undefined
+    )
+    || !(
+      typeof candidate.seoDescription === "string"
+      || candidate.seoDescription === null
+      || candidate.seoDescription === undefined
+    )
+    || !(
+      typeof candidate.canonicalUrl === "string"
+      || candidate.canonicalUrl === null
+      || candidate.canonicalUrl === undefined
+    )
+    || !Array.isArray(candidate.faqScopes)
+    || !candidate.faqScopes.every((scope) => typeof scope === "string")
+  ) {
+    return null;
+  }
+
+  const payload: EditorialContentPayload = {
+    contentType: candidate.contentType.trim() as EditorialContentPayload["contentType"],
+    title: candidate.title.trim(),
+    slug: candidate.slug.trim().toLowerCase(),
+    summary:
+      typeof candidate.summary === "string"
+        ? candidate.summary.trim() || null
+        : null,
+    bodyMarkdown: candidate.bodyMarkdown.trim(),
+    categoryId:
+      typeof candidate.categoryId === "string"
+        ? candidate.categoryId.trim() || null
+        : null,
+    status: candidate.status.trim() as EditorialContentPayload["status"],
+    seoTitle:
+      typeof candidate.seoTitle === "string"
+        ? candidate.seoTitle.trim() || null
+        : null,
+    seoDescription:
+      typeof candidate.seoDescription === "string"
+        ? candidate.seoDescription.trim() || null
+        : null,
+    canonicalUrl:
+      typeof candidate.canonicalUrl === "string"
+        ? candidate.canonicalUrl.trim() || null
+        : null,
+    noIndex: candidate.noIndex,
+    sortOrder: Math.trunc(candidate.sortOrder),
+    faqScopes: Array.from(new Set(
+      candidate.faqScopes
+        .map((scope) => scope.trim().toLowerCase())
+        .filter(Boolean),
+    )),
+  };
+
+  return editorialTypes.includes(payload.contentType)
+    && payload.title.length >= 2
+    && payload.title.length <= 220
+    && editorialSlugPattern.test(payload.slug)
+    && payload.slug.length <= 120
+    && (payload.summary === null || payload.summary.length <= 600)
+    && payload.bodyMarkdown.length <= 160000
+    && editorialStatuses.includes(payload.status)
+    && (payload.categoryId === null || /^[A-Za-z0-9-]{1,100}$/.test(payload.categoryId))
+    && (payload.seoTitle === null || payload.seoTitle.length <= 220)
+    && (payload.seoDescription === null || payload.seoDescription.length <= 320)
+    && (payload.canonicalUrl === null || isAbsoluteWebUrl(payload.canonicalUrl))
+    && payload.sortOrder >= 0
+    && payload.sortOrder <= 100000
+    && payload.faqScopes.length <= 20
+    && payload.faqScopes.every((scope) =>
+      editorialSlugPattern.test(scope) && scope.length <= 80
+    )
+    ? payload
+    : null;
+}
+
+export function parseEditorialCategoryPayload(
+  value: unknown,
+): EditorialCategoryPayload | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Partial<EditorialCategoryPayload>;
+  if (
+    typeof candidate.contentType !== "string"
+    || typeof candidate.name !== "string"
+    || typeof candidate.slug !== "string"
+    || typeof candidate.sortOrder !== "number"
+    || !(
+      typeof candidate.description === "string"
+      || candidate.description === null
+      || candidate.description === undefined
+    )
+  ) {
+    return null;
+  }
+
+  const payload: EditorialCategoryPayload = {
+    contentType: candidate.contentType.trim() as EditorialCategoryPayload["contentType"],
+    name: candidate.name.trim(),
+    slug: candidate.slug.trim().toLowerCase(),
+    description:
+      typeof candidate.description === "string"
+        ? candidate.description.trim() || null
+        : null,
+    sortOrder: Math.trunc(candidate.sortOrder),
+  };
+
+  return editorialTypes.includes(payload.contentType)
+    && payload.name.length >= 2
+    && payload.name.length <= 160
+    && editorialSlugPattern.test(payload.slug)
+    && payload.slug.length <= 100
+    && (payload.description === null || payload.description.length <= 500)
+    && payload.sortOrder >= 0
+    && payload.sortOrder <= 100000
+    ? payload
     : null;
 }
 

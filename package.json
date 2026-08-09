@@ -1,6 +1,6 @@
 {
   "name": "kermaria-client-platform",
-  "version": "1.2.1",
+  "version": "1.3.0",
   "private": true,
   "workspaces": [
     "apps/webportal",
@@ -37,6 +37,8 @@
     "test:commercial": "npm --prefix apps/webportal run test:commercial",
     "test:diagnostic-configurator": "npm --prefix apps/webportal run test:diagnostic-configurator",
     "test:managed-content": "npm --prefix apps/webportal run test:managed-content",
+    "test:editorial": "npm --prefix apps/webportal run test:editorial",
+    "test:markdown-anchors": "npm --prefix apps/webportal run test:markdown-anchors",
     "test:ad-security": "npm --prefix apps/webportal run test:ad-security",
     "test:bpce": "npm --prefix apps/webportal run test:bpce",
     "test:payments": "npm --prefix apps/webportal run test:payments",
@@ -49,7 +51,7 @@
     "test:cart": "npm --prefix apps/webportal run test:cart",
     "test:client-solutions": "npm --prefix apps/webportal run test:client-solutions",
     "test:backups": "npm --prefix apps/webportal run test:backups",
-    "validate": "npm run check:secrets && npm run lint:web && npm run typecheck:shared && npm run typecheck:webportal && npm run build:web && npm run build:api && npm run test:api && npm --prefix apps/webportal run test:forms && npm --prefix apps/webportal run test:auth && npm --prefix apps/webportal run test:admin && npm run test:operations && npm run test:seo && npm run test:ux && npm run test:workflow && npm run test:notifications && npm run test:replies && npm run test:activity && npm run test:commercial && npm run test:diagnostic-configurator && npm run test:managed-content && npm run test:ad-security && npm run test:bpce && npm run test:cart && npm run test:client-solutions && npm run test:backups",
+    "validate": "npm run check:secrets && npm run lint:web && npm run typecheck:shared && npm run typecheck:webportal && npm run build:web && npm run build:api && npm run test:api && npm --prefix apps/webportal run test:forms && npm --prefix apps/webportal run test:auth && npm --prefix apps/webportal run test:admin && npm run test:operations && npm run test:seo && npm run test:ux && npm run test:workflow && npm run test:notifications && npm run test:replies && npm run test:activity && npm run test:commercial && npm run test:diagnostic-configurator && npm run test:managed-content && npm run test:editorial && npm run test:markdown-anchors && npm run test:ad-security && npm run test:bpce && npm run test:cart && npm run test:client-solutions && npm run test:backups",
     "validate:mariadb": "node scripts/validate-mariadb.mjs",
     "validate:preprod": "node scripts/validate-preprod.mjs",
     "validate:staging": "node scripts/validate-staging.mjs"

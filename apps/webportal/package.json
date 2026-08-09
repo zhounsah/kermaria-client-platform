@@ -20,6 +20,8 @@
     "test:commercial": "node scripts/verify-commercial-foundation-contract.mjs",
     "test:diagnostic-configurator": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-diagnostic-configurator-contract.mjs",
     "test:managed-content": "node scripts/verify-managed-content-contract.mjs",
+    "test:editorial": "node scripts/verify-editorial-platform-contract.mjs",
+    "test:markdown-anchors": "node scripts/verify-markdown-anchors.mjs",
     "test:ad-security": "node scripts/verify-ad-security-contract.mjs",
     "test:bpce": "node scripts/verify-bpce-invoicing-contract.mjs",
     "test:payments": "node scripts/verify-payment-channels-contract.mjs",
@@ -40,7 +42,9 @@
     "next": "16.2.9",
     "react": "19.2.7",
     "react-dom": "19.2.7",
-    "react-markdown": "^10.1.0"
+    "react-markdown": "^10.1.0",
+    "rehype-sanitize": "^6.0.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@types/node": "24.13.2",

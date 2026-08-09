@@ -205,11 +205,17 @@ builder.Services.AddScoped<ICommercialRepository>(
         : new MockCommercialRepository(
             serviceProvider.GetRequiredService<MockCommercialStore>()));
 builder.Services.AddSingleton<MockManagedContentStore>();
+builder.Services.AddSingleton<MockEditorialStore>();
 builder.Services.AddScoped<IManagedContentRepository>(
     serviceProvider => sqlConfiguration.IsPersistent
         ? new MariaDbManagedContentRepository(sqlConfiguration)
         : new MockManagedContentRepository(
             serviceProvider.GetRequiredService<MockManagedContentStore>()));
+builder.Services.AddScoped<IEditorialRepository>(
+    serviceProvider => sqlConfiguration.IsPersistent
+        ? new MariaDbEditorialRepository(sqlConfiguration)
+        : new MockEditorialRepository(
+            serviceProvider.GetRequiredService<MockEditorialStore>()));
 builder.Services.AddScoped<IDownloadRepository>(
     serviceProvider => sqlConfiguration.IsPersistent
         ? new MariaDbDownloadRepository(sqlConfiguration)
@@ -327,6 +333,7 @@ builder.Services.AddScoped<
 builder.Services.AddScoped<ICartService, CartService>();
 builder.Services.AddScoped<IRecurringCheckoutService, RecurringCheckoutService>();
 builder.Services.AddScoped<IManagedContentService, ManagedContentService>();
+builder.Services.AddScoped<IEditorialService, EditorialService>();
 builder.Services.AddScoped<IDownloadService, DownloadService>();
 builder.Services.AddScoped<IClientSolutionService, ClientSolutionService>();
 builder.Services.AddScoped<IPublicPackCatalogService, PublicPackCatalogService>();
@@ -2121,6 +2128,413 @@ app.MapPatch(
                 SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
             context.RequestAborted);
         return ManagedContentOk(context, service, result);
+    });
+app.MapGet(
+    "/internal/public/editorial/wiki/home",
+    async (
+        HttpContext context,
+        IEditorialService service) =>
+        EditorialOk(
+            context,
+            service,
+            await service.GetPublicWikiHomeAsync(context.RequestAborted)));
+app.MapGet(
+    "/internal/public/editorial/wiki/search",
+    async (
+        HttpContext context,
+        IEditorialService service) =>
+    {
+        var query = context.Request.Query["query"].FirstOrDefault() ?? "";
+        return EditorialOk(
+            context,
+            service,
+            await service.SearchPublicWikiAsync(query, context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/public/editorial/wiki/articles/{slug}",
+    async (
+        string slug,
+        HttpContext context,
+        IEditorialService service) =>
+        EditorialOk(
+            context,
+            service,
+            await service.GetPublicBySlugAsync(
+                EditorialContentTypes.WikiArticle,
+                slug,
+                context.RequestAborted)));
+app.MapGet(
+    "/internal/public/editorial/seo-pages/{slug}",
+    async (
+        string slug,
+        HttpContext context,
+        IEditorialService service) =>
+        EditorialOk(
+            context,
+            service,
+            await service.GetPublicBySlugAsync(
+                EditorialContentTypes.SeoPage,
+                slug,
+                context.RequestAborted)));
+app.MapGet(
+    "/internal/public/editorial/faq/{scope}",
+    async (
+        string scope,
+        HttpContext context,
+        IEditorialService service) =>
+        EditorialOk(
+            context,
+            service,
+            await service.GetPublicFaqAsync(scope, context.RequestAborted)));
+app.MapGet(
+    "/internal/public/editorial/sitemap",
+    async (
+        HttpContext context,
+        IEditorialService service) =>
+        EditorialOk(
+            context,
+            service,
+            await service.GetPublicSitemapAsync(context.RequestAborted)));
+app.MapGet(
+    "/internal/public/editorial/redirects",
+    async (
+        HttpContext context,
+        IEditorialService service) =>
+    {
+        var oldPath = context.Request.Query["oldPath"].FirstOrDefault()
+            ?? throw new PortalValidationException();
+        return EditorialOk(
+            context,
+            service,
+            await service.GetRedirectAsync(oldPath, context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/admin/editorial",
+    async (
+        HttpContext context,
+        IEditorialService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "content.editorial.read");
+        var contentType = context.Request.Query["contentType"].FirstOrDefault();
+        await service.EnsurePermissionAsync(
+            actor,
+            EditorialReadPermission(contentType),
+            context.RequestAborted);
+        return EditorialOk(
+            context,
+            service,
+            await service.GetAdminListAsync(
+                contentType,
+                context.Request.Query["status"].FirstOrDefault(),
+                context.Request.Query["query"].FirstOrDefault(),
+                context.RequestAborted));
+    });
+app.MapPost(
+    "/internal/admin/editorial",
+    async (
+        HttpContext context,
+        IEditorialService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "content.editorial.write");
+        var payload = await ReadPayload<EditorialContentPayload>(context)
+            ?? throw new PortalValidationException();
+        await service.EnsurePermissionAsync(
+            actor,
+            EditorialWritePermission(payload.ContentType),
+            context.RequestAborted);
+        var result = await service.UpsertContentAsync(
+            null,
+            payload,
+            actor,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "editorial.create",
+                result.Changed ? "success" : "unchanged",
+                TargetType: "editorial_content",
+                TargetReference: result.Id,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return EditorialOk(context, service, result);
+    });
+app.MapGet(
+    "/internal/admin/editorial/{id}",
+    async (
+        string id,
+        HttpContext context,
+        IEditorialService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "content.editorial.read");
+        var content = await service.GetAdminContentAsync(id, context.RequestAborted);
+        await service.EnsurePermissionAsync(
+            actor,
+            EditorialReadPermission(content.ContentType),
+            context.RequestAborted);
+        return EditorialOk(context, service, content);
+    });
+app.MapPatch(
+    "/internal/admin/editorial/{id}",
+    async (
+        string id,
+        HttpContext context,
+        IEditorialService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "content.editorial.write");
+        var payload = await ReadPayload<EditorialContentPayload>(context)
+            ?? throw new PortalValidationException();
+        await service.EnsurePermissionAsync(
+            actor,
+            EditorialWritePermission(payload.ContentType),
+            context.RequestAborted);
+        var result = await service.UpsertContentAsync(
+            id,
+            payload,
+            actor,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "editorial.update",
+                result.Changed ? "success" : "unchanged",
+                TargetType: "editorial_content",
+                TargetReference: id,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return EditorialOk(context, service, result);
+    });
+app.MapPost(
+    "/internal/admin/editorial/{id}/publish",
+    async (
+        string id,
+        HttpContext context,
+        IEditorialService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "content.publish");
+        await service.EnsurePermissionAsync(
+            actor,
+            "content.publish",
+            context.RequestAborted);
+        var result = await service.PublishAsync(
+            id,
+            actor,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "editorial.publish",
+                "success",
+                TargetType: "editorial_content",
+                TargetReference: id,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return EditorialOk(context, service, result);
+    });
+app.MapPost(
+    "/internal/admin/editorial/{id}/archive",
+    async (
+        string id,
+        HttpContext context,
+        IEditorialService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "content.editorial.archive");
+        await service.EnsurePermissionAsync(
+            actor,
+            "content.publish",
+            context.RequestAborted);
+        var result = await service.ArchiveAsync(
+            id,
+            actor,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "editorial.archive",
+                "success",
+                TargetType: "editorial_content",
+                TargetReference: id,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return EditorialOk(context, service, result);
+    });
+app.MapGet(
+    "/internal/admin/editorial/{id}/revisions",
+    async (
+        string id,
+        HttpContext context,
+        IEditorialService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "content.editorial.revisions.read");
+        var content = await service.GetAdminContentAsync(id, context.RequestAborted);
+        await service.EnsurePermissionAsync(
+            actor,
+            EditorialReadPermission(content.ContentType),
+            context.RequestAborted);
+        return EditorialOk(
+            context,
+            service,
+            await service.GetRevisionsAsync(id, context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/admin/editorial/revisions/{revisionId}",
+    async (
+        string revisionId,
+        HttpContext context,
+        IEditorialService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "content.editorial.revisions.read");
+        return EditorialOk(
+            context,
+            service,
+            await service.GetRevisionAsync(revisionId, context.RequestAborted));
+    });
+app.MapPost(
+    "/internal/admin/editorial/revisions/{revisionId}/restore",
+    async (
+        string revisionId,
+        HttpContext context,
+        IEditorialService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "content.editorial.restore");
+        await service.EnsurePermissionAsync(
+            actor,
+            "content.publish",
+            context.RequestAborted);
+        var result = await service.RestoreRevisionAsync(
+            revisionId,
+            actor,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "editorial.restore",
+                "success",
+                TargetType: "editorial_revision",
+                TargetReference: revisionId,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return EditorialOk(context, service, result);
+    });
+app.MapPost(
+    "/internal/admin/editorial/categories",
+    async (
+        HttpContext context,
+        IEditorialService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "content.editorial.categories.write");
+        var payload = await ReadPayload<EditorialCategoryPayload>(context)
+            ?? throw new PortalValidationException();
+        await service.EnsurePermissionAsync(
+            actor,
+            EditorialWritePermission(payload.ContentType),
+            context.RequestAborted);
+        return EditorialOk(
+            context,
+            service,
+            await service.UpsertCategoryAsync(
+                null,
+                payload,
+                actor,
+                context.RequestAborted));
+    });
+app.MapPatch(
+    "/internal/admin/editorial/categories/{id}",
+    async (
+        string id,
+        HttpContext context,
+        IEditorialService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "content.editorial.categories.write");
+        var payload = await ReadPayload<EditorialCategoryPayload>(context)
+            ?? throw new PortalValidationException();
+        await service.EnsurePermissionAsync(
+            actor,
+            EditorialWritePermission(payload.ContentType),
+            context.RequestAborted);
+        return EditorialOk(
+            context,
+            service,
+            await service.UpsertCategoryAsync(
+                id,
+                payload,
+                actor,
+                context.RequestAborted));
     });
 app.MapGet(
     "/internal/admin/download-categories",
@@ -5544,6 +5958,45 @@ static IResult ManagedContentOk<T>(
     context.Response.Headers["X-Data-Source"] =
         service.IsPersistent ? "mariadb" : "mock";
     return Results.Ok(data);
+}
+
+static IResult EditorialOk<T>(
+    HttpContext context,
+    IEditorialService service,
+    T data)
+{
+    context.Response.Headers["X-Data-Source"] =
+        service.IsPersistent ? "mariadb" : "mock";
+    return Results.Ok(data);
+}
+
+static string EditorialReadPermission(string? contentType)
+    => NormalizeEditorialPermissionType(contentType) switch
+    {
+        EditorialContentTypes.WikiArticle => "content.wiki.read",
+        EditorialContentTypes.SeoPage => "content.seo.read",
+        EditorialContentTypes.Faq => "content.faq.read",
+        _ => "content.wiki.read"
+    };
+
+static string EditorialWritePermission(string? contentType)
+    => NormalizeEditorialPermissionType(contentType) switch
+    {
+        EditorialContentTypes.WikiArticle => "content.wiki.write",
+        EditorialContentTypes.SeoPage => "content.seo.write",
+        EditorialContentTypes.Faq => "content.faq.write",
+        _ => "content.wiki.write"
+    };
+
+static string? NormalizeEditorialPermissionType(string? contentType)
+{
+    if (string.IsNullOrWhiteSpace(contentType))
+    {
+        return null;
+    }
+
+    var normalized = contentType.Trim().ToLowerInvariant();
+    return EditorialContentTypes.IsKnown(normalized) ? normalized : null;
 }
 
 static IResult DownloadsOk<T>(

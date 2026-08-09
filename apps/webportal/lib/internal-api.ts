@@ -37,6 +37,12 @@ import type {
   DownloadCategory,
   DataSource,
   DownloadResource,
+  EditorialContentDetail,
+  EditorialContentSummary,
+  EditorialListResponse,
+  EditorialRedirect,
+  EditorialRevisionDetail,
+  EditorialRevisionSummary,
   InvoiceSummary,
   InternalSession,
   InternalSessionCreated,
@@ -552,6 +558,62 @@ export function getPublicManagedContent(key: ManagedContentKey) {
   return getPublicData<ManagedContentDetail | null>(
     `/internal/portal/content/${encodeURIComponent(key)}`,
     localFallback,
+    null,
+  );
+}
+
+export function getPublicWikiHome() {
+  return getPublicData<EditorialListResponse>(
+    "/internal/public/editorial/wiki/home",
+    { items: [], categories: [] },
+    { items: [], categories: [] },
+  );
+}
+
+export function searchPublicWiki(query: string) {
+  return getPublicData<EditorialContentDetail[]>(
+    `/internal/public/editorial/wiki/search?query=${encodeURIComponent(query)}`,
+    [],
+    [],
+  );
+}
+
+export function getPublicWikiArticle(slug: string) {
+  return getPublicData<EditorialContentDetail | null>(
+    `/internal/public/editorial/wiki/articles/${encodeURIComponent(slug)}`,
+    null,
+    null,
+  );
+}
+
+export function getPublicSeoPage(slug: string) {
+  return getPublicData<EditorialContentDetail | null>(
+    `/internal/public/editorial/seo-pages/${encodeURIComponent(slug)}`,
+    null,
+    null,
+  );
+}
+
+export function getPublicFaq(scope: string) {
+  return getPublicData<EditorialContentDetail[]>(
+    `/internal/public/editorial/faq/${encodeURIComponent(scope)}`,
+    [],
+    [],
+  );
+}
+
+export function getPublicEditorialSitemap() {
+  return getPublicData<EditorialContentSummary[]>(
+    "/internal/public/editorial/sitemap",
+    [],
+    [],
+  );
+}
+
+export function getEditorialRedirect(oldPath: string) {
+  return getPublicData<EditorialRedirect | null>(
+    `/internal/public/editorial/redirects?oldPath=${encodeURIComponent(oldPath)}`,
+    null,
     null,
   );
 }
@@ -1304,6 +1366,14 @@ export function getAdminManagedContentList() {
   );
 }
 
+export function getAdminEditorialList(query = "") {
+  const suffix = query ? `?${query}` : "";
+  return getAdminData<EditorialListResponse>(
+    `/internal/admin/editorial${suffix}`,
+    { items: [], categories: [] },
+  );
+}
+
 export function getAdminDemoProfiles() {
   return getAdminData<DemoProfileSummary[]>(
     "/internal/admin/demo/profiles",
@@ -1329,6 +1399,27 @@ export function getAdminManagedContent(key: ManagedContentKey) {
   return getAdminData<ManagedContentDetail | null>(
     `/internal/admin/content/${encodeURIComponent(key)}`,
     getMockManagedContent(key),
+  );
+}
+
+export function getAdminEditorialContent(id: string) {
+  return getAdminData<EditorialContentDetail | null>(
+    `/internal/admin/editorial/${encodeURIComponent(id)}`,
+    null,
+  );
+}
+
+export function getAdminEditorialRevisions(id: string) {
+  return getAdminData<EditorialRevisionSummary[]>(
+    `/internal/admin/editorial/${encodeURIComponent(id)}/revisions`,
+    [],
+  );
+}
+
+export function getAdminEditorialRevision(revisionId: string) {
+  return getAdminData<EditorialRevisionDetail | null>(
+    `/internal/admin/editorial/revisions/${encodeURIComponent(revisionId)}`,
+    null,
   );
 }
 

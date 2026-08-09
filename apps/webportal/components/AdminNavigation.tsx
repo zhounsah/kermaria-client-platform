@@ -27,6 +27,7 @@ const navigationSections: NavSection[] = [
       { href: "/admin/public-pack-catalog", label: "Vitrine packs" },
       { href: "/admin/solutions", label: "Portail solutions" },
       { href: "/admin/content", label: "Contenus" },
+      { href: "/admin/editorial", label: "Editorial" },
       { href: "/admin/downloads", label: "Téléchargements" },
       { href: "/admin/commercial-documents", label: "Documents" },
       { href: "/admin/payments", label: "Paiements" },

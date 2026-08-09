@@ -424,20 +424,28 @@ assert.match(
 );
 
 // 20. Le markdown administrable ne peut plus emettre de `h1` concurrent de
-//     celui de la page : les niveaux sont decales au rendu.
+//     celui de la page. Seul `h1` est rabaisse : un corps editorial qui
+//     commence proprement en `##` doit conserver une hierarchie h2/h3.
 const managedMarkdownSource = await read("components/ManagedMarkdown.tsx");
-for (const [from, to] of [
-  ["h1", "h2"],
-  ["h2", "h3"],
-  ["h3", "h4"],
-  ["h4", "h5"],
-  ["h5", "h6"],
-]) {
-  assert.match(
-    managedMarkdownSource,
-    new RegExp(`${from}:\\s*"${to}"`),
-    `ManagedMarkdown doit rendre \`${from}\` en \`${to}\`.`,
-  );
-}
+assert.match(
+  managedMarkdownSource,
+  /h1:\s*\(.*?<h2\b/s,
+  "ManagedMarkdown doit rendre `h1` en `h2`.",
+);
+assert.match(
+  managedMarkdownSource,
+  /h2:\s*\(.*?<h2\b/s,
+  "ManagedMarkdown doit conserver `h2` en `h2`.",
+);
+assert.match(
+  managedMarkdownSource,
+  /h3:\s*\(.*?<h3\b/s,
+  "ManagedMarkdown doit conserver `h3` en `h3`.",
+);
+assert.doesNotMatch(
+  managedMarkdownSource,
+  /const seenHeadings|new Map<string,\s*number>\(\)/,
+  "ManagedMarkdown ne doit pas dedupliquer les headings avec un compteur mutable pendant le rendu.",
+);
 
 console.log("Vérification du contrat d'indexabilité SEO WEBPORTAL réussie.");

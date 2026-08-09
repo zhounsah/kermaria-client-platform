@@ -613,6 +613,127 @@ export interface ManagedContentMutationResponse {
   correlation_id: CorrelationId;
 }
 
+export type EditorialContentType = "wiki_article" | "seo_page" | "faq";
+
+export type EditorialContentStatus =
+  | "draft"
+  | "published"
+  | "archived"
+  | "scheduled";
+
+export interface EditorialCategory {
+  id: string;
+  contentType: EditorialContentType;
+  name: string;
+  slug: string;
+  description: string | null;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EditorialContentSummary {
+  id: string;
+  contentType: EditorialContentType;
+  title: string;
+  slug: string;
+  summary: string | null;
+  categoryId: string | null;
+  categoryName: string | null;
+  status: EditorialContentStatus;
+  sortOrder: number;
+  noIndex: boolean;
+  faqScopes: string[];
+  publishedAt: string | null;
+  updatedAt: string;
+  publicPath: string | null;
+}
+
+export interface EditorialContentDetail extends EditorialContentSummary {
+  bodyMarkdown: string;
+  seoTitle: string | null;
+  seoDescription: string | null;
+  canonicalUrl: string | null;
+  createdAt: string;
+  createdByUserId: string | null;
+  updatedByUserId: string | null;
+}
+
+export interface EditorialContentPayload {
+  contentType: EditorialContentType;
+  title: string;
+  slug: string;
+  summary: string | null;
+  bodyMarkdown: string;
+  categoryId: string | null;
+  status: EditorialContentStatus;
+  seoTitle: string | null;
+  seoDescription: string | null;
+  canonicalUrl: string | null;
+  noIndex: boolean;
+  sortOrder: number;
+  faqScopes: string[];
+}
+
+export interface EditorialCategoryPayload {
+  contentType: EditorialContentType;
+  name: string;
+  slug: string;
+  description: string | null;
+  sortOrder: number;
+}
+
+export interface EditorialRevisionSummary {
+  id: string;
+  contentId: string;
+  versionNumber: number;
+  action: string;
+  createdAt: string;
+  createdByUserId: string | null;
+}
+
+export interface EditorialRevisionDetail extends EditorialRevisionSummary {
+  snapshot: EditorialContentDetail;
+}
+
+export interface EditorialRedirect {
+  id: string;
+  contentType: EditorialContentType;
+  oldPath: string;
+  newPath: string;
+  createdAt: string;
+}
+
+export interface EditorialListResponse {
+  items: EditorialContentSummary[];
+  categories: EditorialCategory[];
+}
+
+export interface EditorialMutationResponse {
+  id: string;
+  changed: boolean;
+  updatedAt: string;
+  correlation_id: CorrelationId;
+}
+
+export interface EditorialMarkdownImportResult {
+  title: string | null;
+  slug: string | null;
+  description: string | null;
+  bodyMarkdown: string;
+  warnings: string[];
+}
+
+export interface PublicWikiHome {
+  categories: EditorialCategory[];
+  recentArticles: EditorialContentSummary[];
+}
+
+export interface PublicFaqScope {
+  scope: string;
+  items: EditorialContentDetail[];
+}
+
 export type DownloadStatus = "active" | "inactive";
 
 export type DownloadResourceType =
