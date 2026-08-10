@@ -30,6 +30,7 @@ const wikiHome = await read("app/wiki/page.tsx");
 const wikiArticle = await read("app/wiki/article/[slug]/page.tsx");
 const appShell = await read("components/AppShell.tsx");
 const seoPage = await read("app/[slug]/page.tsx");
+const seoHubPage = await read("app/ressources/page.tsx");
 const faqBlock = await read("components/PublicFaqBlock.tsx");
 const docs = await readRoot("docs/V1.3_EDITORIAL_PLATFORM.md");
 
@@ -107,6 +108,8 @@ assert.match(wikiArticle, /wikiCanonical/);
 assert.match(wikiArticle, /ManagedMarkdown/);
 assert.match(seoPage, /getEditorialRedirect/);
 assert.match(seoPage, /getPublicSeoPage/);
+assert.match(seoHubPage, /getPublicEditorialSitemap/);
+assert.match(seoHubPage, /contentType === "seo_page"/);
 assert.match(faqBlock, /<details/);
 assert.match(faqBlock, /return null/);
 

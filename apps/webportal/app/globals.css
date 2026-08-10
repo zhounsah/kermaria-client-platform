@@ -5749,6 +5749,7 @@ fieldset.form-field > .form-hint {
 
 .wiki-page,
 .wiki-article,
+.seo-hub-page,
 .seo-editorial-page {
   display: grid;
   gap: 28px;
@@ -5757,17 +5758,31 @@ fieldset.form-field > .form-hint {
 }
 
 .wiki-header,
+.seo-hub-header,
 .seo-editorial-header {
   display: grid;
   gap: 12px;
 }
 
 .wiki-header h1,
+.seo-hub-header h1,
 .seo-editorial-header h1 {
   margin: 0;
   max-width: 900px;
   font-size: clamp(2rem, 4vw, 3.4rem);
   line-height: 1.05;
+}
+
+.seo-hub-header p:not(.eyebrow) {
+  margin: 0;
+  max-width: 720px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.seo-hub-list {
+  display: grid;
+  gap: 10px;
 }
 
 .wiki-search {

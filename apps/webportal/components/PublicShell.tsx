@@ -6,7 +6,7 @@ import { PORTFOLIO_URL, PUBLIC_SITE_URL } from "@/lib/public-route-config";
 import appPackage from "../../../package.json";
 
 const CLIENT_PORTAL_LOGIN_URL = "https://dashboard.zacharyhounsa.ovh/login";
-const APP_VERSION_LABEL = `Version v${appPackage.version}`;
+const APP_VERSION_LABEL = `Version v${appPackage.displayVersion ?? appPackage.version}`;
 const publicHref = (pathname: string) => `${PUBLIC_SITE_URL}${pathname}`;
 
 type PublicShellProps = {
@@ -35,7 +35,7 @@ export function PublicShell({ children, signupEnabled }: PublicShellProps) {
             <div className="public-header-links">
               <a href={publicHref("/offres")}>Offres</a>
               <a href={publicHref("/diagnostic")}>Diagnostic</a>
-              <a href={publicHref("/solutions")}>Services</a>
+              <a href={publicHref("/ressources")}>Services</a>
               <a href={PORTFOLIO_URL}>Portfolio</a>
               <a href={publicHref("/a-propos")}>À propos</a>
               <a href={publicHref("/contact")}>Contact</a>
@@ -74,7 +74,7 @@ export function PublicShell({ children, signupEnabled }: PublicShellProps) {
             </a>
             <a href={publicHref("/cgv")}>CGV</a>
             <a href={publicHref("/offres")}>Offres</a>
-            <a href={publicHref("/solutions")}>Services</a>
+            <a href={publicHref("/ressources")}>Services</a>
             <a href={publicHref("/wiki")}>Wiki</a>
             <a href={publicHref("/diagnostic")}>Diagnostic</a>
             <a href={CLIENT_PORTAL_LOGIN_URL}>Connexion</a>

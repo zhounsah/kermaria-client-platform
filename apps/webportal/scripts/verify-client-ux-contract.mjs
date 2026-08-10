@@ -27,6 +27,7 @@ const portalNavigation = await read("components/PortalNavigation.tsx");
 const publicShell = await read("components/PublicShell.tsx");
 const publicPackCard = await read("components/PublicPackCard.tsx");
 const offresPage = await read("app/offres/page.tsx");
+const ressourcesPage = await read("app/ressources/page.tsx");
 
 assert.match(loadingPage, /LoadingState/);
 assert.match(errorPage, /ErrorState/);
@@ -68,6 +69,7 @@ assert.match(portalNavigation, /\/downloads/);
 assert.match(portalNavigation, /\/wiki/);
 assert.match(publicShell, /Services informatiques et espace client/);
 assert.match(publicShell, /publicHref\("\/wiki"\)/);
+assert.match(publicShell, /publicHref\("\/ressources"\)/);
 assert.match(publicShell, />Services</);
 assert.doesNotMatch(publicShell, /decouvrir-espace-client|DÃ©mo espace client|Démo espace client/);
 assert.doesNotMatch(publicPackCard, /Pack grand public/);
@@ -75,6 +77,8 @@ assert.match(publicPackCard, /<h2>\{pack\.label\}<\/h2>/);
 assert.match(styles, /\.public-pack-header h2\s*\{[^}]*color:\s*var\(--primary-dark\)/s);
 assert.match(styles, /\.offres-demo-access/);
 assert.match(offresPage, /\/decouvrir-espace-client/);
+assert.match(ressourcesPage, /contentType === "seo_page"/);
+assert.match(ressourcesPage, /Aucune page de service publiée/);
 
 for (const page of [
   "dashboard",
