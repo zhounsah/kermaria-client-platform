@@ -85,6 +85,20 @@ export default async function OffresPage() {
         </div>
       </section>
 
+      <section className="offres-demo-access" aria-labelledby="offres-demo-title">
+        <div>
+          <p className="eyebrow">Espace client</p>
+          <h2 id="offres-demo-title">Voir le portail avant de demander un pack</h2>
+          <p>
+            La démo montre le parcours client avec des données fictives, sans
+            accès à un vrai compte ni à des informations de production.
+          </p>
+        </div>
+        <Link className="button button-secondary" href="/decouvrir-espace-client">
+          Découvrir l’espace client
+        </Link>
+      </section>
+
       {packs.length === 0 ? (
         <p className="offres-empty">
           Les packs ne sont pas encore disponibles en ligne. Contactez-nous pour

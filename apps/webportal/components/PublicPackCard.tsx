@@ -71,7 +71,6 @@ function StatefulPublicPackCard({
     <article className="public-pack-card">
       <header className="public-pack-header">
         <div className="public-pack-header-copy">
-          <p className="card-kicker">Pack grand public</p>
           <h2>{pack.label}</h2>
           <p className="public-pack-audience">{pack.audience}</p>
         </div>

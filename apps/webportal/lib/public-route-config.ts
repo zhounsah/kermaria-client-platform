@@ -3,11 +3,12 @@ export const PUBLIC_ROUTES = [
   "/portfolio",
   "/offres",
   "/diagnostic",
-  "/decouvrir-espace-client",
   "/configurer",
   "/solutions",
   "/a-propos",
   "/contact",
+  "/wiki",
+  "/decouvrir-espace-client",
   "/mentions-legales",
   "/politique-confidentialite",
   "/cgv",
@@ -15,6 +16,7 @@ export const PUBLIC_ROUTES = [
   "/set-password",
 ] as const;
 
+export const PUBLIC_SITE_URL = "https://www.zacharyhounsa.ovh";
 export const PORTFOLIO_URL = "https://portfolio.zacharyhounsa.ovh/";
 export const WIKI_PUBLIC_HOST = "wiki.zacharyhounsa.ovh";
 export const WIKI_INTERNAL_HOST = "wiki.home.bzh";

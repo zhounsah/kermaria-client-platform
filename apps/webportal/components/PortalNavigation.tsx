@@ -41,6 +41,7 @@ const navigationSections: NavSection[] = [
     label: "Suivi",
     items: [
       { href: "/notifications", label: "Notifications" },
+      { href: "/wiki", label: "Wiki" },
       {
         href: "/profile",
         label: "Profil",

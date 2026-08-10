@@ -4,15 +4,17 @@ import { headers } from "next/headers";
 
 import { AppShell } from "@/components/AppShell";
 import {
+  getPortalArea,
   getPortalPublicUrlFromHeaders,
   isSignupEnabled,
 } from "@/lib/public-routes";
 import { getCurrentPortalSession } from "@/lib/auth";
 import "./globals.css";
 
-const SITE_TITLE = "Zachary HOUNSA-HOUNKPA EI - Espace client professionnel";
+const SITE_TITLE =
+  "Zachary HOUNSA-HOUNKPA EI - Services informatiques et espace client";
 const SITE_DESCRIPTION =
-  "Espace client professionnel de Zachary HOUNSA-HOUNKPA EI : catalogue d'offres, facturation, paiements et demandes d'assistance.";
+  "Services informatiques de Zachary HOUNSA-HOUNKPA EI : offres, espace client, facturation, paiements et demandes d'assistance.";
 
 /**
  * TODO (chantier ISR, hors passe SEO du 5 aout 2026) — `await headers()` ici
@@ -53,13 +55,21 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function RootLayout({
   children,
 }: Readonly<{ children: ReactNode }>) {
+  const requestHeaders = await headers();
   const session = await getCurrentPortalSession();
   const signupEnabled = isSignupEnabled();
+  const portalArea = getPortalArea(
+    getPortalPublicUrlFromHeaders(requestHeaders),
+  );
 
   return (
     <html lang="fr">
       <body>
-        <AppShell session={session} signupEnabled={signupEnabled}>
+        <AppShell
+          portalArea={portalArea}
+          session={session}
+          signupEnabled={signupEnabled}
+        >
           {children}
         </AppShell>
       </body>

@@ -3,8 +3,10 @@ import "server-only";
 import type { NextRequest } from "next/server";
 
 import {
+  getPortalArea,
   isPublicRoute,
   PORTFOLIO_URL,
+  PUBLIC_SITE_URL,
   PUBLIC_ROUTES,
 } from "./public-route-config";
 
@@ -13,7 +15,13 @@ const LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1"]);
 type PortalRequestLike = Pick<NextRequest, "headers" | "nextUrl">;
 type HeaderLookup = Pick<Headers, "get">;
 
-export { isPublicRoute, PORTFOLIO_URL, PUBLIC_ROUTES };
+export {
+  getPortalArea,
+  isPublicRoute,
+  PORTFOLIO_URL,
+  PUBLIC_SITE_URL,
+  PUBLIC_ROUTES,
+};
 
 export function isVitrinePublicEnabled(): boolean {
   return process.env.PUBLIC_VITRINE_ENABLED?.trim().toLowerCase() === "true";

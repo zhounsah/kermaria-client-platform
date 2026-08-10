@@ -398,7 +398,7 @@ assert.match(diagnosticPage, /Vos données importantes pourraient-elles dispara�
 assert.match(diagnosticPage, /Sans inscription/);
 assert.match(diagnosticPage, /Aucun compte ni achat nécessaire/);
 assert.doesNotMatch(diagnosticPage, /Sans engagement|Vos coordonnées servent/);
-assert.match(publicShell, /href="\/diagnostic"/);
+assert.match(publicShell, /publicHref\("\/diagnostic"\)/);
 assert.match(publicRoutes, /"\/diagnostic"/);
 assert.match(sitemap, /path:\s*"\/diagnostic"/);
 

@@ -4362,6 +4362,39 @@ fieldset.form-field > .form-hint {
   line-height: 1.6;
 }
 
+.offres-demo-access {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 22px 24px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.offres-demo-access div {
+  display: grid;
+  gap: 8px;
+  max-width: 720px;
+}
+
+.offres-demo-access h2,
+.offres-demo-access p {
+  margin: 0;
+}
+
+.offres-demo-access h2 {
+  color: var(--primary-dark);
+  font-size: 1.18rem;
+}
+
+.offres-demo-access p:not(.eyebrow) {
+  color: var(--muted);
+  line-height: 1.55;
+}
+
 .offres-overview,
 .offres-comparison {
   display: grid;
@@ -4431,6 +4464,7 @@ fieldset.form-field > .form-hint {
 
 .public-pack-header h2 {
   margin: 2px 0 0;
+  color: var(--primary-dark);
   font-size: 1.24rem;
 }
 
@@ -5236,6 +5270,11 @@ fieldset.form-field > .form-hint {
 
   .offres-lead {
     margin: 0;
+  }
+
+  .offres-demo-access {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
   .public-pack-compare-toolbar {

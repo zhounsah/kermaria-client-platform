@@ -1,13 +1,13 @@
 "use client";
 
-import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { PORTFOLIO_URL } from "@/lib/public-route-config";
+import { PORTFOLIO_URL, PUBLIC_SITE_URL } from "@/lib/public-route-config";
 import appPackage from "../../../package.json";
 
 const CLIENT_PORTAL_LOGIN_URL = "https://dashboard.zacharyhounsa.ovh/login";
 const APP_VERSION_LABEL = `Version v${appPackage.version}`;
+const publicHref = (pathname: string) => `${PUBLIC_SITE_URL}${pathname}`;
 
 type PublicShellProps = {
   children: ReactNode;
@@ -22,24 +22,24 @@ export function PublicShell({ children, signupEnabled }: PublicShellProps) {
       </a>
       <header className="public-header">
         <div className="public-header-inner">
-          <Link className="brand brand-public" href="/">
+          <a className="brand brand-public" href={publicHref("/")}>
             <span className="brand-mark" aria-hidden="true">
               ZH
             </span>
             <span className="brand-copy">
               <strong>Zachary HOUNSA-HOUNKPA EI</strong>
-              <small>Espace client professionnel</small>
+              <small>Services informatiques et espace client</small>
             </span>
-          </Link>
+          </a>
           <nav className="public-header-nav" aria-label="Navigation principale">
             <div className="public-header-links">
-              <Link href="/offres">Offres</Link>
-              <Link href="/decouvrir-espace-client">Démo espace client</Link>
-              <Link href="/diagnostic">Diagnostic</Link>
-              <Link href="/solutions">Solutions</Link>
+              <a href={publicHref("/offres")}>Offres</a>
+              <a href={publicHref("/diagnostic")}>Diagnostic</a>
+              <a href={publicHref("/solutions")}>Services</a>
               <a href={PORTFOLIO_URL}>Portfolio</a>
-              <Link href="/a-propos">À propos</Link>
-              <Link href="/contact">Contact</Link>
+              <a href={publicHref("/a-propos")}>À propos</a>
+              <a href={publicHref("/contact")}>Contact</a>
+              <a href={publicHref("/wiki")}>Wiki</a>
             </div>
             <div className="public-header-actions">
               <a
@@ -49,9 +49,9 @@ export function PublicShell({ children, signupEnabled }: PublicShellProps) {
                 Connexion
               </a>
               {signupEnabled ? (
-                <Link className="public-header-signup" href="/signup">
+                <a className="public-header-signup" href={publicHref("/signup")}>
                   Inscription
-                </Link>
+                </a>
               ) : null}
             </div>
           </nav>
@@ -64,19 +64,21 @@ export function PublicShell({ children, signupEnabled }: PublicShellProps) {
         <div className="public-footer-inner">
           <div className="public-footer-brand">
             <strong>Zachary HOUNSA-HOUNKPA EI</strong>
-            <p>Site public, offres et espace client professionnel.</p>
+            <p>Site public, offres et espace client.</p>
             <p>{APP_VERSION_LABEL}</p>
           </div>
           <nav className="public-footer-nav" aria-label="Liens légaux">
-            <Link href="/mentions-legales">Mentions légales</Link>
-            <Link href="/politique-confidentialite">
+            <a href={publicHref("/mentions-legales")}>Mentions légales</a>
+            <a href={publicHref("/politique-confidentialite")}>
               Politique de confidentialité
-            </Link>
-            <Link href="/cgv">CGV</Link>
-            <Link href="/decouvrir-espace-client">Démo espace client</Link>
-            <Link href="/diagnostic">Diagnostic</Link>
+            </a>
+            <a href={publicHref("/cgv")}>CGV</a>
+            <a href={publicHref("/offres")}>Offres</a>
+            <a href={publicHref("/solutions")}>Services</a>
+            <a href={publicHref("/wiki")}>Wiki</a>
+            <a href={publicHref("/diagnostic")}>Diagnostic</a>
             <a href={CLIENT_PORTAL_LOGIN_URL}>Connexion</a>
-            {signupEnabled ? <Link href="/signup">Inscription</Link> : null}
+            {signupEnabled ? <a href={publicHref("/signup")}>Inscription</a> : null}
           </nav>
         </div>
       </footer>

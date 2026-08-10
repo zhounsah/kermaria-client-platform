@@ -24,6 +24,9 @@ const styles = await read("app/globals.css");
 const passwordPage = await read("app/password/page.tsx");
 const invoiceTable = await read("components/InvoiceTable.tsx");
 const portalNavigation = await read("components/PortalNavigation.tsx");
+const publicShell = await read("components/PublicShell.tsx");
+const publicPackCard = await read("components/PublicPackCard.tsx");
+const offresPage = await read("app/offres/page.tsx");
 
 assert.match(loadingPage, /LoadingState/);
 assert.match(errorPage, /ErrorState/);
@@ -62,6 +65,16 @@ assert.match(invoiceTable, /className="invoice-table"/);
 assert.match(invoiceTable, /data-label=/);
 assert.match(invoiceTable, /Informations indicatives/);
 assert.match(portalNavigation, /\/downloads/);
+assert.match(portalNavigation, /\/wiki/);
+assert.match(publicShell, /Services informatiques et espace client/);
+assert.match(publicShell, /publicHref\("\/wiki"\)/);
+assert.match(publicShell, />Services</);
+assert.doesNotMatch(publicShell, /decouvrir-espace-client|DÃ©mo espace client|Démo espace client/);
+assert.doesNotMatch(publicPackCard, /Pack grand public/);
+assert.match(publicPackCard, /<h2>\{pack\.label\}<\/h2>/);
+assert.match(styles, /\.public-pack-header h2\s*\{[^}]*color:\s*var\(--primary-dark\)/s);
+assert.match(styles, /\.offres-demo-access/);
+assert.match(offresPage, /\/decouvrir-espace-client/);
 
 for (const page of [
   "dashboard",

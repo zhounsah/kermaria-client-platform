@@ -28,6 +28,7 @@ const adminDashboard = await read("app/admin/editorial/page.tsx");
 const adminCategoryForm = await read("components/AdminEditorialCategoryForm.tsx");
 const wikiHome = await read("app/wiki/page.tsx");
 const wikiArticle = await read("app/wiki/article/[slug]/page.tsx");
+const appShell = await read("components/AppShell.tsx");
 const seoPage = await read("app/[slug]/page.tsx");
 const faqBlock = await read("components/PublicFaqBlock.tsx");
 const docs = await readRoot("docs/V1.3_EDITORIAL_PLATFORM.md");
@@ -87,6 +88,7 @@ assert.match(markdown, /managed-markdown-table-scroll/);
 
 assert.match(routeConfig, /WIKI_PUBLIC_HOST = "wiki\.zacharyhounsa\.ovh"/);
 assert.match(routeConfig, /WIKI_INTERNAL_HOST = "wiki\.home\.bzh"/);
+assert.match(routeConfig, /"\/wiki"/);
 assert.match(
   routeConfig,
   /pathname === "\/wiki" \|\| pathname\.startsWith\("\/wiki\/"\)/,
@@ -94,6 +96,8 @@ assert.match(
 );
 assert.match(proxy, /resolveWikiRewritePath/);
 assert.match(proxy, /x-wiki-host-kind/);
+assert.match(appShell, /keepAuthenticatedWikiShell/);
+assert.match(appShell, /portalArea === "client"/);
 assert.match(robots, /getWikiHostKind/);
 assert.match(sitemap, /getPublicEditorialSitemap/);
 assert.match(sitemap, /WIKI_PUBLIC_HOST/);

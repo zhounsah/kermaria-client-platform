@@ -53,7 +53,9 @@ const executablePublicRoutes = publicRoutes
     /import \{[\s\S]*?\} from "\.\/public-route-config";/,
     [
       "const isPublicRoute = () => false;",
+      "const getPortalArea = () => null;",
       'const PORTFOLIO_URL = "";',
+      'const PUBLIC_SITE_URL = "";',
       "const PUBLIC_ROUTES = [];",
     ].join("\n"),
   );

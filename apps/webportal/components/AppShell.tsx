@@ -10,6 +10,7 @@ import { AdminNavigation } from "@/components/AdminNavigation";
 import { HeaderCartDrawer } from "@/components/HeaderCartDrawer";
 import { PortalNavigation } from "@/components/PortalNavigation";
 import { PublicShell } from "@/components/PublicShell";
+import type { PortalArea } from "@/lib/public-route-config";
 import { isPublicRoute } from "@/lib/public-route-config";
 import appPackage from "../../../package.json";
 
@@ -17,17 +18,24 @@ const APP_VERSION_LABEL = `Version v${appPackage.version}`;
 
 type AppShellProps = {
   children: ReactNode;
+  portalArea: PortalArea | null;
   session: InternalSession | null;
   signupEnabled: boolean;
 };
 
 export function AppShell({
   children,
+  portalArea,
   session,
   signupEnabled,
 }: AppShellProps) {
   const pathname = usePathname();
   const usePublicShell = isPublicRoute(pathname);
+  const isWikiRoute = pathname === "/wiki" || pathname.startsWith("/wiki/");
+  const keepAuthenticatedWikiShell =
+    isWikiRoute
+    && portalArea === "client"
+    && session?.user.role === "client_user";
   const hasSidebar =
     session?.user.role === "client_user"
     || session?.user.role === "internal_admin";
@@ -38,7 +46,7 @@ export function AppShell({
         ? "Espace client sécurisé"
         : "Accès sécurisé";
 
-  if (usePublicShell) {
+  if (usePublicShell && !keepAuthenticatedWikiShell) {
     return (
       <PublicShell signupEnabled={signupEnabled}>
         {children}

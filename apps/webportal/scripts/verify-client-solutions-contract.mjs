@@ -79,7 +79,7 @@ assert.match(payloads, /isAbsoluteWebUrl\(payload\.targetUrl\)/);
 
 // Exposition publique
 assert.match(publicRouteConfig, /"\/solutions"/);
-assert.match(publicShell, /href="\/solutions"/);
+assert.match(publicShell, /publicHref\("\/solutions"\)/);
 assert.match(adminNav, /\/admin\/solutions/);
 
 // La page reste publique et atteignable, mais volontairement hors index :

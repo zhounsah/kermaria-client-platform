@@ -14,7 +14,11 @@ import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 
 import nextConfig, { NOINDEX_ROUTE_PREFIXES } from "../next.config.ts";
-import { resolveCanonicalPublicUrl } from "../lib/public-route-config.ts";
+import {
+  isPublicRoute,
+  resolveCanonicalPublicUrl,
+  resolveWikiRewritePath,
+} from "../lib/public-route-config.ts";
 
 // Le meme moteur de correspondance que celui utilise par Next pour
 // resoudre les `source` de `headers()` : on teste le comportement reel,
@@ -35,6 +39,7 @@ const PUBLIC_PATHS = [
   "/diagnostic",
   "/a-propos",
   "/contact",
+  "/wiki",
   "/mentions-legales",
   "/politique-confidentialite",
   "/cgv",
@@ -447,5 +452,11 @@ assert.doesNotMatch(
   /const seenHeadings|new Map<string,\s*number>\(\)/,
   "ManagedMarkdown ne doit pas dedupliquer les headings avec un compteur mutable pendant le rendu.",
 );
+
+assert.equal(isPublicRoute("/wiki"), true);
+assert.equal(isPublicRoute("/wiki/article/exemple"), true);
+assert.equal(resolveWikiRewritePath("/"), "/wiki");
+assert.equal(resolveWikiRewritePath("/wiki"), "/wiki");
+assert.equal(resolveWikiRewritePath("/wiki/article/exemple"), "/wiki/article/exemple");
 
 console.log("Vérification du contrat d'indexabilité SEO WEBPORTAL réussie.");
