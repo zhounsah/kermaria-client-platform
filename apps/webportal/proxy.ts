@@ -68,7 +68,8 @@ async function readInternalJsonOrNull(url: string): Promise<unknown> {
     throw new Error(`Internal editorial probe failed: ${response.status}`);
   }
 
-  return response.json();
+  const body = await response.text();
+  return body.trim() ? JSON.parse(body) : null;
 }
 
 async function resolveEditorialSlug(
