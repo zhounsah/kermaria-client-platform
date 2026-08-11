@@ -7,17 +7,18 @@ import {
   getPublicCommercialCatalog,
   getPublicPackCatalogContent,
 } from "@/lib/internal-api";
+import { buildPublicMetadata } from "@/lib/public-metadata";
 import {
   buildSignupPackSnapshot,
   selectionFromSearchParams,
 } from "@/lib/public-packs";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = buildPublicMetadata({
   title: "Contact",
   description:
     "Formulaire de contact pour échanger sur la sauvegarde distante, le dossier de secours numérique et les services Zachary IT.",
-  alternates: { canonical: "/contact" },
-};
+  path: "/contact",
+});
 
 type ContactPageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;

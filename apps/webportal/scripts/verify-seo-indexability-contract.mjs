@@ -15,8 +15,11 @@ import { createRequire } from "node:module";
 
 import nextConfig, { NOINDEX_ROUTE_PREFIXES } from "../next.config.ts";
 import {
+  isClientOrAdminPortalHost,
+  isPortalApplicationPath,
   isPublicRoute,
   resolveCanonicalPublicUrl,
+  resolvePortalPublicRedirectUrl,
   resolveWikiRewritePath,
 } from "../lib/public-route-config.ts";
 
@@ -37,6 +40,7 @@ const PUBLIC_PATHS = [
   "/offres",
   "/offres/pack-essentiel",
   "/diagnostic",
+  "/decouvrir-espace-client",
   "/ressources",
   "/a-propos",
   "/contact",
@@ -70,6 +74,7 @@ const CANONICAL_PAGES = [
   ["/", "app/page.tsx"],
   ["/offres", "app/offres/page.tsx"],
   ["/diagnostic", "app/diagnostic/page.tsx"],
+  ["/decouvrir-espace-client", "app/decouvrir-espace-client/[[...section]]/page.tsx"],
   ["/ressources", "app/ressources/page.tsx"],
   ["/solutions", "app/solutions/page.tsx"],
   ["/configurer", "app/configurer/page.tsx"],
@@ -265,7 +270,66 @@ for (const host of [
   );
 }
 
-// 10. La redirection ne detourne ni les validations ACME ni un chemin
+// 10. Les hotes client/admin ne servent pas la vitrine en 200 : les routes
+//     publiques, les fiches packs et les slugs editoriaux repartent vers `www`.
+for (const [host, pathname, search, expected] of [
+  ["dashboard.zacharyhounsa.ovh", "/", "", "https://www.zacharyhounsa.ovh/"],
+  [
+    "dashboard.zacharyhounsa.ovh",
+    "/offres",
+    "?utm_source=test",
+    "https://www.zacharyhounsa.ovh/offres?utm_source=test",
+  ],
+  [
+    "dashboard.zacharyhounsa.ovh",
+    "/offres/dossier-securise",
+    "",
+    "https://www.zacharyhounsa.ovh/offres/dossier-securise",
+  ],
+  [
+    "administration.zacharyhounsa.ovh",
+    "/contact",
+    "",
+    "https://www.zacharyhounsa.ovh/contact",
+  ],
+  [
+    "dashboard.zacharyhounsa.ovh",
+    "/sauvegarde-3-2-1",
+    "",
+    "https://www.zacharyhounsa.ovh/sauvegarde-3-2-1",
+  ],
+]) {
+  assert.equal(
+    resolvePortalPublicRedirectUrl(host, pathname, search),
+    expected,
+    `${host}${pathname}${search} doit etre renvoye vers l'hote public.`,
+  );
+}
+
+for (const pathname of [
+  "/login",
+  "/dashboard",
+  "/set-password",
+  "/services",
+  "/api/health/ready",
+  "/robots.txt",
+  "/sitemap.xml",
+]) {
+  assert.equal(
+    resolvePortalPublicRedirectUrl("dashboard.zacharyhounsa.ovh", pathname, ""),
+    null,
+    `${pathname} doit rester local a l'hote client/admin.`,
+  );
+}
+
+assert.equal(isClientOrAdminPortalHost("dashboard.zacharyhounsa.ovh"), true);
+assert.equal(isClientOrAdminPortalHost("administration.zacharyhounsa.ovh"), true);
+assert.equal(isClientOrAdminPortalHost("www.zacharyhounsa.ovh"), false);
+assert.equal(isPortalApplicationPath("/login"), true);
+assert.equal(isPortalApplicationPath("/api/contact"), true);
+assert.equal(isPortalApplicationPath("/sauvegarde-3-2-1"), false);
+
+// 11. La redirection ne detourne ni les validations ACME ni un chemin
 //     ouvrant une redirection vers un domaine tiers.
 for (const pathname of [
   "/.well-known/acme-challenge/jeton",
@@ -283,7 +347,7 @@ for (const pathname of [
   );
 }
 
-// 11. Le 301 canonique est pose par le proxy, avant tout rendu, et laisse
+// 12. Le 301 canonique est pose par le proxy, avant tout rendu, et laisse
 //     `robots.txt` / `sitemap.xml` dans son matcher.
 const proxySource = await read("proxy.ts");
 const redirectIndex = proxySource.indexOf("NextResponse.redirect(canonicalUrl");
@@ -294,6 +358,12 @@ assert.match(
   "Le proxy doit rediriger les alias publics en 301 permanent.",
 );
 assert.match(proxySource, /resolveCanonicalPublicUrl\(/);
+assert.match(proxySource, /resolvePortalPublicRedirectUrl\(/);
+assert.match(proxySource, /isClientOrAdminPortalHost\(/);
+assert.match(proxySource, /resolveEditorialSlug\(/);
+assert.match(proxySource, /status:\s*404/);
+assert.match(proxySource, /Page introuvable \| Zachary IT/);
+assert.match(proxySource, /status:\s*404/);
 assert.match(proxySource, /request\.nextUrl\.search/);
 assert.notEqual(passthroughIndex, -1, "Le passe-plat du proxy a disparu.");
 assert.ok(
@@ -310,7 +380,7 @@ for (const pathname of ["/", "/robots.txt", "/sitemap.xml", "/offres"]) {
   );
 }
 
-// 12. `sitemap.xml` ne fabrique plus de `lastmod` a l'heure de la requete :
+// 13. `sitemap.xml` ne fabrique plus de `lastmod` a l'heure de la requete :
 //     soit une date reelle de contenu administrable, soit rien.
 assert.doesNotMatch(
   sitemapSource,
@@ -328,8 +398,18 @@ assert.match(
   "`lastmod` doit etre omis quand aucune date fiable n'existe.",
 );
 assert.match(sitemapSource, /Number\.isNaN\(lastModified\.getTime\(\)\)/);
+assert.match(
+  sitemapSource,
+  /entry\.contentType !== "wiki_article"/,
+  "Le sitemap `www` ne doit pas publier les URL du domaine wiki.",
+);
+assert.match(
+  sitemapSource,
+  /entry\.contentType === "wiki_article"/,
+  "Le sitemap du wiki doit rester limite aux articles wiki.",
+);
 
-// 13. `robots.txt` et `sitemap.xml` restent publics : aucune session
+// 14. `robots.txt` et `sitemap.xml` restent publics : aucune session
 //     requise, aucun `noindex` pose sur ces deux routes.
 for (const [label, source] of [
   ["app/robots.ts", robotsSource],
@@ -346,29 +426,44 @@ for (const [label, source] of [
     `${label} ne doit poser aucun noindex.`,
   );
 }
+assert.match(
+  robotsSource,
+  /portalArea === "client" \|\| portalArea === "admin"/,
+  "`robots.txt` doit identifier les hotes client/admin.",
+);
+assert.match(
+  robotsSource,
+  /disallow:\s*"\/"/,
+  "`robots.txt` doit bloquer entierement les hotes client/admin.",
+);
 
-// 14. Chaque page publique declare sa propre canonical.
+// 15. Chaque page publique declare sa propre canonical via le helper commun,
+//     qui pose aussi `og:title` et `og:description`.
 for (const [pathname, file] of CANONICAL_PAGES) {
   const source = await read(file);
   assert.match(
     source,
-    new RegExp(
-      `alternates:\\s*\\{\\s*canonical:\\s*"${pathname.replace("/", "\\/")}"`,
-    ),
-    `${file} doit declarer \`alternates: { canonical: "${pathname}" }\`.`,
+    /buildPublicMetadata\(/,
+    `${file} doit utiliser \`buildPublicMetadata\`.`,
+  );
+  assert.match(
+    source,
+    new RegExp(`path:\\s*"${pathname.replace("/", "\\/")}"`),
+    `${file} doit declarer \`path: "${pathname}"\`.`,
   );
 }
 
-// 15. La fiche de pack canonicalise depuis `pack.slug`, pas depuis le `slug`
+// 16. La fiche de pack canonicalise depuis `pack.slug`, pas depuis le `slug`
 //     de l'URL : la canonical reste unique si un alias est un jour accepte.
 const packSheetSource = await read("app/offres/[slug]/page.tsx");
 assert.match(
   packSheetSource,
-  /alternates:\s*\{\s*canonical:\s*`\/offres\/\$\{pack\.slug\}`\s*\}/,
+  /path:\s*`\/offres\/\$\{pack\.slug\}`/,
   "La fiche de pack doit canonicaliser depuis `pack.slug`.",
 );
+assert.match(packSheetSource, /buildPublicMetadata\(/);
 
-// 16. Aucune canonical dans le layout racine. Les metadonnees Next.js sont
+// 17. Aucune canonical dans le layout racine. Les metadonnees Next.js sont
 //     heritees : une canonical posee la servirait de repli, et toute page
 //     qui oublierait la sienne heriterait silencieusement de `/`.
 const layoutSource = await read("app/layout.tsx");
@@ -378,7 +473,7 @@ assert.doesNotMatch(
   "Le layout racine ne doit declarer aucune canonical de repli.",
 );
 
-// 17. Les routes retirees de l'index le sont par leurs metadonnees, sans
+// 18. Les routes retirees de l'index le sont par leurs metadonnees, sans
 //     `Disallow` qui empecherait la directive d'etre lue.
 for (const [pathname, file] of METADATA_NOINDEX_PAGES) {
   const source = await read(file);
@@ -401,7 +496,7 @@ for (const [pathname, file] of METADATA_NOINDEX_PAGES) {
   );
 }
 
-// 18. Le sitemap normalise ses URL : l'accueil sortait sans slash final la
+// 19. Le sitemap normalise ses URL : l'accueil sortait sans slash final la
 //     ou sa canonical en porte un, soit deux chaines pour une meme page.
 assert.match(
   sitemapSource,
@@ -414,7 +509,7 @@ assert.doesNotMatch(
   "L'accueil ne doit plus etre concatene sans slash final.",
 );
 
-// 19. Une image Open Graph par defaut existe a la racine, et la carte
+// 20. Une image Open Graph par defaut existe a la racine, et la carte
 //     Twitter l'exploite : `summary` sans image n'a aucun interet.
 const ogImageSource = await read("app/opengraph-image.tsx");
 for (const field of ["alt", "size", "contentType"]) {
@@ -430,7 +525,32 @@ assert.match(
   "Le layout racine doit declarer une carte Twitter avec image.",
 );
 
-// 20. Le markdown administrable ne peut plus emettre de `h1` concurrent de
+// 21. La 404 publique doit etre en francais et les slugs inconnus doivent
+//     appeler `notFound()` avant `connection()` pour eviter le statut 200 des
+//     reponses streamees.
+const notFoundSource = await read("app/not-found.tsx");
+assert.match(notFoundSource, /Page introuvable/);
+assert.match(notFoundSource, /Erreur 404/);
+assert.match(notFoundSource, /href="\/offres"/);
+const editorialSlugSource = await read("app/[slug]/page.tsx");
+assert.match(
+  editorialSlugSource,
+  /generateMetadata[\s\S]*?notFound\(\);/,
+  "`app/[slug]` doit aussi appeler notFound() dans generateMetadata().",
+);
+assert.ok(
+  editorialSlugSource.indexOf("notFound();")
+    < editorialSlugSource.indexOf("await connection();"),
+  "`app/[slug]` doit appeler notFound() avant connection().",
+);
+
+// 22. Un favicon doit exister cote metadata Next et sur le chemin historique.
+const iconSource = await read("app/icon.svg");
+assert.match(iconSource, /<svg/);
+const favicon = await readFile(new URL("../public/favicon.ico", import.meta.url));
+assert.ok(favicon.byteLength > 0, "public/favicon.ico doit exister.");
+
+// 23. Le markdown administrable ne peut plus emettre de `h1` concurrent de
 //     celui de la page. Seul `h1` est rabaisse : un corps editorial qui
 //     commence proprement en `##` doit conserver une hierarchie h2/h3.
 const managedMarkdownSource = await read("components/ManagedMarkdown.tsx");

@@ -5,24 +5,16 @@ import { DemoClientSpace } from "@/components/DemoClientSpace";
 import { sectionFromDemoRouteSlug } from "@/lib/demo-client-space/data";
 import { breadcrumbJsonLd, JsonLd } from "@/lib/seo";
 import { getPortalPublicUrlFromHeaders } from "@/lib/public-routes";
+import { buildPublicMetadata } from "@/lib/public-metadata";
 
 export const dynamic = "force-static";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = buildPublicMetadata({
   title: "Découvrez l'espace client Zachary IT",
   description:
     "Découvrez en démonstration l'espace client Zachary IT : sauvegardes, stockage, utilisateurs, facturation, assistance et sécurité.",
-  alternates: {
-    canonical: "/decouvrir-espace-client",
-  },
-  openGraph: {
-    title: "Découvrez l'espace client Zachary IT",
-    description:
-      "Parcourez un compte client fictif Pack Pro / Association, sans authentification ni données réelles.",
-    url: "/decouvrir-espace-client",
-    type: "website",
-  },
-};
+  path: "/decouvrir-espace-client",
+});
 
 type PageProps = {
   params: Promise<{ section?: string[] }>;

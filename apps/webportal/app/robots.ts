@@ -3,11 +3,13 @@ import { headers } from "next/headers";
 import { connection } from "next/server";
 
 import {
+  getPortalArea,
   getWikiHostKind,
   resolveCanonicalPublicUrl,
   WIKI_PUBLIC_HOST,
 } from "@/lib/public-route-config";
 import {
+  getPortalRequestOriginFromHeaders,
   getPortalPublicUrlFromHeaders,
   isVitrinePublicEnabled,
 } from "@/lib/public-routes";
@@ -35,6 +37,16 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
         allow: "/",
       },
       sitemap: `https://${WIKI_PUBLIC_HOST}/sitemap.xml`,
+    };
+  }
+
+  const portalArea = getPortalArea(getPortalRequestOriginFromHeaders(headerList));
+  if (portalArea === "client" || portalArea === "admin") {
+    return {
+      rules: {
+        userAgent: "*",
+        disallow: "/",
+      },
     };
   }
 

@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 
 import { getCurrentPortalSession } from "@/lib/auth";
+import { buildPublicMetadata } from "@/lib/public-metadata";
 import {
   PORTFOLIO_URL,
   getPortalRequestOriginFromHeaders,
@@ -18,10 +19,12 @@ import {
 import { JsonLd, localBusinessJsonLd, webSiteJsonLd } from "@/lib/seo";
 
 export const metadata: Metadata = {
-  title: "Sauvegarde distante et continuité d'activité",
-  description:
-    "Sauvegarde distante et stockage documentaire à Guichen pour les particuliers, associations et petites entreprises : une copie de vos fichiers importants conservée hors de vos locaux.",
-  alternates: { canonical: "/" },
+  ...buildPublicMetadata({
+    title: "Sauvegarde distante et continuité d'activité à Guichen (35) | Zachary IT",
+    description:
+      "Sauvegarde distante et stockage documentaire à Guichen pour les particuliers, associations et petites entreprises : une copie de vos fichiers importants conservée hors de vos locaux.",
+    path: "/",
+  }),
 };
 
 const METHOD_STEPS = [

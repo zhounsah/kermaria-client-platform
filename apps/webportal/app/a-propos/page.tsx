@@ -3,13 +3,14 @@ import type { Metadata } from "next";
 import { ErrorState } from "@/components/ErrorState";
 import { PublicManagedContentArticle } from "@/components/PublicManagedContentArticle";
 import { getPublicManagedContent } from "@/lib/internal-api";
+import { buildPublicMetadata } from "@/lib/public-metadata";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = buildPublicMetadata({
   title: "À propos",
   description:
-    "Présentation de Zachary HOUNSA-HOUNKPA EI et de ses domaines d'intervention.",
-  alternates: { canonical: "/a-propos" },
-};
+    "Présentation de Zachary IT et de ses domaines d'intervention autour de la sauvegarde, du stockage et de l'accès distant.",
+  path: "/a-propos",
+});
 
 export const revalidate = 300;
 

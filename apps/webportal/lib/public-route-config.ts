@@ -59,6 +59,27 @@ const LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1"]);
 const RAW_CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/;
 const ENCODED_SEPARATOR_OR_CONTROL =
   /%(?:0[0-9a-f]|1[0-9a-f]|7f|2f|5c)/i;
+const PORTAL_APPLICATION_PREFIXES = [
+  "/access-denied",
+  "/admin",
+  "/api",
+  "/backups",
+  "/commercial-documents",
+  "/dashboard",
+  "/downloads",
+  "/invoices",
+  "/login",
+  "/notifications",
+  "/panier",
+  "/password",
+  "/profile",
+  "/request-service",
+  "/services",
+  "/set-password",
+  "/signup/verify",
+  "/souscrire",
+  "/support",
+] as const;
 
 function parsePortalUrl(value: string | null | undefined): URL | null {
   if (!value) {
@@ -194,6 +215,23 @@ export function getWikiHostKind(
   return null;
 }
 
+export function isClientOrAdminPortalHost(
+  host: string | null | undefined,
+): boolean {
+  const hostname = parseRequestHostname(host);
+  if (!hostname) {
+    return false;
+  }
+
+  const familyName = getPortalFamily(hostname);
+  if (!familyName) {
+    return false;
+  }
+
+  const family = PORTAL_FAMILIES[familyName];
+  return hostname === family.client || hostname === family.admin;
+}
+
 export function resolveWikiCanonicalUrl(pathname: string, search = ""): string {
   const safePath = isSafePortalPath(pathname) ? pathname : "/";
   const query = search && search !== "?"
@@ -248,6 +286,57 @@ export function resolveCanonicalPublicUrl(
 
   const family = PORTAL_FAMILIES[familyName];
   if (!family.canonicalRedirects.has(hostname as never)) {
+    return null;
+  }
+
+  const query = search && search !== "?"
+    ? (search.startsWith("?") ? search : `?${search}`)
+    : "";
+
+  return `https://${family.public}${pathname}${query}`;
+}
+
+export function isPortalApplicationPath(pathname: string): boolean {
+  return PORTAL_APPLICATION_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
+}
+
+/**
+ * Les hotes client/admin ne doivent pas servir la vitrine en 200. Les routes
+ * applicatives restent locales a leur zone, tout le reste bascule vers l'hote
+ * public canonique afin de couvrir aussi les slugs editoriaux administrables.
+ */
+export function resolvePortalPublicRedirectUrl(
+  host: string | null | undefined,
+  pathname: string,
+  search = "",
+): string | null {
+  const hostname = parseRequestHostname(host);
+  if (
+    !hostname
+    || !isSafePortalPath(pathname)
+    || pathname.startsWith(ACME_CHALLENGE_PREFIX)
+    || RAW_CONTROL_CHARACTER.test(search)
+  ) {
+    return null;
+  }
+
+  if (
+    pathname === "/robots.txt"
+    || pathname === "/sitemap.xml"
+    || isPortalApplicationPath(pathname)
+  ) {
+    return null;
+  }
+
+  const familyName = getPortalFamily(hostname);
+  if (!familyName) {
+    return null;
+  }
+
+  const family = PORTAL_FAMILIES[familyName];
+  if (hostname !== family.client && hostname !== family.admin) {
     return null;
   }
 

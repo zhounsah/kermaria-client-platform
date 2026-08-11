@@ -11,7 +11,10 @@ import {
   getPublicEditorialSitemap,
   getPublicManagedContent,
 } from "@/lib/internal-api";
-import { WIKI_PUBLIC_HOST } from "@/lib/public-route-config";
+import {
+  getWikiHostKind,
+  WIKI_PUBLIC_HOST,
+} from "@/lib/public-route-config";
 import {
   getPortalPublicUrlFromHeaders,
   isVitrinePublicEnabled,
@@ -91,8 +94,28 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     return [];
   }
 
-  const baseUrl = getPortalPublicUrlFromHeaders(await headers());
+  const headerList = await headers();
   const editorialEntries = await getPublicEditorialSitemap();
+  const host = headerList.get("x-forwarded-host") ?? headerList.get("host");
+  const wikiHostKind = getWikiHostKind(host);
+
+  if (wikiHostKind) {
+    return editorialEntries.data
+      .filter((entry) => entry.contentType === "wiki_article" && entry.publicPath)
+      .map((entry) => {
+        const updatedAt = new Date(entry.updatedAt);
+        return {
+          url: new URL(entry.publicPath!, `https://${WIKI_PUBLIC_HOST}`).toString(),
+          ...(Number.isNaN(updatedAt.getTime())
+            ? {}
+            : { lastModified: updatedAt }),
+          changeFrequency: "weekly" as const,
+          priority: 0.6,
+        };
+      });
+  }
+
+  const baseUrl = getPortalPublicUrlFromHeaders(headerList);
   const packEntries: PublicRouteEntry[] = PUBLIC_PACKS.map((pack) => ({
     path: `/offres/${pack.slug}`,
     changeFrequency: "weekly" as const,
@@ -122,11 +145,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   return [
     ...staticEntries,
     ...editorialEntries.data
-      .filter((entry) => entry.publicPath)
+      .filter((entry) => entry.contentType !== "wiki_article" && entry.publicPath)
       .map((entry) => {
-        const url = entry.contentType === "wiki_article"
-          ? new URL(entry.publicPath!, `https://${WIKI_PUBLIC_HOST}`).toString()
-          : new URL(entry.publicPath!, baseUrl).toString();
+        const url = new URL(entry.publicPath!, baseUrl).toString();
         const updatedAt = new Date(entry.updatedAt);
         return {
           url,

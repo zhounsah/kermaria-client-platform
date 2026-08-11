@@ -9,12 +9,14 @@ import {
   isSignupEnabled,
 } from "@/lib/public-routes";
 import { getCurrentPortalSession } from "@/lib/auth";
+import { PUBLIC_BRAND_NAME, PUBLIC_SITE_NAME } from "@/lib/public-metadata";
+import { PUBLIC_SITE_URL } from "@/lib/public-route-config";
 import "./globals.css";
 
 const SITE_TITLE =
-  "Zachary HOUNSA-HOUNKPA EI - Services informatiques et espace client";
+  "Sauvegarde distante et continuité d'activité à Guichen (35)";
 const SITE_DESCRIPTION =
-  "Services informatiques de Zachary HOUNSA-HOUNKPA EI : offres, espace client, facturation, paiements et demandes d'assistance.";
+  "Sauvegarde distante, stockage documentaire et continuité d'activité à Guichen pour particuliers, associations et petites entreprises.";
 
 /**
  * TODO (chantier ISR, hors passe SEO du 5 aout 2026) — `await headers()` ici
@@ -29,22 +31,20 @@ const SITE_DESCRIPTION =
  * pas seulement les metadonnees.
  */
 export async function generateMetadata(): Promise<Metadata> {
-  const baseUrl = getPortalPublicUrlFromHeaders(await headers());
-
   return {
-    metadataBase: new URL(baseUrl),
+    metadataBase: new URL(PUBLIC_SITE_URL),
     title: {
-      default: SITE_TITLE,
-      template: "%s | Zachary HOUNSA-HOUNKPA EI",
+      default: `${SITE_TITLE} | ${PUBLIC_BRAND_NAME}`,
+      template: `%s | ${PUBLIC_BRAND_NAME}`,
     },
     description: SITE_DESCRIPTION,
     openGraph: {
       type: "website",
       locale: "fr_FR",
-      siteName: "Zachary HOUNSA-HOUNKPA EI",
+      siteName: PUBLIC_SITE_NAME,
       title: SITE_TITLE,
       description: SITE_DESCRIPTION,
-      url: baseUrl,
+      url: PUBLIC_SITE_URL,
     },
     // `summary` sans image n'a aucun interet : l'`opengraph-image` de la
     // racine fournit desormais le visuel, dont `twitter:image` herite.

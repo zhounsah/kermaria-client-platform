@@ -7,6 +7,7 @@ import {
   getPublicCommercialCatalog,
   getPublicPackCatalogContent,
 } from "@/lib/internal-api";
+import { buildPublicMetadata } from "@/lib/public-metadata";
 import {
   configurationFromSearchParams,
   DEFAULT_CATALOG_CONFIGURATION,
@@ -14,13 +15,13 @@ import {
 import { resolvePackCatalog } from "@/lib/public-packs";
 import { isSignupEnabled } from "@/lib/public-routes";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = buildPublicMetadata({
   title: "Configurer une offre",
   description:
     "Personnalisez un pack Zachary IT et obtenez une estimation claire avant l'inscription.",
-  alternates: { canonical: "/configurer" },
+  path: "/configurer",
   robots: { index: false, follow: true },
-};
+});
 
 export const dynamic = "force-dynamic";
 

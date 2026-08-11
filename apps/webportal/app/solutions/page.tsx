@@ -4,12 +4,13 @@ import Link from "next/link";
 import type { PublicClientSolution } from "@kermaria/shared";
 
 import { getPublicClientSolutionPortal } from "@/lib/internal-api";
+import { buildPublicMetadata } from "@/lib/public-metadata";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = buildPublicMetadata({
   title: "Solutions",
   description:
     "Portail d'accès aux solutions mises à disposition des clients : cliquez sur une tuile pour ouvrir le service correspondant.",
-  alternates: { canonical: "/solutions" },
+  path: "/solutions",
   // Portail d'acces client, pas une page vitrine : ~115 mots, aucun `h2`,
   // aucun trafic a en attendre, et elle tire vers le bas la qualite moyenne
   // percue du site. `follow` reste actif pour que les liens sortants
@@ -19,7 +20,7 @@ export const metadata: Metadata = {
   // crawl n'est jamais exploree, donc ce `noindex` ne serait jamais lu. Les
   // deux directives sont contradictoires.
   robots: { index: false, follow: true },
-};
+});
 
 export const revalidate = 300;
 

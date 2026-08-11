@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { useState } from "react";
 
 import { PORTFOLIO_URL, PUBLIC_SITE_URL } from "@/lib/public-route-config";
 import appPackage from "../../../package.json";
@@ -8,6 +9,15 @@ import appPackage from "../../../package.json";
 const CLIENT_PORTAL_LOGIN_URL = "https://dashboard.zacharyhounsa.ovh/login";
 const APP_VERSION_LABEL = `Version v${appPackage.displayVersion ?? appPackage.version}`;
 const publicHref = (pathname: string) => `${PUBLIC_SITE_URL}${pathname}`;
+const publicLinks = [
+  { href: publicHref("/offres"), label: "Offres" },
+  { href: publicHref("/diagnostic"), label: "Diagnostic" },
+  { href: publicHref("/ressources"), label: "Ressources" },
+  { href: PORTFOLIO_URL, label: "Portfolio" },
+  { href: publicHref("/a-propos"), label: "À propos" },
+  { href: publicHref("/contact"), label: "Contact" },
+  { href: publicHref("/wiki"), label: "Wiki" },
+] as const;
 
 type PublicShellProps = {
   children: ReactNode;
@@ -15,6 +25,8 @@ type PublicShellProps = {
 };
 
 export function PublicShell({ children, signupEnabled }: PublicShellProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+
   return (
     <>
       <a className="skip-link" href="#main-content">
@@ -27,32 +39,49 @@ export function PublicShell({ children, signupEnabled }: PublicShellProps) {
               ZH
             </span>
             <span className="brand-copy">
-              <strong>Zachary HOUNSA-HOUNKPA EI</strong>
-              <small>Services informatiques et espace client</small>
+              <strong>Zachary IT</strong>
+              <small>Sauvegarde et continuité à Guichen</small>
             </span>
           </a>
-          <nav className="public-header-nav" aria-label="Navigation principale">
+          <button
+            aria-controls="public-header-nav"
+            aria-expanded={menuOpen}
+            aria-label={menuOpen ? "Fermer le menu" : "Ouvrir le menu"}
+            className="public-menu-toggle"
+            onClick={() => setMenuOpen((current) => !current)}
+            type="button"
+          >
+            <span aria-hidden="true" />
+            <span aria-hidden="true" />
+            <span aria-hidden="true" />
+          </button>
+          <nav
+            aria-label="Navigation principale"
+            className={menuOpen
+              ? "public-header-nav public-header-nav-open"
+              : "public-header-nav"}
+            id="public-header-nav"
+          >
             <div className="public-header-links">
-              <a href={publicHref("/offres")}>Offres</a>
-              <a href={publicHref("/diagnostic")}>Diagnostic</a>
-              <a href={publicHref("/ressources")}>Services</a>
-              <a href={PORTFOLIO_URL}>Portfolio</a>
-              <a href={publicHref("/a-propos")}>À propos</a>
-              <a href={publicHref("/contact")}>Contact</a>
-              <a href={publicHref("/wiki")}>Wiki</a>
+              {publicLinks.map((link) => (
+                <a href={link.href} key={link.href}>
+                  {link.label}
+                </a>
+              ))}
             </div>
             <div className="public-header-actions">
+              <a
+                className="public-header-primary"
+                href={publicHref("/contact")}
+              >
+                Expliquer mon besoin
+              </a>
               <a
                 className="public-header-login"
                 href={CLIENT_PORTAL_LOGIN_URL}
               >
                 Connexion
               </a>
-              {signupEnabled ? (
-                <a className="public-header-signup" href={publicHref("/signup")}>
-                  Inscription
-                </a>
-              ) : null}
             </div>
           </nav>
         </div>
@@ -74,7 +103,7 @@ export function PublicShell({ children, signupEnabled }: PublicShellProps) {
             </a>
             <a href={publicHref("/cgv")}>CGV</a>
             <a href={publicHref("/offres")}>Offres</a>
-            <a href={publicHref("/ressources")}>Services</a>
+            <a href={publicHref("/ressources")}>Ressources</a>
             <a href={publicHref("/wiki")}>Wiki</a>
             <a href={publicHref("/diagnostic")}>Diagnostic</a>
             <a href={CLIENT_PORTAL_LOGIN_URL}>Connexion</a>

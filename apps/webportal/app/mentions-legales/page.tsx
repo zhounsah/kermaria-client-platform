@@ -3,12 +3,13 @@ import type { Metadata } from "next";
 import { ErrorState } from "@/components/ErrorState";
 import { PublicManagedContentArticle } from "@/components/PublicManagedContentArticle";
 import { getPublicManagedContent } from "@/lib/internal-api";
+import { buildPublicMetadata } from "@/lib/public-metadata";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = buildPublicMetadata({
   title: "Mentions légales",
   description: "Mentions légales de Zachary HOUNSA-HOUNKPA EI.",
-  alternates: { canonical: "/mentions-legales" },
-};
+  path: "/mentions-legales",
+});
 
 export const revalidate = 300;
 

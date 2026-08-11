@@ -6,14 +6,15 @@ import {
   getPublicCommercialCatalog,
   getPublicPackCatalogContent,
 } from "@/lib/internal-api";
+import { buildPublicMetadata } from "@/lib/public-metadata";
 import { resolvePackCatalog } from "@/lib/public-packs";
 
-export const metadata: Metadata = {
-  title: "Diagnostic sauvegarde et accès distant | Zachary IT",
+export const metadata: Metadata = buildPublicMetadata({
+  title: "Diagnostic sauvegarde et accès distant",
   description:
     "Répondez à quelques questions pour identifier la solution Zachary IT adaptée à vos besoins de sauvegarde, stockage et accès distant.",
-  alternates: { canonical: "/diagnostic" },
-};
+  path: "/diagnostic",
+});
 
 export const revalidate = 300;
 

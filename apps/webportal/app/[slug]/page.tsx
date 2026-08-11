@@ -7,6 +7,7 @@ import {
   getEditorialRedirect,
   getPublicSeoPage,
 } from "@/lib/internal-api";
+import { buildPublicMetadata } from "@/lib/public-metadata";
 
 type EditorialSeoPageProps = {
   params: Promise<{ slug: string }>;
@@ -18,25 +19,28 @@ export async function generateMetadata({
   params,
 }: EditorialSeoPageProps): Promise<Metadata> {
   const { slug } = await params;
+  const path = `/${slug}`;
+  const redirectResult = await getEditorialRedirect(path);
+  if (redirectResult.data?.newPath && redirectResult.data.newPath !== path) {
+    return {
+      title: "Redirection",
+      robots: { index: false, follow: true },
+    };
+  }
+
   const result = await getPublicSeoPage(slug);
   if (!result.data) {
-    return {
-      title: "Page introuvable",
-      robots: { index: false, follow: false },
-    };
+    notFound();
   }
 
   const page = result.data;
   return {
-    title: page.seoTitle ?? page.title,
-    description: page.seoDescription ?? page.summary ?? undefined,
-    alternates: { canonical: page.canonicalUrl ?? `/${page.slug}` },
-    openGraph: {
+    ...buildPublicMetadata({
       title: page.seoTitle ?? page.title,
       description: page.seoDescription ?? page.summary ?? undefined,
+      path: page.canonicalUrl ?? `/${page.slug}`,
       type: "article",
-      url: page.canonicalUrl ?? `/${page.slug}`,
-    },
+    }),
     robots: { index: !page.noIndex, follow: true },
   };
 }
@@ -44,7 +48,6 @@ export async function generateMetadata({
 export default async function EditorialSeoPage({
   params,
 }: EditorialSeoPageProps) {
-  await connection();
   const { slug } = await params;
   const path = `/${slug}`;
   const redirectResult = await getEditorialRedirect(path);
@@ -56,6 +59,8 @@ export default async function EditorialSeoPage({
   if (!result.data) {
     notFound();
   }
+
+  await connection();
 
   const page = result.data;
   return (

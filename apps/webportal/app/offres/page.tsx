@@ -7,15 +7,16 @@ import {
   getPublicCommercialCatalog,
   getPublicPackCatalogContent,
 } from "@/lib/internal-api";
+import { buildPublicMetadata } from "@/lib/public-metadata";
 import { resolvePackCatalog } from "@/lib/public-packs";
 import { isSignupEnabled } from "@/lib/public-routes";
 
-export const metadata: Metadata = {
-  title: "Offres",
+export const metadata: Metadata = buildPublicMetadata({
+  title: "Offres de sauvegarde et stockage à Guichen",
   description:
     "Quatre packs conçus pour la sauvegarde distante, le stockage documentaire et la continuité d'activité des particuliers et petites structures.",
-  alternates: { canonical: "/offres" },
-};
+  path: "/offres",
+});
 
 export const revalidate = 300;
 

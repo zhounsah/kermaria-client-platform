@@ -3,13 +3,14 @@ import type { Metadata } from "next";
 import { ErrorState } from "@/components/ErrorState";
 import { PublicManagedContentArticle } from "@/components/PublicManagedContentArticle";
 import { getPublicManagedContent } from "@/lib/internal-api";
+import { buildPublicMetadata } from "@/lib/public-metadata";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = buildPublicMetadata({
   title: "Conditions générales de vente",
   description:
     "Conditions générales de vente applicables aux prestations de Zachary HOUNSA-HOUNKPA EI.",
-  alternates: { canonical: "/cgv" },
-};
+  path: "/cgv",
+});
 
 export const revalidate = 300;
 

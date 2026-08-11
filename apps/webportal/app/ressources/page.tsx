@@ -4,15 +4,16 @@ import { connection } from "next/server";
 
 import { ErrorState } from "@/components/ErrorState";
 import { getPublicEditorialSitemap } from "@/lib/internal-api";
+import { buildPublicMetadata } from "@/lib/public-metadata";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = {
-  title: "Services",
+export const metadata: Metadata = buildPublicMetadata({
+  title: "Ressources",
   description:
-    "Pages de ressources publiées par Zachary IT autour des services informatiques proposés.",
-  alternates: { canonical: "/ressources" },
-};
+    "Pages de ressources publiées par Zachary IT autour de la sauvegarde, du stockage documentaire et de l'accès distant.",
+  path: "/ressources",
+});
 
 export default async function RessourcesPage() {
   await connection();
@@ -40,8 +41,8 @@ export default async function RessourcesPage() {
   return (
     <div className="seo-hub-page">
       <header className="seo-hub-header">
-        <p className="eyebrow">Services</p>
-        <h1>Ressources et services Zachary IT</h1>
+        <p className="eyebrow">Ressources</p>
+        <h1>Ressources Zachary IT</h1>
         <p>
           Retrouvez ici les pages publiées depuis le back-office éditorial.
         </p>
@@ -62,7 +63,7 @@ export default async function RessourcesPage() {
         </section>
       ) : (
         <p className="empty-copy">
-          Aucune page de service publiée pour le moment.
+          Aucune ressource publiée pour le moment.
         </p>
       )}
     </div>

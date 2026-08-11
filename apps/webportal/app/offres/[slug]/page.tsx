@@ -22,6 +22,7 @@ import {
   getPortalPublicUrlFromHeaders,
   isSignupEnabled,
 } from "@/lib/public-routes";
+import { buildPublicMetadata } from "@/lib/public-metadata";
 import { resolvePackCatalog } from "@/lib/public-packs";
 import { JsonLd, breadcrumbJsonLd, packServiceJsonLd } from "@/lib/seo";
 
@@ -42,13 +43,13 @@ export async function generateMetadata({
     };
   }
 
-  return {
+  return buildPublicMetadata({
     title: `Fiche technique - ${pack.label}`,
     description: pack.description,
     // `pack.slug` et non le `slug` de l'URL : si un alias de slug est un jour
     // accepte, la canonical continue de pointer la forme unique.
-    alternates: { canonical: `/offres/${pack.slug}` },
-  };
+    path: `/offres/${pack.slug}`,
+  });
 }
 
 export const revalidate = 300;
