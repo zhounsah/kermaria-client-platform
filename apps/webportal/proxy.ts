@@ -60,6 +60,10 @@ async function readInternalJsonOrNull(url: string): Promise<unknown> {
     },
   });
 
+  if (response.status === 404) {
+    return null;
+  }
+
   if (!response.ok) {
     throw new Error(`Internal editorial probe failed: ${response.status}`);
   }
