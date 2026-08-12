@@ -30,6 +30,7 @@ export function ContactForm({
   defaultSubject,
   offerReference,
 }: ContactFormProps) {
+  const fieldErrorId = (field: FieldName) => `contact-${field}-error`;
   const isSubmittingRef = useRef(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -113,6 +114,7 @@ export function ContactForm({
       <label>
         Nom ou raison sociale
         <input
+          aria-describedby={fieldErrors.name ? fieldErrorId("name") : undefined}
           aria-invalid={Boolean(fieldErrors.name)}
           autoComplete="name"
           maxLength={120}
@@ -123,13 +125,16 @@ export function ContactForm({
           value={name}
         />
         {fieldErrors.name ? (
-          <span className="field-error">{fieldErrors.name}</span>
+          <span className="field-error" id={fieldErrorId("name")}>
+            {fieldErrors.name}
+          </span>
         ) : null}
       </label>
 
       <label>
         Adresse e-mail
         <input
+          aria-describedby={fieldErrors.email ? fieldErrorId("email") : undefined}
           aria-invalid={Boolean(fieldErrors.email)}
           autoComplete="email"
           maxLength={254}
@@ -140,13 +145,18 @@ export function ContactForm({
           value={email}
         />
         {fieldErrors.email ? (
-          <span className="field-error">{fieldErrors.email}</span>
+          <span className="field-error" id={fieldErrorId("email")}>
+            {fieldErrors.email}
+          </span>
         ) : null}
       </label>
 
       <label>
         Sujet
         <input
+          aria-describedby={
+            fieldErrors.subject ? fieldErrorId("subject") : undefined
+          }
           aria-invalid={Boolean(fieldErrors.subject)}
           maxLength={150}
           name="subject"
@@ -155,13 +165,18 @@ export function ContactForm({
           value={subject}
         />
         {fieldErrors.subject ? (
-          <span className="field-error">{fieldErrors.subject}</span>
+          <span className="field-error" id={fieldErrorId("subject")}>
+            {fieldErrors.subject}
+          </span>
         ) : null}
       </label>
 
       <label>
         Message
         <textarea
+          aria-describedby={
+            fieldErrors.message ? fieldErrorId("message") : undefined
+          }
           aria-invalid={Boolean(fieldErrors.message)}
           maxLength={5000}
           name="message"
@@ -171,7 +186,9 @@ export function ContactForm({
           value={message}
         />
         {fieldErrors.message ? (
-          <span className="field-error">{fieldErrors.message}</span>
+          <span className="field-error" id={fieldErrorId("message")}>
+            {fieldErrors.message}
+          </span>
         ) : null}
       </label>
 

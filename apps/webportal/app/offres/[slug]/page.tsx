@@ -209,15 +209,10 @@ export default async function PublicPackSheetPage({ params }: PageProps) {
         )}
       </SectionCard>
 
-      <SectionCard ariaLabel={`Détails éditoriaux de ${pack.label}`}>
+      <SectionCard ariaLabel={`Détails opérationnels de ${pack.label}`}>
         <div className="page-header-split">
           <div>
-            <span className="card-kicker">Contenu éditable</span>
-            <h2>Détails opérationnels</h2>
-            <p>
-              Cette partie est administrable en Markdown depuis le back-office
-              et complète la synthèse tarifaire du pack.
-            </p>
+            <span className="card-kicker">Détails opérationnels</span>
           </div>
         </div>
 

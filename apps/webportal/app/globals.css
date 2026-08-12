@@ -3659,17 +3659,21 @@ fieldset.form-field > .form-hint {
 }
 
 .public-header-inner {
-  width: min(1180px, calc(100% - 32px));
+  width: min(1440px, calc(100% - 24px));
   margin-inline: auto;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(230px, 1fr) auto minmax(230px, 1fr);
   align-items: center;
-  justify-content: space-between;
-  gap: 24px;
+  gap: 16px;
   padding-block: 18px;
 }
 
 .brand-public {
   color: var(--text);
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: start;
+  flex: 0 0 auto;
 }
 
 .brand-public .brand-mark {
@@ -3688,6 +3692,8 @@ fieldset.form-field > .form-hint {
 
 .public-menu-toggle {
   display: none;
+  grid-column: 3;
+  justify-self: end;
   width: 42px;
   height: 42px;
   align-items: center;
@@ -3708,9 +3714,7 @@ fieldset.form-field > .form-hint {
 }
 
 .public-header-nav {
-  display: flex;
-  align-items: center;
-  gap: 28px;
+  display: contents;
   font-size: 0.92rem;
 }
 
@@ -3718,14 +3722,23 @@ fieldset.form-field > .form-hint {
 .public-header-actions {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .public-header-links {
-  gap: 14px 22px;
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  gap: 14px;
+  justify-content: center;
+  flex-wrap: nowrap;
 }
 
 .public-header-actions {
+  grid-column: 3;
+  grid-row: 1;
+  justify-self: end;
+  flex: 0 0 auto;
   gap: 10px;
 }
 
@@ -3733,6 +3746,7 @@ fieldset.form-field > .form-hint {
   color: var(--text);
   text-decoration: none;
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .public-header-nav a:hover {
@@ -3794,6 +3808,8 @@ fieldset.form-field > .form-hint {
 @media (max-width: 720px) {
   .public-header-inner {
     width: min(100% - 24px, 1180px);
+    display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 12px;
     padding-block: 12px;
@@ -3817,6 +3833,7 @@ fieldset.form-field > .form-hint {
     width: 100%;
     flex-direction: column;
     align-items: flex-start;
+    justify-self: auto;
     gap: 14px;
     padding-top: 8px;
   }
@@ -3827,6 +3844,8 @@ fieldset.form-field > .form-hint {
 
   .public-header-links,
   .public-header-actions {
+    grid-column: auto;
+    grid-row: auto;
     width: 100%;
     flex-direction: column;
     align-items: stretch;
@@ -3835,6 +3854,7 @@ fieldset.form-field > .form-hint {
 
   .public-header-actions {
     justify-content: stretch;
+    justify-self: stretch;
   }
 
   .public-header-actions a {
@@ -5588,7 +5608,7 @@ fieldset.form-field > .form-hint {
 }
 
 .public-main {
-  width: min(1180px, calc(100% - 32px));
+  width: min(1440px, calc(100% - 24px));
   margin-inline: auto;
   padding-block: 40px 56px;
   min-height: calc(100vh - 220px);

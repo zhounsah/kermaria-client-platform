@@ -32,6 +32,11 @@ export function buildPublicMetadata({
       siteName: PUBLIC_SITE_NAME,
       locale: "fr_FR",
     },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      ...(description ? { description } : {}),
+    },
     ...(robots ? { robots } : {}),
   };
 }

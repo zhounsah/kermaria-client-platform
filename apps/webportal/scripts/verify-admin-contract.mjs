@@ -43,7 +43,7 @@ assert.match(internalApi, /\/internal\/admin\//);
 assert.match(internalApi, /getAdminCustomer/);
 assert.match(internalApi, /getAdminDownloads/);
 assert.doesNotMatch(internalApi, /NEXT_PUBLIC_INTERNAL_API_URL/);
-assert.match(appShell, /session\?\.user\.role === "internal_admin"/);
+assert.match(appShell, /effectiveSession\?\.user\.role === "internal_admin"/);
 assert.match(downloadsRoute, /handleAdminGet/);
 assert.match(downloadsRoute, /handleAdminMutation/);
 assert.match(downloadDetailRoute, /handleAdminGet/);

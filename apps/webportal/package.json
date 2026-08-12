@@ -35,6 +35,7 @@
     "test:cart": "node scripts/verify-cart-contract.mjs",
     "test:client-solutions": "node scripts/verify-client-solutions-contract.mjs",
     "test:backups": "node scripts/verify-backups-contract.mjs",
+    "test:public-site-quality": "node scripts/verify-public-site-quality-contract.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

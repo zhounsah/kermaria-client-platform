@@ -67,10 +67,11 @@ assert.match(invoiceTable, /data-label=/);
 assert.match(invoiceTable, /Informations indicatives/);
 assert.match(portalNavigation, /\/downloads/);
 assert.match(portalNavigation, /\/wiki/);
-assert.match(publicShell, /Services informatiques et espace client/);
 assert.match(publicShell, /publicHref\("\/wiki"\)/);
 assert.match(publicShell, /publicHref\("\/ressources"\)/);
-assert.match(publicShell, />Services</);
+assert.match(publicShell, /Sauvegarde et continuit/);
+assert.match(publicShell, />Ressources</);
+assert.doesNotMatch(publicShell, /publicHref\("\/services"\)|>Services</);
 assert.doesNotMatch(publicShell, /decouvrir-espace-client|DÃ©mo espace client|Démo espace client/);
 assert.doesNotMatch(publicPackCard, /Pack grand public/);
 assert.match(publicPackCard, /<h2>\{pack\.label\}<\/h2>/);
@@ -78,7 +79,8 @@ assert.match(styles, /\.public-pack-header h2\s*\{[^}]*color:\s*var\(--primary-d
 assert.match(styles, /\.offres-demo-access/);
 assert.match(offresPage, /\/decouvrir-espace-client/);
 assert.match(ressourcesPage, /contentType === "seo_page"/);
-assert.match(ressourcesPage, /Aucune page de service publiée/);
+assert.match(ressourcesPage, /Pages publi/);
+assert.match(ressourcesPage, /Aucune ressource publi/);
 
 for (const page of [
   "dashboard",

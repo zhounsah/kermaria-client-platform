@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { MetricCard } from "@/components/MetricCard";
 import { SectionCard } from "@/components/SectionCard";
@@ -816,8 +816,22 @@ function DemoModal({
   modal: NonNullable<ModalState>;
   onClose: () => void;
 }) {
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   let title = "";
   let content = null;
+
+  useEffect(() => {
+    closeButtonRef.current?.focus();
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    }
+
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
 
   if (modal.type === "invoice") {
     title = modal.invoice.reference;
@@ -906,6 +920,7 @@ function DemoModal({
             aria-label="Fermer la fenetre"
             className="button button-secondary button-compact"
             onClick={onClose}
+            ref={closeButtonRef}
             type="button"
           >
             Fermer

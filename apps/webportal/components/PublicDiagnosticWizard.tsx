@@ -360,7 +360,7 @@ export function PublicDiagnosticWizard({ packs }: PublicDiagnosticWizardProps) {
               <option value="8">Moins de 10 Go</option>
               <option value="32">10 à 30 Go</option>
               <option value="64">30 à 60 Go</option>
-              <option value="64">Plus de 60 Go</option>
+              <option value="128">Plus de 60 Go</option>
             </select>
           </label>
         </fieldset>

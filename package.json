@@ -1,7 +1,7 @@
 {
   "name": "kermaria-client-platform",
   "version": "1.3.3",
-  "displayVersion": "1.3.3.4",
+  "displayVersion": "1.3.3.5",
   "private": true,
   "workspaces": [
     "apps/webportal",
@@ -52,7 +52,8 @@
     "test:cart": "npm --prefix apps/webportal run test:cart",
     "test:client-solutions": "npm --prefix apps/webportal run test:client-solutions",
     "test:backups": "npm --prefix apps/webportal run test:backups",
-    "validate": "npm run check:secrets && npm run lint:web && npm run typecheck:shared && npm run typecheck:webportal && npm run build:web && npm run build:api && npm run test:api && npm --prefix apps/webportal run test:forms && npm --prefix apps/webportal run test:auth && npm --prefix apps/webportal run test:admin && npm run test:operations && npm run test:seo && npm run test:ux && npm run test:workflow && npm run test:notifications && npm run test:replies && npm run test:activity && npm run test:commercial && npm run test:diagnostic-configurator && npm run test:managed-content && npm run test:editorial && npm run test:markdown-anchors && npm run test:ad-security && npm run test:bpce && npm run test:cart && npm run test:client-solutions && npm run test:backups",
+    "test:public-site-quality": "npm --prefix apps/webportal run test:public-site-quality",
+    "validate": "npm run check:secrets && npm run lint:web && npm run typecheck:shared && npm run typecheck:webportal && npm run build:web && npm run build:api && npm run test:api && npm --prefix apps/webportal run test:forms && npm --prefix apps/webportal run test:auth && npm --prefix apps/webportal run test:admin && npm run test:operations && npm run test:seo && npm run test:ux && npm run test:public-site-quality && npm run test:workflow && npm run test:notifications && npm run test:replies && npm run test:activity && npm run test:commercial && npm run test:diagnostic-configurator && npm run test:managed-content && npm run test:editorial && npm run test:markdown-anchors && npm run test:ad-security && npm run test:bpce && npm run test:cart && npm run test:client-solutions && npm run test:backups",
     "validate:mariadb": "node scripts/validate-mariadb.mjs",
     "validate:preprod": "node scripts/validate-preprod.mjs",
     "validate:staging": "node scripts/validate-staging.mjs"

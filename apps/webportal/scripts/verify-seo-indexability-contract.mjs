@@ -467,10 +467,16 @@ assert.match(packSheetSource, /buildPublicMetadata\(/);
 //     heritees : une canonical posee la servirait de repli, et toute page
 //     qui oublierait la sienne heriterait silencieusement de `/`.
 const layoutSource = await read("app/layout.tsx");
+const publicMetadataSource = await read("lib/public-metadata.ts");
 assert.doesNotMatch(
   layoutSource,
   /alternates\s*:/,
   "Le layout racine ne doit declarer aucune canonical de repli.",
+);
+assert.doesNotMatch(
+  layoutSource,
+  /headers\(|getCurrentPortalSession\(/,
+  "Le layout racine doit rester sans Dynamic API pour ne pas rendre toute la vitrine dynamique.",
 );
 
 // 18. Les routes retirees de l'index le sont par leurs metadonnees, sans
@@ -523,6 +529,11 @@ assert.match(
   layoutSource,
   /twitter:\s*\{\s*card:\s*"summary_large_image"\s*\}/,
   "Le layout racine doit declarer une carte Twitter avec image.",
+);
+assert.match(
+  publicMetadataSource,
+  /twitter:\s*\{[\s\S]*card:\s*"summary_large_image"[\s\S]*title/,
+  "Le helper SEO public doit propager les titres de page aux Twitter Cards.",
 );
 
 // 21. La 404 publique doit etre en francais et les slugs inconnus doivent

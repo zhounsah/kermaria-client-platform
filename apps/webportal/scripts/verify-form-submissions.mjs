@@ -91,6 +91,13 @@ for (const legacyField of ["serviceId", "timeline", "context"]) {
 }
 
 const contactRoute = await read("app/api/contact/route.ts");
+const contactForm = await read("components/ContactForm.tsx");
+
+assert.match(contactForm, /fieldErrorId/);
+assert.match(contactForm, /aria-describedby=\{fieldErrors\.name/);
+assert.match(contactForm, /id=\{fieldErrorId\("email"\)\}/);
+assert.match(contactForm, /id=\{fieldErrorId\("message"\)\}/);
+
 const contactRouteHarness = String.raw`
 type NextRequest = any;
 

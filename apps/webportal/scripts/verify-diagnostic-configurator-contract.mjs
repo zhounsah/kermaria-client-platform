@@ -385,6 +385,11 @@ assert.match(diagnosticBeforeAfter, /supportsVpn/);
 assert.match(diagnosticBeforeAfter, /supportsWindowsDesktop/);
 assert.match(diagnosticBeforeAfter, /findPackText/);
 assert.match(diagnosticWizard, /Volume à protéger/);
+assert.match(
+  diagnosticWizard,
+  /<option value="128">Plus de 60 Go<\/option>/,
+  "L'option Plus de 60 Go doit declencher le cadrage hors standard.",
+);
 assert.match(diagnosticWizard, /Souhaitez-vous disposer d'un bureau Windows accessible à distance/);
 assert.match(diagnosticWizard, /Élevée - j&apos;ai besoin de retrouver mes fichiers très rapidement/);
 assert.match(diagnosticWizard, /fichiers \?/);
@@ -392,7 +397,8 @@ assert.match(diagnosticWizard, /configurationToQueryString/);
 assert.match(diagnosticWizard, /Personnaliser cette configuration/);
 assert.match(diagnosticWizard, /source=diagnostic/);
 assert.doesNotMatch(diagnosticWizard, /toIncVat|vatRate|0\.2|20\s*\/\s*100/);
-assert.match(diagnosticPage, /alternates:\s*\{\s*canonical:\s*"\/diagnostic"/);
+assert.match(diagnosticPage, /buildPublicMetadata\(/);
+assert.match(diagnosticPage, /path:\s*"\/diagnostic"/);
 assert.match(diagnosticPage, /Diagnostic sauvegarde et accès distant/);
 assert.match(diagnosticPage, /Vos données importantes pourraient-elles disparaître demain/);
 assert.match(diagnosticPage, /Sans inscription/);
@@ -403,7 +409,8 @@ assert.match(publicRoutes, /"\/diagnostic"/);
 assert.match(sitemap, /path:\s*"\/diagnostic"/);
 
 assert.match(configurerPage, /robots:\s*\{\s*index:\s*false,\s*follow:\s*true\s*\}/);
-assert.match(configurerPage, /alternates:\s*\{\s*canonical:\s*"\/configurer"/);
+assert.match(configurerPage, /buildPublicMetadata\(/);
+assert.match(configurerPage, /path:\s*"\/configurer"/);
 assert.match(configurerPage, /Personnalisez votre offre selon vos besoins/);
 assert.match(configurerPage, /Retour au diagnostic/);
 assert.match(configuratorComponent, /fetch\("\/api\/configurer\/resolve"/);

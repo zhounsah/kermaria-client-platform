@@ -2,49 +2,93 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import {
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
 
-import type { InternalSession } from "@kermaria/shared";
+import type { AuthMeResponse, InternalSession } from "@kermaria/shared";
 
 import { AdminNavigation } from "@/components/AdminNavigation";
 import { HeaderCartDrawer } from "@/components/HeaderCartDrawer";
 import { PortalNavigation } from "@/components/PortalNavigation";
 import { PublicShell } from "@/components/PublicShell";
+import { requestBffJson } from "@/lib/client-api";
 import type { PortalArea } from "@/lib/public-route-config";
-import { isPublicRoute } from "@/lib/public-route-config";
+import {
+  getPortalArea,
+  isPublicRoute,
+} from "@/lib/public-route-config";
 import appPackage from "../../../package.json";
 
 const APP_VERSION_LABEL = `Version v${appPackage.version}`;
 
 type AppShellProps = {
   children: ReactNode;
-  portalArea: PortalArea | null;
-  session: InternalSession | null;
   signupEnabled: boolean;
 };
 
 export function AppShell({
   children,
-  portalArea,
-  session,
   signupEnabled,
 }: AppShellProps) {
   const pathname = usePathname();
+  const [session, setSession] = useState<InternalSession | null>(null);
   const usePublicShell = isPublicRoute(pathname);
   const isWikiRoute = pathname === "/wiki" || pathname.startsWith("/wiki/");
+  const effectiveSession = usePublicShell && !isWikiRoute ? null : session;
+  const portalArea: PortalArea | null = typeof window === "undefined"
+    ? null
+    : getPortalArea(window.location.origin);
   const keepAuthenticatedWikiShell =
     isWikiRoute
     && portalArea === "client"
-    && session?.user.role === "client_user";
+    && effectiveSession?.user.role === "client_user";
   const hasSidebar =
-    session?.user.role === "client_user"
-    || session?.user.role === "internal_admin";
+    effectiveSession?.user.role === "client_user"
+    || effectiveSession?.user.role === "internal_admin";
   const shellLabel =
-    session?.user.role === "internal_admin"
+    effectiveSession?.user.role === "internal_admin"
       ? "Administration interne"
-      : session?.user.role === "client_user"
+      : effectiveSession?.user.role === "client_user"
         ? "Espace client sécurisé"
         : "Accès sécurisé";
+
+  useEffect(() => {
+    if (usePublicShell && !isWikiRoute) {
+      return;
+    }
+
+    let ignore = false;
+
+    async function loadSession() {
+      const result = await requestBffJson<AuthMeResponse>(
+        "/api/auth/me",
+        { method: "GET" },
+        5000,
+      );
+
+      if (ignore) {
+        return;
+      }
+
+      setSession(
+        result.ok && result.data.authenticated
+          ? {
+              user: result.data.user,
+              expiresAt: result.data.expiresAt,
+            }
+          : null,
+      );
+    }
+
+    void loadSession();
+
+    return () => {
+      ignore = true;
+    };
+  }, [isWikiRoute, usePublicShell]);
 
   if (usePublicShell && !keepAuthenticatedWikiShell) {
     return (
@@ -71,18 +115,20 @@ export function AppShell({
             </span>
           </Link>
           <div className="site-header-tools">
-            {session?.user.role === "client_user" ? <HeaderCartDrawer /> : null}
+            {effectiveSession?.user.role === "client_user" ? (
+              <HeaderCartDrawer />
+            ) : null}
             <div className="demo-chip">{shellLabel}</div>
           </div>
         </div>
       </header>
       {hasSidebar ? (
         <div className="app-shell">
-          {session?.user.role === "client_user" ? (
-            <PortalNavigation displayName={session.user.displayName} />
+          {effectiveSession?.user.role === "client_user" ? (
+            <PortalNavigation displayName={effectiveSession.user.displayName} />
           ) : null}
-          {session?.user.role === "internal_admin" ? (
-            <AdminNavigation displayName={session.user.displayName} />
+          {effectiveSession?.user.role === "internal_admin" ? (
+            <AdminNavigation displayName={effectiveSession.user.displayName} />
           ) : null}
           <main className="main-content app-content" id="main-content">
             {children}

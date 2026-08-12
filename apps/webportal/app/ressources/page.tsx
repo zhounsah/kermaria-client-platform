@@ -49,17 +49,20 @@ export default async function RessourcesPage() {
       </header>
 
       {pages.length > 0 ? (
-        <section className="seo-hub-list" aria-label="Pages publiées">
-          {pages.map((page) => (
-            <Link
-              className="wiki-list-item"
-              href={page.publicPath ?? `/${page.slug}`}
-              key={page.id}
-            >
-              <strong>{page.title}</strong>
-              {page.summary ? <span>{page.summary}</span> : null}
-            </Link>
-          ))}
+        <section aria-labelledby="ressources-list-title">
+          <h2 id="ressources-list-title">Pages publiées</h2>
+          <div className="seo-hub-list">
+            {pages.map((page) => (
+              <Link
+                className="wiki-list-item"
+                href={page.publicPath ?? `/${page.slug}`}
+                key={page.id}
+              >
+                <strong>{page.title}</strong>
+                {page.summary ? <span>{page.summary}</span> : null}
+              </Link>
+            ))}
+          </div>
         </section>
       ) : (
         <p className="empty-copy">
