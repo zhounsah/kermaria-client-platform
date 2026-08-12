@@ -59,6 +59,7 @@ assert.match(publicMetadata, /twitter:\s*\{[\s\S]*summary_large_image/);
 assert.doesNotMatch(layout, /headers\(|getCurrentPortalSession\(/);
 assert.match(appShell, /requestBffJson<AuthMeResponse>/);
 assert.match(appShell, /\/api\/auth\/me/);
+assert.match(appShell, /displayVersion \?\? appPackage\.version/);
 
 assert.match(homePage, /JsonLd data=\{localBusinessJsonLd/);
 assert.match(homePage, /JsonLd data=\{webSiteJsonLd/);

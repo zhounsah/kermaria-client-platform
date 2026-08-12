@@ -22,7 +22,7 @@ import {
 } from "@/lib/public-route-config";
 import appPackage from "../../../package.json";
 
-const APP_VERSION_LABEL = `Version v${appPackage.version}`;
+const APP_VERSION_LABEL = `Version v${appPackage.displayVersion ?? appPackage.version}`;
 
 type AppShellProps = {
   children: ReactNode;

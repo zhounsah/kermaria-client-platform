@@ -383,8 +383,17 @@ export function isPublicRoute(pathname: string | null | undefined): boolean {
     return true;
   }
 
-  return PUBLIC_ROUTES.some(
+  const isKnownPublicRoute = PUBLIC_ROUTES.some(
     (route) =>
       route !== "/" && (pathname === route || pathname.startsWith(`${route}/`)),
+  );
+
+  if (isKnownPublicRoute) {
+    return true;
+  }
+
+  return (
+    /^\/[a-z0-9][a-z0-9-]*$/i.test(pathname)
+    && !isPortalApplicationPath(pathname)
   );
 }
