@@ -11,7 +11,7 @@ export const metadata: Metadata = buildPublicMetadata({
   path: "/mentions-legales",
 });
 
-export const revalidate = 300;
+export const dynamic = "force-dynamic";
 
 export default async function MentionsLegalesPage() {
   const result = await getPublicManagedContent("legal:mentions-legales");

@@ -12,7 +12,7 @@ export const metadata: Metadata = buildPublicMetadata({
   path: "/cgv",
 });
 
-export const revalidate = 300;
+export const dynamic = "force-dynamic";
 
 export default async function CgvPage() {
   const result = await getPublicManagedContent("legal:cgv");

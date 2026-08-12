@@ -18,7 +18,7 @@ export const metadata: Metadata = buildPublicMetadata({
   path: "/offres",
 });
 
-export const revalidate = 300;
+export const dynamic = "force-dynamic";
 
 const OFFER_STORY_POINTS = [
   {

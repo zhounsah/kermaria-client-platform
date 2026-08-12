@@ -12,7 +12,7 @@ export const metadata: Metadata = buildPublicMetadata({
   path: "/a-propos",
 });
 
-export const revalidate = 300;
+export const dynamic = "force-dynamic";
 
 export default async function AProposPage() {
   const result = await getPublicManagedContent("page:a-propos");

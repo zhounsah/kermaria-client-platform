@@ -16,7 +16,7 @@ export const metadata: Metadata = buildPublicMetadata({
   path: "/diagnostic",
 });
 
-export const revalidate = 300;
+export const dynamic = "force-dynamic";
 
 const BENEFITS = [
   {

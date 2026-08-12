@@ -22,7 +22,7 @@ export const metadata: Metadata = buildPublicMetadata({
   robots: { index: false, follow: true },
 });
 
-export const revalidate = 300;
+export const dynamic = "force-dynamic";
 
 export default async function SolutionsPage() {
   const { data } = await getPublicClientSolutionPortal();

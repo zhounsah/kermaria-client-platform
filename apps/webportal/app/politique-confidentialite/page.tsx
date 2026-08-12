@@ -12,7 +12,7 @@ export const metadata: Metadata = buildPublicMetadata({
   path: "/politique-confidentialite",
 });
 
-export const revalidate = 300;
+export const dynamic = "force-dynamic";
 
 export default async function PolitiqueConfidentialitePage() {
   const result = await getPublicManagedContent("legal:politique-confidentialite");

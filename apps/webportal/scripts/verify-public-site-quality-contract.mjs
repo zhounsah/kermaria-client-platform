@@ -117,6 +117,17 @@ for (const [path, key] of [
   assert.match(source, /buildPublicMetadata\(/, `${path} doit declarer ses metadata.`);
   assert.match(source, new RegExp(key.replaceAll(":", "\\:")), `${path} doit charger le contenu administrable attendu.`);
   assert.match(source, /PublicManagedContentArticle/, `${path} doit conserver le rendu legal/managed commun.`);
+  assert.match(source, /export const dynamic = "force-dynamic"/, `${path} doit etre rendu en production, pas au build local.`);
+}
+
+for (const path of [
+  "app/offres/page.tsx",
+  "app/diagnostic/page.tsx",
+  "app/solutions/page.tsx",
+]) {
+  const source = await read(path);
+  assert.match(source, /export const dynamic = "force-dynamic"/, `${path} doit interroger les donnees publiques a l'execution.`);
+  assert.doesNotMatch(source, /export const revalidate = 300/, `${path} ne doit pas embarquer un fallback vide au build.`);
 }
 
 assert.match(notFoundPage, /robots:\s*\{\s*index:\s*false,\s*follow:\s*false\s*\}/);
