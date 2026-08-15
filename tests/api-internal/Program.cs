@@ -146,6 +146,26 @@ async Task<int> RunAsync(string[] arguments)
     if (arguments.Length == 1
         && string.Equals(
             arguments[0],
+            "--billing-v2-hardening",
+            StringComparison.Ordinal))
+    {
+        try
+        {
+            await BillingV2HardeningTests.RunAsync();
+            Console.WriteLine("Tests hardening Billing V2 reussis.");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine("Tests hardening Billing V2 en echec.");
+            Console.Error.WriteLine(exception.ToString());
+            return 1;
+        }
+    }
+
+    if (arguments.Length == 1
+        && string.Equals(
+            arguments[0],
             "--billing-v2-stripe-rail",
             StringComparison.Ordinal))
     {

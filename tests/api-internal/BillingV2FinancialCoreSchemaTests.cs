@@ -63,6 +63,9 @@ public static class BillingV2FinancialCoreSchemaTests
 
         // Phase 2 : scenarios d'idempotence du rail Stripe sur la meme base.
         await BillingV2StripeRailSchemaTests.RunAsync(connectionString);
+
+        // Phase 2.5 : scenarios de panne (reconciliation, cycles, BPCE).
+        await BillingV2HardeningSchemaTests.RunAsync(connectionString);
     }
 
     private static async Task VerifySchemaShapeAsync(MySqlConnection connection)

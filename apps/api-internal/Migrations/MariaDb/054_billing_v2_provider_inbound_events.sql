@@ -54,9 +54,9 @@ CREATE TABLE IF NOT EXISTS billing_v2_provider_events (
 
     payload_text                    LONGTEXT      NULL,
 
-    created_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    updated_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
-                                                ON UPDATE CURRENT_TIMESTAMP(6),
+    created_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6),
+    updated_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6)
+,
     processed_at                    DATETIME(6)   NULL,
 
     PRIMARY KEY (id),

@@ -194,13 +194,16 @@ public sealed class BillingV2AuthoritativeCheckoutService
         // L'evenement financier est construit AVANT toute ecriture : la
         // fabrique re-verifie que la somme des lignes retombe exactement sur le
         // total du Pricing Engine, et echoue en ferme sinon.
-        var periodStart = now;
-        var periodEnd = string.Equals(
-                mapping.PaymentMode,
-                BillingV2PaymentModes.Upfront,
-                StringComparison.Ordinal)
-            ? now.AddMonths(Math.Max(1, mapping.CommitmentMonths))
-            : now.AddMonths(1);
+        // Periode contractuelle en jours civils Paris, derivee de l'ancre, et
+        // non une arithmetique sur l'instant UTC courant : c'est ce qui la rend
+        // reproductible aux bornes (minuit Paris, changement d'heure, fin de
+        // mois) et identique a celle que portera le document.
+        var contractPeriod = BillingV2BillingCalendar.ResolvePeriod(
+            now,
+            mapping.PaymentMode,
+            mapping.CommitmentMonths);
+        var periodStart = contractPeriod.StartUtc;
+        var periodEnd = contractPeriod.EndUtc;
         var eventBuild = BillingV2BillingEventFactory.BuildInitialCharge(
             new BillingV2BillingEventBuildRequest(
                 mapping.PaymentMode,

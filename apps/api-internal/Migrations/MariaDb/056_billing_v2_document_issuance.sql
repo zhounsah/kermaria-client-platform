@@ -38,9 +38,9 @@ CREATE TABLE IF NOT EXISTS billing_v2_subscription_documents (
     status                          VARCHAR(32)   NOT NULL DEFAULT 'created',
     reason_code                     VARCHAR(96)   NULL,
 
-    created_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    updated_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
-                                                ON UPDATE CURRENT_TIMESTAMP(6),
+    created_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6),
+    updated_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6)
+,
 
     PRIMARY KEY (id),
     UNIQUE KEY uq_billing_v2_subscription_document_period
@@ -86,7 +86,7 @@ CREATE TABLE IF NOT EXISTS billing_v2_document_line_snapshots (
     final_line_amount_cents         BIGINT        NOT NULL,
     currency                        CHAR(3)       NOT NULL DEFAULT 'EUR',
 
-    created_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    created_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6),
 
     PRIMARY KEY (id),
     UNIQUE KEY uq_billing_v2_document_line_snapshot_commercial

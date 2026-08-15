@@ -675,6 +675,161 @@ public static class BillingV2FinancialCoreStore
     }
 
     // -----------------------------------------------------------------
+    // RECONCILIATION (Phase 2.5)
+    // -----------------------------------------------------------------
+
+    /// <summary>
+    /// Tentatives candidates a une reconciliation : parties chez Stripe, sans
+    /// etat terminal local, echeance atteinte et bail libre.
+    /// </summary>
+    public static async Task<IReadOnlyList<BillingV2ReconciliationCandidate>>
+        ReadReconciliationCandidatesAsync(
+            MySqlConnection connection,
+            string provider,
+            string environment,
+            DateTime nowUtc,
+            int limit,
+            CancellationToken cancellationToken)
+    {
+        var candidates = new List<BillingV2ReconciliationCandidate>();
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT id, billing_event_id, status, provider_session_id,
+                   reconciliation_attempts
+            FROM billing_v2_payment_attempts
+            WHERE provider = @provider
+              AND environment = @environment
+              AND status IN ('created', 'in_flight')
+              AND (next_reconciliation_at IS NULL
+                   OR next_reconciliation_at <= @now)
+              AND (reconciliation_lease_until IS NULL
+                   OR reconciliation_lease_until <= @now)
+            ORDER BY COALESCE(next_reconciliation_at, created_at) ASC
+            LIMIT @limit;
+            """;
+        command.Parameters.AddWithValue("@provider", provider);
+        command.Parameters.AddWithValue("@environment", environment);
+        command.Parameters.AddWithValue("@now", nowUtc);
+        command.Parameters.AddWithValue("@limit", limit);
+        await using var reader = await command.ExecuteReaderAsync(
+            cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            candidates.Add(new BillingV2ReconciliationCandidate(
+                MariaDbIdentifierReader.ReadRequired(reader, "id"),
+                MariaDbIdentifierReader.ReadRequired(reader, "billing_event_id"),
+                reader.GetString("status"),
+                reader.IsDBNull(reader.GetOrdinal("provider_session_id"))
+                    ? null
+                    : reader.GetString("provider_session_id"),
+                reader.GetInt32("reconciliation_attempts")));
+        }
+
+        return candidates;
+    }
+
+    /// <summary>
+    /// Prise de bail en une seule ecriture conditionnelle.
+    ///
+    /// Deux workers qui visent la meme tentative : un seul voit 1 ligne
+    /// affectee. C'est ce qui empeche deux reconciliations simultanees, donc
+    /// deux activations.
+    /// </summary>
+    public static async Task<bool> TryClaimReconciliationAsync(
+        MySqlConnection connection,
+        string attemptId,
+        DateTime nowUtc,
+        int leaseSeconds,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            UPDATE billing_v2_payment_attempts
+            SET reconciliation_lease_until = @lease_until,
+                reconciliation_attempts = reconciliation_attempts + 1,
+                updated_at = @now
+            WHERE id = @id
+              AND status IN ('created', 'in_flight')
+              AND (reconciliation_lease_until IS NULL
+                   OR reconciliation_lease_until <= @now);
+            """;
+        command.Parameters.AddWithValue("@id", attemptId);
+        command.Parameters.AddWithValue("@now", nowUtc);
+        command.Parameters.AddWithValue(
+            "@lease_until",
+            nowUtc.AddSeconds(leaseSeconds));
+        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
+    }
+
+    public static async Task ScheduleNextReconciliationAsync(
+        MySqlConnection connection,
+        string attemptId,
+        DateTime nowUtc,
+        int delaySeconds,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            UPDATE billing_v2_payment_attempts
+            SET next_reconciliation_at = @next_at,
+                reconciliation_lease_until = NULL,
+                updated_at = @now
+            WHERE id = @id;
+            """;
+        command.Parameters.AddWithValue("@id", attemptId);
+        command.Parameters.AddWithValue("@now", nowUtc);
+        command.Parameters.AddWithValue(
+            "@next_at",
+            nowUtc.AddSeconds(delaySeconds));
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public static async Task MarkReconciliationRequiredAsync(
+        MySqlConnection connection,
+        string attemptId,
+        string reasonCode,
+        DateTime nowUtc,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            UPDATE billing_v2_payment_attempts
+            SET status = 'reconciliation_required',
+                verification_reason_code = @reason_code,
+                reconciliation_lease_until = NULL,
+                next_reconciliation_at = NULL,
+                reconciled_at = @now,
+                updated_at = @now
+            WHERE id = @id
+              AND status IN ('created', 'in_flight');
+            """;
+        command.Parameters.AddWithValue("@id", attemptId);
+        command.Parameters.AddWithValue("@reason_code", reasonCode);
+        command.Parameters.AddWithValue("@now", nowUtc);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public static async Task<string?> ReadSubscriptionIdForEventAsync(
+        MySqlConnection connection,
+        string billingEventId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT subscription_id FROM billing_v2_billing_events
+            WHERE id = @id LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("@id", billingEventId);
+        var value = await command.ExecuteScalarAsync(cancellationToken);
+        return value is null or DBNull ? null : Convert.ToString(value);
+    }
+
+    // -----------------------------------------------------------------
     // G. CONCURRENCE SUR L'ABONNEMENT
     // -----------------------------------------------------------------
 

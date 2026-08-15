@@ -29,9 +29,9 @@ CREATE TABLE IF NOT EXISTS subscription_billing_price_locks (
         GENERATED ALWAYS AS (
             CASE WHEN status = 'active' THEN 1 ELSE NULL END
         ) STORED,
-    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
-        ON UPDATE CURRENT_TIMESTAMP(6),
+    created_at DATETIME(6) NOT NULL DEFAULT UTC_TIMESTAMP(6),
+    updated_at DATETIME(6) NOT NULL DEFAULT UTC_TIMESTAMP(6)
+,
 
     PRIMARY KEY (id),
     UNIQUE KEY uq_subscription_billing_price_locks_active
@@ -53,9 +53,9 @@ CREATE TABLE IF NOT EXISTS subscription_billing_price_lock_review_required (
     offer_id CHAR(36) NOT NULL,
     reason VARCHAR(96) NOT NULL,
     review_status VARCHAR(24) NOT NULL DEFAULT 'pending',
-    detected_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
-        ON UPDATE CURRENT_TIMESTAMP(6),
+    detected_at DATETIME(6) NOT NULL DEFAULT UTC_TIMESTAMP(6),
+    updated_at DATETIME(6) NOT NULL DEFAULT UTC_TIMESTAMP(6)
+,
 
     PRIMARY KEY (subscription_id),
     KEY idx_subscription_price_lock_review_status

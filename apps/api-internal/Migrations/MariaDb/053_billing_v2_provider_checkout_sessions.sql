@@ -32,9 +32,9 @@ CREATE TABLE IF NOT EXISTS billing_v2_provider_checkout_sessions (
     idempotency_key_hash            CHAR(64)      NOT NULL,
     outbox_event_id                 CHAR(36)      NOT NULL,
 
-    created_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    updated_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
-                                                ON UPDATE CURRENT_TIMESTAMP(6),
+    created_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6),
+    updated_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6)
+,
 
     PRIMARY KEY (id),
     UNIQUE KEY uq_billing_v2_provider_checkout_idempotency

@@ -5,8 +5,8 @@ CREATE TABLE IF NOT EXISTS download_categories (
     description VARCHAR(280) NULL,
     status VARCHAR(20) NOT NULL,
     display_order INT NOT NULL DEFAULT 0,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    created_at DATETIME NOT NULL DEFAULT UTC_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT UTC_TIMESTAMP,
     PRIMARY KEY (id),
     UNIQUE KEY uq_download_categories_slug (slug)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -29,8 +29,8 @@ CREATE TABLE IF NOT EXISTS download_resources (
     internal_file_content_type VARCHAR(160) NULL,
     internal_file_size_bytes BIGINT NULL,
     internal_file_extension VARCHAR(20) NULL,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    created_at DATETIME NOT NULL DEFAULT UTC_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT UTC_TIMESTAMP,
     PRIMARY KEY (id),
     KEY idx_download_resources_category (category_id),
     KEY idx_download_resources_status (status),
@@ -45,8 +45,8 @@ CREATE TABLE IF NOT EXISTS download_resource_visibility_rules (
     resource_id CHAR(36) NOT NULL,
     target_type VARCHAR(40) NOT NULL,
     target_value VARCHAR(160) NOT NULL,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    created_at DATETIME NOT NULL DEFAULT UTC_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT UTC_TIMESTAMP,
     PRIMARY KEY (id),
     UNIQUE KEY uq_download_rules_resource_target (
         resource_id,

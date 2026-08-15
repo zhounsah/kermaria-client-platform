@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Kermaria.ApiInternal;
 using Kermaria.ApiInternal.Contracts;
 using Kermaria.ApiInternal.Data.Configuration;
@@ -363,6 +363,10 @@ builder.Services.AddScoped<IBillingV2StripeGateway>(
 builder.Services.AddScoped<
     IBillingV2StripeRailService,
     BillingV2StripeRailService>();
+builder.Services.AddSingleton<IBillingV2Clock>(SystemBillingV2Clock.Instance);
+builder.Services.AddScoped<
+    IBillingV2StripeReconciliationService,
+    BillingV2StripeReconciliationService>();
 builder.Services.AddScoped<
     IBillingV2ProviderOutboxDispatcher,
     BillingV2ProviderOutboxDispatcher>();

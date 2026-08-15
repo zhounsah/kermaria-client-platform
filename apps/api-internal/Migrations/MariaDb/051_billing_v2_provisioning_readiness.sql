@@ -24,9 +24,9 @@ CREATE TABLE IF NOT EXISTS billing_v2_provisioning_client_readiness (
     reviewed_at                         DATETIME(6)   NULL,
     notes                               TEXT          NULL,
 
-    created_at                          DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    updated_at                          DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
-                                                    ON UPDATE CURRENT_TIMESTAMP(6),
+    created_at                          DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6),
+    updated_at                          DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6)
+,
 
     PRIMARY KEY (customer_id),
     KEY idx_billing_v2_provisioning_readiness_ready

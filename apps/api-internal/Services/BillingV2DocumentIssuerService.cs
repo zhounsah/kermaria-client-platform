@@ -146,10 +146,41 @@ public sealed class BillingV2DocumentIssuerService
             }
         }
 
+        // Phase 2.5. L'intention d'emission est persistee AVANT tout appel
+        // reseau BPCE, avec une reference stable derivee du document. Sans
+        // cela, un succes BPCE suivi d'un timeout avant l'ecriture locale
+        // laissait le retry recreer une facture -- et valider un second numero
+        // fiscal.
+        var issuanceGate = await EnsureIssuanceIntentAsync(
+            documentId,
+            cancellationToken);
+        if (!issuanceGate.CanCallProvider)
+        {
+            _logger.LogWarning(
+                "Billing V2 document {DocumentId} issuance blocked: {ReasonCode}. Manual review required: {Manual}.",
+                documentId,
+                issuanceGate.ReasonCode,
+                issuanceGate.RequiresManualReview);
+            return new BillingV2DocumentIssueResult(
+                false,
+                issuanceGate.ReasonCode,
+                documentId,
+                Invoice: null);
+        }
+
         var issue = await _invoiceIssuing.IssueInvoiceAsync(
             documentId,
             sendEmail: false,
             correlationId,
+            cancellationToken);
+        await ResolveIssuanceIntentAsync(
+            documentId,
+            issue.Succeeded
+            || string.Equals(
+                issue.Code,
+                "INVOICE_ALREADY_ISSUED",
+                StringComparison.Ordinal),
+            issue.Code,
             cancellationToken);
         if (!issue.Succeeded
             && !string.Equals(
@@ -198,6 +229,182 @@ public sealed class BillingV2DocumentIssuerService
             payment.Code,
             documentId,
             payment.Invoice);
+    }
+
+    /// <summary>
+    /// Cree ou reprend l'intention d'emission, et decide si l'appel BPCE est
+    /// autorise. Un appel dont le sort est indetermine laisse l'intention en
+    /// `in_flight` : la reprise passera alors par
+    /// <see cref="BillingV2DocumentIssuancePolicy.ResolveIndeterminate"/>, qui
+    /// echoue en ferme tant que l'API BPCE ne sait pas rechercher une facture
+    /// par reference externe.
+    /// </summary>
+    private async Task<BillingV2DocumentIssuanceDecision>
+        EnsureIssuanceIntentAsync(
+            string documentId,
+            CancellationToken cancellationToken)
+    {
+        var reference = BillingV2DocumentIssuancePolicy
+            .BuildExternalReference(documentId);
+        await using var connection = new MySqlConnection(_sql.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        await using (var insert = connection.CreateCommand())
+        {
+            insert.CommandText =
+                """
+                INSERT IGNORE INTO billing_v2_document_issuance_attempts (
+                    id, commercial_document_id, external_reference,
+                    status, attempt_count, created_at, updated_at
+                ) VALUES (
+                    @id, @document_id, @reference,
+                    'created', 0, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6)
+                );
+                """;
+            insert.Parameters.AddWithValue(
+                "@id",
+                Guid.NewGuid().ToString("D"));
+            insert.Parameters.AddWithValue("@document_id", documentId);
+            insert.Parameters.AddWithValue("@reference", reference);
+            await insert.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        var attempt = await ReadIssuanceAttemptAsync(
+            connection,
+            documentId,
+            cancellationToken);
+        var decision = BillingV2DocumentIssuancePolicy.Evaluate(attempt);
+
+        // Une intention laissee `in_flight` par un appel precedent signifie
+        // que l'on ignore si BPCE a cree la facture. On ne recree pas.
+        if (decision.CanCallProvider
+            && attempt is not null
+            && string.Equals(
+                attempt.Status,
+                BillingV2DocumentIssuanceStatuses.InFlight,
+                StringComparison.Ordinal))
+        {
+            var indeterminate = BillingV2DocumentIssuancePolicy
+                .ResolveIndeterminate(
+                    BillingV2DocumentIssuancePolicy
+                        .InvoiceLookupByExternalReferenceSupported,
+                    lookupFoundExistingInvoice: false);
+            if (!indeterminate.CanCallProvider)
+            {
+                await MarkIssuanceAsync(
+                    connection,
+                    documentId,
+                    BillingV2DocumentIssuanceStatuses.ReconciliationRequired,
+                    indeterminate.ReasonCode,
+                    cancellationToken);
+                return indeterminate;
+            }
+        }
+
+        if (!decision.CanCallProvider)
+        {
+            return decision;
+        }
+
+        await MarkIssuanceAsync(
+            connection,
+            documentId,
+            BillingV2DocumentIssuanceStatuses.InFlight,
+            reasonCode: null,
+            cancellationToken,
+            incrementAttempt: true);
+        return decision;
+    }
+
+    private async Task ResolveIssuanceIntentAsync(
+        string documentId,
+        bool succeeded,
+        string reasonCode,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(_sql.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await MarkIssuanceAsync(
+            connection,
+            documentId,
+            succeeded
+                ? BillingV2DocumentIssuanceStatuses.Succeeded
+                : BillingV2DocumentIssuanceStatuses.Failed,
+            reasonCode,
+            cancellationToken);
+    }
+
+    private static async Task<BillingV2DocumentIssuanceAttempt?>
+        ReadIssuanceAttemptAsync(
+            MySqlConnection connection,
+            string documentId,
+            CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT id, commercial_document_id, external_reference,
+                   status, provider_invoice_id, attempt_count
+            FROM billing_v2_document_issuance_attempts
+            WHERE commercial_document_id = @document_id
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("@document_id", documentId);
+        await using var reader = await command.ExecuteReaderAsync(
+            cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new BillingV2DocumentIssuanceAttempt(
+            MariaDbIdentifierReader.ReadRequired(reader, "id"),
+            MariaDbIdentifierReader.ReadRequired(
+                reader,
+                "commercial_document_id"),
+            reader.GetString("external_reference"),
+            reader.GetString("status"),
+            reader.IsDBNull(reader.GetOrdinal("provider_invoice_id"))
+                ? null
+                : reader.GetString("provider_invoice_id"),
+            reader.GetInt32("attempt_count"));
+    }
+
+    private static async Task MarkIssuanceAsync(
+        MySqlConnection connection,
+        string documentId,
+        string status,
+        string? reasonCode,
+        CancellationToken cancellationToken,
+        bool incrementAttempt = false)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            $"""
+             UPDATE billing_v2_document_issuance_attempts
+             SET status = @status,
+                 reason_code = COALESCE(@reason_code, reason_code),
+                 attempt_count = attempt_count
+                     + {(incrementAttempt ? "1" : "0")},
+                 attempted_at = CASE
+                     WHEN @status = 'in_flight' THEN UTC_TIMESTAMP(6)
+                     ELSE attempted_at
+                 END,
+                 resolved_at = CASE
+                     WHEN @status IN ('succeeded', 'failed',
+                                      'reconciliation_required')
+                         THEN UTC_TIMESTAMP(6)
+                     ELSE resolved_at
+                 END,
+                 updated_at = UTC_TIMESTAMP(6)
+             WHERE commercial_document_id = @document_id;
+             """;
+        command.Parameters.AddWithValue("@document_id", documentId);
+        command.Parameters.AddWithValue("@status", status);
+        command.Parameters.AddWithValue(
+            "@reason_code",
+            reasonCode is null ? DBNull.Value : reasonCode);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task<string?> ReadExistingDocumentIdAsync(
@@ -929,13 +1136,15 @@ public static class BillingV2DocumentSnapshotPlanner
         }
 
         var subscription = source.Subscription;
-        var periodStart = subscription.CreatedAtUtc.Date;
-        var periodEnd = string.Equals(
+        // Jour civil Paris, pas `.Date` sur l'instant UTC : un abonnement cree
+        // apres minuit Paris mais avant minuit UTC aurait sinon une periode
+        // datee de la veille, alors que la facture BPCE porte le jour Paris.
+        var contractPeriod = BillingV2BillingCalendar.ResolvePeriod(
+            subscription.CreatedAtUtc,
             subscription.PaymentMode,
-            BillingV2PaymentModes.Upfront,
-            StringComparison.Ordinal)
-            ? periodStart.AddMonths(Math.Max(1, subscription.CommitmentMonths))
-            : periodStart.AddMonths(1);
+            subscription.CommitmentMonths);
+        var periodStart = contractPeriod.CivilStart.ToDateTime(TimeOnly.MinValue);
+        var periodEnd = contractPeriod.CivilEnd.ToDateTime(TimeOnly.MinValue);
         var oneTimeItems = source.Items
             .Where(item => string.Equals(
                 item.BillingCadence,

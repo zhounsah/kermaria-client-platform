@@ -59,9 +59,9 @@ CREATE TABLE IF NOT EXISTS billing_v2_services (
     status                          VARCHAR(24)   NOT NULL DEFAULT 'active',
     display_order                   INT           NOT NULL DEFAULT 0,
 
-    created_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    updated_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
-                                                ON UPDATE CURRENT_TIMESTAMP(6),
+    created_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6),
+    updated_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6)
+,
 
     PRIMARY KEY (id),
     UNIQUE KEY uq_billing_v2_services_code (code),
@@ -95,9 +95,9 @@ CREATE TABLE IF NOT EXISTS billing_v2_service_tiers (
     status                          VARCHAR(24)   NOT NULL DEFAULT 'active',
     display_order                   INT           NOT NULL DEFAULT 0,
 
-    created_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    updated_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
-                                                ON UPDATE CURRENT_TIMESTAMP(6),
+    created_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6),
+    updated_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6)
+,
 
     PRIMARY KEY (id),
     UNIQUE KEY uq_billing_v2_service_tiers_code (service_id, code),
@@ -140,7 +140,7 @@ CREATE TABLE IF NOT EXISTS billing_v2_service_prices (
     valid_until                     DATETIME(6)   NULL,
     status                          VARCHAR(24)   NOT NULL DEFAULT 'active',
 
-    created_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    created_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6),
 
     PRIMARY KEY (id),
     UNIQUE KEY uq_billing_v2_service_prices_code (price_code),
@@ -189,7 +189,7 @@ CREATE TABLE IF NOT EXISTS billing_v2_service_dependencies (
     tier_relation                   VARCHAR(32)   NOT NULL DEFAULT 'any',
 
     status                          VARCHAR(24)   NOT NULL DEFAULT 'active',
-    created_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    created_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6),
 
     PRIMARY KEY (id),
     UNIQUE KEY uq_billing_v2_service_dependencies
@@ -232,9 +232,9 @@ CREATE TABLE IF NOT EXISTS billing_v2_commitment_terms (
     status                          VARCHAR(24)   NOT NULL DEFAULT 'active',
     display_order                   INT           NOT NULL DEFAULT 0,
 
-    created_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    updated_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
-                                                ON UPDATE CURRENT_TIMESTAMP(6),
+    created_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6),
+    updated_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6)
+,
 
     PRIMARY KEY (id),
     UNIQUE KEY uq_billing_v2_commitment_terms_code (code),
@@ -262,9 +262,9 @@ CREATE TABLE IF NOT EXISTS billing_v2_commitment_payment_options (
     status                          VARCHAR(24)   NOT NULL DEFAULT 'active',
     display_order                   INT           NOT NULL DEFAULT 0,
 
-    created_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    updated_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
-                                                ON UPDATE CURRENT_TIMESTAMP(6),
+    created_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6),
+    updated_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6)
+,
 
     PRIMARY KEY (id),
     UNIQUE KEY uq_billing_v2_commitment_payment_options
@@ -298,9 +298,9 @@ CREATE TABLE IF NOT EXISTS billing_v2_offer_presets (
     is_public                       TINYINT(1)    NOT NULL DEFAULT 1,
     display_order                   INT           NOT NULL DEFAULT 0,
 
-    created_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    updated_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
-                                                ON UPDATE CURRENT_TIMESTAMP(6),
+    created_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6),
+    updated_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6)
+,
 
     PRIMARY KEY (id),
     UNIQUE KEY uq_billing_v2_offer_presets_code (code),
@@ -323,7 +323,7 @@ CREATE TABLE IF NOT EXISTS billing_v2_preset_items (
     customer_editable               TINYINT(1)    NOT NULL DEFAULT 1,
     display_order                   INT           NOT NULL DEFAULT 0,
 
-    created_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    created_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6),
 
     PRIMARY KEY (id),
     KEY idx_billing_v2_preset_items_preset (preset_id, display_order),
@@ -396,9 +396,9 @@ CREATE TABLE IF NOT EXISTS billing_v2_subscriptions (
     -- legacy / v2 ; utile pendant la migration.
     billing_model                       VARCHAR(16)   NOT NULL DEFAULT 'v2',
 
-    created_at                          DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    updated_at                          DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
-                                                    ON UPDATE CURRENT_TIMESTAMP(6),
+    created_at                          DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6),
+    updated_at                          DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6)
+,
 
     PRIMARY KEY (id),
     KEY idx_billing_v2_subscriptions_customer (customer_id, status),
@@ -439,9 +439,9 @@ CREATE TABLE IF NOT EXISTS billing_v2_subscription_users (
     is_primary                      TINYINT(1)    NOT NULL DEFAULT 0,
     status                          VARCHAR(24)   NOT NULL DEFAULT 'active',
 
-    created_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    updated_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
-                                                ON UPDATE CURRENT_TIMESTAMP(6),
+    created_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6),
+    updated_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6)
+,
 
     PRIMARY KEY (id),
     UNIQUE KEY uq_billing_v2_subscription_users_identity
@@ -501,9 +501,9 @@ CREATE TABLE IF NOT EXISTS billing_v2_subscription_items (
 
     status                          VARCHAR(24)   NOT NULL DEFAULT 'active',
 
-    created_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    updated_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
-                                                ON UPDATE CURRENT_TIMESTAMP(6),
+    created_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6),
+    updated_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6)
+,
 
     PRIMARY KEY (id),
     KEY idx_billing_v2_subscription_items_active
@@ -569,9 +569,9 @@ CREATE TABLE IF NOT EXISTS billing_v2_subscription_item_provisioning (
     last_provisioned_at             DATETIME(6)   NULL,
     last_error                      TEXT          NULL,
 
-    created_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    updated_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
-                                                ON UPDATE CURRENT_TIMESTAMP(6),
+    created_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6),
+    updated_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6)
+,
 
     PRIMARY KEY (subscription_item_id),
 
@@ -607,7 +607,7 @@ CREATE TABLE IF NOT EXISTS billing_v2_subscription_changes (
     change_kind                     VARCHAR(24)   NOT NULL,
     billing_effect                  VARCHAR(40)   NOT NULL,
 
-    requested_at                    DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    requested_at                    DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6),
     effective_at                    DATETIME(6)   NOT NULL,
 
     status                          VARCHAR(24)   NOT NULL DEFAULT 'pending',
@@ -617,7 +617,7 @@ CREATE TABLE IF NOT EXISTS billing_v2_subscription_changes (
     applied_at                      DATETIME(6)   NULL,
     cancelled_at                    DATETIME(6)   NULL,
 
-    created_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    created_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6),
 
     PRIMARY KEY (id),
     KEY idx_billing_v2_subscription_changes_pending
@@ -654,7 +654,7 @@ CREATE TABLE IF NOT EXISTS billing_v2_subscription_change_items (
     old_provisioned_tier_id         CHAR(36)      NULL,
     new_provisioned_tier_id         CHAR(36)      NULL,
 
-    created_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    created_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6),
 
     PRIMARY KEY (id),
     KEY idx_billing_v2_subscription_change_items_change (change_id),
@@ -729,9 +729,9 @@ CREATE TABLE IF NOT EXISTS billing_v2_provider_price_mappings (
     external_plan_id                VARCHAR(255)  NULL,
 
     status                          VARCHAR(24)   NOT NULL DEFAULT 'active',
-    created_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    updated_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
-                                                ON UPDATE CURRENT_TIMESTAMP(6),
+    created_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6),
+    updated_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6)
+,
 
     PRIMARY KEY (id),
     UNIQUE KEY uq_billing_v2_provider_price_mapping
@@ -759,9 +759,9 @@ CREATE TABLE IF NOT EXISTS billing_v2_payment_agreements (
 
     status                          VARCHAR(32)   NOT NULL DEFAULT 'pending',
 
-    created_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    updated_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
-                                                ON UPDATE CURRENT_TIMESTAMP(6),
+    created_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6),
+    updated_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6)
+,
 
     PRIMARY KEY (id),
     UNIQUE KEY uq_billing_v2_payment_agreements_subscription
@@ -808,9 +808,9 @@ CREATE TABLE IF NOT EXISTS billing_v2_provisioning_rules (
     status                          VARCHAR(24)   NOT NULL DEFAULT 'active',
     display_order                   INT           NOT NULL DEFAULT 0,
 
-    created_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    updated_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
-                                                ON UPDATE CURRENT_TIMESTAMP(6),
+    created_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6),
+    updated_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6)
+,
 
     PRIMARY KEY (id),
     KEY idx_billing_v2_provisioning_rules_lookup
@@ -849,7 +849,7 @@ CREATE TABLE IF NOT EXISTS billing_v2_legacy_offer_mappings (
     legacy_external_reference       VARCHAR(255)  NULL,
 
     status                          VARCHAR(24)   NOT NULL DEFAULT 'active',
-    created_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    created_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6),
 
     PRIMARY KEY (legacy_offer_id),
     KEY idx_billing_v2_legacy_mapping_preset (preset_id),
@@ -889,7 +889,7 @@ CREATE TABLE IF NOT EXISTS billing_v2_shadow_price_checks (
     currency                        CHAR(3)       NOT NULL DEFAULT 'EUR',
     context_reference               VARCHAR(255)  NULL,
 
-    checked_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    checked_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6),
 
     PRIMARY KEY (id),
     KEY idx_billing_v2_shadow_price_checks_difference
@@ -928,11 +928,11 @@ CREATE TABLE IF NOT EXISTS billing_v2_outbox_events (
     status                          VARCHAR(24)   NOT NULL DEFAULT 'pending',
     retry_count                     INT           NOT NULL DEFAULT 0,
 
-    available_at                    DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    available_at                    DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6),
     processed_at                    DATETIME(6)   NULL,
     last_error                      TEXT          NULL,
 
-    created_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    created_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6),
 
     PRIMARY KEY (id),
     KEY idx_billing_v2_outbox_pending
@@ -957,7 +957,7 @@ CREATE TABLE IF NOT EXISTS billing_v2_audit_log (
     actor_reference                 VARCHAR(255)  NULL,
     details_text                    LONGTEXT      NULL,
 
-    created_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    created_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6),
 
     PRIMARY KEY (id),
     KEY idx_billing_v2_audit_entity
@@ -979,7 +979,7 @@ CREATE TABLE IF NOT EXISTS billing_v2_legacy_service_mappings (
     v2_tier_code                    VARCHAR(64)   NULL,
 
     notes                           TEXT          NULL,
-    created_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    created_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6),
 
     PRIMARY KEY (legacy_service_reference)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -1005,7 +1005,7 @@ CREATE TABLE IF NOT EXISTS billing_v2_subscription_price_locks (
     reason                          VARCHAR(96)   NOT NULL DEFAULT 'legacy_migration',
 
     status                          VARCHAR(24)   NOT NULL DEFAULT 'active',
-    created_at                      DATETIME(6)   NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    created_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6),
 
     PRIMARY KEY (id),
     KEY idx_billing_v2_subscription_price_locks_active

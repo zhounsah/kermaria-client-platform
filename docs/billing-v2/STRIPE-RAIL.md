@@ -127,7 +127,65 @@ compare-and-swap sur `version`. Zéro ligne affectée remonte
 `BILLING_V2_SUBSCRIPTION_VERSION_CONFLICT` et laisse l'opération en
 réconciliation : jamais de lost update silencieux.
 
-## 7. Ce qui reste hors périmètre
+## 7. Règle d'intention unique
+
+**Au plus une intention de checkout non terminale** pour le quadruplet :
+
+```text
+customer + sélection commerciale (offre) + provider + environment
+```
+
+pendant sa fenêtre de validité (`expires_at`, 60 min par défaut).
+
+- un rechargement de page ou un réessai **retrouve** cette intention, même avec
+  un nouveau `client_request_id` ;
+- une intention **terminale** (`applied`, `failed`, `cancelled`) ou **expirée**
+  ne bloque plus rien : une nouvelle intention peut être ouverte ;
+- changer une seule des quatre dimensions du scope ouvre une intention
+  distincte — c'est un choix délibéré de l'utilisateur, pas un doublon.
+
+Les quatre dimensions sont vérifiées une à une dans
+`BillingV2HardeningTests.VerifyPendingIntentRuleScope`, et la récupération après
+rechargement dans `BillingV2StripeRailSchemaTests` (scénario 2).
+
+## 8. Réconciliation (Phase 2.5)
+
+Le webhook reste un signal ; le réconciliateur est le filet qui garantit la
+convergence quand ce signal n'arrive jamais.
+
+`BillingV2StripeReconciliationService` sélectionne les `PaymentAttempt`
+`created`/`in_flight` dont l'échéance est atteinte et le bail libre, prend un
+**bail** (`reconciliation_lease_until`) en une écriture conditionnelle, puis
+délègue à `VerifyAndSettleAsync` — le même chemin que le webhook, donc le même
+verrou d'abonnement et le même compare-and-swap.
+
+Il ne crée jamais de checkout ni de nouvelle tentative : il relit. Backoff
+exponentiel plafonné à 30 min, puis escalade en `reconciliation_required` après
+12 tentatives plutôt que de boucler.
+
+## 9. Idempotence d'émission BPCE (Phase 2.5)
+
+Ce que l'API BPCE permet réellement aujourd'hui, constaté dans le code :
+
+| Objet | Recherche par référence externe |
+|---|---|
+| Client | **oui** (`GetCustomerByExternalIdAsync`), déjà utilisée pour rendre l'upsert idempotent |
+| Facture | **non** — le contrat n'expose que create draft, validate, get PDF, mark as paid |
+
+Le numéro fiscal est alloué par BPCE à `ValidateInvoiceAsync`, **pas** à la
+création du brouillon : un brouillon orphelin ne consomme pas de numéro, c'est
+la validation d'un second brouillon qui en créerait un.
+
+`billing_v2_document_issuance_attempts` porte une intention par document
+(unicité sur `commercial_document_id`), avec une référence externe stable
+`BV2-DOC-<document_id>`, écrite **avant** l'appel réseau. Sur retour indéterminé,
+faute de recherche facture côté BPCE, le système passe en
+`reconciliation_required` et **n'émet rien de plus** : une facture manquante se
+rattrape, un second numéro fiscal ne se reprend pas.
+
+L'autorité de numérotation reste BPCE, inchangée.
+
+## 10. Ce qui reste hors périmètre
 
 PayPal V2, Customer Credit Ledger, downgrades, remboursements, chargebacks,
 réconciliateur périodique, refonte BPCE, résiliation automatisée.
