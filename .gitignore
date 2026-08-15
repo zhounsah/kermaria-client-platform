@@ -70,6 +70,9 @@ local.env.ps1
 # Claude Code worktrees (transient checkouts, never commit)
 .claude/worktrees/
 /.artifacts/
+# Artefacts de validation/packaging : sorties de build, jamais versionnees.
+# Leur suivi cassait `git worktree add` sous Windows (chemins trop longs).
+/_artifacts/
 /.codex-tmp/
 /tmp/
 **/__pycache__/
