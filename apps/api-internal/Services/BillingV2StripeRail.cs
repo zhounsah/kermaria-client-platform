@@ -381,7 +381,18 @@ public sealed record BillingV2StripeCheckoutRequest(
     string SuccessUrl,
     string CancelUrl,
     IReadOnlyDictionary<string, string> Metadata,
-    string IdempotencyKey);
+    string IdempotencyKey,
+    /// <summary>
+    /// Identifiant client Stripe DEJA connu localement. Quand il est renseigne,
+    /// il remplace <c>customer_email</c> : Stripe rattache alors la session au
+    /// client existant au lieu d'en creer un implicitement.
+    ///
+    /// Introduit pour le scenario Test Clock : une horloge de test ne peut
+    /// s'attacher qu'a un client cree a l'avance, ce que `customer_email`
+    /// interdit. Aucun client n'est cree par ce chemin - on ne fait que
+    /// reutiliser un identifiant persiste.
+    /// </summary>
+    string? ProviderCustomerId = null);
 
 public sealed record BillingV2FinalizedBillingEvent(
     string Id,
@@ -492,7 +503,8 @@ public static class BillingV2StripeCheckoutRequestFactory
         string providerRequestKey,
         string customerEmail,
         string successUrl,
-        string cancelUrl)
+        string cancelUrl,
+        string? providerCustomerId = null)
     {
         var guard = BillingV2StripeDispatchGuard.Evaluate(billingEvent);
         if (!guard.IsValid)
@@ -551,7 +563,10 @@ public static class BillingV2StripeCheckoutRequestFactory
                 ["billing_v2_payment_attempt_id"] = paymentAttemptId,
                 ["customer_id"] = billingEvent.CustomerId
             },
-            providerRequestKey);
+            providerRequestKey,
+            string.IsNullOrWhiteSpace(providerCustomerId)
+                ? null
+                : providerCustomerId.Trim());
     }
 
     /// <summary>
@@ -564,10 +579,21 @@ public static class BillingV2StripeCheckoutRequestFactory
         var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["mode"] = request.Mode,
-            ["customer_email"] = request.CustomerEmail,
             ["success_url"] = request.SuccessUrl,
             ["cancel_url"] = request.CancelUrl
         };
+
+        // Stripe refuse `customer` et `customer_email` ensemble. Un client
+        // deja connu prime donc, et rien d'autre ne change ; sans client
+        // connu, le comportement est celui d'avant, a l'identique.
+        if (request.ProviderCustomerId is { Length: > 0 } providerCustomerId)
+        {
+            parameters["customer"] = providerCustomerId;
+        }
+        else
+        {
+            parameters["customer_email"] = request.CustomerEmail;
+        }
 
         for (var index = 0; index < request.Lines.Count; index++)
         {
@@ -620,7 +646,57 @@ public sealed record BillingV2StripeSessionSnapshot(
     string? PaymentStatus,
     string? SessionStatus,
     string? CustomerEmail,
-    IReadOnlyDictionary<string, string> Metadata);
+    IReadOnlyDictionary<string, string> Metadata,
+    string? ApprovalUrl = null);
+
+public sealed record BillingV2StripeApprovalUrlRecovery(
+    string? ApprovalUrl,
+    string ReasonCode,
+    bool RequiresManualReview)
+{
+    public bool Recovered => ApprovalUrl is { Length: > 0 };
+}
+
+/// <summary>
+/// Reprise de l'URL d'approbation d'une session checkout deja creee.
+///
+/// Une reprise ne doit JAMAIS creer une seconde session pour retrouver une
+/// URL : ce serait un second encaissement possible. On rend donc l'URL deja
+/// connue - persistee localement en priorite, sinon celle de la session
+/// relue - et si aucune n'est disponible on echoue en ferme vers revue
+/// manuelle plutot que de laisser l'abonnement sans moyen de paiement.
+/// </summary>
+public static class BillingV2StripeApprovalUrlRecoveryPolicy
+{
+    public static BillingV2StripeApprovalUrlRecovery Resolve(
+        string? persistedApprovalUrl,
+        string? refetchedApprovalUrl)
+    {
+        if (Normalize(persistedApprovalUrl) is { } persisted)
+        {
+            return new BillingV2StripeApprovalUrlRecovery(
+                persisted,
+                "BILLING_V2_STRIPE_APPROVAL_URL_PERSISTED",
+                RequiresManualReview: false);
+        }
+
+        if (Normalize(refetchedApprovalUrl) is { } refetched)
+        {
+            return new BillingV2StripeApprovalUrlRecovery(
+                refetched,
+                "BILLING_V2_STRIPE_APPROVAL_URL_REFETCHED",
+                RequiresManualReview: false);
+        }
+
+        return new BillingV2StripeApprovalUrlRecovery(
+            null,
+            "BILLING_V2_STRIPE_APPROVAL_URL_UNRECOVERABLE",
+            RequiresManualReview: true);
+    }
+
+    private static string? Normalize(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+}
 
 public sealed record BillingV2StripeVerificationExpectation(
     string BillingEventId,

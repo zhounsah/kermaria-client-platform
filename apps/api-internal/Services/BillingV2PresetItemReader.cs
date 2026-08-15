@@ -1,3 +1,4 @@
+﻿using Kermaria.ApiInternal.Data.Repositories;
 using MySqlConnector;
 
 namespace Kermaria.ApiInternal.Services;
@@ -131,11 +132,9 @@ public static class BillingV2PresetItemReader
         while (await reader.ReadAsync(cancellationToken))
         {
             rows.Add(new BillingV2PresetItemRow(
-                reader.GetString("preset_item_id"),
-                reader.GetString("service_id"),
-                reader.IsDBNull(reader.GetOrdinal("tier_id"))
-                    ? null
-                    : reader.GetString("tier_id"),
+                MariaDbIdentifierReader.ReadRequired(reader, "preset_item_id"),
+                MariaDbIdentifierReader.ReadRequired(reader, "service_id"),
+                MariaDbIdentifierReader.ReadNullable(reader, "tier_id"),
                 reader.GetString("service_code"),
                 reader.IsDBNull(reader.GetOrdinal("tier_code"))
                     ? null
@@ -145,7 +144,9 @@ public static class BillingV2PresetItemReader
                 reader.GetInt32("display_order"),
                 reader.GetBoolean("discount_eligible"),
                 new BillingV2ServicePriceCandidate(
-                    reader.GetString("service_price_id"),
+                    MariaDbIdentifierReader.ReadRequired(
+                        reader,
+                        "service_price_id"),
                     reader.GetString("price_code"),
                     reader.GetInt32("price_version"),
                     reader.GetInt64("amount_cents"),

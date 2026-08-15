@@ -31,6 +31,7 @@ public static class BillingV2RenewalTests
         VerifyLookupIsBoundedOrFailsClosed();
         VerifyReconciliationCandidateWithInvoiceOnly();
         VerifyReadinessMatrix();
+        VerifyLaunchScopeIsFrozen();
         VerifyReconciliationMetrics();
         VerifyReconciliationIntervalGuard();
         return Task.CompletedTask;
@@ -543,6 +544,58 @@ public static class BillingV2RenewalTests
                 .Any(component => component.Component
                     == BillingV2ReadinessComponents.StripeReconciliation),
             "Sans reconciliateur activable, le lancement doit etre bloque.");
+    }
+
+    // -----------------------------------------------------------------
+    // Phase 4, point 1 : perimetre de lancement gele
+    // -----------------------------------------------------------------
+
+    private static void VerifyLaunchScopeIsFrozen()
+    {
+        // Le seul cas autorise au lancement.
+        Ensure(
+            BillingV2LaunchScope.EvaluateCheckout(
+                "stripe", BillingV2PaymentModes.Monthly, 0).IsValid,
+            "Stripe mensuel sans TVA doit rester le cas autorise.");
+
+        // Comptant 6/12 mois : le calcul existe, l'encaissement est refuse.
+        var upfront = BillingV2LaunchScope.EvaluateCheckout(
+            "stripe", BillingV2PaymentModes.Upfront, 0);
+        Ensure(
+            !upfront.IsValid
+            && upfront.ReasonCode
+                == "BILLING_V2_SCOPE_UPFRONT_OUT_OF_LAUNCH_SCOPE",
+            "Le comptant doit etre refuse au dispatch.");
+
+        var paypal = BillingV2LaunchScope.EvaluateCheckout(
+            "paypal", BillingV2PaymentModes.Monthly, 0);
+        Ensure(
+            !paypal.IsValid
+            && paypal.ReasonCode
+                == "BILLING_V2_SCOPE_PROVIDER_OUT_OF_LAUNCH_SCOPE",
+            "PayPal doit etre refuse au dispatch.");
+
+        Ensure(
+            !BillingV2LaunchScope.EvaluateCheckout(
+                "stripe", BillingV2PaymentModes.Monthly, 1).IsValid,
+            "Une TVA non nulle doit etre refusee au dispatch.");
+
+        // Les capacites hors perimetre doivent rester fermees : ce test est la
+        // pour qu'un passage a true soit un acte delibere, pas un effet de bord.
+        Ensure(
+            !BillingV2LaunchScope.UpfrontPaymentEnabled
+            && !BillingV2LaunchScope.PayPalEnabled
+            && !BillingV2LaunchScope.SelfServiceUpgradesEnabled
+            && !BillingV2LaunchScope.SelfServiceDowngradesEnabled
+            && !BillingV2LaunchScope.CreditLedgerEnabled
+            && !BillingV2LaunchScope.RefundsEnabled
+            && !BillingV2LaunchScope.ChargebacksEnabled
+            && !BillingV2LaunchScope.SelfServiceCancellationEnabled
+            && !BillingV2LaunchScope.NonZeroTaxEnabled,
+            "Le perimetre gele doit rester ferme.");
+        Ensure(
+            BillingV2LaunchScope.StripeMonthlyEnabled,
+            "Stripe mensuel doit rester la cible READY.");
     }
 
     // -----------------------------------------------------------------

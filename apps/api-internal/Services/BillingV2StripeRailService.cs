@@ -123,6 +123,25 @@ public sealed class BillingV2StripeRailService : IBillingV2StripeRailService
                 billingEventId,
                 cancellationToken);
 
+        // Phase 4. Perimetre de lancement gele : une capacite non validee bout
+        // en bout ne doit pas pouvoir partir chez un provider, meme si le
+        // coeur financier sait la calculer.
+        if (billingEvent is not null)
+        {
+            var scope = BillingV2LaunchScope.EvaluateCheckout(
+                Provider,
+                billingEvent.PaymentModeSnapshot,
+                billingEvent.TaxAmountCents);
+            if (!scope.IsValid)
+            {
+                _logger.LogWarning(
+                    "Billing V2 Stripe dispatch refused for subscription {SubscriptionId}: {ReasonCode} (out of launch scope).",
+                    subscriptionId,
+                    scope.ReasonCode);
+                return Failed(scope.ReasonCode, false);
+            }
+        }
+
         // B. Sans BillingEvent finalise et coherent, rien ne part chez Stripe.
         var guard = BillingV2StripeDispatchGuard.Evaluate(billingEvent);
         if (!guard.IsValid)
@@ -179,11 +198,34 @@ public sealed class BillingV2StripeRailService : IBillingV2StripeRailService
                 cancellationToken);
             if (existing is not null)
             {
+                var recovery = BillingV2StripeApprovalUrlRecoveryPolicy.Resolve(
+                    await ReadPersistedApprovalUrlAsync(
+                        connection,
+                        subscriptionId,
+                        cancellationToken),
+                    existing.ApprovalUrl);
+                if (recovery.RequiresManualReview)
+                {
+                    await BillingV2FinancialCoreStore
+                        .MarkReconciliationRequiredAsync(
+                            connection,
+                            attempt.Id,
+                            recovery.ReasonCode,
+                            _clock.UtcNow,
+                            cancellationToken);
+                    return new BillingV2StripeDispatchResult(
+                        false,
+                        recovery.ReasonCode,
+                        existing.SessionId,
+                        ApprovalUrl: null,
+                        Retryable: false);
+                }
+
                 return new BillingV2StripeDispatchResult(
                     true,
                     "BILLING_V2_STRIPE_CHECKOUT_ALREADY_CREATED",
                     existing.SessionId,
-                    ApprovalUrl: null,
+                    recovery.ApprovalUrl,
                     Retryable: false);
             }
         }
@@ -194,7 +236,10 @@ public sealed class BillingV2StripeRailService : IBillingV2StripeRailService
             attempt.ProviderRequestKey,
             customerEmail,
             successUrl,
-            cancelUrl);
+            cancelUrl,
+            // Rattachement a un client Stripe deja connu, s'il y en a un.
+            // Sans lui, rien ne change : `customer_email` reste utilise.
+            attempt.ProviderCustomerReference);
         var created = await _gateway.CreateCheckoutSessionAsync(
             stripeRequest,
             cancellationToken);
@@ -226,11 +271,35 @@ public sealed class BillingV2StripeRailService : IBillingV2StripeRailService
                         recovered.SubscriptionId,
                         stripeRequest.Mode,
                         cancellationToken);
+                    var recovery =
+                        BillingV2StripeApprovalUrlRecoveryPolicy.Resolve(
+                            await ReadPersistedApprovalUrlAsync(
+                                connection,
+                                subscriptionId,
+                                cancellationToken),
+                            recovered.ApprovalUrl);
+                    if (recovery.RequiresManualReview)
+                    {
+                        await BillingV2FinancialCoreStore
+                            .MarkReconciliationRequiredAsync(
+                                connection,
+                                attempt.Id,
+                                recovery.ReasonCode,
+                                _clock.UtcNow,
+                                cancellationToken);
+                        return new BillingV2StripeDispatchResult(
+                            false,
+                            recovery.ReasonCode,
+                            recovered.SessionId,
+                            ApprovalUrl: null,
+                            Retryable: false);
+                    }
+
                     return new BillingV2StripeDispatchResult(
                         true,
                         "BILLING_V2_STRIPE_CHECKOUT_RECOVERED",
                         recovered.SessionId,
-                        ApprovalUrl: null,
+                        recovery.ApprovalUrl,
                         Retryable: false);
                 }
             }
@@ -904,6 +973,32 @@ public sealed class BillingV2StripeRailService : IBillingV2StripeRailService
     private sealed record ProviderLocator(
         string? ProviderInvoiceId,
         string? ProviderSubscriptionId);
+
+    /// <summary>
+    /// URL d'approbation deja persistee pour cet abonnement, s'il y en a une.
+    /// C'est la source preferee en reprise : elle a ete ecrite au moment ou la
+    /// session a reellement ete creee.
+    /// </summary>
+    private static async Task<string?> ReadPersistedApprovalUrlAsync(
+        MySqlConnection connection,
+        string subscriptionId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT approval_url
+            FROM billing_v2_provider_checkout_sessions
+            WHERE subscription_id = @subscription_id
+              AND provider = 'stripe'
+              AND approval_url IS NOT NULL
+            ORDER BY created_at DESC
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("@subscription_id", subscriptionId);
+        var value = await command.ExecuteScalarAsync(cancellationToken);
+        return value is null or DBNull ? null : Convert.ToString(value);
+    }
 
     private static async Task<ProviderLocator> ReadProviderLocatorAsync(
         MySqlConnection connection,

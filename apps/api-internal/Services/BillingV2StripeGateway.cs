@@ -447,9 +447,14 @@ public sealed class BillingV2StripeGateway : IBillingV2StripeGateway
     /// </summary>
     private static DateTime? ReadInvoicePeriodStart(JsonElement root)
     {
-        var epoch = ReadLong(root, "period_start");
-        if (epoch is null
-            && root.TryGetProperty("lines", out var lines)
+        // La periode de LIGNE fait foi, pas celle de l'entete. Mesure faite sur
+        // une vraie facture `subscription_cycle` : l'entete portait la periode
+        // PRECEDENTE (15/08 -> 15/09) tandis que la ligne portait la periode
+        // reellement facturee (15/09 -> 15/10). Lire l'entete ramenait le cycle
+        // au rang de la charge initiale, et le renouvellement n'etait jamais
+        // facture.
+        long? epoch = null;
+        if (root.TryGetProperty("lines", out var lines)
             && lines.TryGetProperty("data", out var data)
             && data.ValueKind is JsonValueKind.Array)
         {
@@ -463,6 +468,8 @@ public sealed class BillingV2StripeGateway : IBillingV2StripeGateway
                 break;
             }
         }
+
+        epoch ??= ReadLong(root, "period_start");
 
         return epoch is null
             ? null
@@ -551,7 +558,10 @@ public sealed class BillingV2StripeGateway : IBillingV2StripeGateway
             ReadString(root, "payment_status"),
             ReadString(root, "status"),
             ReadString(root, "customer_email"),
-            metadata);
+            metadata,
+            // L'URL d'approbation appartient a la session relue : sans elle,
+            // une reprise laissait l'abonnement sans moyen de payer.
+            ReadString(root, "url"));
     }
 
     private static string? ReadString(JsonElement root, string name)

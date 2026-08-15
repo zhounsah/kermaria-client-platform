@@ -1,4 +1,5 @@
-using Kermaria.ApiInternal.Data.Configuration;
+﻿using Kermaria.ApiInternal.Data.Configuration;
+using Kermaria.ApiInternal.Data.Repositories;
 using MySqlConnector;
 
 namespace Kermaria.ApiInternal.Services;
@@ -149,14 +150,14 @@ public sealed class BillingV2LaunchReadinessService
         while (await reader.ReadAsync(cancellationToken))
         {
             subscriptions.Add(new BillingV2BlockingLegacySubscription(
-                reader.GetString("subscription_id"),
+                MariaDbIdentifierReader.ReadRequired(reader, "subscription_id"),
                 reader.GetString("status"),
-                reader.GetString("customer_id"),
+                MariaDbIdentifierReader.ReadRequired(reader, "customer_id"),
                 reader.GetString("customer_reference"),
                 reader.GetString("customer_name"),
-                reader.IsDBNull(reader.GetOrdinal("commercial_offer_id"))
-                    ? null
-                    : reader.GetString("commercial_offer_id"),
+                MariaDbIdentifierReader.ReadNullable(
+                    reader,
+                    "commercial_offer_id"),
                 reader.GetDateTime("created_at"),
                 reader.GetDateTime("updated_at")));
         }

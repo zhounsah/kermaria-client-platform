@@ -34,6 +34,12 @@ public static class BillingV2StripeRailTests
         VerifyUpfrontProducesSingleChargeWithoutRecurrence();
         VerifySetupFeeIsASeparateOneShotLine();
         VerifyStripeNeverReceivesAnExternalPriceId();
+        VerifyKnownProviderCustomerReplacesEmail();
+        VerifyAbsentProviderCustomerKeepsEmail();
+        VerifyProviderCustomerIsStripeOnly();
+        VerifyApprovalUrlReplayReturnsPersistedUrl();
+        VerifyApprovalUrlReplayFallsBackToRefetchedUrl();
+        VerifyApprovalUrlReplayFailsClosedWhenUnrecoverable();
 
         // E. Settlement verifie : scenarios 6, 7, 8
         VerifyAmountMismatchBlocksActivation();
@@ -270,6 +276,141 @@ public static class BillingV2StripeRailTests
         Ensure(
             request.Lines.Sum(line => line.UnitAmountCents) == 5336,
             "La somme des lignes Stripe egale le total du BillingEvent.");
+    }
+
+    // ------------------------------------------------------------------
+    // Rattachement a un client Stripe deja connu (Phase 4, Test Clock)
+    //
+    // Une horloge de test ne peut s'attacher qu'a un client cree a l'avance.
+    // `customer_email` fait creer le client par Stripe : il faut donc pouvoir
+    // passer un `customer` deja connu. Rien n'est cree par ce chemin.
+    // ------------------------------------------------------------------
+
+    private static void VerifyKnownProviderCustomerReplacesEmail()
+    {
+        var parameters = BillingV2StripeCheckoutRequestFactory.ToFormParameters(
+            Build(Event(), providerCustomerId: "cus_test_123"));
+
+        Ensure(
+            parameters.TryGetValue("customer", out var customer)
+            && customer == "cus_test_123",
+            "Un client connu doit etre transmis en `customer`.");
+        Ensure(
+            !parameters.ContainsKey("customer_email"),
+            "Stripe refuse `customer` et `customer_email` ensemble : "
+            + "l'email ne doit plus etre envoye.");
+        // Le reste de la requete ne bouge pas : meme montant, meme mode.
+        Ensure(
+            parameters["mode"] == BillingV2StripeModes.Subscription
+            && parameters.Keys.Any(key => key.Contains("price_data][unit_amount")),
+            "Le rattachement client ne doit rien changer d'autre.");
+    }
+
+    private static void VerifyAbsentProviderCustomerKeepsEmail()
+    {
+        var parameters = BillingV2StripeCheckoutRequestFactory.ToFormParameters(
+            Build(Event()));
+
+        Ensure(
+            parameters.TryGetValue("customer_email", out var email)
+            && email == "client@example.invalid",
+            "Sans client connu, le comportement d'avant doit etre conserve.");
+        Ensure(
+            !parameters.ContainsKey("customer"),
+            "Aucun `customer` ne doit apparaitre sans identifiant persiste.");
+
+        // Une valeur vide ou blanche n'est pas un identifiant : elle ne doit
+        // pas basculer le comportement en silence.
+        foreach (var blank in new[] { "", "   " })
+        {
+            var fallback = BillingV2StripeCheckoutRequestFactory.ToFormParameters(
+                Build(Event(), providerCustomerId: blank));
+            Ensure(
+                fallback.ContainsKey("customer_email")
+                && !fallback.ContainsKey("customer"),
+                "Un identifiant vide doit retomber sur `customer_email`.");
+        }
+    }
+
+    /// <summary>
+    /// Replay d'un dispatch dont la session existe deja : l'URL persistee doit
+    /// etre rendue telle quelle. Avant correction, la reprise renvoyait null et
+    /// l'abonnement restait `pending_approval` sans moyen de payer.
+    /// </summary>
+    private static void VerifyApprovalUrlReplayReturnsPersistedUrl()
+    {
+        var recovery = BillingV2StripeApprovalUrlRecoveryPolicy.Resolve(
+            "https://checkout.stripe.com/c/pay/cs_test_persisted",
+            "https://checkout.stripe.com/c/pay/cs_test_refetched");
+
+        Ensure(
+            recovery.Recovered
+            && recovery.ApprovalUrl
+                == "https://checkout.stripe.com/c/pay/cs_test_persisted"
+            && !recovery.RequiresManualReview
+            && recovery.ReasonCode
+                == "BILLING_V2_STRIPE_APPROVAL_URL_PERSISTED",
+            "Un replay de dispatch doit rendre l'URL d'approbation deja persistee, sans recreer de session.");
+    }
+
+    /// <summary>
+    /// Rien en base mais la session relue porte son `url` : on rend celle-ci.
+    /// On ne cree jamais une seconde session pour obtenir une URL, ce serait un
+    /// second encaissement possible.
+    /// </summary>
+    private static void VerifyApprovalUrlReplayFallsBackToRefetchedUrl()
+    {
+        var recovery = BillingV2StripeApprovalUrlRecoveryPolicy.Resolve(
+            null,
+            "https://checkout.stripe.com/c/pay/cs_test_refetched");
+        var blank = BillingV2StripeApprovalUrlRecoveryPolicy.Resolve(
+            "   ",
+            "https://checkout.stripe.com/c/pay/cs_test_refetched");
+
+        Ensure(
+            recovery.Recovered
+            && recovery.ApprovalUrl
+                == "https://checkout.stripe.com/c/pay/cs_test_refetched"
+            && recovery.ReasonCode
+                == "BILLING_V2_STRIPE_APPROVAL_URL_REFETCHED"
+            && blank.ApprovalUrl
+                == "https://checkout.stripe.com/c/pay/cs_test_refetched",
+            "Sans URL persistee, le replay doit rendre l'URL de la session relue.");
+    }
+
+    /// <summary>
+    /// Aucune URL sure recuperable : echec ferme et revue manuelle, jamais une
+    /// nouvelle session.
+    /// </summary>
+    private static void VerifyApprovalUrlReplayFailsClosedWhenUnrecoverable()
+    {
+        var recovery = BillingV2StripeApprovalUrlRecoveryPolicy.Resolve(
+            null,
+            null);
+
+        Ensure(
+            !recovery.Recovered
+            && recovery.ApprovalUrl is null
+            && recovery.RequiresManualReview
+            && recovery.ReasonCode
+                == "BILLING_V2_STRIPE_APPROVAL_URL_UNRECOVERABLE",
+            "Sans URL recuperable, le replay doit echouer en ferme vers revue manuelle.");
+    }
+
+    private static void VerifyProviderCustomerIsStripeOnly()
+    {
+        // Le champ vit dans la requete Stripe et nulle part ailleurs : aucun
+        // autre rail ne le lit, donc PayPal ne peut pas etre affecte. Et de
+        // toute facon PayPal est refuse en amont par le perimetre gele.
+        Ensure(
+            !BillingV2LaunchScope.EvaluateCheckout(
+                "paypal", BillingV2PaymentModes.Monthly, 0).IsValid,
+            "PayPal reste refuse : ce changement ne l'atteint pas.");
+
+        var request = Build(Event(), providerCustomerId: "cus_test_123");
+        Ensure(
+            request.ProviderCustomerId == "cus_test_123",
+            "L'identifiant client ne vit que dans la requete Stripe.");
     }
 
     private static void VerifyStripeNeverReceivesAnExternalPriceId()
@@ -534,14 +675,16 @@ public static class BillingV2StripeRailTests
     // ------------------------------------------------------------------
 
     private static BillingV2StripeCheckoutRequest Build(
-        BillingV2FinalizedBillingEvent billingEvent)
+        BillingV2FinalizedBillingEvent billingEvent,
+        string? providerCustomerId = null)
         => BillingV2StripeCheckoutRequestFactory.Build(
             billingEvent,
             "attempt-1",
             "bv2-evt-event-1",
             "client@example.invalid",
             "https://portal.invalid/ok",
-            "https://portal.invalid/ko");
+            "https://portal.invalid/ko",
+            providerCustomerId);
 
     private static BillingV2SubscriptionIntentRequest Intent(
         string clientRequestId)

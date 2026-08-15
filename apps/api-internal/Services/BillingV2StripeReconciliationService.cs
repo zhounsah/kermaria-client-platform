@@ -62,6 +62,7 @@ public sealed class BillingV2StripeReconciliationService
     private readonly StripeRuntimeConfiguration _stripe;
     private readonly BillingV2RuntimeConfiguration _runtime;
     private readonly IBillingV2StripeRailService _rail;
+    private readonly IBillingV2DocumentIssuerService _documents;
     private readonly IBillingV2Clock _clock;
     private readonly ILogger<BillingV2StripeReconciliationService> _logger;
 
@@ -70,6 +71,7 @@ public sealed class BillingV2StripeReconciliationService
         StripeRuntimeConfiguration stripe,
         BillingV2RuntimeConfiguration runtime,
         IBillingV2StripeRailService rail,
+        IBillingV2DocumentIssuerService documents,
         IBillingV2Clock clock,
         ILogger<BillingV2StripeReconciliationService> logger)
     {
@@ -77,6 +79,7 @@ public sealed class BillingV2StripeReconciliationService
         _stripe = stripe;
         _runtime = runtime;
         _rail = rail;
+        _documents = documents;
         _clock = clock;
         _logger = logger;
     }
@@ -170,6 +173,74 @@ public sealed class BillingV2StripeReconciliationService
 
     private sealed record AttemptOutcome(int Claimed, int Settled, int Manual);
 
+    /// <summary>
+    /// Emet le document du cycle encaisse, exactement comme le ferait le
+    /// webhook. Le rang du cycle est relu sur le BillingEvent : cycle 1 =
+    /// facture initiale, au-dela = facture de renouvellement. Un echec
+    /// d'emission ne remet jamais en cause l'encaissement deja verifie.
+    /// </summary>
+    private async Task TryIssueDocumentAsync(
+        MySqlConnection connection,
+        string subscriptionId,
+        string billingEventId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var cycleSequence = await ReadCycleSequenceAsync(
+                connection,
+                billingEventId,
+                cancellationToken);
+            var result = cycleSequence > BillingV2RenewalPolicy.InitialCycleSequence
+                ? await _documents.EnsureCycleInvoiceAsync(
+                    subscriptionId,
+                    billingEventId,
+                    cycleSequence,
+                    $"billing-v2-reconciliation-document-{billingEventId}",
+                    cancellationToken)
+                : await _documents.EnsureInitialInvoiceAsync(
+                    subscriptionId,
+                    $"billing-v2-document-{subscriptionId}",
+                    cancellationToken);
+            if (!result.Succeeded)
+            {
+                _logger.LogWarning(
+                    "Billing V2 reconciliation document issuing for subscription {SubscriptionId} cycle {Cycle} returned {ReasonCode}. It can be retried idempotently.",
+                    subscriptionId,
+                    cycleSequence,
+                    result.ReasonCode);
+            }
+        }
+        catch (Exception exception)
+            when (exception is not OperationCanceledException)
+        {
+            _logger.LogError(
+                exception,
+                "Billing V2 reconciliation document issuing failed for subscription {SubscriptionId}. Settlement stands and issuing can be retried idempotently.",
+                subscriptionId);
+        }
+    }
+
+    private static async Task<int> ReadCycleSequenceAsync(
+        MySqlConnection connection,
+        string billingEventId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT cycle_sequence
+            FROM billing_v2_billing_events
+            WHERE id = @billing_event_id
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("@billing_event_id", billingEventId);
+        var value = await command.ExecuteScalarAsync(cancellationToken);
+        return value is null || value is DBNull
+            ? BillingV2RenewalPolicy.InitialCycleSequence
+            : Convert.ToInt32(value);
+    }
+
     private async Task<AttemptOutcome> ReconcileOneAsync(
         MySqlConnection connection,
         BillingV2ReconciliationCandidate candidate,
@@ -231,6 +302,15 @@ public sealed class BillingV2StripeReconciliationService
 
         if (outcome.Settled)
         {
+            // Le reconciliateur existe pour les webhooks manques. Sans cette
+            // emission, un encaissement qui converge par ce chemin resterait
+            // sans document : client debite, jamais facture. L'emetteur est
+            // idempotent, l'appeler depuis les deux chemins est sans risque.
+            await TryIssueDocumentAsync(
+                connection,
+                subscriptionId,
+                candidate.BillingEventId,
+                cancellationToken);
             return new AttemptOutcome(1, 1, 0);
         }
 

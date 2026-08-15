@@ -1,5 +1,6 @@
-using Kermaria.ApiInternal.Contracts;
+﻿using Kermaria.ApiInternal.Contracts;
 using Kermaria.ApiInternal.Data.Configuration;
+using Kermaria.ApiInternal.Data.Repositories;
 using MySqlConnector;
 
 namespace Kermaria.ApiInternal.Services;
@@ -159,7 +160,9 @@ public sealed class BillingV2ProviderAgreementService
         while (await reader.ReadAsync(cancellationToken))
         {
             mappings.Add(new BillingV2ProviderPriceMapping(
-                reader.GetString("service_price_id"),
+                MariaDbIdentifierReader.ReadRequired(
+                    reader,
+                    "service_price_id"),
                 reader.GetString("provider"),
                 reader.GetString("environment"),
                 reader.GetString("provider_external_id")));
@@ -257,7 +260,9 @@ public sealed class BillingV2ProviderAgreementService
             cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            var existingSubscriptionId = reader.GetString("subscription_id");
+            var existingSubscriptionId = MariaDbIdentifierReader.ReadRequired(
+                reader,
+                "subscription_id");
             var providerSubscriptionIdOrdinal = reader.GetOrdinal(
                 "provider_subscription_id");
             var existingProviderSubscriptionId = reader.IsDBNull(

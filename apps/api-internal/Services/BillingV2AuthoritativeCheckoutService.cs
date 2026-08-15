@@ -565,8 +565,8 @@ public sealed class BillingV2AuthoritativeCheckoutService
         }
 
         return new BillingV2AuthoritativeCheckoutMapping(
-            reader.GetString("preset_id"),
-            reader.GetString("commitment_term_id"),
+            MariaDbIdentifierReader.ReadRequired(reader, "preset_id"),
+            MariaDbIdentifierReader.ReadRequired(reader, "commitment_term_id"),
             reader.GetString("payment_mode"),
             reader.GetInt32("commitment_months"),
             reader.GetInt32("discount_basis_points"));

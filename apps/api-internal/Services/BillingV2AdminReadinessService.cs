@@ -1,5 +1,6 @@
-using Kermaria.ApiInternal.Contracts;
+﻿using Kermaria.ApiInternal.Contracts;
 using Kermaria.ApiInternal.Data.Configuration;
+using Kermaria.ApiInternal.Data.Repositories;
 using MySqlConnector;
 
 namespace Kermaria.ApiInternal.Services;
@@ -334,7 +335,7 @@ public sealed class BillingV2AdminReadinessService
             cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            ids.Add(reader.GetString("id"));
+            ids.Add(MariaDbIdentifierReader.ReadRequired(reader, "id"));
         }
 
         return ids;
@@ -397,15 +398,15 @@ public static class BillingV2AdminOperationalLimitations
         new(
             "BILLING_V2_CANCELLATION_AUTOMATION_NOT_READY",
             "human_review",
-            "Les routes de résiliation automatisée restent legacy-only ; une souscription Billing V2 doit être annulée par une procédure dédiée ou une décision humaine."),
+            "Les routes de rÃ©siliation automatisÃ©e restent legacy-only ; une souscription Billing V2 doit Ãªtre annulÃ©e par une procÃ©dure dÃ©diÃ©e ou une dÃ©cision humaine."),
         new(
             "BILLING_V2_BPCE_INVOICE_AUTOMATION_NOT_READY",
             "hard_blocker",
-            "L'émission de facture BPCE reste branchée sur les documents commerciaux legacy ; aucune facture BPCE V2 automatique n'est produite par le checkout V2."),
+            "L'Ã©mission de facture BPCE reste branchÃ©e sur les documents commerciaux legacy ; aucune facture BPCE V2 automatique n'est produite par le checkout V2."),
         new(
             "BILLING_V2_NEXTCLOUD_QUOTA_PROVIDER_NOT_READY",
             "human_review",
-            "Les quotas Nextcloud V2 peuvent être calculés, mais aucun provider fiable de modification réelle de quota n'est câblé.")
+            "Les quotas Nextcloud V2 peuvent Ãªtre calculÃ©s, mais aucun provider fiable de modification rÃ©elle de quota n'est cÃ¢blÃ©.")
     ];
 
     public static IReadOnlyList<BillingV2AdminOperationalLimitation> Create(

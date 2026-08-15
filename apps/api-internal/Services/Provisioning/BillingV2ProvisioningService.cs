@@ -444,7 +444,7 @@ public sealed class BillingV2ProvisioningService : IBillingV2ProvisioningService
             cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            ids.Add(reader.GetString("id"));
+            ids.Add(MariaDbIdentifierReader.ReadRequired(reader, "id"));
         }
 
         return ids;
@@ -506,21 +506,24 @@ public sealed class BillingV2ProvisioningService : IBillingV2ProvisioningService
             cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            var subscriptionId = reader.GetString("subscription_id");
+            var subscriptionId = MariaDbIdentifierReader.ReadRequired(
+                reader,
+                "subscription_id");
             if (!legacyIdSet.Contains(subscriptionId))
             {
                 continue;
             }
 
-            var provisioningItemId = reader.IsDBNull(
-                    reader.GetOrdinal("provisioning_item_id"))
-                ? null
-                : reader.GetString("provisioning_item_id");
+            var provisioningItemId = MariaDbIdentifierReader.ReadNullable(
+                reader,
+                "provisioning_item_id");
             if (string.IsNullOrWhiteSpace(provisioningItemId))
             {
                 rules.Add(new BillingV2ProvisioningRuleProjection(
                     subscriptionId,
-                    reader.GetString("subscription_item_id"),
+                    MariaDbIdentifierReader.ReadRequired(
+                        reader,
+                        "subscription_item_id"),
                     reader.GetString("service_code"),
                     reader.IsDBNull(reader.GetOrdinal("tier_code"))
                         ? null
@@ -538,7 +541,9 @@ public sealed class BillingV2ProvisioningService : IBillingV2ProvisioningService
 
             rules.Add(new BillingV2ProvisioningRuleProjection(
                 subscriptionId,
-                reader.GetString("subscription_item_id"),
+                MariaDbIdentifierReader.ReadRequired(
+                    reader,
+                    "subscription_item_id"),
                 reader.GetString("service_code"),
                 reader.IsDBNull(reader.GetOrdinal("tier_code"))
                     ? null

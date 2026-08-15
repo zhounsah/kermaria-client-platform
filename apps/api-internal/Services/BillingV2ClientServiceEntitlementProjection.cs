@@ -1,4 +1,5 @@
-using Kermaria.ApiInternal.Data.Configuration;
+﻿using Kermaria.ApiInternal.Data.Configuration;
+using Kermaria.ApiInternal.Data.Repositories;
 using MySqlConnector;
 
 namespace Kermaria.ApiInternal.Services;
@@ -75,7 +76,7 @@ public sealed class BillingV2ClientServiceEntitlementProjection
                         reader.GetString("service_code"));
             entitlements.Add(new BillingV2ClientServiceEntitlement(
                 technicalReference,
-                reader.GetString("subscription_id"),
+                MariaDbIdentifierReader.ReadRequired(reader, "subscription_id"),
                 ReadNullableString(reader, "preset_name")
                     ?? "Souscription Billing V2",
                 reader.GetString("subscription_status"),

@@ -14,6 +14,77 @@ namespace Kermaria.ApiInternal.Services;
 /// - NOT_READY : ne doit pas etre utilise en l'etat.
 /// </summary>
 
+/// <summary>
+/// Perimetre GELE du lancement Billing V2 (Phase 4, point 1).
+///
+/// Ce n'est pas de la documentation : c'est une barriere executable. Une
+/// capacite hors perimetre doit etre refusee par le code, pas seulement
+/// absente d'une liste - sinon elle se retrouve ouverte le jour ou quelqu'un
+/// pose le bon drapeau sans savoir qu'elle n'a jamais ete validee.
+///
+/// Ouvrir une de ces capacites demande de repasser par une validation
+/// explicite, pas un simple changement de configuration.
+/// </summary>
+public static class BillingV2LaunchScope
+{
+    // --- DANS le perimetre de lancement -------------------------------
+    public const bool StripeMonthlyEnabled = true;
+
+    // --- HORS perimetre : refuse en dur --------------------------------
+
+    /// <summary>Comptant 6/12 mois : arithmetique ecrite, jamais validee bout en bout.</summary>
+    public const bool UpfrontPaymentEnabled = false;
+
+    public const bool PayPalEnabled = false;
+    public const bool SelfServiceUpgradesEnabled = false;
+    public const bool SelfServiceDowngradesEnabled = false;
+    public const bool CreditLedgerEnabled = false;
+    public const bool RefundsEnabled = false;
+    public const bool ChargebacksEnabled = false;
+    public const bool SelfServiceCancellationEnabled = false;
+    public const bool NonZeroTaxEnabled = false;
+
+    /// <summary>
+    /// Verdict applique AVANT tout depart vers un provider. Volontairement
+    /// place sur le chemin de dispatch et non dans la construction de
+    /// l'evenement : le coeur financier continue de savoir calculer un
+    /// comptant, on refuse seulement de l'encaisser.
+    /// </summary>
+    public static BillingV2FinancialDecision EvaluateCheckout(
+        string provider,
+        string paymentMode,
+        long taxAmountCents)
+    {
+        if (!string.Equals(provider, "stripe", StringComparison.OrdinalIgnoreCase))
+        {
+            return BillingV2FinancialDecision.Refused(
+                "BILLING_V2_SCOPE_PROVIDER_OUT_OF_LAUNCH_SCOPE",
+                provider);
+        }
+
+        if (!UpfrontPaymentEnabled
+            && string.Equals(
+                paymentMode,
+                BillingV2PaymentModes.Upfront,
+                StringComparison.Ordinal))
+        {
+            return BillingV2FinancialDecision.Refused(
+                "BILLING_V2_SCOPE_UPFRONT_OUT_OF_LAUNCH_SCOPE",
+                paymentMode);
+        }
+
+        if (!NonZeroTaxEnabled && taxAmountCents != 0)
+        {
+            return BillingV2FinancialDecision.Refused(
+                "BILLING_V2_SCOPE_TAX_OUT_OF_LAUNCH_SCOPE",
+                taxAmountCents.ToString());
+        }
+
+        return BillingV2FinancialDecision.Ok(
+            "BILLING_V2_SCOPE_WITHIN_LAUNCH_SCOPE");
+    }
+}
+
 public static class BillingV2ReadinessStates
 {
     public const string Ready = "READY";
@@ -35,6 +106,8 @@ public static class BillingV2ReadinessComponents
     public const string Cancellation = "cancellation";
     public const string UpgradesDowngrades = "upgrades_downgrades";
     public const string PayPal = "paypal";
+    public const string UpfrontPayment = "upfront_payment";
+    public const string Refunds = "refunds";
 }
 
 public sealed record BillingV2ReadinessComponent(
@@ -159,7 +232,16 @@ public static class BillingV2LifecycleReadinessGate
             NotReady(
                 BillingV2ReadinessComponents.PayPal,
                 "BILLING_V2_READINESS_PAYPAL",
-                "PayPal V2 n'est pas raccorde au coeur financier. Cela ne bloque pas Stripe.")
+                "PayPal V2 n'est pas raccorde au coeur financier. Cela ne bloque pas Stripe."),
+            // Gele en Phase 4 : le calcul existe, l'encaissement est refuse.
+            NotReady(
+                BillingV2ReadinessComponents.UpfrontPayment,
+                "BILLING_V2_READINESS_UPFRONT_PAYMENT",
+                "Le comptant 6/12 mois est hors perimetre de lancement : le dispatch le refuse en dur."),
+            NotReady(
+                BillingV2ReadinessComponents.Refunds,
+                "BILLING_V2_READINESS_REFUNDS",
+                "Remboursements et chargebacks sont hors perimetre : aucun avoir ne peut etre produit.")
         ];
     }
 

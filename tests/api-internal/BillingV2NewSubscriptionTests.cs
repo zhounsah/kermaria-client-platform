@@ -70,6 +70,7 @@ public static class BillingV2NewSubscriptionTests
         VerifyProviderReturnExtractorScopesToClient();
         VerifyStripeWebhookExtractorRequiresBillingV2Marker();
         VerifyStripeWebhookExtractorReadsV2CheckoutSession();
+        VerifyStripeWebhookExtractorReadsRenewalInvoice();
         VerifyPayPalWebhookExtractorRequiresV2CustomId();
         VerifyAuthoritativeCheckoutLocalGateRequiresAllFlags();
         VerifyAuthoritativeCheckoutLocalGateRequiresPersistentSql();
@@ -1479,6 +1480,114 @@ public static class BillingV2NewSubscriptionTests
             && request.LocalSubscriptionId == "subscription-v2-new"
             && request.ExpectedCustomerId is null,
             "Un webhook Stripe V2 marque doit extraire la session checkout et la subscription provider sans session client.");
+    }
+
+    /// <summary>
+    /// Une facture Stripe ne porte pas la metadata de son abonnement :
+    /// elle vit sous `parent.subscription_details.metadata`. Sans ce repli,
+    /// `invoice.paid` retombe sur le chemin legacy et le renouvellement
+    /// n'est jamais facture.
+    /// </summary>
+    private static void VerifyStripeWebhookExtractorReadsRenewalInvoice()
+    {
+        var nested = BillingV2ProviderInboundEventExtractor
+            .TryCreateStripeWebhook(
+                new StripeWebhookEventPayload(
+                    "evt_v2_invoice_paid",
+                    "invoice.paid",
+                    "in_v2_456",
+                    """
+                    {
+                      "data": {
+                        "object": {
+                          "id": "in_v2_456",
+                          "parent": {
+                            "subscription_details": {
+                              "subscription": "sub_v2_123",
+                              "metadata": {
+                                "billing_v2_subscription_id": "subscription-v2-new"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                    """),
+                "test");
+
+        var legacyShape = BillingV2ProviderInboundEventExtractor
+            .TryCreateStripeWebhook(
+                new StripeWebhookEventPayload(
+                    "evt_v2_invoice_paid_legacy_shape",
+                    "invoice.payment_succeeded",
+                    "in_v2_789",
+                    """
+                    {
+                      "data": {
+                        "object": {
+                          "id": "in_v2_789",
+                          "subscription": "sub_v2_123",
+                          "subscription_details": {
+                            "metadata": {
+                              "billing_v2_subscription_id": "subscription-v2-new"
+                            }
+                          }
+                        }
+                      }
+                    }
+                    """),
+                "test");
+
+        var lineShape = BillingV2ProviderInboundEventExtractor
+            .TryCreateStripeWebhook(
+                new StripeWebhookEventPayload(
+                    "evt_v2_invoice_failed",
+                    "invoice.payment_failed",
+                    "in_v2_999",
+                    """
+                    {
+                      "data": {
+                        "object": {
+                          "id": "in_v2_999",
+                          "subscription": "sub_v2_123",
+                          "lines": {
+                            "data": [
+                              {
+                                "id": "il_v2_999",
+                                "metadata": {
+                                  "billing_v2_subscription_id": "subscription-v2-new"
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                    """),
+                "test");
+
+        var unmarked = BillingV2ProviderInboundEventExtractor
+            .TryCreateStripeWebhook(
+                new StripeWebhookEventPayload(
+                    "evt_legacy_invoice",
+                    "invoice.paid",
+                    "in_legacy",
+                    """
+                    {"data":{"object":{"id":"in_legacy","subscription":"sub_legacy"}}}
+                    """),
+                "test");
+
+        Ensure(
+            nested is not null
+            && nested.LocalSubscriptionId == "subscription-v2-new"
+            && nested.ProviderSubscriptionId == "sub_v2_123"
+            && nested.ProviderCheckoutId is null
+            && legacyShape is not null
+            && legacyShape.LocalSubscriptionId == "subscription-v2-new"
+            && lineShape is not null
+            && lineShape.LocalSubscriptionId == "subscription-v2-new"
+            && unmarked is null,
+            "Une facture Stripe V2 doit etre reconnue par la metadata portee par son abonnement, sans detourner les factures legacy.");
     }
 
     private static void VerifyPayPalWebhookExtractorRequiresV2CustomId()

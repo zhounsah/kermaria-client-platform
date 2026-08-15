@@ -1,9 +1,10 @@
-using System.Data;
-using System.Text.Json;
-using Kermaria.ApiInternal.Contracts;
+﻿using Kermaria.ApiInternal.Contracts;
 using Kermaria.ApiInternal.Data.Configuration;
+using Kermaria.ApiInternal.Data.Repositories;
 using Kermaria.ApiInternal.Services.Provisioning;
 using MySqlConnector;
+using System.Data;
+using System.Text.Json;
 
 namespace Kermaria.ApiInternal.Services;
 
@@ -462,12 +463,10 @@ public sealed class BillingV2ProviderInboundEventService
             reader.IsDBNull(reader.GetOrdinal("reason_code"))
                 ? null
                 : reader.GetString("reason_code"),
-            reader.IsDBNull(reader.GetOrdinal("subscription_id"))
-                ? null
-                : reader.GetString("subscription_id"),
-            reader.IsDBNull(reader.GetOrdinal("checkout_session_id"))
-                ? null
-                : reader.GetString("checkout_session_id"));
+            MariaDbIdentifierReader.ReadNullable(reader, "subscription_id"),
+            MariaDbIdentifierReader.ReadNullable(
+                reader,
+                "checkout_session_id"));
     }
 
     private static async Task<IReadOnlyList<BillingV2ProviderLocalState>>
@@ -591,11 +590,17 @@ public sealed class BillingV2ProviderInboundEventService
         agreementCommand.Parameters.AddWithValue(
             "@local_subscription_id",
             DbNullable(request.LocalSubscriptionId));
-        await using var agreementReader =
-            await agreementCommand.ExecuteReaderAsync(cancellationToken);
-        while (await agreementReader.ReadAsync(cancellationToken))
+        // Le lecteur est referme AVANT la requete suivante : MySqlConnector
+        // n'autorise qu'un lecteur ouvert par connexion, et un `await using`
+        // porte jusqu'a la fin de methode gelait le chemin renouvellement
+        // avec "This MySqlConnection is already in use".
+        await using (var agreementReader =
+            await agreementCommand.ExecuteReaderAsync(cancellationToken))
         {
-            states.Add(ReadLocalState(agreementReader));
+            while (await agreementReader.ReadAsync(cancellationToken))
+            {
+                states.Add(ReadLocalState(agreementReader));
+            }
         }
 
         if (states.Count > 0
@@ -652,10 +657,10 @@ public sealed class BillingV2ProviderInboundEventService
     private static BillingV2ProviderLocalState ReadLocalState(
         MySqlDataReader reader)
         => new(
-            reader.IsDBNull(reader.GetOrdinal("checkout_session_id"))
-                ? null
-                : reader.GetString("checkout_session_id"),
-            reader.GetString("subscription_id"),
+            MariaDbIdentifierReader.ReadNullable(
+                reader,
+                "checkout_session_id"),
+            MariaDbIdentifierReader.ReadRequired(reader, "subscription_id"),
             reader.GetString("provider"),
             reader.GetString("environment"),
             reader.IsDBNull(reader.GetOrdinal("provider_checkout_id"))
@@ -1415,7 +1420,7 @@ public static class BillingV2ProviderInboundEventExtractor
         using var document = TryParse(payload.RawPayload);
         var root = document?.RootElement;
         var dataObject = TryReadDataObject(root);
-        var metadataSubscriptionId = TryReadMetadata(
+        var metadataSubscriptionId = TryReadStripeSubscriptionMetadata(
             dataObject,
             "billing_v2_subscription_id");
         var providerCheckoutId = IsStripeCheckoutSessionEvent(eventType)
@@ -1543,6 +1548,65 @@ public static class BillingV2ProviderInboundEventExtractor
         && value.ValueKind == JsonValueKind.String
             ? Normalize(value.GetString())
             : null;
+
+    private static JsonElement? TryReadObject(
+        JsonElement? element,
+        string property)
+        => element.HasValue
+        && element.Value.ValueKind == JsonValueKind.Object
+        && element.Value.TryGetProperty(property, out var value)
+        && value.ValueKind == JsonValueKind.Object
+            ? value
+            : null;
+
+    /// <summary>
+    /// Lit une metadata d'abonnement Billing V2 sur un objet Stripe.
+    /// Une facture ne porte pas la metadata de son abonnement : Stripe
+    /// l'expose sous `parent.subscription_details.metadata` (et sous
+    /// `subscription_details.metadata` sur les versions d'API anterieures).
+    /// Sans ce repli, `invoice.paid` retombe sur le chemin legacy et aucun
+    /// renouvellement n'est facture.
+    /// </summary>
+    private static string? TryReadStripeSubscriptionMetadata(
+        JsonElement? dataObject,
+        string metadataKey)
+        => TryReadMetadata(dataObject, metadataKey)
+        ?? TryReadMetadata(
+            TryReadObject(
+                TryReadObject(dataObject, "parent"),
+                "subscription_details"),
+            metadataKey)
+        ?? TryReadMetadata(
+            TryReadObject(dataObject, "subscription_details"),
+            metadataKey)
+        ?? TryReadStripeLineMetadata(dataObject, metadataKey);
+
+    private static string? TryReadStripeLineMetadata(
+        JsonElement? dataObject,
+        string metadataKey)
+    {
+        var lines = TryReadObject(dataObject, "lines");
+        if (lines is null
+            || !lines.Value.TryGetProperty("data", out var data)
+            || data.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        foreach (var line in data.EnumerateArray())
+        {
+            var found = TryReadMetadata(line, metadataKey)
+                ?? TryReadMetadata(
+                    TryReadObject(line, "subscription_details"),
+                    metadataKey);
+            if (found is not null)
+            {
+                return found;
+            }
+        }
+
+        return null;
+    }
 
     private static bool IsStripeCheckoutSessionEvent(string eventType)
         => string.Equals(

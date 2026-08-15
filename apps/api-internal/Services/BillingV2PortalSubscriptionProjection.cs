@@ -1,5 +1,6 @@
 using Kermaria.ApiInternal.Contracts;
 using Kermaria.ApiInternal.Data.Configuration;
+using Kermaria.ApiInternal.Data.Repositories;
 using MySqlConnector;
 
 namespace Kermaria.ApiInternal.Services;
@@ -101,7 +102,9 @@ public sealed class BillingV2PortalSubscriptionProjection
             subscription.originating_preset_id,
             request.legacy_offer_id,
             preset.name AS preset_name,
-            preset.preset_code,
+            -- La colonne s'appelle `code` dans billing_v2_offer_presets ;
+            -- `preset_code` est l'alias attendu par la projection.
+            preset.code AS preset_code,
             offer.external_reference AS offer_external_reference,
             offer.public_pack_code,
             COALESCE(agreement.provider, checkout.provider, request.provider, 'billing')
@@ -246,7 +249,9 @@ public sealed class BillingV2PortalSubscriptionProjection
             subscription.originating_preset_id,
             request.legacy_offer_id,
             preset.name AS preset_name,
-            preset.preset_code,
+            -- La colonne s'appelle `code` dans billing_v2_offer_presets ;
+            -- `preset_code` est l'alias attendu par la projection.
+            preset.code AS preset_code,
             offer.external_reference AS offer_external_reference,
             offer.public_pack_code,
             COALESCE(agreement.provider, checkout.provider, request.provider, 'billing')
@@ -423,14 +428,15 @@ public sealed class BillingV2PortalSubscriptionProjection
     private static string ReadRequiredString(
         MySqlDataReader reader,
         string columnName)
-        => reader.GetString(columnName);
+        => MariaDbIdentifierReader.ReadRequired(reader, columnName);
 
+    // MySqlConnector materialise les colonnes CHAR(36) en Guid : lire ces
+    // identifiants avec GetString leve InvalidCastException en MariaDB reelle,
+    // faute structurellement invisible aux suites en persistance mock.
     private static string? ReadNullableString(
         MySqlDataReader reader,
         string columnName)
-        => reader.IsDBNull(reader.GetOrdinal(columnName))
-            ? null
-            : reader.GetString(columnName);
+        => MariaDbIdentifierReader.ReadNullable(reader, columnName);
 
     private static long? ReadNullableInt64(
         MySqlDataReader reader,

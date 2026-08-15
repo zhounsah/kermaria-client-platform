@@ -1,4 +1,5 @@
-using Kermaria.ApiInternal.Data.Configuration;
+﻿using Kermaria.ApiInternal.Data.Configuration;
+using Kermaria.ApiInternal.Data.Repositories;
 using MySqlConnector;
 
 namespace Kermaria.ApiInternal.Services;
@@ -317,7 +318,7 @@ public sealed class BillingV2ProviderOutboxDispatcher
         }
 
         return new BillingV2ProviderCheckoutSessionSnapshot(
-            reader.GetString(reader.GetOrdinal("subscription_id")),
+            MariaDbIdentifierReader.ReadRequired(reader, "subscription_id"),
             reader.GetString(reader.GetOrdinal("provider")),
             reader.GetString(reader.GetOrdinal("environment")),
             ReadNullableString(reader, "provider_checkout_id"),
@@ -404,7 +405,7 @@ public sealed class BillingV2ProviderOutboxDispatcher
         while (await reader.ReadAsync(cancellationToken))
         {
             events.Add(new BillingV2ProviderOutboxEvent(
-                reader.GetString("id"),
+                MariaDbIdentifierReader.ReadRequired(reader, "id"),
                 reader.GetString("idempotency_key_hash"),
                 reader.IsDBNull(reader.GetOrdinal("payload_text"))
                     ? string.Empty

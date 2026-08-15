@@ -20,7 +20,10 @@ public sealed record BillingV2PaymentAttemptRecord(
     long ExpectedAmountCents,
     string ExpectedCurrency,
     string? ProviderSessionId,
-    string? ProviderPaymentId);
+    string? ProviderPaymentId,
+    // Client Stripe deja connu. Renseigne manuellement pour le scenario Test
+    // Clock ; jamais cree par le rail.
+    string? ProviderCustomerReference = null);
 
 /// <summary>
 /// Persistance du coeur financier Billing V2.
@@ -693,7 +696,8 @@ public static class BillingV2FinancialCoreStore
             SELECT id, billing_event_id, provider, environment,
                    provider_request_key, status,
                    expected_amount_cents, expected_currency,
-                   provider_session_id, provider_payment_id
+                   provider_session_id, provider_payment_id,
+                   provider_customer_reference
             FROM billing_v2_payment_attempts
             WHERE provider = @provider
               AND environment = @environment
@@ -724,7 +728,10 @@ public static class BillingV2FinancialCoreStore
                 : reader.GetString("provider_session_id"),
             reader.IsDBNull(reader.GetOrdinal("provider_payment_id"))
                 ? null
-                : reader.GetString("provider_payment_id"));
+                : reader.GetString("provider_payment_id"),
+            reader.IsDBNull(reader.GetOrdinal("provider_customer_reference"))
+                ? null
+                : reader.GetString("provider_customer_reference"));
     }
 
     public static async Task UpdateAttemptAsync(
@@ -1017,6 +1024,15 @@ public static class BillingV2FinancialCoreStore
                 started_at = CASE
                     WHEN @status = 'active' THEN COALESCE(started_at, @now)
                     ELSE started_at
+                END,
+                -- L'ancre contractuelle est materialisee A L'ACTIVATION et
+                -- jamais recalculee ensuite : c'est elle qui donne le rang des
+                -- cycles, elle ne doit pas bouger d'un renouvellement a
+                -- l'autre. COALESCE garantit qu'une ancre posee reste posee.
+                billing_anchor_at = CASE
+                    WHEN @status = 'active'
+                        THEN COALESCE(billing_anchor_at, started_at, @now)
+                    ELSE billing_anchor_at
                 END,
                 updated_at = @now
             WHERE id = @id

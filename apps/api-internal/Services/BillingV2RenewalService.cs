@@ -196,8 +196,9 @@ public sealed class BillingV2RenewalService : IBillingV2RenewalService
         await BillingV2FinancialCoreStore.LinkAttemptProviderObjectsAsync(
             connection,
             transaction: null,
-            await ResolveAttemptIdAsync(
+            await EnsureAttemptIdAsync(
                 connection,
+                subscriptionId,
                 ensured.BillingEventId,
                 cancellationToken)
             ?? string.Empty,
@@ -214,6 +215,74 @@ public sealed class BillingV2RenewalService : IBillingV2RenewalService
             settlement.ReasonCode,
             resolution.CycleSequence,
             ensured.BillingEventId);
+    }
+
+    /// <summary>
+    /// La tentative du cycle doit exister AVANT qu'on y attache les
+    /// identifiants provider. Sans elle, le lien partait dans le vide et la
+    /// verification echouait ensuite en `NO_PROVIDER_OBJECT`, faute d'objet
+    /// Stripe a relire : le renouvellement n'etait jamais regle.
+    ///
+    /// La cle de requete est deterministe et identique a celle que le rail
+    /// resout, donc aucune seconde tentative ne peut naitre ici.
+    /// </summary>
+    private static async Task<string?> EnsureAttemptIdAsync(
+        MySqlConnection connection,
+        string subscriptionId,
+        string billingEventId,
+        CancellationToken cancellationToken)
+    {
+        var existing = await ResolveAttemptIdAsync(
+            connection,
+            billingEventId,
+            cancellationToken);
+        if (existing is not null)
+        {
+            return existing;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            INSERT IGNORE INTO billing_v2_payment_attempts (
+                id,
+                billing_event_id,
+                provider,
+                environment,
+                provider_request_key,
+                expected_amount_cents,
+                expected_currency,
+                status
+            )
+            SELECT
+                UUID(),
+                event_row.id,
+                'stripe',
+                COALESCE((
+                    SELECT prior.environment
+                    FROM billing_v2_payment_attempts prior
+                    INNER JOIN billing_v2_billing_events prior_event
+                        ON prior_event.id = prior.billing_event_id
+                    WHERE prior_event.subscription_id = @subscription_id
+                      AND prior.provider = 'stripe'
+                    ORDER BY prior.created_at DESC
+                    LIMIT 1
+                ), 'test'),
+                CONCAT('bv2-evt-', event_row.id),
+                event_row.total_amount_cents,
+                event_row.currency,
+                'created'
+            FROM billing_v2_billing_events event_row
+            WHERE event_row.id = @billing_event_id;
+            """;
+        command.Parameters.AddWithValue("@billing_event_id", billingEventId);
+        command.Parameters.AddWithValue("@subscription_id", subscriptionId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+
+        return await ResolveAttemptIdAsync(
+            connection,
+            billingEventId,
+            cancellationToken);
     }
 
     private static async Task<string?> ResolveAttemptIdAsync(
@@ -253,6 +322,19 @@ public sealed class BillingV2RenewalService : IBillingV2RenewalService
             WHERE subscription_id = @subscription_id
               AND provider = 'stripe'
               AND provider_subscription_id IS NOT NULL
+            UNION ALL
+            -- Source la plus sure : l'identifiant lie a une tentative REGLEE,
+            -- donc deja confronte au montant, a la devise et au client lors de
+            -- la verification. Un encaissement qui converge par reconciliation
+            -- ne cree ni accord ni session portant cet identifiant.
+            SELECT attempt.provider_subscription_id
+            FROM billing_v2_payment_attempts attempt
+            INNER JOIN billing_v2_billing_events event_row
+                ON event_row.id = attempt.billing_event_id
+            WHERE event_row.subscription_id = @subscription_id
+              AND attempt.provider = 'stripe'
+              AND attempt.status = 'succeeded'
+              AND attempt.provider_subscription_id IS NOT NULL
             LIMIT 1;
             """;
         command.Parameters.AddWithValue("@subscription_id", subscriptionId);

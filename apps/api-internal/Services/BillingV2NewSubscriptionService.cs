@@ -250,6 +250,9 @@ public sealed class BillingV2NewSubscriptionService
             UPDATE billing_v2_subscriptions
             SET status = @status,
                 started_at = COALESCE(started_at, @started_at),
+                -- Ancre contractuelle posee une fois, jamais recalculee.
+                billing_anchor_at =
+                    COALESCE(billing_anchor_at, started_at, @started_at),
                 current_period_ends_at = @current_period_ends_at,
                 renews_at = @renews_at,
                 commitment_ends_at = @commitment_ends_at,
@@ -353,8 +356,8 @@ public sealed class BillingV2NewSubscriptionService
         }
 
         return new BillingV2NewSubscriptionMapping(
-            reader.GetString("preset_id"),
-            reader.GetString("commitment_term_id"),
+            MariaDbIdentifierReader.ReadRequired(reader, "preset_id"),
+            MariaDbIdentifierReader.ReadRequired(reader, "commitment_term_id"),
             reader.GetString("payment_mode"),
             reader.GetInt32("commitment_months"),
             reader.GetInt32("discount_basis_points"));

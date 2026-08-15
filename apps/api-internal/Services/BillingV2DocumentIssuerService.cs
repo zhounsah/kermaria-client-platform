@@ -729,12 +729,24 @@ public sealed class BillingV2DocumentIssuerService
             insert.CommandText =
                 """
                 INSERT IGNORE INTO billing_v2_document_issuance_attempts (
-                    id, commercial_document_id, external_reference,
+                    id, commercial_document_id, billing_event_id,
+                    external_reference,
                     status, attempt_count, created_at, updated_at
-                ) VALUES (
-                    @id, @document_id, @reference,
-                    'created', 0, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6)
-                );
+                )
+                SELECT
+                    @id,
+                    @document_id,
+                    -- Rattachement explicite au BillingEvent du document :
+                    -- une emission doit etre tracable jusqu'a la charge
+                    -- qu'elle materialise, cycle initial compris.
+                    (
+                        SELECT doc.billing_event_id
+                        FROM billing_v2_subscription_documents doc
+                        WHERE doc.commercial_document_id = @document_id
+                        LIMIT 1
+                    ),
+                    @reference,
+                    'created', 0, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6);
                 """;
             insert.Parameters.AddWithValue(
                 "@id",
@@ -1172,6 +1184,8 @@ public sealed class BillingV2DocumentIssuerService
                     id,
                     subscription_id,
                     commercial_document_id,
+                    billing_event_id,
+                    cycle_sequence,
                     document_kind,
                     period_start,
                     period_end,
@@ -1184,10 +1198,24 @@ public sealed class BillingV2DocumentIssuerService
                     reason_code,
                     created_at,
                     updated_at
-                ) VALUES (
+                )
+                SELECT
                     @id,
                     @subscription_id,
                     @commercial_document_id,
+                    -- Le document initial est rattache a SON BillingEvent et
+                    -- porte explicitement le cycle 1 : sans cela l'unicite par
+                    -- cycle reposait sur un NULL, que MariaDB laisse passer en
+                    -- plusieurs exemplaires dans un index UNIQUE.
+                    (
+                        SELECT initial_event.id
+                        FROM billing_v2_billing_events initial_event
+                        WHERE initial_event.subscription_id = @subscription_id
+                          AND initial_event.cycle_sequence = 1
+                        ORDER BY initial_event.created_at
+                        LIMIT 1
+                    ),
+                    1,
                     @document_kind,
                     @period_start,
                     @period_end,
@@ -1199,8 +1227,7 @@ public sealed class BillingV2DocumentIssuerService
                     'created',
                     @reason_code,
                     @created_at,
-                    @updated_at
-                );
+                    @updated_at;
                 """;
             command.Parameters.AddWithValue("@id", subscriptionDocumentId);
             command.Parameters.AddWithValue(
@@ -1450,6 +1477,31 @@ public sealed class BillingV2DocumentIssuerService
             "@commercial_document_id",
             documentId);
         await command.ExecuteNonQueryAsync(cancellationToken);
+
+        // L'axe documentaire du BillingEvent doit suivre l'etat reel du
+        // document. Sans cette propagation il restait a `none` meme apres
+        // emission, y compris pour un renouvellement.
+        await using var eventCommand = connection.CreateCommand();
+        eventCommand.CommandText =
+            """
+            UPDATE billing_v2_billing_events event_row
+            INNER JOIN billing_v2_subscription_documents doc
+                ON doc.billing_event_id = event_row.id
+            SET event_row.document_status = @document_status
+            WHERE doc.commercial_document_id = @commercial_document_id;
+            """;
+        eventCommand.Parameters.AddWithValue(
+            "@document_status",
+            status switch
+            {
+                "issued" or "paid" => "issued",
+                "failed" => "failed",
+                _ => "pending"
+            });
+        eventCommand.Parameters.AddWithValue(
+            "@commercial_document_id",
+            documentId);
+        await eventCommand.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task InsertAuditAsync(
