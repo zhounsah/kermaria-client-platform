@@ -42,6 +42,10 @@ Navigation par besoin :
 - referencement de la vitrine — canonical, balisage schema.org, image Open
   Graph et routes hors index (v1.1.12) :
   [`docs/v1.1/V1.1.12_SEO_BALISAGE.md`](docs/v1.1/V1.1.12_SEO_BALISAGE.md)
+- identite de marque comprise par les moteurs — `Zachary IT` comme nom
+  commercial, `Zachary HOUNSA-HOUNKPA EI` comme identite juridique
+  (v1.3.3.8) :
+  [`docs/v1.3/V1.3.3.8_IDENTITE_MARQUE.md`](docs/v1.3/V1.3.3.8_IDENTITE_MARQUE.md)
 - deploiement des serveurs applicatifs :
   [`docs/v1.1/deploy/SRV-12_LOT3_DEPLOY.md`](docs/v1.1/deploy/SRV-12_LOT3_DEPLOY.md)
   (webportal, **Ubuntu/systemd**) et

@@ -12,6 +12,7 @@
     "test:admin": "node scripts/verify-admin-contract.mjs",
     "test:operations": "node scripts/verify-operations-contract.mjs",
     "test:seo": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-seo-indexability-contract.mjs",
+    "test:brand": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-brand-identity-contract.mjs",
     "test:ux": "node scripts/verify-client-ux-contract.mjs",
     "test:workflow": "node scripts/verify-request-workflow-contract.mjs",
     "test:notifications": "node scripts/verify-notifications-contract.mjs",
