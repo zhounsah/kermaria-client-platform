@@ -731,6 +731,11 @@ assert.match(
   /pending_cancellation/,
   "La route BFF client doit reconnaitre pending_cancellation.",
 );
+assert.match(
+  clientCancelRoute,
+  /subscription\.billingSystem === "billing_v2"[\s\S]*BILLING_V2_CANCELLATION_NOT_AVAILABLE[\s\S]*Aucune action de paiement n'a été déclenchée[\s\S]*pending_cancellation/,
+  "La route BFF client doit bloquer explicitement une resiliation V2 avant tout chemin legacy.",
+);
 
 assert.match(
   programCs,
@@ -811,6 +816,11 @@ assert.match(
   adminCancelRoute,
   /scheduleStripeSubscriptionCancellationAtPeriodEnd/,
   "La route BFF admin doit pouvoir programmer une fin de terme Stripe.",
+);
+assert.match(
+  adminCancelRoute,
+  /subscription\.billingSystem === "billing_v2"[\s\S]*BILLING_V2_CANCELLATION_NOT_AVAILABLE[\s\S]*Aucune action de paiement n'a été déclenchée[\s\S]*pending_cancellation/,
+  "La route BFF admin doit bloquer explicitement une resiliation V2 avant tout chemin legacy.",
 );
 assert.match(
   reconcileButton,

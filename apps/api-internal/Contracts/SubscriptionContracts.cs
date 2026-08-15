@@ -8,6 +8,31 @@ public sealed record SubscriptionCreatePayload(
     [property: JsonPropertyName("paypalSubscriptionId")] string? PayPalSubscriptionId,
     [property: JsonPropertyName("stripeSubscriptionId")] string? StripeSubscriptionId);
 
+public sealed record BillingV2AuthoritativeCheckoutPayload(
+    string? LegacyOfferId,
+    string? Provider,
+    string? IdempotencyKey,
+    string? SuccessUrl,
+    string? CancelUrl);
+
+public sealed record BillingV2AuthoritativeCheckoutResponse(
+    bool Created,
+    string SubscriptionId,
+    string Provider,
+    string Environment,
+    string OutboxEventId,
+    string IdempotencyKeyHash,
+    long TotalDueNowCents,
+    string ReasonCode,
+    string? ApprovalUrl,
+    string CorrelationId);
+
+public sealed record BillingV2ProviderReturnPayload(
+    string? Provider,
+    string? ProviderCheckoutId,
+    string? ProviderSubscriptionId,
+    string? RawPayload);
+
 public sealed record SubscriptionSummary(
     string Id,
     string CustomerId,
@@ -40,7 +65,8 @@ public sealed record SubscriptionSummary(
     string? NextBillingAt,
     string? CancelledAt,
     string CreatedAt,
-    string UpdatedAt);
+    string UpdatedAt,
+    [property: JsonPropertyName("billingSystem")] string BillingSystem = "legacy");
 
 public sealed record SubscriptionProvisioningTargetUserSummary(
     string SamAccountName,

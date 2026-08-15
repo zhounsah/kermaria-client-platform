@@ -87,6 +87,15 @@ public interface ICommercialRepository
         string? paymentMethod,
         CancellationToken cancellationToken);
 
+    Task EnsureSubscriptionPriceLockAsync(
+        string subscriptionId,
+        string offerId,
+        int unitPriceCents,
+        int? taxRateBasisPoints,
+        string currency,
+        string reason,
+        CancellationToken cancellationToken);
+
     Task<string> CreateBillingDocumentForSubscriptionAsync(
         SubscriptionBillingDocumentRequest request,
         string correlationId,

@@ -12,11 +12,15 @@ public sealed record SubscriptionProvisioningActionCreateRequest(
     string? IdempotencyKeyHash,
     string? DetailsJson);
 
+public sealed record SubscriptionProvisioningActionCreateResult(
+    string ActionId,
+    bool Created);
+
 public interface ISubscriptionProvisioningActionRepository
 {
     bool IsPersistent { get; }
 
-    Task<string> CreateRequestedAsync(
+    Task<SubscriptionProvisioningActionCreateResult> CreateRequestedAsync(
         SubscriptionProvisioningActionCreateRequest request,
         CancellationToken cancellationToken);
 

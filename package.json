@@ -44,6 +44,7 @@
     "test:bpce": "npm --prefix apps/webportal run test:bpce",
     "test:payments": "npm --prefix apps/webportal run test:payments",
     "test:subscriptions": "npm --prefix apps/webportal run test:subscriptions",
+    "test:billing-legacy": "npm --prefix apps/webportal run test:billing-legacy && dotnet run --project tests/api-internal/Kermaria.ApiInternal.SmokeTests.csproj -c Release -- --billing-legacy-idempotency && dotnet run --project tests/api-internal/Kermaria.ApiInternal.SmokeTests.csproj -c Release -- --billing-catalog-compatibility && dotnet run --project tests/api-internal/Kermaria.ApiInternal.SmokeTests.csproj -c Release -- --billing-v2-pricing && dotnet run --project tests/api-internal/Kermaria.ApiInternal.SmokeTests.csproj -c Release -- --billing-v2-provisioning-shadow && dotnet run --project tests/api-internal/Kermaria.ApiInternal.SmokeTests.csproj -c Release -- --billing-v2-new-subscription",
     "test:downloads": "npm --prefix apps/webportal run test:downloads",
     "test:payments-stripe": "npm --prefix apps/webportal run test:payments-stripe",
     "test:timezone": "npm --prefix apps/webportal run test:timezone",

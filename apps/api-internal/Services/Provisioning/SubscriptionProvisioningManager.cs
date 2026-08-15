@@ -31,6 +31,8 @@ public sealed class SubscriptionProvisioningManager
     private readonly ISubscriptionProvisioningActionRepository _actions;
     private readonly IProvisioningService _provisioningService;
     private readonly ICommercialOfferTopologyService _topologyService;
+    private readonly IBillingV2ProvisioningShadowService _v2Shadow;
+    private readonly IBillingV2ProvisioningService _v2Provisioning;
     private readonly IActiveDirectoryService _activeDirectory;
     private readonly SubscriptionProvisioningRuntimeConfiguration _configuration;
     private readonly IAdGroupProvisioner _groupProvisioner;
@@ -42,6 +44,8 @@ public sealed class SubscriptionProvisioningManager
         ISubscriptionProvisioningActionRepository actions,
         IProvisioningService provisioningService,
         ICommercialOfferTopologyService topologyService,
+        IBillingV2ProvisioningShadowService v2Shadow,
+        IBillingV2ProvisioningService v2Provisioning,
         IActiveDirectoryService activeDirectory,
         SubscriptionProvisioningRuntimeConfiguration configuration,
         IAdGroupProvisioner groupProvisioner,
@@ -52,6 +56,8 @@ public sealed class SubscriptionProvisioningManager
         _actions = actions;
         _provisioningService = provisioningService;
         _topologyService = topologyService;
+        _v2Shadow = v2Shadow;
+        _v2Provisioning = v2Provisioning;
         _activeDirectory = activeDirectory;
         _configuration = configuration;
         _groupProvisioner = groupProvisioner;
@@ -66,6 +72,7 @@ public sealed class SubscriptionProvisioningManager
             subscription,
             targetUserSamAccountNames: null,
             cancellationToken);
+        await CompareV2ShadowProvisioningAsync(context, cancellationToken);
         var recentActions = await _actions.GetRecentBySubscriptionAsync(
             subscription.Id,
             limit: 10,
@@ -85,7 +92,8 @@ public sealed class SubscriptionProvisioningManager
             subscription,
             targetUserSamAccountNames,
             cancellationToken);
-        var actionId = await _actions.CreateRequestedAsync(
+        await CompareV2ShadowProvisioningAsync(context, cancellationToken);
+        var actionCreate = await _actions.CreateRequestedAsync(
             new SubscriptionProvisioningActionCreateRequest(
                 subscription.Id,
                 subscription.CustomerId,
@@ -98,6 +106,21 @@ public sealed class SubscriptionProvisioningManager
                 ComputeIdempotencyKeyHash(context),
                 SerializeDetails(context, null)),
             cancellationToken);
+        var actionId = actionCreate.ActionId;
+        if (!actionCreate.Created)
+        {
+            _logger.LogInformation(
+                "Subscription provisioning {ActionType} skipped duplicate active action {ActionId} for subscription {SubscriptionId}",
+                actionType,
+                actionId,
+                subscription.Id);
+            var recentDuplicateActions = await _actions.GetRecentBySubscriptionAsync(
+                subscription.Id,
+                limit: 10,
+                cancellationToken);
+            return BuildSummary(context, recentDuplicateActions);
+        }
+
         await _actions.MarkStartedAsync(actionId, cancellationToken);
 
         try
@@ -265,6 +288,14 @@ public sealed class SubscriptionProvisioningManager
                 Array.Empty<ProvisioningOperationResult>());
         }
 
+        var v2Result = await _v2Provisioning.TryReconcileAsync(
+            context,
+            cancellationToken);
+        if (v2Result is not null)
+        {
+            return v2Result;
+        }
+
         return await _provisioningService.ReconcileAsync(
             new ProvisioningExecutionRequest(
                 context.TargetUsers,
@@ -272,6 +303,52 @@ public sealed class SubscriptionProvisioningManager
                 context.ManagedGroups,
                 context.GroupDistinguishedNamesBySamAccountName),
             cancellationToken);
+    }
+
+    private async Task CompareV2ShadowProvisioningAsync(
+        SubscriptionProvisioningContext context,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var comparison = await _v2Shadow.CompareAsync(
+                context.Subscription,
+                context.MappedGroups,
+                context.ReconciledGroups,
+                cancellationToken);
+            if (!comparison.Enabled)
+            {
+                return;
+            }
+
+            if (!comparison.Succeeded)
+            {
+                _logger.LogWarning(
+                    "Billing V2 shadow provisioning failed for subscription {SubscriptionId}. Legacy provisioning remains authoritative.",
+                    context.Subscription.Id);
+                return;
+            }
+
+            if (!comparison.MatchesLegacy)
+            {
+                _logger.LogWarning(
+                    "Billing V2 shadow provisioning mismatch for subscription {SubscriptionId}. MissingGroups={MissingGroups}; ExtraGroups={ExtraGroups}; Legacy provisioning remains authoritative.",
+                    context.Subscription.Id,
+                    string.Join(",", comparison.MissingGroups),
+                    string.Join(",", comparison.ExtraGroups));
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(
+                exception,
+                "Billing V2 shadow provisioning comparison crashed for subscription {SubscriptionId}. Legacy provisioning remains authoritative.",
+                context.Subscription.Id);
+        }
     }
 
     private SubscriptionProvisioningSummary BuildSummary(
@@ -485,7 +562,7 @@ public sealed class SubscriptionProvisioningManager
     }
 }
 
-internal sealed record SubscriptionProvisioningContext(
+public sealed record SubscriptionProvisioningContext(
     SubscriptionSummary Subscription,
     IReadOnlyList<string> MappedGroups,
     IReadOnlyList<string> ReconciledGroups,

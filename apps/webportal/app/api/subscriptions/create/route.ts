@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { CORRELATION_HEADER, resolveCorrelationId } from "@/lib/correlation";
 import {
+  getInternalApiError,
   getInternalSession,
   mutateInternalPortalPayloadTyped,
 } from "@/lib/internal-api";
@@ -19,6 +20,7 @@ import {
 import { getPortalPublicUrl } from "@/lib/public-routes";
 import { getSessionCookieName } from "@/lib/session-config";
 import {
+  isBillingV2AuthoritativeCheckoutBffEnabled,
   getInternalApiUrl,
   getInternalServiceHeaders,
   isStripeConfigured,
@@ -29,6 +31,19 @@ import {
 } from "@/lib/stripe";
 
 const PORTAL_SESSION_HEADER = "X-Portal-Session";
+
+type BillingV2AuthoritativeCheckoutResponse = {
+  created: boolean;
+  subscriptionId: string;
+  provider: string;
+  environment: string;
+  outboxEventId: string;
+  idempotencyKeyHash: string;
+  totalDueNowCents: number;
+  reasonCode: string;
+  approvalUrl?: string | null;
+  correlationId: string;
+};
 
 export async function POST(request: NextRequest) {
   const correlationId = resolveCorrelationId(
@@ -54,8 +69,14 @@ export async function POST(request: NextRequest) {
   }
 
   const rail = body.rail === "stripe" ? "stripe" : "paypal";
+  const useBillingV2AuthoritativeCheckout =
+    isBillingV2AuthoritativeCheckoutBffEnabled();
 
-  if (rail === "stripe" && !isStripeConfigured()) {
+  if (
+    !useBillingV2AuthoritativeCheckout
+    && rail === "stripe"
+    && !isStripeConfigured()
+  ) {
     return NextResponse.json(
       {
         code: "STRIPE_NOT_CONFIGURED",
@@ -64,7 +85,11 @@ export async function POST(request: NextRequest) {
       { status: 503 },
     );
   }
-  if (rail === "paypal" && !isPayPalConfigured()) {
+  if (
+    !useBillingV2AuthoritativeCheckout
+    && rail === "paypal"
+    && !isPayPalConfigured()
+  ) {
     return NextResponse.json(
       {
         code: "PAYPAL_NOT_CONFIGURED",
@@ -143,6 +168,76 @@ export async function POST(request: NextRequest) {
 
   const portalUrl = getPortalPublicUrl(request);
   const cancelPath = "/profile/subscriptions?subscription=cancelled";
+
+  if (useBillingV2AuthoritativeCheckout) {
+    const idempotencyKey = request.headers.get("Idempotency-Key")?.trim();
+    if (!idempotencyKey || idempotencyKey.length > 128) {
+      return NextResponse.json(
+        {
+          code: "BILLING_V2_IDEMPOTENCY_KEY_REQUIRED",
+          message:
+            "Une cle d'idempotence est requise pour initialiser un checkout Billing V2.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const returnPath =
+      rail === "stripe"
+        ? `/api/subscriptions/billing-v2/return?provider=stripe&offerId=${encodeURIComponent(
+            offer.id,
+          )}&session_id={CHECKOUT_SESSION_ID}`
+        : `/api/subscriptions/billing-v2/return?provider=paypal&offerId=${encodeURIComponent(
+            offer.id,
+          )}`;
+    let result: BillingV2AuthoritativeCheckoutResponse;
+    try {
+      result = await mutateInternalPortalPayloadTyped<
+        BillingV2AuthoritativeCheckoutResponse,
+        {
+          legacyOfferId: string;
+          provider: string;
+          idempotencyKey: string;
+          successUrl: string;
+          cancelUrl: string;
+        }
+      >(
+        "/internal/portal/billing-v2/subscriptions/checkout",
+        {
+          legacyOfferId: offer.id,
+          provider: rail,
+          idempotencyKey,
+          successUrl: `${portalUrl}${returnPath}`,
+          cancelUrl: `${portalUrl}${cancelPath}`,
+        },
+        sessionToken,
+        correlationId,
+      );
+    } catch (error) {
+      const failure = getInternalApiError(error);
+      return NextResponse.json(failure.error, { status: failure.status });
+    }
+
+    if (result.approvalUrl) {
+      return NextResponse.json({
+        approveUrl: result.approvalUrl,
+        subscriptionId: result.subscriptionId,
+        correlation_id: result.correlationId,
+      });
+    }
+
+    return NextResponse.json(
+      {
+        code: "BILLING_V2_CHECKOUT_PENDING_PROVIDER_SESSION",
+        message:
+          "Le checkout Billing V2 local est pret, mais la session fournisseur n'est pas encore disponible.",
+        subscriptionId: result.subscriptionId,
+        outboxEventId: result.outboxEventId,
+        correlation_id: result.correlationId,
+      },
+      { status: 409 },
+    );
+  }
 
   if (rail === "stripe") {
     const mode = getStripeMode();

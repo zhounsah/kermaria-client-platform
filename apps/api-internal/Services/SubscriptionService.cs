@@ -1,6 +1,5 @@
 using System.Globalization;
 using Kermaria.ApiInternal.Contracts;
-using Kermaria.ApiInternal.Data.Configuration;
 using Kermaria.ApiInternal.Data.Repositories;
 using Kermaria.ApiInternal.Services.Provisioning;
 
@@ -96,25 +95,28 @@ public interface ISubscriptionService
 public sealed class SubscriptionService : ISubscriptionService
 {
     private readonly ISubscriptionRepository _repository;
+    private readonly IBillingCatalog _billingCatalog;
     private readonly ICommercialRepository _commercialRepository;
+    private readonly IBillingV2NewSubscriptionService _billingV2Subscriptions;
+    private readonly IBillingV2PortalSubscriptionProjection _billingV2PortalSubscriptions;
     private readonly ISubscriptionProvisioningManager _provisioningManager;
-    private readonly PayPalRuntimeConfiguration _paypal;
-    private readonly StripeRuntimeConfiguration _stripe;
     private readonly ILogger<SubscriptionService> _logger;
 
     public SubscriptionService(
         ISubscriptionRepository repository,
+        IBillingCatalog billingCatalog,
         ICommercialRepository commercialRepository,
+        IBillingV2NewSubscriptionService billingV2Subscriptions,
+        IBillingV2PortalSubscriptionProjection billingV2PortalSubscriptions,
         ISubscriptionProvisioningManager provisioningManager,
-        PayPalRuntimeConfiguration paypal,
-        StripeRuntimeConfiguration stripe,
         ILogger<SubscriptionService> logger)
     {
         _repository = repository;
+        _billingCatalog = billingCatalog;
         _commercialRepository = commercialRepository;
+        _billingV2Subscriptions = billingV2Subscriptions;
+        _billingV2PortalSubscriptions = billingV2PortalSubscriptions;
         _provisioningManager = provisioningManager;
-        _paypal = paypal;
-        _stripe = stripe;
         _logger = logger;
     }
 
@@ -123,11 +125,35 @@ public sealed class SubscriptionService : ISubscriptionService
     public Task<IReadOnlyList<SubscriptionSummary>> GetClientSubscriptionsAsync(
         PortalSessionContext session,
         CancellationToken cancellationToken)
-        => _repository.GetByCustomerAsync(session.CustomerId, cancellationToken);
+        => GetClientSubscriptionsMergedAsync(session, cancellationToken);
 
     public Task<IReadOnlyList<SubscriptionSummary>> GetAdminSubscriptionsAsync(
         CancellationToken cancellationToken)
         => _repository.GetAllAsync(cancellationToken);
+
+    private async Task<IReadOnlyList<SubscriptionSummary>>
+        GetClientSubscriptionsMergedAsync(
+            PortalSessionContext session,
+            CancellationToken cancellationToken)
+    {
+        var legacy = await _repository.GetByCustomerAsync(
+            session.CustomerId,
+            cancellationToken);
+        var billingV2 = await _billingV2PortalSubscriptions
+            .GetClientSubscriptionsAsync(
+                session.CustomerId,
+                cancellationToken);
+        if (billingV2.Count == 0)
+        {
+            return legacy;
+        }
+
+        return legacy
+            .Concat(billingV2)
+            .OrderByDescending(subscription => ParseUpdatedAt(subscription))
+            .ThenByDescending(subscription => subscription.Id, StringComparer.Ordinal)
+            .ToArray();
+    }
 
     public async Task<SubscriptionSummary> GetSubscriptionAsync(
         string subscriptionId,
@@ -141,39 +167,14 @@ public sealed class SubscriptionService : ISubscriptionService
         string rail,
         CancellationToken cancellationToken)
     {
-        var catalog = await _commercialRepository.GetClientCatalogAsync(
+        var resolved = await _billingCatalog.ResolveSubscribableOfferAsync(
+            offerId,
+            rail,
             cancellationToken);
-        var offer = catalog.FirstOrDefault(
-            candidate => string.Equals(
-                candidate.Id,
-                offerId,
-                StringComparison.Ordinal))
-            ?? throw new PortalDataNotFoundException();
-
-        var activePlanId = rail == "stripe"
-            ? (_stripe.IsLive ? offer.StripePriceIdLive : offer.StripePriceIdTest)
-            : (_paypal.IsLive ? offer.PayPalPlanIdLive : offer.PayPalPlanIdSandbox);
-
-        if (!string.Equals(
-                offer.BillingCadence,
-                CommercialStatuses.CadenceMonthly,
-                StringComparison.Ordinal)
-            || offer.PriceAmountCents <= 0)
-        {
-            throw new PortalValidationException();
-        }
-
-        if (string.Equals(rail, "billing", StringComparison.Ordinal))
-        {
-            return new SubscriptionLookup(offer, rail, string.Empty);
-        }
-
-        if (string.IsNullOrWhiteSpace(activePlanId))
-        {
-            throw new PortalValidationException();
-        }
-
-        return new SubscriptionLookup(offer, rail, activePlanId);
+        return new SubscriptionLookup(
+            resolved.Offer,
+            rail,
+            resolved.ProviderExternalId ?? string.Empty);
     }
 
     public async Task<SubscriptionSummary> CreatePendingAsync(
@@ -187,7 +188,7 @@ public sealed class SubscriptionService : ISubscriptionService
             offerId,
             rail,
             cancellationToken);
-        return await _repository.CreatePendingAsync(
+        var subscription = await _repository.CreatePendingAsync(
             session.CustomerId,
             lookup.Offer,
             rail,
@@ -197,6 +198,16 @@ public sealed class SubscriptionService : ISubscriptionService
             rail == "stripe" ? lookup.ExternalPlanId : null,
             rail == "stripe" ? externalSubscriptionId : null,
             cancellationToken);
+        await EnsurePriceLockAsync(
+            subscription,
+            lookup.Offer,
+            "legacy_subscription_created",
+            cancellationToken);
+        await _billingV2Subscriptions.CreateForNewSubscriptionAsync(
+            session,
+            subscription,
+            cancellationToken);
+        return subscription;
     }
 
     public async Task<SubscriptionSummary> CreateBilledPendingAsync(
@@ -208,7 +219,7 @@ public sealed class SubscriptionService : ISubscriptionService
             offerId,
             "billing",
             cancellationToken);
-        return await _repository.CreatePendingAsync(
+        var subscription = await _repository.CreatePendingAsync(
             session.CustomerId,
             lookup.Offer,
             "billing",
@@ -218,6 +229,16 @@ public sealed class SubscriptionService : ISubscriptionService
             null,
             null,
             cancellationToken);
+        await EnsurePriceLockAsync(
+            subscription,
+            lookup.Offer,
+            "legacy_subscription_created",
+            cancellationToken);
+        await _billingV2Subscriptions.CreateForNewSubscriptionAsync(
+            session,
+            subscription,
+            cancellationToken);
+        return subscription;
     }
 
     public async Task<SubscriptionSummary> MarkAsPendingActivationAsync(
@@ -246,10 +267,14 @@ public sealed class SubscriptionService : ISubscriptionService
             throw new PortalValidationException();
         }
 
-        return await _repository.UpdateStatusAsync(
+        var updated = await _repository.UpdateStatusAsync(
             subscriptionId,
             "pending_activation",
             cancellationToken);
+        await _billingV2Subscriptions.SyncFromLegacySubscriptionAsync(
+            updated,
+            cancellationToken);
+        return updated;
     }
 
     public async Task<AdminSubscriptionDetail> GetAdminSubscriptionDetailAsync(
@@ -306,6 +331,13 @@ public sealed class SubscriptionService : ISubscriptionService
             effectiveNextBillingAt,
             effectiveCommitmentEndsAt,
             cancellationToken);
+        await EnsurePriceLockAsync(
+            updated,
+            "legacy_subscription_activated",
+            cancellationToken);
+        await _billingV2Subscriptions.SyncFromLegacySubscriptionAsync(
+            updated,
+            cancellationToken);
         await TryReconcileProvisioningAsync(
             updated,
             "subscription.provisioning.activate",
@@ -313,6 +345,37 @@ public sealed class SubscriptionService : ISubscriptionService
             requestedByUserId: null,
             cancellationToken);
         return updated;
+    }
+
+    private async Task EnsurePriceLockAsync(
+        SubscriptionSummary subscription,
+        CommercialOfferSummary offer,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        await _commercialRepository.EnsureSubscriptionPriceLockAsync(
+            subscription.Id,
+            offer.Id,
+            offer.PriceAmountCents,
+            offer.TaxRateBasisPoints,
+            offer.Currency,
+            reason,
+            cancellationToken);
+    }
+
+    private async Task EnsurePriceLockAsync(
+        SubscriptionSummary subscription,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        await _commercialRepository.EnsureSubscriptionPriceLockAsync(
+            subscription.Id,
+            subscription.CommercialOfferId,
+            subscription.PriceAmountCents,
+            subscription.TaxRateBasisPoints,
+            subscription.Currency,
+            reason,
+            cancellationToken);
     }
 
     public async Task<SubscriptionSummary> RecordPaymentAsync(
@@ -340,11 +403,15 @@ public sealed class SubscriptionService : ISubscriptionService
             ? currentCommitmentEndsAt.AddMonths(commitmentMonths)
             : currentCommitmentEndsAt;
 
-        return await _repository.RecordPaymentAsync(
+        var updated = await _repository.RecordPaymentAsync(
             subscriptionId,
             nextBillingAt,
             nextCommitmentEndsAt,
             cancellationToken);
+        await _billingV2Subscriptions.SyncFromLegacySubscriptionAsync(
+            updated,
+            cancellationToken);
+        return updated;
     }
 
     public async Task<SubscriptionSummary> UpdateStatusAsync(
@@ -372,6 +439,9 @@ public sealed class SubscriptionService : ISubscriptionService
                 subscriptionId,
                 newStatus,
                 cancellationToken);
+        await _billingV2Subscriptions.SyncFromLegacySubscriptionAsync(
+            updated,
+            cancellationToken);
 
         if (ShouldReconcileProvisioning(newStatus))
         {
@@ -470,10 +540,14 @@ public sealed class SubscriptionService : ISubscriptionService
             && nextBillingAt is not null
             && nextBillingAt > DateTime.UtcNow)
         {
-            return await _repository.RequestCancellationAsync(
+            var updated = await _repository.RequestCancellationAsync(
                 current.Id,
                 DateTime.UtcNow,
                 cancellationToken);
+            await _billingV2Subscriptions.SyncFromLegacySubscriptionAsync(
+                updated,
+                cancellationToken);
+            return updated;
         }
 
         return await UpdateStatusAsync(
@@ -541,6 +615,15 @@ public sealed class SubscriptionService : ISubscriptionService
                 : subscription.BillingIntervalMonths,
             1,
             12);
+
+    private static DateTimeOffset ParseUpdatedAt(SubscriptionSummary subscription)
+        => DateTimeOffset.TryParse(
+            subscription.UpdatedAt,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeUniversal,
+            out var parsed)
+                ? parsed
+                : DateTimeOffset.MinValue;
 
     private static DateTime? ParseIsoUtc(string? value)
     {

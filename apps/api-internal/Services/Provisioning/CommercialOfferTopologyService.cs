@@ -1,5 +1,5 @@
 using Kermaria.ApiInternal.Contracts;
-using Kermaria.ApiInternal.Data.Repositories;
+using Kermaria.ApiInternal.Services;
 
 namespace Kermaria.ApiInternal.Services.Provisioning;
 
@@ -36,12 +36,12 @@ public interface ICommercialOfferTopologyService
 public sealed class CommercialOfferTopologyService
     : ICommercialOfferTopologyService
 {
-    private readonly ICommercialRepository _commercialRepository;
+    private readonly IBillingCatalog _billingCatalog;
     private Task<CatalogTopologySnapshot>? _snapshotTask;
 
-    public CommercialOfferTopologyService(ICommercialRepository commercialRepository)
+    public CommercialOfferTopologyService(IBillingCatalog billingCatalog)
     {
-        _commercialRepository = commercialRepository;
+        _billingCatalog = billingCatalog;
     }
 
     public async Task<IReadOnlyList<string>> ResolveMappedGroupsAsync(
@@ -137,7 +137,7 @@ public sealed class CommercialOfferTopologyService
     private async Task<CatalogTopologySnapshot> LoadSnapshotAsync(
         CancellationToken cancellationToken)
     {
-        var offers = await _commercialRepository.GetAdminCatalogAsync(
+        var offers = await _billingCatalog.GetAdminCatalogAsync(
             cancellationToken);
         var offersByExternalReference = offers
             .Where(offer => !string.IsNullOrWhiteSpace(offer.ExternalReference))

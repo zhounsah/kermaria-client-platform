@@ -59,22 +59,34 @@ public sealed class PayPalWebhookService : IPayPalWebhookService
         var existing = await _events.GetByEventIdAsync(eventId, cancellationToken);
         if (existing is not null)
         {
-            _logger.LogInformation(
-                "Duplicate PayPal webhook event {EventId} ignored (status={Status})",
-                eventId,
-                existing.Status);
-            return new PayPalWebhookProcessingResult(
-                eventId,
-                existing.Status,
-                ErrorMessage: null);
+            if (existing.Status is "failed")
+            {
+                _logger.LogInformation(
+                    "Retrying PayPal webhook event {EventId} after prior status={Status}",
+                    eventId,
+                    existing.Status);
+            }
+            else
+            {
+                _logger.LogInformation(
+                    "Duplicate PayPal webhook event {EventId} ignored (status={Status})",
+                    eventId,
+                    existing.Status);
+                return new PayPalWebhookProcessingResult(
+                    eventId,
+                    existing.Status,
+                    ErrorMessage: null);
+            }
         }
-
-        await _events.InsertReceivedAsync(
-            eventId,
-            eventType,
-            payload.ResourceId,
-            rawPayload,
-            cancellationToken);
+        else
+        {
+            await _events.InsertReceivedAsync(
+                eventId,
+                eventType,
+                payload.ResourceId,
+                rawPayload,
+                cancellationToken);
+        }
 
         try
         {

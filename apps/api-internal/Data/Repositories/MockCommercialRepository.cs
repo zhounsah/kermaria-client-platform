@@ -109,6 +109,9 @@ public sealed class MockCommercialStore
     public List<MockCommercialDocumentSubscriptionLink> SubscriptionLinks { get; } =
         [];
 
+    public List<MockSubscriptionBillingPriceLock> SubscriptionPriceLocks { get; } =
+        [];
+
     public MockCommercialStore()
     {
         Offers.AddRange(CreateTechnicalServiceOffers());
@@ -1153,6 +1156,38 @@ public sealed class MockCommercialRepository : ICommercialRepository
         return Task.CompletedTask;
     }
 
+    public Task EnsureSubscriptionPriceLockAsync(
+        string subscriptionId,
+        string offerId,
+        int unitPriceCents,
+        int? taxRateBasisPoints,
+        string currency,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        lock (_store.SyncRoot)
+        {
+            if (_store.SubscriptionPriceLocks.Any(priceLock =>
+                    priceLock.SubscriptionId == subscriptionId
+                    && priceLock.Status == "active"))
+            {
+                return Task.CompletedTask;
+            }
+
+            _store.SubscriptionPriceLocks.Add(new MockSubscriptionBillingPriceLock(
+                Guid.NewGuid().ToString("D"),
+                subscriptionId,
+                offerId,
+                unitPriceCents,
+                taxRateBasisPoints,
+                currency,
+                reason,
+                "active"));
+        }
+
+        return Task.CompletedTask;
+    }
+
     public Task<string> CreateBillingDocumentForSubscriptionAsync(
         SubscriptionBillingDocumentRequest request,
         string correlationId,
@@ -1163,6 +1198,15 @@ public sealed class MockCommercialRepository : ICommercialRepository
             var now = DateTime.UtcNow.ToString("O");
             var offer = ResolveOffer(request.OfferId)
                 ?? throw new PortalValidationException();
+            var priceLock = _store.SubscriptionPriceLocks.FirstOrDefault(
+                candidate => candidate.SubscriptionId == request.SubscriptionId
+                    && candidate.Status == "active");
+            if (priceLock is null)
+            {
+                throw new InvalidOperationException(
+                    "Cannot create a subscription renewal document without an active contractual price lock.");
+            }
+
             var document = new MockCommercialDocument(
                 Guid.NewGuid().ToString("D"),
                 MockPortalData.Profile.CustomerReference,
@@ -1196,8 +1240,8 @@ public sealed class MockCommercialRepository : ICommercialRepository
                 offer.Description,
                 1m,
                 offer.UnitLabel,
-                offer.PriceAmountCents,
-                offer.TaxRateBasisPoints,
+                priceLock.UnitPriceCents,
+                priceLock.TaxRateBasisPoints ?? offer.TaxRateBasisPoints,
                 10,
                 now);
 
@@ -1822,6 +1866,16 @@ public sealed record MockCommercialDocument(
 public sealed record MockCommercialDocumentSubscriptionLink(
     string DocumentId,
     string SubscriptionId);
+
+public sealed record MockSubscriptionBillingPriceLock(
+    string Id,
+    string SubscriptionId,
+    string OfferId,
+    int UnitPriceCents,
+    int? TaxRateBasisPoints,
+    string Currency,
+    string Reason,
+    string Status);
 
 public sealed record MockCommercialDocumentLine(
     string Id,

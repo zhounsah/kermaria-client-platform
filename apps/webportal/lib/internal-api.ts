@@ -108,6 +108,67 @@ export type PortalDataResult<T> = {
   error?: ApiError;
 };
 
+export type BillingV2AdminRuntimeFlags = {
+  catalogShadowModeEnabled: boolean;
+  provisioningShadowModeEnabled: boolean;
+  newSubscriptionsEnabled: boolean;
+  authoritativeCheckoutEnabled: boolean;
+  firstRealSubscriptionApproved: boolean;
+  providerOutboxEnabled: boolean;
+  providerExecutorEnabled: boolean;
+  provisioningEnabled: boolean;
+};
+
+export type BillingV2AdminLaunchReadiness = {
+  realCustomerSubscriptionCount: number;
+  demoSubscriptionCount: number;
+  noRealCustomerSubscriptions: boolean;
+  verifiedAgainstPersistentSql: boolean;
+  blockingRealSubscriptions: BillingV2AdminBlockingLegacySubscription[];
+};
+
+export type BillingV2AdminBlockingLegacySubscription = {
+  subscriptionId: string;
+  status: string;
+  customerId: string;
+  customerReference: string;
+  customerName: string;
+  commercialOfferId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type BillingV2AdminProviderReadiness = {
+  provider: string;
+  environment: string;
+  providerConfigured: boolean;
+  priceMappingsReady: boolean;
+  requiredServicePriceCount: number;
+  resolvedMappingCount: number;
+  missingServicePriceIds: string[];
+  ambiguousServicePriceIds: string[];
+  readyForCheckout: boolean;
+};
+
+export type BillingV2AdminOperationalLimitation = {
+  code: string;
+  severity: string;
+  message: string;
+};
+
+export type BillingV2AdminReadinessSnapshot = {
+  persistentSqlAvailable: boolean;
+  schemaReady: boolean;
+  missingSchemaTables: string[];
+  runtimeFlags: BillingV2AdminRuntimeFlags;
+  launchReadiness: BillingV2AdminLaunchReadiness;
+  providers: BillingV2AdminProviderReadiness[];
+  operationalLimitations: BillingV2AdminOperationalLimitation[];
+  canRequestFirstRealSubscription: boolean;
+  reasonCode: string;
+  correlationId: string;
+};
+
 class InternalApiError extends Error {
   constructor(
     public readonly apiError: ApiError,
@@ -1461,6 +1522,20 @@ export function getAdminDownload(id: string) {
 export function getAdminSubscriptions() {
   return getAdminData<SubscriptionSummary[]>(
     "/internal/admin/subscriptions",
+    [],
+  );
+}
+
+export function getAdminBillingV2Readiness() {
+  return getAdminData<BillingV2AdminReadinessSnapshot | null>(
+    "/internal/admin/billing-v2/readiness",
+    null,
+  );
+}
+
+export function getAdminBillingV2Subscriptions() {
+  return getAdminData<SubscriptionSummary[]>(
+    "/internal/admin/billing-v2/subscriptions",
     [],
   );
 }

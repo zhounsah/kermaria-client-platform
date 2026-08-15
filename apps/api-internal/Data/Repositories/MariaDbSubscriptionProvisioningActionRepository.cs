@@ -19,12 +19,27 @@ public sealed class MariaDbSubscriptionProvisioningActionRepository
 
     public bool IsPersistent => true;
 
-    public async Task<string> CreateRequestedAsync(
+    public async Task<SubscriptionProvisioningActionCreateResult> CreateRequestedAsync(
         SubscriptionProvisioningActionCreateRequest request,
         CancellationToken cancellationToken)
     {
         var id = Guid.NewGuid().ToString("D");
         await using var connection = await OpenAsync(cancellationToken);
+
+        if (!string.IsNullOrWhiteSpace(request.IdempotencyKeyHash))
+        {
+            var existingActiveId = await FindActiveByHashAsync(
+                connection,
+                request.IdempotencyKeyHash,
+                cancellationToken);
+            if (existingActiveId is not null)
+            {
+                return new SubscriptionProvisioningActionCreateResult(
+                    existingActiveId,
+                    Created: false);
+            }
+        }
+
         await using var command = connection.CreateCommand();
         command.CommandText =
             """
@@ -40,6 +55,7 @@ public sealed class MariaDbSubscriptionProvisioningActionRepository
                 result_code,
                 correlation_id,
                 idempotency_key_hash,
+                idempotency_active_hash,
                 changed,
                 details_json
             ) VALUES (
@@ -54,6 +70,7 @@ public sealed class MariaDbSubscriptionProvisioningActionRepository
                 NULL,
                 @correlation_id,
                 @idempotency_key_hash,
+                @idempotency_active_hash,
                 NULL,
                 @details_json
             );
@@ -77,10 +94,35 @@ public sealed class MariaDbSubscriptionProvisioningActionRepository
             "idempotency_key_hash",
             DbValue(request.IdempotencyKeyHash));
         command.Parameters.AddWithValue(
+            "idempotency_active_hash",
+            DbValue(request.IdempotencyKeyHash));
+        command.Parameters.AddWithValue(
             "details_json",
             DbValue(request.DetailsJson));
-        await command.ExecuteNonQueryAsync(cancellationToken);
-        return id;
+        try
+        {
+            await command.ExecuteNonQueryAsync(cancellationToken);
+            return new SubscriptionProvisioningActionCreateResult(
+                id,
+                Created: true);
+        }
+        catch (MySqlException exception)
+            when (exception.Number == 1062
+                && !string.IsNullOrWhiteSpace(request.IdempotencyKeyHash))
+        {
+            var existingActiveId = await FindActiveByHashAsync(
+                connection,
+                request.IdempotencyKeyHash,
+                cancellationToken);
+            if (existingActiveId is not null)
+            {
+                return new SubscriptionProvisioningActionCreateResult(
+                    existingActiveId,
+                    Created: false);
+            }
+
+            throw;
+        }
     }
 
     public async Task MarkStartedAsync(
@@ -118,6 +160,7 @@ public sealed class MariaDbSubscriptionProvisioningActionRepository
                 status = @status,
                 result_code = @result_code,
                 changed = @changed,
+                idempotency_active_hash = NULL,
                 details_json = @details_json
             WHERE id = @id;
             """;
@@ -183,6 +226,30 @@ public sealed class MariaDbSubscriptionProvisioningActionRepository
         }
 
         return actions;
+    }
+
+    private static async Task<string?> FindActiveByHashAsync(
+        MySqlConnection connection,
+        string idempotencyKeyHash,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT id
+            FROM ad_actions
+            WHERE idempotency_active_hash = @idempotency_active_hash
+              AND status IN ('requested', 'running')
+            ORDER BY requested_at ASC, id ASC
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue(
+            "idempotency_active_hash",
+            idempotencyKeyHash);
+        var value = await command.ExecuteScalarAsync(cancellationToken);
+        return value is null || value is DBNull
+            ? null
+            : Convert.ToString(value);
     }
 
     private async Task<MySqlConnection> OpenAsync(

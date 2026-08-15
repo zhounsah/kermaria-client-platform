@@ -26,6 +26,7 @@
     "test:bpce": "node scripts/verify-bpce-invoicing-contract.mjs",
     "test:payments": "node scripts/verify-payment-channels-contract.mjs",
     "test:subscriptions": "node scripts/verify-subscriptions-contract.mjs",
+    "test:billing-legacy": "node scripts/verify-billing-legacy-regression-contract.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-subscription-return-idempotency.mjs",
     "test:downloads": "node scripts/verify-downloads-contract.mjs",
     "test:payments-stripe": "node scripts/verify-stripe-contract.mjs",
     "test:timezone": "node scripts/verify-timezone-contract.mjs",

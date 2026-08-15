@@ -123,8 +123,10 @@ export default async function ProfileSubscriptionsPage({
           <div className="stack-panels">
             {result.data.map((item) => {
               const status = subscriptionStatus[item.status];
+              const isBillingV2 = item.billingSystem === "billing_v2";
               const cancellable =
-                item.status !== "cancelled"
+                !isBillingV2
+                && item.status !== "cancelled"
                 && item.status !== "expired"
                 && item.status !== "pending_cancellation";
 
@@ -227,6 +229,11 @@ export default async function ProfileSubscriptionsPage({
                         : "date indisponible"}
                       {" · "}le service restera actif jusqu&apos;à la fin du terme
                       en cours.
+                    </p>
+                  ) : null}
+                  {isBillingV2 ? (
+                    <p className="field-hint">
+                      Souscription Billing V2 affichée en lecture seule.
                     </p>
                   ) : null}
                   <p className="field-hint">

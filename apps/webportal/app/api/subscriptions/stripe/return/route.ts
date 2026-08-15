@@ -8,9 +8,16 @@ import {
   mutateInternalPortalPayloadTyped,
 } from "@/lib/internal-api";
 import { getPortalPublicUrl } from "@/lib/public-routes";
+import {
+  getInternalApiUrl,
+  getInternalServiceHeaders,
+} from "@/lib/runtime-config";
 import type { SubscriptionSummary } from "@kermaria/shared";
 import { getSessionCookieName } from "@/lib/session-config";
 import { getStripeCheckoutSession } from "@/lib/stripe";
+import { findReturnedSubscription } from "@/lib/subscription-return";
+
+const PORTAL_SESSION_HEADER = "X-Portal-Session";
 
 export async function GET(request: NextRequest) {
   const correlationId = resolveCorrelationId(
@@ -57,17 +64,57 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(errorUrl);
   }
 
-  let subscription: SubscriptionSummary;
+  let subscription: SubscriptionSummary | null = null;
+  let internalApiUrl: string | undefined;
   try {
-    subscription = await mutateInternalPortalPayloadTyped<
-      SubscriptionSummary,
-      { offerId: string; rail: string; stripeSubscriptionId: string }
-    >(
-      "/internal/portal/subscriptions",
-      { offerId, rail: "stripe", stripeSubscriptionId },
-      sessionToken,
-      correlationId,
-    );
+    internalApiUrl = getInternalApiUrl();
+  } catch {
+    /* ignored */
+  }
+
+  if (internalApiUrl) {
+    try {
+      const response = await fetch(
+        `${internalApiUrl}/internal/portal/subscriptions`,
+        {
+          cache: "no-store",
+          signal: AbortSignal.timeout(10000),
+          headers: {
+            Accept: "application/json",
+            ...getInternalServiceHeaders(),
+            [CORRELATION_HEADER]: correlationId,
+            [PORTAL_SESSION_HEADER]: sessionToken,
+          },
+        },
+      );
+      if (!response.ok) {
+        return NextResponse.redirect(errorUrl);
+      }
+
+      const subscriptions = (await response.json()) as SubscriptionSummary[];
+      subscription = findReturnedSubscription(
+        subscriptions,
+        "stripe",
+        stripeSubscriptionId,
+      ) as SubscriptionSummary | null;
+    } catch (error) {
+      console.error("Stripe subscription lookup error:", error);
+      return NextResponse.redirect(errorUrl);
+    }
+  }
+
+  try {
+    if (!subscription) {
+      subscription = await mutateInternalPortalPayloadTyped<
+        SubscriptionSummary,
+        { offerId: string; rail: string; stripeSubscriptionId: string }
+      >(
+        "/internal/portal/subscriptions",
+        { offerId, rail: "stripe", stripeSubscriptionId },
+        sessionToken,
+        correlationId,
+      );
+    }
   } catch (error) {
     console.error("Stripe subscription persist error:", error);
     return NextResponse.redirect(errorUrl);

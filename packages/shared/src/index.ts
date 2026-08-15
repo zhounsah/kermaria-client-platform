@@ -368,6 +368,7 @@ export interface SubscriptionSummary {
   cancelledAt: string | null;
   createdAt: string;
   updatedAt: string;
+  billingSystem?: "legacy" | "billing_v2";
 }
 
 export interface SubscriptionCreatePayload {

@@ -30,6 +30,65 @@ public sealed record AdminActivityItem(
     string AuthorLabel,
     string OccurredAt);
 
+public sealed record BillingV2AdminRuntimeFlags(
+    bool CatalogShadowModeEnabled,
+    bool ProvisioningShadowModeEnabled,
+    bool NewSubscriptionsEnabled,
+    bool AuthoritativeCheckoutEnabled,
+    bool FirstRealSubscriptionApproved,
+    bool ProviderOutboxEnabled,
+    bool ProviderExecutorEnabled,
+    bool ProvisioningEnabled);
+
+public sealed record BillingV2AdminLaunchReadiness(
+    int RealCustomerSubscriptionCount,
+    int DemoSubscriptionCount,
+    bool NoRealCustomerSubscriptions,
+    bool VerifiedAgainstPersistentSql)
+{
+    public IReadOnlyList<BillingV2AdminBlockingLegacySubscription>
+        BlockingRealSubscriptions { get; init; } =
+            Array.Empty<BillingV2AdminBlockingLegacySubscription>();
+}
+
+public sealed record BillingV2AdminBlockingLegacySubscription(
+    string SubscriptionId,
+    string Status,
+    string CustomerId,
+    string CustomerReference,
+    string CustomerName,
+    string? CommercialOfferId,
+    string CreatedAt,
+    string UpdatedAt);
+
+public sealed record BillingV2AdminProviderReadiness(
+    string Provider,
+    string Environment,
+    bool ProviderConfigured,
+    bool PriceMappingsReady,
+    int RequiredServicePriceCount,
+    int ResolvedMappingCount,
+    IReadOnlyList<string> MissingServicePriceIds,
+    IReadOnlyList<string> AmbiguousServicePriceIds,
+    bool ReadyForCheckout);
+
+public sealed record BillingV2AdminOperationalLimitation(
+    string Code,
+    string Severity,
+    string Message);
+
+public sealed record BillingV2AdminReadinessSnapshot(
+    bool PersistentSqlAvailable,
+    bool SchemaReady,
+    IReadOnlyList<string> MissingSchemaTables,
+    BillingV2AdminRuntimeFlags RuntimeFlags,
+    BillingV2AdminLaunchReadiness LaunchReadiness,
+    IReadOnlyList<BillingV2AdminProviderReadiness> Providers,
+    IReadOnlyList<BillingV2AdminOperationalLimitation> OperationalLimitations,
+    bool CanRequestFirstRealSubscription,
+    string ReasonCode,
+    string CorrelationId);
+
 public sealed record AdminCustomerSummary(
     string CustomerReference,
     string DisplayName,
