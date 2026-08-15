@@ -78,6 +78,7 @@ public sealed class BillingV2ProviderInboundEventService
     private readonly BillingV2RuntimeConfiguration _configuration;
     private readonly IBillingV2DocumentIssuerService _documents;
     private readonly IBillingV2ProvisioningService _provisioning;
+    private readonly IBillingV2StripeRailService _stripeRail;
     private readonly ILogger<BillingV2ProviderInboundEventService> _logger;
 
     public BillingV2ProviderInboundEventService(
@@ -85,12 +86,14 @@ public sealed class BillingV2ProviderInboundEventService
         BillingV2RuntimeConfiguration configuration,
         IBillingV2DocumentIssuerService documents,
         IBillingV2ProvisioningService provisioning,
+        IBillingV2StripeRailService stripeRail,
         ILogger<BillingV2ProviderInboundEventService> logger)
     {
         _sql = sql;
         _configuration = configuration;
         _documents = documents;
         _provisioning = provisioning;
+        _stripeRail = stripeRail;
         _logger = logger;
     }
 
@@ -246,9 +249,36 @@ public sealed class BillingV2ProviderInboundEventService
                     : plan.ReasonCode,
                 localState.SubscriptionId,
                 localState.CheckoutSessionId);
-            if (BillingV2ProviderInboundProvisioningPolicy.ShouldAttempt(
-                    plan,
-                    localState))
+            // Phase 2. Le signal ne fait que declencher une RELECTURE Stripe.
+            // Document et provisioning ne suivent que si cette relecture a
+            // confirme l'encaissement du montant attendu, dans la bonne devise.
+            var settledByVerification = false;
+            if (BillingV2ProviderInboundProvisioningPolicy.ShouldVerifySettlement(
+                    request.Provider,
+                    plan.ReasonCode))
+            {
+                var settlement = await _stripeRail.VerifyAndSettleAsync(
+                    localState.SubscriptionId,
+                    cancellationToken);
+                settledByVerification = settlement.Settled;
+                if (!settlement.Settled)
+                {
+                    _logger.LogWarning(
+                        "Billing V2 Stripe settlement not confirmed for subscription {SubscriptionId}: {ReasonCode}. No document and no provisioning.",
+                        localState.SubscriptionId,
+                        settlement.ReasonCode);
+                    return result with { ReasonCode = settlement.ReasonCode };
+                }
+            }
+
+            if (settledByVerification
+                || (!string.Equals(
+                        request.Provider,
+                        "stripe",
+                        StringComparison.OrdinalIgnoreCase)
+                    && BillingV2ProviderInboundProvisioningPolicy.ShouldAttempt(
+                        plan,
+                        localState)))
             {
                 await TryIssueDocumentAsync(
                     localState.SubscriptionId,
@@ -927,6 +957,34 @@ public static class BillingV2ProviderInboundProvisioningPolicy
             reasonCode,
             SubscriptionActivatedReasonCode,
             StringComparison.Ordinal);
+
+    public const string CheckoutCompletedSignalReasonCode =
+        "BILLING_V2_PROVIDER_CHECKOUT_COMPLETED_SIGNAL";
+
+    /// <summary>
+    /// Signaux Stripe qui justifient une RELECTURE de l'objet chez Stripe.
+    ///
+    /// Ils n'autorisent rien par eux-memes : ils declenchent la verification,
+    /// qui seule peut conclure a un encaissement. Un signal inerte de Phase 1
+    /// (`customer.subscription.created` / `updated`) reste volontairement hors
+    /// de cette liste.
+    /// </summary>
+    public static bool ShouldVerifySettlement(
+        string provider,
+        string? reasonCode)
+        => string.Equals(provider, "stripe", StringComparison.OrdinalIgnoreCase)
+           && (string.Equals(
+                   reasonCode,
+                   CheckoutCompletedSignalReasonCode,
+                   StringComparison.Ordinal)
+               || string.Equals(
+                   reasonCode,
+                   SubscriptionActivatedReasonCode,
+                   StringComparison.Ordinal)
+               || string.Equals(
+                   reasonCode,
+                   "BILLING_V2_PROVIDER_CHECKOUT_RETURN_RECORDED",
+                   StringComparison.Ordinal));
 }
 
 public static class BillingV2ProviderInboundEventPlanner
@@ -1038,15 +1096,45 @@ public static class BillingV2ProviderInboundEventPlanner
                     SubscriptionStatus: null,
                     RequiresProviderSubscription: false),
             "billing_v2.subscription_activated"
-                or "checkout.session.completed"
-                or "customer.subscription.created"
-                or "customer.subscription.updated"
                 or "billing.subscription.activated" =>
                 new BillingV2ProviderEventKind(
                     "BILLING_V2_PROVIDER_SUBSCRIPTION_ACTIVATED",
                     CheckoutStatus: "completed",
                     AgreementStatus: "active",
                     SubscriptionStatus: "active",
+                    RequiresProviderSubscription: true),
+            // Phase 2 : `checkout.session.completed` n'active plus rien par
+            // lui-meme. La session peut etre "complete" alors que le paiement
+            // n'est pas encaisse (3DS en attente, `payment_status=unpaid`).
+            // L'evenement marque donc seulement la session comme terminee et
+            // sert de DECLENCHEUR a une relecture Stripe ; c'est cette
+            // relecture qui pourra, elle, conclure a un encaissement.
+            "checkout.session.completed" =>
+                new BillingV2ProviderEventKind(
+                    "BILLING_V2_PROVIDER_CHECKOUT_COMPLETED_SIGNAL",
+                    CheckoutStatus: "completed",
+                    AgreementStatus: null,
+                    SubscriptionStatus: null,
+                    RequiresProviderSubscription: false),
+            // Signal inerte (Phase 1, safety fix).
+            //
+            // `customer.subscription.created` et `customer.subscription.updated`
+            // ne prouvent RIEN sur le paiement : Stripe cree l'objet en statut
+            // `incomplete` tant qu'une authentification 3DS est en attente, et
+            // emet `updated` a chaque changement, y compris vers `past_due`.
+            //
+            // Ces deux evenements sont donc enregistres et rattaches, mais ne
+            // portent aucun statut : ils ne peuvent provoquer ni activation V2,
+            // ni emission documentaire, ni passage a `paid`, ni provisioning.
+            // Le systeme reste fail-closed en attendant la verification de
+            // settlement de la Phase 2.
+            "customer.subscription.created"
+                or "customer.subscription.updated" =>
+                new BillingV2ProviderEventKind(
+                    "BILLING_V2_PROVIDER_SUBSCRIPTION_SIGNAL_ONLY",
+                    CheckoutStatus: null,
+                    AgreementStatus: null,
+                    SubscriptionStatus: null,
                     RequiresProviderSubscription: true),
             "billing_v2.subscription_payment_failed"
                 or "invoice.payment_failed"

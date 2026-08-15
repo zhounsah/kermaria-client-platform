@@ -30,13 +30,17 @@ offer_presets
 
 commitment_terms
 
-subscriptions
+subscriptions                        (version : optimistic locking)
   ├── subscription_users
   ├── subscription_items
   │    └── subscription_item_provisioning
-  ├── subscription_changes
+  ├── subscription_changes           (intention persistante + idempotence)
   ├── payment_agreements
   └── subscription_price_locks
+
+billing_events                       (intention financière immuable)
+  ├── billing_event_lines            (détail figé, remise ventilée)
+  └── payment_attempts               (persistées AVANT tout appel provider)
 
 provider_price_mappings
 
@@ -46,6 +50,43 @@ legacy_service_mappings
 outbox_events
 audit_log
 ```
+
+## Chaîne financière
+
+Le cœur financier est décrit en détail dans `FINANCIAL-CORE.md`, qui fait
+autorité sur ce document pour tout ce qui touche à l'argent.
+
+```text
+Subscription / SubscriptionChange
+        ↓
+Pricing Engine
+        ↓
+BillingEvent + BillingEventLines
+        ↓
+PaymentAttempt
+        ↓
+Provider
+        ↓
+settlement vérifié
+        ↓
+Document
+        ↓
+Entitlement / Provisioning
+```
+
+Points structurants :
+
+- `SubscriptionChange` porte l'intention utilisateur et sert d'ancre
+  d'idempotence. Une clé d'idempotence qui ne vit que côté client n'est pas une
+  ancre valable ;
+- `BillingEvent` est immuable ; une correction est un nouvel événement
+  `adjustment`, jamais une réécriture ;
+- `BillingEvent` ↔ document est **1:1 en V2.0** ;
+- `PaymentAttempt` sépare le montant **attendu** (décidé par le Pricing Engine)
+  du montant **réellement constaté** chez le provider ;
+- un webhook est un **signal**, jamais une preuve de paiement suffisante ;
+- aucun provisioning ne découle d'un événement provider brut ;
+- toute mutation de `subscriptions` s'écrit en compare-and-swap sur `version`.
 
 ## Sources de vérité
 

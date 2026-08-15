@@ -47,17 +47,20 @@ public sealed class BillingV2ProviderOutboxDispatcher
     private readonly SqlRuntimeConfiguration _sql;
     private readonly BillingV2RuntimeConfiguration _configuration;
     private readonly IBillingV2ProviderCheckoutExecutor _executor;
+    private readonly IBillingV2StripeRailService _stripeRail;
     private readonly ILogger<BillingV2ProviderOutboxDispatcher> _logger;
 
     public BillingV2ProviderOutboxDispatcher(
         SqlRuntimeConfiguration sql,
         BillingV2RuntimeConfiguration configuration,
         IBillingV2ProviderCheckoutExecutor executor,
+        IBillingV2StripeRailService stripeRail,
         ILogger<BillingV2ProviderOutboxDispatcher> logger)
     {
         _sql = sql;
         _configuration = configuration;
         _executor = executor;
+        _stripeRail = stripeRail;
         _logger = logger;
     }
 
@@ -96,12 +99,25 @@ public sealed class BillingV2ProviderOutboxDispatcher
                 continue;
             }
 
-            var result = await _executor.ExecuteAsync(
-                new BillingV2ProviderCheckoutExecutionRequest(
-                    outboxEvent.Id,
-                    outboxEvent.IdempotencyKeyHash,
-                    outboxEvent.PayloadText),
-                cancellationToken);
+            // Phase 2 : le rail Stripe passe par le coeur financier. Le montant
+            // vient du BillingEvent finalise et une PaymentAttempt est
+            // persistee avant l'appel. Le chemin generique reste en place pour
+            // PayPal, non branche dans cette phase.
+            var payloadForRouting = BillingV2ProviderCheckoutPayload.Parse(
+                outboxEvent.PayloadText);
+            var result = string.Equals(
+                    payloadForRouting.Provider,
+                    "stripe",
+                    StringComparison.Ordinal)
+                ? await ExecuteStripeRailAsync(
+                    payloadForRouting,
+                    cancellationToken)
+                : await _executor.ExecuteAsync(
+                    new BillingV2ProviderCheckoutExecutionRequest(
+                        outboxEvent.Id,
+                        outboxEvent.IdempotencyKeyHash,
+                        outboxEvent.PayloadText),
+                    cancellationToken);
             var update = BillingV2ProviderOutboxDispatchPolicy.Resolve(
                 result,
                 outboxEvent.RetryCount);
@@ -139,6 +155,26 @@ public sealed class BillingV2ProviderOutboxDispatcher
             dispatched == 0
                 ? "BILLING_V2_PROVIDER_OUTBOX_NO_PENDING_EVENTS"
                 : "BILLING_V2_PROVIDER_OUTBOX_DISPATCHED");
+    }
+
+    private async Task<BillingV2ProviderCheckoutExecutionResult>
+        ExecuteStripeRailAsync(
+            BillingV2ProviderCheckoutPayload payload,
+            CancellationToken cancellationToken)
+    {
+        var dispatch = await _stripeRail.DispatchCheckoutAsync(
+            payload.SubscriptionId,
+            payload.CustomerEmail,
+            payload.SuccessUrl,
+            payload.CancelUrl,
+            cancellationToken);
+        return new BillingV2ProviderCheckoutExecutionResult(
+            dispatch.Succeeded,
+            dispatch.ReasonCode,
+            dispatch.SessionId,
+            ProviderSubscriptionId: null,
+            dispatch.ApprovalUrl,
+            dispatch.Succeeded ? null : dispatch.ReasonCode);
     }
 
     private static async Task<BillingV2ProviderOutboxUpdate?>

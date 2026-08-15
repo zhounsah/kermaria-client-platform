@@ -131,6 +131,9 @@ const billingV2ProviderInboundEventService = await read(
 const billingV2AuthoritativeCheckoutService = await read(
   "../../apps/api-internal/Services/BillingV2AuthoritativeCheckoutService.cs",
 );
+const billingV2StripeRail = await read(
+  "../../apps/api-internal/Services/BillingV2StripeRail.cs",
+);
 const webRuntimeConfig = await read("lib/runtime-config.ts");
 const apiProgram = await read("../../apps/api-internal/Program.cs");
 const billingV2PricingTests = await read(
@@ -538,9 +541,12 @@ assert.match(
   /SUM\(CASE WHEN COALESCE\(customer\.is_demo, FALSE\) = FALSE[\s\S]*real_count[\s\S]*SUM\(CASE WHEN COALESCE\(customer\.is_demo, FALSE\) = TRUE[\s\S]*demo_count/,
   "Le service readiness lancement V2 doit compter separement vrais abonnements et demos en lecture seule.",
 );
+// Detecteur ancre en debut de ligne, comme les autres controles de ce
+// fichier : une mutation SQL est une instruction, pas un appel de methode.
+// La forme non ancree confondait `List<T>.Insert(...)` avec un INSERT SQL.
 assert.doesNotMatch(
   billingV2LaunchReadinessService,
-  /\b(INSERT|UPDATE|DELETE|DROP|ALTER)\b/i,
+  /^\s*(INSERT|UPDATE|DELETE|DROP|ALTER)\b/im,
   "La readiness lancement V2 ne doit pas modifier les donnees.",
 );
 assert.match(
@@ -570,8 +576,13 @@ assert.match(
 );
 assert.doesNotMatch(
   billingV2AdminReadinessService,
-  /\b(INSERT|UPDATE|DELETE|DROP|ALTER)\b|SecretKey|ClientSecret|PAYPAL_CLIENT_SECRET|STRIPE_SECRET_KEY/i,
-  "La readiness admin Billing V2 ne doit ni muter la base ni exposer de secret provider.",
+  /^\s*(INSERT|UPDATE|DELETE|DROP|ALTER)\b/im,
+  "La readiness admin Billing V2 ne doit pas muter la base.",
+);
+assert.doesNotMatch(
+  billingV2AdminReadinessService,
+  /SecretKey|ClientSecret|PAYPAL_CLIENT_SECRET|STRIPE_SECRET_KEY/i,
+  "La readiness admin Billing V2 ne doit exposer aucun secret provider.",
 );
 assert.match(
   apiProgram,
@@ -983,10 +994,30 @@ assert.match(
   /IBillingV2AuthoritativeCheckoutService[\s\S]*BillingV2AuthoritativeCheckoutGate[\s\S]*NewSubscriptionsEnabled[\s\S]*AuthoritativeCheckoutEnabled[\s\S]*FirstRealSubscriptionApproved/,
   "Le checkout V2 autoritaire local doit rester derriere les flags nouveaux abonnements, checkout et validation humaine.",
 );
+// Phase 2 : l'ordre a change car la demande de checkout reference desormais
+// l'intention (subscription_change_id) et l'evenement financier
+// (billing_event_id). L'abonnement doit donc exister avant l'intention, et
+// l'intention avant le BillingEvent. La propriete verifiee reste la meme :
+// tout est ecrit dans UNE seule transaction.
 assert.match(
   billingV2AuthoritativeCheckoutService,
-  /BeginTransactionAsync[\s\S]*InsertCheckoutRequestAsync[\s\S]*InsertSubscriptionAsync[\s\S]*InsertItemAsync[\s\S]*InsertSubscriptionPriceLockAsync[\s\S]*InsertOutboxEventAsync[\s\S]*InsertAuditAsync[\s\S]*MarkCheckoutRequestQueuedAsync[\s\S]*CommitAsync/,
-  "Le checkout V2 autoritaire local doit orchestrer abonnement/items/price lock/outbox/audit dans une transaction.",
+  /BeginTransactionAsync[\s\S]*InsertSubscriptionAsync[\s\S]*TryInsertIntentAsync[\s\S]*InsertFinalizedBillingEventAsync[\s\S]*InsertCheckoutRequestAsync[\s\S]*InsertItemAsync[\s\S]*InsertSubscriptionPriceLockAsync[\s\S]*InsertOutboxEventAsync[\s\S]*InsertAuditAsync[\s\S]*MarkCheckoutRequestQueuedAsync[\s\S]*CommitAsync/,
+  "Le checkout V2 autoritaire local doit orchestrer intention/BillingEvent/abonnement/items/price lock/outbox/audit dans une transaction.",
+);
+assert.match(
+  billingV2AuthoritativeCheckoutService,
+  /FindIntentByHashAsync[\s\S]*FindOpenIntentForSelectionAsync/,
+  "Le checkout V2 doit resoudre l'intention serveur par cle puis par selection metier, jamais depuis un etat navigateur.",
+);
+assert.doesNotMatch(
+  billingV2StripeRail,
+  /line_items\[\d*\]\[price\]|\[price\]"\]\s*=/,
+  "Le rail Stripe V2 ne doit jamais laisser un price_id externe fixer le total contractuel.",
+);
+assert.match(
+  billingV2StripeRail,
+  /price_data\]\[unit_amount\][\s\S]*billingEvent\.TotalAmountCents|TotalAmountCents[\s\S]*price_data\]\[unit_amount\]/,
+  "Le montant envoye a Stripe doit provenir du BillingEvent finalise.",
 );
 assert.match(
   billingV2AuthoritativeCheckoutService,
@@ -1146,12 +1177,18 @@ assert.match(
 );
 assert.match(
   billingV2AuthoritativeCheckoutService,
-  /ReadApprovalUrlAsync[\s\S]*return new BillingV2AuthoritativeCheckoutResult\([\s\S]*Created: false[\s\S]*existingApprovalUrl/,
+  // Phase 2 : la reponse de rejeu est centralisee dans BuildExistingResultAsync,
+  // la variable locale s'appelle desormais `approvalUrl`. La propriete verifiee
+  // ne change pas : l'URL provider n'est exposee que sur `Created: false`.
+  /ReadApprovalUrlAsync[\s\S]*return new BillingV2AuthoritativeCheckoutResult\([\s\S]*Created: false[\s\S]*approvalUrl/,
   "L'URL provider V2 ne doit etre exposee qu'au retry idempotent d'une demande deja materialisee.",
 );
 assert.match(
   billingV2AuthoritativeCheckoutService,
-  /ReadCheckoutRequestOrNullAsync[\s\S]*earlyExisting[\s\S]*ReadApprovalUrlAsync[\s\S]*ReadMappingAsync/,
+  // Phase 2 : le rejeu est resolu par l'intention serveur, plus par la seule
+  // demande de checkout. La propriete verifiee est inchangee et meme renforcee :
+  // la resolution precede toute lecture mapping/pricing courante.
+  /FindIntentByHashAsync[\s\S]*FindOpenIntentForSelectionAsync[\s\S]*BuildExistingResultAsync[\s\S]*ReadMappingAsync/,
   "Un retry checkout V2 deja materialise doit etre resolu avant les lectures mapping/pricing courantes.",
 );
 assert.match(

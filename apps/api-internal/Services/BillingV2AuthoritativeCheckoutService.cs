@@ -1,4 +1,4 @@
-using System.Data;
+﻿using System.Data;
 using System.Security.Cryptography;
 using System.Text;
 using Kermaria.ApiInternal.Contracts;
@@ -100,37 +100,50 @@ public sealed class BillingV2AuthoritativeCheckoutService
         }
 
         var now = DateTime.UtcNow;
+        var intentRequest = new BillingV2SubscriptionIntentRequest(
+            session.CustomerId,
+            request.IdempotencyKey,
+            request.LegacyOfferId,
+            provider,
+            environment);
+        var intentCanonical =
+            BillingV2SubscriptionIntentKey.Canonical(intentRequest);
+        var intentHash = BillingV2SubscriptionIntentKey.Hash(intentCanonical);
+
         await using var readConnection =
             new MySqlConnection(_sql.ConnectionString);
         await readConnection.OpenAsync(cancellationToken);
-        var earlyExisting = await ReadCheckoutRequestOrNullAsync(
-            readConnection,
-            transaction: null,
-            session.CustomerId,
-            request.IdempotencyKey,
-            cancellationToken);
-        if (earlyExisting is not null)
+
+        // L'ancre d'idempotence est desormais l'intention serveur.
+        // 1) meme client_request_id -> meme intention (double clic, retry) ;
+        // 2) sinon, intention encore ouverte pour la MEME selection metier :
+        //    un rafraichissement de navigateur fabrique forcement un nouveau
+        //    client_request_id, il doit quand meme retomber sur l'intention
+        //    existante au lieu d'en ouvrir une seconde.
+        var existingIntent = await BillingV2FinancialCoreStore
+                .FindIntentByHashAsync(
+                    readConnection,
+                    transaction: null,
+                    intentHash,
+                    cancellationToken)
+            ?? await BillingV2FinancialCoreStore
+                .FindOpenIntentForSelectionAsync(
+                    readConnection,
+                    transaction: null,
+                    session.CustomerId,
+                    request.LegacyOfferId,
+                    provider,
+                    environment,
+                    now,
+                    cancellationToken);
+        if (existingIntent is not null)
         {
-            EnsureSameIdempotentRequest(
-                earlyExisting,
-                requestFingerprintHash);
-            var earlyApprovalUrl = await ReadApprovalUrlAsync(
+            return await BuildExistingResultAsync(
                 readConnection,
-                transaction: null,
-                earlyExisting.SubscriptionId,
-                earlyExisting.IdempotencyKeyHash,
+                existingIntent,
+                provider,
+                environment,
                 cancellationToken);
-            return new BillingV2AuthoritativeCheckoutResult(
-                Created: false,
-                earlyExisting.SubscriptionId,
-                earlyExisting.Provider,
-                earlyExisting.Environment,
-                earlyExisting.OutboxEventId ?? string.Empty,
-                earlyExisting.IdempotencyKeyHash ?? string.Empty,
-                TotalDueNowCents: 0,
-                earlyExisting.ReasonCode
-                    ?? "BILLING_V2_AUTHORITATIVE_CHECKOUT_IDEMPOTENT_NOOP",
-                earlyApprovalUrl);
         }
 
         var mapping = await ReadMappingAsync(
@@ -178,10 +191,109 @@ public sealed class BillingV2AuthoritativeCheckoutService
         var providerPlan = BillingV2ProviderCheckoutCommandPlanner.Plan(
             providerRequest);
 
+        // L'evenement financier est construit AVANT toute ecriture : la
+        // fabrique re-verifie que la somme des lignes retombe exactement sur le
+        // total du Pricing Engine, et echoue en ferme sinon.
+        var periodStart = now;
+        var periodEnd = string.Equals(
+                mapping.PaymentMode,
+                BillingV2PaymentModes.Upfront,
+                StringComparison.Ordinal)
+            ? now.AddMonths(Math.Max(1, mapping.CommitmentMonths))
+            : now.AddMonths(1);
+        var eventBuild = BillingV2BillingEventFactory.BuildInitialCharge(
+            new BillingV2BillingEventBuildRequest(
+                mapping.PaymentMode,
+                mapping.CommitmentMonths,
+                mapping.DiscountBasisPoints,
+                checkoutPlan.Currency,
+                presetItems,
+                pricing,
+                periodStart,
+                periodEnd,
+                $"billing_v2.billing_event|initial_charge|{intentHash}"));
+
         await using var connection = new MySqlConnection(_sql.ConnectionString);
         await connection.OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(
             IsolationLevel.ReadCommitted,
+            cancellationToken);
+
+        var itemPlan = BillingV2NewSubscriptionPlanner.Plan(
+            session,
+            presetItems);
+        // Plancher d'engagement partage avec BillingV2NewSubscriptionService :
+        // 45 % du MRR initial remise, jamais 100 %.
+        var minimumCommitmentAmountCents =
+            BillingV2CommitmentFloorPolicy.Resolve(
+                _pricing,
+                mapping.PaymentMode,
+                mapping.CommitmentMonths,
+                pricing.DiscountedRecurringAmountCents);
+        await InsertSubscriptionAsync(
+            connection,
+            transaction,
+            subscriptionId,
+            session.CustomerId,
+            mapping,
+            minimumCommitmentAmountCents,
+            now,
+            cancellationToken);
+
+        // INSERT IGNORE puis relecture : sous concurrence, le perdant annule sa
+        // propre transaction (donc son abonnement brouillon) et repart de
+        // l'intention du gagnant, au lieu de creer un second contrat.
+        var changeId = Guid.NewGuid().ToString("D");
+        var intentInserted = await BillingV2FinancialCoreStore
+            .TryInsertIntentAsync(
+                connection,
+                transaction,
+                changeId,
+                subscriptionId,
+                request.IdempotencyKey,
+                intentCanonical,
+                intentHash,
+                IntentInitialSubscriptionVersion,
+                now,
+                now.AddMinutes(IntentExpiryMinutes),
+                session.UserId,
+                cancellationToken);
+        if (!intentInserted)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            var winner = await BillingV2FinancialCoreStore
+                .FindIntentByHashAsync(
+                    readConnection,
+                    transaction: null,
+                    intentHash,
+                    cancellationToken)
+                ?? throw new InvalidOperationException(
+                    "BILLING_V2_INTENT_NOT_PERSISTED");
+            return await BuildExistingResultAsync(
+                readConnection,
+                winner,
+                provider,
+                environment,
+                cancellationToken);
+        }
+
+        var billingEventId = Guid.NewGuid().ToString("D");
+        await BillingV2FinancialCoreStore.InsertFinalizedBillingEventAsync(
+            connection,
+            transaction,
+            billingEventId,
+            session.CustomerId,
+            subscriptionId,
+            changeId,
+            eventBuild.Draft,
+            mapping.PaymentMode,
+            mapping.CommitmentMonths,
+            mapping.DiscountBasisPoints,
+            periodStart,
+            periodEnd,
+            now,
+            now.AddMinutes(SettlementDeadlineMinutes),
+            eventBuild.LineSources,
             cancellationToken);
 
         var requestId = Guid.NewGuid().ToString("D");
@@ -195,50 +307,10 @@ public sealed class BillingV2AuthoritativeCheckoutService
             environment,
             requestFingerprintHash,
             subscriptionId,
+            changeId,
+            billingEventId,
             cancellationToken);
-        var existing = await ReadCheckoutRequestAsync(
-            connection,
-            transaction,
-            session.CustomerId,
-            request.IdempotencyKey,
-            cancellationToken);
-        if (!string.Equals(existing.Id, requestId, StringComparison.Ordinal))
-        {
-            EnsureSameIdempotentRequest(
-                existing,
-                requestFingerprintHash);
-            var existingApprovalUrl = await ReadApprovalUrlAsync(
-                connection,
-                transaction,
-                existing.SubscriptionId,
-                existing.IdempotencyKeyHash,
-                cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-            return new BillingV2AuthoritativeCheckoutResult(
-                Created: false,
-                existing.SubscriptionId,
-                existing.Provider,
-                existing.Environment,
-                existing.OutboxEventId ?? string.Empty,
-                existing.IdempotencyKeyHash ?? string.Empty,
-                TotalDueNowCents: 0,
-                existing.ReasonCode
-                    ?? "BILLING_V2_AUTHORITATIVE_CHECKOUT_IDEMPOTENT_NOOP",
-                existingApprovalUrl);
-        }
 
-        var itemPlan = BillingV2NewSubscriptionPlanner.Plan(
-            session,
-            presetItems);
-        await InsertSubscriptionAsync(
-            connection,
-            transaction,
-            subscriptionId,
-            session.CustomerId,
-            mapping,
-            pricing,
-            now,
-            cancellationToken);
         foreach (var user in itemPlan.Users)
         {
             await InsertUserAsync(
@@ -311,9 +383,107 @@ public sealed class BillingV2AuthoritativeCheckoutService
             environment,
             outboxEventId,
             providerPlan.IdempotencyKeyHash,
-            pricing.TotalDueNowCents,
+            eventBuild.Draft.TotalAmountCents,
             checkoutReadiness.ReasonCode,
             ApprovalUrl: null);
+    }
+
+    private const long IntentInitialSubscriptionVersion = 1;
+    private const int IntentExpiryMinutes = 60;
+    private const int SettlementDeadlineMinutes = 60;
+
+    /// <summary>
+    /// Reconstruit la reponse a partir d'une intention deja ouverte. Le total
+    /// annonce provient du BillingEvent, jamais d'un recalcul catalogue : un
+    /// rejeu ne peut donc pas afficher un montant different du premier appel.
+    /// </summary>
+    private static async Task<BillingV2AuthoritativeCheckoutResult>
+        BuildExistingResultAsync(
+            MySqlConnection connection,
+            BillingV2IntentRecord intent,
+            string provider,
+            string environment,
+            CancellationToken cancellationToken)
+    {
+        var checkoutRequest = await ReadCheckoutRequestByChangeAsync(
+            connection,
+            intent.Id,
+            cancellationToken);
+        var approvalUrl = await ReadApprovalUrlAsync(
+            connection,
+            transaction: null,
+            intent.SubscriptionId,
+            checkoutRequest?.IdempotencyKeyHash,
+            cancellationToken);
+        var total = 0L;
+        if (intent.BillingEventId is not null)
+        {
+            var billingEvent = await BillingV2FinancialCoreStore
+                .ReadBillingEventAsync(
+                    connection,
+                    transaction: null,
+                    intent.BillingEventId,
+                    cancellationToken);
+            total = billingEvent?.TotalAmountCents ?? 0;
+        }
+
+        return new BillingV2AuthoritativeCheckoutResult(
+            Created: false,
+            intent.SubscriptionId,
+            checkoutRequest?.Provider ?? provider,
+            checkoutRequest?.Environment ?? environment,
+            checkoutRequest?.OutboxEventId ?? string.Empty,
+            checkoutRequest?.IdempotencyKeyHash ?? string.Empty,
+            total,
+            checkoutRequest?.ReasonCode
+                ?? "BILLING_V2_AUTHORITATIVE_CHECKOUT_IDEMPOTENT_NOOP",
+            approvalUrl);
+    }
+
+    private static async Task<BillingV2AuthoritativeCheckoutRequestRecord?>
+        ReadCheckoutRequestByChangeAsync(
+            MySqlConnection connection,
+            string subscriptionChangeId,
+            CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT
+                id,
+                subscription_id,
+                provider,
+                environment,
+                request_fingerprint_hash,
+                outbox_event_id,
+                idempotency_key_hash,
+                reason_code
+            FROM billing_v2_authoritative_checkout_requests
+            WHERE subscription_change_id = @change_id
+            ORDER BY created_at ASC, id ASC
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("@change_id", subscriptionChangeId);
+        await using var reader = await command.ExecuteReaderAsync(
+            cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new BillingV2AuthoritativeCheckoutRequestRecord(
+            MariaDbIdentifierReader.ReadRequired(reader, "id"),
+            MariaDbIdentifierReader.ReadRequired(reader, "subscription_id"),
+            reader.GetString("provider"),
+            reader.GetString("environment"),
+            reader.GetString("request_fingerprint_hash"),
+            MariaDbIdentifierReader.ReadNullable(reader, "outbox_event_id"),
+            reader.IsDBNull(reader.GetOrdinal("idempotency_key_hash"))
+                ? null
+                : reader.GetString("idempotency_key_hash"),
+            reader.IsDBNull(reader.GetOrdinal("reason_code"))
+                ? null
+                : reader.GetString("reason_code"));
     }
 
     private string ResolveEnvironment(string provider)
@@ -395,75 +565,21 @@ public sealed class BillingV2AuthoritativeCheckoutService
             reader.GetInt32("discount_basis_points"));
     }
 
+    // Lecture deleguee au lecteur partage : meme requete et meme resolution
+    // d'ambiguite de prix que BillingV2NewSubscriptionService, pour que les
+    // deux chemins de creation ne puissent plus diverger.
     private static async Task<IReadOnlyList<BillingV2NewSubscriptionPresetItem>>
         ReadPresetItemsAsync(
             MySqlConnection connection,
             string presetId,
             DateTime now,
             CancellationToken cancellationToken)
-    {
-        var items = new List<BillingV2NewSubscriptionPresetItem>();
-        await using var command = connection.CreateCommand();
-        command.CommandText =
-            """
-            SELECT
-                preset_item.id AS preset_item_id,
-                preset_item.service_id,
-                preset_item.tier_id,
-                preset_item.scope_template,
-                preset_item.quantity,
-                service.code AS service_code,
-                service.discount_eligible,
-                tier.code AS tier_code,
-                price.id AS service_price_id,
-                price.price_code,
-                price.amount_cents,
-                price.currency,
-                price.billing_cadence
-            FROM billing_v2_preset_items preset_item
-            INNER JOIN billing_v2_services service
-                ON service.id = preset_item.service_id
-               AND service.status = 'active'
-            LEFT JOIN billing_v2_service_tiers tier
-                ON tier.id = preset_item.tier_id
-               AND tier.status = 'active'
-            INNER JOIN billing_v2_service_prices price
-                ON price.service_id = service.id
-               AND price.tier_id <=> preset_item.tier_id
-               AND price.status = 'active'
-               AND price.valid_from <= @now
-               AND (price.valid_until IS NULL OR price.valid_until > @now)
-            WHERE preset_item.preset_id = @preset_id
-            ORDER BY preset_item.display_order, preset_item.id;
-            """;
-        command.Parameters.AddWithValue("@preset_id", presetId);
-        command.Parameters.AddWithValue("@now", now);
-        await using var reader = await command.ExecuteReaderAsync(
+        => await BillingV2PresetItemReader.ReadAsync(
+            connection,
+            transaction: null,
+            presetId,
+            now,
             cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
-        {
-            items.Add(new BillingV2NewSubscriptionPresetItem(
-                reader.GetString("preset_item_id"),
-                reader.GetString("service_id"),
-                reader.IsDBNull(reader.GetOrdinal("tier_id"))
-                    ? null
-                    : reader.GetString("tier_id"),
-                reader.GetString("service_price_id"),
-                reader.GetString("service_code"),
-                reader.IsDBNull(reader.GetOrdinal("tier_code"))
-                    ? null
-                    : reader.GetString("tier_code"),
-                reader.GetString("price_code"),
-                reader.GetString("scope_template"),
-                reader.GetInt32("quantity"),
-                reader.GetInt64("amount_cents"),
-                reader.GetString("currency"),
-                reader.GetString("billing_cadence"),
-                reader.GetBoolean("discount_eligible")));
-        }
-
-        return items;
-    }
 
     private static async Task InsertCheckoutRequestAsync(
         MySqlConnection connection,
@@ -475,6 +591,8 @@ public sealed class BillingV2AuthoritativeCheckoutService
         string environment,
         string requestFingerprintHash,
         string subscriptionId,
+        string subscriptionChangeId,
+        string billingEventId,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -491,6 +609,8 @@ public sealed class BillingV2AuthoritativeCheckoutService
                 provider,
                 environment,
                 subscription_id,
+                subscription_change_id,
+                billing_event_id,
                 status,
                 created_at,
                 updated_at
@@ -504,11 +624,17 @@ public sealed class BillingV2AuthoritativeCheckoutService
                 @provider,
                 @environment,
                 @subscription_id,
+                @subscription_change_id,
+                @billing_event_id,
                 'pending',
                 UTC_TIMESTAMP(6),
                 UTC_TIMESTAMP(6)
             );
             """;
+        command.Parameters.AddWithValue(
+            "@subscription_change_id",
+            subscriptionChangeId);
+        command.Parameters.AddWithValue("@billing_event_id", billingEventId);
         command.Parameters.AddWithValue("@id", requestId);
         command.Parameters.AddWithValue("@customer_id", session.CustomerId);
         command.Parameters.AddWithValue("@actor_reference", session.UserId);
@@ -580,14 +706,12 @@ public sealed class BillingV2AuthoritativeCheckoutService
         }
 
         return new BillingV2AuthoritativeCheckoutRequestRecord(
-            reader.GetString("id"),
-            reader.GetString("subscription_id"),
+            MariaDbIdentifierReader.ReadRequired(reader, "id"),
+            MariaDbIdentifierReader.ReadRequired(reader, "subscription_id"),
             reader.GetString("provider"),
             reader.GetString("environment"),
             reader.GetString("request_fingerprint_hash"),
-            reader.IsDBNull(reader.GetOrdinal("outbox_event_id"))
-                ? null
-                : reader.GetString("outbox_event_id"),
+            MariaDbIdentifierReader.ReadNullable(reader, "outbox_event_id"),
             reader.IsDBNull(reader.GetOrdinal("idempotency_key_hash"))
                 ? null
                 : reader.GetString("idempotency_key_hash"),
@@ -637,7 +761,7 @@ public sealed class BillingV2AuthoritativeCheckoutService
         string subscriptionId,
         string customerId,
         BillingV2AuthoritativeCheckoutMapping mapping,
-        BillingV2PricingResult pricing,
+        long? minimumCommitmentAmountCents,
         DateTime now,
         CancellationToken cancellationToken)
     {
@@ -687,9 +811,8 @@ public sealed class BillingV2AuthoritativeCheckoutService
             mapping.DiscountBasisPoints);
         command.Parameters.AddWithValue(
             "@minimum_commitment_amount_cents",
-            mapping.CommitmentMonths > 1
-            && mapping.PaymentMode == BillingV2PaymentModes.Monthly
-                ? pricing.PayableRecurringAmountCents
+            minimumCommitmentAmountCents.HasValue
+                ? minimumCommitmentAmountCents.Value
                 : DBNull.Value);
         command.Parameters.AddWithValue("@created_at", now);
         command.Parameters.AddWithValue("@updated_at", now);

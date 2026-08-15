@@ -1235,11 +1235,19 @@ public static class BillingV2NewSubscriptionTests
                 agreementStatus: "active",
                 subscriptionStatus: "active"));
 
+        // Phase 2 : `checkout.session.completed` n'active plus directement.
+        // Il reste idempotent (rien a reappliquer), mais son code de raison est
+        // desormais un signal declencheur de relecture Stripe, pas une
+        // activation.
         Ensure(
             plan.CanApply
             && plan.AlreadyApplied
-            && plan.ReasonCode == "BILLING_V2_PROVIDER_SUBSCRIPTION_ACTIVATED",
+            && plan.ReasonCode
+                == "BILLING_V2_PROVIDER_CHECKOUT_COMPLETED_SIGNAL",
             "Un webhook provider V2 deja applique doit rester idempotent et ne pas recreer d'accord local.");
+        Ensure(
+            plan.SubscriptionStatus is null,
+            "Phase 2 : ce webhook ne doit plus porter d'activation d'abonnement.");
     }
 
     private static void VerifyProviderInboundProcessedActivationCanRetryProvisioning()
@@ -1294,12 +1302,20 @@ public static class BillingV2NewSubscriptionTests
                 providerSubscriptionId: "sub_v2_123"),
             state);
 
+        // Phase 2 : le rejeu reste retentable, mais il passe desormais par la
+        // relecture Stripe. Le provisioning ne peut plus etre declenche
+        // directement par le signal ; il suit la verification de settlement.
         Ensure(
             plan.AlreadyApplied
-            && BillingV2ProviderInboundProvisioningPolicy.ShouldAttempt(
+            && BillingV2ProviderInboundProvisioningPolicy.ShouldVerifySettlement(
+                "stripe",
+                plan.ReasonCode),
+            "Un retry d'activation provider V2 deja applique doit pouvoir retenter le provisioning idempotent.");
+        Ensure(
+            !BillingV2ProviderInboundProvisioningPolicy.ShouldAttempt(
                 plan,
                 state),
-            "Un retry d'activation provider V2 deja applique doit pouvoir retenter le provisioning idempotent.");
+            "Phase 2 : le provisioning ne part plus directement du signal brut.");
     }
 
     private static void VerifyProviderInboundProvisioningFailureKeepsProviderEventProcessed()

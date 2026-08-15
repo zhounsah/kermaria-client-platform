@@ -350,6 +350,19 @@ builder.Services.AddScoped<IBillingV2ProviderCheckoutExecutor>(
             serviceProvider.GetRequiredService<StripeRuntimeConfiguration>(),
             serviceProvider.GetRequiredService<IHttpClientFactory>())
         : DisabledBillingV2ProviderCheckoutExecutor.Instance);
+// Rail Stripe V2 (Phase 2). Fail-closed par defaut : sans flag executor, la
+// passerelle est desactivee et aucun appel Stripe ne peut partir.
+builder.Services.AddScoped<IBillingV2StripeGateway>(
+    serviceProvider => billingV2RuntimeConfiguration.ProviderExecutorEnabled
+        ? new BillingV2StripeGateway(
+            serviceProvider.GetRequiredService<BillingV2RuntimeConfiguration>(),
+            serviceProvider.GetRequiredService<StripeRuntimeConfiguration>(),
+            serviceProvider.GetRequiredService<IHttpClientFactory>(),
+            serviceProvider.GetRequiredService<ILogger<BillingV2StripeGateway>>())
+        : DisabledBillingV2StripeGateway.Instance);
+builder.Services.AddScoped<
+    IBillingV2StripeRailService,
+    BillingV2StripeRailService>();
 builder.Services.AddScoped<
     IBillingV2ProviderOutboxDispatcher,
     BillingV2ProviderOutboxDispatcher>();
@@ -487,6 +500,12 @@ builder.Services.AddHttpClient(
     });
 builder.Services.AddHttpClient(
     BillingV2ProviderCheckoutExecutor.HttpClientName,
+    client =>
+    {
+        client.Timeout = TimeSpan.FromSeconds(30);
+    });
+builder.Services.AddHttpClient(
+    BillingV2StripeGateway.HttpClientName,
     client =>
     {
         client.Timeout = TimeSpan.FromSeconds(30);

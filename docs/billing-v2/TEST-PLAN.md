@@ -148,6 +148,41 @@ Tester :
 - retry apres activation provider => meme document et pas de deuxieme facture ;
 - BPCE disabled ou schema documentaire incomplet => readiness hard blocker.
 
+## Cœur financier (Phase 1)
+
+Schéma / migration, sur MariaDB locale jetable uniquement :
+
+- migration `057` appliquée sur base vierge => tables, colonnes et contraintes présentes ;
+- second passage de la migration => idempotent, aucune erreur, aucun doublon ;
+- `version` présent sur `billing_v2_subscriptions`, valeur initiale déterministe `1` ;
+- `billing_v2_subscription_changes` porte l'intention idempotente ;
+- insertion violant `total != net + tax` => rejetée par la base ;
+- insertion avec devise vide ou montant négatif interdit => rejetée par la base ;
+- réutilisation d'une `idempotency_key_hash` => rejetée par la base ;
+- réutilisation d'un `provider_request_key` sur le même provider/environnement => rejetée ;
+- deux documents V2 pour un même `billing_event_id` => rejetés.
+
+Invariants applicatifs, en tests purs :
+
+- événement `finalized` sans ligne => refus ;
+- somme des lignes différente des totaux de l'événement => refus ;
+- ligne dans une devise différente de l'événement => refus ;
+- ligne négative dans un événement `debit` => refus ;
+- transition `draft → finalized`, `draft → void`, `finalized → void` => autorisées ;
+- transition depuis `void` ou vers `draft` => refus ;
+- `void` avec settlement réussi => refus ;
+- `void` avec document légal émis => refus ;
+- réutilisation d'une clé d'idempotence après `void` => refus ;
+- settled == expected => succès ; écart de montant ou de devise => `amount_mismatch` ;
+- appel provider sans PaymentAttempt persistée => refus ;
+- retry provider => même ligne, même clé provider, jamais de nouvelle clé ;
+- compare-and-swap Subscription avec version périmée => conflit explicite, jamais no-op ;
+- prix applicable ambigu avec versions distinctes => résolution versionnée explicite ;
+- prix applicable ambigu à versions égales => fail closed, jamais de somme ;
+- plancher d'engagement mensuel => 45 % du MRR initial remisé, identique sur les deux chemins ;
+- `customer.subscription.created` / `customer.subscription.updated` => signal inerte,
+  aucune activation, aucun document, aucun provisioning.
+
 ## Rollback
 
 Tester :

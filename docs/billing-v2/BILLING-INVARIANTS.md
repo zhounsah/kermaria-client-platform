@@ -22,3 +22,38 @@ Ces règles ne doivent pas être violées.
 18. Une capacité déjà prépayée peut être reprovisionnée sans supplément dans la limite du droit acheté.
 19. Les prestations ponctuelles ne reçoivent pas une remise d'engagement par défaut.
 20. Toute bascule legacy → V2 doit avoir une stratégie de rollback documentée.
+
+## Cœur financier (Phase 1)
+
+Détail et mécanismes dans `FINANCIAL-CORE.md`.
+
+21. Un `BillingEvent` est une intention financière immuable. Ses montants, sa
+    période, ses snapshots et ses lignes ne sont jamais mis à jour.
+22. Une correction se fait par un nouvel événement `adjustment` référençant
+    l'événement fautif, jamais par mutation d'un événement historique.
+23. Une clé d'idempotence n'est jamais réutilisée, y compris après un `void`.
+24. `SubscriptionChange` persiste l'intention utilisateur et sert d'ancre
+    d'idempotence pour toute opération monétaire.
+25. Toute mutation de `subscriptions` s'écrit en compare-and-swap sur `version`.
+    Un conflit de version remonte en échec explicite, jamais en no-op.
+26. Une `PaymentAttempt` est persistée **avant** tout appel provider, et un retry
+    réutilise la même ligne et la même clé provider.
+27. Le montant attendu et le montant réellement settled sont deux données
+    distinctes. Un règlement n'est un succès que s'ils sont égaux, devise
+    comprise ; tout écart produit `amount_mismatch` et bloque la chaîne.
+28. Aucun montant facturé n'est déterminé par Stripe ou PayPal.
+29. Un webhook provider est un signal, jamais une preuve de paiement suffisante.
+    La convergence passe par une relecture de l'objet chez le provider.
+30. Aucun provisioning, aucune émission documentaire et aucun passage à `paid` ne
+    peut découler de la seule réception d'un événement provider brut.
+31. En V2.0, la relation `BillingEvent` ↔ document est 1:1.
+32. Une seule autorité numérote les factures.
+33. Un `BillingEvent` ne peut pas être annulé si un settlement a réussi ou si un
+    document légal a été émis.
+34. Un événement `finalized` a au moins une ligne, et la somme de ses lignes
+    égale ses totaux, devise comprise.
+35. Une ambiguïté de prix applicable est résolue par une règle versionnée
+    explicite, sinon elle échoue en fermé. Deux versions d'un même prix ne sont
+    jamais sommées comme deux services.
+36. Un paiement arrivant après expiration d'un `SubscriptionChange` ne provisionne
+    rien automatiquement et part en réconciliation.

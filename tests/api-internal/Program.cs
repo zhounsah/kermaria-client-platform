@@ -143,6 +143,72 @@ async Task<int> RunAsync(string[] arguments)
         }
     }
 
+    if (arguments.Length == 1
+        && string.Equals(
+            arguments[0],
+            "--billing-v2-stripe-rail",
+            StringComparison.Ordinal))
+    {
+        try
+        {
+            await BillingV2StripeRailTests.RunAsync();
+            Console.WriteLine("Tests rail Stripe Billing V2 reussis.");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine("Tests rail Stripe Billing V2 en echec.");
+            Console.Error.WriteLine(exception.ToString());
+            return 1;
+        }
+    }
+
+    if (arguments.Length == 1
+        && string.Equals(
+            arguments[0],
+            "--billing-v2-financial-core",
+            StringComparison.Ordinal))
+    {
+        try
+        {
+            await BillingV2FinancialCoreTests.RunAsync();
+            Console.WriteLine("Tests coeur financier Billing V2 reussis.");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine(
+                "Tests coeur financier Billing V2 en echec.");
+            Console.Error.WriteLine(exception.ToString());
+            return 1;
+        }
+    }
+
+    // Exige une MariaDB JETABLE via BILLING_V2_TEST_MARIADB_CONNECTION.
+    // Volontairement hors de la suite par defaut : sans base, la suite echoue
+    // explicitement au lieu de passer en silence.
+    if (arguments.Length == 1
+        && string.Equals(
+            arguments[0],
+            "--billing-v2-financial-core-schema",
+            StringComparison.Ordinal))
+    {
+        try
+        {
+            await BillingV2FinancialCoreSchemaTests.RunAsync();
+            Console.WriteLine(
+                "Tests schema coeur financier Billing V2 reussis.");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine(
+                "Tests schema coeur financier Billing V2 en echec.");
+            Console.Error.WriteLine(exception.ToString());
+            return 1;
+        }
+    }
+
     if (arguments.Length is < 1 or > 2)
     {
         Console.Error.WriteLine(

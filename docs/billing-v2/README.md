@@ -42,6 +42,30 @@ Le prix récurrent est calculé à partir des services réellement souscrits, pu
 - Administration Billing V2 : `/admin/billing-v2` expose les souscriptions V2 autoritaires via `/internal/admin/billing-v2/subscriptions`, en lecture seule. Cette vue ne réutilise pas `ISubscriptionService.GetAdminSubscriptionsAsync`, afin que les workers legacy de renouvellement et d'annulation ne traitent jamais une souscription V2 comme une ligne legacy.
 - Résiliation V2 : les routes BFF client/admin existantes restent legacy-only et refusent `billingSystem = "billing_v2"` avec `BILLING_V2_CANCELLATION_NOT_AVAILABLE` avant tout appel Stripe/PayPal. Toute annulation V2 automatisée reste à concevoir via un flux dédié, audité et idempotent.
 - Outbox checkout provider V2 : préparée via `BillingV2ProviderCheckoutCommandService` et `052_billing_v2_outbox_idempotency.sql`. Une future demande de checkout V2 pourra créer un événement `billing_v2.provider_checkout.create_requested` et un audit dans la même transaction, avec clé d'idempotence stable. Le worker `BillingV2ProviderOutboxWorker` est enregistré uniquement si `BILLING_V2_PROVIDER_OUTBOX_ENABLED=true` et reste fail-closed tant que `BILLING_V2_PROVIDER_EXECUTOR_ENABLED=false`. `BillingV2ProviderCheckoutExecutor` prépare les requêtes Stripe/PayPal idempotentes, mais l'executor réel est remplacé par `DisabledBillingV2ProviderCheckoutExecutor` par défaut.
+- Cœur financier V2 (Phase 1) : `057_billing_v2_financial_core.sql` introduit
+  `billing_v2_billing_events`, `billing_v2_billing_event_lines`,
+  `billing_v2_payment_attempts`, l'optimistic locking sur
+  `billing_v2_subscriptions.version` et l'évolution de
+  `billing_v2_subscription_changes` en intention idempotente persistante.
+  Spécification complète dans `FINANCIAL-CORE.md`. Ces tables sont **dormantes** :
+  contraintes et testées, écrites par aucun flux de production. Le branchement
+  des flux provider/documentaire sur ce cœur est l'objet de la Phase 2.
+- Politiques financières pures (Phase 1) : `BillingV2BillingEventPolicy`,
+  `BillingV2BillingEventStateMachine`, `BillingV2SettlementPolicy`,
+  `BillingV2PaymentAttemptPolicy`, `BillingV2SubscriptionVersionPolicy`,
+  `BillingV2ServicePriceResolutionPolicy`, `BillingV2CommitmentFloorPolicy`.
+  Elles portent les invariants que MariaDB ne peut pas exprimer en `CHECK`.
+- Rail Stripe V2 (Phase 2) : `058_billing_v2_stripe_financial_rail.sql` +
+  `BillingV2StripeRail`, `BillingV2StripeGateway`, `BillingV2StripeRailService`,
+  `BillingV2FinancialCoreStore`. Le checkout Stripe V2 suit désormais
+  SubscriptionChange → BillingEvent finalized → PaymentAttempt → Stripe →
+  refetch → settlement vérifié → activation. Le montant est transmis en
+  `price_data` inline : aucun `price_id` externe ne détermine plus le total.
+  Spécification dans `STRIPE-RAIL.md`. Reste fail-closed par défaut
+  (`BILLING_V2_PROVIDER_EXECUTOR_ENABLED=false` ⇒ passerelle désactivée).
+  PayPal V2 n'est pas branché.
+- Customer Credit Ledger : **non implémenté**. Prérequis de la phase suivante
+  pour les downgrades mensuels avec avoir.
 - Migration de production : NON exécutée.
 - Audit du code applicatif : réalisé avant intégration.
 - Tests legacy : renforcés et à conserver verts pendant toute la migration.
@@ -66,6 +90,8 @@ Le prix récurrent est calculé à partir des services réellement souscrits, pu
 - `apps/api-internal/Migrations/MariaDb/054_billing_v2_provider_inbound_events.sql` : journal idempotent des événements entrants Stripe/PayPal V2, rejouable après échec.
 - `apps/api-internal/Migrations/MariaDb/055_billing_v2_authoritative_checkout_requests.sql` : requêtes locales idempotentes de checkout V2 autoritaire pour préparer le premier vrai nouvel abonnement sans créer de subscription legacy.
 - `apps/api-internal/Migrations/MariaDb/056_billing_v2_document_issuance.sql` : liaison additive entre une souscription V2 et un document commercial/BPCE, avec snapshots financiers de lignes V2.
+- `apps/api-internal/Migrations/MariaDb/058_billing_v2_stripe_financial_rail.sql` : rail Stripe additif — cadence sur les lignes d'événement, liens intention/tentative, trace de vérification, et mappings provider ramenés au rôle de référence (`amount_authority='local'`).
+- `apps/api-internal/Migrations/MariaDb/057_billing_v2_financial_core.sql` : cœur financier additif et dormant — `billing_events`, `billing_event_lines`, `payment_attempts`, `version` sur `subscriptions`, intention idempotente sur `subscription_changes`, et liens `billing_event_id` sur les tables checkout/session/document existantes.
 - `READINESS-CHECKS.sql` : requêtes read-only de pré-activation, hors migrations, pour prouver l'absence de vrais abonnements clients actifs à migrer.
 - `ROLLBACK.md` : procédure de rollback applicatif Billing V2 par flags, outbox, provider events et provisioning fail-closed.
 

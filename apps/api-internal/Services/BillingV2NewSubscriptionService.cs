@@ -1,4 +1,4 @@
-using System.Data;
+﻿using System.Data;
 using System.Globalization;
 using Kermaria.ApiInternal.Contracts;
 using Kermaria.ApiInternal.Data.Configuration;
@@ -178,14 +178,11 @@ public sealed class BillingV2NewSubscriptionService
             PriceLock: null,
             AsOfUtc: now));
         var minimumCommitmentAmountCents =
-            string.Equals(
+            BillingV2CommitmentFloorPolicy.Resolve(
+                _pricing,
                 mapping.PaymentMode,
-                BillingV2PaymentModes.Monthly,
-                StringComparison.Ordinal)
-            && mapping.CommitmentMonths > 1
-                ? _pricing.CalculateMinimumCommitmentAmount(
-                    pricingResult.DiscountedRecurringAmountCents)
-                : (long?)null;
+                mapping.CommitmentMonths,
+                pricingResult.DiscountedRecurringAmountCents);
 
         await InsertSubscriptionAsync(
             connection,
@@ -363,6 +360,9 @@ public sealed class BillingV2NewSubscriptionService
             reader.GetInt32("discount_basis_points"));
     }
 
+    // Lecture deleguee au lecteur partage : la resolution d'un prix
+    // applicable ambigu est faite par une politique testable qui echoue en
+    // ferme, au lieu d'etre choisie silencieusement en SQL.
     private static async Task<IReadOnlyList<BillingV2NewSubscriptionPresetItem>>
         ReadPresetItemsAsync(
             MySqlConnection connection,
@@ -370,91 +370,12 @@ public sealed class BillingV2NewSubscriptionService
             string presetId,
             DateTime now,
             CancellationToken cancellationToken)
-    {
-        var items = new List<BillingV2NewSubscriptionPresetItem>();
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText =
-            """
-            SELECT
-                preset_item.id AS preset_item_id,
-                preset_item.service_id,
-                preset_item.tier_id,
-                preset_item.scope_template,
-                preset_item.quantity,
-                service.code AS service_code,
-                service.discount_eligible,
-                tier.code AS tier_code,
-                price.id AS service_price_id,
-                price.price_code,
-                price.amount_cents,
-                price.currency,
-                price.billing_cadence
-            FROM billing_v2_preset_items preset_item
-            INNER JOIN billing_v2_services service
-                ON service.id = preset_item.service_id
-               AND service.status = 'active'
-            LEFT JOIN billing_v2_service_tiers tier
-                ON tier.id = preset_item.tier_id
-               AND tier.status = 'active'
-            INNER JOIN billing_v2_service_prices price
-                ON price.service_id = service.id
-               AND (
-                   price.tier_id <=> preset_item.tier_id
-               )
-               AND price.status = 'active'
-               AND price.valid_from <= @now
-               AND (
-                   price.valid_until IS NULL
-                   OR price.valid_until > @now
-               )
-            WHERE preset_item.preset_id = @preset_id
-              AND price.id = (
-                  SELECT latest_price.id
-                  FROM billing_v2_service_prices latest_price
-                  WHERE latest_price.service_id = service.id
-                    AND latest_price.tier_id <=> preset_item.tier_id
-                    AND latest_price.status = 'active'
-                    AND latest_price.valid_from <= @now
-                    AND (
-                        latest_price.valid_until IS NULL
-                        OR latest_price.valid_until > @now
-                    )
-                  ORDER BY latest_price.valid_from DESC,
-                           latest_price.price_version DESC,
-                           latest_price.id DESC
-                  LIMIT 1
-              )
-            ORDER BY preset_item.display_order, preset_item.id;
-            """;
-        command.Parameters.AddWithValue("@preset_id", presetId);
-        command.Parameters.AddWithValue("@now", now);
-        await using var reader = await command.ExecuteReaderAsync(
+        => await BillingV2PresetItemReader.ReadAsync(
+            connection,
+            transaction,
+            presetId,
+            now,
             cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
-        {
-            items.Add(new BillingV2NewSubscriptionPresetItem(
-                reader.GetString("preset_item_id"),
-                reader.GetString("service_id"),
-                reader.IsDBNull(reader.GetOrdinal("tier_id"))
-                    ? null
-                    : reader.GetString("tier_id"),
-                reader.GetString("service_price_id"),
-                reader.GetString("service_code"),
-                reader.IsDBNull(reader.GetOrdinal("tier_code"))
-                    ? null
-                    : reader.GetString("tier_code"),
-                reader.GetString("price_code"),
-                reader.GetString("scope_template"),
-                reader.GetInt32("quantity"),
-                reader.GetInt64("amount_cents"),
-                reader.GetString("currency"),
-                reader.GetString("billing_cadence"),
-                reader.GetBoolean("discount_eligible")));
-        }
-
-        return items;
-    }
 
     private static async Task InsertSubscriptionAsync(
         MySqlConnection connection,
