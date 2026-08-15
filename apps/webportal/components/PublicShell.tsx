@@ -92,7 +92,13 @@ export function PublicShell({ children, signupEnabled }: PublicShellProps) {
       <footer className="public-footer">
         <div className="public-footer-inner">
           <div className="public-footer-brand">
-            <strong>Zachary HOUNSA-HOUNKPA EI</strong>
+            {/*
+              Marque en tete, identite juridique juste dessous : le pied de
+              page est le seul endroit present sur toutes les pages publiques
+              ou les deux noms se lisent ensemble.
+            */}
+            <strong>Zachary IT</strong>
+            <p>Zachary HOUNSA-HOUNKPA EI</p>
             <p>Site public, offres et espace client.</p>
             <p>{APP_VERSION_LABEL}</p>
           </div>

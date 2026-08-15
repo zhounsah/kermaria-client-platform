@@ -7,10 +7,8 @@
 // les segments enfants, un helper pose au layout racine servirait de repli
 // et masquerait l'oubli d'une canonique sur une page donnee.
 
+import { BRAND_NAME, LEGAL_NAME } from "@/lib/brand-identity";
 import { PORTFOLIO_URL } from "@/lib/public-route-config";
-
-const LEGAL_NAME = "Zachary HOUNSA-HOUNKPA EI";
-const TRADE_NAME = "Zachary IT";
 
 const BUSINESS_DESCRIPTION =
   "Sauvegarde distante, stockage documentaire et continuité d'activité pour "
@@ -47,6 +45,13 @@ function normalizeBaseUrl(baseUrl: string): string {
  *   - `priceRange` : les tarifs vivent dans le catalogue, pas sous forme
  *     de fourchette.
  *
+ * `name` porte le NOM COMMERCIAL et `legalName` la denomination juridique.
+ * L'inverse etait declare jusqu'ici (`name` = EI, `alternateName` = marque) :
+ * `name` est le libelle que Google reprend pour designer l'etablissement, il
+ * doit correspondre a l'enseigne affichee sur le site. `legalName` est la
+ * propriete schema.org prevue pour la raison sociale — l'identite juridique
+ * n'est donc pas masquee, elle est simplement rangee dans le bon champ.
+ *
  * L'adresse et le SIRET proviennent des mentions legales publiees
  * (`mentions-légales.txt`, repris a l'identique dans le contenu
  * administrable `legal:mentions-legales`). Le numero de telephone a ete
@@ -61,8 +66,8 @@ export function localBusinessJsonLd(baseUrl: string) {
     "@context": "https://schema.org",
     "@type": "LocalBusiness",
     "@id": `${base}/#business`,
-    name: LEGAL_NAME,
-    alternateName: TRADE_NAME,
+    name: BRAND_NAME,
+    legalName: LEGAL_NAME,
     url: `${base}/`,
     description: BUSINESS_DESCRIPTION,
     email: "zhounsah@home.bzh",
@@ -96,10 +101,19 @@ export function localBusinessJsonLd(baseUrl: string) {
 }
 
 /**
- * `WebSite` distinct du business : permet a Google d'associer le nom du site
- * a la marque. Pas de `SearchAction` tant qu'il n'existe pas de recherche
- * interne publique — declarer une sitelinks searchbox inexistante est une
- * cause classique de rejet du balisage.
+ * `WebSite` distinct du business : c'est ce noeud que Google lit pour
+ * determiner le nom du site affiche dans les resultats. Il porte donc le nom
+ * commercial, `alternateName` conservant la denomination juridique comme
+ * variante reconnue de la meme entite.
+ *
+ * `publisher` pointe vers `#business` : c'est la seule relation necessaire
+ * pour relier le site a l'entreprise, et donc a Guichen via l'adresse et
+ * l'`areaServed` deja portes par ce noeud. Ne pas empiler `founder`,
+ * `mainEntity` ou `about` par-dessus : le graphe est deja complet.
+ *
+ * Pas de `SearchAction` tant qu'il n'existe pas de recherche interne
+ * publique — declarer une sitelinks searchbox inexistante est une cause
+ * classique de rejet du balisage.
  */
 export function webSiteJsonLd(baseUrl: string) {
   const base = normalizeBaseUrl(baseUrl);
@@ -109,7 +123,8 @@ export function webSiteJsonLd(baseUrl: string) {
     "@type": "WebSite",
     "@id": `${base}/#website`,
     url: `${base}/`,
-    name: LEGAL_NAME,
+    name: BRAND_NAME,
+    alternateName: [LEGAL_NAME],
     inLanguage: "fr-FR",
     publisher: { "@id": `${base}/#business` },
   };
@@ -139,7 +154,8 @@ export function packServiceJsonLd(
     // laisserait le graphe de cette page incomplet.
     provider: {
       "@type": "LocalBusiness",
-      name: LEGAL_NAME,
+      name: BRAND_NAME,
+      legalName: LEGAL_NAME,
       url: `${base}/`,
       address: {
         "@type": "PostalAddress",

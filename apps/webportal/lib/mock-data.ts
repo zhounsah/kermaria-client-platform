@@ -761,7 +761,7 @@ function createMockManagedContentDetail(
         ...entry,
         versionLabel: null,
         bodyMarkdown: [
-          "Zachary IT est une micro-entreprise de services informatiques basée à Guichen, créée par Zachary HOUNSA-HOUNKPA.",
+          "Zachary IT est le nom commercial de Zachary HOUNSA-HOUNKPA EI, micro-entreprise de services informatiques basée à Guichen, créée par Zachary HOUNSA-HOUNKPA.",
           "",
           "J'accompagne les particuliers, indépendants et petites structures dans la mise en place de solutions informatiques simples et compréhensibles : assistance, maintenance, sauvegarde, hébergement de dossiers, VPN privé, accès distant et accompagnement réseau.",
           "",

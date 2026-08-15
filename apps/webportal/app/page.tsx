@@ -18,11 +18,23 @@ import {
 } from "@/lib/public-route-config";
 import { JsonLd, localBusinessJsonLd, webSiteJsonLd } from "@/lib/seo";
 
+/**
+ * Le nom commercial ouvre le titre : sur l'accueil, c'est le nom du site qui
+ * doit etre lu en premier, l'activite et la localite venant ensuite.
+ *
+ * Une seule occurrence de la marque, et c'est volontaire : le `title.template`
+ * du layout racine (`%s | Zachary IT`) ne s'applique QU'AUX segments enfants,
+ * pas a `app/page.tsx`, qui partage le segment racine avec le layout. Le titre
+ * ecrit ici est donc servi tel quel. Ne pas ajouter de suffixe de marque en
+ * pensant compenser : cela produirait `Zachary IT | … | Zachary IT`.
+ */
 export const metadata: Metadata = {
   ...buildPublicMetadata({
-    title: "Sauvegarde distante et continuité d'activité à Guichen (35) | Zachary IT",
+    title: "Zachary IT | Sauvegarde informatique à Guichen (35)",
     description:
-      "Sauvegarde distante et stockage documentaire à Guichen pour les particuliers, associations et petites entreprises : une copie de vos fichiers importants conservée hors de vos locaux.",
+      "Zachary IT, à Guichen : sauvegarde distante, stockage documentaire et "
+      + "continuité d'activité pour les particuliers, associations et petites "
+      + "entreprises. Vos fichiers conservés hors de vos locaux.",
     path: "/",
   }),
 };
