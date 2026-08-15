@@ -1,9 +1,12 @@
 import type { Metadata } from "next";
 
+import { BRAND_NAME } from "@/lib/brand-identity";
 import { PUBLIC_SITE_URL } from "@/lib/public-route-config";
 
-export const PUBLIC_BRAND_NAME = "Zachary IT";
-export const PUBLIC_SITE_NAME = "Zachary IT";
+// Le suffixe des titres et le `og:site_name` portent le nom commercial, pas
+// la denomination juridique : c'est le nom du site que Google doit retenir.
+export const PUBLIC_BRAND_NAME = BRAND_NAME;
+export const PUBLIC_SITE_NAME = BRAND_NAME;
 
 type PublicMetadataOptions = {
   title: string;
