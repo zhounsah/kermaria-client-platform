@@ -830,18 +830,28 @@ public static class BillingV2FinancialCoreStore
         await using var command = connection.CreateCommand();
         command.CommandText =
             """
-            SELECT id, billing_event_id, status, provider_session_id,
-                   reconciliation_attempts,
-                   provider_invoice_id, provider_subscription_id
-            FROM billing_v2_payment_attempts
-            WHERE provider = @provider
-              AND environment = @environment
-              AND status IN ('created', 'in_flight')
-              AND (next_reconciliation_at IS NULL
-                   OR next_reconciliation_at <= @now)
-              AND (reconciliation_lease_until IS NULL
-                   OR reconciliation_lease_until <= @now)
-            ORDER BY COALESCE(next_reconciliation_at, created_at) ASC
+            SELECT attempt.id, attempt.billing_event_id, attempt.status,
+                   attempt.provider_session_id,
+                   attempt.reconciliation_attempts,
+                   attempt.provider_invoice_id,
+                   attempt.provider_subscription_id
+            FROM billing_v2_payment_attempts attempt
+            INNER JOIN billing_v2_billing_events event_row
+                ON event_row.id = attempt.billing_event_id
+            WHERE attempt.provider = @provider
+              AND attempt.environment = @environment
+              AND attempt.status IN ('created', 'in_flight')
+              -- Une charge deja reglee n'a plus rien a reconcilier : sans ce
+              -- filtre, une tentative laissee `in_flight` par un rejeu etait
+              -- rescannee indefiniment sans jamais pouvoir aboutir.
+              AND event_row.settlement_status <> 'settled'
+              AND (attempt.next_reconciliation_at IS NULL
+                   OR attempt.next_reconciliation_at <= @now)
+              AND (attempt.reconciliation_lease_until IS NULL
+                   OR attempt.reconciliation_lease_until <= @now)
+            ORDER BY COALESCE(
+                attempt.next_reconciliation_at,
+                attempt.created_at) ASC
             LIMIT @limit;
             """;
         command.Parameters.AddWithValue("@provider", provider);
@@ -878,6 +888,54 @@ public static class BillingV2FinancialCoreStore
     /// affectee. C'est ce qui empeche deux reconciliations simultanees, donc
     /// deux activations.
     /// </summary>
+    /// <summary>
+    /// Ferme les tentatives que leur BillingEvent a deja reglees.
+    ///
+    /// Un rejeu de signal deja applique pouvait laisser la tentative en
+    /// `in_flight` alors que la charge etait `settled` : elle restait alors
+    /// candidate a la reconciliation pour toujours, sans jamais pouvoir
+    /// aboutir. On aligne l'axe tentative sur la verite financiere, et on
+    /// libere le bail au passage. Aucune transition financiere ici : le
+    /// reglement a deja eu lieu.
+    /// </summary>
+    public static async Task<int> CloseAttemptsCoveredBySettledEventAsync(
+        MySqlConnection connection,
+        string provider,
+        string environment,
+        DateTime nowUtc,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            UPDATE billing_v2_payment_attempts attempt
+            INNER JOIN billing_v2_billing_events event_row
+                ON event_row.id = attempt.billing_event_id
+            SET attempt.status = 'succeeded',
+                -- `ck_..._settled_matches_expected` exige un montant regle
+                -- egal a l'attendu. On ne l'invente pas : le BillingEvent est
+                -- deja `settled` pour ce montant exact, et la tentative porte
+                -- l'attendu qui en decoule.
+                attempt.settled_amount_cents = attempt.expected_amount_cents,
+                attempt.settled_currency = attempt.expected_currency,
+                attempt.reconciliation_lease_until = NULL,
+                attempt.next_reconciliation_at = NULL,
+                attempt.updated_at = @now
+            WHERE attempt.provider = @provider
+              AND attempt.environment = @environment
+              AND attempt.status IN ('created', 'in_flight')
+              AND event_row.settlement_status = 'settled'
+              -- Fermeture uniquement si l'attendu correspond a la charge
+              -- reglee. Tout ecart reste un cas de revue, jamais un succes.
+              AND event_row.total_amount_cents = attempt.expected_amount_cents
+              AND event_row.currency = attempt.expected_currency;
+            """;
+        command.Parameters.AddWithValue("@provider", provider);
+        command.Parameters.AddWithValue("@environment", environment);
+        command.Parameters.AddWithValue("@now", nowUtc);
+        return await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     public static async Task<bool> TryClaimReconciliationAsync(
         MySqlConnection connection,
         string attemptId,

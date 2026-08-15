@@ -133,6 +133,13 @@ public sealed class BillingV2PortalSubscriptionProjection
             subscription.commitment_ends_at,
             subscription.cancellation_requested_at,
             subscription.cancel_at_period_end,
+            -- Compte des cycles reellement regles, source V2 uniquement.
+            (
+                SELECT COUNT(*)
+                FROM billing_v2_billing_events settled_event
+                WHERE settled_event.subscription_id = subscription.id
+                  AND settled_event.settlement_status = 'settled'
+            ) AS paid_cycles_count,
             subscription.created_at,
             subscription.updated_at
         FROM billing_v2_subscriptions subscription
@@ -280,6 +287,13 @@ public sealed class BillingV2PortalSubscriptionProjection
             subscription.commitment_ends_at,
             subscription.cancellation_requested_at,
             subscription.cancel_at_period_end,
+            -- Compte des cycles reellement regles, source V2 uniquement.
+            (
+                SELECT COUNT(*)
+                FROM billing_v2_billing_events settled_event
+                WHERE settled_event.subscription_id = subscription.id
+                  AND settled_event.settlement_status = 'settled'
+            ) AS paid_cycles_count,
             subscription.created_at,
             subscription.updated_at
         FROM billing_v2_subscriptions subscription
@@ -423,7 +437,8 @@ public sealed class BillingV2PortalSubscriptionProjection
             ReadNullableUtc(reader, "cancellation_requested_at"),
             reader.GetBoolean("cancel_at_period_end"),
             reader.GetDateTime("created_at"),
-            reader.GetDateTime("updated_at"));
+            reader.GetDateTime("updated_at"),
+            reader.GetInt32("paid_cycles_count"));
 
     private static string ReadRequiredString(
         MySqlDataReader reader,
@@ -485,7 +500,11 @@ public sealed record BillingV2PortalSubscriptionRow(
     DateTime? CancellationRequestedAtUtc,
     bool CancelAtPeriodEnd,
     DateTime CreatedAtUtc,
-    DateTime UpdatedAtUtc);
+    DateTime UpdatedAtUtc,
+    // Cycles REELLEMENT regles, comptes sur les BillingEvents V2. Le compteur
+    // legacy `subscriptions.paid_cycles_count` n'est pas alimente par le rail
+    // V2 : le portail affichait donc 0 malgre un cycle encaisse.
+    int PaidCyclesCount = 0);
 
 public static class BillingV2PortalSubscriptionProjector
 {
@@ -522,7 +541,7 @@ public static class BillingV2PortalSubscriptionProjector
             ResolveBillingIntervalMonths(row),
             Math.Max(row.CommitmentMonths, 1),
             NormalizePaymentMode(row.PaymentMode),
-            0,
+            row.PaidCyclesCount,
             ToIso(row.CommitmentEndsAtUtc),
             ToIso(row.CancellationRequestedAtUtc),
             row.CancelAtPeriodEnd,

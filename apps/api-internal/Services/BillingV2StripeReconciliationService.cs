@@ -99,6 +99,24 @@ public sealed class BillingV2StripeReconciliationService
         await connection.OpenAsync(cancellationToken);
 
         var now = _clock.UtcNow;
+
+        // Menage prealable : une tentative dont la charge est deja reglee n'a
+        // plus rien a reconcilier. On la ferme au lieu de la laisser tourner
+        // en boucle dans le lot.
+        var closed = await BillingV2FinancialCoreStore
+            .CloseAttemptsCoveredBySettledEventAsync(
+                connection,
+                "stripe",
+                _stripe.ModeName,
+                now,
+                cancellationToken);
+        if (closed > 0)
+        {
+            _logger.LogInformation(
+                "Billing V2 reconciliation closed {Closed} attempt(s) already covered by a settled billing event.",
+                closed);
+        }
+
         var candidates = await BillingV2FinancialCoreStore
             .ReadReconciliationCandidatesAsync(
                 connection,
