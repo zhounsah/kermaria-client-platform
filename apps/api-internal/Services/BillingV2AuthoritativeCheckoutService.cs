@@ -297,7 +297,11 @@ public sealed class BillingV2AuthoritativeCheckoutService
             now,
             now.AddMinutes(SettlementDeadlineMinutes),
             eventBuild.LineSources,
-            cancellationToken);
+            cancellationToken,
+            // Convention Phase 3 : la charge initiale est le cycle 1. Elle
+            // devient ainsi unique en base par abonnement, au meme titre que
+            // chaque renouvellement l'est par cycle.
+            BillingV2RenewalPolicy.InitialCycleSequence);
 
         var requestId = Guid.NewGuid().ToString("D");
         await InsertCheckoutRequestAsync(

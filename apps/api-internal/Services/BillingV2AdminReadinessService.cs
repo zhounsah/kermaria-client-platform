@@ -29,7 +29,13 @@ public sealed class BillingV2AdminReadinessService
         "billing_v2_provider_events",
         "billing_v2_authoritative_checkout_requests",
         "billing_v2_subscription_documents",
-        "billing_v2_document_line_snapshots"
+        "billing_v2_document_line_snapshots",
+        // Coeur financier (Phase 1) et cycle de vie (Phases 2.5 / 3).
+        "billing_v2_subscription_changes",
+        "billing_v2_billing_events",
+        "billing_v2_billing_event_lines",
+        "billing_v2_payment_attempts",
+        "billing_v2_document_issuance_attempts"
     ];
 
     private readonly SqlRuntimeConfiguration _sql;
@@ -84,7 +90,13 @@ public sealed class BillingV2AdminReadinessService
                 launchSummary,
                 providers: [],
                 documentReadiness,
-                correlationId);
+                correlationId,
+                blockedIssuanceCount: 0,
+                BuildLifecycleInputs(
+                    persistentSqlAvailable,
+                    schemaReady: false,
+                    stripeMappingsReady: false,
+                    documentReadiness));
         }
 
         try
@@ -101,7 +113,13 @@ public sealed class BillingV2AdminReadinessService
                     launchSummary,
                     providers: [],
                     documentReadiness,
-                    correlationId);
+                    correlationId,
+                    blockedIssuanceCount: 0,
+                    BuildLifecycleInputs(
+                        persistentSqlAvailable,
+                        schemaReady: false,
+                        stripeMappingsReady: false,
+                        documentReadiness));
             }
 
             var servicePriceIds = await LoadActiveServicePriceIdsAsync(
@@ -122,6 +140,18 @@ public sealed class BillingV2AdminReadinessService
                     cancellationToken)
             };
 
+            // Phase 3, point 9. Un dossier BPCE bloque ne doit pas rester
+            // silencieux : il remonte dans le meme instantane que le reste,
+            // la ou un exploitant regarde deja.
+            var blockedIssuances = await CountBlockedIssuancesAsync(
+                cancellationToken);
+            if (blockedIssuances > 0)
+            {
+                _logger.LogWarning(
+                    "Billing V2 has {Count} document issuance attempt(s) awaiting manual review. No second invoice will be created automatically.",
+                    blockedIssuances);
+            }
+
             return CreateSnapshot(
                 persistentSqlAvailable,
                 schemaReady: true,
@@ -130,7 +160,17 @@ public sealed class BillingV2AdminReadinessService
                 launchSummary,
                 providers,
                 documentReadiness,
-                correlationId);
+                correlationId,
+                blockedIssuances,
+                BuildLifecycleInputs(
+                    persistentSqlAvailable,
+                    schemaReady: true,
+                    providers.Any(provider => string.Equals(
+                        provider.Provider,
+                        "stripe",
+                        StringComparison.Ordinal)
+                        && provider.PriceMappingsReady),
+                    documentReadiness));
         }
         catch (MySqlException exception)
         {
@@ -145,9 +185,42 @@ public sealed class BillingV2AdminReadinessService
                 launchSummary,
                 providers: [],
                 documentReadiness,
-                correlationId);
+                correlationId,
+                blockedIssuanceCount: 0,
+                BuildLifecycleInputs(
+                    persistentSqlAvailable,
+                    schemaReady: false,
+                    stripeMappingsReady: false,
+                    documentReadiness));
         }
     }
+
+    /// <summary>
+    /// Assemble les entrees de la matrice de readiness Phase 3 depuis l'etat
+    /// reellement observe : schema, drapeaux runtime, providers configures.
+    /// </summary>
+    private BillingV2LifecycleReadinessInputs BuildLifecycleInputs(
+        bool persistentSqlAvailable,
+        bool schemaReady,
+        bool stripeMappingsReady,
+        BillingV2DocumentReadinessStatus documentReadiness)
+        => new(
+            persistentSqlAvailable,
+            FinancialCoreSchemaReady: schemaReady,
+            RenewalSchemaReady: schemaReady,
+            _runtime.AuthoritativeCheckoutEnabled,
+            _runtime.ProviderExecutorEnabled,
+            _stripe.IsConfigured,
+            stripeMappingsReady,
+            // "Activable", pas "actif" : le worker peut rester eteint, il doit
+            // seulement pouvoir etre allume sans changement de code.
+            ReconciliationWorkerActivatable: persistentSqlAvailable
+                && _runtime.AuthoritativeCheckoutEnabled,
+            documentReadiness.Ready,
+            BillingV2DocumentIssuancePolicy
+                .InvoiceLookupByExternalReferenceSupported,
+            _runtime.ProvisioningEnabled,
+            _paypal.IsConfigured);
 
     private async Task<BillingV2AdminProviderReadiness> CheckProviderAsync(
         string provider,
@@ -171,6 +244,27 @@ public sealed class BillingV2AdminReadinessService
             mappings.MissingServicePriceIds,
             mappings.AmbiguousServicePriceIds,
             providerConfigured && mappings.Ready);
+    }
+
+    /// <summary>
+    /// Emissions documentaires en attente d'une decision humaine. Elles ne se
+    /// debloqueront pas seules : tant que l'API BPCE ne sait pas rechercher
+    /// une facture, recreer risquerait un second numero fiscal.
+    /// </summary>
+    private async Task<int> CountBlockedIssuancesAsync(
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(_sql.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT COUNT(*)
+            FROM billing_v2_document_issuance_attempts
+            WHERE status IN ('reconciliation_required', 'failed');
+            """;
+        var value = await command.ExecuteScalarAsync(cancellationToken);
+        return value is null or DBNull ? 0 : Convert.ToInt32(value);
     }
 
     private async Task<IReadOnlyList<string>> LoadMissingSchemaTablesAsync(
@@ -199,7 +293,12 @@ public sealed class BillingV2AdminReadinessService
                 'billing_v2_provider_events',
                 'billing_v2_authoritative_checkout_requests',
                 'billing_v2_subscription_documents',
-                'billing_v2_document_line_snapshots'
+                'billing_v2_document_line_snapshots',
+                'billing_v2_subscription_changes',
+                'billing_v2_billing_events',
+                'billing_v2_billing_event_lines',
+                'billing_v2_payment_attempts',
+                'billing_v2_document_issuance_attempts'
               );
             """;
         await using var reader = await command.ExecuteReaderAsync(
@@ -249,10 +348,15 @@ public sealed class BillingV2AdminReadinessService
         BillingV2AdminLaunchReadiness launchReadiness,
         IReadOnlyList<BillingV2AdminProviderReadiness> providers,
         BillingV2DocumentReadinessStatus documentReadiness,
-        string correlationId)
+        string correlationId,
+        int blockedIssuanceCount,
+        BillingV2LifecycleReadinessInputs lifecycleInputs)
     {
         var operationalLimitations =
-            BillingV2AdminOperationalLimitations.Create(documentReadiness);
+            BillingV2AdminOperationalLimitations.Create(
+                documentReadiness,
+                BillingV2LifecycleReadinessGate.Evaluate(lifecycleInputs),
+                blockedIssuanceCount);
         var reason = BillingV2AdminReadinessGate.ResolveReasonCode(
             persistentSqlAvailable,
             schemaReady,
@@ -305,7 +409,9 @@ public static class BillingV2AdminOperationalLimitations
     ];
 
     public static IReadOnlyList<BillingV2AdminOperationalLimitation> Create(
-        BillingV2DocumentReadinessStatus documentReadiness)
+        BillingV2DocumentReadinessStatus documentReadiness,
+        IReadOnlyList<BillingV2ReadinessComponent>? lifecycle = null,
+        int blockedIssuanceCount = 0)
     {
         var withoutDocumentLimitation = Default
             .Where(limitation => !string.Equals(
@@ -322,6 +428,46 @@ public static class BillingV2AdminOperationalLimitations
                     documentReadiness.ReasonCode,
                     "hard_blocker",
                     documentReadiness.Message));
+        }
+
+        if (blockedIssuanceCount > 0)
+        {
+            withoutDocumentLimitation.Add(
+                new BillingV2AdminOperationalLimitation(
+                    "BILLING_V2_DOCUMENT_ISSUANCE_AWAITING_REVIEW",
+                    "human_review",
+                    $"{blockedIssuanceCount} emission(s) documentaire(s) en attente de revue humaine. Aucune seconde facture n'est creee automatiquement : verifier chez BPCE avant de debloquer."));
+        }
+
+        if (lifecycle is null)
+        {
+            return withoutDocumentLimitation;
+        }
+
+        // Phase 3. Un composant requis mais non pret devient un blocage dur ;
+        // un composant MANUAL reste une limite exploitable, pas un blocage.
+        // C'est ce qui laisse PayPal explicitement NOT READY sans empecher
+        // Stripe de fonctionner : PayPal n'est pas dans les composants requis.
+        foreach (var component in BillingV2LifecycleReadinessGate
+                     .StripeLaunchBlockers(lifecycle))
+        {
+            withoutDocumentLimitation.Add(
+                new BillingV2AdminOperationalLimitation(
+                    component.ReasonCode,
+                    "hard_blocker",
+                    component.Message));
+        }
+
+        foreach (var component in lifecycle.Where(entry => string.Equals(
+                     entry.State,
+                     BillingV2ReadinessStates.Manual,
+                     StringComparison.Ordinal)))
+        {
+            withoutDocumentLimitation.Add(
+                new BillingV2AdminOperationalLimitation(
+                    component.ReasonCode,
+                    "human_review",
+                    component.Message));
         }
 
         return withoutDocumentLimitation;

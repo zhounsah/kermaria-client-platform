@@ -25,7 +25,11 @@ public sealed record BillingV2ReconciliationCandidate(
     string BillingEventId,
     string Status,
     string? ProviderSessionId,
-    int ReconciliationAttempts);
+    int ReconciliationAttempts,
+    // Phase 3 : un renouvellement n'a pas de session checkout. Il se relit par
+    // l'invoice, d'ou ces identifiants persistes - la relecture reste bornee.
+    string? ProviderInvoiceId = null,
+    string? ProviderSubscriptionId = null);
 
 public sealed record BillingV2ReconciliationDecision(
     bool ShouldRefetch,
@@ -74,10 +78,19 @@ public static class BillingV2ReconciliationPolicy
                 GiveUp: false);
         }
 
-        if (string.IsNullOrWhiteSpace(candidate.ProviderSessionId))
+        // Phase 3 : un renouvellement n'a pas de session checkout, il se relit
+        // par l'invoice ou l'abonnement provider. La question n'est donc plus
+        // "y a-t-il une session ?" mais "a-t-on un identifiant persiste a
+        // relire ?". Sans aucun, il n'y a rien a lire - et surtout rien a
+        // recreer : le dispatch normal reprend la main.
+        var lookup = BillingV2StripeSessionLookupPolicy.Plan(
+            new BillingV2StripeSessionLocator(
+                candidate.ProviderSessionId,
+                candidate.ProviderInvoiceId,
+                candidate.ProviderSubscriptionId,
+                candidate.AttemptId));
+        if (!lookup.CanLookup)
         {
-            // Aucune session persistee : il n'y a rien a relire, et surtout
-            // rien a recreer. On laisse le dispatch normal reprendre la main.
             return new BillingV2ReconciliationDecision(
                 false,
                 "BILLING_V2_RECONCILIATION_NO_PROVIDER_SESSION",

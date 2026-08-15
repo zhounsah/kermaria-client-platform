@@ -29,6 +29,28 @@ public interface IBillingV2StripeRailService
     Task<BillingV2StripeSettlementResult> VerifyAndSettleAsync(
         string subscriptionId,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Verifie et regle un CYCLE DE RENOUVELLEMENT (Phase 3).
+    ///
+    /// Un renouvellement n'a pas de session checkout : la preuve financiere
+    /// est l'invoice Stripe reellement payee, relue avec les identifiants
+    /// persistes. Comme le chemin initial, cette methode ne conclut jamais
+    /// depuis un payload brut.
+    /// </summary>
+    Task<BillingV2StripeSettlementResult> VerifyAndSettleRenewalAsync(
+        string billingEventId,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Controle de sante declenche par un signal d'abonnement. Ne peut que
+    /// DEGRADER l'etat local (payment_attention / manual_review) ; jamais
+    /// activer, jamais encaisser, jamais deprovisionner.
+    /// </summary>
+    Task<BillingV2StripeSettlementResult> EvaluateSubscriptionHealthAsync(
+        string subscriptionId,
+        string providerSubscriptionId,
+        CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -51,17 +73,20 @@ public sealed class BillingV2StripeRailService : IBillingV2StripeRailService
     private readonly SqlRuntimeConfiguration _sql;
     private readonly StripeRuntimeConfiguration _stripe;
     private readonly IBillingV2StripeGateway _gateway;
+    private readonly IBillingV2Clock _clock;
     private readonly ILogger<BillingV2StripeRailService> _logger;
 
     public BillingV2StripeRailService(
         SqlRuntimeConfiguration sql,
         StripeRuntimeConfiguration stripe,
         IBillingV2StripeGateway gateway,
+        IBillingV2Clock clock,
         ILogger<BillingV2StripeRailService> logger)
     {
         _sql = sql;
         _stripe = stripe;
         _gateway = gateway;
+        _clock = clock;
         _logger = logger;
     }
 
@@ -184,10 +209,13 @@ public sealed class BillingV2StripeRailService : IBillingV2StripeRailService
                     "BILLING_V2_STRIPE_CALL_INDETERMINATE",
                     StringComparison.Ordinal))
             {
-                var recovered = await _gateway
-                    .FindCheckoutSessionByRequestKeyAsync(
-                        attempt.ProviderRequestKey,
-                        cancellationToken);
+                var recovered = await _gateway.FindCheckoutSessionAsync(
+                    new BillingV2StripeSessionLocator(
+                        attempt.ProviderSessionId,
+                        attempt.ProviderPaymentId,
+                        ProviderSubscriptionId: null,
+                        attempt.ProviderRequestKey),
+                    cancellationToken);
                 if (recovered is not null)
                 {
                     await PersistSessionAsync(
@@ -331,6 +359,49 @@ public sealed class BillingV2StripeRailService : IBillingV2StripeRailService
                 expectedMode,
                 ExpectedCustomerEmail: null));
 
+        // Phase 3, point 2. `payment_status=paid` sur la session ne suffit plus
+        // en mode subscription : on relit l'abonnement ET l'invoice. Une session
+        // payee puis un abonnement bascule `past_due` ne doit pas rester lu
+        // comme un encaissement acquis.
+        if (verification.Settled
+            && string.Equals(
+                expectedMode,
+                BillingV2StripeModes.Subscription,
+                StringComparison.Ordinal))
+        {
+            var lifecycle = await VerifyProviderLifecycleAsync(
+                connection,
+                attempt,
+                snapshot?.SubscriptionId,
+                billingEvent,
+                cancellationToken);
+            if (lifecycle is not null && !lifecycle.Settled)
+            {
+                verification = verification with
+                {
+                    Settled = false,
+                    AttemptStatus = string.Equals(
+                        lifecycle.Outcome,
+                        BillingV2RenewalOutcomes.AmountMismatch,
+                        StringComparison.Ordinal)
+                        ? BillingV2PaymentAttemptStatuses.AmountMismatch
+                        : BillingV2PaymentAttemptStatuses.InFlight,
+                    SettlementStatus = string.Equals(
+                        lifecycle.Outcome,
+                        BillingV2RenewalOutcomes.AmountMismatch,
+                        StringComparison.Ordinal)
+                        ? BillingV2SettlementStatuses.AmountMismatch
+                        : BillingV2SettlementStatuses.Pending,
+                    ReasonCode = lifecycle.ReasonCode
+                };
+                await ApplyPaymentStateAsync(
+                    connection,
+                    subscriptionId,
+                    lifecycle.Outcome,
+                    cancellationToken);
+            }
+        }
+
         await BillingV2FinancialCoreStore.UpdateAttemptAsync(
             connection,
             transaction: null,
@@ -462,6 +533,446 @@ public sealed class BillingV2StripeRailService : IBillingV2StripeRailService
             subscriptionId,
             false);
     }
+
+    // -----------------------------------------------------------------
+    // PHASE 3 : CYCLE DE RENOUVELLEMENT
+    // -----------------------------------------------------------------
+
+    public async Task<BillingV2StripeSettlementResult>
+        VerifyAndSettleRenewalAsync(
+            string billingEventId,
+            CancellationToken cancellationToken)
+    {
+        if (!_sql.IsPersistent || string.IsNullOrWhiteSpace(_sql.ConnectionString))
+        {
+            return NotSettled(
+                "BILLING_V2_STRIPE_RAIL_NO_PERSISTENT_SQL",
+                null,
+                false);
+        }
+
+        await using var connection = new MySqlConnection(_sql.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        var billingEvent = await BillingV2FinancialCoreStore
+            .ReadBillingEventAsync(
+                connection,
+                transaction: null,
+                billingEventId,
+                cancellationToken);
+        if (billingEvent is null)
+        {
+            return NotSettled(
+                "BILLING_V2_RENEWAL_BILLING_EVENT_NOT_FOUND",
+                null,
+                true);
+        }
+
+        var subscriptionId = billingEvent.SubscriptionId;
+
+        // La tentative est resolue AVANT l'appel reseau, exactement comme au
+        // checkout initial : meme cle derivee de l'evenement, donc un rejeu
+        // retombe sur la meme ligne au lieu d'en creer une seconde.
+        BillingV2PaymentAttemptRecord attempt;
+        await using (var transaction = await connection.BeginTransactionAsync(
+                         IsolationLevel.ReadCommitted,
+                         cancellationToken))
+        {
+            attempt = await BillingV2FinancialCoreStore
+                .ResolveOrCreateAttemptAsync(
+                    connection,
+                    transaction,
+                    billingEvent.Id,
+                    Provider,
+                    _stripe.ModeName,
+                    billingEvent.TotalAmountCents,
+                    billingEvent.Currency,
+                    _clock.UtcNow,
+                    cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+
+        var locator = await ReadProviderLocatorAsync(
+            connection,
+            attempt.Id,
+            subscriptionId,
+            cancellationToken);
+        if (locator.ProviderInvoiceId is null
+            && locator.ProviderSubscriptionId is null)
+        {
+            // Rien de persiste a relire : on echoue en ferme plutot que de
+            // balayer Stripe pour deviner quelle invoice nous concerne.
+            return NotSettled(
+                "BILLING_V2_RENEWAL_NO_PROVIDER_OBJECT",
+                subscriptionId,
+                false);
+        }
+
+        var invoice = locator.ProviderInvoiceId is not null
+            ? await _gateway.GetInvoiceAsync(
+                locator.ProviderInvoiceId,
+                cancellationToken)
+            : await _gateway.GetLatestInvoiceForSubscriptionAsync(
+                locator.ProviderSubscriptionId!,
+                cancellationToken);
+        var providerSubscription = locator.ProviderSubscriptionId is null
+            ? null
+            : await _gateway.GetSubscriptionAsync(
+                locator.ProviderSubscriptionId,
+                cancellationToken);
+
+        var lifecycle = BillingV2StripeLifecycleVerifier.VerifyInvoice(
+            invoice,
+            providerSubscription,
+            new BillingV2StripeLifecycleExpectation(
+                billingEvent.Id,
+                subscriptionId,
+                attempt.Id,
+                attempt.ExpectedCurrency,
+                attempt.ExpectedAmountCents,
+                locator.ProviderSubscriptionId,
+                ExpectedProviderCustomerId: null));
+
+        await BillingV2FinancialCoreStore.LinkAttemptProviderObjectsAsync(
+            connection,
+            transaction: null,
+            attempt.Id,
+            invoice?.InvoiceId,
+            invoice?.SubscriptionId ?? locator.ProviderSubscriptionId,
+            _clock.UtcNow,
+            cancellationToken);
+        await BillingV2FinancialCoreStore.UpdateAttemptAsync(
+            connection,
+            transaction: null,
+            attempt.Id,
+            ResolveAttemptStatus(lifecycle),
+            providerSessionId: null,
+            invoice?.PaymentIntentId,
+            BillingV2StripeModes.Subscription,
+            invoice?.Status,
+            lifecycle.SettledAmountCents,
+            lifecycle.SettledCurrency,
+            lifecycle.ReasonCode,
+            _clock.UtcNow,
+            cancellationToken);
+        await ApplyPaymentStateAsync(
+            connection,
+            subscriptionId,
+            lifecycle.Outcome,
+            cancellationToken);
+
+        if (!lifecycle.Settled)
+        {
+            var mismatch = string.Equals(
+                lifecycle.Outcome,
+                BillingV2RenewalOutcomes.AmountMismatch,
+                StringComparison.Ordinal);
+            if (mismatch)
+            {
+                await using var mismatchTransaction =
+                    await connection.BeginTransactionAsync(
+                        IsolationLevel.ReadCommitted,
+                        cancellationToken);
+                await BillingV2FinancialCoreStore.ApplySettlementAsync(
+                    connection,
+                    mismatchTransaction,
+                    billingEvent.Id,
+                    BillingV2SettlementStatuses.AmountMismatch,
+                    lifecycle.ReasonCode,
+                    _clock.UtcNow,
+                    cancellationToken);
+                await mismatchTransaction.CommitAsync(cancellationToken);
+                _logger.LogWarning(
+                    "Billing V2 renewal mismatch on subscription {SubscriptionId}: {ReasonCode}. No invoice marked paid.",
+                    subscriptionId,
+                    lifecycle.ReasonCode);
+            }
+
+            return NotSettled(lifecycle.ReasonCode, subscriptionId, mismatch);
+        }
+
+        // Verrou puis relecture sous verrou : un rejeu de `invoice.paid` ou un
+        // passage du reconciliateur au meme instant retombent sur un no-op.
+        await using var settleTransaction = await connection
+            .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
+        var version = await BillingV2FinancialCoreStore.LockSubscriptionAsync(
+            connection,
+            settleTransaction,
+            subscriptionId,
+            cancellationToken);
+        if (version is null)
+        {
+            await settleTransaction.RollbackAsync(cancellationToken);
+            return NotSettled(
+                "BILLING_V2_STRIPE_SETTLEMENT_SUBSCRIPTION_NOT_FOUND",
+                subscriptionId,
+                true);
+        }
+
+        if (await IsAlreadySettledAsync(
+                connection,
+                settleTransaction,
+                billingEvent.Id,
+                cancellationToken))
+        {
+            await settleTransaction.CommitAsync(cancellationToken);
+            return new BillingV2StripeSettlementResult(
+                true,
+                "BILLING_V2_RENEWAL_SETTLEMENT_ALREADY_APPLIED",
+                subscriptionId,
+                false);
+        }
+
+        await BillingV2FinancialCoreStore.ApplySettlementAsync(
+            connection,
+            settleTransaction,
+            billingEvent.Id,
+            BillingV2SettlementStatuses.Settled,
+            lifecycle.ReasonCode,
+            _clock.UtcNow,
+            cancellationToken);
+        // Un renouvellement ne change pas le statut de l'abonnement : il est
+        // deja `active`. On incremente quand meme la version pour que toute
+        // ecriture concurrente sur cet abonnement soit detectee.
+        var swap = await BillingV2FinancialCoreStore
+            .TryAdvanceSubscriptionAsync(
+                connection,
+                settleTransaction,
+                subscriptionId,
+                version.Value,
+                "active",
+                _clock.UtcNow,
+                cancellationToken);
+        if (!swap.IsValid)
+        {
+            await settleTransaction.RollbackAsync(cancellationToken);
+            return NotSettled(swap.ReasonCode, subscriptionId, true);
+        }
+
+        await settleTransaction.CommitAsync(cancellationToken);
+        return new BillingV2StripeSettlementResult(
+            true,
+            "BILLING_V2_RENEWAL_SETTLEMENT_CONFIRMED",
+            subscriptionId,
+            false);
+    }
+
+    public async Task<BillingV2StripeSettlementResult>
+        EvaluateSubscriptionHealthAsync(
+            string subscriptionId,
+            string providerSubscriptionId,
+            CancellationToken cancellationToken)
+    {
+        if (!_sql.IsPersistent || string.IsNullOrWhiteSpace(_sql.ConnectionString))
+        {
+            return NotSettled(
+                "BILLING_V2_STRIPE_RAIL_NO_PERSISTENT_SQL",
+                subscriptionId,
+                false);
+        }
+
+        var providerSubscription = await _gateway.GetSubscriptionAsync(
+            providerSubscriptionId,
+            cancellationToken);
+        var health = BillingV2StripeLifecycleVerifier.VerifySubscriptionHealth(
+            providerSubscription);
+
+        await using var connection = new MySqlConnection(_sql.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await ApplyPaymentStateAsync(
+            connection,
+            subscriptionId,
+            health.Outcome,
+            cancellationToken);
+
+        // Jamais `Settled` : un controle de sante ne prouve aucun paiement.
+        return NotSettled(
+            health.ReasonCode,
+            subscriptionId,
+            string.Equals(
+                health.Outcome,
+                BillingV2RenewalOutcomes.Unpaid,
+                StringComparison.Ordinal)
+            || string.Equals(
+                health.Outcome,
+                BillingV2RenewalOutcomes.Cancelled,
+                StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Applique la politique de grace : l'etat local devient visible, l'acces
+    /// reste en place. Aucun retrait AD, aucun quota touche, aucune donnee
+    /// supprimee.
+    /// </summary>
+    private async Task ApplyPaymentStateAsync(
+        MySqlConnection connection,
+        string subscriptionId,
+        string outcome,
+        CancellationToken cancellationToken)
+    {
+        var decision = BillingV2RenewalGracePolicy.Resolve(outcome);
+        if (!decision.KeepsProvisioning)
+        {
+            throw new InvalidOperationException(
+                "BILLING_V2_RENEWAL_DEPROVISIONING_NOT_ALLOWED");
+        }
+
+        await BillingV2FinancialCoreStore.SetSubscriptionPaymentStateAsync(
+            connection,
+            transaction: null,
+            subscriptionId,
+            decision.PaymentState,
+            decision.ReasonCode,
+            _clock.UtcNow,
+            cancellationToken);
+    }
+
+    private async Task<BillingV2StripeLifecycleVerification?>
+        VerifyProviderLifecycleAsync(
+            MySqlConnection connection,
+            BillingV2PaymentAttemptRecord attempt,
+            string? providerSubscriptionIdFromSession,
+            BillingV2FinalizedBillingEvent billingEvent,
+            CancellationToken cancellationToken)
+    {
+        var providerSubscriptionId = providerSubscriptionIdFromSession;
+        if (string.IsNullOrWhiteSpace(providerSubscriptionId))
+        {
+            var locator = await ReadProviderLocatorAsync(
+                connection,
+                attempt.Id,
+                billingEvent.SubscriptionId,
+                cancellationToken);
+            providerSubscriptionId = locator.ProviderSubscriptionId;
+        }
+
+        if (string.IsNullOrWhiteSpace(providerSubscriptionId))
+        {
+            // Stripe ne nous a pas encore rattache d'abonnement : rien a
+            // verifier de plus, on s'en tient au verdict de la session.
+            return null;
+        }
+
+        var providerSubscription = await _gateway.GetSubscriptionAsync(
+            providerSubscriptionId,
+            cancellationToken);
+        var invoice = string.IsNullOrWhiteSpace(
+            providerSubscription?.LatestInvoiceId)
+            ? null
+            : await _gateway.GetInvoiceAsync(
+                providerSubscription!.LatestInvoiceId!,
+                cancellationToken);
+
+        await BillingV2FinancialCoreStore.LinkAttemptProviderObjectsAsync(
+            connection,
+            transaction: null,
+            attempt.Id,
+            invoice?.InvoiceId,
+            providerSubscriptionId,
+            _clock.UtcNow,
+            cancellationToken);
+
+        if (invoice is null)
+        {
+            // Invoice pas encore disponible : on ne DEGRADE pas un paiement
+            // deja prouve par la session pour un simple retard de propagation.
+            // Seul un abonnement franchement malade (past_due, unpaid,
+            // cancelled) remet le verdict en cause.
+            var health = BillingV2StripeLifecycleVerifier
+                .VerifySubscriptionHealth(providerSubscription);
+            return string.Equals(
+                health.Outcome,
+                BillingV2RenewalOutcomes.Pending,
+                StringComparison.Ordinal)
+                ? null
+                : health;
+        }
+
+        return BillingV2StripeLifecycleVerifier.VerifyInvoice(
+                invoice,
+                providerSubscription,
+                new BillingV2StripeLifecycleExpectation(
+                    billingEvent.Id,
+                    billingEvent.SubscriptionId,
+                    attempt.Id,
+                    attempt.ExpectedCurrency,
+                    attempt.ExpectedAmountCents,
+                    providerSubscriptionId,
+                    ExpectedProviderCustomerId: null));
+    }
+
+    private sealed record ProviderLocator(
+        string? ProviderInvoiceId,
+        string? ProviderSubscriptionId);
+
+    private static async Task<ProviderLocator> ReadProviderLocatorAsync(
+        MySqlConnection connection,
+        string attemptId,
+        string subscriptionId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT
+                attempt_row.provider_invoice_id,
+                COALESCE(
+                    attempt_row.provider_subscription_id,
+                    (SELECT session_row.provider_subscription_id
+                       FROM billing_v2_provider_checkout_sessions session_row
+                      WHERE session_row.subscription_id = @subscription_id
+                        AND session_row.provider = 'stripe'
+                        AND session_row.provider_subscription_id IS NOT NULL
+                      ORDER BY session_row.created_at ASC
+                      LIMIT 1),
+                    (SELECT agreement_row.provider_subscription_id
+                       FROM billing_v2_payment_agreements agreement_row
+                      WHERE agreement_row.subscription_id = @subscription_id
+                        AND agreement_row.provider = 'stripe'
+                      ORDER BY agreement_row.created_at ASC
+                      LIMIT 1)) AS provider_subscription_id
+            FROM billing_v2_payment_attempts attempt_row
+            WHERE attempt_row.id = @attempt_id
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("@attempt_id", attemptId);
+        command.Parameters.AddWithValue("@subscription_id", subscriptionId);
+        await using var reader = await command.ExecuteReaderAsync(
+            cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return new ProviderLocator(null, null);
+        }
+
+        return new ProviderLocator(
+            reader.IsDBNull(reader.GetOrdinal("provider_invoice_id"))
+                ? null
+                : reader.GetString("provider_invoice_id"),
+            reader.IsDBNull(reader.GetOrdinal("provider_subscription_id"))
+                ? null
+                : reader.GetString("provider_subscription_id"));
+    }
+
+    private static string ResolveAttemptStatus(
+        BillingV2StripeLifecycleVerification lifecycle)
+        => lifecycle.Outcome switch
+        {
+            BillingV2RenewalOutcomes.Paid =>
+                BillingV2PaymentAttemptStatuses.Succeeded,
+            BillingV2RenewalOutcomes.AmountMismatch =>
+                BillingV2PaymentAttemptStatuses.AmountMismatch,
+            BillingV2RenewalOutcomes.Failed
+                or BillingV2RenewalOutcomes.Unpaid
+                or BillingV2RenewalOutcomes.Cancelled =>
+                BillingV2PaymentAttemptStatuses.Failed,
+            _ => BillingV2PaymentAttemptStatuses.InFlight
+        };
+
+    private static BillingV2StripeSettlementResult NotSettled(
+        string reasonCode,
+        string? subscriptionId,
+        bool reconciliationRequired)
+        => new(false, reasonCode, subscriptionId, reconciliationRequired);
 
     // -----------------------------------------------------------------
     // Helpers

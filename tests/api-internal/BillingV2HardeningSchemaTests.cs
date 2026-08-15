@@ -291,6 +291,7 @@ public static class BillingV2HardeningSchemaTests
                 true),
             new StripeRuntimeConfiguration(StripeMode.Test, "sk_test_fake"),
             gateway,
+            SystemBillingV2Clock.Instance,
             NullLogger<BillingV2StripeRailService>.Instance);
 
     private static async Task<long> ScalarLongAsync(
@@ -398,11 +399,29 @@ public static class BillingV2HardeningSchemaTests
             return Task.FromResult(_snapshot);
         }
 
-        public Task<BillingV2StripeSessionSnapshot?>
-            FindCheckoutSessionByRequestKeyAsync(
-                string providerRequestKey,
-                CancellationToken cancellationToken)
+        public Task<BillingV2StripeSessionSnapshot?> FindCheckoutSessionAsync(
+            BillingV2StripeSessionLocator locator,
+            CancellationToken cancellationToken)
             => Task.FromResult(_snapshot);
+
+        // Phase 3 : sans abonnement ni invoice cote faux Stripe, la
+        // verification de cycle de vie ne peut pas degrader un verdict de
+        // session deja etabli. C'est exactement le comportement attendu.
+        public Task<BillingV2StripeSubscriptionSnapshot?> GetSubscriptionAsync(
+            string providerSubscriptionId,
+            CancellationToken cancellationToken)
+            => Task.FromResult<BillingV2StripeSubscriptionSnapshot?>(null);
+
+        public Task<BillingV2StripeInvoiceSnapshot?> GetInvoiceAsync(
+            string providerInvoiceId,
+            CancellationToken cancellationToken)
+            => Task.FromResult<BillingV2StripeInvoiceSnapshot?>(null);
+
+        public Task<BillingV2StripeInvoiceSnapshot?>
+            GetLatestInvoiceForSubscriptionAsync(
+                string providerSubscriptionId,
+                CancellationToken cancellationToken)
+            => Task.FromResult<BillingV2StripeInvoiceSnapshot?>(null);
     }
 
     private sealed record HardeningFixture(

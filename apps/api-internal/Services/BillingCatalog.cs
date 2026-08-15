@@ -13,9 +13,39 @@ public sealed record BillingV2RuntimeConfiguration(
     bool FirstRealSubscriptionApproved,
     bool ProviderOutboxEnabled,
     bool ProviderExecutorEnabled,
-    bool ProvisioningEnabled)
+    bool ProvisioningEnabled,
+    // Phase 3. Le reconciliateur est le seul composant Billing V2 capable
+    // d'appeler Stripe SANS action utilisateur : il reste donc OFF par defaut
+    // et s'active explicitement.
+    bool ReconciliationWorkerEnabled = false,
+    int ReconciliationIntervalSeconds =
+        BillingV2RuntimeConfiguration.DefaultReconciliationIntervalSeconds)
 {
+    public const int DefaultReconciliationIntervalSeconds = 300;
+    public const int MinimumReconciliationIntervalSeconds = 30;
+
     public static BillingV2RuntimeConfiguration Resolve(
+        IConfiguration configuration)
+        => ResolveCore(configuration) with
+        {
+            ReconciliationWorkerEnabled = string.Equals(
+                configuration["BILLING_V2_RECONCILIATION_WORKER_ENABLED"],
+                "true",
+                StringComparison.OrdinalIgnoreCase),
+            ReconciliationIntervalSeconds = ResolveInterval(
+                configuration["BILLING_V2_RECONCILIATION_INTERVAL_SECONDS"])
+        };
+
+    /// <summary>
+    /// Une fréquence absente, illisible ou trop agressive retombe sur la
+    /// valeur par defaut plutot que de marteler l'API Stripe.
+    /// </summary>
+    public static int ResolveInterval(string? rawValue)
+        => int.TryParse(rawValue, out var seconds)
+           && seconds >= MinimumReconciliationIntervalSeconds
+            ? seconds
+            : DefaultReconciliationIntervalSeconds;
+    private static BillingV2RuntimeConfiguration ResolveCore(
         IConfiguration configuration)
         => new(
             string.Equals(

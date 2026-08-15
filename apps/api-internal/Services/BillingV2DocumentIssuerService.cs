@@ -18,6 +18,20 @@ public interface IBillingV2DocumentIssuerService
         string subscriptionId,
         string correlationId,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Document d'un cycle de renouvellement (Phase 3).
+    ///
+    /// Construit UNIQUEMENT depuis les snapshots du BillingEvent : ni
+    /// catalogue, ni recalcul. Idempotent par (abonnement, cycle) et par
+    /// BillingEvent - un rejeu ne peut pas produire une seconde facture.
+    /// </summary>
+    Task<BillingV2DocumentIssueResult> EnsureCycleInvoiceAsync(
+        string subscriptionId,
+        string billingEventId,
+        int cycleSequence,
+        string correlationId,
+        CancellationToken cancellationToken);
 }
 
 public sealed class NoOpBillingV2DocumentIssuerService
@@ -38,6 +52,18 @@ public sealed class NoOpBillingV2DocumentIssuerService
             "BILLING_V2_DOCUMENT_ISSUER_DISABLED",
             CommercialDocumentId: null,
             Invoice: null));
+
+    public Task<BillingV2DocumentIssueResult> EnsureCycleInvoiceAsync(
+        string subscriptionId,
+        string billingEventId,
+        int cycleSequence,
+        string correlationId,
+        CancellationToken cancellationToken)
+        => Task.FromResult(new BillingV2DocumentIssueResult(
+            false,
+            "BILLING_V2_DOCUMENT_ISSUER_DISABLED",
+            CommercialDocumentId: null,
+            Invoice: null));
 }
 
 public sealed class BillingV2DocumentIssuerService
@@ -45,6 +71,10 @@ public sealed class BillingV2DocumentIssuerService
 {
     public const string InitialSubscriptionDocumentKind =
         "initial_subscription_invoice";
+
+    /// <summary>Un document par cycle de renouvellement.</summary>
+    public const string RenewalSubscriptionDocumentKind =
+        "renewal_subscription_invoice";
 
     private const string CommercialDocumentOrigin = "billing_v2";
 
@@ -146,6 +176,22 @@ public sealed class BillingV2DocumentIssuerService
             }
         }
 
+        return await IssueAndConfirmAsync(
+            documentId,
+            correlationId,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Emission + confirmation de paiement, partagees par la charge initiale
+    /// et les cycles de renouvellement. Un seul chemin, donc une seule
+    /// politique d'idempotence BPCE.
+    /// </summary>
+    private async Task<BillingV2DocumentIssueResult> IssueAndConfirmAsync(
+        string documentId,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
         // Phase 2.5. L'intention d'emission est persistee AVANT tout appel
         // reseau BPCE, avec une reference stable derivee du document. Sans
         // cela, un succes BPCE suivi d'un timeout avant l'ecriture locale
@@ -229,6 +275,435 @@ public sealed class BillingV2DocumentIssuerService
             payment.Code,
             documentId,
             payment.Invoice);
+    }
+
+    public async Task<BillingV2DocumentIssueResult> EnsureCycleInvoiceAsync(
+        string subscriptionId,
+        string billingEventId,
+        int cycleSequence,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
+        if (!_sql.IsPersistent || string.IsNullOrWhiteSpace(_sql.ConnectionString))
+        {
+            return new BillingV2DocumentIssueResult(
+                false,
+                "BILLING_V2_DOCUMENT_ISSUER_NO_PERSISTENT_SQL",
+                CommercialDocumentId: null,
+                Invoice: null);
+        }
+
+        string documentId;
+        await using (var connection = new MySqlConnection(_sql.ConnectionString))
+        {
+            await connection.OpenAsync(cancellationToken);
+            await using var transaction = await connection.BeginTransactionAsync(
+                IsolationLevel.ReadCommitted,
+                cancellationToken);
+
+            // Idempotence : un document deja rattache a CE BillingEvent est le
+            // document du cycle. On ne recree rien.
+            var existing = await ReadCycleDocumentIdAsync(
+                connection,
+                transaction,
+                billingEventId,
+                cancellationToken);
+            if (existing is not null)
+            {
+                await transaction.CommitAsync(cancellationToken);
+                documentId = existing;
+            }
+            else
+            {
+                var source = await LoadCycleSourceAsync(
+                    connection,
+                    transaction,
+                    billingEventId,
+                    cancellationToken);
+                if (source is null)
+                {
+                    await transaction.CommitAsync(cancellationToken);
+                    return new BillingV2DocumentIssueResult(
+                        false,
+                        "BILLING_V2_DOCUMENT_BILLING_EVENT_NOT_FOUND",
+                        CommercialDocumentId: null,
+                        Invoice: null);
+                }
+
+                // Le document n'est emis qu'apres un encaissement PROUVE.
+                if (!string.Equals(
+                        source.SettlementStatus,
+                        BillingV2SettlementStatuses.Settled,
+                        StringComparison.Ordinal))
+                {
+                    await transaction.CommitAsync(cancellationToken);
+                    return new BillingV2DocumentIssueResult(
+                        false,
+                        "BILLING_V2_DOCUMENT_CYCLE_NOT_SETTLED",
+                        CommercialDocumentId: null,
+                        Invoice: null);
+                }
+
+                try
+                {
+                    documentId = await CreateCycleDocumentAsync(
+                        connection,
+                        transaction,
+                        subscriptionId,
+                        cycleSequence,
+                        source,
+                        correlationId,
+                        cancellationToken);
+                    await transaction.CommitAsync(cancellationToken);
+                }
+                catch (MySqlException exception) when (exception.Number == 1062)
+                {
+                    // Course perdue avec un autre rejeu : l'unicite sur le
+                    // BillingEvent a fait son travail. On reprend le document
+                    // du gagnant plutot que d'en produire un second.
+                    await transaction.RollbackAsync(cancellationToken);
+                    var winner = await ReadCycleDocumentIdAsync(
+                        connection,
+                        transaction: null,
+                        billingEventId,
+                        cancellationToken);
+                    if (winner is null)
+                    {
+                        throw;
+                    }
+
+                    documentId = winner;
+                }
+            }
+        }
+
+        return await IssueAndConfirmAsync(
+            documentId,
+            correlationId,
+            cancellationToken);
+    }
+
+    private static async Task<string?> ReadCycleDocumentIdAsync(
+        MySqlConnection connection,
+        MySqlTransaction? transaction,
+        string billingEventId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            SELECT commercial_document_id
+            FROM billing_v2_subscription_documents
+            WHERE billing_event_id = @billing_event_id
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("@billing_event_id", billingEventId);
+        var scalar = await command.ExecuteScalarAsync(cancellationToken);
+        return scalar is null or DBNull ? null : Convert.ToString(scalar);
+    }
+
+    private sealed record CycleDocumentLine(
+        string ServiceCode,
+        string? TierCode,
+        string Description,
+        int Quantity,
+        long UnitAmountCents,
+        long GrossAmountCents,
+        long DiscountAmountCents,
+        long NetAmountCents,
+        long TaxAmountCents,
+        long TotalAmountCents,
+        string Currency,
+        string ServicePriceId,
+        int DisplayOrder);
+
+    private sealed record CycleDocumentSource(
+        string BillingEventId,
+        string SubscriptionId,
+        string CustomerId,
+        string CustomerReference,
+        string CustomerName,
+        string SettlementStatus,
+        string Currency,
+        DateTime PeriodStartUtc,
+        DateTime PeriodEndUtc,
+        long DiscountAmountCents,
+        long TaxAmountCents,
+        long TotalAmountCents,
+        IReadOnlyList<CycleDocumentLine> Lines);
+
+    /// <summary>
+    /// Lit le document a produire DEPUIS le BillingEvent et ses lignes.
+    /// Aucun montant n'est recalcule : la facture reproduit exactement ce qui
+    /// a ete finalise puis encaisse.
+    /// </summary>
+    private static async Task<CycleDocumentSource?> LoadCycleSourceAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        string billingEventId,
+        CancellationToken cancellationToken)
+    {
+        CycleDocumentSource? source;
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText =
+                """
+                SELECT
+                    event_row.id,
+                    event_row.subscription_id,
+                    event_row.customer_id,
+                    event_row.settlement_status,
+                    event_row.currency,
+                    event_row.period_start,
+                    event_row.period_end,
+                    event_row.discount_amount_cents,
+                    event_row.tax_amount_cents,
+                    event_row.total_amount_cents,
+                    customer.external_reference,
+                    customer.display_name
+                FROM billing_v2_billing_events event_row
+                INNER JOIN customers customer
+                    ON customer.id = event_row.customer_id
+                WHERE event_row.id = @billing_event_id
+                FOR UPDATE;
+                """;
+            command.Parameters.AddWithValue("@billing_event_id", billingEventId);
+            await using var reader = await command.ExecuteReaderAsync(
+                cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                return null;
+            }
+
+            source = new CycleDocumentSource(
+                MariaDbIdentifierReader.ReadRequired(reader, "id"),
+                MariaDbIdentifierReader.ReadRequired(reader, "subscription_id"),
+                MariaDbIdentifierReader.ReadRequired(reader, "customer_id"),
+                reader.GetString("external_reference"),
+                reader.GetString("display_name"),
+                reader.GetString("settlement_status"),
+                reader.GetString("currency"),
+                DateTime.SpecifyKind(
+                    reader.GetDateTime("period_start"),
+                    DateTimeKind.Utc),
+                DateTime.SpecifyKind(
+                    reader.GetDateTime("period_end"),
+                    DateTimeKind.Utc),
+                reader.GetInt64("discount_amount_cents"),
+                reader.GetInt64("tax_amount_cents"),
+                reader.GetInt64("total_amount_cents"),
+                Array.Empty<CycleDocumentLine>());
+        }
+
+        var lines = new List<CycleDocumentLine>();
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText =
+                """
+                SELECT service_code, tier_code, description, quantity,
+                       unit_amount_cents, gross_amount_cents,
+                       discount_allocated_amount_cents, net_amount_cents,
+                       tax_amount_cents, total_amount_cents, currency,
+                       service_price_id, display_order
+                FROM billing_v2_billing_event_lines
+                WHERE billing_event_id = @billing_event_id
+                ORDER BY display_order;
+                """;
+            command.Parameters.AddWithValue("@billing_event_id", billingEventId);
+            await using var reader = await command.ExecuteReaderAsync(
+                cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                lines.Add(new CycleDocumentLine(
+                    reader.GetString("service_code"),
+                    reader.IsDBNull(reader.GetOrdinal("tier_code"))
+                        ? null
+                        : reader.GetString("tier_code"),
+                    reader.GetString("description"),
+                    reader.GetInt32("quantity"),
+                    reader.GetInt64("unit_amount_cents"),
+                    reader.GetInt64("gross_amount_cents"),
+                    reader.GetInt64("discount_allocated_amount_cents"),
+                    reader.GetInt64("net_amount_cents"),
+                    reader.GetInt64("tax_amount_cents"),
+                    reader.GetInt64("total_amount_cents"),
+                    reader.GetString("currency"),
+                    MariaDbIdentifierReader.ReadRequired(
+                        reader,
+                        "service_price_id"),
+                    reader.GetInt32("display_order")));
+            }
+        }
+
+        return lines.Count == 0 ? null : source with { Lines = lines };
+    }
+
+    private static async Task<string> CreateCycleDocumentAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        string subscriptionId,
+        int cycleSequence,
+        CycleDocumentSource source,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
+        var documentId = Guid.NewGuid().ToString("D");
+        var subscriptionDocumentId = Guid.NewGuid().ToString("D");
+        var systemActorId = await ResolveSystemActorAsync(
+            connection,
+            transaction,
+            cancellationToken);
+        var now = DateTime.UtcNow;
+        var periodStart = BillingV2BillingCalendar
+            .CivilDate(source.PeriodStartUtc)
+            .ToDateTime(TimeOnly.MinValue);
+        var periodEnd = BillingV2BillingCalendar
+            .CivilDate(source.PeriodEndUtc)
+            .ToDateTime(TimeOnly.MinValue);
+        var subtotal = source.Lines.Sum(line => line.NetAmountCents);
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText =
+                """
+                INSERT INTO commercial_documents (
+                    id, customer_id, service_request_id, subscription_id,
+                    origin, document_type, status, title, internal_reference,
+                    currency, subtotal_amount_cents, tax_amount_cents,
+                    total_amount_cents, disclaimer, created_by_user_id,
+                    created_at, updated_at, shared_at, cancelled_at
+                ) VALUES (
+                    @id, @customer_id, NULL, NULL,
+                    @origin, 'informational_invoice', 'shared_with_customer',
+                    @title, @reference,
+                    @currency, @subtotal, @tax,
+                    @total, @disclaimer, @created_by_user_id,
+                    @now, @now, @now, NULL
+                );
+                """;
+            command.Parameters.AddWithValue("@id", documentId);
+            command.Parameters.AddWithValue("@customer_id", source.CustomerId);
+            command.Parameters.AddWithValue("@origin", CommercialDocumentOrigin);
+            command.Parameters.AddWithValue(
+                "@title",
+                $"Facture de renouvellement Billing V2 (cycle {cycleSequence}) - {source.CustomerName}");
+            command.Parameters.AddWithValue(
+                "@reference",
+                $"BV2-C{cycleSequence:D3}-{now:yyyyMMddHHmmss}-{source.CustomerReference}");
+            command.Parameters.AddWithValue("@currency", source.Currency);
+            command.Parameters.AddWithValue(
+                "@subtotal",
+                checked((int)subtotal));
+            command.Parameters.AddWithValue(
+                "@tax",
+                checked((int)source.TaxAmountCents));
+            command.Parameters.AddWithValue(
+                "@total",
+                checked((int)source.TotalAmountCents));
+            command.Parameters.AddWithValue(
+                "@disclaimer",
+                CommercialStatuses.DefaultDisclaimer);
+            command.Parameters.AddWithValue(
+                "@created_by_user_id",
+                systemActorId);
+            command.Parameters.AddWithValue("@now", now);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText =
+                """
+                INSERT INTO billing_v2_subscription_documents (
+                    id, subscription_id, commercial_document_id,
+                    billing_event_id, document_kind, cycle_sequence,
+                    period_start, period_end,
+                    subtotal_amount_cents, discount_amount_cents,
+                    tax_amount_cents, total_amount_cents, currency,
+                    status, reason_code, created_at, updated_at
+                ) VALUES (
+                    @id, @subscription_id, @commercial_document_id,
+                    @billing_event_id, @document_kind, @cycle_sequence,
+                    @period_start, @period_end,
+                    @subtotal, @discount, @tax, @total, @currency,
+                    'created', @reason_code, @now, @now
+                );
+                """;
+            command.Parameters.AddWithValue("@id", subscriptionDocumentId);
+            command.Parameters.AddWithValue(
+                "@subscription_id",
+                subscriptionId);
+            command.Parameters.AddWithValue(
+                "@commercial_document_id",
+                documentId);
+            command.Parameters.AddWithValue(
+                "@billing_event_id",
+                source.BillingEventId);
+            command.Parameters.AddWithValue(
+                "@document_kind",
+                RenewalSubscriptionDocumentKind);
+            command.Parameters.AddWithValue("@cycle_sequence", cycleSequence);
+            command.Parameters.AddWithValue("@period_start", periodStart);
+            command.Parameters.AddWithValue("@period_end", periodEnd);
+            command.Parameters.AddWithValue("@subtotal", subtotal);
+            command.Parameters.AddWithValue(
+                "@discount",
+                source.DiscountAmountCents);
+            command.Parameters.AddWithValue("@tax", source.TaxAmountCents);
+            command.Parameters.AddWithValue("@total", source.TotalAmountCents);
+            command.Parameters.AddWithValue("@currency", source.Currency);
+            command.Parameters.AddWithValue(
+                "@reason_code",
+                "BILLING_V2_DOCUMENT_CREATED_FROM_BILLING_EVENT_SNAPSHOT");
+            command.Parameters.AddWithValue("@now", now);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        foreach (var line in source.Lines)
+        {
+            var commercialLineId = Guid.NewGuid().ToString("D");
+            await InsertCommercialLineAsync(
+                connection,
+                transaction,
+                documentId,
+                commercialLineId,
+                new BillingV2DocumentLinePlan(
+                    SubscriptionItemId: string.Empty,
+                    line.ServicePriceId,
+                    line.ServiceCode,
+                    line.TierCode,
+                    line.TierCode is null
+                        ? line.ServiceCode
+                        : $"{line.ServiceCode} {line.TierCode}",
+                    line.Description,
+                    line.Quantity,
+                    "periode",
+                    line.UnitAmountCents,
+                    line.GrossAmountCents,
+                    line.DiscountAmountCents,
+                    line.NetAmountCents,
+                    TaxRateBasisPoints: null,
+                    line.TaxAmountCents,
+                    line.TotalAmountCents,
+                    line.Currency,
+                    (line.DisplayOrder + 1) * 10),
+                now,
+                cancellationToken);
+        }
+
+        await InsertAuditAsync(
+            connection,
+            transaction,
+            subscriptionId,
+            documentId,
+            correlationId,
+            cancellationToken);
+        return documentId;
     }
 
     /// <summary>

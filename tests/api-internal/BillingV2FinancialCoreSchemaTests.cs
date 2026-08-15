@@ -66,6 +66,9 @@ public static class BillingV2FinancialCoreSchemaTests
 
         // Phase 2.5 : scenarios de panne (reconciliation, cycles, BPCE).
         await BillingV2HardeningSchemaTests.RunAsync(connectionString);
+
+        // Phase 3 : cycle de vie du renouvellement Stripe.
+        await BillingV2RenewalSchemaTests.RunAsync(connectionString);
     }
 
     private static async Task VerifySchemaShapeAsync(MySqlConnection connection)

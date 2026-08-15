@@ -79,6 +79,7 @@ public sealed class BillingV2ProviderInboundEventService
     private readonly IBillingV2DocumentIssuerService _documents;
     private readonly IBillingV2ProvisioningService _provisioning;
     private readonly IBillingV2StripeRailService _stripeRail;
+    private readonly IBillingV2RenewalService _renewals;
     private readonly ILogger<BillingV2ProviderInboundEventService> _logger;
 
     public BillingV2ProviderInboundEventService(
@@ -87,6 +88,7 @@ public sealed class BillingV2ProviderInboundEventService
         IBillingV2DocumentIssuerService documents,
         IBillingV2ProvisioningService provisioning,
         IBillingV2StripeRailService stripeRail,
+        IBillingV2RenewalService renewals,
         ILogger<BillingV2ProviderInboundEventService> logger)
     {
         _sql = sql;
@@ -94,6 +96,7 @@ public sealed class BillingV2ProviderInboundEventService
         _documents = documents;
         _provisioning = provisioning;
         _stripeRail = stripeRail;
+        _renewals = renewals;
         _logger = logger;
     }
 
@@ -253,6 +256,50 @@ public sealed class BillingV2ProviderInboundEventService
             // Document et provisioning ne suivent que si cette relecture a
             // confirme l'encaissement du montant attendu, dans la bonne devise.
             var settledByVerification = false;
+
+            // Phase 3. Signal de cycle : on relit l'invoice chez Stripe, on en
+            // deduit le cycle, on facture ce cycle s'il ne l'est pas deja, puis
+            // on verifie. Rien ne decoule du payload.
+            if (BillingV2ProviderInboundRenewalPolicy.IsRenewalSignal(
+                    request.Provider,
+                    plan.ReasonCode))
+            {
+                var renewal = await _renewals.HandleProviderSignalAsync(
+                    localState.SubscriptionId,
+                    cancellationToken);
+                if (renewal.Settled)
+                {
+                    await TryIssueRenewalDocumentAsync(
+                        localState.SubscriptionId,
+                        renewal.BillingEventId!,
+                        renewal.CycleSequence,
+                        cancellationToken);
+                }
+                else
+                {
+                    _logger.LogWarning(
+                        "Billing V2 renewal signal for subscription {SubscriptionId} did not settle: {ReasonCode}. No document, no provisioning change.",
+                        localState.SubscriptionId,
+                        renewal.ReasonCode);
+                }
+
+                return result with { ReasonCode = renewal.ReasonCode };
+            }
+
+            // Signal d'abonnement : controle de sante uniquement. Il ne peut
+            // que degrader l'etat local, jamais activer ni encaisser.
+            if (BillingV2ProviderInboundRenewalPolicy.IsSubscriptionHealthSignal(
+                    request.Provider,
+                    plan.ReasonCode)
+                && !string.IsNullOrWhiteSpace(plan.ProviderSubscriptionId))
+            {
+                var health = await _stripeRail.EvaluateSubscriptionHealthAsync(
+                    localState.SubscriptionId,
+                    plan.ProviderSubscriptionId!,
+                    cancellationToken);
+                return result with { ReasonCode = health.ReasonCode };
+            }
+
             if (BillingV2ProviderInboundProvisioningPolicy.ShouldVerifySettlement(
                     request.Provider,
                     plan.ReasonCode))
@@ -893,6 +940,40 @@ public sealed class BillingV2ProviderInboundEventService
         }
     }
 
+    private async Task TryIssueRenewalDocumentAsync(
+        string subscriptionId,
+        string billingEventId,
+        int cycleSequence,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await _documents.EnsureCycleInvoiceAsync(
+                subscriptionId,
+                billingEventId,
+                cycleSequence,
+                $"billing-v2-renewal-{subscriptionId}-{cycleSequence}",
+                cancellationToken);
+            if (!result.Succeeded)
+            {
+                _logger.LogWarning(
+                    "Billing V2 renewal document for subscription {SubscriptionId} cycle {Cycle} returned {ReasonCode}. It can be retried idempotently.",
+                    subscriptionId,
+                    cycleSequence,
+                    result.ReasonCode);
+            }
+        }
+        catch (Exception exception)
+            when (exception is not OperationCanceledException)
+        {
+            _logger.LogError(
+                exception,
+                "Billing V2 renewal document issuing failed for subscription {SubscriptionId} cycle {Cycle}. It can be retried idempotently.",
+                subscriptionId,
+                cycleSequence);
+        }
+    }
+
     private async Task TryIssueDocumentAsync(
         string? subscriptionId,
         CancellationToken cancellationToken)
@@ -936,6 +1017,39 @@ public static class BillingV2ProviderInboundProvisioningFailurePolicy
 {
     public static bool ShouldKeepProviderEventProcessed(Exception exception)
         => exception is not OperationCanceledException;
+}
+
+/// <summary>
+/// Aiguillage des signaux de cycle (Phase 3).
+///
+/// Aucun de ces signaux ne porte de decision : ils designent seulement l'objet
+/// Stripe a relire. La separation entre "signal de cycle" et "signal de sante"
+/// est ce qui garantit qu'un <c>customer.subscription.updated</c> ne puisse
+/// jamais servir de preuve de paiement.
+/// </summary>
+public static class BillingV2ProviderInboundRenewalPolicy
+{
+    public const string SubscriptionSignalOnlyReasonCode =
+        "BILLING_V2_PROVIDER_SUBSCRIPTION_SIGNAL_ONLY";
+
+    public static bool IsRenewalSignal(string provider, string? reasonCode)
+        => IsStripe(provider)
+           && string.Equals(
+               reasonCode,
+               BillingV2ProviderInboundEventPlanner.RenewalSignalReasonCode,
+               StringComparison.Ordinal);
+
+    public static bool IsSubscriptionHealthSignal(
+        string provider,
+        string? reasonCode)
+        => IsStripe(provider)
+           && string.Equals(
+               reasonCode,
+               SubscriptionSignalOnlyReasonCode,
+               StringComparison.Ordinal);
+
+    private static bool IsStripe(string provider)
+        => string.Equals(provider, "stripe", StringComparison.OrdinalIgnoreCase);
 }
 
 public static class BillingV2ProviderInboundProvisioningPolicy
@@ -989,6 +1103,12 @@ public static class BillingV2ProviderInboundProvisioningPolicy
 
 public static class BillingV2ProviderInboundEventPlanner
 {
+    /// <summary>
+    /// Signal de cycle : declenche une relecture, n'autorise rien.
+    /// </summary>
+    public const string RenewalSignalReasonCode =
+        "BILLING_V2_PROVIDER_RENEWAL_SIGNAL";
+
     public static BillingV2ProviderInboundEventPlan Plan(
         BillingV2ProviderInboundEventRequest request,
         BillingV2ProviderLocalState state)
@@ -1136,8 +1256,21 @@ public static class BillingV2ProviderInboundEventPlanner
                     AgreementStatus: null,
                     SubscriptionStatus: null,
                     RequiresProviderSubscription: true),
-            "billing_v2.subscription_payment_failed"
+            // Phase 3. Les evenements d'invoice Stripe ne portent AUCUNE
+            // transition : ils disent seulement quel cycle relire. La preuve
+            // financiere vient de la relecture de l'invoice chez Stripe, avec
+            // verification du montant et de la devise attendus.
+            "invoice.paid"
+                or "invoice.payment_succeeded"
                 or "invoice.payment_failed"
+                or "invoice.marked_uncollectible" =>
+                new BillingV2ProviderEventKind(
+                    RenewalSignalReasonCode,
+                    CheckoutStatus: null,
+                    AgreementStatus: null,
+                    SubscriptionStatus: null,
+                    RequiresProviderSubscription: false),
+            "billing_v2.subscription_payment_failed"
                 or "billing.subscription.suspended" =>
                 new BillingV2ProviderEventKind(
                     "BILLING_V2_PROVIDER_SUBSCRIPTION_PAYMENT_FAILED",

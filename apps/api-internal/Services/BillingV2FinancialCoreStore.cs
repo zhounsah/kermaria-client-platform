@@ -241,7 +241,7 @@ public static class BillingV2FinancialCoreStore
         string billingEventId,
         string customerId,
         string subscriptionId,
-        string subscriptionChangeId,
+        string? subscriptionChangeId,
         BillingV2BillingEventDraft draft,
         string paymentModeSnapshot,
         int commitmentMonthsSnapshot,
@@ -251,7 +251,8 @@ public static class BillingV2FinancialCoreStore
         DateTime nowUtc,
         DateTime settlementDeadlineUtc,
         IReadOnlyList<BillingV2BillingEventLineSource> lineSources,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int? cycleSequence = null)
     {
         var validation = BillingV2BillingEventPolicy.ValidateForFinalization(
             draft);
@@ -272,6 +273,7 @@ public static class BillingV2FinancialCoreStore
                     financial_status, settlement_status, document_status,
                     currency, period_start, period_end,
                     payment_mode_snapshot, commitment_months_snapshot,
+                    cycle_sequence,
                     discount_basis_points_snapshot,
                     gross_amount_cents, discount_amount_cents,
                     net_amount_cents, tax_amount_cents, total_amount_cents,
@@ -284,7 +286,9 @@ public static class BillingV2FinancialCoreStore
                     @event_type, @direction,
                     'finalized', 'none', 'none',
                     @currency, @period_start, @period_end,
-                    @payment_mode, @commitment_months, @discount_bps,
+                    @payment_mode, @commitment_months,
+                    @cycle_sequence,
+                    @discount_bps,
                     @gross, @discount, @net, @tax, @total,
                     @engine_version,
                     @canonical, SHA2(@canonical, 256),
@@ -295,7 +299,14 @@ public static class BillingV2FinancialCoreStore
             command.Parameters.AddWithValue("@id", billingEventId);
             command.Parameters.AddWithValue("@customer_id", customerId);
             command.Parameters.AddWithValue("@subscription_id", subscriptionId);
-            command.Parameters.AddWithValue("@change_id", subscriptionChangeId);
+            command.Parameters.AddWithValue(
+                "@change_id",
+                subscriptionChangeId is null
+                    ? DBNull.Value
+                    : subscriptionChangeId);
+            command.Parameters.AddWithValue(
+                "@cycle_sequence",
+                cycleSequence.HasValue ? cycleSequence.Value : DBNull.Value);
             command.Parameters.AddWithValue("@event_type", draft.EventType);
             command.Parameters.AddWithValue("@direction", draft.Direction);
             command.Parameters.AddWithValue("@currency", draft.Currency);
@@ -385,6 +396,123 @@ public static class BillingV2FinancialCoreStore
         }
 
         return billingEventId;
+    }
+
+    /// <summary>
+    /// Ecrit le BillingEvent d'un cycle de renouvellement.
+    ///
+    /// Pas de <c>subscription_change_id</c> : un renouvellement n'est pas une
+    /// intention client, c'est l'execution du contrat deja signe. Son identite
+    /// est le couple (abonnement, cycle), garanti unique en base.
+    /// </summary>
+    public static Task<string> InsertFinalizedRenewalEventAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        string billingEventId,
+        string customerId,
+        string subscriptionId,
+        int cycleSequence,
+        BillingV2BillingEventDraft draft,
+        string paymentModeSnapshot,
+        int commitmentMonthsSnapshot,
+        int discountBasisPointsSnapshot,
+        DateTime periodStartUtc,
+        DateTime periodEndUtc,
+        DateTime nowUtc,
+        DateTime settlementDeadlineUtc,
+        IReadOnlyList<BillingV2BillingEventLineSource> lineSources,
+        CancellationToken cancellationToken)
+        => InsertFinalizedBillingEventAsync(
+            connection,
+            transaction,
+            billingEventId,
+            customerId,
+            subscriptionId,
+            subscriptionChangeId: null,
+            draft,
+            paymentModeSnapshot,
+            commitmentMonthsSnapshot,
+            discountBasisPointsSnapshot,
+            periodStartUtc,
+            periodEndUtc,
+            nowUtc,
+            settlementDeadlineUtc,
+            lineSources,
+            cancellationToken,
+            cycleSequence);
+
+    /// <summary>
+    /// Etat de paiement local (politique de grace V2.0).
+    ///
+    /// Volontairement separe de <c>status</c> : rendre un impaye visible ne
+    /// doit jamais couper un acces. Aucun appel a cette methode ne
+    /// deprovisionne quoi que ce soit.
+    /// </summary>
+    public static async Task SetSubscriptionPaymentStateAsync(
+        MySqlConnection connection,
+        MySqlTransaction? transaction,
+        string subscriptionId,
+        string paymentState,
+        string reasonCode,
+        DateTime nowUtc,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            UPDATE billing_v2_subscriptions
+            SET payment_state = @payment_state,
+                payment_state_reason_code = @reason_code,
+                payment_state_changed_at = @now,
+                updated_at = @now
+            WHERE id = @id
+              AND payment_state <> @payment_state;
+            """;
+        command.Parameters.AddWithValue("@id", subscriptionId);
+        command.Parameters.AddWithValue("@payment_state", paymentState);
+        command.Parameters.AddWithValue("@reason_code", reasonCode);
+        command.Parameters.AddWithValue("@now", nowUtc);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Persiste les identifiants provider necessaires a une relecture BORNEE.
+    /// Sans eux, le reconciliateur n'aurait d'autre choix que de balayer le
+    /// compte Stripe - ce que la Phase 3 interdit.
+    /// </summary>
+    public static async Task LinkAttemptProviderObjectsAsync(
+        MySqlConnection connection,
+        MySqlTransaction? transaction,
+        string attemptId,
+        string? providerInvoiceId,
+        string? providerSubscriptionId,
+        DateTime nowUtc,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            UPDATE billing_v2_payment_attempts
+            SET provider_invoice_id =
+                    COALESCE(provider_invoice_id, @invoice_id),
+                provider_subscription_id =
+                    COALESCE(provider_subscription_id, @subscription_id),
+                updated_at = @now
+            WHERE id = @id;
+            """;
+        command.Parameters.AddWithValue("@id", attemptId);
+        command.Parameters.AddWithValue(
+            "@invoice_id",
+            providerInvoiceId is null ? DBNull.Value : providerInvoiceId);
+        command.Parameters.AddWithValue(
+            "@subscription_id",
+            providerSubscriptionId is null
+                ? DBNull.Value
+                : providerSubscriptionId);
+        command.Parameters.AddWithValue("@now", nowUtc);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     public static async Task<BillingV2FinalizedBillingEvent?>
@@ -696,7 +824,8 @@ public static class BillingV2FinancialCoreStore
         command.CommandText =
             """
             SELECT id, billing_event_id, status, provider_session_id,
-                   reconciliation_attempts
+                   reconciliation_attempts,
+                   provider_invoice_id, provider_subscription_id
             FROM billing_v2_payment_attempts
             WHERE provider = @provider
               AND environment = @environment
@@ -723,7 +852,13 @@ public static class BillingV2FinancialCoreStore
                 reader.IsDBNull(reader.GetOrdinal("provider_session_id"))
                     ? null
                     : reader.GetString("provider_session_id"),
-                reader.GetInt32("reconciliation_attempts")));
+                reader.GetInt32("reconciliation_attempts"),
+                reader.IsDBNull(reader.GetOrdinal("provider_invoice_id"))
+                    ? null
+                    : reader.GetString("provider_invoice_id"),
+                reader.IsDBNull(reader.GetOrdinal("provider_subscription_id"))
+                    ? null
+                    : reader.GetString("provider_subscription_id")));
         }
 
         return candidates;

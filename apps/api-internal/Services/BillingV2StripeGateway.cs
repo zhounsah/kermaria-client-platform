@@ -42,12 +42,39 @@ public interface IBillingV2StripeGateway
         CancellationToken cancellationToken);
 
     /// <summary>
-    /// Recherche une session par la cle d'idempotence utilisee a la creation.
-    /// C'est le chemin de reprise apres timeout quand aucun identifiant Stripe
-    /// n'a pu etre persiste.
+    /// Reprise apres appel indetermine, par relecture BORNEE.
+    ///
+    /// Phase 3 : on ne balaye plus le compte Stripe. On ne relit que ce qui a
+    /// ete persiste (session, payment intent, abonnement provider) ; sans
+    /// aucun identifiant, on echoue en ferme et le retry normal repart avec la
+    /// meme cle d'idempotence, que Stripe deduplique.
     /// </summary>
-    Task<BillingV2StripeSessionSnapshot?> FindCheckoutSessionByRequestKeyAsync(
-        string providerRequestKey,
+    Task<BillingV2StripeSessionSnapshot?> FindCheckoutSessionAsync(
+        BillingV2StripeSessionLocator locator,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Relit l'abonnement Stripe. Necessaire des la Phase 3 : une session
+    /// payee ne dit rien de l'etat de l'abonnement quelques heures plus tard.
+    /// </summary>
+    Task<BillingV2StripeSubscriptionSnapshot?> GetSubscriptionAsync(
+        string providerSubscriptionId,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Relit une invoice Stripe. C'est LA preuve financiere d'un cycle : un
+    /// renouvellement n'a pas de session checkout.
+    /// </summary>
+    Task<BillingV2StripeInvoiceSnapshot?> GetInvoiceAsync(
+        string providerInvoiceId,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Derniere invoice connue d'un abonnement provider. Relecture bornee :
+    /// un seul objet, cible par son identifiant.
+    /// </summary>
+    Task<BillingV2StripeInvoiceSnapshot?> GetLatestInvoiceForSubscriptionAsync(
+        string providerSubscriptionId,
         CancellationToken cancellationToken);
 }
 
@@ -79,17 +106,34 @@ public sealed class DisabledBillingV2StripeGateway : IBillingV2StripeGateway
         CancellationToken cancellationToken)
         => Task.FromResult<BillingV2StripeSessionSnapshot?>(null);
 
-    public Task<BillingV2StripeSessionSnapshot?>
-        FindCheckoutSessionByRequestKeyAsync(
-            string providerRequestKey,
-            CancellationToken cancellationToken)
+    public Task<BillingV2StripeSessionSnapshot?> FindCheckoutSessionAsync(
+        BillingV2StripeSessionLocator locator,
+        CancellationToken cancellationToken)
         => Task.FromResult<BillingV2StripeSessionSnapshot?>(null);
+
+    public Task<BillingV2StripeSubscriptionSnapshot?> GetSubscriptionAsync(
+        string providerSubscriptionId,
+        CancellationToken cancellationToken)
+        => Task.FromResult<BillingV2StripeSubscriptionSnapshot?>(null);
+
+    public Task<BillingV2StripeInvoiceSnapshot?> GetInvoiceAsync(
+        string providerInvoiceId,
+        CancellationToken cancellationToken)
+        => Task.FromResult<BillingV2StripeInvoiceSnapshot?>(null);
+
+    public Task<BillingV2StripeInvoiceSnapshot?>
+        GetLatestInvoiceForSubscriptionAsync(
+            string providerSubscriptionId,
+            CancellationToken cancellationToken)
+        => Task.FromResult<BillingV2StripeInvoiceSnapshot?>(null);
 }
 
 public sealed class BillingV2StripeGateway : IBillingV2StripeGateway
 {
     public const string HttpClientName = "billing-v2-stripe";
     private const string SessionsUrl = "https://api.stripe.com/v1/checkout/sessions";
+    private const string SubscriptionsUrl = "https://api.stripe.com/v1/subscriptions";
+    private const string InvoicesUrl = "https://api.stripe.com/v1/invoices";
 
     private readonly BillingV2RuntimeConfiguration _runtime;
     private readonly StripeRuntimeConfiguration _stripe;
@@ -228,33 +272,61 @@ public sealed class BillingV2StripeGateway : IBillingV2StripeGateway
             await response.Content.ReadAsStringAsync(cancellationToken));
     }
 
-    public async Task<BillingV2StripeSessionSnapshot?>
-        FindCheckoutSessionByRequestKeyAsync(
-            string providerRequestKey,
-            CancellationToken cancellationToken)
+    public async Task<BillingV2StripeSessionSnapshot?> FindCheckoutSessionAsync(
+        BillingV2StripeSessionLocator locator,
+        CancellationToken cancellationToken)
     {
-        if (!CanExecute || string.IsNullOrWhiteSpace(providerRequestKey))
+        if (!CanExecute)
         {
             return null;
         }
 
-        // Rejouer la creation avec la MEME cle d'idempotence renvoie la session
-        // deja creee, sans en creer une nouvelle. C'est la maniere supportee par
-        // Stripe de savoir si un appel interrompu avait abouti.
-        using var message = new HttpRequestMessage(HttpMethod.Get, SessionsUrl);
-        message.Headers.Authorization = new AuthenticationHeaderValue(
-            "Bearer",
-            _stripe.SecretKey);
+        // La strategie est decidee hors reseau, donc testable seule.
+        var plan = BillingV2StripeSessionLookupPolicy.Plan(locator);
+        if (!plan.CanLookup || plan.Target is null)
+        {
+            // Fail closed : aucun identifiant persiste, donc aucun objet a
+            // relire. On ne balaye PAS le compte Stripe pour deviner.
+            _logger.LogWarning(
+                "Billing V2 Stripe lookup refused: {ReasonCode}. The retry will reuse the same idempotency key instead.",
+                plan.ReasonCode);
+            return null;
+        }
 
-        var response = await _httpClientFactory
-            .CreateClient(HttpClientName)
-            .SendAsync(message, cancellationToken);
-        if (!response.IsSuccessStatusCode)
+        return plan.Method switch
+        {
+            BillingV2StripeSessionLookupPolicy.MethodSession =>
+                await GetCheckoutSessionAsync(plan.Target, cancellationToken),
+            // Une session se retrouve depuis son payment intent ou son
+            // abonnement par une requete FILTREE cote serveur - une seule page,
+            // un seul objet attendu, pas un parcours du compte.
+            BillingV2StripeSessionLookupPolicy.MethodPaymentIntent =>
+                await FindSessionByFilterAsync(
+                    "payment_intent",
+                    plan.Target,
+                    cancellationToken),
+            BillingV2StripeSessionLookupPolicy.MethodSubscription =>
+                await FindSessionByFilterAsync(
+                    "subscription",
+                    plan.Target,
+                    cancellationToken),
+            _ => null
+        };
+    }
+
+    private async Task<BillingV2StripeSessionSnapshot?> FindSessionByFilterAsync(
+        string filterName,
+        string filterValue,
+        CancellationToken cancellationToken)
+    {
+        var body = await GetAsync(
+            $"{SessionsUrl}?{filterName}={Uri.EscapeDataString(filterValue)}&limit=1",
+            cancellationToken);
+        if (body is null)
         {
             return null;
         }
 
-        var body = await response.Content.ReadAsStringAsync(cancellationToken);
         using var document = JsonDocument.Parse(body);
         if (!document.RootElement.TryGetProperty("data", out var data)
             || data.ValueKind is not JsonValueKind.Array)
@@ -264,17 +336,163 @@ public sealed class BillingV2StripeGateway : IBillingV2StripeGateway
 
         foreach (var element in data.EnumerateArray())
         {
-            var snapshot = ParseSession(element);
-            if (snapshot is not null
-                && snapshot.Metadata.TryGetValue(
-                    "billing_v2_payment_attempt_id",
-                    out _))
-            {
-                return snapshot;
-            }
+            return ParseSession(element);
         }
 
         return null;
+    }
+
+    public async Task<BillingV2StripeSubscriptionSnapshot?>
+        GetSubscriptionAsync(
+            string providerSubscriptionId,
+            CancellationToken cancellationToken)
+    {
+        if (!CanExecute || string.IsNullOrWhiteSpace(providerSubscriptionId))
+        {
+            return null;
+        }
+
+        var body = await GetAsync(
+            $"{SubscriptionsUrl}/{Uri.EscapeDataString(providerSubscriptionId)}",
+            cancellationToken);
+        if (body is null)
+        {
+            return null;
+        }
+
+        using var document = JsonDocument.Parse(body);
+        var root = document.RootElement;
+        return new BillingV2StripeSubscriptionSnapshot(
+            ReadString(root, "id") ?? providerSubscriptionId,
+            ReadString(root, "status") ?? "unknown",
+            ReadReference(root, "customer"),
+            ReadReference(root, "latest_invoice"),
+            ReadMetadata(root));
+    }
+
+    public async Task<BillingV2StripeInvoiceSnapshot?> GetInvoiceAsync(
+        string providerInvoiceId,
+        CancellationToken cancellationToken)
+    {
+        if (!CanExecute || string.IsNullOrWhiteSpace(providerInvoiceId))
+        {
+            return null;
+        }
+
+        var body = await GetAsync(
+            $"{InvoicesUrl}/{Uri.EscapeDataString(providerInvoiceId)}",
+            cancellationToken);
+        return body is null ? null : ParseInvoice(body);
+    }
+
+    public async Task<BillingV2StripeInvoiceSnapshot?>
+        GetLatestInvoiceForSubscriptionAsync(
+            string providerSubscriptionId,
+            CancellationToken cancellationToken)
+    {
+        var subscription = await GetSubscriptionAsync(
+            providerSubscriptionId,
+            cancellationToken);
+        return string.IsNullOrWhiteSpace(subscription?.LatestInvoiceId)
+            ? null
+            : await GetInvoiceAsync(
+                subscription!.LatestInvoiceId!,
+                cancellationToken);
+    }
+
+    private async Task<string?> GetAsync(
+        string url,
+        CancellationToken cancellationToken)
+    {
+        using var message = new HttpRequestMessage(HttpMethod.Get, url);
+        message.Headers.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            _stripe.SecretKey);
+        var response = await _httpClientFactory
+            .CreateClient(HttpClientName)
+            .SendAsync(message, cancellationToken);
+        return response.IsSuccessStatusCode
+            ? await response.Content.ReadAsStringAsync(cancellationToken)
+            : null;
+    }
+
+    private static BillingV2StripeInvoiceSnapshot? ParseInvoice(string body)
+    {
+        using var document = JsonDocument.Parse(body);
+        var root = document.RootElement;
+        var id = ReadString(root, "id");
+        if (id is null)
+        {
+            return null;
+        }
+
+        return new BillingV2StripeInvoiceSnapshot(
+            id,
+            ReadReference(root, "subscription"),
+            ReadReference(root, "customer"),
+            ReadString(root, "status") ?? "unknown",
+            ReadString(root, "currency"),
+            ReadLong(root, "amount_paid"),
+            ReadLong(root, "amount_due"),
+            ReadReference(root, "payment_intent"),
+            ReadString(root, "billing_reason"),
+            ReadMetadata(root),
+            ReadInvoicePeriodStart(root));
+    }
+
+    /// <summary>
+    /// Debut de la periode facturee. Sert uniquement a identifier DE QUEL
+    /// cycle parle l'invoice ; le rang est ensuite calcule depuis l'ancre
+    /// contractuelle locale, et le montant vient toujours du contrat.
+    /// </summary>
+    private static DateTime? ReadInvoicePeriodStart(JsonElement root)
+    {
+        var epoch = ReadLong(root, "period_start");
+        if (epoch is null
+            && root.TryGetProperty("lines", out var lines)
+            && lines.TryGetProperty("data", out var data)
+            && data.ValueKind is JsonValueKind.Array)
+        {
+            foreach (var line in data.EnumerateArray())
+            {
+                if (line.TryGetProperty("period", out var period))
+                {
+                    epoch = ReadLong(period, "start");
+                }
+
+                break;
+            }
+        }
+
+        return epoch is null
+            ? null
+            : DateTimeOffset.FromUnixTimeSeconds(epoch.Value).UtcDateTime;
+    }
+
+    private static long? ReadLong(JsonElement root, string name)
+        => root.TryGetProperty(name, out var element)
+           && element.ValueKind is JsonValueKind.Number
+            ? element.GetInt64()
+            : null;
+
+    private static IReadOnlyDictionary<string, string> ReadMetadata(
+        JsonElement root)
+    {
+        var metadata = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (root.TryGetProperty("metadata", out var element)
+            && element.ValueKind is JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                var value = property.Value.GetString();
+                if (value is not null)
+                {
+                    metadata[property.Name] = value;
+                }
+            }
+        }
+
+        return metadata;
     }
 
     private static string Encode(IReadOnlyDictionary<string, string> parameters)

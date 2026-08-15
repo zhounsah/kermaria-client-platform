@@ -367,6 +367,22 @@ builder.Services.AddSingleton<IBillingV2Clock>(SystemBillingV2Clock.Instance);
 builder.Services.AddScoped<
     IBillingV2StripeReconciliationService,
     BillingV2StripeReconciliationService>();
+builder.Services.AddScoped<IBillingV2RenewalService>(
+    serviceProvider => sqlConfiguration.IsPersistent
+        ? new BillingV2RenewalService(
+            sqlConfiguration,
+            serviceProvider.GetRequiredService<IBillingV2Clock>(),
+            serviceProvider.GetRequiredService<IBillingV2StripeGateway>(),
+            serviceProvider.GetRequiredService<IBillingV2StripeRailService>(),
+            serviceProvider.GetRequiredService<
+                ILogger<BillingV2RenewalService>>())
+        : NoOpBillingV2RenewalService.Instance);
+// Phase 3. Declencheur periodique du reconciliateur : OFF par defaut, donc
+// pas meme enregistre tant que le drapeau n'est pas pose.
+if (billingV2RuntimeConfiguration.ReconciliationWorkerEnabled)
+{
+    builder.Services.AddHostedService<BillingV2StripeReconciliationWorker>();
+}
 builder.Services.AddScoped<
     IBillingV2ProviderOutboxDispatcher,
     BillingV2ProviderOutboxDispatcher>();
