@@ -1196,6 +1196,65 @@ administrable : `SeedMissingAsync` n'amorce qu'une base vierge, elle doit etre
 perimetre : `/wiki/article/<slug>` repond encore 200 sur `www`, duplicata
 neutralise par sa canonical.
 
+## Jalon v1.4.0.0 — Billing V2, deploye et dormant
+
+Statut : **livre et deploye, non lance**. Documentation dediee :
+[`v1.4/V1.4.0.0_BILLING_V2.md`](v1.4/V1.4.0.0_BILLING_V2.md) ; reference
+technique complete dans [`billing-v2/`](billing-v2/README.md).
+
+Billing V2 remplace a terme la facturation historique par un moteur dont
+l'autorite est **locale** : le `BillingEvent` immuable, accompagne de ses
+lignes, decide de ce qui est du ; Stripe encaisse mais ne decide pas. Trois
+axes de statut orthogonaux (`financial_status`, `settlement_status`,
+`document_status`) evitent les factures sans paiement et les paiements sans
+facture. Un renouvellement est identifie par `(subscription_id,
+cycle_sequence)`, et `billing_anchor_at`, materialise a l'activation
+contractuelle, convertit la *periode* fournie par Stripe en *rang* — ancre qui
+**ne se recalcule pas** a chaque cycle, sous peine de faire deriver toute la
+serie. Le webhook n'est qu'un signal : la convergence vient du refetch
+provider par le reconciliateur.
+
+Le rail Stripe envoie des `price_data` **inline** et ne reference aucun
+`price_id` externe : un mapping de prix manquant ne bloque plus un checkout
+V2. La table `billing_v2_provider_price_mappings` reste pour PayPal et le
+legacy.
+
+Cote public, `/formules` expose un configurateur ou **le prix n'est jamais
+calcule dans le navigateur** : chaque changement de selection repart vers
+`/api/formules/devis`, et `test:formules` interdit tout calcul de montant ou
+identifiant Stripe cote client. Le parcours reste public jusqu'a la
+souscription reelle, en-tete Zachary IT compris. Un contrat regle en une fois
+n'affiche **jamais** de prochaine facturation, ni au configurateur ni dans
+l'espace client.
+
+Migrations `046` a `063`, additives. **`062` n'a pas de rollback SQL** — elle
+rend `cycle_sequence` non nul et remplit des colonnes ; le rollback de cette
+version est applicatif, par les drapeaux, ce qui rend la sauvegarde prealable
+bloquante.
+
+La validation sur une **copie serveur de la base reelle** a revele huit
+defauts invisibles des suites en persistance mock, dont trois qui, seuls,
+auraient suffi a ce qu'aucun renouvellement ne soit jamais facture : entre
+autres, MySqlConnector materialise `CHAR(36)` en `Guid` et non en `string`
+(`reader.GetString` leve `InvalidCastException`), et MariaDB accepte plusieurs
+`NULL` dans un index UNIQUE — un `cycle_sequence` nullable annulait donc
+l'unicite par cycle. Une suite mock valide la logique, pas le contrat de la
+base.
+
+Cette version **deploie sans lancer** : tous les drapeaux `BILLING_V2_*`
+restent a `false`, `STRIPE_MODE` reste `test`, et le parcours legacy continue
+d'operer sans changement. Le perimetre de lancement — Stripe mensuel
+uniquement — n'est pas declaratif : `BillingV2LaunchScope` le refuse a
+l'execution avec des codes `BILLING_V2_SCOPE_*`. La mise en service se joue
+ensuite, drapeau par drapeau, avec
+[`billing-v2/LANCEMENT-CONTROLE.md`](billing-v2/LANCEMENT-CONTROLE.md).
+
+Points ouverts avant lancement, aucun bloquant pour le deploiement :
+`PAYPAL_MODE=live` en production alors que le perimetre exige `disabled` ;
+aucune variable `BILLING_V2_*` posee explicitement en production (les defauts
+`false` s'appliquent, mais l'intention gagnerait a etre ecrite) ; rotation des
+secrets de pilotage avant tout client reel.
+
 Ancrage infra (R740xd) : groupes dans `OU=Groupes_TEST`, comptes dans
 `OU=CLI-DEMO`, quota FSRM, collection RDS Clients-1 filtree par groupe,
 VLAN 64 `10.35.64.0/24`. Deploiement SRV-13 :

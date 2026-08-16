@@ -12,6 +12,12 @@
 
 ## État courant / informations récentes
 
+### Version
+
+- **v1.4.0.0 (2026-08-17)** : Billing V2 déployé et dormant. Voir la section
+  « Billing V2 » plus bas. Version précédente sur `main` : v1.3.3.8 (identité
+  de marque).
+
 ### Vitrine, SEO et éditorial
 
 - **Référence la plus récente importée : v1.3.3.4, vérifiée en production le 2026-08-11.** Routage canonique `www` / `dashboard` / `administration`, métadonnées, robots/sitemap, favicon et vraie 404 ont été validés.
@@ -41,6 +47,29 @@
 
 - Référence : [timezone-utc-convention.md](topics/timezone-utc-convention.md). DB en UTC, API ISO `Z`, affichage Europe/Paris, dates fiscales = jour civil Paris.
 - Revalider le garde-fou `test:timezone` après toute modification SQL ou C# touchant aux horodatages.
+
+### Billing V2 (v1.4.0.0)
+
+- **Livré et déployé le 2026-08-17, mais NON lancé.** Tous les drapeaux
+  `BILLING_V2_*` restent `false`, `STRIPE_MODE` reste `test`, le parcours
+  legacy continue d'opérer. Référence : `docs/v1.4/V1.4.0.0_BILLING_V2.md`,
+  mise en service dans `docs/billing-v2/LANCEMENT-CONTROLE.md`.
+- Invariants à ne pas casser : `BillingEvent` immuable = autorité du montant
+  (pas le provider) ; trois axes de statut orthogonaux ; identité de
+  renouvellement = `(subscription_id, cycle_sequence)` ; `billing_anchor_at`
+  matérialisé à l'activation et **jamais recalculé** ; le webhook est un
+  signal, le refetch provider est la convergence.
+- Rail Stripe en `price_data` **inline** : aucun `price_id` externe, donc
+  aucune dépendance à `billing_v2_provider_price_mappings` pour un checkout V2.
+- Pièges base réelle invisibles des suites mock : MySqlConnector matérialise
+  `CHAR(36)` en **`Guid`** (`reader.GetString` lève) ; MariaDB accepte
+  plusieurs `NULL` dans un index UNIQUE (d'où `cycle_sequence NOT NULL` en
+  migration 062) ; un seul lecteur ouvert par connexion.
+- Migrations `046` à `063`, additives. **`062` n'a pas de rollback SQL** : le
+  rollback est applicatif, par les drapeaux. Sauvegarde préalable bloquante.
+- Avant lancement, à trancher : `PAYPAL_MODE=live` en production alors que le
+  périmètre exige `disabled` ; aucune variable `BILLING_V2_*` posée
+  explicitement en production ; rotation des secrets de pilotage.
 
 ### Paiements / facturation
 
