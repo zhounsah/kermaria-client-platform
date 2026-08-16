@@ -1149,8 +1149,17 @@ assert.match(
 );
 assert.match(
   subscribeButton,
-  /useRef<string \| null>\(null\)[\s\S]*Idempotency-Key[\s\S]*getOrCreateIdempotencyKey[\s\S]*crypto\?\.randomUUID/,
+  /useRef<IdempotencyKey \| null>\(null\)[\s\S]*Idempotency-Key[\s\S]*getOrCreateIdempotencyKey[\s\S]*crypto\?\.randomUUID/,
   "Le bouton de souscription doit fournir une cle d'idempotence stable par tentative checkout.",
+);
+// La cle est conservee avec la selection qui l'a produite : c'est ce qui rend
+// « stable par tentative » verifiable. Reessayer la meme souscription doit
+// reutiliser la meme cle ; changer d'offre ou de rail doit en fabriquer une
+// neuve, sinon deux commandes distinctes partagent une cle d'idempotence.
+assert.match(
+  subscribeButton,
+  /ref\.current\.selectionKey !== selectionKey[\s\S]*ref\.current = \{[\s\S]*selectionKey,/,
+  "La cle d'idempotence doit se renouveler quand l'offre ou le rail change.",
 );
 assert.match(
   subscribeButton,
