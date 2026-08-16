@@ -90,8 +90,12 @@ public sealed class BillingV2DownloadAccessProjection
             provisioningGroups);
     }
 
-    private const string LegacyTargetsSql =
-        """
+    // Le statut 'active' ne suffit pas : un contrat comptant arrive a terme le
+    // reste, faute de renouvellement automatique. La fenetre contractuelle est
+    // donc appliquee ici aussi, sinon les telechargements survivaient a la
+    // periode payee.
+    private static readonly string LegacyTargetsSql =
+        $"""
         SELECT DISTINCT
             offer.public_pack_code,
             offer.external_reference AS offer_external_reference
@@ -102,6 +106,7 @@ public sealed class BillingV2DownloadAccessProjection
             ON offer.id = request.legacy_offer_id
         WHERE subscription.customer_id = @customer_id
           AND subscription.status = 'active'
+          AND {BillingV2ContractWindowSql.SubscriptionStillInForce}
           AND NOT EXISTS (
               SELECT 1
               FROM subscriptions legacy_subscription

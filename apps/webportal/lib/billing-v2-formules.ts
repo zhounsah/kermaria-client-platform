@@ -173,6 +173,12 @@ const CHECKOUT_REASON_MESSAGES: Record<string, string> = {
     + "mettre en place cette formule.",
   BILLING_V2_AUTHORITATIVE_CHECKOUT_NO_SQL:
     "La souscription en ligne est momentanément indisponible.",
+  BILLING_V2_SCOPE_UPFRONT_OUT_OF_LAUNCH_SCOPE:
+    "Le règlement en une fois n'est pas encore ouvert en ligne. Choisissez le "
+    + "règlement au mois, ou contactez-nous.",
+  BILLING_V2_IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_SELECTION:
+    "Cette demande a déjà été enregistrée avec une autre configuration. "
+    + "Rechargez la page pour repartir d'une demande propre.",
 };
 
 export function describeCheckoutReason(reasonCode: string) {

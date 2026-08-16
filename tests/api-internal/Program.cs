@@ -271,6 +271,32 @@ async Task<int> RunAsync(string[] arguments)
         }
     }
 
+    // Exige elle aussi une MariaDB JETABLE portant les migrations 001 a 063.
+    // Couvre les quatre correctifs issus de la validation reelle : catalogue
+    // sans palier, ancre d'idempotence, bornes du contrat comptant et fin de
+    // terme.
+    if (arguments.Length == 1
+        && string.Equals(
+            arguments[0],
+            "--billing-v2-native-checkout-schema",
+            StringComparison.Ordinal))
+    {
+        try
+        {
+            await BillingV2NativeCheckoutSchemaTests.RunAsync();
+            Console.WriteLine(
+                "Tests schema checkout natif Billing V2 reussis.");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine(
+                "Tests schema checkout natif Billing V2 en echec.");
+            Console.Error.WriteLine(exception.ToString());
+            return 1;
+        }
+    }
+
     if (arguments.Length is < 1 or > 2)
     {
         Console.Error.WriteLine(

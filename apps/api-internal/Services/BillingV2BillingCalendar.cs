@@ -139,3 +139,52 @@ public static class BillingV2BillingCalendar
             KermariaTimeZone.TimeZone);
     }
 }
+
+public sealed record BillingV2SubscriptionLifecyclePlan(
+    DateTime CommitmentStartedAtUtc,
+    DateTime CommitmentEndsAtUtc,
+    DateTime CurrentPeriodStartedAtUtc,
+    DateTime CurrentPeriodEndsAtUtc,
+    DateTime? RenewsAtUtc);
+
+/// <summary>
+/// Dates contractuelles d'un abonnement V2, derivees de la meme ancre civile
+/// que le BillingEvent.
+///
+/// L'engagement borne le contrat dans les deux modes ; ce qui change, c'est le
+/// cycle courant et la promesse de renouvellement :
+///
+/// - mensuel : cycle d'un mois, <c>renews_at</c> = fin du cycle courant ;
+/// - comptant : le cycle courant EST la periode d'engagement deja encaissee, et
+///   <c>renews_at</c> reste NULL. Le renouvellement d'un terme prepaye est
+///   manuel (MVP) : promettre une date de renouvellement laisserait croire a un
+///   prelevement automatique qui n'existe pas.
+/// </summary>
+public static class BillingV2SubscriptionLifecyclePolicy
+{
+    public static BillingV2SubscriptionLifecyclePlan Plan(
+        string paymentMode,
+        int commitmentMonths,
+        DateTime anchorUtc)
+    {
+        var commitment = BillingV2BillingCalendar.ResolveCyclePeriod(
+            anchorUtc,
+            Math.Max(1, commitmentMonths),
+            cycleSequence: 1);
+        var current = BillingV2BillingCalendar.ResolvePeriod(
+            anchorUtc,
+            paymentMode,
+            commitmentMonths);
+        var upfront = string.Equals(
+            paymentMode,
+            BillingV2PaymentModes.Upfront,
+            StringComparison.Ordinal);
+
+        return new BillingV2SubscriptionLifecyclePlan(
+            commitment.StartUtc,
+            commitment.EndUtc,
+            current.StartUtc,
+            current.EndUtc,
+            upfront ? null : current.EndUtc);
+    }
+}

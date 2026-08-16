@@ -558,14 +558,14 @@ public static class BillingV2RenewalTests
                 "stripe", BillingV2PaymentModes.Monthly, 0).IsValid,
             "Stripe mensuel sans TVA doit rester le cas autorise.");
 
-        // Comptant 6/12 mois : le calcul existe, l'encaissement est refuse.
+        // Comptant 6/12 mois : ouvert depuis que le cycle de vie contractuel
+        // est pose (engagement date, droits bornes au terme, expiration
+        // reconnue, aucun renouvellement automatique).
         var upfront = BillingV2LaunchScope.EvaluateCheckout(
             "stripe", BillingV2PaymentModes.Upfront, 0);
         Ensure(
-            !upfront.IsValid
-            && upfront.ReasonCode
-                == "BILLING_V2_SCOPE_UPFRONT_OUT_OF_LAUNCH_SCOPE",
-            "Le comptant doit etre refuse au dispatch.");
+            upfront.IsValid,
+            "Le comptant doit etre encaissable au dispatch.");
 
         var paypal = BillingV2LaunchScope.EvaluateCheckout(
             "paypal", BillingV2PaymentModes.Monthly, 0);
@@ -583,8 +583,7 @@ public static class BillingV2RenewalTests
         // Les capacites hors perimetre doivent rester fermees : ce test est la
         // pour qu'un passage a true soit un acte delibere, pas un effet de bord.
         Ensure(
-            !BillingV2LaunchScope.UpfrontPaymentEnabled
-            && !BillingV2LaunchScope.PayPalEnabled
+            !BillingV2LaunchScope.PayPalEnabled
             && !BillingV2LaunchScope.SelfServiceUpgradesEnabled
             && !BillingV2LaunchScope.SelfServiceDowngradesEnabled
             && !BillingV2LaunchScope.CreditLedgerEnabled
@@ -596,6 +595,48 @@ public static class BillingV2RenewalTests
         Ensure(
             BillingV2LaunchScope.StripeMonthlyEnabled,
             "Stripe mensuel doit rester la cible READY.");
+
+        // Ouvrir le comptant n'ouvre pas son renouvellement : un terme prepaye
+        // arrive a echeance ne doit produire aucune refacturation automatique.
+        var renewalRefused = false;
+        try
+        {
+            BillingV2RenewalChargeFactory.Build(
+                new BillingV2RenewalChargeRequest(
+                    Guid.NewGuid().ToString("D"),
+                    CycleSequence: 2,
+                    BillingV2PaymentModes.Upfront,
+                    CommitmentMonths: 12,
+                    DiscountBasisPoints: 2000,
+                    "EUR",
+                    MinimumCommitmentAmountCents: null,
+                    [
+                        new BillingV2RenewalContractItem(
+                            Guid.NewGuid().ToString("D"),
+                            null,
+                            Guid.NewGuid().ToString("D"),
+                            "TEST",
+                            null,
+                            BillingV2BillingCadences.Monthly,
+                            1,
+                            1000,
+                            true)
+                    ],
+                    BillingV2BillingCalendar.ResolveCyclePeriod(
+                        new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                        12,
+                        2)));
+        }
+        catch (InvalidOperationException exception)
+            when (exception.Message == "BILLING_V2_RENEWAL_UPFRONT_NOT_SUPPORTED")
+        {
+            renewalRefused = true;
+        }
+
+        Ensure(
+            renewalRefused,
+            "Le renouvellement d'un terme prepaye doit rester manuel : aucun "
+            + "BillingEvent de renouvellement automatique.");
     }
 
     // -----------------------------------------------------------------

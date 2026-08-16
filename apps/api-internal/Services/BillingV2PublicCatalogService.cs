@@ -546,13 +546,30 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
         return routes;
     }
 
+    /// <summary>
+    /// Un service sans palier remonte par LEFT JOIN avec toutes les colonnes
+    /// de <c>billing_v2_service_tiers</c> a NULL (RDS-ACCESS, USER-ADDITIONAL,
+    /// SUPPORT-PLUS). <c>GetBoolean</c> jette alors un InvalidCastException et
+    /// tout le catalogue public tombe. La lecture doit donc etre defensive :
+    /// absence de palier = pas de palier selectionnable, ce qui n'invente
+    /// aucun palier et laisse intact le <c>public_selectable</c> du service,
+    /// deja filtre par la requete.
+    /// </summary>
+    private static bool ReadFlag(
+        MySqlDataReader reader,
+        string columnName,
+        bool whenNull)
+        => reader.IsDBNull(reader.GetOrdinal(columnName))
+            ? whenNull
+            : reader.GetBoolean(columnName);
+
     private static ServiceRow ReadServiceRow(MySqlDataReader reader)
         => new(
             reader.GetString("service_code"),
             reader.GetString("service_name"),
             reader.GetString("category"),
             reader.GetString("default_scope_type"),
-            reader.GetBoolean("discount_eligible"),
+            ReadFlag(reader, "discount_eligible", whenNull: false),
             reader.GetInt32("display_order"),
             reader.IsDBNull(reader.GetOrdinal("tier_code"))
                 ? null
@@ -566,7 +583,7 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
             reader.IsDBNull(reader.GetOrdinal("numeric_value"))
                 ? null
                 : reader.GetInt32("numeric_value"),
-            reader.GetBoolean("public_selectable"),
+            ReadFlag(reader, "public_selectable", whenNull: false),
             new BillingV2ServicePriceCandidate(
                 MariaDbIdentifierReader.ReadRequired(reader, "service_price_id"),
                 reader.GetString("price_code"),

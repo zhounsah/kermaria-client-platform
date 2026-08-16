@@ -32,8 +32,14 @@ public static class BillingV2LaunchScope
 
     // --- HORS perimetre : refuse en dur --------------------------------
 
-    /// <summary>Comptant 6/12 mois : arithmetique ecrite, jamais validee bout en bout.</summary>
-    public const bool UpfrontPaymentEnabled = false;
+    /// <summary>
+    /// Comptant 6/12 mois. Ouvert seulement une fois le cycle de vie
+    /// contractuel pose : engagement date en base, droits bornes a la periode
+    /// payee, expiration reconnue en fin de terme et aucun renouvellement
+    /// automatique. Sans ces quatre garanties, un comptant encaisse laissait
+    /// des droits illimites apres son terme.
+    /// </summary>
+    public const bool UpfrontPaymentEnabled = true;
 
     public const bool PayPalEnabled = false;
     public const bool SelfServiceUpgradesEnabled = false;
@@ -83,6 +89,29 @@ public static class BillingV2LaunchScope
         return BillingV2FinancialDecision.Ok(
             "BILLING_V2_SCOPE_WITHIN_LAUNCH_SCOPE");
     }
+}
+
+/// <summary>
+/// Fenetre contractuelle d'un abonnement V2, exprimee en SQL pour que toutes
+/// les projections de droits appliquent exactement la meme regle.
+///
+/// Un contrat comptant n'a aucun renouvellement automatique (renews_at NULL) :
+/// passe <c>commitment_ends_at</c>, il est expire et ne doit plus rien ouvrir,
+/// meme si son statut est reste 'active'. Un contrat mensuel porte une date de
+/// renouvellement et n'est donc jamais borne par ce predicat.
+///
+/// La table doit etre aliasee <c>subscription</c> dans la requete appelante.
+/// </summary>
+public static class BillingV2ContractWindowSql
+{
+    public const string SubscriptionStillInForce =
+        """
+        (
+            subscription.renews_at IS NOT NULL
+            OR subscription.commitment_ends_at IS NULL
+            OR subscription.commitment_ends_at > UTC_TIMESTAMP(6)
+        )
+        """;
 }
 
 public static class BillingV2ReadinessStates
@@ -233,11 +262,13 @@ public static class BillingV2LifecycleReadinessGate
                 BillingV2ReadinessComponents.PayPal,
                 "BILLING_V2_READINESS_PAYPAL",
                 "PayPal V2 n'est pas raccorde au coeur financier. Cela ne bloque pas Stripe."),
-            // Gele en Phase 4 : le calcul existe, l'encaissement est refuse.
-            NotReady(
+            // Encaissement unique couvrant tout le terme. Le renouvellement en
+            // fin de periode reste manuel : rien ne se represente tout seul.
+            new BillingV2ReadinessComponent(
                 BillingV2ReadinessComponents.UpfrontPayment,
+                BillingV2ReadinessStates.Manual,
                 "BILLING_V2_READINESS_UPFRONT_PAYMENT",
-                "Le comptant 6/12 mois est hors perimetre de lancement : le dispatch le refuse en dur."),
+                "Le comptant 6/12 mois est encaisse en une fois et les droits s'arretent au terme. Le renouvellement est manuel."),
             NotReady(
                 BillingV2ReadinessComponents.Refunds,
                 "BILLING_V2_READINESS_REFUNDS",

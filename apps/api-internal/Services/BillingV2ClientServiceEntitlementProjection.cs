@@ -87,8 +87,8 @@ public sealed class BillingV2ClientServiceEntitlementProjection
         return entitlements;
     }
 
-    private const string SelectSql =
-        """
+    private static readonly string SelectSql =
+        $"""
         SELECT DISTINCT
             COALESCE(
                 tier_mapping.legacy_service_reference,
@@ -126,6 +126,7 @@ public sealed class BillingV2ClientServiceEntitlementProjection
                 item.effective_until IS NULL
                 OR item.effective_until > UTC_TIMESTAMP(6)
               )
+          AND {BillingV2ContractWindowSql.SubscriptionStillInForce}
           AND NOT EXISTS (
               SELECT 1
               FROM subscriptions legacy_subscription

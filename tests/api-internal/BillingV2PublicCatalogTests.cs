@@ -30,7 +30,124 @@ public static class BillingV2PublicCatalogTests
         VerifyLegacyOfferKeepsItsOwnIdentity();
         VerifyLaunchFlagsBlockCheckoutWithoutHidingThePrice();
         VerifyQuoteIgnoresAnyAmountSentByTheBrowser();
+        VerifyUpfrontLifecycleBoundsTheContract();
+        VerifyMonthlyLifecycleKeepsARenewalDate();
+        VerifyUpfrontIsWithinTheLaunchScope();
+        VerifyQuoteNeverOffersWhatTheRailRefuses();
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Un contrat comptant doit etre borne des sa creation : engagement date,
+    /// periode courante egale a la periode payee, et surtout aucune date de
+    /// renouvellement. Promettre un renouvellement laisserait croire a un
+    /// prelevement automatique qui n'existe pas.
+    /// </summary>
+    private static void VerifyUpfrontLifecycleBoundsTheContract()
+    {
+        var anchor = new DateTime(2026, 8, 16, 9, 30, 0, DateTimeKind.Utc);
+        var plan = BillingV2SubscriptionLifecyclePolicy.Plan(
+            BillingV2PaymentModes.Upfront,
+            commitmentMonths: 12,
+            anchor);
+
+        Ensure(
+            plan.CommitmentEndsAtUtc
+                == plan.CommitmentStartedAtUtc.AddMonths(12),
+            "Douze mois comptant : la fin d'engagement vaut le debut + 12 mois.");
+        Ensure(
+            plan.CurrentPeriodStartedAtUtc == plan.CommitmentStartedAtUtc
+            && plan.CurrentPeriodEndsAtUtc == plan.CommitmentEndsAtUtc,
+            "En comptant, la periode courante EST la periode payee.");
+        Ensure(
+            plan.RenewsAtUtc is null,
+            "Aucun renouvellement automatique ne doit etre promis en comptant.");
+        Ensure(
+            plan.CommitmentStartedAtUtc < anchor
+            && anchor - plan.CommitmentStartedAtUtc < TimeSpan.FromDays(1),
+            "L'engagement demarre au jour civil de l'ancre, pas a l'heure UTC.");
+    }
+
+    /// <summary>
+    /// Le mensuel garde un cycle d'un mois et une date de renouvellement : il
+    /// ne doit pas etre borne par le meme mecanisme que le comptant.
+    /// </summary>
+    private static void VerifyMonthlyLifecycleKeepsARenewalDate()
+    {
+        var anchor = new DateTime(2026, 8, 16, 9, 30, 0, DateTimeKind.Utc);
+        var plan = BillingV2SubscriptionLifecyclePolicy.Plan(
+            BillingV2PaymentModes.Monthly,
+            commitmentMonths: 12,
+            anchor);
+
+        Ensure(
+            plan.CommitmentEndsAtUtc
+                == plan.CommitmentStartedAtUtc.AddMonths(12),
+            "L'engagement de 12 mois est borne meme en reglement mensuel.");
+        Ensure(
+            plan.CurrentPeriodEndsAtUtc
+                == plan.CurrentPeriodStartedAtUtc.AddMonths(1),
+            "Le cycle courant d'un mensuel dure un mois.");
+        Ensure(
+            plan.RenewsAtUtc == plan.CurrentPeriodEndsAtUtc,
+            "Un mensuel annonce sa date de renouvellement.");
+    }
+
+    private static void VerifyUpfrontIsWithinTheLaunchScope()
+    {
+        var upfront = BillingV2LaunchScope.EvaluateCheckout(
+            "stripe",
+            BillingV2PaymentModes.Upfront,
+            taxAmountCents: 0);
+        Ensure(
+            upfront.IsValid,
+            "Le comptant doit etre encaissable une fois son cycle de vie pose.");
+
+        var paypal = BillingV2LaunchScope.EvaluateCheckout(
+            "paypal",
+            BillingV2PaymentModes.Monthly,
+            taxAmountCents: 0);
+        Ensure(
+            !paypal.IsValid,
+            "Ouvrir le comptant ne doit rien ouvrir d'autre.");
+    }
+
+    /// <summary>
+    /// Interface et rail doivent partager la meme autorite. Un mode affiche
+    /// comme souscriptible mais refuse au dispatch laissait le client devant
+    /// une souscription sans page de paiement.
+    /// </summary>
+    private static void VerifyQuoteNeverOffersWhatTheRailRefuses()
+    {
+        foreach (var paymentMode in new[]
+                 {
+                     BillingV2PaymentModes.Monthly,
+                     BillingV2PaymentModes.Upfront
+                 })
+        {
+            var quote = BillingV2PublicQuoteBuilder.Build(
+                BillingV2PublicCatalogSeed.Snapshot(),
+                Baseline("pack-dossier-securise", "TERM-12") with
+                {
+                    PaymentMode = paymentMode
+                },
+                new BillingV2PricingEngine(),
+                new BillingV2AuthoritativeCheckoutReadiness(
+                    Authorized: true,
+                    "BILLING_V2_AUTHORITATIVE_CHECKOUT_LOCALLY_READY"));
+
+            var rail = BillingV2LaunchScope.EvaluateCheckout(
+                "stripe",
+                paymentMode,
+                taxAmountCents: 0);
+
+            Ensure(
+                quote.CheckoutAvailable == rail.IsValid,
+                $"Devis et rail doivent s'accorder sur {paymentMode}.");
+            Ensure(
+                quote.CommitmentTotalAfterDiscountCents > 0,
+                $"Le prix reste affiche pour {paymentMode}.");
+        }
     }
 
     /// <summary>

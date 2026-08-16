@@ -532,7 +532,7 @@ public static class BillingV2PortalSubscriptionProjector
             provider == "paypal" ? row.ProviderSubscriptionId : null,
             null,
             provider == "stripe" ? row.ProviderSubscriptionId : null,
-            NormalizeStatus(row.Status),
+            ResolveStatus(row),
             priceAmountCents,
             setupFeeAmountCents,
             fiscal.TaxRateBasisPoints,
@@ -548,7 +548,7 @@ public static class BillingV2PortalSubscriptionProjector
             string.IsNullOrWhiteSpace(row.Currency) ? "EUR" : row.Currency,
             ToIso(row.StartedAtUtc),
             ToIso(row.RenewsAtUtc ?? row.CurrentPeriodEndsAtUtc),
-            NormalizeStatus(row.Status) == "cancelled"
+            ResolveStatus(row) == "cancelled"
                 ? ToIso(row.UpdatedAtUtc)
                 : null,
             ToIso(row.CreatedAtUtc),
@@ -606,6 +606,31 @@ public static class BillingV2PortalSubscriptionProjector
             BillingV2PaymentModes.Upfront => BillingV2PaymentModes.Upfront,
             _ => BillingV2PaymentModes.Monthly
         };
+
+    /// <summary>
+    /// Statut presente au portail. Un contrat comptant arrive a terme garde le
+    /// statut 'active' en base : aucun renouvellement automatique n'existe pour
+    /// le basculer. Le reconnaitre expire ici, en lecture, evite d'inventer une
+    /// machine d'etats et de promettre un acces sans limite. L'etat 'expired'
+    /// fait deja partie du contrat portail.
+    ///
+    /// Un contrat mensuel porte une date de renouvellement : il n'est jamais
+    /// concerne par cette derivation.
+    /// </summary>
+    private static string ResolveStatus(BillingV2PortalSubscriptionRow row)
+    {
+        var normalized = NormalizeStatus(row.Status);
+        if (normalized != "active"
+            || row.RenewsAtUtc is not null
+            || row.CommitmentEndsAtUtc is null)
+        {
+            return normalized;
+        }
+
+        return row.CommitmentEndsAtUtc.Value <= DateTime.UtcNow
+            ? "expired"
+            : normalized;
+    }
 
     private static string NormalizeStatus(string status)
         => status switch

@@ -84,6 +84,19 @@ public static class BillingV2PublicQuoteBuilder
             ? (result.UpfrontRecurringAmountCents + months / 2) / months
             : result.PayableRecurringAmountCents;
 
+        // Coherence devis / rail : le perimetre de lancement est la meme
+        // autorite des deux cotes. Sans cela, l'interface pouvait proposer un
+        // mode que le dispatch refusait ensuite en dur, laissant le client
+        // devant une souscription sans page de paiement.
+        var scope = BillingV2LaunchScope.EvaluateCheckout(
+            "stripe",
+            selection.PaymentMode,
+            taxAmountCents: 0);
+        var checkoutAuthorized = checkoutReadiness.Authorized && scope.IsValid;
+        var checkoutReasonCode = checkoutReadiness.Authorized
+            ? scope.ReasonCode
+            : checkoutReadiness.ReasonCode;
+
         var route = catalog.CheckoutRoutes.FirstOrDefault(
             item => string.Equals(
                         item.PresetCode,
@@ -112,8 +125,8 @@ public static class BillingV2PublicQuoteBuilder
                 - commitmentTotalAfterDiscountCents),
             resolution.Lines,
             resolution.MatchesPresetBaseline,
-            checkoutReadiness.Authorized,
-            checkoutReadiness.Authorized
+            checkoutAuthorized,
+            checkoutAuthorized
                 ? BillingV2PublicCheckoutModes.Native
                 : BillingV2PublicCheckoutModes.Unavailable,
             // Conserve pour compatibilite : une formule standard payee au mois
@@ -122,6 +135,6 @@ public static class BillingV2PublicQuoteBuilder
             resolution.MatchesPresetBaseline && !upfront
                 ? route?.LegacyOfferId
                 : null,
-            checkoutReadiness.ReasonCode);
+            checkoutReasonCode);
     }
 }

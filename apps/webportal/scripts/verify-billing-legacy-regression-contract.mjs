@@ -1029,10 +1029,32 @@ assert.match(
   /BillingV2AuthoritativeCheckoutPriceLockPolicy[\s\S]*BillingV2PriceLockTypes\.UpfrontPrepaid[\s\S]*UpfrontRecurringAmountCents[\s\S]*BillingV2PriceLockTypes\.MonthlyRecurring[\s\S]*PayableRecurringAmountCents/,
   "Le checkout V2 autoritaire doit creer un price lock contractuel depuis le prix calcule a la souscription.",
 );
-assert.match(
+// La deduplication par cle applicative ne peut pas reposer sur INSERT IGNORE :
+// la ligne de registre etait alors avalee en silence et le contrat cree juste
+// avant restait orphelin. La cle doit etre relue AVANT toute creation
+// financiere, et une reprise avec une autre selection doit etre refusee.
+assert.doesNotMatch(
   billingV2AuthoritativeCheckoutService,
   /INSERT IGNORE INTO billing_v2_authoritative_checkout_requests/,
-  "Le checkout V2 autoritaire local doit dedupliquer la demande par cle applicative.",
+  "Le registre des demandes V2 ne doit jamais etre insere en INSERT IGNORE : "
+    + "un doublon avale laisse un contrat orphelin.",
+);
+assert.match(
+  billingV2AuthoritativeCheckoutService,
+  /ReadCheckoutRequestByKeyAsync[\s\S]*EnsureSameSelection[\s\S]*BuildResultFromRequestAsync/,
+  "Le checkout V2 autoritaire local doit relire la demande ancree par cle, "
+    + "comparer la selection puis rejouer le resultat existant.",
+);
+assert.match(
+  billingV2AuthoritativeCheckoutService,
+  /BILLING_V2_IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_SELECTION/,
+  "Une cle rejouee avec une autre selection doit etre refusee explicitement.",
+);
+assert.match(
+  billingV2AuthoritativeCheckoutService,
+  /MySqlErrorCode\.DuplicateKeyEntry/,
+  "La course sur la cle applicative doit etre tranchee par la contrainte "
+    + "unique, pas ignoree.",
 );
 assert.match(
   billingV2AuthoritativeCheckoutService,
@@ -1162,13 +1184,15 @@ assert.match(
 );
 assert.match(
   billingV2AuthoritativeCheckoutService,
-  /ComputeRequestFingerprintHash[\s\S]*EnsureSameIdempotentRequest[\s\S]*BILLING_V2_AUTHORITATIVE_CHECKOUT_IDEMPOTENCY_CONFLICT[\s\S]*MatchesRequestFingerprint/,
+  /ComputeRequestFingerprintHash[\s\S]*EnsureSameSelection[\s\S]*MatchesRequestFingerprint/,
   "Le checkout V2 autoritaire doit refuser un replay idempotent dont les parametres metier different.",
 );
+// Le filtre porte sur exactement le quadruplet contraint en base : une cle
+// partagee entre deux rails ne doit pas faire passer une demande pour l'autre.
 assert.match(
   billingV2AuthoritativeCheckoutService,
-  /ReadCheckoutRequestOrNullAsync[\s\S]*WHERE customer_id = @customer_id[\s\S]*AND idempotency_key = @idempotency_key[\s\S]*ORDER BY created_at ASC, id ASC/,
-  "Le checkout V2 autoritaire doit rechercher une cle d'idempotence par client avant provider/environnement.",
+  /ReadCheckoutRequestByKeyAsync[\s\S]*WHERE customer_id = @customer_id[\s\S]*AND provider = @provider[\s\S]*AND environment = @environment[\s\S]*AND idempotency_key = @idempotency_key[\s\S]*ORDER BY created_at ASC, id ASC/,
+  "Le checkout V2 autoritaire doit rechercher une cle d'idempotence sur le quadruplet client/provider/environnement/cle.",
 );
 assert.match(
   billingV2AuthoritativeCheckoutService,
