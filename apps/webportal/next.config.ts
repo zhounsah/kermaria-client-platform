@@ -63,7 +63,20 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   output: "standalone",
   transpilePackages: ["@kermaria/shared"],
-  allowedDevOrigins: ["*.trycloudflare.com"],
+  /**
+   * Hotes autorises a charger les ressources de developpement (`_next/*`,
+   * HMR). Sans effet hors `next dev`.
+   *
+   * Les deux plages LAN couvrent le poste de travail et les VM internes :
+   * `192.168.0.0/24` (reseau bureau) et `192.168.100.0/24` (VM applicatives,
+   * dont SRV-12). Next.js attend des motifs d'hote, pas des CIDR : `*` y
+   * remplace la fin du nom, d'ou la forme `192.168.0.*`.
+   */
+  allowedDevOrigins: [
+    "*.trycloudflare.com",
+    "192.168.0.*",
+    "192.168.100.*",
+  ],
   async headers() {
     return [
       {
