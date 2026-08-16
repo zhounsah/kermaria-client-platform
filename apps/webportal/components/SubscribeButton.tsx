@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 
 import { requestBffJson } from "@/lib/client-api";
@@ -8,6 +8,11 @@ import { requestBffJson } from "@/lib/client-api";
 type SubscribeResponse = {
   subscriptionId: string | null;
   approveUrl: string;
+};
+
+type IdempotencyKey = {
+  selectionKey: string;
+  value: string;
 };
 
 type SubscribeButtonProps = {
@@ -33,13 +38,23 @@ export function SubscribeButton({
   const [rail, setRail] = useState<"paypal" | "stripe">(
     stripeEnabled ? "stripe" : "paypal",
   );
-  const idempotencyKeyRef = useRef<string | null>(null);
+  const idempotencyKeyRef = useRef<IdempotencyKey | null>(null);
   const showRailChoice = paypalEnabled && stripeEnabled;
 
-  useEffect(() => {
-    idempotencyKeyRef.current = null;
+  // Changer d'offre ou de rail repart de zero : la cle d'idempotence ne vaut
+  // que pour la selection qui l'a produite, et une erreur affichee parlait de
+  // l'ancienne.
+  //
+  // L'effacement de l'erreur se fait pendant le rendu, pas dans un effet : un
+  // effet afficherait d'abord l'ancienne erreur puis declencherait un second
+  // rendu pour l'effacer. La cle d'idempotence, elle, vit dans une ref et se
+  // renouvelle au moment du clic — on n'ecrit pas une ref pendant le rendu.
+  const selectionKey = `${offerId}|${rail}`;
+  const [renderedSelectionKey, setRenderedSelectionKey] = useState(selectionKey);
+  if (renderedSelectionKey !== selectionKey) {
+    setRenderedSelectionKey(selectionKey);
     setError(null);
-  }, [offerId, rail]);
+  }
 
   async function handleClick() {
     if (isSubmitting) {
@@ -51,6 +66,7 @@ export function SubscribeButton({
 
     const idempotencyKey = getOrCreateIdempotencyKey(
       idempotencyKeyRef,
+      selectionKey,
       offerId,
       rail,
     );
@@ -156,18 +172,25 @@ export function SubscribeButton({
 }
 
 function getOrCreateIdempotencyKey(
-  ref: MutableRefObject<string | null>,
+  ref: MutableRefObject<IdempotencyKey | null>,
+  selectionKey: string,
   offerId: string,
   rail: string,
 ) {
-  if (!ref.current) {
+  // La cle est conservee avec la selection qui l'a produite : reessayer la
+  // meme souscription reutilise la meme cle (c'est tout l'interet), changer
+  // d'offre ou de rail en fabrique une neuve.
+  if (!ref.current || ref.current.selectionKey !== selectionKey) {
     const nonce =
       globalThis.crypto?.randomUUID?.()
       ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-    ref.current = `subscription-${offerId}-${rail}-${nonce}`;
+    ref.current = {
+      selectionKey,
+      value: `subscription-${offerId}-${rail}-${nonce}`,
+    };
   }
 
-  return ref.current;
+  return ref.current.value;
 }
 
 function shouldRetryBillingV2PendingProviderSession(

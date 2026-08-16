@@ -268,7 +268,7 @@ export default async function AdminBillingV2Page() {
                   <h2>Mappings provider</h2>
                   <p>
                     Chaque prix de service actif doit avoir exactement un id
-                    provider résolu dans l'environnement courant.
+                    provider résolu dans l&apos;environnement courant.
                   </p>
                 </div>
               </div>
