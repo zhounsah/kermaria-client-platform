@@ -34,7 +34,12 @@ public static class BillingV2CheckoutPlanner
                 "Billing V2 checkout requires at least one preset item.");
         }
 
-        if (readiness.ProviderMappings.ResolvedMappings.Count == 0)
+        var provider = readiness.ProviderMappings.Provider;
+        var requiresMappings = BillingV2ProviderPricingAuthorityPolicy
+            .RequiresProviderPriceMappings(provider);
+
+        if (requiresMappings
+            && readiness.ProviderMappings.ResolvedMappings.Count == 0)
         {
             throw new InvalidOperationException(
                 "Billing V2 checkout requires resolved provider mappings.");
@@ -52,6 +57,14 @@ public static class BillingV2CheckoutPlanner
                     item.ServicePriceId,
                     out var mapping))
             {
+                // Rail tarifiant en ligne : la ligne provider n'existe pas, le
+                // montant vient du BillingEvent. On ne fabrique pas de
+                // reference provider fictive.
+                if (!requiresMappings)
+                {
+                    continue;
+                }
+
                 throw new InvalidOperationException(
                     $"Billing V2 checkout is missing provider mapping for service price {item.ServicePriceId}.");
             }
@@ -70,8 +83,12 @@ public static class BillingV2CheckoutPlanner
             ?? "EUR";
 
         return new BillingV2CheckoutPlan(
-            readiness.ProviderMappings.ResolvedMappings[0].Provider,
-            readiness.ProviderMappings.ResolvedMappings[0].Environment,
+            string.IsNullOrWhiteSpace(provider)
+                ? readiness.ProviderMappings.ResolvedMappings[0].Provider
+                : provider,
+            string.IsNullOrWhiteSpace(readiness.ProviderMappings.Environment)
+                ? readiness.ProviderMappings.ResolvedMappings[0].Environment
+                : readiness.ProviderMappings.Environment,
             currency,
             pricing.PayableRecurringAmountCents,
             pricing.OneTimeSubtotalCents,

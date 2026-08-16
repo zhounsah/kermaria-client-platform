@@ -40,6 +40,8 @@ public static class BillingV2StripeRailTests
         VerifyApprovalUrlReplayReturnsPersistedUrl();
         VerifyApprovalUrlReplayFallsBackToRefetchedUrl();
         VerifyApprovalUrlReplayFailsClosedWhenUnrecoverable();
+        VerifyStripeIsReadyWithoutProviderPriceMappings();
+        VerifyPayPalStillRequiresProviderPriceMappings();
 
         // E. Settlement verifie : scenarios 6, 7, 8
         VerifyAmountMismatchBlocksActivation();
@@ -395,6 +397,54 @@ public static class BillingV2StripeRailTests
             && recovery.ReasonCode
                 == "BILLING_V2_STRIPE_APPROVAL_URL_UNRECOVERABLE",
             "Sans URL recuperable, le replay doit echouer en ferme vers revue manuelle.");
+    }
+
+    /// <summary>
+    /// Le rail Stripe V2 envoie `price_data` inline depuis le BillingEvent :
+    /// aucun `price_…` Stripe n'est consomme. Un abonnement mensuel Stripe doit
+    /// donc etre READY avec ZERO mapping provider. Exiger l'inverse bloquait le
+    /// lancement sur une donnee que le rail n'utilise pas.
+    /// </summary>
+    private static void VerifyStripeIsReadyWithoutProviderPriceMappings()
+    {
+        var status = BillingV2ProviderPriceMappingGate.Evaluate(
+            new[] { "price-base", "price-storage", "price-backup" },
+            Array.Empty<BillingV2ProviderPriceMapping>(),
+            "stripe",
+            "live");
+
+        Ensure(
+            status.Ready
+            && status.MissingServicePriceIds.Count == 0
+            && status.AmbiguousServicePriceIds.Count == 0
+            && status.ResolvedMappings.Count == 0
+            && status.Provider == "stripe"
+            && status.Environment == "live"
+            && !BillingV2ProviderPricingAuthorityPolicy
+                .RequiresProviderPriceMappings("stripe")
+            && BillingV2ProviderPricingAuthorityPolicy.PricesInline("stripe"),
+            "Stripe mensuel doit etre READY sans aucun mapping provider, le montant venant du BillingEvent.");
+    }
+
+    /// <summary>
+    /// PayPal envoie un `plan_id` et ne sait pas tarifier en ligne : ses
+    /// mappings restent exiges. L'assouplissement ne doit pas fuiter.
+    /// </summary>
+    private static void VerifyPayPalStillRequiresProviderPriceMappings()
+    {
+        var status = BillingV2ProviderPriceMappingGate.Evaluate(
+            new[] { "price-base" },
+            Array.Empty<BillingV2ProviderPriceMapping>(),
+            "paypal",
+            "live");
+
+        Ensure(
+            !status.Ready
+            && status.MissingServicePriceIds.Count == 1
+            && status.MissingServicePriceIds[0] == "price-base"
+            && BillingV2ProviderPricingAuthorityPolicy
+                .RequiresProviderPriceMappings("paypal"),
+            "PayPal doit continuer a exiger ses mappings provider.");
     }
 
     private static void VerifyProviderCustomerIsStripeOnly()

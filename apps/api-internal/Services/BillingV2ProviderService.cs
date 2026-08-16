@@ -21,7 +21,36 @@ public sealed record BillingV2ProviderPriceMappingStatus(
     bool Ready,
     IReadOnlyList<string> MissingServicePriceIds,
     IReadOnlyList<string> AmbiguousServicePriceIds,
-    IReadOnlyList<BillingV2ProviderPriceMapping> ResolvedMappings);
+    IReadOnlyList<BillingV2ProviderPriceMapping> ResolvedMappings,
+    // Portes par le statut plutot que deduits d'un mapping resolu : un rail
+    // qui tarifie en ligne n'a aucun mapping dont les deduire.
+    string Provider = "",
+    string Environment = "");
+
+/// <summary>
+/// Qui, du contrat local ou du provider, porte la reference de prix.
+///
+/// Le rail Stripe V2 envoie `price_data` inline, construit depuis le
+/// BillingEvent finalise : aucun `price_…` Stripe n'est jamais consomme, et le
+/// montant fait autorite localement. Exiger un mapping provider revenait donc
+/// a bloquer le lancement sur une donnee que le rail n'utilise pas.
+///
+/// PayPal reste dans le cas inverse : son rail envoie `plan_id`, il ne sait pas
+/// tarifier en ligne, et ses mappings restent exiges.
+/// </summary>
+public static class BillingV2ProviderPricingAuthorityPolicy
+{
+    public const string InlinePricingProvider = "stripe";
+
+    public static bool PricesInline(string? provider)
+        => string.Equals(
+            provider?.Trim(),
+            InlinePricingProvider,
+            StringComparison.OrdinalIgnoreCase);
+
+    public static bool RequiresProviderPriceMappings(string? provider)
+        => !PricesInline(provider);
+}
 
 public interface IBillingV2ProviderAgreementService
 {
@@ -340,6 +369,20 @@ public static class BillingV2ProviderPriceMappingGate
             .Distinct(StringComparer.Ordinal)
             .OrderBy(value => value, StringComparer.Ordinal)
             .ToArray();
+
+        // Rail tarifiant en ligne : rien a exiger. On ne prononce ni manquant
+        // ni ambigu sur une donnee que le provider ne recevra jamais.
+        if (!BillingV2ProviderPricingAuthorityPolicy
+                .RequiresProviderPriceMappings(provider))
+        {
+            return new BillingV2ProviderPriceMappingStatus(
+                true,
+                Array.Empty<string>(),
+                Array.Empty<string>(),
+                Array.Empty<BillingV2ProviderPriceMapping>(),
+                provider,
+                environment);
+        }
         var activeMappings = mappings
             .Where(mapping =>
                 string.Equals(
@@ -386,6 +429,8 @@ public static class BillingV2ProviderPriceMappingGate
             missing.Length == 0 && ambiguous.Length == 0,
             missing,
             ambiguous,
-            resolved);
+            resolved,
+            provider,
+            environment);
     }
 }

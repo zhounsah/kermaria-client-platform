@@ -201,13 +201,16 @@ public static class BillingV2NewSubscriptionTests
 
     private static void VerifyProviderPriceMappingsMustCoverAllServicePrices()
     {
+        // Provider exige des references de plan (PayPal). Stripe tarifie en
+        // ligne depuis le BillingEvent et n'a plus d'exigence de mapping :
+        // voir BillingV2StripeRailTests.
         var status = BillingV2ProviderPriceMappingGate.Evaluate(
             ["price-storage", "price-vpn"],
             [
-                new("price-storage", "stripe", "test", "price_storage_test"),
-                new("price-vpn", "stripe", "test", "price_vpn_test")
+                new("price-storage", "paypal", "test", "plan_storage_test"),
+                new("price-vpn", "paypal", "test", "plan_vpn_test")
             ],
-            "stripe",
+            "paypal",
             "test");
 
         Ensure(
@@ -221,8 +224,8 @@ public static class BillingV2NewSubscriptionTests
     {
         var status = BillingV2ProviderPriceMappingGate.Evaluate(
             ["price-storage", "price-vpn"],
-            [new("price-storage", "stripe", "test", "price_storage_test")],
-            "stripe",
+            [new("price-storage", "paypal", "test", "plan_storage_test")],
+            "paypal",
             "test");
 
         Ensure(
@@ -238,10 +241,10 @@ public static class BillingV2NewSubscriptionTests
         var status = BillingV2ProviderPriceMappingGate.Evaluate(
             ["price-storage"],
             [
-                new("price-storage", "stripe", "test", "price_storage_test_a"),
-                new("price-storage", "stripe", "test", "price_storage_test_b")
+                new("price-storage", "paypal", "test", "plan_storage_test_a"),
+                new("price-storage", "paypal", "test", "plan_storage_test_b")
             ],
-            "stripe",
+            "paypal",
             "test");
 
         Ensure(
@@ -417,10 +420,13 @@ public static class BillingV2NewSubscriptionTests
                 providerOutboxEnabled: true,
                 providerExecutorEnabled: true),
             BillingV2LaunchReadinessGate.Evaluate(0, 0),
+            // Rail exigeant des references de plan provider. Stripe tarifie en
+            // ligne et n'entre plus dans ce cas : voir
+            // BillingV2StripeRailTests.VerifyStripeIsReadyWithoutProviderPriceMappings.
             BillingV2ProviderPriceMappingGate.Evaluate(
                 ["price-storage", "price-vpn"],
-                [new("price-storage", "stripe", "test", "price_storage_test")],
-                "stripe",
+                [new("price-storage", "paypal", "test", "plan_storage_test")],
+                "paypal",
                 "test"));
 
         Ensure(
@@ -600,10 +606,10 @@ public static class BillingV2NewSubscriptionTests
                 items.Select(item => item.ServicePriceId).ToArray(),
                 items.Select((item, index) => new BillingV2ProviderPriceMapping(
                     item.ServicePriceId,
-                    "stripe",
+                    "paypal",
                     "test",
-                    $"price_v2_test_{index}")).ToArray(),
-                "stripe",
+                    $"plan_v2_test_{index}")).ToArray(),
+                "paypal",
                 "test"),
             BillingV2DocumentReadinessStatus.ReadyForCheckout);
         var plan = BillingV2CheckoutPlanner.Plan(
@@ -612,14 +618,43 @@ public static class BillingV2NewSubscriptionTests
             PricingFor(items));
 
         Ensure(
-            plan.Provider == "stripe"
+            plan.Provider == "paypal"
             && plan.Environment == "test"
             && plan.Currency == "EUR"
             && plan.ProviderLines.Count == 2
-            && plan.ProviderLines[0].ProviderExternalId == "price_v2_test_0"
-            && plan.ProviderLines[1].ProviderExternalId == "price_v2_test_1"
+            && plan.ProviderLines[0].ProviderExternalId == "plan_v2_test_0"
+            && plan.ProviderLines[1].ProviderExternalId == "plan_v2_test_1"
             && plan.TotalDueNowCents == 200,
             "Le plan checkout V2 local doit reprendre les ids provider resolus sans appel Stripe/PayPal.");
+
+        // Stripe : meme planification, sans aucun mapping. Le plan reste
+        // exploitable et ne porte aucune ligne provider, le montant venant du
+        // BillingEvent au moment du dispatch.
+        var stripeReadiness = BillingV2CheckoutReadinessGate.Evaluate(
+            V2Runtime(
+                authoritativeCheckoutEnabled: true,
+                firstRealSubscriptionApproved: true,
+                providerOutboxEnabled: true,
+                providerExecutorEnabled: true),
+            BillingV2LaunchReadinessGate.Evaluate(0, 0),
+            BillingV2ProviderPriceMappingGate.Evaluate(
+                items.Select(item => item.ServicePriceId).ToArray(),
+                Array.Empty<BillingV2ProviderPriceMapping>(),
+                "stripe",
+                "live"),
+            BillingV2DocumentReadinessStatus.ReadyForCheckout);
+        var stripePlan = BillingV2CheckoutPlanner.Plan(
+            stripeReadiness,
+            items,
+            PricingFor(items));
+
+        Ensure(
+            stripeReadiness.Authorized
+            && stripePlan.Provider == "stripe"
+            && stripePlan.Environment == "live"
+            && stripePlan.ProviderLines.Count == 0
+            && stripePlan.TotalDueNowCents == 200,
+            "Stripe doit planifier un checkout mensuel sans aucun mapping provider.");
     }
 
     private static void VerifyProviderCheckoutCommandRequiresReadiness()
