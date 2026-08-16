@@ -4,6 +4,7 @@ public sealed record BillingV2PublicSelectionResolution(
     bool Resolved,
     string ReasonCode,
     IReadOnlyList<BillingV2PublicQuoteLine> Lines,
+    IReadOnlyList<BillingV2PublicSelectionComponent> Components,
     bool MatchesPresetBaseline);
 
 /// <summary>
@@ -36,6 +37,7 @@ public static class BillingV2PublicSelectionPolicy
         return new BillingV2PublicSelection(
             preset.Code,
             "FLEX",
+            BillingV2PaymentModes.Monthly,
             storagePersonal?.TierCode ?? "32",
             FindItem(preset, BillingV2PublicCatalogCodes.BackupPersonal)
                 is not null,
@@ -64,13 +66,23 @@ public static class BillingV2PublicSelectionPolicy
             return Blocked("BILLING_V2_PUBLIC_PRESET_UNKNOWN");
         }
 
-        if (!catalog.Commitments.Any(
-                item => string.Equals(
-                    item.Code,
-                    selection.CommitmentCode,
-                    StringComparison.Ordinal)))
+        var commitment = catalog.Commitments.FirstOrDefault(
+            item => string.Equals(
+                item.Code,
+                selection.CommitmentCode,
+                StringComparison.Ordinal));
+        if (commitment is null)
         {
             return Blocked("BILLING_V2_PUBLIC_COMMITMENT_UNKNOWN");
+        }
+
+        // Le couple (duree, mode de reglement) doit exister dans le catalogue :
+        // c'est lui qui porte la remise, pas la duree seule. Un "comptant" sur
+        // une duree qui ne l'autorise pas est refuse en ferme plutot que
+        // rabattu silencieusement sur le mensuel.
+        if (commitment.Option(selection.PaymentMode) is null)
+        {
+            return Blocked("BILLING_V2_PUBLIC_PAYMENT_MODE_UNAVAILABLE");
         }
 
         if (selection.AdditionalUsers < 0
@@ -226,6 +238,15 @@ public static class BillingV2PublicSelectionPolicy
             Resolved: true,
             Ok,
             lines,
+            // Les composants sont la projection stricte des lignes en codes
+            // catalogue : ce que le serveur rejouera pour retrouver les vraies
+            // lignes de prix ne peut pas diverger de ce qui a ete affiche.
+            lines
+                .Select(line => new BillingV2PublicSelectionComponent(
+                    line.ServiceCode,
+                    line.TierCode,
+                    line.Quantity))
+                .ToArray(),
             MatchesBaseline(baseline, selection));
     }
 
@@ -323,6 +344,7 @@ public static class BillingV2PublicSelectionPolicy
             ?? 0;
         return new BillingV2PublicQuoteLine(
             service.Code,
+            tier?.Code,
             service.Name,
             tier?.Label,
             quantity,
@@ -332,5 +354,5 @@ public static class BillingV2PublicSelectionPolicy
     }
 
     private static BillingV2PublicSelectionResolution Blocked(string reasonCode)
-        => new(Resolved: false, reasonCode, [], MatchesPresetBaseline: false);
+        => new(Resolved: false, reasonCode, [], [], MatchesPresetBaseline: false);
 }

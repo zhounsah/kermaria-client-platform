@@ -7,6 +7,11 @@ namespace Kermaria.ApiInternal.Services;
 /// dans le navigateur : la page peut afficher cette projection, elle ne peut
 /// pas la produire. Le devis n'engage rien — il ne cree ni intention, ni
 /// BillingEvent, ni session provider.
+///
+/// Depuis la souscription V2 native, une configuration personnalisee est
+/// souscriptible : la disponibilite du checkout ne depend plus de l'existence
+/// d'une offre legacy correspondante. L'offre legacy reste exposee quand elle
+/// existe, pour compatibilite, mais n'est plus une condition.
 /// </summary>
 public static class BillingV2PublicQuoteBuilder
 {
@@ -35,25 +40,49 @@ public static class BillingV2PublicQuoteBuilder
                 item.Code,
                 selection.CommitmentCode,
                 StringComparison.Ordinal));
+        // La resolution a deja verifie l'existence de l'option : la remise
+        // affichee est donc toujours celle du catalogue, jamais une valeur de
+        // repli fabriquee ici.
+        var paymentOption = commitment.Option(selection.PaymentMode)!;
+        var months = Math.Max(1, commitment.Months);
 
         var result = pricing.Calculate(new BillingV2PricingRequest(
             resolution.Lines
                 .Select(line => new BillingV2PricingItem(
                     line.ServiceCode,
                     line.ServiceCode,
-                    line.Detail,
+                    line.TierCode,
                     line.ServiceCode,
                     line.UnitAmountCents,
                     line.Quantity,
                     BillingV2BillingCadences.Monthly,
                     line.DiscountEligible))
                 .ToArray(),
-            commitment.DiscountBasisPoints,
-            BillingV2PaymentModes.Monthly,
-            Math.Max(1, commitment.Months),
+            paymentOption.DiscountBasisPoints,
+            selection.PaymentMode,
+            months,
             MinimumCommitmentAmountCents: null,
             PriceLock: null,
             DateTime.UtcNow));
+
+        var upfront = string.Equals(
+            selection.PaymentMode,
+            BillingV2PaymentModes.Upfront,
+            StringComparison.Ordinal);
+
+        // En comptant, le total contractuel est encaisse en une fois ; le
+        // "prix mensuel" affiche n'est alors qu'un equivalent, derive du total
+        // serveur et jamais recompose dans le navigateur.
+        var commitmentTotalAfterDiscountCents = upfront
+            ? result.TotalDueNowCents
+            : checked(result.PayableRecurringAmountCents * months
+                + result.OneTimeSubtotalCents);
+        var commitmentTotalBeforeDiscountCents = checked(
+            result.RecurringSubtotalCents * months
+            + result.OneTimeSubtotalCents);
+        var monthlyAfterDiscountCents = upfront
+            ? (result.UpfrontRecurringAmountCents + months / 2) / months
+            : result.PayableRecurringAmountCents;
 
         var route = catalog.CheckoutRoutes.FirstOrDefault(
             item => string.Equals(
@@ -65,52 +94,34 @@ public static class BillingV2PublicQuoteBuilder
                         selection.CommitmentCode,
                         StringComparison.Ordinal));
 
-        var (checkoutAvailable, checkoutReasonCode) = ResolveCheckout(
-            resolution.MatchesPresetBaseline,
-            route,
-            checkoutReadiness);
-
         return new BillingV2PublicQuote(
             selection.PresetCode,
             selection.CommitmentCode,
             commitment.Months,
-            commitment.DiscountBasisPoints,
+            selection.PaymentMode,
+            paymentOption.DiscountBasisPoints,
             catalog.Currency,
             result.RecurringSubtotalCents,
             result.RecurringDiscountCents,
-            result.PayableRecurringAmountCents,
+            monthlyAfterDiscountCents,
             result.OneTimeSubtotalCents,
             result.TotalDueNowCents,
+            commitmentTotalBeforeDiscountCents,
+            commitmentTotalAfterDiscountCents,
+            checked(commitmentTotalBeforeDiscountCents
+                - commitmentTotalAfterDiscountCents),
             resolution.Lines,
             resolution.MatchesPresetBaseline,
-            checkoutAvailable,
-            checkoutAvailable ? route?.LegacyOfferId : null,
-            checkoutReasonCode);
-    }
-
-    /// <summary>
-    /// Le parcours authoritative valide est indexe par offre legacy, donc par
-    /// formule standard. Une configuration personnalisee n'a pas d'offre
-    /// correspondante : on le dit explicitement au lieu de fabriquer une route
-    /// approximative qui facturerait autre chose que ce qui est affiche.
-    /// </summary>
-    private static (bool Available, string ReasonCode) ResolveCheckout(
-        bool matchesPresetBaseline,
-        BillingV2PublicCheckoutRoute? route,
-        BillingV2AuthoritativeCheckoutReadiness checkoutReadiness)
-    {
-        if (!matchesPresetBaseline)
-        {
-            return (false, CheckoutCustomConfiguration);
-        }
-
-        if (route is null)
-        {
-            return (false, CheckoutRouteMissing);
-        }
-
-        return checkoutReadiness.Authorized
-            ? (true, checkoutReadiness.ReasonCode)
-            : (false, checkoutReadiness.ReasonCode);
+            checkoutReadiness.Authorized,
+            checkoutReadiness.Authorized
+                ? BillingV2PublicCheckoutModes.Native
+                : BillingV2PublicCheckoutModes.Unavailable,
+            // Conserve pour compatibilite : une formule standard payee au mois
+            // reste rattachable a son offre legacy. Le checkout, lui, n'en
+            // depend plus.
+            resolution.MatchesPresetBaseline && !upfront
+                ? route?.LegacyOfferId
+                : null,
+            checkoutReadiness.ReasonCode);
     }
 }

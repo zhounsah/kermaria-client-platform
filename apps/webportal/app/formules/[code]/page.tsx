@@ -71,12 +71,13 @@ export default async function FormuleConfigurationPage({ params }: PageProps) {
           <BillingV2FormuleConfigurator catalog={catalog} preset={preset} />
 
           <section className="formule-footnote">
-            <h2>Comment le prix est calculé</h2>
+            <h2>Ce que vous payez</h2>
             <p>
-              Chaque modification est renvoyée au moteur de facturation, qui
-              recalcule le montant à partir du catalogue. Le navigateur ne
-              fait aucune addition et aucun montant saisi côté client
-              n&apos;est accepté au moment de la souscription.
+              Le prix affiché correspond exactement à la configuration retenue
+              ci-dessus : chaque option ajoutée ou retirée met le total à jour
+              immédiatement. Aucun frais de mise en service ne s&apos;ajoute au
+              moment de la souscription, et la remise annoncée est celle qui
+              sera réellement appliquée.
             </p>
             <p className="formule-footnote-secondary">
               Besoin d&apos;une configuration qui sort de ce cadre ?{" "}

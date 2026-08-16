@@ -453,38 +453,58 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
             MySqlConnection connection,
             CancellationToken cancellationToken)
     {
-        var commitments = new List<BillingV2PublicCommitment>();
+        var rows = new List<CommitmentRow>();
         await using var command = connection.CreateCommand();
-        // Seul le paiement mensuel est expose au lancement : les variantes
-        // "comptant" existent en base et restent volontairement masquees.
+        // La remise est portee par le couple (duree, mode de reglement) : le
+        // mensuel et le comptant d'une meme duree sont deux options distinctes.
+        // Les drapeaux `allow_*_payment` restent l'autorite sur ce qui peut
+        // etre propose.
         command.CommandText =
             """
             SELECT
                 term.code,
                 term.name,
                 term.commitment_months,
+                term.display_order,
+                option_row.payment_mode,
                 option_row.discount_basis_points
             FROM billing_v2_commitment_terms term
             INNER JOIN billing_v2_commitment_payment_options option_row
                 ON option_row.commitment_term_id = term.id
-               AND option_row.payment_mode = 'monthly'
                AND option_row.status = 'active'
+               AND ((option_row.payment_mode = 'monthly'
+                     AND term.allow_monthly_payment = 1)
+                 OR (option_row.payment_mode = 'upfront'
+                     AND term.allow_upfront_payment = 1))
             WHERE term.status = 'active'
-              AND term.allow_monthly_payment = 1
-            ORDER BY term.display_order;
+            ORDER BY term.display_order, option_row.display_order;
             """;
         await using var reader = await command.ExecuteReaderAsync(
             cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            commitments.Add(new BillingV2PublicCommitment(
+            rows.Add(new CommitmentRow(
                 reader.GetString("code"),
                 reader.GetString("name"),
                 reader.GetInt32("commitment_months"),
+                reader.GetInt32("display_order"),
+                reader.GetString("payment_mode"),
                 reader.GetInt32("discount_basis_points")));
         }
 
-        return commitments;
+        return rows
+            .GroupBy(row => row.Code, StringComparer.Ordinal)
+            .OrderBy(group => group.First().DisplayOrder)
+            .Select(group => new BillingV2PublicCommitment(
+                group.Key,
+                group.First().Name,
+                group.First().CommitmentMonths,
+                group
+                    .Select(row => new BillingV2PublicPaymentOption(
+                        row.PaymentMode,
+                        row.DiscountBasisPoints))
+                    .ToArray()))
+            .ToArray();
     }
 
     private static async Task<IReadOnlyList<BillingV2PublicCheckoutRoute>>
@@ -569,6 +589,14 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
         int? NumericValue,
         bool PublicSelectable,
         BillingV2ServicePriceCandidate Candidate);
+
+    private sealed record CommitmentRow(
+        string Code,
+        string Name,
+        int CommitmentMonths,
+        int DisplayOrder,
+        string PaymentMode,
+        int DiscountBasisPoints);
 
     private sealed record PresetRow(
         string PresetCode,

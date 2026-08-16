@@ -15,14 +15,19 @@ public static class BillingV2PublicCatalogTests
     public static Task RunAsync()
     {
         VerifyPresetBaselinePricesMatchPublishedOffers();
-        VerifyOnlyMonthlyCommitmentsAreExposed();
+        VerifyCommitmentPaymentOptionsMatchTheCatalog();
         VerifyCommitmentDiscountsAreAppliedByTheEngine();
         VerifyBackupTierFollowsCoveredStorage();
         VerifySharedBackupRequiresSharedStorage();
         VerifyNonPublicTiersAreRefused();
         VerifyAdditionalUsersAreBounded();
         VerifyBaselineSelectionReachesAuthoritativeCheckout();
-        VerifyCustomConfigurationIsNotCheckoutable();
+        VerifyCustomConfigurationIsCheckoutable();
+        VerifyCustomConfigurationPricesAcrossCommitments();
+        VerifyUpfrontChargesTheWholeTermOnce();
+        VerifyUpfrontIsRefusedWithoutEngagement();
+        VerifySelectionCanonicalIsStableAndDiscriminating();
+        VerifyLegacyOfferKeepsItsOwnIdentity();
         VerifyLaunchFlagsBlockCheckoutWithoutHidingThePrice();
         VerifyQuoteIgnoresAnyAmountSentByTheBrowser();
         return Task.CompletedTask;
@@ -65,34 +70,42 @@ public static class BillingV2PublicCatalogTests
         Ensure(pro.Lines.Count == 8, "Composition complete de la formule Pro.");
     }
 
-    private static void VerifyOnlyMonthlyCommitmentsAreExposed()
+    /// <summary>
+    /// La matrice exposee doit etre exactement celle de la migration 048 : la
+    /// remise depend du couple (duree, mode de reglement), et FLEX n'ouvre pas
+    /// le comptant.
+    /// </summary>
+    private static void VerifyCommitmentPaymentOptionsMatchTheCatalog()
     {
         var catalog = BillingV2PublicCatalogSeed.Snapshot();
         Ensure(catalog.Commitments.Count == 3, "Trois engagements exposes.");
-        Ensure(
-            catalog.Commitments.Any(
-                item => item.Code == "FLEX" && item.DiscountBasisPoints == 0),
-            "Sans engagement a 0 %.");
-        Ensure(
-            catalog.Commitments.Any(
-                item => item.Code == "TERM-6"
-                        && item.DiscountBasisPoints == 1000),
-            "Six mois a -10 %.");
-        Ensure(
-            catalog.Commitments.Any(
-                item => item.Code == "TERM-12"
-                        && item.DiscountBasisPoints == 1500),
-            "Douze mois a -15 %.");
 
-        // Les remises "comptant" (1500 / 2000 bp) existent en base mais ne
-        // doivent pas apparaitre au lancement.
+        var expected = new (string Code, string Mode, int BasisPoints)[]
+        {
+            ("FLEX", BillingV2PaymentModes.Monthly, 0),
+            ("TERM-6", BillingV2PaymentModes.Monthly, 1000),
+            ("TERM-6", BillingV2PaymentModes.Upfront, 1500),
+            ("TERM-12", BillingV2PaymentModes.Monthly, 1500),
+            ("TERM-12", BillingV2PaymentModes.Upfront, 2000)
+        };
+
+        foreach (var (code, mode, basisPoints) in expected)
+        {
+            var option = catalog.Commitments
+                .Single(item => item.Code == code)
+                .Option(mode);
+            Ensure(
+                option?.DiscountBasisPoints == basisPoints,
+                $"Remise {code}/{mode} = {basisPoints} points de base.");
+        }
+
         Ensure(
-            catalog.Commitments.All(
-                item => item.DiscountBasisPoints is 0 or 1000 or 1500),
-            "Aucune remise upfront exposee.");
+            catalog.Commitments.Single(item => item.Code == "FLEX")
+                .Option(BillingV2PaymentModes.Upfront) is null,
+            "Pas de comptant sans engagement.");
         Ensure(
             catalog.CheckoutRoutes.Count == 12,
-            "Douze routes de checkout mensuelles.");
+            "Douze routes legacy mensuelles conservees pour compatibilite.");
     }
 
     private static void VerifyCommitmentDiscountsAreAppliedByTheEngine()
@@ -222,7 +235,12 @@ public static class BillingV2PublicCatalogTests
             "Route vers l'offre legacy 12 mois mensuelle.");
     }
 
-    private static void VerifyCustomConfigurationIsNotCheckoutable()
+    /// <summary>
+    /// Une configuration personnalisee valide est desormais souscriptible : le
+    /// checkout ne depend plus de l'existence d'une offre legacy. Aucune route
+    /// legacy n'est pour autant inventee.
+    /// </summary>
+    private static void VerifyCustomConfigurationIsCheckoutable()
     {
         var quote = Quote(
             "pack-dossier-securise",
@@ -230,20 +248,240 @@ public static class BillingV2PublicCatalogTests
             selection => selection with { RemoteDesktop = true });
 
         Ensure(!quote.MatchesPresetBaseline, "Configuration personnalisee detectee.");
-        Ensure(!quote.CheckoutAvailable, "Pas de checkout sur une configuration hors formule.");
+        Ensure(quote.CheckoutAvailable, "Configuration personnalisee souscriptible.");
+        Ensure(
+            quote.CheckoutMode == BillingV2PublicCheckoutModes.Native,
+            "Souscription V2 native, sans offre legacy.");
         Ensure(
             quote.CheckoutLegacyOfferId is null,
             "Aucune route legacy inventee pour une configuration personnalisee.");
         Ensure(
-            quote.CheckoutReasonCode
-                == BillingV2PublicQuoteBuilder.CheckoutCustomConfiguration,
-            "Motif explicite d'indisponibilite.");
-
-        // Le prix reste calcule et affichable : le client voit ce que coute sa
-        // configuration meme si elle n'est pas encore souscriptible en ligne.
-        Ensure(
             quote.MonthlyAfterDiscountCents == 2780,
-            "Prix de la configuration personnalisee toujours calcule.");
+            "Prix de la configuration personnalisee.");
+    }
+
+    /// <summary>
+    /// Les deux exemples de reference, sur les trois durees. Le total
+    /// contractuel et l'economie affichee proviennent du meme calcul serveur
+    /// que le montant preleve.
+    /// </summary>
+    private static void VerifyCustomConfigurationPricesAcrossCommitments()
+    {
+        // Dossier securise + stockage 128 + sauvegarde 128 + VPN Essentiel.
+        BillingV2PublicSelection Dossier(BillingV2PublicSelection selection)
+            => selection with
+            {
+                StoragePersonalTierCode = "128",
+                BackupPersonal = true,
+                VpnTierCode = "ESSENTIAL"
+            };
+
+        Ensure(
+            Quote("pack-dossier-securise", "FLEX", Dossier)
+                .MonthlyBeforeDiscountCents == 2180,
+            "Composition personnalisee Dossier securise a 21,80 EUR.");
+        Ensure(
+            Quote("pack-dossier-securise", "TERM-6", Dossier)
+                .MonthlyAfterDiscountCents == 1962,
+            "Dossier securise personnalise, 6 mois mensuel.");
+        Ensure(
+            Quote("pack-dossier-securise", "TERM-12", Dossier)
+                .MonthlyAfterDiscountCents == 1853,
+            "Dossier securise personnalise, 12 mois mensuel.");
+
+        // Bureau Windows + 256 Go + VPN Performance + 2 utilisateurs +
+        // Support Plus.
+        BillingV2PublicSelection Bureau(BillingV2PublicSelection selection)
+            => selection with
+            {
+                StoragePersonalTierCode = "256",
+                BackupPersonal = true,
+                VpnTierCode = "PERFORMANCE",
+                AdditionalUsers = 2,
+                SupportPlus = true
+            };
+
+        var bureau = Quote("pack-bureau-windows-distance", "TERM-12", Bureau);
+        Ensure(
+            bureau.MonthlyBeforeDiscountCents == 6530,
+            "Composition personnalisee Bureau Windows a 65,30 EUR.");
+        Ensure(
+            bureau.MonthlyAfterDiscountCents == 5551,
+            "Bureau Windows personnalise, 12 mois mensuel.");
+        Ensure(
+            bureau.CommitmentTotalAfterDiscountCents == 5551 * 12,
+            "Total contractuel du mensuel = douze prelevements.");
+        Ensure(bureau.CheckoutAvailable, "Bureau Windows personnalise souscriptible.");
+    }
+
+    /// <summary>
+    /// Le comptant encaisse la periode entiere en une fois : le total du
+    /// aujourd'hui est le montant de l'engagement, pas un mois.
+    /// </summary>
+    private static void VerifyUpfrontChargesTheWholeTermOnce()
+    {
+        var expected =
+            new (string Preset, string Term, long DueNow, long Monthly, long Saved)[]
+            {
+                ("pack-dossier-securise", "TERM-6", 6069, 1012, 1071),
+                ("pack-dossier-securise", "TERM-12", 11424, 952, 2856)
+            };
+
+        foreach (var (preset, term, dueNow, monthly, saved) in expected)
+        {
+            var quote = Quote(
+                preset,
+                term,
+                selection => selection with
+                {
+                    PaymentMode = BillingV2PaymentModes.Upfront
+                });
+
+            Ensure(
+                quote.TotalDueNowCents == dueNow,
+                $"Comptant {term} : montant preleve aujourd'hui.");
+            Ensure(
+                quote.CommitmentTotalAfterDiscountCents == dueNow,
+                $"Comptant {term} : le total contractuel est le paiement unique.");
+            Ensure(
+                quote.MonthlyAfterDiscountCents == monthly,
+                $"Comptant {term} : equivalent mensuel affiche.");
+            Ensure(
+                quote.CommitmentSavingsCents == saved,
+                $"Comptant {term} : economie totale.");
+            Ensure(quote.CheckoutAvailable, $"Comptant {term} souscriptible.");
+            Ensure(
+                quote.CheckoutLegacyOfferId is null,
+                $"Comptant {term} : aucune offre legacy mensuelle detournee.");
+        }
+
+        // Le comptant personnalise doit rester coherent avec le mensuel : le
+        // total ne peut pas depasser douze fois le prix de base.
+        var bureau = Quote(
+            "pack-bureau-windows-distance",
+            "TERM-12",
+            selection => selection with
+            {
+                PaymentMode = BillingV2PaymentModes.Upfront,
+                StoragePersonalTierCode = "256",
+                BackupPersonal = true,
+                VpnTierCode = "PERFORMANCE",
+                AdditionalUsers = 2,
+                SupportPlus = true
+            });
+        Ensure(
+            bureau.TotalDueNowCents == 62688,
+            "Bureau Windows personnalise, 12 mois comptant.");
+        Ensure(
+            bureau.CommitmentSavingsCents == 15672,
+            "Economie du Bureau Windows personnalise en comptant.");
+    }
+
+    private static void VerifyUpfrontIsRefusedWithoutEngagement()
+    {
+        var resolution = BillingV2PublicSelectionPolicy.Resolve(
+            BillingV2PublicCatalogSeed.Snapshot(),
+            Baseline("pack-dossier-securise", "FLEX") with
+            {
+                PaymentMode = BillingV2PaymentModes.Upfront
+            });
+
+        Ensure(!resolution.Resolved, "Comptant refuse sans engagement.");
+        Ensure(
+            resolution.ReasonCode
+                == "BILLING_V2_PUBLIC_PAYMENT_MODE_UNAVAILABLE",
+            "Motif explicite de refus du mode de reglement.");
+    }
+
+    /// <summary>
+    /// L'ancre d'idempotence remplace le `legacy_offer_id`. Elle doit etre
+    /// stable pour une meme configuration — deux appels avec la meme cle
+    /// retombent sur la meme intention — et differente des qu'un seul choix
+    /// change, sinon deux configurations distinctes se factureraient l'une pour
+    /// l'autre.
+    /// </summary>
+    private static void VerifySelectionCanonicalIsStableAndDiscriminating()
+    {
+        var reference = Baseline("pack-bureau-windows-distance", "TERM-12");
+        var identical = Baseline("pack-bureau-windows-distance", "TERM-12");
+        Ensure(
+            reference.Canonical() == identical.Canonical(),
+            "Meme configuration, meme empreinte.");
+
+        var variants = new[]
+        {
+            reference with { StoragePersonalTierCode = "256" },
+            reference with { PaymentMode = BillingV2PaymentModes.Upfront },
+            reference with { CommitmentCode = "TERM-6" },
+            reference with { AdditionalUsers = 2 },
+            reference with { SupportPlus = true },
+            reference with { BackupPersonal = !reference.BackupPersonal },
+            reference with { RemoteDesktop = !reference.RemoteDesktop },
+            reference with { StorageSharedTierCode = "128" },
+            reference with { VpnTierCode = "PERFORMANCE" },
+            reference with { PresetCode = "pack-pro-association" }
+        };
+        var fingerprints = variants
+            .Select(variant =>
+                BillingV2CheckoutSelectionFingerprint.ForSelection(
+                    variant.Canonical()))
+            .Append(
+                BillingV2CheckoutSelectionFingerprint.ForSelection(
+                    reference.Canonical()))
+            .ToArray();
+        Ensure(
+            fingerprints.Distinct(StringComparer.Ordinal).Count()
+                == fingerprints.Length,
+            "Chaque choix distinct produit une empreinte distincte.");
+
+        // Deux appels successifs avec la meme cle client produisent la meme
+        // intention : c'est ce qui rend le double clic inoffensif.
+        var intent = new BillingV2SubscriptionIntentRequest(
+            "customer-1",
+            "client-request-1",
+            BillingV2CheckoutSelectionFingerprint.ForSelection(
+                reference.Canonical()),
+            "stripe",
+            "test");
+        Ensure(
+            BillingV2SubscriptionIntentKey.Canonical(intent)
+                == BillingV2SubscriptionIntentKey.Canonical(intent),
+            "Cle d'intention deterministe.");
+    }
+
+    /// <summary>
+    /// Le parcours legacy garde une identite propre : son empreinte est
+    /// derivee de l'offre et ne peut pas entrer en collision avec celle d'une
+    /// configuration native.
+    /// </summary>
+    private static void VerifyLegacyOfferKeepsItsOwnIdentity()
+    {
+        var legacy = BillingV2CheckoutSelectionFingerprint.ForLegacyOffer(
+            "61000000-0000-0000-0000-000000000114");
+        Ensure(
+            legacy
+                == BillingV2CheckoutSelectionFingerprint.ForLegacyOffer(
+                    "61000000-0000-0000-0000-000000000114"),
+            "Empreinte legacy stable.");
+        Ensure(
+            legacy
+                != BillingV2CheckoutSelectionFingerprint.ForLegacyOffer(
+                    "61000000-0000-0000-0000-000000000112"),
+            "Deux offres legacy, deux empreintes.");
+        Ensure(
+            legacy
+                != BillingV2CheckoutSelectionFingerprint.ForSelection(
+                    Baseline("pack-bureau-windows-distance", "TERM-12")
+                        .Canonical()),
+            "Legacy et natif ne partagent jamais une empreinte.");
+
+        // La formule standard payee au mois reste rattachee a son offre
+        // legacy : le parcours historique n'est pas casse.
+        Ensure(
+            Quote("pack-bureau-windows-distance", "TERM-12")
+                    .CheckoutLegacyOfferId
+                == "61000000-0000-0000-0000-000000000114",
+            "Formule standard mensuelle toujours mappee a son offre legacy.");
     }
 
     private static void VerifyLaunchFlagsBlockCheckoutWithoutHidingThePrice()
@@ -298,6 +536,28 @@ public static class BillingV2PublicCatalogTests
         Ensure(
             selection.CommitmentCode == "FLEX",
             "Engagement par defaut sans remise.");
+        Ensure(
+            selection.PaymentMode == BillingV2PaymentModes.Monthly,
+            "Mode de reglement par defaut : mensuel.");
+
+        // Aucune reference de prix fournisseur ne doit pouvoir entrer par la
+        // charge utile de souscription : le montant Stripe vient du
+        // BillingEvent, jamais d'un `price_id` transmis par le navigateur.
+        var checkoutProperties =
+            typeof(Contracts.BillingV2AuthoritativeCheckoutPayload)
+                .GetProperties();
+        Ensure(
+            checkoutProperties.All(
+                property => !property.Name.Contains(
+                    "Stripe",
+                    StringComparison.OrdinalIgnoreCase)
+                    && !property.Name.Contains(
+                        "Price",
+                        StringComparison.OrdinalIgnoreCase)
+                    && !property.Name.Contains(
+                        "Amount",
+                        StringComparison.OrdinalIgnoreCase)),
+            "Aucun identifiant de prix fournisseur dans la demande de checkout.");
     }
 
     private static BillingV2PublicSelection Baseline(

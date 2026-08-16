@@ -13,8 +13,11 @@ import {
   buildBaselineSelection,
   describeCheckoutReason,
   findService,
+  formatDiscountPercent,
+  resolveServicePublicLabel,
   selectableTiers,
 } from "@/lib/billing-v2-formules";
+import { MAX_ADDITIONAL_USERS } from "@/lib/billing-v2-selection";
 import { formatCurrencyFromCents } from "@/lib/formatters";
 
 type Props = {
@@ -111,11 +114,33 @@ export function BillingV2FormuleConfigurator({ preset, catalog }: Props) {
           next.backupShared = false;
         }
 
+        // Le mode de reglement doit rester une option reellement ouverte par
+        // l'engagement retenu : changer de duree ne doit jamais laisser un
+        // "comptant" orphelin que le serveur refuserait ensuite.
+        const options =
+          catalog.commitments.find(
+            (commitment) => commitment.code === next.commitmentCode,
+          )?.paymentOptions ?? [];
+        if (!options.some((option) => option.paymentMode === next.paymentMode)) {
+          next.paymentMode = "monthly";
+        }
+
         return next;
       });
     },
-    [],
+    [catalog],
   );
+
+  const commitment = catalog.commitments.find(
+    (item) => item.code === selection.commitmentCode,
+  );
+  const upfrontOption = commitment?.paymentOptions.find(
+    (option) => option.paymentMode === "upfront",
+  );
+  const monthlyOption = commitment?.paymentOptions.find(
+    (option) => option.paymentMode === "monthly",
+  );
+  const isUpfront = selection.paymentMode === "upfront";
 
   const storageTiers = selectableTiers(catalog, SERVICE_CODES.storagePersonal);
   const sharedTiers = selectableTiers(catalog, SERVICE_CODES.storageShared);
@@ -127,7 +152,7 @@ export function BillingV2FormuleConfigurator({ preset, catalog }: Props) {
   const backupShared = findService(catalog, SERVICE_CODES.backupShared);
 
   async function submit() {
-    if (!quote?.checkoutAvailable || !quote.checkoutLegacyOfferId) {
+    if (!quote?.checkoutAvailable) {
       return;
     }
 
@@ -135,16 +160,16 @@ export function BillingV2FormuleConfigurator({ preset, catalog }: Props) {
     setSubmitError(null);
 
     try {
-      const response = await fetch("/api/subscriptions/create", {
+      // On renvoie la SELECTION, jamais le devis affiche : le serveur
+      // revalide la configuration et recalcule integralement le montant. Un
+      // prix altere dans le navigateur n'a donc aucun effet.
+      const response = await fetch("/api/formules/souscrire", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "Idempotency-Key": crypto.randomUUID(),
         },
-        body: JSON.stringify({
-          offerId: quote.checkoutLegacyOfferId,
-          rail: "stripe",
-        }),
+        body: JSON.stringify({ ...selection, rail: "stripe" }),
       });
 
       if (response.status === 401 || response.status === 403) {
@@ -328,28 +353,44 @@ export function BillingV2FormuleConfigurator({ preset, catalog }: Props) {
 
         <fieldset className="formule-fieldset">
           <legend>Équipe et support</legend>
-          <label className="formule-number">
-            <span>Utilisateurs supplémentaires</span>
-            <input
-              type="number"
-              min={0}
-              max={10}
-              step={1}
-              value={selection.additionalUsers}
-              onChange={(event) =>
-                update({
-                  additionalUsers: clamp(Number(event.target.value)),
-                })}
-            />
-            {additionalUser?.flatMonthlyAmountCents ? (
-              <em className="formule-toggle-note">
-                {formatCurrencyFromCents(
-                  additionalUser.flatMonthlyAmountCents,
-                )}{" "}
-                / mois et par utilisateur
-              </em>
-            ) : null}
-          </label>
+          <div className="formule-stepper">
+            <span className="formule-stepper-label">
+              Utilisateurs supplémentaires
+              {additionalUser?.flatMonthlyAmountCents ? (
+                <em className="formule-toggle-note">
+                  {formatCurrencyFromCents(
+                    additionalUser.flatMonthlyAmountCents,
+                  )}{" "}
+                  / mois et par utilisateur
+                </em>
+              ) : null}
+            </span>
+            <span className="formule-stepper-controls">
+              <button
+                type="button"
+                aria-label="Retirer un utilisateur"
+                disabled={selection.additionalUsers <= 0}
+                onClick={() =>
+                  update({
+                    additionalUsers: clamp(selection.additionalUsers - 1),
+                  })}
+              >
+                −
+              </button>
+              <output aria-live="polite">{selection.additionalUsers}</output>
+              <button
+                type="button"
+                aria-label="Ajouter un utilisateur"
+                disabled={selection.additionalUsers >= MAX_ADDITIONAL_USERS}
+                onClick={() =>
+                  update({
+                    additionalUsers: clamp(selection.additionalUsers + 1),
+                  })}
+              >
+                +
+              </button>
+            </span>
+          </div>
 
           <label className="formule-toggle">
             <input
@@ -375,30 +416,84 @@ export function BillingV2FormuleConfigurator({ preset, catalog }: Props) {
         <fieldset className="formule-fieldset">
           <legend>Durée d&apos;engagement</legend>
           <p className="formule-hint">
-            Toutes les durées sont payées au mois. La remise s&apos;applique
-            au montant mensuel.
+            Plus la durée est longue, plus la remise est importante.
           </p>
           <div className="formule-choices">
-            {catalog.commitments.map((commitment) => (
-              <label className="formule-choice" key={commitment.code}>
+            {catalog.commitments.map((item) => {
+              const best = item.paymentOptions.reduce(
+                (max, option) =>
+                  Math.max(max, option.discountBasisPoints),
+                0,
+              );
+
+              return (
+                <label className="formule-choice" key={item.code}>
+                  <input
+                    type="radio"
+                    name="commitment"
+                    value={item.code}
+                    checked={selection.commitmentCode === item.code}
+                    onChange={() => update({ commitmentCode: item.code })}
+                  />
+                  <span className="formule-choice-label">{item.name}</span>
+                  <span className="formule-choice-price">
+                    {best > 0
+                      ? `jusqu'à −${formatDiscountPercent(best)} %`
+                      : "Prix de base"}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </fieldset>
+
+        {upfrontOption ? (
+          <fieldset className="formule-fieldset">
+            <legend>Mode de paiement</legend>
+            <div className="formule-choices">
+              <label className="formule-choice">
                 <input
                   type="radio"
-                  name="commitment"
-                  value={commitment.code}
-                  checked={selection.commitmentCode === commitment.code}
-                  onChange={() =>
-                    update({ commitmentCode: commitment.code })}
+                  name="payment-mode"
+                  value="monthly"
+                  checked={!isUpfront}
+                  onChange={() => update({ paymentMode: "monthly" })}
                 />
-                <span className="formule-choice-label">{commitment.name}</span>
+                <span className="formule-choice-label">
+                  Mensuel
+                  <em className="formule-choice-note">
+                    Prélevé chaque mois pendant {commitment?.months} mois.
+                  </em>
+                </span>
                 <span className="formule-choice-price">
-                  {commitment.discountBasisPoints > 0
-                    ? `−${commitment.discountBasisPoints / 100} %`
+                  {monthlyOption && monthlyOption.discountBasisPoints > 0
+                    ? `−${formatDiscountPercent(
+                        monthlyOption.discountBasisPoints,
+                      )} %`
                     : "Prix de base"}
                 </span>
               </label>
-            ))}
-          </div>
-        </fieldset>
+              <label className="formule-choice">
+                <input
+                  type="radio"
+                  name="payment-mode"
+                  value="upfront"
+                  checked={isUpfront}
+                  onChange={() => update({ paymentMode: "upfront" })}
+                />
+                <span className="formule-choice-label">
+                  En une fois
+                  <em className="formule-choice-note">
+                    Un seul règlement couvrant les {commitment?.months} mois.
+                  </em>
+                </span>
+                <span className="formule-choice-price">
+                  −{formatDiscountPercent(upfrontOption.discountBasisPoints)} %
+                </span>
+              </label>
+            </div>
+          </fieldset>
+        ) : null}
       </div>
 
       <aside
@@ -413,9 +508,9 @@ export function BillingV2FormuleConfigurator({ preset, catalog }: Props) {
           <>
             <ul className="formule-summary-lines">
               {quote.lines.map((line) => (
-                <li key={`${line.serviceCode}-${line.detail ?? "flat"}`}>
+                <li key={`${line.serviceCode}-${line.tierCode ?? "flat"}`}>
                   <span className="formule-summary-line-label">
-                    {line.label}
+                    {resolveServicePublicLabel(line.serviceCode, line.label)}
                     {line.detail ? (
                       <em> — {line.detail}</em>
                     ) : null}
@@ -429,40 +524,68 @@ export function BillingV2FormuleConfigurator({ preset, catalog }: Props) {
             </ul>
 
             <dl className="formule-summary-totals">
-              {quote.monthlyDiscountCents > 0 ? (
-                <>
-                  <div>
-                    <dt>Prix mensuel avant remise</dt>
-                    <dd className="formule-summary-strike">
-                      {formatCurrencyFromCents(
-                        quote.monthlyBeforeDiscountCents,
-                      )}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>
-                      Remise d&apos;engagement (
-                      {quote.discountBasisPoints / 100} % sur{" "}
-                      {quote.commitmentMonths} mois)
-                    </dt>
-                    <dd className="formule-summary-discount">
-                      −{formatCurrencyFromCents(quote.monthlyDiscountCents)}
-                    </dd>
-                  </div>
-                </>
+              <div>
+                <dt>Prix initial</dt>
+                <dd
+                  className={
+                    quote.monthlyDiscountCents > 0
+                      ? "formule-summary-strike"
+                      : undefined
+                  }
+                >
+                  {formatCurrencyFromCents(quote.monthlyBeforeDiscountCents)}
+                  <span className="formule-summary-period"> / mois</span>
+                </dd>
+              </div>
+              {quote.discountBasisPoints > 0 ? (
+                <div>
+                  <dt>
+                    Remise d&apos;engagement (−
+                    {formatDiscountPercent(quote.discountBasisPoints)} %)
+                  </dt>
+                  <dd className="formule-summary-discount">
+                    −{formatCurrencyFromCents(quote.monthlyDiscountCents)}
+                    <span className="formule-summary-period"> / mois</span>
+                  </dd>
+                </div>
               ) : null}
               <div className="formule-summary-final">
-                <dt>Prix mensuel final</dt>
+                <dt>{isUpfront ? "Équivalent mensuel" : "Prix final"}</dt>
                 <dd>
                   {formatCurrencyFromCents(quote.monthlyAfterDiscountCents)}
                   <span className="formule-summary-period"> / mois</span>
                 </dd>
               </div>
+              {isUpfront ? (
+                <div className="formule-summary-final">
+                  <dt>À régler aujourd&apos;hui</dt>
+                  <dd>
+                    {formatCurrencyFromCents(quote.totalDueNowCents)}
+                    <span className="formule-summary-period">
+                      {" "}
+                      pour {quote.commitmentMonths} mois
+                    </span>
+                  </dd>
+                </div>
+              ) : null}
+              {quote.commitmentSavingsCents > 0 ? (
+                <div>
+                  <dt>
+                    Économie sur {quote.commitmentMonths} mois
+                  </dt>
+                  <dd className="formule-summary-discount">
+                    {formatCurrencyFromCents(quote.commitmentSavingsCents)}
+                  </dd>
+                </div>
+              ) : null}
             </dl>
 
             <p className="formule-summary-note">
-              Montant calculé par le moteur de facturation Zachary IT, hors
-              taxes applicables.
+              {isUpfront
+                ? "Un seul règlement, aucun prélèvement mensuel ensuite. "
+                : "Prélèvement mensuel, résiliable au terme de l'engagement. "}
+              Montant calculé par notre moteur de facturation, hors taxes
+              applicables.
             </p>
 
             <button
@@ -501,5 +624,5 @@ function clamp(value: number) {
     return 0;
   }
 
-  return Math.min(10, Math.max(0, Math.trunc(value)));
+  return Math.min(MAX_ADDITIONAL_USERS, Math.max(0, Math.trunc(value)));
 }

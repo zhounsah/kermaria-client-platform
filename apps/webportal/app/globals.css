@@ -7655,18 +7655,54 @@ fieldset.form-field > .form-hint {
   color: var(--muted);
 }
 
-.formule-number {
+/* Compteur d'utilisateurs : deux boutons plutot qu'un champ libre, pour que
+   la valeur reste toujours dans la plage acceptee par le catalogue. */
+
+.formule-stepper {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-width: 260px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
 }
 
-.formule-number input {
-  padding: 10px 12px;
+.formule-stepper-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.formule-stepper-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
   border: 1px solid var(--border-strong);
-  border-radius: 10px;
-  font: inherit;
+  border-radius: 999px;
+}
+
+.formule-stepper-controls button {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--surface-muted, transparent);
+  color: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.formule-stepper-controls button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.formule-stepper-controls output {
+  min-width: 32px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
 }
 
 /* --- Récapitulatif ------------------------------------------------------ */

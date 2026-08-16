@@ -28,18 +28,32 @@ public static class BillingV2PublicCatalogSeed
             Commitments(),
             CheckoutRoutes());
 
+    /// <summary>
+    /// Reprise exacte de `billing_v2_commitment_payment_options` (migration
+    /// 048) : FLEX n'autorise que le mensuel, 6 et 12 mois portent chacun une
+    /// remise differente selon le mode de reglement.
+    /// </summary>
     public static IReadOnlyList<BillingV2PublicCommitment> Commitments()
         =>
         [
-            new("FLEX", "Sans engagement", 1, 0),
-            new("TERM-6", "Engagement 6 mois", 6, 1000),
-            new("TERM-12", "Engagement 12 mois", 12, 1500)
+            new("FLEX", "Sans engagement", 1,
+                [new(BillingV2PaymentModes.Monthly, 0)]),
+            new("TERM-6", "Engagement 6 mois", 6,
+                [
+                    new(BillingV2PaymentModes.Monthly, 1000),
+                    new(BillingV2PaymentModes.Upfront, 1500)
+                ]),
+            new("TERM-12", "Engagement 12 mois", 12,
+                [
+                    new(BillingV2PaymentModes.Monthly, 1500),
+                    new(BillingV2PaymentModes.Upfront, 2000)
+                ])
         ];
 
     /// <summary>
-    /// Les douze offres legacy a paiement mensuel. Les variantes "comptant"
-    /// (upfront) existent en base mais ne sont volontairement pas exposees au
-    /// lancement.
+    /// Les douze offres legacy a paiement mensuel, conservees pour la
+    /// compatibilite du parcours historique. La souscription V2 native ne s'en
+    /// sert plus.
     /// </summary>
     public static IReadOnlyList<BillingV2PublicCheckoutRoute> CheckoutRoutes()
         =>

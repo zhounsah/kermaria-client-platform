@@ -8,12 +8,64 @@ using MySqlConnector;
 
 namespace Kermaria.ApiInternal.Services;
 
+/// <summary>
+/// Demande de checkout authoritative. Deux formes, une seule doit etre
+/// renseignee :
+///
+/// - <see cref="LegacyOfferId"/> : parcours historique, indexe par offre ;
+/// - <see cref="Selection"/> : souscription V2 native, ou la configuration
+///   elle-meme est l'identite metier. C'est la seule forme capable de
+///   representer une configuration personnalisee.
+///
+/// Aucune des deux ne transporte de montant : le total est recalcule ici par
+/// BillingV2PricingEngine a partir du catalogue serveur.
+/// </summary>
 public sealed record BillingV2AuthoritativeCheckoutRequest(
-    string LegacyOfferId,
+    string? LegacyOfferId,
+    BillingV2PublicSelection? Selection,
     string Provider,
     string IdempotencyKey,
     string SuccessUrl,
     string CancelUrl);
+
+/// <summary>
+/// Composition facturable resolue, quelle que soit la forme de la demande.
+/// Tout le chemin d'ecriture en aval ne connait plus que ce type : legacy et
+/// natif partagent donc exactement le meme code de creation, de tarification
+/// et de BillingEvent.
+/// </summary>
+public sealed record BillingV2AuthoritativeCheckoutComposition(
+    string PresetId,
+    string CommitmentTermId,
+    string PaymentMode,
+    int CommitmentMonths,
+    int DiscountBasisPoints,
+    IReadOnlyList<BillingV2NewSubscriptionPresetItem> Items,
+    string? LegacyOfferId,
+    string SelectionCanonical,
+    string SelectionFingerprint);
+
+/// <summary>
+/// Empreinte de l'identite metier d'une demande. Elle remplace le
+/// `legacy_offer_id` comme ancre : deux configurations differentes ne peuvent
+/// pas se retrouver rattachees a la meme intention, et deux demandes
+/// identiques y retombent forcement.
+/// </summary>
+public static class BillingV2CheckoutSelectionFingerprint
+{
+    public const string LegacyPrefix = "billing_v2.legacy_offer|";
+
+    public static string ForLegacyOffer(string legacyOfferId)
+        => Hash($"{LegacyPrefix}{legacyOfferId}");
+
+    public static string ForSelection(string selectionCanonical)
+        => Hash(selectionCanonical);
+
+    private static string Hash(string canonical)
+        => Convert.ToHexString(
+                SHA256.HashData(Encoding.UTF8.GetBytes(canonical)))
+            .ToLowerInvariant();
+}
 
 public sealed record BillingV2AuthoritativeCheckoutResult(
     bool Created,
@@ -36,7 +88,7 @@ public sealed record BillingV2SubscriptionPriceLockPlan(
     string Currency,
     DateTime EffectiveFromUtc,
     DateTime EffectiveUntilUtc,
-    string SourceLegacyOfferId,
+    string? SourceLegacyOfferId,
     string Reason);
 
 public interface IBillingV2AuthoritativeCheckoutService
@@ -57,6 +109,7 @@ public sealed class BillingV2AuthoritativeCheckoutService
     private readonly StripeRuntimeConfiguration _stripe;
     private readonly IBillingV2CheckoutReadinessService _readiness;
     private readonly IBillingV2PricingEngine _pricing;
+    private readonly IBillingV2PublicCatalogService _catalog;
 
     public BillingV2AuthoritativeCheckoutService(
         SqlRuntimeConfiguration sql,
@@ -64,7 +117,8 @@ public sealed class BillingV2AuthoritativeCheckoutService
         PayPalRuntimeConfiguration paypal,
         StripeRuntimeConfiguration stripe,
         IBillingV2CheckoutReadinessService readiness,
-        IBillingV2PricingEngine pricing)
+        IBillingV2PricingEngine pricing,
+        IBillingV2PublicCatalogService catalog)
     {
         _sql = sql;
         _runtime = runtime;
@@ -72,6 +126,7 @@ public sealed class BillingV2AuthoritativeCheckoutService
         _stripe = stripe;
         _readiness = readiness;
         _pricing = pricing;
+        _catalog = catalog;
     }
 
     public async Task<BillingV2AuthoritativeCheckoutResult> CreateAsync(
@@ -82,14 +137,6 @@ public sealed class BillingV2AuthoritativeCheckoutService
     {
         var provider = NormalizeProvider(request.Provider);
         var environment = ResolveEnvironment(provider);
-        var requestFingerprintHash =
-            BillingV2AuthoritativeCheckoutIdempotencyPolicy
-                .ComputeRequestFingerprintHash(
-                    session.CustomerId,
-                    session.UserId,
-                    provider,
-                    environment,
-                    request.LegacyOfferId);
         var gate = BillingV2AuthoritativeCheckoutGate.Evaluate(
             _runtime,
             _sql.IsPersistent && !string.IsNullOrWhiteSpace(_sql.ConnectionString),
@@ -100,24 +147,41 @@ public sealed class BillingV2AuthoritativeCheckoutService
         }
 
         var now = DateTime.UtcNow;
+
+        await using var readConnection =
+            new MySqlConnection(_sql.ConnectionString);
+        await readConnection.OpenAsync(cancellationToken);
+
+        // La composition est resolue AVANT toute recherche d'intention : c'est
+        // elle qui porte l'identite metier de la demande. Une selection
+        // invalide echoue donc ici, avant la moindre ecriture.
+        var composition = await ResolveCompositionAsync(
+            readConnection,
+            request,
+            now,
+            cancellationToken);
+        var requestFingerprintHash =
+            BillingV2AuthoritativeCheckoutIdempotencyPolicy
+                .ComputeRequestFingerprintHash(
+                    session.CustomerId,
+                    session.UserId,
+                    provider,
+                    environment,
+                    composition.SelectionFingerprint);
         var intentRequest = new BillingV2SubscriptionIntentRequest(
             session.CustomerId,
             request.IdempotencyKey,
-            request.LegacyOfferId,
+            composition.SelectionFingerprint,
             provider,
             environment);
         var intentCanonical =
             BillingV2SubscriptionIntentKey.Canonical(intentRequest);
         var intentHash = BillingV2SubscriptionIntentKey.Hash(intentCanonical);
 
-        await using var readConnection =
-            new MySqlConnection(_sql.ConnectionString);
-        await readConnection.OpenAsync(cancellationToken);
-
-        // L'ancre d'idempotence est desormais l'intention serveur.
+        // L'ancre d'idempotence est l'intention serveur.
         // 1) meme client_request_id -> meme intention (double clic, retry) ;
-        // 2) sinon, intention encore ouverte pour la MEME selection metier :
-        //    un rafraichissement de navigateur fabrique forcement un nouveau
+        // 2) sinon, intention encore ouverte pour la MEME configuration : un
+        //    rafraichissement de navigateur fabrique forcement un nouveau
         //    client_request_id, il doit quand meme retomber sur l'intention
         //    existante au lieu d'en ouvrir une seconde.
         var existingIntent = await BillingV2FinancialCoreStore
@@ -131,7 +195,7 @@ public sealed class BillingV2AuthoritativeCheckoutService
                     readConnection,
                     transaction: null,
                     session.CustomerId,
-                    request.LegacyOfferId,
+                    composition.SelectionFingerprint,
                     provider,
                     environment,
                     now,
@@ -146,23 +210,8 @@ public sealed class BillingV2AuthoritativeCheckoutService
                 cancellationToken);
         }
 
-        var mapping = await ReadMappingAsync(
-            readConnection,
-            request.LegacyOfferId,
-            cancellationToken)
-            ?? throw new InvalidOperationException(
-                "BILLING_V2_LEGACY_OFFER_MAPPING_NOT_FOUND");
-        var presetItems = await ReadPresetItemsAsync(
-            readConnection,
-            mapping.PresetId,
-            now,
-            cancellationToken);
-        if (presetItems.Count == 0)
-        {
-            throw new InvalidOperationException(
-                "BILLING_V2_PRESET_HAS_NO_ITEMS");
-        }
-
+        var presetItems = composition.Items;
+        var mapping = composition;
         var pricing = CalculatePricing(mapping, presetItems, now);
         var checkoutReadiness = await _readiness.CheckAsync(
             new BillingV2CheckoutReadinessRequest(
@@ -310,6 +359,7 @@ public sealed class BillingV2AuthoritativeCheckoutService
             requestId,
             session,
             request,
+            composition,
             provider,
             environment,
             requestFingerprintHash,
@@ -347,7 +397,7 @@ public sealed class BillingV2AuthoritativeCheckoutService
         }
 
         var priceLock = BillingV2AuthoritativeCheckoutPriceLockPolicy.Plan(
-            request.LegacyOfferId,
+            composition.LegacyOfferId,
             mapping.PaymentMode,
             mapping.CommitmentMonths,
             pricing,
@@ -508,8 +558,90 @@ public sealed class BillingV2AuthoritativeCheckoutService
         return normalized;
     }
 
+    /// <summary>
+    /// Resout la demande en composition facturable.
+    ///
+    /// Les deux chemins convergent volontairement vers le meme type : une
+    /// configuration personnalisee ne beneficie d'aucun raccourci, elle passe
+    /// par les memes prix, le meme Pricing Engine et le meme BillingEvent que
+    /// la formule standard.
+    /// </summary>
+    private async Task<BillingV2AuthoritativeCheckoutComposition>
+        ResolveCompositionAsync(
+            MySqlConnection connection,
+            BillingV2AuthoritativeCheckoutRequest request,
+            DateTime now,
+            CancellationToken cancellationToken)
+    {
+        if (request.Selection is { } selection)
+        {
+            if (!string.IsNullOrWhiteSpace(request.LegacyOfferId))
+            {
+                // Deux identites metier pour une meme demande : refus, sinon
+                // c'est l'ordre du code qui deciderait de ce qui est facture.
+                throw new InvalidOperationException(
+                    "BILLING_V2_CHECKOUT_AMBIGUOUS_SELECTION");
+            }
+
+            var catalog = await _catalog.GetCatalogAsync(cancellationToken);
+            var resolved = await BillingV2NativeSelectionResolver.ResolveAsync(
+                connection,
+                catalog,
+                selection,
+                now,
+                cancellationToken);
+
+            return new BillingV2AuthoritativeCheckoutComposition(
+                resolved.PresetId,
+                resolved.CommitmentTermId,
+                resolved.PaymentMode,
+                resolved.CommitmentMonths,
+                resolved.DiscountBasisPoints,
+                resolved.Items,
+                LegacyOfferId: null,
+                resolved.SelectionCanonical,
+                BillingV2CheckoutSelectionFingerprint.ForSelection(
+                    resolved.SelectionCanonical));
+        }
+
+        if (string.IsNullOrWhiteSpace(request.LegacyOfferId))
+        {
+            throw new InvalidOperationException(
+                "BILLING_V2_CHECKOUT_SELECTION_REQUIRED");
+        }
+
+        var mapping = await ReadMappingAsync(
+            connection,
+            request.LegacyOfferId,
+            cancellationToken)
+            ?? throw new InvalidOperationException(
+                "BILLING_V2_LEGACY_OFFER_MAPPING_NOT_FOUND");
+        var presetItems = await ReadPresetItemsAsync(
+            connection,
+            mapping.PresetId,
+            now,
+            cancellationToken);
+        if (presetItems.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "BILLING_V2_PRESET_HAS_NO_ITEMS");
+        }
+
+        return new BillingV2AuthoritativeCheckoutComposition(
+            mapping.PresetId,
+            mapping.CommitmentTermId,
+            mapping.PaymentMode,
+            mapping.CommitmentMonths,
+            mapping.DiscountBasisPoints,
+            presetItems,
+            request.LegacyOfferId,
+            $"{BillingV2CheckoutSelectionFingerprint.LegacyPrefix}{request.LegacyOfferId}",
+            BillingV2CheckoutSelectionFingerprint.ForLegacyOffer(
+                request.LegacyOfferId));
+    }
+
     private BillingV2PricingResult CalculatePricing(
-        BillingV2AuthoritativeCheckoutMapping mapping,
+        BillingV2AuthoritativeCheckoutComposition mapping,
         IReadOnlyList<BillingV2NewSubscriptionPresetItem> presetItems,
         DateTime now)
         => _pricing.Calculate(new BillingV2PricingRequest(
@@ -594,6 +726,7 @@ public sealed class BillingV2AuthoritativeCheckoutService
         string requestId,
         PortalSessionContext session,
         BillingV2AuthoritativeCheckoutRequest request,
+        BillingV2AuthoritativeCheckoutComposition composition,
         string provider,
         string environment,
         string requestFingerprintHash,
@@ -613,6 +746,8 @@ public sealed class BillingV2AuthoritativeCheckoutService
                 idempotency_key,
                 request_fingerprint_hash,
                 legacy_offer_id,
+                selection_fingerprint,
+                selection_canonical,
                 provider,
                 environment,
                 subscription_id,
@@ -628,6 +763,8 @@ public sealed class BillingV2AuthoritativeCheckoutService
                 @idempotency_key,
                 @request_fingerprint_hash,
                 @legacy_offer_id,
+                @selection_fingerprint,
+                @selection_canonical,
                 @provider,
                 @environment,
                 @subscription_id,
@@ -653,7 +790,15 @@ public sealed class BillingV2AuthoritativeCheckoutService
             requestFingerprintHash);
         command.Parameters.AddWithValue(
             "@legacy_offer_id",
-            request.LegacyOfferId);
+            composition.LegacyOfferId is null
+                ? DBNull.Value
+                : composition.LegacyOfferId);
+        command.Parameters.AddWithValue(
+            "@selection_fingerprint",
+            composition.SelectionFingerprint);
+        command.Parameters.AddWithValue(
+            "@selection_canonical",
+            composition.SelectionCanonical);
         command.Parameters.AddWithValue("@provider", provider);
         command.Parameters.AddWithValue("@environment", environment);
         command.Parameters.AddWithValue("@subscription_id", subscriptionId);
@@ -767,7 +912,7 @@ public sealed class BillingV2AuthoritativeCheckoutService
         MySqlTransaction transaction,
         string subscriptionId,
         string customerId,
-        BillingV2AuthoritativeCheckoutMapping mapping,
+        BillingV2AuthoritativeCheckoutComposition mapping,
         long? minimumCommitmentAmountCents,
         DateTime now,
         CancellationToken cancellationToken)
@@ -1040,7 +1185,9 @@ public sealed class BillingV2AuthoritativeCheckoutService
             priceLock.EffectiveUntilUtc);
         command.Parameters.AddWithValue(
             "@source_legacy_offer_id",
-            priceLock.SourceLegacyOfferId);
+            priceLock.SourceLegacyOfferId is null
+                ? DBNull.Value
+                : priceLock.SourceLegacyOfferId);
         command.Parameters.AddWithValue("@reason", priceLock.Reason);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -1199,14 +1346,14 @@ public static class BillingV2AuthoritativeCheckoutIdempotencyPolicy
         string actorReference,
         string provider,
         string environment,
-        string legacyOfferId)
+        string selectionFingerprint)
     {
         var fingerprint = string.Join(
             "|",
             customerId,
             provider,
             environment,
-            legacyOfferId,
+            selectionFingerprint,
             actorReference);
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(fingerprint));
         return Convert.ToHexString(bytes).ToLowerInvariant();
@@ -1226,7 +1373,7 @@ public static class BillingV2AuthoritativeCheckoutPriceLockPolicy
     public const string CheckoutReason = "v2_authoritative_checkout";
 
     public static BillingV2SubscriptionPriceLockPlan Plan(
-        string sourceLegacyOfferId,
+        string? sourceLegacyOfferId,
         string paymentMode,
         int commitmentMonths,
         BillingV2PricingResult pricing,

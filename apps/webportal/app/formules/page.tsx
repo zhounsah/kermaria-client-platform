@@ -6,6 +6,7 @@ import { getBillingV2FormulesCatalog } from "@/lib/internal-api";
 import { buildPublicMetadata } from "@/lib/public-metadata";
 import {
   describePresetComposition,
+  formatDiscountPercent,
   resolvePresetBaselineMonthlyCents,
   resolvePresetTagline,
 } from "@/lib/billing-v2-formules";
@@ -25,7 +26,11 @@ export default async function FormulesPage() {
     (left, right) => left.displayOrder - right.displayOrder,
   );
   const bestDiscount = catalog.commitments.reduce(
-    (max, commitment) => Math.max(max, commitment.discountBasisPoints),
+    (max, commitment) =>
+      commitment.paymentOptions.reduce(
+        (best, option) => Math.max(best, option.discountBasisPoints),
+        max,
+      ),
     0,
   );
 
@@ -41,8 +46,8 @@ export default async function FormulesPage() {
         </p>
         {bestDiscount > 0 ? (
           <p className="formules-lead-note">
-            Sans engagement, ou jusqu&apos;à −{bestDiscount / 100} % en
-            s&apos;engageant, toujours payé au mois.
+            Sans engagement, ou jusqu&apos;à −{formatDiscountPercent(bestDiscount)} % en
+            s&apos;engageant — au mois ou en une fois.
           </p>
         ) : null}
       </header>

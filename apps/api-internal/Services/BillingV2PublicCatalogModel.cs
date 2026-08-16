@@ -50,11 +50,29 @@ public sealed record BillingV2PublicPreset(
         => Items.Sum(item => item.AmountCents * item.Quantity);
 }
 
+/// <summary>
+/// Variante de reglement d'un engagement. La remise n'est pas portee par la
+/// duree seule : 6 mois payes au mois et 6 mois payes comptant sont deux
+/// options distinctes, exactement comme en base
+/// (`billing_v2_commitment_payment_options`).
+/// </summary>
+public sealed record BillingV2PublicPaymentOption(
+    string PaymentMode,
+    int DiscountBasisPoints);
+
 public sealed record BillingV2PublicCommitment(
     string Code,
     string Name,
     int Months,
-    int DiscountBasisPoints);
+    IReadOnlyList<BillingV2PublicPaymentOption> PaymentOptions)
+{
+    public BillingV2PublicPaymentOption? Option(string paymentMode)
+        => PaymentOptions.FirstOrDefault(
+            option => string.Equals(
+                option.PaymentMode,
+                paymentMode,
+                StringComparison.Ordinal));
+}
 
 public sealed record BillingV2PublicCheckoutRoute(
     string PresetCode,
@@ -76,6 +94,7 @@ public sealed record BillingV2PublicCatalogSnapshot(
 public sealed record BillingV2PublicSelection(
     string PresetCode,
     string CommitmentCode,
+    string PaymentMode,
     string StoragePersonalTierCode,
     bool BackupPersonal,
     string? StorageSharedTierCode,
@@ -83,7 +102,32 @@ public sealed record BillingV2PublicSelection(
     string? VpnTierCode,
     bool RemoteDesktop,
     int AdditionalUsers,
-    bool SupportPlus);
+    bool SupportPlus)
+{
+    /// <summary>
+    /// Forme canonique de la selection metier. Elle sert d'ancre d'idempotence
+    /// cote serveur : deux configurations differentes ne peuvent pas se
+    /// retrouver rattachees a la meme intention, et un rafraichissement de la
+    /// page retombe sur l'intention deja ouverte pour la meme configuration.
+    ///
+    /// Aucun montant n'y entre : seuls des codes catalogue.
+    /// </summary>
+    public string Canonical()
+        => string.Join(
+            "|",
+            "billing_v2.public_selection",
+            PresetCode,
+            CommitmentCode,
+            PaymentMode,
+            $"sp={StoragePersonalTierCode}",
+            $"bp={(BackupPersonal ? 1 : 0)}",
+            $"ss={StorageSharedTierCode ?? "-"}",
+            $"bs={(BackupShared ? 1 : 0)}",
+            $"vpn={VpnTierCode ?? "-"}",
+            $"rds={(RemoteDesktop ? 1 : 0)}",
+            $"users={AdditionalUsers}",
+            $"support={(SupportPlus ? 1 : 0)}");
+}
 
 /// <summary>
 /// Charge utile acceptee du navigateur. Elle ne porte aucun montant : tout
@@ -95,6 +139,8 @@ public sealed class BillingV2PublicSelectionInput
     public string? PresetCode { get; set; }
 
     public string? CommitmentCode { get; set; }
+
+    public string? PaymentMode { get; set; }
 
     public string? StoragePersonalTierCode { get; set; }
 
@@ -118,6 +164,9 @@ public sealed class BillingV2PublicSelectionInput
             string.IsNullOrWhiteSpace(CommitmentCode)
                 ? "FLEX"
                 : CommitmentCode.Trim(),
+            string.IsNullOrWhiteSpace(PaymentMode)
+                ? BillingV2PaymentModes.Monthly
+                : PaymentMode.Trim().ToLowerInvariant(),
             (StoragePersonalTierCode ?? string.Empty).Trim(),
             BackupPersonal,
             string.IsNullOrWhiteSpace(StorageSharedTierCode)
@@ -134,6 +183,7 @@ public sealed class BillingV2PublicSelectionInput
 
 public sealed record BillingV2PublicQuoteLine(
     string ServiceCode,
+    string? TierCode,
     string Label,
     string? Detail,
     int Quantity,
@@ -141,10 +191,21 @@ public sealed record BillingV2PublicQuoteLine(
     long AmountCents,
     bool DiscountEligible);
 
+/// <summary>
+/// Composant retenu, exprime en codes catalogue. C'est cette liste — et non
+/// les libelles d'affichage — qui est rejouee cote serveur pour retrouver les
+/// vraies lignes de prix en base au moment de la souscription.
+/// </summary>
+public sealed record BillingV2PublicSelectionComponent(
+    string ServiceCode,
+    string? TierCode,
+    int Quantity);
+
 public sealed record BillingV2PublicQuote(
     string PresetCode,
     string CommitmentCode,
     int CommitmentMonths,
+    string PaymentMode,
     int DiscountBasisPoints,
     string Currency,
     long MonthlyBeforeDiscountCents,
@@ -152,11 +213,23 @@ public sealed record BillingV2PublicQuote(
     long MonthlyAfterDiscountCents,
     long OneTimeCents,
     long TotalDueNowCents,
+    long CommitmentTotalBeforeDiscountCents,
+    long CommitmentTotalAfterDiscountCents,
+    long CommitmentSavingsCents,
     IReadOnlyList<BillingV2PublicQuoteLine> Lines,
     bool MatchesPresetBaseline,
     bool CheckoutAvailable,
+    string CheckoutMode,
     string? CheckoutLegacyOfferId,
     string CheckoutReasonCode);
+
+public static class BillingV2PublicCheckoutModes
+{
+    /// <summary>Selection V2 native : aucune offre legacy necessaire.</summary>
+    public const string Native = "native";
+
+    public const string Unavailable = "unavailable";
+}
 
 public static class BillingV2PublicCatalogCodes
 {

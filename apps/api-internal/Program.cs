@@ -3460,7 +3460,13 @@ app.MapPost(
         var payload =
             await ReadPayload<BillingV2AuthoritativeCheckoutPayload>(context)
             ?? throw new PortalValidationException();
-        if (string.IsNullOrWhiteSpace(payload.LegacyOfferId)
+        // Une demande porte soit une offre legacy, soit une selection V2
+        // native. Les deux ensemble, ou aucune des deux, est un refus : la
+        // demande n'aurait pas d'identite metier certaine.
+        var hasLegacyOffer = !string.IsNullOrWhiteSpace(payload.LegacyOfferId);
+        var hasSelection = !string.IsNullOrWhiteSpace(
+            payload.Selection?.PresetCode);
+        if (hasLegacyOffer == hasSelection
             || string.IsNullOrWhiteSpace(payload.Provider)
             || string.IsNullOrWhiteSpace(payload.IdempotencyKey)
             || string.IsNullOrWhiteSpace(payload.SuccessUrl)
@@ -3475,7 +3481,8 @@ app.MapPost(
             result = await service.CreateAsync(
                 session,
                 new BillingV2AuthoritativeCheckoutRequest(
-                    payload.LegacyOfferId.Trim(),
+                    hasLegacyOffer ? payload.LegacyOfferId!.Trim() : null,
+                    hasSelection ? payload.Selection!.ToSelection() : null,
                     payload.Provider.Trim(),
                     payload.IdempotencyKey.Trim(),
                     payload.SuccessUrl.Trim(),

@@ -80,7 +80,7 @@ public static class BillingV2FinancialCoreStore
         MySqlConnection connection,
         MySqlTransaction? transaction,
         string customerId,
-        string legacyOfferId,
+        string selectionFingerprint,
         string provider,
         string environment,
         DateTime nowUtc,
@@ -100,7 +100,7 @@ public static class BillingV2FinancialCoreStore
             INNER JOIN billing_v2_subscription_changes change_row
                 ON change_row.id = request_row.subscription_change_id
             WHERE request_row.customer_id = @customer_id
-              AND request_row.legacy_offer_id = @legacy_offer_id
+              AND request_row.selection_fingerprint = @selection_fingerprint
               AND request_row.provider = @provider
               AND request_row.environment = @environment
               AND change_row.status = 'pending'
@@ -110,7 +110,9 @@ public static class BillingV2FinancialCoreStore
             LIMIT 1;
             """;
         command.Parameters.AddWithValue("@customer_id", customerId);
-        command.Parameters.AddWithValue("@legacy_offer_id", legacyOfferId);
+        command.Parameters.AddWithValue(
+            "@selection_fingerprint",
+            selectionFingerprint);
         command.Parameters.AddWithValue("@provider", provider);
         command.Parameters.AddWithValue("@environment", environment);
         command.Parameters.AddWithValue("@now", nowUtc);

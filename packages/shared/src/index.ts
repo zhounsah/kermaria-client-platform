@@ -2633,11 +2633,23 @@ export interface BillingV2PublicPreset {
   baselineMonthlyAmountCents: number;
 }
 
+/** `monthly` = paye au mois ; `upfront` = paye en une fois. */
+export type BillingV2PublicPaymentMode = "monthly" | "upfront";
+
+export interface BillingV2PublicPaymentOption {
+  paymentMode: BillingV2PublicPaymentMode;
+  discountBasisPoints: number;
+}
+
 export interface BillingV2PublicCommitment {
   code: string;
   name: string;
   months: number;
-  discountBasisPoints: number;
+  /**
+   * La remise depend du couple (duree, mode de reglement) : six mois payes au
+   * mois et six mois payes comptant sont deux options distinctes.
+   */
+  paymentOptions: BillingV2PublicPaymentOption[];
 }
 
 export interface BillingV2PublicCheckoutRoute {
@@ -2658,6 +2670,7 @@ export interface BillingV2PublicCatalog {
 export interface BillingV2PublicSelection {
   presetCode: string;
   commitmentCode: string;
+  paymentMode: BillingV2PublicPaymentMode;
   storagePersonalTierCode: string;
   backupPersonal: boolean;
   storageSharedTierCode: string | null;
@@ -2670,6 +2683,7 @@ export interface BillingV2PublicSelection {
 
 export interface BillingV2PublicQuoteLine {
   serviceCode: string;
+  tierCode: string | null;
   label: string;
   detail: string | null;
   quantity: number;
@@ -2682,16 +2696,24 @@ export interface BillingV2PublicQuote {
   presetCode: string;
   commitmentCode: string;
   commitmentMonths: number;
+  paymentMode: BillingV2PublicPaymentMode;
   discountBasisPoints: number;
   currency: string;
   monthlyBeforeDiscountCents: number;
   monthlyDiscountCents: number;
+  /** En comptant, equivalent mensuel derive du total serveur. */
   monthlyAfterDiscountCents: number;
   oneTimeCents: number;
+  /** Montant reellement preleve a la souscription. */
   totalDueNowCents: number;
+  commitmentTotalBeforeDiscountCents: number;
+  commitmentTotalAfterDiscountCents: number;
+  commitmentSavingsCents: number;
   lines: BillingV2PublicQuoteLine[];
   matchesPresetBaseline: boolean;
   checkoutAvailable: boolean;
+  /** `native` : souscription V2 sans offre legacy. */
+  checkoutMode: string;
   checkoutLegacyOfferId: string | null;
   checkoutReasonCode: string;
 }

@@ -26,6 +26,14 @@ const programCs = await read("../../apps/api-internal/Program.cs");
 const internalApi = await read("lib/internal-api.ts");
 const helpers = await read("lib/billing-v2-formules.ts");
 const quoteRoute = await read("app/api/formules/devis/route.ts");
+const subscribeRoute = await read("app/api/formules/souscrire/route.ts");
+const selectionReader = await read("lib/billing-v2-selection.ts");
+const checkoutService = await read(
+  "../../apps/api-internal/Services/BillingV2AuthoritativeCheckoutService.cs",
+);
+const nativeResolver = await read(
+  "../../apps/api-internal/Services/BillingV2NativeSelectionResolver.cs",
+);
 const listPage = await read("app/formules/page.tsx");
 const configuratorPage = await read("app/formules/[code]/page.tsx");
 const configurator = await read(
@@ -62,8 +70,25 @@ assert.doesNotMatch(
 
 assert.match(
   quoteRoute,
-  /function readSelection/,
+  /readBillingV2SelectionPayload/,
   "La route de devis doit reconstruire strictement la selection.",
+);
+assert.match(
+  subscribeRoute,
+  /readBillingV2SelectionPayload/,
+  "La souscription doit reconstruire la selection avec le meme lecteur.",
+);
+assert.doesNotMatch(
+  subscribeRoute,
+  /amountCents|totalDueNow[^C]|monthlyAfterDiscountCents|discountBasisPoints/,
+  "La souscription ne relaie aucun montant venu du navigateur.",
+);
+// Le lecteur partage est la seule porte d'entree : tout champ absent de cette
+// liste ne peut pas atteindre API-INTERNAL.
+assert.doesNotMatch(
+  selectionReader,
+  /amount|cents|price|discount/i,
+  "Le lecteur de selection n'accepte aucun champ tarifaire.",
 );
 
 // La charge utile acceptee par l'API ne porte aucun champ tarifaire.
@@ -128,46 +153,55 @@ for (const [priceCode, amountCents] of seededPrices) {
   );
 }
 
-// --- 3. Engagements exposes ----------------------------------------------
+// --- 3. Engagements et modes de reglement --------------------------------
 
-assert.match(
-  catalogSeed,
-  /new\("FLEX", "Sans engagement", 1, 0\)/,
-  "Sans engagement a 0 %.",
-);
-assert.match(
-  catalogSeed,
-  /new\("TERM-6", "Engagement 6 mois", 6, 1000\)/,
-  "Six mois a -10 %.",
-);
-assert.match(
-  catalogSeed,
-  /new\("TERM-12", "Engagement 12 mois", 12, 1500\)/,
-  "Douze mois a -15 %.",
-);
+// La matrice remise x mode de reglement doit rester celle de la migration 048.
+for (const [term, mode, basisPoints] of [
+  ["FLEX", "monthly", 0],
+  ["TERM-6", "monthly", 1000],
+  ["TERM-6", "upfront", 1500],
+  ["TERM-12", "monthly", 1500],
+  ["TERM-12", "upfront", 2000],
+]) {
+  // La premiere ligne du seed est aliasee (`'FLEX' AS term_code`), les
+  // suivantes non : on verifie donc la coexistence sur une meme ligne.
+  const seeded = migration
+    .split(String.fromCharCode(10))
+    .some(
+      (line) =>
+        line.includes(`'${term}'`)
+        && line.includes(`'${mode}'`)
+        && new RegExp(String.raw`(^|[ ,])${basisPoints}([ ,]|$)`).test(line),
+    );
+  assert.ok(
+    seeded,
+    `La migration 048 doit porter ${term}/${mode} a ${basisPoints} points.`,
+  );
+  const seedMode = mode === "monthly" ? "Monthly" : "Upfront";
+  assert.ok(
+    catalogSeed.includes(`BillingV2PaymentModes.${seedMode}, ${basisPoints})`),
+    `Le repli catalogue doit reprendre ${term}/${mode}.`,
+  );
+}
 
-// Le paiement comptant reste masque au lancement.
+// Les drapeaux du catalogue restent l'autorite : une duree qui n'autorise pas
+// un mode de reglement ne doit pas pouvoir l'exposer.
 assert.match(
   catalogService,
-  /option_row\.payment_mode = 'monthly'/,
-  "Seules les options mensuelles sont projetees.",
+  /term\.allow_monthly_payment = 1/,
+  "Le mensuel reste conditionne au drapeau du catalogue.",
 );
 assert.match(
   catalogService,
-  /mapping\.payment_mode = 'monthly'/,
-  "Seules les routes de checkout mensuelles sont exposees.",
+  /term\.allow_upfront_payment = 1/,
+  "Le comptant reste conditionne au drapeau du catalogue.",
 );
-// Les commentaires peuvent expliquer pourquoi le comptant reste masque ; le
-// code, lui, ne doit en porter aucune trace.
-const catalogSeedCode = catalogSeed
-  .split(/\r?\n/)
-  .filter((line) => !line.trimStart().startsWith("//"))
-  .join("\n");
-assert.doesNotMatch(
-  catalogSeedCode,
-  /upfront/i,
-  "Aucune variante comptant dans le repli catalogue.",
+assert.match(
+  selectionPolicy,
+  /BILLING_V2_PUBLIC_PAYMENT_MODE_UNAVAILABLE/,
+  "Un mode de reglement non ouvert doit etre refuse en ferme.",
 );
+
 
 // --- 4. Dependances du catalogue respectees ------------------------------
 
@@ -191,8 +225,13 @@ assert.match(
 
 assert.match(
   configurator,
-  /"\/api\/subscriptions\/create"/,
-  "Le bouton final doit rejoindre le parcours de souscription existant.",
+  /"\/api\/formules\/souscrire"/,
+  "Le bouton final doit rejoindre le parcours de souscription V2 native.",
+);
+assert.match(
+  subscribeRoute,
+  /"\/internal\/portal\/billing-v2\/subscriptions\/checkout"/,
+  "La souscription doit passer par le checkout authoritative existant.",
 );
 assert.match(
   configurator,
@@ -214,11 +253,75 @@ assert.match(
   /BillingV2AuthoritativeCheckoutReadiness/,
   "Le devis doit remonter le motif du gate authoritative.",
 );
-assert.match(
-  quoteBuilder,
-  /CheckoutCustomConfiguration/,
-  "Une configuration personnalisee doit etre signalee comme non souscriptible.",
+assert.doesNotMatch(
+  subscribeRoute,
+  /stripe\.com|stripePriceId|price_id|price_data/i,
+  "Aucune logique Stripe ne doit etre recreee dans le BFF.",
 );
+assert.doesNotMatch(
+  nativeResolver,
+  /stripePriceId|stripe_price|provider_external_id|price_data/i,
+  "La resolution native ne connait aucun identifiant de prix fournisseur.",
+);
+
+// --- 5 bis. Souscription V2 native ---------------------------------------
+
+// Le checkout authoritative doit accepter une selection sans offre legacy,
+// tout en conservant le chemin historique.
+assert.match(
+  checkoutService,
+  /BillingV2PublicSelection\? Selection/,
+  "Le checkout authoritative doit accepter une selection V2 native.",
+);
+assert.match(
+  checkoutService,
+  /BILLING_V2_CHECKOUT_AMBIGUOUS_SELECTION/,
+  "Une demande portant les deux identites doit etre refusee.",
+);
+assert.match(
+  checkoutService,
+  /BILLING_V2_LEGACY_OFFER_MAPPING_NOT_FOUND/,
+  "Le parcours legacy doit rester en place.",
+);
+// Le Pricing Engine n'est pas duplique : la composition native retombe sur le
+// meme calcul que le preset.
+assert.match(
+  checkoutService,
+  /_pricing\.Calculate\(new BillingV2PricingRequest\(/,
+  "Le checkout doit recalculer le prix avec le Pricing Engine.",
+);
+assert.ok(
+  (checkoutService.match(/_pricing\.Calculate\(/g) ?? []).length === 1,
+  "Un seul point de calcul tarifaire dans le checkout authoritative.",
+);
+// L'ancre d'idempotence devient la configuration elle-meme.
+assert.match(
+  checkoutService,
+  /BillingV2CheckoutSelectionFingerprint/,
+  "L'identite metier d'une demande doit etre l'empreinte de configuration.",
+);
+assert.match(
+  nativeResolver,
+  /BillingV2PublicSelectionPolicy\.Resolve/,
+  "La selection doit etre revalidee cote serveur avant toute ecriture.",
+);
+assert.match(
+  nativeResolver,
+  /BillingV2ServicePriceResolutionPolicy\.Resolve/,
+  "Les prix natifs doivent passer par la resolution d'ambiguite partagee.",
+);
+for (const forbiddenWrite of [
+  "INSERT INTO",
+  "UPDATE ",
+  "DELETE FROM",
+  "ALTER TABLE",
+  "CREATE TABLE",
+]) {
+  assert.ok(
+    !nativeResolver.includes(forbiddenWrite),
+    `La resolution native doit rester en lecture seule (${forbiddenWrite}).`,
+  );
+}
 
 // --- 6. Projection strictement en lecture --------------------------------
 
@@ -291,7 +394,10 @@ for (const contract of [
   "BillingV2PublicPreset",
   "BillingV2PublicQuote",
   "BillingV2PublicSelection",
+  "BillingV2PublicPaymentOption",
   "baselineMonthlyAmountCents",
+  "commitmentSavingsCents",
+  "paymentMode",
 ]) {
   assert.match(
     sharedTypes,

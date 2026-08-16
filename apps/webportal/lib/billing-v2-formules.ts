@@ -26,6 +26,22 @@ export const SERVICE_CODES = {
   supportPlus: "SUPPORT-PLUS",
 } as const;
 
+/**
+ * Libellé public d'un service. Le catalogue nomme « Socle de service » ce que
+ * le client, lui, perçoit comme la mise en service et le suivi de son espace.
+ */
+const SERVICE_PUBLIC_LABELS: Record<string, string> = {
+  [SERVICE_CODES.base]: "Mise en service et suivi de votre espace",
+};
+
+export function resolveServicePublicLabel(serviceCode: string, fallback: string) {
+  return SERVICE_PUBLIC_LABELS[serviceCode] ?? fallback;
+}
+
+export function formatDiscountPercent(basisPoints: number) {
+  return `${basisPoints / 100}`.replace(".", ",");
+}
+
 const PRESET_TAGLINES: Record<string, string> = {
   "pack-dossier-securise":
     "Mettre à l'abri les documents qu'on ne pourrait pas reconstituer.",
@@ -63,7 +79,10 @@ export function describePresetComposition(
   return preset.items.map((item) => {
     const service = findService(catalog, item.serviceCode);
     const tierLabel = resolveTierLabel(service, item.tierCode);
-    const name = service?.name ?? item.serviceCode;
+    const name = resolveServicePublicLabel(
+      item.serviceCode,
+      service?.name ?? item.serviceCode,
+    );
     const quantitySuffix = item.quantity > 1 ? ` × ${item.quantity}` : "";
 
     return {
@@ -125,6 +144,7 @@ export function buildBaselineSelection(
   return {
     presetCode: preset.code,
     commitmentCode,
+    paymentMode: "monthly",
     storagePersonalTierCode: storagePersonal?.tierCode ?? "32",
     backupPersonal: item(SERVICE_CODES.backupPersonal) !== undefined,
     storageSharedTierCode: storageShared?.tierCode ?? null,
@@ -137,13 +157,11 @@ export function buildBaselineSelection(
 }
 
 const CHECKOUT_REASON_MESSAGES: Record<string, string> = {
-  BILLING_V2_PUBLIC_CUSTOM_CONFIGURATION_NOT_CHECKOUTABLE:
-    "Cette configuration personnalisée n'est pas encore souscriptible en "
-    + "ligne. Revenez à la configuration recommandée pour souscrire "
-    + "immédiatement, ou contactez-nous pour la mettre en place.",
   BILLING_V2_PUBLIC_CHECKOUT_ROUTE_MISSING:
     "Cette combinaison formule / engagement n'est pas ouverte à la "
     + "souscription en ligne.",
+  BILLING_V2_PUBLIC_PAYMENT_MODE_UNAVAILABLE:
+    "Ce mode de règlement n'est pas proposé pour cette durée.",
   BILLING_V2_FIRST_REAL_SUBSCRIPTION_NOT_APPROVED:
     "La souscription en ligne n'est pas encore ouverte. Contactez-nous pour "
     + "mettre en place cette formule.",
