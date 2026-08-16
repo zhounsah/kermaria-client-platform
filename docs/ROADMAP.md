@@ -1170,6 +1170,32 @@ si elles se croisent. Le chantier ISR reste **hors perimetre** : `headers()` et
 `getCurrentPortalSession()` dans le layout racine neutralisent tous les
 `revalidate = 300`, un `TODO` le documente sur place.
 
+Correctif **`v1.3.3.8`** : l'identite de marque. Documentation dediee :
+[`v1.3/V1.3.3.8_IDENTITE_MARQUE.md`](v1.3/V1.3.3.8_IDENTITE_MARQUE.md). Le
+balisage attribuait le site a la mauvaise identite : `WebSite.name` portait la
+denomination juridique `Zachary HOUNSA-HOUNKPA EI` alors que c'est ce champ que
+Google lit pour determiner le **nom du site**, et `LocalBusiness` avait les
+roles inverses (`name` = EI, `alternateName` = marque). `name` porte desormais
+le nom commercial `Zachary IT` et `legalName` la raison sociale — la propriete
+schema.org prevue pour elle : l'identite juridique n'est pas masquee, elle est
+rangee dans le bon champ, et reste en `alternateName` sur le `WebSite`. Les
+deux noms viennent d'une source unique,
+[`lib/brand-identity.ts`](../apps/webportal/lib/brand-identity.ts), module
+volontairement **sans import** pour que `test:brand` charge les valeurs reelles
+plutot qu'une chaine relue dans du source ; ils etaient auparavant recopies
+dans trois fichiers. Le titre de l'accueil s'ouvre sur la marque et conserve
+Guichen. Piege verifie sur le HTML servi : le `title.template` du layout racine
+ne s'applique **qu'aux segments enfants**, pas a `app/page.tsx` qui partage le
+segment racine avec le layout — l'accueil ecrit donc sa marque lui-meme, et
+aucune autre page ne doit la suffixer sous peine de doublon, ce que `test:brand`
+interdit sur tous les `app/**/page.tsx`. Rien n'est invente : adresse, telephone
+et SIRET sont inchanges, aucun `sameAs` ni relation schema.org ajoutee. La
+phrase de `/a-propos` reliant marque et entite juridique vit dans le contenu
+administrable : `SeedMissingAsync` n'amorce qu'une base vierge, elle doit etre
+**reportee via le back-office** sur un environnement deja amorce. Hors
+perimetre : `/wiki/article/<slug>` repond encore 200 sur `www`, duplicata
+neutralise par sa canonical.
+
 Ancrage infra (R740xd) : groupes dans `OU=Groupes_TEST`, comptes dans
 `OU=CLI-DEMO`, quota FSRM, collection RDS Clients-1 filtree par groupe,
 VLAN 64 `10.35.64.0/24`. Deploiement SRV-13 :
