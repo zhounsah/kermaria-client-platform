@@ -7623,8 +7623,10 @@ fieldset.form-field > .form-hint {
 
 .formule-choice-label {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
+  overflow-wrap: anywhere;
 }
 
 .formule-choice-note,
@@ -7742,6 +7744,13 @@ fieldset.form-field > .form-hint {
   display: flex;
   gap: 12px;
   justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.formule-summary-line-label {
+  flex: 1 1 11rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .formule-summary-line-label em {
@@ -7770,9 +7779,15 @@ fieldset.form-field > .form-hint {
   gap: 12px;
   justify-content: space-between;
   align-items: baseline;
+  /* Un intitule long — « Économie totale sur 12 mois » — face a un montant
+     insecable deborderait sur un ecran etroit : on autorise le retour a la
+     ligne plutot qu'un debordement horizontal de la page. */
+  flex-wrap: wrap;
 }
 
 .formule-summary-totals dt {
+  flex: 1 1 auto;
+  min-width: 0;
   color: var(--muted);
   font-size: 0.88rem;
 }
@@ -7815,6 +7830,15 @@ fieldset.form-field > .form-hint {
   margin: 0;
   color: var(--muted);
   font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.formule-summary-note strong {
+  color: var(--text);
+}
+
+.formule-summary-note-secondary {
+  font-size: 0.78rem;
 }
 
 .formule-summary-action {
@@ -7856,4 +7880,60 @@ fieldset.form-field > .form-hint {
   margin: 0 0 8px;
   color: var(--muted);
   line-height: 1.6;
+}
+
+/* --- Mobile -------------------------------------------------------------- */
+
+/* Le configurateur se manipule au doigt : chaque cible atteint 44 px, les
+   montants peuvent passer a la ligne et le bouton de souscription occupe
+   toute la largeur. Le recapitulatif suit les options dans le flux — il n'est
+   pas colle en bas d'ecran, ce qui masquerait les choix en cours. */
+@media (max-width: 48rem) {
+  .formules-page,
+  .formule-page {
+    gap: 28px;
+  }
+
+  .formules-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .formule-fieldset,
+  .formule-summary,
+  .formules-note,
+  .formule-footnote {
+    padding: 18px;
+  }
+
+  .formule-choice {
+    min-height: 44px;
+    padding: 12px 14px;
+    flex-wrap: wrap;
+  }
+
+  .formule-choice-price {
+    white-space: normal;
+  }
+
+  .formule-toggle {
+    align-items: center;
+    min-height: 44px;
+  }
+
+  .formule-stepper-controls button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .formule-stepper-controls output {
+    min-width: 40px;
+  }
+
+  .formule-summary-final dd {
+    font-size: 1.3rem;
+  }
+
+  .formule-summary-action {
+    min-height: 48px;
+  }
 }

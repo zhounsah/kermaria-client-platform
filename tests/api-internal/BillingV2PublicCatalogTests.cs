@@ -264,8 +264,11 @@ public static class BillingV2PublicCatalogTests
         var backup = quote.Lines.Single(
             line => line.ServiceCode
                 == BillingV2PublicCatalogCodes.BackupPersonal);
+        // Le libelle est compare accent compris : le repli catalogue est ce
+        // que lit un visiteur tant que le schema V2 n'est pas applique, et une
+        // divergence avec la migration 048 se verrait en pleine vitrine.
         Ensure(
-            backup.Detail == "128 Go proteges",
+            backup.Detail == "128 Go protégés",
             "Le palier de sauvegarde suit la capacite couverte.");
         Ensure(backup.UnitAmountCents == 400, "Prix du palier 128 protege.");
         Ensure(

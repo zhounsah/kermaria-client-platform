@@ -27,15 +27,51 @@ export const SERVICE_CODES = {
 } as const;
 
 /**
- * Libellé public d'un service. Le catalogue nomme « Socle de service » ce que
- * le client, lui, perçoit comme la mise en service et le suivi de son espace.
+ * Libellé public d'un service.
+ *
+ * Le catalogue porte des noms d'exploitation — « Socle de service »,
+ * « Accès bureau distant RDS » — qui ne disent rien à un client et qui
+ * exposent inutilement le découpage interne. La traduction se fait ici, et
+ * pas dans le catalogue : la base reste l'autorité sur ce qui est facturé,
+ * cette table ne change que ce qui est lu à l'écran.
  */
 const SERVICE_PUBLIC_LABELS: Record<string, string> = {
   [SERVICE_CODES.base]: "Mise en service et suivi de votre espace",
+  [SERVICE_CODES.remoteDesktop]: "Bureau Windows à distance",
+  [SERVICE_CODES.vpn]: "Accès sécurisé à distance",
 };
 
 export function resolveServicePublicLabel(serviceCode: string, fallback: string) {
   return SERVICE_PUBLIC_LABELS[serviceCode] ?? fallback;
+}
+
+/**
+ * Ce que le client obtient réellement, en une phrase. Une carte de formule
+ * doit se lire en quelques secondes : la liste exhaustive des composants
+ * facturés appartient au configurateur et au récapitulatif, pas à la vitrine.
+ */
+const SERVICE_BENEFITS: Record<string, string> = {
+  [SERVICE_CODES.storagePersonal]: "Un espace de stockage personnel",
+  [SERVICE_CODES.storageShared]: "Un espace partagé pour toute la structure",
+  [SERVICE_CODES.backupPersonal]: "Sauvegarde quotidienne de vos fichiers",
+  [SERVICE_CODES.backupShared]: "Sauvegarde de l'espace partagé",
+  [SERVICE_CODES.vpn]: "Accès sécurisé depuis l'extérieur",
+  [SERVICE_CODES.remoteDesktop]: "Un bureau Windows accessible à distance",
+  [SERVICE_CODES.additionalUser]: "Des comptes pour vos collaborateurs",
+  [SERVICE_CODES.supportPlus]: "Support renforcé",
+};
+
+/**
+ * Durée d'engagement telle qu'on la choisit : « Sans engagement », « 6 mois »,
+ * « 12 mois ». Le catalogue la nomme « Engagement 12 mois », ce qui répète le
+ * titre du champ et allonge inutilement le libellé du bouton.
+ */
+export function formatCommitmentDurationLabel(months: number, fallback: string) {
+  if (months <= 1) {
+    return "Sans engagement";
+  }
+
+  return months > 0 ? `${months} mois` : fallback;
 }
 
 export function formatDiscountPercent(basisPoints: number) {
@@ -92,6 +128,50 @@ export function describePresetComposition(
         : `${name}${quantitySuffix}`,
     };
   });
+}
+
+/**
+ * Bénéfices mis en avant sur une carte de formule.
+ *
+ * Volontairement court et non exhaustif : la carte vend un usage, pas un
+ * inventaire. Le socle est retiré — il est présent partout, donc il ne
+ * distingue rien — et la capacité de stockage est reprise du palier retenu
+ * parce que c'est le seul chiffre que le visiteur compare vraiment.
+ */
+export function describePresetBenefits(
+  preset: BillingV2PublicPreset,
+  catalog: BillingV2PublicCatalog,
+  limit = 4,
+): CompositionEntry[] {
+  const seen = new Set<string>();
+  const entries: CompositionEntry[] = [];
+
+  for (const item of preset.items) {
+    if (item.serviceCode === SERVICE_CODES.base) {
+      continue;
+    }
+
+    const benefit = SERVICE_BENEFITS[item.serviceCode];
+    if (!benefit || seen.has(item.serviceCode)) {
+      continue;
+    }
+
+    seen.add(item.serviceCode);
+    const tierLabel = resolveTierLabel(
+      findService(catalog, item.serviceCode),
+      item.tierCode,
+    );
+    const capacity =
+      item.serviceCode === SERVICE_CODES.storagePersonal
+      || item.serviceCode === SERVICE_CODES.storageShared;
+
+    entries.push({
+      key: item.serviceCode,
+      label: capacity && tierLabel ? `${benefit} de ${tierLabel}` : benefit,
+    });
+  }
+
+  return entries.slice(0, limit);
 }
 
 export function findService(

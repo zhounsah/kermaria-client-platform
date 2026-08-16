@@ -5,7 +5,7 @@ import { formatCurrencyFromCents } from "@/lib/formatters";
 import { getBillingV2FormulesCatalog } from "@/lib/internal-api";
 import { buildPublicMetadata } from "@/lib/public-metadata";
 import {
-  describePresetComposition,
+  describePresetBenefits,
   formatDiscountPercent,
   resolvePresetBaselineMonthlyCents,
   resolvePresetTagline,
@@ -63,7 +63,7 @@ export default async function FormulesPage() {
           <section className="formules-grid" aria-label="Formules disponibles">
             {presets.map((preset) => {
               const monthlyCents = resolvePresetBaselineMonthlyCents(preset);
-              const composition = describePresetComposition(preset, catalog);
+              const benefits = describePresetBenefits(preset, catalog);
 
               return (
                 <article className="formule-card" key={preset.code}>
@@ -82,7 +82,7 @@ export default async function FormulesPage() {
                   </p>
 
                   <ul className="formule-card-list">
-                    {composition.map((entry) => (
+                    {benefits.map((entry) => (
                       <li key={entry.key}>{entry.label}</li>
                     ))}
                   </ul>
@@ -99,16 +99,19 @@ export default async function FormulesPage() {
           </section>
 
           <section className="formules-note">
-            <h2>Ce qui est compris dans toutes les formules</h2>
+            <h2>Un tarif adapté à vos besoins</h2>
             <p>
-              Le socle de service couvre le compte client, l&apos;exploitation
-              de la plateforme, la supervision de l&apos;infrastructure et le
-              support lié au fonctionnement normal des services. Il est
-              toujours facturé, il n&apos;est pas optionnel.
+              Choisissez uniquement les services et capacités dont vous avez
+              besoin. Le prix de votre configuration est recalculé
+              automatiquement avant la souscription.
+            </p>
+            <p>
+              Chaque formule comprend la mise en service de votre espace, son
+              hébergement, sa supervision et le support lié à son
+              fonctionnement.
             </p>
             <p className="formules-note-secondary">
-              Les montants affichés sont hors taxes applicables et calculés par
-              le moteur de facturation, pas par votre navigateur.
+              Les montants affichés sont hors taxes applicables.
             </p>
           </section>
         </>

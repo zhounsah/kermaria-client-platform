@@ -13,6 +13,7 @@ import {
   buildBaselineSelection,
   describeCheckoutReason,
   findService,
+  formatCommitmentDurationLabel,
   formatDiscountPercent,
   resolveServicePublicLabel,
   selectableTiers,
@@ -338,7 +339,15 @@ export function BillingV2FormuleConfigurator({ preset, catalog }: Props) {
                 update({ remoteDesktop: event.target.checked })}
             />
             <span>
-              {remoteDesktop?.name ?? "Accès bureau distant"}
+              {/*
+                Le catalogue nomme ce service « Acces bureau distant RDS » :
+                l'acronyme d'exploitation n'a pas sa place dans une page
+                publique, la traduction commerciale est centralisee.
+              */}
+              {resolveServicePublicLabel(
+                SERVICE_CODES.remoteDesktop,
+                remoteDesktop?.name ?? "Bureau Windows à distance",
+              )}
               {remoteDesktop?.flatMonthlyAmountCents ? (
                 <em className="formule-toggle-note">
                   {formatCurrencyFromCents(
@@ -353,6 +362,12 @@ export function BillingV2FormuleConfigurator({ preset, catalog }: Props) {
 
         <fieldset className="formule-fieldset">
           <legend>Équipe et support</legend>
+          <p className="formule-hint">
+            Un utilisateur supplémentaire, c&apos;est un compte nominatif de
+            plus : son identifiant, son espace personnel et son accès aux
+            services de la formule. Comptez une personne de votre structure par
+            utilisateur ; le vôtre est déjà inclus.
+          </p>
           <div className="formule-stepper">
             <span className="formule-stepper-label">
               Utilisateurs supplémentaires
@@ -414,7 +429,7 @@ export function BillingV2FormuleConfigurator({ preset, catalog }: Props) {
         </fieldset>
 
         <fieldset className="formule-fieldset">
-          <legend>Durée d&apos;engagement</legend>
+          <legend>Durée</legend>
           <p className="formule-hint">
             Plus la durée est longue, plus la remise est importante.
           </p>
@@ -435,7 +450,9 @@ export function BillingV2FormuleConfigurator({ preset, catalog }: Props) {
                     checked={selection.commitmentCode === item.code}
                     onChange={() => update({ commitmentCode: item.code })}
                   />
-                  <span className="formule-choice-label">{item.name}</span>
+                  <span className="formule-choice-label">
+                    {formatCommitmentDurationLabel(item.months, item.name)}
+                  </span>
                   <span className="formule-choice-price">
                     {best > 0
                       ? `jusqu'à −${formatDiscountPercent(best)} %`
@@ -447,9 +464,15 @@ export function BillingV2FormuleConfigurator({ preset, catalog }: Props) {
           </div>
         </fieldset>
 
-        {upfrontOption ? (
-          <fieldset className="formule-fieldset">
-            <legend>Mode de paiement</legend>
+        {/*
+          Le mode de reglement est toujours annonce, meme quand il n'y a rien a
+          choisir : masquer entierement le bloc en « sans engagement » laissait
+          croire que le paiement en une fois n'existe pas, alors qu'il suffit de
+          prendre une duree.
+        */}
+        <fieldset className="formule-fieldset">
+          <legend>Mode de paiement</legend>
+          {upfrontOption ? (
             <div className="formule-choices">
               <label className="formule-choice">
                 <input
@@ -484,7 +507,8 @@ export function BillingV2FormuleConfigurator({ preset, catalog }: Props) {
                 <span className="formule-choice-label">
                   En une fois
                   <em className="formule-choice-note">
-                    Un seul règlement couvrant les {commitment?.months} mois.
+                    Un seul règlement couvrant les {commitment?.months} mois,
+                    sans prélèvement ensuite.
                   </em>
                 </span>
                 <span className="formule-choice-price">
@@ -492,8 +516,14 @@ export function BillingV2FormuleConfigurator({ preset, catalog }: Props) {
                 </span>
               </label>
             </div>
-          </fieldset>
-        ) : null}
+          ) : (
+            <p className="formule-hint">
+              Sans engagement, le règlement est mensuel et s&apos;arrête quand
+              vous le décidez. Le paiement en une fois est proposé à partir
+              d&apos;une durée de 6 mois.
+            </p>
+          )}
+        </fieldset>
       </div>
 
       <aside
@@ -525,7 +555,7 @@ export function BillingV2FormuleConfigurator({ preset, catalog }: Props) {
 
             <dl className="formule-summary-totals">
               <div>
-                <dt>Prix initial</dt>
+                <dt>Prix avant remise</dt>
                 <dd
                   className={
                     quote.monthlyDiscountCents > 0
@@ -540,8 +570,8 @@ export function BillingV2FormuleConfigurator({ preset, catalog }: Props) {
               {quote.discountBasisPoints > 0 ? (
                 <div>
                   <dt>
-                    Remise d&apos;engagement (−
-                    {formatDiscountPercent(quote.discountBasisPoints)} %)
+                    Remise (−{formatDiscountPercent(quote.discountBasisPoints)}{" "}
+                    %)
                   </dt>
                   <dd className="formule-summary-discount">
                     −{formatCurrencyFromCents(quote.monthlyDiscountCents)}
@@ -549,30 +579,35 @@ export function BillingV2FormuleConfigurator({ preset, catalog }: Props) {
                   </dd>
                 </div>
               ) : null}
-              <div className="formule-summary-final">
-                <dt>{isUpfront ? "Équivalent mensuel" : "Prix final"}</dt>
-                <dd>
-                  {formatCurrencyFromCents(quote.monthlyAfterDiscountCents)}
-                  <span className="formule-summary-period"> / mois</span>
-                </dd>
-              </div>
               {isUpfront ? (
+                <>
+                  <div className="formule-summary-final">
+                    <dt>À régler aujourd&apos;hui</dt>
+                    <dd>{formatCurrencyFromCents(quote.totalDueNowCents)}</dd>
+                  </div>
+                  <div>
+                    <dt>Soit par mois</dt>
+                    <dd>
+                      {formatCurrencyFromCents(quote.monthlyAfterDiscountCents)}
+                      <span className="formule-summary-period">
+                        {" "}
+                        / mois équivalent
+                      </span>
+                    </dd>
+                  </div>
+                </>
+              ) : (
                 <div className="formule-summary-final">
-                  <dt>À régler aujourd&apos;hui</dt>
+                  <dt>Prix final</dt>
                   <dd>
-                    {formatCurrencyFromCents(quote.totalDueNowCents)}
-                    <span className="formule-summary-period">
-                      {" "}
-                      pour {quote.commitmentMonths} mois
-                    </span>
+                    {formatCurrencyFromCents(quote.monthlyAfterDiscountCents)}
+                    <span className="formule-summary-period"> / mois</span>
                   </dd>
                 </div>
-              ) : null}
+              )}
               {quote.commitmentSavingsCents > 0 ? (
                 <div>
-                  <dt>
-                    Économie sur {quote.commitmentMonths} mois
-                  </dt>
+                  <dt>Économie totale sur {quote.commitmentMonths} mois</dt>
                   <dd className="formule-summary-discount">
                     {formatCurrencyFromCents(quote.commitmentSavingsCents)}
                   </dd>
@@ -580,12 +615,28 @@ export function BillingV2FormuleConfigurator({ preset, catalog }: Props) {
               ) : null}
             </dl>
 
-            <p className="formule-summary-note">
-              {isUpfront
-                ? "Un seul règlement, aucun prélèvement mensuel ensuite. "
-                : "Prélèvement mensuel, résiliable au terme de l'engagement. "}
-              Montant calculé par notre moteur de facturation, hors taxes
-              applicables.
+            {/*
+              Vocabulaire du contrat comptant : le client paie une fois, rien
+              ne repart ensuite. Ne jamais y parler de prochaine facturation.
+            */}
+            {isUpfront ? (
+              <p className="formule-summary-note">
+                <strong>Paiement en une fois.</strong> Contrat de{" "}
+                {quote.commitmentMonths} mois. Aucun prélèvement mensuel, aucun
+                renouvellement automatique.
+              </p>
+            ) : (
+              <p className="formule-summary-note">
+                <strong>Prélèvement mensuel.</strong>{" "}
+                {quote.commitmentMonths > 1
+                  ? `Pendant ${quote.commitmentMonths} mois, puis libre.`
+                  : "Sans engagement : vous arrêtez quand vous le souhaitez."}
+              </p>
+            )}
+
+            <p className="formule-summary-note formule-summary-note-secondary">
+              Ce montant correspond exactement à la configuration ci-dessus. Il
+              est indiqué hors taxes applicables.
             </p>
 
             <button

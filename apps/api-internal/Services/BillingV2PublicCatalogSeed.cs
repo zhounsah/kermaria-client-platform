@@ -12,6 +12,13 @@ namespace Kermaria.ApiInternal.Services;
 /// Toute divergence avec 048 est un defaut : le test
 /// --billing-v2-public-catalog verifie que les quatre formules retombent bien
 /// sur 11,90 / 15,80 / 36,70 / 48,50 EUR.
+///
+/// Les libelles portent les memes accents que 048. Sans eux, ce repli - qui
+/// est ce que voit reellement un visiteur tant que le schema V2 n'est pas
+/// applique - affichait « Dossier securise » ou « 32 Go proteges » en pleine
+/// vitrine. Le nom commercial destine au client ne se corrige pas ici mais
+/// dans la couche d'affichage du portail, sinon les deux sources
+/// divergeraient.
 /// </summary>
 public static class BillingV2PublicCatalogSeed
 {
@@ -110,7 +117,7 @@ public static class BillingV2PublicCatalogSeed
                 ]),
             new(
                 BillingV2PublicCatalogCodes.StorageShared,
-                "Stockage partage",
+                "Stockage partagé",
                 "Stockage",
                 "subscription",
                 null,
@@ -128,44 +135,44 @@ public static class BillingV2PublicCatalogSeed
                 "user",
                 null,
                 [
-                    new("16", "16 Go proteges", null, 16, 100, false),
-                    new("32", "32 Go proteges", null, 32, 200, false),
-                    new("64", "64 Go proteges", null, 64, 300, false),
-                    new("128", "128 Go proteges", null, 128, 400, false),
-                    new("256", "256 Go proteges", null, 256, 600, false),
-                    new("512", "512 Go proteges", null, 512, 900, false)
+                    new("16", "16 Go protégés", null, 16, 100, false),
+                    new("32", "32 Go protégés", null, 32, 200, false),
+                    new("64", "64 Go protégés", null, 64, 300, false),
+                    new("128", "128 Go protégés", null, 128, 400, false),
+                    new("256", "256 Go protégés", null, 256, 600, false),
+                    new("512", "512 Go protégés", null, 512, 900, false)
                 ]),
             new(
                 BillingV2PublicCatalogCodes.BackupShared,
-                "Sauvegarde du stockage partage",
+                "Sauvegarde du stockage partagé",
                 "Sauvegarde",
                 "subscription",
                 null,
                 [
-                    new("32", "32 Go proteges", null, 32, 200, false),
-                    new("64", "64 Go proteges", null, 64, 350, false),
-                    new("128", "128 Go proteges", null, 128, 500, false),
-                    new("256", "256 Go proteges", null, 256, 850, false),
-                    new("512", "512 Go proteges", null, 512, 1200, false)
+                    new("32", "32 Go protégés", null, 32, 200, false),
+                    new("64", "64 Go protégés", null, 64, 350, false),
+                    new("128", "128 Go protégés", null, 128, 500, false),
+                    new("256", "256 Go protégés", null, 256, 850, false),
+                    new("512", "512 Go protégés", null, 512, 1200, false)
                 ]),
             new(
                 BillingV2PublicCatalogCodes.VpnAccess,
-                "Acces VPN",
-                "Acces",
+                "Accès VPN",
+                "Accès",
                 "user",
                 null,
                 [
                     new(
                         "ESSENTIAL",
                         "VPN Essentiel",
-                        "Pour l'acces securise aux fichiers et les usages courants.",
+                        "Pour l'accès sécurisé aux fichiers et les usages courants.",
                         100,
                         390,
                         true),
                     new(
                         "PLUS",
                         "VPN Plus",
-                        "Pour une utilisation reguliere et des transferts plus importants.",
+                        "Pour une utilisation régulière et des transferts plus importants.",
                         250,
                         590,
                         true),
@@ -179,21 +186,21 @@ public static class BillingV2PublicCatalogSeed
                     new(
                         "PRO",
                         "VPN Pro",
-                        "Pour les structures ayant des besoins reseau importants.",
+                        "Pour les structures ayant des besoins réseau importants.",
                         1000,
                         1290,
                         false)
                 ]),
             new(
                 BillingV2PublicCatalogCodes.RemoteDesktop,
-                "Acces bureau distant RDS",
-                "Acces",
+                "Accès bureau distant RDS",
+                "Accès",
                 "user",
                 1590,
                 []),
             new(
                 BillingV2PublicCatalogCodes.AdditionalUser,
-                "Utilisateur supplementaire",
+                "Utilisateur supplémentaire",
                 "Utilisateurs",
                 "user",
                 390,
@@ -212,8 +219,8 @@ public static class BillingV2PublicCatalogSeed
         [
             new(
                 "pack-dossier-securise",
-                "Dossier securise",
-                "Configuration recommandee : socle, 32 Go de stockage personnel et sauvegarde quotidienne.",
+                "Dossier sécurisé",
+                "Configuration recommandée : mise en service, 32 Go de stockage personnel et sauvegarde quotidienne.",
                 10,
                 [
                     Item(BillingV2PublicCatalogCodes.BaseService, null,
@@ -225,8 +232,8 @@ public static class BillingV2PublicCatalogSeed
                 ]),
             new(
                 "pack-acces-distance",
-                "Acces securise",
-                "Configuration recommandee : socle, 32 Go de stockage personnel, sauvegarde et VPN Essentiel.",
+                "Accès sécurisé",
+                "Configuration recommandée : mise en service, 32 Go de stockage personnel, sauvegarde et VPN Essentiel.",
                 20,
                 [
                     Item(BillingV2PublicCatalogCodes.BaseService, null,
@@ -240,8 +247,8 @@ public static class BillingV2PublicCatalogSeed
                 ]),
             new(
                 "pack-bureau-windows-distance",
-                "Bureau Windows",
-                "Configuration recommandee : socle, 64 Go de stockage personnel, sauvegarde, VPN Plus et acces RDS.",
+                "Bureau à distance",
+                "Configuration recommandée : mise en service, 64 Go de stockage personnel, sauvegarde, VPN Plus et accès au bureau Windows.",
                 30,
                 [
                     Item(BillingV2PublicCatalogCodes.BaseService, null,
@@ -258,7 +265,7 @@ public static class BillingV2PublicCatalogSeed
             new(
                 "pack-pro-association",
                 "Pro / Association",
-                "Configuration recommandee : socle, stockage personnel 64 Go, espace partage 128 Go, sauvegardes, VPN Plus, un utilisateur supplementaire et Support Plus.",
+                "Configuration recommandée : mise en service, stockage personnel 64 Go, espace partagé 128 Go, sauvegardes, VPN Plus, un utilisateur supplémentaire et Support Plus.",
                 40,
                 [
                     Item(BillingV2PublicCatalogCodes.BaseService, null,
