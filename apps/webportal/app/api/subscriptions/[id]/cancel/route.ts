@@ -97,6 +97,18 @@ export async function POST(
     );
   }
 
+  if (subscription.billingSystem === "billing_v2") {
+    return NextResponse.json(
+      {
+        code: "BILLING_V2_CANCELLATION_NOT_AVAILABLE",
+        message:
+          "La résiliation Billing V2 n'est pas encore automatisée. Aucune action de paiement n'a été déclenchée.",
+        correlation_id: correlationId,
+      },
+      { status: 409 },
+    );
+  }
+
   if (subscription.status === "pending_cancellation") {
     return NextResponse.json(subscription);
   }

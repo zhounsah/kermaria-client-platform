@@ -42,7 +42,7 @@ public sealed partial class CartService : ICartService
     private const int MaxDistinctItems = 50;
 
     private readonly ICartRepository _cart;
-    private readonly ICommercialService _catalog;
+    private readonly IBillingCatalog _billingCatalog;
     private readonly ICommercialRepository _commercial;
     private readonly IInvoiceIssuingService _issuing;
     private readonly IFiscalPolicy _fiscalPolicy;
@@ -50,14 +50,14 @@ public sealed partial class CartService : ICartService
 
     public CartService(
         ICartRepository cart,
-        ICommercialService catalog,
+        IBillingCatalog billingCatalog,
         ICommercialRepository commercial,
         IInvoiceIssuingService issuing,
         IFiscalPolicy fiscalPolicy,
         ILogger<CartService> logger)
     {
         _cart = cart;
-        _catalog = catalog;
+        _billingCatalog = billingCatalog;
         _commercial = commercial;
         _issuing = issuing;
         _fiscalPolicy = fiscalPolicy;
@@ -87,7 +87,7 @@ public sealed partial class CartService : ICartService
             throw new PortalValidationException();
         }
 
-        var catalog = await _catalog.GetClientCatalogAsync(cancellationToken);
+        var catalog = await _billingCatalog.GetClientCatalogAsync(cancellationToken);
         var offer = catalog.FirstOrDefault(candidate => candidate.Id == normalizedOfferId);
         if (offer is null)
         {
@@ -223,7 +223,7 @@ public sealed partial class CartService : ICartService
             return new List<(CommercialOfferSummary, int)>();
         }
 
-        var catalog = await _catalog.GetClientCatalogAsync(cancellationToken);
+        var catalog = await _billingCatalog.GetClientCatalogAsync(cancellationToken);
         var byId = catalog.ToDictionary(offer => offer.Id);
         var resolved = new List<(CommercialOfferSummary, int)>();
 

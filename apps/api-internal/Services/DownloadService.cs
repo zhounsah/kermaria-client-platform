@@ -222,6 +222,7 @@ public sealed class DownloadService : IDownloadService
     private readonly ISubscriptionRepository _subscriptions;
     private readonly IClientServiceCatalogService _serviceCatalogService;
     private readonly ICommercialOfferTopologyService _topologyService;
+    private readonly IBillingV2DownloadAccessProjection _billingV2Access;
     private readonly IDownloadSchemaEnsurer _schemaEnsurer;
     private readonly ILogger<DownloadService> _logger;
 
@@ -231,6 +232,7 @@ public sealed class DownloadService : IDownloadService
         ISubscriptionRepository subscriptions,
         IClientServiceCatalogService serviceCatalogService,
         ICommercialOfferTopologyService topologyService,
+        IBillingV2DownloadAccessProjection billingV2Access,
         IDownloadSchemaEnsurer schemaEnsurer,
         ILogger<DownloadService> logger)
     {
@@ -239,6 +241,7 @@ public sealed class DownloadService : IDownloadService
         _subscriptions = subscriptions;
         _serviceCatalogService = serviceCatalogService;
         _topologyService = topologyService;
+        _billingV2Access = billingV2Access;
         _schemaEnsurer = schemaEnsurer;
         _logger = logger;
     }
@@ -695,6 +698,9 @@ public sealed class DownloadService : IDownloadService
         var activeServiceTypes = await _serviceCatalogService.GetActiveServiceTypesAsync(
             session,
             cancellationToken);
+        var billingV2Access = await _billingV2Access.GetClientAccessScopeAsync(
+            session.CustomerId,
+            cancellationToken);
 
         var activeSubscriptions = subscriptions
             .Where(subscription =>
@@ -705,11 +711,14 @@ public sealed class DownloadService : IDownloadService
             .Where(value => !string.IsNullOrWhiteSpace(value))
             .Select(value => value!)
             .ToHashSet(StringComparer.Ordinal);
+        publicPackCodes.UnionWith(billingV2Access.PublicPackCodes);
         var offerExternalReferences = activeSubscriptions
             .Select(subscription => subscription.OfferExternalReference)
             .Where(value => !string.IsNullOrWhiteSpace(value))
             .Select(value => value!)
             .ToHashSet(StringComparer.Ordinal);
+        offerExternalReferences.UnionWith(
+            billingV2Access.OfferExternalReferences);
         var serviceTypes = new HashSet<string>(
             activeServiceTypes,
             StringComparer.OrdinalIgnoreCase);
@@ -724,6 +733,7 @@ public sealed class DownloadService : IDownloadService
                 provisioningGroups.Add(group);
             }
         }
+        provisioningGroups.UnionWith(billingV2Access.ProvisioningGroups);
 
         return new DownloadAccessScope(
             publicPackCodes,

@@ -222,6 +222,24 @@ export function formatPaymentModeLabel(
   return commercialOfferPaymentMode[value].label;
 }
 
+/**
+ * Meme information que `formatPaymentModeLabel`, dite au client.
+ *
+ * « Comptant » est un terme comptable : il reste juste pour les ecrans
+ * internes, qui s'appuient sur `commercialOfferPaymentMode`, mais le
+ * souscripteur a besoin de savoir qu'il paie une fois et que rien ne repartira
+ * ensuite. Le map partage n'est donc pas modifie.
+ */
+export function formatClientPaymentModeLabel(
+  value: "monthly" | "upfront" | null | undefined,
+) {
+  if (value === "upfront") {
+    return "Paiement en une fois";
+  }
+
+  return value === "monthly" ? "Mensuel" : "—";
+}
+
 export function formatSubscriptionRailLabel(rail: PaymentRail) {
   switch (rail) {
     case "stripe":

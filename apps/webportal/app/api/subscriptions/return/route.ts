@@ -14,6 +14,7 @@ import {
   getInternalApiUrl,
   getInternalServiceHeaders,
 } from "@/lib/runtime-config";
+import { findReturnedSubscription } from "@/lib/subscription-return";
 
 const PORTAL_SESSION_HEADER = "X-Portal-Session";
 
@@ -80,8 +81,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(errorUrl);
   }
 
-  const subscription = subscriptions.find(
-    (item) => item.paypalSubscriptionId === paypalSubscriptionId,
+  const subscription = findReturnedSubscription(
+    subscriptions,
+    "paypal",
+    paypalSubscriptionId,
   );
   if (!subscription) {
     return NextResponse.redirect(errorUrl);

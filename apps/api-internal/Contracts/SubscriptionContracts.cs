@@ -8,6 +8,38 @@ public sealed record SubscriptionCreatePayload(
     [property: JsonPropertyName("paypalSubscriptionId")] string? PayPalSubscriptionId,
     [property: JsonPropertyName("stripeSubscriptionId")] string? StripeSubscriptionId);
 
+/// <summary>
+/// Charge utile du checkout authoritative. `LegacyOfferId` sert le parcours
+/// historique ; `Selection` porte une configuration V2 native, personnalisee
+/// ou non. Aucun montant n'y figure — ni prix, ni remise, ni reference de prix
+/// fournisseur : tout est recalcule par API-INTERNAL.
+/// </summary>
+public sealed record BillingV2AuthoritativeCheckoutPayload(
+    string? LegacyOfferId,
+    Services.BillingV2PublicSelectionInput? Selection,
+    string? Provider,
+    string? IdempotencyKey,
+    string? SuccessUrl,
+    string? CancelUrl);
+
+public sealed record BillingV2AuthoritativeCheckoutResponse(
+    bool Created,
+    string SubscriptionId,
+    string Provider,
+    string Environment,
+    string OutboxEventId,
+    string IdempotencyKeyHash,
+    long TotalDueNowCents,
+    string ReasonCode,
+    string? ApprovalUrl,
+    string CorrelationId);
+
+public sealed record BillingV2ProviderReturnPayload(
+    string? Provider,
+    string? ProviderCheckoutId,
+    string? ProviderSubscriptionId,
+    string? RawPayload);
+
 public sealed record SubscriptionSummary(
     string Id,
     string CustomerId,
@@ -40,7 +72,8 @@ public sealed record SubscriptionSummary(
     string? NextBillingAt,
     string? CancelledAt,
     string CreatedAt,
-    string UpdatedAt);
+    string UpdatedAt,
+    [property: JsonPropertyName("billingSystem")] string BillingSystem = "legacy");
 
 public sealed record SubscriptionProvisioningTargetUserSummary(
     string SamAccountName,

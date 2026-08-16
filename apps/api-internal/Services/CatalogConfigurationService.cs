@@ -33,14 +33,14 @@ public sealed class CatalogConfigurationService : ICatalogConfigurationService
             [PackPro] = new(2, 64, SupportsVpn: true, SupportsWindows: false)
         };
 
-    private readonly ICommercialService _commercialService;
+    private readonly IBillingCatalog _billingCatalog;
     private readonly IFiscalPolicy _fiscalPolicy;
 
     public CatalogConfigurationService(
-        ICommercialService commercialService,
+        IBillingCatalog billingCatalog,
         IFiscalPolicy fiscalPolicy)
     {
-        _commercialService = commercialService;
+        _billingCatalog = billingCatalog;
         _fiscalPolicy = fiscalPolicy;
     }
 
@@ -63,7 +63,7 @@ public sealed class CatalogConfigurationService : ICatalogConfigurationService
         }
 
         var targetPackKey = decision.TargetPackKey ?? requested.PackKey!;
-        var catalog = await _commercialService.GetClientCatalogAsync(
+        var catalog = await _billingCatalog.GetClientCatalogAsync(
             cancellationToken);
         var variant = ResolveVariant(
             catalog,

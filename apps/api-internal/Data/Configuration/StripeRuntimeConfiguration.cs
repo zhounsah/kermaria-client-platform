@@ -7,13 +7,18 @@ public enum StripeMode
     Live
 }
 
-public sealed record StripeRuntimeConfiguration(StripeMode Mode)
+public sealed record StripeRuntimeConfiguration(
+    StripeMode Mode,
+    string? SecretKey = null)
 {
     public string ModeName => Mode.ToString().ToLowerInvariant();
 
     public bool IsLive => Mode is StripeMode.Live;
 
     public bool Enabled => Mode is not StripeMode.Disabled;
+
+    public bool IsConfigured
+        => Enabled && !string.IsNullOrWhiteSpace(SecretKey);
 }
 
 public static class StripeConfigurationResolver
@@ -27,6 +32,8 @@ public static class StripeConfigurationResolver
             "live" => StripeMode.Live,
             _ => StripeMode.Disabled
         };
-        return new StripeRuntimeConfiguration(mode);
+        return new StripeRuntimeConfiguration(
+            mode,
+            configuration["STRIPE_SECRET_KEY"]?.Trim());
     }
 }

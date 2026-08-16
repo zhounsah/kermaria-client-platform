@@ -32,6 +32,7 @@ const navigationSections: NavSection[] = [
       { href: "/admin/commercial-documents", label: "Documents" },
       { href: "/admin/payments", label: "Paiements" },
       { href: "/admin/subscriptions", label: "Abonnements" },
+      { href: "/admin/billing-v2", label: "Billing V2" },
     ],
   },
   {

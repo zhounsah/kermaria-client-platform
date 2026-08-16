@@ -16,6 +16,9 @@ const excludedDirectories = new Set([
 ]);
 const excludedFiles = new Set([
   path.normalize("scripts/check-secrets.mjs"),
+  // Meme raison que la ligne ci-dessus : ce scanner-la porte aussi les motifs
+  // qu'il traque, il ne peut pas etre sa propre victime.
+  path.normalize("scripts/check-memory-secrets.ps1"),
   path.normalize("scripts/validate-preprod.mjs"),
   path.normalize("scripts/validate-staging.mjs"),
   path.normalize("apps/api-internal/Data/Configuration/RuntimeConfigurationValidator.cs"),

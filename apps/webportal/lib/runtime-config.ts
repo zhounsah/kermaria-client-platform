@@ -21,6 +21,14 @@ export function isStripeConfigured(): boolean {
 /** Ouvre le parcours de changement de mot de passe. Le drapeau est lu au même
  *  endroit par la page /password et par le profil, pour que l'espace client
  *  n'annonce jamais un parcours que l'API interne refusera. */
+export function isBillingV2AuthoritativeCheckoutBffEnabled(): boolean {
+  return (
+    process.env.BILLING_V2_AUTHORITATIVE_CHECKOUT_BFF_ENABLED
+      ?.trim()
+      .toLowerCase() === "true"
+  );
+}
+
 export function isPasswordChangeEnabled(): boolean {
   return (
     process.env.AD_PASSWORD_CHANGE_ENABLED?.trim().toLowerCase() === "true"

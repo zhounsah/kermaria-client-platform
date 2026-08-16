@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Kermaria.ApiInternal;
 using Kermaria.ApiInternal.Contracts;
 using Kermaria.ApiInternal.Data.Configuration;
@@ -298,12 +298,141 @@ builder.Services.AddScoped<
     PortalNotificationService>();
 builder.Services.AddSingleton<IFiscalPolicy, FiscalPolicy>();
 builder.Services.AddScoped<ICommercialService, CommercialService>();
+var billingV2RuntimeConfiguration =
+    BillingV2RuntimeConfiguration.Resolve(builder.Configuration);
+builder.Services.AddSingleton(billingV2RuntimeConfiguration);
+builder.Services.AddScoped<LegacyBillingCatalogAdapter>();
+builder.Services.AddScoped<V2BillingCatalogAdapter>();
+builder.Services.AddScoped<IBillingCatalog>(serviceProvider =>
+    new ShadowBillingCatalogAdapter(
+        serviceProvider.GetRequiredService<LegacyBillingCatalogAdapter>(),
+        serviceProvider.GetRequiredService<V2BillingCatalogAdapter>(),
+        serviceProvider.GetRequiredService<BillingV2RuntimeConfiguration>(),
+        serviceProvider.GetRequiredService<
+            ILogger<ShadowBillingCatalogAdapter>>()));
+builder.Services.AddSingleton<IBillingV2PricingEngine, BillingV2PricingEngine>();
+// Projection commerciale publique : lecture seule du catalogue V2 et devis
+// calcule par le moteur ci-dessus. N'ecrit rien et ne cree aucun abonnement.
+builder.Services.AddScoped<
+    IBillingV2PublicCatalogService,
+    BillingV2PublicCatalogService>();
+builder.Services.AddScoped<
+    IBillingV2LaunchReadinessService,
+    BillingV2LaunchReadinessService>();
+builder.Services.AddScoped<
+    IBillingV2AdminReadinessService,
+    BillingV2AdminReadinessService>();
+builder.Services.AddScoped<
+    IBillingV2CheckoutReadinessService,
+    BillingV2CheckoutReadinessService>();
+builder.Services.AddScoped<
+    IBillingV2ProviderAgreementService,
+    BillingV2ProviderAgreementService>();
+builder.Services.AddScoped<IBillingV2DocumentReadinessService>(
+    serviceProvider => sqlConfiguration.IsPersistent
+        ? new BillingV2DocumentReadinessService(
+            sqlConfiguration,
+            serviceProvider.GetRequiredService<BpceRuntimeConfiguration>(),
+            serviceProvider.GetRequiredService<
+                ILogger<BillingV2DocumentReadinessService>>())
+        : NoOpBillingV2DocumentReadinessService.Instance);
+builder.Services.AddScoped<IBillingV2DocumentIssuerService>(
+    serviceProvider => sqlConfiguration.IsPersistent
+        ? new BillingV2DocumentIssuerService(
+            sqlConfiguration,
+            serviceProvider.GetRequiredService<IInvoiceIssuingService>(),
+            serviceProvider.GetRequiredService<
+                ILogger<BillingV2DocumentIssuerService>>())
+        : NoOpBillingV2DocumentIssuerService.Instance);
+builder.Services.AddScoped<
+    IBillingV2ProviderCheckoutCommandService,
+    BillingV2ProviderCheckoutCommandService>();
+builder.Services.AddScoped<IBillingV2ProviderCheckoutExecutor>(
+    serviceProvider => billingV2RuntimeConfiguration.ProviderExecutorEnabled
+        ? new BillingV2ProviderCheckoutExecutor(
+            serviceProvider.GetRequiredService<BillingV2RuntimeConfiguration>(),
+            serviceProvider.GetRequiredService<PayPalRuntimeConfiguration>(),
+            serviceProvider.GetRequiredService<StripeRuntimeConfiguration>(),
+            serviceProvider.GetRequiredService<IHttpClientFactory>())
+        : DisabledBillingV2ProviderCheckoutExecutor.Instance);
+// Rail Stripe V2 (Phase 2). Fail-closed par defaut : sans flag executor, la
+// passerelle est desactivee et aucun appel Stripe ne peut partir.
+builder.Services.AddScoped<IBillingV2StripeGateway>(
+    serviceProvider => billingV2RuntimeConfiguration.ProviderExecutorEnabled
+        ? new BillingV2StripeGateway(
+            serviceProvider.GetRequiredService<BillingV2RuntimeConfiguration>(),
+            serviceProvider.GetRequiredService<StripeRuntimeConfiguration>(),
+            serviceProvider.GetRequiredService<IHttpClientFactory>(),
+            serviceProvider.GetRequiredService<ILogger<BillingV2StripeGateway>>())
+        : DisabledBillingV2StripeGateway.Instance);
+builder.Services.AddScoped<
+    IBillingV2StripeRailService,
+    BillingV2StripeRailService>();
+builder.Services.AddSingleton<IBillingV2Clock>(SystemBillingV2Clock.Instance);
+builder.Services.AddScoped<
+    IBillingV2StripeReconciliationService,
+    BillingV2StripeReconciliationService>();
+builder.Services.AddScoped<IBillingV2RenewalService>(
+    serviceProvider => sqlConfiguration.IsPersistent
+        ? new BillingV2RenewalService(
+            sqlConfiguration,
+            serviceProvider.GetRequiredService<IBillingV2Clock>(),
+            serviceProvider.GetRequiredService<IBillingV2StripeGateway>(),
+            serviceProvider.GetRequiredService<IBillingV2StripeRailService>(),
+            serviceProvider.GetRequiredService<
+                ILogger<BillingV2RenewalService>>())
+        : NoOpBillingV2RenewalService.Instance);
+// Phase 3. Declencheur periodique du reconciliateur : OFF par defaut, donc
+// pas meme enregistre tant que le drapeau n'est pas pose.
+if (billingV2RuntimeConfiguration.ReconciliationWorkerEnabled)
+{
+    builder.Services.AddHostedService<BillingV2StripeReconciliationWorker>();
+}
+builder.Services.AddScoped<
+    IBillingV2ProviderOutboxDispatcher,
+    BillingV2ProviderOutboxDispatcher>();
+builder.Services.AddScoped<
+    IBillingV2ProviderInboundEventService,
+    BillingV2ProviderInboundEventService>();
+builder.Services.AddScoped<
+    IBillingV2AuthoritativeCheckoutService,
+    BillingV2AuthoritativeCheckoutService>();
+builder.Services.AddScoped<
+    IBillingV2NewSubscriptionService,
+    BillingV2NewSubscriptionService>();
+builder.Services.AddScoped<IBillingV2PortalSubscriptionProjection>(
+    _ => sqlConfiguration.IsPersistent
+        ? new BillingV2PortalSubscriptionProjection(sqlConfiguration)
+        : NoOpBillingV2PortalSubscriptionProjection.Instance);
+builder.Services.AddScoped<IBillingV2ClientServiceEntitlementProjection>(
+    _ => sqlConfiguration.IsPersistent
+        ? new BillingV2ClientServiceEntitlementProjection(sqlConfiguration)
+        : NoOpBillingV2ClientServiceEntitlementProjection.Instance);
+builder.Services.AddScoped<IBillingV2DownloadAccessProjection>(
+    _ => sqlConfiguration.IsPersistent
+        ? new BillingV2DownloadAccessProjection(sqlConfiguration)
+        : NoOpBillingV2DownloadAccessProjection.Instance);
+if (billingV2RuntimeConfiguration.ProviderOutboxEnabled)
+{
+    builder.Services.AddHostedService<BillingV2ProviderOutboxWorker>();
+}
 builder.Services.AddScoped<
     ICatalogConfigurationService,
     CatalogConfigurationService>();
 builder.Services.AddScoped<
     ICommercialOfferTopologyService,
     CommercialOfferTopologyService>();
+builder.Services.AddScoped<
+    IBillingV2ProvisioningShadowService,
+    BillingV2ProvisioningShadowService>();
+builder.Services.AddScoped<
+    IBillingV2ClientServiceCatalogShadowService,
+    BillingV2ClientServiceCatalogShadowService>();
+builder.Services.AddSingleton<IBillingV2NextcloudQuotaProvider>(
+    DormantBillingV2NextcloudQuotaProvider.Instance);
+builder.Services.AddScoped<
+    IBillingV2ProvisioningService,
+    BillingV2ProvisioningService>();
 builder.Services.AddScoped<
     IClientServiceCatalogService,
     ClientServiceCatalogService>();
@@ -393,6 +522,18 @@ builder.Services.AddHttpClient(
     client =>
     {
         client.Timeout = koxoSyncWebhookConfiguration.Timeout;
+    });
+builder.Services.AddHttpClient(
+    BillingV2ProviderCheckoutExecutor.HttpClientName,
+    client =>
+    {
+        client.Timeout = TimeSpan.FromSeconds(30);
+    });
+builder.Services.AddHttpClient(
+    BillingV2StripeGateway.HttpClientName,
+    client =>
+    {
+        client.Timeout = TimeSpan.FromSeconds(30);
     });
 builder.Services.AddSingleton<IBpceTokenCache, BpceTokenCache>();
 builder.Services.AddSingleton<IBpceApiClient, BpceApiClient>();
@@ -1309,6 +1450,55 @@ app.MapGet(
             context,
             service,
             await service.GetClientCatalogAsync(context.RequestAborted));
+    });
+
+// Conception commerciale V2 : catalogue des formules lisible sans session pour
+// alimenter la page publique `/formules`. Lecture seule, toujours protégé par
+// `X-Service-Auth` côté ingress webportal.
+app.MapGet(
+    "/internal/portal/billing-v2/formules",
+    async (
+        HttpContext context,
+        IBillingV2PublicCatalogService service) =>
+        Results.Ok(
+            await service.GetCatalogAsync(context.RequestAborted)));
+
+// Devis V2 : le navigateur envoie une sélection de codes catalogue, jamais un
+// montant. Le total est recalculé ici par BillingV2PricingEngine. Aucune
+// écriture, aucune intention créée : ce n'est pas une souscription.
+app.MapPost(
+    "/internal/portal/billing-v2/formules/devis",
+    async (
+        HttpContext context,
+        IBillingV2PublicCatalogService service) =>
+    {
+        var payload = await ReadPayload<BillingV2PublicSelectionInput>(context);
+        if (payload is null)
+        {
+            return Results.Json(
+                new ApiError(
+                    "INVALID_REQUEST",
+                    "Le corps de la requete est invalide.",
+                    context.GetCorrelationId()),
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        try
+        {
+            return Results.Ok(
+                await service.QuoteAsync(
+                    payload.ToSelection(),
+                    context.RequestAborted));
+        }
+        catch (InvalidOperationException exception)
+        {
+            return Results.Json(
+                new ApiError(
+                    exception.Message,
+                    "La configuration demandee n'est pas disponible.",
+                    context.GetCorrelationId()),
+                statusCode: StatusCodes.Status400BadRequest);
+        }
     });
 
 // V0.35 : panier / commande groupée à la carte (offres one-shot). Session
@@ -3256,6 +3446,142 @@ app.MapPost(
         return SubscriptionOk(context, service, result);
     });
 app.MapPost(
+    "/internal/portal/billing-v2/subscriptions/checkout",
+    async (
+        HttpContext context,
+        IBillingV2AuthoritativeCheckoutService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            auditService);
+        var payload =
+            await ReadPayload<BillingV2AuthoritativeCheckoutPayload>(context)
+            ?? throw new PortalValidationException();
+        // Une demande porte soit une offre legacy, soit une selection V2
+        // native. Les deux ensemble, ou aucune des deux, est un refus : la
+        // demande n'aurait pas d'identite metier certaine.
+        var hasLegacyOffer = !string.IsNullOrWhiteSpace(payload.LegacyOfferId);
+        var hasSelection = !string.IsNullOrWhiteSpace(
+            payload.Selection?.PresetCode);
+        if (hasLegacyOffer == hasSelection
+            || string.IsNullOrWhiteSpace(payload.Provider)
+            || string.IsNullOrWhiteSpace(payload.IdempotencyKey)
+            || string.IsNullOrWhiteSpace(payload.SuccessUrl)
+            || string.IsNullOrWhiteSpace(payload.CancelUrl))
+        {
+            throw new PortalValidationException();
+        }
+
+        BillingV2AuthoritativeCheckoutResult result;
+        try
+        {
+            result = await service.CreateAsync(
+                session,
+                new BillingV2AuthoritativeCheckoutRequest(
+                    hasLegacyOffer ? payload.LegacyOfferId!.Trim() : null,
+                    hasSelection ? payload.Selection!.ToSelection() : null,
+                    payload.Provider.Trim(),
+                    payload.IdempotencyKey.Trim(),
+                    payload.SuccessUrl.Trim(),
+                    payload.CancelUrl.Trim()),
+                context.GetCorrelationId(),
+                context.RequestAborted);
+        }
+        catch (InvalidOperationException exception)
+            when (exception.Message.StartsWith(
+                "BILLING_V2_",
+                StringComparison.Ordinal))
+        {
+            return Results.Json(
+                new ApiError(
+                    "BILLING_V2_CHECKOUT_NOT_READY",
+                    exception.Message,
+                    context.GetCorrelationId()),
+                statusCode: StatusCodes.Status409Conflict);
+        }
+
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "billing_v2.authoritative_checkout_requested",
+                result.Created ? "success" : "unchanged",
+                TargetType: "billing_v2_subscription",
+                TargetReference: result.SubscriptionId,
+                CustomerId: session.CustomerId,
+                ActorUserId: session.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return Results.Ok(new BillingV2AuthoritativeCheckoutResponse(
+            result.Created,
+            result.SubscriptionId,
+            result.Provider,
+            result.Environment,
+            result.OutboxEventId,
+            result.IdempotencyKeyHash,
+            result.TotalDueNowCents,
+            result.ReasonCode,
+            result.ApprovalUrl,
+            context.GetCorrelationId()));
+    });
+app.MapPost(
+    "/internal/portal/billing-v2/provider-return",
+    async (
+        HttpContext context,
+        IBillingV2ProviderInboundEventService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            auditService);
+        var payload = await ReadPayload<BillingV2ProviderReturnPayload>(context)
+            ?? throw new PortalValidationException();
+        if (string.IsNullOrWhiteSpace(payload.Provider)
+            || (string.IsNullOrWhiteSpace(payload.ProviderCheckoutId)
+                && string.IsNullOrWhiteSpace(payload.ProviderSubscriptionId)))
+        {
+            throw new PortalValidationException();
+        }
+
+        var environment = payload.Provider.Trim().ToLowerInvariant() == "stripe"
+            ? stripeConfiguration.ModeName
+            : paypalConfiguration.ModeName;
+        var request = BillingV2ProviderInboundEventExtractor.CreateProviderReturn(
+            payload.Provider,
+            environment,
+            payload.ProviderCheckoutId,
+            payload.ProviderSubscriptionId,
+            payload.RawPayload,
+            session.CustomerId);
+        var result = await service.ProcessAsync(
+            request,
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "billing_v2.provider_return_received",
+                result.Applied ? "success" : "unchanged",
+                ReasonCode: result.ReasonCode,
+                TargetType: "billing_v2_subscription",
+                TargetReference: result.SubscriptionId,
+                CustomerId: session.CustomerId,
+                ActorUserId: session.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return Results.Ok(new
+        {
+            applied = result.Applied,
+            reason_code = result.ReasonCode,
+            subscription_id = result.SubscriptionId,
+            checkout_session_id = result.CheckoutSessionId,
+            correlation_id = context.GetCorrelationId()
+        });
+    });
+app.MapPost(
     "/internal/portal/subscriptions/{id}/return-approved",
     async (
         string id,
@@ -3321,10 +3647,36 @@ app.MapPost(
     "/internal/webhooks/paypal",
     async (
         HttpContext context,
-        IPayPalWebhookService webhookService) =>
+        IPayPalWebhookService webhookService,
+        IBillingV2ProviderInboundEventService billingV2InboundService) =>
     {
         var payload = await ReadPayload<PayPalWebhookEventPayload>(context)
             ?? throw new PortalValidationException();
+        var billingV2Request =
+            BillingV2ProviderInboundEventExtractor.TryCreatePayPalWebhook(
+                payload,
+                paypalConfiguration.ModeName);
+        if (billingV2Request is not null)
+        {
+            var billingV2Result = await billingV2InboundService.ProcessAsync(
+                billingV2Request,
+                context.RequestAborted);
+            return Results.Ok(new
+            {
+                event_id = payload.EventId,
+                status = billingV2Result.Applied ? "processed" : "ignored",
+                error_message = (string?)null,
+                billing_v2 = new
+                {
+                    applied = billingV2Result.Applied,
+                    reason_code = billingV2Result.ReasonCode,
+                    subscription_id = billingV2Result.SubscriptionId,
+                    checkout_session_id = billingV2Result.CheckoutSessionId
+                },
+                correlation_id = context.GetCorrelationId()
+            });
+        }
+
         var result = await webhookService.ProcessAsync(
             payload,
             context.GetCorrelationId(),
@@ -3342,10 +3694,36 @@ app.MapPost(
     "/internal/webhooks/stripe",
     async (
         HttpContext context,
-        IStripeWebhookService webhookService) =>
+        IStripeWebhookService webhookService,
+        IBillingV2ProviderInboundEventService billingV2InboundService) =>
     {
         var payload = await ReadPayload<StripeWebhookEventPayload>(context)
             ?? throw new PortalValidationException();
+        var billingV2Request =
+            BillingV2ProviderInboundEventExtractor.TryCreateStripeWebhook(
+                payload,
+                stripeConfiguration.ModeName);
+        if (billingV2Request is not null)
+        {
+            var billingV2Result = await billingV2InboundService.ProcessAsync(
+                billingV2Request,
+                context.RequestAborted);
+            return Results.Ok(new
+            {
+                event_id = payload.EventId,
+                status = billingV2Result.Applied ? "processed" : "ignored",
+                error_message = (string?)null,
+                billing_v2 = new
+                {
+                    applied = billingV2Result.Applied,
+                    reason_code = billingV2Result.ReasonCode,
+                    subscription_id = billingV2Result.SubscriptionId,
+                    checkout_session_id = billingV2Result.CheckoutSessionId
+                },
+                correlation_id = context.GetCorrelationId()
+            });
+        }
+
         var result = await webhookService.ProcessAsync(
             payload,
             context.GetCorrelationId(),
@@ -4186,6 +4564,47 @@ app.MapPost(
             message = result.Message,
             correlation_id = context.GetCorrelationId()
         });
+    });
+app.MapGet(
+    "/internal/admin/billing-v2/readiness",
+    async (
+        HttpContext context,
+        IBillingV2AdminReadinessService service,
+        IAuthenticationService authenticationService) =>
+    {
+        var session = await ResolvePortalSessionAsync(
+            context,
+            authenticationService);
+        if (session.UserRole != PortalRoles.InternalAdmin)
+        {
+            throw new PortalAccessDeniedException();
+        }
+
+        var snapshot = await service.CheckAsync(
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        return Results.Ok(snapshot);
+    });
+app.MapGet(
+    "/internal/admin/billing-v2/subscriptions",
+    async (
+        HttpContext context,
+        IBillingV2PortalSubscriptionProjection projection,
+        ISubscriptionService subscriptionService,
+        IAuthenticationService authenticationService) =>
+    {
+        var session = await ResolvePortalSessionAsync(
+            context,
+            authenticationService);
+        if (session.UserRole != PortalRoles.InternalAdmin)
+        {
+            throw new PortalAccessDeniedException();
+        }
+
+        context.Response.Headers["X-Data-Source"] =
+            subscriptionService.IsPersistent ? "mariadb" : "mock";
+        return Results.Ok(await projection.GetAdminSubscriptionsAsync(
+            context.RequestAborted));
     });
 app.MapGet(
     "/internal/admin/ad/status",

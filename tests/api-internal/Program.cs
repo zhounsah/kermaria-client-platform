@@ -15,6 +15,7 @@ using Kermaria.ApiInternal.Services;
 using Kermaria.ApiInternal.Services.ActiveDirectory;
 using Kermaria.ApiInternal.Services.Email;
 using Kermaria.ApiInternal.Services.Provisioning;
+using Kermaria.ApiInternal.SmokeTests;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
@@ -38,6 +39,264 @@ return await RunAsync(args);
 
 async Task<int> RunAsync(string[] arguments)
 {
+    if (arguments.Length == 1
+        && string.Equals(
+            arguments[0],
+            "--billing-legacy-idempotency",
+            StringComparison.Ordinal))
+    {
+        try
+        {
+            await BillingLegacyIdempotencyTests.RunAsync();
+            Console.WriteLine("Tests idempotence Billing legacy reussis.");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine(
+                "Tests idempotence Billing legacy en echec.");
+            Console.Error.WriteLine(exception.ToString());
+            return 1;
+        }
+    }
+
+    if (arguments.Length == 1
+        && string.Equals(
+            arguments[0],
+            "--billing-catalog-compatibility",
+            StringComparison.Ordinal))
+    {
+        try
+        {
+            await BillingCatalogCompatibilityTests.RunAsync();
+            Console.WriteLine("Tests compatibilite catalogue Billing legacy reussis.");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine(
+                "Tests compatibilite catalogue Billing legacy en echec.");
+            Console.Error.WriteLine(exception.ToString());
+            return 1;
+        }
+    }
+
+    if (arguments.Length == 1
+        && string.Equals(
+            arguments[0],
+            "--billing-v2-pricing",
+            StringComparison.Ordinal))
+    {
+        try
+        {
+            await BillingV2PricingTests.RunAsync();
+            Console.WriteLine("Tests pricing Billing V2 reussis.");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine("Tests pricing Billing V2 en echec.");
+            Console.Error.WriteLine(exception.ToString());
+            return 1;
+        }
+    }
+
+    if (arguments.Length == 1
+        && string.Equals(
+            arguments[0],
+            "--billing-v2-public-catalog",
+            StringComparison.Ordinal))
+    {
+        try
+        {
+            await BillingV2PublicCatalogTests.RunAsync();
+            Console.WriteLine("Tests catalogue public Billing V2 reussis.");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine(
+                "Tests catalogue public Billing V2 en echec.");
+            Console.Error.WriteLine(exception.ToString());
+            return 1;
+        }
+    }
+
+    if (arguments.Length == 1
+        && string.Equals(
+            arguments[0],
+            "--billing-v2-provisioning-shadow",
+            StringComparison.Ordinal))
+    {
+        try
+        {
+            await BillingV2ProvisioningShadowTests.RunAsync();
+            Console.WriteLine("Tests shadow provisioning Billing V2 reussis.");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine(
+                "Tests shadow provisioning Billing V2 en echec.");
+            Console.Error.WriteLine(exception.ToString());
+            return 1;
+        }
+    }
+
+    if (arguments.Length == 1
+        && string.Equals(
+            arguments[0],
+            "--billing-v2-new-subscription",
+            StringComparison.Ordinal))
+    {
+        try
+        {
+            await BillingV2NewSubscriptionTests.RunAsync();
+            Console.WriteLine("Tests nouveaux abonnements Billing V2 reussis.");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine(
+                "Tests nouveaux abonnements Billing V2 en echec.");
+            Console.Error.WriteLine(exception.ToString());
+            return 1;
+        }
+    }
+
+    if (arguments.Length == 1
+        && string.Equals(
+            arguments[0],
+            "--billing-v2-hardening",
+            StringComparison.Ordinal))
+    {
+        try
+        {
+            await BillingV2HardeningTests.RunAsync();
+            Console.WriteLine("Tests hardening Billing V2 reussis.");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine("Tests hardening Billing V2 en echec.");
+            Console.Error.WriteLine(exception.ToString());
+            return 1;
+        }
+    }
+
+    if (arguments.Length == 1
+        && string.Equals(
+            arguments[0],
+            "--billing-v2-renewal",
+            StringComparison.Ordinal))
+    {
+        try
+        {
+            await BillingV2RenewalTests.RunAsync();
+            Console.WriteLine("Tests renouvellement Billing V2 reussis.");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine(
+                "Tests renouvellement Billing V2 en echec.");
+            Console.Error.WriteLine(exception.ToString());
+            return 1;
+        }
+    }
+
+    if (arguments.Length == 1
+        && string.Equals(
+            arguments[0],
+            "--billing-v2-stripe-rail",
+            StringComparison.Ordinal))
+    {
+        try
+        {
+            await BillingV2StripeRailTests.RunAsync();
+            Console.WriteLine("Tests rail Stripe Billing V2 reussis.");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine("Tests rail Stripe Billing V2 en echec.");
+            Console.Error.WriteLine(exception.ToString());
+            return 1;
+        }
+    }
+
+    if (arguments.Length == 1
+        && string.Equals(
+            arguments[0],
+            "--billing-v2-financial-core",
+            StringComparison.Ordinal))
+    {
+        try
+        {
+            await BillingV2FinancialCoreTests.RunAsync();
+            Console.WriteLine("Tests coeur financier Billing V2 reussis.");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine(
+                "Tests coeur financier Billing V2 en echec.");
+            Console.Error.WriteLine(exception.ToString());
+            return 1;
+        }
+    }
+
+    // Exige une MariaDB JETABLE via BILLING_V2_TEST_MARIADB_CONNECTION.
+    // Volontairement hors de la suite par defaut : sans base, la suite echoue
+    // explicitement au lieu de passer en silence.
+    if (arguments.Length == 1
+        && string.Equals(
+            arguments[0],
+            "--billing-v2-financial-core-schema",
+            StringComparison.Ordinal))
+    {
+        try
+        {
+            await BillingV2FinancialCoreSchemaTests.RunAsync();
+            Console.WriteLine(
+                "Tests schema coeur financier Billing V2 reussis.");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine(
+                "Tests schema coeur financier Billing V2 en echec.");
+            Console.Error.WriteLine(exception.ToString());
+            return 1;
+        }
+    }
+
+    // Exige elle aussi une MariaDB JETABLE portant les migrations 001 a 063.
+    // Couvre les quatre correctifs issus de la validation reelle : catalogue
+    // sans palier, ancre d'idempotence, bornes du contrat comptant et fin de
+    // terme.
+    if (arguments.Length == 1
+        && string.Equals(
+            arguments[0],
+            "--billing-v2-native-checkout-schema",
+            StringComparison.Ordinal))
+    {
+        try
+        {
+            await BillingV2NativeCheckoutSchemaTests.RunAsync();
+            Console.WriteLine(
+                "Tests schema checkout natif Billing V2 reussis.");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine(
+                "Tests schema checkout natif Billing V2 en echec.");
+            Console.Error.WriteLine(exception.ToString());
+            return 1;
+        }
+    }
+
     if (arguments.Length is < 1 or > 2)
     {
         Console.Error.WriteLine(
@@ -210,11 +469,13 @@ void VerifyBackupProtectionService()
 async Task VerifySignupRecalculatesCatalogConfigurationAsync()
 {
     var commercialStore = new MockCommercialStore();
-    var commercialService = new CommercialService(
-        new MockCommercialRepository(commercialStore));
+    var commercialRepository = new MockCommercialRepository(commercialStore);
     var fiscalPolicy = new FiscalPolicy();
     var configurationService = new CatalogConfigurationService(
-        commercialService,
+        new LegacyBillingCatalogAdapter(
+            commercialRepository,
+            new PayPalRuntimeConfiguration(PayPalMode.Sandbox, "client", "secret"),
+            new StripeRuntimeConfiguration(StripeMode.Test)),
         fiscalPolicy);
     var requestedConfiguration = new CatalogConfigurationInput(
         "pack-dossier-securise",
@@ -3872,8 +4133,10 @@ async Task RunSignupKoxoWebhookTriggerTestsAsync()
         NewPendingPasswordStore(),
         trigger,
         new CatalogConfigurationService(
-            new CommercialService(
-                new MockCommercialRepository(new MockCommercialStore())),
+            new LegacyBillingCatalogAdapter(
+                new MockCommercialRepository(new MockCommercialStore()),
+                new PayPalRuntimeConfiguration(PayPalMode.Sandbox, "client", "secret"),
+                new StripeRuntimeConfiguration(StripeMode.Test)),
             new FiscalPolicy()),
         new SignupRuntimeConfiguration(true, 3, 1, 24, 24, false),
         new EmailRuntimeConfiguration(

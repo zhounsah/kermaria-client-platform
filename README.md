@@ -46,6 +46,13 @@ Navigation par besoin :
   commercial, `Zachary HOUNSA-HOUNKPA EI` comme identite juridique
   (v1.3.3.8) :
   [`docs/v1.3/V1.3.3.8_IDENTITE_MARQUE.md`](docs/v1.3/V1.3.3.8_IDENTITE_MARQUE.md)
+- facturation Billing V2 — coeur financier, rail Stripe et configurateur
+  public `/formules`, **deploye mais dormant** derriere ses drapeaux
+  (v1.4.0.0) :
+  [`docs/v1.4/V1.4.0.0_BILLING_V2.md`](docs/v1.4/V1.4.0.0_BILLING_V2.md),
+  reference technique dans [`docs/billing-v2/`](docs/billing-v2/README.md) et
+  checklist de mise en service dans
+  [`docs/billing-v2/LANCEMENT-CONTROLE.md`](docs/billing-v2/LANCEMENT-CONTROLE.md)
 - deploiement des serveurs applicatifs :
   [`docs/v1.1/deploy/SRV-12_LOT3_DEPLOY.md`](docs/v1.1/deploy/SRV-12_LOT3_DEPLOY.md)
   (webportal, **Ubuntu/systemd**) et

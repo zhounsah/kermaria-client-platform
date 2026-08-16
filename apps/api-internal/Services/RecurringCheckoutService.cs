@@ -37,7 +37,7 @@ public interface IRecurringCheckoutService
 public sealed partial class RecurringCheckoutService : IRecurringCheckoutService
 {
     private readonly IRecurringCheckoutRepository _repository;
-    private readonly ICommercialService _catalog;
+    private readonly IBillingCatalog _billingCatalog;
     private readonly ICartService _cart;
     private readonly ISubscriptionService _subscriptions;
     private readonly ICommercialRepository _commercial;
@@ -48,7 +48,7 @@ public sealed partial class RecurringCheckoutService : IRecurringCheckoutService
 
     public RecurringCheckoutService(
         IRecurringCheckoutRepository repository,
-        ICommercialService catalog,
+        IBillingCatalog billingCatalog,
         ICartService cart,
         ISubscriptionService subscriptions,
         ICommercialRepository commercial,
@@ -58,7 +58,7 @@ public sealed partial class RecurringCheckoutService : IRecurringCheckoutService
         ILogger<RecurringCheckoutService> logger)
     {
         _repository = repository;
-        _catalog = catalog;
+        _billingCatalog = billingCatalog;
         _cart = cart;
         _subscriptions = subscriptions;
         _commercial = commercial;
@@ -246,7 +246,7 @@ public sealed partial class RecurringCheckoutService : IRecurringCheckoutService
             return [];
         }
 
-        var catalog = await _catalog.GetClientCatalogAsync(cancellationToken);
+        var catalog = await _billingCatalog.GetClientCatalogAsync(cancellationToken);
         var byId = catalog.ToDictionary(offer => offer.Id);
         var resolved = new List<ResolvedRecurringCheckoutItem>(stored.Count);
 
@@ -277,7 +277,7 @@ public sealed partial class RecurringCheckoutService : IRecurringCheckoutService
         CancellationToken cancellationToken)
     {
         var normalizedOfferId = ValidateIdentifier(offerId);
-        var catalog = await _catalog.GetClientCatalogAsync(cancellationToken);
+        var catalog = await _billingCatalog.GetClientCatalogAsync(cancellationToken);
         var offer = catalog.FirstOrDefault(candidate =>
             string.Equals(candidate.Id, normalizedOfferId, StringComparison.Ordinal));
         if (offer is null)

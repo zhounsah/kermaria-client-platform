@@ -11,6 +11,7 @@ public sealed record MockSubscriptionProvisioningActionRecord(
     string TargetReference,
     string CorrelationId,
     string? IdempotencyKeyHash,
+    string? IdempotencyActiveHash,
     string Status,
     string? ResultCode,
     bool? Changed,
@@ -39,12 +40,26 @@ public sealed class MockSubscriptionProvisioningActionRepository
 
     public bool IsPersistent => false;
 
-    public Task<string> CreateRequestedAsync(
+    public Task<SubscriptionProvisioningActionCreateResult> CreateRequestedAsync(
         SubscriptionProvisioningActionCreateRequest request,
         CancellationToken cancellationToken)
     {
         lock (_store.SyncRoot)
         {
+            if (!string.IsNullOrWhiteSpace(request.IdempotencyKeyHash))
+            {
+                var existingActive = _store.Actions.FirstOrDefault(action =>
+                    action.IdempotencyActiveHash == request.IdempotencyKeyHash
+                    && action.Status is "requested" or "running");
+                if (existingActive is not null)
+                {
+                    return Task.FromResult(
+                        new SubscriptionProvisioningActionCreateResult(
+                            existingActive.Id,
+                            Created: false));
+                }
+            }
+
             var id = Guid.NewGuid().ToString("D");
             _store.Actions.Add(new MockSubscriptionProvisioningActionRecord(
                 id,
@@ -55,6 +70,7 @@ public sealed class MockSubscriptionProvisioningActionRepository
                 request.TargetReference,
                 request.CorrelationId,
                 request.IdempotencyKeyHash,
+                request.IdempotencyKeyHash,
                 "requested",
                 null,
                 null,
@@ -62,7 +78,10 @@ public sealed class MockSubscriptionProvisioningActionRepository
                 null,
                 null,
                 request.DetailsJson));
-            return Task.FromResult(id);
+            return Task.FromResult(
+                new SubscriptionProvisioningActionCreateResult(
+                    id,
+                    Created: true));
         }
     }
 
@@ -110,6 +129,7 @@ public sealed class MockSubscriptionProvisioningActionRepository
                 Status = status,
                 ResultCode = resultCode,
                 Changed = changed,
+                IdempotencyActiveHash = null,
                 StartedAt = current.StartedAt ?? DateTime.UtcNow.ToString("O"),
                 CompletedAt = DateTime.UtcNow.ToString("O"),
                 DetailsJson = detailsJson

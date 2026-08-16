@@ -368,6 +368,7 @@ export interface SubscriptionSummary {
   cancelledAt: string | null;
   createdAt: string;
   updatedAt: string;
+  billingSystem?: "legacy" | "billing_v2";
 }
 
 export interface SubscriptionCreatePayload {
@@ -2585,4 +2586,134 @@ export interface DemoAccountCreatedResponse {
   email: string;
   kind: string;
   expiresAt: string | null;
+}
+
+/**
+ * Conception commerciale Billing V2 — projection publique.
+ *
+ * Aucun de ces contrats ne transporte un montant DEPUIS le navigateur : la
+ * selection ne porte que des codes catalogue, et le devis est le resultat
+ * renvoye par le serveur. Le front affiche, il ne calcule pas.
+ */
+export interface BillingV2PublicTier {
+  code: string;
+  label: string;
+  description: string | null;
+  numericValue: number | null;
+  monthlyAmountCents: number;
+  publicSelectable: boolean;
+}
+
+export interface BillingV2PublicService {
+  code: string;
+  name: string;
+  category: string;
+  scopeType: string;
+  flatMonthlyAmountCents: number | null;
+  tiers: BillingV2PublicTier[];
+  discountEligible: boolean;
+}
+
+export interface BillingV2PublicPresetItem {
+  serviceCode: string;
+  tierCode: string | null;
+  scopeTemplate: string;
+  quantity: number;
+  amountCents: number;
+  customerEditable: boolean;
+}
+
+export interface BillingV2PublicPreset {
+  code: string;
+  name: string;
+  description: string;
+  displayOrder: number;
+  items: BillingV2PublicPresetItem[];
+  /** Total mensuel de la configuration recommandee, calcule cote serveur. */
+  baselineMonthlyAmountCents: number;
+}
+
+/** `monthly` = paye au mois ; `upfront` = paye en une fois. */
+export type BillingV2PublicPaymentMode = "monthly" | "upfront";
+
+export interface BillingV2PublicPaymentOption {
+  paymentMode: BillingV2PublicPaymentMode;
+  discountBasisPoints: number;
+}
+
+export interface BillingV2PublicCommitment {
+  code: string;
+  name: string;
+  months: number;
+  /**
+   * La remise depend du couple (duree, mode de reglement) : six mois payes au
+   * mois et six mois payes comptant sont deux options distinctes.
+   */
+  paymentOptions: BillingV2PublicPaymentOption[];
+}
+
+export interface BillingV2PublicCheckoutRoute {
+  presetCode: string;
+  commitmentCode: string;
+  legacyOfferId: string;
+}
+
+export interface BillingV2PublicCatalog {
+  source: string;
+  currency: string;
+  presets: BillingV2PublicPreset[];
+  services: BillingV2PublicService[];
+  commitments: BillingV2PublicCommitment[];
+  checkoutRoutes: BillingV2PublicCheckoutRoute[];
+}
+
+export interface BillingV2PublicSelection {
+  presetCode: string;
+  commitmentCode: string;
+  paymentMode: BillingV2PublicPaymentMode;
+  storagePersonalTierCode: string;
+  backupPersonal: boolean;
+  storageSharedTierCode: string | null;
+  backupShared: boolean;
+  vpnTierCode: string | null;
+  remoteDesktop: boolean;
+  additionalUsers: number;
+  supportPlus: boolean;
+}
+
+export interface BillingV2PublicQuoteLine {
+  serviceCode: string;
+  tierCode: string | null;
+  label: string;
+  detail: string | null;
+  quantity: number;
+  unitAmountCents: number;
+  amountCents: number;
+  discountEligible: boolean;
+}
+
+export interface BillingV2PublicQuote {
+  presetCode: string;
+  commitmentCode: string;
+  commitmentMonths: number;
+  paymentMode: BillingV2PublicPaymentMode;
+  discountBasisPoints: number;
+  currency: string;
+  monthlyBeforeDiscountCents: number;
+  monthlyDiscountCents: number;
+  /** En comptant, equivalent mensuel derive du total serveur. */
+  monthlyAfterDiscountCents: number;
+  oneTimeCents: number;
+  /** Montant reellement preleve a la souscription. */
+  totalDueNowCents: number;
+  commitmentTotalBeforeDiscountCents: number;
+  commitmentTotalAfterDiscountCents: number;
+  commitmentSavingsCents: number;
+  lines: BillingV2PublicQuoteLine[];
+  matchesPresetBaseline: boolean;
+  checkoutAvailable: boolean;
+  /** `native` : souscription V2 sans offre legacy. */
+  checkoutMode: string;
+  checkoutLegacyOfferId: string | null;
+  checkoutReasonCode: string;
 }

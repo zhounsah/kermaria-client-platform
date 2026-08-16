@@ -26,15 +26,24 @@ public sealed class ClientServiceCatalogService : IClientServiceCatalogService
     private readonly ISubscriptionRepository _subscriptions;
     private readonly ICommercialRepository _commercialRepository;
     private readonly ICommercialOfferTopologyService _topologyService;
+    private readonly IBillingV2ClientServiceCatalogShadowService _v2Shadow;
+    private readonly IBillingV2ClientServiceEntitlementProjection _v2Entitlements;
+    private readonly ILogger<ClientServiceCatalogService> _logger;
 
     public ClientServiceCatalogService(
         ISubscriptionRepository subscriptions,
         ICommercialRepository commercialRepository,
-        ICommercialOfferTopologyService topologyService)
+        ICommercialOfferTopologyService topologyService,
+        IBillingV2ClientServiceCatalogShadowService v2Shadow,
+        IBillingV2ClientServiceEntitlementProjection v2Entitlements,
+        ILogger<ClientServiceCatalogService> logger)
     {
         _subscriptions = subscriptions;
         _commercialRepository = commercialRepository;
         _topologyService = topologyService;
+        _v2Shadow = v2Shadow;
+        _v2Entitlements = v2Entitlements;
+        _logger = logger;
     }
 
     public async Task<IReadOnlyList<ServiceSummary>> GetServicesAsync(
@@ -99,6 +108,34 @@ public sealed class ClientServiceCatalogService : IClientServiceCatalogService
             }
         }
 
+        var billingV2Entitlements =
+            await _v2Entitlements.GetClientEntitlementsAsync(
+                session.CustomerId,
+                cancellationToken);
+        foreach (var entitlement in billingV2Entitlements)
+        {
+            var serviceStatus = MapSubscriptionStatus(
+                entitlement.SubscriptionStatus);
+            if (serviceStatus is null)
+            {
+                continue;
+            }
+
+            AddSource(
+                buckets,
+                entitlement.TechnicalServiceReference,
+                new ServiceEntitlementSource(
+                    "subscription",
+                    entitlement.SubscriptionId,
+                    entitlement.SubscriptionLabel,
+                    serviceStatus,
+                    entitlement.StartedAt ?? entitlement.CreatedAt,
+                    serviceStatus == "pending"
+                        ? CreatePendingSubscriptionMessage(
+                            entitlement.SubscriptionStatus)
+                        : null));
+        }
+
         var documentSummaries = await _commercialRepository.GetClientDocumentsAsync(
             session,
             cancellationToken);
@@ -146,13 +183,15 @@ public sealed class ClientServiceCatalogService : IClientServiceCatalogService
             }
         }
 
-        return buckets
+        var services = buckets
             .Select(bucket => BuildServiceSummary(
                 bucket.Key,
                 bucket.Value,
                 offersByExternalReference))
             .OrderBy(service => service.Name, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+        await CompareV2ShadowAsync(session, services, cancellationToken);
+        return services;
     }
 
     public async Task<bool> IsKnownServiceIdAsync(
@@ -289,6 +328,44 @@ public sealed class ClientServiceCatalogService : IClientServiceCatalogService
                 "pending",
             _ => null
         };
+
+    private async Task CompareV2ShadowAsync(
+        PortalSessionContext session,
+        IReadOnlyList<ServiceSummary> services,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var comparison = await _v2Shadow.CompareAsync(
+                session,
+                services,
+                cancellationToken);
+            if (!comparison.Enabled
+                || !comparison.Succeeded
+                || comparison.IsCovered)
+            {
+                return;
+            }
+
+            _logger.LogWarning(
+                "Billing V2 client service catalog shadow mismatch for customer {CustomerId}. UnsupportedLegacyServices={UnsupportedLegacyServices}. Legacy service catalog remains authoritative.",
+                session.CustomerId,
+                string.Join(
+                    ",",
+                    comparison.UnsupportedLegacyServiceReferences));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(
+                exception,
+                "Billing V2 client service catalog shadow comparison crashed for customer {CustomerId}. Legacy service catalog remains authoritative.",
+                session.CustomerId);
+        }
+    }
 
     private static string CreatePendingSubscriptionMessage(string subscriptionStatus)
         => subscriptionStatus switch

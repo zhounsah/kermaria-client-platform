@@ -73,6 +73,9 @@ import type {
   DemoAccountSummary,
   DemoContentTemplateSummary,
   DemoProfileSummary,
+  BillingV2PublicCatalog,
+  BillingV2PublicQuote,
+  BillingV2PublicSelection,
 } from "@kermaria/shared";
 import {
   createDefaultAdminClientSolutionPortal,
@@ -106,6 +109,80 @@ export type PortalDataResult<T> = {
   source: DataSource;
   correlationId: CorrelationId;
   error?: ApiError;
+};
+
+/**
+ * Catalogue vide volontaire : le webportal ne connait aucun prix Billing V2.
+ * Toute valeur tarifaire vient d'API-INTERNAL.
+ */
+const EMPTY_BILLING_V2_CATALOG: BillingV2PublicCatalog = {
+  source: "unavailable",
+  currency: "EUR",
+  presets: [],
+  services: [],
+  commitments: [],
+  checkoutRoutes: [],
+};
+
+export type BillingV2AdminRuntimeFlags = {
+  catalogShadowModeEnabled: boolean;
+  provisioningShadowModeEnabled: boolean;
+  newSubscriptionsEnabled: boolean;
+  authoritativeCheckoutEnabled: boolean;
+  firstRealSubscriptionApproved: boolean;
+  providerOutboxEnabled: boolean;
+  providerExecutorEnabled: boolean;
+  provisioningEnabled: boolean;
+};
+
+export type BillingV2AdminLaunchReadiness = {
+  realCustomerSubscriptionCount: number;
+  demoSubscriptionCount: number;
+  noRealCustomerSubscriptions: boolean;
+  verifiedAgainstPersistentSql: boolean;
+  blockingRealSubscriptions: BillingV2AdminBlockingLegacySubscription[];
+};
+
+export type BillingV2AdminBlockingLegacySubscription = {
+  subscriptionId: string;
+  status: string;
+  customerId: string;
+  customerReference: string;
+  customerName: string;
+  commercialOfferId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type BillingV2AdminProviderReadiness = {
+  provider: string;
+  environment: string;
+  providerConfigured: boolean;
+  priceMappingsReady: boolean;
+  requiredServicePriceCount: number;
+  resolvedMappingCount: number;
+  missingServicePriceIds: string[];
+  ambiguousServicePriceIds: string[];
+  readyForCheckout: boolean;
+};
+
+export type BillingV2AdminOperationalLimitation = {
+  code: string;
+  severity: string;
+  message: string;
+};
+
+export type BillingV2AdminReadinessSnapshot = {
+  persistentSqlAvailable: boolean;
+  schemaReady: boolean;
+  missingSchemaTables: string[];
+  runtimeFlags: BillingV2AdminRuntimeFlags;
+  launchReadiness: BillingV2AdminLaunchReadiness;
+  providers: BillingV2AdminProviderReadiness[];
+  operationalLimitations: BillingV2AdminOperationalLimitation[];
+  canRequestFirstRealSubscription: boolean;
+  reasonCode: string;
+  correlationId: string;
 };
 
 class InternalApiError extends Error {
@@ -534,6 +611,65 @@ export function getPublicCommercialCatalog() {
     mockCommercialOffers,
     [],
   );
+}
+
+/**
+ * Catalogue des formules Billing V2.
+ *
+ * Aucun prix n'est recopie cote webportal : si API-INTERNAL n'est pas
+ * joignable, on renvoie un catalogue VIDE et la page le dit. Un repli local
+ * tarifaire ferait du navigateur une seconde autorite financiere, ce que le
+ * contrat interdit.
+ */
+export function getBillingV2FormulesCatalog() {
+  return getPublicData<BillingV2PublicCatalog>(
+    "/internal/portal/billing-v2/formules",
+    EMPTY_BILLING_V2_CATALOG,
+    EMPTY_BILLING_V2_CATALOG,
+  );
+}
+
+/**
+ * Devis serveur. La selection ne porte que des codes catalogue ; le montant
+ * renvoye est celui calcule par BillingV2PricingEngine.
+ */
+export async function quoteBillingV2Formule(
+  selection: BillingV2PublicSelection,
+  correlationId: CorrelationId,
+): Promise<BillingV2PublicQuote> {
+  const internalApiUrl = getInternalApiUrl();
+
+  if (!internalApiUrl) {
+    throw new InternalApiError(unavailableError(correlationId), 503);
+  }
+
+  let response: Response;
+
+  try {
+    response = await fetch(
+      `${internalApiUrl}/internal/portal/billing-v2/formules/devis`,
+      {
+        method: "POST",
+        cache: "no-store",
+        signal: AbortSignal.timeout(INTERNAL_API_TIMEOUT_MS),
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          ...getInternalServiceHeaders(),
+          [CORRELATION_HEADER]: correlationId,
+        },
+        body: JSON.stringify(selection),
+      },
+    );
+  } catch {
+    throw new InternalApiError(unavailableError(correlationId), 503);
+  }
+
+  if (!response.ok) {
+    throw await toInternalApiError(response, correlationId);
+  }
+
+  return readInternalJson<BillingV2PublicQuote>(response, correlationId);
 }
 
 export function getPublicPackCatalogContent() {
@@ -1461,6 +1597,20 @@ export function getAdminDownload(id: string) {
 export function getAdminSubscriptions() {
   return getAdminData<SubscriptionSummary[]>(
     "/internal/admin/subscriptions",
+    [],
+  );
+}
+
+export function getAdminBillingV2Readiness() {
+  return getAdminData<BillingV2AdminReadinessSnapshot | null>(
+    "/internal/admin/billing-v2/readiness",
+    null,
+  );
+}
+
+export function getAdminBillingV2Subscriptions() {
+  return getAdminData<SubscriptionSummary[]>(
+    "/internal/admin/billing-v2/subscriptions",
     [],
   );
 }

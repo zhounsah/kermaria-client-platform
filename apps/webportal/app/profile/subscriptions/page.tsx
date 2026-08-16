@@ -11,9 +11,9 @@ import { requireClientSession } from "@/lib/auth";
 import { formatCommercialAmountFromCents } from "@/lib/fiscal-formatters";
 import {
   formatBillingIntervalMonths,
+  formatClientPaymentModeLabel,
   formatCommitmentMonths,
   formatDateTime,
-  formatPaymentModeLabel,
   formatSubscriptionRailLabel,
   subscriptionStatus,
 } from "@/lib/formatters";
@@ -123,8 +123,14 @@ export default async function ProfileSubscriptionsPage({
           <div className="stack-panels">
             {result.data.map((item) => {
               const status = subscriptionStatus[item.status];
+              const isBillingV2 = item.billingSystem === "billing_v2";
+              // Un contrat regle en une fois n'a pas d'echeance suivante :
+              // annoncer une « prochaine echeance », meme « a determiner »,
+              // laisse croire a un prelevement qui n'arrivera jamais.
+              const isUpfront = item.paymentMode === "upfront";
               const cancellable =
-                item.status !== "cancelled"
+                !isBillingV2
+                && item.status !== "cancelled"
                 && item.status !== "expired"
                 && item.status !== "pending_cancellation";
 
@@ -173,7 +179,7 @@ export default async function ProfileSubscriptionsPage({
                     </div>
                     <div>
                       <dt>Mode de paiement</dt>
-                      <dd>{formatPaymentModeLabel(item.paymentMode)}</dd>
+                      <dd>{formatClientPaymentModeLabel(item.paymentMode)}</dd>
                     </div>
                     <div>
                       <dt>Mise en service</dt>
@@ -184,16 +190,27 @@ export default async function ProfileSubscriptionsPage({
                         )}
                       </dd>
                     </div>
+                    {isUpfront ? (
+                      <div>
+                        <dt>Renouvellement</dt>
+                        <dd>Aucun renouvellement automatique</dd>
+                      </div>
+                    ) : (
+                      <div>
+                        <dt>Prochaine échéance</dt>
+                        <dd>
+                          {item.nextBillingAt
+                            ? formatDateTime(item.nextBillingAt)
+                            : "À déterminer"}
+                        </dd>
+                      </div>
+                    )}
                     <div>
-                      <dt>Prochaine échéance</dt>
-                      <dd>
-                        {item.nextBillingAt
-                          ? formatDateTime(item.nextBillingAt)
-                          : "À déterminer"}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Fin d&apos;engagement</dt>
+                      <dt>
+                        {isUpfront
+                          ? "Contrat actif jusqu'au"
+                          : "Fin d'engagement"}
+                      </dt>
                       <dd>
                         {item.commitmentEndsAt
                           ? formatDateTime(item.commitmentEndsAt)
@@ -227,6 +244,11 @@ export default async function ProfileSubscriptionsPage({
                         : "date indisponible"}
                       {" · "}le service restera actif jusqu&apos;à la fin du terme
                       en cours.
+                    </p>
+                  ) : null}
+                  {isBillingV2 ? (
+                    <p className="field-hint">
+                      Souscription Billing V2 affichée en lecture seule.
                     </p>
                   ) : null}
                   <p className="field-hint">

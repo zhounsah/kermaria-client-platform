@@ -1906,6 +1906,32 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    public async Task EnsureSubscriptionPriceLockAsync(
+        string subscriptionId,
+        string offerId,
+        int unitPriceCents,
+        int? taxRateBasisPoints,
+        string currency,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(
+            IsolationLevel.ReadCommitted,
+            cancellationToken);
+        await EnsureSubscriptionPriceLockAsync(
+            connection,
+            transaction,
+            subscriptionId,
+            offerId,
+            unitPriceCents,
+            taxRateBasisPoints,
+            currency,
+            reason,
+            cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
+
     public async Task<string> CreateBillingDocumentForSubscriptionAsync(
         SubscriptionBillingDocumentRequest request,
         string correlationId,
@@ -1926,6 +1952,24 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
             transaction,
             request.OfferId,
             cancellationToken);
+        var priceLock = await ReadActiveSubscriptionPriceLockAsync(
+            connection,
+            transaction,
+            request.SubscriptionId,
+            cancellationToken);
+        if (priceLock is null)
+        {
+            await RecordSubscriptionPriceLockReviewRequiredAsync(
+                connection,
+                transaction,
+                request.SubscriptionId,
+                request.OfferId,
+                "missing_active_price_lock_at_renewal",
+                cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            throw new InvalidOperationException(
+                "Cannot create a subscription renewal document without an active contractual price lock.");
+        }
 
         var documentId = Guid.NewGuid().ToString("D");
         var now = DateTime.UtcNow;
@@ -2000,8 +2044,8 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
             offer.Description,
             quantity: 1m,
             offer.UnitLabel,
-            offer.PriceAmountCents,
-            offer.TaxRateBasisPoints,
+            priceLock.UnitPriceCents,
+            priceLock.TaxRateBasisPoints ?? offer.TaxRateBasisPoints,
             sortOrder: 10,
             now,
             cancellationToken);
@@ -2581,6 +2625,139 @@ public sealed class MariaDbCommercialRepository : ICommercialRepository
         string UnitLabel,
         int PriceAmountCents,
         int? TaxRateBasisPoints);
+
+    private sealed record SubscriptionPriceLockRow(
+        int UnitPriceCents,
+        int? TaxRateBasisPoints,
+        string Currency);
+
+    private static async Task EnsureSubscriptionPriceLockAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        string subscriptionId,
+        string offerId,
+        int unitPriceCents,
+        int? taxRateBasisPoints,
+        string currency,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            INSERT INTO subscription_billing_price_locks (
+                id,
+                subscription_id,
+                offer_id,
+                unit_price_cents,
+                tax_rate_basis_points,
+                currency,
+                reason,
+                status,
+                created_at,
+                updated_at
+            ) VALUES (
+                @id,
+                @subscription_id,
+                @offer_id,
+                @unit_price_cents,
+                @tax_rate_basis_points,
+                @currency,
+                @reason,
+                'active',
+                UTC_TIMESTAMP(6),
+                UTC_TIMESTAMP(6)
+            )
+            ON DUPLICATE KEY UPDATE
+                unit_price_cents = unit_price_cents,
+                updated_at = updated_at;
+            """;
+        command.Parameters.AddWithValue("@id", Guid.NewGuid().ToString("D"));
+        command.Parameters.AddWithValue("@subscription_id", subscriptionId);
+        command.Parameters.AddWithValue("@offer_id", offerId);
+        command.Parameters.AddWithValue("@unit_price_cents", unitPriceCents);
+        command.Parameters.AddWithValue(
+            "@tax_rate_basis_points",
+            taxRateBasisPoints is null ? DBNull.Value : taxRateBasisPoints);
+        command.Parameters.AddWithValue("@currency", currency);
+        command.Parameters.AddWithValue("@reason", reason);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<SubscriptionPriceLockRow?>
+        ReadActiveSubscriptionPriceLockAsync(
+            MySqlConnection connection,
+            MySqlTransaction transaction,
+            string subscriptionId,
+            CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            SELECT unit_price_cents, tax_rate_basis_points, currency
+            FROM subscription_billing_price_locks
+            WHERE subscription_id = @subscription_id
+              AND status = 'active'
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("@subscription_id", subscriptionId);
+        await using var reader = await command.ExecuteReaderAsync(
+            cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new SubscriptionPriceLockRow(
+            reader.GetInt32("unit_price_cents"),
+            reader.IsDBNull(reader.GetOrdinal("tax_rate_basis_points"))
+                ? null
+                : reader.GetInt32("tax_rate_basis_points"),
+            reader.GetString("currency"));
+    }
+
+    private static async Task RecordSubscriptionPriceLockReviewRequiredAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        string subscriptionId,
+        string offerId,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            INSERT INTO subscription_billing_price_lock_review_required (
+                subscription_id,
+                offer_id,
+                reason,
+                review_status,
+                detected_at,
+                updated_at
+            ) VALUES (
+                @subscription_id,
+                @offer_id,
+                @reason,
+                'pending',
+                UTC_TIMESTAMP(6),
+                UTC_TIMESTAMP(6)
+            )
+            ON DUPLICATE KEY UPDATE
+                reason = VALUES(reason),
+                review_status = IF(
+                    review_status = 'resolved',
+                    review_status,
+                    VALUES(review_status)),
+                updated_at = UTC_TIMESTAMP(6);
+            """;
+        command.Parameters.AddWithValue("@subscription_id", subscriptionId);
+        command.Parameters.AddWithValue("@offer_id", offerId);
+        command.Parameters.AddWithValue("@reason", reason);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
 
     private static async Task<OfferDetailsRow> ReadOfferDetailsAsync(
         MySqlConnection connection,
