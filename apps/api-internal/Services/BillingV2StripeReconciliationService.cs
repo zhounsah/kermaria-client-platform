@@ -1,4 +1,5 @@
 using Kermaria.ApiInternal.Data.Configuration;
+using Kermaria.ApiInternal.Data.Repositories;
 using MySqlConnector;
 
 namespace Kermaria.ApiInternal.Services;
@@ -11,7 +12,10 @@ public sealed record BillingV2ReconciliationRunResult(
     string ReasonCode,
     // Phase 3 : une tentative qui explose ne doit ni disparaitre du compte
     // rendu, ni empecher les suivantes d'etre traitees.
-    int Failed = 0)
+    int Failed = 0,
+    // Charges deja encaissees dont le document restait a emettre, reprises par
+    // ce passage.
+    int DocumentsResumed = 0)
 {
     /// <summary>
     /// Restant a traiter apres ce passage : examine moins ce qui a conclu.
@@ -22,6 +26,13 @@ public sealed record BillingV2ReconciliationRunResult(
         0,
         Examined - Settled - ReconciliationRequired - Failed);
 }
+
+/// <summary>
+/// Charge encaissee dont le document reste a emettre.
+/// </summary>
+public sealed record BillingV2PendingDocument(
+    string SubscriptionId,
+    string BillingEventId);
 
 public interface IBillingV2StripeReconciliationService
 {
@@ -165,23 +176,35 @@ public sealed class BillingV2StripeReconciliationService
             }
         }
 
+        // Reprise documentaire. Une charge encaissee dont l'emission a echoue
+        // sortait definitivement du circuit : la tentative de paiement est
+        // close, donc plus jamais candidate, et rien d'autre ne repassait
+        // dessus. Le client restait debite sans facture. Le controle porte
+        // donc sur l'invariant lui-meme - BillingEvent regle + document non
+        // emis - et non sur l'etat de la tentative.
+        var documentsResumed = await ResumePendingDocumentsAsync(
+            connection,
+            cancellationToken);
+
         var result = new BillingV2ReconciliationRunResult(
             candidates.Count,
             claimed,
             settled,
             manual,
-            candidates.Count == 0
+            candidates.Count == 0 && documentsResumed == 0
                 ? "BILLING_V2_RECONCILIATION_NOTHING_PENDING"
                 : "BILLING_V2_RECONCILIATION_RUN_COMPLETED",
-            failed);
-        if (candidates.Count > 0)
+            failed,
+            documentsResumed);
+        if (candidates.Count > 0 || documentsResumed > 0)
         {
             _logger.LogInformation(
-                "Billing V2 reconciliation run: pending={Pending} reconciled={Reconciled} failed={Failed} reconciliation_required={ManualReview} (examined={Examined}, claimed={Claimed}).",
+                "Billing V2 reconciliation run: pending={Pending} reconciled={Reconciled} failed={Failed} reconciliation_required={ManualReview} documents_resumed={DocumentsResumed} (examined={Examined}, claimed={Claimed}).",
                 result.Pending,
                 result.Settled,
                 result.Failed,
                 result.ReconciliationRequired,
+                result.DocumentsResumed,
                 result.Examined,
                 result.Claimed);
         }
@@ -190,6 +213,113 @@ public sealed class BillingV2StripeReconciliationService
     }
 
     private sealed record AttemptOutcome(int Claimed, int Settled, int Manual);
+
+    /// <summary>
+    /// Reprend l'emission des documents dus sur des charges deja encaissees.
+    ///
+    /// Fail-closed et idempotent : rien n'est cree ici. Le lot est constitue
+    /// depuis l'etat financier - seuls les BillingEvents <c>settled</c> dont le
+    /// document n'est pas <c>issued</c> - puis confie a l'emetteur existant,
+    /// qui reprend un document deja present au lieu d'en fabriquer un second et
+    /// qui porte deja le verrou d'intention BPCE.
+    ///
+    /// Les emissions laissees en <c>reconciliation_required</c> sont
+    /// volontairement exclues : un resultat BPCE indetermine doit rester en
+    /// revue manuelle, jamais etre relance en boucle au risque d'un second
+    /// numero fiscal.
+    /// </summary>
+    private async Task<int> ResumePendingDocumentsAsync(
+        MySqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        var pending = await ReadDocumentsToResumeAsync(
+            connection,
+            _stripe.ModeName,
+            cancellationToken);
+        if (pending.Count == 0)
+        {
+            return 0;
+        }
+
+        _logger.LogInformation(
+            "Billing V2 reconciliation is resuming {Count} settled charge(s) whose document is still missing.",
+            pending.Count);
+        var resumed = 0;
+        foreach (var document in pending)
+        {
+            await TryIssueDocumentAsync(
+                connection,
+                document.SubscriptionId,
+                document.BillingEventId,
+                cancellationToken);
+            resumed++;
+        }
+
+        return resumed;
+    }
+
+    /// <summary>
+    /// Lot de reprise. Expose pour etre verifiable sur MariaDB reelle : la
+    /// selection est le coeur du controle, et une suite en persistance mock ne
+    /// peut rien prouver de son comportement SQL.
+    /// </summary>
+    public static async Task<IReadOnlyList<BillingV2PendingDocument>>
+        ReadDocumentsToResumeAsync(
+            MySqlConnection connection,
+            string environment,
+            CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT
+                event_row.id AS billing_event_id,
+                event_row.subscription_id
+            FROM billing_v2_billing_events event_row
+            INNER JOIN billing_v2_payment_attempts attempt
+                ON attempt.billing_event_id = event_row.id
+            LEFT JOIN billing_v2_subscription_documents doc
+                ON doc.billing_event_id = event_row.id
+            LEFT JOIN billing_v2_document_issuance_attempts issuance
+                ON issuance.commercial_document_id = doc.commercial_document_id
+            WHERE event_row.settlement_status = @settled
+              AND event_row.document_status <> @issued
+              AND attempt.status = @succeeded
+              AND attempt.provider = 'stripe'
+              AND attempt.environment = @environment
+              AND (issuance.status IS NULL
+                   OR issuance.status <> @manual_review)
+            GROUP BY event_row.id, event_row.subscription_id
+            ORDER BY event_row.settled_at ASC, event_row.id ASC
+            LIMIT @batch;
+            """;
+        command.Parameters.AddWithValue(
+            "@settled",
+            BillingV2SettlementStatuses.Settled);
+        command.Parameters.AddWithValue("@issued", "issued");
+        command.Parameters.AddWithValue("@succeeded", "succeeded");
+        command.Parameters.AddWithValue("@environment", environment);
+        command.Parameters.AddWithValue(
+            "@manual_review",
+            BillingV2DocumentIssuanceStatuses.ReconciliationRequired);
+        command.Parameters.AddWithValue("@batch", BatchSize);
+
+        var pending = new List<BillingV2PendingDocument>();
+        await using var reader = await command.ExecuteReaderAsync(
+            cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            pending.Add(new BillingV2PendingDocument(
+                MariaDbIdentifierReader.ReadRequired(
+                    reader,
+                    "subscription_id"),
+                MariaDbIdentifierReader.ReadRequired(
+                    reader,
+                    "billing_event_id")));
+        }
+
+        return pending;
+    }
 
     /// <summary>
     /// Emet le document du cycle encaisse, exactement comme le ferait le

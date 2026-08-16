@@ -547,7 +547,7 @@ public static class BillingV2PortalSubscriptionProjector
             row.CancelAtPeriodEnd,
             string.IsNullOrWhiteSpace(row.Currency) ? "EUR" : row.Currency,
             ToIso(row.StartedAtUtc),
-            ToIso(row.RenewsAtUtc ?? row.CurrentPeriodEndsAtUtc),
+            ToIso(ResolveNextBillingAt(row)),
             ResolveStatus(row) == "cancelled"
                 ? ToIso(row.UpdatedAtUtc)
                 : null,
@@ -606,6 +606,30 @@ public static class BillingV2PortalSubscriptionProjector
             BillingV2PaymentModes.Upfront => BillingV2PaymentModes.Upfront,
             _ => BillingV2PaymentModes.Monthly
         };
+
+    /// <summary>
+    /// Prochaine facturation presentee au portail.
+    ///
+    /// Un contrat comptant n'en a aucune : le terme est deja paye et aucun
+    /// renouvellement automatique n'est prevu. La date de fin contractuelle
+    /// reste exposee par <c>commitmentEndsAt</c>, ce qui permet d'afficher
+    /// « contrat actif jusqu'au ... » sans jamais annoncer un prelevement qui
+    /// n'aura pas lieu. Retomber sur la fin de periode courante, comme le
+    /// faisait ce calcul, transformait le terme d'un contrat prepaye en
+    /// promesse de facturation.
+    ///
+    /// Le mensuel est inchange : il porte une vraie date de renouvellement, et
+    /// la retombee sur la fin de periode couvre les lignes anterieures a la
+    /// migration 061 ou <c>renews_at</c> n'etait pas encore alimente.
+    /// </summary>
+    private static DateTime? ResolveNextBillingAt(
+        BillingV2PortalSubscriptionRow row)
+        => string.Equals(
+            NormalizePaymentMode(row.PaymentMode),
+            BillingV2PaymentModes.Upfront,
+            StringComparison.Ordinal)
+            ? row.RenewsAtUtc
+            : row.RenewsAtUtc ?? row.CurrentPeriodEndsAtUtc;
 
     /// <summary>
     /// Statut presente au portail. Un contrat comptant arrive a terme garde le

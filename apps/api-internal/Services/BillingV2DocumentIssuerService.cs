@@ -12,6 +12,36 @@ public sealed record BillingV2DocumentIssueResult(
     string? CommercialDocumentId,
     BpceIssuedInvoiceInfo? Invoice);
 
+/// <summary>
+/// Moyen de paiement inscrit sur le document commercial.
+///
+/// <c>commercial_documents.payment_method</c> est un ENUM MariaDB borne a
+/// ('paypal','stripe','manual'). Y ecrire une valeur hors liste ne leve pas
+/// une erreur metier lisible : MariaDB repond
+/// « Data truncated for column 'payment_method' », la confirmation echoue et
+/// la facture reste emise mais jamais marquee payee alors que l'argent est
+/// encaisse. Le rail reel du reglement est donc traduit ici, et tout provider
+/// inconnu retombe sur 'manual' - une valeur toujours valide, qui signale un
+/// rapprochement a faire a la main plutot que de casser l'emission.
+///
+/// Les suites en persistance mock ne voyaient pas cette contrainte : seule une
+/// verification sur MariaDB reelle peut la prouver.
+/// </summary>
+public static class BillingV2DocumentPaymentMethod
+{
+    public const string Stripe = "stripe";
+    public const string PayPal = "paypal";
+    public const string Manual = "manual";
+
+    public static string FromProvider(string? provider)
+        => provider?.Trim().ToLowerInvariant() switch
+        {
+            Stripe => Stripe,
+            PayPal => PayPal,
+            _ => Manual
+        };
+}
+
 public interface IBillingV2DocumentIssuerService
 {
     Task<BillingV2DocumentIssueResult> EnsureInitialInvoiceAsync(
@@ -254,7 +284,9 @@ public sealed class BillingV2DocumentIssuerService
         var payment = await _invoiceIssuing.ConfirmPaymentAsync(
             documentId,
             correlationId,
-            paymentMethod: "billing_v2_provider",
+            paymentMethod: await ResolvePaymentMethodAsync(
+                documentId,
+                cancellationToken),
             cancellationToken);
         if (!payment.Succeeded)
         {
@@ -275,6 +307,52 @@ public sealed class BillingV2DocumentIssuerService
             payment.Code,
             documentId,
             payment.Invoice);
+    }
+
+    /// <summary>
+    /// Rail reel du reglement de ce document, lu sur la tentative de paiement
+    /// reussie du BillingEvent que le document materialise. C'est la seule
+    /// source qui dise par quel moyen le client a effectivement paye ; l'ecrire
+    /// depuis une constante revenait a inventer une valeur que la base refuse.
+    /// </summary>
+    private async Task<string> ResolvePaymentMethodAsync(
+        string documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(_sql.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        return await ReadPaymentMethodAsync(
+            connection,
+            documentId,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Lecture du rail, isolee pour etre verifiable sur MariaDB reelle : la
+    /// jointure porte sur des colonnes que seule une vraie base peut valider,
+    /// et la valeur produite doit tenir dans un ENUM que le mock ignore.
+    /// </summary>
+    public static async Task<string> ReadPaymentMethodAsync(
+        MySqlConnection connection,
+        string documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT attempt.provider
+            FROM billing_v2_subscription_documents doc
+            INNER JOIN billing_v2_payment_attempts attempt
+                ON attempt.billing_event_id = doc.billing_event_id
+            WHERE doc.commercial_document_id = @document_id
+              AND attempt.status = 'succeeded'
+            ORDER BY attempt.responded_at DESC, attempt.created_at DESC
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("@document_id", documentId);
+        var scalar = await command.ExecuteScalarAsync(cancellationToken);
+        return BillingV2DocumentPaymentMethod.FromProvider(
+            scalar is null or DBNull ? null : Convert.ToString(scalar));
     }
 
     public async Task<BillingV2DocumentIssueResult> EnsureCycleInvoiceAsync(

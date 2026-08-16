@@ -88,6 +88,105 @@ public static class BillingV2NewSubscriptionTests
         VerifyAdminReadinessExposesOperationalLimitations();
         VerifyAdminReadinessBlocksFirstRealSubscriptionWithoutV2InvoicePath();
         VerifyAdminReadinessAllowsFirstRealSubscriptionWhenHardBlockersCleared();
+        VerifyUpfrontPortalNeverAnnouncesANextCharge();
+        VerifyMonthlyPortalKeepsItsNextCharge();
+        VerifyLegacyMonthlyRowKeepsItsPeriodFallback();
+        VerifyDocumentPaymentMethodStaysWithinTheDatabaseEnum();
+    }
+
+    /// <summary>
+    /// Un contrat comptant est deja paye : le portail ne doit annoncer aucun
+    /// prelevement a venir. La fin contractuelle reste lisible par
+    /// <c>commitmentEndsAt</c>, ce qui permet d'ecrire « actif jusqu'au ... »
+    /// sans promettre une facturation qui n'existera pas.
+    /// </summary>
+    private static void VerifyUpfrontPortalNeverAnnouncesANextCharge()
+    {
+        var termEnd = new DateTime(2027, 8, 15, 22, 0, 0, DateTimeKind.Utc);
+        var summary = BillingV2PortalSubscriptionProjector.Project(
+            PortalSubscriptionRow(
+                paymentMode: BillingV2PaymentModes.Upfront,
+                commitmentMonths: 12,
+                activeLockType: BillingV2PriceLockTypes.UpfrontPrepaid,
+                renewsAtUtc: null,
+                currentPeriodEndsAtUtc: termEnd,
+                commitmentEndsAtUtc: termEnd));
+
+        Ensure(
+            summary.NextBillingAt is null,
+            "Un contrat comptant ne doit exposer aucune prochaine facturation.");
+        Ensure(
+            summary.CommitmentEndsAt is not null,
+            "La fin contractuelle doit rester exposee pour le comptant.");
+    }
+
+    private static void VerifyMonthlyPortalKeepsItsNextCharge()
+    {
+        var renewsAt = new DateTime(2026, 9, 15, 22, 0, 0, DateTimeKind.Utc);
+        var summary = BillingV2PortalSubscriptionProjector.Project(
+            PortalSubscriptionRow(
+                paymentMode: BillingV2PaymentModes.Monthly,
+                commitmentMonths: 6,
+                renewsAtUtc: renewsAt,
+                currentPeriodEndsAtUtc: renewsAt,
+                commitmentEndsAtUtc: new DateTime(
+                    2027, 2, 15, 23, 0, 0, DateTimeKind.Utc)));
+
+        Ensure(
+            summary.NextBillingAt is not null
+            && summary.NextBillingAt.StartsWith(
+                "2026-09-15",
+                StringComparison.Ordinal),
+            "Le mensuel doit conserver sa date de prochaine facturation.");
+    }
+
+    /// <summary>
+    /// Lignes anterieures a la migration 061 : <c>renews_at</c> n'etait pas
+    /// alimente. La retombee sur la fin de periode reste donc necessaire pour
+    /// le mensuel - la corriger pour le comptant ne doit pas la supprimer ici.
+    /// </summary>
+    private static void VerifyLegacyMonthlyRowKeepsItsPeriodFallback()
+    {
+        var periodEnd = new DateTime(2026, 9, 15, 22, 0, 0, DateTimeKind.Utc);
+        var summary = BillingV2PortalSubscriptionProjector.Project(
+            PortalSubscriptionRow(
+                paymentMode: BillingV2PaymentModes.Monthly,
+                renewsAtUtc: null,
+                currentPeriodEndsAtUtc: periodEnd));
+
+        Ensure(
+            summary.NextBillingAt is not null,
+            "Un mensuel sans renews_at doit retomber sur la fin de periode.");
+    }
+
+    /// <summary>
+    /// <c>commercial_documents.payment_method</c> est un ENUM MariaDB. Toute
+    /// valeur hors liste fait echouer la confirmation de paiement en base, et
+    /// la facture reste emise sans jamais etre marquee payee.
+    /// </summary>
+    private static void VerifyDocumentPaymentMethodStaysWithinTheDatabaseEnum()
+    {
+        string[] accepted = ["stripe", "paypal", "manual"];
+        string?[] inputs =
+            ["stripe", "STRIPE", "paypal", "billing_v2_provider", null, ""];
+
+        foreach (var input in inputs)
+        {
+            var resolved = BillingV2DocumentPaymentMethod.FromProvider(input);
+            Ensure(
+                accepted.Contains(resolved),
+                $"Le moyen de paiement resolu depuis '{input}' doit rester "
+                + "dans l'ENUM de la base.");
+        }
+
+        Ensure(
+            BillingV2DocumentPaymentMethod.FromProvider("stripe") == "stripe",
+            "Un reglement Stripe doit etre inscrit comme tel sur le document.");
+        Ensure(
+            BillingV2DocumentPaymentMethod.FromProvider("billing_v2_provider")
+                == "manual",
+            "Un rail inconnu doit retomber sur un rapprochement manuel, "
+            + "jamais sur une valeur refusee par la base.");
     }
 
     private static void VerifyPresetPlannerCreatesPrimaryUserItems()
@@ -2280,7 +2379,11 @@ public static class BillingV2NewSubscriptionTests
         long recurringNonDiscountableCents = 0,
         long oneTimeCents = 0,
         string provider = "stripe",
-        string? providerSubscriptionId = "sub_v2_portal")
+        string? providerSubscriptionId = "sub_v2_portal",
+        DateTime? renewsAtUtc = null,
+        DateTime? currentPeriodEndsAtUtc = null,
+        DateTime? commitmentEndsAtUtc = null,
+        string status = "pending_approval")
         => new(
             "sub-v2-portal",
             "customer-v2-new",
@@ -2294,7 +2397,7 @@ public static class BillingV2NewSubscriptionTests
             "pack-dossier-securise",
             provider,
             providerSubscriptionId,
-            "pending_approval",
+            status,
             paymentMode,
             "EUR",
             discountBasisPoints,
@@ -2307,9 +2410,9 @@ public static class BillingV2NewSubscriptionTests
             oneTimeCents,
             null,
             null,
-            null,
-            null,
-            null,
+            renewsAtUtc,
+            currentPeriodEndsAtUtc,
+            commitmentEndsAtUtc,
             null,
             false,
             new DateTime(2026, 8, 13, 12, 0, 0, DateTimeKind.Utc),
