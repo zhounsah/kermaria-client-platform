@@ -36,6 +36,10 @@ type PublicRouteEntry = {
 const PUBLIC_ROUTE_ENTRIES: PublicRouteEntry[] = [
   { path: "/", changeFrequency: "monthly", priority: 1 },
   { path: "/offres", changeFrequency: "weekly", priority: 0.9 },
+  // Les pages `/formules/<code>` ne sont pas declarees : ce sont des
+  // configurateurs dont le contenu depend d'une selection, pas des pages
+  // editoriales. Seul le hub l'est.
+  { path: "/formules", changeFrequency: "weekly", priority: 0.9 },
   { path: "/diagnostic", changeFrequency: "monthly", priority: 0.8 },
   { path: "/decouvrir-espace-client", changeFrequency: "monthly", priority: 0.75 },
   { path: "/ressources", changeFrequency: "weekly", priority: 0.75 },

@@ -311,6 +311,11 @@ builder.Services.AddScoped<IBillingCatalog>(serviceProvider =>
         serviceProvider.GetRequiredService<
             ILogger<ShadowBillingCatalogAdapter>>()));
 builder.Services.AddSingleton<IBillingV2PricingEngine, BillingV2PricingEngine>();
+// Projection commerciale publique : lecture seule du catalogue V2 et devis
+// calcule par le moteur ci-dessus. N'ecrit rien et ne cree aucun abonnement.
+builder.Services.AddScoped<
+    IBillingV2PublicCatalogService,
+    BillingV2PublicCatalogService>();
 builder.Services.AddScoped<
     IBillingV2LaunchReadinessService,
     BillingV2LaunchReadinessService>();
@@ -1445,6 +1450,55 @@ app.MapGet(
             context,
             service,
             await service.GetClientCatalogAsync(context.RequestAborted));
+    });
+
+// Conception commerciale V2 : catalogue des formules lisible sans session pour
+// alimenter la page publique `/formules`. Lecture seule, toujours protégé par
+// `X-Service-Auth` côté ingress webportal.
+app.MapGet(
+    "/internal/portal/billing-v2/formules",
+    async (
+        HttpContext context,
+        IBillingV2PublicCatalogService service) =>
+        Results.Ok(
+            await service.GetCatalogAsync(context.RequestAborted)));
+
+// Devis V2 : le navigateur envoie une sélection de codes catalogue, jamais un
+// montant. Le total est recalculé ici par BillingV2PricingEngine. Aucune
+// écriture, aucune intention créée : ce n'est pas une souscription.
+app.MapPost(
+    "/internal/portal/billing-v2/formules/devis",
+    async (
+        HttpContext context,
+        IBillingV2PublicCatalogService service) =>
+    {
+        var payload = await ReadPayload<BillingV2PublicSelectionInput>(context);
+        if (payload is null)
+        {
+            return Results.Json(
+                new ApiError(
+                    "INVALID_REQUEST",
+                    "Le corps de la requete est invalide.",
+                    context.GetCorrelationId()),
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        try
+        {
+            return Results.Ok(
+                await service.QuoteAsync(
+                    payload.ToSelection(),
+                    context.RequestAborted));
+        }
+        catch (InvalidOperationException exception)
+        {
+            return Results.Json(
+                new ApiError(
+                    exception.Message,
+                    "La configuration demandee n'est pas disponible.",
+                    context.GetCorrelationId()),
+                statusCode: StatusCodes.Status400BadRequest);
+        }
     });
 
 // V0.35 : panier / commande groupée à la carte (offres one-shot). Session

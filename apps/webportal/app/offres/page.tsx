@@ -86,6 +86,21 @@ export default async function OffresPage() {
         </div>
       </section>
 
+      <section className="offres-demo-access" aria-labelledby="offres-formules-title">
+        <div>
+          <p className="eyebrow">Nouveau</p>
+          <h2 id="offres-formules-title">Configurer une formule et souscrire en ligne</h2>
+          <p>
+            Quatre formules ajustables — capacité, sauvegarde, accès à
+            distance, utilisateurs — avec le prix mis à jour à chaque
+            changement et la remise d&apos;engagement affichée.
+          </p>
+        </div>
+        <Link className="button button-primary" href="/formules">
+          Voir les formules
+        </Link>
+      </section>
+
       <section className="offres-demo-access" aria-labelledby="offres-demo-title">
         <div>
           <p className="eyebrow">Espace client</p>
