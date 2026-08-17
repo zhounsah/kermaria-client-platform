@@ -209,12 +209,19 @@ public sealed class BillingV2KoxoStorageTargetResolutionService
                 BillingV2KoxoStorageTargetReasons.CustomerReferenceMismatch);
         }
 
+        // L'etat du client voyage brut : c'est le resolver, via
+        // KoxoDirectoryTopology, qui en deduira l'OU de la fiche. Ces trois
+        // valeurs viennent de la meme lecture jointe, donc sans lecture
+        // supplementaire.
         return UserSnapshotAttempt.Success(
             new BillingV2KoxoUserIdentitySnapshot(
                 portalUser.PortalUserId,
                 employeeNumber,
                 links,
-                directoryObject));
+                directoryObject,
+                portalUser.IsDemo,
+                portalUser.KoxoGroupReference,
+                portalUser.CustomerReference));
     }
 
     /// <summary>

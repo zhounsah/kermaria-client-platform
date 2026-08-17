@@ -88,6 +88,11 @@ public static class RuntimeConfigurationValidator
             "KOXO_SYNC_WEBHOOK_URL",
             "KOXO_SYNC_WEBHOOK_TOKEN",
             invalidVariables);
+        ValidateOptionalWebhook(
+            configuration,
+            "BILLING_V2_KOXO_STORAGE_URL",
+            "BILLING_V2_KOXO_STORAGE_TOKEN",
+            invalidVariables);
 
         if (string.Equals(
                 configuration["SESSION_COOKIE_SECURE"]?.Trim(),

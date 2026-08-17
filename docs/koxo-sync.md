@@ -58,6 +58,76 @@ non dans le profil de synchro :
 5. `scripts/koxo/Install-KoXoScheduledTask.ps1` documente et simule la tache planifiee ;
    aucune creation reelle n'est effectuee depuis le depot.
 
+## Deux operations, a ne surtout pas confondre
+
+Le recepteur de SRV-21 sert **deux routes** sur le meme port et le meme
+mecanisme d'authentification. Elles n'ont pas la meme portee et ne sont pas
+interchangeables.
+
+| Route | Portee | Effet |
+|---|---|---|
+| `/internal/koxo/sync/` | **globale** | Rejoue la synchronisation CSV de tous les profils. Avec `DisableOrphanedAccounts`, une ligne absente du CSV **desactive** le compte correspondant. |
+| `/internal/koxo/storage/reconcile/` | **un seul objet** | Pose un quota sur une fiche utilisateur ou une fiche de groupe secondaire. Ne touche a rien d'autre, ne lance aucune synchronisation CSV. |
+
+**Ne jamais appeler `/internal/koxo/sync/` pour poser un quota.** La portee est
+sans commune mesure avec l'intention, et une desactivation de masse ne se
+rattrape pas apres coup.
+
+### Reconciliation ciblee d'un quota
+
+Implementee dans `scripts/koxo/KoxoStorage.Common.psm1`, appelee par
+`HttpBillingV2KoxoStorageProvider` cote API-INTERNAL. Elle est **idempotente**
+et **fermee par defaut**.
+
+La requete porte tout ce qui est necessaire, pour que le recepteur n'ait rien
+a deviner : `correlationId`, `targetKind` (`user` ou `secondary_group`),
+`userId` exact pour une fiche personnelle, `primaryGroup` et `secondaryGroup`
+exacts, `desiredQuotaMib`, plus `targetKey` et `subscriptionItemId` pour
+l'audit. Aucun mot de passe ne circule. Un champ incoherent avec le type de
+cible est refuse, pas neutralise.
+
+La fiche est cherchee a son emplacement exact — `Data\Users\<PRIMAIRE>\<SECONDAIRE>\<userId>.xml`
+pour une personne, `Data\Users\<PRIMAIRE>\<SECONDAIRE>.xml` pour un groupe — et
+**jamais par balayage de nom** : le `sAMAccountName` est derive par KoXo et le
+nom est translittere, donc aucun des deux n'est predictible cote application.
+Le `userId` transmis est celui **lu** dans `customer_ad_links`.
+
+Etat constate puis decision, avant toute ecriture :
+
+| Constat | Decision |
+|---|---|
+| fiche absente | `not_materialized` — bloquant, jamais de creation |
+| quota applique == desire | `noop` |
+| quota applique < desire | augmentation appliquee |
+| quota applique > desire | `blocked_reduction` — **jamais applique** |
+| fiche illisible ou ambigue | `failed` |
+
+Une reduction n'est pas l'inverse d'une augmentation : abaisser un quota sous
+l'occupation reelle bloque l'utilisateur sans rien liberer. Cette phase ne
+reduit donc jamais.
+
+Pour une augmentation : verrou partage avec la synchronisation globale (KoXoAdm
+ne supporte pas deux instances), relecture sous verrou, sauvegarde locale,
+remplacement atomique, puis
+`/RepairUser UserId="…" Type="Storage"` ou
+`/RepairSecondaryGroup Group="…" PrimaryGroup="…" Type="Storage"`. Seul le type
+`Storage` est demande : une reparation complete reappliquerait aussi groupes,
+mot de passe et acces.
+
+La fiche est relue **apres** la reparation. L'ecriture n'est pas sa propre
+preuve : une reparation qui reecrirait la fiche depuis la base KoXo annulerait
+silencieusement la modification.
+
+Le niveau de preuve est explicite dans la reponse :
+
+- `xml_verified` — la fiche porte bien `EnableFolderQuota=1` et le quota
+  demande, relue apres la reparation ;
+- `fully_verified` — le quota **effectif** a en plus ete constate cote FSRM.
+
+FSRM n'est verifie que si `KOXO_STORAGE_FSRM_ENABLED=true` et qu'un gabarit de
+chemin est fourni ; la verification demandee mais non concluante **ferme** le
+resultat. Par defaut, la reponse s'arrete honnetement a `xml_verified`.
+
 ## Donnees exportees
 
 Chaque utilisateur exporte contient exactement 8 champs JSON :
@@ -422,6 +492,34 @@ est consulte.
 - `KOXO_LOG_DIRECTORY`
 - `KOXO_KOXO_LOG_GLOB`
 - `KOXO_BACKUP_RETENTION_COUNT`
+
+### Reconciliation ciblee de quota
+
+Cote API-INTERNAL (SRV-13) :
+
+- `BILLING_V2_KOXO_STORAGE_URL` — vise **la route ciblee**, jamais
+  `/internal/koxo/sync/`
+- `BILLING_V2_KOXO_STORAGE_TOKEN`
+- `BILLING_V2_KOXO_STORAGE_TIMEOUT_SECONDS` optionnelle, `180` par defaut
+- `BILLING_V2_KOXO_STORAGE_ALLOW_INSECURE_HTTP` optionnelle, `false` par defaut
+
+Les deux premieres absentes laissent le provider **dormant** : tout quota
+Billing V2 est alors bloque, sans repli silencieux. Une seule des deux fait
+echouer le demarrage — une configuration a moitie posee est une erreur
+d'exploitation, pas une intention.
+
+Cote SRV-21 :
+
+- `KOXO_STORAGE_WEBHOOK_TOKEN` optionnelle. Posee, elle devient le **seul**
+  jeton accepte sur la route de stockage, de sorte qu'un secret qui fuiterait
+  cote facturation ne puisse pas declencher la synchronisation globale. Absente,
+  la route retombe sur `KOXO_SYNC_WEBHOOK_TOKEN`.
+- `KOXO_STORAGE_DATA_ROOT` optionnelle, `C:\Program Files\KoXo Dev\KoXoAdm\Data`
+- `KOXO_STORAGE_FSRM_ENABLED` optionnelle, `false` par defaut
+- `KOXO_STORAGE_FSRM_SERVER` optionnelle — hote portant le role FSRM
+- `KOXO_STORAGE_FSRM_USER_PATH_TEMPLATE` /
+  `KOXO_STORAGE_FSRM_GROUP_PATH_TEMPLATE` — gabarits acceptant `{primaryGroup}`,
+  `{secondaryGroup}` et `{userId}`
 
 Valeur validee en recette SRV-21 pour les journaux KoXo :
 

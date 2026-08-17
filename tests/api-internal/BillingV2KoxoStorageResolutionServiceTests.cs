@@ -1,5 +1,6 @@
 using Kermaria.ApiInternal.Contracts;
 using Kermaria.ApiInternal.Data.Repositories;
+using Kermaria.ApiInternal.Services;
 using Kermaria.ApiInternal.Services.Provisioning;
 
 namespace Kermaria.ApiInternal.SmokeTests;
@@ -73,6 +74,15 @@ public static class BillingV2KoxoStorageResolutionServiceTests
             // Le sAMAccountName vient de l'annuaire, il n'est jamais predit.
             && resolution.Targets[0].AdLink?.SamAccountName == SamAccountName,
             "Un stockage personnel alimente par des lectures reelles doit resoudre sa fiche KoXo.");
+
+        // L'emplacement de la fiche vient de l'etat du client LU en base, pas
+        // d'une valeur composee par cette couche d'alimentation.
+        Ensure(
+            resolution.Targets[0].PrimaryGroup
+                == KoxoDirectoryTopology.PrimaryGroupClients
+            && resolution.Targets[0].SecondaryGroup == CustomerReference
+            && resolution.Targets[0].UserId == SamAccountName,
+            "L'emplacement KoXo de la fiche doit decouler des lectures, pas d'une convention locale.");
     }
 
     private static async Task VerifySharedStorageHappyPathAsync()

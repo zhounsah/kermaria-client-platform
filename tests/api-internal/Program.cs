@@ -228,6 +228,26 @@ async Task<int> RunAsync(string[] arguments)
     if (arguments.Length == 1
         && string.Equals(
             arguments[0],
+            "--billing-v2-koxo-storage-provider",
+            StringComparison.Ordinal))
+    {
+        try
+        {
+            await BillingV2KoxoStorageProviderTests.RunAsync();
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine(
+                "Tests provider de stockage KoXo Billing V2 en echec.");
+            Console.Error.WriteLine(exception.ToString());
+            return 1;
+        }
+    }
+
+    if (arguments.Length == 1
+        && string.Equals(
+            arguments[0],
             "--billing-v2-new-subscription",
             StringComparison.Ordinal))
     {

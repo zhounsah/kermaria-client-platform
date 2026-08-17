@@ -1,6 +1,6 @@
 ---
 name: billing-v2-koxo-storage-targets
-description: "Phase 3A Billing V2 (2026-08-17) : topologie KoXo extraite et partagée, résolution fail-closed des cibles de quota (GiB→MiB), provider réel toujours dormant. Corrige la fausse causalité « le stockage personnel crée le compte annuaire »."
+description: "Phase 3 Billing V2 (2026-08-17) TERMINÉE : topologie KoXo partagée, résolution fail-closed des cibles (GiB→MiB), route ciblée /internal/koxo/storage/reconcile/ sur SRV-21, provider HTTP réel et subordination des droits AD au stockage. Dormant en prod par les drapeaux. Corrige la fausse causalité « le stockage personnel crée le compte annuaire »."
 metadata:
   node_type: memory
   type: project
@@ -105,10 +105,70 @@ J'avais rapporté que cette méthode « ne rend rien hors `controlled_write` ».
 rend `DisabledAdGroupProvisioner`, `mock` rend le provisioner mock) reste à
 étudier séparément avant 3B — ne pas re-déduire cette contrainte de mode.
 
-## Reste à faire en 3B
+## Phase 3 terminée — exécution réelle câblée
 
-Endpoint SRV-21, fiche XML, `RepairUser` / `RepairSecondaryGroup`, lecture du
-quota courant (nécessaire pour appliquer la règle de non-réduction), puis
-branchement du resolver derrière un drapeau. Rappel :
-`KoXoAdm.exe` sort en **code 1 même en succès**, se fier aux marqueurs de
-journal.
+Le chemin complet existe : plan → résolution → `/internal/koxo/storage/reconcile/`
+sur SRV-21 → quota posé et vérifié → seulement ensuite les droits AD. Il reste
+**inaccessible en production** par `BILLING_V2_PROVISIONING_ENABLED=false`, non
+touché.
+
+### Deux routes, portées incomparables
+
+`/internal/koxo/sync/` reconcilie **toute** la branche et, avec
+`DisableOrphanedAccounts`, désactive ce qui manque au CSV. Ne jamais s'en servir
+pour poser un quota. `/internal/koxo/storage/reconcile/` ne touche qu'un objet.
+Même récepteur, même port, même mécanisme d'authentification — mais un jeton
+`KOXO_STORAGE_WEBHOOK_TOKEN` facultatif, qui devient exclusif sur la route de
+stockage quand il est posé.
+
+### Emplacement de la fiche
+
+`Data\Users\<PRIMAIRE>\<SECONDAIRE>\<userId>.xml` pour une personne,
+`Data\Users\<PRIMAIRE>\<SECONDAIRE>.xml` pour un groupe. Les deux premiers
+segments viennent de `KoxoDirectoryTopology`, donc de la **même OU que
+l'export**. Le `userId` est le `sAMAccountName` **lu** dans `customer_ad_links`,
+jamais prédit. Aucun balayage par nom : si la fiche n'est pas à cet endroit,
+l'objet n'est pas matérialisé et c'est bloquant. Le système de fichiers est donc
+lui-même la vérification — c'est pourquoi aucun contrôle sur le DN n'a été
+ajouté, il n'aurait apporté qu'un risque de faux blocage.
+
+### Décision desired ↔ actual
+
+absent → `not_materialized` · égal → `noop` · inférieur → augmentation ·
+supérieur → `blocked_reduction`, **jamais appliqué** · illisible ou ambigu →
+`failed`. Un quota désactivé n'est jamais un `noop` : l'activer est une
+modification, et on refuse quand même d'abaisser au passage une valeur déjà
+enregistrée.
+
+### Pièges intégrés
+
+- **Édition byte-safe obligatoire** : substitution ciblée sur les deux éléments,
+  jamais `[xml]` + `.Save()` (voir [[koxo-fiche-utilisateur-maitre]]). Le reste
+  de la fiche est préservé au caractère près, KoXo la réapplique intégralement.
+- `<FolderQuota>` et `<UserFolderQuota>` sont deux éléments distincts ; le `<`
+  ancre la distinction dans le motif.
+- `KoXoAdm.exe` sort en **code 1 même en succès** : `Invoke-KoxoProcess` tranche
+  sur les marqueurs de journal, réutilisé tel quel.
+- **Verrou partagé** avec la synchro globale : KoXoAdm ne supporte pas deux
+  instances, quel que soit le chemin qui l'invoque.
+- La relecture après réparation est obligatoire : l'écriture n'est pas sa preuve,
+  une réparation qui réécrirait la fiche depuis la base KoXo annulerait tout.
+
+### Niveau de preuve, dit honnêtement
+
+`xml_verified` = fiche relue après réparation. `fully_verified` = quota effectif
+constaté côté FSRM, seulement si `KOXO_STORAGE_FSRM_ENABLED=true` et gabarit de
+chemin fourni. **FSRM n'a pas été validé en réel** : aucun rôle FSRM sur SRV-21,
+le volume « Stockage dossiers personnels » est ailleurs. Une vérification
+demandée mais non concluante ferme le résultat.
+
+### Côté API
+
+`HttpBillingV2KoxoStorageProvider` ne résout rien : il reçoit des cibles déjà
+vérifiées. Une requête par cible, séquentielle, arrêt à la première non
+appliquée, les suivantes rendues **non tentées**. Un lot partiel échoue
+globalement. `BillingV2KoxoStorageGate` porte l'invariant « pas de droit AD
+dépendant sans socle de stockage » et est testable seul.
+
+Configuration absente ⇒ provider dormant qui bloque tout ; configuration à
+moitié posée ⇒ échec au démarrage, volontairement.

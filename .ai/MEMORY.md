@@ -41,6 +41,11 @@
 
 - Les topics Claude du 2026-08-05/06 restent les références détaillées pour les comportements mesurés de KoXo : accents, groupes primaires, orphelins, fiche utilisateur, maîtrise du mot de passe et adoption AD.
 - Références : [koxo-accents-majuscules.md](topics/koxo-accents-majuscules.md), [koxo-groupes-primaires-separes.md](topics/koxo-groupes-primaires-separes.md), [koxo-orphelins-supprimes.md](topics/koxo-orphelins-supprimes.md), [koxo-fiche-utilisateur-maitre.md](topics/koxo-fiche-utilisateur-maitre.md), [koxo-ad-password-mastery.md](topics/koxo-ad-password-mastery.md), [koxo-api-ne-cree-plus.md](topics/koxo-api-ne-cree-plus.md).
+- **Deux routes sur le récepteur SRV-21, portées incomparables** :
+  `/internal/koxo/sync/` est **globale** (une ligne absente du CSV désactive le
+  compte) ; `/internal/koxo/storage/reconcile/` ne touche **qu'un** objet KoXo.
+  Ne jamais utiliser la première pour poser un quota. Détail :
+  [billing-v2-koxo-storage-targets.md](topics/billing-v2-koxo-storage-targets.md).
 - **Un client payant ordinaire a déjà son `customer_ad_links` avant l'export CSV** (`ListExportCandidatesAsync` l'exige) ; seul un essai `demo_kind = 'trial'` part sans lien et est créé par KoXo. Le stockage personnel Billing V2 **ne crée aucune identité** — le code affirmait le contraire jusqu'au 2026-08-17. Détail : [billing-v2-koxo-storage-targets.md](topics/billing-v2-koxo-storage-targets.md).
 - Une mémoire Codex plus récente (preuve datée 2026-08-10) couvre la synchro SRV-13→SRV-21, le remapping des groupes AD vers le domaine enfant et la release 1.0.0.8. Elle précise que code/config/TCP étaient prouvés mais qu'aucun nouveau POST signé / replay KoXo n'avait été exécuté : conserver cette limite de preuve.
 
@@ -60,6 +65,15 @@
   Stripe n'est créé. Mais la phase de validation prévue en `STRIPE_MODE=test`
   a été sautée : lever ce verrou ferait passer de « rien » à « argent réel »
   sans palier. Référence : `docs/v1.4/V1.4.0.0_BILLING_V2.md`.
+- **Provisioning du stockage KoXo câblé de bout en bout (2026-08-17)** : plan →
+  résolution stricte → route ciblée SRV-21 → quota vérifié → *seulement ensuite*
+  les droits AD. Un stockage bloqué ou échoué empêche VPN/RDS du même
+  utilisateur. Reste inaccessible en production par
+  `BILLING_V2_PROVISIONING_ENABLED=false`, non touché. Sans
+  `BILLING_V2_KOXO_STORAGE_URL`/`_TOKEN`, le provider est dormant et bloque tout
+  quota — aucun repli silencieux. **Une réduction de quota n'est jamais
+  appliquée.** La vérification FSRM existe mais n'a **pas** été validée en réel :
+  la preuve courante s'arrête à `xml_verified`.
 - Invariants à ne pas casser : `BillingEvent` immuable = autorité du montant
   (pas le provider) ; trois axes de statut orthogonaux ; identité de
   renouvellement = `(subscription_id, cycle_sequence)` ; `billing_anchor_at`

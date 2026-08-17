@@ -317,9 +317,11 @@ public sealed record BillingV2ProvisioningPlan(
     /// </summary>
     /// <remarks>
     /// Le chemin reel du quota passe par KoXo, qui ecrit le quota dans la fiche
-    /// XML puis fait appliquer la limite sur le serveur de fichiers. Aucun de
-    /// ces plans n'est executable aujourd'hui et leur seule presence doit
-    /// continuer a bloquer l'execution.
+    /// XML puis fait appliquer la limite sur le serveur de fichiers. Ces plans
+    /// sont desormais executables, mais uniquement apres resolution stricte de
+    /// leur cible : leur presence conditionne le provisioning, elle ne l'ouvre
+    /// pas. Un quota non resolu ou non applique bloque tout le lot, acces
+    /// annuaire compris.
     /// </remarks>
     public IReadOnlyList<BillingV2StorageQuotaPlan> StorageQuotaPlans => Users
         .SelectMany(user => user.UserStoragePlans)
@@ -365,6 +367,20 @@ public interface IBillingV2KoxoStorageProvider
 {
     BillingV2KoxoStorageReadiness CheckReadiness(
         IReadOnlyList<BillingV2StorageQuotaPlan> quotas);
+
+    /// <summary>
+    /// Reconcilie des cibles DEJA resolues, sans jamais en resoudre aucune.
+    /// </summary>
+    /// <remarks>
+    /// Le provider ne connait ni <c>portal_users</c>, ni l'annuaire, ni la
+    /// topologie : il recoit des objets KoXo nommes et verifies. Refaire la
+    /// resolution ici creerait un second chemin d'identification, donc une
+    /// seconde facon de se tromper de titulaire.
+    /// </remarks>
+    Task<BillingV2KoxoStorageApplyResult> ApplyAsync(
+        IReadOnlyList<BillingV2ResolvedKoxoStorageTarget> targets,
+        string correlationId,
+        CancellationToken cancellationToken);
 }
 
 public sealed class DormantBillingV2KoxoStorageProvider
@@ -385,7 +401,25 @@ public sealed class DormantBillingV2KoxoStorageProvider
                 "BILLING_V2_KOXO_STORAGE_NOOP")
             : new BillingV2KoxoStorageReadiness(
                 CanApplyQuotas: false,
-                "BILLING_V2_KOXO_STORAGE_PROVIDER_NOT_CONFIGURED");
+                BillingV2KoxoStorageApplyReasons.ProviderNotConfigured);
+
+    /// <summary>
+    /// Refuse tout, sauf un lot vide.
+    /// </summary>
+    /// <remarks>
+    /// C'est l'implementation retenue quand aucun point d'entree KoXo n'est
+    /// configure. Elle echoue au lieu de rendre un succes vide : un lot de
+    /// quotas declare applique alors que rien n'a ete fait laisserait
+    /// l'abonnement passer pour provisionne.
+    /// </remarks>
+    public Task<BillingV2KoxoStorageApplyResult> ApplyAsync(
+        IReadOnlyList<BillingV2ResolvedKoxoStorageTarget> targets,
+        string correlationId,
+        CancellationToken cancellationToken)
+        => Task.FromResult(targets.Count == 0
+            ? BillingV2KoxoStorageApplyResult.Noop()
+            : BillingV2KoxoStorageApplyResult.Fail(
+                BillingV2KoxoStorageApplyReasons.ProviderNotConfigured));
 }
 
 /// <summary>
@@ -451,6 +485,8 @@ public sealed class BillingV2ProvisioningService : IBillingV2ProvisioningService
     private readonly IActiveDirectoryLinkRepository _activeDirectoryLinks;
     private readonly IProvisioningService _provisioningService;
     private readonly IBillingV2KoxoStorageProvider _koxoStorageProvider;
+    private readonly IBillingV2KoxoStorageTargetResolutionService
+        _koxoStorageTargets;
     private readonly SubscriptionProvisioningRuntimeConfiguration
         _provisioningConfiguration;
     private readonly ILogger<BillingV2ProvisioningService> _logger;
@@ -462,6 +498,7 @@ public sealed class BillingV2ProvisioningService : IBillingV2ProvisioningService
         IActiveDirectoryLinkRepository activeDirectoryLinks,
         IProvisioningService provisioningService,
         IBillingV2KoxoStorageProvider koxoStorageProvider,
+        IBillingV2KoxoStorageTargetResolutionService koxoStorageTargets,
         SubscriptionProvisioningRuntimeConfiguration provisioningConfiguration,
         ILogger<BillingV2ProvisioningService> logger)
     {
@@ -471,8 +508,99 @@ public sealed class BillingV2ProvisioningService : IBillingV2ProvisioningService
         _activeDirectoryLinks = activeDirectoryLinks;
         _provisioningService = provisioningService;
         _koxoStorageProvider = koxoStorageProvider;
+        _koxoStorageTargets = koxoStorageTargets;
         _provisioningConfiguration = provisioningConfiguration;
         _logger = logger;
+    }
+
+    /// <summary>
+    /// Reconcilie le socle de stockage avant toute ecriture dans l'annuaire.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// L'ordre n'est pas cosmetique : un acces VPN ou RDS accorde a un
+    /// utilisateur dont l'environnement personnel n'existe pas ouvre une session
+    /// vers un poste vide. Le stockage passe donc d'abord, et un stockage
+    /// bloque ou echoue interrompt le provisioning avant la moindre modification
+    /// de groupe.
+    /// </para>
+    /// <para>
+    /// La resolution des cibles reste entierement en dehors du provider : ce
+    /// service resout, le provider applique. Un provider qui resoudrait
+    /// lui-meme ouvrirait un second chemin d'identification du titulaire.
+    /// </para>
+    /// </remarks>
+    private async Task<bool> TryReconcileStorageAsync(
+        string customerId,
+        BillingV2ProvisioningPlan plan,
+        string subscriptionId,
+        CancellationToken cancellationToken)
+    {
+        var planCount = plan.StorageQuotaPlans.Count;
+        if (planCount == 0)
+        {
+            return BillingV2KoxoStorageGate
+                .Evaluate(planCount, resolution: null, applied: null)
+                .MayContinue;
+        }
+
+        var resolution = await _koxoStorageTargets.ResolveAsync(
+            customerId,
+            plan.StorageQuotaPlans,
+            cancellationToken);
+        if (!BillingV2KoxoStorageGate
+                .Evaluate(planCount, resolution, applied: null)
+                .MayContinue
+            && !resolution.Resolved)
+        {
+            _logger.LogWarning(
+                "Billing V2 provisioning denied for customer {CustomerId} subscription {SubscriptionId}: KoXo storage targets could not be resolved ({ReasonCode}). No storage quota and no Active Directory change was applied.",
+                customerId,
+                subscriptionId,
+                resolution.ReasonCode);
+            return false;
+        }
+
+        var correlationId = Guid.NewGuid().ToString("D");
+        var applied = await _koxoStorageProvider.ApplyAsync(
+            resolution.Targets,
+            correlationId,
+            cancellationToken);
+        var gate = BillingV2KoxoStorageGate.Evaluate(
+            planCount,
+            resolution,
+            applied);
+        if (!gate.MayContinue)
+        {
+            // Le detail par cible est journalise : un lot partiellement
+            // applique doit rester lisible, sinon il se lit comme un echec
+            // total alors qu'une partie du stockage a bien change.
+            foreach (var result in applied.Results.Where(
+                result => !result.Succeeded))
+            {
+                _logger.LogWarning(
+                    "Billing V2 KoXo storage reconcile refused for subscription {SubscriptionId} item {SubscriptionItemId}: {Outcome} ({ReasonCode}).",
+                    subscriptionId,
+                    result.SubscriptionItemId,
+                    result.Outcome,
+                    result.ReasonCode);
+            }
+
+            _logger.LogWarning(
+                "Billing V2 provisioning denied for customer {CustomerId} subscription {SubscriptionId}: KoXo storage reconciliation did not complete ({ReasonCode}). Dependent Active Directory rights were not applied.",
+                customerId,
+                subscriptionId,
+                applied.ReasonCode);
+            return false;
+        }
+
+        _logger.LogInformation(
+            "Billing V2 KoXo storage reconciled for customer {CustomerId} subscription {SubscriptionId}: {TargetCount} target(s), correlation {CorrelationId}.",
+            customerId,
+            subscriptionId,
+            applied.Results.Count,
+            correlationId);
+        return true;
     }
 
     public async Task<ProvisioningExecutionResult?> TryReconcileAsync(
@@ -560,22 +688,15 @@ public sealed class BillingV2ProvisioningService : IBillingV2ProvisioningService
             return null;
         }
 
-        if (plan.StorageQuotaPlans.Count > 0)
-        {
-            var storageReadiness =
-                _koxoStorageProvider.CheckReadiness(plan.StorageQuotaPlans);
-            if (storageReadiness.CanApplyQuotas)
-            {
-                _logger.LogWarning(
-                    "Billing V2 KoXo storage provider unexpectedly reported ready for customer {CustomerId}, but storage quota execution is not wired in this release. Legacy provisioning remains authoritative.",
-                    customerId);
-                return null;
-            }
-
-            _logger.LogWarning(
-                "Billing V2 provisioning gate denied for customer {CustomerId}: KoXo storage quota plans exist but no trusted runtime storage provider is configured ({ReasonCode}). Legacy provisioning remains authoritative.",
+        // Le socle de stockage passe avant tout acces dependant, et son echec
+        // arrete le provisioning : la reconciliation refuse d'elle-meme si
+        // aucun provider n'est configure.
+        if (!await TryReconcileStorageAsync(
                 customerId,
-                storageReadiness.ReasonCode);
+                plan,
+                context.Subscription.Id,
+                cancellationToken))
+        {
             return null;
         }
 
@@ -718,14 +839,12 @@ public sealed class BillingV2ProvisioningService : IBillingV2ProvisioningService
             return null;
         }
 
-        if (plan.StorageQuotaPlans.Count > 0)
-        {
-            var storageReadiness =
-                _koxoStorageProvider.CheckReadiness(plan.StorageQuotaPlans);
-            _logger.LogWarning(
-                "Billing V2 provisioning gate denied for subscription {SubscriptionId}: KoXo storage quota plans exist but no trusted runtime storage provider is configured ({ReasonCode}). No external action was executed.",
+        if (!await TryReconcileStorageAsync(
+                customerId,
+                plan,
                 subscriptionId,
-                storageReadiness.ReasonCode);
+                cancellationToken))
+        {
             return null;
         }
 

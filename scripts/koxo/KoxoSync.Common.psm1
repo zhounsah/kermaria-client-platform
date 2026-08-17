@@ -1559,6 +1559,8 @@ Export-ModuleMember -Function `
     Get-KoxoLostCharacters, `
     Get-KoxoRecentApplicationLogs, `
     Get-KoxoLatestExternalLog, `
+    Get-KoxoPropertyValue, `
+    Get-KoxoSetting, `
     Get-KoxoSha256Hex, `
     Get-KoxoSyncConfiguration, `
     Invoke-KoxoApiRequest, `

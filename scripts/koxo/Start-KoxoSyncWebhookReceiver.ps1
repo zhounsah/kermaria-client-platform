@@ -9,11 +9,19 @@ param(
     [string]$KoxoWorkingDirectory = 'C:\Program Files\KoXo Dev\KoXoAdm',
     [string]$KoxoSyncArgument = '/Synchro=CLIENTS.xml',
     [string]$Token = '',
-    [string]$LogDirectory = 'C:\Program Files\KoXo Dev\KoXoAdm\Data\CSVSynchro\Logs\webhook'
+    [string]$LogDirectory = 'C:\Program Files\KoXo Dev\KoXoAdm\Data\CSVSynchro\Logs\webhook',
+    # Operation CIBLEE de quota, distincte de la synchronisation globale.
+    # Elle partage l'hote, le port et le mecanisme d'authentification, mais
+    # jamais la semantique : elle ne declenche aucune synchronisation CSV.
+    [string]$StoragePath = '/internal/koxo/storage/reconcile/',
+    [string]$StorageToken = '',
+    [string]$KoxoDataRoot = 'C:\Program Files\KoXo Dev\KoXoAdm\Data'
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+Import-Module (Join-Path $PSScriptRoot 'KoxoStorage.Common.psm1') -Force -DisableNameChecking
 
 if (-not (Test-Path -LiteralPath $LogDirectory)) {
     New-Item -ItemType Directory -Path $LogDirectory -Force | Out-Null
@@ -29,6 +37,30 @@ if ([string]::IsNullOrWhiteSpace($resolvedToken)) {
     throw 'KOXO_SYNC_WEBHOOK_TOKEN is required.'
 }
 
+# Jeton dedie facultatif. Pose, il devient le SEUL jeton accepte sur la route
+# de stockage : un secret qui fuiterait cote facturation ne pourrait alors pas
+# declencher la synchronisation globale, dont un passage errone desactive des
+# comptes. Absent, la route de stockage retombe sur le jeton existant.
+$resolvedStorageToken = if ([string]::IsNullOrWhiteSpace($StorageToken)) {
+    $env:KOXO_STORAGE_WEBHOOK_TOKEN
+} else {
+    $StorageToken
+}
+
+if ([string]::IsNullOrWhiteSpace($resolvedStorageToken)) {
+    $resolvedStorageToken = $resolvedToken
+}
+
+$syncPath = ([System.Uri]($Prefix -replace '://\+', '://localhost')).AbsolutePath.TrimEnd('/')
+$normalizedStoragePath = '/' + $StoragePath.Trim('/')
+$storagePrefix = ($Prefix -replace '(?<=://[^/]+)/.*$', '') + $normalizedStoragePath + '/'
+# Meme repertoire de travail que la synchronisation globale, volontairement :
+# c'est ce qui fait tomber les deux chemins sur le MEME verrou, et KoXoAdm.exe
+# ne supporte pas deux instances concurrentes.
+$storageConfiguration = Get-KoxoStorageConfiguration `
+    -DataRoot $KoxoDataRoot `
+    -WorkingDirectory $WorkingDirectory
+
 $resolvedSyncScriptPath = [System.IO.Path]::GetFullPath($SyncScriptPath)
 $resolvedWebhookSyncLauncherPath = [System.IO.Path]::GetFullPath($WebhookSyncLauncherPath)
 $resolvedCsvTargetPath = [System.IO.Path]::GetFullPath($CsvTargetPath)
@@ -37,6 +69,7 @@ $resolvedKoxoExecutablePath = [System.IO.Path]::GetFullPath($KoxoExecutablePath)
 $resolvedKoxoWorkingDirectory = [System.IO.Path]::GetFullPath($KoxoWorkingDirectory)
 $listener = [System.Net.HttpListener]::new()
 $listener.Prefixes.Add($Prefix)
+$listener.Prefixes.Add($storagePrefix)
 $listener.Start()
 
 function Write-WebhookLog {
@@ -144,8 +177,30 @@ try {
                 continue
             }
 
+            # Routage AVANT toute action : la route de stockage ne doit jamais
+            # tomber dans la branche de synchronisation globale, dont un
+            # passage errone desactive des comptes.
+            $requestPath = $request.Url.AbsolutePath.TrimEnd('/')
+            $isStorageRequest = [string]::Equals(
+                $requestPath,
+                $normalizedStoragePath,
+                [System.StringComparison]::OrdinalIgnoreCase)
+            $isSyncRequest = [string]::Equals(
+                $requestPath,
+                $syncPath,
+                [System.StringComparison]::OrdinalIgnoreCase)
+
+            if (-not $isStorageRequest -and -not $isSyncRequest) {
+                Write-JsonResponse -Response $response -StatusCode 404 -Body @{
+                    code = 'NOT_FOUND'
+                    message = 'Unknown operation.'
+                }
+                continue
+            }
+
+            $expectedToken = if ($isStorageRequest) { $resolvedStorageToken } else { $resolvedToken }
             $providedToken = Read-BearerToken -Request $request
-            if (-not [string]::Equals($providedToken, $resolvedToken, [System.StringComparison]::Ordinal)) {
+            if (-not [string]::Equals($providedToken, $expectedToken, [System.StringComparison]::Ordinal)) {
                 Write-WebhookLog -Level 'warning' -Message 'KoXo webhook unauthorized.' -Data @{
                     remote = $request.RemoteEndPoint.ToString()
                 }
@@ -159,6 +214,63 @@ try {
             $reader = [System.IO.StreamReader]::new($request.InputStream, $request.ContentEncoding)
             $body = $reader.ReadToEnd()
             $reader.Dispose()
+
+            if ($isStorageRequest) {
+                # Traitement SYNCHRONE : l'appelant a besoin du constat, pas
+                # d'un accuse de prise en compte. Le verrou partage serialise
+                # de toute facon les invocations de KoXoAdm.exe.
+                try {
+                    $storageRequest = Read-KoxoStorageRequest -Body $body
+                }
+                catch {
+                    Write-WebhookLog -Level 'warning' -Message 'KoXo storage request rejected.' -Data @{
+                        reason = $_.Exception.Message
+                    }
+                    Write-JsonResponse -Response $response -StatusCode 400 -Body @{
+                        code = 'INVALID_REQUEST'
+                        message = 'The storage reconcile contract was not respected.'
+                    }
+                    continue
+                }
+
+                # Un echec de reconciliation est une issue normale, pas une
+                # panne du service : il est rendu avec la cible concernee pour
+                # que l'appelant sache exactement ce qui n'a pas ete applique.
+                try {
+                    $storageResult = Invoke-KoxoStorageReconcile `
+                        -Configuration $storageConfiguration `
+                        -TargetKind $storageRequest.TargetKind `
+                        -PrimaryGroup $storageRequest.PrimaryGroup `
+                        -SecondaryGroup $storageRequest.SecondaryGroup `
+                        -UserId $storageRequest.UserId `
+                        -DesiredQuotaMib $storageRequest.DesiredQuotaMib `
+                        -CorrelationId $storageRequest.CorrelationId `
+                        -TargetKey $storageRequest.TargetKey `
+                        -SubscriptionItemId $storageRequest.SubscriptionItemId
+                }
+                catch {
+                    Write-WebhookLog -Level 'error' -Message 'KoXo storage reconcile failed.' -Data @{
+                        correlation_id = $storageRequest.CorrelationId
+                        target_key = $storageRequest.TargetKey
+                        exception = $_.Exception.Message
+                    }
+                    $storageResult = New-KoxoStorageResult `
+                        -Status 'failed' `
+                        -ReasonCode 'BILLING_V2_KOXO_STORAGE_REPAIR_FAILED' `
+                        -Verification 'none' `
+                        -TargetKey $storageRequest.TargetKey `
+                        -CorrelationId $storageRequest.CorrelationId
+                }
+
+                Write-JsonResponse -Response $response -StatusCode 200 -Body @{
+                    status = $storageResult.status
+                    reasonCode = $storageResult.reasonCode
+                    verification = $storageResult.verification
+                    targetKey = $storageResult.targetKey
+                    correlationId = $storageResult.correlationId
+                }
+                continue
+            }
 
             $payload = if ([string]::IsNullOrWhiteSpace($body)) {
                 $null

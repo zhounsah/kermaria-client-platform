@@ -280,9 +280,9 @@ builder.Services.AddScoped<IBillingV2KoxoTargetingRepository>(
     _ => sqlConfiguration.IsPersistent
         ? new MariaDbBillingV2KoxoTargetingRepository(sqlConfiguration)
         : new MockBillingV2KoxoTargetingRepository());
-// Resolution en lecture seule des cibles de stockage KoXo. Enregistree pour
-// etre disponible, mais volontairement branchee nulle part : le provider reel
-// reste DormantBillingV2KoxoStorageProvider et rien n'applique de quota.
+// Resolution en lecture seule des cibles de stockage KoXo, consommee par
+// BillingV2ProvisioningService avant toute application de quota : le provider
+// ne resout jamais lui-meme le titulaire d'une cible.
 builder.Services.AddScoped<
     IBillingV2KoxoStorageTargetResolutionService,
     BillingV2KoxoStorageTargetResolutionService>();
@@ -441,8 +441,32 @@ builder.Services.AddScoped<
 builder.Services.AddScoped<
     IBillingV2ClientServiceCatalogShadowService,
     BillingV2ClientServiceCatalogShadowService>();
-builder.Services.AddSingleton<IBillingV2KoxoStorageProvider>(
-    DormantBillingV2KoxoStorageProvider.Instance);
+// Sans point d'entree KoXo configure, le provider reste dormant et refuse tout
+// lot non vide : pas de repli silencieux vers une adresse devinee.
+var koxoStorageProviderConfiguration =
+    BillingV2KoxoStorageProviderConfiguration.Resolve(builder.Configuration);
+builder.Services.AddSingleton(koxoStorageProviderConfiguration);
+if (koxoStorageProviderConfiguration.Configured)
+{
+    builder.Services.AddHttpClient(
+        BillingV2KoxoStorageProviderConfiguration.HttpClientName,
+        client =>
+        {
+            client.Timeout = koxoStorageProviderConfiguration.Timeout;
+            client.DefaultRequestHeaders.Authorization =
+                new System.Net.Http.Headers.AuthenticationHeaderValue(
+                    "Bearer",
+                    koxoStorageProviderConfiguration.BearerToken);
+        });
+    builder.Services.AddSingleton<
+        IBillingV2KoxoStorageProvider,
+        HttpBillingV2KoxoStorageProvider>();
+}
+else
+{
+    builder.Services.AddSingleton<IBillingV2KoxoStorageProvider>(
+        DormantBillingV2KoxoStorageProvider.Instance);
+}
 builder.Services.AddScoped<
     IBillingV2ProvisioningService,
     BillingV2ProvisioningService>();

@@ -61,6 +61,9 @@ $ErrorActionPreference = 'Stop'
 # Liste explicite : ajouter un script au depot ne le deploie pas tout seul.
 $DeployableFiles = @(
     'KoxoSync.Common.psm1',
+    # Le recepteur importe ce module au demarrage : l'oublier au deploiement
+    # empeche le service de demarrer, pas seulement la route de stockage.
+    'KoxoStorage.Common.psm1',
     'Sync-KoXoClients.ps1',
     'Invoke-KoxoSyncFromWebhook.ps1',
     'Start-KoxoSyncWebhookReceiver.ps1',

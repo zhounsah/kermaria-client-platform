@@ -72,19 +72,36 @@ public sealed record BillingV2ResolvedKoxoStorageTarget(
         _ => $"group:{PrimaryGroup}/{SecondaryGroup}",
     };
 
+    /// <summary>
+    /// Identifiant de la fiche KoXo, tel qu'il est reellement porte par le
+    /// compte, jamais reconstruit.
+    /// </summary>
+    /// <remarks>
+    /// KoXo derive lui-meme le <c>sAMAccountName</c> a la creation et
+    /// translittere le nom : aucune regle applicative ne permet de le predire.
+    /// La valeur rendue ici vient du lien annuaire, dont la coherence avec
+    /// l'objet retrouve par <c>employeeNumber</c> a deja ete verifiee sur le
+    /// triplet GUID / SID / sAMAccountName.
+    /// </remarks>
+    public string? UserId => Kind == BillingV2KoxoStorageTargetKind.User
+        ? AdLink?.SamAccountName?.Trim()
+        : null;
+
     public static BillingV2ResolvedKoxoStorageTarget ForUser(
         string subscriptionItemId,
         long quotaMebibytes,
         string employeeNumber,
-        PortalUserAdLinkRecord adLink)
+        PortalUserAdLinkRecord adLink,
+        string primaryGroup,
+        string secondaryGroup)
         => new(
             subscriptionItemId,
             BillingV2KoxoStorageTargetKind.User,
             quotaMebibytes,
             employeeNumber,
             adLink,
-            PrimaryGroup: null,
-            SecondaryGroup: null);
+            primaryGroup,
+            secondaryGroup);
 
     public static BillingV2ResolvedKoxoStorageTarget ForSecondaryGroup(
         string subscriptionItemId,
@@ -290,11 +307,19 @@ public static class BillingV2KoxoStorageTargetReasons
 /// tranche au hasard.
 /// </para>
 /// </remarks>
+/// <param name="IsDemo">
+/// Etat brut du client, transporte pour que la topologie — et elle seule —
+/// puisse nommer l'emplacement KoXo de la fiche. Le service d'alimentation ne
+/// compose aucun nom.
+/// </param>
 public sealed record BillingV2KoxoUserIdentitySnapshot(
     string IdentityReference,
     string? KoxoUniqueIdentifier,
     IReadOnlyList<PortalUserAdLinkRecord> PortalUserLinks,
-    AdDirectoryObjectSummary? DirectoryObjectByEmployeeNumber);
+    AdDirectoryObjectSummary? DirectoryObjectByEmployeeNumber,
+    bool IsDemo = false,
+    string? KoxoGroupReference = null,
+    string CustomerReference = "");
 
 /// <summary>
 /// Etat du client necessaire pour nommer son OU de groupe secondaire.
@@ -637,11 +662,35 @@ public static class BillingV2KoxoStorageTargetResolver
             return false;
         }
 
+        // La fiche KoXo vit sous l'OU dans laquelle l'export a place l'identite :
+        // le meme calcul, a partir des memes donnees brutes du client. Recomposer
+        // ce nom ailleurs, ou le lire dans le nom distingue par decoupage de
+        // chaine, ferait diverger le quota de l'export a la premiere evolution.
+        if (string.IsNullOrWhiteSpace(snapshot.CustomerReference))
+        {
+            reasonCode =
+                BillingV2KoxoStorageTargetReasons.SecondaryGroupUnknown;
+            return false;
+        }
+
+        var userSecondaryGroup = KoxoDirectoryTopology.ResolveSecondaryGroup(
+            snapshot.IsDemo,
+            NormalizeOptional(snapshot.KoxoGroupReference),
+            snapshot.CustomerReference.Trim());
+        if (string.IsNullOrWhiteSpace(userSecondaryGroup))
+        {
+            reasonCode =
+                BillingV2KoxoStorageTargetReasons.SecondaryGroupUnknown;
+            return false;
+        }
+
         target = BillingV2ResolvedKoxoStorageTarget.ForUser(
             quota.SubscriptionItemId,
             mebibytes,
             employeeNumber!,
-            link);
+            link,
+            KoxoDirectoryTopology.ResolvePrimaryGroup(snapshot.IsDemo),
+            userSecondaryGroup);
         return true;
     }
 

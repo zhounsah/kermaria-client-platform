@@ -52,6 +52,9 @@ public static class BillingV2KoxoStorageTargetTests
         VerifyDirectoryLookupFailureBlocks();
         VerifyDirectoryMismatchBlocksOnEachAttribute();
         VerifyNoNameBasedFallbackExists();
+        VerifyUserTargetCarriesItsKoxoLocation();
+        VerifyDemoUserTargetFollowsItsOwnBranch();
+        VerifyUserWithoutCustomerReferenceIsRefused();
         VerifySecondaryGroupTargetFollowsTheExportTopology();
         VerifyDemoSecondaryGroupKeepsItsOwnOu();
         VerifySecondaryGroupWithoutCustomerContextIsRefused();
@@ -667,6 +670,69 @@ public static class BillingV2KoxoStorageTargetTests
     }
 
     // ------------------------------------------------------------------
+    // Emplacement KoXo de la fiche utilisateur.
+    // ------------------------------------------------------------------
+
+    /// <summary>
+    /// La cible personnelle sait ou vit sa fiche, sans que rien ne soit devine.
+    /// </summary>
+    /// <remarks>
+    /// La fiche KoXo est a <c>Data\Users\&lt;primaire&gt;\&lt;secondaire&gt;\&lt;login&gt;.xml</c>.
+    /// Les deux premiers segments viennent de la meme topologie que l'export —
+    /// donc de la meme OU — et le troisieme est le <c>sAMAccountName</c> LU dans
+    /// le lien annuaire, jamais reconstruit a partir du nom.
+    /// </remarks>
+    private static void VerifyUserTargetCarriesItsKoxoLocation()
+    {
+        var resolution = ResolveUser(UserQuota(32));
+        var target = resolution.Targets[0];
+
+        Ensure(
+            resolution.Resolved
+            && target.PrimaryGroup == KoxoDirectoryTopology.PrimaryGroupClients
+            && target.SecondaryGroup == KoxoDirectoryTopology.ResolveSecondaryGroup(
+                false,
+                null,
+                "CLI-000042")
+            && target.UserId == SamAccountName,
+            "La cible personnelle doit porter son emplacement KoXo exact, login lu et non predit.");
+    }
+
+    private static void VerifyDemoUserTargetFollowsItsOwnBranch()
+    {
+        var snapshot = Snapshot() with { IsDemo = true };
+        var resolution = ResolveUser(UserQuota(8), snapshot);
+        var target = resolution.Targets[0];
+
+        // Les deux branches primaires sont volontairement cloisonnees et leurs
+        // OU secondaires portent des noms distincts : viser la branche payante
+        // pour un essai poserait le quota sur une OU ou l'identite n'est pas.
+        Ensure(
+            resolution.Resolved
+            && target.PrimaryGroup == KoxoDirectoryTopology.PrimaryGroupDemo
+            && target.SecondaryGroup == KoxoDirectoryTopology.ResolveSecondaryGroup(
+                true,
+                null,
+                "CLI-000042"),
+            "Un essai doit viser sa propre branche primaire et sa propre OU.");
+    }
+
+    private static void VerifyUserWithoutCustomerReferenceIsRefused()
+    {
+        var snapshot = Snapshot() with { CustomerReference = "  " };
+        var resolution = ResolveUser(UserQuota(32), snapshot);
+
+        // Sans reference client, l'OU ne peut pas etre nommee. La deviner
+        // reviendrait a choisir un dossier au hasard.
+        Ensure(
+            !resolution.Resolved
+            && resolution.ReasonCode
+                == BillingV2KoxoStorageTargetReasons.SecondaryGroupUnknown
+            && resolution.Targets.Count == 0,
+            "Une cible personnelle sans reference client doit etre refusee, pas nommee par defaut.");
+    }
+
+    // ------------------------------------------------------------------
     // Fabriques.
     // ------------------------------------------------------------------
 
@@ -692,7 +758,10 @@ public static class BillingV2KoxoStorageTargetTests
             IdentityReference,
             EmployeeNumber,
             [Link()],
-            DirectoryObject());
+            DirectoryObject(),
+            IsDemo: false,
+            KoxoGroupReference: null,
+            CustomerReference: "CLI-000042");
 
     private static BillingV2StorageQuotaPlan UserQuota(long gibibytes)
         => new(
