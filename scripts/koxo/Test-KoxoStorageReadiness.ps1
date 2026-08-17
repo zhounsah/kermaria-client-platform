@@ -97,7 +97,12 @@ function Invoke-ReadOnlyQuery {
         throw ("MariaDB query failed with exit code {0}." -f $LASTEXITCODE)
     }
 
-    @($output | Where-Object { $_ -is [string] -and $_ -notmatch '^(Warning|mysql:)' })
+    # PowerShell reenumere ce que rend une fonction : sans l'operateur virgule,
+    # une requete a une seule ligne rendrait un scalaire et $rows.Count
+    # echouerait sous StrictMode. On rend donc toujours le tableau lui-meme,
+    # comme objet unique, pour 0, 1 ou N lignes.
+    $rows = @($output | Where-Object { $_ -is [string] -and $_ -notmatch '^(Warning|mysql:)' })
+    return ,$rows
 }
 
 Write-Host 'Preflight KoXo Storage - LECTURE SEULE, aucune modification.' -ForegroundColor Cyan

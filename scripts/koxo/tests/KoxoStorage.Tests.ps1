@@ -95,6 +95,64 @@ function Invoke-KoxoStorageTestReconcile {
         -RepairInvoker $RepairInvoker
 }
 
+# Le preflight est un script, pas un module : on en extrait la seule fonction
+# testable par l'arbre syntaxique plutot que de le sourcer, ce qui declencherait
+# tout le parcours de lecture.
+$script:ReadinessScriptPath = Join-Path (Split-Path -Parent $PSScriptRoot) 'Test-KoxoStorageReadiness.ps1'
+$script:ReadinessAst = [System.Management.Automation.Language.Parser]::ParseFile(
+    $script:ReadinessScriptPath, [ref]$null, [ref]$null)
+$script:ReadOnlyQueryAst = $script:ReadinessAst.FindAll({
+    param($node)
+    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+        $node.Name -eq 'Invoke-ReadOnlyQuery'
+}, $true)
+. ([scriptblock]::Create($script:ReadOnlyQueryAst[0].Extent.Text))
+
+# Le client MariaDB reel emet un avertissement a chaque appel : le substitut le
+# reproduit pour que le filtrage reste couvert par le comptage des lignes.
+$script:FakeRowCount = 0
+function Invoke-FakeMysqlClient {
+    Write-Output 'Warning: Using a password on the command line interface can be insecure.'
+    for ($i = 1; $i -le $script:FakeRowCount; $i++) {
+        Write-Output ("id-$i`tvaleur-$i")
+    }
+    $global:LASTEXITCODE = 0
+}
+
+$script:MysqlClientPath = 'Invoke-FakeMysqlClient'
+$script:SqlHost = 'localhost'
+$script:SqlPort = '3306'
+$script:SqlDatabase = 'kermaria'
+$script:SqlUsername = 'kermaria_api'
+$script:SqlPassword = ''
+
+Describe 'Test-KoxoStorageReadiness.ps1 : Invoke-ReadOnlyQuery' {
+    It 'returns an empty array when nothing matches' {
+        $script:FakeRowCount = 0
+        $rows = Invoke-ReadOnlyQuery -Sql 'SELECT 1;'
+        $rows.GetType().IsArray | Should Be $true
+        $rows.Count | Should Be 0
+    }
+
+    It 'returns a one-element array rather than a scalar for a single row' {
+        # C'est le cas nominal du preflight : un utilisateur portail, un lien
+        # annuaire. Un scalaire ferait echouer $rows.Count sous StrictMode.
+        $script:FakeRowCount = 1
+        $rows = Invoke-ReadOnlyQuery -Sql 'SELECT 1;'
+        $rows.GetType().IsArray | Should Be $true
+        $rows.Count | Should Be 1
+        $rows[0] | Should Be "id-1`tvaleur-1"
+    }
+
+    It 'returns every row when several match' {
+        $script:FakeRowCount = 3
+        $rows = Invoke-ReadOnlyQuery -Sql 'SELECT 1;'
+        $rows.GetType().IsArray | Should Be $true
+        $rows.Count | Should Be 3
+        $rows[2] | Should Be "id-3`tvaleur-3"
+    }
+}
+
 Describe 'Resolve-KoxoStorageTargetPath' {
     It 'places a user sheet at the exact KoXo location' {
         $path = Resolve-KoxoStorageTargetPath -UsersRoot 'C:\Data\Users' -TargetKind 'user' `
