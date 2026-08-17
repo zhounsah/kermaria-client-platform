@@ -111,12 +111,13 @@ $script:ReadOnlyQueryAst = $script:ReadinessAst.FindAll({
 # Le client MariaDB reel emet un avertissement a chaque appel : le substitut le
 # reproduit pour que le filtrage reste couvert par le comptage des lignes.
 $script:FakeRowCount = 0
+$script:FakeExitCode = 0
 function Invoke-FakeMysqlClient {
     Write-Output 'Warning: Using a password on the command line interface can be insecure.'
     for ($i = 1; $i -le $script:FakeRowCount; $i++) {
         Write-Output ("id-$i`tvaleur-$i")
     }
-    $global:LASTEXITCODE = 0
+    $global:LASTEXITCODE = $script:FakeExitCode
 }
 
 $script:MysqlClientPath = 'Invoke-FakeMysqlClient'
@@ -150,6 +151,106 @@ Describe 'Test-KoxoStorageReadiness.ps1 : Invoke-ReadOnlyQuery' {
         $rows.GetType().IsArray | Should Be $true
         $rows.Count | Should Be 3
         $rows[2] | Should Be "id-3`tvaleur-3"
+    }
+
+    It 'reports the exit code of the client, not that of a later command' {
+        $script:FakeRowCount = 0
+        $script:FakeExitCode = 2
+        try {
+            { Invoke-ReadOnlyQuery -Sql 'SELECT 1;' } | Should Throw 'exit code 2'
+        }
+        finally {
+            $script:FakeExitCode = 0
+        }
+    }
+
+    It 'captures the exit code inside the try, never after the finally' {
+        # $LASTEXITCODE est global et vaut celui de la DERNIERE commande native :
+        # relu apres le finally, il ne prouve plus rien sur le client MariaDB.
+        $source = $script:ReadOnlyQueryAst[0].Extent.Text
+        $captureIndex = $source.IndexOf('$mysqlExitCode = $LASTEXITCODE')
+        $finallyIndex = $source.IndexOf('finally {')
+        $captureIndex | Should BeGreaterThan 0
+        $finallyIndex | Should BeGreaterThan $captureIndex
+        $source.Substring($finallyIndex) | Should Not Match '\$LASTEXITCODE'
+    }
+}
+
+# Colonnes reellement portees par customer_ad_links, lues dans les migrations :
+# c'est la seule source qui puisse contredire une requete du preflight.
+$script:MigrationsRoot = Join-Path `
+    (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))) `
+    'apps/api-internal/Migrations/MariaDb'
+
+function Get-CustomerAdLinkColumns {
+    param([Parameter(Mandatory = $true)][string]$MigrationsRoot)
+
+    $columns = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+
+    foreach ($file in Get-ChildItem -LiteralPath $MigrationsRoot -Filter '*.sql') {
+        $text = Get-Content -LiteralPath $file.FullName -Raw
+
+        $create = [regex]::Match(
+            $text, 'CREATE TABLE IF NOT EXISTS customer_ad_links\s*\((?<body>.*?)\)\s*ENGINE',
+            [System.Text.RegularExpressions.RegexOptions]::Singleline)
+        if ($create.Success) {
+            foreach ($line in ($create.Groups['body'].Value -split "`n")) {
+                $column = [regex]::Match(
+                    $line.Trim(),
+                    '^(?<col>[a-z][a-z0-9_]*)\s+(CHAR|VARCHAR|DATETIME|DATE|INT|BIGINT|TINYINT|TEXT|DECIMAL|BOOLEAN)')
+                if ($column.Success) { [void]$columns.Add($column.Groups['col'].Value) }
+            }
+        }
+
+        foreach ($alter in [regex]::Matches(
+                $text, 'ALTER TABLE customer_ad_links(?<body>.*?);',
+                [System.Text.RegularExpressions.RegexOptions]::Singleline)) {
+            foreach ($added in [regex]::Matches(
+                    $alter.Groups['body'].Value, 'ADD COLUMN(?: IF NOT EXISTS)?\s+(?<col>[a-z][a-z0-9_]*)')) {
+                [void]$columns.Add($added.Groups['col'].Value)
+            }
+        }
+    }
+
+    # Sans l'operateur virgule, PowerShell enumererait le HashSet a la sortie de
+    # fonction : l'appelant recevrait un tableau, dont le .Contains() est
+    # sensible a la casse, et la comparaison ne vaudrait plus rien.
+    return ,$columns
+}
+
+Describe 'Test-KoxoStorageReadiness.ps1 : requete customer_ad_links' {
+    $source = Get-Content -LiteralPath $script:ReadinessScriptPath -Raw
+    $start = $source.IndexOf('$linkRows = Invoke-ReadOnlyQuery')
+    $end = $source.IndexOf('"@', $start)
+    $query = $source.Substring($start, $end - $start)
+    $adLinkColumns = Get-CustomerAdLinkColumns -MigrationsRoot $script:MigrationsRoot
+
+    It 'only reads columns that customer_ad_links actually carries' {
+        # customer_reference n'existe pas sur cette table : la selectionner
+        # rendait ERROR 1054 (42S22) et coupait tout le preflight.
+        $start | Should BeGreaterThan 0
+        $adLinkColumns -is [System.Collections.Generic.HashSet[string]] | Should Be $true
+        $adLinkColumns.Count | Should BeGreaterThan 10
+        $adLinkColumns.Contains('customer_reference') | Should Be $false
+
+        $referenced = [regex]::Matches($query, 'cal\.(?<col>[a-z][a-z0-9_]*)') |
+            ForEach-Object { $_.Groups['col'].Value } |
+            Select-Object -Unique
+        @($referenced).Count | Should BeGreaterThan 0
+        foreach ($column in $referenced) {
+            $adLinkColumns.Contains($column) | Should Be $true
+        }
+    }
+
+    It 'takes the customer reference from customers through an exact join' {
+        $query | Should Match 'INNER JOIN customers c'
+        $query | Should Match 'ON c\.id = cal\.customer_id'
+        $query | Should Match 'c\.external_reference AS customer_reference'
+    }
+
+    It 'stays bounded to the user object of that portal user' {
+        $query | Should Match "cal\.portal_user_id = '"
+        $query | Should Match "cal\.object_type = 'user'"
     }
 }
 

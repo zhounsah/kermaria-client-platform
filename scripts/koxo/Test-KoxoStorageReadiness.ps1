@@ -79,6 +79,7 @@ function Invoke-ReadOnlyQuery {
     # que sur $LASTEXITCODE.
     $previous = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
+    $mysqlExitCode = $null
     try {
         $output = & $MysqlClientPath `
             "--host=$SqlHost" `
@@ -88,13 +89,18 @@ function Invoke-ReadOnlyQuery {
             '--batch' '--raw' '--skip-column-names' `
             $SqlDatabase `
             '-e' $Sql 2>&1
+        # $LASTEXITCODE est global et reflete la DERNIERE commande native
+        # executee : le releve doit suivre immediatement l'invocation. Le lire
+        # apres le finally laisserait le restaurateur de preference, ou tout
+        # autre code intercale, ecraser la valeur du client MariaDB.
+        $mysqlExitCode = $LASTEXITCODE
     }
     finally {
         $ErrorActionPreference = $previous
     }
 
-    if ($LASTEXITCODE -ne 0) {
-        throw ("MariaDB query failed with exit code {0}." -f $LASTEXITCODE)
+    if ($mysqlExitCode -ne 0) {
+        throw ("MariaDB query failed with exit code {0}." -f $mysqlExitCode)
     }
 
     # PowerShell reenumere ce que rend une fonction : sans l'operateur virgule,
@@ -147,10 +153,21 @@ Add-Finding -Step '2. koxo_unique_identifier' -Status 'OK' -Detail $employeeNumb
 # ---------------------------------------------------------------------------
 # 2. customer_ad_links : exactement un lien, et il appartient a cet utilisateur.
 # ---------------------------------------------------------------------------
+# La reference client n'existe pas sur customer_ad_links (migration 007) : elle
+# vit sur customers.external_reference. La selectionner directement rendait
+# ERROR 1054 (42S22) et faisait echouer tout le preflight.
 $linkRows = Invoke-ReadOnlyQuery -Sql @"
-SELECT object_guid, object_sid, sam_account_name, customer_id, customer_reference
-FROM customer_ad_links
-WHERE portal_user_id = '$escapedPortalUserId';
+SELECT
+    cal.object_guid,
+    cal.object_sid,
+    cal.sam_account_name,
+    cal.customer_id,
+    c.external_reference AS customer_reference
+FROM customer_ad_links cal
+INNER JOIN customers c
+    ON c.id = cal.customer_id
+WHERE cal.portal_user_id = '$escapedPortalUserId'
+  AND cal.object_type = 'user';
 "@
 
 if ($linkRows.Count -eq 0) {
