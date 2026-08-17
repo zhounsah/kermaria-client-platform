@@ -1,24 +1,37 @@
 [CmdletBinding()]
 param(
-    [string]$TaskName = 'Kermaria-KoXoWebhookReceiver',
-    [string]$ReceiverScriptPath = (Join-Path $PSScriptRoot 'Start-KoxoSyncWebhookReceiver.ps1'),
-    [string]$Prefix = 'http://+:8041/internal/koxo/sync/',
+    [string]$TaskName = 'Kermaria-KoXoWebhookReceiver-8042',
+    [string]$LauncherPath = (Join-Path $PSScriptRoot 'Start-KoxoSyncWebhookReceiver-8042.cmd'),
+    [ValidateRange(1, 65535)]
+    [int]$Port = 8042,
     [switch]$Execute,
     [switch]$RunNow
 )
 
 Set-StrictMode -Version Latest
-$resolvedReceiverScriptPath = [System.IO.Path]::GetFullPath($ReceiverScriptPath)
+$ErrorActionPreference = 'Stop'
+
+$resolvedLauncherPath = [System.IO.Path]::GetFullPath($LauncherPath)
+$workingDirectory = [System.IO.Path]::GetDirectoryName($resolvedLauncherPath)
 
 $taskDefinition = [pscustomobject]@{
     TaskName = $TaskName
-    ReceiverScriptPath = $resolvedReceiverScriptPath
-    Prefix = $Prefix
+    LauncherPath = $resolvedLauncherPath
+    Port = $Port
+    WorkingDirectory = $workingDirectory
+
+    PrincipalUserId = 'SYSTEM'
+    RunLevel = 'Highest'
+    Trigger = 'AtStartup'
+
+    ExecutionTimeLimit = 'PT0S'
+    RestartCount = 3
+    RestartInterval = 'PT1M'
+    MultipleInstances = 'IgnoreNew'
+    StartWhenAvailable = $true
+
     Mode = if ($Execute) { 'execute' } else { 'simulate' }
-    CommandLine = 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Start-Process powershell.exe -WindowStyle Hidden -ArgumentList ''-NoProfile'',''-NonInteractive'',''-ExecutionPolicy'',''Bypass'',''-Command'',''& ''''''{0}'''''' -Prefix ''''''{1}''''''''" -f (
-        $resolvedReceiverScriptPath,
-        $Prefix
-    )
+    CommandLine = '"{0}" {1}' -f $resolvedLauncherPath, $Port
 }
 
 if (-not $Execute) {
@@ -26,13 +39,38 @@ if (-not $Execute) {
     return
 }
 
-$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument (
-    '-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Start-Process powershell.exe -WindowStyle Hidden -ArgumentList ''-NoProfile'',''-NonInteractive'',''-ExecutionPolicy'',''Bypass'',''-Command'',''& ''''''{0}'''''' -Prefix ''''''{1}''''''''"' -f $resolvedReceiverScriptPath, $Prefix
-)
+if (-not (Test-Path -LiteralPath $resolvedLauncherPath -PathType Leaf)) {
+    throw "KoXo webhook launcher not found: $resolvedLauncherPath"
+}
+
+$action = New-ScheduledTaskAction `
+    -Execute $resolvedLauncherPath `
+    -Argument ([string]$Port) `
+    -WorkingDirectory $workingDirectory
+
 $trigger = New-ScheduledTaskTrigger -AtStartup
-$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -MultipleInstances IgnoreNew -StartWhenAvailable
-$principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -RunLevel Highest -LogonType ServiceAccount
-Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null
+
+$settings = New-ScheduledTaskSettingsSet `
+    -AllowStartIfOnBatteries `
+    -MultipleInstances IgnoreNew `
+    -StartWhenAvailable `
+    -ExecutionTimeLimit ([TimeSpan]::Zero) `
+    -RestartCount 3 `
+    -RestartInterval (New-TimeSpan -Minutes 1)
+
+$principal = New-ScheduledTaskPrincipal `
+    -UserId 'SYSTEM' `
+    -RunLevel Highest `
+    -LogonType ServiceAccount
+
+Register-ScheduledTask `
+    -TaskName $TaskName `
+    -Action $action `
+    -Trigger $trigger `
+    -Settings $settings `
+    -Principal $principal `
+    -Force |
+Out-Null
 
 if ($RunNow) {
     Start-ScheduledTask -TaskName $TaskName

@@ -7,9 +7,9 @@ rem
 rem Les chemins sont deduits de %~dp0 : ce fichier fonctionne donc depuis le
 rem depot comme depuis C:\Program Files\KoXo Dev\KoXoAdm\Data\CSVSynchro.
 rem
-rem La tache planifiee Kermaria-KoXoWebhookReceiver-8042 n'appelle PAS ce
-rem fichier : elle invoque powershell.exe directement. Ce lanceur sert aux
-rem demarrages manuels et de reference pour reconstruire la tache.
+rem La tache planifiee Kermaria-KoXoWebhookReceiver-8042 appelle ce fichier
+rem avec le port 8042. Le lanceur lit le jeton local puis demarre le receveur
+rem PowerShell avec les chemins relatifs a son propre dossier.
 rem
 rem Ne jamais echapper le $ de PowerShell ici : la version deployee sur SRV-21
 rem portait `$t au lieu de $t, ce qui transmettait la chaine litterale « $t »

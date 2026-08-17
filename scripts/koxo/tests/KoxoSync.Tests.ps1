@@ -1073,3 +1073,49 @@ Describe 'Invoke-KoxoSyncProfiles' {
         $resultats[0].UserCount | Should Be 1
     }
 }
+
+Describe 'Install-KoxoSyncWebhookReceiverTask.ps1' {
+    $koxoRoot = Split-Path -Parent $PSScriptRoot
+    $installer = Join-Path $koxoRoot 'Install-KoxoSyncWebhookReceiverTask.ps1'
+
+    It 'simulates the validated SRV-21 receiver contract without creating a task' {
+        $definition = & $installer
+
+        $definition.TaskName | Should Be 'Kermaria-KoXoWebhookReceiver-8042'
+        $definition.LauncherPath | Should Match 'Start-KoxoSyncWebhookReceiver-8042\.cmd$'
+        $definition.Port | Should Be 8042
+        $definition.PrincipalUserId | Should Be 'SYSTEM'
+        $definition.RunLevel | Should Be 'Highest'
+        $definition.Trigger | Should Be 'AtStartup'
+        $definition.ExecutionTimeLimit | Should Be 'PT0S'
+        $definition.RestartCount | Should Be 3
+        $definition.RestartInterval | Should Be 'PT1M'
+        $definition.MultipleInstances | Should Be 'IgnoreNew'
+        $definition.StartWhenAvailable | Should Be $true
+        $definition.Mode | Should Be 'simulate'
+        $definition.CommandLine | Should Match 'Start-KoxoSyncWebhookReceiver-8042\.cmd"? 8042$'
+    }
+
+    It 'protects the long-lived task settings in the installer source' {
+        $source = Get-Content -LiteralPath $installer -Raw
+
+        $source | Should Match "ExecutionTimeLimit = 'PT0S'"
+        $source | Should Match 'RestartCount = 3'
+        $source | Should Match "RestartInterval = 'PT1M'"
+        $source | Should Match "MultipleInstances = 'IgnoreNew'"
+        $source | Should Match "Trigger = 'AtStartup'"
+
+        $source | Should Match '-ExecutionTimeLimit \(\[TimeSpan\]::Zero\)'
+        $source | Should Match '-RestartCount 3'
+        $source | Should Match '-RestartInterval \(New-TimeSpan -Minutes 1\)'
+        $source | Should Match 'New-ScheduledTaskTrigger -AtStartup'
+        $source | Should Match "New-ScheduledTaskPrincipal .*"
+        $source | Should Match "-UserId 'SYSTEM'"
+        $source | Should Match '-RunLevel Highest'
+
+        $source | Should Not Match 'PT72H'
+        $source | Should Not Match "ReceiverScriptPath"
+        $source | Should Not Match "8041/internal/koxo/sync"
+        $source | Should Not Match "Start-Process powershell"
+    }
+}

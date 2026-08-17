@@ -657,9 +657,13 @@ demarre `Start-KoxoSyncWebhookReceiver.ps1`. Le port se passe en premier
 argument, `8042` par defaut. Les chemins viennent de `%~dp0`, il fonctionne donc
 aussi bien depuis le depot que depuis le dossier cible.
 
-> La tache planifiee `Kermaria-KoXoWebhookReceiver-8042` **n'appelle pas** ce
-> fichier : elle invoque `powershell.exe` directement. Le lanceur sert aux
-> demarrages manuels et de reference pour reconstruire la tache.
+> La tache planifiee `Kermaria-KoXoWebhookReceiver-8042` appelle ce fichier
+> avec l'argument `8042`. Le lanceur lit le jeton local depuis
+> `koxo-webhook-token.txt`, puis demarre le receveur PowerShell.
+>
+> La tache est un service long-lived : `ExecutionTimeLimit=PT0S`, trois
+> tentatives de redemarrage espacees d'une minute, `AtStartup`, `SYSTEM`,
+> `Highest` et `MultipleInstances=IgnoreNew`.
 
 La version qui trainait sur SRV-21 etait **inoperante** : elle portait `` `$t ``
 au lieu de `$t`, fuite d'echappement PowerShell de l'outil qui l'avait generee.
