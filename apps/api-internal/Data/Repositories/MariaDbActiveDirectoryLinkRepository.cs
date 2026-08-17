@@ -300,6 +300,7 @@ public sealed class MariaDbActiveDirectoryLinkRepository
         string? customerIdByPortalUser = null;
         string? linkIdByObjectGuid = null;
         string? customerIdByObjectGuid = null;
+        string? portalUserIdByObjectGuid = null;
         await using (var existingCommand = connection.CreateCommand())
         {
             existingCommand.Transaction = transaction;
@@ -315,6 +316,7 @@ public sealed class MariaDbActiveDirectoryLinkRepository
                 SELECT
                     id,
                     customer_id,
+                    portal_user_id,
                     CAST(object_guid = @object_guid AS SIGNED)
                         AS matches_object_guid,
                     CAST(
@@ -353,6 +355,9 @@ public sealed class MariaDbActiveDirectoryLinkRepository
                 {
                     linkIdByObjectGuid = rowId;
                     customerIdByObjectGuid = rowCustomerId;
+                    portalUserIdByObjectGuid = MariaDbIdentifierReader.ReadNullable(
+                        existingReader,
+                        "portal_user_id");
                 }
             }
         }
@@ -371,6 +376,26 @@ public sealed class MariaDbActiveDirectoryLinkRepository
                 portalUserId,
                 linkIdByPortalUser,
                 linkIdByObjectGuid);
+        }
+
+        if (linkIdByObjectGuid is not null
+            && portalUserIdByObjectGuid is not null
+            && !string.Equals(
+                portalUserIdByObjectGuid,
+                portalUserId,
+                StringComparison.Ordinal))
+        {
+            // L'objet annuaire appartient deja a un AUTRE utilisateur portail.
+            // Le reprendre reviendrait a transferer une identite d'une personne
+            // a une autre en silence, sans qu'aucune contrainte d'unicite ne
+            // s'y oppose : les deux lignes n'en font qu'une, seul le
+            // portal_user_id changerait. Un lien inter-utilisateur ne se decide
+            // pas dans un upsert.
+            throw new AmbiguousAdLinkException(
+                portalUserId,
+                linkIdByPortalUser,
+                linkIdByObjectGuid,
+                portalUserIdByObjectGuid);
         }
 
         var existingId = linkIdByPortalUser ?? linkIdByObjectGuid;

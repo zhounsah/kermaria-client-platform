@@ -64,6 +64,8 @@ public static class ActiveDirectoryLinkRepositorySchemaTests
                 connection, repository, fixture);
             await VerifyConflictingAdoptionIsRefusedAsync(
                 connection, repository, fixture);
+            await VerifyForeignOwnerIsNeverTransferredAsync(
+                connection, repository, fixture);
         }
         finally
         {
@@ -240,6 +242,113 @@ public static class ActiveDirectoryLinkRepositorySchemaTests
             "L'objet convoite ne doit rester porte que par un seul lien.");
     }
 
+    /// <summary>
+    /// Q porte l'objet B, le revendicateur n'a AUCUN lien : l'objet ne doit pas
+    /// lui etre transfere. Aucune contrainte d'unicite ne s'y opposerait, le
+    /// transfert ne changerait qu'une colonne d'une seule ligne.
+    /// </summary>
+    private static async Task VerifyForeignOwnerIsNeverTransferredAsync(
+        MySqlConnection connection,
+        MariaDbActiveDirectoryLinkRepository repository,
+        LinkFixture fixture)
+    {
+        var ownedGuid = Guid.NewGuid().ToString("D");
+
+        var ownerLink = await repository.UpsertPortalUserLinkAsync(
+            fixture.CustomerReference,
+            fixture.OtherPortalUserId,
+            actorUserId: null,
+            DirectoryObject(ownedGuid, "proprietaire", fixture.CustomerReference),
+            adDomain: null,
+            adProvisioningStatus: null,
+            adProvisionedAtUtc: null,
+            lastPasswordSyncStatus: null,
+            lastPasswordSyncAtUtc: null,
+            koxoExportStatus: null,
+            CancellationToken.None);
+
+        Ensure(
+            await ScalarLongAsync(
+                connection,
+                "SELECT COUNT(*) FROM customer_ad_links "
+                + "WHERE portal_user_id = @p",
+                fixture.ClaimantPortalUserId) == 0,
+            "Le revendicateur doit partir sans aucun lien.");
+
+        var refused = false;
+        try
+        {
+            await repository.UpsertPortalUserLinkAsync(
+                fixture.CustomerReference,
+                fixture.ClaimantPortalUserId,
+                actorUserId: null,
+                DirectoryObject(
+                    ownedGuid, "revendicateur", fixture.CustomerReference),
+                adDomain: null,
+                adProvisioningStatus: null,
+                adProvisionedAtUtc: null,
+                lastPasswordSyncStatus: null,
+                lastPasswordSyncAtUtc: null,
+                koxoExportStatus: null,
+                CancellationToken.None);
+        }
+        catch (AmbiguousAdLinkException exception)
+        {
+            refused = true;
+            Ensure(
+                string.Equals(
+                    exception.ObjectGuidLinkPortalUserId,
+                    fixture.OtherPortalUserId,
+                    StringComparison.Ordinal),
+                "Le refus doit nommer l'utilisateur portail proprietaire.");
+            Ensure(
+                string.Equals(
+                    exception.ObjectGuidLinkId,
+                    ownerLink.Id,
+                    StringComparison.Ordinal),
+                "Le refus doit nommer le lien deja en place.");
+            Ensure(
+                exception.PortalUserLinkId is null,
+                "Le revendicateur n'a aucun lien : rien ne doit etre nomme de "
+                + "son cote.");
+        }
+
+        Ensure(
+            refused,
+            "Un objet annuaire deja rattache a un autre utilisateur portail ne "
+            + "doit jamais etre transfere par un upsert.");
+
+        // Relecture apres l'echec : la transaction doit avoir ete abandonnee.
+        var ownerAfter = await ReadLinkAsync(connection, ownerLink.Id);
+        Ensure(
+            string.Equals(
+                ownerAfter.PortalUserId,
+                fixture.OtherPortalUserId,
+                StringComparison.Ordinal)
+            && string.Equals(
+                ownerAfter.ObjectGuid, ownedGuid, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(
+                ownerAfter.SamAccountName,
+                "proprietaire",
+                StringComparison.Ordinal),
+            "Le proprietaire doit conserver son lien, inchange.");
+
+        Ensure(
+            await ScalarLongAsync(
+                connection,
+                "SELECT COUNT(*) FROM customer_ad_links "
+                + "WHERE portal_user_id = @p",
+                fixture.ClaimantPortalUserId) == 0,
+            "Le revendicateur ne doit avoir obtenu aucun lien.");
+
+        Ensure(
+            await ScalarLongAsync(
+                connection,
+                "SELECT COUNT(*) FROM customer_ad_links WHERE object_guid = @p",
+                ownedGuid) == 1,
+            "L'objet convoite ne doit rester porte que par un seul lien.");
+    }
+
     private static AdDirectoryObjectSummary DirectoryObject(
         string objectGuid,
         string samAccountName,
@@ -325,7 +434,8 @@ public static class ActiveDirectoryLinkRepositorySchemaTests
         string CustomerId,
         string CustomerReference,
         string PortalUserId,
-        string OtherPortalUserId)
+        string OtherPortalUserId,
+        string ClaimantPortalUserId)
     {
         public static async Task<LinkFixture> CreateAsync(
             MySqlConnection connection)
@@ -334,6 +444,7 @@ public static class ActiveDirectoryLinkRepositorySchemaTests
             var customerId = Guid.NewGuid().ToString("D");
             var portalUserId = Guid.NewGuid().ToString("D");
             var otherPortalUserId = Guid.NewGuid().ToString("D");
+            var claimantPortalUserId = Guid.NewGuid().ToString("D");
 
             await ExecuteAsync(
                 connection,
@@ -348,9 +459,15 @@ public static class ActiveDirectoryLinkRepositorySchemaTests
                 connection, portalUserId, customerId, marker, "a");
             await InsertPortalUserAsync(
                 connection, otherPortalUserId, customerId, marker, "b");
+            await InsertPortalUserAsync(
+                connection, claimantPortalUserId, customerId, marker, "c");
 
             return new LinkFixture(
-                customerId, marker, portalUserId, otherPortalUserId);
+                customerId,
+                marker,
+                portalUserId,
+                otherPortalUserId,
+                claimantPortalUserId);
         }
 
         private static Task InsertPortalUserAsync(

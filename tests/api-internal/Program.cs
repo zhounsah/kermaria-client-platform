@@ -399,6 +399,30 @@ async Task<int> RunAsync(string[] arguments)
         }
     }
 
+    // Regles d'adoption d'une identite AD, sur persistance mock : qui a le
+    // droit de reprendre un objet annuaire deja connu.
+    if (arguments.Length == 1
+        && string.Equals(
+            arguments[0],
+            "--ad-link-adoption",
+            StringComparison.Ordinal))
+    {
+        try
+        {
+            await ActiveDirectoryLinkAdoptionTests.RunAsync();
+            Console.WriteLine(
+                "Tests regles d'adoption des liens Active Directory reussis.");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine(
+                "Tests regles d'adoption des liens Active Directory en echec.");
+            Console.Error.WriteLine(exception.ToString());
+            return 1;
+        }
+    }
+
     // Exige elle aussi une MariaDB JETABLE. Le defaut couvert est l'omission
     // d'une colonne dans un UPDATE : la persistance mock reecrit
     // l'enregistrement entier, donc cette classe de bug lui est invisible.

@@ -12,35 +12,68 @@ public sealed record CustomerAdLinkUpsertResult(
     bool Changed);
 
 /// <summary>
-/// Deux liens distincts revendiquent la meme adoption : l'un porte deja cet
-/// utilisateur portail, l'autre porte deja cet objet annuaire.
+/// Un lien Active Directory ne peut pas etre attribue sans ecraser une
+/// attribution existante.
 /// </summary>
 /// <remarks>
-/// Les fusionner detruirait silencieusement une adoption, et laisser l'UPDATE
-/// aller au bout ne rendrait qu'une violation d'unicite opaque. On refuse, et
+/// Deux formes, un seul refus : soit deux liens distincts revendiquent la meme
+/// adoption (l'un porte deja cet utilisateur portail, l'autre porte deja cet
+/// objet annuaire), soit l'objet annuaire appartient deja a un AUTRE
+/// utilisateur portail. Dans les deux cas, poursuivre transfererait
+/// silencieusement une identite d'un utilisateur a un autre. On refuse, et
 /// l'arbitrage revient a un humain.
 /// </remarks>
 public sealed class AmbiguousAdLinkException : Exception
 {
     public AmbiguousAdLinkException(
         string portalUserId,
-        string portalUserLinkId,
-        string objectGuidLinkId)
+        string? portalUserLinkId,
+        string objectGuidLinkId,
+        string? objectGuidLinkPortalUserId = null)
         : base(
-            $"Portal user '{portalUserId}' is already linked by '{portalUserLinkId}' "
-            + $"while the requested directory object is already linked by "
-            + $"'{objectGuidLinkId}'. Refusing to merge two Active Directory links.")
+            BuildMessage(
+                portalUserId,
+                portalUserLinkId,
+                objectGuidLinkId,
+                objectGuidLinkPortalUserId))
     {
         PortalUserId = portalUserId;
         PortalUserLinkId = portalUserLinkId;
         ObjectGuidLinkId = objectGuidLinkId;
+        ObjectGuidLinkPortalUserId = objectGuidLinkPortalUserId;
     }
 
+    /// <summary>Utilisateur portail pour lequel l'ecriture a ete demandee.</summary>
     public string PortalUserId { get; }
 
-    public string PortalUserLinkId { get; }
+    /// <summary>
+    /// Lien portant deja cet utilisateur portail, s'il en existe un.
+    /// </summary>
+    public string? PortalUserLinkId { get; }
 
+    /// <summary>Lien portant deja l'objet annuaire demande.</summary>
     public string ObjectGuidLinkId { get; }
+
+    /// <summary>
+    /// Utilisateur portail proprietaire de ce lien, quand il en a un et qu'il
+    /// differe de celui demande.
+    /// </summary>
+    public string? ObjectGuidLinkPortalUserId { get; }
+
+    private static string BuildMessage(
+        string portalUserId,
+        string? portalUserLinkId,
+        string objectGuidLinkId,
+        string? objectGuidLinkPortalUserId)
+        => objectGuidLinkPortalUserId is not null
+            ? $"The requested directory object is already linked by "
+                + $"'{objectGuidLinkId}' on behalf of portal user "
+                + $"'{objectGuidLinkPortalUserId}'. Refusing to transfer it to "
+                + $"portal user '{portalUserId}'."
+            : $"Portal user '{portalUserId}' is already linked by "
+                + $"'{portalUserLinkId}' while the requested directory object is "
+                + $"already linked by '{objectGuidLinkId}'. Refusing to merge two "
+                + "Active Directory links.";
 }
 
 public sealed record PortalUserAdLinkRecord(

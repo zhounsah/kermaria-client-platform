@@ -159,6 +159,25 @@ public sealed class MockActiveDirectoryLinkRepository
                     existingSummary.Id);
             }
 
+            // Meme refus que la persistance reelle : un objet annuaire deja
+            // rattache a un AUTRE utilisateur portail ne se transfere pas dans
+            // un upsert. Aucune contrainte ne s'y opposerait ici non plus.
+            var foreignOwner = PortalLinksByUserId
+                .FirstOrDefault(entry =>
+                    !string.Equals(entry.Key, portalUserId, StringComparison.Ordinal)
+                    && string.Equals(
+                        entry.Value.ObjectGuid,
+                        directoryObject.ObjectGuid,
+                        StringComparison.OrdinalIgnoreCase));
+            if (foreignOwner.Key is not null)
+            {
+                throw new AmbiguousAdLinkException(
+                    portalUserId,
+                    existingPortalLink?.Id,
+                    foreignOwner.Value.Id,
+                    foreignOwner.Key);
+            }
+
             var id = existingPortalLink?.Id
                 ?? existingSummary?.Id
                 ?? Guid.NewGuid().ToString("D");
