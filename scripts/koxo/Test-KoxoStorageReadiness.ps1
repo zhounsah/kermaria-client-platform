@@ -17,6 +17,20 @@
           -> fiche KoXo Data\Users\<PRIMAIRE>\<SECONDAIRE>\<sAMAccountName>.xml
           -> quota actuellement enregistre
 
+.PARAMETER AdServer
+    Controleur de domaine interroge. RDC-07 appartient a HOME.BZH, alors que
+    les identites KoXo vivent dans le domaine ENFANT clients.home.bzh : sans
+    borne explicite, la recherche part dans le mauvais domaine et ne trouve
+    jamais l'utilisateur. La valeur par defaut est celle qui a rendu
+    CLI-000001 lors de la verification manuelle. Le FQDN du domaine
+    (clients.home.bzh) convient aussi, au prix d'un controleur choisi par DNS.
+
+.PARAMETER AdSearchBase
+    Racine de recherche, en DN. Volontairement la racine du domaine enfant et
+    non AD_CLIENTS_OU_DN : cette variable d'environnement porte encore un DN du
+    domaine PARENT (voir AGENTS.md), la reprendre reintroduirait exactement la
+    panne corrigee ici.
+
 .NOTES
     A LANCER DEPUIS RDC-07, PAS DEPUIS UNE SESSION WinRM. Une requete LDAP
     emise depuis une session WinRM echoue par double saut : l'identite n'est pas
@@ -27,6 +41,10 @@
 
 .EXAMPLE
     .\Test-KoxoStorageReadiness.ps1 -PortalUserId '0f1e...' -SqlUsername kermaria_api
+
+.EXAMPLE
+    .\Test-KoxoStorageReadiness.ps1 -PortalUserId '0f1e...' `
+        -AdServer 'clients.home.bzh' -AdSearchBase 'OU=KoXoAdm,DC=clients,DC=home,DC=bzh'
 #>
 [CmdletBinding()]
 param(
@@ -39,6 +57,14 @@ param(
     [string]$SqlUsername = $env:SQL_USERNAME,
     [string]$SqlPassword = $env:SQL_PASSWORD,
     [string]$MysqlClientPath = 'mysql.exe',
+
+    # Bornage LDAP explicite. Aucune valeur par defaut n'est prise dans
+    # l'environnement : AD_DOMAIN vaut home.bzh et AD_CLIENTS_OU_DN porte un DN
+    # du domaine parent, donc les reprendre ramenerait la recherche dans le
+    # mauvais domaine. La convention C# (AdRuntimeConfiguration.BuildLdapPath)
+    # reste respectee : "LDAP://<serveur ou domaine>/<DN>".
+    [string]$AdServer = 'KERMARIA-SRV-21.clients.home.bzh',
+    [string]$AdSearchBase = 'DC=clients,DC=home,DC=bzh',
 
     # Racine des donnees KoXo. Renseignee uniquement si ce poste voit le disque
     # de SRV-21 ; sinon la derniere etape est declaree non verifiee, jamais
@@ -198,35 +224,72 @@ Add-Finding -Step '3. customer_ad_links' -Status 'OK' -Detail ("GUID {0}, sAMAcc
 # ---------------------------------------------------------------------------
 # 3. Annuaire : resolution par employeeNumber, jamais par nom.
 # ---------------------------------------------------------------------------
+# Un DirectorySearcher sans SearchRoot interroge le domaine COURANT. Lance
+# depuis RDC-07, membre de HOME.BZH, il cherchait donc dans home.bzh alors que
+# les identites KoXo vivent dans l'enfant clients.home.bzh : zero resultat, et
+# un « aucun objet ne porte cet employeeNumber » trompeur. La racine est
+# desormais posee explicitement.
+$adObjects = New-Object System.Collections.Generic.List[object]
+$ldapFailed = $false
+$directoryRoot = $null
+$searcher = $null
+$results = $null
 try {
-    $searcher = New-Object System.DirectoryServices.DirectorySearcher
+    $directoryRoot = [System.DirectoryServices.DirectoryEntry]::new(
+        "LDAP://$AdServer/$AdSearchBase")
+    $searcher = [System.DirectoryServices.DirectorySearcher]::new($directoryRoot)
+    # Resolution par employeeNumber UNIQUEMENT : le nom est translittere par
+    # KoXo et le sAMAccountName derive a la creation, donc aucun repli par SAM,
+    # nom, UPN ou DN n'est admissible.
     $searcher.Filter = "(&(objectClass=user)(employeeNumber=$employeeNumber))"
+    $searcher.SearchScope = 'Subtree'
+    # 2 suffit a distinguer « un seul » de « plusieurs ».
+    $searcher.SizeLimit = 2
+    $searcher.PageSize = 2
     [void]$searcher.PropertiesToLoad.Add('objectGUID')
     [void]$searcher.PropertiesToLoad.Add('objectSid')
     [void]$searcher.PropertiesToLoad.Add('sAMAccountName')
     [void]$searcher.PropertiesToLoad.Add('distinguishedName')
-    $found = @($searcher.FindAll())
+
+    $results = $searcher.FindAll()
+    # Les valeurs sont extraites tant que la collection vit : apres Dispose,
+    # les handles sous-jacents ne sont plus garantis.
+    foreach ($result in $results) {
+        $adObjects.Add([pscustomobject]@{
+            Guid = ([guid]$result.Properties['objectguid'][0]).ToString('D')
+            Sid = (New-Object System.Security.Principal.SecurityIdentifier(
+                $result.Properties['objectsid'][0], 0)).Value
+            Sam = [string]$result.Properties['samaccountname'][0]
+            Dn = [string]$result.Properties['distinguishedname'][0]
+        })
+    }
 }
 catch {
-    Add-Finding -Step '4. annuaire' -Status 'NON VERIFIE' -Detail ("Recherche LDAP impossible : {0}. Relancer HORS session WinRM." -f $_.Exception.Message)
-    $found = @()
+    # Fail-closed : une recherche impossible n'est jamais un « aucun objet ».
+    $ldapFailed = $true
+    Add-Finding -Step '4. annuaire' -Status 'NON VERIFIE' -Detail ("Recherche LDAP impossible sur LDAP://{0}/{1} : {2}. Relancer HORS session WinRM." -f $AdServer, $AdSearchBase, $_.Exception.Message)
+}
+finally {
+    if ($null -ne $results) { $results.Dispose() }
+    if ($null -ne $searcher) { $searcher.Dispose() }
+    if ($null -ne $directoryRoot) { $directoryRoot.Dispose() }
 }
 
-if ($found.Count -eq 1) {
-    $adGuid = ([guid]$found[0].Properties['objectguid'][0]).ToString('D')
-    $adSid = (New-Object System.Security.Principal.SecurityIdentifier($found[0].Properties['objectsid'][0], 0)).Value
-    $adSam = [string]$found[0].Properties['samaccountname'][0]
-    $adDn = [string]$found[0].Properties['distinguishedname'][0]
+if ($adObjects.Count -eq 1) {
+    $adGuid = $adObjects[0].Guid
+    $adSid = $adObjects[0].Sid
+    $adSam = $adObjects[0].Sam
+    $adDn = $adObjects[0].Dn
 
     $coherent = ($adGuid -eq $linkGuid) -and ($adSid -eq $linkSid) -and ($adSam -eq $samAccountName)
     Add-Finding -Step '4. annuaire' `
         -Status $(if ($coherent) { 'OK' } else { 'BLOQUANT' }) `
         -Detail ("DN {0} ; triplet GUID/SID/SAM {1}" -f $adDn, $(if ($coherent) { 'coherent avec le lien' } else { 'DIVERGENT du lien enregistre' }))
 }
-elseif ($found.Count -gt 1) {
-    Add-Finding -Step '4. annuaire' -Status 'BLOQUANT' -Detail ("{0} objets portent cet employeeNumber : aucune designation possible." -f $found.Count)
+elseif ($adObjects.Count -gt 1) {
+    Add-Finding -Step '4. annuaire' -Status 'BLOQUANT' -Detail ("{0} objets portent cet employeeNumber : aucune designation possible." -f $adObjects.Count)
 }
-elseif ($script:Findings[-1].Step -ne '4. annuaire') {
+elseif (-not $ldapFailed) {
     Add-Finding -Step '4. annuaire' -Status 'BLOQUANT' -Detail 'Aucun objet ne porte cet employeeNumber.'
 }
 

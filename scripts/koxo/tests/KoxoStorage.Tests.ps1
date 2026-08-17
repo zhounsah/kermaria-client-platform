@@ -254,6 +254,59 @@ Describe 'Test-KoxoStorageReadiness.ps1 : requete customer_ad_links' {
     }
 }
 
+Describe 'Test-KoxoStorageReadiness.ps1 : bornage LDAP' {
+    $source = Get-Content -LiteralPath $script:ReadinessScriptPath -Raw
+
+    It 'never builds a searcher without a search root' {
+        # Sans SearchRoot, DirectorySearcher interroge le domaine COURANT.
+        # Depuis RDC-07 (HOME.BZH) la recherche partait dans home.bzh au lieu
+        # de l'enfant clients.home.bzh, et rendait un faux « aucun objet ».
+        $source | Should Not Match 'New-Object\s+System\.DirectoryServices\.DirectorySearcher'
+        $source | Should Not Match 'DirectorySearcher\]::new\(\s*\)'
+    }
+
+    It 'binds the root from AdServer and AdSearchBase' {
+        $source | Should Match '\[System\.DirectoryServices\.DirectoryEntry\]::new\(\s*"LDAP://\$AdServer/\$AdSearchBase"\s*\)'
+        $source | Should Match '\[System\.DirectoryServices\.DirectorySearcher\]::new\(\$directoryRoot\)'
+    }
+
+    It 'exposes and documents both bounds as parameters' {
+        $source | Should Match '(?m)^\s*\[string\]\$AdServer\s*='
+        $source | Should Match '(?m)^\s*\[string\]\$AdSearchBase\s*='
+        $source | Should Match '\.PARAMETER AdServer'
+        $source | Should Match '\.PARAMETER AdSearchBase'
+        # La cible prouvee est le domaine enfant, pas le domaine courant.
+        $source | Should Match 'clients\.home\.bzh'
+        $source | Should Match 'DC=clients,DC=home,DC=bzh'
+    }
+
+    It 'resolves on employeeNumber alone, with no fallback' {
+        $filters = [regex]::Matches($source, '\$searcher\.Filter\s*=\s*"(?<value>[^"]*)"')
+        $filters.Count | Should Be 1
+        $filters[0].Groups['value'].Value | Should Be '(&(objectClass=user)(employeeNumber=$employeeNumber))'
+    }
+
+    It 'keeps the 0 / 1 / >1 verdicts unchanged' {
+        $source | Should Match '\$adObjects\.Count -eq 1'
+        $source | Should Match '\$adObjects\.Count -gt 1'
+        $source | Should Match 'Aucun objet ne porte cet employeeNumber'
+        $source | Should Match 'aucune designation possible'
+        # Une recherche impossible reste NON VERIFIE, jamais « aucun objet ».
+        $source | Should Match 'NON VERIFIE.+Recherche LDAP impossible'
+        $source | Should Match '\$ldapFailed = \$true'
+        $source | Should Match 'elseif \(-not \$ldapFailed\)'
+    }
+
+    It 'disposes the searcher and the root even on failure' {
+        $finallyIndex = $source.IndexOf('    if ($null -ne $results) { $results.Dispose() }')
+        $finallyIndex | Should BeGreaterThan 0
+        $source | Should Match 'if \(\$null -ne \$searcher\) \{ \$searcher\.Dispose\(\) \}'
+        $source | Should Match 'if \(\$null -ne \$directoryRoot\) \{ \$directoryRoot\.Dispose\(\) \}'
+        # Le bloc de liberation doit etre un finally, pas la fin du try.
+        $source.Substring(0, $finallyIndex) | Should Match 'finally \{\s*$'
+    }
+}
+
 Describe 'Resolve-KoxoStorageTargetPath' {
     It 'places a user sheet at the exact KoXo location' {
         $path = Resolve-KoxoStorageTargetPath -UsersRoot 'C:\Data\Users' -TargetKind 'user' `
