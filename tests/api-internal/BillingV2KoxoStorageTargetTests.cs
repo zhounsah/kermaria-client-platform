@@ -28,6 +28,8 @@ public static class BillingV2KoxoStorageTargetTests
     private const string CustomerId = "22222222-2222-2222-2222-222222222222";
     private const string OtherCustomerId = "33333333-3333-3333-3333-333333333333";
     private const string IdentityReference = "44444444-4444-4444-4444-444444444444";
+    private const string OtherIdentityReference =
+        "99999999-9999-9999-9999-999999999999";
     private const string EmployeeNumber = "CLI-000123";
     private const string ObjectGuid = "55555555-5555-5555-5555-555555555555";
     private const string ObjectSid = "S-1-5-21-1-2-3-1104";
@@ -45,12 +47,16 @@ public static class BillingV2KoxoStorageTargetTests
         VerifyMissingEmployeeNumberBlocks();
         VerifyDuplicateAdLinkBlocksInsteadOfChoosing();
         VerifyLinkOfAnotherCustomerIsRefused();
+        VerifySnapshotFiledUnderTheWrongKeyIsRefused();
+        VerifyLinkOfAnotherPortalUserIsRefused();
         VerifyDirectoryLookupFailureBlocks();
         VerifyDirectoryMismatchBlocksOnEachAttribute();
         VerifyNoNameBasedFallbackExists();
         VerifySecondaryGroupTargetFollowsTheExportTopology();
         VerifyDemoSecondaryGroupKeepsItsOwnOu();
         VerifySecondaryGroupWithoutCustomerContextIsRefused();
+        VerifySecondaryGroupOfAnotherCustomerIsRefused();
+        VerifySameOuNameUnderTwoPrimaryGroupsIsNotACollision();
         VerifyScopeIsCheckedOnBothSides();
         VerifyTwoQuotasOnTheSameObjectAreRefused();
         VerifyOneBadPlanRefusesTheWholeResolution();
@@ -267,6 +273,56 @@ public static class BillingV2KoxoStorageTargetTests
             "Un lien appartenant a un autre client ne doit jamais porter le quota.");
     }
 
+    /// <summary>
+    /// Cle du dictionnaire A, instantane decrivant B.
+    /// </summary>
+    /// <remarks>
+    /// La cle est choisie par l'appelant : elle ne prouve rien. Un instantane
+    /// range sous la mauvaise cle est parfaitement coherent avec lui-meme, donc
+    /// les controles GUID/SID/sAMAccountName reussiraient tous et le quota de A
+    /// serait pose sur l'identite de B.
+    /// </remarks>
+    private static void VerifySnapshotFiledUnderTheWrongKeyIsRefused()
+    {
+        var resolution = ResolveUser(
+            UserQuota(64),
+            Snapshot() with { IdentityReference = OtherIdentityReference });
+
+        Ensure(
+            !resolution.Resolved
+            && resolution.ReasonCode
+                == BillingV2KoxoStorageTargetReasons.IdentitySnapshotMismatch
+            && resolution.Targets.Count == 0,
+            "Un instantane range sous la cle d'un autre utilisateur doit refuser, pas etre cru sur parole.");
+    }
+
+    /// <summary>
+    /// Quota de A, lien annuaire de B, meme client.
+    /// </summary>
+    /// <remarks>
+    /// Le triplet prouve que le lien et l'objet d'annuaire decrivent le meme
+    /// compte, pas que ce compte appartient au <c>portal_users.id</c> qui a paye
+    /// le quota. Sans ce controle, deux utilisateurs d'un meme client sont
+    /// interchangeables.
+    /// </remarks>
+    private static void VerifyLinkOfAnotherPortalUserIsRefused()
+    {
+        var resolution = ResolveUser(
+            UserQuota(64),
+            Snapshot() with
+            {
+                PortalUserLinks =
+                    [Link() with { PortalUserId = OtherIdentityReference }]
+            });
+
+        Ensure(
+            !resolution.Resolved
+            && resolution.ReasonCode
+                == BillingV2KoxoStorageTargetReasons.IdentityPortalUserMismatch
+            && resolution.Targets.Count == 0,
+            "Un lien annuaire rattache a un autre utilisateur portail ne doit jamais porter le quota.");
+    }
+
     private static void VerifyDirectoryLookupFailureBlocks()
     {
         var resolution = ResolveUser(
@@ -342,6 +398,7 @@ public static class BillingV2KoxoStorageTargetTests
             [SharedQuota(128)],
             Identities(),
             new BillingV2KoxoSecondaryGroupSnapshot(
+                CustomerId,
                 IsDemo: false,
                 KoxoGroupReference: null,
                 CustomerReference: "CLI-000042"));
@@ -367,6 +424,7 @@ public static class BillingV2KoxoStorageTargetTests
             [SharedQuota(16)],
             Identities(),
             new BillingV2KoxoSecondaryGroupSnapshot(
+                CustomerId,
                 IsDemo: true,
                 KoxoGroupReference: "CLI-000042",
                 CustomerReference: "CLI-000042"));
@@ -397,6 +455,102 @@ public static class BillingV2KoxoStorageTargetTests
             "Sans contexte client, aucune OU ne doit etre devinee.");
     }
 
+    /// <summary>
+    /// Abonnement du client A, instantane de groupe du client B.
+    /// </summary>
+    /// <remarks>
+    /// Une OU partagee n'a aucune identite pour la contredire : rien, dans
+    /// <c>CLI-000042</c>, ne rappelle a quel abonnement elle appartient. C'est
+    /// le seul endroit ou une erreur d'alimentation ne serait rattrapee par
+    /// aucun autre controle.
+    /// </remarks>
+    private static void VerifySecondaryGroupOfAnotherCustomerIsRefused()
+    {
+        var resolution = BillingV2KoxoStorageTargetResolver.Resolve(
+            CustomerId,
+            [SharedQuota(128)],
+            Identities(),
+            new BillingV2KoxoSecondaryGroupSnapshot(
+                OtherCustomerId,
+                IsDemo: false,
+                KoxoGroupReference: null,
+                CustomerReference: "CLI-000099"));
+
+        Ensure(
+            !resolution.Resolved
+            && resolution.ReasonCode
+                == BillingV2KoxoStorageTargetReasons
+                    .SecondaryGroupCustomerMismatch
+            && resolution.Targets.Count == 0,
+            "Le dossier partage d'un autre client ne doit jamais recevoir ce quota.");
+
+        // Et le meme instantane, presente a son vrai client, reste resolvable :
+        // le refus vient bien du rattachement, pas du contenu.
+        var sameSnapshotForItsOwner =
+            BillingV2KoxoStorageTargetResolver.Resolve(
+                OtherCustomerId,
+                [SharedQuota(128)],
+                Identities(),
+                new BillingV2KoxoSecondaryGroupSnapshot(
+                    OtherCustomerId,
+                    IsDemo: false,
+                    KoxoGroupReference: null,
+                    CustomerReference: "CLI-000099"));
+
+        Ensure(
+            sameSnapshotForItsOwner.Resolved
+            && sameSnapshotForItsOwner.Targets.Count == 1
+            && sameSnapshotForItsOwner.Targets[0].SecondaryGroup
+                == "CLI-000099",
+            "Le meme instantane doit rester valide pour le client auquel il appartient.");
+    }
+
+    /// <summary>
+    /// Deux OU de meme nom sous deux groupes primaires differents.
+    /// </summary>
+    /// <remarks>
+    /// <c>CLIENTS/X</c> et <c>CLIENTS DEMO/X</c> sont deux objets distincts,
+    /// dans les deux branches que la separation des groupes primaires cloisonne.
+    /// Les confondre declarerait une collision inexistante et refuserait deux
+    /// quotas legitimes.
+    /// </remarks>
+    private static void VerifySameOuNameUnderTwoPrimaryGroupsIsNotACollision()
+    {
+        var paying = BillingV2ResolvedKoxoStorageTarget.ForSecondaryGroup(
+            "item-1",
+            131072,
+            KoxoDirectoryTopology.PrimaryGroupClients,
+            "CLI-000042");
+        var demo = BillingV2ResolvedKoxoStorageTarget.ForSecondaryGroup(
+            "item-2",
+            16384,
+            KoxoDirectoryTopology.PrimaryGroupDemo,
+            "CLI-000042");
+
+        Ensure(
+            paying.TargetKey != demo.TargetKey,
+            "Deux OU de meme nom sous deux groupes primaires differents ne sont pas le meme objet.");
+
+        // Le meme couple, lui, doit bien collisionner : c'est ce sur quoi
+        // repose le refus de deux quotas concurrents.
+        var duplicate = BillingV2ResolvedKoxoStorageTarget.ForSecondaryGroup(
+            "item-3",
+            65536,
+            KoxoDirectoryTopology.PrimaryGroupClients,
+            "CLI-000042");
+        Ensure(
+            paying.TargetKey == duplicate.TargetKey,
+            "Deux quotas sur la meme OU doivent rester detectes comme un conflit.");
+
+        // Les espaces de noms restent separes : une OU nommee comme un GUID ne
+        // doit pas pouvoir se confondre avec une fiche utilisateur.
+        Ensure(
+            paying.TargetKey.StartsWith("group:", StringComparison.Ordinal)
+            && ResolveUser(UserQuota(64)).Targets[0].TargetKey
+                .StartsWith("user:", StringComparison.Ordinal),
+            "Les espaces de noms user: et group: doivent rester distincts.");
+    }
+
     // ------------------------------------------------------------------
     // Scope et globalite du refus.
     // ------------------------------------------------------------------
@@ -421,6 +575,7 @@ public static class BillingV2KoxoStorageTargetTests
             ],
             Identities(),
             new BillingV2KoxoSecondaryGroupSnapshot(
+                CustomerId,
                 IsDemo: false,
                 KoxoGroupReference: null,
                 CustomerReference: "CLI-000042"));
@@ -472,6 +627,7 @@ public static class BillingV2KoxoStorageTargetTests
             ],
             Identities(),
             new BillingV2KoxoSecondaryGroupSnapshot(
+                CustomerId,
                 IsDemo: false,
                 KoxoGroupReference: null,
                 CustomerReference: "CLI-000042"));

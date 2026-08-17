@@ -52,15 +52,24 @@ public sealed record BillingV2ResolvedKoxoStorageTarget(
     /// meme objet d'annuaire.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// L'identite d'une fiche utilisateur est son <c>objectGUID</c> et non son
     /// <c>employeeNumber</c> : dans une foret multi-domaines seul le premier est
     /// unique et immuable.
+    /// </para>
+    /// <para>
+    /// Un groupe secondaire, lui, n'est identifie que par le couple complet :
+    /// <c>CLIENTS/X</c> et <c>CLIENTS DEMO/X</c> sont deux OU distinctes, dans
+    /// deux branches que la separation des groupes primaires cloisonne
+    /// justement. Ne retenir que le nom secondaire declarerait une collision la
+    /// ou il n'y en a pas, et refuserait deux quotas legitimes.
+    /// </para>
     /// </remarks>
     public string TargetKey => Kind switch
     {
         BillingV2KoxoStorageTargetKind.User
             => $"user:{AdLink?.ObjectGuid}",
-        _ => $"group:{SecondaryGroup}",
+        _ => $"group:{PrimaryGroup}/{SecondaryGroup}",
     };
 
     public static BillingV2ResolvedKoxoStorageTarget ForUser(
@@ -157,6 +166,32 @@ public static class BillingV2KoxoStorageTargetReasons
     public const string IdentityCustomerMismatch =
         "BILLING_V2_KOXO_STORAGE_IDENTITY_CUSTOMER_MISMATCH";
 
+    /// <summary>
+    /// L'instantane fourni ne decrit pas l'utilisateur demande par le quota.
+    /// </summary>
+    /// <remarks>
+    /// La cle du dictionnaire n'est pas une preuve : c'est l'appelant qui la
+    /// choisit. Sans cette verification, une couche d'alimentation qui range un
+    /// instantane sous la mauvaise cle ferait porter le quota de A par
+    /// l'identite de B, et toutes les verifications suivantes reussiraient
+    /// puisque l'instantane de B est parfaitement coherent avec lui-meme.
+    /// </remarks>
+    public const string IdentitySnapshotMismatch =
+        "BILLING_V2_KOXO_STORAGE_IDENTITY_SNAPSHOT_MISMATCH";
+
+    /// <summary>
+    /// Le lien annuaire retenu appartient a un autre utilisateur portail.
+    /// </summary>
+    /// <remarks>
+    /// Meme raisonnement un cran plus bas : le triplet GUID/SID/sAMAccountName
+    /// prouve que le lien et l'objet d'annuaire decrivent le meme compte, pas
+    /// que ce compte est celui du <c>portal_users.id</c> qui a paye le quota.
+    /// Deux utilisateurs d'un meme client passeraient donc tous les autres
+    /// controles.
+    /// </remarks>
+    public const string IdentityPortalUserMismatch =
+        "BILLING_V2_KOXO_STORAGE_IDENTITY_PORTAL_USER_MISMATCH";
+
     public const string IdentityGuidInvalid =
         "BILLING_V2_KOXO_STORAGE_IDENTITY_GUID_INVALID";
 
@@ -177,6 +212,19 @@ public static class BillingV2KoxoStorageTargetReasons
 
     public const string SecondaryGroupUnknown =
         "BILLING_V2_KOXO_STORAGE_SECONDARY_GROUP_UNKNOWN";
+
+    /// <summary>
+    /// L'instantane de groupe secondaire decrit un autre client.
+    /// </summary>
+    /// <remarks>
+    /// Le stockage partage est la seule cible qui n'a aucune identite pour la
+    /// contredire : rien, dans le nom d'une OU, ne rappelle a quel abonnement
+    /// elle appartient. Sans ce controle, une couche d'alimentation qui se
+    /// tromperait de client poserait le quota de A sur le dossier partage de B,
+    /// et toutes les autres verifications passeraient.
+    /// </remarks>
+    public const string SecondaryGroupCustomerMismatch =
+        "BILLING_V2_KOXO_STORAGE_SECONDARY_GROUP_CUSTOMER_MISMATCH";
 }
 
 /// <summary>
@@ -206,7 +254,14 @@ public sealed record BillingV2KoxoUserIdentitySnapshot(
 /// <summary>
 /// Etat du client necessaire pour nommer son OU de groupe secondaire.
 /// </summary>
+/// <param name="CustomerId">
+/// Client auquel cet instantane appartient. Present pour que le resolver puisse
+/// verifier qu'il decrit bien le client de l'abonnement en cours, et non un
+/// autre : contrairement a une fiche utilisateur, une OU partagee n'a aucune
+/// autre attache qui pourrait dementir une erreur d'alimentation.
+/// </param>
 public sealed record BillingV2KoxoSecondaryGroupSnapshot(
+    string CustomerId,
     bool IsDemo,
     string? KoxoGroupReference,
     string CustomerReference);
@@ -335,6 +390,7 @@ public static class BillingV2KoxoStorageTargetResolver
                     .KoxoSecondaryGroupStorageTarget))
             {
                 if (!TryResolveSecondaryGroup(
+                        customerId,
                         quota,
                         mebibytes,
                         secondaryGroup,
@@ -427,14 +483,28 @@ public static class BillingV2KoxoStorageTargetResolver
             return false;
         }
 
+        var identityReference = quota.IdentityReference.Trim();
+
         // Un utilisateur non materialise est bloquant : le fournisseur de quota
         // ne cree pas d'identite, sinon deux chemins de creation coexisteraient
         // et le compte KoXo ne serait plus la seule source.
-        if (!identitiesByReference.TryGetValue(
-                quota.IdentityReference.Trim(),
-                out var snapshot))
+        if (!identitiesByReference.TryGetValue(identityReference, out var snapshot))
         {
             reasonCode = BillingV2KoxoStorageTargetReasons.IdentityNotMaterialized;
+            return false;
+        }
+
+        // La cle du dictionnaire vient de l'appelant : elle ne prouve rien. Un
+        // instantane range sous la mauvaise cle serait parfaitement coherent
+        // avec lui-meme et passerait tous les controles suivants, en faisant
+        // porter le quota de A par l'identite de B.
+        if (!string.Equals(
+                snapshot.IdentityReference,
+                identityReference,
+                StringComparison.Ordinal))
+        {
+            reasonCode =
+                BillingV2KoxoStorageTargetReasons.IdentitySnapshotMismatch;
             return false;
         }
 
@@ -462,6 +532,20 @@ public static class BillingV2KoxoStorageTargetResolver
         {
             reasonCode =
                 BillingV2KoxoStorageTargetReasons.IdentityCustomerMismatch;
+            return false;
+        }
+
+        // Le triplet verifie plus bas prouve que le lien et l'objet d'annuaire
+        // decrivent le meme compte — pas que ce compte est celui du
+        // portal_users.id qui a paye le quota. Deux utilisateurs d'un meme
+        // client passeraient donc tout le reste.
+        if (!string.Equals(
+                link.PortalUserId,
+                identityReference,
+                StringComparison.Ordinal))
+        {
+            reasonCode =
+                BillingV2KoxoStorageTargetReasons.IdentityPortalUserMismatch;
             return false;
         }
 
@@ -517,6 +601,7 @@ public static class BillingV2KoxoStorageTargetResolver
     }
 
     private static bool TryResolveSecondaryGroup(
+        string customerId,
         BillingV2StorageQuotaPlan quota,
         long mebibytes,
         BillingV2KoxoSecondaryGroupSnapshot? secondaryGroup,
@@ -541,6 +626,19 @@ public static class BillingV2KoxoStorageTargetResolver
         {
             reasonCode =
                 BillingV2KoxoStorageTargetReasons.SecondaryGroupUnknown;
+            return false;
+        }
+
+        // L'instantane doit decrire le client de l'abonnement en cours. C'est
+        // la seule attache dont dispose une OU partagee : le nom du groupe
+        // secondaire, lui, ne dementirait jamais une erreur d'alimentation.
+        if (!string.Equals(
+                secondaryGroup.CustomerId,
+                customerId,
+                StringComparison.Ordinal))
+        {
+            reasonCode = BillingV2KoxoStorageTargetReasons
+                .SecondaryGroupCustomerMismatch;
             return false;
         }
 
