@@ -11,6 +11,38 @@ public sealed record CustomerAdLinkUpsertResult(
     string Id,
     bool Changed);
 
+/// <summary>
+/// Deux liens distincts revendiquent la meme adoption : l'un porte deja cet
+/// utilisateur portail, l'autre porte deja cet objet annuaire.
+/// </summary>
+/// <remarks>
+/// Les fusionner detruirait silencieusement une adoption, et laisser l'UPDATE
+/// aller au bout ne rendrait qu'une violation d'unicite opaque. On refuse, et
+/// l'arbitrage revient a un humain.
+/// </remarks>
+public sealed class AmbiguousAdLinkException : Exception
+{
+    public AmbiguousAdLinkException(
+        string portalUserId,
+        string portalUserLinkId,
+        string objectGuidLinkId)
+        : base(
+            $"Portal user '{portalUserId}' is already linked by '{portalUserLinkId}' "
+            + $"while the requested directory object is already linked by "
+            + $"'{objectGuidLinkId}'. Refusing to merge two Active Directory links.")
+    {
+        PortalUserId = portalUserId;
+        PortalUserLinkId = portalUserLinkId;
+        ObjectGuidLinkId = objectGuidLinkId;
+    }
+
+    public string PortalUserId { get; }
+
+    public string PortalUserLinkId { get; }
+
+    public string ObjectGuidLinkId { get; }
+}
+
 public sealed record PortalUserAdLinkRecord(
     string Id,
     string CustomerId,

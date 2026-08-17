@@ -141,6 +141,24 @@ public sealed class MockActiveDirectoryLinkRepository
         {
             PortalLinksByUserId.TryGetValue(portalUserId, out var existingPortalLink);
             var existingSummary = FindSummaryByObjectGuid(directoryObject.ObjectGuid);
+
+            // Meme refus que la persistance reelle : deux liens distincts qui
+            // revendiquent la meme adoption ne se fusionnent pas en silence.
+            // Le mock n'a pas les index UNIQUE qui l'imposeraient, donc rien
+            // d'autre ne le rattraperait ici.
+            if (existingPortalLink is not null
+                && existingSummary is not null
+                && !string.Equals(
+                    existingPortalLink.Id,
+                    existingSummary.Id,
+                    StringComparison.Ordinal))
+            {
+                throw new AmbiguousAdLinkException(
+                    portalUserId,
+                    existingPortalLink.Id,
+                    existingSummary.Id);
+            }
+
             var id = existingPortalLink?.Id
                 ?? existingSummary?.Id
                 ?? Guid.NewGuid().ToString("D");

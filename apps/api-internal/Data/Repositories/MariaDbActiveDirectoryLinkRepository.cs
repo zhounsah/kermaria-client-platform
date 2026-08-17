@@ -296,22 +296,34 @@ public sealed class MariaDbActiveDirectoryLinkRepository
             ?? throw new InvalidOperationException(
                 "Customer context is unavailable for Active Directory link persistence.");
 
-        string? existingId = null;
-        string? existingCustomerId = null;
+        string? linkIdByPortalUser = null;
+        string? customerIdByPortalUser = null;
+        string? linkIdByObjectGuid = null;
+        string? customerIdByObjectGuid = null;
         await using (var existingCommand = connection.CreateCommand())
         {
             existingCommand.Transaction = transaction;
+            // Les DEUX candidats sont lus, pas seulement le premier : un
+            // ORDER BY ... LIMIT 1 masquait le cas ou un lien porte deja cet
+            // utilisateur portail pendant qu'un autre porte deja cet objet
+            // annuaire, et la collision n'apparaissait qu'a l'UPDATE, sous la
+            // forme d'une violation d'unicite opaque. Le rapprochement est fait
+            // par MariaDB elle-meme, donc avec la semantique exacte des index
+            // UNIQUE qu'il s'agit de proteger. FOR UPDATE verrouille les deux.
             existingCommand.CommandText =
                 """
-                SELECT id, customer_id
+                SELECT
+                    id,
+                    customer_id,
+                    CAST(object_guid = @object_guid AS SIGNED)
+                        AS matches_object_guid,
+                    CAST(
+                        portal_user_id = @portal_user_id
+                        AND object_type = 'user' AS SIGNED)
+                        AS matches_portal_user
                 FROM customer_ad_links
                 WHERE object_guid = @object_guid
                    OR (portal_user_id = @portal_user_id AND object_type = 'user')
-                ORDER BY CASE
-                    WHEN portal_user_id = @portal_user_id THEN 0
-                    ELSE 1
-                END
-                LIMIT 1
                 FOR UPDATE;
                 """;
             existingCommand.Parameters.AddWithValue(
@@ -322,16 +334,49 @@ public sealed class MariaDbActiveDirectoryLinkRepository
                 portalUserId);
             await using var existingReader = await existingCommand.ExecuteReaderAsync(
                 cancellationToken);
-            if (await existingReader.ReadAsync(cancellationToken))
+            while (await existingReader.ReadAsync(cancellationToken))
             {
-                existingId = MariaDbIdentifierReader.ReadRequired(
+                var rowId = MariaDbIdentifierReader.ReadRequired(
                     existingReader,
                     "id");
-                existingCustomerId = MariaDbIdentifierReader.ReadRequired(
+                var rowCustomerId = MariaDbIdentifierReader.ReadRequired(
                     existingReader,
                     "customer_id");
+
+                if (existingReader.GetInt64("matches_portal_user") != 0)
+                {
+                    linkIdByPortalUser = rowId;
+                    customerIdByPortalUser = rowCustomerId;
+                }
+
+                if (existingReader.GetInt64("matches_object_guid") != 0)
+                {
+                    linkIdByObjectGuid = rowId;
+                    customerIdByObjectGuid = rowCustomerId;
+                }
             }
         }
+
+        if (linkIdByPortalUser is not null
+            && linkIdByObjectGuid is not null
+            && !string.Equals(
+                linkIdByPortalUser,
+                linkIdByObjectGuid,
+                StringComparison.Ordinal))
+        {
+            // Refus explicite : reporter l'objet annuaire sur le lien de
+            // l'utilisateur portail ecraserait l'adoption portee par l'autre
+            // lien. La transaction est abandonnee a la sortie.
+            throw new AmbiguousAdLinkException(
+                portalUserId,
+                linkIdByPortalUser,
+                linkIdByObjectGuid);
+        }
+
+        var existingId = linkIdByPortalUser ?? linkIdByObjectGuid;
+        var existingCustomerId = linkIdByPortalUser is not null
+            ? customerIdByPortalUser
+            : customerIdByObjectGuid;
 
         if (existingId is not null)
         {
@@ -353,6 +398,7 @@ public sealed class MariaDbActiveDirectoryLinkRepository
                     ad_domain = @ad_domain,
                     ad_provisioning_status = @ad_provisioning_status,
                     ad_provisioned_at = @ad_provisioned_at,
+                    object_guid = @object_guid,
                     object_sid = @object_sid,
                     object_type = @object_type,
                     sam_account_name = @sam_account_name,
@@ -380,6 +426,13 @@ public sealed class MariaDbActiveDirectoryLinkRepository
             updateCommand.Parameters.AddWithValue(
                 "@ad_provisioned_at",
                 (object?)adProvisionedAtUtc ?? DBNull.Value);
+            // Sans cette ligne, un lien reconduit gardait l'ancien objectGUID
+            // pendant que le SID, le sAMAccountName et le DN devenaient ceux de
+            // la nouvelle identite : le lien designait alors un objet annuaire
+            // qui n'existe plus.
+            updateCommand.Parameters.AddWithValue(
+                "@object_guid",
+                directoryObject.ObjectGuid);
             updateCommand.Parameters.AddWithValue(
                 "@object_sid",
                 directoryObject.ObjectSid);

@@ -399,6 +399,31 @@ async Task<int> RunAsync(string[] arguments)
         }
     }
 
+    // Exige elle aussi une MariaDB JETABLE. Le defaut couvert est l'omission
+    // d'une colonne dans un UPDATE : la persistance mock reecrit
+    // l'enregistrement entier, donc cette classe de bug lui est invisible.
+    if (arguments.Length == 1
+        && string.Equals(
+            arguments[0],
+            "--ad-link-repository-schema",
+            StringComparison.Ordinal))
+    {
+        try
+        {
+            await ActiveDirectoryLinkRepositorySchemaTests.RunAsync();
+            Console.WriteLine(
+                "Tests adoption des liens Active Directory reussis.");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine(
+                "Tests adoption des liens Active Directory en echec.");
+            Console.Error.WriteLine(exception.ToString());
+            return 1;
+        }
+    }
+
     if (arguments.Length is < 1 or > 2)
     {
         Console.Error.WriteLine(
