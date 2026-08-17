@@ -457,15 +457,15 @@ public static class BillingV2ProvisioningSemanticsTests
             ]);
 
         // Il ne doit exister qu'un seul proprietaire technique de la creation
-        // d'identite : le provisioning attache au stockage personnel. Le slot
-        // commercial se contente d'autoriser l'utilisateur.
+        // d'identite, et c'est la chaine KoXo. Le slot commercial se contente
+        // d'autoriser l'utilisateur ; c'est le stockage personnel qui l'equipe.
         Ensure(
             plan.UnresolvedRuleReferences.Count == 0
             && plan.Users.Single().UserEntitlements.Count == 1
             && plan.Users.Single().UserEntitlements[0].TargetType == "user_slot"
             && plan.Users.Single().PersonalStorage is not null
             && plan.Users.Single().PersonalStorage!.QuotaValue == 32,
-            "Le droit a un utilisateur supplementaire doit rester un entitlement, adosse au stockage personnel qui provisionne reellement.");
+            "Le droit a un utilisateur supplementaire doit rester un entitlement, adosse au stockage personnel qui equipe reellement l'utilisateur.");
     }
 
     // ------------------------------------------------------------------
@@ -631,9 +631,9 @@ public static class BillingV2ProvisioningSemanticsTests
                 AdGroupRule("item-vpn-a", "VPN-ACCESS", "GG_VPN", "user-a", "identity-a")
             ]);
 
-        // L'environnement utilisateur, donc le compte annuaire, est produit par
-        // le provisioning du stockage personnel. Un acces VPN ou RDS accorde
-        // sans lui porterait sur une identite que rien ne garantit.
+        // L'environnement utilisateur est produit par le provisioning du
+        // stockage personnel. Un acces VPN ou RDS accorde sans lui ouvrirait
+        // une porte vers un poste de travail qui n'existe pas.
         Ensure(
             plan.Blockers.Count == 2
             && plan.Blockers.All(blocker => blocker.ReasonCode
@@ -670,10 +670,12 @@ public static class BillingV2ProvisioningSemanticsTests
     /// Le stockage personnel ne suppose aucune identite annuaire deja resolue.
     /// </summary>
     /// <remarks>
-    /// C'est le sens meme du bootstrap : le provisioning KoXo cree le compte
-    /// annuaire. Exiger un <c>customer_ad_links</c> pour l'executer creerait une
-    /// dependance circulaire ou le premier utilisateur d'un client ne pourrait
-    /// jamais exister.
+    /// Au stade du plan, aucune ecriture annuaire n'est demandee par un simple
+    /// quota : exiger un <c>customer_ad_links</c> ici bloquerait l'essai de
+    /// demonstration, dont le compte n'est cree qu'ensuite par KoXo. La
+    /// verification stricte de l'identite existe bien, mais au moment de viser
+    /// la fiche KoXo — voir
+    /// <c>BillingV2KoxoStorageTargetResolver</c>.
     /// </remarks>
     private static void VerifyPersonalStorageNeedsNoResolvedAdIdentity()
     {

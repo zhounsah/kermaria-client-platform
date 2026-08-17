@@ -564,9 +564,8 @@ public static class BillingV2ProvisioningScopeTests
     /// </summary>
     /// <remarks>
     /// Depuis la phase 2B, un acces VPN ou RDS suppose que l'environnement
-    /// utilisateur, donc le compte annuaire, soit provisionne. Les scenarios
-    /// qui attendent un plan resolu doivent donc fournir ce socle, comme le
-    /// ferait un vrai abonnement.
+    /// utilisateur soit provisionne. Les scenarios qui attendent un plan resolu
+    /// doivent donc fournir ce socle, comme le ferait un vrai abonnement.
     /// </remarks>
     private static BillingV2ProvisioningRuleProjection StorageRule(
         string subscriptionItemId,

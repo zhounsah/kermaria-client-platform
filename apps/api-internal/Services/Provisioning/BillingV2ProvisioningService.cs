@@ -146,11 +146,20 @@ public static class BillingV2ProvisioningBlockerReasons
     /// personnel.
     /// </summary>
     /// <remarks>
-    /// Le stockage personnel n'est pas une ressource parmi d'autres : c'est le
-    /// provisioning qui cree et maintient l'environnement utilisateur, donc
-    /// l'identite annuaire elle-meme. Accorder un acces VPN ou RDS sans lui
-    /// reviendrait a distribuer un droit sur une identite dont personne ne
-    /// garantit l'existence.
+    /// <para>
+    /// Le stockage personnel n'est pas une ressource parmi d'autres : c'est
+    /// l'environnement de travail de l'utilisateur, donc la marque qu'il est
+    /// techniquement equipe. Accorder un acces VPN ou RDS a quelqu'un qui n'en a
+    /// pas reviendrait a ouvrir un acces vers un poste de travail inexistant.
+    /// </para>
+    /// <para>
+    /// Ce n'est PAS lui qui cree l'identite annuaire. Pour un client payant
+    /// ordinaire, l'export KoXo exige deja un <c>customer_ad_links</c>, donc le
+    /// compte preexiste ; seul un essai de demonstration part sans lien, et
+    /// c'est alors KoXo qui cree le compte, adopte ensuite par
+    /// <c>employeeNumber</c>. La condition posee ici est une regle d'ordre
+    /// voulue, pas une dependance technique de creation.
+    /// </para>
     /// </remarks>
     public const string PersonalStorageRequired =
         "BILLING_V2_PROVISIONING_PERSONAL_STORAGE_REQUIRED";
@@ -198,10 +207,10 @@ public static class BillingV2ProvisioningBlockerReasons
 /// </para>
 /// <para>
 /// Les membres ne sont pas paralleles : <see cref="PersonalStorage"/> est le
-/// socle technique de l'utilisateur. C'est ce provisioning qui cree et
-/// maintient le compte annuaire et son environnement ; <see
-/// cref="DesiredAdGroups"/> ne contient que des acces optionnels situes en aval
-/// et qui supposent cette identite deja resolue.
+/// socle technique de l'utilisateur, c'est-a-dire son environnement de travail
+/// et le quota qui le borne ; <see cref="DesiredAdGroups"/> ne contient que des
+/// acces optionnels situes en aval, qui supposent une identite annuaire deja
+/// resolue.
 /// </para>
 /// </remarks>
 public sealed record BillingV2UserDesiredState(
@@ -288,9 +297,14 @@ public sealed record BillingV2ProvisioningPlan(
     /// <c>objectSID</c>), qui n'existe qu'une fois le compte cree.
     /// </para>
     /// <para>
-    /// Le stockage personnel produit la seconde : l'exiger de lui reviendrait a
-    /// demander a une ressource de preexister a sa propre creation. Seuls les
-    /// acces situes en aval — VPN, RDS — la supposent.
+    /// Seuls les acces situes en aval — VPN, RDS — exigent la seconde, parce
+    /// qu'eux seuls ecrivent dans l'annuaire. Un utilisateur qui n'a que son
+    /// environnement personnel ne declenche aucune ecriture AD dans cette
+    /// version, et reclamer son lien ici bloquerait aussi l'essai de
+    /// demonstration, dont le compte n'est cree qu'ensuite, par KoXo. La rigueur
+    /// n'est pas relachee pour autant : appliquer reellement un quota passe par
+    /// <see cref="BillingV2KoxoStorageTargetResolver"/>, qui exige une identite
+    /// entierement materialisee.
     /// </para>
     /// </remarks>
     public IReadOnlyList<BillingV2UserDesiredState> UsersRequiringAdIdentity
@@ -662,9 +676,11 @@ public sealed class BillingV2ProvisioningService : IBillingV2ProvisioningService
             activeV2SubscriptionIds.ToArray(),
             cancellationToken);
         // Le referentiel de liens est charge ici, mais son eventuelle vacuite ne
-        // peut pas conclure avant la porte de stockage : c'est le provisioning
-        // KoXo qui cree le compte annuaire, donc exiger le lien d'abord
-        // interdirait pour toujours au premier utilisateur d'exister.
+        // peut pas conclure avant la porte de stockage : celle-ci refuse plus
+        // tot et plus explicitement. Un lien absent n'est d'ailleurs pas
+        // toujours une anomalie — pour un essai de demonstration, le compte est
+        // cree par KoXo apres l'export, donc l'absence est un etat transitoire
+        // normal.
         var targetUsers = await _activeDirectoryLinks.GetCustomerUserLinksAsync(
             customerId,
             cancellationToken);
@@ -1548,10 +1564,10 @@ public static class BillingV2ProvisioningRuleSemantics
     /// Droit commercial a un utilisateur d'abonnement supplementaire.
     /// </summary>
     /// <remarks>
-    /// Ce n'est pas un mecanisme de creation d'identite. Le bootstrap technique
-    /// d'un utilisateur, quel qu'il soit, reste le provisioning attache a son
-    /// stockage personnel : il ne doit exister qu'un seul proprietaire de la
-    /// creation d'identite.
+    /// Ce n'est pas un mecanisme de creation d'identite : la creation du compte
+    /// annuaire appartient a la chaine KoXo, et il ne doit exister qu'un seul
+    /// proprietaire de cette operation. Le droit commercial autorise un
+    /// utilisateur de plus, il ne le materialise pas.
     /// </remarks>
     public const string UserSlotTarget = "user_slot";
 
@@ -1653,7 +1669,7 @@ public static class BillingV2ProvisioningRuleSemantics
 
         // Le droit a un utilisateur supplementaire est commercial : il autorise
         // un billing_v2_subscription_user de plus, il ne cree rien. Son
-        // bootstrap technique passe par le stockage personnel de cet
+        // equipement technique passe par le stockage personnel de cet
         // utilisateur, comme pour tout autre utilisateur.
         if (Matches(rule, ContractualEntitlementRule)
             && Matches(target, UserSlotTarget))
@@ -1734,10 +1750,12 @@ public static class BillingV2ProvisioningPlanner
     /// </summary>
     /// <remarks>
     /// <para>
-    /// La chaine reelle est : stockage personnel achete, provisioning de
-    /// l'environnement utilisateur, compte annuaire cree et maintenu, puis
-    /// seulement acces optionnels. Un acces VPN ou RDS suppose donc une
-    /// identite dont le stockage personnel est le seul producteur connu.
+    /// L'ordre voulu est : stockage personnel achete, environnement utilisateur
+    /// provisionne, puis seulement acces optionnels. Un acces VPN ou RDS sans
+    /// environnement ouvrirait une porte vers un poste inexistant. Le compte
+    /// annuaire, lui, n'est pas produit par ce stockage : il preexiste pour un
+    /// client payant ordinaire, et c'est KoXo qui le cree pour un essai de
+    /// demonstration.
     /// </para>
     /// <para>
     /// Le controle est un post-passage parce que l'ordre des lignes de

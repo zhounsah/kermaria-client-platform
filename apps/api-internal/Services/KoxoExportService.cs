@@ -45,40 +45,27 @@ public sealed class KoxoExportService : IKoxoExportService
     private const int SchemaVersion = 2;
     private const int PreviewLimit = 5;
 
-    /// <summary>
-    /// OU commune hebergeant les identites de demonstration. Ne sert plus que de
-    /// repli pour les comptes crees avant la reservation systematique d'un code
-    /// de groupe (lot 5) : le cas nominal publie <c>DEMO-CLI-XXXXXX</c>.
-    /// </summary>
-    public const string DemoGroupReference = "CLI-DEMO";
+    // Le nommage KoXo lui-meme vit desormais dans KoxoDirectoryTopology : il est
+    // aussi consomme par le provisioning Billing V2, qui doit viser exactement
+    // l'OU de cet export. Les alias sont conserves pour ne rien changer aux
+    // appelants existants.
+    /// <inheritdoc cref="KoxoDirectoryTopology.DemoGroupReference"/>
+    public const string DemoGroupReference =
+        KoxoDirectoryTopology.DemoGroupReference;
 
-    /// <summary>
-    /// Prefixe des OU de demonstration. Il n'est pas cosmetique : KoXo ne cree
-    /// un groupe secondaire dans l'annuaire que s'il est nouveau pour sa propre
-    /// base. Un meme nom des deux cotes de la separation lui fait croire le
-    /// groupe deja existant, et l'identite migree perd son groupe DEFINITIVEMENT
-    /// — mesure en reel le 2026-08-06. Les deux branches doivent donc nommer
-    /// leurs groupes secondaires differemment.
-    /// </summary>
-    public const string DemoGroupPrefix = "DEMO-";
+    /// <inheritdoc cref="KoxoDirectoryTopology.DemoGroupPrefix"/>
+    public const string DemoGroupPrefix = KoxoDirectoryTopology.DemoGroupPrefix;
 
-    /// <summary>Groupe primaire KoXo des clients payants.</summary>
-    public const string PrimaryGroupClients = "CLIENTS";
+    /// <inheritdoc cref="KoxoDirectoryTopology.PrimaryGroupClients"/>
+    public const string PrimaryGroupClients =
+        KoxoDirectoryTopology.PrimaryGroupClients;
 
-    /// <summary>
-    /// Groupe primaire KoXo des comptes de demonstration. Ecrit en sequence
-    /// d'echappement a dessein : la graphie doit correspondre AU BIT PRES a
-    /// celle saisie dans l'IHM KoXo (<c>43 4c 49 45 4e 54 53 20 44 c3 89 4d 4f</c>
-    /// en UTF-8), sans quoi la synchronisation est un no-op silencieux. Un
-    /// fichier source relu dans un autre encodage ne peut pas alterer une
-    /// sequence \u.
-    /// </summary>
-    public const string PrimaryGroupDemo = "CLIENTS DÉMO";
+    /// <inheritdoc cref="KoxoDirectoryTopology.PrimaryGroupDemo"/>
+    public const string PrimaryGroupDemo =
+        KoxoDirectoryTopology.PrimaryGroupDemo;
 
     private static readonly Regex EmailPattern =
         new("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$", RegexOptions.Compiled);
-    private static readonly Regex IdentifierPattern =
-        new("^CLI-\\d{6}$", RegexOptions.Compiled);
 
     private readonly IKoxoRepository _repository;
     private readonly IKoxoPendingPasswordStore _pendingPasswords;
@@ -143,45 +130,16 @@ public sealed class KoxoExportService : IKoxoExportService
         return await BuildDashboardAsync(prepared, cancellationToken);
     }
 
-    /// <summary>
-    /// Determine l'OU cible cote KoXo, qui la cree si elle n'existe pas.
-    /// </summary>
-    /// <remarks>
-    /// Trois cas :
-    /// <list type="bullet">
-    /// <item>essai en cours : le code reserve a la creation, PREFIXE — chaque
-    /// essai a donc son OU propre sous <see cref="PrimaryGroupDemo"/>, et le
-    /// prefixe garantit que le nom differe de celui de l'OU definitive ;</item>
-    /// <item>compte converti : le meme code reserve, SANS prefixe, ce qui fait
-    /// creer l'OU definitive a KoXo sans renommer la reference client ;</item>
-    /// <item>client reel ordinaire : sa reference, qui nomme deja son OU.</item>
-    /// </list>
-    /// C'est le seul levier de la conversion cote annuaire : l'application ne
-    /// deplace aucune identite elle-meme. Le changement de nom entre les deux
-    /// premiers cas n'est donc pas un detail — c'est lui qui permet a KoXo de
-    /// creer le groupe cible au lieu de le croire deja present.
-    /// </remarks>
+    /// <inheritdoc cref="KoxoDirectoryTopology.ResolveSecondaryGroup"/>
     private static string ResolveGroupeSecondaire(KoxoExportCandidate candidate)
-        => candidate.IsDemo
-            // Repli sur l'OU commune historique pour les essais crees avant la
-            // reservation systematique d'un code : ils n'en ont pas, et les
-            // exclure de l'export les ferait passer pour orphelins donc
-            // desactiver.
-            ? DemoGroupPrefix + (candidate.KoxoGroupReference ?? DemoGroupReference)
-            : candidate.KoxoGroupReference ?? candidate.CustomerReference;
+        => KoxoDirectoryTopology.ResolveSecondaryGroup(
+            candidate.IsDemo,
+            candidate.KoxoGroupReference,
+            candidate.CustomerReference);
 
-    /// <summary>
-    /// Determine le profil KoXo qui prend l'identite en charge. Le decoupage
-    /// suit la seule frontiere qui compte cote annuaire : les quotas et le
-    /// modele de compte, qui ne s'attachent qu'a un groupe primaire.
-    /// </summary>
-    /// <remarks>
-    /// Cloisonne aussi le rayon d'action de chaque synchronisation : avec un CSV
-    /// unique et <c>DisableOrphanedAccounts</c> actif, une anomalie d'export cote
-    /// demo desactivait de vrais clients payants.
-    /// </remarks>
+    /// <inheritdoc cref="KoxoDirectoryTopology.ResolvePrimaryGroup"/>
     private static string ResolveGroupePrimaire(KoxoExportCandidate candidate)
-        => candidate.IsDemo ? PrimaryGroupDemo : PrimaryGroupClients;
+        => KoxoDirectoryTopology.ResolvePrimaryGroup(candidate.IsDemo);
 
     /// <param name="consumePendingPasswords">
     /// Vrai pour le seul export reel. Le tableau de bord et la validation
@@ -231,7 +189,7 @@ public sealed class KoxoExportService : IKoxoExportService
             }
 
             var identifiantUnique = NormalizeRequired(candidate.KoxoUniqueIdentifier);
-            if (identifiantUnique is null || !IdentifierPattern.IsMatch(identifiantUnique))
+            if (!KoxoDirectoryTopology.IsValidUniqueIdentifier(identifiantUnique))
             {
                 fields.Add("identifiantUnique");
             }
@@ -270,9 +228,8 @@ public sealed class KoxoExportService : IKoxoExportService
         }
 
         foreach (var duplicate in candidates
-            .Where(candidate =>
-                NormalizeRequired(candidate.KoxoUniqueIdentifier) is string identifier
-                && IdentifierPattern.IsMatch(identifier))
+            .Where(candidate => KoxoDirectoryTopology.IsValidUniqueIdentifier(
+                NormalizeRequired(candidate.KoxoUniqueIdentifier)))
             .GroupBy(
                 candidate => NormalizeRequired(candidate.KoxoUniqueIdentifier)!,
                 StringComparer.Ordinal)

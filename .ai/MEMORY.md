@@ -41,6 +41,7 @@
 
 - Les topics Claude du 2026-08-05/06 restent les références détaillées pour les comportements mesurés de KoXo : accents, groupes primaires, orphelins, fiche utilisateur, maîtrise du mot de passe et adoption AD.
 - Références : [koxo-accents-majuscules.md](topics/koxo-accents-majuscules.md), [koxo-groupes-primaires-separes.md](topics/koxo-groupes-primaires-separes.md), [koxo-orphelins-supprimes.md](topics/koxo-orphelins-supprimes.md), [koxo-fiche-utilisateur-maitre.md](topics/koxo-fiche-utilisateur-maitre.md), [koxo-ad-password-mastery.md](topics/koxo-ad-password-mastery.md), [koxo-api-ne-cree-plus.md](topics/koxo-api-ne-cree-plus.md).
+- **Un client payant ordinaire a déjà son `customer_ad_links` avant l'export CSV** (`ListExportCandidatesAsync` l'exige) ; seul un essai `demo_kind = 'trial'` part sans lien et est créé par KoXo. Le stockage personnel Billing V2 **ne crée aucune identité** — le code affirmait le contraire jusqu'au 2026-08-17. Détail : [billing-v2-koxo-storage-targets.md](topics/billing-v2-koxo-storage-targets.md).
 - Une mémoire Codex plus récente (preuve datée 2026-08-10) couvre la synchro SRV-13→SRV-21, le remapping des groupes AD vers le domaine enfant et la release 1.0.0.8. Elle précise que code/config/TCP étaient prouvés mais qu'aucun nouveau POST signé / replay KoXo n'avait été exécuté : conserver cette limite de preuve.
 
 ### Temps / timezone
@@ -108,6 +109,7 @@
 
 ## Tous les topics Claude importés
 
+- [billing-v2-koxo-storage-targets.md](topics/billing-v2-koxo-storage-targets.md)
 - [bpce-invoicing-api.md](topics/bpce-invoicing-api.md)
 - [custom-demo-accounts.md](topics/custom-demo-accounts.md)
 - [deployment-topology.md](topics/deployment-topology.md)
