@@ -603,6 +603,67 @@ public sealed class MariaDbActiveDirectoryLinkRepository
             ReadNullableString(reader, "koxo_export_status"));
     }
 
+    public async Task<IReadOnlyList<PortalUserAdLinkRecord>>
+        GetUserLinksByPortalUserIdAsync(
+            string portalUserId,
+            CancellationToken cancellationToken)
+    {
+        var links = new List<PortalUserAdLinkRecord>();
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT
+                link.id,
+                link.customer_id,
+                customer.external_reference AS customer_reference,
+                link.portal_user_id,
+                link.object_guid,
+                link.object_sid,
+                link.sam_account_name,
+                link.user_principal_name,
+                link.display_name,
+                link.distinguished_name,
+                link.ad_domain,
+                link.ad_provisioning_status,
+                link.ad_provisioned_at,
+                link.last_password_sync_at,
+                link.last_password_sync_status,
+                link.koxo_export_status
+            FROM customer_ad_links link
+            INNER JOIN customers customer
+                ON customer.id = link.customer_id
+            WHERE link.portal_user_id = @portal_user_id
+              AND link.object_type = 'user'
+            ORDER BY link.id;
+            """;
+        command.Parameters.AddWithValue("@portal_user_id", portalUserId);
+        await using var reader = await command.ExecuteReaderAsync(
+            cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            links.Add(new PortalUserAdLinkRecord(
+                ReadRequiredIdentifier(reader, "id"),
+                ReadRequiredIdentifier(reader, "customer_id"),
+                reader.GetString("customer_reference"),
+                ReadRequiredIdentifier(reader, "portal_user_id"),
+                ReadRequiredIdentifier(reader, "object_guid"),
+                reader.GetString("object_sid"),
+                reader.GetString("sam_account_name"),
+                ReadNullableString(reader, "user_principal_name"),
+                reader.GetString("display_name"),
+                reader.GetString("distinguished_name"),
+                ReadNullableString(reader, "ad_domain"),
+                ReadNullableString(reader, "ad_provisioning_status"),
+                ReadNullableUtc(reader, "ad_provisioned_at"),
+                ReadNullableUtc(reader, "last_password_sync_at"),
+                ReadNullableString(reader, "last_password_sync_status"),
+                ReadNullableString(reader, "koxo_export_status")));
+        }
+
+        return links;
+    }
+
     public async Task<bool> RefreshCustomerLinkAsync(
         string targetCustomerReference,
         AdDirectoryObjectSummary directoryObject,

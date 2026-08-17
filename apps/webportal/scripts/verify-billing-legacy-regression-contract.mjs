@@ -142,6 +142,9 @@ const billingV2PricingTests = await read(
 const billingV2ProvisioningShadowTests = await read(
   "../../tests/api-internal/BillingV2ProvisioningShadowTests.cs",
 );
+const billingV2ProvisioningScopeTests = await read(
+  "../../tests/api-internal/BillingV2ProvisioningScopeTests.cs",
+);
 const billingV2NewSubscriptionTests = await read(
   "../../tests/api-internal/BillingV2NewSubscriptionTests.cs",
 );
@@ -703,6 +706,73 @@ assert.match(
   billingV2ProvisioningService,
   /plan\.NextcloudQuotas\.Count > 0[\s\S]*CheckReadiness\(plan\.NextcloudQuotas\)[\s\S]*Legacy provisioning remains authoritative/,
   "Le provisioning V2 doit bloquer les quotas Nextcloud tant qu'aucun provider fiable ne peut les appliquer.",
+);
+// -- Isolation par utilisateur du provisioning V2 -------------------------
+// Le moteur AD applique chaque groupe gere a chaque TargetUsers recu : un plan
+// agrege au niveau client donnait donc a tout le monde le droit d'un seul. Les
+// assertions ci-dessous figent la seule structure qui rend cela impossible.
+assert.match(
+  billingV2ProvisioningService,
+  /SELECT[\s\S]*item\.scope_type,[\s\S]*item\.subscription_user_id,[\s\S]*subscription_user\.identity_reference,[\s\S]*LEFT JOIN billing_v2_subscription_users subscription_user/,
+  "La projection provisioning V2 doit conserver le scope et l'utilisateur porteur de chaque item.",
+);
+assert.match(
+  billingV2ProvisioningService,
+  /record BillingV2UserDesiredState\([\s\S]*SubscriptionUserId,[\s\S]*IdentityReference,[\s\S]*DesiredAdGroups/,
+  "Le plan provisioning V2 doit porter un etat desire par utilisateur d'abonnement, pas un ensemble de groupes client.",
+);
+assert.match(
+  billingV2ProvisioningService,
+  /BuildPerUserRequests[\s\S]*\[target\.AdLink\][\s\S]*desiredGroups,[\s\S]*ResolveManagedGroupsForExecution\([\s\S]*decision,[\s\S]*desiredGroups,[\s\S]*desiredGroups\)/,
+  "Chaque requete de reconciliation V2 ne doit porter qu'un utilisateur, et ses groupes geres doivent rester bornes a ses groupes desires.",
+);
+assert.match(
+  billingV2ProvisioningService,
+  /BILLING_V2_PROVISIONING_IDENTITY_NOT_LINKED[\s\S]*BILLING_V2_PROVISIONING_IDENTITY_AMBIGUOUS[\s\S]*BILLING_V2_PROVISIONING_IDENTITY_CUSTOMER_MISMATCH/,
+  "La resolution d'identite V2 doit echouer explicitement sur lien absent, lien ambigu et lien d'un autre client.",
+);
+assert.doesNotMatch(
+  billingV2ProvisioningService,
+  /ProvisioningExecutionRequest\(\s*(context\.TargetUsers|targetUsers)/,
+  "Le provisioning V2 ne doit plus construire d'execution portant tous les utilisateurs du client.",
+);
+// -- Correlation forte de l'identite finale -------------------------------
+// Un sAMAccountName n'est unique que dans son domaine : dans une foret
+// multi-domaines il ne peut pas designer une identite. La cle est objectGUID.
+assert.match(
+  billingV2ProvisioningService,
+  /BILLING_V2_PROVISIONING_IDENTITY_GUID_MISSING[\s\S]*NormalizeObjectGuid\(portalLink\.ObjectGuid\)[\s\S]*BILLING_V2_PROVISIONING_IDENTITY_GUID_INVALID[\s\S]*customerUserLinks[\s\S]*NormalizeObjectGuid\(candidate\.ObjectGuid\),[\s\S]*expectedObjectGuid,[\s\S]*StringComparison\.Ordinal/,
+  "La resolution d'identite V2 doit selectionner l'objet annuaire final sur objectGUID exact, et distinguer absence et valeur malformee.",
+);
+assert.match(
+  billingV2ProvisioningService,
+  /Guid\.TryParse\(trimmed, out var parsed\)\s*\?\s*parsed\.ToString\("D"\)\s*:\s*null;/,
+  "Un objectGUID non parsable ne doit jamais etre conserve comme cle d'identite opaque.",
+);
+assert.doesNotMatch(
+  billingV2ProvisioningService,
+  /candidate\.SamAccountName,\s*portalLink\.SamAccountName/,
+  "Le sAMAccountName ne doit plus servir de cle d'identite finale dans le provisioning V2.",
+);
+assert.match(
+  billingV2ProvisioningService,
+  /ObjectSidsAreCoherent\(portalLink\.ObjectSid, adLink\.ObjectSid\)[\s\S]*BILLING_V2_PROVISIONING_IDENTITY_SID_MISMATCH/,
+  "Un objectSid incoherent a objectGUID constant doit bloquer le provisioning V2.",
+);
+assert.match(
+  billingV2ProvisioningService,
+  /allowedObjectGuids = context\.TargetUsers[\s\S]*NormalizeObjectGuid\(user\.ObjectGuid\)/,
+  "La restriction de selection manuelle doit se juger sur objectGUID, pas sur sAMAccountName.",
+);
+assert.match(
+  billingV2ProvisioningScopeTests,
+  /VerifyUserScopedRightsNeverLeakToAnotherUser[\s\S]*VerifyUserWithoutUserScopedServiceGetsNoOperation[\s\S]*VerifyUserScopedItemWithoutSubscriptionUserFailsClosed[\s\S]*VerifyUserWithoutIdentityReferenceFailsClosed[\s\S]*VerifyIdentityWithoutAdLinkFailsClosed[\s\S]*VerifyAmbiguousAdLinkFailsClosed[\s\S]*VerifyAdLinkOfAnotherCustomerFailsClosed[\s\S]*VerifyPersonalQuotaWithoutIdentityFailsClosed[\s\S]*VerifyActiveServiceWithoutRuleStaysUnresolved[\s\S]*VerifySubscriptionScopedAdGroupFailsClosed[\s\S]*VerifyRetryIsIdempotent[\s\S]*VerifyAddOnlyModeNeverRemoves[\s\S]*VerifySameSamAccountNameIsDisambiguatedByObjectGuid[\s\S]*VerifyMissingObjectGuidInCustomerReferentialFailsClosed[\s\S]*VerifyIncoherentSnapshotsFailClosed[\s\S]*VerifySameSamAccountNameAcrossDomainsResolvesTheRightObject[\s\S]*VerifyRefreshedSnapshotsAfterSidChangeResolve[\s\S]*VerifyMalformedPortalObjectGuidFailsClosed[\s\S]*VerifyMalformedCustomerObjectGuidNeverMatches[\s\S]*VerifyObjectGuidWritingFormIsCanonicalized/,
+  "Les tests d'isolation provisioning V2 doivent couvrir les douze cas de fuite et de fail-closed, plus la correlation forte par objectGUID.",
+);
+assert.match(
+  rootPackageJson,
+  /--billing-v2-provisioning-scope/,
+  "La suite billing legacy doit executer les tests d'isolation par utilisateur du provisioning Billing V2.",
 );
 assert.match(
   billingV2ProvisioningShadowTests,

@@ -244,6 +244,20 @@ public sealed class MockActiveDirectoryLinkRepository
         }
     }
 
+    public Task<IReadOnlyList<PortalUserAdLinkRecord>>
+        GetUserLinksByPortalUserIdAsync(
+            string portalUserId,
+            CancellationToken cancellationToken)
+    {
+        lock (SyncRoot)
+        {
+            return Task.FromResult<IReadOnlyList<PortalUserAdLinkRecord>>(
+                PortalLinksByUserId.TryGetValue(portalUserId, out var link)
+                    ? [link]
+                    : Array.Empty<PortalUserAdLinkRecord>());
+        }
+    }
+
     public Task<bool> RefreshCustomerLinkAsync(
         string targetCustomerReference,
         AdDirectoryObjectSummary directoryObject,

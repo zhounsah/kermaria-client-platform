@@ -146,6 +146,28 @@ async Task<int> RunAsync(string[] arguments)
     if (arguments.Length == 1
         && string.Equals(
             arguments[0],
+            "--billing-v2-provisioning-scope",
+            StringComparison.Ordinal))
+    {
+        try
+        {
+            await BillingV2ProvisioningScopeTests.RunAsync();
+            Console.WriteLine(
+                "Tests isolation par utilisateur du provisioning Billing V2 reussis.");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine(
+                "Tests isolation par utilisateur du provisioning Billing V2 en echec.");
+            Console.Error.WriteLine(exception.ToString());
+            return 1;
+        }
+    }
+
+    if (arguments.Length == 1
+        && string.Equals(
+            arguments[0],
             "--billing-v2-new-subscription",
             StringComparison.Ordinal))
     {

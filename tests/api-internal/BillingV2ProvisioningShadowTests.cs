@@ -212,11 +212,17 @@ public static class BillingV2ProvisioningShadowTests
                     StaticValue: null,
                     TierNumericValue: null,
                     TierUnit: null,
-                    Quantity: 0)
+                    Quantity: 0,
+                    ScopeType: "user",
+                    SubscriptionUserId: "subscription-user-v2",
+                    IdentityReference: "portal-user-v2",
+                    SubscriptionUserIsPrimary: true,
+                    SubscriptionUserStatus: "active")
             ]);
 
         Ensure(
-            plan.DesiredAdGroups.Count == 0
+            plan.AllDesiredAdGroups.Count == 0
+            && plan.Users.Count == 0
             && plan.UnresolvedRuleReferences.SequenceEqual(
                 ["VPN-ACCESS:no-tier:item-v2-unprovisioned"],
                 StringComparer.OrdinalIgnoreCase),
@@ -239,17 +245,25 @@ public static class BillingV2ProvisioningShadowTests
                     StaticValue: null,
                     TierNumericValue: 128,
                     TierUnit: "GiB",
-                    Quantity: 1)
+                    Quantity: 1,
+                    ScopeType: "user",
+                    SubscriptionUserId: "subscription-user-v2",
+                    IdentityReference: "portal-user-v2",
+                    SubscriptionUserIsPrimary: true,
+                    SubscriptionUserStatus: "active")
             ]);
 
         Ensure(
-            plan.DesiredAdGroups.Count == 0
+            plan.AllDesiredAdGroups.Count == 0
             && plan.UnresolvedRuleReferences.Count == 0
             && plan.NextcloudQuotas.Count == 1
             && plan.NextcloudQuotas[0].QuotaValue == 128
             && plan.NextcloudQuotas[0].Unit == "GiB"
-            && plan.NextcloudQuotas[0].TargetType == "nextcloud_user_quota",
-            "Les regles Nextcloud V2 doivent calculer un quota explicite sans le confondre avec un groupe AD.");
+            && plan.NextcloudQuotas[0].TargetType == "nextcloud_user_quota"
+            && plan.NextcloudQuotas[0].SubscriptionUserId
+                == "subscription-user-v2"
+            && plan.NextcloudQuotas[0].IdentityReference == "portal-user-v2",
+            "Les regles Nextcloud V2 doivent calculer un quota explicite, rattache a son utilisateur, sans le confondre avec un groupe AD.");
     }
 
     private static void VerifyDormantNextcloudQuotaProviderBlocksExecution()
@@ -259,8 +273,9 @@ public static class BillingV2ProvisioningShadowTests
                 [
                     new BillingV2NextcloudQuotaPlan(
                         "item-v2-storage",
+                        SubscriptionUserId: "subscription-user-v2",
                         "nextcloud_user_quota",
-                        IdentityReference: null,
+                        IdentityReference: "portal-user-v2",
                         QuotaValue: 128,
                         Unit: "GiB")
                 ]);

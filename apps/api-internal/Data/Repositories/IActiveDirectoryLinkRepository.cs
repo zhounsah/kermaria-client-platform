@@ -79,4 +79,18 @@ public interface IActiveDirectoryLinkRepository
     Task<PortalUserAdLinkRecord?> FindUserLinkByPortalUserIdAsync(
         string portalUserId,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Retourne <b>tous</b> les liens Active Directory rattaches a cet
+    /// utilisateur portail.
+    /// </summary>
+    /// <remarks>
+    /// Volontairement distincte de
+    /// <see cref="FindUserLinkByPortalUserIdAsync"/>, qui borne a un seul
+    /// resultat : quand le resultat sert a donner des droits reels, un doublon
+    /// doit etre visible et bloquant, pas resolu au hasard.
+    /// </remarks>
+    Task<IReadOnlyList<PortalUserAdLinkRecord>> GetUserLinksByPortalUserIdAsync(
+        string portalUserId,
+        CancellationToken cancellationToken);
 }

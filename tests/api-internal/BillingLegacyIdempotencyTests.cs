@@ -746,6 +746,12 @@ public static class BillingLegacyIdempotencyTests
             string portalUserId,
             CancellationToken cancellationToken)
             => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<PortalUserAdLinkRecord>>
+            GetUserLinksByPortalUserIdAsync(
+                string portalUserId,
+                CancellationToken cancellationToken)
+            => throw new NotSupportedException();
     }
 
     private sealed class StaticOfferTopologyService : ICommercialOfferTopologyService
