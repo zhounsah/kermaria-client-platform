@@ -1241,9 +1241,13 @@ autres, MySqlConnector materialise `CHAR(36)` en `Guid` et non en `string`
 l'unicite par cycle. Une suite mock valide la logique, pas le contrat de la
 base.
 
-Cette version **deploie sans lancer** : tous les drapeaux `BILLING_V2_*`
-restent a `false`, `STRIPE_MODE` reste `test`, et le parcours legacy continue
-d'operer sans changement. Le perimetre de lancement — Stripe mensuel
+Cette version **deploie sans lancer** : sans variable posee, chaque drapeau
+`BILLING_V2_*` vaut `false` et le parcours legacy continue d'operer sans
+changement. C'est la configuration de l'hote qui decide — et un releve du
+2026-08-17 montre qu'en production les drapeaux d'execution sont **deja
+leves** avec `STRIPE_MODE=live`, seul `BILLING_V2_FIRST_REAL_SUBSCRIPTION_APPROVED`
+tenant encore ; detail et consequences dans la documentation dediee. Le
+perimetre de lancement — Stripe mensuel
 uniquement — n'est pas declaratif : `BillingV2LaunchScope` le refuse a
 l'execution avec des codes `BILLING_V2_SCOPE_*`. La mise en service se joue
 ensuite, drapeau par drapeau, avec

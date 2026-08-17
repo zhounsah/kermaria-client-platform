@@ -50,10 +50,15 @@
 
 ### Billing V2 (v1.4.0.0)
 
-- **Livré et déployé le 2026-08-17, mais NON lancé.** Tous les drapeaux
-  `BILLING_V2_*` restent `false`, `STRIPE_MODE` reste `test`, le parcours
-  legacy continue d'opérer. Référence : `docs/v1.4/V1.4.0.0_BILLING_V2.md`,
-  mise en service dans `docs/billing-v2/LANCEMENT-CONTROLE.md`.
+- **Livré en v1.4.0.0.** Le code est dormant par défaut (drapeaux absents =
+  `false`), mais **la production ne l'est pas** : relevé du 2026-08-17,
+  `NEW_SUBSCRIPTIONS`, `AUTHORITATIVE_CHECKOUT`, `PROVIDER_OUTBOX`,
+  `PROVIDER_EXECUTOR` et `RECONCILIATION_WORKER` sont à `true`, `STRIPE_MODE`
+  et `PAYPAL_MODE` à `live`. Seul `FIRST_REAL_SUBSCRIPTION_APPROVED=false`
+  bloque encore — il est évalué **avant** tout appel sortant, donc aucun objet
+  Stripe n'est créé. Mais la phase de validation prévue en `STRIPE_MODE=test`
+  a été sautée : lever ce verrou ferait passer de « rien » à « argent réel »
+  sans palier. Référence : `docs/v1.4/V1.4.0.0_BILLING_V2.md`.
 - Invariants à ne pas casser : `BillingEvent` immuable = autorité du montant
   (pas le provider) ; trois axes de statut orthogonaux ; identité de
   renouvellement = `(subscription_id, cycle_sequence)` ; `billing_anchor_at`
