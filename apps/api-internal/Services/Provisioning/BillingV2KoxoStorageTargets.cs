@@ -210,8 +210,53 @@ public static class BillingV2KoxoStorageTargetReasons
     public const string DirectoryObjectMismatch =
         "BILLING_V2_KOXO_STORAGE_DIRECTORY_OBJECT_MISMATCH";
 
+    /// <summary>
+    /// Aucun utilisateur portail ne repond a ce couple client / identifiant.
+    /// </summary>
+    /// <remarks>
+    /// Couvre volontairement deux situations : l'utilisateur n'existe pas, ou
+    /// il appartient a un autre client. La lecture ciblee est bornee par les
+    /// deux identifiants, donc elle ne peut pas les distinguer — et ne doit pas
+    /// le faire, sous peine de confirmer l'existence d'une ligne d'un autre
+    /// client.
+    /// </remarks>
+    public const string PortalUserNotFound =
+        "BILLING_V2_KOXO_STORAGE_PORTAL_USER_NOT_FOUND";
+
+    /// <summary>
+    /// L'utilisateur lu declare un autre client que celui de l'abonnement.
+    /// </summary>
+    /// <remarks>
+    /// Redondant avec le bornage de la requete, et c'est le but : si un jour
+    /// une implementation de depot relache ce bornage, le service le voit ici
+    /// au lieu de poser le quota chez le voisin.
+    /// </remarks>
+    public const string PortalUserCustomerMismatch =
+        "BILLING_V2_KOXO_STORAGE_PORTAL_USER_CUSTOMER_MISMATCH";
+
+    /// <summary>
+    /// Les references client disponibles ne designent pas le meme client.
+    /// </summary>
+    /// <remarks>
+    /// Compare les references reellement portees par les objets lus. Une valeur
+    /// absente n'est pas une contradiction : dans le chemin LDAP actuel,
+    /// <see cref="Contracts.AdDirectoryObjectSummary.CustomerReference"/> est
+    /// laissee vide par la recherche par <c>employeeNumber</c>. Exiger d'elle
+    /// une egalite rendrait toute resolution impossible ; exiger la coherence
+    /// seulement quand la valeur existe garde le controle utile sans le rendre
+    /// faux.
+    /// </remarks>
+    public const string CustomerReferenceMismatch =
+        "BILLING_V2_KOXO_STORAGE_CUSTOMER_REFERENCE_MISMATCH";
+
     public const string SecondaryGroupUnknown =
         "BILLING_V2_KOXO_STORAGE_SECONDARY_GROUP_UNKNOWN";
+
+    /// <summary>
+    /// Le client de l'abonnement est introuvable en base.
+    /// </summary>
+    public const string CustomerNotFound =
+        "BILLING_V2_KOXO_STORAGE_CUSTOMER_NOT_FOUND";
 
     /// <summary>
     /// L'instantane de groupe secondaire decrit un autre client.

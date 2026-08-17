@@ -273,6 +273,19 @@ builder.Services.AddScoped<IKoxoRepository>(
     _ => sqlConfiguration.IsPersistent
         ? new MariaDbKoxoRepository(sqlConfiguration)
         : new MockKoxoRepository());
+// Lectures ciblees du ciblage de stockage KoXo, distinctes de l'export global :
+// l'export porte la politique de population du CSV, pas la designation d'une
+// cible de quota.
+builder.Services.AddScoped<IBillingV2KoxoTargetingRepository>(
+    _ => sqlConfiguration.IsPersistent
+        ? new MariaDbBillingV2KoxoTargetingRepository(sqlConfiguration)
+        : new MockBillingV2KoxoTargetingRepository());
+// Resolution en lecture seule des cibles de stockage KoXo. Enregistree pour
+// etre disponible, mais volontairement branchee nulle part : le provider reel
+// reste DormantBillingV2KoxoStorageProvider et rien n'applique de quota.
+builder.Services.AddScoped<
+    IBillingV2KoxoStorageTargetResolutionService,
+    BillingV2KoxoStorageTargetResolutionService>();
 builder.Services.AddScoped<IPortalService, PortalService>();
 builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
 builder.Services.AddScoped<IAdminService, AdminService>();

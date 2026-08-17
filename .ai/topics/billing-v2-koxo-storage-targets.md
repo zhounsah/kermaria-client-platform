@@ -66,6 +66,34 @@ dépendance technique de création d'identité.
   déclarée non applicable** (abaisser sous l'occupation réelle bloque
   l'utilisateur sans rien libérer). Modélisé, pas encore branché.
 
+## 3A.2 — alimentation read-only
+
+`BillingV2KoxoStorageTargetResolutionService` construit les snapshots depuis les
+données réelles puis appelle le resolver pur. **Enregistré en DI mais branché
+nulle part** : rien ne consomme sa sortie, le provider dormant et les hard-stops
+sont intacts.
+
+Lectures ciblées via un dépôt dédié `IBillingV2KoxoTargetingRepository`,
+**volontairement séparé de `IKoxoRepository`** : `ListExportCandidatesAsync`
+porte la politique de population du CSV global (état civil complet, tolérance
+`demo_kind = 'trial'`, exclusion `showcase`) et n'a rien à dire sur « où poser
+le quota de cet abonnement ». S'en servir ferait dépendre le ciblage de règles
+d'export sans rapport.
+
+- `FindPortalUserAsync(customerId, portalUserId)` — bornée par les **deux**
+  identifiants exacts. Conséquence assumée : « utilisateur inexistant » et
+  « utilisateur d'un autre client » sont indistinguables
+  (`…_PORTAL_USER_NOT_FOUND`) ; les distinguer confirmerait l'existence d'une
+  ligne d'un autre client.
+- `FindCustomerAsync(customerId)` — pour la cible partagée uniquement.
+
+**Piège mesuré :** `LdapAdGroupProvisioner.SearchRoot` construit
+`AdDirectoryObjectSummary` avec `CustomerReference = string.Empty`. La recherche
+par `employeeNumber` ne renseigne donc **jamais** cette référence. Exiger une
+égalité stricte rendrait toute résolution impossible ; la règle retenue est
+« une référence absente n'est pas une contradiction, une référence renseignée et
+divergente en est une ». Ne pas reconstruire la référence depuis le DN.
+
 ## Correction 2026-08-17 : `ResolveUserByEmployeeNumberAsync` et les modes AD
 
 J'avais rapporté que cette méthode « ne rend rien hors `controlled_write` ».
