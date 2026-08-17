@@ -21,8 +21,8 @@ public static class BillingV2ProvisioningShadowTests
         VerifyFirstActivationIsAddOnly();
         VerifyProvisioningRetryKeepsSameGateDecision();
         VerifyProvisioningPlannerFlagsMissingItemProvisioning();
-        VerifyNextcloudQuotaRulesAreCalculatedButNotAdGroups();
-        VerifyDormantNextcloudQuotaProviderBlocksExecution();
+        VerifyStorageQuotaRulesAreCalculatedButNotAdGroups();
+        VerifyDormantKoxoStorageProviderBlocksExecution();
         return Task.CompletedTask;
     }
 
@@ -229,7 +229,7 @@ public static class BillingV2ProvisioningShadowTests
             "Un item V2 actif sans etat subscription_item_provisioning doit bloquer le provisioning au lieu d'etre ignore.");
     }
 
-    private static void VerifyNextcloudQuotaRulesAreCalculatedButNotAdGroups()
+    private static void VerifyStorageQuotaRulesAreCalculatedButNotAdGroups()
     {
         var plan = BillingV2ProvisioningPlanner.Plan(
             [
@@ -238,9 +238,9 @@ public static class BillingV2ProvisioningShadowTests
                     "item-v2-storage",
                     "STORAGE-PERSONAL",
                     "128",
-                    "nextcloud_quota",
-                    "nextcloud_user_quota",
-                    TargetReference: null,
+                    "infrastructure_action",
+                    "koxo_user_storage",
+                    TargetReference: "KOXO-USER-STORAGE",
                     "tier_numeric_value",
                     StaticValue: null,
                     TierNumericValue: 128,
@@ -256,35 +256,36 @@ public static class BillingV2ProvisioningShadowTests
         Ensure(
             plan.AllDesiredAdGroups.Count == 0
             && plan.UnresolvedRuleReferences.Count == 0
-            && plan.NextcloudQuotas.Count == 1
-            && plan.NextcloudQuotas[0].QuotaValue == 128
-            && plan.NextcloudQuotas[0].Unit == "GiB"
-            && plan.NextcloudQuotas[0].TargetType == "nextcloud_user_quota"
-            && plan.NextcloudQuotas[0].SubscriptionUserId
+            && plan.StorageQuotaPlans.Count == 1
+            && plan.StorageQuotaPlans[0].QuotaValue == 128
+            && plan.StorageQuotaPlans[0].Unit == "GiB"
+            && plan.StorageQuotaPlans[0].TargetType == "koxo_user_storage"
+            && plan.StorageQuotaPlans[0].SubscriptionUserId
                 == "subscription-user-v2"
-            && plan.NextcloudQuotas[0].IdentityReference == "portal-user-v2",
-            "Les regles Nextcloud V2 doivent calculer un quota explicite, rattache a son utilisateur, sans le confondre avec un groupe AD.");
+            && plan.StorageQuotaPlans[0].IdentityReference == "portal-user-v2",
+            "Les regles de stockage V2 doivent calculer un quota explicite, rattache a son utilisateur, sans le confondre avec un groupe AD.");
     }
 
-    private static void VerifyDormantNextcloudQuotaProviderBlocksExecution()
+    private static void VerifyDormantKoxoStorageProviderBlocksExecution()
     {
-        var readiness = DormantBillingV2NextcloudQuotaProvider.Instance
+        var readiness = DormantBillingV2KoxoStorageProvider.Instance
             .CheckReadiness(
                 [
-                    new BillingV2NextcloudQuotaPlan(
+                    new BillingV2StorageQuotaPlan(
                         "item-v2-storage",
                         SubscriptionUserId: "subscription-user-v2",
-                        "nextcloud_user_quota",
+                        "koxo_user_storage",
                         IdentityReference: "portal-user-v2",
                         QuotaValue: 128,
-                        Unit: "GiB")
+                        Unit: "GiB",
+                        ScopeType: "user")
                 ]);
 
         Ensure(
             !readiness.CanApplyQuotas
             && readiness.ReasonCode
-                == "BILLING_V2_NEXTCLOUD_QUOTA_PROVIDER_NOT_CONFIGURED",
-            "Le provider Nextcloud dormant doit bloquer toute application reelle de quota.");
+                == "BILLING_V2_KOXO_STORAGE_PROVIDER_NOT_CONFIGURED",
+            "Le provider de stockage KoXo dormant doit bloquer toute application reelle de quota.");
     }
 
     private static IReadOnlyList<BillingV2ProvisioningShadowRule> V2AdRules =>

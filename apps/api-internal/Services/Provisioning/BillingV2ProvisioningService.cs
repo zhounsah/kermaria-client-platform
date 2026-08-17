@@ -62,40 +62,202 @@ public sealed record BillingV2ProvisioningRuleProjection(
     string? SubscriptionUserStatus);
 
 /// <summary>
+/// Regle explicitement comprise par le planificateur mais qui n'emet aucune
+/// ecriture externe.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Un droit contractuel, une prestation humaine ou une couverture heritee
+/// d'une politique globale n'a pas d'objet a creer : la reconnaitre est une
+/// conclusion, pas une action. La distinction avec un blocage est essentielle,
+/// sinon la seule presence d'un socle ou d'un support dans l'abonnement
+/// empecherait a jamais le provisioning des droits qui, eux, sont reels.
+/// </para>
+/// <para>
+/// Ce type n'existe que pour les regles EXPLICITES. L'absence de regle reste
+/// une anomalie : voir
+/// <see cref="BillingV2ProvisioningBlockerReasons.RuleMissing"/>.
+/// </para>
+/// </remarks>
+public sealed record BillingV2AcknowledgedEntitlement(
+    string SubscriptionItemId,
+    string? SubscriptionUserId,
+    string ServiceCode,
+    string RuleType,
+    string TargetType,
+    string? TargetReference,
+    string ScopeType);
+
+/// <summary>
+/// Quota de stockage desire, exprime dans l'unite canonique du catalogue.
+/// </summary>
+/// <remarks>
+/// Aucune conversion n'est faite ici. La valeur reste celle du catalogue
+/// (<c>GiB</c>) et la traduction vers l'unite attendue par KoXo/FSRM
+/// (<c>FolderQuota</c> en MiB) appartient au provider reel, pas au plan : un
+/// plan converti trop tot deviendrait faux si l'unite du catalogue changeait.
+/// </remarks>
+public sealed record BillingV2StorageQuotaPlan(
+    string SubscriptionItemId,
+    string? SubscriptionUserId,
+    string TargetType,
+    string? IdentityReference,
+    long QuotaValue,
+    string Unit,
+    string ScopeType);
+
+/// <summary>
+/// Raison precise pour laquelle une ligne du catalogue n'est pas executable.
+/// </summary>
+public sealed record BillingV2ProvisioningBlocker(
+    string RuleReference,
+    string ReasonCode);
+
+public static class BillingV2ProvisioningBlockerReasons
+{
+    /// <summary>
+    /// Aucune regle explicite, ou item non materialise. Ce n'est jamais un
+    /// noop : une brique vendue sans regle est une lacune de catalogue.
+    /// </summary>
+    public const string RuleMissing =
+        "BILLING_V2_PROVISIONING_RULE_MISSING";
+
+    public const string RuleTypeUnknown =
+        "BILLING_V2_PROVISIONING_RULE_TYPE_UNKNOWN";
+
+    public const string TargetTypeUnknown =
+        "BILLING_V2_PROVISIONING_TARGET_TYPE_UNKNOWN";
+
+    /// <summary>
+    /// Le scope de l'item contredit le scope impose par la regle.
+    /// </summary>
+    public const string ScopeIncoherent =
+        "BILLING_V2_PROVISIONING_SCOPE_INCOHERENT";
+
+    /// <summary>
+    /// La regle est comprise mais aucune identite ne la porte. Aucun repli
+    /// vers un autre utilisateur du client n'est acceptable.
+    /// </summary>
+    public const string IdentityRequired =
+        "BILLING_V2_PROVISIONING_IDENTITY_REQUIRED";
+
+    /// <summary>
+    /// Un droit aval a ete achete pour un utilisateur qui n'a pas de stockage
+    /// personnel.
+    /// </summary>
+    /// <remarks>
+    /// Le stockage personnel n'est pas une ressource parmi d'autres : c'est le
+    /// provisioning qui cree et maintient l'environnement utilisateur, donc
+    /// l'identite annuaire elle-meme. Accorder un acces VPN ou RDS sans lui
+    /// reviendrait a distribuer un droit sur une identite dont personne ne
+    /// garantit l'existence.
+    /// </remarks>
+    public const string PersonalStorageRequired =
+        "BILLING_V2_PROVISIONING_PERSONAL_STORAGE_REQUIRED";
+
+    /// <summary>
+    /// Deux stockages personnels concurrents pour un meme utilisateur.
+    /// </summary>
+    /// <remarks>
+    /// L'environnement utilisateur est unique : deux quotas contradictoires ne
+    /// se departagent pas, ils se refusent.
+    /// </remarks>
+    public const string PersonalStorageConflict =
+        "BILLING_V2_PROVISIONING_PERSONAL_STORAGE_CONFLICT";
+
+    public const string UserNotActive =
+        "BILLING_V2_PROVISIONING_USER_NOT_ACTIVE";
+
+    public const string UserIdentityConflict =
+        "BILLING_V2_PROVISIONING_USER_IDENTITY_CONFLICT";
+
+    public const string TargetReferenceMissing =
+        "BILLING_V2_PROVISIONING_TARGET_REFERENCE_MISSING";
+
+    public const string ValueUnresolved =
+        "BILLING_V2_PROVISIONING_VALUE_UNRESOLVED";
+
+    /// <summary>
+    /// Le catalogue exprime le tier dans une unite differente de celle que le
+    /// provisioning de stockage sait interpreter.
+    /// </summary>
+    public const string UnitUnexpected =
+        "BILLING_V2_PROVISIONING_UNIT_UNEXPECTED";
+}
+
+/// <summary>
 /// Etat desire d'un seul <c>billing_v2_subscription_user</c>.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Le plan V2 n'expose plus aucun ensemble de groupes AD au niveau client :
 /// un groupe n'existe que porte par l'utilisateur qui l'a achete. C'est cette
 /// structure, et non un controle a l'execution, qui rend impossible d'appliquer
-/// le droit de A a B.
+/// le droit de A a B. La meme regle vaut pour le stockage personnel : un quota
+/// n'existe que dans l'etat desire de son titulaire.
+/// </para>
+/// <para>
+/// Les membres ne sont pas paralleles : <see cref="PersonalStorage"/> est le
+/// socle technique de l'utilisateur. C'est ce provisioning qui cree et
+/// maintient le compte annuaire et son environnement ; <see
+/// cref="DesiredAdGroups"/> ne contient que des acces optionnels situes en aval
+/// et qui supposent cette identite deja resolue.
+/// </para>
 /// </remarks>
 public sealed record BillingV2UserDesiredState(
     string SubscriptionUserId,
     string IdentityReference,
     IReadOnlyList<string> DesiredAdGroups,
-    IReadOnlyList<BillingV2NextcloudQuotaPlan> UserStoragePlans);
+    BillingV2StorageQuotaPlan? PersonalStorage,
+    IReadOnlyList<BillingV2AcknowledgedEntitlement> UserInheritedCoverages,
+    IReadOnlyList<BillingV2AcknowledgedEntitlement> UserEntitlements)
+{
+    /// <summary>
+    /// Plans de stockage personnels de cet utilisateur, au plus un.
+    /// </summary>
+    public IReadOnlyList<BillingV2StorageQuotaPlan> UserStoragePlans
+        => PersonalStorage is null
+            ? Array.Empty<BillingV2StorageQuotaPlan>()
+            : [PersonalStorage];
+}
 
 /// <summary>
 /// Ressources de scope abonnement, volontairement separees des utilisateurs.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Aucun groupe AD n'y figure : la semantique utilisateur d'un droit AD achete
 /// au niveau abonnement n'est pas definie dans le modele actuel, donc le
 /// planificateur le classe non resolu plutot que de le distribuer a tous les
-/// utilisateurs du client.
+/// utilisateurs du client. Le stockage partage suit la meme logique en sens
+/// inverse : il appartient au groupe secondaire du client et ne doit jamais
+/// etre recopie dans l'etat desire d'un utilisateur.
+/// </para>
+/// <para>
+/// <see cref="UnassignedUserSlots"/> porte les places d'utilisateur payees mais
+/// pas encore attribuees a une personne. Elles sont rattachees a l'abonnement
+/// et non a un utilisateur, precisement parce qu'aucune identite ne les porte
+/// encore.
+/// </para>
 /// </remarks>
 public sealed record BillingV2SubscriptionDesiredState(
-    IReadOnlyList<BillingV2NextcloudQuotaPlan> SharedStoragePlans)
+    IReadOnlyList<BillingV2StorageQuotaPlan> SharedStoragePlans,
+    IReadOnlyList<BillingV2AcknowledgedEntitlement> InheritedCoverages,
+    IReadOnlyList<BillingV2AcknowledgedEntitlement> Entitlements,
+    IReadOnlyList<BillingV2AcknowledgedEntitlement> UnassignedUserSlots)
 {
     public static BillingV2SubscriptionDesiredState Empty { get; }
-        = new(Array.Empty<BillingV2NextcloudQuotaPlan>());
+        = new(
+            Array.Empty<BillingV2StorageQuotaPlan>(),
+            Array.Empty<BillingV2AcknowledgedEntitlement>(),
+            Array.Empty<BillingV2AcknowledgedEntitlement>(),
+            Array.Empty<BillingV2AcknowledgedEntitlement>());
 }
 
 public sealed record BillingV2ProvisioningPlan(
     IReadOnlyList<BillingV2UserDesiredState> Users,
     BillingV2SubscriptionDesiredState SubscriptionResources,
-    IReadOnlyList<string> UnresolvedRuleReferences)
+    IReadOnlyList<BillingV2ProvisioningBlocker> Blockers)
 {
     /// <summary>
     /// Enveloppe informative des groupes AD du client, tous utilisateurs
@@ -113,62 +275,103 @@ public sealed record BillingV2ProvisioningPlan(
         .ToArray();
 
     /// <summary>
+    /// Utilisateurs dont l'execution exige une identite Active Directory deja
+    /// resolue.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Deux identites distinctes coexistent et ne doivent pas etre confondues :
+    /// l'identite de facturation
+    /// (<c>billing_v2_subscription_users.identity_reference</c>, soit
+    /// <c>portal_users.id</c>), exigee de toute ressource utilisateur ; et
+    /// l'identite annuaire resolue (<c>customer_ad_links</c>, <c>objectGUID</c>,
+    /// <c>objectSID</c>), qui n'existe qu'une fois le compte cree.
+    /// </para>
+    /// <para>
+    /// Le stockage personnel produit la seconde : l'exiger de lui reviendrait a
+    /// demander a une ressource de preexister a sa propre creation. Seuls les
+    /// acces situes en aval — VPN, RDS — la supposent.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<BillingV2UserDesiredState> UsersRequiringAdIdentity
+        => Users
+            .Where(user => user.DesiredAdGroups.Count > 0)
+            .ToArray();
+
+    /// <summary>
     /// Tous les plans de quota, personnels et partages.
     /// </summary>
     /// <remarks>
-    /// Le chemin reel du quota de stockage passe par KoXo puis le systeme de
-    /// fichiers, pas par un appel direct : aucun de ces plans n'est executable
-    /// aujourd'hui et leur seule presence doit continuer a bloquer l'execution.
+    /// Le chemin reel du quota passe par KoXo, qui ecrit le quota dans la fiche
+    /// XML puis fait appliquer la limite sur le serveur de fichiers. Aucun de
+    /// ces plans n'est executable aujourd'hui et leur seule presence doit
+    /// continuer a bloquer l'execution.
     /// </remarks>
-    public IReadOnlyList<BillingV2NextcloudQuotaPlan> NextcloudQuotas => Users
+    public IReadOnlyList<BillingV2StorageQuotaPlan> StorageQuotaPlans => Users
         .SelectMany(user => user.UserStoragePlans)
         .Concat(SubscriptionResources.SharedStoragePlans)
+        .ToArray();
+
+    /// <summary>
+    /// References des lignes non executables, quelle qu'en soit la raison.
+    /// </summary>
+    /// <remarks>
+    /// Derivee de <see cref="Blockers"/> et non alimentee separement : toute
+    /// nouvelle raison de blocage refuse donc automatiquement le provisioning,
+    /// sans qu'il faille penser a la cabler dans la gate.
+    /// </remarks>
+    public IReadOnlyList<string> UnresolvedRuleReferences => Blockers
+        .Select(blocker => blocker.RuleReference)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderBy(reference => reference, StringComparer.OrdinalIgnoreCase)
         .ToArray();
 
     public static BillingV2ProvisioningPlan Empty { get; }
         = new(
             Array.Empty<BillingV2UserDesiredState>(),
             BillingV2SubscriptionDesiredState.Empty,
-            Array.Empty<string>());
+            Array.Empty<BillingV2ProvisioningBlocker>());
 }
 
-public sealed record BillingV2NextcloudQuotaPlan(
-    string SubscriptionItemId,
-    string? SubscriptionUserId,
-    string TargetType,
-    string? IdentityReference,
-    long QuotaValue,
-    string Unit);
-
-public sealed record BillingV2NextcloudQuotaReadiness(
+public sealed record BillingV2KoxoStorageReadiness(
     bool CanApplyQuotas,
     string ReasonCode);
 
-public interface IBillingV2NextcloudQuotaProvider
+/// <summary>
+/// Application reelle d'un quota de stockage.
+/// </summary>
+/// <remarks>
+/// L'implementation reelle passera par KoXo (fiche utilisateur ou groupe
+/// secondaire, puis reparation de type <c>Storage</c>), jamais par un appel
+/// direct au serveur de fichiers ni par le service qui expose ce stockage aux
+/// utilisateurs. Cette interface ne connait donc que l'intention, pas le
+/// transport.
+/// </remarks>
+public interface IBillingV2KoxoStorageProvider
 {
-    BillingV2NextcloudQuotaReadiness CheckReadiness(
-        IReadOnlyList<BillingV2NextcloudQuotaPlan> quotas);
+    BillingV2KoxoStorageReadiness CheckReadiness(
+        IReadOnlyList<BillingV2StorageQuotaPlan> quotas);
 }
 
-public sealed class DormantBillingV2NextcloudQuotaProvider
-    : IBillingV2NextcloudQuotaProvider
+public sealed class DormantBillingV2KoxoStorageProvider
+    : IBillingV2KoxoStorageProvider
 {
-    public static DormantBillingV2NextcloudQuotaProvider Instance { get; }
+    public static DormantBillingV2KoxoStorageProvider Instance { get; }
         = new();
 
-    private DormantBillingV2NextcloudQuotaProvider()
+    private DormantBillingV2KoxoStorageProvider()
     {
     }
 
-    public BillingV2NextcloudQuotaReadiness CheckReadiness(
-        IReadOnlyList<BillingV2NextcloudQuotaPlan> quotas)
+    public BillingV2KoxoStorageReadiness CheckReadiness(
+        IReadOnlyList<BillingV2StorageQuotaPlan> quotas)
         => quotas.Count == 0
-            ? new BillingV2NextcloudQuotaReadiness(
+            ? new BillingV2KoxoStorageReadiness(
                 CanApplyQuotas: true,
-                "BILLING_V2_NEXTCLOUD_QUOTA_NOOP")
-            : new BillingV2NextcloudQuotaReadiness(
+                "BILLING_V2_KOXO_STORAGE_NOOP")
+            : new BillingV2KoxoStorageReadiness(
                 CanApplyQuotas: false,
-                "BILLING_V2_NEXTCLOUD_QUOTA_PROVIDER_NOT_CONFIGURED");
+                "BILLING_V2_KOXO_STORAGE_PROVIDER_NOT_CONFIGURED");
 }
 
 /// <summary>
@@ -233,7 +436,7 @@ public sealed class BillingV2ProvisioningService : IBillingV2ProvisioningService
     private readonly ISubscriptionRepository _subscriptions;
     private readonly IActiveDirectoryLinkRepository _activeDirectoryLinks;
     private readonly IProvisioningService _provisioningService;
-    private readonly IBillingV2NextcloudQuotaProvider _nextcloudQuotaProvider;
+    private readonly IBillingV2KoxoStorageProvider _koxoStorageProvider;
     private readonly SubscriptionProvisioningRuntimeConfiguration
         _provisioningConfiguration;
     private readonly ILogger<BillingV2ProvisioningService> _logger;
@@ -244,7 +447,7 @@ public sealed class BillingV2ProvisioningService : IBillingV2ProvisioningService
         ISubscriptionRepository subscriptions,
         IActiveDirectoryLinkRepository activeDirectoryLinks,
         IProvisioningService provisioningService,
-        IBillingV2NextcloudQuotaProvider nextcloudQuotaProvider,
+        IBillingV2KoxoStorageProvider koxoStorageProvider,
         SubscriptionProvisioningRuntimeConfiguration provisioningConfiguration,
         ILogger<BillingV2ProvisioningService> logger)
     {
@@ -253,7 +456,7 @@ public sealed class BillingV2ProvisioningService : IBillingV2ProvisioningService
         _subscriptions = subscriptions;
         _activeDirectoryLinks = activeDirectoryLinks;
         _provisioningService = provisioningService;
-        _nextcloudQuotaProvider = nextcloudQuotaProvider;
+        _koxoStorageProvider = koxoStorageProvider;
         _provisioningConfiguration = provisioningConfiguration;
         _logger = logger;
     }
@@ -343,22 +546,22 @@ public sealed class BillingV2ProvisioningService : IBillingV2ProvisioningService
             return null;
         }
 
-        if (plan.NextcloudQuotas.Count > 0)
+        if (plan.StorageQuotaPlans.Count > 0)
         {
-            var nextcloudReadiness =
-                _nextcloudQuotaProvider.CheckReadiness(plan.NextcloudQuotas);
-            if (nextcloudReadiness.CanApplyQuotas)
+            var storageReadiness =
+                _koxoStorageProvider.CheckReadiness(plan.StorageQuotaPlans);
+            if (storageReadiness.CanApplyQuotas)
             {
                 _logger.LogWarning(
-                    "Billing V2 Nextcloud quota provider unexpectedly reported ready for customer {CustomerId}, but quota execution is not wired in this release. Legacy provisioning remains authoritative.",
+                    "Billing V2 KoXo storage provider unexpectedly reported ready for customer {CustomerId}, but storage quota execution is not wired in this release. Legacy provisioning remains authoritative.",
                     customerId);
                 return null;
             }
 
             _logger.LogWarning(
-                "Billing V2 provisioning gate denied for customer {CustomerId}: Nextcloud quota plans exist but no trusted runtime quota provider is configured ({ReasonCode}). Legacy provisioning remains authoritative.",
+                "Billing V2 provisioning gate denied for customer {CustomerId}: KoXo storage quota plans exist but no trusted runtime storage provider is configured ({ReasonCode}). Legacy provisioning remains authoritative.",
                 customerId,
-                nextcloudReadiness.ReasonCode);
+                storageReadiness.ReasonCode);
             return null;
         }
 
@@ -374,9 +577,13 @@ public sealed class BillingV2ProvisioningService : IBillingV2ProvisioningService
             await _activeDirectoryLinks.GetCustomerUserLinksAsync(
                 customerId,
                 cancellationToken);
+
+        // Seuls les acces AD reclament une identite annuaire deja resolue. Un
+        // utilisateur qui n'a que son environnement personnel n'en a pas encore
+        // et ne doit pas faire echouer la resolution des autres.
         var resolution = await ResolveTargetsAsync(
             customerId,
-            plan.Users,
+            plan.UsersRequiringAdIdentity,
             customerUserLinks,
             cancellationToken);
         if (!resolution.Resolved)
@@ -454,16 +661,13 @@ public sealed class BillingV2ProvisioningService : IBillingV2ProvisioningService
             customerId,
             activeV2SubscriptionIds.ToArray(),
             cancellationToken);
+        // Le referentiel de liens est charge ici, mais son eventuelle vacuite ne
+        // peut pas conclure avant la porte de stockage : c'est le provisioning
+        // KoXo qui cree le compte annuaire, donc exiger le lien d'abord
+        // interdirait pour toujours au premier utilisateur d'exister.
         var targetUsers = await _activeDirectoryLinks.GetCustomerUserLinksAsync(
             customerId,
             cancellationToken);
-        if (targetUsers.Count == 0)
-        {
-            _logger.LogWarning(
-                "Billing V2 provisioning skipped for subscription {SubscriptionId}: no Active Directory user link is available. No external action was executed.",
-                subscriptionId);
-            return null;
-        }
 
         var targetGroupsResolved = plan.AllDesiredAdGroups.All(group =>
             _provisioningConfiguration.GroupDistinguishedNamesBySamAccountName
@@ -498,14 +702,14 @@ public sealed class BillingV2ProvisioningService : IBillingV2ProvisioningService
             return null;
         }
 
-        if (plan.NextcloudQuotas.Count > 0)
+        if (plan.StorageQuotaPlans.Count > 0)
         {
-            var nextcloudReadiness =
-                _nextcloudQuotaProvider.CheckReadiness(plan.NextcloudQuotas);
+            var storageReadiness =
+                _koxoStorageProvider.CheckReadiness(plan.StorageQuotaPlans);
             _logger.LogWarning(
-                "Billing V2 provisioning gate denied for subscription {SubscriptionId}: Nextcloud quota plans exist but no trusted runtime quota provider is configured ({ReasonCode}). No external action was executed.",
+                "Billing V2 provisioning gate denied for subscription {SubscriptionId}: KoXo storage quota plans exist but no trusted runtime storage provider is configured ({ReasonCode}). No external action was executed.",
                 subscriptionId,
-                nextcloudReadiness.ReasonCode);
+                storageReadiness.ReasonCode);
             return null;
         }
 
@@ -517,9 +721,27 @@ public sealed class BillingV2ProvisioningService : IBillingV2ProvisioningService
             return null;
         }
 
+        // Rien a executer sur l'annuaire : le declarer traite ici masquerait le
+        // fait que le socle KoXo, lui, reste non applique.
+        if (plan.UsersRequiringAdIdentity.Count == 0)
+        {
+            _logger.LogWarning(
+                "Billing V2 provisioning skipped for subscription {SubscriptionId}: no user requires an Active Directory access. No external action was executed.",
+                subscriptionId);
+            return null;
+        }
+
+        if (targetUsers.Count == 0)
+        {
+            _logger.LogWarning(
+                "Billing V2 provisioning skipped for subscription {SubscriptionId}: an Active Directory access is required but no user link is available. No external action was executed.",
+                subscriptionId);
+            return null;
+        }
+
         var resolution = await ResolveTargetsAsync(
             customerId,
-            plan.Users,
+            plan.UsersRequiringAdIdentity,
             targetUsers,
             cancellationToken);
         if (!resolution.Resolved)
@@ -1252,6 +1474,210 @@ public static class BillingV2ProvisioningResultAggregator
     }
 }
 
+/// <summary>
+/// Nature d'une regle une fois le couple <c>rule_type</c> / <c>target_type</c>
+/// reconnu.
+/// </summary>
+public enum BillingV2ProvisioningRuleKind
+{
+    /// <summary>Couple inconnu : rien ne doit en etre deduit.</summary>
+    Unknown = 0,
+
+    /// <summary>Appartenance a un groupe Active Directory.</summary>
+    AdGroupMembership,
+
+    /// <summary>
+    /// Stockage personnel : socle technique de l'environnement utilisateur.
+    /// </summary>
+    UserStorageQuota,
+
+    /// <summary>Quota de stockage porte par le groupe secondaire du client.</summary>
+    SharedStorageQuota,
+
+    /// <summary>Droit reconnu qui n'emet aucune ecriture externe.</summary>
+    AcknowledgedEntitlement,
+}
+
+/// <summary>
+/// Scope impose par la regle, independamment de celui declare sur l'item.
+/// </summary>
+public enum BillingV2ProvisioningRuleScope
+{
+    User,
+    Subscription,
+    Any,
+}
+
+/// <summary>
+/// Vocabulaire des regles de provisioning V2 et classification stricte.
+/// </summary>
+/// <remarks>
+/// <para>
+/// La classification est une liste blanche : seul un couple explicitement
+/// enumere ici est compris. Un <c>rule_type</c> ou un <c>target_type</c>
+/// inconnu ne recoit aucune interpretation par defaut, faute de quoi une faute
+/// de frappe dans le catalogue deviendrait silencieusement un noop.
+/// </para>
+/// <para>
+/// Le scope fait partie de la classification. Un quota personnel achete au
+/// niveau abonnement, ou un quota de groupe secondaire attache a un
+/// utilisateur, decrit une intention que le modele ne sait pas honorer : la
+/// regle est reconnue, l'item est refuse.
+/// </para>
+/// </remarks>
+public static class BillingV2ProvisioningRuleSemantics
+{
+    public const string AdGroupMembershipRule = "ad_group_membership";
+    public const string InfrastructureActionRule = "infrastructure_action";
+    public const string InheritedCoverageRule = "inherited_coverage";
+    public const string PlatformEntitlementRule = "platform_entitlement";
+    public const string ContractualEntitlementRule = "contractual_entitlement";
+    public const string ServiceDeliveryRule = "service_delivery";
+
+    public const string AdGroupTarget = "ad_group";
+    public const string KoxoUserStorageTarget = "koxo_user_storage";
+    public const string KoxoSecondaryGroupStorageTarget =
+        "koxo_secondary_group_storage";
+    public const string BackupPolicyTarget = "backup_policy";
+    public const string PlatformTarget = "platform";
+    public const string MonitoringTarget = "monitoring";
+    public const string SupportLevelTarget = "support_level";
+    public const string OnboardingTarget = "onboarding";
+
+    /// <summary>
+    /// Droit commercial a un utilisateur d'abonnement supplementaire.
+    /// </summary>
+    /// <remarks>
+    /// Ce n'est pas un mecanisme de creation d'identite. Le bootstrap technique
+    /// d'un utilisateur, quel qu'il soit, reste le provisioning attache a son
+    /// stockage personnel : il ne doit exister qu'un seul proprietaire de la
+    /// creation d'identite.
+    /// </remarks>
+    public const string UserSlotTarget = "user_slot";
+
+    /// <summary>
+    /// Unite dans laquelle le catalogue exprime les tiers de stockage.
+    /// </summary>
+    /// <remarks>
+    /// Le tier ne porte qu'un nombre : sans unite verifiee, 64 pourrait aussi
+    /// bien valoir 64 Mio que 64 Tio. La conversion vers l'unite de KoXo est
+    /// laissee au provider reel.
+    /// </remarks>
+    public const string ExpectedStorageUnit = "GiB";
+
+    private static readonly HashSet<string> KnownRuleTypes = new(
+        StringComparer.OrdinalIgnoreCase)
+    {
+        AdGroupMembershipRule,
+        InfrastructureActionRule,
+        InheritedCoverageRule,
+        PlatformEntitlementRule,
+        ContractualEntitlementRule,
+        ServiceDeliveryRule,
+    };
+
+    public static bool IsKnownRuleType(string? ruleType)
+        => !string.IsNullOrWhiteSpace(ruleType)
+            && KnownRuleTypes.Contains(ruleType.Trim());
+
+    public static bool TryClassify(
+        string? ruleType,
+        string? targetType,
+        out BillingV2ProvisioningRuleKind kind,
+        out BillingV2ProvisioningRuleScope scope)
+    {
+        kind = BillingV2ProvisioningRuleKind.Unknown;
+        scope = BillingV2ProvisioningRuleScope.Any;
+
+        if (string.IsNullOrWhiteSpace(ruleType)
+            || string.IsNullOrWhiteSpace(targetType))
+        {
+            return false;
+        }
+
+        var rule = ruleType.Trim();
+        var target = targetType.Trim();
+
+        if (Matches(rule, AdGroupMembershipRule)
+            && Matches(target, AdGroupTarget))
+        {
+            kind = BillingV2ProvisioningRuleKind.AdGroupMembership;
+            scope = BillingV2ProvisioningRuleScope.User;
+            return true;
+        }
+
+        if (Matches(rule, InfrastructureActionRule)
+            && Matches(target, KoxoUserStorageTarget))
+        {
+            kind = BillingV2ProvisioningRuleKind.UserStorageQuota;
+            scope = BillingV2ProvisioningRuleScope.User;
+            return true;
+        }
+
+        if (Matches(rule, InfrastructureActionRule)
+            && Matches(target, KoxoSecondaryGroupStorageTarget))
+        {
+            kind = BillingV2ProvisioningRuleKind.SharedStorageQuota;
+            scope = BillingV2ProvisioningRuleScope.Subscription;
+            return true;
+        }
+
+        // La sauvegarde est portee par une politique globale deja en place :
+        // un nouveau dossier place dans le perimetre sauvegarde est couvert
+        // sans objet dedie. Le scope reste libre parce que la couverture vaut
+        // pour un dossier personnel comme pour un dossier de groupe.
+        if (Matches(rule, InheritedCoverageRule)
+            && Matches(target, BackupPolicyTarget))
+        {
+            kind = BillingV2ProvisioningRuleKind.AcknowledgedEntitlement;
+            scope = BillingV2ProvisioningRuleScope.Any;
+            return true;
+        }
+
+        if (Matches(rule, PlatformEntitlementRule)
+            && (Matches(target, PlatformTarget)
+                || Matches(target, MonitoringTarget)))
+        {
+            kind = BillingV2ProvisioningRuleKind.AcknowledgedEntitlement;
+            scope = BillingV2ProvisioningRuleScope.Subscription;
+            return true;
+        }
+
+        if (Matches(rule, ContractualEntitlementRule)
+            && Matches(target, SupportLevelTarget))
+        {
+            kind = BillingV2ProvisioningRuleKind.AcknowledgedEntitlement;
+            scope = BillingV2ProvisioningRuleScope.Subscription;
+            return true;
+        }
+
+        // Le droit a un utilisateur supplementaire est commercial : il autorise
+        // un billing_v2_subscription_user de plus, il ne cree rien. Son
+        // bootstrap technique passe par le stockage personnel de cet
+        // utilisateur, comme pour tout autre utilisateur.
+        if (Matches(rule, ContractualEntitlementRule)
+            && Matches(target, UserSlotTarget))
+        {
+            kind = BillingV2ProvisioningRuleKind.AcknowledgedEntitlement;
+            scope = BillingV2ProvisioningRuleScope.Any;
+            return true;
+        }
+
+        if (Matches(rule, ServiceDeliveryRule)
+            && Matches(target, OnboardingTarget))
+        {
+            kind = BillingV2ProvisioningRuleKind.AcknowledgedEntitlement;
+            scope = BillingV2ProvisioningRuleScope.Subscription;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool Matches(string value, string expected)
+        => string.Equals(value, expected, StringComparison.OrdinalIgnoreCase);
+}
+
 public static class BillingV2ProvisioningPlanner
 {
     private const string UserScope = "user";
@@ -1270,212 +1696,487 @@ public static class BillingV2ProvisioningPlanner
     public static BillingV2ProvisioningPlan Plan(
         IReadOnlyList<BillingV2ProvisioningRuleProjection> rules)
     {
-        var userOrder = new List<string>();
-        var identityByUserId = new Dictionary<string, string>(
-            StringComparer.Ordinal);
-        var groupsByUserId = new Dictionary<string, SortedSet<string>>(
-            StringComparer.Ordinal);
-        var quotasByUserId =
-            new Dictionary<string, List<BillingV2NextcloudQuotaPlan>>(
-                StringComparer.Ordinal);
-        var sharedQuotas = new List<BillingV2NextcloudQuotaPlan>();
-        var unresolved = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        var state = new PlanningState();
 
         foreach (var rule in rules)
         {
-            if (string.IsNullOrWhiteSpace(rule.RuleType)
-                || string.IsNullOrWhiteSpace(rule.TargetType))
-            {
-                unresolved.Add(CreateRuleReference(rule));
-                continue;
-            }
-
-            if (string.Equals(
-                    rule.ScopeType,
-                    UserScope,
-                    StringComparison.OrdinalIgnoreCase))
-            {
-                if (!TryRegisterUser(
-                        rule,
-                        userOrder,
-                        identityByUserId,
-                        groupsByUserId,
-                        quotasByUserId,
-                        out var subscriptionUserId,
-                        out var identityReference))
-                {
-                    unresolved.Add(CreateRuleReference(rule));
-                    continue;
-                }
-
-                if (IsAdGroupTarget(rule))
-                {
-                    if (string.IsNullOrWhiteSpace(rule.TargetReference))
-                    {
-                        unresolved.Add(CreateRuleReference(rule));
-                        continue;
-                    }
-
-                    groupsByUserId[subscriptionUserId]
-                        .Add(rule.TargetReference.Trim());
-                    continue;
-                }
-
-                if (IsStorageQuotaTarget(rule))
-                {
-                    var value = ResolveValue(rule);
-                    if (value is null)
-                    {
-                        unresolved.Add(CreateRuleReference(rule));
-                        continue;
-                    }
-
-                    quotasByUserId[subscriptionUserId].Add(
-                        new BillingV2NextcloudQuotaPlan(
-                            rule.SubscriptionItemId,
-                            subscriptionUserId,
-                            rule.TargetType,
-                            identityReference,
-                            value.Value,
-                            rule.TierUnit ?? "GiB"));
-                    continue;
-                }
-
-                unresolved.Add(CreateRuleReference(rule));
-                continue;
-            }
-
-            if (string.Equals(
-                    rule.ScopeType,
-                    SubscriptionScope,
-                    StringComparison.OrdinalIgnoreCase))
-            {
-                // Un item de scope abonnement ne doit pas porter d'utilisateur :
-                // l'incoherence de scope est une anomalie, pas un detail.
-                if (!string.IsNullOrWhiteSpace(rule.SubscriptionUserId))
-                {
-                    unresolved.Add(CreateRuleReference(rule));
-                    continue;
-                }
-
-                // Un droit AD achete au niveau abonnement n'a pas de titulaire
-                // defini dans le modele actuel. Le distribuer a tous les
-                // utilisateurs du client serait exactement la fuite corrigee
-                // ici, donc il reste non resolu.
-                if (IsAdGroupTarget(rule))
-                {
-                    unresolved.Add(CreateRuleReference(rule));
-                    continue;
-                }
-
-                if (IsStorageQuotaTarget(rule))
-                {
-                    var value = ResolveValue(rule);
-                    if (value is null)
-                    {
-                        unresolved.Add(CreateRuleReference(rule));
-                        continue;
-                    }
-
-                    sharedQuotas.Add(new BillingV2NextcloudQuotaPlan(
-                        rule.SubscriptionItemId,
-                        SubscriptionUserId: null,
-                        rule.TargetType,
-                        IdentityReference: null,
-                        value.Value,
-                        rule.TierUnit ?? "GiB"));
-                    continue;
-                }
-
-                unresolved.Add(CreateRuleReference(rule));
-                continue;
-            }
-
-            unresolved.Add(CreateRuleReference(rule));
+            Classify(rule, state);
         }
 
-        var users = userOrder
+        EnforcePersonalStoragePrerequisite(state);
+
+        var users = state.UserOrder
             .Select(subscriptionUserId => new BillingV2UserDesiredState(
                 subscriptionUserId,
-                identityByUserId[subscriptionUserId],
-                groupsByUserId[subscriptionUserId].ToArray(),
-                quotasByUserId[subscriptionUserId]))
+                state.IdentityByUserId[subscriptionUserId],
+                state.GroupsByUserId[subscriptionUserId].ToArray(),
+                state.PersonalStorageByUserId.GetValueOrDefault(
+                    subscriptionUserId),
+                state.CoveragesByUserId[subscriptionUserId],
+                state.EntitlementsByUserId[subscriptionUserId]))
             .ToArray();
 
         return new BillingV2ProvisioningPlan(
             users,
-            new BillingV2SubscriptionDesiredState(sharedQuotas),
-            unresolved.ToArray());
+            new BillingV2SubscriptionDesiredState(
+                state.SharedQuotas,
+                state.SubscriptionCoverages,
+                state.SubscriptionEntitlements,
+                state.UnassignedUserSlots),
+            state.Blockers
+                .OrderBy(blocker => blocker.RuleReference, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(blocker => blocker.ReasonCode, StringComparer.Ordinal)
+                .ToArray());
     }
 
-    private static bool TryRegisterUser(
-        BillingV2ProvisioningRuleProjection rule,
-        List<string> userOrder,
-        Dictionary<string, string> identityByUserId,
-        Dictionary<string, SortedSet<string>> groupsByUserId,
-        Dictionary<string, List<BillingV2NextcloudQuotaPlan>> quotasByUserId,
-        out string subscriptionUserId,
-        out string identityReference)
+    /// <summary>
+    /// Refuse tout acces aval accorde a un utilisateur sans stockage personnel.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// La chaine reelle est : stockage personnel achete, provisioning de
+    /// l'environnement utilisateur, compte annuaire cree et maintenu, puis
+    /// seulement acces optionnels. Un acces VPN ou RDS suppose donc une
+    /// identite dont le stockage personnel est le seul producteur connu.
+    /// </para>
+    /// <para>
+    /// Le controle est un post-passage parce que l'ordre des lignes de
+    /// projection n'est pas garanti : l'acces peut arriver avant le stockage
+    /// qui le rend legitime.
+    /// </para>
+    /// <para>
+    /// Le refus est volontairement grossier dans cette version. Le moteur ne
+    /// sait pas encore representer une sequence partielle (environnement pret,
+    /// acces en attente), donc tant qu'il ne le sait pas, il refuse.
+    /// </para>
+    /// </remarks>
+    private static void EnforcePersonalStoragePrerequisite(PlanningState state)
     {
-        subscriptionUserId = string.Empty;
-        identityReference = string.Empty;
+        foreach (var subscriptionUserId in state.UserOrder)
+        {
+            if (state.GroupsByUserId[subscriptionUserId].Count == 0
+                || state.PersonalStorageByUserId.ContainsKey(subscriptionUserId))
+            {
+                continue;
+            }
 
+            foreach (var reference in state
+                .AdAccessReferencesByUserId[subscriptionUserId])
+            {
+                state.Blockers.Add(new BillingV2ProvisioningBlocker(
+                    reference,
+                    BillingV2ProvisioningBlockerReasons.PersonalStorageRequired));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Classe une ligne de projection, ou l'inscrit comme bloquante.
+    /// </summary>
+    /// <remarks>
+    /// Aucune sortie silencieuse : chaque chemin se termine soit par un ajout a
+    /// un etat desire, soit par un blocage motive.
+    /// </remarks>
+    private static void Classify(
+        BillingV2ProvisioningRuleProjection rule,
+        PlanningState state)
+    {
+        // Item actif sans regle explicite, ou item non materialise : le
+        // catalogue ne dit pas quoi faire, ce qui n'autorise pas a ne rien
+        // faire.
+        if (string.IsNullOrWhiteSpace(rule.RuleType)
+            || string.IsNullOrWhiteSpace(rule.TargetType))
+        {
+            state.Block(rule, BillingV2ProvisioningBlockerReasons.RuleMissing);
+            return;
+        }
+
+        if (!BillingV2ProvisioningRuleSemantics.IsKnownRuleType(rule.RuleType))
+        {
+            state.Block(rule, BillingV2ProvisioningBlockerReasons.RuleTypeUnknown);
+            return;
+        }
+
+        if (!BillingV2ProvisioningRuleSemantics.TryClassify(
+                rule.RuleType,
+                rule.TargetType,
+                out var kind,
+                out var requiredScope))
+        {
+            state.Block(
+                rule,
+                BillingV2ProvisioningBlockerReasons.TargetTypeUnknown);
+            return;
+        }
+
+        var itemIsUserScoped = string.Equals(
+            rule.ScopeType,
+            UserScope,
+            StringComparison.OrdinalIgnoreCase);
+        var itemIsSubscriptionScoped = string.Equals(
+            rule.ScopeType,
+            SubscriptionScope,
+            StringComparison.OrdinalIgnoreCase);
+
+        if (!itemIsUserScoped && !itemIsSubscriptionScoped)
+        {
+            state.Block(
+                rule,
+                BillingV2ProvisioningBlockerReasons.ScopeIncoherent);
+            return;
+        }
+
+        // Le scope impose par la regle prime sur celui declare par l'item : un
+        // quota de groupe secondaire attache a un utilisateur, ou l'inverse,
+        // decrit une intention que le modele ne sait pas honorer.
+        if (requiredScope == BillingV2ProvisioningRuleScope.User
+                && !itemIsUserScoped
+            || requiredScope == BillingV2ProvisioningRuleScope.Subscription
+                && !itemIsSubscriptionScoped)
+        {
+            state.Block(
+                rule,
+                BillingV2ProvisioningBlockerReasons.ScopeIncoherent);
+            return;
+        }
+
+        if (itemIsSubscriptionScoped)
+        {
+            // Un item de scope abonnement ne doit pas porter d'utilisateur :
+            // l'incoherence de scope est une anomalie, pas un detail.
+            if (!string.IsNullOrWhiteSpace(rule.SubscriptionUserId))
+            {
+                state.Block(
+                    rule,
+                    BillingV2ProvisioningBlockerReasons.ScopeIncoherent);
+                return;
+            }
+
+            ClassifySubscriptionScoped(rule, kind, state);
+            return;
+        }
+
+        ClassifyUserScoped(rule, kind, state);
+    }
+
+    private static void ClassifySubscriptionScoped(
+        BillingV2ProvisioningRuleProjection rule,
+        BillingV2ProvisioningRuleKind kind,
+        PlanningState state)
+    {
+        switch (kind)
+        {
+            case BillingV2ProvisioningRuleKind.SharedStorageQuota:
+                if (!TryBuildQuota(
+                        rule,
+                        subscriptionUserId: null,
+                        identityReference: null,
+                        SubscriptionScope,
+                        state,
+                        out var sharedQuota))
+                {
+                    return;
+                }
+
+                state.SharedQuotas.Add(sharedQuota);
+                return;
+
+            case BillingV2ProvisioningRuleKind.AcknowledgedEntitlement:
+                var entitlement = CreateEntitlement(rule, SubscriptionScope);
+                if (IsInheritedCoverage(rule))
+                {
+                    state.SubscriptionCoverages.Add(entitlement);
+                    return;
+                }
+
+                state.SubscriptionEntitlements.Add(entitlement);
+                return;
+
+            default:
+                // AD, stockage personnel et identite ont un titulaire par
+                // nature. Les rattacher a l'abonnement reviendrait a choisir
+                // arbitrairement un utilisateur du client.
+                state.Block(
+                    rule,
+                    BillingV2ProvisioningBlockerReasons.ScopeIncoherent);
+                return;
+        }
+    }
+
+    private static void ClassifyUserScoped(
+        BillingV2ProvisioningRuleProjection rule,
+        BillingV2ProvisioningRuleKind kind,
+        PlanningState state)
+    {
         // Un item de scope utilisateur sans utilisateur n'a pas de titulaire :
         // il ne doit jamais retomber sur les utilisateurs du client.
         if (string.IsNullOrWhiteSpace(rule.SubscriptionUserId))
         {
-            return false;
+            state.Block(
+                rule,
+                BillingV2ProvisioningBlockerReasons.ScopeIncoherent);
+            return;
         }
 
-        // Sans identite, il n'existe aucun compte a qui appliquer le droit.
-        // C'est le cas de tout utilisateur supplementaire aujourd'hui.
-        if (string.IsNullOrWhiteSpace(rule.IdentityReference))
-        {
-            return false;
-        }
+        var subscriptionUserId = rule.SubscriptionUserId.Trim();
 
         if (!string.Equals(
                 rule.SubscriptionUserStatus,
                 "active",
                 StringComparison.OrdinalIgnoreCase))
         {
+            state.Block(
+                rule,
+                BillingV2ProvisioningBlockerReasons.UserNotActive);
+            return;
+        }
+
+        // Une place d'utilisateur est un droit commercial, pas une ressource.
+        // Tant qu'aucune personne ne lui est affectee, elle ne demande aucune
+        // ecriture : la representer sans identite est donc legitime, et la
+        // faire echouer immobiliserait tout l'abonnement pour une place que le
+        // client n'a simplement pas encore attribuee.
+        if (kind == BillingV2ProvisioningRuleKind.AcknowledgedEntitlement
+            && string.Equals(
+                rule.TargetType?.Trim(),
+                BillingV2ProvisioningRuleSemantics.UserSlotTarget,
+                StringComparison.OrdinalIgnoreCase)
+            && string.IsNullOrWhiteSpace(rule.IdentityReference))
+        {
+            state.UnassignedUserSlots.Add(CreateEntitlement(rule, UserScope));
+            return;
+        }
+
+        // Toute autre regle de scope utilisateur decrit une ressource reelle :
+        // sans identite de facturation, il n'existe aucun titulaire a qui
+        // l'appliquer, et aucun repli vers un autre utilisateur du client n'est
+        // acceptable. C'est en attachant STORAGE-PERSONAL, VPN ou RDS a une
+        // place vide que l'absence d'identite redevient bloquante.
+        if (string.IsNullOrWhiteSpace(rule.IdentityReference))
+        {
+            state.Block(
+                rule,
+                BillingV2ProvisioningBlockerReasons.IdentityRequired);
+            return;
+        }
+
+        var identityReference = rule.IdentityReference.Trim();
+        if (!state.TryRegisterUser(subscriptionUserId, identityReference))
+        {
+            state.Block(
+                rule,
+                BillingV2ProvisioningBlockerReasons.UserIdentityConflict);
+            return;
+        }
+
+        switch (kind)
+        {
+            case BillingV2ProvisioningRuleKind.AdGroupMembership:
+                if (string.IsNullOrWhiteSpace(rule.TargetReference))
+                {
+                    state.Block(
+                        rule,
+                        BillingV2ProvisioningBlockerReasons
+                            .TargetReferenceMissing);
+                    return;
+                }
+
+                state.GroupsByUserId[subscriptionUserId]
+                    .Add(rule.TargetReference.Trim());
+                state.AdAccessReferencesByUserId[subscriptionUserId]
+                    .Add(CreateRuleReference(rule));
+                return;
+
+            case BillingV2ProvisioningRuleKind.UserStorageQuota:
+                if (!TryBuildQuota(
+                        rule,
+                        subscriptionUserId,
+                        identityReference,
+                        UserScope,
+                        state,
+                        out var userQuota))
+                {
+                    return;
+                }
+
+                // Un environnement utilisateur est unique : deux quotas
+                // personnels contradictoires ne se departagent pas.
+                if (state.PersonalStorageByUserId.ContainsKey(subscriptionUserId))
+                {
+                    state.Block(
+                        rule,
+                        BillingV2ProvisioningBlockerReasons
+                            .PersonalStorageConflict);
+                    return;
+                }
+
+                state.PersonalStorageByUserId[subscriptionUserId] = userQuota;
+                return;
+
+            case BillingV2ProvisioningRuleKind.AcknowledgedEntitlement:
+                var entitlement = CreateEntitlement(rule, UserScope);
+                if (IsInheritedCoverage(rule))
+                {
+                    state.CoveragesByUserId[subscriptionUserId].Add(entitlement);
+                    return;
+                }
+
+                state.EntitlementsByUserId[subscriptionUserId].Add(entitlement);
+                return;
+
+            default:
+                state.Block(
+                    rule,
+                    BillingV2ProvisioningBlockerReasons.ScopeIncoherent);
+                return;
+        }
+    }
+
+    private static bool TryBuildQuota(
+        BillingV2ProvisioningRuleProjection rule,
+        string? subscriptionUserId,
+        string? identityReference,
+        string scopeType,
+        PlanningState state,
+        out BillingV2StorageQuotaPlan quota)
+    {
+        quota = null!;
+
+        var value = ResolveValue(rule);
+        if (value is null)
+        {
+            state.Block(
+                rule,
+                BillingV2ProvisioningBlockerReasons.ValueUnresolved);
             return false;
         }
 
-        subscriptionUserId = rule.SubscriptionUserId.Trim();
-        identityReference = rule.IdentityReference.Trim();
-
-        if (identityByUserId.TryGetValue(subscriptionUserId, out var known))
+        // Le catalogue est la seule source de l'unite : aucune valeur par
+        // defaut n'est fabriquee ici, sinon un tier sans unite deviendrait
+        // silencieusement un quota en GiB.
+        if (!string.Equals(
+                rule.TierUnit?.Trim(),
+                BillingV2ProvisioningRuleSemantics.ExpectedStorageUnit,
+                StringComparison.OrdinalIgnoreCase))
         {
-            if (!string.Equals(known, identityReference, StringComparison.Ordinal))
-            {
-                return false;
-            }
-
-            return true;
+            state.Block(
+                rule,
+                BillingV2ProvisioningBlockerReasons.UnitUnexpected);
+            return false;
         }
 
-        identityByUserId[subscriptionUserId] = identityReference;
-        groupsByUserId[subscriptionUserId] =
-            new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
-        quotasByUserId[subscriptionUserId] =
-            new List<BillingV2NextcloudQuotaPlan>();
-        userOrder.Add(subscriptionUserId);
+        quota = new BillingV2StorageQuotaPlan(
+            rule.SubscriptionItemId,
+            subscriptionUserId,
+            rule.TargetType.Trim(),
+            identityReference,
+            value.Value,
+            BillingV2ProvisioningRuleSemantics.ExpectedStorageUnit,
+            scopeType);
         return true;
     }
 
-    private static bool IsAdGroupTarget(
+    private static BillingV2AcknowledgedEntitlement CreateEntitlement(
+        BillingV2ProvisioningRuleProjection rule,
+        string scopeType)
+        => new(
+            rule.SubscriptionItemId,
+            string.IsNullOrWhiteSpace(rule.SubscriptionUserId)
+                ? null
+                : rule.SubscriptionUserId.Trim(),
+            rule.ServiceCode,
+            rule.RuleType.Trim(),
+            rule.TargetType.Trim(),
+            rule.TargetReference,
+            scopeType);
+
+    private static bool IsInheritedCoverage(
         BillingV2ProvisioningRuleProjection rule)
         => string.Equals(
-            rule.TargetType,
-            "ad_group",
+            rule.RuleType?.Trim(),
+            BillingV2ProvisioningRuleSemantics.InheritedCoverageRule,
             StringComparison.OrdinalIgnoreCase);
 
-    private static bool IsStorageQuotaTarget(
-        BillingV2ProvisioningRuleProjection rule)
-        => rule.TargetType.StartsWith(
-            "nextcloud_",
-            StringComparison.OrdinalIgnoreCase);
+    /// <summary>
+    /// Accumulateur du planificateur.
+    /// </summary>
+    private sealed class PlanningState
+    {
+        public List<string> UserOrder { get; } = [];
+
+        public Dictionary<string, string> IdentityByUserId { get; }
+            = new(StringComparer.Ordinal);
+
+        public Dictionary<string, SortedSet<string>> GroupsByUserId { get; }
+            = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// Socle technique de chaque utilisateur, au plus un par utilisateur.
+        /// </summary>
+        public Dictionary<string, BillingV2StorageQuotaPlan>
+            PersonalStorageByUserId
+        { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// References des lignes d'acces AD, pour pouvoir les bloquer
+        /// nominativement si le socle manque.
+        /// </summary>
+        public Dictionary<string, List<string>> AdAccessReferencesByUserId
+        { get; } = new(StringComparer.Ordinal);
+
+        public Dictionary<string, List<BillingV2AcknowledgedEntitlement>>
+            CoveragesByUserId
+        { get; } = new(StringComparer.Ordinal);
+
+        public Dictionary<string, List<BillingV2AcknowledgedEntitlement>>
+            EntitlementsByUserId
+        { get; } = new(StringComparer.Ordinal);
+
+        public List<BillingV2StorageQuotaPlan> SharedQuotas { get; } = [];
+
+        public List<BillingV2AcknowledgedEntitlement> SubscriptionCoverages
+        { get; } = [];
+
+        public List<BillingV2AcknowledgedEntitlement> SubscriptionEntitlements
+        { get; } = [];
+
+        /// <summary>
+        /// Places d'utilisateur payees mais pas encore attribuees.
+        /// </summary>
+        public List<BillingV2AcknowledgedEntitlement> UnassignedUserSlots
+        { get; } = [];
+
+        public List<BillingV2ProvisioningBlocker> Blockers { get; } = [];
+
+        public void Block(
+            BillingV2ProvisioningRuleProjection rule,
+            string reasonCode)
+            => Blockers.Add(new BillingV2ProvisioningBlocker(
+                CreateRuleReference(rule),
+                reasonCode));
+
+        public bool TryRegisterUser(
+            string subscriptionUserId,
+            string identityReference)
+        {
+            if (IdentityByUserId.TryGetValue(subscriptionUserId, out var known))
+            {
+                return string.Equals(
+                    known,
+                    identityReference,
+                    StringComparison.Ordinal);
+            }
+
+            IdentityByUserId[subscriptionUserId] = identityReference;
+            GroupsByUserId[subscriptionUserId] =
+                new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+            AdAccessReferencesByUserId[subscriptionUserId] = [];
+            CoveragesByUserId[subscriptionUserId] = [];
+            EntitlementsByUserId[subscriptionUserId] = [];
+            UserOrder.Add(subscriptionUserId);
+            return true;
+        }
+    }
 
     private static long? ResolveValue(BillingV2ProvisioningRuleProjection rule)
     {

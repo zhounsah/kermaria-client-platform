@@ -73,6 +73,8 @@ public static class BillingV2ProvisioningScopeTests
     {
         var plan = BillingV2ProvisioningPlanner.Plan(
             [
+                StorageRule("item-a-stockage", "user-a", "identity-a"),
+                StorageRule("item-b-stockage", "user-b", "identity-b"),
                 UserRule("item-a-vpn", "user-a", "identity-a", "VPN-ACCESS", "GG_VPN"),
                 UserRule("item-a-rds", "user-a", "identity-a", "RDS-ACCESS", "GG_RDS"),
                 UserRule("item-b-vpn", "user-b", "identity-b", "VPN-ACCESS", "GG_VPN")
@@ -125,6 +127,7 @@ public static class BillingV2ProvisioningScopeTests
     {
         var plan = BillingV2ProvisioningPlanner.Plan(
             [
+                StorageRule("item-a-stockage", "user-a", "identity-a"),
                 UserRule("item-a-vpn", "user-a", "identity-a", "VPN-ACCESS", "GG_VPN")
             ]);
 
@@ -305,14 +308,17 @@ public static class BillingV2ProvisioningScopeTests
                     "item-stockage",
                     "user-additionnel",
                     identityReference: null,
-                    "nextcloud_user_quota",
+                    "koxo_user_storage",
                     scopeType: "user")
             ]);
 
         Ensure(
             plan.Users.Count == 0
-            && plan.NextcloudQuotas.Count == 0
-            && plan.UnresolvedRuleReferences.Count == 1,
+            && plan.StorageQuotaPlans.Count == 0
+            && plan.UnresolvedRuleReferences.Count == 1
+            && plan.Blockers.Count == 1
+            && plan.Blockers[0].ReasonCode
+                == BillingV2ProvisioningBlockerReasons.IdentityRequired,
             "CAS 8 : un quota personnel sans identite ne doit produire aucun plan de quota.");
     }
 
@@ -324,28 +330,28 @@ public static class BillingV2ProvisioningScopeTests
                     "item-stockage",
                     "user-a",
                     "identity-a",
-                    "nextcloud_user_quota",
+                    "koxo_user_storage",
                     scopeType: "user")
             ]);
 
         Ensure(
             plan.UnresolvedRuleReferences.Count == 0
-            && plan.NextcloudQuotas.Count == 1
-            && plan.NextcloudQuotas[0].SubscriptionUserId == "user-a"
-            && plan.NextcloudQuotas[0].IdentityReference == "identity-a"
+            && plan.StorageQuotaPlans.Count == 1
+            && plan.StorageQuotaPlans[0].SubscriptionUserId == "user-a"
+            && plan.StorageQuotaPlans[0].IdentityReference == "identity-a"
             && plan.AllDesiredAdGroups.Count == 0,
             "Un quota de stockage personnel doit rester rattache a son utilisateur et ne jamais devenir un groupe AD.");
 
         // Le chemin reel du quota passe par KoXo puis le systeme de fichiers :
         // disposer de l'identite ne rend rien applicable pour autant.
-        var readiness = DormantBillingV2NextcloudQuotaProvider.Instance
-            .CheckReadiness(plan.NextcloudQuotas);
+        var readiness = DormantBillingV2KoxoStorageProvider.Instance
+            .CheckReadiness(plan.StorageQuotaPlans);
 
         Ensure(
             !readiness.CanApplyQuotas
             && readiness.ReasonCode
-                == "BILLING_V2_NEXTCLOUD_QUOTA_PROVIDER_NOT_CONFIGURED",
-            "Connaitre l'identite d'un quota ne doit pas lever le blocage : aucun provider de quota n'existe.");
+                == "BILLING_V2_KOXO_STORAGE_PROVIDER_NOT_CONFIGURED",
+            "Connaitre l'identite d'un quota ne doit pas lever le blocage : aucun provider de stockage n'existe.");
     }
 
     // ------------------------------------------------------------------
@@ -425,6 +431,8 @@ public static class BillingV2ProvisioningScopeTests
     {
         var plan = BillingV2ProvisioningPlanner.Plan(
             [
+                StorageRule("item-a-stockage", "user-a", "identity-a"),
+                StorageRule("item-b-stockage", "user-b", "identity-b"),
                 UserRule("item-a-vpn", "user-a", "identity-a", "VPN-ACCESS", "GG_VPN"),
                 UserRule("item-b-rds", "user-b", "identity-b", "RDS-ACCESS", "GG_RDS")
             ]);
@@ -457,6 +465,7 @@ public static class BillingV2ProvisioningScopeTests
     {
         var plan = BillingV2ProvisioningPlanner.Plan(
             [
+                StorageRule("item-a-stockage", "user-a", "identity-a"),
                 UserRule("item-a-vpn", "user-a", "identity-a", "VPN-ACCESS", "GG_VPN")
             ]);
 
@@ -482,6 +491,9 @@ public static class BillingV2ProvisioningScopeTests
     {
         var plan = BillingV2ProvisioningPlanner.Plan(
             [
+                StorageRule("item-a-stockage", "user-a", "identity-a"),
+                StorageRule("item-b-stockage", "user-b", "identity-b"),
+                StorageRule("item-c-stockage", "user-c", "identity-c"),
                 UserRule("item-a-vpn", "user-a", "identity-a", "VPN-ACCESS", "GG_VPN"),
                 UserRule("item-a-rds", "user-a", "identity-a", "RDS-ACCESS", "GG_RDS"),
                 UserRule("item-b-vpn", "user-b", "identity-b", "VPN-ACCESS", "GG_VPN"),
@@ -547,24 +559,48 @@ public static class BillingV2ProvisioningScopeTests
             SubscriptionUserIsPrimary: true,
             SubscriptionUserStatus: subscriptionUserId is null ? null : "active");
 
+    /// <summary>
+    /// Socle technique d'un utilisateur : stockage personnel.
+    /// </summary>
+    /// <remarks>
+    /// Depuis la phase 2B, un acces VPN ou RDS suppose que l'environnement
+    /// utilisateur, donc le compte annuaire, soit provisionne. Les scenarios
+    /// qui attendent un plan resolu doivent donc fournir ce socle, comme le
+    /// ferait un vrai abonnement.
+    /// </remarks>
+    private static BillingV2ProvisioningRuleProjection StorageRule(
+        string subscriptionItemId,
+        string subscriptionUserId,
+        string identityReference)
+        => QuotaRule(
+            subscriptionItemId,
+            subscriptionUserId,
+            identityReference,
+            "koxo_user_storage",
+            scopeType: "user");
+
     private static BillingV2ProvisioningRuleProjection QuotaRule(
         string subscriptionItemId,
         string? subscriptionUserId,
         string? identityReference,
         string targetType,
-        string scopeType)
+        string scopeType,
+        long numericValue = 128,
+        string? tierUnit = "GiB")
         => new(
             SubscriptionId,
             subscriptionItemId,
-            "STORAGE-PERSONAL",
-            "128",
-            "nextcloud_quota",
+            targetType == "koxo_secondary_group_storage"
+                ? "STORAGE-SHARED"
+                : "STORAGE-PERSONAL",
+            $"{numericValue}",
+            "infrastructure_action",
             targetType,
             TargetReference: null,
             "tier_numeric_value",
             StaticValue: null,
-            TierNumericValue: 128,
-            TierUnit: "GiB",
+            TierNumericValue: numericValue,
+            tierUnit,
             Quantity: 1,
             scopeType,
             subscriptionUserId,
@@ -580,7 +616,9 @@ public static class BillingV2ProvisioningScopeTests
             subscriptionUserId,
             identityReference,
             desiredAdGroups,
-            Array.Empty<BillingV2NextcloudQuotaPlan>());
+            PersonalStorage: null,
+            Array.Empty<BillingV2AcknowledgedEntitlement>(),
+            Array.Empty<BillingV2AcknowledgedEntitlement>());
 
     // ------------------------------------------------------------------
     // CAS A : meme sAMAccountName, objectGUID differents.

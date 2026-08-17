@@ -29,6 +29,9 @@ const billingV2DormantSchemaMigration = await read(
 const billingV2CatalogSeedMigration = await read(
   "../../apps/api-internal/Migrations/MariaDb/048_billing_v2_catalog_seed.sql",
 );
+const billingV2ProvisioningRuleSemanticsMigration = await read(
+  "../../apps/api-internal/Migrations/MariaDb/064_billing_v2_provisioning_rule_semantics.sql",
+);
 const subscriptionBillingPriceLocksMigration = await read(
   "../../apps/api-internal/Migrations/MariaDb/049_subscription_billing_price_locks.sql",
 );
@@ -91,6 +94,9 @@ const billingV2PricingEngine = await read(
 );
 const billingV2ProvisioningShadowService = await read(
   "../../apps/api-internal/Services/Provisioning/BillingV2ProvisioningShadowService.cs",
+);
+const billingV2ProvisioningSemanticsTests = await read(
+  "../../tests/api-internal/BillingV2ProvisioningSemanticsTests.cs",
 );
 const billingV2ProvisioningService = await read(
   "../../apps/api-internal/Services/Provisioning/BillingV2ProvisioningService.cs",
@@ -519,10 +525,181 @@ assert.match(
   /INSERT INTO billing_v2_provisioning_rules[\s\S]*VPN-ACCESS[\s\S]*GG_VPN[\s\S]*INSERT INTO billing_v2_provisioning_rules[\s\S]*RDS-ACCESS[\s\S]*GG_RDS/,
   "Le seed V2 doit declarer les regles shadow AD VPN/RDS.",
 );
+// -- Semantique reelle des regles de provisioning V2 (migration 064) -------
+// Le seed 048 nommait Nextcloud comme pilote du quota. La chaine reelle est
+// KoXo puis le serveur de fichiers ; Nextcloud est en bout de chaine. La 064
+// corrige ces regles et comble les 8 briques qui n'en avaient aucune.
+for (const [expected, why] of [
+  [
+    "rule.target_type     = 'koxo_user_storage'",
+    "Le stockage personnel doit etre pilote par une action d'infrastructure KoXo.",
+  ],
+  [
+    "rule.target_type     = 'koxo_secondary_group_storage'",
+    "Le stockage partage doit designer le groupe secondaire du client, pas un espace partage applicatif.",
+  ],
+  [
+    "'inherited_coverage', 'backup_policy',",
+    "Les sauvegardes doivent etre des couvertures heritees, sans objet de sauvegarde par abonnement.",
+  ],
+  [
+    "'VEEAM-KOXODATA', 'tier_numeric_value', NULL, 'inherit_coverage', NULL,",
+    "La couverture de sauvegarde doit rester heritee de la politique globale existante.",
+  ],
+]) {
+  assert.ok(
+    billingV2ProvisioningRuleSemanticsMigration.includes(expected),
+    why,
+  );
+}
+for (const serviceCode of ["BACKUP-PERSONAL", "BACKUP-SHARED"]) {
+  assert.ok(
+    billingV2ProvisioningRuleSemanticsMigration.includes(
+      `WHERE s.code = '${serviceCode}'`,
+    ),
+    `La migration 064 doit ajouter les regles de couverture pour ${serviceCode}.`,
+  );
+}
 assert.match(
-  billingV2CatalogSeedMigration,
-  /nextcloud_user_quota[\s\S]*tier_numeric_value[\s\S]*nextcloud_shared_quota/,
-  "Le seed V2 doit preparer les regles de quota Nextcloud sans les executer.",
+  billingV2ProvisioningRuleSemanticsMigration,
+  /'contractual_entitlement', 'user_slot'[\s\S]*WHERE s\.code = 'USER-ADDITIONAL'/,
+  "L'utilisateur supplementaire doit rester un droit commercial et non un second mecanisme de creation d'identite.",
+);
+assert.doesNotMatch(
+  billingV2ProvisioningRuleSemanticsMigration,
+  /identity_provisioning|koxo_user'|ensure_identity/,
+  "Aucune regle ne doit ouvrir un deuxieme chemin de creation d'identite en parallele du provisioning de stockage.",
+);
+assert.doesNotMatch(
+  billingV2ProvisioningRuleSemanticsMigration,
+  /CREATE TABLE|ALTER TABLE|DROP TABLE/,
+  "La migration 064 doit rester une migration de donnees, sans changement de schema.",
+);
+// -- Convergence des deux UPDATE de stockage -------------------------------
+// Se borner au seul `target_type` laisserait intacte une ligne a moitie
+// corrigee : cible deja bonne, action ou source de valeur encore anciennes.
+// Le WHERE doit donc comparer l'etat cible complet, et le comparer en
+// NULL-safe, sans quoi un `target_reference` NULL rend le test indecidable et
+// la ligne divergente echappe a la reparation.
+const billingV2StorageUpdates = billingV2ProvisioningRuleSemanticsMigration
+  .split(/^UPDATE billing_v2_provisioning_rules rule$/m)
+  .slice(1)
+  .map((statement) => statement.slice(0, statement.indexOf(");") + 2));
+assert.equal(
+  billingV2StorageUpdates.length,
+  2,
+  "La migration 064 doit corriger exactement les deux familles de regles de stockage.",
+);
+for (const [service, target, reference, tiers] of [
+  [
+    "STORAGE-PERSONAL",
+    "koxo_user_storage",
+    "KOXO-USER-STORAGE",
+    "'16', '32', '64', '128', '256', '512'",
+  ],
+  [
+    "STORAGE-SHARED",
+    "koxo_secondary_group_storage",
+    "KOXO-SECONDARY-GROUP-STORAGE",
+    "'32', '64', '128', '256', '512'",
+  ],
+]) {
+  const statement = billingV2StorageUpdates.find((candidate) =>
+    candidate.includes(`WHERE service.code = '${service}'`),
+  );
+  assert.ok(statement, `La migration 064 doit contenir l'UPDATE de ${service}.`);
+  assert.doesNotMatch(
+    statement,
+    /rule\.target_type <> /,
+    `L'UPDATE ${service} ne doit pas se borner au seul target_type : une ligne dont la cible est deja bonne mais dont l'action est restee ancienne resterait divergente.`,
+  );
+  // La table n'a aucune unicite sur (service_id, tier_id) : seul un index
+  // simple existe. Une deuxieme regle tieree pourra donc coexister un jour
+  // legitimement sur le meme service, et une relance tardive la reecrirait en
+  // regle de stockage. D'ou le double bornage : paliers historiques connus,
+  // puis abstention des que le couple porte plus d'une regle.
+  assert.ok(
+    statement.includes(`AND tier.code IN (${tiers})`),
+    `L'UPDATE ${service} doit se borner a ses paliers historiques (${tiers}).`,
+  );
+  assert.match(
+    statement,
+    /INNER JOIN billing_v2_service_tiers tier\s*\n\s*ON tier\.id = rule\.tier_id\s*\n\s*AND tier\.service_id = service\.id/,
+    `L'UPDATE ${service} doit joindre les tiers du meme service pour borner les paliers.`,
+  );
+  assert.match(
+    statement,
+    /AND \(\s*\n\s*SELECT COUNT\(\*\)\s*\n\s*FROM billing_v2_provisioning_rules other_rule\s*\n\s*WHERE other_rule\.service_id = rule\.service_id\s*\n\s*AND other_rule\.tier_id = rule\.tier_id\s*\n\s*\) = 1/,
+    `L'UPDATE ${service} doit s'abstenir des couples service+tier portant plus d'une regle au lieu de les ecraser.`,
+  );
+  for (const [column, value] of [
+    ["rule_type", "'infrastructure_action'"],
+    ["target_type", `'${target}'`],
+    ["target_reference", `'${reference}'`],
+    ["value_source", "'tier_numeric_value'"],
+    ["static_value", "NULL"],
+    ["enable_action", "'reconcile_storage_quota'"],
+    ["disable_action", "NULL"],
+  ]) {
+    assert.match(
+      statement,
+      new RegExp(`rule\\.${column}\\s+=\\s+${value},`),
+      `L'UPDATE ${service} doit reecrire ${column} vers l'etat cible.`,
+    );
+    assert.match(
+      statement,
+      new RegExp(`rule\\.${column}\\s+<=>\\s+${value}\\s`),
+      `L'UPDATE ${service} doit tester ${column} en NULL-safe, sinon une valeur NULL rend la divergence indecidable.`,
+    );
+  }
+  assert.doesNotMatch(
+    statement,
+    /rule\.status/,
+    `L'UPDATE ${service} ne doit pas retablir l'activation d'une regle desactivee volontairement : le statut est une decision d'exploitation.`,
+  );
+}
+// Un UPDATE qui s'abstient ne dit rien : sans ce controle, un couple ambigu ou
+// depourvu de regle passerait pour migre. Il doit etre lisible au dry-run.
+assert.match(
+  billingV2ProvisioningRuleSemanticsMigration,
+  /HAVING COUNT\(rule\.id\) <> 1;/,
+  "La migration 064 doit fournir la detection des couples STORAGE service+tier qui ne portent pas exactement une regle.",
+);
+assert.match(
+  billingV2ProvisioningRuleSemanticsMigration,
+  /WHERE \(service\.code = 'STORAGE-PERSONAL'[\s\S]*?tier\.code IN \('16', '32', '64', '128', '256', '512'\)\)[\s\S]*?OR \(service\.code = 'STORAGE-SHARED'[\s\S]*?tier\.code IN \('32', '64', '128', '256', '512'\)\)/,
+  "Le controle de coherence doit couvrir les deux services de stockage sur leurs paliers respectifs.",
+);
+assert.doesNotMatch(
+  billingV2ProvisioningRuleSemanticsMigration,
+  /GG_VPN|GG_RDS/,
+  "La migration 064 ne doit pas toucher aux regles AD VPN/RDS existantes.",
+);
+for (const expected of [
+  "'platform_entitlement', 'platform'",
+  "'contractual_entitlement', 'support_level'",
+  "'service_delivery', 'onboarding'",
+  "'platform_entitlement', 'monitoring'",
+]) {
+  assert.ok(
+    billingV2ProvisioningRuleSemanticsMigration.includes(expected),
+    `La migration 064 doit declarer la regle ${expected}.`,
+  );
+}
+for (const accessCode of ["VPN-ACCESS", "RDS-ACCESS"]) {
+  assert.ok(
+    billingV2ProvisioningRuleSemanticsMigration.includes(
+      `WHERE access.code = '${accessCode}'
+  AND storage.code = 'STORAGE-PERSONAL'`,
+    ),
+    `${accessCode} doit declarer sa dependance au stockage personnel.`,
+  );
+}
+assert.ok(
+  billingV2ProvisioningRuleSemanticsMigration.includes(
+    "'same_subscription_user', 'any', 'active'",
+  ),
+  "La dependance doit exprimer meme utilisateur et tiers independants.",
 );
 assert.match(
   billingV2ProvisioningReadinessMigration,
@@ -694,19 +871,92 @@ assert.match(
 );
 assert.match(
   billingV2ProvisioningService,
-  /IBillingV2NextcloudQuotaProvider[\s\S]*DormantBillingV2NextcloudQuotaProvider[\s\S]*BILLING_V2_NEXTCLOUD_QUOTA_PROVIDER_NOT_CONFIGURED/,
-  "Le quota Nextcloud doit etre represente par un provider dormant explicite sans integration runtime supposee.",
+  /IBillingV2KoxoStorageProvider[\s\S]*DormantBillingV2KoxoStorageProvider[\s\S]*BILLING_V2_KOXO_STORAGE_PROVIDER_NOT_CONFIGURED/,
+  "Le quota de stockage doit etre represente par un provider KoXo dormant explicite sans integration runtime supposee.",
 );
 assert.match(
   apiProgram,
-  /IBillingV2NextcloudQuotaProvider[\s\S]*DormantBillingV2NextcloudQuotaProvider\.Instance/,
-  "Le provider quota Nextcloud enregistre doit rester dormant par defaut.",
+  /IBillingV2KoxoStorageProvider[\s\S]*DormantBillingV2KoxoStorageProvider\.Instance/,
+  "Le provider de stockage KoXo enregistre doit rester dormant par defaut.",
 );
 assert.match(
   billingV2ProvisioningService,
-  /plan\.NextcloudQuotas\.Count > 0[\s\S]*CheckReadiness\(plan\.NextcloudQuotas\)[\s\S]*Legacy provisioning remains authoritative/,
-  "Le provisioning V2 doit bloquer les quotas Nextcloud tant qu'aucun provider fiable ne peut les appliquer.",
+  /plan\.StorageQuotaPlans\.Count > 0[\s\S]*CheckReadiness\(plan\.StorageQuotaPlans\)[\s\S]*Legacy provisioning remains authoritative/,
+  "Le provisioning V2 doit bloquer les quotas de stockage tant qu'aucun provider fiable ne peut les appliquer.",
 );
+// -- Vocabulaire du provisioning de stockage -------------------------------
+// Le quota n'a jamais ete pilote par le service de partage : il est ecrit dans
+// la fiche KoXo puis applique par le serveur de fichiers. Un nom faux ici
+// oriente toute la phase suivante vers le mauvais systeme.
+for (const [label, source] of [
+  ["le service de provisioning V2", billingV2ProvisioningService],
+  ["l'enregistrement DI", apiProgram],
+  ["la suite semantique", billingV2ProvisioningSemanticsTests],
+]) {
+  assert.doesNotMatch(
+    source,
+    /nextcloud_user_quota|nextcloud_shared_quota|BillingV2NextcloudQuotaProvider|NextcloudQuotas/,
+    `Le vocabulaire Nextcloud ne doit plus decrire le quota de stockage V2 dans ${label}.`,
+  );
+}
+
+// -- Semantique : reconnu sans ecriture, ou bloque, jamais ignore ----------
+assert.match(
+  billingV2ProvisioningService,
+  /InheritedCoverageRule = "inherited_coverage"[\s\S]*PlatformEntitlementRule = "platform_entitlement"[\s\S]*ContractualEntitlementRule = "contractual_entitlement"[\s\S]*ServiceDeliveryRule = "service_delivery"/,
+  "Le planificateur doit reconnaitre explicitement les familles de regles sans ecriture.",
+);
+assert.match(
+  billingV2ProvisioningService,
+  /RuleMissing =\s*\n?\s*"BILLING_V2_PROVISIONING_RULE_MISSING"/,
+  "L'absence de regle doit rester une anomalie nommee, jamais un noop implicite.",
+);
+assert.match(
+  billingV2ProvisioningService,
+  /PersonalStorageRequired =\s*\n?\s*"BILLING_V2_PROVISIONING_PERSONAL_STORAGE_REQUIRED"/,
+  "Un acces AD accorde sans stockage personnel doit bloquer avec une raison nommant le socle manquant.",
+);
+assert.match(
+  billingV2ProvisioningService,
+  /IdentityRequired =\s*\n?\s*"BILLING_V2_PROVISIONING_IDENTITY_REQUIRED"/,
+  "Une identite absente doit bloquer explicitement, sans repli sur un autre utilisateur.",
+);
+assert.doesNotMatch(
+  billingV2ProvisioningService,
+  /IdentityProvisioningRule|BillingV2IdentityProvisioningPlan/,
+  "Il ne doit exister qu'un seul proprietaire technique de la creation d'identite : le provisioning de stockage.",
+);
+assert.match(
+  billingV2ProvisioningService,
+  /ExpectedStorageUnit = "GiB"[\s\S]*UnitUnexpected|UnitUnexpected[\s\S]*ExpectedStorageUnit = "GiB"/,
+  "L'unite du tier de stockage doit etre verifiee et jamais fabriquee par defaut.",
+);
+assert.match(
+  billingV2ProvisioningSemanticsTests,
+  /VerifyExplicitBaseServiceRuleIsAcknowledgedWithoutOperation[\s\S]*VerifyBaseServiceWithoutRuleStaysUnresolved[\s\S]*VerifySupportPlusIsAcknowledgedWithoutOperation[\s\S]*VerifyMonitoringIsAcknowledgedWithoutOperation[\s\S]*VerifyInitServiceIsAcknowledgedWithoutOperation[\s\S]*VerifyPersonalBackupIsInheritedCoverageWithoutOperation[\s\S]*VerifySharedBackupIsSubscriptionCoverageWithoutOperation[\s\S]*VerifyPersonalStorageStaysWithItsOwner[\s\S]*VerifyTwoUsersKeepTwoDistinctStoragePlans[\s\S]*VerifySharedStorageNeverReachesAnyUser[\s\S]*VerifyDormantStorageProviderBlocksTheWholePlan[\s\S]*VerifyUnassignedUserSlotNeverBlocksTheSubscription[\s\S]*VerifyResourceAttachedToUnassignedSlotStaysBlocked[\s\S]*VerifyUserSlotIsNeverASecondIdentityCreationPath[\s\S]*VerifyDownstreamAccessRequiresPersonalStorage[\s\S]*VerifyPersonalStorageNeedsNoResolvedAdIdentity[\s\S]*VerifyVpnStillDemandsAResolvedAdIdentity[\s\S]*VerifyUnknownTargetTypeStaysUnresolved[\s\S]*VerifyUnknownRuleTypeStaysUnresolved[\s\S]*VerifyUserScopedRuleWithoutUserStaysUnresolved[\s\S]*VerifySubscriptionScopedRuleCarryingAUserStaysUnresolved/,
+  "La suite semantique doit couvrir socle, support, supervision, mise en service, sauvegardes heritees, stockage par utilisateur, stockage partage, provider dormant, place non attribuee, bootstrap d'identite, prerequis de socle, types inconnus et scopes incoherents.",
+);
+
+// -- Bootstrap d'identite : deux identites, deux exigences ----------------
+// Le stockage personnel PRODUIT le compte annuaire ; lui demander un lien
+// customer_ad_links prealable rendrait le premier utilisateur d'un client
+// impossible a creer. Seuls les acces situes en aval l'exigent.
+assert.match(
+  billingV2ProvisioningService,
+  /UsersRequiringAdIdentity\s*=>\s*Users[\s\S]*DesiredAdGroups\.Count > 0/,
+  "Seuls les utilisateurs portant un acces AD doivent exiger une identite annuaire resolue.",
+);
+assert.doesNotMatch(
+  billingV2ProvisioningService,
+  /ResolveTargetsAsync\(\s*customerId,\s*plan\.Users,/,
+  "La resolution d'identite annuaire ne doit plus etre imposee aux utilisateurs qui n'ont aucun acces AD.",
+);
+assert.match(
+  billingV2ProvisioningService,
+  /UserSlotTarget,[\s\S]*IsNullOrWhiteSpace\(rule\.IdentityReference\)[\s\S]*UnassignedUserSlots\.Add[\s\S]*IsNullOrWhiteSpace\(rule\.IdentityReference\)[\s\S]*IdentityRequired/,
+  "Une place d'utilisateur non attribuee doit rester representable, alors que toute ressource sans identite reste bloquante.",
+);
+
 // -- Isolation par utilisateur du provisioning V2 -------------------------
 // Le moteur AD applique chaque groupe gere a chaque TargetUsers recu : un plan
 // agrege au niveau client donnait donc a tout le monde le droit d'un seul. Les
@@ -781,8 +1031,8 @@ assert.match(
 );
 assert.match(
   billingV2ProvisioningShadowTests,
-  /VerifyProvisioningReadinessAllowsOnlyCompleteReadyMatch[\s\S]*VerifyProvisioningReadinessDeniesMismatch[\s\S]*VerifyProvisioningReadinessDeniesIncompleteMaterialization[\s\S]*VerifyProvisioningReadinessDeniesUnknownRuleOrGroup[\s\S]*VerifyProvisioningReadinessDeniesFlagOff[\s\S]*VerifyFirstActivationIsAddOnly[\s\S]*VerifyProvisioningRetryKeepsSameGateDecision[\s\S]*VerifyProvisioningPlannerFlagsMissingItemProvisioning[\s\S]*VerifyNextcloudQuotaRulesAreCalculatedButNotAdGroups[\s\S]*VerifyDormantNextcloudQuotaProviderBlocksExecution/,
-  "Les tests readiness provisioning V2 doivent couvrir match, mismatch, legacy incomplet, inconnus, flag off, add-only, retry, items non materialises et quotas Nextcloud dormants.",
+  /VerifyProvisioningReadinessAllowsOnlyCompleteReadyMatch[\s\S]*VerifyProvisioningReadinessDeniesMismatch[\s\S]*VerifyProvisioningReadinessDeniesIncompleteMaterialization[\s\S]*VerifyProvisioningReadinessDeniesUnknownRuleOrGroup[\s\S]*VerifyProvisioningReadinessDeniesFlagOff[\s\S]*VerifyFirstActivationIsAddOnly[\s\S]*VerifyProvisioningRetryKeepsSameGateDecision[\s\S]*VerifyProvisioningPlannerFlagsMissingItemProvisioning[\s\S]*VerifyStorageQuotaRulesAreCalculatedButNotAdGroups[\s\S]*VerifyDormantKoxoStorageProviderBlocksExecution/,
+  "Les tests readiness provisioning V2 doivent couvrir match, mismatch, legacy incomplet, inconnus, flag off, add-only, retry, items non materialises et quotas de stockage dormants.",
 );
 assert.match(
   subscriptionService,

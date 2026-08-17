@@ -2063,7 +2063,7 @@ public static class BillingV2NewSubscriptionTests
                 && limitation.Severity == "hard_blocker")
             && limitations.Any(limitation =>
                 limitation.Code
-                    == "BILLING_V2_NEXTCLOUD_QUOTA_PROVIDER_NOT_READY"
+                    == "BILLING_V2_KOXO_STORAGE_PROVIDER_NOT_READY"
                 && limitation.Severity == "human_review"),
             "La readiness admin V2 doit exposer les limites operationnelles connues avant le premier vrai abonnement.");
     }

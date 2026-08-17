@@ -428,8 +428,8 @@ builder.Services.AddScoped<
 builder.Services.AddScoped<
     IBillingV2ClientServiceCatalogShadowService,
     BillingV2ClientServiceCatalogShadowService>();
-builder.Services.AddSingleton<IBillingV2NextcloudQuotaProvider>(
-    DormantBillingV2NextcloudQuotaProvider.Instance);
+builder.Services.AddSingleton<IBillingV2KoxoStorageProvider>(
+    DormantBillingV2KoxoStorageProvider.Instance);
 builder.Services.AddScoped<
     IBillingV2ProvisioningService,
     BillingV2ProvisioningService>();
