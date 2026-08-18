@@ -69,6 +69,11 @@ public static class BillingV2FinancialCoreSchemaTests
 
         // Phase 3 : cycle de vie du renouvellement Stripe.
         await BillingV2RenewalSchemaTests.RunAsync(connectionString);
+
+        // Cycle de vie des identites d'utilisateurs additionnels : regle
+        // d'export KoXo, unicites et etats.
+        await BillingV2AdditionalUserIdentitySchemaTests.RunAsync(
+            connectionString);
     }
 
     private static async Task VerifySchemaShapeAsync(MySqlConnection connection)

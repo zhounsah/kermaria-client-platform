@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Security.Cryptography;
 using System.Text;
 using Kermaria.ApiInternal.Contracts;
 using Kermaria.ApiInternal.Data.Configuration;
@@ -1110,17 +1109,12 @@ public sealed class SignupService : ISignupService
         return $"{prefix}{path}?token={Uri.EscapeDataString(token)}";
     }
 
-    private static string GenerateToken()
-        => Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
-            .Replace('+', '-')
-            .Replace('/', '_')
-            .TrimEnd('=');
+    // Delegue a PortalSetupToken : le cycle de vie des utilisateurs
+    // additionnels Billing V2 emet le meme type de lien, et deux generateurs
+    // divergents produiraient deux niveaux de securite pour un meme usage.
+    private static string GenerateToken() => PortalSetupToken.Generate();
 
-    private static string HashToken(string token)
-    {
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(token));
-        return Convert.ToHexString(bytes).ToLowerInvariant();
-    }
+    private static string HashToken(string token) => PortalSetupToken.Hash(token);
 
     private static string GenerateCustomerReference()
         => CustomerReferenceGenerator.Generate();

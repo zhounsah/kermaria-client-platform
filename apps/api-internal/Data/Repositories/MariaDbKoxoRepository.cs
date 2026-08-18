@@ -25,60 +25,7 @@ public sealed class MariaDbKoxoRepository : IKoxoRepository
         await using var connection = new MySqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText =
-            """
-            SELECT
-                portal_user.id AS portal_user_id,
-                customer.external_reference AS customer_reference,
-                portal_user.koxo_unique_identifier AS koxo_unique_identifier,
-                portal_user.personal_title AS personal_title,
-                portal_user.given_name AS given_name,
-                portal_user.surname AS surname,
-                portal_user.birth_date AS birth_date,
-                portal_user.email AS email,
-                customer.is_demo AS is_demo,
-                customer.koxo_group_reference AS koxo_group_reference
-            FROM portal_users portal_user
-            INNER JOIN customers customer
-                ON customer.id = portal_user.customer_id
-            -- LEFT et non INNER : un essai de demonstration n'a pas encore
-            -- d'identite AD, et c'est justement KoXo qui doit la creer. Avec une
-            -- jointure stricte il serait exclu du CSV, donc jamais cree, donc
-            -- toujours exclu — l'impasse qui laissait OU=CLI-DEMO vide.
-            LEFT JOIN customer_ad_links ad_link
-                ON ad_link.portal_user_id = portal_user.id
-               AND ad_link.object_type = 'user'
-            WHERE portal_user.status = 'active'
-              AND customer.status = 'active'
-              -- La regle stricte reste la norme : seuls les essais de demo sont
-              -- exportes sans identite prealable, pour qu'aucun vrai client dont
-              -- le provisioning AD a echoue ne parte dans le CSV par accident.
-              --
-              -- L'etat civil complet est exige pour ce cas : un compte incomplet
-              -- serait rejete par la validation de l'export, or un seul invalide
-              -- bloque l'export GLOBAL. Le laisser dehors le maintient en attente
-              -- sans jamais casser la synchronisation des autres comptes.
-              AND (
-                    ad_link.portal_user_id IS NOT NULL
-                 OR (
-                        customer.is_demo = TRUE
-                    AND customer.demo_kind = 'trial'
-                    AND portal_user.personal_title IS NOT NULL
-                    AND portal_user.given_name IS NOT NULL
-                    AND portal_user.surname IS NOT NULL
-                    AND portal_user.birth_date IS NOT NULL
-                    AND portal_user.koxo_unique_identifier IS NOT NULL
-                 )
-              )
-              -- Une vitrine est inerte par construction : elle ne doit jamais
-              -- atteindre le pipeline d'identites reelles. Seuls les essais
-              -- (trial), qui ont besoin d'une identite AD, sont exportes.
-              AND NOT (customer.is_demo = TRUE AND customer.demo_kind = 'showcase')
-            ORDER BY
-                customer.external_reference ASC,
-                portal_user.koxo_unique_identifier ASC,
-                portal_user.id ASC;
-            """;
+        command.CommandText = KoxoExportCandidateQuery.Sql;
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))

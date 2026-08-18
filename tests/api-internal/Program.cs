@@ -248,6 +248,55 @@ async Task<int> RunAsync(string[] arguments)
     if (arguments.Length == 1
         && string.Equals(
             arguments[0],
+            "--billing-v2-additional-user-identity",
+            StringComparison.Ordinal))
+    {
+        try
+        {
+            await BillingV2AdditionalUserIdentityTests.RunAsync();
+            Console.WriteLine(
+                "Tests cycle de vie des utilisateurs additionnels Billing V2 reussis.");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine(
+                "Tests cycle de vie des utilisateurs additionnels Billing V2 en echec.");
+            Console.Error.WriteLine(exception.ToString());
+            return 1;
+        }
+    }
+
+    // Volontairement hors de la suite par defaut : elle exige une MariaDB
+    // JETABLE portant les migrations 001 a 065. Sans base, elle echoue en le
+    // disant plutot que de simuler un succes.
+    if (arguments.Length == 1
+        && string.Equals(
+            arguments[0],
+            "--billing-v2-additional-user-identity-schema",
+            StringComparison.Ordinal))
+    {
+        try
+        {
+            await BillingV2AdditionalUserIdentitySchemaTests.RunAsync();
+            Console.WriteLine(
+                "Tests schema du cycle de vie des utilisateurs additionnels "
+                + "Billing V2 reussis.");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine(
+                "Tests schema du cycle de vie des utilisateurs additionnels "
+                + "Billing V2 en echec.");
+            Console.Error.WriteLine(exception.ToString());
+            return 1;
+        }
+    }
+
+    if (arguments.Length == 1
+        && string.Equals(
+            arguments[0],
             "--billing-v2-new-subscription",
             StringComparison.Ordinal))
     {

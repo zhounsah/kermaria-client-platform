@@ -273,6 +273,33 @@ builder.Services.AddScoped<IKoxoRepository>(
     _ => sqlConfiguration.IsPersistent
         ? new MariaDbKoxoRepository(sqlConfiguration)
         : new MockKoxoRepository());
+// Cycle de vie d'identite des utilisateurs additionnels Billing V2 (Phase 4).
+// Les magasins mock sont des singletons : l'utilisateur portail cree par
+// l'attribution doit rester visible du depot de jetons, qui ecrit son condensat
+// dans une requete ulterieure.
+builder.Services.AddSingleton<MockPortalUserStore>();
+builder.Services.AddSingleton<MockPortalPasswordSetupRepository>(
+    serviceProvider => new MockPortalPasswordSetupRepository(
+        serviceProvider.GetRequiredService<MockPortalUserStore>()));
+builder.Services.AddScoped<IPortalPasswordSetupRepository>(
+    serviceProvider => sqlConfiguration.IsPersistent
+        ? new MariaDbPortalPasswordSetupRepository(sqlConfiguration)
+        : serviceProvider
+            .GetRequiredService<MockPortalPasswordSetupRepository>());
+builder.Services.AddSingleton<MockBillingV2AdditionalUserIdentityRepository>(
+    serviceProvider => new MockBillingV2AdditionalUserIdentityRepository(
+        serviceProvider.GetRequiredService<MockPortalUserStore>(),
+        serviceProvider
+            .GetRequiredService<MockPortalPasswordSetupRepository>()));
+builder.Services.AddScoped<IBillingV2AdditionalUserIdentityRepository>(
+    serviceProvider => sqlConfiguration.IsPersistent
+        ? new MariaDbBillingV2AdditionalUserIdentityRepository(sqlConfiguration)
+        : serviceProvider
+            .GetRequiredService<
+                MockBillingV2AdditionalUserIdentityRepository>());
+builder.Services.AddScoped<
+    IBillingV2AdditionalUserIdentityService,
+    BillingV2AdditionalUserIdentityService>();
 // Lectures ciblees du ciblage de stockage KoXo, distinctes de l'export global :
 // l'export porte la politique de population du CSV, pas la designation d'une
 // cible de quota.
