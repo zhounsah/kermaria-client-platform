@@ -1,6 +1,7 @@
 using Kermaria.ApiInternal.Data.Configuration;
 using Kermaria.ApiInternal.Data.Repositories;
 using Kermaria.ApiInternal.Services;
+using Kermaria.ApiInternal.Services.Provisioning;
 using Microsoft.Extensions.Logging.Abstractions;
 using MySqlConnector;
 
@@ -705,13 +706,16 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
         var setups = new MariaDbPortalPasswordSetupRepository(sql);
         var store = NewStore(sql, TestProtector(11), connectionString);
 
-        var slotId = await fixture.CreateSlotAsync(connection, isPrimary: false);
+        var slotId = await fixture.CreateSlotAsync(
+            connection,
+            isPrimary: false,
+            withEntitlement: true);
         var token = $"jeton-atomique-{Guid.NewGuid():N}";
         var command = BuildAssignment(fixture, slotId, "atomique", token);
 
         var assignment = await identities.AssignAsync(
             command,
-            RejectIfUnavailable,
+            RealPolicyFor(fixture),
             CancellationToken.None);
         Ensure(
             assignment.Succeeded,
@@ -816,12 +820,15 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
         var setups = new MariaDbPortalPasswordSetupRepository(sql);
         var store = NewStore(sql, TestProtector(11), connectionString);
 
-        var slotId = await fixture.CreateSlotAsync(connection, isPrimary: false);
+        var slotId = await fixture.CreateSlotAsync(
+            connection,
+            isPrimary: false,
+            withEntitlement: true);
         var token = $"jeton-rollback-{Guid.NewGuid():N}";
         var command = BuildAssignment(fixture, slotId, "rollback", token);
         var assignment = await identities.AssignAsync(
             command,
-            RejectIfUnavailable,
+            RealPolicyFor(fixture),
             CancellationToken.None);
         Ensure(
             assignment.Succeeded,
@@ -967,8 +974,25 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
     {
         var identities = new MariaDbBillingV2AdditionalUserIdentityRepository(
             SqlFor(connectionString));
+        var policy = RealPolicyFor(fixture);
 
-        var slotId = await fixture.CreateSlotAsync(connection, isPrimary: false);
+        // Ce que chaque tentative a REELLEMENT vu sous verrou : sans cette
+        // capture, un refus juste pourrait venir d'une relecture fausse.
+        var seen = new System.Collections.Concurrent.ConcurrentDictionary<
+            string,
+            BillingV2AdditionalUserSlotSnapshot>();
+
+        Func<string, Func<BillingV2AdditionalUserSlotSnapshot, string?>> observe =
+            key => snapshot =>
+            {
+                seen[key] = snapshot;
+                return policy(snapshot);
+            };
+
+        var slotId = await fixture.CreateSlotAsync(
+            connection,
+            isPrimary: false,
+            withEntitlement: true);
         var first = BuildAssignment(
             fixture,
             slotId,
@@ -983,11 +1007,11 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
         var results = await Task.WhenAll(
             identities.AssignAsync(
                 first,
-                RejectIfUnavailable,
+                observe("a"),
                 CancellationToken.None),
             identities.AssignAsync(
                 second,
-                RejectIfUnavailable,
+                observe("b"),
                 CancellationToken.None));
 
         var winners = results.Where(result => result.Succeeded).ToList();
@@ -999,10 +1023,21 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
         Ensure(
             loser.RejectionCode
                 == BillingV2AdditionalUserRejectionCodes.SlotAlreadyAssigned,
-            "La tentative perdante doit etre refusee comme conflit de place "
+            "La tentative perdante doit etre refusee comme conflit de place, "
+            + "pas comme anomalie de cycle de vie "
             + $"(code obtenu : {loser.RejectionCode}).");
 
         var winnerPortalUserId = winners[0].Created!.PortalUserId;
+        var loserKey = winnerPortalUserId == first.PortalUserId ? "b" : "a";
+
+        // La lecture verrouillee du perdant doit avoir eu lieu APRES le commit
+        // du gagnant : si elle voyait encore la place libre, le refus obtenu
+        // serait juste par accident.
+        Ensure(
+            seen.TryGetValue(loserKey, out var loserSnapshot)
+            && loserSnapshot.IdentityReference is not null,
+            "Le perdant doit relire la place deja attribuee : c'est le "
+            + "FOR UPDATE qui le garantit, pas l'index unique.");
 
         await using var verification = new MySqlConnection(connectionString);
         await verification.OpenAsync();
@@ -1057,31 +1092,21 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
     }
 
     /// <summary>
-    /// Refus volontairement reduits a ce que la concurrence peut declencher.
+    /// La <b>vraie</b> politique, appliquee a l'instantane verrouille.
     /// </summary>
     /// <remarks>
-    /// Les regles contractuelles — droit, perimetre, statut de la place — sont
-    /// couvertes par la clause d'export et les suites mock. Ici, seul compte ce
-    /// que l'instantane <b>verrouille</b> revele : place deja prise, cycle deja
-    /// present, e-mail deja utilise.
+    /// Un predicat ecrit pour le test ne prouverait rien de la decision reelle,
+    /// et un ordre de controles different du sien produirait un refus different
+    /// pour le meme etat : c'est exactement ce qui faisait rendre
+    /// <c>LIFECYCLE_ALREADY_EXISTS</c> a un perdant de course, alors que la
+    /// place etait deja attribuee.
     /// </remarks>
-    private static string? RejectIfUnavailable(
-        BillingV2AdditionalUserSlotSnapshot snapshot)
-    {
-        if (snapshot.EmailAlreadyUsed)
-        {
-            return BillingV2AdditionalUserRejectionCodes.EmailAlreadyUsed;
-        }
-
-        if (snapshot.HasExistingLifecycle)
-        {
-            return BillingV2AdditionalUserRejectionCodes.LifecycleAlreadyExists;
-        }
-
-        return snapshot.IdentityReference is null
-            ? null
-            : BillingV2AdditionalUserRejectionCodes.SlotAlreadyAssigned;
-    }
+    private static Func<BillingV2AdditionalUserSlotSnapshot, string?>
+        RealPolicyFor(Fixture fixture)
+        => snapshot => BillingV2AdditionalUserAssignmentPolicy.Validate(
+            snapshot,
+            fixture.CustomerId,
+            fixture.SubscriptionId);
 
     private static BillingV2AdditionalUserAssignmentCommand BuildAssignment(
         Fixture fixture,
@@ -1482,9 +1507,15 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
             return id;
         }
 
+        /// <param name="withEntitlement">
+        /// Adosse un item actif de perimetre <c>user</c> a la place, sans quoi
+        /// la vraie politique refuse tout de suite en
+        /// <c>SLOT_ENTITLEMENT_MISSING</c>.
+        /// </param>
         public async Task<string> CreateSlotAsync(
             MySqlConnection connection,
-            bool isPrimary)
+            bool isPrimary,
+            bool withEntitlement = false)
         {
             var id = Guid.NewGuid().ToString("D");
             await ExecuteAsync(
@@ -1502,6 +1533,33 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
                 ("@subscription_id", SubscriptionId),
                 ("@is_primary", isPrimary ? 1 : 0));
             ExtraSlotIds.Add(id);
+
+            if (withEntitlement)
+            {
+                await ExecuteAsync(
+                    connection,
+                    """
+                    INSERT INTO billing_v2_subscription_items (
+                        id, subscription_id, subscription_user_id, service_id,
+                        tier_id, service_price_id, scope_type, quantity,
+                        amount_cents_snapshot, currency, source,
+                        effective_from, status, created_at, updated_at
+                    ) VALUES (
+                        @id, @subscription_id, @slot_id, @service_id,
+                        @tier_id, @price_id, 'user', 1,
+                        1000, 'EUR', 'preset',
+                        '2026-01-01 00:00:00', 'active',
+                        UTC_TIMESTAMP(6), UTC_TIMESTAMP(6)
+                    );
+                    """,
+                    ("@id", Guid.NewGuid().ToString("D")),
+                    ("@subscription_id", SubscriptionId),
+                    ("@slot_id", id),
+                    ("@service_id", ServiceId),
+                    ("@tier_id", TierId),
+                    ("@price_id", ServicePriceId));
+            }
+
             return id;
         }
 

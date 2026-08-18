@@ -273,6 +273,22 @@ public static class BillingV2AdditionalUserIdentityTests
         Assert(
             harness.Repository.AllocatedKoxoIdentifiers.Count == 1,
             "Aucun CLI-NNNNNN n'est consomme par une tentative refusee.");
+        // Meme semantique que sur MariaDB : les perdants apprennent que la
+        // place est prise, jamais que « un cycle de vie existe deja » — ce
+        // dernier code doit rester reserve a un etat incoherent.
+        Assert(
+            results
+                .Where(result => !result.Succeeded)
+                .All(result => result.Code
+                    == BillingV2AdditionalUserRejectionCodes
+                        .SlotAlreadyAssigned),
+            "Un perdant de course est un conflit de place : "
+            + string.Join(
+                ", ",
+                results
+                    .Where(result => !result.Succeeded)
+                    .Select(result => result.Code)
+                    .Distinct()));
     }
 
     private static async Task VerifyDuplicateEmailIsRefused()
@@ -1615,6 +1631,16 @@ public static class BillingV2AdditionalUserIdentityTests
                 BillingV2AdditionalUserRejectionCodes.SlotAlreadyAssigned),
             (valid with { HasExistingLifecycle = true },
                 BillingV2AdditionalUserRejectionCodes.LifecycleAlreadyExists),
+            // Etat exact d'un perdant de course : la place ET son cycle de vie
+            // existent. La place tranche — c'est le fait, le cycle n'en est que
+            // la consequence. L'ordre inverse rendrait un refus different selon
+            // qui gagne la course.
+            (valid with
+                {
+                    IdentityReference = "portal-user-existant",
+                    HasExistingLifecycle = true
+                },
+                BillingV2AdditionalUserRejectionCodes.SlotAlreadyAssigned),
             (valid with { HasActiveUserSlotEntitlement = false },
                 BillingV2AdditionalUserRejectionCodes.SlotEntitlementMissing),
             (valid with { IncompatibleScopedItemCount = 1 },

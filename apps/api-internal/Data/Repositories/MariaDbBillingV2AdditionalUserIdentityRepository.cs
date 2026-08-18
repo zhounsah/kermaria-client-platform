@@ -141,9 +141,59 @@ public sealed class MariaDbBillingV2AdditionalUserIdentityRepository
             when (exception.Number == DuplicateEntryErrorNumber)
         {
             await SafeRollbackAsync(transaction, cancellationToken);
+
+            // Le verrou de place rend ce chemin improbable, pas impossible :
+            // il ne couvre ni `portal_users.email` ni un cycle de vie insere
+            // par une autre voie. Plutot que de deduire le conflit du nom de la
+            // contrainte, on relit l'etat reel de la place, verrou relache.
+            //
+            // Une place desormais attribuee tranche : c'est le meme refus que
+            // celui qu'aurait rendu la politique si la lecture verrouillee
+            // etait arrivee un instant plus tard, et l'appelant obtient la
+            // meme reponse quel que soit l'ordre d'arrivee.
+            var identityReference = await ReadSlotIdentityReferenceAsync(
+                connection,
+                command.SubscriptionUserId,
+                cancellationToken);
+            if (identityReference is not null)
+            {
+                return BillingV2AdditionalUserAssignmentResult.Reject(
+                    BillingV2AdditionalUserRejectionCodes.SlotAlreadyAssigned);
+            }
+
+            // La place est reellement libre : le conflit vient d'ailleurs. On
+            // conserve alors le diagnostic specifique — un cycle de vie sans
+            // place attribuee est un etat incoherent qu'il ne faut surtout pas
+            // repeindre en banal conflit d'attribution.
             return BillingV2AdditionalUserAssignmentResult.Reject(
                 ClassifyDuplicate(exception));
         }
+    }
+
+    /// <summary>
+    /// Relit l'occupation de la place, hors transaction.
+    /// </summary>
+    private static async Task<string?> ReadSlotIdentityReferenceAsync(
+        MySqlConnection connection,
+        string subscriptionUserId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT identity_reference
+            FROM billing_v2_subscription_users
+            WHERE id = @subscription_user_id
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue(
+            "@subscription_user_id",
+            subscriptionUserId);
+
+        var value = await command.ExecuteScalarAsync(cancellationToken);
+        return value is null or DBNull
+            ? null
+            : Convert.ToString(value, CultureInfo.InvariantCulture);
     }
 
     /// <summary>
