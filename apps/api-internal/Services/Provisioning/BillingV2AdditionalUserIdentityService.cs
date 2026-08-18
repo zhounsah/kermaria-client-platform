@@ -494,41 +494,94 @@ public sealed class BillingV2AdditionalUserIdentityService
                 $"Le mot de passe doit comporter entre {MinPasswordLength} et {MaxPasswordLength} caracteres.");
         }
 
-        // Verifie AVANT de consommer le jeton : celui-ci est a usage unique,
-        // et decouvrir ensuite que le mot de passe n'atteindra jamais KoXo
-        // laisserait un compte portail sans identite annuaire et sans second
-        // lien pour recommencer.
-        if (_adConfiguration.KoxoOwnsDirectory
-            && !_pendingPasswords.IsOperational)
+        var tokenHash = PortalSetupToken.Hash(normalizedToken);
+
+        // Lecture prealable, hors verrou, pour savoir CE QU'IL FAUDRA ecrire
+        // dans la transaction. Elle n'autorise rien : la transaction relit le
+        // jeton sous verrou et refuse si le relais prepare designe quelqu'un
+        // d'autre.
+        var target = await _passwordSetups.FindByTokenHashAsync(
+            tokenHash,
+            cancellationToken);
+        if (target is null || !target.IsUsable(DateTime.UtcNow))
         {
-            _logger.LogError(
-                "KoXo password handoff is not operational: refusing to consume a password setup token.");
             return Failure(
-                BillingV2AdditionalUserMaterializationCodes
-                    .PasswordHandoffUnavailable,
-                "La definition du mot de passe est momentanement indisponible.");
+                ClassifyTarget(target),
+                DescribeTokenFailure(ClassifyTarget(target)));
         }
 
-        // La consommation du jeton et l'ecriture du condensat sont
-        // indissociables : un jeton consomme sans mot de passe pose laisserait
-        // un compte inaccessible et un lien mort.
+        var record = await _repository.FindByPortalUserIdAsync(
+            target.PortalUserId,
+            cancellationToken);
+
+        PortalPasswordHandoff? handoff = null;
+        if (record is not null)
+        {
+            PortalPasswordSecret? secret = null;
+            if (_adConfiguration.KoxoOwnsDirectory)
+            {
+                // Le mot de passe voyage par la colonne 14 du CSV : il est
+                // scelle ici, jamais ecrit en LDAP, sinon ForcePasswords=1
+                // l'ecraserait au passage suivant.
+                //
+                // Le scellement precede la consommation : sans lui, on
+                // consommerait un jeton a usage unique pour decouvrir ensuite
+                // que le secret n'atteindra jamais l'annuaire, sans second
+                // lien pour recommencer.
+                secret = _pendingPasswords.Seal(target.PortalUserId, password);
+                if (secret is null)
+                {
+                    _logger.LogError(
+                        "KoXo password handoff is not operational: refusing to consume a password setup token.");
+                    return Failure(
+                        BillingV2AdditionalUserMaterializationCodes
+                            .PasswordHandoffUnavailable,
+                        "La definition du mot de passe est momentanement indisponible.");
+                }
+            }
+
+            handoff = new PortalPasswordHandoff(
+                target.PortalUserId,
+                record.Id,
+                DateTime.UtcNow,
+                secret);
+        }
+
+        // UNE transaction : verrou du jeton, condensat du mot de passe,
+        // consommation, secret scelle, transition du cycle de vie. Le decoupage
+        // precedent laissait une fenetre ou le jeton etait deja consomme alors
+        // que le secret n'existait nulle part — et il n'existe en clair qu'a
+        // cet instant. Aucun appel reseau ici : le declenchement KoXo suit le
+        // COMMIT.
         var consumption = await _passwordSetups.ConsumeAndSetPasswordAsync(
-            PortalSetupToken.Hash(normalizedToken),
+            tokenHash,
             portalUserId => _passwordService.HashPassword(
                 portalUserId,
                 password),
+            handoff,
             cancellationToken);
         if (!consumption.Succeeded)
         {
+            if (string.Equals(
+                    consumption.Code,
+                    PortalPasswordSetupCodes.HandoffFailed,
+                    StringComparison.Ordinal))
+            {
+                _logger.LogError(
+                    "Password handoff transaction rolled back for portal_user_id {PortalUserId}; nothing was consumed.",
+                    target.PortalUserId);
+                return Failure(
+                    BillingV2AdditionalUserMaterializationCodes
+                        .PasswordHandoffUnavailable,
+                    "La definition du mot de passe est momentanement indisponible.");
+            }
+
             return Failure(
                 consumption.Code,
                 DescribeTokenFailure(consumption.Code));
         }
 
         var portalUserId = consumption.PortalUserId!;
-        var record = await _repository.FindByPortalUserIdAsync(
-            portalUserId,
-            cancellationToken);
         if (record is null)
         {
             // Le mot de passe est pose et le compte portail fonctionne : seule
@@ -544,36 +597,6 @@ public sealed class BillingV2AdditionalUserIdentityService
                 portalUserId);
         }
 
-        if (_adConfiguration.KoxoOwnsDirectory
-            && !await _pendingPasswords.PublishAsync(
-                portalUserId,
-                password,
-                cancellationToken))
-        {
-            // Le mot de passe voyage par la colonne 14 du CSV : il est publie
-            // pour le prochain export, jamais ecrit en LDAP, sinon
-            // ForcePasswords=1 l'ecraserait au passage suivant.
-            //
-            // S'il n'a pas pu etre retenu, on ne declenche RIEN : une
-            // synchronisation KoXo creerait alors le compte annuaire avec un
-            // mot de passe que personne ne connait.
-            _logger.LogError(
-                "Pending KoXo password could not be stored for portal_user_id {PortalUserId}; directory handoff aborted.",
-                portalUserId);
-            return Failure(
-                BillingV2AdditionalUserMaterializationCodes
-                    .PasswordHandoffUnavailable,
-                "Votre mot de passe est enregistre, mais l'activation de vos "
-                + "acces n'a pas pu demarrer. Contactez le support.",
-                record);
-        }
-
-        var now = DateTime.UtcNow;
-        await _repository.MarkKoxoPendingAsync(
-            record.Id,
-            now,
-            now,
-            cancellationToken);
         await TriggerKoxoSyncAsync(record, "additional_user_password_set", cancellationToken);
 
         var materialization = await MaterializeCoreAsync(
@@ -588,6 +611,15 @@ public sealed class BillingV2AdditionalUserIdentityService
             portalUserId,
             materialization.LifecycleStatus);
     }
+
+    private static string ClassifyTarget(PortalPasswordSetupTarget? target)
+        => target switch
+        {
+            null => PortalPasswordSetupCodes.TokenInvalid,
+            { IsConsumed: true } => PortalPasswordSetupCodes.TokenAlreadyUsed,
+            { IsSuperseded: true } => PortalPasswordSetupCodes.TokenInvalid,
+            _ => PortalPasswordSetupCodes.TokenExpired
+        };
 
     // ------------------------------------------------------------------
     // 3. MATERIALISATION ANNUAIRE
@@ -645,6 +677,12 @@ public sealed class BillingV2AdditionalUserIdentityService
         switch (record.Status)
         {
             case BillingV2UserIdentityStatuses.Ready:
+                // Idempotent : un cycle deja conclu ne doit conserver aucun
+                // secret. Si l'acquittement precedent n'a pas abouti — arret
+                // juste apres la conclusion — c'est ici qu'il se rattrape.
+                await _pendingPasswords.AcknowledgeAsync(
+                    record.PortalUserId,
+                    cancellationToken);
                 return Success(
                     BillingV2AdditionalUserMaterializationCodes.Ready,
                     "L'identite est prete.",
@@ -844,18 +882,24 @@ public sealed class BillingV2AdditionalUserIdentityService
                 record with { Status = BillingV2UserIdentityStatuses.DirectoryReady });
         }
 
-        await _repository.MarkReadyAsync(
-            record.Id,
-            DateTime.UtcNow,
-            cancellationToken);
-
         // Le lien annuaire vient d'etre relu en base : c'est la preuve durable
         // que KoXo a bien cree l'identite et repris le mot de passe. Seulement
         // maintenant le secret peut disparaitre. L'acquitter plus tot — au
         // premier instantane, comme le faisait la version d'origine — le
         // perdait des que l'export echouait ensuite ou que l'API redemarrait.
+        //
+        // Avant la conclusion, et non apres : un arret entre les deux laisse
+        // un cycle `directory_ready` dont le lien existe deja, donc que
+        // l'export reprend par la branche normale, sans exiger de secret. Le
+        // rejeu acquitte de nouveau — l'effacement est idempotent — puis
+        // conclut.
         await _pendingPasswords.AcknowledgeAsync(
             record.PortalUserId,
+            cancellationToken);
+
+        await _repository.MarkReadyAsync(
+            record.Id,
+            DateTime.UtcNow,
             cancellationToken);
 
         return Success(

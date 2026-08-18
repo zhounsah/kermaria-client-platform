@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using Kermaria.ApiInternal.Data.Configuration;
+using Kermaria.ApiInternal.Data.Repositories;
 using MySqlConnector;
 
 namespace Kermaria.ApiInternal.Services;
@@ -43,6 +44,22 @@ public interface IKoxoPendingPasswordStore
     /// </remarks>
     bool IsOperational { get; }
 
+    /// <summary>
+    /// Scelle le mot de passe, sans rien ecrire.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Separe de l'ecriture pour que celle-ci puisse avoir lieu dans la meme
+    /// transaction que la consommation du jeton. Le clair ne franchit pas
+    /// cette frontiere : ce qui en sort est deja un chiffre authentifie.
+    /// </para>
+    /// <para>
+    /// <c>null</c> quand la configuration necessaire manque — l'appelant doit
+    /// alors refuser avant tout point de non-retour.
+    /// </para>
+    /// </remarks>
+    PortalPasswordSecret? Seal(string portalUserId, string password);
+
     /// <summary>Retient le mot de passe destine a cet utilisateur portail.</summary>
     /// <returns>Faux si le secret n'a pas pu etre retenu durablement.</returns>
     Task<bool> PublishAsync(
@@ -78,11 +95,17 @@ public interface IKoxoPendingPasswordStore
 /// redemarrage ni a une seconde instance. En persistance SQL c'est
 /// <see cref="MariaDbKoxoPendingPasswordStore"/> qui est enregistre.
 /// </remarks>
-public sealed class KoxoPendingPasswordStore : IKoxoPendingPasswordStore
+public sealed class KoxoPendingPasswordStore
+    : IKoxoPendingPasswordStore, IKoxoPendingPasswordSealSink
 {
     private sealed record Entry(string Password, DateTime ExpiresAtUtc);
 
     private readonly ConcurrentDictionary<string, Entry> _entries =
+        new(StringComparer.Ordinal);
+    // Scelles pas encore attaches. Le clair y attend, comme il attend dans une
+    // transaction ouverte cote SQL : visible de personne tant que l'unite de
+    // travail n'a pas abouti.
+    private readonly ConcurrentDictionary<string, Entry> _staged =
         new(StringComparer.Ordinal);
     private readonly TimeSpan _lifetime;
     private readonly ILogger<KoxoPendingPasswordStore> _logger;
@@ -96,6 +119,36 @@ public sealed class KoxoPendingPasswordStore : IKoxoPendingPasswordStore
     }
 
     public bool IsOperational => true;
+
+    /// <remarks>
+    /// Sans cle en mode mock : le « chiffre » est une poignee opaque, et le
+    /// clair reste dans le magasin. L'important est que la frontiere ait la
+    /// meme forme qu'en production — rien de lisible n'en sort.
+    /// </remarks>
+    public PortalPasswordSecret? Seal(string portalUserId, string password)
+    {
+        if (string.IsNullOrWhiteSpace(portalUserId)
+            || string.IsNullOrEmpty(password))
+        {
+            return null;
+        }
+
+        var handle = Guid.NewGuid().ToString("N");
+        var expiresAt = DateTime.UtcNow.Add(_lifetime);
+        _staged[handle] = new Entry(password, expiresAt);
+        return new PortalPasswordSecret(handle, "mock", expiresAt);
+    }
+
+    public void AttachSealed(string portalUserId, PortalPasswordSecret secret)
+    {
+        if (!_staged.TryRemove(secret.Ciphertext, out var entry))
+        {
+            throw new InvalidOperationException(
+                "Le scelle presente n'existe pas ou a deja ete attache.");
+        }
+
+        _entries[portalUserId] = entry;
+    }
 
     public Task<bool> PublishAsync(
         string portalUserId,
@@ -361,6 +414,21 @@ public sealed class MariaDbKoxoPendingPasswordStore : IKoxoPendingPasswordStore
                 : DefaultLifetimeMinutes);
 
     public bool IsOperational => _protector is not null;
+
+    public PortalPasswordSecret? Seal(string portalUserId, string password)
+    {
+        if (_protector is null
+            || string.IsNullOrWhiteSpace(portalUserId)
+            || string.IsNullOrEmpty(password))
+        {
+            return null;
+        }
+
+        return new PortalPasswordSecret(
+            _protector.Protect(password, portalUserId),
+            _protector.KeyId,
+            DateTime.UtcNow.Add(_lifetime));
+    }
 
     public async Task<bool> PublishAsync(
         string portalUserId,

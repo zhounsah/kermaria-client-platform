@@ -70,7 +70,11 @@ public sealed class MockPortalUserStore
         }
     }
 
-    public bool TrySetPasswordHash(string portalUserId, string passwordHash)
+    /// <param name="passwordHash">
+    /// Nul pour revenir a l'etat « sans mot de passe » : c'est ce que fait une
+    /// annulation de transaction simulee.
+    /// </param>
+    public bool TrySetPasswordHash(string portalUserId, string? passwordHash)
     {
         if (!_byId.TryGetValue(portalUserId, out var entry))
         {

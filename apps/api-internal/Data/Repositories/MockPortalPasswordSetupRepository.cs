@@ -108,9 +108,23 @@ public sealed class MockPortalPasswordSetupRepository
         }
     }
 
+    /// <summary>
+    /// Recoit le secret scelle quand la transaction simulee aboutit.
+    /// </summary>
+    /// <remarks>
+    /// Renseigne apres construction : le magasin de secrets et ce depot se
+    /// connaissent mutuellement, et l'un des deux doit donc etre branche
+    /// ensuite.
+    /// </remarks>
+    public IKoxoPendingPasswordSealSink? SealSink { get; set; }
+
+    /// <summary>Fait avancer le cycle de vie dans la meme unite de travail.</summary>
+    public IBillingV2UserIdentityTransitionSink? LifecycleSink { get; set; }
+
     public Task<PortalPasswordSetupConsumption> ConsumeAndSetPasswordAsync(
         string tokenHash,
         Func<string, string> hashPasswordForUser,
+        PortalPasswordHandoff? handoff,
         CancellationToken cancellationToken)
     {
         lock (_gate)
@@ -143,6 +157,19 @@ public sealed class MockPortalPasswordSetupRepository
                     null));
             }
 
+            if (handoff is not null
+                && !string.Equals(
+                    handoff.PortalUserId,
+                    entry.PortalUserId,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(new PortalPasswordSetupConsumption(
+                    PortalPasswordSetupCodes.TokenInvalid,
+                    null));
+            }
+
+            var previousHash = _portalUsers.Find(entry.PortalUserId)
+                ?.PasswordHash;
             if (!_portalUsers.TrySetPasswordHash(
                     entry.PortalUserId,
                     hashPasswordForUser(entry.PortalUserId)))
@@ -152,10 +179,53 @@ public sealed class MockPortalPasswordSetupRepository
                     null));
             }
 
+            // Tout ou rien, comme la transaction reelle : si le relais ou la
+            // transition echoue, le mot de passe pose est repris et le jeton
+            // n'est pas consomme. Sans cela le mock validerait un chemin que
+            // la base refuse, et la classe de bug qu'on corrige resterait
+            // invisible hors MariaDB.
+            if (handoff is not null && !TryApplyHandoff(handoff))
+            {
+                _portalUsers.TrySetPasswordHash(
+                    entry.PortalUserId,
+                    previousHash);
+                return Task.FromResult(new PortalPasswordSetupConsumption(
+                    PortalPasswordSetupCodes.HandoffFailed,
+                    null));
+            }
+
             entry.ConsumedAtUtc = DateTime.UtcNow;
             return Task.FromResult(new PortalPasswordSetupConsumption(
                 PortalPasswordSetupCodes.Consumed,
                 entry.PortalUserId));
+        }
+    }
+
+    private bool TryApplyHandoff(PortalPasswordHandoff handoff)
+    {
+        try
+        {
+            if (handoff.Secret is not null)
+            {
+                if (SealSink is null)
+                {
+                    return false;
+                }
+
+                SealSink.AttachSealed(handoff.PortalUserId, handoff.Secret);
+            }
+
+            return LifecycleSink is not null
+                && LifecycleSink.TryMarkKoxoPending(
+                    handoff.LifecycleId,
+                    handoff.PortalUserId,
+                    handoff.AtUtc);
+        }
+        catch (InvalidOperationException)
+        {
+            // Panne simulee du relais : traitee comme un echec de transaction,
+            // pas comme une exception qui remonterait a l'appelant.
+            return false;
         }
     }
 

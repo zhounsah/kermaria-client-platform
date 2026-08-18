@@ -211,6 +211,26 @@ public sealed class KoxoExportService : IKoxoExportService
                 fields.Add("email");
             }
 
+            // Fail-closed. Une ligne presente par l'exception Billing V2 fera
+            // CREER l'objet annuaire par KoXo : sans mot de passe en colonne
+            // 14, le compte naitrait avec un secret que personne ne connait,
+            // et aucune synchronisation ulterieure ne le rattraperait puisque
+            // le compte existerait deja. Un secret absent, expire, scelle sous
+            // une autre cle ou illisible aboutit ici de la meme facon — on ne
+            // devine jamais.
+            string? pendingPassword = null;
+            if (consumePendingPasswords)
+            {
+                pendingPassword = await _pendingPasswords.PeekAsync(
+                    candidate.PortalUserId,
+                    cancellationToken);
+                if (candidate.RequiresPendingPassword
+                    && pendingPassword is null)
+                {
+                    fields.Add("motDePasse");
+                }
+            }
+
             if (fields.Count > 0)
             {
                 invalidUsers.Add(CreateInvalidUser(candidate, fields));
@@ -226,11 +246,7 @@ public sealed class KoxoExportService : IKoxoExportService
                 groupeSecondaire!,
                 email!,
                 ResolveGroupePrimaire(candidate),
-                consumePendingPasswords
-                    ? await _pendingPasswords.PeekAsync(
-                        candidate.PortalUserId,
-                        cancellationToken)
-                    : null));
+                pendingPassword));
         }
 
         foreach (var duplicate in candidates

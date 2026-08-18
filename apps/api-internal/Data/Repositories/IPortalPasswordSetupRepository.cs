@@ -23,12 +23,84 @@ public sealed record PortalPasswordSetupTarget(
         => !IsConsumed && !IsSuperseded && !IsExpired(nowUtc);
 }
 
+/// <summary>
+/// Secret scelle, pret a etre ecrit sans jamais transiter en clair.
+/// </summary>
+/// <remarks>
+/// Le scellement est fait par le magasin de mots de passe en attente, qui seul
+/// detient la cle. Ce qui traverse ensuite les couches n'est plus qu'un chiffre
+/// authentifie : ni le depot, ni la transaction, ni un journal ne voient le mot
+/// de passe.
+/// </remarks>
+public sealed record PortalPasswordSecret(
+    string Ciphertext,
+    string KeyId,
+    DateTime ExpiresAtUtc);
+
+/// <summary>
+/// Ce qui doit etre ecrit <b>dans la meme transaction</b> que la consommation
+/// du jeton.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Sans cela, le chemin comportait une fenetre irrattrapable : le jeton etait
+/// consomme et le mot de passe pose dans une premiere transaction, puis le
+/// secret destine a KoXo publie dans une seconde. Un arret entre les deux
+/// laissait un jeton mort — il est a usage unique — et aucun moyen de
+/// retrouver le mot de passe, qui n'existe en clair qu'a cet instant. La
+/// personne se connectait au portail mais n'avait jamais ni VPN, ni RDS, ni
+/// stockage, sans aucune erreur visible.
+/// </para>
+/// <para>
+/// <see cref="Secret"/> est nul quand KoXo n'est pas maitre de l'annuaire :
+/// il n'y a alors aucun relais a alimenter, mais la transition du cycle de vie
+/// reste due.
+/// </para>
+/// </remarks>
+public sealed record PortalPasswordHandoff(
+    string PortalUserId,
+    string LifecycleId,
+    DateTime AtUtc,
+    PortalPasswordSecret? Secret);
+
+/// <summary>
+/// Point d'attache du secret scelle, reserve aux depots <b>mock</b>.
+/// </summary>
+/// <remarks>
+/// En persistance reelle le secret est ecrit par le depot SQL a l'interieur de
+/// la transaction. En mock il n'y a pas de transaction : c'est le magasin en
+/// memoire qui joue ce role, et l'attache n'a lieu qu'au moment ou la
+/// transaction simulee reussit.
+/// </remarks>
+public interface IKoxoPendingPasswordSealSink
+{
+    void AttachSealed(string portalUserId, PortalPasswordSecret secret);
+}
+
+/// <summary>
+/// Transition du cycle de vie a effectuer dans la meme transaction, reservee
+/// aux depots <b>mock</b>.
+/// </summary>
+public interface IBillingV2UserIdentityTransitionSink
+{
+    bool TryMarkKoxoPending(
+        string lifecycleId,
+        string portalUserId,
+        DateTime atUtc);
+}
+
 public static class PortalPasswordSetupCodes
 {
     public const string Consumed = "PASSWORD_SET";
     public const string TokenInvalid = "TOKEN_INVALID";
     public const string TokenExpired = "TOKEN_EXPIRED";
     public const string TokenAlreadyUsed = "TOKEN_ALREADY_USED";
+
+    /// <summary>
+    /// Le relais du mot de passe ou la transition du cycle de vie a echoue :
+    /// rien n'a ete conserve, le jeton reste utilisable.
+    /// </summary>
+    public const string HandoffFailed = "PASSWORD_HANDOFF_FAILED";
 }
 
 /// <summary>
@@ -109,8 +181,20 @@ public interface IPortalPasswordSetupRepository
     /// resolution du jeton.
     /// </para>
     /// </remarks>
+    /// <param name="handoff">
+    /// Ce qui doit etre ecrit dans la <b>meme</b> transaction : le secret
+    /// scelle destine a KoXo et la transition du cycle de vie. Nul pour un
+    /// utilisateur sans cycle de vie Billing V2, ou le comportement se limite
+    /// a la consommation et au mot de passe.
+    /// <para>
+    /// Aucun appel reseau ici : le declenchement KoXo est fait par l'appelant
+    /// <b>apres</b> le COMMIT. Tenir une transaction ouverte pendant un appel
+    /// sortant exposerait la base a la latence d'un tiers.
+    /// </para>
+    /// </param>
     Task<PortalPasswordSetupConsumption> ConsumeAndSetPasswordAsync(
         string tokenHash,
         Func<string, string> hashPasswordForUser,
+        PortalPasswordHandoff? handoff,
         CancellationToken cancellationToken);
 }

@@ -280,7 +280,15 @@ builder.Services.AddScoped<IKoxoRepository>(
 builder.Services.AddSingleton<MockPortalUserStore>();
 builder.Services.AddSingleton<MockPortalPasswordSetupRepository>(
     serviceProvider => new MockPortalPasswordSetupRepository(
-        serviceProvider.GetRequiredService<MockPortalUserStore>()));
+        serviceProvider.GetRequiredService<MockPortalUserStore>())
+    {
+        // En mock, c'est le magasin en memoire qui tient lieu de transaction
+        // pour le secret : il ne le rend visible qu'au moment ou l'unite de
+        // travail aboutit. En persistance SQL, le depot MariaDB l'ecrit
+        // lui-meme dans sa transaction et ce point d'attache reste nul.
+        SealSink = serviceProvider.GetRequiredService<IKoxoPendingPasswordStore>()
+            as IKoxoPendingPasswordSealSink
+    });
 builder.Services.AddScoped<IPortalPasswordSetupRepository>(
     serviceProvider => sqlConfiguration.IsPersistent
         ? new MariaDbPortalPasswordSetupRepository(sqlConfiguration)

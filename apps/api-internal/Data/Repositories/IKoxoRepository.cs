@@ -21,7 +21,19 @@ public sealed record KoxoExportCandidate(
     string? BirthDate,
     string Email,
     bool IsDemo = false,
-    string? KoxoGroupReference = null);
+    string? KoxoGroupReference = null,
+    /// <summary>
+    /// Vrai quand cette ligne n'est presente que par l'exception Billing V2,
+    /// sans <c>customer_ad_links</c>.
+    /// </summary>
+    /// <remarks>
+    /// KoXo va donc <b>creer</b> l'objet annuaire a partir de cette ligne, et
+    /// la colonne 14 est le seul endroit ou le mot de passe peut lui parvenir.
+    /// Exporter cette ligne sans mot de passe creerait un compte dont personne
+    /// ne connaitrait le secret, et une synchronisation ulterieure ne le
+    /// rattraperait pas : le compte existerait deja.
+    /// </remarks>
+    bool RequiresPendingPassword = false);
 
 public sealed record KoxoRunInsert(
     string Id,

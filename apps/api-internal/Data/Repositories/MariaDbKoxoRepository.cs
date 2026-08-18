@@ -40,7 +40,8 @@ public sealed class MariaDbKoxoRepository : IKoxoRepository
                 ReadNullableDate(reader, "birth_date"),
                 reader.GetString("email"),
                 reader.GetBoolean("is_demo"),
-                ReadNullableString(reader, "koxo_group_reference")));
+                ReadNullableString(reader, "koxo_group_reference"),
+                reader.GetBoolean("requires_pending_password")));
         }
 
         return items;

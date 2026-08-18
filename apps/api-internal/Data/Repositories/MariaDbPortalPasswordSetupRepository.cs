@@ -130,6 +130,7 @@ public sealed class MariaDbPortalPasswordSetupRepository
     public async Task<PortalPasswordSetupConsumption> ConsumeAndSetPasswordAsync(
         string tokenHash,
         Func<string, string> hashPasswordForUser,
+        PortalPasswordHandoff? handoff,
         CancellationToken cancellationToken)
     {
         await using var connection = new MySqlConnection(_connectionString);
@@ -200,6 +201,21 @@ public sealed class MariaDbPortalPasswordSetupRepository
                 null);
         }
 
+        // Le relais a ete prepare a partir d'une lecture anterieure, hors
+        // verrou. Si le jeton designe finalement quelqu'un d'autre, ecrire ce
+        // secret attribuerait le mot de passe d'une personne a une autre.
+        if (handoff is not null
+            && !string.Equals(
+                handoff.PortalUserId,
+                portalUserId,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return new PortalPasswordSetupConsumption(
+                PortalPasswordSetupCodes.TokenInvalid,
+                null);
+        }
+
         // La condition complete est repetee dans le UPDATE : le FOR UPDATE
         // protege de la concurrence, cette clause protege d'une relecture
         // devenue fausse et rend le nombre de lignes affectees decisif.
@@ -258,9 +274,117 @@ public sealed class MariaDbPortalPasswordSetupRepository
             }
         }
 
+        if (handoff is not null)
+        {
+            // Meme transaction, volontairement. Une seconde transaction — ce
+            // qu'on faisait — laissait une fenetre ou le jeton etait deja
+            // consomme alors que le secret n'existait nulle part : la personne
+            // se connectait au portail sans jamais obtenir ses acces, et le
+            // mot de passe en clair n'existait plus pour recommencer.
+            if (handoff.Secret is not null
+                && !await WriteSecretAsync(
+                    connection,
+                    transaction,
+                    portalUserId,
+                    handoff.Secret,
+                    cancellationToken))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return new PortalPasswordSetupConsumption(
+                    PortalPasswordSetupCodes.HandoffFailed,
+                    null);
+            }
+
+            if (!await MarkKoxoPendingAsync(
+                    connection,
+                    transaction,
+                    handoff,
+                    cancellationToken))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return new PortalPasswordSetupConsumption(
+                    PortalPasswordSetupCodes.HandoffFailed,
+                    null);
+            }
+        }
+
         await transaction.CommitAsync(cancellationToken);
         return new PortalPasswordSetupConsumption(
             PortalPasswordSetupCodes.Consumed,
             portalUserId);
+    }
+
+    private static async Task<bool> WriteSecretAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        string portalUserId,
+        PortalPasswordSecret secret,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        // Le compteur de relectures repart de zero : c'est un nouveau secret,
+        // pas la suite du precedent.
+        command.CommandText =
+            """
+            INSERT INTO koxo_pending_directory_passwords (
+                portal_user_id, ciphertext, key_id, expires_at,
+                published_count, created_at, updated_at
+            ) VALUES (
+                @portal_user_id, @ciphertext, @key_id, @expires_at,
+                0, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6)
+            )
+            ON DUPLICATE KEY UPDATE
+                ciphertext = VALUES(ciphertext),
+                key_id = VALUES(key_id),
+                expires_at = VALUES(expires_at),
+                published_count = 0,
+                last_published_at = NULL,
+                updated_at = UTC_TIMESTAMP(6);
+            """;
+        command.Parameters.AddWithValue("@portal_user_id", portalUserId);
+        command.Parameters.AddWithValue("@ciphertext", secret.Ciphertext);
+        command.Parameters.AddWithValue("@key_id", secret.KeyId);
+        command.Parameters.AddWithValue("@expires_at", secret.ExpiresAtUtc);
+        return await command.ExecuteNonQueryAsync(cancellationToken) >= 1;
+    }
+
+    /// <summary>
+    /// Fait passer le cycle de vie en <c>koxo_pending</c>, sous la meme
+    /// transaction.
+    /// </summary>
+    /// <remarks>
+    /// Meme clause d'entree que
+    /// <see cref="MariaDbBillingV2AdditionalUserIdentityRepository"/>, plus la
+    /// verification que le cycle vise bien cet utilisateur portail : le
+    /// <c>lifecycle_id</c> vient d'une lecture faite avant le verrou.
+    /// </remarks>
+    private static async Task<bool> MarkKoxoPendingAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        PortalPasswordHandoff handoff,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            UPDATE billing_v2_user_identity_provisioning
+            SET status = 'koxo_pending',
+                password_set_at = COALESCE(password_set_at, @at),
+                koxo_triggered_at = @at,
+                failure_code = NULL,
+                failure_detail = NULL,
+                updated_at = UTC_TIMESTAMP(6)
+            WHERE id = @id
+              AND portal_user_id = @portal_user_id
+              AND status IN ('awaiting_password', 'koxo_pending', 'failed');
+            """;
+        command.Parameters.AddWithValue("@id", handoff.LifecycleId);
+        command.Parameters.AddWithValue(
+            "@portal_user_id",
+            handoff.PortalUserId);
+        command.Parameters.AddWithValue("@at", handoff.AtUtc);
+        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
     }
 }

@@ -72,7 +72,12 @@ public static class KoxoExportCandidateQuery
             portal_user.birth_date AS birth_date,
             portal_user.email AS email,
             customer.is_demo AS is_demo,
-            customer.koxo_group_reference AS koxo_group_reference
+            customer.koxo_group_reference AS koxo_group_reference,
+            -- Sans lien AD et hors demonstration, une ligne ne peut etre la
+            -- que par l'exception Billing V2 : KoXo doit alors creer l'objet,
+            -- et le mot de passe ne peut lui parvenir que par le CSV.
+            (ad_link.portal_user_id IS NULL AND customer.is_demo = FALSE)
+                AS requires_pending_password
         FROM portal_users portal_user
         INNER JOIN customers customer
             ON customer.id = portal_user.customer_id

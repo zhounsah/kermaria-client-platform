@@ -19,7 +19,8 @@ namespace Kermaria.ApiInternal.Data.Repositories;
 /// </para>
 /// </remarks>
 public sealed class MockBillingV2AdditionalUserIdentityRepository
-    : IBillingV2AdditionalUserIdentityRepository
+    : IBillingV2AdditionalUserIdentityRepository,
+      IBillingV2UserIdentityTransitionSink
 {
     /// <summary>Place d'abonnement simulee.</summary>
     public sealed class Slot
@@ -70,6 +71,44 @@ public sealed class MockBillingV2AdditionalUserIdentityRepository
     {
         _portalUsers = portalUsers;
         _passwordSetups = passwordSetups;
+        // Le depot de jetons doit pouvoir faire avancer le cycle de vie dans
+        // la meme unite de travail que la consommation, comme la transaction
+        // MariaDB le fait en une seule fois.
+        _passwordSetups.LifecycleSink = this;
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Meme clause d'entree que la transition asynchrone, plus la verification
+    /// que le cycle vise bien cet utilisateur portail : l'identifiant vient
+    /// d'une lecture faite avant le verrou.
+    /// </remarks>
+    public bool TryMarkKoxoPending(
+        string lifecycleId,
+        string portalUserId,
+        DateTime atUtc)
+    {
+        if (!_lifecycles.TryGetValue(lifecycleId, out var lifecycle)
+            || !string.Equals(
+                lifecycle.PortalUserId,
+                portalUserId,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (lifecycle.Status is not (BillingV2UserIdentityStatuses.AwaitingPassword
+            or BillingV2UserIdentityStatuses.KoxoPending
+            or BillingV2UserIdentityStatuses.Failed))
+        {
+            return false;
+        }
+
+        lifecycle.Status = BillingV2UserIdentityStatuses.KoxoPending;
+        lifecycle.PasswordSetAtUtc ??= atUtc;
+        lifecycle.FailureCode = null;
+        lifecycle.FailureDetail = null;
+        return true;
     }
 
     public bool IsPersistent => false;

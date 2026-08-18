@@ -71,6 +71,12 @@ public static class BillingV2AdditionalUserIdentityTests
         await VerifyGateOffStillValidatesATokenReadOnly();
         await VerifyUnavailableHandoffNeverConsumesTheToken();
         VerifyProtectorRoundTripsWithoutLeakingPlaintext();
+        await VerifyTokenAndSecretCommitTogether();
+        await VerifyFailedHandoffRollsEverythingBack();
+        await VerifyExportRefusesALineWithoutItsSecret();
+        await VerifyExportRefusesAnUnreadableSecret();
+        await VerifyLinkedUserNeedsNoPendingSecret();
+        await VerifyAcknowledgeAndReadyAreIdempotent();
         VerifyExportQueryKeepsEveryMandatoryCondition();
         VerifyAssignmentPolicyRefusesEveryIncoherentSnapshot();
     }
@@ -1056,6 +1062,400 @@ public static class BillingV2AdditionalUserIdentityTests
         }
     }
 
+    // ==================================================================
+    // Atomicite du relais, fail-closed de l'export, nettoyage
+    // ==================================================================
+
+    /// <summary>
+    /// Il n'existe aucun instant ou le jeton est consomme sans que le secret
+    /// existe.
+    /// </summary>
+    /// <remarks>
+    /// Ce n'est pas une question de sequencement mais de construction : les
+    /// deux ecritures sont dans la meme unite de travail, donc il n'y a pas
+    /// d'entre-deux ou s'arreter. Le test le constate par l'observable qui
+    /// compte — apres l'appel, jeton consomme ET secret present, ou ni l'un ni
+    /// l'autre.
+    /// </remarks>
+    private static async Task VerifyTokenAndSecretCommitTogether()
+    {
+        var harness = Harness.Create();
+        harness.RegisterSlot("slot-1");
+        var assignment = await harness.AssignAsync(
+            "slot-1",
+            "atomique@example.invalid");
+        var token = harness.Emails.LastToken;
+        var portalUserId = assignment.PortalUserId!;
+
+        // Avant : le jeton est utilisable et aucun secret n'existe.
+        Assert(
+            await IsTokenStillUsable(harness, token)
+            && await harness.PendingPasswords.PeekAsync(
+                portalUserId,
+                CancellationToken.None) is null,
+            "Avant la saisie, jeton libre et aucun secret.");
+
+        var result = await harness.Service.SetPasswordAsync(
+            token,
+            Password,
+            CancellationToken.None);
+
+        Assert(result.Succeeded, $"La saisie doit reussir ({result.Code}).");
+        Assert(
+            !await IsTokenStillUsable(harness, token)
+            && await harness.PendingPasswords.PeekAsync(
+                portalUserId,
+                CancellationToken.None) == Password,
+            "Apres la saisie, jeton consomme ET secret present : les deux "
+            + "ecritures sont indissociables.");
+        Assert(
+            harness.Repository.StatusOf(harness.LifecycleIdOf(portalUserId))
+                == BillingV2UserIdentityStatuses.KoxoPending,
+            "La transition du cycle de vie fait partie de la meme unite de "
+            + "travail.");
+    }
+
+    /// <summary>
+    /// Une ecriture du relais qui echoue annule tout.
+    /// </summary>
+    /// <remarks>
+    /// Sans ce comportement, le jeton — a usage unique — serait perdu et le
+    /// mot de passe, qui n'existe en clair qu'a cet instant, avec lui. La
+    /// personne n'aurait plus aucun moyen de reprendre le parcours.
+    /// </remarks>
+    private static async Task VerifyFailedHandoffRollsEverythingBack()
+    {
+        var harness = Harness.Create();
+        harness.RegisterSlot("slot-1");
+        var assignment = await harness.AssignAsync(
+            "slot-1",
+            "rollback@example.invalid");
+        var token = harness.Emails.LastToken;
+        var portalUserId = assignment.PortalUserId!;
+        harness.PendingPasswords.FailAttach = true;
+
+        var result = await harness.Service.SetPasswordAsync(
+            token,
+            Password,
+            CancellationToken.None);
+
+        Assert(
+            !result.Succeeded
+            && result.Code == BillingV2AdditionalUserMaterializationCodes
+                .PasswordHandoffUnavailable,
+            $"L'echec du relais fait echouer l'ensemble ({result.Code}).");
+        Assert(
+            await IsTokenStillUsable(harness, token),
+            "Le jeton reste utilisable : rien n'a ete consomme.");
+        Assert(
+            harness.PortalUsers.Find(portalUserId)?.PasswordHash is null,
+            "Le condensat pose est repris : la transaction est annulee en "
+            + "entier, pas a moitie.");
+        Assert(
+            await harness.PendingPasswords.PeekAsync(
+                portalUserId,
+                CancellationToken.None) is null,
+            "Aucun secret n'a survecu a l'annulation.");
+        Assert(
+            harness.Repository.StatusOf(harness.LifecycleIdOf(portalUserId))
+                == BillingV2UserIdentityStatuses.AwaitingPassword,
+            "Le cycle de vie n'a pas avance.");
+        Assert(
+            harness.Koxo.Triggers.Count == 0,
+            "Aucune synchronisation KoXo n'est declenchee.");
+
+        // Le parcours reste reprenable : c'est tout l'interet de l'annulation.
+        harness.PendingPasswords.FailAttach = false;
+        var retry = await harness.Service.SetPasswordAsync(
+            token,
+            Password,
+            CancellationToken.None);
+        Assert(
+            retry.Succeeded,
+            $"Le meme lien doit encore fonctionner ({retry.Code}).");
+    }
+
+    /// <summary>
+    /// Une ligne creee par l'exception Billing V2, sans secret, refuse
+    /// l'export.
+    /// </summary>
+    /// <remarks>
+    /// KoXo va creer l'objet annuaire a partir de cette ligne. Sans mot de
+    /// passe en colonne 14, le compte naitrait avec un secret que personne ne
+    /// connait, et aucune synchronisation ulterieure ne le rattraperait :
+    /// l'objet existerait deja.
+    /// </remarks>
+    private static async Task VerifyExportRefusesALineWithoutItsSecret()
+    {
+        var service = NewExportService(
+            out var store,
+            new KoxoExportCandidate(
+                "portal-user-1",
+                "CLI-A",
+                "CLI-000001",
+                "madame",
+                "Martin",
+                "Alice",
+                "1990-04-12",
+                "alice@example.invalid",
+                IsDemo: false,
+                KoxoGroupReference: null,
+                RequiresPendingPassword: true));
+
+        var refused = await ExportFailsAsync(service);
+        Assert(
+            refused is not null
+            && refused.Any(invalid =>
+                invalid.PortalUserId == "portal-user-1"
+                && invalid.Fields.Contains("motDePasse")),
+            "Sans secret en attente, la ligne est invalide et l'export "
+            + "n'aboutit pas.");
+
+        // Avec le secret, la meme ligne passe.
+        await store.PublishAsync(
+            "portal-user-1",
+            Password,
+            CancellationToken.None);
+        var exported = await service.ExportAsync(
+            "api",
+            "phase4-handoff",
+            "127.0.0.1",
+            CancellationToken.None);
+        Assert(
+            exported.Users.Single().MotDePasse == Password,
+            "Avec son secret, la ligne part normalement.");
+    }
+
+    /// <summary>
+    /// Un secret illisible vaut un secret absent.
+    /// </summary>
+    /// <remarks>
+    /// Chiffre altere, cle tournee, entree expiree : tous aboutissent a un
+    /// <c>null</c>. Devinez a partir de la serait pire que refuser — un mot de
+    /// passe faux applique a un compte reel.
+    /// </remarks>
+    private static async Task VerifyExportRefusesAnUnreadableSecret()
+    {
+        var service = NewExportService(
+            out var store,
+            new KoxoExportCandidate(
+                "portal-user-1",
+                "CLI-A",
+                "CLI-000001",
+                "madame",
+                "Martin",
+                "Alice",
+                "1990-04-12",
+                "alice@example.invalid",
+                IsDemo: false,
+                KoxoGroupReference: null,
+                RequiresPendingPassword: true));
+        store.ReturnUnreadable = true;
+        await store.PublishAsync(
+            "portal-user-1",
+            Password,
+            CancellationToken.None);
+
+        var refused = await ExportFailsAsync(service);
+        Assert(
+            refused is not null
+            && refused.Any(invalid =>
+                invalid.Fields.Contains("motDePasse")),
+            "Un secret illisible — cle tournee, chiffre altere — est traite "
+            + "comme absent : l'export refuse au lieu de deviner.");
+    }
+
+    /// <summary>
+    /// Un utilisateur deja lie a l'annuaire n'a besoin d'aucun secret.
+    /// </summary>
+    /// <remarks>
+    /// Son objet existe : KoXo ne le cree pas, il le met a jour. Exiger un
+    /// secret ici bloquerait l'export GLOBAL — un seul invalide suffit — et
+    /// desactiverait donc tous les comptes du CSV.
+    /// </remarks>
+    private static async Task VerifyLinkedUserNeedsNoPendingSecret()
+    {
+        var service = NewExportService(
+            out _,
+            new KoxoExportCandidate(
+                "portal-user-1",
+                "CLI-A",
+                "CLI-000001",
+                "madame",
+                "Martin",
+                "Alice",
+                "1990-04-12",
+                "alice@example.invalid",
+                IsDemo: false,
+                KoxoGroupReference: null,
+                RequiresPendingPassword: false));
+
+        var exported = await service.ExportAsync(
+            "api",
+            "phase4-linked",
+            "127.0.0.1",
+            CancellationToken.None);
+
+        Assert(
+            exported.Users.Single().MotDePasse is null,
+            "Un utilisateur deja adopte part sans mot de passe, et c'est "
+            + "normal : son objet annuaire existe deja.");
+    }
+
+    /// <summary>
+    /// La conclusion et l'acquittement se rejouent sans dommage.
+    /// </summary>
+    private static async Task VerifyAcknowledgeAndReadyAreIdempotent()
+    {
+        var harness = Harness.Create();
+        harness.RegisterSlot("slot-1");
+        var assignment = await harness.AssignAsync(
+            "slot-1",
+            "idempotent@example.invalid");
+        var portalUserId = assignment.PortalUserId!;
+
+        await harness.Service.SetPasswordAsync(
+            harness.Emails.LastToken,
+            Password,
+            CancellationToken.None);
+        harness.Directory.Publish(
+            harness.KoxoIdentifierOf(portalUserId),
+            "7a0b1c2d-3e4f-5061-7283-94a5b6c7d8e9");
+
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            var result = await harness.Service.TryMaterializeAsync(
+                portalUserId,
+                CancellationToken.None);
+            Assert(
+                result.Succeeded
+                && result.LifecycleStatus
+                    == BillingV2UserIdentityStatuses.Ready,
+                $"La materialisation rejouee reste stable ({result.Code}).");
+            Assert(
+                await harness.PendingPasswords.PeekAsync(
+                    portalUserId,
+                    CancellationToken.None) is null,
+                "Un cycle conclu ne conserve aucun secret, y compris apres "
+                + "rejeu.");
+        }
+
+        var link = await harness.Links.FindUserLinkByPortalUserIdAsync(
+            portalUserId,
+            CancellationToken.None);
+        Assert(
+            link is not null
+            && string.Equals(
+                link.ObjectGuid,
+                "7a0b1c2d-3e4f-5061-7283-94a5b6c7d8e9",
+                StringComparison.OrdinalIgnoreCase),
+            "Le rejeu n'a pas fait basculer l'identite sur un autre objet.");
+    }
+
+    // ------------------------------------------------------------------
+    // Outils des tests d'export
+    // ------------------------------------------------------------------
+
+    private static KoxoExportService NewExportService(
+        out ExportPendingPasswordStore store,
+        params KoxoExportCandidate[] candidates)
+    {
+        store = new ExportPendingPasswordStore();
+        return new KoxoExportService(
+            new StubKoxoRepository(candidates),
+            store);
+    }
+
+    private static async Task<IReadOnlyList<KoxoInvalidUser>?> ExportFailsAsync(
+        KoxoExportService service)
+    {
+        try
+        {
+            await service.ExportAsync(
+                "api",
+                "phase4-fail-closed",
+                "127.0.0.1",
+                CancellationToken.None);
+        }
+        catch (KoxoValidationException exception)
+        {
+            return exception.InvalidUsers;
+        }
+
+        return null;
+    }
+
+    private sealed class StubKoxoRepository : IKoxoRepository
+    {
+        private readonly IReadOnlyList<KoxoExportCandidate> _candidates;
+
+        public StubKoxoRepository(IReadOnlyList<KoxoExportCandidate> candidates)
+            => _candidates = candidates;
+
+        public bool IsPersistent => false;
+
+        public Task<IReadOnlyList<KoxoExportCandidate>>
+            ListExportCandidatesAsync(CancellationToken cancellationToken)
+            => Task.FromResult(_candidates);
+
+        public Task InsertRunAsync(
+            KoxoRunInsert run,
+            CancellationToken cancellationToken)
+            => Task.CompletedTask;
+
+        public Task<KoxoRunSummary?> GetLatestRunAsync(
+            CancellationToken cancellationToken)
+            => Task.FromResult<KoxoRunSummary?>(null);
+
+        public Task<KoxoRunSummary?> GetLatestRunBySourceAsync(
+            string source,
+            CancellationToken cancellationToken)
+            => Task.FromResult<KoxoRunSummary?>(null);
+    }
+
+    /// <summary>
+    /// Magasin d'export capable de rendre un secret illisible.
+    /// </summary>
+    /// <remarks>
+    /// Cle tournee, chiffre altere, entree expiree : cote appelant, les trois
+    /// se presentent de la meme facon — un <c>null</c>. C'est ce que ce double
+    /// reproduit.
+    /// </remarks>
+    private sealed class ExportPendingPasswordStore : IKoxoPendingPasswordStore
+    {
+        private readonly KoxoPendingPasswordStore _inner =
+            new(NullLogger<KoxoPendingPasswordStore>.Instance);
+
+        public bool ReturnUnreadable { get; set; }
+
+        public bool IsOperational => true;
+
+        public PortalPasswordSecret? Seal(string portalUserId, string password)
+            => _inner.Seal(portalUserId, password);
+
+        public Task<bool> PublishAsync(
+            string portalUserId,
+            string password,
+            CancellationToken cancellationToken)
+            => _inner.PublishAsync(portalUserId, password, cancellationToken);
+
+        public Task<string?> PeekAsync(
+            string portalUserId,
+            CancellationToken cancellationToken)
+            => ReturnUnreadable
+                ? Task.FromResult<string?>(null)
+                : _inner.PeekAsync(portalUserId, cancellationToken);
+
+        public Task AcknowledgeAsync(
+            string portalUserId,
+            CancellationToken cancellationToken)
+            => _inner.AcknowledgeAsync(portalUserId, cancellationToken);
+
+        public Task<IReadOnlyList<string>> DrainExpiredAsync(
+            CancellationToken cancellationToken)
+            => _inner.DrainExpiredAsync(cancellationToken);
+    }
+
     /// <summary>
     /// Vrai si le jeton n'a ete ni consomme ni remplace.
     /// </summary>
@@ -1145,6 +1545,16 @@ public static class BillingV2AdditionalUserIdentityTests
                 StringComparison.Ordinal),
             "L'exception couvre exactement les deux etats ou le lien AD "
             + "n'existe pas encore.");
+
+        // L'export doit savoir, ligne par ligne, si KoXo va CREER l'objet :
+        // c'est ce qui lui permet d'exiger le mot de passe et de refuser
+        // plutot que de creer un compte au secret inconnu.
+        Assert(
+            collapsed.Contains(
+                "(ad_link.portal_user_id IS NULL AND customer.is_demo = FALSE)"
+                + " AS requires_pending_password",
+                StringComparison.Ordinal),
+            "La requete expose si la ligne exige un mot de passe en attente.");
         foreach (var forbidden in new[]
         {
             "'awaiting_password'",
@@ -1265,6 +1675,9 @@ public static class BillingV2AdditionalUserIdentityTests
             var directory = new PublishedDirectory();
             var activeDirectory = new CountingActiveDirectoryService();
             var pendingPasswords = new ControllablePendingPasswordStore();
+            // Le depot de jetons joue la transaction : il n'attache le secret
+            // qu'au moment ou l'unite de travail aboutit.
+            passwordSetups.SealSink = pendingPasswords;
             var passwordService = new PortalPasswordService();
 
             // controlled_write : c'est le mode de production, celui ou KoXo
@@ -1410,14 +1823,36 @@ public static class BillingV2AdditionalUserIdentityTests
     /// chemin fail-closed le plus important du lot ne serait jamais parcouru.
     /// </remarks>
     internal sealed class ControllablePendingPasswordStore
-        : IKoxoPendingPasswordStore
+        : IKoxoPendingPasswordStore, IKoxoPendingPasswordSealSink
     {
         private readonly KoxoPendingPasswordStore _inner =
             new(NullLogger<KoxoPendingPasswordStore>.Instance);
 
         public bool Operational { get; set; } = true;
 
+        /// <summary>
+        /// Fait echouer l'attache du scelle, comme une insertion refusee par
+        /// la base au milieu de la transaction.
+        /// </summary>
+        public bool FailAttach { get; set; }
+
         public bool IsOperational => Operational;
+
+        public PortalPasswordSecret? Seal(string portalUserId, string password)
+            => Operational ? _inner.Seal(portalUserId, password) : null;
+
+        public void AttachSealed(
+            string portalUserId,
+            PortalPasswordSecret secret)
+        {
+            if (FailAttach)
+            {
+                throw new InvalidOperationException(
+                    "Echec simule de l'ecriture du relais.");
+            }
+
+            _inner.AttachSealed(portalUserId, secret);
+        }
 
         public Task<bool> PublishAsync(
             string portalUserId,
