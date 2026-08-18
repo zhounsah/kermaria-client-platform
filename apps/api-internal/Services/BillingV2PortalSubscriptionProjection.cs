@@ -140,8 +140,54 @@ public sealed class BillingV2PortalSubscriptionProjection
                 WHERE settled_event.subscription_id = subscription.id
                   AND settled_event.settlement_status = 'settled'
             ) AS paid_cycles_count,
+            -- Compteurs de places USER-ADDITIONAL reellement administrables :
+            -- meme definition que la lecture produit et que la politique
+            -- d'attribution, droit contractuel actif compris. Sous-requetes
+            -- independantes et volontairement pas une jointure : joindre les
+            -- places au calcul financier multiplierait les lignes d'items et
+            -- fausserait les montants.
+            (
+                SELECT COUNT(*)
+                FROM billing_v2_subscription_users slot
+                WHERE slot.subscription_id = subscription.id
+        """
+        + MariaDbBillingV2AdditionalUserIdentityRepository
+            .AdministrableSlotPredicate
+        + """
+                  AND EXISTS (
+                        SELECT 1
+        """
+        + MariaDbBillingV2AdditionalUserIdentityRepository
+            .UserSlotEntitlementSource
+        + """
+                          AND item.subscription_user_id = slot.id
+                          AND item.subscription_id = slot.subscription_id
+                  )
+            ) AS additional_user_slots_count,
+            (
+                SELECT COUNT(*)
+                FROM billing_v2_subscription_users slot
+                WHERE slot.subscription_id = subscription.id
+                  AND slot.identity_reference IS NOT NULL
+        """
+        + MariaDbBillingV2AdditionalUserIdentityRepository
+            .AdministrableSlotPredicate
+        + """
+                  AND EXISTS (
+                        SELECT 1
+        """
+        + MariaDbBillingV2AdditionalUserIdentityRepository
+            .UserSlotEntitlementSource
+        + """
+                          AND item.subscription_user_id = slot.id
+                          AND item.subscription_id = slot.subscription_id
+                  )
+            ) AS assigned_additional_users_count,
             subscription.created_at,
             subscription.updated_at
+        """
+        + "\n"
+        + """
         FROM billing_v2_subscriptions subscription
         INNER JOIN customers customer
             ON customer.id = subscription.customer_id
@@ -294,8 +340,54 @@ public sealed class BillingV2PortalSubscriptionProjection
                 WHERE settled_event.subscription_id = subscription.id
                   AND settled_event.settlement_status = 'settled'
             ) AS paid_cycles_count,
+            -- Compteurs de places USER-ADDITIONAL reellement administrables :
+            -- meme definition que la lecture produit et que la politique
+            -- d'attribution, droit contractuel actif compris. Sous-requetes
+            -- independantes et volontairement pas une jointure : joindre les
+            -- places au calcul financier multiplierait les lignes d'items et
+            -- fausserait les montants.
+            (
+                SELECT COUNT(*)
+                FROM billing_v2_subscription_users slot
+                WHERE slot.subscription_id = subscription.id
+        """
+        + MariaDbBillingV2AdditionalUserIdentityRepository
+            .AdministrableSlotPredicate
+        + """
+                  AND EXISTS (
+                        SELECT 1
+        """
+        + MariaDbBillingV2AdditionalUserIdentityRepository
+            .UserSlotEntitlementSource
+        + """
+                          AND item.subscription_user_id = slot.id
+                          AND item.subscription_id = slot.subscription_id
+                  )
+            ) AS additional_user_slots_count,
+            (
+                SELECT COUNT(*)
+                FROM billing_v2_subscription_users slot
+                WHERE slot.subscription_id = subscription.id
+                  AND slot.identity_reference IS NOT NULL
+        """
+        + MariaDbBillingV2AdditionalUserIdentityRepository
+            .AdministrableSlotPredicate
+        + """
+                  AND EXISTS (
+                        SELECT 1
+        """
+        + MariaDbBillingV2AdditionalUserIdentityRepository
+            .UserSlotEntitlementSource
+        + """
+                          AND item.subscription_user_id = slot.id
+                          AND item.subscription_id = slot.subscription_id
+                  )
+            ) AS assigned_additional_users_count,
             subscription.created_at,
             subscription.updated_at
+        """
+        + "\n"
+        + """
         FROM billing_v2_subscriptions subscription
         INNER JOIN customers customer
             ON customer.id = subscription.customer_id
@@ -438,7 +530,9 @@ public sealed class BillingV2PortalSubscriptionProjection
             reader.GetBoolean("cancel_at_period_end"),
             reader.GetDateTime("created_at"),
             reader.GetDateTime("updated_at"),
-            reader.GetInt32("paid_cycles_count"));
+            reader.GetInt32("paid_cycles_count"),
+            reader.GetInt32("additional_user_slots_count"),
+            reader.GetInt32("assigned_additional_users_count"));
 
     private static string ReadRequiredString(
         MySqlDataReader reader,
@@ -504,7 +598,9 @@ public sealed record BillingV2PortalSubscriptionRow(
     // Cycles REELLEMENT regles, comptes sur les BillingEvents V2. Le compteur
     // legacy `subscriptions.paid_cycles_count` n'est pas alimente par le rail
     // V2 : le portail affichait donc 0 malgre un cycle encaisse.
-    int PaidCyclesCount = 0);
+    int PaidCyclesCount = 0,
+    int AdditionalUserSlotsCount = 0,
+    int AssignedAdditionalUsersCount = 0);
 
 public static class BillingV2PortalSubscriptionProjector
 {
@@ -553,7 +649,9 @@ public static class BillingV2PortalSubscriptionProjector
                 : null,
             ToIso(row.CreatedAtUtc),
             ToIso(row.UpdatedAtUtc),
-            "billing_v2");
+            "billing_v2",
+            row.AdditionalUserSlotsCount,
+            row.AssignedAdditionalUsersCount);
     }
 
     private static long ResolvePriceAmountCents(

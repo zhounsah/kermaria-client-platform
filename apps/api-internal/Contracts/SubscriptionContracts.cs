@@ -73,7 +73,40 @@ public sealed record SubscriptionSummary(
     string? CancelledAt,
     string CreatedAt,
     string UpdatedAt,
-    [property: JsonPropertyName("billingSystem")] string BillingSystem = "legacy");
+    [property: JsonPropertyName("billingSystem")] string BillingSystem = "legacy",
+
+    // Places USER-ADDITIONAL vendues sur cet abonnement, et places
+    // effectivement pourvues. Zero par defaut : le rail legacy ne vend pas de
+    // place utilisateur et ne doit rien annoncer.
+    [property: JsonPropertyName("additionalUserSlotsCount")]
+    int AdditionalUserSlotsCount = 0,
+    [property: JsonPropertyName("assignedAdditionalUsersCount")]
+    int AssignedAdditionalUsersCount = 0);
+
+/// <summary>
+/// Personne a installer sur une place USER-ADDITIONAL.
+/// </summary>
+/// <remarks>
+/// Ce que le navigateur n'envoie <b>pas</b> est aussi important que ce qu'il
+/// envoie : ni client, ni acteur, ni identifiant d'utilisateur portail. Ces
+/// trois valeurs viennent de la session cote serveur ; les accepter du client
+/// permettrait d'equiper la place d'un autre client.
+/// </remarks>
+public sealed record BillingV2AdditionalUserAssignPayload(
+    string? Email,
+    [property: JsonPropertyName("displayName")] string? DisplayName,
+    [property: JsonPropertyName("personalTitle")] string? PersonalTitle,
+    [property: JsonPropertyName("givenName")] string? GivenName,
+    string? Surname,
+    // Jour civil, format ISO `yyyy-MM-dd`. Pas un horodatage : une date de
+    // naissance n'a pas de fuseau.
+    [property: JsonPropertyName("birthDate")] string? BirthDate,
+    string? Initials,
+    string? Phone);
+
+public sealed record BillingV2AdditionalUserSetPasswordPayload(
+    string? Token,
+    string? Password);
 
 public sealed record SubscriptionProvisioningTargetUserSummary(
     string SamAccountName,

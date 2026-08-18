@@ -129,6 +129,7 @@ public sealed class MariaDbPortalPasswordSetupRepository
 
     public async Task<PortalPasswordSetupConsumption> ConsumeAndSetPasswordAsync(
         string tokenHash,
+        string expectedPurpose,
         Func<string, string> hashPasswordForUser,
         PortalPasswordHandoff? handoff,
         CancellationToken cancellationToken)
@@ -139,6 +140,7 @@ public sealed class MariaDbPortalPasswordSetupRepository
             cancellationToken);
 
         string portalUserId;
+        string purpose;
         bool consumed;
         bool superseded;
         DateTime expiresAtUtc;
@@ -148,11 +150,15 @@ public sealed class MariaDbPortalPasswordSetupRepository
             lookupCommand.Transaction = transaction;
             // FOR UPDATE : la lecture et la consommation doivent etre
             // indissociables, sinon deux requetes concurrentes liraient toutes
-            // les deux un jeton libre.
+            // les deux un jeton libre. Le `purpose` est lu ici, sous ce meme
+            // verrou, et non par un appel prealable : verifier l'usage d'un
+            // jeton en dehors de la transaction qui le consomme laisse
+            // exactement la fenetre qu'on pretend fermer.
             lookupCommand.CommandText =
                 """
                 SELECT
                     portal_user_id,
+                    purpose,
                     expires_at,
                     consumed_at,
                     superseded_at
@@ -176,11 +182,23 @@ public sealed class MariaDbPortalPasswordSetupRepository
             portalUserId = MariaDbIdentifierReader.ReadRequired(
                 reader,
                 "portal_user_id");
+            purpose = reader.GetString("purpose");
             expiresAtUtc = DateTime.SpecifyKind(
                 reader.GetDateTime("expires_at"),
                 DateTimeKind.Utc);
             consumed = !reader.IsDBNull(reader.GetOrdinal("consumed_at"));
             superseded = !reader.IsDBNull(reader.GetOrdinal("superseded_at"));
+        }
+
+        // Meme reponse qu'un jeton inconnu : distinguer un jeton d'un autre
+        // parcours d'un jeton inexistant dirait a l'appelant qu'il tient un
+        // secret valide ailleurs. Le jeton n'est pas consomme.
+        if (!string.Equals(purpose, expectedPurpose, StringComparison.Ordinal))
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return new PortalPasswordSetupConsumption(
+                PortalPasswordSetupCodes.TokenInvalid,
+                null);
         }
 
         if (consumed || superseded)
@@ -229,11 +247,13 @@ public sealed class MariaDbPortalPasswordSetupRepository
                 SET consumed_at = UTC_TIMESTAMP(6),
                     updated_at = UTC_TIMESTAMP(6)
                 WHERE token_hash = @token_hash
+                  AND purpose = @purpose
                   AND consumed_at IS NULL
                   AND superseded_at IS NULL
                   AND expires_at > UTC_TIMESTAMP(6);
                 """;
             consumeCommand.Parameters.AddWithValue("@token_hash", tokenHash);
+            consumeCommand.Parameters.AddWithValue("@purpose", expectedPurpose);
             affected = await consumeCommand.ExecuteNonQueryAsync(
                 cancellationToken);
         }

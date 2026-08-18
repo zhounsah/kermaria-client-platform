@@ -192,8 +192,20 @@ public interface IPortalPasswordSetupRepository
     /// sortant exposerait la base a la latence d'un tiers.
     /// </para>
     /// </param>
+    /// <param name="expectedPurpose">
+    /// <c>purpose</c> exige du jeton, verifie <b>sous le meme verrou</b> que la
+    /// consommation.
+    /// <para>
+    /// Le controler avant, sur une lecture separee, ne prouverait rien : entre
+    /// la lecture et la consommation, rien n'empeche que le jeton ait change.
+    /// Et un jeton emis pour un autre parcours consomme ici poserait un mot de
+    /// passe dans un flux dont ni les regles de validation ni les invariants
+    /// n'ont ete verifies.
+    /// </para>
+    /// </param>
     Task<PortalPasswordSetupConsumption> ConsumeAndSetPasswordAsync(
         string tokenHash,
+        string expectedPurpose,
         Func<string, string> hashPasswordForUser,
         PortalPasswordHandoff? handoff,
         CancellationToken cancellationToken);

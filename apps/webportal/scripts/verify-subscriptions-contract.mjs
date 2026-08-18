@@ -1056,4 +1056,315 @@ assert.match(
   "PAYPAL_WEBHOOK_VERIFY doit etre documente dans .env.example.",
 );
 
+/**
+ * Decoupe une ou plusieurs routes a leur frontiere reelle.
+ *
+ * Un decompte fixe de caracteres glisse dans la route suivante des que le
+ * fichier bouge — ne serait-ce qu'en changeant de fin de ligne — et
+ * l'assertion se met alors a parler d'autre chose que de la route visee.
+ */
+function routeSection(source, marker, routeCount = 1) {
+  const start = source.indexOf(marker);
+  assert.notEqual(start, -1, `Route introuvable dans Program.cs : ${marker}`);
+  let end = start;
+  for (let index = 0; index < routeCount; index += 1) {
+    const next = source.indexOf("\napp.Map", end + 1);
+    end = next === -1 ? source.length : next;
+  }
+  return source.slice(start, end);
+}
+
+// ----------------------------------------------------------------------
+// Utilisateurs supplementaires Billing V2 (Phase 4, cablage produit)
+// ----------------------------------------------------------------------
+
+const additionalUsersPage = await read(
+  "app/profile/subscriptions/[id]/users/page.tsx",
+);
+const additionalUsersManager = await read(
+  "components/BillingV2AdditionalUsersManager.tsx",
+);
+const additionalUsersAssignRoute = await read(
+  "app/api/subscriptions/[id]/users/[userId]/assign/route.ts",
+);
+const additionalUsersResendRoute = await read(
+  "app/api/subscriptions/[id]/users/[userId]/resend-invitation/route.ts",
+);
+const billingV2PortalProjection = await read(
+  "../../apps/api-internal/Services/BillingV2PortalSubscriptionProjection.cs",
+);
+const additionalUserRepository = await read(
+  "../../apps/api-internal/Data/Repositories/"
+  + "MariaDbBillingV2AdditionalUserIdentityRepository.cs",
+);
+
+assert.match(
+  sharedTypes,
+  /additionalUserSlotsCount\?: number;/,
+  "Le contrat partage doit porter le nombre de places utilisateur.",
+);
+assert.match(
+  sharedTypes,
+  /assignedAdditionalUsersCount\?: number;/,
+  "Le contrat partage doit porter le nombre de places attribuees.",
+);
+assert.match(
+  subscriptionContracts,
+  /"additionalUserSlotsCount"/,
+  "SubscriptionSummary doit exposer additionalUserSlotsCount.",
+);
+assert.match(
+  subscriptionContracts,
+  /"assignedAdditionalUsersCount"/,
+  "SubscriptionSummary doit exposer assignedAdditionalUsersCount.",
+);
+
+// Les compteurs passent par des sous-requetes scalaires : une jointure sur
+// billing_v2_subscription_users multiplierait les lignes financieres de la
+// projection, et donc les montants lus par l'espace client.
+for (const alias of [
+  "AS additional_user_slots_count",
+  "AS assigned_additional_users_count",
+]) {
+  assert.ok(
+    billingV2PortalProjection.includes(alias),
+    `La projection portail doit exposer ${alias}.`,
+  );
+}
+assert.ok(
+  !/JOIN\s+billing_v2_subscription_users/i.test(billingV2PortalProjection),
+  "Les compteurs ne doivent jamais etre obtenus par une jointure : elle "
+  + "dupliquerait les lignes financieres de la souscription.",
+);
+assert.ok(
+  billingV2PortalProjection.includes("UserSlotEntitlementSource"),
+  "Les compteurs doivent reutiliser la definition unique d'une place "
+  + "utilisateur supplementaire, pas une variante locale.",
+);
+// Le droit contractuel ne suffit pas : compter une place resiliee, ou les
+// places d'un abonnement resilie, annoncerait a l'ecran des places que la
+// politique d'attribution refuse ensuite systematiquement.
+assert.ok(
+  billingV2PortalProjection.includes("AdministrableSlotPredicate"),
+  "Les compteurs doivent porter le predicat d'administrabilite partage.",
+);
+assert.equal(
+  (billingV2PortalProjection.match(/AdministrableSlotPredicate/g) ?? []).length,
+  4,
+  "Les quatre compteurs — deux dans la projection client, deux dans la "
+  + "projection admin — portent le predicat.",
+);
+assert.match(
+  additionalUserRepository,
+  /internal const string AdministrableSlotPredicate/,
+  "Le predicat d'administrabilite est defini une seule fois, aupres de la "
+  + "definition d'une place utilisateur supplementaire.",
+);
+for (const predicate of [
+  "AND slot.is_primary = 0",
+  "AND slot.status = 'active'",
+  "AND subscription.status = 'active'",
+]) {
+  assert.ok(
+    additionalUserRepository.includes(predicate),
+    `Le predicat partage doit imposer « ${predicate} ».`,
+  );
+}
+// La lecture produit s'appuie sur le meme predicat que les compteurs : deux
+// clauses ecrites separement finiraient par diverger, et l'ecran listerait
+// des places que les compteurs ignorent.
+assert.match(
+  additionalUserRepository,
+  /\+ AdministrableSlotPredicate/,
+  "La lecture des places doit consommer le predicat partage.",
+);
+
+assert.match(
+  clientListPage,
+  /Utilisateurs supplémentaires/,
+  "La liste des souscriptions doit annoncer les utilisateurs supplementaires.",
+);
+assert.match(
+  clientListPage,
+  /additionalUserSlots > 0 \? \(/,
+  "Le renvoi ne s'affiche que si la souscription ouvre au moins une place.",
+);
+assert.match(
+  clientListPage,
+  /\/profile\/subscriptions\/\$\{encodeURIComponent\(item\.id\)\}\/users/,
+  "Le lien « Gerer les utilisateurs » doit pointer vers l'ecran dedie.",
+);
+assert.match(
+  clientListPage,
+  /Gérer les utilisateurs/,
+  "Le libelle du lien doit rester explicite.",
+);
+
+assert.match(
+  additionalUsersPage,
+  /await requireClientSession\(\)/,
+  "L'ecran des utilisateurs supplementaires exige une session client.",
+);
+assert.match(
+  additionalUsersPage,
+  /getBillingV2AdditionalUsers\(/,
+  "Le chargement passe par internal-api.ts, pas par un fetch maison.",
+);
+assert.ok(
+  !additionalUsersPage.includes("fetch("),
+  "La page ne doit contenir aucun appel reseau direct.",
+);
+assert.match(
+  internalApi,
+  /\/internal\/portal\/billing-v2\/subscriptions\/\$\{encodeURIComponent\(subscriptionId\)\}\/users/,
+  "La lecture des places passe par la route portail dediee.",
+);
+
+for (const [status, label] of [
+  ["available", "À attribuer"],
+  ["invited", "Invitation envoyée"],
+  ["activating", "Activation en cours"],
+  ["active", "Activé"],
+  ["attention", "Activation à finaliser"],
+  ["disabled", "Désactivé"],
+]) {
+  assert.ok(
+    additionalUsersManager.includes(`${status}: { label: "${label}"`),
+    `L'etat ${status} doit etre presente « ${label} ».`,
+  );
+}
+assert.ok(
+  !/Désactiver/.test(additionalUsersManager),
+  "Aucune action de desactivation n'est proposee au client.",
+);
+assert.ok(
+  !/disable/i.test(additionalUsersManager.replace(/disabled/g, "")),
+  "L'ecran n'appelle jamais la desactivation d'une place.",
+);
+assert.match(
+  additionalUsersManager,
+  /Ajouter un utilisateur/,
+  "Une place libre propose l'attribution.",
+);
+assert.match(
+  additionalUsersManager,
+  /Renvoyer l'invitation/,
+  "Une place invitee propose le renvoi de l'invitation.",
+);
+assert.match(
+  additionalUsersManager,
+  /router\.refresh\(\)/,
+  "Une mutation reussie doit relire l'etat serveur.",
+);
+// Le contrat reel de l'attribution : reduire le formulaire produirait une
+// fiche d'identite incomplete que personne ne reviendrait completer.
+for (const field of [
+  "email",
+  "displayName",
+  "personalTitle",
+  "givenName",
+  "surname",
+  "birthDate",
+  "initials",
+  "phone",
+]) {
+  assert.ok(
+    additionalUsersManager.includes(`name="${field}"`),
+    `Le formulaire d'attribution doit porter le champ ${field}.`,
+  );
+}
+// Controle sur le code effectif : les commentaires expliquent justement
+// pourquoi ces notions restent internes, et les compter comme des fuites
+// ferait supprimer l'explication plutot que le risque.
+const managerCode = additionalUsersManager
+  .replace(/\/\*[\s\S]*?\*\//g, "")
+  .replace(/^\s*\/\/.*$/gm, "");
+for (const forbidden of ["koxo", "objectGuid", "employeeNumber", "failureCode"]) {
+  assert.ok(
+    !managerCode.toLowerCase().includes(forbidden.toLowerCase()),
+    `L'ecran client ne doit jamais montrer ${forbidden}.`,
+  );
+}
+
+// Meme lecture que ci-dessus : ces routes expliquent en commentaire
+// pourquoi elles refusent un client fourni par le navigateur.
+const stripComments = (source) => source
+  .replace(/\/\*[\s\S]*?\*\//g, "")
+  .replace(/^\s*\/\/.*$/gm, "");
+
+for (const [route, name] of [
+  [stripComments(additionalUsersAssignRoute), "assign"],
+  [stripComments(additionalUsersResendRoute), "resend-invitation"],
+]) {
+  assert.match(
+    route,
+    /handlePortalPayloadMutationTyped/,
+    `La route BFF ${name} doit reutiliser portal-bff.ts.`,
+  );
+  assert.match(
+    route,
+    /isValidPortalIdentifier\(id\)\s*\|\|\s*!isValidPortalIdentifier\(userId\)/,
+    `La route BFF ${name} doit valider les deux identifiants.`,
+  );
+  assert.ok(
+    !route.includes("fetch("),
+    `La route BFF ${name} ne doit pas refaire un appel reseau maison.`,
+  );
+  assert.ok(
+    !/customerId/i.test(route),
+    `La route BFF ${name} ne doit jamais accepter ni relayer un client `
+    + "fourni par le navigateur.",
+  );
+  assert.ok(
+    !/actorReference|portalUserId/i.test(route),
+    `La route BFF ${name} ne doit jamais relayer d'acteur navigateur.`,
+  );
+}
+assert.ok(
+  !/\.\.\.(candidate|payload|body)/.test(additionalUsersAssignRoute),
+  "Le corps recu n'est jamais relaye par etalement : un champ non prevu "
+  + "passerait tel quel a l'API.",
+);
+
+for (const route of [
+  '"/internal/portal/billing-v2/subscriptions/{subscriptionId}/users"',
+  '"/internal/portal/billing-v2/subscriptions/{subscriptionId}/users/{subscriptionUserId}/assign"',
+  '"/internal/portal/billing-v2/subscriptions/{subscriptionId}/users/{subscriptionUserId}/resend-invitation"',
+]) {
+  assert.ok(
+    programCs.includes(route),
+    `API-INTERNAL doit exposer la route ${route}.`,
+  );
+}
+// Les trois routes portail, prises a leurs frontieres reelles.
+const additionalUsersRoutesSection = routeSection(
+  programCs,
+  '"/internal/portal/billing-v2/subscriptions/{subscriptionId}/users"',
+  3,
+);
+assert.ok(
+  !/customerId\s*[,)]/.test(
+    additionalUsersRoutesSection.replace(/session\.CustomerId/g, ""),
+  ),
+  "Les routes portail ne prennent jamais un client en parametre : il vient "
+  + "de la session.",
+);
+assert.ok(
+  (additionalUsersRoutesSection.match(/session\.CustomerId/g) ?? []).length >= 3,
+  "Chaque route portail borne son traitement au client de la session.",
+);
+assert.ok(
+  additionalUsersRoutesSection.includes("session.UserId"),
+  "L'acteur audite est celui de la session.",
+);
+assert.ok(
+  !additionalUsersRoutesSection.includes("TryMaterializeAsync"),
+  "La materialisation reste interne : elle n'est jamais declenchee par le "
+  + "navigateur.",
+);
+assert.ok(
+  !additionalUsersRoutesSection.includes("DisableAsync"),
+  "La desactivation n'est pas exposee au parcours client.",
+);
+
 console.log("Verification du contrat souscriptions v0.32 reussie.");

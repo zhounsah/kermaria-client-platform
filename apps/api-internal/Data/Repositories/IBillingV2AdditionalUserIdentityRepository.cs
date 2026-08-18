@@ -53,6 +53,22 @@ public sealed record BillingV2AdditionalUserSlotSnapshot(
     bool HasExistingLifecycle,
     bool EmailAlreadyUsed);
 
+/// <summary>
+/// Place USER-ADDITIONAL telle qu'elle est lue pour l'espace client.
+/// </summary>
+/// <remarks>
+/// Lecture <b>produit</b> : elle ne porte ni identifiant KoXo, ni objectGUID,
+/// ni code d'echec. Ces informations n'ont aucun usage cote client et leur
+/// seule presence dans une projection finit toujours par remonter jusqu'a
+/// l'ecran.
+/// </remarks>
+public sealed record BillingV2AdditionalUserSlotView(
+    string SubscriptionUserId,
+    string? DisplayName,
+    string? Email,
+    bool IsAssigned,
+    string? LifecycleStatus);
+
 public sealed record BillingV2AdditionalUserAssignmentCommand(
     string CustomerId,
     string SubscriptionId,
@@ -137,6 +153,31 @@ public interface IBillingV2AdditionalUserIdentityRepository
         BillingV2AdditionalUserAssignmentCommand command,
         Func<BillingV2AdditionalUserSlotSnapshot, string?> validate,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Places USER-ADDITIONAL d'un abonnement, <b>places vides comprises</b>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Une place n'est USER-ADDITIONAL que si un droit contractuel actif la
+    /// couvre : item de perimetre utilisateur, service actif et regle de
+    /// provisioning <c>contractual_entitlement</c> ciblant <c>user_slot</c>.
+    /// <c>is_primary = 0</c> ne prouve rien a lui seul — une place secondaire
+    /// peut exister sans qu'aucun utilisateur additionnel n'ait ete vendu, et
+    /// la presenter comme attribuable proposerait une action que l'attribution
+    /// refuserait ensuite en <c>SLOT_ENTITLEMENT_MISSING</c>.
+    /// </para>
+    /// <para>
+    /// <paramref name="customerId"/> n'est pas un filtre de confort : une
+    /// place appartenant a un autre client ne doit pas seulement etre masquee,
+    /// elle doit etre indistinguable d'une place inexistante.
+    /// </para>
+    /// </remarks>
+    Task<IReadOnlyList<BillingV2AdditionalUserSlotView>>
+        ListAdditionalUserSlotsAsync(
+            string customerId,
+            string subscriptionId,
+            CancellationToken cancellationToken);
 
     Task<BillingV2AdditionalUserIdentityRecord?> FindByPortalUserIdAsync(
         string portalUserId,

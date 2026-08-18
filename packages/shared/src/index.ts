@@ -369,6 +369,59 @@ export interface SubscriptionSummary {
   createdAt: string;
   updatedAt: string;
   billingSystem?: "legacy" | "billing_v2";
+  /**
+   * Places USER-ADDITIONAL vendues sur cette souscription, et places
+   * effectivement pourvues. Absentes du rail legacy, qui n'en vend pas.
+   */
+  additionalUserSlotsCount?: number;
+  assignedAdditionalUsersCount?: number;
+}
+
+/**
+ * Etats d'une place utilisateur supplementaire, tels que l'espace client les
+ * voit. Volontairement plus grossiers que le cycle de vie interne : le client
+ * n'a pas a connaitre l'etat de l'annuaire.
+ */
+export type BillingV2AdditionalUserSlotStatus =
+  | "available"
+  | "invited"
+  | "activating"
+  | "active"
+  | "attention"
+  | "disabled";
+
+/**
+ * Place utilisateur supplementaire presentee a l'espace client.
+ *
+ * Ne porte aucune donnee technique : ni identifiant KoXo, ni objectGUID, ni
+ * code d'echec, ni identifiant d'utilisateur portail.
+ */
+export interface BillingV2AdditionalUserSlotSummary {
+  id: string;
+  displayName: string | null;
+  email: string | null;
+  status: BillingV2AdditionalUserSlotStatus;
+  canAssign: boolean;
+  canResendInvitation: boolean;
+}
+
+/**
+ * Personne a installer sur une place.
+ *
+ * Ni client, ni acteur, ni identifiant d'utilisateur portail : ces valeurs
+ * sont resolues par le serveur a partir de la session. Les accepter du
+ * navigateur permettrait d'equiper la place d'une autre organisation.
+ */
+export interface BillingV2AdditionalUserAssignPayload {
+  email: string;
+  displayName: string;
+  personalTitle?: string | null;
+  givenName?: string | null;
+  surname?: string | null;
+  /** Jour civil ISO `yyyy-MM-dd`. Une date de naissance n'a pas de fuseau. */
+  birthDate?: string | null;
+  initials?: string | null;
+  phone?: string | null;
 }
 
 export interface SubscriptionCreatePayload {

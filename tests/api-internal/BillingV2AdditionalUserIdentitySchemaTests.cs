@@ -1,3 +1,4 @@
+using Kermaria.ApiInternal.Contracts;
 using Kermaria.ApiInternal.Data.Configuration;
 using Kermaria.ApiInternal.Data.Repositories;
 using Kermaria.ApiInternal.Services;
@@ -101,6 +102,11 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
                 connection,
                 fixture,
                 connectionString);
+
+            await VerifyRealProductReadingIsAdministrableOnlyAsync(
+                connection,
+                fixture,
+                connectionString);
         }
         finally
         {
@@ -166,7 +172,7 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
 
         // Meme regle pour le relais de mot de passe : la seule colonne de
         // contenu est un chiffre authentifie, jamais un clair ni un simple
-        // condensat — KoXo a besoin du mot de passe reel.
+        // condensat â€” KoXo a besoin du mot de passe reel.
         var passwordColumns = await ScalarLongAsync(
             connection,
             """
@@ -349,7 +355,7 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
             await fixture.SetLifecycleStatusAsync(connection, status);
             Ensure(
                 !await IsExportCandidateAsync(connection, fixture.PortalUserId),
-                $"Un cycle de vie « {status} » n'autorise aucune creation.");
+                $"Un cycle de vie Â« {status} Â» n'autorise aucune creation.");
         }
     }
 
@@ -358,8 +364,8 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
     /// </summary>
     /// <remarks>
     /// C'est l'etat que le service persiste <b>avant</b> d'ecrire le lien. Une
-    /// interruption a cet instant — redemarrage, panne reseau, arret du
-    /// service — laisse une ligne <c>directory_ready</c> sans
+    /// interruption a cet instant â€” redemarrage, panne reseau, arret du
+    /// service â€” laisse une ligne <c>directory_ready</c> sans
     /// <c>customer_ad_links</c>. Si l'export l'excluait, l'identite sortirait
     /// du CSV, ce qui <b>desactive</b> le compte AD correspondant, et rien ne
     /// permettrait d'y revenir : le compte est desactive, donc jamais relie,
@@ -373,7 +379,7 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
 
         Ensure(
             await IsExportCandidateAsync(connection, fixture.PortalUserId),
-            "Un cycle de vie « directory_ready » sans lien AD reste exporte : "
+            "Un cycle de vie Â« directory_ready Â» sans lien AD reste exporte : "
             + "c'est la fenetre de crash entre la resolution de l'objet et "
             + "l'ecriture du lien, et l'en exclure desactiverait le compte "
             + "sans retour possible.");
@@ -390,7 +396,7 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
 
         Ensure(
             !await IsExportCandidateAsync(connection, fixture.PortalUserId),
-            "Un cycle de vie « ready » sans lien AD n'est pas exporte par "
+            "Un cycle de vie Â« ready Â» sans lien AD n'est pas exporte par "
             + "l'exception : a ce stade, c'est le lien qui fait foi.");
     }
 
@@ -688,8 +694,8 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
     /// Le scenario passe par
     /// <see cref="MariaDbBillingV2AdditionalUserIdentityRepository"/> puis
     /// <see cref="MariaDbPortalPasswordSetupRepository"/>, puis relit tout sur
-    /// une connexion neuve : les quatre ecritures — condensat, consommation du
-    /// jeton, secret scelle, transition du cycle — doivent etre visibles
+    /// une connexion neuve : les quatre ecritures â€” condensat, consommation du
+    /// jeton, secret scelle, transition du cycle â€” doivent etre visibles
     /// ensemble ou pas du tout.
     /// </remarks>
     private static async Task VerifyRealHandoffCommitsAtomicallyAsync(
@@ -727,6 +733,7 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
 
         var consumption = await setups.ConsumeAndSetPasswordAsync(
             PortalSetupToken.Hash(token),
+            BillingV2AdditionalUserIdentityConventions.PasswordSetupPurpose,
             _ => expectedHash,
             new PortalPasswordHandoff(
                 command.PortalUserId,
@@ -804,8 +811,8 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
     /// </para>
     /// <para>
     /// Ce test mord si la transaction disparait : le jeton resterait consomme
-    /// et le nouveau condensat pose, alors que le secret reversible — qui
-    /// n'existe en clair qu'a cet instant — n'aurait jamais ete ecrit.
+    /// et le nouveau condensat pose, alors que le secret reversible â€” qui
+    /// n'existe en clair qu'a cet instant â€” n'aurait jamais ete ecrit.
     /// </para>
     /// </remarks>
     private static async Task VerifyRealHandoffRollsBackEntirelyAsync(
@@ -835,7 +842,7 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
             "L'attribution preparatoire doit reussir "
             + $"(refus obtenu : {assignment.RejectionCode}).");
 
-        // Un condensat anterieur connu : sans lui, « intact » ne voudrait rien
+        // Un condensat anterieur connu : sans lui, Â« intact Â» ne voudrait rien
         // dire, NULL etant aussi l'etat d'un compte jamais active.
         await ExecuteAsync(
             connection,
@@ -852,6 +859,7 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
         {
             await setups.ConsumeAndSetPasswordAsync(
                 tokenHash,
+                BillingV2AdditionalUserIdentityConventions.PasswordSetupPurpose,
                 _ => "$argon2id$test$jamais-pose",
                 new PortalPasswordHandoff(
                     command.PortalUserId,
@@ -884,6 +892,7 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
         //    sans dependre du mode strict du serveur.
         var refused = await setups.ConsumeAndSetPasswordAsync(
             tokenHash,
+            BillingV2AdditionalUserIdentityConventions.PasswordSetupPurpose,
             _ => "$argon2id$test$jamais-pose-non-plus",
             new PortalPasswordHandoff(
                 command.PortalUserId,
@@ -1196,7 +1205,7 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
     /// <remarks>
     /// MySqlConnector materialise ces colonnes en <see cref="Guid"/> et non en
     /// chaine : <c>GetString</c> y leve. Le depot resout cela avec un helper
-    /// interne, inaccessible depuis les tests — d'ou cette relecture locale.
+    /// interne, inaccessible depuis les tests â€” d'ou cette relecture locale.
     /// </remarks>
     private static string ReadIdentifier(MySqlDataReader reader, string column)
     {
@@ -1282,6 +1291,355 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
         {
             throw new InvalidOperationException(message);
         }
+    }
+
+    // ==================================================================
+    // Lecture produit et compteurs, en base reelle
+    // ==================================================================
+
+    /// <summary>
+    /// La lecture produit et les compteurs ne montrent que ce qui est
+    /// reellement administrable, et ne touchent pas aux montants.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Rien de tout cela n'est verifiable en mock : la clause de lecture, la
+    /// jointure vers <c>portal_users</c> et les deux sous-requetes de
+    /// comptage ne sont que des chaines tant qu'un vrai serveur ne les a pas
+    /// executees. Le mock, lui, ne fait qu'imiter leur intention.
+    /// </para>
+    /// <para>
+    /// Le scenario est deroule dans l'ordre parce que chaque etape s'appuie
+    /// sur l'etat pose par la precedente : ajouter des places sans ligne
+    /// financiere, puis une place facturee, puis la desactiver, puis
+    /// desactiver l'abonnement. C'est aussi ce qui rend l'invariant des
+    /// montants observable : quatre places de plus ne doivent rien changer
+    /// aux euros, la ou une jointure les aurait multiplies par cinq.
+    /// </para>
+    /// </remarks>
+    private static async Task VerifyRealProductReadingIsAdministrableOnlyAsync(
+        MySqlConnection connection,
+        Fixture fixture,
+        string connectionString)
+    {
+        var identities = new MariaDbBillingV2AdditionalUserIdentityRepository(
+            SqlFor(connectionString));
+        var projection = new BillingV2PortalSubscriptionProjection(
+            SqlFor(connectionString));
+        var scenarioMarker = $"bv2-product-{Guid.NewGuid():N}"[..24];
+        var scenarioSubscriptionId = Guid.NewGuid().ToString("D");
+        var scenarioKoxoIdentifier = ($"CLI-TEST-{Guid.NewGuid():N}")[..32];
+        string? scenarioPortalUserId = null;
+        try
+        {
+            await ExecuteAsync(
+                connection,
+                """
+                INSERT INTO billing_v2_subscriptions (
+                    id, customer_id, status, payment_mode, currency,
+                    billing_model, created_at, updated_at
+                ) VALUES (
+                    @id, @customer_id, 'active', 'monthly', 'EUR',
+                    'v2', UTC_TIMESTAMP(6), UTC_TIMESTAMP(6)
+                );
+                """,
+                ("@id", scenarioSubscriptionId),
+                ("@customer_id", fixture.CustomerId));
+
+            var scenarioEmail = $"ua-{scenarioMarker}@example.invalid";
+            scenarioPortalUserId = await fixture.CreatePortalUserAsync(
+                connection,
+                scenarioEmail,
+                scenarioKoxoIdentifier);
+            var scenarioSlotId = await fixture.CreateSlotAsync(
+                connection,
+                scenarioSubscriptionId,
+                isPrimary: false,
+                withEntitlement: true);
+            await ExecuteAsync(
+                connection,
+                """
+                UPDATE billing_v2_subscription_users
+                SET identity_reference = @portal_user_id,
+                    email = @email,
+                    updated_at = UTC_TIMESTAMP(6)
+                WHERE id = @slot_id;
+                """,
+                ("@portal_user_id", scenarioPortalUserId),
+                ("@email", scenarioEmail),
+                ("@slot_id", scenarioSlotId));
+            await ExecuteAsync(
+                connection,
+                """
+                INSERT INTO billing_v2_user_identity_provisioning (
+                    id, subscription_user_id, subscription_id, customer_id,
+                    portal_user_id, koxo_unique_identifier, status,
+                    created_at, updated_at
+                ) VALUES (
+                    @id, @slot_id, @subscription_id, @customer_id,
+                    @portal_user_id, @koxo, 'awaiting_password',
+                    UTC_TIMESTAMP(6), UTC_TIMESTAMP(6)
+                );
+                """,
+                ("@id", Guid.NewGuid().ToString("D")),
+                ("@slot_id", scenarioSlotId),
+                ("@subscription_id", scenarioSubscriptionId),
+                ("@customer_id", fixture.CustomerId),
+                ("@portal_user_id", scenarioPortalUserId),
+                ("@koxo", scenarioKoxoIdentifier));
+
+            // La projection portail exige une demande de checkout : sans elle, la
+            // souscription n'existe pas pour l'espace client.
+            await fixture.EnsureCheckoutRequestAsync(connection, scenarioSubscriptionId, scenarioMarker);
+
+            // --- Etat initial : une place vendue, attribuee. -------------------
+            var listed = await identities.ListAdditionalUserSlotsAsync(
+                fixture.CustomerId,
+                scenarioSubscriptionId,
+                CancellationToken.None);
+            Ensure(
+                listed.Count == 1
+                && listed[0].SubscriptionUserId == scenarioSlotId,
+                "La place vendue et attribuee est la seule listee "
+                + $"({listed.Count} obtenue(s)).");
+            Ensure(
+                listed[0].IsAssigned,
+                "Elle est annoncee attribuee : identity_reference est pose.");
+            // COALESCE(portal_user.display_name, slot.display_name) : la place
+            // porte Â« Utilisateur additionnel 1 Â», l'utilisateur portail
+            // Â« Utilisateur additionnel Â». Lire le second prouve que la jointure
+            // a bien resolu l'identite, et pas seulement recopie la place.
+            Ensure(
+                listed[0].DisplayName == "Utilisateur additionnel",
+                "Le nom affiche vient de l'utilisateur portail joint, pas du "
+                + $"libelle de planification (Â« {listed[0].DisplayName} Â»).");
+            Ensure(
+                listed[0].Email == $"ua-{scenarioMarker}@example.invalid",
+                $"L'adresse est celle de la personne (Â« {listed[0].Email} Â»).");
+            Ensure(
+                listed[0].LifecycleStatus == "awaiting_password",
+                "Le cycle de vie remonte tel quel : c'est lui qui donne l'etat "
+                + $"produit (Â« {listed[0].LifecycleStatus} Â»).");
+
+            var baseline = await ReadSummaryAsync(projection, fixture.CustomerId, scenarioSubscriptionId);
+            Ensure(
+                baseline.AdditionalUserSlotsCount == 1
+                && baseline.AssignedAdditionalUsersCount == 1,
+                "Les compteurs partent de 1 place vendue, 1 pourvue "
+                + $"({baseline.AdditionalUserSlotsCount}/"
+                + $"{baseline.AssignedAdditionalUsersCount}).");
+
+            // --- Quatre places de plus, aucune ligne financiere. ---------------
+            // Sans droit contractuel elles ne sont pas des places USER-ADDITIONAL
+            // et ne doivent rien changer : ni a la liste, ni aux compteurs, ni
+            // surtout aux montants. Une jointure sur les places multiplierait ici
+            // les lignes d'items par cinq.
+            await fixture.CreateSlotAsync(connection, scenarioSubscriptionId, isPrimary: false);
+            await fixture.CreateSlotAsync(connection, scenarioSubscriptionId, isPrimary: false);
+            await fixture.CreateSlotAsync(connection, scenarioSubscriptionId, isPrimary: false);
+            await fixture.CreateSlotAsync(
+                connection,
+                scenarioSubscriptionId,
+                isPrimary: true,
+                withEntitlement: false);
+
+            var noise = await ReadSummaryAsync(projection, fixture.CustomerId, scenarioSubscriptionId);
+            Ensure(
+                noise.AdditionalUserSlotsCount == 1
+                && noise.AssignedAdditionalUsersCount == 1,
+                "Des places sans droit contractuel ne sont pas comptees "
+                + $"({noise.AdditionalUserSlotsCount}/"
+                + $"{noise.AssignedAdditionalUsersCount}).");
+            Ensure(
+                noise.PriceAmountCents == baseline.PriceAmountCents
+                && noise.SetupFeeAmountCents == baseline.SetupFeeAmountCents,
+                "Les montants sont STRICTEMENT identiques apres l'ajout de quatre "
+                + $"places ({noise.PriceAmountCents} contre "
+                + $"{baseline.PriceAmountCents} centimes).");
+            Ensure(
+                (await identities.ListAdditionalUserSlotsAsync(
+                    fixture.CustomerId,
+                    scenarioSubscriptionId,
+                    CancellationToken.None)).Count == 1,
+                "La liste non plus ne bouge pas : ni la place principale, ni une "
+                + "place sans droit ne sont administrables.");
+
+            // --- Une vraie place vendue et vide. -------------------------------
+            var emptySlotId = await fixture.CreateSlotAsync(
+                connection,
+                scenarioSubscriptionId,
+                isPrimary: false,
+                withEntitlement: true);
+
+            listed = await identities.ListAdditionalUserSlotsAsync(
+                fixture.CustomerId,
+                scenarioSubscriptionId,
+                CancellationToken.None);
+            var empty = listed.SingleOrDefault(
+                slot => slot.SubscriptionUserId == emptySlotId);
+            Ensure(
+                listed.Count == 2 && empty is not null,
+                $"La place vendue et vide est annoncee ({listed.Count} listee(s)).");
+            Ensure(
+                !empty!.IsAssigned
+                && empty.DisplayName is null
+                && empty.Email is null
+                && empty.LifecycleStatus is null,
+                "Une place vide ne porte personne : la jointure vers portal_users "
+                + "ne ramene rien et le libelle de planification n'est pas "
+                + $"presente comme un occupant (Â« {empty.DisplayName} Â»).");
+
+            var sold = await ReadSummaryAsync(projection, fixture.CustomerId, scenarioSubscriptionId);
+            Ensure(
+                sold.AdditionalUserSlotsCount == 2
+                && sold.AssignedAdditionalUsersCount == 1,
+                "Deux places vendues, une seule pourvue "
+                + $"({sold.AdditionalUserSlotsCount}/"
+                + $"{sold.AssignedAdditionalUsersCount}).");
+            Ensure(
+                sold.PriceAmountCents == baseline.PriceAmountCents + 1000,
+                "Le montant augmente d'exactement une ligne d'item, pas d'un "
+                + $"multiple ({sold.PriceAmountCents} contre "
+                + $"{baseline.PriceAmountCents + 1000} centimes attendus).");
+
+            // --- Place resiliee : plus administrable. --------------------------
+            await fixture.SetSlotStatusAsync(connection, emptySlotId, "cancelled");
+
+            listed = await identities.ListAdditionalUserSlotsAsync(
+                fixture.CustomerId,
+                scenarioSubscriptionId,
+                CancellationToken.None);
+            Ensure(
+                listed.Count == 1
+                && listed[0].SubscriptionUserId == scenarioSlotId,
+                "Une place resiliee disparait de la liste : la politique "
+                + $"d'attribution la refuserait ({listed.Count} listee(s)).");
+
+            var cancelledSlot = await ReadSummaryAsync(projection, fixture.CustomerId, scenarioSubscriptionId);
+            Ensure(
+                cancelledSlot.AdditionalUserSlotsCount == 1
+                && cancelledSlot.AssignedAdditionalUsersCount == 1,
+                "Elle ne compte plus non plus "
+                + $"({cancelledSlot.AdditionalUserSlotsCount}/"
+                + $"{cancelledSlot.AssignedAdditionalUsersCount}).");
+            // Le compteur produit et la facturation sont deux axes distincts :
+            // l'item reste actif, donc le montant ne bouge pas. C'est constate
+            // ici, pas corrige : ce test ne decide pas de la politique de
+            // facturation d'une place resiliee.
+            Ensure(
+                cancelledSlot.PriceAmountCents == sold.PriceAmountCents,
+                "Desactiver une place ne touche pas au montant facture "
+                + $"({cancelledSlot.PriceAmountCents} contre "
+                + $"{sold.PriceAmountCents} centimes).");
+
+            await fixture.SetSlotStatusAsync(connection, emptySlotId, "active");
+
+            // --- Abonnement non actif : plus rien a administrer. ---------------
+            await fixture.SetSubscriptionStatusAsync(connection, scenarioSubscriptionId, "cancelled");
+            try
+            {
+                Ensure(
+                    (await identities.ListAdditionalUserSlotsAsync(
+                        fixture.CustomerId,
+                        scenarioSubscriptionId,
+                        CancellationToken.None)).Count == 0,
+                    "Un abonnement non actif ne presente aucune place : "
+                    + "SUBSCRIPTION_NOT_PROVISIONABLE refuserait chaque "
+                    + "attribution.");
+
+                var inactive = await ReadSummaryAsync(projection, fixture.CustomerId, scenarioSubscriptionId);
+                Ensure(
+                    inactive.AdditionalUserSlotsCount == 0
+                    && inactive.AssignedAdditionalUsersCount == 0,
+                    "Les compteurs tombent a zero avec lui "
+                    + $"({inactive.AdditionalUserSlotsCount}/"
+                    + $"{inactive.AssignedAdditionalUsersCount}).");
+            }
+            finally
+            {
+                await fixture.SetSubscriptionStatusAsync(connection, scenarioSubscriptionId, "active");
+            }
+
+            // --- Cloisonnement : Â« pas a vous Â» se lit Â« rien Â». ---------------
+            Ensure(
+                (await identities.ListAdditionalUserSlotsAsync(
+                    fixture.OtherCustomerId,
+                    scenarioSubscriptionId,
+                    CancellationToken.None)).Count == 0,
+                "L'abonnement d'un autre client ne se lit pas.");
+            Ensure(
+                (await identities.ListAdditionalUserSlotsAsync(
+                    fixture.CustomerId,
+                    Guid.NewGuid().ToString("D"),
+                    CancellationToken.None)).Count == 0,
+                "Un abonnement inconnu se lit exactement pareil : aucune "
+                + "difference observable entre Â« pas a vous Â» et Â« inexistant Â».");
+            Ensure(
+                (await projection.GetClientSubscriptionsAsync(
+                    fixture.OtherCustomerId,
+                    CancellationToken.None))
+                    .All(summary => summary.Id != scenarioSubscriptionId),
+                "La projection portail ne rend pas la souscription a l'autre "
+                + "client.");
+        }
+        finally
+        {
+            await ExecuteAsync(
+                connection,
+                "DELETE FROM billing_v2_user_identity_provisioning WHERE subscription_id = @id;",
+                ("@id", scenarioSubscriptionId));
+            await ExecuteAsync(
+                connection,
+                "DELETE FROM billing_v2_subscription_items WHERE subscription_id = @id;",
+                ("@id", scenarioSubscriptionId));
+            await ExecuteAsync(
+                connection,
+                "DELETE FROM billing_v2_subscription_users WHERE subscription_id = @id;",
+                ("@id", scenarioSubscriptionId));
+            await ExecuteAsync(
+                connection,
+                "DELETE FROM billing_v2_authoritative_checkout_requests WHERE subscription_id = @id;",
+                ("@id", scenarioSubscriptionId));
+            await ExecuteAsync(
+                connection,
+                "DELETE FROM billing_v2_subscriptions WHERE id = @id;",
+                ("@id", scenarioSubscriptionId));
+            if (scenarioPortalUserId is not null)
+            {
+                await ExecuteAsync(
+                    connection,
+                    "DELETE FROM portal_users WHERE id = @id;",
+                    ("@id", scenarioPortalUserId));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Lit la souscription de la fixture par la <b>vraie</b> projection.
+    /// </summary>
+    private static Task<SubscriptionSummary> ReadSummaryAsync(
+        BillingV2PortalSubscriptionProjection projection,
+        Fixture fixture)
+        => ReadSummaryAsync(
+            projection,
+            fixture.CustomerId,
+            fixture.SubscriptionId);
+
+    private static async Task<SubscriptionSummary> ReadSummaryAsync(
+        BillingV2PortalSubscriptionProjection projection,
+        string customerId,
+        string subscriptionId)
+    {
+        var summaries = await projection.GetClientSubscriptionsAsync(
+            customerId,
+            CancellationToken.None);
+        var summary = summaries.SingleOrDefault(
+            candidate => candidate.Id == subscriptionId);
+        Ensure(
+            summary is not null,
+            "La souscription de test doit etre visible dans la projection "
+            + "portail, sinon rien de ce qui suit ne mesure quoi que ce soit.");
+        return summary!;
     }
 
     private sealed record Fixture(
@@ -1512,8 +1870,19 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
         /// la vraie politique refuse tout de suite en
         /// <c>SLOT_ENTITLEMENT_MISSING</c>.
         /// </param>
+        public Task<string> CreateSlotAsync(
+            MySqlConnection connection,
+            bool isPrimary,
+            bool withEntitlement = false)
+            => CreateSlotAsync(
+                connection,
+                SubscriptionId,
+                isPrimary,
+                withEntitlement);
+
         public async Task<string> CreateSlotAsync(
             MySqlConnection connection,
+            string subscriptionId,
             bool isPrimary,
             bool withEntitlement = false)
         {
@@ -1530,7 +1899,7 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
                 );
                 """,
                 ("@id", id),
-                ("@subscription_id", SubscriptionId),
+                ("@subscription_id", subscriptionId),
                 ("@is_primary", isPrimary ? 1 : 0));
             ExtraSlotIds.Add(id);
 
@@ -1553,7 +1922,7 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
                     );
                     """,
                     ("@id", Guid.NewGuid().ToString("D")),
-                    ("@subscription_id", SubscriptionId),
+                    ("@subscription_id", subscriptionId),
                     ("@slot_id", id),
                     ("@service_id", ServiceId),
                     ("@tier_id", TierId),
@@ -1602,14 +1971,73 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
                 ("@status", status),
                 ("@id", LifecycleId));
 
+        public Task SetSlotStatusAsync(
+            MySqlConnection connection,
+            string slotId,
+            string status)
+            => ExecuteAsync(
+                connection,
+                """
+                UPDATE billing_v2_subscription_users
+                SET status = @s, updated_at = UTC_TIMESTAMP(6)
+                WHERE id = @id;
+                """,
+                ("@s", status),
+                ("@id", slotId));
+
+        /// <summary>
+        /// Pose la demande de checkout exigee par la projection portail.
+        /// </summary>
+        /// <remarks>
+        /// La projection joint cette table en <c>INNER JOIN</c> : sans une
+        /// ligne, la souscription n'apparait pas du tout, et un test de
+        /// compteurs lirait zero pour la mauvaise raison.
+        /// </remarks>
+        public Task EnsureCheckoutRequestAsync(MySqlConnection connection)
+            => EnsureCheckoutRequestAsync(connection, SubscriptionId, Marker);
+
+        public Task EnsureCheckoutRequestAsync(
+            MySqlConnection connection,
+            string subscriptionId,
+            string marker)
+            => ExecuteAsync(
+                connection,
+                """
+                INSERT INTO billing_v2_authoritative_checkout_requests (
+                    id, customer_id, idempotency_key,
+                    request_fingerprint_hash, legacy_offer_id,
+                    selection_fingerprint, provider,
+                    environment, subscription_id, status,
+                    created_at, updated_at
+                ) VALUES (
+                    @id, @customer_id, @key,
+                    SHA2(@key, 256), @offer_id,
+                    SHA2(CONCAT('billing_v2.legacy_offer|', @offer_id), 256), 'stripe',
+                    'test', @subscription_id, 'succeeded',
+                    UTC_TIMESTAMP(6), UTC_TIMESTAMP(6)
+                )
+                ON DUPLICATE KEY UPDATE updated_at = UTC_TIMESTAMP(6);
+                """,
+                ("@id", Guid.NewGuid().ToString("D")),
+                ("@customer_id", CustomerId),
+                ("@key", $"checkout-{marker}"),
+                ("@offer_id", Guid.NewGuid().ToString("D")),
+                ("@subscription_id", subscriptionId));
+
         public Task SetSubscriptionStatusAsync(
             MySqlConnection connection,
+            string status)
+            => SetSubscriptionStatusAsync(connection, SubscriptionId, status);
+
+        public Task SetSubscriptionStatusAsync(
+            MySqlConnection connection,
+            string subscriptionId,
             string status)
             => ExecuteAsync(
                 connection,
                 "UPDATE billing_v2_subscriptions SET status = @s WHERE id = @id;",
                 ("@s", status),
-                ("@id", SubscriptionId));
+                ("@id", subscriptionId));
 
         public Task SetSlotPrimaryAsync(
             MySqlConnection connection,
@@ -1711,6 +2139,15 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
             await ExecuteAsync(
                 connection,
                 "DELETE FROM billing_v2_subscription_users WHERE subscription_id = @id;",
+                ("@id", SubscriptionId));
+            // La demande de checkout porte une cle etrangere ON DELETE
+            // RESTRICT vers la souscription : elle part d'abord.
+            await ExecuteAsync(
+                connection,
+                """
+                DELETE FROM billing_v2_authoritative_checkout_requests
+                WHERE subscription_id = @id;
+                """,
                 ("@id", SubscriptionId));
             await ExecuteAsync(
                 connection,

@@ -47,7 +47,23 @@ public static class BillingV2AdditionalUserIdentityConventions
     /// <summary>
     /// <c>purpose</c> des jetons de mot de passe emis par ce cycle de vie.
     /// </summary>
+    /// <remarks>
+    /// Verifie sous le meme verrou que la consommation du jeton : un jeton
+    /// d'inscription presente ici doit etre refuse, et inversement.
+    /// </remarks>
     public const string PasswordSetupPurpose = "billing_v2_additional_user";
+
+    /// <summary>
+    /// Selecteur de parcours porte par le lien <c>/set-password</c>.
+    /// </summary>
+    /// <remarks>
+    /// Purement presentationnel : il choisit le formulaire et les points
+    /// d'appel affiches, <b>jamais</b> ce qui est autorise. L'autorisation
+    /// reste entierement portee par le jeton et par son <c>purpose</c>, qui
+    /// sont verifies cote API. Un lien dont on changerait le <c>flow</c> a la
+    /// main ne donne donc acces a rien.
+    /// </remarks>
+    public const string SetPasswordFlow = "billing-v2-additional-user";
 
     /// <summary>
     /// Sujet d'identite des utilisateurs portail crees ici.

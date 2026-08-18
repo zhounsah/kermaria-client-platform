@@ -1,4 +1,5 @@
-﻿using System.Text.Json;
+﻿using System.Globalization;
+using System.Text.Json;
 using Kermaria.ApiInternal;
 using Kermaria.ApiInternal.Contracts;
 using Kermaria.ApiInternal.Data.Configuration;
@@ -2060,6 +2061,84 @@ app.MapGet(
         });
     });
 
+// Definition du mot de passe d'un utilisateur additionnel Billing V2.
+//
+// Sans session portail : la personne n'a precisement pas encore de mot de
+// passe. L'autorisation est portee par le jeton, dont le `purpose` est
+// verifie cote service, et l'acces reste borne par X-Service-Auth comme tout
+// `/internal/*`. Volontairement distinct des routes d'inscription : ni la
+// meme table, ni les memes regles, et fusionner les deux ferait accepter ici
+// un jeton `signup_pending`.
+app.MapGet(
+    "/internal/billing-v2/additional-users/password-setup/validate",
+    async (
+        HttpContext context,
+        IBillingV2AdditionalUserIdentityService service) =>
+    {
+        // Lecture stricte : ne consomme pas le jeton. La consommation reste le
+        // seul fait du POST, unique point d'anti-rejeu.
+        var correlationId = context.GetCorrelationId();
+        var result = await service.ValidateInvitationTokenAsync(
+            context.Request.Query["token"].FirstOrDefault(),
+            context.RequestAborted);
+
+        return result.Succeeded
+            ? Results.Ok(new
+            {
+                code = result.Code,
+                message = result.Message,
+                correlation_id = correlationId
+            })
+            : Results.Json(
+                new ApiError(result.Code, result.Message, correlationId),
+                statusCode: result.Code == PortalPasswordSetupCodes.TokenExpired
+                    ? StatusCodes.Status410Gone
+                    : StatusCodes.Status400BadRequest);
+    });
+
+app.MapPost(
+    "/internal/billing-v2/additional-users/password-setup",
+    async (
+        HttpContext context,
+        IBillingV2AdditionalUserIdentityService service,
+        IAuditService auditService) =>
+    {
+        var correlationId = context.GetCorrelationId();
+        var payload =
+            await ReadPayload<BillingV2AdditionalUserSetPasswordPayload>(
+                context);
+        var result = await service.SetPasswordAsync(
+            payload?.Token,
+            payload?.Password,
+            context.RequestAborted);
+
+        // Ni jeton ni mot de passe dans l'audit : seul le code de resultat.
+        await auditService.RecordAsync(
+            new AuditEvent(
+                correlationId,
+                result.Succeeded
+                    ? "billing_v2.additional_user.password_set"
+                    : "billing_v2.additional_user.password_failed",
+                result.Succeeded ? "success" : "refused",
+                ReasonCode: result.Code,
+                TargetType: "billing_v2_user_identity",
+                SourceAddress:
+                    context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+
+        return result.Succeeded
+            ? Results.Ok(new
+            {
+                code = result.Code,
+                message = result.Message,
+                correlation_id = correlationId
+            })
+            : Results.Json(
+                new ApiError(result.Code, result.Message, correlationId),
+                statusCode: ResolveBillingV2AdditionalUserStatusCode(
+                    result.Code));
+    });
+
 app.MapGet(
     "/internal/portal/commercial-documents",
     async (
@@ -3732,6 +3811,135 @@ app.MapPost(
                 SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
             context.RequestAborted);
         return SubscriptionOk(context, service, result);
+    });
+
+app.MapGet(
+    "/internal/portal/billing-v2/subscriptions/{subscriptionId}/users",
+    async (
+        string subscriptionId,
+        HttpContext context,
+        IBillingV2AdditionalUserIdentityService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            auditService);
+        // Le client vient de la session, jamais de la requete : un abonnement
+        // d'un autre client renvoie une liste vide, indistinguable d'un
+        // abonnement inexistant.
+        var slots = await service.ListSlotsAsync(
+            session.CustomerId,
+            subscriptionId,
+            context.RequestAborted);
+        return Results.Ok(slots);
+    });
+
+app.MapPost(
+    "/internal/portal/billing-v2/subscriptions/{subscriptionId}/users/{subscriptionUserId}/assign",
+    async (
+        string subscriptionId,
+        string subscriptionUserId,
+        HttpContext context,
+        IBillingV2AdditionalUserIdentityService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            auditService);
+        var payload =
+            await ReadPayload<BillingV2AdditionalUserAssignPayload>(context)
+            ?? throw new PortalValidationException();
+
+        DateOnly? birthDate = null;
+        if (!string.IsNullOrWhiteSpace(payload.BirthDate))
+        {
+            // Une date illisible est refusee, jamais ignoree : la laisser
+            // tomber creerait une identite incomplete sans que personne ne
+            // l'ait demande.
+            if (!DateOnly.TryParse(
+                    payload.BirthDate,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out var parsed))
+            {
+                throw new PortalValidationException();
+            }
+
+            birthDate = parsed;
+        }
+
+        var result = await service.AssignAsync(
+            new BillingV2AdditionalUserAssignment(
+                session.CustomerId,
+                subscriptionId,
+                subscriptionUserId,
+                payload.Email ?? string.Empty,
+                payload.DisplayName ?? string.Empty,
+                payload.PersonalTitle,
+                payload.GivenName,
+                payload.Surname,
+                birthDate,
+                payload.Initials,
+                payload.Phone,
+                session.UserId),
+            context.GetCorrelationId(),
+            context.RequestAborted);
+
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "billing_v2.additional_user.assign",
+                result.Succeeded ? "success" : "refused",
+                ReasonCode: result.Code,
+                TargetType: "billing_v2_subscription_user",
+                TargetReference: subscriptionUserId,
+                CustomerId: session.CustomerId,
+                ActorUserId: session.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+
+        return BillingV2AdditionalUserResponse(context, result);
+    });
+
+app.MapPost(
+    "/internal/portal/billing-v2/subscriptions/{subscriptionId}/users/{subscriptionUserId}/resend-invitation",
+    async (
+        string subscriptionId,
+        string subscriptionUserId,
+        HttpContext context,
+        IBillingV2AdditionalUserIdentityService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            auditService);
+        var result = await service.ResendInvitationAsync(
+            subscriptionUserId,
+            subscriptionId,
+            session.CustomerId,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "billing_v2.additional_user.resend_invitation",
+                result.Succeeded ? "success" : "refused",
+                ReasonCode: result.Code,
+                TargetType: "billing_v2_subscription_user",
+                TargetReference: subscriptionUserId,
+                CustomerId: session.CustomerId,
+                ActorUserId: session.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+
+        return BillingV2AdditionalUserResponse(context, result);
     });
 
 app.MapPost(
@@ -7051,6 +7259,64 @@ static async Task RecordAdAuditAsync(
             context.Connection.RemoteIpAddress?.ToString()),
         context.RequestAborted);
 }
+
+static IResult BillingV2AdditionalUserResponse(
+    HttpContext context,
+    BillingV2AdditionalUserOperationResult result)
+{
+    var correlationId = context.GetCorrelationId();
+    // La reponse ne porte ni identifiant d'utilisateur portail, ni statut de
+    // cycle de vie : le navigateur relit la liste, qui est la seule projection
+    // produit. Renvoyer ces valeurs ici les ferait exister cote client sans
+    // qu'aucun ecran n'en ait besoin.
+    return result.Succeeded
+        ? Results.Ok(new
+        {
+            code = result.Code,
+            message = result.Message,
+            correlation_id = correlationId
+        })
+        : Results.Json(
+            new ApiError(result.Code, result.Message, correlationId),
+            statusCode: ResolveBillingV2AdditionalUserStatusCode(result.Code));
+}
+
+/// <summary>
+/// Traduit un refus du cycle de vie en code HTTP.
+/// </summary>
+/// <remarks>
+/// Confirmer l'existence d'une place qu'on n'a pas le droit de voir est deja
+/// une fuite. Le service rabat donc lui-meme les refus d'appartenance sur
+/// « introuvable », code et message compris — le statut HTTP ne suffirait pas,
+/// le corps de la reponse est affiche a l'ecran. Les codes d'appartenance
+/// restent listes ici en second rideau, pour qu'un futur appelant qui les
+/// laisserait passer ne reponde pas 400.
+/// </remarks>
+static int ResolveBillingV2AdditionalUserStatusCode(string code)
+    => code switch
+    {
+        BillingV2AdditionalUserRejectionCodes.SlotNotFound
+            or BillingV2AdditionalUserRejectionCodes.SlotSubscriptionMismatch
+            or BillingV2AdditionalUserRejectionCodes.SlotCustomerMismatch
+            or BillingV2AdditionalUserMaterializationCodes.LifecycleMissing =>
+                StatusCodes.Status404NotFound,
+        BillingV2AdditionalUserRejectionCodes.SlotAlreadyAssigned
+            or BillingV2AdditionalUserRejectionCodes.LifecycleAlreadyExists
+            or BillingV2AdditionalUserRejectionCodes.EmailAlreadyUsed
+            or BillingV2AdditionalUserRejectionCodes.SlotIsPrimary
+            or BillingV2AdditionalUserRejectionCodes.SlotNotActive
+            or BillingV2AdditionalUserRejectionCodes.SubscriptionNotProvisionable
+            or BillingV2AdditionalUserRejectionCodes.SlotEntitlementMissing
+            or BillingV2AdditionalUserRejectionCodes.SlotScopeIncoherent
+            or BillingV2AdditionalUserRejectionCodes.CustomerNotFound
+            or "INVALID_STATE" => StatusCodes.Status409Conflict,
+        PortalPasswordSetupCodes.TokenExpired => StatusCodes.Status410Gone,
+        BillingV2AdditionalUserMaterializationCodes.ProvisioningDisabled
+            or BillingV2AdditionalUserMaterializationCodes
+                .PasswordHandoffUnavailable =>
+                StatusCodes.Status503ServiceUnavailable,
+        _ => StatusCodes.Status400BadRequest
+    };
 
 static async Task<T?> ReadPayload<T>(HttpContext context)
 {

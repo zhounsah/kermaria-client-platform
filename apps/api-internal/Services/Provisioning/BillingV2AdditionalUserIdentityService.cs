@@ -110,6 +110,40 @@ public static class BillingV2AdditionalUserAssignmentPolicy
     }
 }
 
+/// <summary>
+/// Etats d'une place USER-ADDITIONAL tels que l'espace client les voit.
+/// </summary>
+/// <remarks>
+/// Volontairement plus grossiers que le cycle de vie interne : le client n'a
+/// pas a distinguer un objet annuaire cree d'un lien confirme, ce sont deux
+/// etapes d'une meme attente. Reprendre tel quel le vocabulaire interne
+/// ferait fuir dans l'interface des notions KoXo / AD qui n'appartiennent pas
+/// au produit.
+/// </remarks>
+public static class BillingV2AdditionalUserSlotStatuses
+{
+    public const string Available = "available";
+    public const string Invited = "invited";
+    public const string Activating = "activating";
+    public const string Active = "active";
+    public const string Attention = "attention";
+    public const string Disabled = "disabled";
+}
+
+/// <summary>Place USER-ADDITIONAL presentee a l'espace client.</summary>
+/// <remarks>
+/// Aucune donnee technique : ni identifiant KoXo, ni objectGUID, ni code
+/// d'echec, ni identifiant d'utilisateur portail. Ce qui n'est pas dans ce
+/// type ne peut pas fuir dans l'interface.
+/// </remarks>
+public sealed record BillingV2AdditionalUserSlotSummary(
+    string Id,
+    string? DisplayName,
+    string? Email,
+    string Status,
+    bool CanAssign,
+    bool CanResendInvitation);
+
 /// <summary>Personne reelle affectee a une place.</summary>
 public sealed record BillingV2AdditionalUserAssignment(
     string CustomerId,
@@ -174,13 +208,34 @@ public interface IBillingV2AdditionalUserIdentityService
 {
     bool IsPersistent { get; }
 
+    /// <summary>
+    /// Places USER-ADDITIONAL d'un abonnement du client, vides comprises.
+    /// </summary>
+    /// <remarks>
+    /// Un abonnement qui n'appartient pas a <paramref name="customerId"/>
+    /// renvoie une liste vide, exactement comme un abonnement inexistant.
+    /// </remarks>
+    Task<IReadOnlyList<BillingV2AdditionalUserSlotSummary>> ListSlotsAsync(
+        string customerId,
+        string subscriptionId,
+        CancellationToken cancellationToken);
+
     Task<BillingV2AdditionalUserOperationResult> AssignAsync(
         BillingV2AdditionalUserAssignment assignment,
         string correlationId,
         CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Renvoie l'invitation d'une place de l'abonnement du client.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="subscriptionId"/> est verifie, pas decoratif : une
+    /// place appelee depuis l'adresse d'un autre abonnement repond comme une
+    /// place inexistante.
+    /// </remarks>
     Task<BillingV2AdditionalUserOperationResult> ResendInvitationAsync(
         string subscriptionUserId,
+        string subscriptionId,
         string customerId,
         string correlationId,
         CancellationToken cancellationToken);
@@ -286,6 +341,80 @@ public sealed class BillingV2AdditionalUserIdentityService
     public bool IsPersistent => _repository.IsPersistent;
 
     // ------------------------------------------------------------------
+    // 0. LECTURE PRODUIT
+    // ------------------------------------------------------------------
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<BillingV2AdditionalUserSlotSummary>>
+        ListSlotsAsync(
+            string customerId,
+            string subscriptionId,
+            CancellationToken cancellationToken)
+    {
+        var views = await _repository.ListAdditionalUserSlotsAsync(
+            customerId,
+            subscriptionId,
+            cancellationToken);
+
+        // Le drapeau de provisioning ferme aussi les actions affichees. Sinon
+        // l'ecran proposerait un bouton dont l'appel serait refuse
+        // systematiquement : le lecteur en deduirait une panne, alors que
+        // c'est une decision.
+        var mutable = _billingConfiguration.ProvisioningEnabled;
+
+        return views
+            .Select(view =>
+            {
+                var status = MapSlotStatus(view);
+                return new BillingV2AdditionalUserSlotSummary(
+                    view.SubscriptionUserId,
+                    view.DisplayName,
+                    view.Email,
+                    status,
+                    mutable && string.Equals(
+                        status,
+                        BillingV2AdditionalUserSlotStatuses.Available,
+                        StringComparison.Ordinal),
+                    mutable && string.Equals(
+                        status,
+                        BillingV2AdditionalUserSlotStatuses.Invited,
+                        StringComparison.Ordinal));
+            })
+            .ToArray();
+    }
+
+    /// <summary>
+    /// Traduit le cycle de vie interne en etat presentable.
+    /// </summary>
+    /// <remarks>
+    /// Une place occupee sans cycle de vie est un etat incoherent : elle n'est
+    /// pas annoncee libre, sinon l'ecran proposerait une attribution que la
+    /// transaction refuserait, et la place semblerait perdue sans explication.
+    /// Un statut inconnu tombe dans le meme sceau plutot que d'etre presente
+    /// comme un succes.
+    /// </remarks>
+    private static string MapSlotStatus(BillingV2AdditionalUserSlotView view)
+        => view.LifecycleStatus switch
+        {
+            null => view.IsAssigned
+                ? BillingV2AdditionalUserSlotStatuses.Attention
+                : BillingV2AdditionalUserSlotStatuses.Available,
+            BillingV2UserIdentityStatuses.AwaitingPassword =>
+                BillingV2AdditionalUserSlotStatuses.Invited,
+            BillingV2UserIdentityStatuses.KoxoPending =>
+                BillingV2AdditionalUserSlotStatuses.Activating,
+            BillingV2UserIdentityStatuses.DirectoryReady =>
+                BillingV2AdditionalUserSlotStatuses.Activating,
+            BillingV2UserIdentityStatuses.Ready =>
+                BillingV2AdditionalUserSlotStatuses.Active,
+            BillingV2UserIdentityStatuses.Failed =>
+                BillingV2AdditionalUserSlotStatuses.Attention,
+            BillingV2UserIdentityStatuses.Disabled =>
+                BillingV2AdditionalUserSlotStatuses.Disabled,
+            _ => BillingV2AdditionalUserSlotStatuses.Attention
+        };
+
+    // ------------------------------------------------------------------
     // 1. ATTRIBUTION
     // ------------------------------------------------------------------
 
@@ -349,9 +478,16 @@ public sealed class BillingV2AdditionalUserIdentityService
 
         if (!result.Succeeded)
         {
-            return Failure(
-                result.RejectionCode!,
-                DescribeRejection(result.RejectionCode!));
+            // Une place que l'appelant n'a pas le droit de voir repond comme
+            // une place inexistante, code et message compris : unifier le seul
+            // statut HTTP laisserait le corps de la reponse — que l'espace
+            // client affiche tel quel — distinguer « n'existe pas » de
+            // « existe chez quelqu'un d'autre ».
+            return IsOwnershipRejection(result.RejectionCode!)
+                ? SlotNotVisible()
+                : Failure(
+                    result.RejectionCode!,
+                    DescribeRejection(result.RejectionCode!));
         }
 
         // L'e-mail est hors transaction et son echec n'annule rien : le compte
@@ -375,6 +511,7 @@ public sealed class BillingV2AdditionalUserIdentityService
     public async Task<BillingV2AdditionalUserOperationResult>
         ResendInvitationAsync(
             string subscriptionUserId,
+            string subscriptionId,
             string customerId,
             string correlationId,
             CancellationToken cancellationToken)
@@ -388,7 +525,10 @@ public sealed class BillingV2AdditionalUserIdentityService
         var record = await _repository.FindBySubscriptionUserIdAsync(
             subscriptionUserId,
             cancellationToken);
-        var guard = GuardOwnership(record, customerId);
+        // L'abonnement de l'URL fait partie du controle, comme a
+        // l'attribution : sans lui, la place d'un abonnement serait
+        // actionnable depuis l'adresse d'un autre.
+        var guard = GuardOwnership(record, customerId, subscriptionId);
         if (guard is not null)
         {
             return guard;
@@ -449,7 +589,11 @@ public sealed class BillingV2AdditionalUserIdentityService
         var target = await _passwordSetups.FindByTokenHashAsync(
             PortalSetupToken.Hash(normalized),
             cancellationToken);
+        // Un jeton emis pour un autre parcours est traite comme inconnu : le
+        // distinguer indiquerait a qui le presente qu'il tient un secret
+        // valide ailleurs.
         if (target is null
+            || !IsAdditionalUserToken(target)
             || target.IsConsumed
             || target.IsSuperseded)
         {
@@ -503,7 +647,16 @@ public sealed class BillingV2AdditionalUserIdentityService
         var target = await _passwordSetups.FindByTokenHashAsync(
             tokenHash,
             cancellationToken);
-        if (target is null || !target.IsUsable(DateTime.UtcNow))
+        // Refus immediat d'un jeton d'un autre parcours : la transaction le
+        // refuserait de toute facon, mais on evite ainsi de sceller un secret
+        // et de preparer un relais pour rien. C'est un raccourci, pas la
+        // garantie — celle-ci est posee sous verrou par le depot.
+        if (target is null || !IsAdditionalUserToken(target))
+        {
+            return TokenInvalid();
+        }
+
+        if (!target.IsUsable(DateTime.UtcNow))
         {
             return Failure(
                 ClassifyTarget(target),
@@ -555,6 +708,7 @@ public sealed class BillingV2AdditionalUserIdentityService
         // COMMIT.
         var consumption = await _passwordSetups.ConsumeAndSetPasswordAsync(
             tokenHash,
+            BillingV2AdditionalUserIdentityConventions.PasswordSetupPurpose,
             portalUserId => _passwordService.HashPassword(
                 portalUserId,
                 password),
@@ -611,6 +765,12 @@ public sealed class BillingV2AdditionalUserIdentityService
             portalUserId,
             materialization.LifecycleStatus);
     }
+
+    private static bool IsAdditionalUserToken(PortalPasswordSetupTarget target)
+        => string.Equals(
+            target.Purpose,
+            BillingV2AdditionalUserIdentityConventions.PasswordSetupPurpose,
+            StringComparison.Ordinal);
 
     private static string ClassifyTarget(PortalPasswordSetupTarget? target)
         => target switch
@@ -1035,15 +1195,19 @@ public sealed class BillingV2AdditionalUserIdentityService
                     .ProvisioningDisabled,
                 "Le provisioning Billing V2 est desactive.");
 
+    /// <param name="expectedSubscriptionId">
+    /// Abonnement porte par l'URL appelante, quand il y en a un. Les
+    /// operations internes n'en ont pas et passent <c>null</c> : elles ne sont
+    /// pas atteignables depuis un navigateur.
+    /// </param>
     private BillingV2AdditionalUserOperationResult? GuardOwnership(
         BillingV2AdditionalUserIdentityRecord? record,
-        string customerId)
+        string customerId,
+        string? expectedSubscriptionId = null)
     {
         if (record is null)
         {
-            return Failure(
-                BillingV2AdditionalUserMaterializationCodes.LifecycleMissing,
-                "Aucun cycle de vie d'identite pour cette place.");
+            return LifecycleNotVisible();
         }
 
         if (!string.Equals(
@@ -1053,13 +1217,49 @@ public sealed class BillingV2AdditionalUserIdentityService
         {
             // Meme reponse que l'absence : confirmer l'existence d'une place
             // d'un autre client serait deja une fuite.
-            return Failure(
-                BillingV2AdditionalUserMaterializationCodes.LifecycleMissing,
-                "Aucun cycle de vie d'identite pour cette place.");
+            return LifecycleNotVisible();
+        }
+
+        if (expectedSubscriptionId is not null
+            && !string.Equals(
+                record.SubscriptionId,
+                expectedSubscriptionId,
+                StringComparison.Ordinal))
+        {
+            // Meme client, mais pas le meme abonnement : l'adresse appelee ne
+            // designe pas cette place. Repondre autre chose ferait de l'URL
+            // d'un abonnement un revelateur des places des autres.
+            return LifecycleNotVisible();
         }
 
         return null;
     }
+
+    /// <summary>Refus unique des places qu'un appelant ne peut pas voir.</summary>
+    private static BillingV2AdditionalUserOperationResult LifecycleNotVisible()
+        => Failure(
+            BillingV2AdditionalUserMaterializationCodes.LifecycleMissing,
+            "Aucun cycle de vie d'identite pour cette place.");
+
+    /// <summary>
+    /// Equivalent cote attribution : la place n'existe pas <i>pour cet
+    /// appelant</i>.
+    /// </summary>
+    /// <remarks>
+    /// Place inexistante, place d'un autre abonnement et place d'un autre
+    /// client produisent volontairement le meme code et le meme message. Le
+    /// diagnostic precis reste produit par la politique d'attribution et
+    /// verifie par les tests, mais il ne sort jamais vers le navigateur.
+    /// </remarks>
+    private static BillingV2AdditionalUserOperationResult SlotNotVisible()
+        => Failure(
+            BillingV2AdditionalUserRejectionCodes.SlotNotFound,
+            SlotNotVisibleMessage);
+
+    private static bool IsOwnershipRejection(string code)
+        => code is BillingV2AdditionalUserRejectionCodes.SlotNotFound
+            or BillingV2AdditionalUserRejectionCodes.SlotSubscriptionMismatch
+            or BillingV2AdditionalUserRejectionCodes.SlotCustomerMismatch;
 
     private async Task SendInvitationAsync(
         BillingV2AdditionalUserIdentityRecord record,
@@ -1118,13 +1318,23 @@ public sealed class BillingV2AdditionalUserIdentityService
         }
     }
 
+    /// <summary>
+    /// Lien de definition du mot de passe, porteur du parcours Phase 4.
+    /// </summary>
+    /// <remarks>
+    /// Le <c>flow</c> ne fait que choisir le formulaire : c'est le jeton, et
+    /// lui seul, qui autorise. Il est place avant le jeton pour qu'un lien
+    /// tronque a la recopie perde le secret, pas le selecteur.
+    /// </remarks>
     private string BuildSetPasswordUrl(string token)
     {
         var baseUrl = _emailConfiguration.PortalPublicUrl;
         var prefix = string.IsNullOrWhiteSpace(baseUrl)
             ? string.Empty
             : baseUrl.TrimEnd('/');
-        return $"{prefix}/set-password?token={Uri.EscapeDataString(token)}";
+        var flow = BillingV2AdditionalUserIdentityConventions.SetPasswordFlow;
+        return $"{prefix}/set-password?flow={flow}"
+            + $"&token={Uri.EscapeDataString(token)}";
     }
 
     private static string? Normalize(string? value)
@@ -1177,15 +1387,17 @@ public sealed class BillingV2AdditionalUserIdentityService
             _ => "Ce lien de definition de mot de passe est invalide."
         };
 
+    private const string SlotNotVisibleMessage =
+        "Cette place d'abonnement est introuvable.";
+
     private static string DescribeRejection(string code)
         => code switch
         {
+            // Les refus d'appartenance ne passent pas par ici : ils sont
+            // rabattus sur SlotNotVisible() avant. Leur redonner un libelle
+            // propre reintroduirait l'oracle par la porte de derriere.
             BillingV2AdditionalUserRejectionCodes.SlotNotFound =>
-                "Cette place d'abonnement est introuvable.",
-            BillingV2AdditionalUserRejectionCodes.SlotSubscriptionMismatch =>
-                "Cette place n'appartient pas a l'abonnement vise.",
-            BillingV2AdditionalUserRejectionCodes.SlotCustomerMismatch =>
-                "Cette place n'appartient pas a votre organisation.",
+                SlotNotVisibleMessage,
             BillingV2AdditionalUserRejectionCodes.CustomerNotFound =>
                 "Le client de cet abonnement est introuvable ou inactif.",
             BillingV2AdditionalUserRejectionCodes.SlotIsPrimary =>

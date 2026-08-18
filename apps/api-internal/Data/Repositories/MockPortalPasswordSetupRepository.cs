@@ -123,6 +123,7 @@ public sealed class MockPortalPasswordSetupRepository
 
     public Task<PortalPasswordSetupConsumption> ConsumeAndSetPasswordAsync(
         string tokenHash,
+        string expectedPurpose,
         Func<string, string> hashPasswordForUser,
         PortalPasswordHandoff? handoff,
         CancellationToken cancellationToken)
@@ -130,6 +131,20 @@ public sealed class MockPortalPasswordSetupRepository
         lock (_gate)
         {
             if (!_byTokenHash.TryGetValue(tokenHash, out var entry))
+            {
+                return Task.FromResult(new PortalPasswordSetupConsumption(
+                    PortalPasswordSetupCodes.TokenInvalid,
+                    null));
+            }
+
+            // Le verrou global tient lieu de FOR UPDATE : la verification de
+            // l'usage se fait donc dans la meme section critique que la
+            // consommation, comme en base. Meme reponse qu'un jeton inconnu, et
+            // rien n'est consomme.
+            if (!string.Equals(
+                    entry.Purpose,
+                    expectedPurpose,
+                    StringComparison.Ordinal))
             {
                 return Task.FromResult(new PortalPasswordSetupConsumption(
                     PortalPasswordSetupCodes.TokenInvalid,

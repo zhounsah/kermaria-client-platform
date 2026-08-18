@@ -15,7 +15,20 @@ type SetPasswordRequestBody = {
   token?: unknown;
   password?: unknown;
   confirmPassword?: unknown;
+  flow?: unknown;
 };
+
+// Parcours de definition de mot de passe. `flow` choisit l'endpoint et la
+// borne haute du mot de passe — rien d'autre. Il n'autorise rien : c'est le
+// jeton, et le `purpose` verifie cote API, qui decident. Un parcours inconnu
+// est refuse plutot que ramene au signup : un repli silencieux enverrait un
+// jeton d'utilisateur supplementaire vers l'endpoint d'inscription.
+type SetPasswordFlow = {
+  upstreamPath: string;
+  maxPasswordLength: number;
+};
+
+const ADDITIONAL_USER_FLOW = "billing-v2-additional-user";
 
 type SetPasswordRequestFormat = "json" | "form";
 
@@ -42,7 +55,12 @@ class SetPasswordBodyError extends Error {
 }
 
 const MIN_PASSWORD_LENGTH = 12;
+// Inscription : borne historique du parcours signup.
 const MAX_PASSWORD_LENGTH = 200;
+// Utilisateur supplementaire Billing V2 : borne du service Phase 4. Les deux
+// bornes different reellement cote API ; les aligner ici ferait accepter au
+// navigateur un mot de passe que l'API refuserait ensuite.
+const MAX_ADDITIONAL_USER_PASSWORD_LENGTH = 128;
 const MAX_SET_PASSWORD_BODY_BYTES = 16 * 1024;
 const RATE_LIMIT_MAX = 5;
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
@@ -131,6 +149,20 @@ export async function POST(request: NextRequest) {
         );
   }
 
+  const flow = resolveSetPasswordFlow(body.flow);
+  if (!flow) {
+    return format === "form"
+      ? presentationRedirect("INVALID_REQUEST", correlationId)
+      : jsonResponse(
+          {
+            code: "INVALID_REQUEST",
+            message: "Le parcours demandé n'est pas pris en charge.",
+            correlation_id: correlationId,
+          },
+          400,
+        );
+  }
+
   const token = typeof body.token === "string" ? body.token.trim() : "";
   const password = typeof body.password === "string" ? body.password : "";
 
@@ -149,7 +181,7 @@ export async function POST(request: NextRequest) {
 
   if (
     password.length < MIN_PASSWORD_LENGTH
-    || password.length > MAX_PASSWORD_LENGTH
+    || password.length > flow.maxPasswordLength
     || (
       format === "form"
       && (
@@ -163,15 +195,18 @@ export async function POST(request: NextRequest) {
       : jsonResponse(
           {
             code: "INVALID_PASSWORD",
-            message: `Le mot de passe doit comporter entre ${MIN_PASSWORD_LENGTH} et ${MAX_PASSWORD_LENGTH} caractères.`,
+            message: `Le mot de passe doit comporter entre ${MIN_PASSWORD_LENGTH} et ${flow.maxPasswordLength} caractères.`,
             correlation_id: correlationId,
           },
           400,
         );
   }
 
+  // Le corps transmis en amont ne porte pas `flow` : l'endpoint le dit deja,
+  // et l'API ne doit jamais deduire d'un champ du navigateur ce qu'elle a le
+  // droit de faire.
   const result = await callInternalSignup(
-    "/internal/signup/set-password",
+    flow.upstreamPath,
     { token, password },
     correlationId,
   );
@@ -192,6 +227,24 @@ export async function POST(request: NextRequest) {
     },
     result.ok ? 200 : result.status >= 500 ? 502 : result.status,
   );
+}
+
+function resolveSetPasswordFlow(value: unknown): SetPasswordFlow | null {
+  if (value === undefined || value === null || value === "") {
+    return {
+      upstreamPath: "/internal/signup/set-password",
+      maxPasswordLength: MAX_PASSWORD_LENGTH,
+    };
+  }
+
+  if (value === ADDITIONAL_USER_FLOW) {
+    return {
+      upstreamPath: "/internal/billing-v2/additional-users/password-setup",
+      maxPasswordLength: MAX_ADDITIONAL_USER_PASSWORD_LENGTH,
+    };
+  }
+
+  return null;
 }
 
 function getSetPasswordRequestFormat(
@@ -318,10 +371,15 @@ function parseSetPasswordBody(
   const tokens = form.getAll("token");
   const passwords = form.getAll("password");
   const confirmations = form.getAll("confirmPassword");
+  // `flow` est facultatif — son absence est le parcours d'inscription — mais
+  // repete il serait ambigu, et une ambiguite sur le parcours choisit
+  // l'endpoint a notre place.
+  const flows = form.getAll("flow");
   if (
     tokens.length !== 1
     || passwords.length !== 1
     || confirmations.length !== 1
+    || flows.length > 1
   ) {
     throw new SetPasswordBodyError("invalid");
   }
@@ -330,6 +388,7 @@ function parseSetPasswordBody(
     token: tokens[0],
     password: passwords[0],
     confirmPassword: confirmations[0],
+    flow: flows[0],
   };
 }
 

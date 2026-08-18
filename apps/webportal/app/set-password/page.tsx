@@ -3,7 +3,10 @@ import Link from "next/link";
 
 import { SetPasswordForm } from "@/components/SetPasswordForm";
 import { resolveCorrelationId } from "@/lib/correlation";
-import { validateSetPasswordToken } from "@/lib/signup-server";
+import {
+  validateAdditionalUserSetPasswordToken,
+  validateSetPasswordToken,
+} from "@/lib/signup-server";
 
 export const metadata: Metadata = {
   title: "Définir votre mot de passe",
@@ -13,8 +16,15 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 type SetPasswordPageProps = {
-  searchParams: Promise<{ result?: string; token?: string }>;
+  searchParams: Promise<{ result?: string; token?: string; flow?: string }>;
 };
+
+// Parcours reconnu pour un utilisateur supplémentaire Billing V2. Le `flow`
+// ne fait que choisir le texte et l'endpoint de validation : il n'ouvre aucun
+// droit, l'autorisation restant entièrement portée par le jeton et par son
+// `purpose`, vérifiés côté API. Un `flow` inconnu est refusé plutôt que
+// ramené au parcours d'inscription.
+const ADDITIONAL_USER_FLOW = "billing-v2-additional-user";
 
 const SET_PASSWORD_RESULTS = {
   PASSWORD_SET: {
@@ -70,7 +80,7 @@ const SET_PASSWORD_RESULTS = {
 export default async function SetPasswordPage({
   searchParams,
 }: SetPasswordPageProps) {
-  const { result, token } = await searchParams;
+  const { result, token, flow } = await searchParams;
   const resultCode = result?.trim() ?? "";
   const presentation = Object.hasOwn(SET_PASSWORD_RESULTS, resultCode)
     ? SET_PASSWORD_RESULTS[resultCode as keyof typeof SET_PASSWORD_RESULTS]
@@ -101,15 +111,25 @@ export default async function SetPasswordPage({
   }
 
   const trimmedToken = token?.trim() || "";
+  const trimmedFlow = flow?.trim() || "";
+  const isAdditionalUserFlow = trimmedFlow === ADDITIONAL_USER_FLOW;
+  const isKnownFlow = trimmedFlow === "" || isAdditionalUserFlow;
 
-  const validation = trimmedToken
-    ? await validateSetPasswordToken(trimmedToken, resolveCorrelationId(null))
-    : {
-        ok: false,
-        status: 400,
-        code: "TOKEN_INVALID",
-        message: "Lien de définition de mot de passe invalidé.",
-      };
+  const invalidLink = {
+    ok: false,
+    status: 400,
+    code: "TOKEN_INVALID",
+    message: "Lien de définition de mot de passe invalidé.",
+  };
+
+  const validation = !isKnownFlow || !trimmedToken
+    ? invalidLink
+    : isAdditionalUserFlow
+      ? await validateAdditionalUserSetPasswordToken(
+          trimmedToken,
+          resolveCorrelationId(null),
+        )
+      : await validateSetPasswordToken(trimmedToken, resolveCorrelationId(null));
 
   const valid = validation.ok;
   const expired = validation.code === "TOKEN_EXPIRED";
@@ -122,19 +142,31 @@ export default async function SetPasswordPage({
         <p className="eyebrow">Activation du compte</p>
         <h1>{valid ? "Définir votre mot de passe" : "Définition impossible"}</h1>
         {valid ? (
-          <p className="signup-lead">
-            Votre compte a été validé. Choisissez un mot de passe pour activer
-            votre accès à l&apos;espace client. Cette définition du mot de passe
-            finalise aussi l&apos;identité cible dans clients.home.bzh lorsque
-            l&apos;écriture AD est active. Une fois connecté, votre tableau de
-            bord vous guidera vers les prochaines étapes, notamment la
-            finalisation de votre pack si vous en aviez choisi un.
-          </p>
+          isAdditionalUserFlow ? (
+            <p className="signup-lead">
+              Votre organisation vous a ouvert un accès à son espace client.
+              Choisissez un mot de passe pour activer votre compte. Vos accès
+              associés sont préparés automatiquement ensuite : ils peuvent
+              mettre quelques minutes à devenir disponibles.
+            </p>
+          ) : (
+            <p className="signup-lead">
+              Votre compte a été validé. Choisissez un mot de passe pour activer
+              votre accès à l&apos;espace client. Cette définition du mot de
+              passe finalise aussi l&apos;identité cible dans clients.home.bzh
+              lorsque l&apos;écriture AD est active. Une fois connecté, votre
+              tableau de bord vous guidera vers les prochaines étapes, notamment
+              la finalisation de votre pack si vous en aviez choisi un.
+            </p>
+          )
         ) : null}
       </header>
 
       {valid ? (
-        <SetPasswordForm token={trimmedToken} />
+        <SetPasswordForm
+          flow={isAdditionalUserFlow ? ADDITIONAL_USER_FLOW : undefined}
+          token={trimmedToken}
+        />
       ) : (
         <section className="set-password-invalid">
           {serviceUnavailable ? (

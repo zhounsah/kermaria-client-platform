@@ -20,6 +20,7 @@ import type {
   BackupJobDetail,
   BackupJobSummary,
   BackupRestoreRequestPayload,
+  BillingV2AdditionalUserSlotSummary,
   AdminClientSolutionPortal,
   ApiError,
   ClientProfile,
@@ -757,6 +758,21 @@ export function getEditorialRedirect(oldPath: string) {
 export function getClientSubscriptions() {
   return getPortalData<SubscriptionSummary[]>(
     "/internal/portal/subscriptions",
+    [],
+    [],
+  );
+}
+
+/**
+ * Places utilisateur supplementaires d'une souscription Billing V2.
+ *
+ * Le client n'est pas transmis : l'API le lit dans la session. Une
+ * souscription d'une autre organisation renvoie une liste vide, exactement
+ * comme une souscription inexistante.
+ */
+export function getBillingV2AdditionalUsers(subscriptionId: string) {
+  return getPortalData<BillingV2AdditionalUserSlotSummary[]>(
+    `/internal/portal/billing-v2/subscriptions/${encodeURIComponent(subscriptionId)}/users`,
     [],
     [],
   );

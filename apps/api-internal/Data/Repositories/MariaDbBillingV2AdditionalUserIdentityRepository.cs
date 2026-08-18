@@ -171,6 +171,162 @@ public sealed class MariaDbBillingV2AdditionalUserIdentityRepository
     }
 
     /// <summary>
+    /// Ce qui fait qu'une place est <b>reellement</b> USER-ADDITIONAL.
+    /// </summary>
+    /// <remarks>
+    /// Fragment volontairement unique : l'attribution, la lecture produit et
+    /// les compteurs du portail s'appuient dessus tous les trois. Deux
+    /// definitions separees finiraient par diverger, et l'ecran annoncerait des
+    /// places attribuables que la transaction refuse ensuite en
+    /// <c>SLOT_ENTITLEMENT_MISSING</c>.
+    /// </remarks>
+    internal const string UserSlotEntitlementSource =
+        // Saut de ligne d'ouverture obligatoire : un litteral brut ne
+        // conserve pas celui qui precede son delimiteur fermant, et le
+        // fragment est toujours colle a la fin d'une autre chaine SQL.
+        // Sans lui, « SELECT 1 » + « FROM ... » devient « SELECT 1FROM »,
+        // que le serveur lit comme un identifiant.
+        "\n"
+        + """
+        FROM billing_v2_subscription_items item
+        INNER JOIN billing_v2_services service
+            ON service.id = item.service_id
+           AND service.status = 'active'
+        INNER JOIN billing_v2_provisioning_rules rule
+            ON rule.service_id = service.id
+           AND rule.status = 'active'
+           AND rule.rule_type = 'contractual_entitlement'
+           AND rule.target_type = 'user_slot'
+           AND (rule.tier_id IS NULL OR rule.tier_id = item.tier_id)
+        WHERE item.status = 'active'
+          AND item.scope_type = 'user'
+          AND item.effective_from <= UTC_TIMESTAMP(6)
+          AND (item.effective_until IS NULL
+               OR item.effective_until > UTC_TIMESTAMP(6))
+        """;
+
+    /// <summary>
+    /// Ce qui rend une place <b>administrable</b> depuis l'espace client.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Le droit contractuel ne suffit pas. La politique d'attribution refuse
+    /// aussi une place qui n'est pas active (<c>SLOT_NOT_ACTIVE</c>) et un
+    /// abonnement qui n'est pas actif
+    /// (<c>SUBSCRIPTION_NOT_PROVISIONABLE</c>). Une lecture qui ignorerait ces
+    /// deux predicats annoncerait « a attribuer » une place resiliee, avec un
+    /// bouton dont l'appel serait refuse a chaque fois, et compterait a
+    /// l'ecran des places que le client ne peut plus utiliser.
+    /// </para>
+    /// <para>
+    /// Alias imposes a tout consommateur : <c>slot</c> pour la place,
+    /// <c>subscription</c> pour l'abonnement.
+    /// </para>
+    /// </remarks>
+    internal const string AdministrableSlotPredicate =
+        // Meme regle d'ecriture que ci-dessus.
+        "\n"
+        + """
+          AND slot.is_primary = 0
+          AND slot.status = 'active'
+          AND subscription.status = 'active'
+        """;
+
+    /// <summary>
+    /// Lecture produit des places USER-ADDITIONAL d'un abonnement.
+    /// </summary>
+    /// <remarks>
+    /// Le client est dans la clause, pas dans un filtre applique apres coup :
+    /// un abonnement d'un autre client ne renvoie pas un acces refuse, il ne
+    /// renvoie rien du tout, exactement comme un abonnement inexistant.
+    /// Constante et non chaine construite a l'appel : la requete reellement
+    /// envoyee est ainsi lisible d'un seul tenant, delimiteurs compris.
+    /// </remarks>
+    private const string ListAdditionalUserSlotsSql =
+        """
+        SELECT
+            slot.id AS subscription_user_id,
+            slot.identity_reference,
+            COALESCE(portal_user.display_name, slot.display_name)
+                AS resolved_display_name,
+            COALESCE(portal_user.email, slot.email) AS resolved_email,
+            lifecycle.status AS lifecycle_status
+        FROM billing_v2_subscription_users slot
+        INNER JOIN billing_v2_subscriptions subscription
+            ON subscription.id = slot.subscription_id
+        LEFT JOIN portal_users portal_user
+            ON portal_user.id = slot.identity_reference
+        LEFT JOIN billing_v2_user_identity_provisioning lifecycle
+            ON lifecycle.subscription_user_id = slot.id
+        WHERE slot.subscription_id = @subscription_id
+          AND subscription.customer_id = @customer_id
+        """
+        + AdministrableSlotPredicate
+        + """
+          AND EXISTS (
+                SELECT 1
+        """
+        + UserSlotEntitlementSource
+        + """
+                  AND item.subscription_user_id = slot.id
+                  AND item.subscription_id = slot.subscription_id
+          )
+        ORDER BY slot.created_at, slot.id;
+        """;
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<BillingV2AdditionalUserSlotView>>
+        ListAdditionalUserSlotsAsync(
+            string customerId,
+            string subscriptionId,
+            CancellationToken cancellationToken)
+    {
+        var views = new List<BillingV2AdditionalUserSlotView>();
+        await using var connection = new MySqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = ListAdditionalUserSlotsSql;
+        command.Parameters.AddWithValue("@subscription_id", subscriptionId);
+        command.Parameters.AddWithValue("@customer_id", customerId);
+
+        await using var reader = await command.ExecuteReaderAsync(
+            cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var identityReference = ReadNullableColumn(
+                reader,
+                "identity_reference");
+            var isAssigned = identityReference is not null;
+
+            views.Add(new BillingV2AdditionalUserSlotView(
+                MariaDbIdentifierReader.ReadRequired(
+                    reader,
+                    "subscription_user_id"),
+                // Une place vide ne porte aucune personne : son libelle de
+                // planification n'en est pas une, et l'afficher laisserait
+                // croire que quelqu'un occupe deja la place.
+                isAssigned
+                    ? ReadNullableColumn(reader, "resolved_display_name")
+                    : null,
+                isAssigned
+                    ? ReadNullableColumn(reader, "resolved_email")
+                    : null,
+                isAssigned,
+                ReadNullableColumn(reader, "lifecycle_status")));
+        }
+
+        return views;
+    }
+
+    private static string? ReadNullableColumn(
+        MySqlDataReader reader,
+        string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        return reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
+    }
+
+    /// <summary>
     /// Relit l'occupation de la place, hors transaction.
     /// </summary>
     private static async Task<string?> ReadSlotIdentityReferenceAsync(
@@ -311,25 +467,11 @@ public sealed class MariaDbBillingV2AdditionalUserIdentityRepository
         var entitlementCount = await ReadCountAsync(
             connection,
             transaction,
-            """
-            SELECT COUNT(*)
-            FROM billing_v2_subscription_items item
-            INNER JOIN billing_v2_services service
-                ON service.id = item.service_id
-               AND service.status = 'active'
-            INNER JOIN billing_v2_provisioning_rules rule
-                ON rule.service_id = service.id
-               AND rule.status = 'active'
-               AND rule.rule_type = 'contractual_entitlement'
-               AND rule.target_type = 'user_slot'
-               AND (rule.tier_id IS NULL OR rule.tier_id = item.tier_id)
-            WHERE item.subscription_user_id = @subscription_user_id
-              AND item.subscription_id = @subscription_id
-              AND item.status = 'active'
-              AND item.scope_type = 'user'
-              AND item.effective_from <= UTC_TIMESTAMP(6)
-              AND (item.effective_until IS NULL
-                   OR item.effective_until > UTC_TIMESTAMP(6));
+            "SELECT COUNT(*) "
+            + UserSlotEntitlementSource
+            + """
+              AND item.subscription_user_id = @subscription_user_id
+              AND item.subscription_id = @subscription_id;
             """,
             [
                 ("@subscription_user_id", command.SubscriptionUserId),

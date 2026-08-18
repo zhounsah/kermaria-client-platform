@@ -226,11 +226,46 @@ export async function callInternalSignup(
   }
 }
 
+// Points d'appel de la définition de mot de passe. Deux parcours, deux jeux
+// d'endpoints : l'inscription lit `signup_pending`, l'utilisateur
+// supplémentaire lit `portal_user_password_setups`. Les fusionner ferait
+// accepter dans l'un un jeton émis pour l'autre.
+const SIGNUP_SET_PASSWORD_VALIDATE_PATH =
+  "/internal/signup/set-password/validate";
+const ADDITIONAL_USER_SET_PASSWORD_VALIDATE_PATH =
+  "/internal/billing-v2/additional-users/password-setup/validate";
+
 // Validation non destructive (GET) du jeton de définition de mot de passe.
 // Permet à la page /set-password d'afficher l'état « lien invalide / expiré »
-// dès le chargement, sans consommer le jeton (la consommation reste le POST
-// /internal/signup/set-password). Relais anonyme X-Service-Auth, sans session.
+// dès le chargement, sans consommer le jeton (la consommation reste le POST).
+// Relais anonyme X-Service-Auth, sans session.
 export async function validateSetPasswordToken(
+  token: string,
+  correlationId: string,
+): Promise<InternalSignupResult> {
+  return validateSetPasswordTokenAt(
+    SIGNUP_SET_PASSWORD_VALIDATE_PATH,
+    token,
+    correlationId,
+  );
+}
+
+// Même lecture non destructive, pour un utilisateur supplémentaire Billing V2.
+// Le `purpose` du jeton est vérifié côté API : un lien d'inscription présenté
+// ici est refusé comme s'il n'existait pas.
+export async function validateAdditionalUserSetPasswordToken(
+  token: string,
+  correlationId: string,
+): Promise<InternalSignupResult> {
+  return validateSetPasswordTokenAt(
+    ADDITIONAL_USER_SET_PASSWORD_VALIDATE_PATH,
+    token,
+    correlationId,
+  );
+}
+
+async function validateSetPasswordTokenAt(
+  path: string,
   token: string,
   correlationId: string,
 ): Promise<InternalSignupResult> {
@@ -247,7 +282,7 @@ export async function validateSetPasswordToken(
 
   try {
     const upstream = await fetch(
-      `${internalApiUrl}/internal/signup/set-password/validate?token=${encodeURIComponent(token)}`,
+      `${internalApiUrl}${path}?token=${encodeURIComponent(token)}`,
       {
         method: "GET",
         cache: "no-store",

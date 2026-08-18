@@ -58,6 +58,9 @@ const signupConfig = await read(
 const signupService = await read(
   "../../apps/api-internal/Services/SignupService.cs",
 );
+const portalSetupToken = await read(
+  "../../apps/api-internal/Services/PortalSetupToken.cs",
+);
 const catalogConfigurationService = await read(
   "../../apps/api-internal/Services/CatalogConfigurationService.cs",
 );
@@ -140,11 +143,15 @@ check("rate limits + TTL configurables", () => {
   assert.match(signupConfig, /SIGNUP_PASSWORD_SETUP_TOKEN_TTL_HOURS/);
 });
 
+check("SignupService delegue les jetons au helper partage", () => {
+  assert.match(signupService, /GenerateToken\(\)\s*=>\s*PortalSetupToken\.Generate\(\)/);
+  assert.match(signupService, /HashToken\(string token\)\s*=>\s*PortalSetupToken\.Hash\(token\)/);
+});
 check("jetons hashes en SHA-256", () => {
-  assert.match(signupService, /SHA256\.HashData/);
+  assert.match(portalSetupToken, /SHA256\.HashData\s*\(/);
 });
 check("token aleatoire 32 octets", () => {
-  assert.match(signupService, /RandomNumberGenerator\.GetBytes\(32\)/);
+  assert.match(portalSetupToken, /RandomNumberGenerator\.GetBytes\(32\)/);
 });
 check("non-leak : reponse identique via HasRecentSignupOrUserAsync", () => {
   assert.match(signupService, /HasRecentSignupOrUserAsync/);
@@ -715,6 +722,191 @@ check(".env.example borne explicitement le perimetre AD", () => {
     1,
     "AD_ALLOWED_ROOTS doit contenir exactement AD_CLIENTS_OU_DN.",
   );
+});
+
+/**
+ * Decoupe une ou plusieurs routes a leur frontiere reelle.
+ *
+ * Un decompte fixe de caracteres glisse dans la route suivante des que le
+ * fichier bouge — ne serait-ce qu'en changeant de fin de ligne — et
+ * l'assertion se met alors a parler d'autre chose que de la route visee.
+ */
+function routeSection(source, marker, routeCount = 1) {
+  const start = source.indexOf(marker);
+  assert.notEqual(start, -1, `Route introuvable dans Program.cs : ${marker}`);
+  let end = start;
+  for (let index = 0; index < routeCount; index += 1) {
+    const next = source.indexOf("\napp.Map", end + 1);
+    end = next === -1 ? source.length : next;
+  }
+  return source.slice(start, end);
+}
+
+// ----------------------------------------------------------------------
+// Parcours /set-password partage avec les utilisateurs supplementaires
+// Billing V2 (Phase 4). `flow` choisit un texte et un endpoint ; il
+// n'autorise rien : seul le `purpose` du jeton, verifie cote API, decide.
+// ----------------------------------------------------------------------
+
+const additionalUserService = await read(
+  "../../apps/api-internal/Services/Provisioning/"
+  + "BillingV2AdditionalUserIdentityService.cs",
+);
+const additionalUserConventions = await read(
+  "../../apps/api-internal/Data/Repositories/"
+  + "BillingV2AdditionalUserIdentityConventions.cs",
+);
+const passwordSetupRepoMaria = await read(
+  "../../apps/api-internal/Data/Repositories/"
+  + "MariaDbPortalPasswordSetupRepository.cs",
+);
+const passwordSetupRepoMock = await read(
+  "../../apps/api-internal/Data/Repositories/"
+  + "MockPortalPasswordSetupRepository.cs",
+);
+
+check("flow absent conserve le parcours d'inscription", () => {
+  assert.match(
+    setPasswordRoute,
+    /value === undefined \|\| value === null \|\| value === ""/,
+  );
+  assert.match(
+    setPasswordRoute,
+    /upstreamPath: "\/internal\/signup\/set-password",\s*\n\s*maxPasswordLength: MAX_PASSWORD_LENGTH,/,
+  );
+  assert.match(setPasswordRoute, /MAX_PASSWORD_LENGTH\s*=\s*200/);
+  assert.match(setPasswordRoute, /MIN_PASSWORD_LENGTH\s*=\s*12/);
+  // Le lien d'inscription ne porte pas de `flow` : la page doit continuer a
+  // valider par l'endpoint signup historique.
+  assert.match(setPasswordPage, /validateSetPasswordToken\(trimmedToken/);
+  assert.match(signupServerLib, /\/internal\/signup\/set-password\/validate/);
+});
+
+check("flow utilisateur supplementaire vise ses propres endpoints", () => {
+  assert.match(
+    setPasswordRoute,
+    /ADDITIONAL_USER_FLOW\s*=\s*"billing-v2-additional-user"/,
+  );
+  assert.match(
+    setPasswordRoute,
+    /upstreamPath: "\/internal\/billing-v2\/additional-users\/password-setup",/,
+  );
+  assert.match(
+    setPasswordRoute,
+    /MAX_ADDITIONAL_USER_PASSWORD_LENGTH\s*=\s*128/,
+  );
+  assert.match(
+    signupServerLib,
+    /\/internal\/billing-v2\/additional-users\/password-setup\/validate/,
+  );
+  assert.match(signupServerLib, /validateAdditionalUserSetPasswordToken/);
+  assert.match(setPasswordPage, /validateAdditionalUserSetPasswordToken/);
+  // Deux parcours, deux endpoints : un repli de l'un vers l'autre enverrait
+  // un jeton d'utilisateur supplementaire au service d'inscription.
+  assert.match(
+    programCs,
+    /"\/internal\/billing-v2\/additional-users\/password-setup"/,
+  );
+  assert.match(
+    programCs,
+    /"\/internal\/billing-v2\/additional-users\/password-setup\/validate"/,
+  );
+  assert.match(programCs, /"\/internal\/signup\/set-password"/);
+});
+
+check("flow inconnu est refuse, jamais ramene au signup", () => {
+  const resolver = setPasswordRoute.slice(
+    setPasswordRoute.indexOf("function resolveSetPasswordFlow"),
+  );
+  assert.match(resolver, /return null;/);
+  assert.match(setPasswordRoute, /const flow = resolveSetPasswordFlow\(body\.flow\)/);
+  assert.match(setPasswordRoute, /if \(!flow\) \{/);
+  assert.match(setPasswordPage, /isKnownFlow/);
+  // Le champ repete rendrait le parcours ambigu, et l'ambiguite choisirait
+  // l'endpoint a notre place.
+  assert.match(setPasswordRoute, /flows\.length > 1/);
+});
+
+check("flow ne sert qu'a l'affichage, jamais a autoriser", () => {
+  // Le corps relaye en amont ne porte pas `flow` : l'endpoint le dit deja.
+  assert.match(setPasswordRoute, /\{ token, password \}/);
+  assert.doesNotMatch(setPasswordRoute, /\{ token, password, flow \}/);
+  assert.match(setPasswordForm, /name="flow" type="hidden"/);
+  assert.match(
+    setPasswordForm,
+    /MAX_ADDITIONAL_USER_PASSWORD_LENGTH\s*=\s*128/,
+  );
+  assert.match(setPasswordForm, /MAX_PASSWORD_LENGTH\s*=\s*200/);
+  assert.match(setPasswordForm, /action="\/api\/set-password"/);
+});
+
+check("le purpose du jeton est verifie sous le meme verrou", () => {
+  assert.match(
+    additionalUserConventions,
+    /PasswordSetupPurpose\s*=\s*"billing_v2_additional_user"/,
+  );
+  assert.match(
+    additionalUserService,
+    /ConsumeAndSetPasswordAsync\(\s*[^;]*PasswordSetupPurpose/s,
+  );
+  const consume = passwordSetupRepoMaria.slice(
+    passwordSetupRepoMaria.indexOf("ConsumeAndSetPasswordAsync"),
+  );
+  const lockIndex = consume.indexOf("FOR UPDATE");
+  const purposeIndex = consume.indexOf(
+    "!string.Equals(purpose, expectedPurpose, StringComparison.Ordinal)",
+  );
+  assert.notEqual(lockIndex, -1, "Le verrou FOR UPDATE doit rester en place.");
+  assert.notEqual(purposeIndex, -1, "Le purpose doit etre compare.");
+  assert.ok(
+    lockIndex < purposeIndex,
+    "Le purpose se verifie APRES la prise du verrou : le verifier avant "
+    + "laisserait une fenetre entre le controle et la consommation.",
+  );
+  // La consommation elle-meme reste conditionnee au purpose : le verrou
+  // seul ne protegerait pas d'une relecture divergente.
+  assert.match(passwordSetupRepoMaria, /AND purpose = @purpose/);
+  assert.match(passwordSetupRepoMock, /expectedPurpose/);
+});
+
+check("le parcours utilisateur supplementaire ne fuite ni jeton ni mot de passe", () => {
+  for (const [label, source] of [
+    ["page set-password", setPasswordPage],
+    ["formulaire set-password", setPasswordForm],
+    ["route BFF set-password", setPasswordRoute],
+    ["lib signup-server", signupServerLib],
+  ]) {
+    assert.doesNotMatch(
+      source,
+      /console\.(log|info|warn|error)\([^)]*\b(token|password)\b/i,
+      `${label} ne doit journaliser ni jeton ni mot de passe.`,
+    );
+  }
+  assert.doesNotMatch(
+    setPasswordRoute,
+    /Location:\s*`\/set-password\?[^`]*\$\{(?:token|password)\}/,
+  );
+  // Le POST de definition ne consomme le jeton qu'une fois : la validation
+  // au chargement doit rester une lecture.
+  const validateRoute = routeSection(
+    programCs,
+    '"/internal/billing-v2/additional-users/password-setup/validate"',
+  );
+  assert.match(validateRoute, /ValidateInvitationTokenAsync/);
+  assert.doesNotMatch(validateRoute, /SetPasswordAsync/);
+  assert.doesNotMatch(validateRoute, /ResolveClientSessionAsync/);
+});
+
+check("la materialisation reste hors du parcours navigateur", () => {
+  // Les deux routes du parcours : la validation en lecture et le POST qui
+  // consomme le jeton.
+  const additionalUserRoutes = routeSection(
+    programCs,
+    '"/internal/billing-v2/additional-users/password-setup/validate"',
+    2,
+  );
+  assert.doesNotMatch(additionalUserRoutes, /TryMaterializeAsync/);
+  assert.doesNotMatch(additionalUserRoutes, /DisableAsync/);
 });
 
 let failures = 0;

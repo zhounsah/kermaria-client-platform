@@ -241,6 +241,71 @@ public sealed class MockBillingV2AdditionalUserIdentityRepository
         => Task.FromResult(
             BillingV2AdditionalUserAssignmentResult.Reject(code));
 
+    /// <inheritdoc />
+    /// <remarks>
+    /// Meme definition d'une place USER-ADDITIONAL que MariaDB : une place
+    /// secondaire sans droit contractuel actif n'en est pas une, et rester sur
+    /// <c>IsPrimary == false</c> ferait afficher des places attribuables que
+    /// l'attribution refuserait.
+    /// </remarks>
+    public Task<IReadOnlyList<BillingV2AdditionalUserSlotView>>
+        ListAdditionalUserSlotsAsync(
+            string customerId,
+            string subscriptionId,
+            CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            var views = _slots.Values
+                .Where(slot =>
+                    string.Equals(
+                        slot.SubscriptionId,
+                        subscriptionId,
+                        StringComparison.Ordinal)
+                    // Le client fait partie du critere, pas d'un filtre pose
+                    // apres : une place d'un autre client est absente, pas
+                    // masquee.
+                    && string.Equals(
+                        slot.SubscriptionCustomerId,
+                        customerId,
+                        StringComparison.Ordinal)
+                    && !slot.IsPrimary
+                    // Memes predicats que la clause SQL : une place non active
+                    // ou un abonnement non actif ne sont pas administrables,
+                    // et la politique d'attribution les refuse de toute facon.
+                    // Sans eux ici, aucun test mock ne pourrait voir la
+                    // divergence entre ce qui est affiche et ce qui est
+                    // acceptable.
+                    && string.Equals(
+                        slot.Status,
+                        BillingV2AdditionalUserIdentityConventions
+                            .ActiveSlotStatus,
+                        StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(
+                        slot.SubscriptionStatus,
+                        BillingV2AdditionalUserIdentityConventions
+                            .ProvisionableSubscriptionStatus,
+                        StringComparison.OrdinalIgnoreCase)
+                    && slot.HasActiveUserSlotEntitlement)
+                .OrderBy(slot => slot.Id, StringComparer.Ordinal)
+                .Select(slot => new BillingV2AdditionalUserSlotView(
+                    slot.Id,
+                    slot.IdentityReference is null ? null : slot.DisplayName,
+                    slot.IdentityReference is null ? null : slot.Email,
+                    slot.IdentityReference is not null,
+                    _lifecycles.Values
+                        .FirstOrDefault(lifecycle => string.Equals(
+                            lifecycle.SubscriptionUserId,
+                            slot.Id,
+                            StringComparison.Ordinal))
+                        ?.Status))
+                .ToArray();
+
+            return Task.FromResult<IReadOnlyList<BillingV2AdditionalUserSlotView>>(
+                views);
+        }
+    }
+
     public Task<BillingV2AdditionalUserIdentityRecord?> FindByPortalUserIdAsync(
         string portalUserId,
         CancellationToken cancellationToken)

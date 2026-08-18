@@ -46,6 +46,8 @@ public static class BillingV2AdditionalUserIdentityTests
         await VerifyIdentityReferencePointsAtTheCreatedUser();
         await VerifyKoxoIdentifierIsAllocated();
         await VerifyCrossCustomerAssignmentIsRefused();
+        await VerifyInvisibleSlotAnswersLikeAnAbsentOne();
+        await VerifyResendHonoursTheSubscriptionInTheUrl();
         await VerifyPrimarySlotIsRefused();
         await VerifyForeignSubscriptionIsRefused();
         await VerifyAlreadyAssignedSlotIsRefused();
@@ -79,6 +81,16 @@ public static class BillingV2AdditionalUserIdentityTests
         await VerifyAcknowledgeAndReadyAreIdempotent();
         VerifyExportQueryKeepsEveryMandatoryCondition();
         VerifyAssignmentPolicyRefusesEveryIncoherentSnapshot();
+        VerifyComposedSlotQueriesAreWellFormed();
+        await VerifyListingShowsEveryRealEmptySlot();
+        await VerifyListingHidesWhatIsNotAnAdditionalUserSlot();
+        await VerifyInactiveSlotIsNotAdministrable();
+        await VerifyInactiveSubscriptionHasNoAdministrableSlot();
+        await VerifyCrossCustomerListingIsEmpty();
+        await VerifyEveryLifecycleMapsToAProductState();
+        await VerifyGateOffClosesEveryOfferedAction();
+        await VerifyForeignPurposeTokenChangesNothing();
+        VerifySlotSummaryCarriesNoTechnicalData();
     }
 
     // ==================================================================
@@ -192,14 +204,130 @@ public static class BillingV2AdditionalUserIdentityTests
             "intrus@example.invalid");
 
         Assert(
-            !result.Succeeded
-            && result.Code
-                == BillingV2AdditionalUserRejectionCodes.SlotCustomerMismatch,
+            !result.Succeeded,
             "Une place d'un autre client est refusee : l'attribuer creerait "
             + $"une identite dans le mauvais perimetre annuaire ({result.Code}).");
         Assert(
             harness.PortalUsers.Entries.Count == 0,
             "Un refus ne laisse aucun utilisateur derriere lui.");
+    }
+
+    /// <summary>
+    /// Une place invisible repond <b>exactement</b> comme une place absente.
+    /// </summary>
+    /// <remarks>
+    /// La comparaison est faite entre les deux reponses reelles, pas contre
+    /// une constante : c'est l'egalite qui est le contrat. Le code et le
+    /// message sont tous deux verifies parce que l'espace client affiche le
+    /// message tel quel — n'unifier que le statut HTTP laisserait la phrase
+    /// « cette place n'appartient pas a votre organisation » confirmer a un
+    /// inconnu qu'une place existe ailleurs.
+    /// </remarks>
+    private static async Task VerifyInvisibleSlotAnswersLikeAnAbsentOne()
+    {
+        var harness = Harness.Create();
+        harness.RegisterSlot("slot-etranger", customerId: OtherCustomerId);
+        harness.RegisterSlot(
+            "slot-autre-abonnement",
+            subscriptionId: OtherSubscriptionId);
+
+        var unknown = await harness.AssignAsync(
+            "slot-inexistant",
+            "a@example.invalid");
+        var foreignCustomer = await harness.AssignAsync(
+            "slot-etranger",
+            "b@example.invalid");
+        var foreignSubscription = await harness.AssignAsync(
+            "slot-autre-abonnement",
+            "c@example.invalid");
+
+        foreach (var (label, result) in new[]
+        {
+            ("place d'un autre client", foreignCustomer),
+            ("place d'un autre abonnement", foreignSubscription)
+        })
+        {
+            Assert(
+                !result.Succeeded && !unknown.Succeeded,
+                $"La {label} est refusee, comme la place inexistante.");
+            Assert(
+                string.Equals(result.Code, unknown.Code, StringComparison.Ordinal),
+                $"La {label} rend le meme code qu'une place inexistante "
+                + $"(« {result.Code} » contre « {unknown.Code} »).");
+            Assert(
+                string.Equals(
+                    result.Message,
+                    unknown.Message,
+                    StringComparison.Ordinal),
+                $"La {label} rend le meme message qu'une place inexistante "
+                + $"(« {result.Message} » contre « {unknown.Message} »).");
+            Assert(
+                result.PortalUserId is null && result.LifecycleStatus is null,
+                $"La {label} ne renvoie aucune donnee de la place visee.");
+        }
+
+        Assert(
+            harness.PortalUsers.Entries.Count == 0,
+            "Aucun de ces refus ne cree quoi que ce soit.");
+    }
+
+    /// <summary>
+    /// Le renvoi d'invitation honore l'abonnement porte par l'URL.
+    /// </summary>
+    /// <remarks>
+    /// Meme client, mais la place appartient a un autre abonnement : l'adresse
+    /// appelee ne la designe pas. Le refus est celui d'une place absente, sinon
+    /// l'URL d'un abonnement deviendrait un revelateur des places des autres.
+    /// </remarks>
+    private static async Task VerifyResendHonoursTheSubscriptionInTheUrl()
+    {
+        var harness = Harness.Create();
+        harness.RegisterSlot("slot-1");
+        await harness.AssignAsync("slot-1", "alice@example.invalid");
+        var issued = harness.Emails.LastToken!;
+
+        var mismatched = await harness.Service.ResendInvitationAsync(
+            "slot-1",
+            OtherSubscriptionId,
+            CustomerId,
+            "correlation",
+            CancellationToken.None);
+        var unknown = await harness.Service.ResendInvitationAsync(
+            "slot-inexistant",
+            OtherSubscriptionId,
+            CustomerId,
+            "correlation",
+            CancellationToken.None);
+
+        Assert(
+            !mismatched.Succeeded,
+            "Une place appelee depuis l'URL d'un autre abonnement est refusee "
+            + $"({mismatched.Code}).");
+        Assert(
+            string.Equals(mismatched.Code, unknown.Code, StringComparison.Ordinal)
+            && string.Equals(
+                mismatched.Message,
+                unknown.Message,
+                StringComparison.Ordinal),
+            "Le refus est indistinguable de celui d'une place inexistante "
+            + $"(« {mismatched.Code} » contre « {unknown.Code} »).");
+        Assert(
+            string.Equals(
+                harness.Emails.LastToken,
+                issued,
+                StringComparison.Ordinal),
+            "Aucun nouveau jeton n'est emis : un refus ne doit pas invalider "
+            + "le lien deja envoye a la personne.");
+
+        var accepted = await harness.Service.ResendInvitationAsync(
+            "slot-1",
+            SubscriptionId,
+            CustomerId,
+            "correlation",
+            CancellationToken.None);
+        Assert(
+            accepted.Succeeded,
+            $"L'abonnement reel reste servi ({accepted.Code}).");
     }
 
     private static async Task VerifyPrimarySlotIsRefused()
@@ -224,10 +352,11 @@ public static class BillingV2AdditionalUserIdentityTests
 
         var result = await harness.AssignAsync("slot-1", "alice@example.invalid");
 
+        // Le code exact du refus est celui d'une place introuvable : la
+        // distinction reste interne a la politique, verifiee par
+        // VerifyAssignmentPolicyRefusesEveryIncoherentSnapshot.
         Assert(
-            !result.Succeeded
-            && result.Code == BillingV2AdditionalUserRejectionCodes
-                .SlotSubscriptionMismatch,
+            !result.Succeeded,
             $"La place doit appartenir a l'abonnement vise ({result.Code}).");
     }
 
@@ -446,6 +575,7 @@ public static class BillingV2AdditionalUserIdentityTests
 
         await harness.Service.ResendInvitationAsync(
             "slot-1",
+            SubscriptionId,
             CustomerId,
             "correlation",
             CancellationToken.None);
@@ -918,6 +1048,7 @@ public static class BillingV2AdditionalUserIdentityTests
             ("renvoi d'invitation", await harness.Service
                 .ResendInvitationAsync(
                     "slot-1",
+                    SubscriptionId,
                     CustomerId,
                     "correlation-test",
                     CancellationToken.None)),
@@ -1659,6 +1790,542 @@ public static class BillingV2AdditionalUserIdentityTests
                 string.Equals(actual, expected, StringComparison.Ordinal),
                 $"Refus attendu « {expected} », obtenu « {actual ?? "aucun"} ».");
         }
+    }
+
+    // ==================================================================
+    // Forme des requetes composees
+    // ==================================================================
+
+    /// <summary>
+    /// Les requetes assemblees a partir des fragments partages sont
+    /// syntaxiquement soudables.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Un litteral brut C# ne conserve pas le saut de ligne qui precede son
+    /// delimiteur fermant. Concatener un fragment commencant par
+    /// <c>FROM</c> juste apres <c>SELECT 1</c> produit donc
+    /// <c>SELECT 1FROM</c>, que le serveur lit comme un identifiant et
+    /// refuse. Le defaut est invisible partout ailleurs : les suites mock
+    /// n'executent aucun SQL, et la relecture humaine voit deux lignes la ou
+    /// la chaine n'en a qu'une.
+    /// </para>
+    /// <para>
+    /// La verification passe par les constantes reellement compilees, pas par
+    /// une relecture du fichier source : c'est la chaine envoyee au pilote qui
+    /// compte.
+    /// </para>
+    /// </remarks>
+    private static void VerifyComposedSlotQueriesAreWellFormed()
+    {
+        (string Label, string Sql)[] queries =
+        [
+            (
+                "lecture des places",
+                ReadSqlConstant(
+                    typeof(MariaDbBillingV2AdditionalUserIdentityRepository),
+                    "ListAdditionalUserSlotsSql")
+            ),
+            (
+                "projection portail client",
+                ReadSqlConstant(
+                    typeof(BillingV2PortalSubscriptionProjection),
+                    "SelectSql")
+            ),
+            (
+                "projection portail admin",
+                ReadSqlConstant(
+                    typeof(BillingV2PortalSubscriptionProjection),
+                    "AdminSelectSql")
+            )
+        ];
+
+        foreach (var (label, sql) in queries)
+        {
+            Assert(
+                !sql.Contains("1FROM", StringComparison.Ordinal),
+                $"La requete « {label} » soude deux mots-cles : le fragment "
+                + "partage doit commencer par un saut de ligne.");
+            Assert(
+                sql.Contains("SELECT 1\nFROM billing_v2_subscription_items",
+                    StringComparison.Ordinal),
+                $"La requete « {label} » doit ouvrir son EXISTS sur une "
+                + "clause FROM detachee.");
+            if (label.StartsWith("projection portail", StringComparison.Ordinal))
+            {
+                var normalizedSql = sql.Replace("\r\n", "\n", StringComparison.Ordinal);
+                Assert(
+                    !normalizedSql.Contains("updated_atFROM", StringComparison.Ordinal),
+                    $"La requete {label} soude subscription.updated_at et FROM.");
+                Assert(
+                    normalizedSql.Contains(
+                        "subscription.updated_at\nFROM billing_v2_subscriptions subscription",
+                        StringComparison.Ordinal),
+                    $"La requete {label} doit separer subscription.updated_at "
+                    + "du FROM principal par un saut de ligne explicite.");
+            }
+            // Ce que la lecture montre doit etre ce que l'attribution
+            // accepte : ces deux predicats sont la difference entre une place
+            // administrable et une place seulement vendue un jour.
+            foreach (var predicate in new[]
+            {
+                "AND slot.is_primary = 0",
+                "AND slot.status = 'active'",
+                "AND subscription.status = 'active'"
+            })
+            {
+                Assert(
+                    sql.Contains(predicate, StringComparison.Ordinal),
+                    $"La requete « {label} » doit imposer « {predicate} ».");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Lit une constante SQL compilee, quelle que soit sa visibilite.
+    /// </summary>
+    private static string ReadSqlConstant(Type type, string fieldName)
+    {
+        var field = type.GetField(
+            fieldName,
+            System.Reflection.BindingFlags.NonPublic
+            | System.Reflection.BindingFlags.Public
+            | System.Reflection.BindingFlags.Static);
+        Assert(
+            field is not null,
+            $"La constante {type.Name}.{fieldName} doit exister : sans elle, "
+            + "la requete reellement envoyee n'est plus verifiable.");
+        return (string)field!.GetRawConstantValue()!;
+    }
+
+    // ==================================================================
+    // Lecture produit des places
+    // ==================================================================
+
+    /// <summary>
+    /// Une place contractuelle vide est annoncee, pas omise.
+    /// </summary>
+    /// <remarks>
+    /// C'est le cas qui justifie l'ecran : sans lui, le client paie des places
+    /// qu'aucune interface ne lui montre, et il n'a aucun moyen de savoir
+    /// qu'il peut les attribuer.
+    /// </remarks>
+    private static async Task VerifyListingShowsEveryRealEmptySlot()
+    {
+        var harness = Harness.Create();
+        harness.RegisterSlot("slot-1");
+        harness.RegisterSlot("slot-2");
+
+        var slots = await harness.Service.ListSlotsAsync(
+            CustomerId,
+            SubscriptionId,
+            CancellationToken.None);
+
+        Assert(
+            slots.Count == 2,
+            $"Les deux places contractuelles sont listees ({slots.Count}).");
+        foreach (var slot in slots)
+        {
+            Assert(
+                string.Equals(
+                    slot.Status,
+                    BillingV2AdditionalUserSlotStatuses.Available,
+                    StringComparison.Ordinal),
+                $"Une place vide est annoncee a attribuer ({slot.Status}).");
+            Assert(
+                slot.CanAssign && !slot.CanResendInvitation,
+                "Une place vide propose l'attribution, et elle seule.");
+            Assert(
+                slot.DisplayName is null && slot.Email is null,
+                "Une place vide ne porte le nom de personne.");
+        }
+    }
+
+    /// <summary>
+    /// La place primaire et les places sans droit contractuel restent hors
+    /// de la lecture.
+    /// </summary>
+    /// <remarks>
+    /// <c>is_primary = 0</c> ne suffit pas a designer une place utilisateur
+    /// supplementaire : une ligne d'abonnement peut exister sans regle
+    /// d'attribution active. Annoncer une telle place ferait proposer une
+    /// attribution que la transaction refuserait par
+    /// <c>SLOT_ENTITLEMENT_MISSING</c>, sans que le client comprenne pourquoi.
+    /// </remarks>
+    private static async Task VerifyListingHidesWhatIsNotAnAdditionalUserSlot()
+    {
+        var harness = Harness.Create();
+        harness.RegisterSlot("slot-1");
+        harness.RegisterSlot("slot-primaire", isPrimary: true);
+        var withoutEntitlement = harness.RegisterSlot("slot-sans-droit");
+        withoutEntitlement.HasActiveUserSlotEntitlement = false;
+        harness.RegisterSlot(
+            "slot-autre-souscription",
+            subscriptionId: OtherSubscriptionId);
+
+        var slots = await harness.Service.ListSlotsAsync(
+            CustomerId,
+            SubscriptionId,
+            CancellationToken.None);
+
+        Assert(
+            slots.Count == 1
+            && string.Equals(slots[0].Id, "slot-1", StringComparison.Ordinal),
+            "Seule la place utilisateur supplementaire reelle de la "
+            + $"souscription demandee est listee ({slots.Count}).");
+    }
+
+    /// <summary>
+    /// Une place non active n'est pas administrable, donc pas listee.
+    /// </summary>
+    /// <remarks>
+    /// La politique d'attribution la refuse en <c>SLOT_NOT_ACTIVE</c>. La
+    /// lister l'annoncerait « a attribuer », avec un bouton dont l'appel
+    /// echouerait a chaque fois : le client lirait une panne la ou il y a une
+    /// place resiliee.
+    /// </remarks>
+    private static async Task VerifyInactiveSlotIsNotAdministrable()
+    {
+        var harness = Harness.Create();
+        harness.RegisterSlot("slot-1");
+        var cancelled = harness.RegisterSlot("slot-resilie");
+        cancelled.Status = "cancelled";
+
+        var slots = await harness.Service.ListSlotsAsync(
+            CustomerId,
+            SubscriptionId,
+            CancellationToken.None);
+
+        Assert(
+            slots.Count == 1
+            && string.Equals(slots[0].Id, "slot-1", StringComparison.Ordinal),
+            $"Seule la place active est administrable ({slots.Count}).");
+
+        var refused = await harness.AssignAsync(
+            "slot-resilie",
+            "alice@example.invalid");
+        Assert(
+            !refused.Succeeded,
+            "Ce que la lecture cache, la transaction le refuse : les deux "
+            + $"disent la meme chose ({refused.Code}).");
+    }
+
+    /// <summary>
+    /// Un abonnement non actif n'ouvre aucune place administrable.
+    /// </summary>
+    /// <remarks>
+    /// Meme raison : <c>SUBSCRIPTION_NOT_PROVISIONABLE</c> refuserait toute
+    /// attribution. Un abonnement resilie ne doit donc pas continuer a
+    /// presenter ses places comme attribuables.
+    /// </remarks>
+    private static async Task VerifyInactiveSubscriptionHasNoAdministrableSlot()
+    {
+        var harness = Harness.Create();
+        var slot = harness.RegisterSlot("slot-1");
+        slot.SubscriptionStatus = "cancelled";
+
+        var slots = await harness.Service.ListSlotsAsync(
+            CustomerId,
+            SubscriptionId,
+            CancellationToken.None);
+
+        Assert(
+            slots.Count == 0,
+            "Un abonnement non actif ne presente aucune place a administrer "
+            + $"({slots.Count}).");
+
+        var refused = await harness.AssignAsync("slot-1", "alice@example.invalid");
+        Assert(
+            !refused.Succeeded,
+            $"L'attribution reste refusee, comme avant ({refused.Code}).");
+    }
+
+    /// <summary>
+    /// La souscription d'une autre organisation n'existe pas.
+    /// </summary>
+    /// <remarks>
+    /// Aucune distinction n'est offerte entre « pas a vous » et « inconnue » :
+    /// la difference renseignerait sur l'existence d'une souscription tierce.
+    /// </remarks>
+    private static async Task VerifyCrossCustomerListingIsEmpty()
+    {
+        var harness = Harness.Create();
+        harness.RegisterSlot("slot-1");
+
+        var foreign = await harness.Service.ListSlotsAsync(
+            OtherCustomerId,
+            SubscriptionId,
+            CancellationToken.None);
+        var unknown = await harness.Service.ListSlotsAsync(
+            OtherCustomerId,
+            "subscription-inconnue",
+            CancellationToken.None);
+
+        Assert(
+            foreign.Count == 0,
+            "La souscription d'un autre client ne se lit pas.");
+        Assert(
+            unknown.Count == 0,
+            "Une souscription inconnue se lit exactement comme une "
+            + "souscription etrangere.");
+    }
+
+    /// <summary>
+    /// Chaque etat interne a une, et une seule, traduction produit.
+    /// </summary>
+    /// <remarks>
+    /// La traduction est le contrat de l'ecran : un etat interne ajoute plus
+    /// tard sans traduction tomberait dans « a finaliser » plutot que d'etre
+    /// presente comme un succes, mais un etat existant mal traduit ferait
+    /// croire a un acces disponible qui ne l'est pas.
+    /// </remarks>
+    private static async Task VerifyEveryLifecycleMapsToAProductState()
+    {
+        var harness = Harness.Create();
+        harness.RegisterSlot("slot-0-vide");
+
+        var invited = await AssignedLifecycleId(harness, "slot-1-invite", "a");
+        var koxoPending = await AssignedLifecycleId(harness, "slot-2-koxo", "b");
+        var directoryReady =
+            await AssignedLifecycleId(harness, "slot-3-annuaire", "c");
+        var ready = await AssignedLifecycleId(harness, "slot-4-pret", "d");
+        var failed = await AssignedLifecycleId(harness, "slot-5-echec", "e");
+        var disabled = await AssignedLifecycleId(harness, "slot-6-desactive", "f");
+
+        var now = DateTime.UtcNow;
+        await harness.Repository.MarkKoxoPendingAsync(
+            koxoPending, now, now, CancellationToken.None);
+        await harness.Repository.MarkKoxoPendingAsync(
+            directoryReady, now, now, CancellationToken.None);
+        await harness.Repository.MarkDirectoryResolvedAsync(
+            directoryReady,
+            Guid.NewGuid().ToString("D"),
+            now,
+            CancellationToken.None);
+        await harness.Repository.MarkKoxoPendingAsync(
+            ready, now, now, CancellationToken.None);
+        await harness.Repository.MarkDirectoryResolvedAsync(
+            ready,
+            Guid.NewGuid().ToString("D"),
+            now,
+            CancellationToken.None);
+        await harness.Repository.MarkReadyAsync(ready, now, CancellationToken.None);
+        await harness.Repository.MarkFailedAsync(
+            failed,
+            "AD_ACCESS_DENIED",
+            "detail technique",
+            CancellationToken.None);
+        await harness.Repository.MarkDisabledAsync(
+            disabled, now, CancellationToken.None);
+
+        var byId = (await harness.Service.ListSlotsAsync(
+                CustomerId,
+                SubscriptionId,
+                CancellationToken.None))
+            .ToDictionary(slot => slot.Id, StringComparer.Ordinal);
+
+        (string Slot, string Expected)[] expectations =
+        [
+            ("slot-0-vide", BillingV2AdditionalUserSlotStatuses.Available),
+            ("slot-1-invite", BillingV2AdditionalUserSlotStatuses.Invited),
+            ("slot-2-koxo", BillingV2AdditionalUserSlotStatuses.Activating),
+            ("slot-3-annuaire", BillingV2AdditionalUserSlotStatuses.Activating),
+            ("slot-4-pret", BillingV2AdditionalUserSlotStatuses.Active),
+            ("slot-5-echec", BillingV2AdditionalUserSlotStatuses.Attention),
+            ("slot-6-desactive", BillingV2AdditionalUserSlotStatuses.Disabled)
+        ];
+
+        foreach (var (slotId, expected) in expectations)
+        {
+            Assert(
+                byId.TryGetValue(slotId, out var slot)
+                && string.Equals(slot.Status, expected, StringComparison.Ordinal),
+                $"La place {slotId} est presentee « {expected} », obtenu "
+                + $"« {(byId.TryGetValue(slotId, out var actual) ? actual.Status : "absente")} ».");
+        }
+
+        // Seule la place invitee peut recevoir un nouveau lien : renvoyer une
+        // invitation a une identite deja active reinitialiserait un acces qui
+        // fonctionne.
+        foreach (var slot in byId.Values)
+        {
+            var isInvited = string.Equals(
+                slot.Status,
+                BillingV2AdditionalUserSlotStatuses.Invited,
+                StringComparison.Ordinal);
+            var isAvailable = string.Equals(
+                slot.Status,
+                BillingV2AdditionalUserSlotStatuses.Available,
+                StringComparison.Ordinal);
+            Assert(
+                slot.CanResendInvitation == isInvited,
+                $"Le renvoi d'invitation ne concerne que l'etat invite ({slot.Status}).");
+            Assert(
+                slot.CanAssign == isAvailable,
+                $"L'attribution ne concerne qu'une place libre ({slot.Status}).");
+            Assert(
+                isAvailable || slot.Email is not null,
+                "Une place occupee montre l'utilisateur qui l'occupe.");
+        }
+    }
+
+    /// <summary>
+    /// Drapeau ferme : l'ecran n'offre plus aucune action.
+    /// </summary>
+    /// <remarks>
+    /// Laisser les boutons visibles derriere un drapeau ferme produirait un
+    /// refus systematique, que le client lirait comme une panne alors que
+    /// c'est une decision d'exploitation.
+    /// </remarks>
+    private static async Task VerifyGateOffClosesEveryOfferedAction()
+    {
+        var enabled = Harness.Create();
+        enabled.RegisterSlot("slot-1");
+        await enabled.AssignAsync("slot-1", "alice@example.invalid");
+        enabled.RegisterSlot("slot-2");
+
+        var disabled = Harness.Create(provisioningEnabled: false);
+        disabled.RegisterSlot("slot-1");
+        disabled.RegisterSlot("slot-2");
+
+        var open = await enabled.Service.ListSlotsAsync(
+            CustomerId,
+            SubscriptionId,
+            CancellationToken.None);
+        var closed = await disabled.Service.ListSlotsAsync(
+            CustomerId,
+            SubscriptionId,
+            CancellationToken.None);
+
+        Assert(
+            open.Any(slot => slot.CanAssign)
+            && open.Any(slot => slot.CanResendInvitation),
+            "Drapeau ouvert : les actions restent proposees.");
+        Assert(
+            closed.Count == 2,
+            $"La lecture reste possible drapeau ferme ({closed.Count}).");
+        Assert(
+            closed.All(slot => !slot.CanAssign && !slot.CanResendInvitation),
+            "Drapeau ferme : plus aucune action n'est proposee.");
+    }
+
+    /// <summary>
+    /// Un jeton emis pour un autre usage ne fait rien, et reste intact.
+    /// </summary>
+    /// <remarks>
+    /// Le refus doit etre indistinguable d'un jeton inconnu, et surtout ne
+    /// rien consommer : consommer le jeton d'un autre parcours le detruirait
+    /// pour son parcours legitime, en plus de ne rien accomplir ici.
+    /// </remarks>
+    private static async Task VerifyForeignPurposeTokenChangesNothing()
+    {
+        var harness = Harness.Create();
+        harness.RegisterSlot("slot-1");
+        var assignment = await harness.AssignAsync(
+            "slot-1",
+            "alice@example.invalid");
+        var portalUserId = assignment.PortalUserId!;
+        var lifecycleId = harness.LifecycleIdOf(portalUserId);
+
+        // Jeton du parcours d'inscription, emis sur la meme identite : c'est
+        // exactement la confusion que le `purpose` doit empecher.
+        var foreignToken = PortalSetupToken.Generate();
+        await harness.PasswordSetups.IssueAsync(
+            new PortalPasswordSetupIssue(
+                Guid.NewGuid().ToString("D"),
+                portalUserId,
+                "signup_pending",
+                PortalSetupToken.Hash(foreignToken),
+                DateTime.UtcNow.AddHours(24)),
+            CancellationToken.None);
+
+        var validation = await harness.Service.ValidateInvitationTokenAsync(
+            foreignToken,
+            CancellationToken.None);
+        var applied = await harness.Service.SetPasswordAsync(
+            foreignToken,
+            Password,
+            CancellationToken.None);
+
+        Assert(
+            !validation.Succeeded
+            && validation.Code == PortalPasswordSetupCodes.TokenInvalid,
+            "Un jeton d'un autre usage est refuse a la validation, et refuse "
+            + $"comme un jeton inconnu ({validation.Code}).");
+        Assert(
+            !applied.Succeeded
+            && applied.Code == PortalPasswordSetupCodes.TokenInvalid,
+            $"Un jeton d'un autre usage ne pose aucun mot de passe ({applied.Code}).");
+        Assert(
+            harness.PortalUsers.Entries.Single().PasswordHash is null,
+            "Le condensat de mot de passe reste inchange.");
+        Assert(
+            string.Equals(
+                (await harness.Repository.FindBySubscriptionUserIdAsync(
+                    "slot-1",
+                    CancellationToken.None))!.Status,
+                BillingV2UserIdentityStatuses.AwaitingPassword,
+                StringComparison.Ordinal),
+            "Le cycle de vie n'a pas bouge.");
+        Assert(
+            await IsTokenStillUsable(harness, foreignToken),
+            "Le jeton de l'autre parcours n'est pas consomme : il reste "
+            + "utilisable la ou il a un sens.");
+        Assert(
+            lifecycleId.Length > 0,
+            "Le cycle de vie existe toujours.");
+    }
+
+    /// <summary>
+    /// La projection produit ne transporte aucune donnee technique.
+    /// </summary>
+    /// <remarks>
+    /// Le controle porte sur la forme du type, pas sur une instance : ajouter
+    /// un identifiant KoXo, un GUID annuaire ou un code d'echec « pour le
+    /// support » les enverrait au navigateur de chaque client.
+    /// </remarks>
+    private static void VerifySlotSummaryCarriesNoTechnicalData()
+    {
+        var actual = typeof(BillingV2AdditionalUserSlotSummary)
+            .GetProperties()
+            .Select(property => property.Name)
+            .Where(name => !string.Equals(
+                name,
+                "EqualityContract",
+                StringComparison.Ordinal))
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+
+        string[] expected =
+        [
+            "CanAssign",
+            "CanResendInvitation",
+            "DisplayName",
+            "Email",
+            "Id",
+            "Status"
+        ];
+
+        Assert(
+            actual.SequenceEqual(expected, StringComparer.Ordinal),
+            "La projection produit expose exactement l'identifiant de place, "
+            + "le nom, l'adresse, l'etat et les deux actions : obtenu "
+            + $"« {string.Join(", ", actual)} ».");
+    }
+
+    private static async Task<string> AssignedLifecycleId(
+        Harness harness,
+        string slotId,
+        string emailPrefix)
+    {
+        harness.RegisterSlot(slotId);
+        var result = await harness.AssignAsync(
+            slotId,
+            $"{emailPrefix}@example.invalid");
+        Assert(
+            result.Succeeded,
+            $"L'attribution de {slotId} doit reussir ({result.Code}).");
+        return harness.LifecycleIdOf(result.PortalUserId!);
     }
 
     // ==================================================================

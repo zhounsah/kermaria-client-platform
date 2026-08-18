@@ -128,6 +128,13 @@ export default async function ProfileSubscriptionsPage({
               // annoncer une « prochaine echeance », meme « a determiner »,
               // laisse croire a un prelevement qui n'arrivera jamais.
               const isUpfront = item.paymentMode === "upfront";
+              // Places « utilisateur supplementaire » reellement portees par
+              // le contrat, comptees cote API. Sans place, pas de renvoi : la
+              // souscription n'en ouvre aucune, et proposer l'ecran donnerait
+              // une page vide sans explication.
+              const additionalUserSlots = item.additionalUserSlotsCount ?? 0;
+              const assignedAdditionalUsers =
+                item.assignedAdditionalUsersCount ?? 0;
               const cancellable =
                 !isBillingV2
                 && item.status !== "cancelled"
@@ -249,6 +256,17 @@ export default async function ProfileSubscriptionsPage({
                   {isBillingV2 ? (
                     <p className="field-hint">
                       Souscription Billing V2 affichée en lecture seule.
+                    </p>
+                  ) : null}
+                  {additionalUserSlots > 0 ? (
+                    <p className="field-hint">
+                      Utilisateurs supplémentaires : {assignedAdditionalUsers}{" "}
+                      / {additionalUserSlots} configurés{" · "}
+                      <Link
+                        href={`/profile/subscriptions/${encodeURIComponent(item.id)}/users`}
+                      >
+                        Gérer les utilisateurs
+                      </Link>
                     </p>
                   ) : null}
                   <p className="field-hint">
