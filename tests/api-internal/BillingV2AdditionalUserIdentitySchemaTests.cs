@@ -87,6 +87,19 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
                 connection,
                 fixture,
                 connectionString);
+
+            await VerifyRealHandoffCommitsAtomicallyAsync(
+                connection,
+                fixture,
+                connectionString);
+            await VerifyRealHandoffRollsBackEntirelyAsync(
+                connection,
+                fixture,
+                connectionString);
+            await VerifyRealAssignmentIsSerializedAsync(
+                connection,
+                fixture,
+                connectionString);
         }
         finally
         {
@@ -663,6 +676,451 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
             "L'acquittement efface l'entree.");
     }
 
+    // ==================================================================
+    // Depots reels : ce que seule une vraie transaction peut prouver
+    // ==================================================================
+
+    /// <summary>
+    /// Le relais du mot de passe s'engage d'un seul bloc, par les vrais depots.
+    /// </summary>
+    /// <remarks>
+    /// Le scenario passe par
+    /// <see cref="MariaDbBillingV2AdditionalUserIdentityRepository"/> puis
+    /// <see cref="MariaDbPortalPasswordSetupRepository"/>, puis relit tout sur
+    /// une connexion neuve : les quatre ecritures — condensat, consommation du
+    /// jeton, secret scelle, transition du cycle — doivent etre visibles
+    /// ensemble ou pas du tout.
+    /// </remarks>
+    private static async Task VerifyRealHandoffCommitsAtomicallyAsync(
+        MySqlConnection connection,
+        Fixture fixture,
+        string connectionString)
+    {
+        const string password = "MotDePasseAtomique!1";
+        const string expectedHash = "$argon2id$test$atomique";
+
+        var sql = SqlFor(connectionString);
+        var identities =
+            new MariaDbBillingV2AdditionalUserIdentityRepository(sql);
+        var setups = new MariaDbPortalPasswordSetupRepository(sql);
+        var store = NewStore(sql, TestProtector(11), connectionString);
+
+        var slotId = await fixture.CreateSlotAsync(connection, isPrimary: false);
+        var token = $"jeton-atomique-{Guid.NewGuid():N}";
+        var command = BuildAssignment(fixture, slotId, "atomique", token);
+
+        var assignment = await identities.AssignAsync(
+            command,
+            RejectIfUnavailable,
+            CancellationToken.None);
+        Ensure(
+            assignment.Succeeded,
+            "L'attribution reelle doit reussir sur une place libre "
+            + $"(refus obtenu : {assignment.RejectionCode}).");
+
+        var secret = store.Seal(command.PortalUserId, password);
+        Ensure(secret is not null, "Le scellement doit produire un secret.");
+
+        var consumption = await setups.ConsumeAndSetPasswordAsync(
+            PortalSetupToken.Hash(token),
+            _ => expectedHash,
+            new PortalPasswordHandoff(
+                command.PortalUserId,
+                command.LifecycleId,
+                DateTime.UtcNow,
+                secret),
+            CancellationToken.None);
+        Ensure(
+            consumption.Succeeded
+            && consumption.PortalUserId == command.PortalUserId,
+            "La consommation reelle doit reussir "
+            + $"(code obtenu : {consumption.Code}).");
+
+        // Connexion neuve : on ne lit rien depuis la transaction qui a ecrit.
+        await using var verification = new MySqlConnection(connectionString);
+        await verification.OpenAsync();
+
+        Ensure(
+            await ScalarStringAsync(
+                verification,
+                "SELECT password_hash FROM portal_users WHERE id = @id;",
+                ("@id", command.PortalUserId)) == expectedHash,
+            "Le condensat doit etre pose en base apres COMMIT.");
+        Ensure(
+            await ScalarLongAsync(
+                verification,
+                """
+                SELECT COUNT(*)
+                FROM portal_user_password_setups
+                WHERE id = @id AND consumed_at IS NOT NULL;
+                """,
+                ("@id", command.PasswordSetupId)) == 1,
+            "Le jeton doit etre marque consomme.");
+        Ensure(
+            await ScalarLongAsync(
+                verification,
+                """
+                SELECT COUNT(*)
+                FROM koxo_pending_directory_passwords
+                WHERE portal_user_id = @id;
+                """,
+                ("@id", command.PortalUserId)) == 1,
+            "Le secret scelle doit etre persiste par la meme transaction.");
+        Ensure(
+            await ScalarStringAsync(
+                verification,
+                """
+                SELECT status
+                FROM billing_v2_user_identity_provisioning
+                WHERE id = @id;
+                """,
+                ("@id", command.LifecycleId)) == "koxo_pending",
+            "Le cycle de vie doit avoir bascule en koxo_pending.");
+
+        // Le secret persiste bien le mot de passe REEL : un chiffre illisible
+        // passerait toutes les assertions de comptage ci-dessus.
+        Ensure(
+            await NewStore(sql, TestProtector(11), connectionString)
+                .PeekAsync(command.PortalUserId, CancellationToken.None)
+                == password,
+            "Un processus neuf doit relire le mot de passe exact.");
+    }
+
+    /// <summary>
+    /// Un echec tardif annule tout, condensat compris.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Deux declenchements, tous deux posterieurs au debut des ecritures :
+    /// un chiffre plus long que <c>VARCHAR(1024)</c>, qui leve une erreur SQL
+    /// remontant jusqu'a l'appelant ; puis un <c>lifecycle_id</c> inexistant,
+    /// qui produit un refus metier sans exception. Le premier prouve que
+    /// l'annulation vient bien de la transaction et non d'un chemin d'erreur
+    /// ecrit a la main ; le second ne depend d'aucun <c>sql_mode</c>.
+    /// </para>
+    /// <para>
+    /// Ce test mord si la transaction disparait : le jeton resterait consomme
+    /// et le nouveau condensat pose, alors que le secret reversible — qui
+    /// n'existe en clair qu'a cet instant — n'aurait jamais ete ecrit.
+    /// </para>
+    /// </remarks>
+    private static async Task VerifyRealHandoffRollsBackEntirelyAsync(
+        MySqlConnection connection,
+        Fixture fixture,
+        string connectionString)
+    {
+        const string previousHash = "$argon2id$test$precedent";
+        var sql = SqlFor(connectionString);
+        var identities =
+            new MariaDbBillingV2AdditionalUserIdentityRepository(sql);
+        var setups = new MariaDbPortalPasswordSetupRepository(sql);
+        var store = NewStore(sql, TestProtector(11), connectionString);
+
+        var slotId = await fixture.CreateSlotAsync(connection, isPrimary: false);
+        var token = $"jeton-rollback-{Guid.NewGuid():N}";
+        var command = BuildAssignment(fixture, slotId, "rollback", token);
+        var assignment = await identities.AssignAsync(
+            command,
+            RejectIfUnavailable,
+            CancellationToken.None);
+        Ensure(
+            assignment.Succeeded,
+            "L'attribution preparatoire doit reussir "
+            + $"(refus obtenu : {assignment.RejectionCode}).");
+
+        // Un condensat anterieur connu : sans lui, « intact » ne voudrait rien
+        // dire, NULL etant aussi l'etat d'un compte jamais active.
+        await ExecuteAsync(
+            connection,
+            "UPDATE portal_users SET password_hash = @h WHERE id = @id;",
+            ("@h", previousHash),
+            ("@id", command.PortalUserId));
+
+        var tokenHash = PortalSetupToken.Hash(token);
+        var secret = store.Seal(command.PortalUserId, "MotDePasseAnnule!1")!;
+
+        // 1. Erreur SQL tardive : le chiffre depasse la colonne.
+        MySqlException? failure = null;
+        try
+        {
+            await setups.ConsumeAndSetPasswordAsync(
+                tokenHash,
+                _ => "$argon2id$test$jamais-pose",
+                new PortalPasswordHandoff(
+                    command.PortalUserId,
+                    command.LifecycleId,
+                    DateTime.UtcNow,
+                    new PortalPasswordSecret(
+                        new string('A', 2048),
+                        secret.KeyId,
+                        secret.ExpiresAtUtc)),
+                CancellationToken.None);
+        }
+        catch (MySqlException exception)
+        {
+            failure = exception;
+        }
+
+        Ensure(
+            failure is not null,
+            "Un chiffre de 2048 caracteres doit etre refuse par "
+            + "koxo_pending_directory_passwords.ciphertext (VARCHAR(1024)). "
+            + "Sans erreur, la base tronque silencieusement et ce scenario ne "
+            + "prouverait plus rien : verifier sql_mode.");
+        await AssertHandoffLeftNoTraceAsync(
+            connectionString,
+            command,
+            previousHash,
+            "apres une erreur SQL tardive");
+
+        // 2. Refus metier tardif : le cycle vise n'existe pas. Meme exigence,
+        //    sans dependre du mode strict du serveur.
+        var refused = await setups.ConsumeAndSetPasswordAsync(
+            tokenHash,
+            _ => "$argon2id$test$jamais-pose-non-plus",
+            new PortalPasswordHandoff(
+                command.PortalUserId,
+                Guid.NewGuid().ToString("D"),
+                DateTime.UtcNow,
+                secret),
+            CancellationToken.None);
+        Ensure(
+            refused.Code == PortalPasswordSetupCodes.HandoffFailed,
+            "Un cycle de vie introuvable doit produire PASSWORD_HANDOFF_FAILED "
+            + $"(code obtenu : {refused.Code}).");
+        await AssertHandoffLeftNoTraceAsync(
+            connectionString,
+            command,
+            previousHash,
+            "apres un refus metier tardif");
+
+        // Le jeton doit rester utilisable : c'est l'unique lien dont dispose la
+        // personne, et rien n'a abouti.
+        var target = await setups.FindByTokenHashAsync(
+            tokenHash,
+            CancellationToken.None);
+        Ensure(
+            target is not null && target.IsUsable(DateTime.UtcNow),
+            "Le jeton doit rester utilisable apres une annulation.");
+    }
+
+    private static async Task AssertHandoffLeftNoTraceAsync(
+        string connectionString,
+        BillingV2AdditionalUserAssignmentCommand command,
+        string previousHash,
+        string context)
+    {
+        await using var verification = new MySqlConnection(connectionString);
+        await verification.OpenAsync();
+
+        Ensure(
+            await ScalarStringAsync(
+                verification,
+                "SELECT password_hash FROM portal_users WHERE id = @id;",
+                ("@id", command.PortalUserId)) == previousHash,
+            $"Le condensat anterieur doit etre intact {context}.");
+        Ensure(
+            await ScalarLongAsync(
+                verification,
+                """
+                SELECT COUNT(*)
+                FROM portal_user_password_setups
+                WHERE id = @id AND consumed_at IS NULL;
+                """,
+                ("@id", command.PasswordSetupId)) == 1,
+            $"Le jeton ne doit pas etre consomme {context}.");
+        Ensure(
+            await ScalarLongAsync(
+                verification,
+                """
+                SELECT COUNT(*)
+                FROM koxo_pending_directory_passwords
+                WHERE portal_user_id = @id;
+                """,
+                ("@id", command.PortalUserId)) == 0,
+            $"Aucun secret ne doit subsister {context}.");
+        Ensure(
+            await ScalarStringAsync(
+                verification,
+                """
+                SELECT status
+                FROM billing_v2_user_identity_provisioning
+                WHERE id = @id;
+                """,
+                ("@id", command.LifecycleId)) == "awaiting_password",
+            $"Le cycle de vie doit rester awaiting_password {context}.");
+    }
+
+    /// <summary>
+    /// Deux attributions concurrentes sur la meme place : une seule aboutit.
+    /// </summary>
+    /// <remarks>
+    /// Les deux e-mails sont distincts, donc ce n'est pas l'index unique de
+    /// <c>portal_users.email</c> qui tranche : seuls le <c>FOR UPDATE</c> de la
+    /// place et le <c>UPDATE</c> conditionne a
+    /// <c>identity_reference IS NULL</c> peuvent le faire.
+    /// </remarks>
+    private static async Task VerifyRealAssignmentIsSerializedAsync(
+        MySqlConnection connection,
+        Fixture fixture,
+        string connectionString)
+    {
+        var identities = new MariaDbBillingV2AdditionalUserIdentityRepository(
+            SqlFor(connectionString));
+
+        var slotId = await fixture.CreateSlotAsync(connection, isPrimary: false);
+        var first = BuildAssignment(
+            fixture,
+            slotId,
+            "concurrent-a",
+            $"jeton-concurrent-a-{Guid.NewGuid():N}");
+        var second = BuildAssignment(
+            fixture,
+            slotId,
+            "concurrent-b",
+            $"jeton-concurrent-b-{Guid.NewGuid():N}");
+
+        var results = await Task.WhenAll(
+            identities.AssignAsync(
+                first,
+                RejectIfUnavailable,
+                CancellationToken.None),
+            identities.AssignAsync(
+                second,
+                RejectIfUnavailable,
+                CancellationToken.None));
+
+        var winners = results.Where(result => result.Succeeded).ToList();
+        Ensure(
+            winners.Count == 1,
+            "Exactement une des deux tentatives doit aboutir "
+            + $"({winners.Count} obtenues).");
+        var loser = results.Single(result => !result.Succeeded);
+        Ensure(
+            loser.RejectionCode
+                == BillingV2AdditionalUserRejectionCodes.SlotAlreadyAssigned,
+            "La tentative perdante doit etre refusee comme conflit de place "
+            + $"(code obtenu : {loser.RejectionCode}).");
+
+        var winnerPortalUserId = winners[0].Created!.PortalUserId;
+
+        await using var verification = new MySqlConnection(connectionString);
+        await verification.OpenAsync();
+
+        Ensure(
+            await ScalarLongAsync(
+                verification,
+                """
+                SELECT COUNT(*)
+                FROM portal_users
+                WHERE id IN (@a, @b);
+                """,
+                ("@a", first.PortalUserId),
+                ("@b", second.PortalUserId)) == 1,
+            "Un seul utilisateur portail doit exister : l'autre insertion doit "
+            + "avoir ete annulee, pas laissee orpheline.");
+        Ensure(
+            await ScalarLongAsync(
+                verification,
+                """
+                SELECT COUNT(*)
+                FROM billing_v2_user_identity_provisioning
+                WHERE subscription_user_id = @slot;
+                """,
+                ("@slot", slotId)) == 1,
+            "La place ne doit porter qu'un seul cycle de vie.");
+        Ensure(
+            await ScalarLongAsync(
+                verification,
+                """
+                SELECT COUNT(*)
+                FROM portal_user_password_setups
+                WHERE id IN (@a, @b);
+                """,
+                ("@a", first.PasswordSetupId),
+                ("@b", second.PasswordSetupId)) == 1,
+            "Un seul jeton de mot de passe doit avoir ete emis.");
+        var assignedIdentity = await ScalarStringAsync(
+            verification,
+            """
+            SELECT identity_reference
+            FROM billing_v2_subscription_users
+            WHERE id = @slot;
+            """,
+            ("@slot", slotId));
+        Ensure(
+            string.Equals(
+                assignedIdentity,
+                winnerPortalUserId,
+                StringComparison.OrdinalIgnoreCase),
+            "La place doit designer l'attribution qui a abouti.");
+    }
+
+    /// <summary>
+    /// Refus volontairement reduits a ce que la concurrence peut declencher.
+    /// </summary>
+    /// <remarks>
+    /// Les regles contractuelles — droit, perimetre, statut de la place — sont
+    /// couvertes par la clause d'export et les suites mock. Ici, seul compte ce
+    /// que l'instantane <b>verrouille</b> revele : place deja prise, cycle deja
+    /// present, e-mail deja utilise.
+    /// </remarks>
+    private static string? RejectIfUnavailable(
+        BillingV2AdditionalUserSlotSnapshot snapshot)
+    {
+        if (snapshot.EmailAlreadyUsed)
+        {
+            return BillingV2AdditionalUserRejectionCodes.EmailAlreadyUsed;
+        }
+
+        if (snapshot.HasExistingLifecycle)
+        {
+            return BillingV2AdditionalUserRejectionCodes.LifecycleAlreadyExists;
+        }
+
+        return snapshot.IdentityReference is null
+            ? null
+            : BillingV2AdditionalUserRejectionCodes.SlotAlreadyAssigned;
+    }
+
+    private static BillingV2AdditionalUserAssignmentCommand BuildAssignment(
+        Fixture fixture,
+        string slotId,
+        string label,
+        string token)
+        => new(
+            fixture.CustomerId,
+            fixture.SubscriptionId,
+            slotId,
+            Guid.NewGuid().ToString("D"),
+            Guid.NewGuid().ToString("D"),
+            Guid.NewGuid().ToString("D"),
+            PortalSetupToken.Hash(token),
+            DateTime.UtcNow.AddHours(2),
+            BillingV2AdditionalUserIdentityConventions.PasswordSetupPurpose,
+            $"{label}-{fixture.Marker}@example.invalid",
+            $"Utilisateur {label}",
+            "monsieur",
+            "Paul",
+            "Durand",
+            new DateOnly(1988, 3, 4),
+            "PD",
+            "+33123456789",
+            "tests");
+
+    private static SqlRuntimeConfiguration SqlFor(string connectionString)
+        => new(
+            PortalPersistenceMode.MariaDb,
+            "mariadb",
+            connectionString,
+            "TEST",
+            ConfigurationValid: true);
+
+    private static KoxoPendingPasswordProtector? TestProtector(byte filler)
+        => KoxoPendingPasswordProtector.TryCreate(
+            Convert.ToBase64String(
+                Enumerable.Repeat(filler, 32).ToArray()));
+
     private static MariaDbKoxoPendingPasswordStore NewStore(
         SqlRuntimeConfiguration sql,
         KoxoPendingPasswordProtector? protector,
@@ -1178,6 +1636,16 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
                 """,
                 ("@a", CustomerId),
                 ("@b", OtherCustomerId));
+            // Le vrai depot journalise chaque attribution ; l'audit ne porte
+            // pas de cle etrangere, donc rien ne l'emporterait autrement.
+            await ExecuteAsync(
+                connection,
+                """
+                DELETE FROM billing_v2_audit_log
+                WHERE entity_type = 'billing_v2_subscription_user'
+                  AND details_text LIKE CONCAT('%subscription_id=', @id, '%');
+                """,
+                ("@id", SubscriptionId));
             await ExecuteAsync(
                 connection,
                 "DELETE FROM billing_v2_subscription_items WHERE subscription_id = @id;",
