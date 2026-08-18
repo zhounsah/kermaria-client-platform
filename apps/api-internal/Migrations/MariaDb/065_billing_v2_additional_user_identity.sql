@@ -199,3 +199,68 @@ CREATE TABLE IF NOT EXISTS portal_user_password_setups (
         ON UPDATE RESTRICT
         ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- statement-break
+
+-- ============================================================================
+-- 3. MOT DE PASSE EN ATTENTE DE REPRISE PAR KoXo
+--
+-- Depuis que KoXo fait autorite sur l'annuaire, le mot de passe voyage par la
+-- colonne 14 du CSV. Il n'existe en clair qu'a l'instant ou la personne le
+-- saisit, alors que l'export qui doit le porter est asynchrone. Il faut donc
+-- le retenir entre les deux.
+--
+-- Le retenir en memoire de processus ne suffit pas : un redemarrage de l'API,
+-- ou un instantane suivi d'un echec KoXo, perd le SEUL secret reversible du
+-- systeme. Le portail reste utilisable, mais l'annuaire ne recevra jamais ce
+-- mot de passe et l'utilisateur perd VPN, RDS et stockage sans aucune erreur
+-- visible.
+--
+-- D'ou cette table. Trois regles non negociables :
+--
+--   1. jamais de mot de passe en clair. La colonne porte un chiffre
+--      authentifie AES-256-GCM ; la cle vit hors base, hors depot et hors
+--      configuration versionnee, et n'est jamais generee au demarrage.
+--   2. jamais un simple condensat : KoXo a besoin du mot de passe REEL, un
+--      hash ne serait pas rejouable.
+--   3. relecture non destructive. L'entree n'est effacee qu'apres preuve
+--      durable que le lien AD attendu existe. Un instantane peut donc relire
+--      le meme secret autant de fois que necessaire, et un arret avant ou
+--      apres l'export reste reprenable.
+--
+-- `key_id` empeche une rotation de cle de produire un dechiffrement silencieux
+-- et faux : une ligne posee sous une autre cle est ignoree, jamais devinee.
+--
+-- `aad` du chiffrement = `portal_user_id` : un chiffre deplace d'une ligne a
+-- l'autre ne se dechiffre pas, ce qui interdit d'attribuer le mot de passe
+-- d'une personne a une autre.
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS koxo_pending_directory_passwords (
+    portal_user_id                  CHAR(36)      NOT NULL,
+
+    -- Base64 de nonce(12) || tag(16) || chiffre. Jamais de clair.
+    ciphertext                      VARCHAR(1024) NOT NULL,
+
+    -- Empreinte courte de la cle ayant chiffre cette ligne.
+    key_id                          VARCHAR(64)   NOT NULL,
+
+    expires_at                      DATETIME(6)   NOT NULL,
+
+    -- Nombre de relectures par un instantane. Diagnostic uniquement : une
+    -- valeur qui grimpe signale un cycle KoXo qui n'aboutit pas.
+    published_count                 INT           NOT NULL DEFAULT 0,
+    last_published_at               DATETIME(6)   NULL,
+
+    created_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6),
+    updated_at                      DATETIME(6)   NOT NULL DEFAULT UTC_TIMESTAMP(6),
+
+    PRIMARY KEY (portal_user_id),
+    KEY idx_koxo_pending_directory_passwords_expiry (expires_at),
+
+    CONSTRAINT fk_koxo_pending_directory_passwords_user
+        FOREIGN KEY (portal_user_id)
+        REFERENCES portal_users(id)
+        ON UPDATE RESTRICT
+        ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

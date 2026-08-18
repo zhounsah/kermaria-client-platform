@@ -4443,7 +4443,10 @@ async Task RunKoxoPendingPasswordTestsAsync()
     var store = NewPendingPasswordStore();
     var service = new KoxoExportService(repository, store);
 
-    store.Publish("portal-user-1", "NOT_A_REAL_PASSWORD_V041");
+    await store.PublishAsync(
+        "portal-user-1",
+        "NOT_A_REAL_PASSWORD_V041",
+        CancellationToken.None);
 
     // Le tableau de bord rejoue la preparation a la demande. S'il consommait
     // l'entree, le mot de passe disparaitrait avant d'atteindre KoXo — et
@@ -4463,20 +4466,35 @@ async Task RunKoxoPendingPasswordTestsAsync()
         exported.Users.Single().MotDePasse == "NOT_A_REAL_PASSWORD_V041",
         "L'export reel doit publier le mot de passe en attente.");
 
-    // Usage unique : un second export ne doit pas republier le mot de passe,
-    // sinon KoXo le reappliquerait indefiniment a chaque synchronisation et
-    // annulerait tout changement ulterieur.
+    // Relecture NON destructive : tant que l'identite annuaire n'est pas
+    // confirmee, un second instantane doit reporter le meme mot de passe.
+    // L'ancien comportement a usage unique perdait le seul secret reversible
+    // du systeme des que l'export echouait apres lecture, ou que l'API
+    // redemarrait entre les deux — sans aucune erreur visible.
     var again = await service.ExportAsync(
         "api",
         "v0.41-koxo-password-2",
         "127.0.0.1",
         CancellationToken.None);
     Ensure(
-        again.Users.Single().MotDePasse is null,
-        "Le mot de passe en attente doit etre a usage unique.");
+        again.Users.Single().MotDePasse == "NOT_A_REAL_PASSWORD_V041",
+        "Un second export doit republier le mot de passe tant qu'il n'est "
+        + "pas acquitte.");
+
+    // L'acquittement n'intervient qu'apres preuve du lien annuaire.
+    await store.AcknowledgeAsync("portal-user-1", CancellationToken.None);
+    var acknowledged = await service.ExportAsync(
+        "api",
+        "v0.41-koxo-password-3",
+        "127.0.0.1",
+        CancellationToken.None);
+    Ensure(
+        acknowledged.Users.Single().MotDePasse is null,
+        "Apres acquittement, le mot de passe ne doit plus etre republie.");
 
     Ensure(
-        store.Consume("portal-user-inconnu") is null,
+        await store.PeekAsync("portal-user-inconnu", CancellationToken.None)
+            is null,
         "Un identifiant sans mot de passe en attente doit rendre null.");
 }
 

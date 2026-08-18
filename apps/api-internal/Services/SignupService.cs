@@ -870,7 +870,10 @@ public sealed class SignupService : ISignupService
             // NextCloud, RDS et le VPN sans aucune erreur visible. On publie
             // donc le mot de passe pour l'export, et le declenchement qui suit
             // dans ApplyPasswordAsync le fait appliquer par KoXo.
-            _pendingPasswords.Publish(record.ApprovedUserId, password);
+            await _pendingPasswords.PublishAsync(
+                record.ApprovedUserId,
+                password,
+                cancellationToken);
         }
         else
         {

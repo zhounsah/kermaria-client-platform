@@ -66,6 +66,11 @@ public static class BillingV2AdditionalUserIdentityTests
         await VerifyMaterializationBeforePasswordIsRefused();
         await VerifyDisabledLifecycleStopsMaterializing();
         await VerifyDirectoryObjectConflictFailsClosed();
+        await VerifyPendingPasswordSurvivesUntilTheLinkIsProven();
+        await VerifyGateOffRefusesEveryMutation();
+        await VerifyGateOffStillValidatesATokenReadOnly();
+        await VerifyUnavailableHandoffNeverConsumesTheToken();
+        VerifyProtectorRoundTripsWithoutLeakingPlaintext();
         VerifyExportQueryKeepsEveryMandatoryCondition();
         VerifyAssignmentPolicyRefusesEveryIncoherentSnapshot();
     }
@@ -523,10 +528,18 @@ public static class BillingV2AdditionalUserIdentityTests
             CancellationToken.None);
 
         Assert(
-            harness.PendingPasswords.Consume(assignment.PortalUserId!)
-                == Password,
+            await harness.PendingPasswords.PeekAsync(
+                assignment.PortalUserId!,
+                CancellationToken.None) == Password,
             "Le mot de passe est publie pour la colonne 14 du CSV, seul chemin "
             + "par lequel KoXo l'appliquera a l'annuaire.");
+        Assert(
+            await harness.PendingPasswords.PeekAsync(
+                assignment.PortalUserId!,
+                CancellationToken.None) == Password,
+            "Une relecture ne consomme pas le secret : tant que l'identite "
+            + "n'est pas confirmee, l'instantane suivant doit encore le "
+            + "porter.");
         Assert(
             harness.Koxo.Triggers.Count > 0,
             "Un declenchement de synchronisation KoXo est emis.");
@@ -777,6 +790,289 @@ public static class BillingV2AdditionalUserIdentityTests
     // 15. Forme de la clause d'export KoXo
     // ==================================================================
 
+    // ==================================================================
+    // Reprise apres crash et verrou de provisioning
+    // ==================================================================
+
+    /// <summary>
+    /// Le secret destine a KoXo survit a un instantane qui n'aboutit pas.
+    /// </summary>
+    /// <remarks>
+    /// C'est le seul secret reversible du systeme : le portail n'en garde
+    /// qu'un condensat, et KoXo a besoin du mot de passe reel pour la colonne
+    /// 14 du CSV. Le retirer au premier instantane le perdait des que l'export
+    /// echouait ensuite, ou que l'API redemarrait entre les deux — et la
+    /// personne perdait VPN, RDS et stockage sans aucune erreur visible.
+    /// </remarks>
+    private static async Task VerifyPendingPasswordSurvivesUntilTheLinkIsProven()
+    {
+        var harness = Harness.Create();
+        harness.RegisterSlot("slot-1");
+        var assignment = await harness.AssignAsync(
+            "slot-1",
+            "reprise@example.invalid");
+
+        await harness.Service.SetPasswordAsync(
+            harness.Emails.LastToken,
+            Password,
+            CancellationToken.None);
+        var portalUserId = assignment.PortalUserId!;
+
+        // Trois relectures d'affilee : l'identite n'est pas encore confirmee,
+        // le secret doit encore etre la a chaque fois.
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            Assert(
+                await harness.PendingPasswords.PeekAsync(
+                    portalUserId,
+                    CancellationToken.None) == Password,
+                "Tant que le lien annuaire n'est pas prouve, chaque instantane "
+                + "doit pouvoir reporter le meme mot de passe.");
+        }
+
+        // KoXo cree enfin l'objet : la materialisation aboutit, le lien est
+        // ecrit puis relu, et seulement la le secret disparait.
+        harness.Directory.Publish(
+            harness.KoxoIdentifierOf(portalUserId),
+            "6a0b1c2d-3e4f-5061-7283-94a5b6c7d8e9");
+        var materialized = await harness.Service.TryMaterializeAsync(
+            portalUserId,
+            CancellationToken.None);
+
+        Assert(
+            materialized.Succeeded,
+            $"La materialisation doit aboutir ({materialized.Code}).");
+        Assert(
+            await harness.PendingPasswords.PeekAsync(
+                portalUserId,
+                CancellationToken.None) is null,
+            "Le secret n'est efface qu'apres la preuve durable du lien AD.");
+    }
+
+    /// <summary>
+    /// Provisioning desactive : aucune operation a effet reel ne passe.
+    /// </summary>
+    /// <remarks>
+    /// Le refus tombe <b>avant</b> tout point de non-retour. Un refus tardif
+    /// laisserait un jeton a usage unique consomme et un compte sans identite
+    /// annuaire, etat dont on ne revient pas sans intervention.
+    /// </remarks>
+    private static async Task VerifyGateOffRefusesEveryMutation()
+    {
+        var enabled = Harness.Create();
+        enabled.RegisterSlot("slot-1");
+        var assignment = await enabled.AssignAsync(
+            "slot-1",
+            "gate@example.invalid");
+        var token = enabled.Emails.LastToken;
+
+        var harness = Harness.Create(provisioningEnabled: false);
+        harness.RegisterSlot("slot-1");
+
+        var assign = await harness.AssignAsync(
+            "slot-1",
+            "gate-off@example.invalid");
+        Assert(
+            !assign.Succeeded
+            && assign.Code == BillingV2AdditionalUserMaterializationCodes
+                .ProvisioningDisabled,
+            $"L'attribution est refusee par le drapeau ({assign.Code}).");
+        Assert(
+            harness.PortalUsers.Entries.Count == 0
+            && harness.Repository.AllocatedKoxoIdentifiers.Count == 0,
+            "Aucun utilisateur portail, aucun CLI-NNNNNN : le refus precede "
+            + "la premiere ecriture.");
+        Assert(
+            harness.Emails.LastToken is null,
+            "Aucune invitation n'est envoyee.");
+
+        foreach (var (label, result) in new[]
+        {
+            ("definition du mot de passe", await harness.Service
+                .SetPasswordAsync(token, Password, CancellationToken.None)),
+            ("materialisation", await harness.Service.TryMaterializeAsync(
+                assignment.PortalUserId!,
+                CancellationToken.None)),
+            ("renvoi d'invitation", await harness.Service
+                .ResendInvitationAsync(
+                    "slot-1",
+                    CustomerId,
+                    "correlation-test",
+                    CancellationToken.None)),
+            ("desactivation", await harness.Service.DisableAsync(
+                "slot-1",
+                CustomerId,
+                CancellationToken.None))
+        })
+        {
+            Assert(
+                !result.Succeeded
+                && result.Code == BillingV2AdditionalUserMaterializationCodes
+                    .ProvisioningDisabled,
+                $"Le drapeau refuse aussi la {label} ({result.Code}).");
+        }
+
+        Assert(
+            await IsTokenStillUsable(enabled, token),
+            "Le jeton n'a pas ete consomme : le refus tombe avant la "
+            + "consommation, qui est a usage unique.");
+        Assert(
+            harness.Koxo.Triggers.Count == 0
+            && harness.ActiveDirectory.CreateUserCalls == 0
+            && harness.ActiveDirectory.SetPasswordCalls == 0,
+            "Aucun appel KoXo ni AD n'est emis drapeau ferme.");
+    }
+
+    /// <summary>
+    /// La validation en lecture d'un jeton reste autorisee.
+    /// </summary>
+    /// <remarks>
+    /// Elle ne mute rien : la refuser afficherait « lien invalide » a une
+    /// personne dont le lien est parfaitement valable, ce qui la pousserait a
+    /// en demander un autre.
+    /// </remarks>
+    private static async Task VerifyGateOffStillValidatesATokenReadOnly()
+    {
+        var harness = Harness.Create(provisioningEnabled: false);
+        var portalUserId = Guid.NewGuid().ToString("D");
+        harness.PortalUsers.TryAdd(
+            new MockPortalUserStore.Entry(
+                portalUserId,
+                CustomerId,
+                "lecture@example.invalid",
+                "Lecture Seule",
+                "CLI-000999",
+                PasswordHash: null));
+        var token = PortalSetupToken.Generate();
+        await harness.PasswordSetups.IssueAsync(
+            new PortalPasswordSetupIssue(
+                Guid.NewGuid().ToString("D"),
+                portalUserId,
+                BillingV2AdditionalUserIdentityConventions
+                    .PasswordSetupPurpose,
+                PortalSetupToken.Hash(token),
+                DateTime.UtcNow.AddHours(24)),
+            CancellationToken.None);
+
+        var validation = await harness.Service.ValidateInvitationTokenAsync(
+            token,
+            CancellationToken.None);
+
+        Assert(
+            validation.Succeeded && validation.Code == "TOKEN_VALID",
+            $"La validation en lecture reste possible ({validation.Code}).");
+        Assert(
+            await IsTokenStillUsable(harness, token),
+            "Elle ne consomme rien.");
+    }
+
+    /// <summary>
+    /// Relais de mot de passe indisponible : le jeton n'est pas consomme.
+    /// </summary>
+    /// <remarks>
+    /// Consommer d'abord et decouvrir ensuite que le secret n'atteindra jamais
+    /// l'annuaire laisserait la personne sans second lien pour recommencer.
+    /// </remarks>
+    private static async Task VerifyUnavailableHandoffNeverConsumesTheToken()
+    {
+        var harness = Harness.Create();
+        harness.RegisterSlot("slot-1");
+        await harness.AssignAsync("slot-1", "relais@example.invalid");
+        var token = harness.Emails.LastToken;
+        harness.PendingPasswords.Operational = false;
+
+        var result = await harness.Service.SetPasswordAsync(
+            token,
+            Password,
+            CancellationToken.None);
+
+        Assert(
+            !result.Succeeded
+            && result.Code == BillingV2AdditionalUserMaterializationCodes
+                .PasswordHandoffUnavailable,
+            $"Le relais indisponible fait echouer fermement ({result.Code}).");
+        Assert(
+            await IsTokenStillUsable(harness, token),
+            "Le jeton reste utilisable : le refus precede sa consommation.");
+        Assert(
+            harness.Koxo.Triggers.Count == 0,
+            "Aucune synchronisation n'est declenchee : KoXo creerait le compte "
+            + "avec un mot de passe que personne ne connait.");
+    }
+
+    /// <summary>
+    /// Le chiffrement du secret est reversible, lie a sa ligne, et ne laisse
+    /// pas fuir le clair.
+    /// </summary>
+    private static void VerifyProtectorRoundTripsWithoutLeakingPlaintext()
+    {
+        var key = Convert.ToBase64String(new byte[32]);
+        var protector = KoxoPendingPasswordProtector.TryCreate(key);
+        Assert(protector is not null, "Une cle de 32 octets est acceptee.");
+
+        var envelope = protector!.Protect(Password, "portal-user-1");
+        Assert(
+            !envelope.Contains(Password, StringComparison.Ordinal),
+            "Le chiffre ne contient jamais le clair.");
+        Assert(
+            protector.Unprotect(envelope, "portal-user-1") == Password,
+            "Le secret est relisible autant de fois que necessaire.");
+        Assert(
+            protector.Unprotect(envelope, "portal-user-1") == Password,
+            "La relecture n'est pas destructive.");
+
+        // Lie a sa ligne : un chiffre deplace d'une personne a une autre ne
+        // doit pas se dechiffrer, sinon on attribuerait le mot de passe de
+        // quelqu'un a quelqu'un d'autre.
+        Assert(
+            protector.Unprotect(envelope, "portal-user-2") is null,
+            "Un chiffre deplace vers un autre utilisateur est illisible.");
+
+        // Rotation de cle : ne jamais deviner, sinon un mot de passe faux
+        // serait applique a un compte reel.
+        var other = KoxoPendingPasswordProtector.TryCreate(
+            Convert.ToBase64String(Enumerable.Repeat((byte)7, 32).ToArray()))!;
+        Assert(
+            other.KeyId != protector.KeyId,
+            "Deux cles distinctes portent deux empreintes distinctes.");
+        Assert(
+            other.Unprotect(envelope, "portal-user-1") is null,
+            "Une autre cle ne dechiffre pas.");
+
+        // Fail-closed sur configuration absente ou aberrante.
+        foreach (var invalid in new[]
+        {
+            null,
+            "",
+            "   ",
+            "pas-du-base64!",
+            Convert.ToBase64String(new byte[16])
+        })
+        {
+            Assert(
+                KoxoPendingPasswordProtector.TryCreate(invalid) is null,
+                "Une cle absente ou de mauvaise taille est refusee, jamais "
+                + "remplacee par une cle improvisee.");
+        }
+    }
+
+    /// <summary>
+    /// Vrai si le jeton n'a ete ni consomme ni remplace.
+    /// </summary>
+    /// <remarks>
+    /// A ne pas confondre avec <c>ContainsRawToken</c>, qui verifie l'inverse :
+    /// que le jeton en clair n'est nulle part en magasin.
+    /// </remarks>
+    private static async Task<bool> IsTokenStillUsable(
+        Harness harness,
+        string? token)
+    {
+        var target = await harness.PasswordSetups.FindByTokenHashAsync(
+            PortalSetupToken.Hash(token!),
+            CancellationToken.None);
+        return target is not null && target.IsUsable(DateTime.UtcNow);
+    }
+
     /// <summary>
     /// Verrouille la forme de la clause d'export.
     /// </summary>
@@ -792,7 +1088,6 @@ public static class BillingV2AdditionalUserIdentityTests
         var sql = KoxoExportCandidateQuery.Sql;
         string[] mandatory =
         [
-            "lifecycle.status = 'koxo_pending'",
             "lifecycle.portal_user_id = portal_user.id",
             "lifecycle.customer_id = portal_user.customer_id",
             "sub.customer_id = portal_user.customer_id",
@@ -839,6 +1134,29 @@ public static class BillingV2AdditionalUserIdentityTests
                 StringComparison.Ordinal),
             "L'exception passe par une ligne de cycle de vie explicitement "
             + "designante, pas par une caracteristique de l'utilisateur.");
+
+        // Les deux etats sans lien AD, et eux seuls. Le cycle passe par
+        // directory_ready AVANT d'ecrire le lien : s'arreter a koxo_pending
+        // laissait une interruption a cet instant sortir l'identite du CSV,
+        // donc la DESACTIVER, sans aucun retour possible.
+        Assert(
+            collapsed.Contains(
+                "AND lifecycle.status IN ( 'koxo_pending', 'directory_ready')",
+                StringComparison.Ordinal),
+            "L'exception couvre exactement les deux etats ou le lien AD "
+            + "n'existe pas encore.");
+        foreach (var forbidden in new[]
+        {
+            "'awaiting_password'",
+            "'failed'",
+            "'disabled'",
+            "'ready'"
+        })
+        {
+            Assert(
+                !collapsed.Contains(forbidden, StringComparison.Ordinal),
+                $"L'etat {forbidden} n'acquiert jamais cette exception.");
+        }
     }
 
     // ==================================================================
@@ -924,13 +1242,13 @@ public static class BillingV2AdditionalUserIdentityTests
         public required PublishedDirectory Directory { get; init; }
         public required CountingActiveDirectoryService ActiveDirectory
         { get; init; }
-        public required IKoxoPendingPasswordStore PendingPasswords
+        public required ControllablePendingPasswordStore PendingPasswords
         { get; init; }
         public required IPortalPasswordService PasswordService { get; init; }
         public required BillingV2AdditionalUserIdentityService Service
         { get; init; }
 
-        public static Harness Create()
+        public static Harness Create(bool provisioningEnabled = true)
         {
             var portalUsers = new MockPortalUserStore();
             var passwordSetups =
@@ -946,8 +1264,7 @@ public static class BillingV2AdditionalUserIdentityTests
             var koxo = new RecordingKoxoTrigger();
             var directory = new PublishedDirectory();
             var activeDirectory = new CountingActiveDirectoryService();
-            var pendingPasswords = new KoxoPendingPasswordStore(
-                NullLogger<KoxoPendingPasswordStore>.Instance);
+            var pendingPasswords = new ControllablePendingPasswordStore();
             var passwordService = new PortalPasswordService();
 
             // controlled_write : c'est le mode de production, celui ou KoXo
@@ -1011,6 +1328,15 @@ public static class BillingV2AdditionalUserIdentityTests
                         LiveAllowlist: [],
                         ConfigurationValid: true),
                     adConfiguration,
+                    new BillingV2RuntimeConfiguration(
+                        CatalogShadowModeEnabled: false,
+                        ProvisioningShadowModeEnabled: false,
+                        NewSubscriptionsEnabled: false,
+                        AuthoritativeCheckoutEnabled: false,
+                        FirstRealSubscriptionApproved: false,
+                        ProviderOutboxEnabled: false,
+                        ProviderExecutorEnabled: false,
+                        ProvisioningEnabled: provisioningEnabled),
                     NullLogger<BillingV2AdditionalUserIdentityService>.Instance)
             };
         }
@@ -1074,6 +1400,48 @@ public static class BillingV2AdditionalUserIdentityTests
     /// de recherche legitime quand KoXo fait autorite, et un faux plus
     /// complaisant laisserait passer une adoption par ressemblance de nom.
     /// </remarks>
+    /// <summary>
+    /// Magasin de mots de passe en attente, dont on peut couper la
+    /// disponibilite.
+    /// </summary>
+    /// <remarks>
+    /// Reproduit le seul cas ou la version persistante refuse de retenir un
+    /// secret : cle de chiffrement absente ou inutilisable. Sans ce levier, le
+    /// chemin fail-closed le plus important du lot ne serait jamais parcouru.
+    /// </remarks>
+    internal sealed class ControllablePendingPasswordStore
+        : IKoxoPendingPasswordStore
+    {
+        private readonly KoxoPendingPasswordStore _inner =
+            new(NullLogger<KoxoPendingPasswordStore>.Instance);
+
+        public bool Operational { get; set; } = true;
+
+        public bool IsOperational => Operational;
+
+        public Task<bool> PublishAsync(
+            string portalUserId,
+            string password,
+            CancellationToken cancellationToken)
+            => Operational
+                ? _inner.PublishAsync(portalUserId, password, cancellationToken)
+                : Task.FromResult(false);
+
+        public Task<string?> PeekAsync(
+            string portalUserId,
+            CancellationToken cancellationToken)
+            => _inner.PeekAsync(portalUserId, cancellationToken);
+
+        public Task AcknowledgeAsync(
+            string portalUserId,
+            CancellationToken cancellationToken)
+            => _inner.AcknowledgeAsync(portalUserId, cancellationToken);
+
+        public Task<IReadOnlyList<string>> DrainExpiredAsync(
+            CancellationToken cancellationToken)
+            => _inner.DrainExpiredAsync(cancellationToken);
+    }
+
     private sealed class PublishedDirectory : IAdGroupProvisioner
     {
         private readonly Dictionary<string, AdDirectoryObjectSummary> _objects =

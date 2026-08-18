@@ -1,4 +1,7 @@
+using Kermaria.ApiInternal.Data.Configuration;
 using Kermaria.ApiInternal.Data.Repositories;
+using Kermaria.ApiInternal.Services;
+using Microsoft.Extensions.Logging.Abstractions;
 using MySqlConnector;
 
 namespace Kermaria.ApiInternal.SmokeTests;
@@ -63,6 +66,9 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
             await VerifyKoxoPendingLifecycleIsIncludedAsync(connection, fixture);
             await VerifyAwaitingPasswordIsExcludedAsync(connection, fixture);
             await VerifyFailedAndDisabledAreExcludedAsync(connection, fixture);
+            await VerifyDirectoryReadyWithoutLinkIsIncludedAsync(
+                connection,
+                fixture);
             await VerifyReadyWithoutLinkIsExcludedAsync(connection, fixture);
             await VerifyLifecycleOfAnotherUserGrantsNothingAsync(
                 connection,
@@ -77,6 +83,10 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
             await VerifyLinkedUserIsIncludedThroughTheNormalBranchAsync(
                 connection,
                 fixture);
+            await VerifyPendingPasswordIsPersistedRereadableAndAckedAsync(
+                connection,
+                fixture,
+                connectionString);
         }
         finally
         {
@@ -103,7 +113,11 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
             ("portal_user_password_setups", "token_hash"),
             ("portal_user_password_setups", "expires_at"),
             ("portal_user_password_setups", "consumed_at"),
-            ("portal_user_password_setups", "superseded_at")
+            ("portal_user_password_setups", "superseded_at"),
+            ("koxo_pending_directory_passwords", "ciphertext"),
+            ("koxo_pending_directory_passwords", "key_id"),
+            ("koxo_pending_directory_passwords", "expires_at"),
+            ("koxo_pending_directory_passwords", "published_count")
         })
         {
             var present = await ScalarLongAsync(
@@ -135,6 +149,22 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
         Ensure(
             plaintextColumns == 0,
             "Aucune colonne ne doit pouvoir accueillir un jeton en clair.");
+
+        // Meme regle pour le relais de mot de passe : la seule colonne de
+        // contenu est un chiffre authentifie, jamais un clair ni un simple
+        // condensat — KoXo a besoin du mot de passe reel.
+        var passwordColumns = await ScalarLongAsync(
+            connection,
+            """
+            SELECT COUNT(*)
+            FROM information_schema.columns
+            WHERE table_schema = DATABASE()
+              AND table_name = 'koxo_pending_directory_passwords'
+              AND column_name IN ('password', 'plaintext', 'password_hash');
+            """);
+        Ensure(
+            passwordColumns == 0,
+            "Le relais de mot de passe ne stocke ni clair ni condensat.");
     }
 
     // ==================================================================
@@ -309,22 +339,45 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
         }
     }
 
+    /// <summary>
+    /// Fenetre de crash : objet annuaire resolu, lien pas encore ecrit.
+    /// </summary>
+    /// <remarks>
+    /// C'est l'etat que le service persiste <b>avant</b> d'ecrire le lien. Une
+    /// interruption a cet instant — redemarrage, panne reseau, arret du
+    /// service — laisse une ligne <c>directory_ready</c> sans
+    /// <c>customer_ad_links</c>. Si l'export l'excluait, l'identite sortirait
+    /// du CSV, ce qui <b>desactive</b> le compte AD correspondant, et rien ne
+    /// permettrait d'y revenir : le compte est desactive, donc jamais relie,
+    /// donc jamais reexporte.
+    /// </remarks>
+    private static async Task VerifyDirectoryReadyWithoutLinkIsIncludedAsync(
+        MySqlConnection connection,
+        Fixture fixture)
+    {
+        await fixture.SetLifecycleStatusAsync(connection, "directory_ready");
+
+        Ensure(
+            await IsExportCandidateAsync(connection, fixture.PortalUserId),
+            "Un cycle de vie « directory_ready » sans lien AD reste exporte : "
+            + "c'est la fenetre de crash entre la resolution de l'objet et "
+            + "l'ecriture du lien, et l'en exclure desactiverait le compte "
+            + "sans retour possible.");
+    }
+
     private static async Task VerifyReadyWithoutLinkIsExcludedAsync(
         MySqlConnection connection,
         Fixture fixture)
     {
-        // ready sans lien est un etat incoherent. L'exception ne le couvre pas :
-        // ready signifie precisement que le lien existe, et l'inclure ici
-        // reviendrait a exporter sur la foi d'un statut au lieu d'un fait.
-        foreach (var status in new[] { "directory_ready", "ready" })
-        {
-            await fixture.SetLifecycleStatusAsync(connection, status);
-            Ensure(
-                !await IsExportCandidateAsync(connection, fixture.PortalUserId),
-                $"Un cycle de vie « {status} » sans lien AD n'est pas exporte "
-                + "par l'exception : au-dela de koxo_pending, c'est le lien qui "
-                + "fait foi.");
-        }
+        // ready sans lien est un etat incoherent : ready signifie precisement
+        // que le lien a ete relu et confirme. L'inclure ici reviendrait a
+        // exporter sur la foi d'un statut au lieu d'un fait.
+        await fixture.SetLifecycleStatusAsync(connection, "ready");
+
+        Ensure(
+            !await IsExportCandidateAsync(connection, fixture.PortalUserId),
+            "Un cycle de vie « ready » sans lien AD n'est pas exporte par "
+            + "l'exception : a ce stade, c'est le lien qui fait foi.");
     }
 
     private static async Task VerifyLifecycleOfAnotherUserGrantsNothingAsync(
@@ -476,6 +529,152 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
     }
 
     // ==================================================================
+    // Relais de mot de passe vers KoXo
+    // ==================================================================
+
+    /// <summary>
+    /// Le secret survit au processus, se relit sans se consommer, et ne
+    /// disparait qu'a l'acquittement.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Trois choses ne se prouvent qu'ici : que le secret est bien ecrit en
+    /// base (donc qu'il survit a un redemarrage de l'API), qu'il n'y figure
+    /// jamais en clair, et qu'une relecture ne le detruit pas. Un magasin en
+    /// memoire ne demontre aucune des trois.
+    /// </para>
+    /// <para>
+    /// Un second magasin est construit pour la relecture : c'est la
+    /// simulation la plus proche d'un redemarrage, puisqu'il ne partage aucun
+    /// etat avec le premier.
+    /// </para>
+    /// </remarks>
+    private static async Task
+        VerifyPendingPasswordIsPersistedRereadableAndAckedAsync(
+            MySqlConnection connection,
+            Fixture fixture,
+            string connectionString)
+    {
+        const string secret = "MotDePasseAssezLong!";
+        var sql = new SqlRuntimeConfiguration(
+            PortalPersistenceMode.MariaDb,
+            "mariadb",
+            connectionString,
+            "TEST",
+            ConfigurationValid: true);
+        var protector = KoxoPendingPasswordProtector.TryCreate(
+            Convert.ToBase64String(Enumerable.Repeat((byte)11, 32).ToArray()));
+        Ensure(
+            protector is not null,
+            "La cle de test doit etre acceptee.");
+
+        var store = NewStore(sql, protector, connectionString);
+        Ensure(store.IsOperational, "Avec une cle valide, le magasin opere.");
+        Ensure(
+            await store.PublishAsync(
+                fixture.PortalUserId,
+                secret,
+                CancellationToken.None),
+            "La publication doit reussir.");
+
+        // Le clair ne doit exister nulle part dans la ligne.
+        var stored = await ScalarStringAsync(
+            connection,
+            """
+            SELECT ciphertext
+            FROM koxo_pending_directory_passwords
+            WHERE portal_user_id = @id;
+            """,
+            ("@id", fixture.PortalUserId));
+        Ensure(
+            stored is not null
+            && !stored.Contains(secret, StringComparison.Ordinal),
+            "La colonne ne porte jamais le mot de passe en clair.");
+
+        // Redemarrage simule : un magasin neuf relit la meme entree.
+        var afterRestart = NewStore(sql, protector, connectionString);
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            Ensure(
+                await afterRestart.PeekAsync(
+                    fixture.PortalUserId,
+                    CancellationToken.None) == secret,
+                "Chaque instantane doit pouvoir relire le secret tant qu'il "
+                + "n'est pas acquitte : c'est ce qui rend un crash avant ou "
+                + "apres export reprenable.");
+        }
+
+        var reads = await ScalarLongAsync(
+            connection,
+            """
+            SELECT published_count
+            FROM koxo_pending_directory_passwords
+            WHERE portal_user_id = @id;
+            """,
+            ("@id", fixture.PortalUserId));
+        Ensure(
+            reads == 3,
+            "Les relectures sont comptees : un compteur qui grimpe signale un "
+            + "cycle KoXo qui n'aboutit pas.");
+
+        // Rotation de cle : ne jamais deviner. Un mot de passe faux applique a
+        // un compte reel serait pire que pas de mot de passe du tout.
+        var rotated = NewStore(
+            sql,
+            KoxoPendingPasswordProtector.TryCreate(
+                Convert.ToBase64String(
+                    Enumerable.Repeat((byte)12, 32).ToArray())),
+            connectionString);
+        Ensure(
+            await rotated.PeekAsync(
+                fixture.PortalUserId,
+                CancellationToken.None) is null,
+            "Une ligne scellee sous une autre cle est ignoree, jamais devinee.");
+
+        // Fail-closed : sans cle, rien n'est retenu et rien n'est relu.
+        var keyless = NewStore(sql, protector: null, connectionString);
+        Ensure(
+            !keyless.IsOperational
+            && !await keyless.PublishAsync(
+                fixture.PortalUserId,
+                secret,
+                CancellationToken.None)
+            && await keyless.PeekAsync(
+                fixture.PortalUserId,
+                CancellationToken.None) is null,
+            "Sans cle exploitable, le magasin refuse au lieu de retomber en "
+            + "clair ou en memoire.");
+
+        await afterRestart.AcknowledgeAsync(
+            fixture.PortalUserId,
+            CancellationToken.None);
+        Ensure(
+            await afterRestart.PeekAsync(
+                fixture.PortalUserId,
+                CancellationToken.None) is null
+            && await ScalarLongAsync(
+                connection,
+                """
+                SELECT COUNT(*)
+                FROM koxo_pending_directory_passwords
+                WHERE portal_user_id = @id;
+                """,
+                ("@id", fixture.PortalUserId)) == 0,
+            "L'acquittement efface l'entree.");
+    }
+
+    private static MariaDbKoxoPendingPasswordStore NewStore(
+        SqlRuntimeConfiguration sql,
+        KoxoPendingPasswordProtector? protector,
+        string connectionString)
+        => new(
+            sql,
+            protector,
+            TimeSpan.FromMinutes(
+                MariaDbKoxoPendingPasswordStore.DefaultLifetimeMinutes),
+            NullLogger<MariaDbKoxoPendingPasswordStore>.Instance);
+
+    // ==================================================================
     // Outils
     // ==================================================================
 
@@ -576,6 +775,22 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
 
         var value2 = await command.ExecuteScalarAsync();
         return value2 is null or DBNull ? 0 : Convert.ToInt64(value2);
+    }
+
+    private static async Task<string?> ScalarStringAsync(
+        MySqlConnection connection,
+        string sql,
+        params (string Name, object Value)[] parameters)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        foreach (var (name, value) in parameters)
+        {
+            command.Parameters.AddWithValue(name, value);
+        }
+
+        var value2 = await command.ExecuteScalarAsync();
+        return value2 is null or DBNull ? null : Convert.ToString(value2);
     }
 
     private static void Ensure(bool condition, string message)
@@ -933,6 +1148,16 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
             await ExecuteAsync(
                 connection,
                 "DELETE FROM customer_ad_links WHERE customer_id IN (@a, @b);",
+                ("@a", CustomerId),
+                ("@b", OtherCustomerId));
+            await ExecuteAsync(
+                connection,
+                """
+                DELETE pending FROM koxo_pending_directory_passwords pending
+                INNER JOIN portal_users portal_user
+                    ON portal_user.id = pending.portal_user_id
+                WHERE portal_user.customer_id IN (@a, @b);
+                """,
                 ("@a", CustomerId),
                 ("@b", OtherCustomerId));
             await ExecuteAsync(

@@ -25,7 +25,11 @@ namespace Kermaria.ApiInternal.Data.Repositories;
 /// <item>
 /// l'utilisateur additionnel Billing V2 <b>designe explicitement</b> par une
 /// ligne de <c>billing_v2_user_identity_provisioning</c> en etat
-/// <c>koxo_pending</c>.
+/// <c>koxo_pending</c> ou <c>directory_ready</c> — les deux etats ou le lien
+/// AD n'existe pas encore. Retenir le seul <c>koxo_pending</c> ouvrait une
+/// fenetre de crash : le cycle passe par <c>directory_ready</c> avant
+/// l'ecriture du lien, et une interruption a cet instant sortait l'identite du
+/// CSV, donc la <b>desactivait</b>, sans retour possible.
 /// </item>
 /// </list>
 /// <para>
@@ -137,11 +141,21 @@ public static class KoxoExportCandidateQuery
                        AND (rule.tier_id IS NULL
                             OR rule.tier_id = item.tier_id)
                     WHERE lifecycle.portal_user_id = portal_user.id
-                      -- Seul koxo_pending autorise : avant, le mot de passe
-                      -- n'est pas pose et le compte AD naitrait sans mot de
-                      -- passe maitrise ; apres, le lien existe et la branche
+                      -- Deux etats seulement, et pour la meme raison : le lien
+                      -- AD n'existe pas encore.
+                      --
+                      -- koxo_pending  : KoXo n'a pas encore cree l'objet.
+                      -- directory_ready : l'objet est resolu mais le lien
+                      --   n'est pas ecrit. Un arret entre les deux laisserait
+                      --   sinon l'identite hors du CSV, donc DESACTIVEE, sans
+                      --   aucun moyen de revenir — c'est la fenetre de crash.
+                      --
+                      -- awaiting_password ne part pas : le mot de passe n'est
+                      -- pas pose et le compte naitrait sans secret maitrise.
+                      -- ready n'en a pas besoin : le lien existe et la branche
                       -- normale suffit. failed et disabled n'autorisent rien.
-                      AND lifecycle.status = 'koxo_pending'
+                      AND lifecycle.status IN (
+                          'koxo_pending', 'directory_ready')
                       AND lifecycle.koxo_unique_identifier =
                           portal_user.koxo_unique_identifier
                       -- Le meme client aux trois niveaux, sans exception :

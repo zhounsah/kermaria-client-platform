@@ -143,10 +143,14 @@ public sealed class KoxoExportService : IKoxoExportService
 
     /// <param name="consumePendingPasswords">
     /// Vrai pour le seul export reel. Le tableau de bord et la validation
-    /// admin passent faux : ils rejouent <see cref="PrepareAsync"/> a la
-    /// demande, et consommer la un mot de passe a usage unique le ferait
-    /// disparaitre avant d'atteindre KoXo — en plus de l'exposer dans
-    /// l'apercu montre a l'administrateur.
+    /// admin passent faux : le mot de passe n'a rien a faire dans un apercu
+    /// montre a un administrateur.
+    /// <para>
+    /// La relecture est <b>non destructive</b> : le secret reste en attente
+    /// jusqu'a ce que le lien annuaire soit prouve. Le retirer ici — ce que
+    /// faisait la version d'origine — le perdait definitivement des que
+    /// l'export echouait ensuite, ou que l'API redemarrait entre les deux.
+    /// </para>
     /// </param>
     private async Task<KoxoPreparedExport> PrepareAsync(
         bool consumePendingPasswords,
@@ -223,7 +227,9 @@ public sealed class KoxoExportService : IKoxoExportService
                 email!,
                 ResolveGroupePrimaire(candidate),
                 consumePendingPasswords
-                    ? _pendingPasswords.Consume(candidate.PortalUserId)
+                    ? await _pendingPasswords.PeekAsync(
+                        candidate.PortalUserId,
+                        cancellationToken)
                     : null));
         }
 

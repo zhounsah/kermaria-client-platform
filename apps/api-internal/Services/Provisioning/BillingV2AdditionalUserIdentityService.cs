@@ -146,6 +146,28 @@ public static class BillingV2AdditionalUserMaterializationCodes
     public const string DirectoryFailed = "AD_PROVISIONING_FAILED";
     public const string LifecycleMissing = "LIFECYCLE_MISSING";
     public const string LifecycleDisabled = "LIFECYCLE_DISABLED";
+
+    /// <summary>
+    /// Le provisioning Billing V2 est desactive : aucune operation a effet
+    /// reel n'est tentee.
+    /// </summary>
+    /// <remarks>
+    /// Refus <b>avant</b> tout point de non-retour — consommation de jeton,
+    /// publication de mot de passe, appel KoXo ou AD. Un refus tardif
+    /// laisserait un jeton consomme et un compte sans identite annuaire, etat
+    /// dont on ne revient pas tout seul.
+    /// </remarks>
+    public const string ProvisioningDisabled = "BILLING_V2_PROVISIONING_DISABLED";
+
+    /// <summary>
+    /// Le relais du mot de passe vers KoXo n'est pas exploitable.
+    /// </summary>
+    /// <remarks>
+    /// Sans lui, le mot de passe n'atteindrait jamais l'annuaire et la
+    /// personne perdrait VPN, RDS et stockage sans aucune erreur visible. On
+    /// refuse donc avant de consommer le jeton, qui est a usage unique.
+    /// </remarks>
+    public const string PasswordHandoffUnavailable = "KOXO_PASSWORD_HANDOFF_UNAVAILABLE";
 }
 
 public interface IBillingV2AdditionalUserIdentityService
@@ -226,6 +248,7 @@ public sealed class BillingV2AdditionalUserIdentityService
     private readonly SignupRuntimeConfiguration _signupConfiguration;
     private readonly EmailRuntimeConfiguration _emailConfiguration;
     private readonly AdRuntimeConfiguration _adConfiguration;
+    private readonly BillingV2RuntimeConfiguration _billingConfiguration;
     private readonly ILogger<BillingV2AdditionalUserIdentityService> _logger;
 
     public BillingV2AdditionalUserIdentityService(
@@ -241,6 +264,7 @@ public sealed class BillingV2AdditionalUserIdentityService
         SignupRuntimeConfiguration signupConfiguration,
         EmailRuntimeConfiguration emailConfiguration,
         AdRuntimeConfiguration adConfiguration,
+        BillingV2RuntimeConfiguration billingConfiguration,
         ILogger<BillingV2AdditionalUserIdentityService> logger)
     {
         _repository = repository;
@@ -255,6 +279,7 @@ public sealed class BillingV2AdditionalUserIdentityService
         _signupConfiguration = signupConfiguration;
         _emailConfiguration = emailConfiguration;
         _adConfiguration = adConfiguration;
+        _billingConfiguration = billingConfiguration;
         _logger = logger;
     }
 
@@ -269,6 +294,12 @@ public sealed class BillingV2AdditionalUserIdentityService
         string correlationId,
         CancellationToken cancellationToken)
     {
+        var gate = GuardProvisioningEnabled();
+        if (gate is not null)
+        {
+            return gate;
+        }
+
         var email = NormalizeEmail(assignment.Email);
         if (email is null)
         {
@@ -348,6 +379,12 @@ public sealed class BillingV2AdditionalUserIdentityService
             string correlationId,
             CancellationToken cancellationToken)
     {
+        var gate = GuardProvisioningEnabled();
+        if (gate is not null)
+        {
+            return gate;
+        }
+
         var record = await _repository.FindBySubscriptionUserIdAsync(
             subscriptionUserId,
             cancellationToken);
@@ -437,6 +474,12 @@ public sealed class BillingV2AdditionalUserIdentityService
         string? password,
         CancellationToken cancellationToken)
     {
+        var gate = GuardProvisioningEnabled();
+        if (gate is not null)
+        {
+            return gate;
+        }
+
         var normalizedToken = token?.Trim();
         if (string.IsNullOrWhiteSpace(normalizedToken))
         {
@@ -449,6 +492,21 @@ public sealed class BillingV2AdditionalUserIdentityService
             return Failure(
                 "INVALID_PASSWORD",
                 $"Le mot de passe doit comporter entre {MinPasswordLength} et {MaxPasswordLength} caracteres.");
+        }
+
+        // Verifie AVANT de consommer le jeton : celui-ci est a usage unique,
+        // et decouvrir ensuite que le mot de passe n'atteindra jamais KoXo
+        // laisserait un compte portail sans identite annuaire et sans second
+        // lien pour recommencer.
+        if (_adConfiguration.KoxoOwnsDirectory
+            && !_pendingPasswords.IsOperational)
+        {
+            _logger.LogError(
+                "KoXo password handoff is not operational: refusing to consume a password setup token.");
+            return Failure(
+                BillingV2AdditionalUserMaterializationCodes
+                    .PasswordHandoffUnavailable,
+                "La definition du mot de passe est momentanement indisponible.");
         }
 
         // La consommation du jeton et l'ecriture du condensat sont
@@ -486,12 +544,28 @@ public sealed class BillingV2AdditionalUserIdentityService
                 portalUserId);
         }
 
-        if (_adConfiguration.KoxoOwnsDirectory)
+        if (_adConfiguration.KoxoOwnsDirectory
+            && !await _pendingPasswords.PublishAsync(
+                portalUserId,
+                password,
+                cancellationToken))
         {
             // Le mot de passe voyage par la colonne 14 du CSV : il est publie
             // pour le prochain export, jamais ecrit en LDAP, sinon
             // ForcePasswords=1 l'ecraserait au passage suivant.
-            _pendingPasswords.Publish(portalUserId, password);
+            //
+            // S'il n'a pas pu etre retenu, on ne declenche RIEN : une
+            // synchronisation KoXo creerait alors le compte annuaire avec un
+            // mot de passe que personne ne connait.
+            _logger.LogError(
+                "Pending KoXo password could not be stored for portal_user_id {PortalUserId}; directory handoff aborted.",
+                portalUserId);
+            return Failure(
+                BillingV2AdditionalUserMaterializationCodes
+                    .PasswordHandoffUnavailable,
+                "Votre mot de passe est enregistre, mais l'activation de vos "
+                + "acces n'a pas pu demarrer. Contactez le support.",
+                record);
         }
 
         var now = DateTime.UtcNow;
@@ -524,6 +598,12 @@ public sealed class BillingV2AdditionalUserIdentityService
             string portalUserId,
             CancellationToken cancellationToken)
     {
+        var gate = GuardProvisioningEnabled();
+        if (gate is not null)
+        {
+            return gate;
+        }
+
         var record = await _repository.FindByPortalUserIdAsync(
             portalUserId,
             cancellationToken);
@@ -768,6 +848,16 @@ public sealed class BillingV2AdditionalUserIdentityService
             record.Id,
             DateTime.UtcNow,
             cancellationToken);
+
+        // Le lien annuaire vient d'etre relu en base : c'est la preuve durable
+        // que KoXo a bien cree l'identite et repris le mot de passe. Seulement
+        // maintenant le secret peut disparaitre. L'acquitter plus tot — au
+        // premier instantane, comme le faisait la version d'origine — le
+        // perdait des que l'export echouait ensuite ou que l'API redemarrait.
+        await _pendingPasswords.AcknowledgeAsync(
+            record.PortalUserId,
+            cancellationToken);
+
         return Success(
             BillingV2AdditionalUserMaterializationCodes.Ready,
             "L'identite est prete.",
@@ -847,6 +937,12 @@ public sealed class BillingV2AdditionalUserIdentityService
         string customerId,
         CancellationToken cancellationToken)
     {
+        var gate = GuardProvisioningEnabled();
+        if (gate is not null)
+        {
+            return gate;
+        }
+
         var record = await _repository.FindBySubscriptionUserIdAsync(
             subscriptionUserId,
             cancellationToken);
@@ -875,6 +971,25 @@ public sealed class BillingV2AdditionalUserIdentityService
     // ------------------------------------------------------------------
     // Utilitaires
     // ------------------------------------------------------------------
+
+    /// <summary>
+    /// Refuse toute operation a effet reel quand le provisioning V2 est
+    /// desactive.
+    /// </summary>
+    /// <remarks>
+    /// Le service est dormant : aucune route publique ne le raccorde encore.
+    /// Ce garde-fou existe pour que le jour ou une route l'atteindra, un
+    /// drapeau a <c>false</c> suffise a tout arreter — et l'arrete <b>avant</b>
+    /// la premiere ecriture, pas au milieu. La seule exception est la
+    /// validation en lecture d'un jeton, qui ne mute rien.
+    /// </remarks>
+    private BillingV2AdditionalUserOperationResult? GuardProvisioningEnabled()
+        => _billingConfiguration.ProvisioningEnabled
+            ? null
+            : Failure(
+                BillingV2AdditionalUserMaterializationCodes
+                    .ProvisioningDisabled,
+                "Le provisioning Billing V2 est desactive.");
 
     private BillingV2AdditionalUserOperationResult? GuardOwnership(
         BillingV2AdditionalUserIdentityRecord? record,

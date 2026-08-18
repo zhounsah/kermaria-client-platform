@@ -325,12 +325,31 @@ builder.Services.AddSingleton(
     DemoConversionRuntimeConfiguration.Resolve(builder.Configuration));
 builder.Services.AddScoped<IDemoConversionService, DemoConversionService>();
 builder.Services.AddScoped<IDemoAccountService, DemoAccountService>();
-// Singleton : le mot de passe est publie par une requete (set-password) et
-// consomme par une autre (l'export declenche dans la foulee). Un enregistrement
-// scoped le perdrait entre les deux.
+// Le mot de passe est publie par une requete (set-password) et repris par une
+// autre (l'export declenche dans la foulee).
+//
+// En persistance reelle il est retenu en base, chiffre : la version en memoire
+// ne survivait ni a un redemarrage de l'API, ni a un export echoue apres
+// lecture, et perdait alors le seul secret reversible du systeme. Fail-closed
+// si KOXO_PENDING_PASSWORD_KEY manque : rien n'est retenu, et les appelants
+// refusent l'operation au lieu de la croire faite.
+//
+// La variante en memoire reste le mode mock, ou il n'y a aucun KoXo derriere.
 builder.Services.AddSingleton<IKoxoPendingPasswordStore>(serviceProvider =>
-    new KoxoPendingPasswordStore(
-        serviceProvider.GetRequiredService<ILogger<KoxoPendingPasswordStore>>()));
+    sqlConfiguration.IsPersistent
+        ? new MariaDbKoxoPendingPasswordStore(
+            sqlConfiguration,
+            KoxoPendingPasswordProtector.TryCreate(
+                builder.Configuration[
+                    MariaDbKoxoPendingPasswordStore.KeyVariable]),
+            MariaDbKoxoPendingPasswordStore.ResolveLifetime(
+                builder.Configuration[
+                    MariaDbKoxoPendingPasswordStore.LifetimeVariable]),
+            serviceProvider.GetRequiredService<
+                ILogger<MariaDbKoxoPendingPasswordStore>>())
+        : new KoxoPendingPasswordStore(
+            serviceProvider.GetRequiredService<
+                ILogger<KoxoPendingPasswordStore>>()));
 builder.Services.AddScoped<IKoxoExportService, KoxoExportService>();
 builder.Services.AddScoped<IRequestWorkflowService, RequestWorkflowService>();
 builder.Services.AddScoped<
