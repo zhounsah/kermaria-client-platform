@@ -19,10 +19,14 @@ public sealed record BillingV2RuntimeConfiguration(
     // et s'active explicitement.
     bool ReconciliationWorkerEnabled = false,
     int ReconciliationIntervalSeconds =
-        BillingV2RuntimeConfiguration.DefaultReconciliationIntervalSeconds)
+        BillingV2RuntimeConfiguration.DefaultReconciliationIntervalSeconds,
+    bool AdditionalUserProvisioningEnabled = false)
 {
     public const int DefaultReconciliationIntervalSeconds = 300;
     public const int MinimumReconciliationIntervalSeconds = 30;
+
+    public bool AdditionalUserMutationsEnabled
+        => ProvisioningEnabled || AdditionalUserProvisioningEnabled;
 
     public static BillingV2RuntimeConfiguration Resolve(
         IConfiguration configuration)
@@ -33,7 +37,11 @@ public sealed record BillingV2RuntimeConfiguration(
                 "true",
                 StringComparison.OrdinalIgnoreCase),
             ReconciliationIntervalSeconds = ResolveInterval(
-                configuration["BILLING_V2_RECONCILIATION_INTERVAL_SECONDS"])
+                configuration["BILLING_V2_RECONCILIATION_INTERVAL_SECONDS"]),
+            AdditionalUserProvisioningEnabled = string.Equals(
+                configuration["BILLING_V2_ADDITIONAL_USER_PROVISIONING_ENABLED"],
+                "true",
+                StringComparison.OrdinalIgnoreCase)
         };
 
     /// <summary>

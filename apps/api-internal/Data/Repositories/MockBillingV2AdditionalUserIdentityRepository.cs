@@ -325,6 +325,32 @@ public sealed class MockBillingV2AdditionalUserIdentityRepository
                 subscriptionUserId,
                 StringComparison.Ordinal))));
 
+    public Task<IReadOnlyList<BillingV2AdditionalUserIdentityRecord>>
+        ListMaterializationCandidatesAsync(
+            int limit,
+            CancellationToken cancellationToken)
+    {
+        if (limit <= 0)
+        {
+            return Task.FromResult<IReadOnlyList<BillingV2AdditionalUserIdentityRecord>>([]);
+        }
+
+        var records = _lifecycles.Values
+            .Where(lifecycle => lifecycle.Status is
+                BillingV2UserIdentityStatuses.KoxoPending or
+                BillingV2UserIdentityStatuses.DirectoryReady)
+            .OrderBy(lifecycle => lifecycle.Id, StringComparer.Ordinal)
+            .Take(Math.Min(limit, 100))
+            .Select(Project)
+            .OfType<BillingV2AdditionalUserIdentityRecord>()
+            .ToArray();
+        return Task.FromResult<IReadOnlyList<BillingV2AdditionalUserIdentityRecord>>(records);
+    }
+    public Task TouchMaterializationAttemptAsync(
+        string id,
+        CancellationToken cancellationToken)
+        => Task.CompletedTask;
+
     private BillingV2AdditionalUserIdentityRecord? Project(Lifecycle? lifecycle)
     {
         if (lifecycle is null)

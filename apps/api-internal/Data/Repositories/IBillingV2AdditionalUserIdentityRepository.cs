@@ -188,6 +188,18 @@ public interface IBillingV2AdditionalUserIdentityRepository
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Cycles qui attendent uniquement la convergence KoXo/annuaire.
+    /// </summary>
+    Task<IReadOnlyList<BillingV2AdditionalUserIdentityRecord>>
+        ListMaterializationCandidatesAsync(
+            int limit,
+            CancellationToken cancellationToken);
+
+    Task TouchMaterializationAttemptAsync(
+        string id,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// <c>awaiting_password</c> (ou reprise) -&gt; <c>koxo_pending</c>.
     /// </summary>
     /// <remarks>

@@ -6,6 +6,7 @@ using Kermaria.ApiInternal.Services.ActiveDirectory;
 using Kermaria.ApiInternal.Services.Email;
 using Kermaria.ApiInternal.Services.Provisioning;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Kermaria.ApiInternal.SmokeTests;
@@ -62,6 +63,9 @@ public static class BillingV2AdditionalUserIdentityTests
         await VerifyPortalPasswordHashIsUsable();
         await VerifyKoxoOwnedDirectoryNeverCreatesNorSetsPassword();
         await VerifyPasswordIsPublishedForTheKoxoExport();
+        await VerifyRuntimeConvergenceClosesKoxoPendingGap();
+        VerifyDedicatedGateConfigurationIsNarrow();
+        await VerifyDedicatedGateDoesNotOpenGlobalProvisioning();
         await VerifyIdentityIsAdoptedByExactEmployeeNumber();
         await VerifyForeignEmployeeNumberIsNeverAdopted();
         await VerifyRetryAfterMaterializationIsIdempotent();
@@ -703,6 +707,89 @@ public static class BillingV2AdditionalUserIdentityTests
             + "l'etat qui le maintient dans l'export.");
     }
 
+    private static async Task VerifyRuntimeConvergenceClosesKoxoPendingGap()
+    {
+        var harness = Harness.Create(
+            provisioningEnabled: false,
+            additionalUserProvisioningEnabled: true);
+        harness.RegisterSlot("slot-convergence");
+        var assignment = await harness.AssignAsync(
+            "slot-convergence",
+            "convergence@example.invalid");
+
+        await harness.Service.SetPasswordAsync(
+            harness.Emails.LastToken,
+            Password,
+            CancellationToken.None);
+        Assert(
+            harness.Repository.StatusOf(harness.LifecycleIdOf(
+                assignment.PortalUserId!))
+                == BillingV2UserIdentityStatuses.KoxoPending,
+            "Sans objet annuaire, le handoff reste en koxo_pending.");
+
+        harness.Directory.Publish(
+            harness.KoxoIdentifierOf(assignment.PortalUserId!),
+            "8f47c9e1-6ab2-4d35-91fe-20c7a8b3d654");
+        var completed = await harness.Service.ConvergePendingAsync(
+            50,
+            CancellationToken.None);
+
+        Assert(completed == 1, "La passe de convergence ferme exactement un cycle.");
+        Assert(
+            harness.Repository.StatusOf(harness.LifecycleIdOf(
+                assignment.PortalUserId!))
+                == BillingV2UserIdentityStatuses.Ready,
+            "Le cycle passe de koxo_pending a ready sans TryMaterializeAsync manuel.");
+        Assert(
+            await harness.Links.FindUserLinkByPortalUserIdAsync(
+                assignment.PortalUserId!,
+                CancellationToken.None) is not null,
+            "La convergence prouve et persiste le lien annuaire.");
+        Assert(
+            await harness.PendingPasswords.PeekAsync(
+                assignment.PortalUserId!,
+                CancellationToken.None) is null,
+            "Le secret KoXo est retire seulement apres la convergence prouvee.");
+    }
+
+    private static void VerifyDedicatedGateConfigurationIsNarrow()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["BILLING_V2_PROVISIONING_ENABLED"] = "false",
+                ["BILLING_V2_ADDITIONAL_USER_PROVISIONING_ENABLED"] = "true"
+            })
+            .Build();
+        var runtime = BillingV2RuntimeConfiguration.Resolve(configuration);
+
+        Assert(
+            !runtime.ProvisioningEnabled,
+            "Le gate dedie ne doit jamais ouvrir le provisioning Billing V2 global.");
+        Assert(
+            runtime.AdditionalUserProvisioningEnabled
+            && runtime.AdditionalUserMutationsEnabled,
+            "Le gate dedie doit ouvrir uniquement les mutations USER-ADDITIONAL.");
+    }
+
+    private static async Task VerifyDedicatedGateDoesNotOpenGlobalProvisioning()
+    {
+        var harness = Harness.Create(
+            provisioningEnabled: false,
+            additionalUserProvisioningEnabled: true);
+        harness.RegisterSlot("slot-dedicated-gate");
+
+        var assignment = await harness.AssignAsync(
+            "slot-dedicated-gate",
+            "dedicated-gate@example.invalid");
+
+        Assert(
+            assignment.Succeeded,
+            $"Le gate USER-ADDITIONAL autorise son propre parcours ({assignment.Code}).");
+        Assert(
+            harness.PortalUsers.Entries.Count == 1,
+            "Le gate dedie ouvre uniquement la mutation USER-ADDITIONAL testee.");
+    }
     private static async Task VerifyIdentityIsAdoptedByExactEmployeeNumber()
     {
         var harness = Harness.Create();
@@ -2351,7 +2438,9 @@ public static class BillingV2AdditionalUserIdentityTests
         public required BillingV2AdditionalUserIdentityService Service
         { get; init; }
 
-        public static Harness Create(bool provisioningEnabled = true)
+        public static Harness Create(
+            bool provisioningEnabled = true,
+            bool additionalUserProvisioningEnabled = false)
         {
             var portalUsers = new MockPortalUserStore();
             var passwordSetups =
@@ -2442,7 +2531,9 @@ public static class BillingV2AdditionalUserIdentityTests
                         FirstRealSubscriptionApproved: false,
                         ProviderOutboxEnabled: false,
                         ProviderExecutorEnabled: false,
-                        ProvisioningEnabled: provisioningEnabled),
+                        ProvisioningEnabled: provisioningEnabled,
+                        AdditionalUserProvisioningEnabled:
+                            additionalUserProvisioningEnabled),
                     NullLogger<BillingV2AdditionalUserIdentityService>.Instance)
             };
         }

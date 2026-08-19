@@ -831,6 +831,84 @@ public sealed class MariaDbBillingV2AdditionalUserIdentityRepository
             subscriptionUserId,
             cancellationToken);
 
+    public async Task<IReadOnlyList<BillingV2AdditionalUserIdentityRecord>>
+        ListMaterializationCandidatesAsync(
+            int limit,
+            CancellationToken cancellationToken)
+    {
+        if (limit <= 0)
+        {
+            return [];
+        }
+
+        var boundedLimit = Math.Min(limit, 100);
+        await using var connection = new MySqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT
+                lifecycle.id,
+                lifecycle.subscription_user_id,
+                lifecycle.subscription_id,
+                lifecycle.customer_id,
+                lifecycle.portal_user_id,
+                lifecycle.koxo_unique_identifier,
+                lifecycle.status,
+                lifecycle.failure_code,
+                lifecycle.directory_object_guid,
+                customer.external_reference AS customer_reference,
+                portal_user.email,
+                portal_user.display_name
+            FROM billing_v2_user_identity_provisioning lifecycle
+            INNER JOIN customers customer
+                ON customer.id = lifecycle.customer_id
+            INNER JOIN portal_users portal_user
+                ON portal_user.id = lifecycle.portal_user_id
+            WHERE lifecycle.status IN ('koxo_pending', 'directory_ready')
+            ORDER BY lifecycle.updated_at ASC, lifecycle.id ASC
+            LIMIT @limit;
+            """;
+        command.Parameters.AddWithValue("@limit", boundedLimit);
+
+        var records = new List<BillingV2AdditionalUserIdentityRecord>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            records.Add(new BillingV2AdditionalUserIdentityRecord(
+                MariaDbIdentifierReader.ReadRequired(reader, "id"),
+                MariaDbIdentifierReader.ReadRequired(reader, "subscription_user_id"),
+                MariaDbIdentifierReader.ReadRequired(reader, "subscription_id"),
+                MariaDbIdentifierReader.ReadRequired(reader, "customer_id"),
+                reader.GetString("customer_reference"),
+                MariaDbIdentifierReader.ReadRequired(reader, "portal_user_id"),
+                reader.GetString("koxo_unique_identifier"),
+                reader.GetString("status"),
+                reader.IsDBNull(reader.GetOrdinal("failure_code")) ? null : reader.GetString("failure_code"),
+                reader.IsDBNull(reader.GetOrdinal("directory_object_guid")) ? null : reader.GetString("directory_object_guid"),
+                reader.GetString("email"),
+                reader.GetString("display_name")));
+        }
+
+        return records;
+    }
+
+    public async Task TouchMaterializationAttemptAsync(
+        string id,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE billing_v2_user_identity_provisioning
+            SET updated_at = UTC_TIMESTAMP(6)
+            WHERE id = @id
+              AND status IN ('koxo_pending', 'directory_ready');
+            """;
+        command.Parameters.AddWithValue("@id", id);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     private async Task<BillingV2AdditionalUserIdentityRecord?> FindCoreAsync(
         string predicate,
         string value,

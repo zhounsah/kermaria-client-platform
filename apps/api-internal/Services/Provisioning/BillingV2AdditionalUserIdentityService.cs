@@ -259,6 +259,13 @@ public interface IBillingV2AdditionalUserIdentityService
         CancellationToken cancellationToken);
 }
 
+public interface IBillingV2AdditionalUserIdentityConvergenceService
+{
+    Task<int> ConvergePendingAsync(
+        int batchSize,
+        CancellationToken cancellationToken);
+}
+
 /// <summary>
 /// Cycle de vie d'identite des utilisateurs additionnels Billing V2.
 /// </summary>
@@ -286,7 +293,8 @@ public interface IBillingV2AdditionalUserIdentityService
 /// </para>
 /// </remarks>
 public sealed class BillingV2AdditionalUserIdentityService
-    : IBillingV2AdditionalUserIdentityService
+    : IBillingV2AdditionalUserIdentityService,
+      IBillingV2AdditionalUserIdentityConvergenceService
 {
     private const int MinPasswordLength = 12;
     private const int MaxPasswordLength = 128;
@@ -360,7 +368,7 @@ public sealed class BillingV2AdditionalUserIdentityService
         // l'ecran proposerait un bouton dont l'appel serait refuse
         // systematiquement : le lecteur en deduirait une panne, alors que
         // c'est une decision.
-        var mutable = _billingConfiguration.ProvisioningEnabled;
+        var mutable = _billingConfiguration.AdditionalUserMutationsEnabled;
 
         return views
             .Select(view =>
@@ -785,6 +793,93 @@ public sealed class BillingV2AdditionalUserIdentityService
     // 3. MATERIALISATION ANNUAIRE
     // ------------------------------------------------------------------
 
+    public async Task<int> ConvergePendingAsync(
+        int batchSize,
+        CancellationToken cancellationToken)
+    {
+        if (!_billingConfiguration.AdditionalUserMutationsEnabled
+            || batchSize <= 0)
+        {
+            return 0;
+        }
+
+        var candidates = await _repository.ListMaterializationCandidatesAsync(
+            batchSize,
+            cancellationToken);
+        var completed = 0;
+
+        foreach (var candidate in candidates)
+        {
+            try
+            {
+                var result = await MaterializeCoreAsync(
+                    candidate,
+                    plaintextPassword: null,
+                    cancellationToken);
+                if (result.Succeeded
+                    && string.Equals(
+                        result.Code,
+                        BillingV2AdditionalUserMaterializationCodes.Ready,
+                        StringComparison.Ordinal))
+                {
+                    completed++;
+                    continue;
+                }
+
+                if (!string.Equals(
+                    result.Code,
+                    BillingV2AdditionalUserMaterializationCodes.DirectoryNotReady,
+                    StringComparison.Ordinal))
+                {
+                    _logger.LogWarning(
+                        "Additional-user convergence did not complete portal_user_id {PortalUserId}: {Code}.",
+                        candidate.PortalUserId,
+                        result.Code);
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                _logger.LogError(
+                    exception,
+                    "Additional-user convergence failed for portal_user_id {PortalUserId}; a later pass will retry it.",
+                    candidate.PortalUserId);
+            }
+
+            await TouchMaterializationAttemptForRetryAsync(
+                candidate.Id,
+                cancellationToken);
+        }
+
+        return completed;
+    }
+
+    private async Task TouchMaterializationAttemptForRetryAsync(
+        string lifecycleId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _repository.TouchMaterializationAttemptAsync(
+                lifecycleId,
+                cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(
+                exception,
+                "Could not rotate additional-user convergence candidate {LifecycleId}.",
+                lifecycleId);
+        }
+    }
+
     public async Task<BillingV2AdditionalUserOperationResult>
         TryMaterializeAsync(
             string portalUserId,
@@ -1188,7 +1283,7 @@ public sealed class BillingV2AdditionalUserIdentityService
     /// validation en lecture d'un jeton, qui ne mute rien.
     /// </remarks>
     private BillingV2AdditionalUserOperationResult? GuardProvisioningEnabled()
-        => _billingConfiguration.ProvisioningEnabled
+        => _billingConfiguration.AdditionalUserMutationsEnabled
             ? null
             : Failure(
                 BillingV2AdditionalUserMaterializationCodes

@@ -75,6 +75,7 @@ Le prix récurrent est calculé à partir des services réellement souscrits, pu
 - Hypothèse de migration : aucun vrai client production avec abonnement actif n'est présumé à migrer. Avant toute décision d'activation, vérifier en lecture seule `READINESS-CHECKS.sql`; les comptes `is_demo=true` ne sont pas des contrats clients réels, mais un client non-démo reste compté comme réel même s'il porte une trace historique de conversion.
 - Readiness données : `real_customer_subscription_count = 0` n'est utilisable que si le snapshot porte `verifiedAgainstPersistentSql=true`. Une absence de configuration SQL ou une lecture non vérifiée ne vaut jamais preuve d'absence de contrats réels.
 - Provisioning V2 réel : préparé uniquement derrière `BILLING_V2_PROVISIONING_ENABLED=false` et une readiness explicite par client (`billing_v2_provisioning_client_readiness`). Le mode initial est add-only et le legacy reste autoritaire si une condition échoue. Après activation locale par provider inbound, le provisioning V2 peut être retenté uniquement via `BillingV2ProvisioningService`, la gate de readiness et `ProvisioningService`; aucun appel AD direct n'est ajouté.
+- USER-ADDITIONAL : le cycle identite dispose d'un gate dedie `BILLING_V2_ADDITIONAL_USER_PROVISIONING_ENABLED`, independant du provisioning general. Quand seul ce gate est ouvert, un worker borne reprend uniquement les cycles `koxo_pending` et `directory_ready` jusqu'a `ready`; `BILLING_V2_PROVISIONING_ENABLED` peut rester `false`.
 
 ## Fichiers SQL
 

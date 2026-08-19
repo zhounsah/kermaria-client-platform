@@ -180,6 +180,7 @@ chemin de dispatch, avec les codes `BILLING_V2_SCOPE_*`.
 | `BILLING_V2_RECONCILIATION_WORKER_ENABLED` | `false` | `true` | `true` | `false` |
 | `BILLING_V2_RECONCILIATION_INTERVAL_SECONDS` | — | `300` | `300` | — |
 | `BILLING_V2_PROVISIONING_ENABLED` | `false` | `false` | `false` | `false` |
+| `BILLING_V2_ADDITIONAL_USER_PROVISIONING_ENABLED` | `false` | `false` | `false` | `false` |
 | `BILLING_V2_CATALOG_SHADOW_MODE` | `true` | `true` | `true` | `true` |
 | `BILLING_V2_PROVISIONING_SHADOW_MODE` | `true` | `true` | `true` | `true` |
 | `STRIPE_MODE` | `test` | `test` | `live` | `test` |
@@ -189,6 +190,13 @@ chemin de dispatch, avec les codes `BILLING_V2_SCOPE_*`.
 
 `BILLING_V2_FIRST_REAL_SUBSCRIPTION_APPROVED` est le dernier verrou : il ne
 passe à `true` qu'au moment d'accepter le premier vrai client.
+
+Le gate `BILLING_V2_ADDITIONAL_USER_PROVISIONING_ENABLED` est volontairement
+independant du provisioning general. Lorsqu'il vaut `true` avec
+`BILLING_V2_PROVISIONING_ENABLED=false`, seules les mutations USER-ADDITIONAL
+et leur worker de convergence `koxo_pending`/`directory_ready` sont ouverts.
+Le provisioning general reste ferme. En rollback, remettre ce gate a `false`
+et redemarrer API-INTERNAL.
 
 Rappel SRV-13 : corriger un réglage **aux deux endroits** —
 `C:\ProgramData\Kermaria\api-internal.config.json` et

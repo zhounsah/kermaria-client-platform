@@ -306,9 +306,13 @@ builder.Services.AddScoped<IBillingV2AdditionalUserIdentityRepository>(
         : serviceProvider
             .GetRequiredService<
                 MockBillingV2AdditionalUserIdentityRepository>());
-builder.Services.AddScoped<
-    IBillingV2AdditionalUserIdentityService,
-    BillingV2AdditionalUserIdentityService>();
+builder.Services.AddScoped<BillingV2AdditionalUserIdentityService>();
+builder.Services.AddScoped<IBillingV2AdditionalUserIdentityService>(
+    serviceProvider => serviceProvider.GetRequiredService<
+        BillingV2AdditionalUserIdentityService>());
+builder.Services.AddScoped<IBillingV2AdditionalUserIdentityConvergenceService>(
+    serviceProvider => serviceProvider.GetRequiredService<
+        BillingV2AdditionalUserIdentityService>());
 // Lectures ciblees du ciblage de stockage KoXo, distinctes de l'export global :
 // l'export porte la politique de population du CSV, pas la designation d'une
 // cible de quota.
@@ -369,6 +373,10 @@ builder.Services.AddScoped<ICommercialService, CommercialService>();
 var billingV2RuntimeConfiguration =
     BillingV2RuntimeConfiguration.Resolve(builder.Configuration);
 builder.Services.AddSingleton(billingV2RuntimeConfiguration);
+if (billingV2RuntimeConfiguration.AdditionalUserMutationsEnabled)
+{
+    builder.Services.AddHostedService<BillingV2AdditionalUserIdentityConvergenceWorker>();
+}
 builder.Services.AddScoped<LegacyBillingCatalogAdapter>();
 builder.Services.AddScoped<V2BillingCatalogAdapter>();
 builder.Services.AddScoped<IBillingCatalog>(serviceProvider =>
