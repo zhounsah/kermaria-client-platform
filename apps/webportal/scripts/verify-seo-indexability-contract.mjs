@@ -372,6 +372,11 @@ assert.match(
 assert.match(proxySource, /resolveCanonicalPublicUrl\(/);
 assert.match(proxySource, /resolvePortalPublicRedirectUrl\(/);
 assert.match(proxySource, /isClientOrAdminPortalHost\(/);
+assert.match(
+  proxySource,
+  /isClientOrAdminPortalHost\(requestHost\)[\s\S]*isClientCheckoutContinuationPath\(request\.nextUrl\.pathname\)[\s\S]*response\.headers\.set\("X-Robots-Tag", "noindex, nofollow"\)/,
+  "La continuation Billing V2 sur l'hote client doit etre explicitement noindex.",
+);
 assert.match(proxySource, /resolveEditorialSlug\(/);
 assert.match(proxySource, /status:\s*404/);
 assert.match(proxySource, /Page introuvable \| Zachary IT/);

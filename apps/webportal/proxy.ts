@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import {
   getWikiHostKind,
+  isClientCheckoutContinuationPath,
   isClientOrAdminPortalHost,
   isPortalApplicationPath,
   isPublicRoute,
@@ -182,7 +183,19 @@ export async function proxy(request: NextRequest) {
 
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-pathname", request.nextUrl.pathname);
-  return NextResponse.next({ request: { headers: requestHeaders } });
+  const response = NextResponse.next({ request: { headers: requestHeaders } });
+
+  // `/formules` reste indexable sur l'hote public, mais la copie servie sur
+  // le portail client n'existe que pour conserver le cookie host-only lors
+  // de la souscription. Elle ne doit donc jamais devenir une URL indexable.
+  if (
+    isClientOrAdminPortalHost(requestHost)
+    && isClientCheckoutContinuationPath(request.nextUrl.pathname)
+  ) {
+    response.headers.set("X-Robots-Tag", "noindex, nofollow");
+  }
+
+  return response;
 }
 
 export const config = {
