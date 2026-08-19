@@ -1005,11 +1005,13 @@ public sealed partial class BillingV2ProvisioningService : IBillingV2Provisionin
             LIMIT 1;
             """;
         command.Parameters.AddWithValue("@subscription_id", subscriptionId);
-        var value = await command.ExecuteScalarAsync(cancellationToken);
-        return value is string customerId
-            && !string.IsNullOrWhiteSpace(customerId)
-                ? customerId
-                : null;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return MariaDbIdentifierReader.ReadRequired(reader, "customer_id");
     }
 
     private async Task<BillingV2ProvisioningDbReadiness> LoadReadinessAsync(

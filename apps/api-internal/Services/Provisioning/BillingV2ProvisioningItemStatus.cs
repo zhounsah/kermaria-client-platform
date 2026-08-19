@@ -1,3 +1,4 @@
+using Kermaria.ApiInternal.Data.Repositories;
 using MySqlConnector;
 
 namespace Kermaria.ApiInternal.Services.Provisioning;
@@ -103,7 +104,7 @@ public sealed partial class BillingV2ProvisioningService
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            ids.Add(reader.GetString("id"));
+            ids.Add(MariaDbIdentifierReader.ReadRequired(reader, "id"));
         }
         return ids;
     }
