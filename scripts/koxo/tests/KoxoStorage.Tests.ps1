@@ -549,6 +549,10 @@ Describe 'Invoke-KoxoStorageReconcile (fiche personnelle)' {
             { Invoke-KoxoStorageTestReconcile -Sandbox $sandbox -RepairInvoker {
                 param($a) throw 'KoXo process timed out after 30 seconds.'
             } } | Should Throw
+
+            $rolledBack = Read-KoxoStorageQuotaState -Path $path
+            $rolledBack.Enabled | Should Be $false
+            $rolledBack.QuotaMib | Should Be 5120
         }
         finally {
             Remove-Item -LiteralPath $sandbox.Root -Recurse -Force -ErrorAction SilentlyContinue
@@ -570,6 +574,10 @@ Describe 'Invoke-KoxoStorageReconcile (fiche personnelle)' {
 
             $result.status | Should Be 'failed'
             $result.reasonCode | Should Be 'BILLING_V2_KOXO_STORAGE_VERIFICATION_FAILED'
+
+            $rolledBack = Read-KoxoStorageQuotaState -Path $path
+            $rolledBack.Enabled | Should Be $false
+            $rolledBack.QuotaMib | Should Be 5120
         }
         finally {
             Remove-Item -LiteralPath $sandbox.Root -Recurse -Force -ErrorAction SilentlyContinue

@@ -376,6 +376,28 @@ function Write-KoxoStorageQuotaFile {
         -RetentionCount $Configuration.BackupRetentionCount
 }
 
+function Restore-KoxoStorageQuotaAfterFailure {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)] $Configuration,
+        [Parameter(Mandatory = $true)] [string]$Path,
+        [Parameter(Mandatory = $true)] [string]$OriginalContent,
+        [Parameter(Mandatory = $true)] [string]$Reason,
+        [hashtable]$AuditData = @{}
+    )
+
+    Write-KoxoStorageQuotaFile `
+        -Configuration $Configuration `
+        -Path $Path `
+        -Content $OriginalContent | Out-Null
+
+    Write-KoxoSyncLog `
+        -Configuration $Configuration `
+        -Level 'warning' `
+        -Message 'KoXo storage reconcile rolled the sheet back after an unproven repair.' `
+        -Data ($AuditData + @{ rollback_reason = $Reason })
+}
+
 function Get-KoxoStorageRepairArguments {
     [CmdletBinding()]
     param(
@@ -591,15 +613,26 @@ function Invoke-KoxoStorageReconcile {
         # sur le code de sortie : KoXoAdm.exe sort en 1 meme en succes et peut
         # rester vivant apres avoir termine. Il leve quand rien ne prouve
         # l'execution.
-        if ($RepairInvoker) {
-            & $RepairInvoker $arguments
+        try {
+            if ($RepairInvoker) {
+                & $RepairInvoker $arguments
+            }
+            else {
+                Invoke-KoxoProcess `
+                    -Configuration $Configuration `
+                    -ExecutablePath $Configuration.KoxoExecutablePath `
+                    -WorkingDirectory $Configuration.KoxoWorkingDirectory `
+                    -Arguments $arguments | Out-Null
+            }
         }
-        else {
-            Invoke-KoxoProcess `
+        catch {
+            Restore-KoxoStorageQuotaAfterFailure `
                 -Configuration $Configuration `
-                -ExecutablePath $Configuration.KoxoExecutablePath `
-                -WorkingDirectory $Configuration.KoxoWorkingDirectory `
-                -Arguments $arguments | Out-Null
+                -Path $path `
+                -OriginalContent $state.Content `
+                -Reason 'repair_failed' `
+                -AuditData $auditData
+            throw
         }
 
         # Relecture apres coup : l'ecriture n'est pas sa propre preuve. Une
@@ -608,6 +641,12 @@ function Invoke-KoxoStorageReconcile {
         $finalState = Read-KoxoStorageQuotaState -Path $path
         if (-not $finalState.Exists -or $finalState.Ambiguous -or
             -not $finalState.Enabled -or $finalState.QuotaMib -ne $DesiredQuotaMib) {
+            Restore-KoxoStorageQuotaAfterFailure `
+                -Configuration $Configuration `
+                -Path $path `
+                -OriginalContent $state.Content `
+                -Reason 'xml_verification_failed' `
+                -AuditData $auditData
             Write-KoxoSyncLog -Configuration $Configuration -Level 'error' -Message 'KoXo storage reconcile could not be verified in the sheet.' -Data (
                 $auditData + @{ final_quota_mib = $finalState.QuotaMib; final_quota_enabled = $finalState.Enabled }
             )
@@ -625,6 +664,12 @@ function Invoke-KoxoStorageReconcile {
         # La verification FSRM demandee mais non concluante ferme le resultat :
         # elle n'a de sens que si son echec compte.
         if ($fsrm.Attempted -and -not $fsrm.Verified) {
+            Restore-KoxoStorageQuotaAfterFailure `
+                -Configuration $Configuration `
+                -Path $path `
+                -OriginalContent $state.Content `
+                -Reason 'fsrm_verification_failed' `
+                -AuditData $auditData
             Write-KoxoSyncLog -Configuration $Configuration -Level 'error' -Message 'KoXo storage reconcile failed the FSRM verification.' -Data (
                 $auditData + @{ fsrm_reason = $fsrm.Reason }
             )

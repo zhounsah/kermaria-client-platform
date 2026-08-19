@@ -1,4 +1,4 @@
-﻿# V0.40 / V0.40.1 - Synchronisation KoXo privee, validee et non destructive
+# V0.40 / V0.40.1 - Synchronisation KoXo privee, validee et non destructive
 
 ## Objet
 
@@ -117,6 +117,8 @@ mot de passe et acces.
 La fiche est relue **apres** la reparation. L'ecriture n'est pas sa propre
 preuve : une reparation qui reecrirait la fiche depuis la base KoXo annulerait
 silencieusement la modification.
+
+Si la reparation ne peut pas etre prouvee (exception ou timeout sans marqueur de fin, relecture XML non concluante, ou verification FSRM demandee mais en echec), la fiche **pre-repair est restauree atomiquement avant de rendre l'echec**. Un retry ne peut donc pas devenir un faux `NOOP` simplement parce que l'intention etait restee ecrite dans le XML.
 
 Le niveau de preuve est explicite dans la reponse :
 
