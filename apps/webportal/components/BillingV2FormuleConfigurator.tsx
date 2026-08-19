@@ -377,10 +377,10 @@ export function BillingV2FormuleConfigurator({ preset, catalog }: Props) {
         <fieldset className="formule-fieldset">
           <legend>Équipe et support</legend>
           <p className="formule-hint">
-            Un utilisateur supplémentaire, c&apos;est un compte nominatif de
-            plus : son identifiant, son espace personnel et son accès aux
-            services de la formule. Comptez une personne de votre structure par
-            utilisateur ; le vôtre est déjà inclus.
+            Une place d&apos;utilisateur suppl&eacute;mentaire ajoute un compte nominatif
+            de plus. Elle ne duplique pas automatiquement le stockage personnel,
+            la sauvegarde personnelle, l&apos;acc&egrave;s s&eacute;curis&eacute; ni le bureau &agrave;
+            distance du titulaire. Le v&ocirc;tre est d&eacute;j&agrave; inclus.
           </p>
           <div className="formule-stepper">
             <span className="formule-stepper-label">

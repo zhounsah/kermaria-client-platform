@@ -110,6 +110,17 @@ assert.doesNotMatch(
   "Aucun montant ne doit etre accepte depuis le navigateur.",
 );
 
+assert.match(
+  configurator,
+  /ne duplique pas automatiquement le stockage personnel/,
+  "USER-ADDITIONAL doit etre presente comme une place nominative, sans duplication automatique des services user-scoped.",
+);
+assert.doesNotMatch(
+  configurator,
+  /son espace personnel et son/,
+  "Le configurateur ne doit plus promettre implicitement stockage et acces avec la seule place USER-ADDITIONAL.",
+);
+
 // --- 2. Les quatre formules publiques ------------------------------------
 
 for (const presetCode of [
