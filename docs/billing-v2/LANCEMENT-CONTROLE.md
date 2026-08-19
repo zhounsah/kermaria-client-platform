@@ -413,3 +413,37 @@ jamais sur `Error|Exception`, chaque ligne contenant `"Exception":null`. La
 
 Ne jamais journaliser jeton, cookie, chaîne de connexion ni montant complet de
 facture.
+
+---
+
+## I. Etat production apres ouverture du 2026-08-19
+
+Etat valide en production apres le premier abonnement Billing V2 reel et la recette USER-ADDITIONAL :
+
+- API-INTERNAL deployee : `89ae2fff38697a1438e162b64afb2c0ada7a2226` ;
+- release publique webportal : `5102618da865abc2931bc6ad5486204877f7cdac` ;
+- `BILLING_V2_NEW_SUBSCRIPTIONS_ENABLED=true` ;
+- `BILLING_V2_AUTHORITATIVE_CHECKOUT_ENABLED=true` ;
+- `BILLING_V2_FIRST_REAL_SUBSCRIPTION_APPROVED=true` ;
+- `BILLING_V2_PROVIDER_OUTBOX_ENABLED=true` ;
+- `BILLING_V2_PROVIDER_EXECUTOR_ENABLED=true` ;
+- `BILLING_V2_PROVISIONING_ENABLED=true` ;
+- `BILLING_V2_ADDITIONAL_USER_PROVISIONING_ENABLED=true` ;
+- le tarif de recette first-real reste desactive : `BILLING_V2_FIRST_REAL_TEST_PRICING_ENABLED` absent ou `false` ;
+- readiness admin : `BILLING_V2_ADMIN_READY_FOR_FIRST_SUBSCRIPTION` ;
+- compteur de souscriptions legacy reelles bloquantes : `0`, verifie contre MariaDB persistante ;
+- readiness provisioning du client de recette : `ready_for_v2_provisioning=1`, `add_only_mode=1`, shadow `success`, match legacy `1`, mismatch non resolu `0` ;
+- les huit items actifs du premier abonnement V2 reel sont `provisioned` sans `last_error` ;
+- le replay admin natif du premier abonnement est idempotent : `PROVISIONING_UNCHANGED`, avec le droit VPN deja present ;
+- un cycle USER-ADDITIONAL reel a converge jusqu'a `ready` avec lien AD durable ;
+- le devis non mutant de la configuration Pro/FLEX de recette retourne `4850` centimes, remise `0`, `checkoutAvailable=true`, `checkoutMode=native` ;
+- le mode initial de provisioning reste strictement add-only. Cette ouverture ne doit pas etre utilisee pour automatiser des retraits ou suppressions.
+
+Le packager webportal doit toujours inclure le repertoire vide `apps/webportal/.next/cache/` dans l'archive standalone. Sans ce repertoire, le service systemd peut echouer au demarrage avant que Next.js puisse initialiser son cache runtime.
+
+Tunnel public Billing V2 valide :
+`vitrine -> choix formule/options -> inscription -> activation du compte -> connexion/session -> paiement -> provisioning de la formule`.
+
+La selection Billing V2 complete est persistee comme codes catalogue/options dans le snapshot JSON du signup, jamais comme montant client. Elle est revalidee/rechiffree par le serveur avant inscription puis avant checkout. `/formules/reprendre` exige une session client et conserve `next=/formules/reprendre` si la session est absente ou expiree.
+
+Le lifecycle de suppression/remplacement d'utilisateur et toute migration ulterieure restent hors de ce runbook tant qu'ils ne sont pas valides separement.
