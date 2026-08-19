@@ -103,7 +103,7 @@ export function readBillingV2SelectionSearchParams(
   }
 
   const usersRaw = singleParam(searchParams.v2Users) ?? "0";
-  if (!/^\\d+$/.test(usersRaw)) {
+  if (!/^\d+$/.test(usersRaw)) {
     return null;
   }
 

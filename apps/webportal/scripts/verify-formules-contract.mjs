@@ -106,6 +106,11 @@ assert.doesNotMatch(
   "Le lecteur de selection n'accepte aucun champ tarifaire.",
 );
 
+assert.ok(
+  selectionReader.includes(String.raw`if (!/^\d+$/.test(usersRaw)) {`),
+  "La reprise URL doit accepter un nombre entier d utilisateurs additionnels.",
+);
+
 // La charge utile acceptee par l'API ne porte aucun champ tarifaire.
 const selectionInputBlock = catalogModel.slice(
   catalogModel.indexOf("class BillingV2PublicSelectionInput"),
