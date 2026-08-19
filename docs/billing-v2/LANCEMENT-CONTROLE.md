@@ -179,8 +179,8 @@ chemin de dispatch, avec les codes `BILLING_V2_SCOPE_*`.
 | `BILLING_V2_PROVIDER_EXECUTOR_ENABLED` | `false` | `true` | `true` | `false` |
 | `BILLING_V2_RECONCILIATION_WORKER_ENABLED` | `false` | `true` | `true` | `false` |
 | `BILLING_V2_RECONCILIATION_INTERVAL_SECONDS` | — | `300` | `300` | — |
-| `BILLING_V2_PROVISIONING_ENABLED` | `false` | `false` | `false` | `false` |
-| `BILLING_V2_ADDITIONAL_USER_PROVISIONING_ENABLED` | `false` | `false` | `false` | `false` |
+| `BILLING_V2_PROVISIONING_ENABLED` | `false` | `false` | `true` | `false` |
+| `BILLING_V2_ADDITIONAL_USER_PROVISIONING_ENABLED` | `false` | `false` | `true` | `false` |
 | `BILLING_V2_CATALOG_SHADOW_MODE` | `true` | `true` | `true` | `true` |
 | `BILLING_V2_PROVISIONING_SHADOW_MODE` | `true` | `true` | `true` | `true` |
 | `STRIPE_MODE` | `test` | `test` | `live` | `test` |
@@ -207,6 +207,13 @@ echoue avant la creation de l abonnement. Le `discount_basis_points_snapshot`
 et le price lock portent ensuite le meme prix contractuel pour Stripe, les
 documents et les renouvellements. Couper le gate juste apres l ancrage du
 checkout de validation ; le snapshot de l abonnement reste autoritaire.
+
+Apres validation du premier abonnement reel, remettre
+`BILLING_V2_FIRST_REAL_TEST_PRICING_ENABLED=false` puis retirer de la
+configuration runtime les six parametres `BILLING_V2_FIRST_REAL_TEST_*`.
+Le snapshot de prix deja persiste reste autoritaire pour cet abonnement ; la
+suppression des parametres runtime empeche toute reutilisation accidentelle du
+tarif de validation.
 
 
 Le gate `BILLING_V2_ADDITIONAL_USER_PROVISIONING_ENABLED` est volontairement
@@ -316,10 +323,17 @@ Ordre imposé. Ne pas passer à l'étape suivante sans la preuve.
 
 ### 9. Provisioning
 
-- **Preuve** : action enregistrée, **exécution manuelle**.
-- **Où** : `billing_v2_provisioning_*`, journal admin.
-- **Si échec** : le provisioning reste sous gate pour le lancement. Aucun
-  automatisme AD n'est attendu.
+- **Preuve** : apres settlement et activation, les items techniques convergent
+  automatiquement ; `billing_v2_subscription_item_provisioning` doit refleter
+  `provisioned` sans `last_error`, les quotas KoXo doivent etre verifies sur le
+  stockage effectif et les appartenances AD doivent correspondre aux droits V2.
+- **Ou** : `billing_v2_subscription_item_provisioning`, readiness client,
+  journaux API-INTERNAL/KoXo, FSRM et AD. L'endpoint admin natif V2 de reconcile
+  sert uniquement au replay controle et idempotent d'un abonnement deja actif.
+- **Si echec** : rester fail-closed ; ne jamais marquer un item `provisioned` a
+  la main. Corriger readiness/provider KoXo/AD puis rejouer la reconciliation.
+  Un echec KoXo non prouve restaure la fiche pre-repair afin qu'un retry ne
+  puisse pas devenir un faux `NOOP`.
 
 ---
 
