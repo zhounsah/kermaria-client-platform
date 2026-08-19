@@ -25,6 +25,7 @@ public static class BillingV2ProvisioningShadowTests
         VerifyProvisioningRetryKeepsSameGateDecision();
         VerifyProvisioningPlannerFlagsMissingItemProvisioning();
         VerifyStorageQuotaRulesAreCalculatedButNotAdGroups();
+        VerifyProvisioningItemStatusPolicy();
         VerifyDormantKoxoStorageProviderBlocksExecution();
         return Task.CompletedTask;
     }
@@ -310,6 +311,56 @@ public static class BillingV2ProvisioningShadowTests
                 == "subscription-user-v2"
             && plan.StorageQuotaPlans[0].IdentityReference == "portal-user-v2",
             "Les regles de stockage V2 doivent calculer un quota explicite, rattache a son utilisateur, sans le confondre avec un groupe AD.");
+    }
+
+    private static void VerifyProvisioningItemStatusPolicy()
+    {
+        var entitlement = new BillingV2AcknowledgedEntitlement(
+            "item-entitlement", null, "SUPPORT-PLUS",
+            "contractual_entitlement", "support_level", "PLUS", "subscription");
+        var slot = new BillingV2AcknowledgedEntitlement(
+            "item-slot", null, "USER-ADDITIONAL",
+            "platform_entitlement", "platform", "additional_user_slot", "subscription");
+        var plan = new BillingV2ProvisioningPlan(
+            Array.Empty<BillingV2UserDesiredState>(),
+            new BillingV2SubscriptionDesiredState(
+                Array.Empty<BillingV2StorageQuotaPlan>(),
+                Array.Empty<BillingV2AcknowledgedEntitlement>(),
+                [entitlement],
+                [slot]),
+            Array.Empty<BillingV2ProvisioningBlocker>());
+
+        var acknowledged = BillingV2ProvisioningItemStatusPolicy.Acknowledged(plan);
+        Ensure(
+            acknowledged.Select(update => update.SubscriptionItemId)
+                .SequenceEqual(["item-entitlement", "item-slot"], StringComparer.Ordinal)
+            && acknowledged.All(update => update.Status == "provisioned" && update.SetProvisionedAt),
+            "Les entitlements sans mutation externe et les slots doivent etre marques provisioned des que le contrat actif est autorise.");
+
+        var storage = BillingV2ProvisioningItemStatusPolicy.Storage(
+            new BillingV2KoxoStorageApplyResult(
+                "mixed",
+                [
+                    new BillingV2KoxoStorageTargetResult(
+                        "item-storage-ok", "user:u", BillingV2KoxoStorageOutcome.Noop,
+                        "NOOP", BillingV2KoxoStorageVerification.XmlVerified),
+                    new BillingV2KoxoStorageTargetResult(
+                        "item-storage-ko", "group:g", BillingV2KoxoStorageOutcome.Failed,
+                        "KOXO_FAILED", BillingV2KoxoStorageVerification.None)
+                ]));
+        Ensure(
+            storage.Single(update => update.SubscriptionItemId == "item-storage-ok").Status == "provisioned"
+            && storage.Single(update => update.SubscriptionItemId == "item-storage-ko").Status == "failed"
+            && storage.Single(update => update.SubscriptionItemId == "item-storage-ko").LastError == "KOXO_FAILED",
+            "Le statut stockage doit suivre la preuve KoXo cible par cible.");
+
+        var ad = BillingV2ProvisioningItemStatusPolicy.ActiveDirectory(
+            ["item-vpn"],
+            new ProvisioningExecutionResult(true, false, "PROVISIONING_ALREADY_COMPLIANT",
+                Array.Empty<ProvisioningOperationResult>()));
+        Ensure(
+            ad.Count == 1 && ad[0].Status == "provisioned" && ad[0].SetProvisionedAt,
+            "Un droit AD deja conforme doit etre provisioned meme sans changement LDAP.");
     }
 
     private static void VerifyDormantKoxoStorageProviderBlocksExecution()

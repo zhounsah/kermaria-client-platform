@@ -577,6 +577,7 @@ public sealed partial class BillingV2ProvisioningService : IBillingV2Provisionin
             resolution.Targets,
             correlationId,
             cancellationToken);
+        await PersistStorageStatusesAsync(applied, cancellationToken);
         var gate = BillingV2KoxoStorageGate.Evaluate(
             planCount,
             resolution,
@@ -850,6 +851,8 @@ public sealed partial class BillingV2ProvisioningService : IBillingV2Provisionin
             return null;
         }
 
+        await MarkAcknowledgedEntitlementsAsync(plan, cancellationToken);
+
         if (!await TryReconcileStorageAsync(
                 customerId,
                 plan,
@@ -909,12 +912,14 @@ public sealed partial class BillingV2ProvisioningService : IBillingV2Provisionin
                 entry => (string?)entry.Value,
                 StringComparer.OrdinalIgnoreCase);
 
-        return await ExecutePerUserAsync(
+        var execution = await ExecutePerUserAsync(
             BillingV2ProvisioningExecutionPlanner.BuildPerUserRequests(
                 decision,
                 resolution.Targets,
                 groupDistinguishedNames),
             cancellationToken);
+        await PersistAdStatusesAsync(customerId, execution, cancellationToken);
+        return execution;
     }
 
     /// <summary>

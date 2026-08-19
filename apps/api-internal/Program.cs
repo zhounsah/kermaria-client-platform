@@ -4924,6 +4924,42 @@ app.MapPost(
             context.RequestAborted);
         return Results.Ok(result);
     });
+app.MapPost(
+    "/internal/admin/billing-v2/subscriptions/{id}/provisioning/reconcile",
+    async (
+        string id,
+        HttpContext context,
+        IBillingV2ProvisioningService provisioningService,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context, authenticationService, auditService,
+            "admin.billing_v2.provisioning.reconcile");
+        var result = await provisioningService.TryReconcileActivatedSubscriptionAsync(
+            id, context.RequestAborted);
+        var resultCode = result?.ResultCode
+            ?? "BILLING_V2_PROVISIONING_NOT_EXECUTED";
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "billing_v2.provisioning.reconcile",
+                result?.Succeeded == true ? "success" : "refused",
+                ReasonCode: resultCode,
+                TargetType: "billing_v2_subscription",
+                TargetReference: id,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return Results.Ok(new
+        {
+            executed = result is not null,
+            succeeded = result?.Succeeded ?? false,
+            changed = result?.Changed ?? false,
+            resultCode,
+            operations = result?.Operations ?? Array.Empty<ProvisioningOperationResult>()
+        });
+    });
 app.MapGet(
     "/internal/admin/billing-v2/subscriptions",
     async (
