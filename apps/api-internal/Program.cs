@@ -4892,6 +4892,38 @@ app.MapGet(
             context.RequestAborted);
         return Results.Ok(snapshot);
     });
+app.MapPost(
+    "/internal/admin/billing-v2/provisioning-readiness/{customerId}/review",
+    async (
+        string customerId,
+        HttpContext context,
+        IBillingV2ProvisioningService provisioningService,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.billing_v2.provisioning_readiness.review");
+        var result = await provisioningService.ReviewClientReadinessAsync(
+            customerId,
+            actor.UserId,
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "billing_v2.provisioning_readiness.review",
+                result.Ready ? "success" : "refused",
+                ReasonCode: result.ReasonCode,
+                TargetType: "customer",
+                TargetReference: customerId,
+                CustomerId: customerId,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return Results.Ok(result);
+    });
 app.MapGet(
     "/internal/admin/billing-v2/subscriptions",
     async (

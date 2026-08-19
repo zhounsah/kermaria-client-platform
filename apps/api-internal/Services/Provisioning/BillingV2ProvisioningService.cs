@@ -455,6 +455,11 @@ public interface IBillingV2ProvisioningService
     Task<ProvisioningExecutionResult?> TryReconcileActivatedSubscriptionAsync(
         string subscriptionId,
         CancellationToken cancellationToken);
+
+    Task<BillingV2ProvisioningReadinessReviewResult> ReviewClientReadinessAsync(
+        string customerId,
+        string reviewedByReference,
+        CancellationToken cancellationToken);
 }
 
 public sealed class NoOpBillingV2ProvisioningService
@@ -475,9 +480,15 @@ public sealed class NoOpBillingV2ProvisioningService
         string subscriptionId,
         CancellationToken cancellationToken)
         => Task.FromResult<ProvisioningExecutionResult?>(null);
+
+    public Task<BillingV2ProvisioningReadinessReviewResult> ReviewClientReadinessAsync(
+        string customerId,
+        string reviewedByReference,
+        CancellationToken cancellationToken)
+        => Task.FromResult(BillingV2ProvisioningReadinessReviewResult.PersistenceUnavailable);
 }
 
-public sealed class BillingV2ProvisioningService : IBillingV2ProvisioningService
+public sealed partial class BillingV2ProvisioningService : IBillingV2ProvisioningService
 {
     private readonly SqlRuntimeConfiguration _sql;
     private readonly BillingV2RuntimeConfiguration _billingV2;

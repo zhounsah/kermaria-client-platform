@@ -18,6 +18,9 @@ public static class BillingV2ProvisioningShadowTests
         VerifyProvisioningReadinessDeniesIncompleteMaterialization();
         VerifyProvisioningReadinessDeniesUnknownRuleOrGroup();
         VerifyProvisioningReadinessDeniesFlagOff();
+        VerifyReadinessReviewApprovesNativeV2WithoutLegacyOverlap();
+        VerifyReadinessReviewDeniesLegacyOverlap();
+        VerifyReadinessReviewDeniesStorageTargetGap();
         VerifyFirstActivationIsAddOnly();
         VerifyProvisioningRetryKeepsSameGateDecision();
         VerifyProvisioningPlannerFlagsMissingItemProvisioning();
@@ -171,6 +174,49 @@ public static class BillingV2ProvisioningShadowTests
             !decision.Authorized
             && decision.ReasonCode == "BILLING_V2_PROVISIONING_FLAG_OFF",
             "Le flag global off doit interdire toute action V2 meme si le client est ready.");
+    }
+
+    private static void VerifyReadinessReviewApprovesNativeV2WithoutLegacyOverlap()
+    {
+        var decision = BillingV2ProvisioningReadinessReviewPolicy.Evaluate(
+            ReviewInputs());
+
+        Ensure(
+            decision.Ready
+            && decision.AddOnlyMode
+            && decision.ShadowStatus == "success"
+            && decision.ShadowMatchesLegacy
+            && decision.UnresolvedMismatchCount == 0
+            && decision.ReasonCode
+                == BillingV2ProvisioningReadinessReviewReasons.Ready,
+            "Un client reel V2 natif sans chevauchement legacy et sans blocker doit etre approuvable uniquement en add-only.");
+    }
+
+    private static void VerifyReadinessReviewDeniesLegacyOverlap()
+    {
+        var decision = BillingV2ProvisioningReadinessReviewPolicy.Evaluate(
+            ReviewInputs(activeLegacySubscriptionCount: 1));
+
+        Ensure(
+            !decision.Ready
+            && !decision.ShadowMatchesLegacy
+            && decision.ReasonCodes.Contains(
+                BillingV2ProvisioningReadinessReviewReasons.LegacyOverlap)
+            && decision.UnresolvedMismatchCount > 0,
+            "Un abonnement legacy actif concurrent doit fermer la revue readiness.");
+    }
+
+    private static void VerifyReadinessReviewDeniesStorageTargetGap()
+    {
+        var decision = BillingV2ProvisioningReadinessReviewPolicy.Evaluate(
+            ReviewInputs(storageTargetsResolved: false));
+
+        Ensure(
+            !decision.Ready
+            && decision.ReasonCodes.Contains(
+                BillingV2ProvisioningReadinessReviewReasons.StorageTargetsUnresolved)
+            && decision.UnresolvedMismatchCount == 1,
+            "Une cible KoXo non resolue doit laisser la readiness rouge avant toute action externe.");
     }
 
     private static void VerifyFirstActivationIsAddOnly()
@@ -330,6 +376,29 @@ public static class BillingV2ProvisioningShadowTests
                 string.Empty,
                 null)
         ];
+
+    private static BillingV2ProvisioningReadinessReviewInputs ReviewInputs(
+        bool persistentSqlAvailable = true,
+        bool customerExists = true,
+        bool customerIsDemo = false,
+        int activeV2SubscriptionCount = 1,
+        int activeLegacySubscriptionCount = 0,
+        int unresolvedRuleCount = 0,
+        bool targetGroupsResolved = true,
+        bool storageProviderReady = true,
+        bool storageTargetsResolved = true,
+        bool adTargetsResolved = true)
+        => new(
+            persistentSqlAvailable,
+            customerExists,
+            customerIsDemo,
+            activeV2SubscriptionCount,
+            activeLegacySubscriptionCount,
+            unresolvedRuleCount,
+            targetGroupsResolved,
+            storageProviderReady,
+            storageTargetsResolved,
+            adTargetsResolved);
 
     private static BillingV2ProvisioningReadinessState ReadyState(
         bool globalFlagEnabled = true,
