@@ -35,8 +35,15 @@ export async function requirePortalSession() {
 
 export const requireAuth = requirePortalSession;
 
-export async function requireClientSession() {
-  const session = await requirePortalSession();
+export async function requireClientSession(nextPath?: string) {
+  const session = await getCurrentPortalSession();
+
+  if (!session) {
+    const safeNext = nextPath?.startsWith("/") && !nextPath.startsWith("//")
+      ? nextPath
+      : null;
+    redirect(safeNext ? `/login?next=${encodeURIComponent(safeNext)}` : "/login");
+  }
 
   if (session.user.role !== "client_user") {
     redirect("/admin");

@@ -337,7 +337,7 @@ assert.match(
 );
 assert.match(
   resumePage,
-  /requireClientSession\(\)[\s\S]*getPendingBillingV2Selection\(\)[\s\S]*billingV2SelectionToSearchParams[\s\S]*redirect\(/,
+  /requireClientSession\("\/formules\/reprendre"\)[\s\S]*getPendingBillingV2Selection\(\)[\s\S]*billingV2SelectionToSearchParams[\s\S]*redirect\(/,
   "La reprise doit exiger une session puis restaurer la selection persistante.",
 );
 assert.match(

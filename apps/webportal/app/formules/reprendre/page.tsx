@@ -7,7 +7,7 @@ import { getPendingBillingV2Selection } from "@/lib/internal-api";
 export const dynamic = "force-dynamic";
 
 export default async function ResumeBillingV2FormulePage() {
-  await requireClientSession();
+  await requireClientSession("/formules/reprendre");
   const result = await getPendingBillingV2Selection();
 
   if (result.error || !result.data) {
