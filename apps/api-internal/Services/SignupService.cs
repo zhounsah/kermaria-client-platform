@@ -41,6 +41,10 @@ public interface ISignupService
         PortalSessionContext session,
         CancellationToken cancellationToken);
 
+    Task<PendingBillingV2SelectionSummary?> GetPendingBillingV2SelectionAsync(
+        PortalSessionContext session,
+        CancellationToken cancellationToken);
+
     Task<SignupOperationResult> ApproveAsync(
         string id,
         string correlationId,
@@ -192,7 +196,8 @@ public sealed class SignupService : ISignupService
             HashToken(token),
             DateTime.UtcNow.AddHours(_configuration.VerificationTokenTtlHours),
             NormalizeOptional(payload.SourceAddress, 45),
-            NormalizeOptional(payload.UserAgent, 500));
+            NormalizeOptional(payload.UserAgent, 500),
+            BillingV2Selection: normalized.BillingV2Selection);
         await _repository.InsertPendingAsync(insert, cancellationToken);
 
         var verificationUrl = BuildUrl("/signup/verify", token);
@@ -300,6 +305,27 @@ public sealed class SignupService : ISignupService
             ToIso(record.CreatedAtUtc),
             record.PackSelection);
     }
+
+    public async Task<PendingBillingV2SelectionSummary?> GetPendingBillingV2SelectionAsync(
+        PortalSessionContext session,
+        CancellationToken cancellationToken)
+    {
+        var record = await _repository.GetLatestApprovedByCustomerIdAsync(
+            session.CustomerId,
+            cancellationToken);
+        if (record?.BillingV2Selection is null)
+        {
+            return null;
+        }
+
+        return new PendingBillingV2SelectionSummary(
+            record.Id,
+            record.Status,
+            ToNullableIso(record.ApprovedAtUtc),
+            ToIso(record.CreatedAtUtc),
+            record.BillingV2Selection);
+    }
+
 
     private static bool HasMatchingFinalizedSubscription(
         IReadOnlyList<SubscriptionSummary> subscriptions,
@@ -1229,8 +1255,23 @@ public sealed class SignupService : ISignupService
             payload.PrimaryUser?.IsPrimaryContact ?? true);
 
         CatalogConfigurationSnapshot? catalogConfiguration = null;
-        SignupPackSelectionSnapshot? packSelection;
-        if (payload.CatalogConfiguration is not null)
+        SignupPackSelectionSnapshot? packSelection = null;
+        BillingV2PublicSelection? billingV2Selection = null;
+        if (payload.BillingV2Selection is not null)
+        {
+            if (payload.CatalogConfiguration is not null
+                || payload.PackSelection is not null)
+            {
+                return null;
+            }
+
+            billingV2Selection = payload.BillingV2Selection.ToSelection();
+            if (!IsValidBillingV2Selection(billingV2Selection))
+            {
+                return null;
+            }
+        }
+        else if (payload.CatalogConfiguration is not null)
         {
             var resolution = await _catalogConfigurationService.ResolveAsync(
                 payload.CatalogConfiguration,
@@ -1250,6 +1291,7 @@ public sealed class SignupService : ISignupService
             packSelection = ValidatePackSelection(payload.PackSelection);
         }
 
+
         return new NormalizedSignupSubmission(
             companyName,
             displayName,
@@ -1259,7 +1301,8 @@ public sealed class SignupService : ISignupService
             customer,
             primaryUser,
             packSelection,
-            catalogConfiguration);
+            catalogConfiguration,
+            billingV2Selection);
     }
 
     private static string? NormalizeCustomerType(
@@ -1583,6 +1626,15 @@ public sealed class SignupService : ISignupService
         };
     }
 
+    private static bool IsValidBillingV2Selection(BillingV2PublicSelection selection)
+        => !string.IsNullOrWhiteSpace(selection.PresetCode)
+            && !string.IsNullOrWhiteSpace(selection.StoragePersonalTierCode)
+            && (selection.PaymentMode == BillingV2PaymentModes.Monthly
+                || selection.PaymentMode == BillingV2PaymentModes.Upfront)
+            && selection.AdditionalUsers >= 0
+            && selection.AdditionalUsers <= 10;
+
+
     private static bool IsAwaitingPasswordSetup(SignupPendingRecord record)
         => string.Equals(record.Status, "approved", StringComparison.Ordinal)
             && record.ApprovedUserId is not null
@@ -1603,5 +1655,6 @@ public sealed class SignupService : ISignupService
         SignupCustomerData Customer,
         SignupUserData PrimaryUser,
         SignupPackSelectionSnapshot? PackSelection,
-        CatalogConfigurationSnapshot? CatalogConfiguration);
+        CatalogConfigurationSnapshot? CatalogConfiguration,
+        BillingV2PublicSelection? BillingV2Selection);
 }

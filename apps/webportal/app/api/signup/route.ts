@@ -12,6 +12,7 @@ import {
   buildSignupPackSnapshot,
   resolvePackSelectionInput,
 } from "@/lib/public-packs";
+import { readBillingV2SelectionPayload } from "@/lib/billing-v2-selection";
 import { normalizeCatalogConfigurationInput } from "@/lib/public-configurator";
 import { isSignupEnabled } from "@/lib/public-routes";
 import { checkRateLimit, getRequestIdentifier } from "@/lib/rate-limit";
@@ -41,6 +42,7 @@ type SignupRequestBody = {
   storageGb?: unknown;
   needsVpn?: unknown;
   needsWindowsDesktop?: unknown;
+  billingV2Selection?: unknown;
   hcaptchaToken?: unknown;
   website?: unknown;
   formRenderedAt?: unknown;
@@ -198,6 +200,34 @@ export async function POST(request: NextRequest) {
     || hasProvidedPackValue(body.storageGb)
     || hasProvidedPackValue(body.needsVpn)
     || hasProvidedPackValue(body.needsWindowsDesktop);
+  const billingV2SelectionProvided =
+    body.billingV2Selection !== undefined && body.billingV2Selection !== null;
+  const billingV2Selection = billingV2SelectionProvided
+    ? readBillingV2SelectionPayload(body.billingV2Selection)
+    : null;
+  if (billingV2SelectionProvided && !billingV2Selection) {
+    return NextResponse.json(
+      {
+        code: "INVALID_BILLING_V2_SELECTION",
+        message: "La configuration Billing V2 choisie n est pas valide.",
+        correlation_id: correlationId,
+      },
+      { status: 400 },
+    );
+  }
+
+  if (billingV2Selection && hasCatalogConfiguration) {
+    return NextResponse.json(
+      {
+        code: "AMBIGUOUS_COMMERCIAL_SELECTION",
+        message: "Une inscription ne peut pas melanger une formule Billing V2 et un ancien pack.",
+        correlation_id: correlationId,
+      },
+      { status: 400 },
+    );
+  }
+
+
   let packSelection = null;
   let catalogConfiguration = null;
   if (hasPackSelection) {
@@ -273,6 +303,7 @@ export async function POST(request: NextRequest) {
       ...payload,
       packSelection: catalogConfiguration ? null : packSelection,
       catalogConfiguration,
+      billingV2Selection,
       sourceAddress: identifier === "unknown" ? null : identifier,
       userAgent: request.headers.get("user-agent")?.slice(0, 500) ?? null,
     },

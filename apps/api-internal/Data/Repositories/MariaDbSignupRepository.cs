@@ -1,7 +1,8 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Text.Json;
 using Kermaria.ApiInternal.Contracts;
 using Kermaria.ApiInternal.Data.Configuration;
+using Kermaria.ApiInternal.Services;
 using MySqlConnector;
 
 namespace Kermaria.ApiInternal.Data.Repositories;
@@ -163,7 +164,9 @@ public sealed class MariaDbSignupRepository : ISignupRepository
             SerializeSnapshot(insert.PackSelection));
         command.Parameters.AddWithValue(
             "@catalog_configuration_snapshot_json",
-            SerializeCatalogConfiguration(insert.CatalogConfiguration));
+            SerializeCatalogContext(
+                insert.CatalogConfiguration,
+                insert.BillingV2Selection));
         command.Parameters.AddWithValue(
             "@verification_token_hash",
             insert.VerificationTokenHash);
@@ -299,7 +302,10 @@ public sealed class MariaDbSignupRepository : ISignupRepository
             """
             WHERE signup_pending.approved_customer_id = @customer_id
               AND signup_pending.status = 'approved'
-              AND signup_pending.pack_selection_snapshot_json IS NOT NULL
+              AND (
+                    signup_pending.pack_selection_snapshot_json IS NOT NULL
+                    OR signup_pending.catalog_configuration_snapshot_json IS NOT NULL
+                  )
             """,
             "ORDER BY signup_pending.approved_at DESC, signup_pending.created_at DESC",
             "LIMIT 1");
@@ -746,7 +752,10 @@ public sealed class MariaDbSignupRepository : ISignupRepository
             ReadNullableUtc(reader, "rejected_at"),
             ReadNullableString(reader, "rejected_reason"),
             reader.GetDateTime("created_at"),
-            reader.GetDateTime("updated_at"));
+            reader.GetDateTime("updated_at"),
+            BillingV2Selection: DeserializeBillingV2Selection(
+                reader,
+                "catalog_configuration_snapshot_json"));
 
     private static string BuildRecordSelectSql(
         string? whereClause = null,
@@ -813,11 +822,21 @@ public sealed class MariaDbSignupRepository : ISignupRepository
             ? DBNull.Value
             : JsonSerializer.Serialize(snapshot, JsonOptions);
 
-    private static object SerializeCatalogConfiguration(
-        CatalogConfigurationSnapshot? snapshot)
-        => snapshot is null
+    private static object SerializeCatalogContext(
+        CatalogConfigurationSnapshot? snapshot,
+        BillingV2PublicSelection? billingV2Selection)
+    {
+        if (billingV2Selection is not null)
+        {
+            return JsonSerializer.Serialize(
+                new SignupCatalogContextEnvelope("billing_v2", billingV2Selection),
+                JsonOptions);
+        }
+
+        return snapshot is null
             ? DBNull.Value
             : JsonSerializer.Serialize(snapshot, JsonOptions);
+    }
 
     private static Task<string> AllocateKoxoUniqueIdentifierAsync(
         MySqlConnection connection,
@@ -870,6 +889,11 @@ public sealed class MariaDbSignupRepository : ISignupRepository
             return null;
         }
 
+        if (TryDeserializeBillingV2Selection(raw) is not null)
+        {
+            return null;
+        }
+
         try
         {
             return JsonSerializer.Deserialize<CatalogConfigurationSnapshot>(
@@ -881,6 +905,46 @@ public sealed class MariaDbSignupRepository : ISignupRepository
             return null;
         }
     }
+
+    private static BillingV2PublicSelection? DeserializeBillingV2Selection(
+        MySqlDataReader reader,
+        string columnName)
+    {
+        if (reader.IsDBNull(reader.GetOrdinal(columnName)))
+        {
+            return null;
+        }
+
+        var raw = reader.GetString(columnName);
+        return string.IsNullOrWhiteSpace(raw)
+            ? null
+            : TryDeserializeBillingV2Selection(raw);
+    }
+
+    private static BillingV2PublicSelection? TryDeserializeBillingV2Selection(string raw)
+    {
+        try
+        {
+            var envelope = JsonSerializer.Deserialize<SignupCatalogContextEnvelope>(
+                raw,
+                JsonOptions);
+            return envelope is not null
+                && string.Equals(
+                    envelope.Kind,
+                    "billing_v2",
+                    StringComparison.Ordinal)
+                ? envelope.Selection
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private sealed record SignupCatalogContextEnvelope(
+        string? Kind,
+        BillingV2PublicSelection? Selection);
 
     private static string? BuildLegacyAddress(SignupCustomerData customer)
     {

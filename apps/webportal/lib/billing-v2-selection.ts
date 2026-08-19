@@ -69,3 +69,59 @@ function readString(value: unknown) {
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
 }
+
+type BillingV2SearchParams = Record<string, string | string[] | undefined>;
+
+export function billingV2SelectionToSearchParams(
+  selection: BillingV2PublicSelection,
+): URLSearchParams {
+  const params = new URLSearchParams();
+  params.set("v2", "1");
+  params.set("v2Preset", selection.presetCode);
+  params.set("v2Commitment", selection.commitmentCode);
+  params.set("v2Payment", selection.paymentMode);
+  params.set("v2Personal", selection.storagePersonalTierCode);
+  params.set("v2BackupPersonal", selection.backupPersonal ? "1" : "0");
+  if (selection.storageSharedTierCode) {
+    params.set("v2Shared", selection.storageSharedTierCode);
+  }
+  params.set("v2BackupShared", selection.backupShared ? "1" : "0");
+  if (selection.vpnTierCode) {
+    params.set("v2Vpn", selection.vpnTierCode);
+  }
+  params.set("v2Rds", selection.remoteDesktop ? "1" : "0");
+  params.set("v2Users", String(selection.additionalUsers));
+  params.set("v2Support", selection.supportPlus ? "1" : "0");
+  return params;
+}
+
+export function readBillingV2SelectionSearchParams(
+  searchParams: BillingV2SearchParams,
+): BillingV2PublicSelection | null {
+  if (singleParam(searchParams.v2) !== "1") {
+    return null;
+  }
+
+  const usersRaw = singleParam(searchParams.v2Users) ?? "0";
+  if (!/^\\d+$/.test(usersRaw)) {
+    return null;
+  }
+
+  return readBillingV2SelectionPayload({
+    presetCode: singleParam(searchParams.v2Preset),
+    commitmentCode: singleParam(searchParams.v2Commitment),
+    paymentMode: singleParam(searchParams.v2Payment),
+    storagePersonalTierCode: singleParam(searchParams.v2Personal),
+    backupPersonal: singleParam(searchParams.v2BackupPersonal) === "1",
+    storageSharedTierCode: singleParam(searchParams.v2Shared),
+    backupShared: singleParam(searchParams.v2BackupShared) === "1",
+    vpnTierCode: singleParam(searchParams.v2Vpn),
+    remoteDesktop: singleParam(searchParams.v2Rds) === "1",
+    additionalUsers: Number(usersRaw),
+    supportPlus: singleParam(searchParams.v2Support) === "1",
+  });
+}
+
+function singleParam(value: string | string[] | undefined): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}

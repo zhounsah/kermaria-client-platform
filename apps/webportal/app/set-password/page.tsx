@@ -98,7 +98,11 @@ export default async function SetPasswordPage({
           <p>{presentation.message}</p>
           {presentation.tone === "success" ? (
             <p>
-              <Link href="/login">Se connecter à votre espace client</Link>
+              <Link href={flow?.trim() === ADDITIONAL_USER_FLOW ? "/login" : "/login?next=%2Fformules%2Freprendre"}>
+                {flow?.trim() === ADDITIONAL_USER_FLOW
+                  ? "Se connecter ├á votre espace client"
+                  : "Se connecter et finaliser ma formule"}
+              </Link>
             </p>
           ) : (
             <p>

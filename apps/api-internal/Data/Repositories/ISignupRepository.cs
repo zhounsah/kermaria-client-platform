@@ -1,4 +1,5 @@
 using Kermaria.ApiInternal.Contracts;
+using Kermaria.ApiInternal.Services;
 
 namespace Kermaria.ApiInternal.Data.Repositories;
 
@@ -19,7 +20,8 @@ public sealed record SignupInsert(
     string VerificationTokenHash,
     DateTime VerificationTokenExpiresAtUtc,
     string? SourceAddress,
-    string? UserAgent);
+    string? UserAgent,
+    BillingV2PublicSelection? BillingV2Selection = null);
 
 public sealed record SignupPendingRecord(
     string Id,
@@ -49,7 +51,8 @@ public sealed record SignupPendingRecord(
     DateTime? RejectedAtUtc,
     string? RejectedReason,
     DateTime CreatedAtUtc,
-    DateTime UpdatedAtUtc);
+    DateTime UpdatedAtUtc,
+    BillingV2PublicSelection? BillingV2Selection = null);
 
 public sealed record SignupVerificationTarget(
     string Id,

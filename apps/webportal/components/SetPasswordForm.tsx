@@ -119,7 +119,11 @@ export function SetPasswordForm({ token, flow }: SetPasswordFormProps) {
       <FormMessage title="Mot de passe défini" tone="success">
         <p>{state.message}</p>
         <p>
-          <Link href="/login">Se connecter et ouvrir le tableau de bord</Link>
+          <Link href={flow === ADDITIONAL_USER_FLOW ? "/login" : "/login?next=%2Fformules%2Freprendre"}>
+            {flow === ADDITIONAL_USER_FLOW
+              ? "Se connecter et ouvrir le tableau de bord"
+              : "Se connecter et finaliser ma formule"}
+          </Link>
         </p>
       </FormMessage>
     );

@@ -7,11 +7,13 @@ import { formatCurrencyFromCents } from "@/lib/formatters";
 import { getBillingV2FormulesCatalog } from "@/lib/internal-api";
 import { buildPublicMetadata } from "@/lib/public-metadata";
 import { resolvePresetTagline } from "@/lib/billing-v2-formules";
+import { readBillingV2SelectionSearchParams } from "@/lib/billing-v2-selection";
 
 export const dynamic = "force-dynamic";
 
 type PageProps = {
   params: Promise<{ code: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
 export async function generateMetadata({
@@ -30,8 +32,9 @@ export async function generateMetadata({
   });
 }
 
-export default async function FormuleConfigurationPage({ params }: PageProps) {
+export default async function FormuleConfigurationPage({ params, searchParams }: PageProps) {
   const { code } = await params;
+  const resumedSelection = readBillingV2SelectionSearchParams(await searchParams);
   const { data: catalog } = await getBillingV2FormulesCatalog();
   const preset = catalog.presets.find((item) => item.code === code);
 
@@ -68,7 +71,11 @@ export default async function FormuleConfigurationPage({ params }: PageProps) {
             </p>
           </header>
 
-          <BillingV2FormuleConfigurator catalog={catalog} preset={preset} />
+          <BillingV2FormuleConfigurator
+            catalog={catalog}
+            preset={preset}
+            initialSelection={resumedSelection?.presetCode === preset.code ? resumedSelection : null}
+          />
 
           <section className="formule-footnote">
             <h2>Ce que vous payez</h2>

@@ -3,7 +3,11 @@
 import Script from "next/script";
 import { useEffect, useRef, useState } from "react";
 
-import type { CatalogConfigurationInput, PublicPackCode } from "@kermaria/shared";
+import type {
+  BillingV2PublicSelection,
+  CatalogConfigurationInput,
+  PublicPackCode,
+} from "@kermaria/shared";
 
 import { FormMessage } from "@/components/FormMessage";
 import {
@@ -20,6 +24,7 @@ type SignupFormProps = {
     packKey: PublicPackCode;
   }) | null;
   initialCatalogConfiguration?: CatalogConfigurationInput | null;
+  initialBillingV2Selection?: BillingV2PublicSelection | null;
 };
 
 type SignupState =
@@ -48,6 +53,7 @@ export function SignupForm({
   hcaptchaSiteKey,
   initialPackSelection = null,
   initialCatalogConfiguration = null,
+  initialBillingV2Selection = null,
 }: SignupFormProps) {
   const isSubmittingRef = useRef(false);
   const renderedAtRef = useRef<number>(0);
@@ -128,6 +134,7 @@ export function SignupForm({
           needsVpn: initialCatalogConfiguration?.needsVpn ?? null,
           needsWindowsDesktop:
             initialCatalogConfiguration?.needsWindowsDesktop ?? null,
+          billingV2Selection: initialBillingV2Selection,
           hcaptchaToken: hcaptchaToken || null,
           website: honeypot,
           formRenderedAt: renderedAtRef.current,
@@ -142,9 +149,11 @@ export function SignupForm({
 
       setState({
         status: "success",
-        message: initialPackSelection
-          ? "Demande envoyée. Vérifiez votre boîte mail pour confirmer votre adresse, puis attendez notre validation avant de définir le mot de passe et de reprendre le pack depuis votre espace client."
-          : "Demande envoyée. Vérifiez votre boîte mail pour confirmer votre adresse, puis attendez notre validation avant de définir votre mot de passe.",
+        message: initialBillingV2Selection
+          ? "Demande envoyee. Verifiez votre boite mail, activez votre compte puis connectez-vous : votre formule et ses options seront restaurees avant le paiement."
+          : initialPackSelection
+            ? "Demande envoyee. Verifiez votre boite mail pour confirmer votre adresse, puis attendez notre validation avant de definir le mot de passe et de reprendre le pack depuis votre espace client."
+            : "Demande envoyee. Verifiez votre boite mail pour confirmer votre adresse, puis attendez notre validation avant de definir votre mot de passe.",
       });
     } finally {
       isSubmittingRef.current = false;

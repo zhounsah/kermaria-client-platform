@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Text.Json;
 using Kermaria.ApiInternal;
 using Kermaria.ApiInternal.Contracts;
@@ -1905,6 +1905,7 @@ app.MapPost(
     async (
         HttpContext context,
         ISignupService signupService,
+        IBillingV2PublicCatalogService billingV2CatalogService,
         IAuditService auditService) =>
     {
         var correlationId = context.GetCorrelationId();
@@ -1918,6 +1919,37 @@ app.MapPost(
                     correlationId),
                 statusCode: StatusCodes.Status400BadRequest);
         }
+
+        if (payload.BillingV2Selection is not null)
+        {
+            if (payload.CatalogConfiguration is not null
+                || payload.PackSelection is not null)
+            {
+                return Results.Json(
+                    new ApiError(
+                        "INVALID_REQUEST",
+                        "Une inscription ne peut pas melanger une selection Billing V2 et un ancien pack.",
+                        correlationId),
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            try
+            {
+                _ = await billingV2CatalogService.QuoteAsync(
+                    payload.BillingV2Selection.ToSelection(),
+                    context.RequestAborted);
+            }
+            catch (InvalidOperationException)
+            {
+                return Results.Json(
+                    new ApiError(
+                        "INVALID_REQUEST",
+                        "La configuration Billing V2 selectionnee est invalide.",
+                        correlationId),
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+        }
+
 
         var result = await signupService.SubmitAsync(
             payload, correlationId, context.RequestAborted);
@@ -2415,6 +2447,47 @@ app.MapGet(
             signupService.IsPersistent ? "mariadb" : "mock";
         return Results.Json(pendingSelection);
     });
+app.MapGet(
+    "/internal/portal/pending-billing-v2-selection",
+    async (
+        HttpContext context,
+        ISignupService signupService,
+        ISubscriptionService subscriptionService,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            auditService);
+        var pendingSelection = await signupService.GetPendingBillingV2SelectionAsync(
+            session,
+            context.RequestAborted);
+        if (pendingSelection is null)
+        {
+            return Results.Json<PendingBillingV2SelectionSummary?>(null);
+        }
+
+        var subscriptions = await subscriptionService.GetClientSubscriptionsAsync(
+            session,
+            context.RequestAborted);
+        var hasOpenBillingV2Subscription = subscriptions.Any(subscription =>
+            string.Equals(
+                subscription.BillingSystem,
+                "billing_v2",
+                StringComparison.Ordinal)
+            && subscription.Status is not "cancelled"
+            && subscription.Status is not "expired");
+        if (hasOpenBillingV2Subscription)
+        {
+            return Results.Json<PendingBillingV2SelectionSummary?>(null);
+        }
+
+        context.Response.Headers["X-Data-Source"] =
+            signupService.IsPersistent ? "mariadb" : "mock";
+        return Results.Json(pendingSelection);
+    });
+
 app.MapGet(
     "/internal/portal/content/{key}",
     async (

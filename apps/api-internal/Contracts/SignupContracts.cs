@@ -24,6 +24,13 @@ public sealed record PendingPackSelectionSummary(
     string CreatedAt,
     SignupPackSelectionSnapshot Snapshot);
 
+public sealed record PendingBillingV2SelectionSummary(
+    string SignupId,
+    string Status,
+    string? ApprovedAt,
+    string CreatedAt,
+    Services.BillingV2PublicSelection Selection);
+
 public sealed record SignupCustomerData(
     string? CustomerType,
     string? DisplayName,
@@ -59,7 +66,8 @@ public sealed record SignupSubmitPayload(
     SignupPackSelectionSnapshot? PackSelection,
     CatalogConfigurationInput? CatalogConfiguration,
     string? SourceAddress,
-    string? UserAgent);
+    string? UserAgent,
+    Services.BillingV2PublicSelectionInput? BillingV2Selection = null);
 
 public sealed record SignupVerifyPayload(string? Token);
 

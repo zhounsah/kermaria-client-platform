@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Kermaria.ApiInternal.Contracts;
+using Kermaria.ApiInternal.Services;
 
 namespace Kermaria.ApiInternal.Data.Repositories;
 
@@ -16,6 +17,7 @@ public sealed class MockSignupRow
     public required SignupUserData PrimaryUser { get; set; }
     public SignupPackSelectionSnapshot? PackSelection { get; set; }
     public CatalogConfigurationSnapshot? CatalogConfiguration { get; set; }
+    public BillingV2PublicSelection? BillingV2Selection { get; set; }
     public string? VerificationTokenHash { get; set; }
     public DateTime? VerificationTokenExpiresAtUtc { get; set; }
     public string? PasswordSetupTokenHash { get; set; }
@@ -98,6 +100,7 @@ public sealed class MockSignupRepository : ISignupRepository
             PrimaryUser = insert.PrimaryUser,
             PackSelection = insert.PackSelection,
             CatalogConfiguration = insert.CatalogConfiguration,
+            BillingV2Selection = insert.BillingV2Selection,
             VerificationTokenHash = insert.VerificationTokenHash,
             VerificationTokenExpiresAtUtc = insert.VerificationTokenExpiresAtUtc,
             SourceAddress = insert.SourceAddress,
@@ -177,7 +180,8 @@ public sealed class MockSignupRepository : ISignupRepository
             .Where(candidate =>
                 candidate.Status == "approved"
                 && candidate.ApprovedCustomerId == customerId
-                && candidate.PackSelection is not null)
+                && (candidate.PackSelection is not null
+                    || candidate.BillingV2Selection is not null))
             .OrderByDescending(candidate => candidate.ApprovedAtUtc)
             .ThenByDescending(candidate => candidate.CreatedAtUtc)
             .FirstOrDefault();
@@ -357,7 +361,8 @@ public sealed class MockSignupRepository : ISignupRepository
             row.RejectedAtUtc,
             row.RejectedReason,
             row.CreatedAtUtc,
-            row.UpdatedAtUtc);
+            row.UpdatedAtUtc,
+            BillingV2Selection: row.BillingV2Selection);
 
     private static bool HasDefinedPassword(MockSignupRow row)
         => row.ApprovedUserId is not null

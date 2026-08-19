@@ -1,4 +1,4 @@
-﻿import "server-only";
+import "server-only";
 
 import type {
   AdminAdStatus,
@@ -53,6 +53,7 @@ import type {
   ManagedContentSummary,
   MockSubmissionResponse,
   NotificationReadResponse,
+  PendingBillingV2SelectionSummary,
   PendingPackSelectionSummary,
   PortalDownloadCategory,
   PortalSummary,
@@ -896,6 +897,15 @@ export async function getPendingPackSelection() {
     } satisfies PortalDataResult<PendingPackSelectionSummary | null>;
   }
 }
+
+export function getPendingBillingV2Selection() {
+  return getPortalData<PendingBillingV2SelectionSummary | null>(
+    "/internal/portal/pending-billing-v2-selection",
+    null,
+    null,
+  );
+}
+
 
 export function getCommercialDocuments() {
   return getPortalData<CommercialDocumentSummary[]>(

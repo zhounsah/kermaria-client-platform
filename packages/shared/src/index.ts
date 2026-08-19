@@ -1028,6 +1028,15 @@ export interface PendingPackSelectionSummary {
   snapshot: SignupPackSelectionSnapshot;
 }
 
+export interface PendingBillingV2SelectionSummary {
+  signupId: string;
+  status: string;
+  approvedAt: string | null;
+  createdAt: string;
+  selection: BillingV2PublicSelection;
+}
+
+
 export type DiagnosticCustomerType =
   | "individual"
   | "business"

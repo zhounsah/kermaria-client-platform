@@ -3,9 +3,11 @@ import Link from "next/link";
 
 import { PublicPackSelectionSummary } from "@/components/PublicPackSelectionSummary";
 import { SignupForm } from "@/components/SignupForm";
+import { readBillingV2SelectionSearchParams } from "@/lib/billing-v2-selection";
 import { resolveCatalogConfiguration } from "@/lib/catalog-configuration-server";
 import {
   getPublicCommercialCatalog,
+  quoteBillingV2Formule,
   getPublicPackCatalogContent,
 } from "@/lib/internal-api";
 import {
@@ -16,6 +18,8 @@ import {
   buildSignupPackSnapshot,
   selectionFromSearchParams,
 } from "@/lib/public-packs";
+import { formatCurrencyFromCents } from "@/lib/formatters";
+import { resolveCorrelationId } from "@/lib/correlation";
 import { isSignupEnabled } from "@/lib/public-routes";
 import styles from "./page.module.css";
 
@@ -40,8 +44,17 @@ export default async function SignupPage({
   const enabled = isSignupEnabled();
   const hcaptchaSiteKey = process.env.HCAPTCHA_SITE_KEY?.trim() || null;
   const rawSearchParams = await searchParams;
+  const billingV2Requested = rawSearchParams.v2 === "1";
+  const billingV2Selection =
+    readBillingV2SelectionSearchParams(rawSearchParams);
+  const billingV2Quote = billingV2Selection
+    ? await quoteBillingV2Formule(
+        billingV2Selection,
+        resolveCorrelationId(null),
+      ).catch(() => null)
+    : null;
   const catalogConfiguration =
-    configurationFromSearchParams(rawSearchParams);
+    billingV2Requested ? null : configurationFromSearchParams(rawSearchParams);
   const selection =
     catalogConfiguration
       ? {
@@ -97,6 +110,42 @@ export default async function SignupPage({
         </p>
       </header>
 
+      {billingV2Selection && billingV2Quote ? (
+        <div className={styles.selectionStack}>
+          <section className={styles.stepsCard} aria-label="Formule Billing V2 selectionnee">
+            <p className="eyebrow">Formule selectionnee</p>
+            <h2>{billingV2Quote.presetCode}</h2>
+            <p>
+              <strong>{formatCurrencyFromCents(billingV2Quote.monthlyAfterDiscountCents)} / mois</strong>
+              {" - "}{billingV2Quote.commitmentMonths} mois,
+              {billingV2Quote.paymentMode === "upfront" ? " paiement comptant" : " paiement mensuel"}.
+            </p>
+            <ul>
+              {billingV2Quote.lines.map((line) => (
+                <li key={`${line.serviceCode}-${line.tierCode ?? "base"}`}>
+                  {line.label}{line.detail ? ` - ${line.detail}` : ""}
+                  {line.quantity > 1 ? ` x${line.quantity}` : ""}
+                </li>
+              ))}
+            </ul>
+            <p>
+              Cette configuration est attachee a votre inscription. Aucun paiement
+              n est effectue ici : apres activation puis connexion, vous la retrouverez
+              telle quelle avant le passage chez Stripe.
+            </p>
+          </section>
+        </div>
+      ) : null}
+
+      {billingV2Requested && (!billingV2Selection || !billingV2Quote) ? (
+        <section className={styles.stepsCard} aria-label="Configuration Billing V2 invalide">
+          <h2>Configuration a reprendre</h2>
+          <p>La formule transmise ne peut pas etre revalidee. Revenez au configurateur avant de creer le compte.</p>
+          <Link className="button button-secondary" href="/formules">Reprendre ma formule</Link>
+        </section>
+      ) : null}
+
+
       {packSelection ? (
         <div className={styles.selectionStack}>
           <PublicPackSelectionSummary
@@ -138,9 +187,10 @@ export default async function SignupPage({
         </section>
       ) : null}
 
-      {enabled ? (
+      {enabled && (!billingV2Requested || (billingV2Selection && billingV2Quote)) ? (
         <SignupForm
           hcaptchaSiteKey={hcaptchaSiteKey}
+          initialBillingV2Selection={billingV2Selection}
           initialPackSelection={packSelection
             ? {
                 packKey: packSelection.packKey,

@@ -597,7 +597,8 @@ check("page set-password presente uniquement des resultats natifs finis", () => 
     setPasswordPage,
     /Object\.hasOwn\(SET_PASSWORD_RESULTS, resultCode\)/,
   );
-  assert.match(setPasswordPage, /<Link href="\/login">/);
+  assert.match(setPasswordPage, /\/login\?next=%2Fformules%2Freprendre/);
+  assert.match(setPasswordPage, /ADDITIONAL_USER_FLOW \? "\/login"/);
   assert.doesNotMatch(setPasswordPage, /dangerouslySetInnerHTML/);
 
   const presentationIndex = setPasswordPage.indexOf("if (presentation)");

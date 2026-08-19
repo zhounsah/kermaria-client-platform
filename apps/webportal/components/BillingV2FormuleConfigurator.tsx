@@ -18,13 +18,17 @@ import {
   resolveServicePublicLabel,
   selectableTiers,
 } from "@/lib/billing-v2-formules";
-import { MAX_ADDITIONAL_USERS } from "@/lib/billing-v2-selection";
+import {
+  MAX_ADDITIONAL_USERS,
+  billingV2SelectionToSearchParams,
+} from "@/lib/billing-v2-selection";
 import { formatCurrencyFromCents } from "@/lib/formatters";
 import { getPortalArea, resolvePortalAreaUrl } from "@/lib/public-route-config";
 
 type Props = {
   preset: BillingV2PublicPreset;
   catalog: BillingV2PublicCatalog;
+  initialSelection?: BillingV2PublicSelection | null;
 };
 
 /**
@@ -35,10 +39,16 @@ type Props = {
  * renvoye. Tant que la reponse n'est pas arrivee, le prix precedent reste
  * visible mais marque comme en cours de recalcul.
  */
-export function BillingV2FormuleConfigurator({ preset, catalog }: Props) {
+export function BillingV2FormuleConfigurator({
+  preset,
+  catalog,
+  initialSelection: resumedSelection = null,
+}: Props) {
   const initialSelection = useMemo(
-    () => buildBaselineSelection(preset, defaultCommitment(catalog)),
-    [preset, catalog],
+    () => resumedSelection?.presetCode === preset.code
+      ? resumedSelection
+      : buildBaselineSelection(preset, defaultCommitment(catalog)),
+    [preset, catalog, resumedSelection],
   );
   const [selection, setSelection] =
     useState<BillingV2PublicSelection>(initialSelection);
@@ -158,6 +168,17 @@ export function BillingV2FormuleConfigurator({ preset, catalog }: Props) {
       return;
     }
 
+    const currentArea = getPortalArea(window.location.origin);
+    if (currentArea === "public") {
+      const signupPath = `/signup?${billingV2SelectionToSearchParams(selection)}`;
+      window.location.href = resolvePortalAreaUrl(
+        window.location.origin,
+        "public",
+        signupPath,
+      ) ?? signupPath;
+      return;
+    }
+
     setSubmitting(true);
     setSubmitError(null);
 
@@ -176,6 +197,7 @@ export function BillingV2FormuleConfigurator({ preset, catalog }: Props) {
 
       if (response.status === 401 || response.status === 403) {
         const continuationPath = `/formules/${preset.code}`;
+        const signupPath = `/signup?${billingV2SelectionToSearchParams(selection)}`;
         const currentArea = getPortalArea(window.location.origin);
         const target = currentArea === "client"
           ? resolvePortalAreaUrl(
@@ -185,11 +207,11 @@ export function BillingV2FormuleConfigurator({ preset, catalog }: Props) {
             )
           : resolvePortalAreaUrl(
               window.location.origin,
-              "client",
-              continuationPath,
+              "public",
+              signupPath,
             );
 
-        window.location.href = target ?? "/login";
+        window.location.href = target ?? signupPath;
         return;
       }
 

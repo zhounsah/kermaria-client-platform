@@ -43,6 +43,17 @@ const appShell = await read("components/AppShell.tsx");
 const loginPage = await read("app/login/page.tsx");
 const loginForm = await read("components/LoginForm.tsx");
 const publicRouteConfig = await read("lib/public-route-config.ts");
+const signupPage = await read("app/signup/page.tsx");
+const signupForm = await read("components/SignupForm.tsx");
+const signupRoute = await read("app/api/signup/route.ts");
+const resumePage = await read("app/formules/reprendre/page.tsx");
+const setPasswordForm = await read("components/SetPasswordForm.tsx");
+const signupRepoMaria = await read(
+  "../../apps/api-internal/Data/Repositories/MariaDbSignupRepository.cs",
+);
+const signupService = await read(
+  "../../apps/api-internal/Services/SignupService.cs",
+);
 const offersPage = await read("app/offres/page.tsx");
 const sitemap = await read("app/sitemap.ts");
 
@@ -253,10 +264,21 @@ assert.match(
   /"Idempotency-Key": crypto\.randomUUID\(\)/,
   "Le checkout doit porter une cle d'idempotence.",
 );
+const publicSignupIndex = configurator.indexOf('if (currentArea === "public")');
+const checkoutFetchIndex = configurator.indexOf('fetch("/api/formules/souscrire"');
+assert.ok(
+  publicSignupIndex >= 0 && checkoutFetchIndex > publicSignupIndex,
+  "Sur la vitrine, l inscription doit etre choisie avant tout appel checkout.",
+);
 assert.match(
   configurator,
-  /resolvePortalAreaUrl\([\s\S]*"client"[\s\S]*continuationPath/,
-  "Une session absente sur www doit poursuivre le configurateur sur l'hote client.",
+  /billingV2SelectionToSearchParams\(selection\)[\s\S]*"public"[\s\S]*signupPath/,
+  "La vitrine doit transporter la selection complete vers l inscription publique.",
+);
+assert.match(
+  configurator,
+  /currentArea === "client"[\s\S]*\/login\?next=/,
+  "Sur l hote client, une session expiree doit encore passer par le login borne.",
 );
 assert.match(
   publicRouteConfig,
@@ -283,6 +305,42 @@ assert.match(
   /result\.user\.role === "client_user" && continuationPath[\s\S]*resolvePortalAreaUrl/,
   "Apres connexion client, le formulaire doit reprendre le configurateur demande.",
 );
+assert.match(
+  signupPage,
+  /readBillingV2SelectionSearchParams[\s\S]*quoteBillingV2Formule/,
+  "L inscription doit relire puis revalider le devis V2 cote serveur.",
+);
+assert.match(
+  signupForm,
+  /billingV2Selection:\s*initialBillingV2Selection/,
+  "Le formulaire doit transmettre la selection V2, jamais seulement le code du preset.",
+);
+assert.match(
+  signupRoute,
+  /readBillingV2SelectionPayload[\s\S]*AMBIGUOUS_COMMERCIAL_SELECTION[\s\S]*billingV2Selection,/,
+  "Le BFF signup doit reconstruire strictement V2 et refuser le melange legacy.",
+);
+assert.match(
+  signupRepoMaria,
+  /SignupCatalogContextEnvelope\("billing_v2",\s*billingV2Selection\)/,
+  "La selection V2 doit etre persistee dans le snapshot JSON existant.",
+);
+assert.match(
+  signupService,
+  /GetPendingBillingV2SelectionAsync/,
+  "Le signup doit exposer la selection approuvee apres authentification.",
+);
+assert.match(
+  resumePage,
+  /requireClientSession\(\)[\s\S]*getPendingBillingV2Selection\(\)[\s\S]*billingV2SelectionToSearchParams[\s\S]*redirect\(/,
+  "La reprise doit exiger une session puis restaurer la selection persistante.",
+);
+assert.match(
+  setPasswordForm,
+  /\/login\?next=%2Fformules%2Freprendre/,
+  "Apres activation du compte principal, le login doit reprendre la formule V2.",
+);
+
 assert.doesNotMatch(
   configurator,
   /stripe\.com|stripePriceId|price_/i,
