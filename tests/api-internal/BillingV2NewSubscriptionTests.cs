@@ -77,6 +77,10 @@ public static class BillingV2NewSubscriptionTests
         VerifyAuthoritativeCheckoutLocalGateRequiresIdempotencyKey();
         VerifyAuthoritativeCheckoutIdempotencyFingerprintBindsRequest();
         VerifyAuthoritativeCheckoutCreatesContractualPriceLocks();
+        VerifyFirstRealTestPricingScopesToTargetCustomer();
+        VerifyFirstRealTestPricingFailsClosedOutsideApprovedSelection();
+        VerifyFirstRealTestPricingReachesFiftyCents();
+        VerifyFirstRealTestPricingMarksContractualPriceLock();
         VerifyPortalProjectionUsesV2ContractualPriceLock();
         VerifyPortalProjectionFallsBackToSubscriptionItemSnapshots();
         VerifyDownloadAccessScopeKeepsV2LegacyTargets();
@@ -2104,6 +2108,164 @@ public static class BillingV2NewSubscriptionTests
             reason == "BILLING_V2_ADMIN_READY_FOR_FIRST_SUBSCRIPTION",
             "La readiness admin V2 ne doit devenir autorisable que lorsque schema, flags, providers, validation humaine et hard blockers sont prets.");
     }
+
+    private static void VerifyFirstRealTestPricingScopesToTargetCustomer()
+    {
+        var runtime = FirstRealTestRuntime();
+        var selection = FirstRealTestSelection();
+        var composition = FirstRealTestComposition(selection);
+
+        var target = BillingV2FirstRealTestPricingPolicy.Evaluate(
+            runtime,
+            "customer-first-real-test",
+            "stripe",
+            selection,
+            composition);
+        var other = BillingV2FirstRealTestPricingPolicy.Evaluate(
+            runtime,
+            "customer-other",
+            "stripe",
+            selection,
+            composition);
+
+        Ensure(
+            target.Applied
+            && target.DiscountBasisPoints == 9897
+            && target.ExpectedTotalCents == 50,
+            "Le tarif de validation du premier abonnement doit etre applique uniquement au client cible avec la remise attendue.");
+        Ensure(
+            !other.Applied,
+            "Le tarif de validation du premier abonnement ne doit jamais contaminer un autre client.");
+    }
+
+    private static void VerifyFirstRealTestPricingFailsClosedOutsideApprovedSelection()
+    {
+        var runtime = FirstRealTestRuntime();
+        var selection = FirstRealTestSelection() with
+        {
+            AdditionalUsers = 2
+        };
+
+        try
+        {
+            _ = BillingV2FirstRealTestPricingPolicy.Evaluate(
+                runtime,
+                "customer-first-real-test",
+                "stripe",
+                selection,
+                FirstRealTestComposition(selection));
+            throw new InvalidOperationException(
+                "Le tarif de validation doit refuser une selection hors scope.");
+        }
+        catch (InvalidOperationException ex) when (
+            ex.Message == "BILLING_V2_FIRST_REAL_TEST_PRICING_SCOPE_MISMATCH")
+        {
+        }
+    }
+
+    private static void VerifyFirstRealTestPricingReachesFiftyCents()
+    {
+        var pricing = new BillingV2PricingEngine().Calculate(
+            new BillingV2PricingRequest(
+                [new BillingV2PricingItem(
+                    "preset-item-pro",
+                    "PRO-BASELINE",
+                    TierCode: null,
+                    "PRO-BASELINE-MONTHLY-EUR-V1",
+                    AmountCentsSnapshot: 4850,
+                    Quantity: 1,
+                    BillingV2BillingCadences.Monthly,
+                    DiscountEligible: true)],
+                DiscountBasisPoints: 9897,
+                BillingV2PaymentModes.Monthly,
+                CommitmentMonths: 1,
+                MinimumCommitmentAmountCents: null,
+                PriceLock: null,
+                DateTime.UtcNow));
+
+        Ensure(
+            pricing.RecurringSubtotalCents == 4850
+            && pricing.RecurringDiscountCents == 4800
+            && pricing.DiscountedRecurringAmountCents == 50
+            && pricing.PayableRecurringAmountCents == 50
+            && pricing.TotalDueNowCents == 50,
+            "Le moteur Billing V2 doit calculer exactement 0,50 EUR, sans modifier les snapshots de prix catalogue.");
+    }
+
+    private static void VerifyFirstRealTestPricingMarksContractualPriceLock()
+    {
+        var pricing = PricingResult(payableRecurringAmountCents: 50);
+        var plan = BillingV2AuthoritativeCheckoutPriceLockPolicy.Plan(
+            sourceLegacyOfferId: null,
+            BillingV2PaymentModes.Monthly,
+            commitmentMonths: 1,
+            pricing,
+            new DateTime(2026, 8, 19, 11, 0, 0, DateTimeKind.Utc),
+            BillingV2FirstRealTestPricingPolicy.AppliedReasonCode);
+
+        Ensure(
+            plan.AmountCents == 50
+            && plan.Reason == BillingV2FirstRealTestPricingPolicy.AppliedReasonCode,
+            "Le price lock du test reel doit figer 0,50 EUR et porter une raison d audit explicite.");
+    }
+
+    private static BillingV2RuntimeConfiguration FirstRealTestRuntime()
+        => V2Runtime(
+            authoritativeCheckoutEnabled: true,
+            firstRealSubscriptionApproved: true,
+            newSubscriptionsEnabled: true,
+            providerOutboxEnabled: true,
+            providerExecutorEnabled: true) with
+        {
+            FirstRealTestPricingEnabled = true,
+            FirstRealTestCustomerId = "customer-first-real-test",
+            FirstRealTestPresetCode = "pack-pro-association",
+            FirstRealTestSelectionFingerprint =
+                BillingV2CheckoutSelectionFingerprint.ForSelection(
+                    FirstRealTestSelection().Canonical()),
+            FirstRealTestDiscountBasisPoints = 9897,
+            FirstRealTestExpectedTotalCents = 50
+        };
+
+    private static BillingV2PublicSelection FirstRealTestSelection()
+        => new(
+            "pack-pro-association",
+            "FLEX",
+            BillingV2PaymentModes.Monthly,
+            "64",
+            BackupPersonal: true,
+            "128",
+            BackupShared: true,
+            "PLUS",
+            RemoteDesktop: false,
+            AdditionalUsers: 1,
+            SupportPlus: true);
+
+    private static BillingV2AuthoritativeCheckoutComposition FirstRealTestComposition(
+        BillingV2PublicSelection selection)
+        => new(
+            "preset-pro",
+            "term-flex",
+            BillingV2PaymentModes.Monthly,
+            CommitmentMonths: 1,
+            DiscountBasisPoints: 0,
+            [new BillingV2NewSubscriptionPresetItem(
+                "preset-item-pro",
+                "service-pro",
+                TierId: null,
+                "price-pro",
+                "PRO-BASELINE",
+                TierCode: null,
+                "PRO-BASELINE-MONTHLY-EUR-V1",
+                "subscription",
+                Quantity: 1,
+                AmountCents: 4850,
+                "EUR",
+                BillingV2BillingCadences.Monthly,
+                DiscountEligible: true)],
+            LegacyOfferId: null,
+            selection.Canonical(),
+            BillingV2CheckoutSelectionFingerprint.ForSelection(selection.Canonical()));
 
     private static BillingV2AdminRuntimeFlags AdminRuntimeFlags()
         => new(

@@ -234,8 +234,27 @@ public sealed class BillingV2AuthoritativeCheckoutService
         }
 
         var presetItems = composition.Items;
-        var mapping = composition;
+        var testPricing = BillingV2FirstRealTestPricingPolicy.Evaluate(
+            _runtime,
+            session.CustomerId,
+            provider,
+            request.Selection,
+            composition);
+        var mapping = testPricing.Applied
+            ? composition with
+            {
+                DiscountBasisPoints = testPricing.DiscountBasisPoints
+            }
+            : composition;
         var pricing = CalculatePricing(mapping, presetItems, now);
+        if (testPricing.Applied
+            && pricing.TotalDueNowCents != testPricing.ExpectedTotalCents)
+        {
+            throw new InvalidOperationException(
+                "BILLING_V2_FIRST_REAL_TEST_PRICE_TARGET_MISMATCH:"
+                + $" expected={testPricing.ExpectedTotalCents}"
+                + $" actual={pricing.TotalDueNowCents}");
+        }
         var checkoutReadiness = await _readiness.CheckAsync(
             new BillingV2CheckoutReadinessRequest(
                 presetItems
@@ -454,7 +473,10 @@ public sealed class BillingV2AuthoritativeCheckoutService
             mapping.PaymentMode,
             mapping.CommitmentMonths,
             pricing,
-            now);
+            now,
+            testPricing.Applied
+                ? BillingV2FirstRealTestPricingPolicy.AppliedReasonCode
+                : null);
         await InsertSubscriptionPriceLockAsync(
             connection,
             transaction,
@@ -1547,6 +1569,96 @@ public static class BillingV2AuthoritativeCheckoutIdempotencyPolicy
             StringComparison.OrdinalIgnoreCase);
 }
 
+public sealed record BillingV2FirstRealTestPricingDecision(
+    bool Applied,
+    int DiscountBasisPoints,
+    long ExpectedTotalCents,
+    string ReasonCode);
+
+public static class BillingV2FirstRealTestPricingPolicy
+{
+    public const string AppliedReasonCode = "v2_first_real_test_pricing";
+    private const string NotAppliedReasonCode = "v2_first_real_test_not_applied";
+
+    public static BillingV2FirstRealTestPricingDecision Evaluate(
+        BillingV2RuntimeConfiguration runtime,
+        string customerId,
+        string provider,
+        BillingV2PublicSelection? selection,
+        BillingV2AuthoritativeCheckoutComposition composition)
+    {
+        if (!runtime.FirstRealTestPricingEnabled)
+        {
+            return NotApplied();
+        }
+
+        if (!string.Equals(
+                runtime.FirstRealTestCustomerId?.Trim(),
+                customerId.Trim(),
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return NotApplied();
+        }
+
+        if (string.IsNullOrWhiteSpace(runtime.FirstRealTestCustomerId)
+            || string.IsNullOrWhiteSpace(runtime.FirstRealTestPresetCode)
+            || string.IsNullOrWhiteSpace(runtime.FirstRealTestSelectionFingerprint)
+            || runtime.FirstRealTestDiscountBasisPoints is <= 0 or >= 10000
+            || runtime.FirstRealTestExpectedTotalCents <= 0)
+        {
+            throw new InvalidOperationException(
+                "BILLING_V2_FIRST_REAL_TEST_PRICING_CONFIGURATION_INVALID");
+        }
+
+        if (!string.Equals(provider, "stripe", StringComparison.Ordinal)
+            || selection is null
+            || !string.Equals(
+                selection.PresetCode,
+                runtime.FirstRealTestPresetCode,
+                StringComparison.Ordinal)
+            || !string.Equals(
+                BillingV2CheckoutSelectionFingerprint.ForSelection(selection.Canonical()),
+                runtime.FirstRealTestSelectionFingerprint,
+                StringComparison.Ordinal)
+            || !string.Equals(selection.CommitmentCode, "FLEX", StringComparison.Ordinal)
+            || !string.Equals(
+                selection.PaymentMode,
+                BillingV2PaymentModes.Monthly,
+                StringComparison.Ordinal)
+            || !string.Equals(
+                composition.PaymentMode,
+                BillingV2PaymentModes.Monthly,
+                StringComparison.Ordinal)
+            || composition.CommitmentMonths != 1)
+        {
+            throw new InvalidOperationException(
+                "BILLING_V2_FIRST_REAL_TEST_PRICING_SCOPE_MISMATCH");
+        }
+
+        if (composition.Items.Count == 0
+            || composition.Items.Any(item =>
+                !string.Equals(
+                    item.BillingCadence,
+                    BillingV2BillingCadences.Monthly,
+                    StringComparison.Ordinal)
+                || !item.DiscountEligible))
+        {
+            throw new InvalidOperationException(
+                "BILLING_V2_FIRST_REAL_TEST_PRICING_ITEMS_UNSUPPORTED");
+        }
+
+        return new BillingV2FirstRealTestPricingDecision(
+            true,
+            runtime.FirstRealTestDiscountBasisPoints,
+            runtime.FirstRealTestExpectedTotalCents,
+            AppliedReasonCode);
+    }
+
+    private static BillingV2FirstRealTestPricingDecision NotApplied()
+        => new(false, 0, 0, NotAppliedReasonCode);
+}
+
+
 public static class BillingV2AuthoritativeCheckoutPriceLockPolicy
 {
     public const string CheckoutReason = "v2_authoritative_checkout";
@@ -1556,8 +1668,12 @@ public static class BillingV2AuthoritativeCheckoutPriceLockPolicy
         string paymentMode,
         int commitmentMonths,
         BillingV2PricingResult pricing,
-        DateTime nowUtc)
+        DateTime nowUtc,
+        string? reason = null)
     {
+        var resolvedReason = string.IsNullOrWhiteSpace(reason)
+            ? CheckoutReason
+            : reason;
         var months = Math.Max(1, commitmentMonths);
         if (string.Equals(
                 paymentMode,
@@ -1571,7 +1687,7 @@ public static class BillingV2AuthoritativeCheckoutPriceLockPolicy
                 nowUtc,
                 nowUtc.AddMonths(months),
                 sourceLegacyOfferId,
-                CheckoutReason);
+                resolvedReason);
         }
 
         return new BillingV2SubscriptionPriceLockPlan(
@@ -1581,7 +1697,7 @@ public static class BillingV2AuthoritativeCheckoutPriceLockPolicy
             nowUtc,
             nowUtc.AddMonths(months),
             sourceLegacyOfferId,
-            CheckoutReason);
+            resolvedReason);
     }
 }
 

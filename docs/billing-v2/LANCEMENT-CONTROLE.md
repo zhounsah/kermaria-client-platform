@@ -190,6 +190,24 @@ chemin de dispatch, avec les codes `BILLING_V2_SCOPE_*`.
 
 `BILLING_V2_FIRST_REAL_SUBSCRIPTION_APPROVED` est le dernier verrou : il ne
 passe à `true` qu'au moment d'accepter le premier vrai client.
+Le tarif de validation du premier abonnement reel est un mecanisme temporaire,
+ferme par defaut, qui ne modifie jamais le catalogue. Il est controle par :
+
+- `BILLING_V2_FIRST_REAL_TEST_PRICING_ENABLED` ;
+- `BILLING_V2_FIRST_REAL_TEST_CUSTOMER_ID` ;
+- `BILLING_V2_FIRST_REAL_TEST_PRESET_CODE` ;
+- `BILLING_V2_FIRST_REAL_TEST_SELECTION_FINGERPRINT` ;
+- `BILLING_V2_FIRST_REAL_TEST_DISCOUNT_BPS` ;
+- `BILLING_V2_FIRST_REAL_TEST_EXPECTED_TOTAL_CENTS`.
+
+Quand le gate vaut `true`, l override ne peut s appliquer qu au client cible,
+sur Stripe, en selection native `pack-pro-association`/`FLEX`/`monthly`. Pour le
+client cible, toute divergence de scope, de configuration ou de total attendu
+echoue avant la creation de l abonnement. Le `discount_basis_points_snapshot`
+et le price lock portent ensuite le meme prix contractuel pour Stripe, les
+documents et les renouvellements. Couper le gate juste apres l ancrage du
+checkout de validation ; le snapshot de l abonnement reste autoritaire.
+
 
 Le gate `BILLING_V2_ADDITIONAL_USER_PROVISIONING_ENABLED` est volontairement
 independant du provisioning general. Lorsqu'il vaut `true` avec

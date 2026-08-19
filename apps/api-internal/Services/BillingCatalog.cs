@@ -20,7 +20,13 @@ public sealed record BillingV2RuntimeConfiguration(
     bool ReconciliationWorkerEnabled = false,
     int ReconciliationIntervalSeconds =
         BillingV2RuntimeConfiguration.DefaultReconciliationIntervalSeconds,
-    bool AdditionalUserProvisioningEnabled = false)
+    bool AdditionalUserProvisioningEnabled = false,
+    bool FirstRealTestPricingEnabled = false,
+    string? FirstRealTestCustomerId = null,
+    string? FirstRealTestPresetCode = null,
+    string? FirstRealTestSelectionFingerprint = null,
+    int FirstRealTestDiscountBasisPoints = 0,
+    long FirstRealTestExpectedTotalCents = 0)
 {
     public const int DefaultReconciliationIntervalSeconds = 300;
     public const int MinimumReconciliationIntervalSeconds = 30;
@@ -41,7 +47,21 @@ public sealed record BillingV2RuntimeConfiguration(
             AdditionalUserProvisioningEnabled = string.Equals(
                 configuration["BILLING_V2_ADDITIONAL_USER_PROVISIONING_ENABLED"],
                 "true",
-                StringComparison.OrdinalIgnoreCase)
+                StringComparison.OrdinalIgnoreCase),
+            FirstRealTestPricingEnabled = string.Equals(
+                configuration["BILLING_V2_FIRST_REAL_TEST_PRICING_ENABLED"],
+                "true",
+                StringComparison.OrdinalIgnoreCase),
+            FirstRealTestCustomerId =
+                configuration["BILLING_V2_FIRST_REAL_TEST_CUSTOMER_ID"],
+            FirstRealTestPresetCode =
+                configuration["BILLING_V2_FIRST_REAL_TEST_PRESET_CODE"],
+            FirstRealTestSelectionFingerprint =
+                configuration["BILLING_V2_FIRST_REAL_TEST_SELECTION_FINGERPRINT"],
+            FirstRealTestDiscountBasisPoints = ResolveNonNegativeInt(
+                configuration["BILLING_V2_FIRST_REAL_TEST_DISCOUNT_BPS"]),
+            FirstRealTestExpectedTotalCents = ResolveNonNegativeLong(
+                configuration["BILLING_V2_FIRST_REAL_TEST_EXPECTED_TOTAL_CENTS"])
         };
 
     /// <summary>
@@ -53,6 +73,13 @@ public sealed record BillingV2RuntimeConfiguration(
            && seconds >= MinimumReconciliationIntervalSeconds
             ? seconds
             : DefaultReconciliationIntervalSeconds;
+
+    private static int ResolveNonNegativeInt(string? rawValue)
+        => int.TryParse(rawValue, out var value) && value >= 0 ? value : 0;
+
+    private static long ResolveNonNegativeLong(string? rawValue)
+        => long.TryParse(rawValue, out var value) && value >= 0 ? value : 0;
+
     private static BillingV2RuntimeConfiguration ResolveCore(
         IConfiguration configuration)
         => new(
