@@ -147,12 +147,25 @@ try {
   New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
   Copy-Item -Recurse -Force (Join-Path $WorktreePath "apps\webportal\.next\standalone\*") $releaseDir
   New-Item -ItemType Directory -Force -Path (Join-Path $releaseDir "apps\webportal\.next") | Out-Null
+  # Next standalone writes its runtime cache here. Keep it empty in the artifact.
+  New-Item -ItemType Directory -Force -Path (Join-Path $releaseDir "apps\webportal\.next\cache") | Out-Null
   Copy-Item -Recurse -Force (Join-Path $WorktreePath "apps\webportal\.next\static") (Join-Path $releaseDir "apps\webportal\.next\static")
   Copy-Item -Recurse -Force (Join-Path $WorktreePath "apps\webportal\public") (Join-Path $releaseDir "apps\webportal\public")
 
   tar -czf $archivePath -C $releaseDir .
   if ($LASTEXITCODE -ne 0) {
     throw "La creation de l'archive a echoue."
+  }
+
+  $archiveEntries = @(tar -tzf $archivePath)
+  if ($LASTEXITCODE -ne 0) {
+    throw "La verification de l'archive a echoue."
+  }
+  $cacheEntry = $archiveEntries | Where-Object {
+    ($_.Replace('\', '/') -match '(^|/)apps/webportal/\.next/cache/?$')
+  } | Select-Object -First 1
+  if (-not $cacheEntry) {
+    throw "Le package webportal ne contient pas apps/webportal/.next/cache/."
   }
 
   $manifest = [ordered]@{
