@@ -239,6 +239,10 @@ function AssignForm({ isSubmitting, onCancel, onSubmit }: AssignFormProps) {
 
     const trimmedEmail = email.trim();
     const trimmedDisplayName = displayName.trim();
+    const normalizedPersonalTitle = personalTitle.trim().toLowerCase();
+    const trimmedGivenName = givenName.trim();
+    const trimmedSurname = surname.trim();
+    const trimmedBirthDate = birthDate.trim();
 
     if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
       setError("Indiquez une adresse e-mail valide.");
@@ -250,14 +254,24 @@ function AssignForm({ isSubmitting, onCancel, onSubmit }: AssignFormProps) {
       return;
     }
 
+    if (
+      (normalizedPersonalTitle !== "madame" && normalizedPersonalTitle !== "monsieur")
+      || !trimmedGivenName
+      || !trimmedSurname
+      || !/^\d{4}-\d{2}-\d{2}$/.test(trimmedBirthDate)
+    ) {
+      setError("Renseignez la civilite, le prenom, le nom et une date de naissance valide.");
+      return;
+    }
+
     setError(null);
     onSubmit({
       email: trimmedEmail,
       displayName: trimmedDisplayName,
-      personalTitle: optional(personalTitle),
-      givenName: optional(givenName),
-      surname: optional(surname),
-      birthDate: optional(birthDate),
+      personalTitle: normalizedPersonalTitle,
+      givenName: trimmedGivenName,
+      surname: trimmedSurname,
+      birthDate: trimmedBirthDate,
       initials: optional(initials),
       phone: optional(phone),
     });
@@ -302,6 +316,7 @@ function AssignForm({ isSubmitting, onCancel, onSubmit }: AssignFormProps) {
           maxLength={MAX_FIELD_LENGTH}
           name="personalTitle"
           onChange={(event) => setPersonalTitle(event.target.value)}
+          required
           type="text"
           value={personalTitle}
         />
@@ -313,6 +328,7 @@ function AssignForm({ isSubmitting, onCancel, onSubmit }: AssignFormProps) {
           maxLength={MAX_FIELD_LENGTH}
           name="givenName"
           onChange={(event) => setGivenName(event.target.value)}
+          required
           type="text"
           value={givenName}
         />
@@ -324,6 +340,7 @@ function AssignForm({ isSubmitting, onCancel, onSubmit }: AssignFormProps) {
           maxLength={MAX_FIELD_LENGTH}
           name="surname"
           onChange={(event) => setSurname(event.target.value)}
+          required
           type="text"
           value={surname}
         />
@@ -334,6 +351,7 @@ function AssignForm({ isSubmitting, onCancel, onSubmit }: AssignFormProps) {
         <input
           name="birthDate"
           onChange={(event) => setBirthDate(event.target.value)}
+          required
           type="date"
           value={birthDate}
         />

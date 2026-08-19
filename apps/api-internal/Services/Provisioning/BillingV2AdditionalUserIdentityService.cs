@@ -453,6 +453,19 @@ public sealed class BillingV2AdditionalUserIdentityService
                 "Le nom affiche de l'utilisateur est obligatoire.");
         }
 
+        var personalTitle = NormalizePersonalTitle(assignment.PersonalTitle);
+        var givenName = Normalize(assignment.GivenName);
+        var surname = Normalize(assignment.Surname);
+        if (personalTitle is null
+            || givenName is null
+            || surname is null
+            || assignment.BirthDate is null)
+        {
+            return Failure(
+                BillingV2AdditionalUserRejectionCodes.InvalidIdentity,
+                "La civilite, le prenom, le nom et la date de naissance sont obligatoires.");
+        }
+
         var token = PortalSetupToken.Generate();
         var portalUserId = Guid.NewGuid().ToString("D");
         var command = new BillingV2AdditionalUserAssignmentCommand(
@@ -468,9 +481,9 @@ public sealed class BillingV2AdditionalUserIdentityService
             BillingV2AdditionalUserIdentityConventions.PasswordSetupPurpose,
             email,
             displayName,
-            Normalize(assignment.PersonalTitle),
-            Normalize(assignment.GivenName),
-            Normalize(assignment.Surname),
+            personalTitle,
+            givenName,
+            surname,
             assignment.BirthDate,
             Normalize(assignment.Initials),
             Normalize(assignment.Phone),
@@ -1437,6 +1450,14 @@ public sealed class BillingV2AdditionalUserIdentityService
         var trimmed = value?.Trim();
         return string.IsNullOrWhiteSpace(trimmed) ? null : trimmed;
     }
+
+    private static string? NormalizePersonalTitle(string? value)
+        => Normalize(value)?.ToLowerInvariant() switch
+        {
+            "madame" => "madame",
+            "monsieur" => "monsieur",
+            _ => null
+        };
 
     private static string? NormalizeEmail(string? value)
     {

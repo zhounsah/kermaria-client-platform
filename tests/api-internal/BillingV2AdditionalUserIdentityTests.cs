@@ -44,6 +44,7 @@ public static class BillingV2AdditionalUserIdentityTests
     {
         await VerifyUnassignedSlotStaysInert();
         await VerifyAssignmentCreatesExactlyOnePortalUser();
+        await VerifyAssignmentRequiresCompleteKoxoIdentity();
         await VerifyIdentityReferencePointsAtTheCreatedUser();
         await VerifyKoxoIdentifierIsAllocated();
         await VerifyCrossCustomerAssignmentIsRefused();
@@ -147,6 +148,56 @@ public static class BillingV2AdditionalUserIdentityTests
             + "koxo_pending : rien ne doit partir vers KoXo avant le mot de "
             + "passe.");
     }
+
+    private static async Task VerifyAssignmentRequiresCompleteKoxoIdentity()
+    {
+        var baseline = new BillingV2AdditionalUserAssignment(
+            CustomerId,
+            SubscriptionId,
+            "slot-1",
+            "alice@example.invalid",
+            "Alice Martin",
+            "madame",
+            "Alice",
+            "Martin",
+            new DateOnly(1990, 4, 12),
+            null,
+            null,
+            "admin-test");
+
+        BillingV2AdditionalUserAssignment[] invalid =
+        [
+            baseline with { PersonalTitle = null },
+            baseline with { PersonalTitle = "docteur" },
+            baseline with { GivenName = " " },
+            baseline with { Surname = null },
+            baseline with { BirthDate = null }
+        ];
+
+        foreach (var assignment in invalid)
+        {
+            var harness = Harness.Create();
+            harness.RegisterSlot("slot-1");
+            var result = await harness.Service.AssignAsync(
+                assignment,
+                "correlation-test",
+                CancellationToken.None);
+
+            Assert(
+                !result.Succeeded
+                && result.Code == BillingV2AdditionalUserRejectionCodes.InvalidIdentity,
+                "Une identite KoXo incomplete doit etre refusee avant attribution.");
+            Assert(
+                harness.PortalUsers.Entries.Count == 0,
+                "Le refus doit preceder la creation du portal_user.");
+            Assert(
+                await harness.Repository.FindBySubscriptionUserIdAsync(
+                    "slot-1",
+                    CancellationToken.None) is null,
+                "Le refus ne doit creer aucun lifecycle Billing V2.");
+        }
+    }
+
 
     private static async Task VerifyIdentityReferencePointsAtTheCreatedUser()
     {

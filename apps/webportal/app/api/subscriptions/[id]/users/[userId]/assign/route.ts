@@ -85,6 +85,9 @@ function parseAssignPayload(
   const candidate = value as Record<string, unknown>;
   const email = text(candidate.email);
   const displayName = text(candidate.displayName);
+  const personalTitle = text(candidate.personalTitle)?.toLowerCase() ?? null;
+  const givenName = text(candidate.givenName);
+  const surname = text(candidate.surname);
   const birthDate = text(candidate.birthDate);
 
   if (
@@ -93,26 +96,24 @@ function parseAssignPayload(
     || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
     || !displayName
     || displayName.length > MAX_FIELD_LENGTH
+    || (personalTitle !== "madame" && personalTitle !== "monsieur")
+    || !givenName
+    || !surname
+    || !birthDate
+    || !/^\d{4}-\d{2}-\d{2}$/.test(birthDate)
   ) {
     return null;
   }
 
-  // Jour civil strict. Une date approximative deviendrait une date de
-  // naissance fausse dans l'annuaire, que plus personne ne corrigera.
-  if (birthDate && !/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) {
-    return null;
-  }
-
   const optionals = {
-    personalTitle: text(candidate.personalTitle),
-    givenName: text(candidate.givenName),
-    surname: text(candidate.surname),
     initials: text(candidate.initials),
     phone: text(candidate.phone),
   };
 
   if (
-    Object.values(optionals).some(
+    givenName.length > MAX_FIELD_LENGTH
+    || surname.length > MAX_FIELD_LENGTH
+    || Object.values(optionals).some(
       (field) => field !== null && field.length > MAX_FIELD_LENGTH,
     )
   ) {
@@ -122,10 +123,14 @@ function parseAssignPayload(
   return {
     email,
     displayName,
+    personalTitle,
+    givenName,
+    surname,
     birthDate,
     ...optionals,
   };
 }
+
 
 function text(value: unknown): string | null {
   if (typeof value !== "string") {
