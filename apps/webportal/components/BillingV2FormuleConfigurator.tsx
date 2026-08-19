@@ -20,6 +20,7 @@ import {
 } from "@/lib/billing-v2-formules";
 import { MAX_ADDITIONAL_USERS } from "@/lib/billing-v2-selection";
 import { formatCurrencyFromCents } from "@/lib/formatters";
+import { getPortalArea, resolvePortalAreaUrl } from "@/lib/public-route-config";
 
 type Props = {
   preset: BillingV2PublicPreset;
@@ -174,8 +175,21 @@ export function BillingV2FormuleConfigurator({ preset, catalog }: Props) {
       });
 
       if (response.status === 401 || response.status === 403) {
-        window.location.href =
-          `/login?next=${encodeURIComponent(`/formules/${preset.code}`)}`;
+        const continuationPath = `/formules/${preset.code}`;
+        const currentArea = getPortalArea(window.location.origin);
+        const target = currentArea === "client"
+          ? resolvePortalAreaUrl(
+              window.location.origin,
+              "client",
+              `/login?next=${encodeURIComponent(continuationPath)}`,
+            )
+          : resolvePortalAreaUrl(
+              window.location.origin,
+              "client",
+              continuationPath,
+            );
+
+        window.location.href = target ?? "/login";
         return;
       }
 

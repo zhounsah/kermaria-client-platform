@@ -306,6 +306,20 @@ export function isPortalApplicationPath(pathname: string): boolean {
   );
 }
 
+export function isClientCheckoutContinuationPath(pathname: string): boolean {
+  return pathname === "/formules" || /^\/formules\/[a-z0-9-]+$/.test(pathname);
+}
+
+export function resolveClientCheckoutContinuationPath(
+  value: string | string[] | null | undefined,
+): string | null {
+  if (typeof value !== "string" || !isSafePortalPath(value)) {
+    return null;
+  }
+
+  return isClientCheckoutContinuationPath(value) ? value : null;
+}
+
 /**
  * Les hotes client/admin ne doivent pas servir la vitrine en 200. Les routes
  * applicatives restent locales a leur zone, tout le reste bascule vers l'hote
@@ -341,6 +355,16 @@ export function resolvePortalPublicRedirectUrl(
 
   const family = PORTAL_FAMILIES[familyName];
   if (hostname !== family.client && hostname !== family.admin) {
+    return null;
+  }
+
+  // Le configurateur Billing V2 peut rester sur l'hote client afin que le
+  // BFF de souscription recoive le cookie de session host-only. Il ne reste
+  // jamais local sur l'hote d'administration, et sa canonical demeure `www`.
+  if (
+    hostname === family.client
+    && isClientCheckoutContinuationPath(pathname)
+  ) {
     return null;
   }
 

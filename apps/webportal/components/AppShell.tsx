@@ -18,6 +18,7 @@ import { requestBffJson } from "@/lib/client-api";
 import type { PortalArea } from "@/lib/public-route-config";
 import {
   getPortalArea,
+  isClientCheckoutContinuationPath,
   isPublicRoute,
 } from "@/lib/public-route-config";
 import appPackage from "../../../package.json";
@@ -37,10 +38,18 @@ export function AppShell({
   const [session, setSession] = useState<InternalSession | null>(null);
   const usePublicShell = isPublicRoute(pathname);
   const isWikiRoute = pathname === "/wiki" || pathname.startsWith("/wiki/");
-  const effectiveSession = usePublicShell && !isWikiRoute ? null : session;
+  const isCheckoutContinuation = isClientCheckoutContinuationPath(pathname);
   const portalArea: PortalArea | null = typeof window === "undefined"
     ? null
     : getPortalArea(window.location.origin);
+  const keepAuthenticatedCheckoutShell =
+    isCheckoutContinuation
+    && portalArea === "client"
+    && session?.user.role === "client_user";
+  const effectiveSession =
+    usePublicShell && !isWikiRoute && !keepAuthenticatedCheckoutShell
+      ? null
+      : session;
   const keepAuthenticatedWikiShell =
     isWikiRoute
     && portalArea === "client"
@@ -56,7 +65,7 @@ export function AppShell({
         : "Accès sécurisé";
 
   useEffect(() => {
-    if (usePublicShell && !isWikiRoute) {
+    if (usePublicShell && !isWikiRoute && !isCheckoutContinuation) {
       return;
     }
 
@@ -88,9 +97,13 @@ export function AppShell({
     return () => {
       ignore = true;
     };
-  }, [isWikiRoute, usePublicShell]);
+  }, [isCheckoutContinuation, isWikiRoute, usePublicShell]);
 
-  if (usePublicShell && !keepAuthenticatedWikiShell) {
+  if (
+    usePublicShell
+    && !keepAuthenticatedWikiShell
+    && !keepAuthenticatedCheckoutShell
+  ) {
     return (
       <PublicShell signupEnabled={signupEnabled}>
         {children}

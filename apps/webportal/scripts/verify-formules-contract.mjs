@@ -39,6 +39,10 @@ const configuratorPage = await read("app/formules/[code]/page.tsx");
 const configurator = await read(
   "components/BillingV2FormuleConfigurator.tsx",
 );
+const appShell = await read("components/AppShell.tsx");
+const loginPage = await read("app/login/page.tsx");
+const loginForm = await read("components/LoginForm.tsx");
+const publicRouteConfig = await read("lib/public-route-config.ts");
 const offersPage = await read("app/offres/page.tsx");
 const sitemap = await read("app/sitemap.ts");
 
@@ -237,6 +241,36 @@ assert.match(
   configurator,
   /"Idempotency-Key": crypto\.randomUUID\(\)/,
   "Le checkout doit porter une cle d'idempotence.",
+);
+assert.match(
+  configurator,
+  /resolvePortalAreaUrl\([\s\S]*"client"[\s\S]*continuationPath/,
+  "Une session absente sur www doit poursuivre le configurateur sur l'hote client.",
+);
+assert.match(
+  publicRouteConfig,
+  /hostname === family\.client[\s\S]*isClientCheckoutContinuationPath\(pathname\)/,
+  "Seul l'hote client doit pouvoir servir localement la continuation /formules.",
+);
+assert.match(
+  publicRouteConfig,
+  /isClientCheckoutContinuationPath[\s\S]*\[a-z0-9-\]\+\$/,
+  "Le chemin de reprise doit etre borne a un unique code de formule.",
+);
+assert.match(
+  appShell,
+  /keepAuthenticatedCheckoutShell[\s\S]*portalArea === "client"[\s\S]*client_user/,
+  "Le configurateur servi sur dashboard doit reprendre le shell de la session client.",
+);
+assert.match(
+  loginPage,
+  /resolveClientCheckoutContinuationPath\(query\.next\)/,
+  "La page de connexion doit valider strictement le chemin de reprise.",
+);
+assert.match(
+  loginForm,
+  /result\.user\.role === "client_user" && continuationPath[\s\S]*resolvePortalAreaUrl/,
+  "Apres connexion client, le formulaire doit reprendre le configurateur demande.",
 );
 assert.doesNotMatch(
   configurator,

@@ -312,6 +312,8 @@ for (const pathname of [
   "/set-password",
   "/services",
   "/api/health/ready",
+  "/formules",
+  "/formules/pack-pro-association",
   "/robots.txt",
   "/sitemap.xml",
 ]) {
@@ -321,6 +323,16 @@ for (const pathname of [
     `${pathname} doit rester local a l'hote client/admin.`,
   );
 }
+
+assert.equal(
+  resolvePortalPublicRedirectUrl(
+    "administration.zacharyhounsa.ovh",
+    "/formules/pack-pro-association",
+    "",
+  ),
+  "https://www.zacharyhounsa.ovh/formules/pack-pro-association",
+  "Le configurateur ne doit rester local que sur l'hote client.",
+);
 
 assert.equal(isClientOrAdminPortalHost("dashboard.zacharyhounsa.ovh"), true);
 assert.equal(isClientOrAdminPortalHost("administration.zacharyhounsa.ovh"), true);

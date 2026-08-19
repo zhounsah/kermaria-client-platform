@@ -6,6 +6,7 @@ import { getCurrentPortalSession } from "@/lib/auth";
 import {
   getPortalArea,
   isPortalRoleAllowed,
+  resolveClientCheckoutContinuationPath,
   resolvePortalAreaUrl,
   resolvePortalRoleUrl,
 } from "@/lib/public-route-config";
@@ -31,13 +32,18 @@ const LOGIN_ERROR_MESSAGES = {
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   const origin = getPortalRequestOriginFromHeaders(await headers());
   const area = getPortalArea(origin);
+  const query = await searchParams;
+  const continuationPath = resolveClientCheckoutContinuationPath(query.next);
 
   if (!origin || !area) {
     notFound();
   }
 
   if (area === "public") {
-    const clientLoginUrl = resolvePortalAreaUrl(origin, "client", "/login");
+    const loginPath = continuationPath
+      ? `/login?next=${encodeURIComponent(continuationPath)}`
+      : "/login";
+    const clientLoginUrl = resolvePortalAreaUrl(origin, "client", loginPath);
     if (!clientLoginUrl) {
       notFound();
     }
@@ -58,14 +64,16 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
     session
     && (area === "local" || isPortalRoleAllowed(area, session.user.role))
   ) {
-    const landingUrl = resolvePortalRoleUrl(origin, session.user.role);
+    const landingUrl =
+      session.user.role === "client_user" && continuationPath
+        ? resolvePortalAreaUrl(origin, "client", continuationPath)
+        : resolvePortalRoleUrl(origin, session.user.role);
     if (!landingUrl) {
       notFound();
     }
     redirect(landingUrl);
   }
 
-  const query = await searchParams;
   const errorCode = typeof query.error === "string" ? query.error : "";
   const initialError = Object.hasOwn(LOGIN_ERROR_MESSAGES, errorCode)
     ? LOGIN_ERROR_MESSAGES[errorCode as keyof typeof LOGIN_ERROR_MESSAGES]
@@ -88,6 +96,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
       </div>
       <div>
         <LoginForm
+          continuationPath={continuationPath}
           initialError={initialError}
           origin={origin}
           portalArea={area}

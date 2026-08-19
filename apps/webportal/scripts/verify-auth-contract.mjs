@@ -71,6 +71,7 @@ const publicRoutesRuntime = await importPureTypeScript(
 const {
   getPortalArea,
   isPortalRoleAllowed,
+  resolveClientCheckoutContinuationPath,
   resolvePortalAreaUrl,
   resolvePortalRoleUrl,
 } = routing;
@@ -239,6 +240,25 @@ assert.equal(isPortalRoleAllowed("local", "internal_admin"), true);
 assert.equal(isPortalRoleAllowed("local", "unknown_role"), false);
 assert.equal(isPortalRoleAllowed(null, "client_user"), false);
 
+assert.equal(
+  resolveClientCheckoutContinuationPath("/formules/pack-pro-association"),
+  "/formules/pack-pro-association",
+);
+assert.equal(resolveClientCheckoutContinuationPath("/formules"), "/formules");
+for (const unsafeContinuation of [
+  "/dashboard",
+  "/formules/pack-pro-association/details",
+  "/formules/%2e%2e/admin",
+  "//evil.example",
+  ["/formules/pack-pro-association"],
+]) {
+  assert.equal(
+    resolveClientCheckoutContinuationPath(unsafeContinuation),
+    null,
+    `Continuation invalide acceptee: ${String(unsafeContinuation)}`,
+  );
+}
+
 assert.doesNotMatch(publicRouteConfig, /process\.env|server-only/);
 assert.match(publicRoutes, /export function getPortalRequestOriginFromHeaders/);
 assert.match(publicRoutes, /hostname\.startsWith\("\["\)/);
@@ -257,6 +277,8 @@ for (const presentationCode of [
 }
 assert.match(loginPage, /Object\.hasOwn\(LOGIN_ERROR_MESSAGES, errorCode\)/);
 assert.doesNotMatch(loginPage, /query\.email|initialEmail/);
+assert.match(loginPage, /resolveClientCheckoutContinuationPath\(query\.next\)/);
+assert.match(loginPage, /continuationPath=\{continuationPath\}/);
 assert.match(loginPage, /initialError=\{initialError\}/);
 assert.match(loginPage, /portalArea=\{area\}/);
 assert.match(loginPage, /notFound\(\)/);
@@ -271,6 +293,8 @@ assert.match(loginForm, /isSubmittingRef\.current/);
 assert.match(loginForm, /aria-invalid/);
 assert.match(loginForm, /acceptCharset="UTF-8"/);
 assert.match(loginForm, /encType="application\/x-www-form-urlencoded"/);
+assert.match(loginForm, /continuationPath/);
+assert.match(loginForm, /resolvePortalAreaUrl\(origin, "client", continuationPath\)/);
 assert.match(loginForm, /resolvePortalRoleUrl\(origin, result\.user\.role\)/);
 assert.match(loginForm, /"\/login\?error=PORTAL_ROLE_MISMATCH"/);
 assert.match(loginForm, /window\.location\.assign\(target\)/);

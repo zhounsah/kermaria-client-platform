@@ -25,12 +25,14 @@ type LoginState =
   | { status: "error"; message: string };
 
 type LoginFormProps = {
+  continuationPath: string | null;
   initialError: string | null;
   origin: string;
   portalArea: Exclude<PortalArea, "public">;
 };
 
 export function LoginForm({
+  continuationPath,
   initialError,
   origin,
   portalArea,
@@ -118,7 +120,10 @@ export function LoginForm({
         return;
       }
 
-      const target = resolvePortalRoleUrl(origin, result.user.role);
+      const target =
+        result.user.role === "client_user" && continuationPath
+          ? resolvePortalAreaUrl(origin, "client", continuationPath)
+          : resolvePortalRoleUrl(origin, result.user.role);
       if (!target) {
         setState({
           status: "error",
