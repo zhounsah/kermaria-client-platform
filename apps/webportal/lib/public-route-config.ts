@@ -361,7 +361,8 @@ export function resolvePortalPublicRedirectUrl(
   }
 
   if (
-    pathname === "/robots.txt"
+    pathname === "/"
+    || pathname === "/robots.txt"
     || pathname === "/sitemap.xml"
     || isPortalApplicationPath(pathname)
   ) {

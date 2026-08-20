@@ -343,7 +343,6 @@ for (const host of [
 //     publiques, les fiches packs et les slugs editoriaux repartent vers le
 //     canonique public de leur famille.
 for (const [host, pathname, search, expected] of [
-  ["dashboard.zacharyhounsa.ovh", "/", "", "https://zachary-it.fr/"],
   [
     "dashboard.zacharyhounsa.ovh",
     "/offres",
@@ -377,6 +376,7 @@ for (const [host, pathname, search, expected] of [
 }
 
 for (const pathname of [
+  "/",
   "/login",
   "/dashboard",
   "/set-password",
