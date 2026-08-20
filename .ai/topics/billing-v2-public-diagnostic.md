@@ -44,3 +44,11 @@ npm --prefix apps/webportal run test:signup
 ```
 
 Documentation : `docs/DIAGNOSTIC_CONFIGURATEUR.md`.
+## Production 2026-08-20
+- commit applicatif : `bf535b7` ;
+- SRV-12 : `/opt/kermaria/releases/20260820-093552-v1.4.0.1-bf535b7` ;
+- rollback : `/opt/kermaria/releases/20260820-0936-a68d0d6` ;
+- readiness privee + publique : `healthy` ;
+- `/diagnostic` et `/formules` publics : HTTP 200 ;
+- footer : `Version v1.4.0.1` ;
+- SRV-13 non redeploye : aucune modification API/SQL/pricing/provisioning.

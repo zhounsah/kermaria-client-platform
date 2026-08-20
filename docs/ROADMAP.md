@@ -1265,8 +1265,9 @@ VLAN 64 `10.35.64.0/24`. Deploiement SRV-13 :
 [`v1.1/deploy/SRV-13_LOT3_DEPLOY.md`](v1.1/deploy/SRV-13_LOT3_DEPLOY.md).
 
 ## Jalon v1.4.0.1 - diagnostic public Billing V2
-Statut : **livre dans le depot le 2026-08-20**. Documentation dediee :
+Statut : **livre et deploye sur SRV-12 le 2026-08-20**. Documentation dediee :
 [`v1.4/V1.4.0.1_PUBLIC_DIAGNOSTIC.md`](v1.4/V1.4.0.1_PUBLIC_DIAGNOSTIC.md).
+Production : commit `bf535b7`, release SRV-12 `20260820-093552-v1.4.0.1-bf535b7`, readiness privee et publique healthy.
 Le questionnaire public `/diagnostic` conserve son UX, mais son moteur
 commercial ne depend plus des anciens manifests de packs. Il produit soit une
 `BillingV2PublicSelection`, soit `requires_quote`. Le diagnostic ne calcule

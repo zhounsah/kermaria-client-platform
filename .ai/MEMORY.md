@@ -14,7 +14,7 @@
 
 ### Version
 
-- **v1.4.0.1 (2026-08-20)** : diagnostic public migre vers Billing V2, sans changement SQL/pricing/provisioning. Voir [billing-v2-public-diagnostic.md](topics/billing-v2-public-diagnostic.md). Version de base Billing V2 : v1.4.0.0.
+- **v1.4.0.1 (2026-08-20)** : diagnostic public migre vers Billing V2 et deploye sur SRV-12 (`20260820-093552-v1.4.0.1-bf535b7`, commit applicatif `bf535b7`). Aucun changement SQL/pricing/provisioning ni redeploiement SRV-13. Voir [billing-v2-public-diagnostic.md](topics/billing-v2-public-diagnostic.md). Version de base Billing V2 : v1.4.0.0.
 
 ### Vitrine, SEO et éditorial
 
