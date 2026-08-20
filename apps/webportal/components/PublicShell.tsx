@@ -6,7 +6,7 @@ import { useState } from "react";
 import { PORTFOLIO_URL, PUBLIC_SITE_URL } from "@/lib/public-route-config";
 import appPackage from "../../../package.json";
 
-const CLIENT_PORTAL_LOGIN_URL = "https://dashboard.zacharyhounsa.ovh/login";
+const CLIENT_PORTAL_LOGIN_URL = "https://dashboard.zachary-it.fr/login";
 const APP_VERSION_LABEL = `Version v${appPackage.displayVersion ?? appPackage.version}`;
 const publicHref = (pathname: string) => `${PUBLIC_SITE_URL}${pathname}`;
 const publicLinks = [

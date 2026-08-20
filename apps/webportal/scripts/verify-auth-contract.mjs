@@ -157,7 +157,7 @@ assert.equal(
     "client",
     "/login?error=PORTAL_ROLE_MISMATCH#form",
   ),
-  "https://dashboard.zacharyhounsa.ovh/login?error=PORTAL_ROLE_MISMATCH#form",
+  "https://dashboard.zachary-it.fr/login?error=PORTAL_ROLE_MISMATCH#form",
 );
 assert.equal(
   resolvePortalAreaUrl(
@@ -250,7 +250,7 @@ for (const hostilePath of [
 
 assert.equal(
   resolvePortalRoleUrl("https://zachary-it.fr", "client_user"),
-  "https://dashboard.zacharyhounsa.ovh/dashboard",
+  "https://dashboard.zachary-it.fr/dashboard",
 );
 assert.equal(
   resolvePortalRoleUrl("https://www.zacharyhounsa.ovh", "client_user"),

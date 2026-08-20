@@ -37,8 +37,8 @@ const PORTAL_FAMILIES = {
     // `www` reste un alias de transition : le canonique commercial est
     // l'apex `zachary-it.fr`.
     canonicalRedirects: new Set(["www.zachary-it.fr"]),
-    client: "dashboard.zacharyhounsa.ovh",
-    admin: "administration.zacharyhounsa.ovh",
+    client: "dashboard.zachary-it.fr",
+    admin: "administration.zachary-it.fr",
   },
   "zacharyhounsa.ovh": {
     public: "www.zacharyhounsa.ovh",
