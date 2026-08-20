@@ -67,6 +67,9 @@ Navigation par besoin :
   [`docs/billing-v2/LANCEMENT-CONTROLE.md`](docs/billing-v2/LANCEMENT-CONTROLE.md)
 - diagnostic public migre sur Billing V2 (v1.4.0.1) : recommandations en `BillingV2PublicSelection`, devis serveur via `/api/formules/devis` et sortie vers `/formules/{preset}` :
   [`docs/v1.4/V1.4.0.1_PUBLIC_DIAGNOSTIC.md`](docs/v1.4/V1.4.0.1_PUBLIC_DIAGNOSTIC.md)
+- identite visuelle Zachary IT 2026 - assets officiels, tokens, favicons et
+  surfaces WEBPORTAL :
+  [`docs/v1.4/V1.4.0.2_IDENTITE_ZACHARY_IT_2026.md`](docs/v1.4/V1.4.0.2_IDENTITE_ZACHARY_IT_2026.md)
 - deploiement des serveurs applicatifs :
   [`docs/v1.1/deploy/SRV-12_LOT3_DEPLOY.md`](docs/v1.1/deploy/SRV-12_LOT3_DEPLOY.md)
   (webportal, **Ubuntu/systemd**) et

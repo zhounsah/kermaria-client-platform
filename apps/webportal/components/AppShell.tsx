@@ -14,6 +14,7 @@ import { AdminNavigation } from "@/components/AdminNavigation";
 import { HeaderCartDrawer } from "@/components/HeaderCartDrawer";
 import { PortalNavigation } from "@/components/PortalNavigation";
 import { PublicShell } from "@/components/PublicShell";
+import { BrandLogo } from "@/components/BrandLogo";
 import { requestBffJson } from "@/lib/client-api";
 import type { PortalArea } from "@/lib/public-route-config";
 import {
@@ -119,13 +120,7 @@ export function AppShell({
       <header className="site-header">
         <div className="site-header-inner">
           <Link className="brand" href="/">
-            <span className="brand-mark" aria-hidden="true">
-              ZH
-            </span>
-            <span className="brand-copy">
-              <strong>Zachary HOUNSA-HOUNKPA EI</strong>
-              <small>Espace client</small>
-            </span>
+            <BrandLogo className="brand-logo brand-logo-app" priority variant="dark" />
           </Link>
           <div className="site-header-tools">
             {effectiveSession?.user.role === "client_user" ? (
@@ -154,6 +149,7 @@ export function AppShell({
       )}
       <footer className="site-footer">
         <div>
+          <BrandLogo className="brand-logo brand-logo-footer" variant="dark" />
           <strong>Zachary HOUNSA-HOUNKPA EI</strong>
           <p>Portail client authentifié et administration interne contrôlée.</p>
           <p>{APP_VERSION_LABEL}</p>

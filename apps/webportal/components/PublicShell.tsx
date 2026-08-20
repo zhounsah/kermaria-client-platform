@@ -2,7 +2,9 @@
 
 import type { ReactNode } from "react";
 import { useState } from "react";
+import { Menu, X } from "lucide-react";
 
+import { BrandLogo } from "@/components/BrandLogo";
 import { PORTFOLIO_URL, PUBLIC_SITE_URL } from "@/lib/public-route-config";
 import appPackage from "../../../package.json";
 
@@ -35,13 +37,7 @@ export function PublicShell({ children, signupEnabled }: PublicShellProps) {
       <header className="public-header">
         <div className="public-header-inner">
           <a className="brand brand-public" href={publicHref("/")}>
-            <span className="brand-mark" aria-hidden="true">
-              ZH
-            </span>
-            <span className="brand-copy">
-              <strong>Zachary IT</strong>
-              <small>Sauvegarde et continuité à Guichen</small>
-            </span>
+            <BrandLogo className="brand-logo brand-logo-public" priority />
           </a>
           <button
             aria-controls="public-header-nav"
@@ -51,9 +47,11 @@ export function PublicShell({ children, signupEnabled }: PublicShellProps) {
             onClick={() => setMenuOpen((current) => !current)}
             type="button"
           >
-            <span aria-hidden="true" />
-            <span aria-hidden="true" />
-            <span aria-hidden="true" />
+            {menuOpen ? (
+              <X aria-hidden="true" size={20} strokeWidth={1.75} />
+            ) : (
+              <Menu aria-hidden="true" size={20} strokeWidth={1.75} />
+            )}
           </button>
           <nav
             aria-label="Navigation principale"
@@ -97,7 +95,7 @@ export function PublicShell({ children, signupEnabled }: PublicShellProps) {
               page est le seul endroit present sur toutes les pages publiques
               ou les deux noms se lisent ensemble.
             */}
-            <strong>Zachary IT</strong>
+            <BrandLogo className="brand-logo brand-logo-footer" variant="dark" />
             <p>Zachary HOUNSA-HOUNKPA EI</p>
             <p>Site public, offres et espace client.</p>
             <p>{APP_VERSION_LABEL}</p>

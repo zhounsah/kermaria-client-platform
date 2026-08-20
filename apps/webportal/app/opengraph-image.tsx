@@ -12,12 +12,11 @@ import { ImageResponse } from "next/og";
  * `zachary-it.fr`, l'ancien domaine et `home.bzh` en recette ; une URL en dur serait
  * fausse sur l'un des deux.
  *
- * Les couleurs sont celles de `app/globals.css` (`--primary-dark`,
- * `--primary`, `--primary-light`) recopiees en dur : Satori ne resout pas
- * les variables CSS.
+ * Les couleurs viennent des tokens officiels 2026 et sont recopiees en dur :
+ * Satori ne resout pas les variables CSS.
  */
 export const alt =
-  "Zachary IT — sauvegarde distante et continuité d'activité à Guichen";
+  "Zachary IT — votre informatique, gérée, sécurisée, disponible.";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -31,9 +30,9 @@ export default async function OpengraphImage() {
           display: "flex",
           flexDirection: "column",
           justifyContent: "space-between",
-          backgroundColor: "#17417f",
+          backgroundColor: "#0B1220",
           padding: "72px 80px",
-          fontFamily: "sans-serif",
+          fontFamily: "Inter, sans-serif",
         }}
       >
         <div style={{ display: "flex", flexDirection: "column" }}>
@@ -42,7 +41,7 @@ export default async function OpengraphImage() {
               display: "flex",
               fontSize: 30,
               letterSpacing: 4,
-              color: "#eaf1fc",
+              color: "#38BDF8",
             }}
           >
             ZACHARY IT — GUICHEN (35)
@@ -53,7 +52,7 @@ export default async function OpengraphImage() {
               width: 96,
               height: 6,
               marginTop: 28,
-              backgroundColor: "#2459a9",
+              backgroundColor: "#2563EB",
             }}
           />
         </div>
@@ -67,7 +66,7 @@ export default async function OpengraphImage() {
             letterSpacing: -1,
           }}
         >
-          Sauvegarde distante et continuité d&apos;activité
+          Votre informatique. Gérée, sécurisée, disponible.
         </div>
 
         <div
@@ -76,7 +75,7 @@ export default async function OpengraphImage() {
             justifyContent: "space-between",
             alignItems: "flex-end",
             fontSize: 26,
-            color: "#eaf1fc",
+            color: "#F8FAFC",
           }}
         >
           <div style={{ display: "flex" }}>

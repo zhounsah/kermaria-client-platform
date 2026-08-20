@@ -1,0 +1,92 @@
+/* Zachary IT — design tokens (charte 2026, figée) */
+:root {
+  /* Brand colors */
+  --brand-blue: #2563EB;
+  --brand-blue-dark: #1D4ED8;
+  --brand-sky: #38BDF8;
+  --brand-ink: #0B1220;
+
+  /* Neutrals */
+  --slate-900: #0F172A;
+  --slate-500: #64748B;
+  --slate-border: #E2E8F0;
+  --surface: #F8FAFC;
+  --white: #FFFFFF;
+
+  /* Functional state colors — never used as brand colors */
+  --state-success: #16A34A;
+  --state-success-bg: #F0FDF4;
+  --state-success-border: #BBF7D0;
+  --state-success-text: #15803D;
+
+  --state-warning: #D97706;
+  --state-warning-bg: #FFFBEB;
+  --state-warning-border: #FDE68A;
+  --state-warning-text: #B45309;
+
+  --state-danger: #DC2626;
+  --state-danger-bg: #FEF2F2;
+  --state-danger-border: #FECACA;
+  --state-danger-text: #B91C1C;
+
+  --state-info-bg: #EFF6FF;
+  --state-info-border: #BFDBFE;
+  --state-info-text: #1D4ED8;
+
+  /* Typography */
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 14px;
+  --text-md: 15px;
+  --text-lg: 16px;
+  --text-xl: 22px;
+  --text-2xl: 24px;
+  --text-3xl: 32px;
+  --text-4xl: 40px;
+  --text-display: 52px;
+
+  --font-regular: 400;
+  --font-medium: 500;
+  --font-semibold: 600;
+  --font-bold: 700;
+
+  /* Spacing */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-2xl: 32px;
+  --space-3xl: 48px;
+  --space-4xl: 64px;
+
+  /* Radius */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-full: 9999px;
+
+  /* Borders */
+  --border-width: 1px;
+  --border-width-emphasis: 1.5px;
+  --border-color: var(--slate-border);
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.06);
+  --shadow-lg: 0 18px 48px rgba(15, 23, 42, 0.07);
+  --shadow-dark: 0 24px 60px rgba(2, 6, 23, 0.5);
+
+  /* Icon sizes (Lucide, 1.75px stroke) */
+  --icon-sm: 16px;
+  --icon-md: 20px;
+  --icon-lg: 24px;
+
+  /* Breakpoints (reference values, use in JS/media query literals) */
+  --bp-mobile: 390px;
+  --bp-tablet: 768px;
+  --bp-desktop: 1280px;
+}

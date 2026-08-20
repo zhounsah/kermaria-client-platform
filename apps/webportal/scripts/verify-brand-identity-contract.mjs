@@ -343,8 +343,8 @@ const headerBrand = publicShell.slice(
   publicShell.indexOf("</a>", publicShell.indexOf('className="brand brand-public"')),
 );
 assert.ok(
-  headerBrand.includes(`<strong>${BRAND_NAME}</strong>`),
-  "L'en-tete public doit afficher le nom commercial.",
+  headerBrand.includes('className="brand-logo brand-logo-public"'),
+  "L'en-tete public doit afficher le logo horizontal officiel.",
 );
 assert.ok(
   !headerBrand.includes(LEGAL_NAME),
@@ -356,8 +356,8 @@ const footerBrand = publicShell.slice(
   publicShell.indexOf("</div>", publicShell.indexOf('className="public-footer-brand"')),
 );
 assert.ok(
-  footerBrand.includes(`<strong>${BRAND_NAME}</strong>`),
-  "Le pied de page public doit afficher le nom commercial.",
+  footerBrand.includes('className="brand-logo brand-logo-footer"'),
+  "Le pied de page public doit afficher le logo officiel.",
 );
 assert.ok(
   footerBrand.includes(LEGAL_NAME),

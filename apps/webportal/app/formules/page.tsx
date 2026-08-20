@@ -36,7 +36,7 @@ export default async function FormulesPage() {
 
   return (
     <div className="formules-page">
-      <header className="formules-header">
+      <header className="formules-header formules-header-2026">
         <p className="eyebrow">Formules</p>
         <h1>Choisissez une formule, ajustez-la, souscrivez.</h1>
         <p className="formules-lead">
@@ -66,7 +66,7 @@ export default async function FormulesPage() {
               const benefits = describePresetBenefits(preset, catalog);
 
               return (
-                <article className="formule-card" key={preset.code}>
+                <article className="formule-card formule-card-2026" key={preset.code}>
                   <header className="formule-card-header">
                     <h2>{preset.name}</h2>
                     <p className="formule-card-tagline">

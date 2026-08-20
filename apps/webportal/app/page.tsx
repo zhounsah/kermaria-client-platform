@@ -17,6 +17,7 @@ import {
   resolvePortalRoleUrl,
 } from "@/lib/public-route-config";
 import { JsonLd, localBusinessJsonLd, webSiteJsonLd } from "@/lib/seo";
+import { BrandLogo } from "@/components/BrandLogo";
 
 /**
  * Le nom commercial ouvre le titre : sur l'accueil, c'est le nom du site qui
@@ -160,32 +161,41 @@ export default async function HomePage() {
       <JsonLd data={localBusinessJsonLd(baseUrl)} />
       <JsonLd data={webSiteJsonLd(baseUrl)} />
 
-      <section className="vitrine-hero">
-        <p className="eyebrow">Zachary IT — Guichen</p>
-        <h1>
-          Un sinistre peut détruire votre matériel. Il ne devrait pas détruire
-          vos données.
-        </h1>
-        <p className="vitrine-hero-lead">
-          Zachary IT met en place des solutions de sauvegarde et de stockage
-          distant pour les particuliers, associations et petites entreprises.
-          Vos fichiers importants sont conservés séparément de votre ordinateur,
-          de votre serveur ou de vos locaux. En cas de panne, de vol, d&apos;incendie
-          ou de rançongiciel, vous disposez ainsi d&apos;une copie à partir de
-          laquelle repartir.
-        </p>
-        <p className="vitrine-hero-note">
-          Basé à Guichen, j&apos;échange directement avec chaque client et
-          j&apos;explique ce qui est installé, ce qui est sauvegardé et comment les
-          données peuvent être récupérées.
-        </p>
-        <div className="vitrine-hero-actions">
-          <Link className="button" href="/offres">
-            Découvrir les offres
-          </Link>
-          <Link className="button button-secondary" href="/contact">
-            Expliquer mon besoin
-          </Link>
+      <section className="vitrine-hero vitrine-hero-2026">
+        <div className="vitrine-hero-copy">
+          <p className="eyebrow">Zachary IT — Guichen</p>
+          <p className="vitrine-hero-baseline">
+            Votre informatique. Gérée, sécurisée, disponible.
+          </p>
+          <h1>
+            Un sinistre peut détruire votre matériel. Il ne devrait pas détruire
+            vos données.
+          </h1>
+          <p className="vitrine-hero-lead">
+            Zachary IT met en place des solutions de sauvegarde et de stockage
+            distant pour les particuliers, associations et petites entreprises.
+            Vos fichiers importants sont conservés séparément de votre ordinateur,
+            de votre serveur ou de vos locaux. En cas de panne, de vol, d&apos;incendie
+            ou de rançongiciel, vous disposez ainsi d&apos;une copie à partir de
+            laquelle repartir.
+          </p>
+          <p className="vitrine-hero-note">
+            Basé à Guichen, j&apos;échange directement avec chaque client et
+            j&apos;explique ce qui est installé, ce qui est sauvegardé et comment les
+            données peuvent être récupérées.
+          </p>
+          <div className="vitrine-hero-actions">
+            <Link className="button" href="/offres">
+              Découvrir les offres
+            </Link>
+            <Link className="button button-secondary" href="/contact">
+              Expliquer mon besoin
+            </Link>
+          </div>
+        </div>
+        <div aria-hidden="true" className="vitrine-hero-brand-panel">
+          <BrandLogo className="vitrine-hero-logo" priority variant="dark" />
+          <div className="vitrine-network-motif" />
         </div>
       </section>
 

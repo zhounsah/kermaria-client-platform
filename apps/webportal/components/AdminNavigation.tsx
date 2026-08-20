@@ -2,53 +2,73 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import {
+  Activity,
+  BookOpen,
+  Boxes,
+  CircleDollarSign,
+  ClipboardList,
+  Download,
+  FileText,
+  LayoutDashboard,
+  LifeBuoy,
+  Mail,
+  MonitorSmartphone,
+  Package,
+  ScrollText,
+  ShieldCheck,
+  UserPlus,
+  Users,
+  WalletCards,
+  type LucideIcon,
+} from "lucide-react";
 
 import { LogoutButton } from "@/components/LogoutButton";
 
 type NavSection = {
   label: string;
-  items: { href: string; label: string; exact?: boolean }[];
+  items: { href: string; label: string; icon: LucideIcon; exact?: boolean }[];
 };
 
 const navigationSections: NavSection[] = [
   {
     label: "Pilotage",
     items: [
-      { href: "/admin", label: "Vue d'ensemble", exact: true },
-      { href: "/admin/koxo", label: "KoXo" },
-      { href: "/admin/activity", label: "Flux d'activité" },
-      { href: "/admin/audit-logs", label: "Journal d'audit" },
+      { href: "/admin", label: "Vue d'ensemble", icon: LayoutDashboard, exact: true },
+      { href: "/admin/koxo", label: "KoXo", icon: Boxes },
+      { href: "/admin/activity", label: "Flux d'activité", icon: Activity },
+      { href: "/admin/audit-logs", label: "Journal d'audit", icon: ScrollText },
     ],
   },
   {
     label: "Activité commerciale",
     items: [
-      { href: "/admin/catalog", label: "Catalogue" },
-      { href: "/admin/public-pack-catalog", label: "Vitrine packs" },
-      { href: "/admin/solutions", label: "Portail solutions" },
-      { href: "/admin/content", label: "Contenus" },
-      { href: "/admin/editorial", label: "Editorial" },
-      { href: "/admin/downloads", label: "Téléchargements" },
-      { href: "/admin/commercial-documents", label: "Documents" },
-      { href: "/admin/payments", label: "Paiements" },
-      { href: "/admin/subscriptions", label: "Abonnements" },
-      { href: "/admin/billing-v2", label: "Billing V2" },
+      { href: "/admin/catalog", label: "Catalogue", icon: Package },
+      { href: "/admin/public-pack-catalog", label: "Vitrine packs", icon: Boxes },
+      { href: "/admin/solutions", label: "Portail solutions", icon: MonitorSmartphone },
+      { href: "/admin/content", label: "Contenus", icon: FileText },
+      { href: "/admin/editorial", label: "Editorial", icon: BookOpen },
+      { href: "/admin/downloads", label: "Téléchargements", icon: Download },
+      { href: "/admin/commercial-documents", label: "Documents", icon: FileText },
+      { href: "/admin/payments", label: "Paiements", icon: WalletCards },
+      { href: "/admin/subscriptions", label: "Abonnements", icon: ClipboardList },
+      { href: "/admin/billing-v2", label: "Billing V2", icon: CircleDollarSign },
     ],
   },
   {
     label: "Relation client",
     items: [
-      { href: "/admin/customers", label: "Clients" },
-      { href: "/admin/demo", label: "Comptes démo" },
-      { href: "/admin/signups", label: "Demandes d'inscription" },
-      { href: "/admin/support-requests", label: "Demandes support" },
-      { href: "/admin/service-requests", label: "Demandes service" },
-      { href: "/admin/email-log", label: "Journal e-mails" },
+      { href: "/admin/customers", label: "Clients", icon: Users },
+      { href: "/admin/demo", label: "Comptes démo", icon: MonitorSmartphone },
+      { href: "/admin/signups", label: "Demandes d'inscription", icon: UserPlus },
+      { href: "/admin/support-requests", label: "Demandes support", icon: LifeBuoy },
+      { href: "/admin/service-requests", label: "Demandes service", icon: ClipboardList },
+      { href: "/admin/email-log", label: "Journal e-mails", icon: Mail },
     ],
   },
   {
     label: "Sécurité",
-    items: [{ href: "/admin/sessions", label: "Sessions" }],
+    items: [{ href: "/admin/sessions", label: "Sessions", icon: ShieldCheck }],
   },
 ];
 
@@ -88,7 +108,8 @@ export function AdminNavigation({ displayName }: AdminNavigationProps) {
                       }
                       href={item.href}
                     >
-                      {item.label}
+                      <item.icon aria-hidden="true" size={16} strokeWidth={1.75} />
+                      <span>{item.label}</span>
                     </Link>
                   </li>
                 );

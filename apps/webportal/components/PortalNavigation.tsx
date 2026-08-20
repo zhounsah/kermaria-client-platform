@@ -2,6 +2,19 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import {
+  Bell,
+  BookOpen,
+  Download,
+  FileText,
+  LayoutDashboard,
+  LifeBuoy,
+  LockKeyhole,
+  PackagePlus,
+  UserRound,
+  Wrench,
+  type LucideIcon,
+} from "lucide-react";
 
 import { LogoutButton } from "@/components/LogoutButton";
 
@@ -10,6 +23,7 @@ type NavSection = {
   items: {
     href: string;
     label: string;
+    icon: LucideIcon;
     exact?: boolean;
     // Sous-pages qui gardent l'entree active alors que `exact` interdit le
     // prefixe (ex. /profile ne doit pas s'allumer sur /profile/subscriptions,
@@ -22,33 +36,34 @@ const navigationSections: NavSection[] = [
   {
     label: "Mon espace",
     items: [
-      { href: "/dashboard", label: "Vue d'ensemble", exact: true },
-      { href: "/services", label: "Mes services" },
-      { href: "/souscrire", label: "Souscrire" },
-      { href: "/profile/subscriptions", label: "Mes souscriptions" },
-      { href: "/downloads", label: "Téléchargements" },
-      { href: "/invoices", label: "Documents & factures" },
+      { href: "/dashboard", label: "Vue d'ensemble", icon: LayoutDashboard, exact: true },
+      { href: "/services", label: "Mes services", icon: Wrench },
+      { href: "/souscrire", label: "Souscrire", icon: PackagePlus },
+      { href: "/profile/subscriptions", label: "Mes souscriptions", icon: FileText },
+      { href: "/downloads", label: "Téléchargements", icon: Download },
+      { href: "/invoices", label: "Documents & factures", icon: FileText },
     ],
   },
   {
     label: "Demandes",
     items: [
-      { href: "/support", label: "Support" },
-      { href: "/request-service", label: "Nouvelle demande" },
+      { href: "/support", label: "Support", icon: LifeBuoy },
+      { href: "/request-service", label: "Nouvelle demande", icon: PackagePlus },
     ],
   },
   {
     label: "Suivi",
     items: [
-      { href: "/notifications", label: "Notifications" },
-      { href: "/wiki", label: "Wiki" },
+      { href: "/notifications", label: "Notifications", icon: Bell },
+      { href: "/wiki", label: "Wiki", icon: BookOpen },
       {
         href: "/profile",
         label: "Profil",
+        icon: UserRound,
         exact: true,
         activePaths: ["/profile/edit"],
       },
-      { href: "/password", label: "Mot de passe" },
+      { href: "/password", label: "Mot de passe", icon: LockKeyhole },
     ],
   },
 ];
@@ -91,7 +106,8 @@ export function PortalNavigation({ displayName }: PortalNavigationProps) {
                       }
                       href={item.href}
                     >
-                      {item.label}
+                      <item.icon aria-hidden="true" size={16} strokeWidth={1.75} />
+                      <span>{item.label}</span>
                     </Link>
                   </li>
                 );
