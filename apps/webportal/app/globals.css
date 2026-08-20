@@ -8161,9 +8161,26 @@ fieldset.form-field > .form-hint {
   padding-block: var(--space-2xl) var(--space-4xl);
 }
 
+.public-main:has(.vitrine-hero-band) {
+  width: 100%;
+}
+
+.public-main:has(.vitrine-hero-band) > :not(.vitrine-hero-band) {
+  width: min(1440px, calc(100% - 24px));
+  margin-inline: auto;
+}
+
+.vitrine-hero-band {
+  width: 100%;
+  margin-top: calc(-1 * var(--space-2xl));
+  background: var(--brand-ink);
+}
+
 .vitrine-hero-2026 {
   display: grid;
   max-width: none;
+  width: min(1440px, calc(100% - 24px));
+  margin-inline: auto;
   padding: clamp(28px, 5vw, 64px);
   grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.8fr);
   gap: clamp(32px, 7vw, 96px);
@@ -8346,6 +8363,7 @@ fieldset.form-field > .form-hint {
   }
 
   .vitrine-hero-2026 {
+    width: min(100% - 24px, 1180px);
     grid-template-columns: minmax(0, 1fr);
     gap: var(--space-2xl);
     padding: var(--space-2xl) var(--space-xl);

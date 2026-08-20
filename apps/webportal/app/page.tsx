@@ -161,48 +161,43 @@ export default async function HomePage() {
       <JsonLd data={localBusinessJsonLd(baseUrl)} />
       <JsonLd data={webSiteJsonLd(baseUrl)} />
 
-      <section className="vitrine-hero vitrine-hero-2026">
-        <div className="vitrine-hero-copy">
-          <p className="eyebrow">Zachary IT — Guichen</p>
-          <p className="vitrine-hero-baseline">
-            Votre informatique. Gérée, sécurisée, disponible.
-          </p>
-          <h1>
-            Un sinistre peut détruire votre matériel. Il ne devrait pas détruire
-            vos données.
-          </h1>
-          <p className="vitrine-hero-lead">
-            Zachary IT met en place des solutions de sauvegarde et de stockage
-            distant pour les particuliers, associations et petites entreprises.
-            Vos fichiers importants sont conservés séparément de votre ordinateur,
-            de votre serveur ou de vos locaux. En cas de panne, de vol, d&apos;incendie
-            ou de rançongiciel, vous disposez ainsi d&apos;une copie à partir de
-            laquelle repartir.
-          </p>
-          <p className="vitrine-hero-note">
-            Basé à Guichen, j&apos;échange directement avec chaque client et
-            j&apos;explique ce qui est installé, ce qui est sauvegardé et comment les
-            données peuvent être récupérées.
-          </p>
-          <div className="vitrine-hero-actions">
-            <Link className="button" href="/offres">
-              Découvrir les offres
-            </Link>
-            <Link className="button button-secondary" href="/contact">
-              Expliquer mon besoin
-            </Link>
+      <section className="vitrine-hero-band">
+        <div className="vitrine-hero vitrine-hero-2026">
+          <div className="vitrine-hero-copy">
+            <p className="eyebrow">Zachary IT — Guichen</p>
+            <p className="vitrine-hero-baseline">
+              Votre informatique. Gérée, sécurisée, disponible.
+            </p>
+            <h1>Une informatique fiable, sans avoir à tout gérer vous-même.</h1>
+            <p className="vitrine-hero-lead">
+              Infrastructure, sauvegarde, stockage, accès à distance, bureau
+              Windows à distance et support IT pour les particuliers,
+              associations, indépendants et petites entreprises.
+            </p>
+            <p className="vitrine-hero-note">
+              Basé à Guichen, j&apos;échange directement avec chaque client et
+              j&apos;explique ce qui est installé, protégé et accessible au quotidien.
+            </p>
+            <div className="vitrine-hero-actions">
+              <Link className="button" href="/offres">
+                Découvrir les offres
+              </Link>
+              <Link className="button button-secondary" href="/contact">
+                Expliquer mon besoin
+              </Link>
+            </div>
           </div>
-        </div>
-        <div aria-hidden="true" className="vitrine-hero-brand-panel">
-          <BrandLogo className="vitrine-hero-logo" priority variant="dark" />
-          <div className="vitrine-network-motif" />
+          <div aria-hidden="true" className="vitrine-hero-brand-panel">
+            <BrandLogo className="vitrine-hero-logo" priority variant="dark" />
+            <div className="vitrine-network-motif" />
+          </div>
         </div>
       </section>
 
       <section className="vitrine-method">
         <header className="vitrine-section-header">
           <p className="eyebrow">Comment ça marche</p>
-          <h2>Trois étapes, de la sélection des fichiers à la récupération.</h2>
+          <h2>Trois étapes pour définir et mettre en place votre solution.</h2>
         </header>
         <ol className="vitrine-method-grid">
           {METHOD_STEPS.map((step) => (
@@ -218,7 +213,7 @@ export default async function HomePage() {
       <section className="vitrine-services" id="services">
         <header className="vitrine-section-header">
           <p className="eyebrow">Services</p>
-          <h2>Sauvegarder, stocker à distance et reprendre après un incident.</h2>
+          <h2>Infrastructure, sauvegarde, accès à distance et accompagnement.</h2>
           <p className="vitrine-section-lead">
             Les prestations se combinent selon votre besoin. Tarifs indicatifs
             dans le <Link href="/offres">catalogue d&apos;offres</Link> ; exemples
