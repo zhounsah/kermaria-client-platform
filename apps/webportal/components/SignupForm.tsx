@@ -150,10 +150,10 @@ export function SignupForm({
       setState({
         status: "success",
         message: initialBillingV2Selection
-          ? "Demande envoyee. Verifiez votre boite mail, activez votre compte puis connectez-vous : votre formule et ses options seront restaurees avant le paiement."
+          ? "Demande envoyÉe. VÉrifiez votre boîte mail, activez votre compte puis connectez-vous : votre formule et ses options seront restaurÉes avant le paiement."
           : initialPackSelection
-            ? "Demande envoyee. Verifiez votre boite mail pour confirmer votre adresse, puis attendez notre validation avant de definir le mot de passe et de reprendre le pack depuis votre espace client."
-            : "Demande envoyee. Verifiez votre boite mail pour confirmer votre adresse, puis attendez notre validation avant de definir votre mot de passe.",
+            ? "Demande envoyÉe. VÉrifiez votre boîte mail pour confirmer votre adresse, puis attendez notre validation avant de dÉfinir le mot de passe et de reprendre le pack depuis votre espace client."
+            : "Demande envoyÉe. VÉrifiez votre boîte mail pour confirmer votre adresse, puis attendez notre validation avant de dÉfinir votre mot de passe.",
       });
     } finally {
       isSubmittingRef.current = false;
@@ -459,21 +459,21 @@ export function SignupForm({
 
         {initialCatalogConfiguration ? (
           <section
-            aria-label="Configuration demandee"
+            aria-label="Configuration demandÉe"
             className="catalog-configuration-summary"
           >
-            <h2>Configuration demandee</h2>
+            <h2>Configuration demandÉe</h2>
             <dl>
               <div>
                 <dt>Utilisateurs</dt>
-                <dd>{initialCatalogConfiguration.users ?? "A preciser"}</dd>
+                <dd>{initialCatalogConfiguration.users ?? "À prÉciser"}</dd>
               </div>
               <div>
                 <dt>Stockage</dt>
                 <dd>
                   {initialCatalogConfiguration.storageGb
                     ? `${initialCatalogConfiguration.storageGb} Go`
-                    : "A preciser"}
+                    : "À prÉciser"}
                 </dd>
               </div>
               <div>
@@ -582,7 +582,7 @@ function formatBooleanNeed(value: boolean | null) {
   if (value === false) {
     return "Non";
   }
-  return "A preciser";
+  return "À prÉciser";
 }
 
 function formatNullableBooleanValue(value: boolean | null) {

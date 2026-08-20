@@ -7,6 +7,7 @@ import { readBillingV2SelectionSearchParams } from "@/lib/billing-v2-selection";
 import { resolveCatalogConfiguration } from "@/lib/catalog-configuration-server";
 import {
   getPublicCommercialCatalog,
+  getBillingV2FormulesCatalog,
   quoteBillingV2Formule,
   getPublicPackCatalogContent,
 } from "@/lib/internal-api";
@@ -52,6 +53,14 @@ export default async function SignupPage({
         billingV2Selection,
         resolveCorrelationId(null),
       ).catch(() => null)
+    : null;
+  const billingV2CatalogResult = billingV2Selection
+    ? await getBillingV2FormulesCatalog().catch(() => null)
+    : null;
+  const billingV2PresetName = billingV2Selection
+    ? billingV2CatalogResult?.data.presets.find(
+        (preset) => preset.code === billingV2Selection.presetCode,
+      )?.name ?? null
     : null;
   const catalogConfiguration =
     billingV2Requested ? null : configurationFromSearchParams(rawSearchParams);
@@ -104,7 +113,7 @@ export default async function SignupPage({
         <h1>Créer un compte client</h1>
         <p className="signup-lead">
           Renseignez vos informations pour demander l&apos;ouverture de votre accès
-          client. Le parcours reste simple et assume : confirmation de votre
+          client. Le parcours reste simple et assumÉ : confirmation de votre
           adresse e-mail, validation de votre demande par notre équipe, puis
           définition du mot de passe avant la finalisation du pack choisi.
         </p>
@@ -112,9 +121,9 @@ export default async function SignupPage({
 
       {billingV2Selection && billingV2Quote ? (
         <div className={styles.selectionStack}>
-          <section className={styles.stepsCard} aria-label="Formule Billing V2 selectionnee">
-            <p className="eyebrow">Formule selectionnee</p>
-            <h2>{billingV2Quote.presetCode}</h2>
+          <section className={styles.stepsCard} aria-label="Formule Billing V2 sélectionnée">
+            <p className="eyebrow">Formule sélectionnée</p>
+            <h2>{billingV2PresetName ?? "Votre formule"}</h2>
             <p>
               <strong>{formatCurrencyFromCents(billingV2Quote.monthlyAfterDiscountCents)} / mois</strong>
               {" - "}{billingV2Quote.commitmentMonths} mois,
@@ -129,8 +138,8 @@ export default async function SignupPage({
               ))}
             </ul>
             <p>
-              Cette configuration est attachee a votre inscription. Aucun paiement
-              n est effectue ici : apres activation puis connexion, vous la retrouverez
+              Cette configuration est attachée à votre inscription. Aucun paiement
+              n&apos;est effectué ici : après activation puis connexion, vous la retrouverez
               telle quelle avant le passage chez Stripe.
             </p>
           </section>
@@ -139,8 +148,8 @@ export default async function SignupPage({
 
       {billingV2Requested && (!billingV2Selection || !billingV2Quote) ? (
         <section className={styles.stepsCard} aria-label="Configuration Billing V2 invalide">
-          <h2>Configuration a reprendre</h2>
-          <p>La formule transmise ne peut pas etre revalidee. Revenez au configurateur avant de creer le compte.</p>
+          <h2>Configuration à reprendre</h2>
+          <p>La formule transmise ne peut pas être revalidée. Revenez au configurateur avant de créer le compte.</p>
           <Link className="button button-secondary" href="/formules">Reprendre ma formule</Link>
         </section>
       ) : null}
@@ -175,11 +184,11 @@ export default async function SignupPage({
 
       {catalogConfiguration && configurationResult && !configurationResult.ok ? (
         <section className={styles.stepsCard} aria-label="Configuration indisponible">
-          <h2>Configuration a verifier</h2>
+          <h2>Configuration à vérifier</h2>
           <p>
-            La configuration transmise n&apos;a pas pu etre recalculée pour
+            La configuration transmise n&apos;a pas pu être recalculée pour
             l&apos;instant. Revenez au configurateur pour obtenir une estimation
-            a jour avant de poursuivre.
+            à jour avant de poursuivre.
           </p>
           <Link className="button button-secondary" href="/configurer">
             Reprendre la configuration
