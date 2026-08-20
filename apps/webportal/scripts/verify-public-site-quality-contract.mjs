@@ -83,7 +83,8 @@ assert.doesNotMatch(offresPage, /priceAmountCents|setupFeeAmountCents/);
 assert.match(packSheetPage, /Détails opérationnels/);
 assert.doesNotMatch(packSheetPage, /Contenu éditable|back-office|administrable en Markdown/);
 
-assert.match(diagnosticWizard, /<option value="128">Plus de 60 Go<\/option>/);
+assert.match(diagnosticWizard, /<option value="256">/);
+assert.match(diagnosticWizard, /<option value="above_public_max">Plus de 256 Go<\/option>/);
 assert.match(diagnosticWizard, /storage_requires_quote/);
 assert.match(diagnosticWizard, /aria-live="polite"/);
 

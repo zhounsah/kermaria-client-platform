@@ -2,12 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { PublicDiagnosticWizard } from "@/components/PublicDiagnosticWizard";
-import {
-  getPublicCommercialCatalog,
-  getPublicPackCatalogContent,
-} from "@/lib/internal-api";
+import { getBillingV2FormulesCatalog } from "@/lib/internal-api";
 import { buildPublicMetadata } from "@/lib/public-metadata";
-import { resolvePackCatalog } from "@/lib/public-packs";
 
 export const metadata: Metadata = buildPublicMetadata({
   title: "Diagnostic sauvegarde et accès distant",
@@ -34,16 +30,12 @@ const BENEFITS = [
 ];
 
 export default async function DiagnosticPage() {
-  const [{ data: offers }, { data: content }] = await Promise.all([
-    getPublicCommercialCatalog(),
-    getPublicPackCatalogContent(),
-  ]);
-  const packs = resolvePackCatalog(offers, content);
+  const { data: catalog } = await getBillingV2FormulesCatalog();
 
   return (
     <div className="diagnostic-page">
-      <Link className="back-link" href="/offres">
-        <span aria-hidden="true">{"<-"}</span> Retour aux offres
+      <Link className="back-link" href="/formules">
+        <span aria-hidden="true">{"<-"}</span> Retour aux formules
       </Link>
 
       <header className="diagnostic-header">
@@ -57,7 +49,7 @@ export default async function DiagnosticPage() {
             leur accès distant.
           </p>
         </div>
-        <div className="diagnostic-benefits" aria-label="Benefices du diagnostic">
+        <div className="diagnostic-benefits" aria-label="Bénéfices du diagnostic">
           {BENEFITS.map((benefit) => (
             <article key={benefit.title}>
               <span aria-hidden="true">✓</span>
@@ -68,13 +60,13 @@ export default async function DiagnosticPage() {
         </div>
       </header>
 
-      {packs.length === 0 ? (
+      {catalog.presets.length === 0 ? (
         <section className="offres-empty">
-          Les packs ne sont pas encore disponibles en ligne. Contactez-nous pour
+          Les formules ne sont pas encore disponibles en ligne. Contactez-nous pour
           obtenir une proposition adaptée.
         </section>
       ) : (
-        <PublicDiagnosticWizard packs={packs} />
+        <PublicDiagnosticWizard catalog={catalog} />
       )}
     </div>
   );

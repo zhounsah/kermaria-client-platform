@@ -1,8 +1,15 @@
 import type {
+  BillingV2PublicCatalog,
+  BillingV2PublicSelection,
   DiagnosticAnswers,
   DiagnosticRecommendation,
-  ResolvedPublicPackManifest,
 } from "@kermaria/shared";
+
+import {
+  SERVICE_CODES,
+  findService,
+  resolveTierLabel,
+} from "@/lib/billing-v2-formules";
 
 export type BeforeAfterItem = {
   before: string;
@@ -17,35 +24,33 @@ export type BeforeAfterSummary = {
 export function buildDiagnosticBeforeAfterSummary({
   answers,
   recommendation,
-  pack,
+  catalog,
 }: {
   answers: DiagnosticAnswers;
   recommendation: DiagnosticRecommendation;
-  pack: ResolvedPublicPackManifest | null;
+  catalog: BillingV2PublicCatalog;
 }): BeforeAfterSummary {
   const items: BeforeAfterItem[] = [];
   const requiresQuote = recommendation.status === "requires_quote";
+  const selection = recommendation.selection;
 
   addItem(items, {
     before: backupBefore(answers),
     after: requiresQuote
       ? "La fréquence sera validée avant de proposer la bonne solution"
-      : backupAfter(pack),
+      : backupAfter(selection),
   });
 
   addItem(items, {
     before: restoreBefore(answers),
     after: requiresQuote
       ? "Les modalités de restauration seront précisées avec vous"
-      : pack?.capabilities.supportsBackup
+      : selection?.backupPersonal || selection?.backupShared
         ? "Possibilité de restaurer vos fichiers selon les conditions du service"
         : "Le besoin de restauration sera clarifié avant activation",
   });
 
-  if (
-    answers.needsWindowsDesktop === true
-    || pack?.capabilities.supportsWindowsDesktop
-  ) {
+  if (answers.needsWindowsDesktop === true || selection?.remoteDesktop) {
     addItem(items, {
       before: "Bureau Windows distant non encore en place",
       after: requiresQuote
@@ -55,13 +60,13 @@ export function buildDiagnosticBeforeAfterSummary({
   } else if (
     answers.needsRemoteFiles === true
     || answers.needsVpn === true
-    || pack?.capabilities.supportsRemoteFiles
+    || selection?.vpnTierCode
   ) {
     addItem(items, {
       before: remoteAccessBefore(answers),
       after: requiresQuote
         ? "Le mode d'accès à distance sera confirmé avec vous"
-        : remoteAccessAfter(pack),
+        : remoteAccessAfter(selection),
     });
   }
 
@@ -69,14 +74,14 @@ export function buildDiagnosticBeforeAfterSummary({
     before: continuityBefore(answers),
     after: requiresQuote
       ? "Un cadrage permettra de définir la bonne configuration"
-      : continuityAfter(answers, pack),
+      : continuityAfter(answers, selection),
   });
 
   addItem(items, {
     before: storageBefore(answers),
     after: requiresQuote
       ? "Le volume et les usages seront validés avant activation"
-      : storageAfter(answers, pack),
+      : storageAfter(catalog, selection),
   });
 
   return {
@@ -104,13 +109,18 @@ function backupBefore(answers: DiagnosticAnswers) {
   }
 }
 
-function backupAfter(pack: ResolvedPublicPackManifest | null) {
-  if (!pack?.capabilities.supportsBackup) {
+function backupAfter(selection: BillingV2PublicSelection | null) {
+  if (!selection?.backupPersonal && !selection?.backupShared) {
     return "Besoin de sauvegarde à préciser";
   }
 
-  return findPackText(pack, /sauvegardes?\s+quotidiennes?/i)
-    ?? "Sauvegarde incluse dans l'offre recommandée";
+  if (selection.backupPersonal && selection.backupShared) {
+    return "Sauvegarde du stockage personnel et de l'espace partagé incluse";
+  }
+
+  return selection.backupShared
+    ? "Sauvegarde de l'espace partagé incluse"
+    : "Sauvegarde du stockage personnel incluse";
 }
 
 function restoreBefore(answers: DiagnosticAnswers) {
@@ -140,16 +150,12 @@ function remoteAccessBefore(answers: DiagnosticAnswers) {
   return "Accès distant à confirmer";
 }
 
-function remoteAccessAfter(pack: ResolvedPublicPackManifest | null) {
-  if (pack?.capabilities.supportsVpn) {
-    return "Accès sécurisé inclus selon l'offre recommandée";
+function remoteAccessAfter(selection: BillingV2PublicSelection | null) {
+  if (selection?.vpnTierCode) {
+    return "Accès sécurisé à distance inclus dans la configuration";
   }
 
-  if (pack?.capabilities.supportsRemoteFiles) {
-    return "Accès distant à vos fichiers";
-  }
-
-  return "Solution adaptée au besoin retenu";
+  return "Accès à vos fichiers prévu par la solution de stockage retenue";
 }
 
 function continuityBefore(answers: DiagnosticAnswers) {
@@ -170,9 +176,9 @@ function continuityBefore(answers: DiagnosticAnswers) {
 
 function continuityAfter(
   answers: DiagnosticAnswers,
-  pack: ResolvedPublicPackManifest | null,
+  selection: BillingV2PublicSelection | null,
 ) {
-  if (pack?.capabilities.supportsWindowsDesktop) {
+  if (selection?.remoteDesktop) {
     return "Accès plus simple à un environnement de travail distant";
   }
 
@@ -188,27 +194,27 @@ function storageBefore(answers: DiagnosticAnswers) {
     return "Volume à protéger à confirmer";
   }
 
-  return `Volume à protéger estimé à ${answers.estimatedStorageGb} Go`;
+  if (answers.estimatedStorageGb === "above_public_max") {
+    return "Volume à protéger supérieur aux paliers disponibles en ligne";
+  }
+
+  return `Volume à protéger estiné à ${answers.estimatedStorageGb} Go`;
 }
 
 function storageAfter(
-  answers: DiagnosticAnswers,
-  pack: ResolvedPublicPackManifest | null,
+  catalog: BillingV2PublicCatalog,
+  selection: BillingV2PublicSelection | null,
 ) {
-  if (!pack || answers.estimatedStorageGb === null) {
+  if (!selection) {
     return "Volume pris en compte dans la recommandation";
   }
 
-  if (answers.estimatedStorageGb <= pack.capabilities.includedStorageGb) {
-    return "Volume compatible avec votre besoin estimé";
-  }
+  const label = resolveTierLabel(
+    findService(catalog, SERVICE_CODES.storagePersonal),
+    selection.storagePersonalTierCode,
+  );
 
-  return "Volume à confirmer avec l'offre la plus adaptée";
-}
-
-function findPackText(
-  pack: ResolvedPublicPackManifest,
-  pattern: RegExp,
-): string | null {
-  return pack.included.find((item) => pattern.test(item)) ?? null;
+  return label
+    ? `Palier de stockage personnel retenu : ${label}`
+    : "Volume pris en compte dans la recommandation";
 }

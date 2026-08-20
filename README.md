@@ -53,6 +53,8 @@ Navigation par besoin :
   reference technique dans [`docs/billing-v2/`](docs/billing-v2/README.md) et
   checklist de mise en service dans
   [`docs/billing-v2/LANCEMENT-CONTROLE.md`](docs/billing-v2/LANCEMENT-CONTROLE.md)
+- diagnostic public migre sur Billing V2 (v1.4.0.1) : recommandations en `BillingV2PublicSelection`, devis serveur via `/api/formules/devis` et sortie vers `/formules/{preset}` :
+  [`docs/v1.4/V1.4.0.1_PUBLIC_DIAGNOSTIC.md`](docs/v1.4/V1.4.0.1_PUBLIC_DIAGNOSTIC.md)
 - deploiement des serveurs applicatifs :
   [`docs/v1.1/deploy/SRV-12_LOT3_DEPLOY.md`](docs/v1.1/deploy/SRV-12_LOT3_DEPLOY.md)
   (webportal, **Ubuntu/systemd**) et

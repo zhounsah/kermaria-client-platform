@@ -64,6 +64,17 @@ export function normalizePaymentMode(value, commitmentMonths) {
   );
 }
 
+const billingV2FormulesStub = String.raw`
+export const SERVICE_CODES={storagePersonal:"STORAGE-PERSONAL",storageShared:"STORAGE-SHARED",backupPersonal:"BACKUP-PERSONAL",backupShared:"BACKUP-SHARED",vpn:"VPN-ACCESS",remoteDesktop:"RDS-ACCESS",additionalUser:"USER-ADDITIONAL",supportPlus:"SUPPORT-PLUS"};
+export function selectableTiers(c,s){return c.services.find(x=>x.code===s)?.tiers.filter(x=>x.publicSelectable)??[]}
+export function buildBaselineSelection(p,c){const i=s=>p.items.find(x=>x.serviceCode===s);return{presetCode:p.code,commitmentCode:c,paymentMode:"monthly",storagePersonalTierCode:i(SERVICE_CODES.storagePersonal)?.tierCode??"32",backupPersonal:i(SERVICE_CODES.backupPersonal)!==undefined,storageSharedTierCode:i(SERVICE_CODES.storageShared)?.tierCode??null,backupShared:i(SERVICE_CODES.backupShared)!==undefined,vpnTierCode:i(SERVICE_CODES.vpn)?.tierCode??null,remoteDesktop:i(SERVICE_CODES.remoteDesktop)!==undefined,additionalUsers:i(SERVICE_CODES.additionalUser)?.quantity??0,supportPlus:i(SERVICE_CODES.supportPlus)!==undefined}}
+export function findService(c,s){return c.services.find(x=>x.code===s)}
+export function resolveTierLabel(s,c){return !s||!c?null:(s.tiers.find(x=>x.code===c)?.label??c)}
+`;
+const billingV2FormulesStubUrl=`data:text/javascript;base64,${Buffer.from(billingV2FormulesStub).toString("base64")}`;
+const billingV2SelectionStubUrl=`data:text/javascript;base64,${Buffer.from("export const MAX_ADDITIONAL_USERS=10;").toString("base64")}`;
+async function importBillingV2Runtime(source,label){return importPureTypeScript(source.replaceAll('"@/lib/billing-v2-formules"',JSON.stringify(billingV2FormulesStubUrl)).replaceAll('"@/lib/billing-v2-selection"',JSON.stringify(billingV2SelectionStubUrl)),label)}
+
 const sharedTypes = await read("../../packages/shared/src/index.ts");
 const diagnosticEngine = await read("lib/public-diagnostic.ts");
 const diagnosticBeforeAfter = await read("lib/diagnostic-before-after.ts");
@@ -91,153 +102,215 @@ const signupContracts = await read(
   "../../apps/api-internal/Contracts/SignupContracts.cs",
 );
 
-const diagnosticRuntime = await importPureTypeScript(
+const diagnosticRuntime = await importBillingV2Runtime(
   diagnosticEngine,
   "public-diagnostic.ts",
 );
-const diagnosticBeforeAfterRuntime = await importPureTypeScript(
+const diagnosticBeforeAfterRuntime = await importBillingV2Runtime(
   diagnosticBeforeAfter,
   "diagnostic-before-after.ts",
 );
 const configuratorRuntime = await importConfiguratorRuntime(configuratorEngine);
 
-const catalog = [
-  {
-    key: "pack-dossier-securise",
-    capabilities: {
-      includedUsers: 1,
-      includedStorageGb: 32,
-      supportsRemoteFiles: true,
-      supportsVpn: false,
-      supportsWindowsDesktop: false,
-      supportsBackup: true,
+const catalog = {
+  source: "test",
+  currency: "EUR",
+  commitments: [{
+    code: "FLEX",
+    name: "Sans engagement",
+    months: 1,
+    paymentOptions: [{ paymentMode: "monthly", discountBasisPoints: 0 }],
+  }],
+  checkoutRoutes: [],
+  services: [
+    {
+      code: "STORAGE-PERSONAL",
+      name: "Stockage personnel",
+      category: "Stockage",
+      scopeType: "user",
+      flatMonthlyAmountCents: null,
+      discountEligible: true,
+      tiers: [16, 32, 64, 128, 256].map((value) => ({
+        code: String(value),
+        label: `${value} Go`,
+        description: null,
+        numericValue: value,
+        monthlyAmountCents: 0,
+        publicSelectable: true,
+      })),
     },
-  },
-  {
-    key: "pack-acces-distance",
-    capabilities: {
-      includedUsers: 1,
-      includedStorageGb: 32,
-      supportsRemoteFiles: true,
-      supportsVpn: true,
-      supportsWindowsDesktop: false,
-      supportsBackup: true,
+    {
+      code: "VPN-ACCESS",
+      name: "Acces VPN",
+      category: "Acces",
+      scopeType: "user",
+      flatMonthlyAmountCents: null,
+      discountEligible: true,
+      tiers: [
+        { code: "ESSENTIAL", label: "VPN Essentiel", numericValue: 100 },
+        { code: "PLUS", label: "VPN Plus", numericValue: 250 },
+      ].map((tier) => ({
+        ...tier,
+        description: null,
+        monthlyAmountCents: 0,
+        publicSelectable: true,
+      })),
     },
-  },
-  {
-    key: "pack-bureau-windows-distance",
-    capabilities: {
-      includedUsers: 1,
-      includedStorageGb: 32,
-      supportsRemoteFiles: true,
-      supportsVpn: true,
-      supportsWindowsDesktop: true,
-      supportsBackup: true,
+  ],
+  presets: [
+    {
+      code: "pack-dossier-securise",
+      name: "Dossier securise",
+      description: "Dossier",
+      displayOrder: 10,
+      baselineMonthlyAmountCents: 0,
+      items: [
+        { serviceCode: "STORAGE-PERSONAL", tierCode: "32", quantity: 1 },
+        { serviceCode: "BACKUP-PERSONAL", tierCode: "32", quantity: 1 },
+      ],
     },
-  },
-  {
-    key: "pack-pro-association",
-    capabilities: {
-      includedUsers: 2,
-      includedStorageGb: 64,
-      supportsRemoteFiles: true,
-      supportsVpn: true,
-      supportsWindowsDesktop: false,
-      supportsBackup: true,
+    {
+      code: "pack-acces-distance",
+      name: "Acces securise",
+      description: "Acces",
+      displayOrder: 20,
+      baselineMonthlyAmountCents: 0,
+      items: [
+        { serviceCode: "STORAGE-PERSONAL", tierCode: "32", quantity: 1 },
+        { serviceCode: "BACKUP-PERSONAL", tierCode: "32", quantity: 1 },
+        { serviceCode: "VPN-ACCESS", tierCode: "ESSENTIAL", quantity: 1 },
+      ],
     },
-  },
-];
+    {
+      code: "pack-bureau-windows-distance",
+      name: "Bureau a distance",
+      description: "Windows",
+      displayOrder: 30,
+      baselineMonthlyAmountCents: 0,
+      items: [
+        { serviceCode: "STORAGE-PERSONAL", tierCode: "64", quantity: 1 },
+        { serviceCode: "BACKUP-PERSONAL", tierCode: "64", quantity: 1 },
+        { serviceCode: "VPN-ACCESS", tierCode: "PLUS", quantity: 1 },
+        { serviceCode: "RDS-ACCESS", tierCode: null, quantity: 1 },
+      ],
+    },
+    {
+      code: "pack-pro-association",
+      name: "Pro / Association",
+      description: "Pro",
+      displayOrder: 40,
+      baselineMonthlyAmountCents: 0,
+      items: [
+        { serviceCode: "STORAGE-PERSONAL", tierCode: "64", quantity: 1 },
+        { serviceCode: "BACKUP-PERSONAL", tierCode: "64", quantity: 1 },
+        { serviceCode: "VPN-ACCESS", tierCode: "PLUS", quantity: 1 },
+        { serviceCode: "STORAGE-SHARED", tierCode: "128", quantity: 1 },
+        { serviceCode: "BACKUP-SHARED", tierCode: "128", quantity: 1 },
+        { serviceCode: "USER-ADDITIONAL", tierCode: null, quantity: 1 },
+        { serviceCode: "SUPPORT-PLUS", tierCode: null, quantity: 1 },
+      ],
+    },
+  ],
+};
 
 function baseAnswers(overrides = {}) {
   return {
     customerType: "individual",
     users: 1,
     dataKinds: ["personal_documents"],
-    estimatedStorageGb: 8,
+    estimatedStorageGb: 16,
     needsRemoteFiles: true,
     needsVpn: false,
     needsWindowsDesktop: false,
     recoveryImportance: "normal",
     backupFrequency: "daily",
-    restoreTestRecency: "less_than_6_months",
+    restoreTestRecency: "less_than_3_months",
     continuityPlan: "yes",
     ...overrides,
   };
 }
 
-function recommendation(overrides) {
+function recommendation(overrides = {}) {
   return diagnosticRuntime.recommendOffer(baseAnswers(overrides), catalog);
 }
 
 assert.equal(
-  recommendation({ needsRemoteFiles: false }).offerId,
+  recommendation({ needsRemoteFiles: false }).selection?.presetCode,
   "pack-dossier-securise",
-  "Sauvegarde simple particulier -> Pack Dossier Securise.",
+  "Sauvegarde simple -> preset Dossier securise V2.",
 );
 assert.equal(
-  recommendation({ needsVpn: true }).offerId,
+  recommendation({ needsVpn: true }).selection?.presetCode,
   "pack-acces-distance",
-  "Besoin VPN -> Pack Acces a Distance.",
+  "Besoin VPN -> preset Acces securise V2.",
 );
 assert.equal(
-  recommendation({ needsWindowsDesktop: true }).offerId,
+  recommendation({ needsWindowsDesktop: true }).selection?.presetCode,
   "pack-bureau-windows-distance",
-  "Bureau Windows distant -> Pack Bureau Windows a Distance.",
+  "Bureau Windows -> preset Bureau a distance V2.",
 );
 assert.equal(
-  recommendation({ needsWindowsDesktop: true }).configuration?.needsVpn,
+  recommendation({ needsWindowsDesktop: true }).selection?.remoteDesktop,
   true,
-  "Le diagnostic doit pre-remplir le VPN quand le pack Bureau Windows l'inclut.",
+  "Le diagnostic doit produire le composant RDS V2.",
 );
 assert.equal(
-  recommendation({
-    customerType: "association",
-    users: 2,
-    dataKinds: ["association_data"],
-  }).offerId,
+  recommendation({ customerType: "association", users: 2 }).selection?.presetCode,
   "pack-pro-association",
-  "Association avec plusieurs utilisateurs -> Pack Pro / Association.",
+  "Association -> preset Pro / Association V2.",
 );
 assert.equal(
-  recommendation({ estimatedStorageGb: 64 }).offerId,
-  "pack-pro-association",
-  "Stockage au-dessus du quota Dossier -> pack standard plus adapte.",
+  recommendation({ estimatedStorageGb: 64 }).selection?.storagePersonalTierCode,
+  "64",
+  "64 Go reste souscriptible dans la selection V2.",
 );
+assert.equal(recommendation({ estimatedStorageGb: 128 }).status, "standard");
+assert.equal(
+  recommendation({ estimatedStorageGb: 128 }).selection?.storagePersonalTierCode,
+  "128",
+);
+assert.equal(recommendation({ estimatedStorageGb: 256 }).status, "standard");
+assert.equal(
+  recommendation({ estimatedStorageGb: 256 }).selection?.storagePersonalTierCode,
+  "256",
+);
+assert.equal(
+  recommendation({ estimatedStorageGb: "above_public_max" }).status,
+  "requires_quote",
+);
+assert.ok(
+  recommendation({ estimatedStorageGb: "above_public_max" }).warnings.includes(
+    "storage_requires_quote",
+  ),
+);
+assert.equal(recommendation({ users: 5 }).selection?.additionalUsers, 4);
+assert.equal(recommendation({ users: 11 }).selection?.additionalUsers, 10);
+assert.equal(recommendation({ users: 12 }).status, "requires_quote");
+assert.ok(recommendation({ users: 12 }).warnings.includes("users_require_quote"));
+assert.equal(
+  recommendation({ needsWindowsDesktop: true, estimatedStorageGb: 128 }).status,
+  "standard",
+  "RDS + 128 Go est representable par Billing V2.",
+);
+const proWindows = recommendation({
+  customerType: "business",
+  users: 5,
+  needsWindowsDesktop: true,
+});
+assert.equal(proWindows.selection?.presetCode, "pack-pro-association");
+assert.equal(proWindows.selection?.remoteDesktop, true);
+assert.equal(proWindows.selection?.additionalUsers, 4);
 assert.deepEqual(
   recommendation({ estimatedStorageGb: null }).warnings,
   ["storage_unknown"],
-  "Je ne sais pas sur le stockage doit avertir sans bloquer quand la frequence est connue.",
+  "Stockage inconnu avertit sans bloquer.",
 );
 assert.ok(
   recommendation({ backupFrequency: "unknown" }).warnings.includes(
     "backup_frequency_unknown",
   ),
-  "Je ne sais pas sur la frequence de sauvegarde doit ajouter un point a verifier.",
 );
-const windowsStorageQuote = recommendation({
-  needsWindowsDesktop: true,
-  estimatedStorageGb: 64,
-});
-assert.equal(windowsStorageQuote.status, "requires_quote");
-assert.ok(
-  windowsStorageQuote.warnings.includes("windows_storage_requires_quote"),
-  "Bureau Windows 1 utilisateur avec volume superieur au standard doit cadrer le volume.",
-);
-assert.equal(
-  windowsStorageQuote.warnings.includes("windows_team_requires_quote"),
-  false,
-  "Bureau Windows 1 utilisateur ne doit pas afficher un motif multi-utilisateurs.",
-);
-assert.equal(
-  recommendation({ estimatedStorageGb: 128 }).status,
-  "requires_quote",
-  "Stockage hors standard -> cadrage.",
-);
-assert.equal(
-  recommendation({ customerType: "other" }).status,
-  "requires_quote",
-  "Structure hors standard -> cadrage.",
-);
+assert.equal(recommendation({ customerType: "other" }).status, "requires_quote");
 
 const beforeAfterUnknownBackup =
   diagnosticBeforeAfterRuntime.buildDiagnosticBeforeAfterSummary({
@@ -253,64 +326,44 @@ const beforeAfterUnknownBackup =
       continuityPlan: "unknown",
       estimatedStorageGb: null,
     }),
-    pack: {
-      ...catalog[0],
-      included: ["Sauvegardes quotidiennes"],
-    },
+    catalog,
   });
 assert.ok(
-  beforeAfterUnknownBackup.items.some(
-    (item) =>
-      item.before === "Fréquence de sauvegarde inconnue"
-      && item.after === "Sauvegardes quotidiennes",
+  beforeAfterUnknownBackup.items.some((item) =>
+    item.after.includes("stockage personnel")
   ),
-  "Le bloc Avant / Apres doit reprendre la frequence inconnue et la sauvegarde du catalogue.",
+  "Le bloc Avant / Apres doit exploiter la selection V2.",
 );
 assert.ok(
-  beforeAfterUnknownBackup.items.some(
-    (item) => item.before === "Volume à protéger à confirmer",
-  ),
-  "Le bloc Avant / Apres doit rester utile quand le volume est inconnu.",
+  beforeAfterUnknownBackup.items.some((item) => item.before.includes("Volume")),
+  "Le bloc Avant / Apres reste utile quand le volume est inconnu.",
 );
 
 const beforeAfterWindows =
   diagnosticBeforeAfterRuntime.buildDiagnosticBeforeAfterSummary({
-    answers: baseAnswers({
-      needsWindowsDesktop: true,
-      needsVpn: false,
-    }),
-    recommendation: recommendation({
-      needsWindowsDesktop: true,
-      needsVpn: false,
-    }),
-    pack: {
-      ...catalog[2],
-      included: ["VPN personnel inclus", "32 Go de stockage et sauvegardes"],
-    },
+    answers: baseAnswers({ needsWindowsDesktop: true, needsVpn: false }),
+    recommendation: recommendation({ needsWindowsDesktop: true, needsVpn: false }),
+    catalog,
   });
 assert.ok(
   beforeAfterWindows.items.some(
     (item) =>
-      item.before === "Bureau Windows distant non encore en place"
-      && item.after === "Bureau Windows accessible à distance",
+      item.before.includes("Bureau Windows")
+      && item.after.includes("Bureau Windows accessible"),
   ),
   "Le bloc Avant / Apres doit montrer le changement Bureau Windows.",
 );
 
+const storageQuote = recommendation({ estimatedStorageGb: "above_public_max" });
 const beforeAfterQuote =
   diagnosticBeforeAfterRuntime.buildDiagnosticBeforeAfterSummary({
-    answers: baseAnswers({
-      needsWindowsDesktop: true,
-      estimatedStorageGb: 64,
-    }),
-    recommendation: windowsStorageQuote,
-    pack: null,
+    answers: baseAnswers({ estimatedStorageGb: "above_public_max" }),
+    recommendation: storageQuote,
+    catalog,
   });
 assert.equal(beforeAfterQuote.title, "Avant cadrage");
 assert.ok(
-  beforeAfterQuote.items.some((item) =>
-    item.after.includes("validés avant activation"),
-  ),
+  beforeAfterQuote.items.some((item) => item.after.includes("valid")),
   "Le bloc Avant / Apres ne doit pas promettre une activation standard quand un cadrage est requis.",
 );
 
@@ -371,32 +424,51 @@ assert.doesNotMatch(
   /priceAmountCents|setupFeeAmountCents|monthlyPrice|billingPrice/,
   "packages/shared ne doit pas dupliquer les prix commerciaux des packs.",
 );
+assert.match(
+  sharedTypes,
+  /interface DiagnosticRecommendation[\s\S]*selection:\s*BillingV2PublicSelection \| null/,
+);
 
 assert.match(diagnosticEngine, /export function recommendOffer/);
-assert.doesNotMatch(diagnosticEngine, /"Pack Dossier|Pack Acces|Pack Bureau/);
+assert.match(diagnosticEngine, /BillingV2PublicSelection/);
+assert.match(diagnosticEngine, /selectableTiers/);
+assert.match(diagnosticEngine, /MAX_ADDITIONAL_USERS/);
+assert.doesNotMatch(diagnosticEngine, /ResolvedPublicPackManifest|CatalogConfigurationInput/);
+assert.doesNotMatch(
+  diagnosticEngine,
+  /AmountCents|monthlyAmountCents|setupFeeAmountCents|formatCurrencyFromCents/,
+  "Le moteur du diagnostic ne doit calculer ou lire aucun prix.",
+);
+
 assert.match(diagnosticWizard, /REASON_LABELS/);
 assert.match(diagnosticWizard, /WARNING_MESSAGES/);
 assert.match(diagnosticWizard, /buildDiagnosticBeforeAfterSummary/);
-assert.match(diagnosticWizard, /diagnostic-before-after/);
 assert.match(diagnosticWizard, /backup_frequency_unknown/);
-assert.match(diagnosticBeforeAfter, /export function buildDiagnosticBeforeAfterSummary/);
-assert.match(diagnosticBeforeAfter, /items\.slice\(0, 5\)/);
-assert.match(diagnosticBeforeAfter, /supportsVpn/);
-assert.match(diagnosticBeforeAfter, /supportsWindowsDesktop/);
-assert.match(diagnosticBeforeAfter, /findPackText/);
-assert.match(diagnosticWizard, /Volume à protéger/);
-assert.match(
-  diagnosticWizard,
-  /<option value="128">Plus de 60 Go<\/option>/,
-  "L'option Plus de 60 Go doit declencher le cadrage hors standard.",
-);
-assert.match(diagnosticWizard, /Souhaitez-vous disposer d'un bureau Windows accessible à distance/);
-assert.match(diagnosticWizard, /Élevée - j&apos;ai besoin de retrouver mes fichiers très rapidement/);
-assert.match(diagnosticWizard, /fichiers \?/);
-assert.match(diagnosticWizard, /configurationToQueryString/);
+assert.match(diagnosticWizard, /fetch\("\/api\/formules\/devis"/);
+assert.match(diagnosticWizard, /billingV2SelectionToSearchParams/);
+assert.match(diagnosticWizard, /`\/formules\/\$\{selection\.presetCode\}\?/);
+assert.match(diagnosticWizard, /params\.set\("source", "diagnostic"\)/);
+assert.doesNotMatch(diagnosticWizard, /configurationToQueryString|\/configurer\?/);
+assert.match(diagnosticWizard, /<option value="256">Jusqu&apos;à 256 Go<\/option>/);
+assert.match(diagnosticWizard, /<option value="above_public_max">Plus de 256 Go<\/option>/);
+assert.match(diagnosticWizard, /Array\.from\(\{ length: 11 \}/);
+assert.match(diagnosticWizard, /<option value="12">12 ou plus<\/option>/);
 assert.match(diagnosticWizard, /Personnaliser cette configuration/);
-assert.match(diagnosticWizard, /source=diagnostic/);
 assert.doesNotMatch(diagnosticWizard, /toIncVat|vatRate|0\.2|20\s*\/\s*100/);
+
+assert.match(diagnosticBeforeAfter, /BillingV2PublicSelection/);
+assert.match(diagnosticBeforeAfter, /items\.slice\(0, 5\)/);
+assert.doesNotMatch(
+  diagnosticBeforeAfter,
+  /ResolvedPublicPackManifest|supportsVpn|supportsWindowsDesktop|findPackText/,
+);
+
+assert.match(diagnosticPage, /getBillingV2FormulesCatalog/);
+assert.doesNotMatch(
+  diagnosticPage,
+  /getPublicCommercialCatalog|getPublicPackCatalogContent|resolvePackCatalog/,
+);
+assert.match(diagnosticPage, /<PublicDiagnosticWizard catalog=\{catalog\} \/>/);
 assert.match(diagnosticPage, /buildPublicMetadata\(/);
 assert.match(diagnosticPage, /path:\s*"\/diagnostic"/);
 assert.match(diagnosticPage, /Diagnostic sauvegarde et accès distant/);

@@ -4,23 +4,22 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type {
+  BillingV2PublicCatalog,
+  BillingV2PublicQuote,
+  BillingV2PublicSelection,
   DiagnosticAnswers,
   DiagnosticDataKind,
   DiagnosticRecommendationReasonCode,
   DiagnosticRecommendationWarningCode,
-  ResolvedPublicPackManifest,
 } from "@kermaria/shared";
 
-import {
-  formatCommercialAmountFromCents,
-  formatFiscalMention,
-} from "@/lib/fiscal-formatters";
 import { buildDiagnosticBeforeAfterSummary } from "@/lib/diagnostic-before-after";
-import { configurationToQueryString } from "@/lib/public-configurator";
+import { formatCurrencyFromCents } from "@/lib/formatters";
+import { billingV2SelectionToSearchParams } from "@/lib/billing-v2-selection";
 import { recommendOffer } from "@/lib/public-diagnostic";
 
 type PublicDiagnosticWizardProps = {
-  packs: ResolvedPublicPackManifest[];
+  catalog: BillingV2PublicCatalog;
 };
 
 const STEPS = ["Profil", "Données", "Accès", "Reprise"] as const;
@@ -42,7 +41,7 @@ const REASON_LABELS: Record<DiagnosticRecommendationReasonCode, string> = {
     "Vous avez besoin d'un bureau Windows accessible à distance.",
   team_or_structure: "Le besoin concerne plusieurs utilisateurs ou une structure.",
   association_context: "Le contexte association demande un cadre plus structuré.",
-  storage_within_pack: "Le volume estimé reste compatible avec le pack proposé.",
+  storage_within_pack: "Le volume estimé correspond à un palier disponible en ligne.",
   strong_recovery_need:
     "Vous avez indiqué avoir besoin de retrouver rapidement vos fichiers.",
 };
@@ -54,7 +53,7 @@ const WARNING_MESSAGES: Record<
   storage_unknown: {
     title: "Confirmer le volume à protéger",
     body:
-      "Vous ne connaissez pas encore le volume exact. L'estimation reste valable, mais il faudra le vérifier avant activation.",
+      "Vous ne connaissez pas encore le volume exact. La formule proposée reste ajustable avant la souscription.",
   },
   backup_frequency_unknown: {
     title: "Vérifier la fréquence de vos sauvegardes",
@@ -64,22 +63,12 @@ const WARNING_MESSAGES: Record<
   storage_requires_quote: {
     title: "Prévoir un cadrage stockage",
     body:
-      "Le volume indiqué dépasse les variantes standards proposées en ligne. Une vérification est nécessaire avant de chiffrer.",
+      "Le volume indiqué dépasse les paliers de stockage proposés en ligne. Une vérification est nécessaire avant de chiffrer.",
   },
   users_require_quote: {
     title: "Valider le nombre d'utilisateurs",
     body:
-      "Le nombre d'utilisateurs indiqué sort des packs standards. Un cadrage permet d'éviter une configuration sous-dimensionnée.",
-  },
-  windows_storage_requires_quote: {
-    title: "Cadrer le volume pour le bureau Windows",
-    body:
-      "Le volume indiqué dépasse la variante standard du bureau Windows à distance proposée en ligne.",
-  },
-  windows_team_requires_quote: {
-    title: "Cadrer le bureau Windows partagé",
-    body:
-      "Un bureau Windows distant pour plusieurs personnes demande une vérification technique avant proposition.",
+      "Le besoin dépasse 11 utilisateurs au total. Un cadrage permet de dimensionner correctement les comptes et les accès.",
   },
   other_structure_requires_review: {
     title: "Préciser votre contexte",
@@ -112,20 +101,22 @@ const INITIAL_ANSWERS: DiagnosticAnswers = {
   continuityPlan: "unknown",
 };
 
-export function PublicDiagnosticWizard({ packs }: PublicDiagnosticWizardProps) {
+export function PublicDiagnosticWizard({ catalog }: PublicDiagnosticWizardProps) {
   const [answers, setAnswers] = useState<DiagnosticAnswers>(INITIAL_ANSWERS);
   const [step, setStep] = useState(0);
   const [completed, setCompleted] = useState(false);
+  const [quote, setQuote] = useState<BillingV2PublicQuote | null>(null);
+  const [quotePending, setQuotePending] = useState(false);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
   const stepTitleRef = useRef<HTMLLegendElement | null>(null);
   const recommendation = useMemo(
-    () => recommendOffer(answers, packs),
-    [answers, packs],
+    () => recommendOffer(answers, catalog),
+    [answers, catalog],
   );
-  const recommendedPack =
-    recommendation.offerId
-      ? (packs.find((pack) => pack.key === recommendation.offerId) ?? null)
-      : null;
-  const defaultVariant = recommendedPack?.variantsByCommitment[1].monthly;
+  const selection = recommendation.selection;
+  const recommendedPreset = selection
+    ? (catalog.presets.find((preset) => preset.code === selection.presetCode) ?? null)
+    : null;
   const canContinue = step !== 1 || answers.dataKinds.length > 0;
 
   useEffect(() => {
@@ -142,65 +133,90 @@ export function PublicDiagnosticWizard({ packs }: PublicDiagnosticWizardProps) {
     return () => window.cancelAnimationFrame(frame);
   }, [completed, step]);
 
+  useEffect(() => {
+    if (!completed || !selection) {
+      return;
+    }
+
+    const controller = new AbortController();
+
+    fetch("/api/formules/devis", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(selection),
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(String(response.status));
+        }
+
+        return (await response.json()) as BillingV2PublicQuote;
+      })
+      .then((payload) => {
+        setQuote(payload);
+        setQuotePending(false);
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        setQuote(null);
+        setQuotePending(false);
+        setQuoteError(
+          error instanceof Error && error.message === "400"
+            ? "Cette configuration n'est plus disponible dans le catalogue."
+            : "Le tarif est temporairement indisponible. La formule le recalculera avant toute souscription.",
+        );
+      });
+
+    return () => controller.abort();
+  }, [completed, selection]);
+
   if (completed) {
-    const fiscalRegime = defaultVariant?.offer.fiscalRegime ?? "franchise_base";
-    const fiscalMention = formatFiscalMention(
-      fiscalRegime,
-      defaultVariant?.offer.fiscalMention,
-    );
     const beforeAfterSummary = buildDiagnosticBeforeAfterSummary({
       answers,
       recommendation,
-      pack: recommendedPack,
+      catalog,
     });
+    const formulaHref = selection ? buildFormulaHref(selection) : null;
 
     return (
       <section className="diagnostic-result" aria-live="polite">
         <div className="diagnostic-result-main">
           <p className="eyebrow">Résultat immédiat</p>
-          {recommendedPack && defaultVariant ? (
+          {recommendedPreset && selection && formulaHref ? (
             <>
-              <h2>Votre besoin correspond au {recommendedPack.label}</h2>
-              <p>{recommendedPack.description}</p>
+              <h2>Votre besoin correspond à la formule {recommendedPreset.name}</h2>
+              <p>{recommendedPreset.description}</p>
               <dl className="diagnostic-price">
                 <div>
-                  <dt>À partir de</dt>
+                  <dt>Votre configuration</dt>
                   <dd>
                     <strong>
-                      {formatCommercialAmountFromCents(
-                        defaultVariant.monthlyPriceAmountCents,
-                        { fiscalRegime, suffix: " / mois" },
-                      )}
+                      {quotePending
+                        ? "Calcul du tarif…"
+                        : quote
+                          ? `${formatCurrencyFromCents(quote.monthlyAfterDiscountCents)} / mois`
+                          : "Tarif à recalculer"}
                     </strong>
-                    <span>{fiscalMention}</span>
-                  </dd>
-                </div>
-                <div>
-                  <dt>Mise en service</dt>
-                  <dd>
-                    <strong>
-                      {formatCommercialAmountFromCents(
-                        defaultVariant.setupFeeAmountCents,
-                        { fiscalRegime },
-                      )}
-                    </strong>
-                    <span>{fiscalMention}</span>
+                    <span>
+                      {quoteError
+                        ?? "Montant calculé par Billing V2 à partir de la sélection ci-dessous, hors taxes applicables."}
+                    </span>
                   </dd>
                 </div>
               </dl>
               <div className="diagnostic-result-actions">
-                {recommendation.configuration ? (
-                  <Link
-                    className="button"
-                    href={`/configurer?${configurationToQueryString(
-                      recommendation.configuration,
-                    )}&source=diagnostic`}
-                  >
-                    Personnaliser cette configuration
-                  </Link>
-                ) : null}
-                <Link className="text-link" href={`/offres/${recommendedPack.slug}`}>
-                  Voir la fiche complète
+                <Link className="button" href={formulaHref}>
+                  Personnaliser cette configuration
+                </Link>
+                <Link
+                  className="text-link"
+                  href={`/formules/${recommendedPreset.code}`}
+                >
+                  Voir la formule
                 </Link>
               </div>
             </>
@@ -208,8 +224,8 @@ export function PublicDiagnosticWizard({ packs }: PublicDiagnosticWizardProps) {
             <>
               <h2>Votre besoin nécessite un cadrage</h2>
               <p>
-                Les réponses indiquent un besoin qui ne correspond pas à une
-                variante standard proposée en ligne.
+                Les réponses indiquent un besoin qui dépasse les options
+                actuellement proposées en ligne.
               </p>
               <Link className="button" href="/contact">
                 Demander un cadrage
@@ -248,6 +264,9 @@ export function PublicDiagnosticWizard({ packs }: PublicDiagnosticWizardProps) {
               setAnswers(INITIAL_ANSWERS);
               setStep(0);
               setCompleted(false);
+              setQuote(null);
+              setQuotePending(false);
+              setQuoteError(null);
             }}
             type="button"
           >
@@ -274,7 +293,7 @@ export function PublicDiagnosticWizard({ packs }: PublicDiagnosticWizardProps) {
       {step === 0 ? (
         <fieldset className="diagnostic-step">
           <legend ref={stepTitleRef} tabIndex={-1}>
-            Qui utilisera le service ?
+            Qui utilisera le service
           </legend>
           <div className="diagnostic-options">
             {[
@@ -309,10 +328,12 @@ export function PublicDiagnosticWizard({ packs }: PublicDiagnosticWizardProps) {
                   users: event.target.value ? Number(event.target.value) : null,
                 }))}
             >
-              <option value="1">1</option>
-              <option value="2">2</option>
-              <option value="3">3-5</option>
-              <option value="6">6+</option>
+              {Array.from({ length: 11 }, (_, index) => index + 1).map((users) => (
+                <option key={users} value={users}>
+                  {users}
+                </option>
+              ))}
+              <option value="12">12 ou plus</option>
             </select>
           </label>
         </fieldset>
@@ -324,7 +345,7 @@ export function PublicDiagnosticWizard({ packs }: PublicDiagnosticWizardProps) {
           className="diagnostic-step"
         >
           <legend ref={stepTitleRef} tabIndex={-1}>
-            Quelles données souhaitez-vous protéger ?
+            Quelles données souhaitez-vous protéger ?
           </legend>
           <div className="diagnostic-options diagnostic-options-multi">
             {DATA_KIND_OPTIONS.map((option) => (
@@ -348,19 +369,26 @@ export function PublicDiagnosticWizard({ packs }: PublicDiagnosticWizardProps) {
             <span>Volume à protéger</span>
             <select
               value={String(answers.estimatedStorageGb ?? "")}
-              onChange={(event) =>
+              onChange={(event) => {
+                const value = event.target.value;
                 setAnswers((current) => ({
                   ...current,
-                  estimatedStorageGb: event.target.value
-                    ? Number(event.target.value)
-                    : null,
-                }))}
+                  estimatedStorageGb:
+                    value === ""
+                      ? null
+                      : value === "above_public_max"
+                        ? "above_public_max"
+                        : Number(value),
+                }));
+              }}
             >
               <option value="">Je ne sais pas</option>
-              <option value="8">Moins de 10 Go</option>
-              <option value="32">10 à 30 Go</option>
-              <option value="64">30 à 60 Go</option>
-              <option value="128">Plus de 60 Go</option>
+              <option value="16">Jusqu&apos;à 16 Go</option>
+              <option value="32">Jusqu&apos;à 32 Go</option>
+              <option value="64">Jusqu&apos;à 64 Go</option>
+              <option value="128">Jusqu&apos;à 128 Go</option>
+              <option value="256">Jusqu&apos;à 256 Go</option>
+              <option value="above_public_max">Plus de 256 Go</option>
             </select>
           </label>
         </fieldset>
@@ -369,11 +397,11 @@ export function PublicDiagnosticWizard({ packs }: PublicDiagnosticWizardProps) {
       {step === 2 ? (
         <fieldset className="diagnostic-step">
           <legend ref={stepTitleRef} tabIndex={-1}>
-            Quels accès sont utiles ?
+            Quels accès sont utiles ?
           </legend>
           <NullableBooleanQuestion
             id="needsRemoteFiles"
-            label="Souhaitez-vous accéder à vos fichiers à distance ?"
+            label="Souhaitez-vous accéder à vos fichiers à distance ?"
             value={answers.needsRemoteFiles}
             onChange={(needsRemoteFiles) =>
               setAnswers((current) => ({ ...current, needsRemoteFiles }))}
@@ -381,14 +409,14 @@ export function PublicDiagnosticWizard({ packs }: PublicDiagnosticWizardProps) {
           <NullableBooleanQuestion
             hint="Un VPN peut servir à créer ce type d'accès lorsque c'est nécessaire."
             id="needsVpn"
-            label="Avez-vous besoin d'un accès sécurisé à distance à un réseau ou à des ressources internes ?"
+            label="Avez-vous besoin d'un accès sécurisé à distance à un réseau ou à des ressources internes ?"
             value={answers.needsVpn}
             onChange={(needsVpn) =>
               setAnswers((current) => ({ ...current, needsVpn }))}
           />
           <NullableBooleanQuestion
             id="needsWindowsDesktop"
-            label="Souhaitez-vous disposer d'un bureau Windows accessible à distance avec vos logiciels et vos fichiers ?"
+            label="Souhaitez-vous disposer d'un bureau Windows accessible à distance avec vos logiciels et vos fichiers ?"
             value={answers.needsWindowsDesktop}
             onChange={(needsWindowsDesktop) =>
               setAnswers((current) => ({
@@ -403,7 +431,7 @@ export function PublicDiagnosticWizard({ packs }: PublicDiagnosticWizardProps) {
         <fieldset className="diagnostic-step">
           <legend ref={stepTitleRef} tabIndex={-1}>
             En cas de panne ou de perte de votre matériel, à quelle vitesse
-            souhaitez-vous retrouver vos fichiers ?
+            souhaitez-vous retrouver vos fichiers
           </legend>
           <label className="diagnostic-field">
             <span>Délai souhaité pour retrouver vos fichiers</span>
@@ -423,7 +451,7 @@ export function PublicDiagnosticWizard({ packs }: PublicDiagnosticWizardProps) {
           </label>
 
           <label className="diagnostic-field">
-            <span>À quelle fréquence vos données importantes sont-elles sauvegardées ?</span>
+            <span>À quelle fréquence vos données importantes sont-elles sauvegardées ?</span>
             <select
               value={answers.backupFrequency}
               onChange={(event) =>
@@ -442,7 +470,7 @@ export function PublicDiagnosticWizard({ packs }: PublicDiagnosticWizardProps) {
           </label>
 
           <label className="diagnostic-field">
-            <span>Quand avez-vous testé une restauration pour la dernière fois ?</span>
+            <span>Quand avez-vous testé une restauration pour la dernière fois ?</span>
             <select
               value={answers.restoreTestRecency}
               onChange={(event) =>
@@ -497,6 +525,9 @@ export function PublicDiagnosticWizard({ packs }: PublicDiagnosticWizardProps) {
           disabled={!canContinue}
           onClick={() => {
             if (step === STEPS.length - 1) {
+              setQuote(null);
+              setQuotePending(recommendation.selection !== null);
+              setQuoteError(null);
               setCompleted(true);
             } else {
               setStep((current) => current + 1);
@@ -520,6 +551,12 @@ export function PublicDiagnosticWizard({ packs }: PublicDiagnosticWizardProps) {
   }
 }
 
+function buildFormulaHref(selection: BillingV2PublicSelection) {
+  const params = billingV2SelectionToSearchParams(selection);
+  params.set("source", "diagnostic");
+  return `/formules/${selection.presetCode}?${params.toString()}`;
+}
+
 function DiagnosticBeforeAfterBlock({
   summary,
 }: {
@@ -532,7 +569,7 @@ function DiagnosticBeforeAfterBlock({
     <section className="diagnostic-before-after" aria-labelledby="before-after-title">
       <div className="diagnostic-before-after-heading">
         <h3 id="before-after-title">{summary.title}</h3>
-        <span aria-hidden="true">Avant → Après</span>
+        <span aria-hidden="true">Avant - Après</span>
       </div>
       <div className="diagnostic-before-after-grid">
         <div>

@@ -14,9 +14,7 @@
 
 ### Version
 
-- **v1.4.0.0 (2026-08-17)** : Billing V2 déployé et dormant. Voir la section
-  « Billing V2 » plus bas. Version précédente sur `main` : v1.3.3.8 (identité
-  de marque).
+- **v1.4.0.1 (2026-08-20)** : diagnostic public migre vers Billing V2, sans changement SQL/pricing/provisioning. Voir [billing-v2-public-diagnostic.md](topics/billing-v2-public-diagnostic.md). Version de base Billing V2 : v1.4.0.0.
 
 ### Vitrine, SEO et éditorial
 
@@ -53,6 +51,10 @@
 
 - Référence : [timezone-utc-convention.md](topics/timezone-utc-convention.md). DB en UTC, API ISO `Z`, affichage Europe/Paris, dates fiscales = jour civil Paris.
 - Revalider le garde-fou `test:timezone` après toute modification SQL ou C# touchant aux horodatages.
+
+### Diagnostic public Billing V2 (2026-08-20)
+
+- /diagnostic produit d├®sormais une BillingV2PublicSelection ou `requires_quote`, demande le devis via /api/formules/devis, puis sort vers /formules/{preset} avec la s├®lection compl├¿te. Aucun SQL/pricing/provisioning ajout├®. R├®f├®rence : [billing-v2-public-diagnostic.md](topics/billing-v2-public-diagnostic.md).
 
 ### Billing V2 (v1.4.0.0)
 

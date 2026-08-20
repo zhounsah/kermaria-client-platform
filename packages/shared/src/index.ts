@@ -1073,7 +1073,7 @@ export interface DiagnosticAnswers {
   customerType: DiagnosticCustomerType;
   users: number | null;
   dataKinds: readonly DiagnosticDataKind[];
-  estimatedStorageGb: number | null;
+  estimatedStorageGb: number | "above_public_max" | null;
   needsRemoteFiles: boolean | null;
   needsVpn: boolean | null;
   needsWindowsDesktop: boolean | null;
@@ -1098,8 +1098,6 @@ export type DiagnosticRecommendationWarningCode =
   | "backup_frequency_unknown"
   | "storage_requires_quote"
   | "users_require_quote"
-  | "windows_storage_requires_quote"
-  | "windows_team_requires_quote"
   | "other_structure_requires_review"
   | "no_recent_restore_test"
   | "no_continuity_plan";
@@ -1110,11 +1108,10 @@ export type DiagnosticRecommendationStatus =
 
 export interface DiagnosticRecommendation {
   status: DiagnosticRecommendationStatus;
-  offerId: PublicPackCode | null;
   reasons: readonly DiagnosticRecommendationReasonCode[];
   warnings: readonly DiagnosticRecommendationWarningCode[];
   suggestedOptions: readonly string[];
-  configuration: CatalogConfigurationInput | null;
+  selection: BillingV2PublicSelection | null;
 }
 
 export interface PublicPackVariantManifest {

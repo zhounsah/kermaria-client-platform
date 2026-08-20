@@ -1,4 +1,4 @@
-﻿# Feuille de route
+# Feuille de route
 
 > Lecture 1.0.0 : cette feuille de route sert a comprendre l'historique et les
 > jalons V0.xx. Pour l'etat courant et les points d'entree actuels, commencer
@@ -1263,6 +1263,27 @@ Ancrage infra (R740xd) : groupes dans `OU=Groupes_TEST`, comptes dans
 `OU=CLI-DEMO`, quota FSRM, collection RDS Clients-1 filtree par groupe,
 VLAN 64 `10.35.64.0/24`. Deploiement SRV-13 :
 [`v1.1/deploy/SRV-13_LOT3_DEPLOY.md`](v1.1/deploy/SRV-13_LOT3_DEPLOY.md).
+
+## Jalon v1.4.0.1 - diagnostic public Billing V2
+Statut : **livre dans le depot le 2026-08-20**. Documentation dediee :
+[`v1.4/V1.4.0.1_PUBLIC_DIAGNOSTIC.md`](v1.4/V1.4.0.1_PUBLIC_DIAGNOSTIC.md).
+Le questionnaire public `/diagnostic` conserve son UX, mais son moteur
+commercial ne depend plus des anciens manifests de packs. Il produit soit une
+`BillingV2PublicSelection`, soit `requires_quote`. Le diagnostic ne calcule
+aucun prix : la selection est envoyee a `/api/formules/devis`, puis le CTA
+transporte la selection V2 complete vers `/formules/{preset}`. Le tunnel
+existant signup -> activation -> login -> reprise -> Stripe -> provisioning est
+reutilise sans modification.
+Bornes publiques : stockage personnel 16 / 32 / 64 / 128 / 256 Go ; au-dela,
+`requires_quote`. Jusqu'a 11 utilisateurs au total sont representables
+(`additionalUsers <= 10`) ; 12 ou plus basculent en cadrage. Les anciennes
+limites `> 64 Go`, `> 2 utilisateurs`, RDS multi-utilisateur ou RDS > 32 Go ne
+sont plus des motifs de devis lorsqu'une composition Billing V2 publique peut
+les representer.
+Aucune migration SQL, aucun changement du Pricing Engine et aucun changement
+de provisioning n'accompagnent ce hotfix. `/configurer` reste disponible pour
+les parcours legacy qui l'utilisent encore, mais n'est plus la sortie du
+diagnostic.
 
 ## Jalon V1.1 portail public des solutions client
 
