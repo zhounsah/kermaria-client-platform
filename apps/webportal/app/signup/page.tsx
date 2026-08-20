@@ -113,7 +113,7 @@ export default async function SignupPage({
         <h1>Créer un compte client</h1>
         <p className="signup-lead">
           Renseignez vos informations pour demander l&apos;ouverture de votre accès
-          client. Le parcours reste simple et assumÉ : confirmation de votre
+          client. Le parcours reste simple et assumé : confirmation de votre
           adresse e-mail, validation de votre demande par notre équipe, puis
           définition du mot de passe avant la finalisation du pack choisi.
         </p>
