@@ -18,6 +18,8 @@ import {
   isClientOrAdminPortalHost,
   isPortalApplicationPath,
   isPublicRoute,
+  PUBLIC_SITE_URL,
+  resolvePortalAreaUrl,
   resolveCanonicalPublicUrl,
   resolvePortalPublicRedirectUrl,
   resolveWikiRewritePath,
@@ -103,6 +105,12 @@ function isCatchAllSource(source) {
 
 const headerRules = await nextConfig.headers();
 
+assert.equal(
+  PUBLIC_SITE_URL,
+  "https://zachary-it.fr",
+  "La base publique canonique Zachary IT doit etre l'apex zachary-it.fr.",
+);
+
 function headersFor(pathname) {
   return headerRules
     .filter((rule) => sourceToRegExp(rule.source).test(pathname))
@@ -171,6 +179,7 @@ for (const key of [
 
 // 5. `robots.txt` doit refuser exactement les memes prefixes.
 const robotsSource = await read("app/robots.ts");
+const publicShellSource = await read("components/PublicShell.tsx");
 const disallowBlock = robotsSource.match(/disallow:\s*\[([^\]]*)\]/);
 assert.ok(disallowBlock, "Liste `disallow` introuvable dans app/robots.ts.");
 
@@ -212,9 +221,68 @@ assert.match(
   "robots.txt doit publier l'URL du sitemap sur l'hote canonique.",
 );
 
-// 8. La redirection canonique 301 des alias publics (apex sans `www`)
+// 7b. Une destination de vitrine publique se construit toujours depuis la
+//     base canonique, meme si l'origine appartient a l'ancien domaine.
+for (const [origin, pathname, expected] of [
+  ["https://zachary-it.fr", "/offres", "https://zachary-it.fr/offres"],
+  [
+    "https://zachary-it.fr",
+    "/diagnostic",
+    "https://zachary-it.fr/diagnostic",
+  ],
+  [
+    "https://www.zacharyhounsa.ovh",
+    "/offres",
+    "https://zachary-it.fr/offres",
+  ],
+  [
+    "https://www.home.bzh",
+    "/contact",
+    "https://zachary-it.fr/contact",
+  ],
+]) {
+  assert.equal(
+    resolvePortalAreaUrl(origin, "public", pathname),
+    expected,
+    `${origin} -> ${pathname} doit utiliser PUBLIC_SITE_URL.`,
+  );
+}
+
+// 7c. Le header/footer public utilisent PUBLIC_SITE_URL pour les routes
+//     vitrine et ne codent pas l'ancien domaine comme destination publique.
+for (const pathname of [
+  "/offres",
+  "/diagnostic",
+  "/a-propos",
+  "/contact",
+  "/mentions-legales",
+  "/politique-confidentialite",
+  "/cgv",
+]) {
+  assert.match(
+    publicShellSource,
+    new RegExp(`publicHref\\("${pathname.replaceAll("/", "\\/")}"\\)`),
+    `PublicShell doit construire ${pathname} via publicHref/PUBLIC_SITE_URL.`,
+  );
+}
+assert.doesNotMatch(
+  publicShellSource,
+  /https:\/\/(?:www\.)?zacharyhounsa\.ovh\/(?:offres|diagnostic|a-propos|contact|mentions-legales|politique-confidentialite|cgv|ressources|solutions|formules)/,
+  "PublicShell ne doit pas generer de lien de vitrine vers l'ancien domaine.",
+);
+
+// 8. La redirection canonique 301 des alias publics (`www` pour le nouveau
+//    domaine, apex sans `www` pour l'ancien domaine de transition)
 //    conserve chemin et query string.
 for (const [host, pathname, search, expected] of [
+  ["www.zachary-it.fr", "/", "", "https://zachary-it.fr/"],
+  [
+    "www.zachary-it.fr",
+    "/offres/dossier-securise",
+    "?utm_source=google&utm_medium=cpc",
+    "https://zachary-it.fr/offres/dossier-securise"
+      + "?utm_source=google&utm_medium=cpc",
+  ],
   ["zacharyhounsa.ovh", "/", "", "https://www.zacharyhounsa.ovh/"],
   [
     "zacharyhounsa.ovh",
@@ -247,6 +315,7 @@ for (const [host, pathname, search, expected] of [
 // 9. Aucun 301 sur l'hote canonique lui-meme (boucle de redirection), sur
 //    les portails, en local, sur un hote inconnu ou hostile.
 for (const host of [
+  "zachary-it.fr",
   "www.zacharyhounsa.ovh",
   "www.home.bzh",
   "portail.home.bzh",
@@ -271,32 +340,33 @@ for (const host of [
 }
 
 // 10. Les hotes client/admin ne servent pas la vitrine en 200 : les routes
-//     publiques, les fiches packs et les slugs editoriaux repartent vers `www`.
+//     publiques, les fiches packs et les slugs editoriaux repartent vers le
+//     canonique public de leur famille.
 for (const [host, pathname, search, expected] of [
-  ["dashboard.zacharyhounsa.ovh", "/", "", "https://www.zacharyhounsa.ovh/"],
+  ["dashboard.zacharyhounsa.ovh", "/", "", "https://zachary-it.fr/"],
   [
     "dashboard.zacharyhounsa.ovh",
     "/offres",
     "?utm_source=test",
-    "https://www.zacharyhounsa.ovh/offres?utm_source=test",
+    "https://zachary-it.fr/offres?utm_source=test",
   ],
   [
     "dashboard.zacharyhounsa.ovh",
     "/offres/dossier-securise",
     "",
-    "https://www.zacharyhounsa.ovh/offres/dossier-securise",
+    "https://zachary-it.fr/offres/dossier-securise",
   ],
   [
     "administration.zacharyhounsa.ovh",
     "/contact",
     "",
-    "https://www.zacharyhounsa.ovh/contact",
+    "https://zachary-it.fr/contact",
   ],
   [
     "dashboard.zacharyhounsa.ovh",
     "/sauvegarde-3-2-1",
     "",
-    "https://www.zacharyhounsa.ovh/sauvegarde-3-2-1",
+    "https://zachary-it.fr/sauvegarde-3-2-1",
   ],
 ]) {
   assert.equal(
@@ -330,12 +400,13 @@ assert.equal(
     "/formules/pack-pro-association",
     "",
   ),
-  "https://www.zacharyhounsa.ovh/formules/pack-pro-association",
+  "https://zachary-it.fr/formules/pack-pro-association",
   "Le configurateur ne doit rester local que sur l'hote client.",
 );
 
 assert.equal(isClientOrAdminPortalHost("dashboard.zacharyhounsa.ovh"), true);
 assert.equal(isClientOrAdminPortalHost("administration.zacharyhounsa.ovh"), true);
+assert.equal(isClientOrAdminPortalHost("zachary-it.fr"), false);
 assert.equal(isClientOrAdminPortalHost("www.zacharyhounsa.ovh"), false);
 assert.equal(isPortalApplicationPath("/login"), true);
 assert.equal(isPortalApplicationPath("/api/contact"), true);
@@ -353,11 +424,17 @@ for (const pathname of [
   "login",
 ]) {
   assert.equal(
-    resolveCanonicalPublicUrl("zacharyhounsa.ovh", pathname, ""),
+    resolveCanonicalPublicUrl("www.zachary-it.fr", pathname, ""),
     null,
     `${pathname} ne doit pas etre redirige.`,
   );
 }
+
+assert.equal(
+  resolveCanonicalPublicUrl("www.zachary-it.fr", "/diagnostic", "?src=nav"),
+  "https://zachary-it.fr/diagnostic?src=nav",
+  "www.zachary-it.fr doit rediriger vers l'apex canonique.",
+);
 
 // 12. Le 301 canonique est pose par le proxy, avant tout rendu, et laisse
 //     `robots.txt` / `sitemap.xml` dans son matcher.

@@ -12,7 +12,7 @@ import process from "node:process";
  * l'egalite stricte et sort dans le message d'erreur.
  *
  * Usage :
- *   node scripts/assert-security-headers.mjs --url https://www.zacharyhounsa.ovh/
+ *   node scripts/assert-security-headers.mjs --url https://zachary-it.fr/
  *
  * L'URL doit pointer une page de la VITRINE PUBLIQUE : le script exige
  * l'absence de `X-Robots-Tag` (regression du noindex global, corrigee le

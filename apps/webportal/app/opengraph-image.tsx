@@ -9,7 +9,7 @@ import { ImageResponse } from "next/og";
  * routes qui ne declarent pas leur propre `opengraph-image`.
  *
  * Aucun nom d'hote n'y figure : la meme image est servie sur
- * `zacharyhounsa.ovh` et sur `home.bzh` en recette, une URL en dur serait
+ * `zachary-it.fr`, l'ancien domaine et `home.bzh` en recette ; une URL en dur serait
  * fausse sur l'un des deux.
  *
  * Les couleurs sont celles de `app/globals.css` (`--primary-dark`,

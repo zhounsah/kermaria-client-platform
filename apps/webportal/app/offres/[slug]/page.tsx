@@ -63,7 +63,7 @@ export default async function PublicPackSheetPage({ params }: PageProps) {
   }
 
   // Le balisage schema.org exige des URL absolues, donc l'hote reel de la
-  // requete (`www.zacharyhounsa.ovh` en production, `www.home.bzh` en
+  // requete (`zachary-it.fr` en production, `www.home.bzh` en
   // recette). Cet appel rend la page dynamique et neutralise le
   // `revalidate` ci-dessus — sans consequence tant que le layout racine
   // impose deja le rendu dynamique a tout l'arbre (cf. le TODO ISR dans

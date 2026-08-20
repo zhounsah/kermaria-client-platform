@@ -134,7 +134,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
         return {
           // `new URL` et non une concatenation : l'accueil sortait
-          // `https://www.zacharyhounsa.ovh` sans slash final la ou la
+          // `https://zachary-it.fr` sans slash final la ou la
           // canonical de la page vaut `…/`. Deux chaines pour une meme
           // page, donc deux URL du point de vue de Google.
           url: new URL(path, baseUrl).toString(),

@@ -21,7 +21,7 @@ export const PUBLIC_ROUTES = [
   "/set-password",
 ] as const;
 
-export const PUBLIC_SITE_URL = "https://www.zacharyhounsa.ovh";
+export const PUBLIC_SITE_URL = "https://zachary-it.fr";
 export const PORTFOLIO_URL = "https://portfolio.zacharyhounsa.ovh/";
 export const WIKI_PUBLIC_HOST = "wiki.zacharyhounsa.ovh";
 export const WIKI_INTERNAL_HOST = "wiki.home.bzh";
@@ -31,6 +31,15 @@ export type PortalRole = "client_user" | "internal_admin";
 export type WikiHostKind = "canonical" | "internal";
 
 const PORTAL_FAMILIES = {
+  "zachary-it.fr": {
+    public: "zachary-it.fr",
+    publicAliases: new Set(["zachary-it.fr", "www.zachary-it.fr"]),
+    // `www` reste un alias de transition : le canonique commercial est
+    // l'apex `zachary-it.fr`.
+    canonicalRedirects: new Set(["www.zachary-it.fr"]),
+    client: "dashboard.zacharyhounsa.ovh",
+    admin: "administration.zacharyhounsa.ovh",
+  },
   "zacharyhounsa.ovh": {
     public: "www.zacharyhounsa.ovh",
     publicAliases: new Set(["zacharyhounsa.ovh", "www.zacharyhounsa.ovh"]),
@@ -137,6 +146,13 @@ function isSafePortalPath(pathname: string): boolean {
   );
 }
 
+function resolvePublicSiteUrl(pathname: string, search = ""): string {
+  const query = search && search !== "?"
+    ? (search.startsWith("?") ? search : `?${search}`)
+    : "";
+  return new URL(`${pathname}${query}`, PUBLIC_SITE_URL).toString();
+}
+
 export function getPortalArea(
   origin: string | null | undefined,
 ): PortalArea | null {
@@ -187,6 +203,10 @@ export function resolvePortalAreaUrl(
   const familyName = getPortalFamily(hostname);
   if (!familyName) {
     return null;
+  }
+
+  if (area === "public") {
+    return resolvePublicSiteUrl(pathname);
   }
 
   return `https://${PORTAL_FAMILIES[familyName][area]}${pathname}`;
@@ -360,7 +380,8 @@ export function resolvePortalPublicRedirectUrl(
 
   // Le configurateur Billing V2 peut rester sur l'hote client afin que le
   // BFF de souscription recoive le cookie de session host-only. Il ne reste
-  // jamais local sur l'hote d'administration, et sa canonical demeure `www`.
+  // jamais local sur l'hote d'administration, et sa canonical demeure le
+  // domaine public officiel.
   if (
     hostname === family.client
     && isClientCheckoutContinuationPath(pathname)
@@ -368,11 +389,7 @@ export function resolvePortalPublicRedirectUrl(
     return null;
   }
 
-  const query = search && search !== "?"
-    ? (search.startsWith("?") ? search : `?${search}`)
-    : "";
-
-  return `https://${family.public}${pathname}${query}`;
+  return resolvePublicSiteUrl(pathname, search);
 }
 
 export function resolvePortalRoleUrl(

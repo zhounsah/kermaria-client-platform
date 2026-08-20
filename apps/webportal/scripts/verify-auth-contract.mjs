@@ -91,6 +91,7 @@ for (const [headers, expectedOrigin] of [
   [{ host: "localhost:3000" }, "http://localhost:3000"],
   [{ host: "127.0.0.1:3100" }, "http://127.0.0.1:3100"],
   [{ host: "[::1]:3200" }, "http://[::1]:3200"],
+  [{ host: "zachary-it.fr" }, "https://zachary-it.fr"],
   [
     { host: "dashboard.zacharyhounsa.ovh" },
     "https://dashboard.zacharyhounsa.ovh",
@@ -117,6 +118,8 @@ for (const [headers, expectedOrigin] of [
 }
 
 for (const [origin, expectedArea] of [
+  ["https://zachary-it.fr", "public"],
+  ["https://www.zachary-it.fr", "public"],
   ["https://zacharyhounsa.ovh", "public"],
   ["https://www.zacharyhounsa.ovh", "public"],
   ["https://dashboard.zacharyhounsa.ovh", "client"],
@@ -150,6 +153,14 @@ for (const origin of [
 
 assert.equal(
   resolvePortalAreaUrl(
+    "https://zachary-it.fr",
+    "client",
+    "/login?error=PORTAL_ROLE_MISMATCH#form",
+  ),
+  "https://dashboard.zacharyhounsa.ovh/login?error=PORTAL_ROLE_MISMATCH#form",
+);
+assert.equal(
+  resolvePortalAreaUrl(
     "http://www.zacharyhounsa.ovh:8080",
     "client",
     "/login?error=PORTAL_ROLE_MISMATCH#form",
@@ -166,7 +177,35 @@ assert.equal(
 );
 assert.equal(
   resolvePortalAreaUrl("https://home.bzh", "public", "/offres"),
-  "https://www.home.bzh/offres",
+  "https://zachary-it.fr/offres",
+);
+assert.equal(
+  resolvePortalAreaUrl("https://zachary-it.fr", "public", "/diagnostic"),
+  "https://zachary-it.fr/diagnostic",
+);
+assert.equal(
+  resolvePortalAreaUrl("https://www.zacharyhounsa.ovh", "public", "/contact"),
+  "https://zachary-it.fr/contact",
+);
+assert.equal(
+  resolvePortalAreaUrl("https://dashboard.zacharyhounsa.ovh", "public", "/offres"),
+  "https://zachary-it.fr/offres",
+);
+assert.equal(
+  resolvePortalAreaUrl("https://www.home.bzh", "public", "/offres"),
+  "https://zachary-it.fr/offres",
+);
+assert.equal(
+  resolvePortalAreaUrl("https://unknown.example", "public", "/offres"),
+  null,
+);
+assert.equal(
+  resolvePortalAreaUrl(
+    "https://dashboard.zacharyhounsa.ovh.evil.example",
+    "public",
+    "/offres",
+  ),
+  null,
 );
 assert.equal(
   resolvePortalAreaUrl("http://localhost:3000", "admin", "/admin?tab=users"),
@@ -209,6 +248,10 @@ for (const hostilePath of [
   );
 }
 
+assert.equal(
+  resolvePortalRoleUrl("https://zachary-it.fr", "client_user"),
+  "https://dashboard.zacharyhounsa.ovh/dashboard",
+);
 assert.equal(
   resolvePortalRoleUrl("https://www.zacharyhounsa.ovh", "client_user"),
   "https://dashboard.zacharyhounsa.ovh/dashboard",

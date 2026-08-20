@@ -1,7 +1,7 @@
 # Kermaria Client Platform
 
 Plateforme technique de l'espace client **Zachary HOUNSA-HOUNKPA EI** pour
-`clients.zacharyhounsa.ovh`.
+`zachary-it.fr`.
 
 Ce depot reste separe du site vitrine Astro et conserve une architecture
 obligatoire :
@@ -139,13 +139,13 @@ Acquis V0.27 (site vitrine public,
 - racine `/` branche selon la session : client -> `/dashboard`,
   admin -> `/admin`, anonyme + `PUBLIC_VITRINE_ENABLED=false` ->
   `/login`, anonyme + flag actif -> landing vitrine ;
-- landing au ton calque sur [zacharyhounsa.ovh](https://zacharyhounsa.ovh/) :
+- landing au ton calque sur [zachary-it.fr](https://zachary-it.fr/) :
   hero "Informatique claire et utile", section Methode (3 etapes),
   Services (6 prestations), Pour qui (particuliers / associations /
   petites structures), CTA finale ;
 - portfolio integre en statique : copie integrale du portfolio Astro
   sous `apps/webportal/public/portfolio/` (21 fichiers, source de
-  verite reste sur `zacharyhounsa.ovh/portfolio/` via canonical), lien
+  verite reste sur `portfolio.zacharyhounsa.ovh` via canonical), lien
   dans la nav header ;
 - pages publiques Next `/`, `/offres`, `/a-propos`, `/contact`,
   `/mentions-legales`, `/politique-confidentialite`, `/cgv` (contenu
@@ -532,7 +532,7 @@ npm run test:ad-security     # garde-fous AD
 Controle en ligne des en-tetes de securite (necessite le site joignable) :
 
 ```powershell
-npm run assert:security:headers -- --url https://www.zacharyhounsa.ovh/
+npm run assert:security:headers -- --url https://zachary-it.fr/
 ```
 
 Les tests contrat lisent le code source : ils ne voient pas le reverse proxy.
