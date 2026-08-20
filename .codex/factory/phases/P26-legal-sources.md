@@ -10,7 +10,7 @@
   "initialStatus": "PENDING",
   "requiresCommit": true,
   "commitMessage": "chore(legal): clarifier les sources juridiques canoniques",
-  "allowedPaths": ["CGV.txt", "mentions-légales.txt", "apps/api-internal/SeedContent/cgv.md", "apps/api-internal/SeedContent/mentions-legales.md", "README.md"],
+  "allowedPaths": ["apps/api-internal/SeedContent/cgv.md", "apps/api-internal/SeedContent/mentions-legales.md", "README.md"],
   "validations": [
     { "name": "api-build", "executable": "npm.cmd", "arguments": ["run", "build:api"] },
     { "name": "secrets-check", "executable": "npm.cmd", "arguments": ["run", "check:secrets"] },

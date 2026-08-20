@@ -5,12 +5,9 @@
 > quotidiennes, validations et rollback, voir d'abord
 > [`OPERATIONS.md`](OPERATIONS.md).
 
-Pour le deploiement concret Windows Server 2022 sans VM (SRV-01
-WEBPORTAL + SRV-02 API-INTERNAL + SRV-07 MariaDB, cible actuelle en
-phase de tests), voir le runbook dedie
-[`DEPLOYMENT_WINDOWS.md`](DEPLOYMENT_WINDOWS.md). Le present
-document reste la reference des variables, modes et garde-fous
-generaux.
+Production actuelle : SRV-11 porte edge/TLS, SRV-12 porte WEBPORTAL sous Ubuntu/systemd, SRV-13 porte API-INTERNAL sous Windows et SRV-06 porte MariaDB.
+Le runbook DEPLOYMENT_WINDOWS.md decrit l ancienne topologie SRV-01/SRV-02 et reste utile uniquement comme historique/staging.
+Voir aussi DOMAIN_MIGRATION_2026-08-20.md. Le present document reste la reference des variables, modes et garde-fous generaux.
 
 Ce runbook V0.21 couvre la mise en place de `Development`, `Staging` et
 `Production` en conservant strictement l'architecture :
@@ -23,12 +20,13 @@ browser -> WEBPORTAL / BFF -> API-INTERNAL -> MariaDB
 
 ## Topologie cible
 
-| Composant | Cible | Exposition |
+| Composant | Cible actuelle | Exposition |
 |---|---|---|
-| `WEBPORTAL` | Ubuntu Server LTS | Reverse proxy HTTPS uniquement |
-| `API-INTERNAL` | VM Windows Server Core ou hote interne dedie | Reseau prive uniquement |
-| MariaDB | Serveur existant | `API-INTERNAL` uniquement |
-| Active Directory | Infrastructure existante | Bornee a l'OU de test en V0.18 |
+| Edge / TLS | SRV-11 | Public 80/443, HAProxy + nginx |
+| WEBPORTAL | SRV-12 Ubuntu | 192.168.100.212:3000, derriere SRV-11 |
+| API-INTERNAL | SRV-13 Windows | Reseau prive uniquement |
+| MariaDB | SRV-06 | API-INTERNAL uniquement |
+| Active Directory | Infrastructure existante | Acces borne par les services/provisioning |
 
 ## Variables API-INTERNAL
 

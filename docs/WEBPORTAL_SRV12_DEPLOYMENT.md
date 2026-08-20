@@ -6,14 +6,14 @@ sans toucher `api-internal`.
 Objectif principal : ne plus basculer un artefact dont le contenu public ne
 correspond pas a la ref Git attendue.
 
-Mapping canonique valide en production le 1er aout 2026 :
+Mapping canonique valide en production le 20 aout 2026 :
 
-- `www.zacharyhounsa.ovh` = vitrine publique canonique
-- `dashboard.zacharyhounsa.ovh` = portail client canonique + endpoints webhook
-- `administration.zacharyhounsa.ovh` = portail admin canonique
-- `www.home.bzh` = alias public, redirige vers `www.zacharyhounsa.ovh`
-- `dashboard.home.bzh` et `portail.home.bzh` = aliases client, redirigent vers `dashboard.zacharyhounsa.ovh`
-- `administration.home.bzh` = alias admin, redirige vers `administration.zacharyhounsa.ovh`
+- `zachary-it.fr` = vitrine publique canonique
+- `dashboard.zachary-it.fr` = portail client canonique + endpoints webhook
+- `administration.zachary-it.fr` = portail admin canonique
+- `www.home.bzh` = alias public, redirige vers `zachary-it.fr`
+- `dashboard.home.bzh` et `portail.home.bzh` = aliases client, redirigent vers `dashboard.zachary-it.fr`
+- `administration.home.bzh` = alias admin, redirige vers `administration.zachary-it.fr`
 
 ## 1. Principe
 
@@ -146,14 +146,14 @@ DEPLOY
 Verifier la sante :
 
 ```powershell
-curl.exe -k https://dashboard.zacharyhounsa.ovh/api/health/ready
+curl.exe -k https://dashboard.zachary-it.fr/api/health/ready
 ```
 
 Verifier le hero public attendu :
 
 ```powershell
 npm run assert:webportal:home -- `
-  --url https://www.zacharyhounsa.ovh/ `
+  --url https://zachary-it.fr/ `
   --must-match "Un sinistre peut" `
   --must-not-match "Informatique claire et utile\\."
 ```

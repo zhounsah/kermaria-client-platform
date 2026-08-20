@@ -265,7 +265,7 @@ Controle : `npm run assert:security:headers` passe, les sept en-tetes sont
 servis une seule fois, `X-Frame-Options: DENY` sans contradiction.
 
 Non-regression relevee dans la foulee : `portfolio.zacharyhounsa.ovh` et
-`dashboard.zacharyhounsa.ovh` en `200`, `noindex` conserve sur `/login`, aucun
+`dashboard.zachary-it.fr` en `200`, `noindex` conserve sur `/login`, aucun
 `X-Robots-Tag` sur `/offres`.
 
 Cote depot, `scripts/r740xd-vm/srv11/kermaria-nginx.conf` ne porte plus aucun
@@ -278,7 +278,7 @@ fichier et `OPERATIONS.md`).
 Reste ouvert : `kermaria-tls.pending`, inactif, porte encore les quatre
 directives.
 
-Garde-fou : `npm run assert:security:headers -- --url https://www.zacharyhounsa.ovh/`
+Garde-fou : `npm run assert:security:headers -- --url https://zachary-it.fr/`
 compare la reponse **livree** au contrat de `next.config.ts` et echoue sur tout
 doublon. Les tests `test:operations` et `test:seo` lisent le code source et ne
 voient pas le proxy : seul ce controle en ligne couvre SRV-11.

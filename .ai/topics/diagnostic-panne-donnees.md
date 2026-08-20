@@ -11,7 +11,7 @@ metadata:
 Symptôme type : la vitrine rend, mais **tout le contenu venant de l'API disparaît d'un coup** — « Les packs ne sont pas encore disponibles en ligne », « Ressources indisponibles », pages SEO éditoriales absentes du sitemap et en 404, plus aucun `lastmod`. Cause = un maillon de la chaîne données, jamais le code : tout le public passe par `getPublicData()` qui renvoie une valeur vide en cas d'échec.
 
 **Les 3 sondes, dans l'ordre** (elles isolent le maillon sans accès serveur) :
-1. `https://www.zacharyhounsa.ovh/api/health/ready` — sépare `configuration` (env SRV-12) de `api_internal`.
+1. `https://dashboard.zachary-it.fr/api/health/ready` — sépare `configuration` (env SRV-12) de `api_internal`.
 2. `http://192.168.100.213:5000/health/ready` — expose `configuration` / `persistence` / `mariadb` / `ad`. **Pas protégé par `X-Service-Auth`** : le middleware ne garde que `/internal/*`, donc interrogeable directement. Un `mariadb: unhealthy` ici = cause trouvée.
 3. Handshake TCP brut sur 3306 (`TcpClient` + lecture des premiers octets) : **révèle l'erreur MariaDB sans aucun credential** — `Too many connections` arrive en clair là où `Test-NetConnection` dit juste « port ouvert ».
 

@@ -7,6 +7,17 @@ metadata:
   originSessionId: 2d7207aa-a9f5-4387-aa15-8c308b6f44fb
   modified: 2026-08-04T21:41:38.432Z
 ---
+## Etat courant - 20/08/2026
+
+- public canonique : https://zachary-it.fr ;
+- portail client : https://dashboard.zachary-it.fr ;
+- administration : https://administration.zachary-it.fr ;
+- portfolio : https://portfolio.zacharyhounsa.ovh ;
+- wiki : https://wiki.zacharyhounsa.ovh ;
+- edge/TLS : SRV-11 ; webportal : SRV-12 ; API-INTERNAL : SRV-13.
+- anciens domaines public/client/admin : redirections 301 sur SRV-11, avec passthrough temporaire de /api/webhooks/* sur l ancien dashboard.
+- source de verite : docs/DOMAIN_MIGRATION_2026-08-20.md.
+
 
 **RÉÉCRITURE 2026-08-03 — nouvelle topologie R740xd (source : tableau d'infra fourni par l'utilisateur ; toutes les VM déclarées actives). Voir [[infra-r740xd-blocker]] (blocage levé).**
 

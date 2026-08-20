@@ -194,7 +194,7 @@ sans ambiguite.
 
 `cloudflared` tourne aussi sur SRV-11, mais avec un tunnel a jeton : ses
 regles d'ingress vivent dans le tableau de bord Cloudflare, pas sur la machine.
-Il ne sert pas `www.zacharyhounsa.ovh` : le DNS public de ce nom pointe
+Il ne sert pas zachary-it.fr via Cloudflare Tunnel : le DNS public de ce nom pointe
 `82.67.32.172`, pas une adresse Cloudflare.
 
 ⚠️ Le DNS interne est en vue dedoublee (SRV-19 rend `192.168.100.211`). Un
@@ -205,7 +205,7 @@ Controle en ligne (le seul qui voie le proxy — `test:operations` et `test:seo`
 lisent le code source) :
 
 ```bash
-npm run assert:security:headers -- --url https://www.zacharyhounsa.ovh/
+npm run assert:security:headers -- --url https://zachary-it.fr/
 ```
 
 Il echoue si un en-tete est absent, duplique par un intermediaire, ou si
@@ -213,31 +213,34 @@ Il echoue si un en-tete est absent, duplique par un intermediaire, ou si
 
 ### Canonicalisation de la vitrine, robots.txt et sitemap
 
-Un seul hote public doit repondre `200` : `www.zacharyhounsa.ovh`. L'apex
-`zacharyhounsa.ovh` est redirige en **301 permanent** par `proxy.ts`, chemin
-et query string conserves ; `/.well-known/acme-challenge/` en est exempte pour
-ne pas casser le renouvellement des certificats.
+Un seul hote public est canonique et doit repondre `200` : `zachary-it.fr`.
+`www.zachary-it.fr` redirige en **301 permanent** vers l'apex. Les anciens
+`zacharyhounsa.ovh` et `www.zacharyhounsa.ovh` redirigent eux aussi directement
+vers `https://zachary-it.fr` en conservant chemin et query string. Ces
+redirections sont portees par SRV-11/nginx ; ne pas recreer de chaine de
+redirection dans Next.js.
 
 ```bash
-curl -sS -o /dev/null -w '%{http_code} %{redirect_url}\n' \
+curl -sS -o /dev/null -w '%{http_code} %{redirect_url}
+' \
+  "https://www.zachary-it.fr/offres?utm_source=test"
+curl -sS -o /dev/null -w '%{http_code} %{redirect_url}
+' \
   "https://zacharyhounsa.ovh/offres?utm_source=test"
-curl -sS https://www.zacharyhounsa.ovh/robots.txt
-curl -sS -o /dev/null -w '%{http_code} %{content_type}\n' \
-  https://www.zacharyhounsa.ovh/sitemap.xml
+curl -sS https://zachary-it.fr/robots.txt
+curl -sS -o /dev/null -w '%{http_code} %{content_type}
+' \
+  https://zachary-it.fr/sitemap.xml
 ```
 
-Attendu : `301 https://www.zacharyhounsa.ovh/offres?utm_source=test`, un
-`robots.txt` sans directive `Host` (non standard) dont la seule ligne
-`Sitemap:` pointe `https://www.zacharyhounsa.ovh/sitemap.xml`, et un sitemap en
-`200 application/xml`. Ces deux ressources restent publiques : ni session, ni
-`X-Robots-Tag`.
+Attendu : les deux aliases renvoient `301 https://zachary-it.fr/offres?utm_source=test`,
+`robots.txt` publie `Sitemap: https://zachary-it.fr/sitemap.xml`, et le sitemap
+repond `200 application/xml`. Ces deux ressources restent publiques : ni session,
+ni `X-Robots-Tag`.
 
 Dans le sitemap, `lastmod` n'apparait que sur les pages adossees a un contenu
-administrable (`updatedAt` en base) — pages legales, `/a-propos`, fiches de
-pack. Les pages purement statiques n'en portent pas : mieux vaut omettre la
-date que la recalculer a chaque requete, ce qui annonce a tort tout le site
-comme modifie a chaque passage du robot. Garde-fou statique : `npm run
-test:seo`.
+administrable (`updatedAt` en base). Les pages purement statiques n'en portent
+pas. Garde-fou statique : `npm run test:seo`.
 
 ### Canonical, balisage schema.org et hors-index (v1.1.12)
 
@@ -248,16 +251,16 @@ poste qui atteint la vitrine :
 for p in / /offres /solutions /a-propos /contact /cgv /mentions-legales \
          /politique-confidentialite /offres/dossier-securise; do
   printf '%-34s ' "$p"
-  curl -sS "https://www.zacharyhounsa.ovh$p" \
+  curl -sS "https://zachary-it.fr$p" \
     | grep -o '<link rel="canonical"[^>]*>'
 done
 
-curl -sS https://www.zacharyhounsa.ovh/cgv | grep -c '<h1'
-curl -sS https://www.zacharyhounsa.ovh/ \
+curl -sS https://zachary-it.fr/cgv | grep -c '<h1'
+curl -sS https://zachary-it.fr/ \
   | grep -oE '<meta [^>]*(og:image|twitter:card)[^>]*>'
-curl -sS https://www.zacharyhounsa.ovh/solutions \
+curl -sS https://zachary-it.fr/solutions \
   | grep -o '<meta name="robots"[^>]*>'
-curl -sS https://www.zacharyhounsa.ovh/sitemap.xml | grep -c '<loc>'
+curl -sS https://zachary-it.fr/sitemap.xml | grep -c '<loc>'
 ```
 
 Attendu : **une** canonical par page et une seule ; `1` sur le compte de
@@ -267,7 +270,7 @@ et `twitter:card` a `summary_large_image` ; `noindex, follow` sur
 
 Deux pieges verifies en recette, a ne pas prendre pour des regressions :
 
-- la canonical de l'accueil est `https://www.zacharyhounsa.ovh` **sans**
+- la canonical de l'accueil est `https://zachary-it.fr` **sans**
   slash final, alors que le sitemap ecrit `…/`. Next normalise ainsi tout
   chemin racine (`resolve-url.js`, branche `pathname === "/"`) et seul
   `trailingSlash: true` changerait ce comportement. Les deux formes designent
@@ -293,7 +296,7 @@ attendus, `LocalBusiness` et `WebSite` sur l'accueil, `Service` et
 Constat brut :
 
 ```bash
-curl -sSk -o /dev/null -D - https://www.zacharyhounsa.ovh/
+curl -sSk -o /dev/null -D - https://zachary-it.fr/
 ```
 
 Un en-tete affiche deux fois vient du proxy : `add_header` **n'ecrase pas**
@@ -338,7 +341,7 @@ sudo nginx -t && sudo systemctl reload nginx
 Verifier enfin depuis le poste de build :
 
 ```bash
-npm run assert:security:headers -- --url https://www.zacharyhounsa.ovh/
+npm run assert:security:headers -- --url https://zachary-it.fr/
 ```
 
 Rollback : restaurer la sauvegarde du vhost, `nginx -t`, `systemctl reload

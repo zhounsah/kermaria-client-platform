@@ -7,6 +7,8 @@ metadata:
   originSessionId: 326e39e6-ff3d-491d-9776-85b0f8c59d7c
   modified: 2026-08-06T12:53:22.408Z
 ---
+Etat courant 20/08/2026 : domaine public canonique = https://zachary-it.fr. Les references a www.zacharyhounsa.ovh ci-dessous sont historiques. Voir docs/DOMAIN_MIGRATION_2026-08-20.md.
+
 
 Passe SEO **v1.1.12** (audit du 2026-08-05, rapport dans
 `C:\Users\zhounsah\Documents\Dev\seo\`) : six défauts corrigés — canonical

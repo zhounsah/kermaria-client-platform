@@ -7,6 +7,8 @@ metadata:
   originSessionId: 5091a314-79a7-435b-95ba-6df760db654f
   modified: 2026-08-04T23:11:40.318Z
 ---
+Etat courant 20/08/2026 : la vitrine canonique est https://zachary-it.fr ; dashboard/admin utilisent *.zachary-it.fr. Les references a www.zacharyhounsa.ovh ci-dessous decrivent l incident historique du 05/08. Voir docs/DOMAIN_MIGRATION_2026-08-20.md.
+
 
 Décidé le 2026-08-04 (livré en `v1.1.10.2`) : **l'application est source de
 vérité unique des en-têtes de sécurité**, le proxy nginx SRV-11

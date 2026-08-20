@@ -1,5 +1,7 @@
 # Deploiement R740xd par VM dediees (SRV-11 / SRV-12 / SRV-13)
 
+> Current production note - 2026-08-20: edge/TLS is SRV-11, webportal is SRV-12 and API-INTERNAL is SRV-13. Canonical hosts are zachary-it.fr, dashboard.zachary-it.fr and administration.zachary-it.fr. Older IIS/SRV-01 procedures below are historical or staging-only. See docs/DOMAIN_MIGRATION_2026-08-20.md.
+
 Statut : **cible active au 2026-07-29** pour la mise en configuration du
 R740xd. Ce runbook remplace comme **chemin nominal** la variante plus
 ancienne "mono-hote R740xd" conservee dans
@@ -102,7 +104,7 @@ Artefacts du repo a reutiliser :
   `EF53E21262082E538F647335B216956E6F875D32FB7D06B17D2501D93DC8F8D3` ;
   health `live` et `ready` a `200`, y compris la dependance SRV-13 ;
 - `SRV-11` : nginx `1.28.3` actif avec terminaison TLS pour `www`,
-  `dashboard` et `administration.zacharyhounsa.ovh`; certificat Let's Encrypt
+  `dashboard` et `administration.zachary-it.fr`; certificat Let's Encrypt
   valide jusqu'au `2026-10-27`, renouvellement DNS-01 OVH et rechargement nginx
   verifies par un dry-run Certbot ;
 - le DNS interne AD integre des trois FQDN pointe vers `192.168.100.211` et se

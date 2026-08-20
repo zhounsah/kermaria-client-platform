@@ -1,5 +1,7 @@
 # Procedure de mise en production
 
+> Current production note - 2026-08-20: edge/TLS is SRV-11, webportal is SRV-12 and API-INTERNAL is SRV-13. Canonical hosts are zachary-it.fr, dashboard.zachary-it.fr and administration.zachary-it.fr. Older IIS/SRV-01 procedures below are historical or staging-only. See docs/DOMAIN_MIGRATION_2026-08-20.md.
+
 Livrable V0.24 Brique 3. Cette procedure decrit la bascule de la
 phase de tests staging (KERMARIA-SRV-01/02/07) vers l'infrastructure
 definitive (R740xd), en deux temps :
@@ -55,14 +57,14 @@ V0.25 sortie AD prod cible (V0.31) executee :
   - Zone interne `home.bzh` (sur SRV-03 DC AD) : `A` records pour
     `www`, `portail`, `dashboard`, `api` (si expose interne)
     pointant sur l'IP LAN du R740xd (ou sur le reverse proxy edge).
-  - Zone publique `zacharyhounsa.ovh` (OVH) : `CNAME` ou `A`
-    records `www`, `portail`, `dashboard` vers l'IP WAN. Verifier
-    aussi les enregistrements SPF/DKIM/DMARC finalises en V0.30
-    final.
+  - Zone publique zachary-it.fr (OVH) : A/CNAME pour apex, www, dashboard et administration vers l IP WAN.
+    Conserver zacharyhounsa.ovh pour les redirects legacy, le portfolio et le wiki.
+    Si la messagerie reste sur cette famille, conserver et verifier SPF/DKIM/DMARC.
+
 - Certificat TLS production :
   - Option A (reprise wildcard existant) : valider la couverture des
     nouveaux hostnames par le wildcard Let's Encrypt en place
-    (`*.home.bzh`, `*.zacharyhounsa.ovh`, `*.kermaria35580.ovh`) et
+    (*.home.bzh, zachary-it.fr, *.zachary-it.fr, *.zacharyhounsa.ovh, *.kermaria35580.ovh) et
     son renouvellement automatique.
   - Option B (cert dedie) : monter win-acme sur R740xd, faire
     emettre un certificat propre par site avec HTTP-01 ou DNS-01.
@@ -159,13 +161,13 @@ sur R740xd. N'engage pas la production.
   - PayPal : creer une app `live` distincte, generer
     `PAYPAL_CLIENT_ID` / `PAYPAL_CLIENT_SECRET`. Configurer les
     webhook endpoints avec l'URL cible
-    `https://dashboard.zacharyhounsa.ovh/api/webhooks/paypal`.
+    `https://dashboard.zachary-it.fr/api/webhooks/paypal`.
   - Stripe : basculer sur les cles `live`, generer un
     `STRIPE_WEBHOOK_SECRET` pour l'endpoint
-    `https://dashboard.zacharyhounsa.ovh/api/webhooks/stripe`.
+    `https://dashboard.zachary-it.fr/api/webhooks/stripe`.
   - hCaptcha : `HCAPTCHA_SITE_KEY` + `HCAPTCHA_SECRET_KEY` **du meme
     site** (un couple depareille = `sitekey-secret-mismatch`), avec le
-    hostname servant `/signup` (`dashboard.zacharyhounsa.ovh`) dans les hostnames
+    hostname servant `/signup` (`dashboard.zachary-it.fr`) dans les hostnames
     autorises du site. Recetter avec de **vraies** cles (les cles de
     test ignorent `remoteip` et ne reproduisent pas le comportement).
     Signup **fail-closed** sans cle. Detail : `DEPLOYMENT_WINDOWS.md`
@@ -374,21 +376,21 @@ Wildcard reutilise ou cert prod dedie selon prerequis TLS.
 
 Quatre surfaces IIS :
 
-- `kermaria-vitrine` sur `www.zacharyhounsa.ovh` (canonique, indexable).
+- `kermaria-vitrine` sur `zachary-it.fr` (canonique, indexable).
 - `kermaria-home-redirect` sur `www.home.bzh` (redirection vers
-  `www.zacharyhounsa.ovh`).
-- `kermaria-portal` sur `administration.zacharyhounsa.ovh` et
-  `dashboard.zacharyhounsa.ovh` (canonique, noindex).
+  `zachary-it.fr`).
+- `kermaria-portal` sur `administration.zachary-it.fr` et
+  `dashboard.zachary-it.fr` (canonique, noindex).
 - `kermaria-portal-home-redirect` sur `administration.home.bzh` et
   `dashboard.home.bzh` (redirection vers les hosts canoniques).
 
 Convention canonique retenue :
 
-- public : `www.zacharyhounsa.ovh`
-- client : `dashboard.zacharyhounsa.ovh`
-- admin : `administration.zacharyhounsa.ovh`
+- public : `zachary-it.fr`
+- client : `dashboard.zachary-it.fr`
+- admin : `administration.zachary-it.fr`
 - `portail.home.bzh` est un alias historique a rediriger vers
-  `dashboard.zacharyhounsa.ovh`, pas un host canonique
+  `dashboard.zachary-it.fr`, pas un host canonique
 
 ### HSTS progressif
 
@@ -469,7 +471,7 @@ validee est **immuable cote banque**.
 ### 9.3 `PAYPAL_MODE=live`
 
 Prerequis : app PayPal live enregistree, webhook endpoint
-configure sur `https://dashboard.zacharyhounsa.ovh/api/webhooks/paypal`.
+configure sur `https://dashboard.zachary-it.fr/api/webhooks/paypal`.
 
 Bascule dans `webportal.config.json` **et** `api-internal.config.json`
 en meme temps (les deux composants lisent `PAYPAL_MODE`) :
@@ -496,7 +498,7 @@ associee, l'email de confirmation.
 ### 9.4 `STRIPE_MODE=live`
 
 Prerequis : compte Stripe en mode live, webhook endpoint configure
-sur `https://dashboard.zacharyhounsa.ovh/api/webhooks/stripe`.
+sur `https://dashboard.zachary-it.fr/api/webhooks/stripe`.
 
 Bascule identique :
 
@@ -677,7 +679,7 @@ Scenario extreme (incident majeur sur R740xd en V1.0 beta 1) :
 
 1. Retirer le R740xd du trafic (arret IIS ou basculement DNS vers
    maintenance page hostee ailleurs).
-2. Rebasculer les DNS `zacharyhounsa.ovh` publics vers l'IP
+2. Rebasculer les DNS zachary-it.fr publics vers l IP
    staging SRV-01 si elle est encore up.
 3. Documenter l'incident, RCA, correctifs, replanifier la
    bascule R740xd.

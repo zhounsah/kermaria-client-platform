@@ -3,14 +3,26 @@
 Plateforme technique de l'espace client **Zachary HOUNSA-HOUNKPA EI** pour
 `zachary-it.fr`.
 
-Ce depot reste separe du site vitrine Astro et conserve une architecture
-obligatoire :
+Ce depot porte la vitrine publique Zachary IT et l espace client via le meme WEBPORTAL Next.js.
+L architecture obligatoire reste :
 
 ```text
 browser -> WEBPORTAL / BFF -> API-INTERNAL -> MariaDB
 ```
 
 `WEBPORTAL` ne doit jamais acceder directement a MariaDB.
+
+## Domaines de production
+
+Topologie canonique depuis le 20 aout 2026 :
+
+- public : https://zachary-it.fr ;
+- client : https://dashboard.zachary-it.fr ;
+- administration : https://administration.zachary-it.fr ;
+- portfolio : https://portfolio.zacharyhounsa.ovh ;
+- wiki : https://wiki.zacharyhounsa.ovh.
+
+Voir docs/DOMAIN_MIGRATION_2026-08-20.md pour les redirections legacy, les webhooks et les regles de migration.
 
 ## Documentation 1.0.0
 
@@ -309,27 +321,13 @@ Acquis V0.18 et V0.19 (toujours actifs) :
   `Development` ;
 - validateur d'entrees AD strict cote `API-INTERNAL`.
 
-Le mode `live` BPCE/PayPal/EMAIL/Stripe n'est jamais active sans
-validation explicite (V1.0 beta 1, R740xd).
+La production n est plus bloquee par le R740xd : la cible est en service.
+Topologie courante : SRV-11 edge/TLS, SRV-12 WEBPORTAL, SRV-13 API-INTERNAL et SRV-06 MariaDB.
+Les modes fournisseurs et les mutations sensibles restent gouvernes par la configuration de production et leurs garde-fous, pas par un blocage materiel.
 
-Le projet reste en **phase de tests** sur SRV-01 et SRV-02 tant que la
-cible R740xd n'est pas livree : aucun client reel, aucun envoi e-mail
-externe a un destinataire reel hors liste blanche, aucun prelevement
-recurrent active.
+Les jalons pre-R740xd et la recette historique SRV-01/SRV-02 sont conserves dans docs/ROADMAP.md et les documents V0.x, mais ne doivent plus etre utilises comme topologie de deploiement actuelle.
 
-A venir avant la bascule hardware (tous faisables sans R740xd, ajoutes
-au 2026-06-30) :
-
-- V0.24 stabilisation testable SRV-01/02 ;
-- V0.28 catalogue packs et offres groupees ;
-- V0.30 premier test SMTP reel controle (brique allowlist livree le
-  2026-07-02 — [`docs/V0.30_EMAIL_LIVE_TEST.md`](docs/V0.30_EMAIL_LIVE_TEST.md) —
-  reste a livrer : statuts `email_messages` etendus, sous-domaine
-  emetteur dedie, SPF/DKIM/DMARC documentes, recette guidee) ;
-- V0.31 sortie effective de `OU=TEST_SITE_WEB` (procedure V0.25
-  brique 3 executee, levee du `RequiredTestOuRoot` hardcode) ;
-
-Voir [`docs/ROADMAP.md`](docs/ROADMAP.md) pour le detail.
+Voir docs/DOMAIN_MIGRATION_2026-08-20.md pour les domaines et redirections de production.
 
 ## Architecture
 

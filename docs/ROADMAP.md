@@ -1,5 +1,7 @@
 # Feuille de route
 
+> Historical domain note - 2026-08-20: zacharyhounsa.ovh names in this document describe the state of that release. Current canonical hosts are zachary-it.fr, dashboard.zachary-it.fr and administration.zachary-it.fr. See docs/DOMAIN_MIGRATION_2026-08-20.md.
+
 > Lecture 1.0.0 : cette feuille de route sert a comprendre l'historique et les
 > jalons V0.xx. Pour l'etat courant et les points d'entree actuels, commencer
 > par [`V1.0.0_DOCUMENTATION.md`](V1.0.0_DOCUMENTATION.md).

@@ -11,9 +11,9 @@ private_key="/etc/ssl/kermaria/privkey.pem"
 pending_config="/etc/nginx/sites-available/kermaria-tls.pending"
 active_config="/etc/nginx/sites-available/kermaria"
 required_names=(
-  "www.zacharyhounsa.ovh"
-  "dashboard.zacharyhounsa.ovh"
-  "administration.zacharyhounsa.ovh"
+  "zachary-it.fr"
+  "*.zachary-it.fr"
+  "*.zacharyhounsa.ovh"
 )
 
 for path in "${certificate}" "${private_key}" "${pending_config}"; do
@@ -72,7 +72,7 @@ systemctl reload nginx.service
 expected_fingerprint="$(openssl x509 -in "${certificate}" -noout -fingerprint -sha256 | cut -d= -f2)"
 served_fingerprint="$(
   openssl s_client -connect 192.168.100.211:443 \
-    -servername dashboard.zacharyhounsa.ovh </dev/null 2>/dev/null |
+    -servername dashboard.zachary-it.fr </dev/null 2>/dev/null |
     openssl x509 -noout -fingerprint -sha256 | cut -d= -f2
 )"
 if [[ "${expected_fingerprint}" != "${served_fingerprint}" ]]; then
@@ -87,8 +87,8 @@ fi
 # Origin certificates are trusted by Cloudflare, not by a browser trust store.
 curl --fail --silent --show-error --max-time 10 \
   --insecure \
-  --resolve dashboard.zacharyhounsa.ovh:443:192.168.100.211 \
-  https://dashboard.zacharyhounsa.ovh/api/health/ready >/dev/null
+  --resolve dashboard.zachary-it.fr:443:192.168.100.211 \
+  https://dashboard.zachary-it.fr/api/health/ready >/dev/null
 
 trap - ERR
 echo "tls_configuration=active"

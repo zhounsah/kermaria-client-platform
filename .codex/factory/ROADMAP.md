@@ -76,7 +76,6 @@ Les éléments suivants ne constituent pas des phases de restauration :
 - `etat-avant-remise-a-plat.patch` et son patch d'index ;
 - snapshots DNS datés, exports ACL et journaux bruts ;
 - renommages globaux destinés à accentuer des identifiants techniques ;
-- `v0.24.txt` brut, qui n'est pas une source de vérité versionnée.
 
 ## Critères globaux de fin
 

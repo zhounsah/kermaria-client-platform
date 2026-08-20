@@ -19,7 +19,7 @@ groupes de sécurité et ports applicatifs définitifs.
 
 | Source | Destination | Protocole / port | Usage et conditions |
 |---|---|---|---|
-| Internet | Cloudflare / reverse proxy public | TCP 443 | Accès HTTPS à `clients.zacharyhounsa.ovh` |
+| Internet | Cloudflare / reverse proxy public | TCP 443 | Accès HTTPS à `dashboard.zachary-it.fr` |
 | Cloudflare / reverse proxy | `WEBPORTAL` | TCP 443 | Transmission HTTPS vers l'origine ; sources restreintes lorsque possible |
 | `WEBPORTAL` | `API-INTERNAL` | TCP 443 ou port HTTPS applicatif à confirmer | Appels privés avec identité service-à-service |
 | `API-INTERNAL` | SQL existant | Port SQL à confirmer selon le moteur | Accès avec compte applicatif dédié et chiffrement si disponible |

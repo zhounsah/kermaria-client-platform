@@ -49,7 +49,7 @@ systemctl enable nginx.service
 systemctl restart nginx.service
 
 curl --fail --silent --show-error --max-time 10 \
-  --header 'Host: dashboard.zacharyhounsa.ovh' \
+  --header 'Host: dashboard.zachary-it.fr' \
   http://192.168.100.211/api/health/ready >/dev/null
 
 echo "nginx_bootstrap=active"

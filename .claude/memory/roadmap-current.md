@@ -6,6 +6,14 @@ metadata:
   type: project
   originSessionId: 316dd2c1-620c-4ba1-833b-0b5d317971ba
 ---
+## Etat courant - 20/08/2026
+
+- production : SRV-11 edge/TLS, SRV-12 WEBPORTAL, SRV-13 API-INTERNAL, SRV-06 MariaDB ;
+- domaines canoniques : https://zachary-it.fr, https://dashboard.zachary-it.fr, https://administration.zachary-it.fr ;
+- anciens domaines public/client/admin : 301 sur SRV-11 ; /api/webhooks/* de l ancien dashboard reste temporairement en passthrough ;
+- source de verite domaine/topologie : docs/DOMAIN_MIGRATION_2026-08-20.md ;
+- le snapshot juillet ci-dessous est historique et ne doit plus etre utilise pour choisir les cibles de deploiement.
+
 
 État réel au **2026-07-06**, reconstitué sur la source de vérité
 prioritaire (code + historique Git + tests de contrat + docs datées).

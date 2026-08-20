@@ -1,5 +1,7 @@
 # Deploiement Windows Server 2022 (KERMARIA-SRV-01 / KERMARIA-SRV-02 / KERMARIA-SRV-07)
 
+> Current production note - 2026-08-20: edge/TLS is SRV-11, webportal is SRV-12 and API-INTERNAL is SRV-13. Canonical hosts are zachary-it.fr, dashboard.zachary-it.fr and administration.zachary-it.fr. Older IIS/SRV-01 procedures below are historical or staging-only. See docs/DOMAIN_MIGRATION_2026-08-20.md.
+
 Runbook cible : deploiement natif sans VM ni Docker, sur trois hotes
 Windows Server 2022 existants. Sert de reference pour la Brique 1 de
 V0.24 (recette staging KERMARIA-SRV-01/02) et d'ossature pour V1.0 beta 1
@@ -728,7 +730,7 @@ Contenu attendu (extrait typique) :
 >   `sitekey-secret-mismatch` et le siteverify echoue en 400
 >   `CAPTCHA_FAILED` malgre un token valide ;
 > - les **hostnames autorises** du site hCaptcha doivent inclure le
->   domaine servant le formulaire : `dashboard.zacharyhounsa.ovh` (+ `dashboard.home.bzh`
+>   domaine servant le formulaire : `dashboard.zachary-it.fr` (+ `dashboard.home.bzh`
 >   si tu conserves l'alias interne, et les hosts de recette encore exposes
 >   pendant la transition).
 >   Un hostname absent renvoie une reponse siteverify avec le champ
@@ -908,9 +910,9 @@ portfolio :
 
 | Site | Hostnames | Role | Header noindex |
 |---|---|---|---|
-| `kermaria-vitrine` | `www.zacharyhounsa.ovh` | Vitrine publique canonique | strippe |
-| `kermaria-home-redirect` | `www.home.bzh` | Alias public vers `www.zacharyhounsa.ovh` | n/a |
-| `kermaria-portal` | `administration.zacharyhounsa.ovh`, `dashboard.zacharyhounsa.ovh` | Interfaces canoniques interne/client + `/api/*` | conserve |
+| `kermaria-vitrine` | `zachary-it.fr` | Vitrine publique canonique | strippe |
+| `kermaria-home-redirect` | `www.home.bzh` | Alias public vers `zachary-it.fr` | n/a |
+| `kermaria-portal` | `administration.zachary-it.fr`, `dashboard.zachary-it.fr` | Interfaces canoniques interne/client + `/api/*` | conserve |
 | `kermaria-portal-home-redirect` | `administration.home.bzh`, `dashboard.home.bzh`, `portail.home.bzh` | Aliases vers les hosts canoniques client/admin | n/a |
 | `kermaria-portfolio` | `portfolio.zacharyhounsa.ovh` | Portfolio canonique a la racine du sous-domaine | strippe |
 
@@ -983,16 +985,16 @@ Set-ItemProperty "IIS:\AppPools\$AppPoolName" -Name startMode -Value "AlwaysRunn
 ### Site `kermaria-portal` (hosts canoniques prives)
 
 Le site prive sert les deux hosts canoniques suivants :
-- `administration.zacharyhounsa.ovh` : `/` redirige vers `/admin`
-- `dashboard.zacharyhounsa.ovh` : `/` redirige vers `/login`
+- `administration.zachary-it.fr` : `/` redirige vers `/admin`
+- `dashboard.zachary-it.fr` : `/` redirige vers `/login`
 
 ```powershell
 $Ip         = "192.168.100.201"    # IP publique du serveur
-$CertThumb  = "<empreinte du wildcard *.home.bzh + *.zacharyhounsa.ovh>"
+$CertThumb  = "<empreinte couvrant *.home.bzh + zachary-it.fr + *.zachary-it.fr + *.zacharyhounsa.ovh>"
 $PortalPath = "C:\inetpub\kermaria"
 $PortalHosts = @(
-    "administration.zacharyhounsa.ovh",
-    "dashboard.zacharyhounsa.ovh"
+    "administration.zachary-it.fr",
+    "dashboard.zachary-it.fr"
 )
 
 New-Item -ItemType Directory -Force -Path $PortalPath | Out-Null
@@ -1097,7 +1099,7 @@ portfolio.
 ```powershell
 $VitrineSite  = "kermaria-vitrine"
 $VitrinePath  = "C:\inetpub\kermaria-vitrine"
-$VitrineHosts = @("www.zacharyhounsa.ovh")
+$VitrineHosts = @("zachary-it.fr")
 
 New-Item -ItemType Directory -Force -Path $VitrinePath | Out-Null
 
@@ -1183,12 +1185,12 @@ Start-Website -Name $VitrineSite
 ### Sites de redirection et portfolio
 
 - `kermaria-home-redirect` : redirige `www.home.bzh/*` vers
-  `https://www.zacharyhounsa.ovh/*`.
+  `https://zachary-it.fr/*`.
 - `kermaria-portal-home-redirect` : redirige
   `administration.home.bzh/*` vers
-  `https://administration.zacharyhounsa.ovh/*`, `dashboard.home.bzh/*`
-  vers `https://dashboard.zacharyhounsa.ovh/*` et `portail.home.bzh/*`
-  vers `https://dashboard.zacharyhounsa.ovh/*`.
+  `https://administration.zachary-it.fr/*`, `dashboard.home.bzh/*`
+  vers `https://dashboard.zachary-it.fr/*` et `portail.home.bzh/*`
+  vers `https://dashboard.zachary-it.fr/*`.
 - `kermaria-portfolio` : host indexable `portfolio.zacharyhounsa.ovh`
   qui rewrite `/` vers `/portfolio/index.html` et `/{path}` vers
   `/portfolio/{path}` sur le meme Node local.
@@ -1199,12 +1201,12 @@ Start-Website -Name $VitrineSite
   topologie). Ajouter les A records `www`, `administration`,
   `dashboard`
   → `192.168.100.201`.
-- **`*.zacharyhounsa.ovh`** : DNS public OVH. CNAME ou A records
-  `www`, `administration`, `dashboard`, `portfolio` vers l'IP WAN +
-  port forward 80/443 vers `192.168.100.201`.
+- **`zachary-it.fr` / `*.zachary-it.fr`** : DNS public OVH pour la vitrine et les portails canoniques.
+- **Legacy `*.zacharyhounsa.ovh`** : conserve pour portfolio, wiki et redirects legacy.
+  Pour ce runbook IIS legacy, adapter les A/CNAME vers l IP WAN du front utilise.
 
 Le certificat wildcard Let's Encrypt en place couvre deja
-`*.home.bzh`, `*.zacharyhounsa.ovh` et `*.kermaria35580.ovh` — sa
+*.home.bzh, zachary-it.fr, *.zachary-it.fr, *.zacharyhounsa.ovh et *.kermaria35580.ovh - sa
 reutilisation evite un cert propre par sous-domaine. Voir section
 6 pour le renouvellement.
 
@@ -1220,10 +1222,10 @@ file ou le DNS interne resolvant les hostnames sur `192.168.100.201` :
 $b = Invoke-WebRequest -Uri "https://portail.home.bzh/" `
   -MaximumRedirection 0 -UseBasicParsing
 $b.StatusCode                        # 301
-$b.Headers.Location                  # https://dashboard.zacharyhounsa.ovh/
+$b.Headers.Location                  # https://dashboard.zachary-it.fr/
 
 # Vitrine canonique : landing publique indexable
-$v = Invoke-WebRequest -Uri "https://www.zacharyhounsa.ovh/" -UseBasicParsing
+$v = Invoke-WebRequest -Uri "https://zachary-it.fr/" -UseBasicParsing
 $v.StatusCode                        # 200
 $v.Headers['X-Robots-Tag']           # vide → outbound rule OK
 $v.Content -match "claire et utile"  # True (hero V0.27)

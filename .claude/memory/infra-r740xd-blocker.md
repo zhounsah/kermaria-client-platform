@@ -1,20 +1,27 @@
 ---
 name: infra-r740xd-blocker
-description: "Production deployment of kermaria-client-platform is hardware-gated — the R740xd host has not been delivered yet, so the project stays in test phase on SRV-01/SRV-02 with no real external commitments."
+description: "RÉSOLU (~2026-07-23) : le R740xd est livré et toutes les VM sont actives. La V1.0 n'est PLUS hardware-gated. Historique du blocage conservé ci-dessous."
 metadata: 
   node_type: memory
   type: project
   originSessionId: 316dd2c1-620c-4ba1-833b-0b5d317971ba
+  modified: 2026-08-03T08:51:55.973Z
 ---
+Etat courant 20/08/2026 : production active sur SRV-11/SRV-12/SRV-13/SRV-06 ; le blocage materiel est clos. Les domaines canoniques sont zachary-it.fr, dashboard.zachary-it.fr et administration.zachary-it.fr. Voir deployment-topology et docs/DOMAIN_MIGRATION_2026-08-20.md.
 
-Le déploiement de production de `kermaria-client-platform` est bloqué par la livraison du serveur **R740xd**. Tant qu'il n'est pas livré, on reste en **phase de tests** sur les hôtes existants **SRV-01** et **SRV-02**. L'utilisateur refuse explicitement de mettre en place deux VM de préproduction "dans le vent" sur l'infra actuelle.
 
-**Why:** L'infra cible (R740xd) doit héberger la vraie préproduction et la production. Monter une préprod jetable sur SRV-01/02 puis tout rebasculer plus tard est du travail perdu. La V1.0 (premier client réel servi) ne peut pas exister sans cible définitive — domaine, TLS, supervision, sauvegardes, rotation des secrets sont câblés sur la machine finale, pas avant.
+**MISE À JOUR 2026-08-03 — BLOCAGE LEVÉ.** L'utilisateur confirme avoir reçu le **R740xd il y a ~1,5 semaine (≈ 2026-07-23)** et que **toutes les VM sont actives**. La cible d'infra est donc debout. Conséquences :
 
-**How to apply:**
-- Considérer V1.0 comme **hardware-gated** : ne pas proposer de "go live" tant que le R740xd n'est pas listé comme disponible par l'utilisateur.
-- Toute version développée avant la cible reste **en phase de tests** : aucune émission externe, aucun e-mail envoyé à un destinataire réel, aucune numérotation fiscale revendiquée comme légale, aucune mutation AD hors `OU=TEST_SITE_WEB`. Les modes (`BPCE_INTEGRATION_MODE`/`PAYPAL_MODE`/`STRIPE_MODE`/`EMAIL_INTEGRATION_MODE`) restent à leur défaut non-live.
-- **V0.24 est le sas de stabilisation pré-V1** : ce qui se valide en interne maintenant (Brique 1 recette staging + restauration MariaDB, Brique 2 audit sécurité, Brique 3 doc + procédure prod) est distinct de ce qui attend la cible R740xd (exécution de `docs/PRODUCTION_DEPLOYMENT.md`, bascule des modes en `live`, supervision/sauvegardes/rotation câblées sur l'infra définitive = V1.0 beta 1). Le détail à jour des jalons vit dans [[roadmap-current]], ne pas re-hardcoder de numéros de version ici.
-- Si une décision implique d'engager une obligation externe non honorable en test (envoi e-mail réel, numérotation fiscale officielle, AD production), alerter l'utilisateur plutôt que d'avancer.
+- La V1.0 (V1.0 beta 1 = test de déploiement cible, V1.0 RC = prod réelle) **n'est plus hardware-gated** ; le jalon peut avancer.
+- L'argument « ne rien monter dans le vent avant la cible » ne tient plus : la cible EST la R740xd.
+- La topologie a changé de nature : on passe du bare-metal 3 hôtes sans VM à une **ferme Hyper-V R740xd de ~38 VM** (rôles séparés). Détail à jour dans [[deployment-topology]] (mémoire réécrite le 2026-08-03).
+- ⚠️ À confirmer avant d'affirmer : « VM actives » ≠ « apps redéployées dessus ». Vérifier au cas par cas si le webportal/API/DB tournent déjà sur les nouvelles VM (SRV-12/SRV-13/SRV-06…) ou encore sur l'ancien split. Le runbook `docs/DEPLOYMENT_WINDOWS.md` décrit encore l'ancien modèle.
+- Les garde-fous « phase de tests » (modes non-live par défaut, pas d'émission externe non voulue, mutations AD cadrées) restent une **décision produit** à conserver tant que l'utilisateur ne bascule pas explicitement en live — mais ce n'est plus imposé par le matériel.
+
+--- HISTORIQUE (périmé, conservé pour contexte) ---
+
+Le déploiement de production était bloqué par la livraison du serveur **R740xd**. Tant qu'il n'était pas livré, on restait en **phase de tests** sur les hôtes existants SRV-01 et SRV-02. L'utilisateur refusait de monter deux VM de préproduction "dans le vent" sur l'infra d'alors.
+
+**Why (historique) :** l'infra cible (R740xd) devait héberger la vraie préprod et la prod ; monter une préprod jetable puis tout rebasculer était du travail perdu.
 
 Voir aussi [[roadmap-current]] pour le détail des jalons.
