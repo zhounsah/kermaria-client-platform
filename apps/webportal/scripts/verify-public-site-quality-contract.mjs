@@ -74,7 +74,7 @@ assert.match(publicShell, /aria-label="Liens l/);
 assert.match(publicShell, /publicHref\("\/offres"\)/);
 assert.match(publicShell, /publicHref\("\/diagnostic"\)/);
 assert.match(publicShell, /publicHref\("\/ressources"\)/);
-assert.doesNotMatch(publicShell, /publicHref\("\/services"\)/);
+assert.match(publicShell, /publicHref\("\/services"\)/);
 
 assert.match(offresPage, /PublicPackOverviewGrid/);
 assert.match(offresPage, /PublicPackComparisonTable/);
@@ -124,6 +124,7 @@ for (const [path, key] of [
 for (const path of [
   "app/offres/page.tsx",
   "app/diagnostic/page.tsx",
+  "app/services/page.tsx",
   "app/solutions/page.tsx",
 ]) {
   const source = await read(path);
@@ -140,7 +141,7 @@ assert.match(robots, /disallow:\s*\[/);
 assert.match(robots, /sitemap:/);
 assert.match(sitemap, /path:\s*"\/offres"/);
 assert.match(sitemap, /path:\s*"\/ressources"/);
-assert.doesNotMatch(sitemap, /path:\s*"\/services"/);
+assert.match(sitemap, /path:\s*"\/services"/);
 
 assert.match(styles, /@media \(max-width: 720px\)[\s\S]*\.public-header-nav/);
 assert.match(styles, /\.public-header-inner\s*\{[\s\S]*grid-template-columns:\s*minmax\(230px,\s*1fr\) auto minmax\(230px,\s*1fr\)/);

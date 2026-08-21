@@ -72,7 +72,7 @@ assert.match(publicShell, /publicHref\("\/ressources"\)/);
 assert.match(publicShell, /brand-logo-public/);
 assert.doesNotMatch(publicShell, /Sauvegarde et continuit/);
 assert.match(publicShell, />Ressources</);
-assert.doesNotMatch(publicShell, /publicHref\("\/services"\)|>Services</);
+assert.match(publicShell, /publicHref\("\/services"\)/);
 assert.doesNotMatch(publicShell, /decouvrir-espace-client|DÃ©mo espace client|Démo espace client/);
 assert.doesNotMatch(publicPackCard, /Pack grand public/);
 assert.match(publicPackCard, /<h2>\{pack\.label\}<\/h2>/);

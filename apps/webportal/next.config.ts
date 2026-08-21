@@ -25,7 +25,6 @@ export const NOINDEX_ROUTE_PREFIXES = [
   "/password",
   "/profile",
   "/request-service",
-  "/services",
   "/set-password",
   "/signup/verify",
   "/souscrire",

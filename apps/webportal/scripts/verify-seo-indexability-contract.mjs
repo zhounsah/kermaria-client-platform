@@ -41,6 +41,11 @@ const PUBLIC_PATHS = [
   "/",
   "/offres",
   "/offres/pack-essentiel",
+  "/services",
+  "/services/cloud-hebergement",
+  "/services/domaines-messagerie",
+  "/services/reseau-securite",
+  "/services/support-it",
   "/diagnostic",
   "/decouvrir-espace-client",
   "/ressources",
@@ -75,6 +80,7 @@ const METADATA_NOINDEX_PAGES = [
 const CANONICAL_PAGES = [
   ["/", "app/page.tsx"],
   ["/offres", "app/offres/page.tsx"],
+  ["/services", "app/services/page.tsx"],
   ["/diagnostic", "app/diagnostic/page.tsx"],
   ["/decouvrir-espace-client", "app/decouvrir-espace-client/[[...section]]/page.tsx"],
   ["/ressources", "app/ressources/page.tsx"],
@@ -451,6 +457,11 @@ assert.match(proxySource, /resolvePortalPublicRedirectUrl\(/);
 assert.match(proxySource, /isClientOrAdminPortalHost\(/);
 assert.match(
   proxySource,
+  /isClientOrAdminPortalHost\(requestHost\)[\s\S]*request\.nextUrl\.pathname === "\/services"[\s\S]*X-Robots-Tag/,
+  "La copie portail de /services doit rester noindex.",
+);
+assert.match(
+  proxySource,
   /isClientOrAdminPortalHost\(requestHost\)[\s\S]*isClientCheckoutContinuationPath\(request\.nextUrl\.pathname\)[\s\S]*response\.headers\.set\("X-Robots-Tag", "noindex, nofollow"\)/,
   "La continuation Billing V2 sur l'hote client doit etre explicitement noindex.",
 );
@@ -683,7 +694,7 @@ assert.doesNotMatch(
 assert.equal(isPublicRoute("/wiki"), true);
 assert.equal(isPublicRoute("/wiki/article/exemple"), true);
 assert.equal(isPublicRoute("/slug-editorial-inconnu"), true);
-assert.equal(isPublicRoute("/services"), false);
+assert.equal(isPublicRoute("/services"), true);
 assert.equal(resolveWikiRewritePath("/"), "/wiki");
 assert.equal(resolveWikiRewritePath("/wiki"), "/wiki");
 assert.equal(resolveWikiRewritePath("/wiki/article/exemple"), "/wiki/article/exemple");

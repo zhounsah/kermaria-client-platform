@@ -12,6 +12,9 @@ export const PUBLIC_ROUTES = [
   "/solutions",
   "/a-propos",
   "/contact",
+  // La même route reste l'espace « Mes services » sur l'hôte dashboard.
+  // AppShell sélectionne le shell selon l'hôte pour préserver ce parcours.
+  "/services",
   "/wiki",
   "/decouvrir-espace-client",
   "/mentions-legales",

@@ -37,12 +37,16 @@ export function AppShell({
 }: AppShellProps) {
   const pathname = usePathname();
   const [session, setSession] = useState<InternalSession | null>(null);
-  const usePublicShell = isPublicRoute(pathname);
-  const isWikiRoute = pathname === "/wiki" || pathname.startsWith("/wiki/");
-  const isCheckoutContinuation = isClientCheckoutContinuationPath(pathname);
   const portalArea: PortalArea | null = typeof window === "undefined"
     ? null
     : getPortalArea(window.location.origin);
+  // `/services` est volontairement servi comme vitrine sur le domaine public
+  // et comme espace « Mes services » sur le portail client. Le choix du shell
+  // doit donc tenir compte de l'hôte, pas uniquement du chemin.
+  const isClientServicesRoute = pathname === "/services" && portalArea === "client";
+  const usePublicShell = isPublicRoute(pathname) && !isClientServicesRoute;
+  const isWikiRoute = pathname === "/wiki" || pathname.startsWith("/wiki/");
+  const isCheckoutContinuation = isClientCheckoutContinuationPath(pathname);
   const keepAuthenticatedCheckoutShell =
     isCheckoutContinuation
     && portalArea === "client"

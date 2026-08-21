@@ -1,4 +1,6 @@
+import type { Metadata } from "next";
 import Link from "next/link";
+import { headers } from "next/headers";
 
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
@@ -8,7 +10,11 @@ import { PublicPackCard } from "@/components/PublicPackCard";
 import { SectionHeading } from "@/components/SectionHeading";
 import { ServiceCard } from "@/components/ServiceCard";
 import { StatusBadge } from "@/components/StatusBadge";
+import { PublicServicesLandingPage } from "@/components/PublicServicesPages";
 import { requireClientSession } from "@/lib/auth";
+import { buildPublicMetadata } from "@/lib/public-metadata";
+import { getPortalArea } from "@/lib/public-route-config";
+import { getPortalRequestOriginFromHeaders } from "@/lib/public-routes";
 import {
   getPendingPackSelection,
   getPublicCommercialCatalog,
@@ -22,13 +28,25 @@ import {
   resolvePackCatalog,
 } from "@/lib/public-packs";
 
-export const metadata = {
-  title: "Services",
-};
+export const metadata: Metadata = buildPublicMetadata({
+  title: "Services informatiques pour indépendants, associations et PME",
+  description:
+    "Cloud, hébergement, domaines, messagerie, réseau, sécurité et accompagnement IT : Zachary IT vous aide à garder une informatique fiable au quotidien.",
+  path: "/services",
+});
 
 export const dynamic = "force-dynamic";
 
 export default async function ServicesPage() {
+  const requestHeaders = await headers();
+  const portalArea = getPortalArea(
+    getPortalRequestOriginFromHeaders(requestHeaders),
+  );
+
+  if (portalArea === "public" || portalArea === "local") {
+    return <PublicServicesLandingPage />;
+  }
+
   await requireClientSession();
   const [
     servicesResult,

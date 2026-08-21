@@ -195,6 +195,16 @@ export async function proxy(request: NextRequest) {
     response.headers.set("X-Robots-Tag", "noindex, nofollow");
   }
 
+  // La vitrine `/services` est indexable uniquement sur l'hôte commercial.
+  // La même URL reste locale au portail client pour « Mes services » : elle
+  // ne doit jamais pouvoir devenir une seconde URL publique concurrente.
+  if (
+    isClientOrAdminPortalHost(requestHost)
+    && request.nextUrl.pathname === "/services"
+  ) {
+    response.headers.set("X-Robots-Tag", "noindex, nofollow");
+  }
+
   return response;
 }
 
