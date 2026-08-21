@@ -24,7 +24,9 @@ public sealed record BillingV2PublicService(
     string ScopeType,
     long? FlatMonthlyAmountCents,
     IReadOnlyList<BillingV2PublicTier> Tiers,
-    bool DiscountEligible = true);
+    bool DiscountEligible = true,
+    bool PublicVisible = true,
+    bool SelfServiceOrderable = true);
 
 public sealed record BillingV2PublicPresetItem(
     string ServiceCode,
@@ -102,7 +104,8 @@ public sealed record BillingV2PublicSelection(
     string? VpnTierCode,
     bool RemoteDesktop,
     int AdditionalUsers,
-    bool SupportPlus)
+    bool SupportPlus,
+    IReadOnlyList<BillingV2PublicSelectionComponent>? Components = null)
 {
     /// <summary>
     /// Forme canonique de la selection metier. Elle sert d'ancre d'idempotence
@@ -113,7 +116,25 @@ public sealed record BillingV2PublicSelection(
     /// Aucun montant n'y entre : seuls des codes catalogue.
     /// </summary>
     public string Canonical()
-        => string.Join(
+    {
+        if (Components is { Count: > 0 })
+        {
+            return string.Join(
+                "|",
+                "billing_v2.public_selection.components",
+                PresetCode,
+                CommitmentCode,
+                PaymentMode,
+                string.Join(
+                    ";",
+                    Components
+                        .OrderBy(component => component.ServiceCode, StringComparer.Ordinal)
+                        .ThenBy(component => component.TierCode, StringComparer.Ordinal)
+                        .ThenBy(component => component.Quantity)
+                        .Select(component => $"{component.ServiceCode}/{component.TierCode ?? "-"}/{component.Quantity}")));
+        }
+
+        return string.Join(
             "|",
             "billing_v2.public_selection",
             PresetCode,
@@ -127,6 +148,7 @@ public sealed record BillingV2PublicSelection(
             $"rds={(RemoteDesktop ? 1 : 0)}",
             $"users={AdditionalUsers}",
             $"support={(SupportPlus ? 1 : 0)}");
+    }
 }
 
 /// <summary>
@@ -158,6 +180,8 @@ public sealed class BillingV2PublicSelectionInput
 
     public bool SupportPlus { get; set; }
 
+    public List<BillingV2PublicSelectionComponentInput>? Components { get; set; }
+
     public BillingV2PublicSelection ToSelection()
         => new(
             (PresetCode ?? string.Empty).Trim(),
@@ -178,7 +202,25 @@ public sealed class BillingV2PublicSelectionInput
                 : VpnTierCode.Trim(),
             RemoteDesktop,
             AdditionalUsers,
-            SupportPlus);
+            SupportPlus,
+            Components?
+                .Select(component => component.ToComponent())
+                .ToArray());
+}
+
+public sealed class BillingV2PublicSelectionComponentInput
+{
+    public string? ServiceCode { get; set; }
+
+    public string? TierCode { get; set; }
+
+    public int Quantity { get; set; }
+
+    public BillingV2PublicSelectionComponent ToComponent()
+        => new(
+            (ServiceCode ?? string.Empty).Trim(),
+            string.IsNullOrWhiteSpace(TierCode) ? null : TierCode.Trim(),
+            Quantity);
 }
 
 public sealed record BillingV2PublicQuoteLine(

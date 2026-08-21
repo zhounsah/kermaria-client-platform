@@ -1063,25 +1063,31 @@ public sealed class BillingV2DocumentIssuerService
                 """
                 SELECT
                     item.id AS subscription_item_id,
-                    item.service_price_id,
+                    component.service_price_id,
                     service.code AS service_code,
                     service.name AS service_name,
                     tier.code AS tier_code,
                     tier.name AS tier_name,
                     price.price_code,
-                    price.billing_cadence,
+                    component.billing_cadence,
                     price.tax_rate_basis_points,
                     item.quantity,
-                    item.amount_cents_snapshot,
-                    item.currency,
-                    item.discount_eligible_snapshot
+                    component.amount_cents_snapshot,
+                    component.currency,
+                    component.discount_eligible_snapshot
                 FROM billing_v2_subscription_items item
+                INNER JOIN billing_v2_subscription_item_effective_price_components component
+                    ON component.subscription_item_id = item.id
+                   AND component.status = 'active'
+                   AND component.effective_from <= UTC_TIMESTAMP(6)
+                   AND (component.effective_until IS NULL
+                        OR component.effective_until > UTC_TIMESTAMP(6))
                 INNER JOIN billing_v2_services service
                     ON service.id = item.service_id
                 LEFT JOIN billing_v2_service_tiers tier
                     ON tier.id = item.tier_id
                 INNER JOIN billing_v2_service_prices price
-                    ON price.id = item.service_price_id
+                    ON price.id = component.service_price_id
                 WHERE item.subscription_id = @subscription_id
                   AND item.status = 'active'
                   AND item.effective_from <= UTC_TIMESTAMP(6)

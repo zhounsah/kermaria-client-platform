@@ -148,7 +148,9 @@ public sealed record BillingV2RenewalContractItem(
     string BillingCadence,
     int Quantity,
     long UnitAmountCents,
-    bool DiscountEligible);
+    bool DiscountEligible,
+    string? SubscriptionItemId = null,
+    string? SubscriptionItemPriceComponentId = null);
 
 public sealed record BillingV2RenewalChargeRequest(
     string SubscriptionId,
@@ -277,7 +279,9 @@ public static class BillingV2RenewalChargeFactory
                 item.ServiceId,
                 item.TierId,
                 item.ServicePriceId,
-                BillingV2LineCadences.Monthly));
+                BillingV2LineCadences.Monthly,
+                item.SubscriptionItemId,
+                item.SubscriptionItemPriceComponentId));
 
             gross = checked(gross + lineGross);
             discount = checked(discount + allocated);
@@ -307,7 +311,9 @@ public static class BillingV2RenewalChargeFactory
                 recurring[0].ServiceId,
                 recurring[0].TierId,
                 recurring[0].ServicePriceId,
-                BillingV2LineCadences.Monthly));
+                BillingV2LineCadences.Monthly,
+                recurring[0].SubscriptionItemId,
+                recurring[0].SubscriptionItemPriceComponentId));
             gross = checked(gross + complement);
             net = checked(net + complement);
         }
@@ -428,7 +434,16 @@ public sealed record BillingV2StripeSubscriptionSnapshot(
     string Status,
     string? CustomerId,
     string? LatestInvoiceId,
-    IReadOnlyDictionary<string, string> Metadata);
+    IReadOnlyDictionary<string, string> Metadata,
+    IReadOnlyList<BillingV2StripeSubscriptionItemSnapshot>? Items = null);
+
+public sealed record BillingV2StripeSubscriptionItemSnapshot(
+    string ItemId,
+    string? ProductId,
+    bool IsRecurring,
+    long? UnitAmountCents = null,
+    string? Currency = null,
+    int? Quantity = null);
 
 public sealed record BillingV2StripeInvoiceSnapshot(
     string InvoiceId,

@@ -34,7 +34,67 @@ public static class BillingV2PublicCatalogTests
         VerifyMonthlyLifecycleKeepsARenewalDate();
         VerifyUpfrontIsWithinTheLaunchScope();
         VerifyQuoteNeverOffersWhatTheRailRefuses();
+        VerifyGenericComponentsAreCanonicalAndServerResolved();
+        VerifyVpsUpgradeDoesNotRepeatInitialSetup();
+        VerifyFulfillmentNeverEquatesManualDeliveryWithProvisioning();
         return Task.CompletedTask;
+    }
+
+    private static void VerifyGenericComponentsAreCanonicalAndServerResolved()
+    {
+        var baseline = Baseline("pack-dossier-securise", "FLEX");
+        var generic = baseline with
+        {
+            Components =
+            [
+                new BillingV2PublicSelectionComponent("STORAGE-PERSONAL", "32", 1),
+                new BillingV2PublicSelectionComponent("VPN-ACCESS", "ESSENTIAL", 1)
+            ]
+        };
+        var resolution = BillingV2PublicSelectionPolicy.Resolve(
+            BillingV2PublicCatalogSeed.Snapshot(), generic);
+        Ensure(resolution.Resolved, "Selection generique validee cote serveur.");
+        Ensure(resolution.Components.Count == 2, "Composants generiques canoniques.");
+        Ensure(generic.Canonical().Contains("components", StringComparison.Ordinal),
+            "Empreinte des composants distincte du shape legacy.");
+    }
+
+    private static void VerifyVpsUpgradeDoesNotRepeatInitialSetup()
+    {
+        var initialM = new[]
+        {
+            new BillingV2PriceComponentSnapshot("VPS-CLOUD-M-MONTHLY", "monthly", "initial_subscription", 2990, "EUR", true, 10),
+            new BillingV2PriceComponentSnapshot("VPS-CLOUD-M-SETUP", "one_time", "initial_subscription", 2990, "EUR", false, 20)
+        };
+        var upgradedL = new[]
+        {
+            new BillingV2PriceComponentSnapshot("VPS-CLOUD-L-MONTHLY", "monthly", "initial_subscription", 4490, "EUR", true, 10),
+            new BillingV2PriceComponentSnapshot("VPS-CLOUD-L-SETUP", "one_time", "initial_subscription", 2990, "EUR", false, 20)
+        };
+        Ensure(BillingV2ComponentizedPricingPolicy.ForInitialCharge(initialM).Count == 2,
+            "Le setup M est facture lors de la souscription initiale.");
+        var upgradeCharges = BillingV2ComponentizedPricingPolicy.ForSubscriptionChange(upgradedL);
+        Ensure(upgradeCharges.Count == 1 && upgradeCharges[0].ServicePriceId == "VPS-CLOUD-L-MONTHLY",
+            "M vers L ne refacture jamais le setup initial sans regle explicite.");
+        Ensure(BillingV2ComponentizedPricingPolicy.ForRenewal(initialM).Count == 1,
+            "Le renouvellement exclut toujours la composante one-time.");
+        Ensure(BillingV2SubscriptionChangePolicy.ComponentsForSuccessor(
+                BillingV2SubscriptionChangePolicy.Upgrade, upgradedL).Count == 1,
+            "Le successeur d'upgrade ne reprend que le MRR sans regle de frais explicite.");
+    }
+
+    private static void VerifyFulfillmentNeverEquatesManualDeliveryWithProvisioning()
+    {
+        Ensure(BillingV2FulfillmentPolicy.InitialStatus("manual_delivery")
+               == BillingV2FulfillmentPolicy.Pending,
+            "Un service humain regle reste pending jusqu'a livraison reelle.");
+        Ensure(BillingV2FulfillmentPolicy.InitialStatus("contractual_acknowledgement")
+               == BillingV2FulfillmentPolicy.Fulfilled,
+            "Un entitlement contractuel pur peut etre acknowledged.");
+        Ensure(BillingV2FulfillmentPolicy.CanTransition(
+                BillingV2FulfillmentPolicy.Pending,
+                BillingV2FulfillmentPolicy.InProgress),
+            "Le fulfillment manuel suit un lifecycle explicite.");
     }
 
     /// <summary>

@@ -378,6 +378,59 @@ public sealed class BillingV2AuthoritativeCheckoutService
                 cancellationToken);
         }
 
+        // Les droits et leurs composants existent avant l'evenement. Les
+        // lignes financieres peuvent ainsi referencer la composante exacte et
+        // consommer atomiquement un setup one_time.
+        foreach (var user in itemPlan.Users)
+        {
+            await InsertUserAsync(connection, transaction, subscriptionId, user, now, cancellationToken);
+        }
+        foreach (var item in itemPlan.Items)
+        {
+            await InsertItemAsync(connection, transaction, subscriptionId, item, lifecycle, now, cancellationToken);
+            foreach (var component in item.PriceComponents.DefaultIfEmpty(
+                         new BillingV2NewSubscriptionPriceComponentPlan(
+                             item.PriceComponentId, "legacy-mirror", item.ServicePriceId,
+                             item.AmountCentsSnapshot, item.Currency,
+                             item.DiscountEligibleSnapshot, 0)))
+            {
+                await InsertItemPriceComponentAsync(
+                    connection, transaction, item, component, lifecycle, now, cancellationToken);
+            }
+            await InsertItemProvisioningAsync(connection, transaction, item, now, cancellationToken);
+            await InsertItemFulfillmentAsync(connection, transaction, item, now, cancellationToken);
+        }
+
+        var componentsByPresetItem = itemPlan.Items
+            .SelectMany(item => item.PriceComponents.Select(component => new
+            {
+                item.Id,
+                Component = component
+            }))
+            .ToDictionary(
+                entry => entry.Component.PresetItemId,
+                entry => (ItemId: entry.Id, ComponentId: entry.Component.Id),
+                StringComparer.Ordinal);
+
+        var eventBuildWithItems = eventBuild with
+        {
+            LineSources = eventBuild.LineSources.Select(source =>
+            {
+                if (source.PresetItemId is null
+                    || !componentsByPresetItem.TryGetValue(
+                        source.PresetItemId,
+                        out var component))
+                {
+                    throw new InvalidOperationException(
+                        "BILLING_V2_COMPONENT_FINANCIAL_LINK_MISSING");
+                }
+                return source with
+                {
+                    SubscriptionItemId = component.ItemId,
+                    SubscriptionItemPriceComponentId = component.ComponentId
+                };
+            }).ToArray()
+        };
         var billingEventId = Guid.NewGuid().ToString("D");
         await BillingV2FinancialCoreStore.InsertFinalizedBillingEventAsync(
             connection,
@@ -386,7 +439,7 @@ public sealed class BillingV2AuthoritativeCheckoutService
             session.CustomerId,
             subscriptionId,
             changeId,
-            eventBuild.Draft,
+            eventBuildWithItems.Draft,
             mapping.PaymentMode,
             mapping.CommitmentMonths,
             mapping.DiscountBasisPoints,
@@ -394,7 +447,7 @@ public sealed class BillingV2AuthoritativeCheckoutService
             periodEnd,
             now,
             now.AddMinutes(SettlementDeadlineMinutes),
-            eventBuild.LineSources,
+            eventBuildWithItems.LineSources,
             cancellationToken,
             // Convention Phase 3 : la charge initiale est le cycle 1. Elle
             // devient ainsi unique en base par abonnement, au meme titre que
@@ -436,35 +489,6 @@ public sealed class BillingV2AuthoritativeCheckoutService
             return await BuildResultFromRequestAsync(
                 readConnection,
                 winner,
-                cancellationToken);
-        }
-
-        foreach (var user in itemPlan.Users)
-        {
-            await InsertUserAsync(
-                connection,
-                transaction,
-                subscriptionId,
-                user,
-                now,
-                cancellationToken);
-        }
-
-        foreach (var item in itemPlan.Items)
-        {
-            await InsertItemAsync(
-                connection,
-                transaction,
-                subscriptionId,
-                item,
-                lifecycle,
-                now,
-                cancellationToken);
-            await InsertItemProvisioningAsync(
-                connection,
-                transaction,
-                item,
-                now,
                 cancellationToken);
         }
 
@@ -663,6 +687,12 @@ public sealed class BillingV2AuthoritativeCheckoutService
     {
         if (request.Selection is { } selection)
         {
+            if (selection.Components is { Count: > 0 }
+                && !_runtime.GenericSelectionEnabled)
+            {
+                throw new InvalidOperationException(
+                    "BILLING_V2_GENERIC_SELECTION_DISABLED");
+            }
             if (!string.IsNullOrWhiteSpace(request.LegacyOfferId))
             {
                 // Deux identites metier pour une meme demande : refus, sinon
@@ -1042,6 +1072,7 @@ public sealed class BillingV2AuthoritativeCheckoutService
                 discount_basis_points_snapshot,
                 minimum_commitment_amount_cents,
                 billing_model,
+                pricing_authority,
                 commitment_started_at,
                 commitment_ends_at,
                 current_period_started_at,
@@ -1060,6 +1091,7 @@ public sealed class BillingV2AuthoritativeCheckoutService
                 @discount_basis_points,
                 @minimum_commitment_amount_cents,
                 'v2',
+                'item_snapshots',
                 @commitment_started_at,
                 @commitment_ends_at,
                 @current_period_started_at,
@@ -1184,6 +1216,7 @@ public sealed class BillingV2AuthoritativeCheckoutService
                 amount_cents_snapshot,
                 currency,
                 discount_eligible_snapshot,
+                pricing_representation,
                 source,
                 effective_from,
                 effective_until,
@@ -1202,6 +1235,7 @@ public sealed class BillingV2AuthoritativeCheckoutService
                 @amount_cents_snapshot,
                 @currency,
                 @discount_eligible_snapshot,
+                'componentized',
                 @source,
                 @effective_from,
                 @effective_until,
@@ -1246,6 +1280,47 @@ public sealed class BillingV2AuthoritativeCheckoutService
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    private static async Task InsertItemPriceComponentAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        BillingV2NewSubscriptionItemPlan item,
+        BillingV2NewSubscriptionPriceComponentPlan component,
+        BillingV2SubscriptionLifecyclePlan lifecycle,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            INSERT INTO billing_v2_subscription_item_price_components (
+                id, subscription_item_id, service_price_id, billing_cadence,
+                charge_trigger, amount_cents_snapshot, currency,
+                discount_eligible_snapshot, effective_from, effective_until,
+                display_order, status, created_at
+            )
+            SELECT
+                @id, @item_id, price.id, price.billing_cadence,
+                price.charge_trigger, @amount, @currency, @discount_eligible,
+                @effective_from, @effective_until, 0, 'active', @now
+            FROM billing_v2_service_prices price
+            WHERE price.id = @service_price_id;
+            """;
+        command.Parameters.AddWithValue("@id", component.Id);
+        command.Parameters.AddWithValue("@item_id", item.Id);
+        command.Parameters.AddWithValue("@service_price_id", component.ServicePriceId);
+        command.Parameters.AddWithValue("@amount", component.AmountCentsSnapshot);
+        command.Parameters.AddWithValue("@currency", component.Currency);
+        command.Parameters.AddWithValue("@discount_eligible", component.DiscountEligibleSnapshot);
+        command.Parameters.AddWithValue("@effective_from", lifecycle.CommitmentStartedAtUtc);
+        command.Parameters.AddWithValue("@effective_until", lifecycle.RenewsAtUtc is null ? lifecycle.CommitmentEndsAtUtc : DBNull.Value);
+        command.Parameters.AddWithValue("@now", now);
+        if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
+        {
+            throw new InvalidOperationException("BILLING_V2_COMPONENT_PRICE_NOT_FOUND");
+        }
+    }
+
     private static async Task InsertItemProvisioningAsync(
         MySqlConnection connection,
         MySqlTransaction transaction,
@@ -1283,6 +1358,46 @@ public sealed class BillingV2AuthoritativeCheckoutService
         command.Parameters.AddWithValue("@created_at", now);
         command.Parameters.AddWithValue("@updated_at", now);
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task InsertItemFulfillmentAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        BillingV2NewSubscriptionItemPlan item,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            INSERT INTO billing_v2_subscription_item_fulfillment (
+                subscription_item_id, fulfillment_profile_id, backend,
+                fulfillment_status, requested_at, updated_at
+            )
+            SELECT
+                @item_id, profile.id, COALESCE(profile.default_backend, 'MANUAL'),
+                CASE profile.fulfillment_mode
+                    WHEN 'contractual_acknowledgement' THEN 'fulfilled'
+                    ELSE 'pending'
+                END,
+                @now, @now
+            FROM (SELECT 1 AS singleton) AS source
+            LEFT JOIN billing_v2_service_fulfillment_profiles profile
+                ON profile.service_id = @service_id
+               AND (profile.tier_id <=> @tier_id OR profile.tier_id IS NULL)
+               AND profile.status = 'active'
+            ORDER BY profile.tier_id IS NULL, profile.id
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("@item_id", item.Id);
+        command.Parameters.AddWithValue("@service_id", item.ServiceId);
+        command.Parameters.AddWithValue("@tier_id", item.TierId is null ? DBNull.Value : item.TierId);
+        command.Parameters.AddWithValue("@now", now);
+        if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
+        {
+            throw new InvalidOperationException("BILLING_V2_FULFILLMENT_PROFILE_INSERT_FAILED");
+        }
     }
 
     private static async Task InsertSubscriptionPriceLockAsync(

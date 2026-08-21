@@ -5,6 +5,26 @@ async function read(path) {
   return readFile(new URL(`../${path}`, import.meta.url), "utf8");
 }
 
+function endpointBlock(source, routeLiteral) {
+  const start = source.indexOf(routeLiteral);
+  const nextEndpoint = source.indexOf("app.Map", start + routeLiteral.length);
+  assert.ok(start >= 0 && nextEndpoint > start, `Endpoint ${routeLiteral} introuvable.`);
+  return source.slice(start, nextEndpoint);
+}
+
+// Test du garde lui-meme : un endpoint pur ne doit pas etre contamine par
+// l'endpoint mutateur suivant, mais une mutation dans son propre bloc reste vue.
+assert.doesNotMatch(
+  endpointBlock('app.MapGet("/readiness", () => Results.Ok()); app.MapPost("/review", () => auditService.RecordAsync());', '"/readiness"'),
+  /auditService|RecordAsync/,
+  "Le decoupage des endpoints doit s'arreter avant la route suivante.",
+);
+assert.match(
+  endpointBlock('app.MapGet("/readiness", () => auditService.RecordAsync()); app.MapPost("/review", () => Results.Ok());', '"/readiness"'),
+  /auditService|RecordAsync/,
+  "Le garde doit toujours detecter une mutation dans l'endpoint readiness.",
+);
+
 const publicPackOfferMigration = await read(
   "../../apps/api-internal/Migrations/MariaDb/023_public_pack_offers.sql",
 );
@@ -92,6 +112,9 @@ const billingCatalog = await read(
 const billingV2PricingEngine = await read(
   "../../apps/api-internal/Services/BillingV2PricingEngine.cs",
 );
+const billingV2StripeGateway = await read(
+  "../../apps/api-internal/Services/BillingV2StripeGateway.cs",
+);
 const billingV2ProvisioningShadowService = await read(
   "../../apps/api-internal/Services/Provisioning/BillingV2ProvisioningShadowService.cs",
 );
@@ -101,6 +124,30 @@ const billingV2ProvisioningSemanticsTests = await read(
 const billingV2ProvisioningService = await read(
   "../../apps/api-internal/Services/Provisioning/BillingV2ProvisioningService.cs",
 );
+const billingV2KoxoStorageProvider = await read(
+  "../../apps/api-internal/Services/Provisioning/BillingV2KoxoStorageProvider.cs",
+);
+
+const recurringMutationStart = billingV2StripeGateway.indexOf(
+  "UpdateRecurringAmountAsync(",
+  billingV2StripeGateway.indexOf("public sealed class BillingV2StripeGateway"),
+);
+const recurringMutationEnd = billingV2StripeGateway.indexOf(
+  "private async Task<string?> GetAsync",
+  recurringMutationStart,
+);
+assert.ok(recurringMutationStart >= 0 && recurringMutationEnd > recurringMutationStart,
+  "La mutation Stripe recurrente doit etre isolable pour son contrat de securite.");
+const recurringMutationBlock = billingV2StripeGateway.slice(
+  recurringMutationStart,
+  recurringMutationEnd,
+);
+assert.match(recurringMutationBlock, /proration_behavior[\s\S]*none/,
+  "La mutation Stripe recurrente ne doit jamais laisser Stripe recalculer un prorata.");
+assert.doesNotMatch(recurringMutationBlock, /payment_behavior/,
+  "La mutation Stripe recurrente price_data ne doit pas utiliser pending_if_incomplete ni aucun payment_behavior.");
+assert.match(recurringMutationBlock, /GetSubscriptionAsync[\s\S]*REFETCH_MISMATCH/,
+  "Un POST Stripe reussi doit etre confirme par relecture montant/devise/item.");
 const clientServiceCatalogService = await read(
   "../../apps/api-internal/Services/ClientServiceCatalogService.cs",
 );
@@ -769,23 +816,8 @@ assert.match(
   /\/internal\/admin\/billing-v2\/readiness[\s\S]*IBillingV2AdminReadinessService[\s\S]*ResolvePortalSessionAsync[\s\S]*PortalRoles\.InternalAdmin[\s\S]*CheckAsync/,
   "L'endpoint interne admin readiness Billing V2 doit etre authentifie et strictement consultatif.",
 );
-const billingV2AdminReadinessEndpointStart = apiProgram.indexOf(
-  '"/internal/admin/billing-v2/readiness"',
-);
-const billingV2AdminReadinessEndpointEnd = apiProgram.indexOf(
-  '"/internal/admin/ad/status"',
-  billingV2AdminReadinessEndpointStart,
-);
-assert.ok(
-  billingV2AdminReadinessEndpointStart >= 0
-    && billingV2AdminReadinessEndpointEnd > billingV2AdminReadinessEndpointStart,
-  "Le bloc endpoint admin readiness Billing V2 doit etre identifiable.",
-);
 assert.doesNotMatch(
-  apiProgram.slice(
-    billingV2AdminReadinessEndpointStart,
-    billingV2AdminReadinessEndpointEnd,
-  ),
+  endpointBlock(apiProgram, '"/internal/admin/billing-v2/readiness"'),
   /auditService|RecordAsync|INSERT|UPDATE|DELETE|HttpClient|ProvisioningService/,
   "L'endpoint admin readiness Billing V2 ne doit pas ecrire d'audit, appeler provider ou declencher du provisioning.",
 );
@@ -870,7 +902,7 @@ assert.match(
   "Le provisioning V2 doit rendre detectables les items actifs sans etat de provisioning au lieu de les ignorer.",
 );
 assert.match(
-  billingV2ProvisioningService,
+  `${billingV2ProvisioningService}\n${billingV2KoxoStorageProvider}`,
   /IBillingV2KoxoStorageProvider[\s\S]*DormantBillingV2KoxoStorageProvider[\s\S]*BILLING_V2_KOXO_STORAGE_PROVIDER_NOT_CONFIGURED/,
   "Le quota de stockage doit etre represente par un provider KoXo dormant explicite sans integration runtime supposee.",
 );
@@ -881,7 +913,7 @@ assert.match(
 );
 assert.match(
   billingV2ProvisioningService,
-  /plan\.StorageQuotaPlans\.Count > 0[\s\S]*CheckReadiness\(plan\.StorageQuotaPlans\)[\s\S]*Legacy provisioning remains authoritative/,
+  /plan\.StorageQuotaPlans\.Count[\s\S]*_koxoStorageTargets\.ResolveAsync\([\s\S]*BillingV2KoxoStorageGate[\s\S]*No storage quota and no Active Directory change was applied/,
   "Le provisioning V2 doit bloquer les quotas de stockage tant qu'aucun provider fiable ne peut les appliquer.",
 );
 // -- Vocabulaire du provisioning de stockage -------------------------------
@@ -1321,7 +1353,7 @@ assert.match(
 // tout est ecrit dans UNE seule transaction.
 assert.match(
   billingV2AuthoritativeCheckoutService,
-  /BeginTransactionAsync[\s\S]*InsertSubscriptionAsync[\s\S]*TryInsertIntentAsync[\s\S]*InsertFinalizedBillingEventAsync[\s\S]*InsertCheckoutRequestAsync[\s\S]*InsertItemAsync[\s\S]*InsertSubscriptionPriceLockAsync[\s\S]*InsertOutboxEventAsync[\s\S]*InsertAuditAsync[\s\S]*MarkCheckoutRequestQueuedAsync[\s\S]*CommitAsync/,
+  /BeginTransactionAsync[\s\S]*InsertSubscriptionAsync[\s\S]*TryInsertIntentAsync[\s\S]*InsertItemAsync[\s\S]*InsertItemPriceComponentAsync[\s\S]*InsertFinalizedBillingEventAsync[\s\S]*InsertCheckoutRequestAsync[\s\S]*InsertSubscriptionPriceLockAsync[\s\S]*InsertOutboxEventAsync[\s\S]*InsertAuditAsync[\s\S]*MarkCheckoutRequestQueuedAsync[\s\S]*CommitAsync/,
   "Le checkout V2 autoritaire local doit orchestrer intention/BillingEvent/abonnement/items/price lock/outbox/audit dans une transaction.",
 );
 assert.match(

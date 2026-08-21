@@ -85,6 +85,14 @@ public static class BillingV2PublicSelectionPolicy
             return Blocked("BILLING_V2_PUBLIC_PAYMENT_MODE_UNAVAILABLE");
         }
 
+        // V2.1 : la forme generique est deja une intention en composants. Les
+        // anciens champs restent routes vers la logique historique ci-dessous
+        // pour ne pas casser /formules ni le diagnostic public.
+        if (selection.Components is { Count: > 0 })
+        {
+            return ResolveGeneric(catalog, selection);
+        }
+
         if (selection.AdditionalUsers < 0
             || selection.AdditionalUsers
                 > BillingV2PublicCatalogCodes.MaxAdditionalUsers)
@@ -275,6 +283,76 @@ public static class BillingV2PublicSelectionPolicy
            && baseline.RemoteDesktop == selection.RemoteDesktop
            && baseline.AdditionalUsers == selection.AdditionalUsers
            && baseline.SupportPlus == selection.SupportPlus;
+
+    private static BillingV2PublicSelectionResolution ResolveGeneric(
+        BillingV2PublicCatalogSnapshot catalog,
+        BillingV2PublicSelection selection)
+    {
+        var canonicalComponents = selection.Components!
+            .GroupBy(
+                component => new
+                {
+                    Service = component.ServiceCode.Trim(),
+                    Tier = component.TierCode?.Trim()
+                })
+            .OrderBy(group => group.Key.Service, StringComparer.Ordinal)
+            .ThenBy(group => group.Key.Tier, StringComparer.Ordinal)
+            .Select(group => new BillingV2PublicSelectionComponent(
+                group.Key.Service,
+                group.Key.Tier,
+                group.Sum(component => component.Quantity)))
+            .ToArray();
+        if (canonicalComponents.Length == 0
+            || canonicalComponents.Any(component =>
+                string.IsNullOrWhiteSpace(component.ServiceCode)
+                || component.Quantity <= 0))
+        {
+            return Blocked("BILLING_V2_PUBLIC_COMPONENT_INVALID");
+        }
+
+        var lines = new List<BillingV2PublicQuoteLine>();
+        foreach (var component in canonicalComponents)
+        {
+            var service = FindService(catalog, component.ServiceCode);
+            if (service is null)
+            {
+                return Blocked("BILLING_V2_PUBLIC_COMPONENT_SERVICE_UNKNOWN");
+            }
+            if (!service.SelfServiceOrderable)
+            {
+                return Blocked("BILLING_V2_PUBLIC_COMPONENT_REQUIRES_QUOTE");
+            }
+
+            BillingV2PublicTier? tier = null;
+            if (component.TierCode is not null)
+            {
+                tier = service.Tiers.FirstOrDefault(candidate =>
+                    string.Equals(candidate.Code, component.TierCode, StringComparison.Ordinal));
+                if (tier is null || !tier.PublicSelectable)
+                {
+                    return Blocked("BILLING_V2_PUBLIC_COMPONENT_TIER_UNKNOWN");
+                }
+            }
+            else if (service.Tiers.Count > 0)
+            {
+                return Blocked("BILLING_V2_PUBLIC_COMPONENT_TIER_REQUIRED");
+            }
+
+            if (tier is null && service.FlatMonthlyAmountCents is null)
+            {
+                return Blocked("BILLING_V2_PUBLIC_COMPONENT_UNPRICED");
+            }
+
+            lines.Add(Line(service, tier, component.Quantity));
+        }
+
+        return new BillingV2PublicSelectionResolution(
+            true,
+            Ok,
+            lines,
+            canonicalComponents,
+            MatchesPresetBaseline: false);
+    }
 
     private static BillingV2PublicPresetItem? FindItem(
         BillingV2PublicPreset preset,

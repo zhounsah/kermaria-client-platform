@@ -1,4 +1,7 @@
-import type { BillingV2PublicSelection } from "@kermaria/shared";
+import type {
+  BillingV2PublicSelection,
+  BillingV2PublicSelectionComponent,
+} from "@kermaria/shared";
 
 /**
  * Reconstruction stricte d'une selection Billing V2 recue du navigateur.
@@ -26,7 +29,8 @@ export function readBillingV2SelectionPayload(
   const source = payload as Record<string, unknown>;
   const presetCode = readString(source.presetCode);
   const storagePersonalTierCode = readString(source.storagePersonalTierCode);
-  if (!presetCode || !storagePersonalTierCode) {
+  const components = readComponents(source.components);
+  if (!presetCode || (!storagePersonalTierCode && !components)) {
     return null;
   }
 
@@ -50,7 +54,9 @@ export function readBillingV2SelectionPayload(
     presetCode,
     commitmentCode: readString(source.commitmentCode) ?? "FLEX",
     paymentMode: paymentMode as BillingV2PublicSelection["paymentMode"],
-    storagePersonalTierCode,
+    // Le champ historique reste obligatoire dans le contrat TypeScript ; la
+    // forme V2.1 generique ne le consulte jamais apres validation serveur.
+    storagePersonalTierCode: storagePersonalTierCode ?? "",
     backupPersonal: source.backupPersonal === true,
     storageSharedTierCode: readString(source.storageSharedTierCode),
     backupShared: source.backupShared === true,
@@ -58,7 +64,32 @@ export function readBillingV2SelectionPayload(
     remoteDesktop: source.remoteDesktop === true,
     additionalUsers: typeof additionalUsers === "number" ? additionalUsers : 0,
     supportPlus: source.supportPlus === true,
+    components: components ?? undefined,
   };
+}
+
+function readComponents(value: unknown): BillingV2PublicSelectionComponent[] | null {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 64) {
+    return null;
+  }
+
+  const components: BillingV2PublicSelectionComponent[] = [];
+  for (const candidate of value) {
+    if (typeof candidate !== "object" || candidate === null) {
+      return null;
+    }
+    const source = candidate as Record<string, unknown>;
+    const serviceCode = readString(source.serviceCode);
+    const tierCode = source.tierCode === null ? null : readString(source.tierCode);
+    const quantity = source.quantity;
+    if (!serviceCode || (source.tierCode !== undefined && !tierCode)
+      || typeof quantity !== "number" || !Number.isInteger(quantity)
+      || quantity <= 0 || quantity > 1000) {
+      return null;
+    }
+    components.push({ serviceCode, tierCode, quantity });
+  }
+  return components;
 }
 
 function readString(value: unknown) {

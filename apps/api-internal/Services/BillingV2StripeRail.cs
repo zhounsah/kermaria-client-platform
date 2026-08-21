@@ -244,7 +244,8 @@ public static class BillingV2BillingEventFactory
                     seed.Item.ServiceId,
                     seed.Item.TierId,
                     seed.Item.ServicePriceId,
-                    seed.Cadence))
+                    seed.Cadence,
+                    PresetItemId: seed.Item.PresetItemId))
                 .ToArray());
     }
 

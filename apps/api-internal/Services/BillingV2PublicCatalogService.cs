@@ -174,6 +174,8 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                     service.category,
                     service.default_scope_type,
                     service.discount_eligible,
+                    service.public_visible,
+                    service.self_service_orderable,
                     service.display_order,
                     tier.code AS tier_code,
                     tier.public_label,
@@ -200,7 +202,7 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                    AND price.valid_from <= @now
                    AND (price.valid_until IS NULL OR price.valid_until > @now)
                 WHERE service.status = 'active'
-                  AND service.public_selectable = 1
+                  AND service.public_visible = 1
                 ORDER BY service.display_order,
                          service.code,
                          tier.display_order,
@@ -228,6 +230,8 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                     service.category,
                     service.default_scope_type,
                     service.discount_eligible,
+                    service.public_visible,
+                    service.self_service_orderable,
                     service.display_order,
                     NULL AS tier_code,
                     NULL AS public_label,
@@ -319,7 +323,9 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                 tiers
                     .OrderBy(tier => tier.NumericValue ?? int.MaxValue)
                     .ToArray(),
-                first.DiscountEligible));
+                first.DiscountEligible,
+                first.PublicVisible,
+                first.SelfServiceOrderable));
         }
 
         return services;
@@ -570,6 +576,8 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
             reader.GetString("category"),
             reader.GetString("default_scope_type"),
             ReadFlag(reader, "discount_eligible", whenNull: false),
+            ReadFlag(reader, "public_visible", whenNull: false),
+            ReadFlag(reader, "self_service_orderable", whenNull: false),
             reader.GetInt32("display_order"),
             reader.IsDBNull(reader.GetOrdinal("tier_code"))
                 ? null
@@ -599,6 +607,8 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
         string Category,
         string ScopeType,
         bool DiscountEligible,
+        bool PublicVisible,
+        bool SelfServiceOrderable,
         int DisplayOrder,
         string? TierCode,
         string? TierLabel,

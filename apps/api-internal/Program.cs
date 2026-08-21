@@ -470,9 +470,18 @@ builder.Services.AddScoped<
 builder.Services.AddScoped<
     IBillingV2ProviderInboundEventService,
     BillingV2ProviderInboundEventService>();
+builder.Services.AddScoped<BillingV2FulfillmentDispatcher>();
+builder.Services.AddScoped<BillingV2StripeRecurringMutationDispatcher>();
+if (billingV2RuntimeConfiguration.StripeRecurringMutationEnabled)
+{
+    builder.Services.AddHostedService<BillingV2StripeRecurringMutationWorker>();
+}
 builder.Services.AddScoped<
     IBillingV2AuthoritativeCheckoutService,
     BillingV2AuthoritativeCheckoutService>();
+builder.Services.AddScoped<
+    IBillingV2SubscriptionChangeService,
+    BillingV2SubscriptionChangeService>();
 builder.Services.AddScoped<
     IBillingV2NewSubscriptionService,
     BillingV2NewSubscriptionService>();

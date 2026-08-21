@@ -40,6 +40,41 @@ return await RunAsync(args);
 async Task<int> RunAsync(string[] arguments)
 {
     if (arguments.Length == 1
+        && string.Equals(arguments[0], "--billing-v2-change-integration", StringComparison.Ordinal))
+    {
+        try { await BillingV2SubscriptionChangeIntegrationTests.RunAsync(); Console.WriteLine("Integration M vers L Billing V2 reussie."); return 0; }
+        catch (Exception exception) { Console.Error.WriteLine("Integration M vers L Billing V2 en echec."); Console.Error.WriteLine(exception); return 1; }
+    }
+
+    if (arguments.Length == 1
+        && string.Equals(arguments[0], "--billing-v2-change-one-time-refusal", StringComparison.Ordinal))
+    {
+        try { await BillingV2SubscriptionChangeIntegrationTests.RunSubscriptionChangeOneTimeRefusalAsync(); Console.WriteLine("Refus des frais one-time de changement Billing V2 reussi."); return 0; }
+        catch (Exception exception) { Console.Error.WriteLine("Refus des frais one-time de changement Billing V2 en echec."); Console.Error.WriteLine(exception); return 1; }
+    }
+
+    if (arguments.Length == 1
+        && string.Equals(arguments[0], "--billing-v2-downgrade-integration", StringComparison.Ordinal))
+    {
+        try { await BillingV2SubscriptionChangeIntegrationTests.RunDeferredDowngradeAsync(); Console.WriteLine("Integration L vers S differee Billing V2 reussie."); return 0; }
+        catch (Exception exception) { Console.Error.WriteLine("Integration L vers S differee Billing V2 en echec."); Console.Error.WriteLine(exception); return 1; }
+    }
+
+    if (arguments.Length == 1
+        && string.Equals(arguments[0], "--billing-v2-change-crash-concurrency", StringComparison.Ordinal))
+    {
+        try { await BillingV2SubscriptionChangeIntegrationTests.RunCrashConcurrencyAsync(); Console.WriteLine("Tests crash et concurrence Billing V2 reussis."); return 0; }
+        catch (Exception exception) { Console.Error.WriteLine("Tests crash et concurrence Billing V2 en echec."); Console.Error.WriteLine(exception); return 1; }
+    }
+
+    if (arguments.Length == 1
+        && string.Equals(arguments[0], "--billing-v2-stripe-indeterminate", StringComparison.Ordinal))
+    {
+        try { await BillingV2SubscriptionChangeIntegrationTests.RunStripeIndeterminateAsync(); Console.WriteLine("Tests Stripe indetermine Billing V2 reussis."); return 0; }
+        catch (Exception exception) { Console.Error.WriteLine("Tests Stripe indetermine Billing V2 en echec."); Console.Error.WriteLine(exception); return 1; }
+    }
+
+    if (arguments.Length == 1
         && string.Equals(
             arguments[0],
             "--billing-legacy-idempotency",

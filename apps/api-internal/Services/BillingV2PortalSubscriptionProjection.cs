@@ -118,6 +118,7 @@ public sealed class BillingV2PortalSubscriptionProjection
             subscription.currency,
             subscription.discount_basis_points_snapshot,
             subscription.minimum_commitment_amount_cents,
+            subscription.pricing_authority,
             term.commitment_months,
             active_lock.amount_cents AS active_lock_amount_cents,
             active_lock.lock_type AS active_lock_type,
@@ -215,32 +216,38 @@ public sealed class BillingV2PortalSubscriptionProjection
         LEFT JOIN (
             SELECT item.subscription_id,
                    SUM(CASE
-                       WHEN price.billing_cadence = 'monthly'
-                        AND item.discount_eligible_snapshot <> 0
-                           THEN item.amount_cents_snapshot * item.quantity
+                       WHEN component.billing_cadence = 'monthly'
+                        AND component.discount_eligible_snapshot <> 0
+                           THEN component.amount_cents_snapshot * item.quantity
                        ELSE 0
                    END) AS recurring_discount_eligible_cents,
                    SUM(CASE
-                       WHEN price.billing_cadence = 'monthly'
-                        AND item.discount_eligible_snapshot = 0
-                           THEN item.amount_cents_snapshot * item.quantity
+                       WHEN component.billing_cadence = 'monthly'
+                        AND component.discount_eligible_snapshot = 0
+                           THEN component.amount_cents_snapshot * item.quantity
                        ELSE 0
                    END) AS recurring_non_discountable_cents,
                    SUM(CASE
-                       WHEN price.billing_cadence = 'one_time'
-                           THEN item.amount_cents_snapshot * item.quantity
+                       WHEN component.billing_cadence = 'one_time'
+                           THEN component.amount_cents_snapshot * item.quantity
                        ELSE 0
                    END) AS one_time_cents,
                    MAX(price.tax_rate_basis_points) AS tax_rate_basis_points
             FROM billing_v2_subscription_items item
+            INNER JOIN billing_v2_subscription_item_effective_price_components component
+                ON component.subscription_item_id = item.id
             INNER JOIN billing_v2_service_prices price
-                ON price.id = item.service_price_id
+                ON price.id = component.service_price_id
             WHERE item.status = 'active'
               AND item.effective_from <= UTC_TIMESTAMP(6)
               AND (
                     item.effective_until IS NULL
                     OR item.effective_until > UTC_TIMESTAMP(6)
                   )
+              AND component.status = 'active'
+              AND component.effective_from <= UTC_TIMESTAMP(6)
+              AND (component.effective_until IS NULL
+                   OR component.effective_until > UTC_TIMESTAMP(6))
             GROUP BY item.subscription_id
         ) totals
             ON totals.subscription_id = subscription.id
@@ -318,6 +325,7 @@ public sealed class BillingV2PortalSubscriptionProjection
             subscription.currency,
             subscription.discount_basis_points_snapshot,
             subscription.minimum_commitment_amount_cents,
+            subscription.pricing_authority,
             term.commitment_months,
             active_lock.amount_cents AS active_lock_amount_cents,
             active_lock.lock_type AS active_lock_type,
@@ -415,32 +423,38 @@ public sealed class BillingV2PortalSubscriptionProjection
         LEFT JOIN (
             SELECT item.subscription_id,
                    SUM(CASE
-                       WHEN price.billing_cadence = 'monthly'
-                        AND item.discount_eligible_snapshot <> 0
-                           THEN item.amount_cents_snapshot * item.quantity
+                       WHEN component.billing_cadence = 'monthly'
+                        AND component.discount_eligible_snapshot <> 0
+                           THEN component.amount_cents_snapshot * item.quantity
                        ELSE 0
                    END) AS recurring_discount_eligible_cents,
                    SUM(CASE
-                       WHEN price.billing_cadence = 'monthly'
-                        AND item.discount_eligible_snapshot = 0
-                           THEN item.amount_cents_snapshot * item.quantity
+                       WHEN component.billing_cadence = 'monthly'
+                        AND component.discount_eligible_snapshot = 0
+                           THEN component.amount_cents_snapshot * item.quantity
                        ELSE 0
                    END) AS recurring_non_discountable_cents,
                    SUM(CASE
-                       WHEN price.billing_cadence = 'one_time'
-                           THEN item.amount_cents_snapshot * item.quantity
+                       WHEN component.billing_cadence = 'one_time'
+                           THEN component.amount_cents_snapshot * item.quantity
                        ELSE 0
                    END) AS one_time_cents,
                    MAX(price.tax_rate_basis_points) AS tax_rate_basis_points
             FROM billing_v2_subscription_items item
+            INNER JOIN billing_v2_subscription_item_effective_price_components component
+                ON component.subscription_item_id = item.id
             INNER JOIN billing_v2_service_prices price
-                ON price.id = item.service_price_id
+                ON price.id = component.service_price_id
             WHERE item.status = 'active'
               AND item.effective_from <= UTC_TIMESTAMP(6)
               AND (
                     item.effective_until IS NULL
-                    OR item.effective_until > UTC_TIMESTAMP(6)
+                  OR item.effective_until > UTC_TIMESTAMP(6)
                   )
+              AND component.status = 'active'
+              AND component.effective_from <= UTC_TIMESTAMP(6)
+              AND (component.effective_until IS NULL
+                   OR component.effective_until > UTC_TIMESTAMP(6))
             GROUP BY item.subscription_id
         ) totals
             ON totals.subscription_id = subscription.id
@@ -511,6 +525,7 @@ public sealed class BillingV2PortalSubscriptionProjection
             ReadRequiredString(reader, "currency"),
             reader.GetInt32("discount_basis_points_snapshot"),
             ReadNullableInt64(reader, "minimum_commitment_amount_cents"),
+            ReadRequiredString(reader, "pricing_authority"),
             reader.IsDBNull(reader.GetOrdinal("commitment_months"))
                 ? 1
                 : reader.GetInt32("commitment_months"),
@@ -580,6 +595,7 @@ public sealed record BillingV2PortalSubscriptionRow(
     string Currency,
     int DiscountBasisPointsSnapshot,
     long? MinimumCommitmentAmountCents,
+    string PricingAuthority,
     int CommitmentMonths,
     long? ActiveLockAmountCents,
     string? ActiveLockType,
@@ -657,7 +673,11 @@ public static class BillingV2PortalSubscriptionProjector
     private static long ResolvePriceAmountCents(
         BillingV2PortalSubscriptionRow row)
     {
-        if (row.ActiveLockAmountCents.HasValue)
+        if (row.ActiveLockAmountCents.HasValue
+            && !string.Equals(
+                row.PricingAuthority,
+                "item_snapshots",
+                StringComparison.Ordinal))
         {
             return row.ActiveLockAmountCents.Value;
         }

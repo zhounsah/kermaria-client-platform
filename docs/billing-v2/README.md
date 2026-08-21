@@ -1,5 +1,12 @@
 # Billing V2 — Zachary IT
 
+## V2.1
+
+V2.1 introduit le droit contractuel unique avec composantes tarifaires, le
+catalogue Zachary IT et le fulfillment distinct du provisioning. Voir
+[V2.1.md](V2.1.md). Les migrations 066–069 restent dormantes tant que les flags
+et readiness V2.1 ne sont pas explicitement ouverts.
+
 ## Objectif
 
 Faire évoluer la facturation actuelle, centrée sur des packs figés, vers un moteur modulaire :

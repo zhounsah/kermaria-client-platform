@@ -15,6 +15,7 @@ public static class BillingV2NewSubscriptionTests
         VerifyPresetPlannerCreatesPrimaryUserItems();
         VerifyPresetPlannerKeepsSubscriptionScopedItemsUnassigned();
         VerifyPresetPlannerCreatesAdditionalUserEntitlement();
+        VerifyComponentizedPlannerKeepsOneEntitlementForMonthlyAndSetup();
         VerifyPayPalPaymentAgreementUsesLegacySubscriptionId();
         VerifyStripePaymentAgreementUsesLegacySubscriptionId();
         VerifyBillingRailDoesNotInventProviderAgreement();
@@ -247,6 +248,29 @@ public static class BillingV2NewSubscriptionTests
                 && item.ScopeType == "user"
                 && item.Source == "preset"),
             "L'item utilisateur additionnel doit rester traçable comme item issu du preset.");
+    }
+
+    private static void VerifyComponentizedPlannerKeepsOneEntitlementForMonthlyAndSetup()
+    {
+        var plan = BillingV2NewSubscriptionPlanner.Plan(
+            Session(),
+            [
+                new BillingV2NewSubscriptionPresetItem(
+                    "vps-m#monthly", "service-vps", "tier-m", "price-vps-m-monthly",
+                    "VPS-CLOUD", "M", "VPS-CLOUD-M-MONTHLY", "subscription", 1,
+                    1999, "EUR", BillingV2BillingCadences.Monthly, true),
+                new BillingV2NewSubscriptionPresetItem(
+                    "vps-m#one_time", "service-vps", "tier-m", "price-vps-m-setup",
+                    "VPS-CLOUD", "M", "VPS-CLOUD-M-SETUP", "subscription", 1,
+                    9900, "EUR", BillingV2BillingCadences.OneTime, false)
+            ]);
+
+        Ensure(
+            plan.Items.Count == 1
+            && plan.Items[0].PriceComponents.Count == 2
+            && plan.Items[0].PriceComponents.Any(component => component.ServicePriceId == "price-vps-m-monthly")
+            && plan.Items[0].PriceComponents.Any(component => component.ServicePriceId == "price-vps-m-setup"),
+            "VPS-CLOUD/M mensuel + setup doit materialiser un droit unique avec deux composantes tarifaires.");
     }
 
     private static void VerifyPayPalPaymentAgreementUsesLegacySubscriptionId()
@@ -2564,6 +2588,7 @@ public static class BillingV2NewSubscriptionTests
             "EUR",
             discountBasisPoints,
             null,
+            "legacy_global_lock",
             commitmentMonths,
             activeLockAmountCents,
             activeLockType,

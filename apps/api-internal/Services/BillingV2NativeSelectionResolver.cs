@@ -109,7 +109,7 @@ public static class BillingV2NativeSelectionResolver
         foreach (var component in resolution.Components)
         {
             var key = PriceKey(component.ServiceCode, component.TierCode);
-            if (!prices.TryGetValue(key, out var price))
+            if (!prices.TryGetValue(key, out var priceComponents))
             {
                 throw new InvalidOperationException(
                     $"{ServicePriceUnknown}: {key}");
@@ -133,22 +133,27 @@ public static class BillingV2NativeSelectionResolver
             var lineCount = splitPerUnit ? component.Quantity : 1;
             var quantity = splitPerUnit ? 1 : component.Quantity;
 
-            for (var index = 0; index < lineCount; index++)
+            foreach (var price in priceComponents)
             {
-                items.Add(new BillingV2NewSubscriptionPresetItem(
-                    splitPerUnit ? $"{key}#{index + 1}" : key,
-                    price.ServiceId,
-                    price.TierId,
-                    price.ServicePriceId,
-                    component.ServiceCode,
-                    component.TierCode,
-                    price.PriceCode,
-                    scopeTemplate,
-                    quantity,
-                    price.AmountCents,
-                    price.Currency,
-                    price.BillingCadence,
-                    price.DiscountEligible));
+                for (var index = 0; index < lineCount; index++)
+                {
+                    items.Add(new BillingV2NewSubscriptionPresetItem(
+                        splitPerUnit
+                            ? $"{key}#{index + 1}#{price.BillingCadence}"
+                            : $"{key}#{price.BillingCadence}",
+                        price.ServiceId,
+                        price.TierId,
+                        price.ServicePriceId,
+                        component.ServiceCode,
+                        component.TierCode,
+                        price.PriceCode,
+                        scopeTemplate,
+                        quantity,
+                        price.AmountCents,
+                        price.Currency,
+                        price.BillingCadence,
+                        price.DiscountEligible));
+                }
             }
         }
 
@@ -280,7 +285,7 @@ public static class BillingV2NativeSelectionResolver
         return templates;
     }
 
-    private static async Task<IReadOnlyDictionary<string, ServicePriceRow>>
+    private static async Task<IReadOnlyDictionary<string, IReadOnlyList<ServicePriceRow>>>
         ReadServicePricesAsync(
             MySqlConnection connection,
             DateTime now,
@@ -346,34 +351,45 @@ public static class BillingV2NativeSelectionResolver
             }
         }
 
-        var prices = new Dictionary<string, ServicePriceRow>(
+        var prices = new Dictionary<string, IReadOnlyList<ServicePriceRow>>(
             StringComparer.Ordinal);
         foreach (var group in rows.GroupBy(
                      row => PriceKey(row.ServiceCode, row.TierCode),
                      StringComparer.Ordinal))
         {
             var first = group.First();
-            var resolved = BillingV2ServicePriceResolutionPolicy.Resolve(
-                group.Select(row => row.Candidate).ToArray(),
-                first.ServiceCode,
-                first.TierCode);
-            if (!resolved.Resolved || resolved.Price is null)
+            var resolvedByCadence = new List<ServicePriceRow>();
+            foreach (var cadenceGroup in group.GroupBy(
+                         row => row.Candidate.BillingCadence,
+                         StringComparer.Ordinal))
             {
-                // Ambiguite de prix : la ligne disparait de la resolution, ce
-                // qui fera echouer la souscription avec un motif explicite
-                // plutot que de facturer un montant arbitraire.
-                continue;
+                var resolved = BillingV2ServicePriceResolutionPolicy.Resolve(
+                    cadenceGroup.Select(row => row.Candidate).ToArray(),
+                    first.ServiceCode,
+                    first.TierCode);
+                if (!resolved.Resolved || resolved.Price is null)
+                {
+                    // Une ambiguite dans UNE cadence suffit a invalider cette
+                    // configuration : ne jamais choisir arbitrairement.
+                    resolvedByCadence.Clear();
+                    break;
+                }
+
+                resolvedByCadence.Add(new ServicePriceRow(
+                    first.ServiceId,
+                    first.TierId,
+                    resolved.Price.ServicePriceId,
+                    resolved.Price.PriceCode,
+                    resolved.Price.AmountCents,
+                    resolved.Price.Currency,
+                    resolved.Price.BillingCadence,
+                    first.DiscountEligible));
             }
 
-            prices[group.Key] = new ServicePriceRow(
-                first.ServiceId,
-                first.TierId,
-                resolved.Price.ServicePriceId,
-                resolved.Price.PriceCode,
-                resolved.Price.AmountCents,
-                resolved.Price.Currency,
-                resolved.Price.BillingCadence,
-                first.DiscountEligible);
+            if (resolvedByCadence.Count > 0)
+            {
+                prices[group.Key] = resolvedByCadence;
+            }
         }
 
         return prices;

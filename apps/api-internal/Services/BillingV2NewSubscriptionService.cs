@@ -35,6 +35,7 @@ public sealed record BillingV2NewSubscriptionPresetItem(
 
 public sealed record BillingV2NewSubscriptionItemPlan(
     string Id,
+    string PriceComponentId,
     string? UserId,
     string ServiceId,
     string? TierId,
@@ -44,7 +45,22 @@ public sealed record BillingV2NewSubscriptionItemPlan(
     long AmountCentsSnapshot,
     string Currency,
     bool DiscountEligibleSnapshot,
-    string Source);
+    string Source)
+{
+    // Les colonnes historiques de l'item restent un miroir de compatibilite.
+    // L'autorite V2.1 est exclusivement cette collection de composants.
+    public IReadOnlyList<BillingV2NewSubscriptionPriceComponentPlan> PriceComponents { get; init; }
+        = Array.Empty<BillingV2NewSubscriptionPriceComponentPlan>();
+}
+
+public sealed record BillingV2NewSubscriptionPriceComponentPlan(
+    string Id,
+    string PresetItemId,
+    string ServicePriceId,
+    long AmountCentsSnapshot,
+    string Currency,
+    bool DiscountEligibleSnapshot,
+    int DisplayOrder);
 
 public interface IBillingV2NewSubscriptionService
 {
@@ -634,26 +650,48 @@ public static class BillingV2NewSubscriptionPlanner
         BillingV2NewSubscriptionUserPlan? primaryUser = null;
         var additionalUserIndex = 0;
 
-        foreach (var presetItem in presetItems)
+        foreach (var group in presetItems.GroupBy(item => new
+                 {
+                     item.ServiceId,
+                     item.TierId,
+                     item.ScopeTemplate,
+                     item.Quantity
+                 }))
         {
+            var presetItem = group.First();
             var user = ResolveUserForScope(
                 session,
                 presetItem.ScopeTemplate,
                 users,
                 ref primaryUser,
                 ref additionalUserIndex);
+            var components = group.Select((component, index) =>
+                    new BillingV2NewSubscriptionPriceComponentPlan(
+                        Guid.NewGuid().ToString("D"),
+                        component.PresetItemId,
+                        component.ServicePriceId,
+                        component.AmountCents,
+                        component.Currency,
+                        component.DiscountEligible,
+                        index))
+                .ToArray();
+            var mirror = components.First();
             items.Add(new BillingV2NewSubscriptionItemPlan(
                 Guid.NewGuid().ToString("D"),
+                mirror.Id,
                 user?.Id,
                 presetItem.ServiceId,
                 presetItem.TierId,
-                presetItem.ServicePriceId,
+                mirror.ServicePriceId,
                 user is null ? "subscription" : "user",
                 presetItem.Quantity,
-                presetItem.AmountCents,
-                presetItem.Currency,
-                presetItem.DiscountEligible,
-                "preset"));
+                mirror.AmountCentsSnapshot,
+                mirror.Currency,
+                mirror.DiscountEligibleSnapshot,
+                "preset")
+            {
+                PriceComponents = components
+            });
         }
 
         return new BillingV2NewSubscriptionPlan(users, items);

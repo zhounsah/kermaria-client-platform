@@ -26,7 +26,13 @@ public sealed record BillingV2RuntimeConfiguration(
     string? FirstRealTestPresetCode = null,
     string? FirstRealTestSelectionFingerprint = null,
     int FirstRealTestDiscountBasisPoints = 0,
-    long FirstRealTestExpectedTotalCents = 0)
+    long FirstRealTestExpectedTotalCents = 0,
+    bool GenericSelectionEnabled = false,
+    bool ServiceFulfillmentEnabled = false,
+    bool SubscriptionChangesEnabled = false,
+    bool StripeRecurringMutationEnabled = false,
+    bool VpsLocalProvisioningEnabled = false,
+    bool VpsCloudAutomationEnabled = false)
 {
     public const int DefaultReconciliationIntervalSeconds = 300;
     public const int MinimumReconciliationIntervalSeconds = 30;
@@ -61,8 +67,17 @@ public sealed record BillingV2RuntimeConfiguration(
             FirstRealTestDiscountBasisPoints = ResolveNonNegativeInt(
                 configuration["BILLING_V2_FIRST_REAL_TEST_DISCOUNT_BPS"]),
             FirstRealTestExpectedTotalCents = ResolveNonNegativeLong(
-                configuration["BILLING_V2_FIRST_REAL_TEST_EXPECTED_TOTAL_CENTS"])
+                configuration["BILLING_V2_FIRST_REAL_TEST_EXPECTED_TOTAL_CENTS"]),
+            GenericSelectionEnabled = ReadFlag(configuration, "BILLING_V2_GENERIC_SELECTION_ENABLED"),
+            ServiceFulfillmentEnabled = ReadFlag(configuration, "BILLING_V2_SERVICE_FULFILLMENT_ENABLED"),
+            SubscriptionChangesEnabled = ReadFlag(configuration, "BILLING_V2_SUBSCRIPTION_CHANGES_ENABLED"),
+            StripeRecurringMutationEnabled = ReadFlag(configuration, "BILLING_V2_STRIPE_RECURRING_MUTATION_ENABLED"),
+            VpsLocalProvisioningEnabled = ReadFlag(configuration, "BILLING_V2_VPS_LOCAL_PROVISIONING_ENABLED"),
+            VpsCloudAutomationEnabled = ReadFlag(configuration, "BILLING_V2_VPS_CLOUD_AUTOMATION_ENABLED")
         };
+
+    private static bool ReadFlag(IConfiguration configuration, string key)
+        => string.Equals(configuration[key], "true", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Une fréquence absente, illisible ou trop agressive retombe sur la

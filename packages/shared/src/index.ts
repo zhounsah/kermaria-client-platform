@@ -2738,6 +2738,14 @@ export interface BillingV2PublicSelection {
   remoteDesktop: boolean;
   additionalUsers: number;
   supportPlus: boolean;
+  /** V2.1 : intention generique sans montant, tier/provider/scope client. */
+  components?: BillingV2PublicSelectionComponent[];
+}
+
+export interface BillingV2PublicSelectionComponent {
+  serviceCode: string;
+  tierCode: string | null;
+  quantity: number;
 }
 
 export interface BillingV2PublicQuoteLine {

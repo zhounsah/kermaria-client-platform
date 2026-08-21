@@ -137,6 +137,7 @@ public sealed class BillingV2RenewalService : IBillingV2RenewalService
         var snapshot = await ReadContractSnapshotAsync(
             connection,
             subscriptionId,
+            _clock.UtcNow,
             cancellationToken);
         if (snapshot is null)
         {
@@ -386,6 +387,7 @@ public sealed class BillingV2RenewalService : IBillingV2RenewalService
         var snapshot = await ReadContractSnapshotAsync(
             connection,
             subscriptionId,
+            _clock.UtcNow,
             cancellationToken);
         if (snapshot is null)
         {
@@ -399,6 +401,20 @@ public sealed class BillingV2RenewalService : IBillingV2RenewalService
             return Refused(
                 "BILLING_V2_RENEWAL_SUBSCRIPTION_NOT_ACTIVE",
                 cycleSequence);
+        }
+
+        var cyclePeriod = BillingV2BillingCalendar.ResolveCyclePeriod(
+            snapshot.BillingAnchorUtc,
+            monthsPerCycle: 1,
+            cycleSequence);
+        snapshot = await ReadContractSnapshotAsync(
+            connection,
+            subscriptionId,
+            cyclePeriod.StartUtc,
+            cancellationToken);
+        if (snapshot is null)
+        {
+            return Refused("BILLING_V2_RENEWAL_SUBSCRIPTION_NOT_FOUND", cycleSequence);
         }
 
         BillingV2RenewalChargeResult charge;
@@ -416,10 +432,7 @@ public sealed class BillingV2RenewalService : IBillingV2RenewalService
                     snapshot.Items,
                     // La periode vient de l'ancre contractuelle et du rang du
                     // cycle : elle est reproductible a l'identique.
-                    BillingV2BillingCalendar.ResolveCyclePeriod(
-                        snapshot.BillingAnchorUtc,
-                        monthsPerCycle: 1,
-                        cycleSequence)));
+                    cyclePeriod));
         }
         catch (InvalidOperationException exception)
         {
@@ -544,6 +557,7 @@ public sealed class BillingV2RenewalService : IBillingV2RenewalService
         ReadContractSnapshotAsync(
             MySqlConnection connection,
             string subscriptionId,
+            DateTime cyclePeriodStartUtc,
             CancellationToken cancellationToken)
     {
         BillingV2RenewalContractSnapshot? snapshot;
@@ -604,25 +618,36 @@ public sealed class BillingV2RenewalService : IBillingV2RenewalService
                 SELECT
                     item.service_id,
                     item.tier_id,
-                    item.service_price_id,
+                    effective_component.subscription_item_id,
+                    effective_component.component_id,
+                    effective_component.service_price_id,
                     service.code AS service_code,
                     tier.code AS tier_code,
-                    price.billing_cadence,
+                    effective_component.billing_cadence,
                     item.quantity,
-                    item.amount_cents_snapshot,
-                    item.discount_eligible_snapshot
+                    effective_component.amount_cents_snapshot,
+                    effective_component.discount_eligible_snapshot
                 FROM billing_v2_subscription_items item
                 INNER JOIN billing_v2_services service
                     ON service.id = item.service_id
                 LEFT JOIN billing_v2_service_tiers tier
                     ON tier.id = item.tier_id
-                INNER JOIN billing_v2_service_prices price
-                    ON price.id = item.service_price_id
+                INNER JOIN billing_v2_subscription_item_effective_price_components effective_component
+                    ON effective_component.subscription_item_id = item.id
                 WHERE item.subscription_id = @subscription_id
                   AND item.status = 'active'
-                ORDER BY service.display_order, tier.display_order, item.id;
+                  AND item.effective_from <= @cycle_period_start
+                  AND (item.effective_until IS NULL OR item.effective_until > @cycle_period_start)
+                  AND effective_component.status = 'active'
+                  AND effective_component.billing_cadence = 'monthly'
+                  AND effective_component.effective_from <= @cycle_period_start
+                  AND (effective_component.effective_until IS NULL
+                       OR effective_component.effective_until > @cycle_period_start)
+                ORDER BY service.display_order, tier.display_order, item.id,
+                    effective_component.display_order;
                 """;
             command.Parameters.AddWithValue("@subscription_id", subscriptionId);
+            command.Parameters.AddWithValue("@cycle_period_start", cyclePeriodStartUtc);
             await using var reader = await command.ExecuteReaderAsync(
                 cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
@@ -640,7 +665,9 @@ public sealed class BillingV2RenewalService : IBillingV2RenewalService
                     reader.GetString("billing_cadence"),
                     reader.GetInt32("quantity"),
                     reader.GetInt64("amount_cents_snapshot"),
-                    reader.GetBoolean("discount_eligible_snapshot")));
+                    reader.GetBoolean("discount_eligible_snapshot"),
+                    MariaDbIdentifierReader.ReadRequired(reader, "subscription_item_id"),
+                    MariaDbIdentifierReader.ReadNullable(reader, "component_id")));
             }
         }
 

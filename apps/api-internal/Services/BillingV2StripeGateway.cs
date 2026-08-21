@@ -61,6 +61,11 @@ public interface IBillingV2StripeGateway
         string providerSubscriptionId,
         CancellationToken cancellationToken);
 
+    Task<BillingV2StripeRecurringMutationResult> UpdateRecurringAmountAsync(
+        BillingV2StripeRecurringMutationRequest request,
+        CancellationToken cancellationToken)
+        => Task.FromResult(BillingV2StripeRecurringMutationResult.Disabled);
+
     /// <summary>
     /// Relit une invoice Stripe. C'est LA preuve financiere d'un cycle : un
     /// renouvellement n'a pas de session checkout.
@@ -115,6 +120,11 @@ public sealed class DisabledBillingV2StripeGateway : IBillingV2StripeGateway
         string providerSubscriptionId,
         CancellationToken cancellationToken)
         => Task.FromResult<BillingV2StripeSubscriptionSnapshot?>(null);
+
+    public Task<BillingV2StripeRecurringMutationResult> UpdateRecurringAmountAsync(
+        BillingV2StripeRecurringMutationRequest request,
+        CancellationToken cancellationToken)
+        => Task.FromResult(BillingV2StripeRecurringMutationResult.Disabled);
 
     public Task<BillingV2StripeInvoiceSnapshot?> GetInvoiceAsync(
         string providerInvoiceId,
@@ -367,7 +377,78 @@ public sealed class BillingV2StripeGateway : IBillingV2StripeGateway
             ReadString(root, "status") ?? "unknown",
             ReadReference(root, "customer"),
             ReadReference(root, "latest_invoice"),
-            ReadMetadata(root));
+            ReadMetadata(root),
+            ReadSubscriptionItems(root));
+    }
+
+    public async Task<BillingV2StripeRecurringMutationResult> UpdateRecurringAmountAsync(
+        BillingV2StripeRecurringMutationRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!CanExecute) return BillingV2StripeRecurringMutationResult.Disabled;
+        var subscription = await GetSubscriptionAsync(request.ProviderSubscriptionId, cancellationToken);
+        var item = subscription?.Items?.Where(candidate => candidate.IsRecurring).ToArray();
+        if (item is null || item.Length != 1 || string.IsNullOrWhiteSpace(item[0].ProductId))
+            return new(false, "BILLING_V2_STRIPE_RECURRING_ITEM_AMBIGUOUS", null, false);
+        if (item[0].UnitAmountCents == request.AmountCents
+            && string.Equals(item[0].Currency, request.Currency, StringComparison.OrdinalIgnoreCase)
+            && item[0].Quantity == request.Quantity)
+            return new(true, "BILLING_V2_STRIPE_RECURRING_MUTATION_CONFIRMED_AFTER_REFETCH", request.ProviderSubscriptionId, false);
+        var values = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["items[0][id]"] = item[0].ItemId,
+            ["items[0][price_data][product]"] = item[0].ProductId!,
+            ["items[0][price_data][currency]"] = request.Currency.ToLowerInvariant(),
+            ["items[0][price_data][unit_amount]"] = request.AmountCents.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["items[0][price_data][recurring][interval]"] = "month",
+            ["items[0][quantity]"] = request.Quantity.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["proration_behavior"] = "none",
+            ["metadata[billing_v2_change_id]"] = request.ChangeId
+        };
+        using var message = new HttpRequestMessage(HttpMethod.Post, $"{SubscriptionsUrl}/{Uri.EscapeDataString(request.ProviderSubscriptionId)}")
+        {
+            Content = new StringContent(Encode(values), Encoding.UTF8, "application/x-www-form-urlencoded")
+        };
+        message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _stripe.SecretKey);
+        message.Headers.Add("Idempotency-Key", request.IdempotencyKey);
+        HttpResponseMessage response;
+        try
+        {
+            response = await _httpClientFactory.CreateClient(HttpClientName).SendAsync(message, cancellationToken);
+        }
+        catch (Exception exception) when (exception is HttpRequestException
+            || (exception is OperationCanceledException && !cancellationToken.IsCancellationRequested))
+        {
+            // Resultat indetermine : avant tout retry, relire l'abonnement
+            // cible. Si Stripe a applique le POST mais la reponse s'est
+            // perdue, cette lecture est la seule preuve admissible.
+            var recovered = await GetSubscriptionAsync(request.ProviderSubscriptionId, cancellationToken);
+            var applied = recovered?.Items?.SingleOrDefault(candidate =>
+                candidate.IsRecurring
+                && candidate.ItemId == item[0].ItemId
+                && candidate.UnitAmountCents == request.AmountCents
+                && string.Equals(candidate.Currency, request.Currency, StringComparison.OrdinalIgnoreCase)
+                && candidate.Quantity == request.Quantity);
+            return applied is not null
+                ? new(true, "BILLING_V2_STRIPE_RECURRING_MUTATION_CONFIRMED_AFTER_REFETCH", request.ProviderSubscriptionId, false)
+                : new(false, "BILLING_V2_STRIPE_RECURRING_MUTATION_INDETERMINATE", null, true);
+        }
+        using var responseToDispose = response;
+        if (!response.IsSuccessStatusCode)
+            return new(false, "BILLING_V2_STRIPE_RECURRING_MUTATION_FAILED", null, (int)response.StatusCode >= 500);
+
+        // Le POST n'est jamais une preuve de convergence. La relecture ciblee
+        // doit retrouver exactement l'item recurrent, devise/montant/quantite.
+        var reread = await GetSubscriptionAsync(request.ProviderSubscriptionId, cancellationToken);
+        var matched = reread?.Items?.SingleOrDefault(candidate =>
+            candidate.IsRecurring
+            && candidate.ItemId == item[0].ItemId
+            && candidate.UnitAmountCents == request.AmountCents
+            && string.Equals(candidate.Currency, request.Currency, StringComparison.OrdinalIgnoreCase)
+            && candidate.Quantity == request.Quantity);
+        return matched is not null
+            ? new(true, "BILLING_V2_STRIPE_RECURRING_MUTATION_CONFIRMED", request.ProviderSubscriptionId, false)
+            : new(false, "BILLING_V2_STRIPE_RECURRING_MUTATION_REFETCH_MISMATCH", null, true);
     }
 
     public async Task<BillingV2StripeInvoiceSnapshot?> GetInvoiceAsync(
@@ -500,6 +581,27 @@ public sealed class BillingV2StripeGateway : IBillingV2StripeGateway
         }
 
         return metadata;
+    }
+
+    private static IReadOnlyList<BillingV2StripeSubscriptionItemSnapshot> ReadSubscriptionItems(JsonElement root)
+    {
+        if (!root.TryGetProperty("items", out var items)
+            || !items.TryGetProperty("data", out var data)
+            || data.ValueKind != JsonValueKind.Array) return Array.Empty<BillingV2StripeSubscriptionItemSnapshot>();
+        var result = new List<BillingV2StripeSubscriptionItemSnapshot>();
+        foreach (var item in data.EnumerateArray())
+        {
+            var price = item.TryGetProperty("price", out var p) ? p : default;
+            var recurring = price.ValueKind == JsonValueKind.Object && price.TryGetProperty("recurring", out _);
+            result.Add(new BillingV2StripeSubscriptionItemSnapshot(
+                ReadString(item, "id") ?? string.Empty,
+                price.ValueKind == JsonValueKind.Object ? ReadReference(price, "product") : null,
+                recurring,
+                price.ValueKind == JsonValueKind.Object ? ReadLong(price, "unit_amount") : null,
+                price.ValueKind == JsonValueKind.Object ? ReadString(price, "currency") : null,
+                item.TryGetProperty("quantity", out var quantity) && quantity.TryGetInt32(out var count) ? count : null));
+        }
+        return result.Where(item => !string.IsNullOrWhiteSpace(item.ItemId)).ToArray();
     }
 
     private static string Encode(IReadOnlyDictionary<string, string> parameters)

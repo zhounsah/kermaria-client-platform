@@ -352,7 +352,8 @@ public static class BillingV2FinancialCoreStore
                 """
                 INSERT INTO billing_v2_billing_event_lines (
                     id, billing_event_id,
-                    service_id, tier_id, service_price_id,
+                    service_id, tier_id, service_price_id, subscription_item_id,
+                    subscription_item_price_component_id,
                     service_code, tier_code, description, billing_cadence,
                     quantity, unit_amount_cents, gross_amount_cents,
                     discount_allocated_amount_cents, net_amount_cents,
@@ -360,7 +361,8 @@ public static class BillingV2FinancialCoreStore
                     period_start, period_end, display_order, created_at
                 ) VALUES (
                     @id, @billing_event_id,
-                    @service_id, @tier_id, @service_price_id,
+                    @service_id, @tier_id, @service_price_id, @subscription_item_id,
+                    @subscription_item_price_component_id,
                     @service_code, @tier_code, @description, @cadence,
                     @quantity, @unit, @gross,
                     @discount, @net,
@@ -368,7 +370,8 @@ public static class BillingV2FinancialCoreStore
                     @period_start, @period_end, @display_order, @now
                 );
                 """;
-            command.Parameters.AddWithValue("@id", Guid.NewGuid().ToString("D"));
+            var lineId = Guid.NewGuid().ToString("D");
+            command.Parameters.AddWithValue("@id", lineId);
             command.Parameters.AddWithValue("@billing_event_id", billingEventId);
             command.Parameters.AddWithValue("@service_id", source.ServiceId);
             command.Parameters.AddWithValue(
@@ -377,6 +380,14 @@ public static class BillingV2FinancialCoreStore
             command.Parameters.AddWithValue(
                 "@service_price_id",
                 source.ServicePriceId);
+            command.Parameters.AddWithValue(
+                "@subscription_item_id",
+                source.SubscriptionItemId is null ? DBNull.Value : source.SubscriptionItemId);
+            command.Parameters.AddWithValue(
+                "@subscription_item_price_component_id",
+                source.SubscriptionItemPriceComponentId is null
+                    ? DBNull.Value
+                    : source.SubscriptionItemPriceComponentId);
             command.Parameters.AddWithValue("@service_code", line.ServiceCode);
             command.Parameters.AddWithValue(
                 "@tier_code",
@@ -398,6 +409,18 @@ public static class BillingV2FinancialCoreStore
             command.Parameters.AddWithValue("@display_order", line.DisplayOrder);
             command.Parameters.AddWithValue("@now", nowUtc);
             await command.ExecuteNonQueryAsync(cancellationToken);
+
+            if (string.Equals(source.Cadence, "one_time", StringComparison.Ordinal)
+                && source.SubscriptionItemPriceComponentId is not null)
+            {
+                await ReserveOneTimeComponentConsumptionAsync(
+                    connection,
+                    transaction,
+                    source.SubscriptionItemPriceComponentId,
+                    lineId,
+                    nowUtc,
+                    cancellationToken);
+            }
         }
 
         return billingEventId;
@@ -1106,10 +1129,96 @@ public static class BillingV2FinancialCoreStore
         return BillingV2SubscriptionVersionPolicy.EvaluateCompareAndSwap(
             affected);
     }
+
+    /// <summary>
+    /// Ancre atomiquement la premiere charge d'une composante ponctuelle. La
+    /// cle unique conditionnelle de la migration ne concerne que les debits :
+    /// les futurs avoirs/adjustments peuvent donc reference la composante sans
+    /// contourner la protection contre une seconde charge.
+    /// </summary>
+    private static async Task ReserveOneTimeComponentConsumptionAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        string componentId,
+        string billingEventLineId,
+        DateTime nowUtc,
+        CancellationToken cancellationToken)
+    {
+        await using (var lockCommand = connection.CreateCommand())
+        {
+            lockCommand.Transaction = transaction;
+            lockCommand.CommandText =
+                """
+                SELECT id
+                FROM billing_v2_subscription_item_price_components
+                WHERE id = @component_id
+                  AND billing_cadence = 'one_time'
+                  AND status = 'active'
+                FOR UPDATE;
+                """;
+            lockCommand.Parameters.AddWithValue("@component_id", componentId);
+            var locked = await lockCommand.ExecuteScalarAsync(cancellationToken);
+            if (locked is null)
+            {
+                throw new InvalidOperationException(
+                    "BILLING_V2_ONE_TIME_COMPONENT_UNKNOWN_OR_INACTIVE");
+            }
+        }
+
+        try
+        {
+            var consumptionId = Guid.NewGuid().ToString("D");
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText =
+                """
+                INSERT INTO billing_v2_one_time_component_consumptions (
+                    id, subscription_item_price_component_id,
+                    billing_event_line_id, consumption_kind, status,
+                    created_at, finalized_at
+                ) VALUES (
+                    @id, @component_id, @line_id, 'debit_charge', 'reserved',
+                    @now, NULL
+                );
+                """;
+            command.Parameters.AddWithValue("@id", consumptionId);
+            command.Parameters.AddWithValue("@component_id", componentId);
+            command.Parameters.AddWithValue("@line_id", billingEventLineId);
+            command.Parameters.AddWithValue("@now", nowUtc);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+
+            // La ligne financiere existe deja dans la MEME transaction. La
+            // reservation devient donc consommation definitive sans fenetre
+            // intermediaire observable ni seconde charge concurrente.
+            await using var finalize = connection.CreateCommand();
+            finalize.Transaction = transaction;
+            finalize.CommandText =
+                """
+                UPDATE billing_v2_one_time_component_consumptions
+                SET status = 'consumed', finalized_at = @now
+                WHERE id = @id AND status = 'reserved';
+                """;
+            finalize.Parameters.AddWithValue("@id", consumptionId);
+            finalize.Parameters.AddWithValue("@now", nowUtc);
+            if (await finalize.ExecuteNonQueryAsync(cancellationToken) != 1)
+            {
+                throw new InvalidOperationException(
+                    "BILLING_V2_ONE_TIME_CONSUMPTION_FINALIZATION_FAILED");
+            }
+        }
+        catch (MySqlException exception) when (exception.Number == 1062)
+        {
+            throw new InvalidOperationException(
+                "BILLING_V2_ONE_TIME_ALREADY_CONSUMED", exception);
+        }
+    }
 }
 
 public sealed record BillingV2BillingEventLineSource(
     string ServiceId,
     string? TierId,
     string ServicePriceId,
-    string Cadence);
+    string Cadence,
+    string? SubscriptionItemId = null,
+    string? SubscriptionItemPriceComponentId = null,
+    string? PresetItemId = null);

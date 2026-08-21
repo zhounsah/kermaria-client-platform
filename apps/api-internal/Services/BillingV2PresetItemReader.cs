@@ -36,8 +36,7 @@ public static class BillingV2PresetItemReader
 
         var items = new List<BillingV2NewSubscriptionPresetItem>();
         foreach (var group in rows.GroupBy(
-                     row => row.PresetItemId,
-                     StringComparer.Ordinal))
+                     row => (row.PresetItemId, row.Candidate.BillingCadence)))
         {
             var first = group.First();
             var candidates = group
@@ -55,7 +54,7 @@ public static class BillingV2PresetItemReader
 
             var price = resolution.Price;
             items.Add(new BillingV2NewSubscriptionPresetItem(
-                first.PresetItemId,
+                $"{first.PresetItemId}#{price.BillingCadence}",
                 first.ServiceId,
                 first.TierId,
                 price.ServicePriceId,
