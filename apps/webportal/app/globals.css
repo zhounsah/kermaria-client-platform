@@ -3051,6 +3051,20 @@ fieldset.form-field > .form-hint {
 .service-cta p { color: #cbd5e1; }
 .service-cta .button-secondary { border-color: var(--white); color: var(--white); background: transparent; white-space: nowrap; }
 .service-cta .button-secondary:hover { color: var(--brand-ink); background: var(--white); }
+.storefront-section .managed-markdown { max-width: 820px; color: var(--muted); line-height: 1.7; }
+.storefront-section .managed-markdown p { margin: 0; }
+.storefront-faq-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.storefront-faq-grid details { border: 1px solid var(--border); border-radius: 14px; padding: 18px; background: var(--white); }
+.storefront-faq-grid summary { cursor: pointer; font-weight: 700; }
+.storefront-faq-grid p { margin: 12px 0 0; color: var(--muted); line-height: 1.6; }
+.storefront-related { align-items: start; }
+.storefront-link-list { display: grid; gap: 12px; align-content: start; }
+.billing-price-projection-amount { margin: 0 0 20px; color: var(--primary); font-size: 1.35rem; font-weight: 800; }
+.storefront-admin-form fieldset { display: grid; gap: 16px; margin: 28px 0 0; padding: 20px; border: 1px solid var(--border); border-radius: 16px; }
+.storefront-admin-form legend { padding-inline: 6px; font-weight: 700; }
+.storefront-admin-item { display: grid; grid-template-columns: minmax(0, 0.45fr) minmax(0, 0.55fr); gap: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+.storefront-admin-item:first-of-type { padding-top: 0; border-top: 0; }
+.storefront-admin-item label { display: grid; gap: 7px; font-weight: 600; }
 
 @media (max-width: 1100px) {
   .public-header-inner { width: min(100% - 32px, 1180px); display: flex; flex-wrap: wrap; min-height: 72px; padding-block: 14px; }
@@ -3075,7 +3089,7 @@ fieldset.form-field > .form-hint {
 
 @media (max-width: 820px) {
   .service-category-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .service-offer-grid, .service-overview-grid { grid-template-columns: 1fr; }
+  .service-offer-grid, .service-overview-grid, .storefront-faq-grid { grid-template-columns: 1fr; }
   .service-process, .service-trust, .service-problem-section, .service-category-proof, .service-cta { grid-template-columns: 1fr; gap: 28px; }
 }
 
@@ -3088,6 +3102,7 @@ fieldset.form-field > .form-hint {
   .service-category-card, .service-offer-card, .service-overview-grid article { min-height: auto; padding: 20px; }
   .service-main-services, .service-process, .service-trust, .service-problem-section, .service-category-proof, .service-cta { padding: 24px 20px; border-radius: 16px; }
   .service-cta .button-secondary { width: 100%; text-align: center; }
+  .storefront-admin-item { grid-template-columns: 1fr; }
 }
 
 .process-card {

@@ -15,6 +15,12 @@ const comparisonTable = await read("components/PublicPackComparisonTable.tsx");
 const adminNavigation = await read("components/AdminNavigation.tsx");
 const adminContentPage = await read("app/admin/content/page.tsx");
 const adminContentDetailPage = await read("app/admin/content/[key]/page.tsx");
+const adminStorefrontContentForm = await read("components/AdminStorefrontContentForm.tsx");
+const publicStorefrontPage = await read("components/PublicStorefrontPage.tsx");
+const storefrontContent = await read("lib/storefront-content.ts");
+const servicesPage = await read("app/services/page.tsx");
+const serviceDetailPage = await read("app/services/[category]/page.tsx");
+const tarifsPage = await read("app/tarifs/page.tsx");
 const adminPackCatalogPage = await read("app/admin/public-pack-catalog/page.tsx");
 const cgvPage = await read("app/cgv/page.tsx");
 const privacyPage = await read("app/politique-confidentialite/page.tsx");
@@ -23,6 +29,11 @@ const aProposPage = await read("app/a-propos/page.tsx");
 const packSheetPage = await read("app/offres/[slug]/page.tsx");
 const adminContentRoute = await read("app/api/admin/content/route.ts");
 const adminContentDetailRoute = await read("app/api/admin/content/[key]/route.ts");
+const {
+  resolveStorefrontPublicCta,
+  resolveStorefrontPublicRelatedLinks,
+  storefrontServiceSelfServiceOrderable,
+} = await import(new URL("../lib/storefront-content.ts", import.meta.url));
 
 assert.match(sharedTypes, /type ManagedContentKey =/);
 assert.match(sharedTypes, /type ManagedContentType =/);
@@ -31,6 +42,11 @@ assert.match(sharedTypes, /interface ManagedContentDetail/);
 assert.match(sharedTypes, /interface ManagedContentPayload/);
 assert.match(sharedTypes, /buildPackSheetContentKey/);
 assert.match(sharedTypes, /getManagedContentRegistry/);
+assert.match(sharedTypes, /StorefrontContentKey/);
+assert.match(sharedTypes, /storefront:vpn-entreprise/);
+assert.match(sharedTypes, /storefront:messagerie-professionnelle/);
+assert.match(sharedTypes, /publicVisible: boolean/);
+assert.match(sharedTypes, /selfServiceOrderable: boolean/);
 
 assert.match(internalApi, /getPublicManagedContent/);
 assert.match(internalApi, /getAdminManagedContentList/);
@@ -54,6 +70,26 @@ assert.match(adminContentPage, /target="_blank"/);
 assert.match(adminContentDetailPage, /await requireAdminSession\(\)/);
 assert.match(adminContentDetailPage, /decodeURIComponent/);
 assert.match(adminContentDetailPage, /target="_blank"/);
+assert.match(adminContentDetailPage, /AdminStorefrontContentForm/);
+assert.match(adminStorefrontContentForm, /Titre commercial \/ H1/);
+assert.match(adminStorefrontContentForm, /Title SEO/);
+assert.match(adminStorefrontContentForm, /Meta description/);
+assert.match(adminStorefrontContentForm, /selfServiceOrderable === false/);
+assert.match(adminStorefrontContentForm, /isStorefrontSelfServiceCta/);
+assert.match(adminStorefrontContentForm, /href !== "\/formules"/);
+assert.doesNotMatch(adminStorefrontContentForm, /Contenu JSON/);
+assert.match(publicStorefrontPage, /Questions fréquentes/);
+assert.match(publicStorefrontPage, /ManagedMarkdown/);
+assert.match(publicStorefrontPage, /resolveStorefrontPublicCta/);
+assert.match(publicStorefrontPage, /resolveStorefrontPublicRelatedLinks/);
+assert.match(storefrontContent, /STOREFRONT_SERVICE_SLUGS/);
+assert.match(storefrontContent, /"vpn-entreprise": \["VPN-ACCESS"\]/);
+assert.match(servicesPage, /storefront:services/);
+assert.match(serviceDetailPage, /storefrontContentKeyForServiceSlug/);
+assert.match(serviceDetailPage, /getBillingV2FormulesCatalog/);
+assert.match(serviceDetailPage, /storefrontServiceSelfServiceOrderable/);
+assert.match(serviceDetailPage, /selfServiceOrderable=/);
+assert.match(tarifsPage, /storefront:tarifs/);
 assert.match(adminNavigation, /\/admin\/content/);
 assert.match(
   adminPackCatalogPage,
@@ -84,5 +120,53 @@ assert.match(comparisonTable, /Voir la fiche technique/);
 assert.match(managedMarkdown, /ReactMarkdown/);
 assert.doesNotMatch(managedMarkdown, /dangerouslySetInnerHTML/);
 assert.doesNotMatch(managedMarkdown, /rehypeRaw|rehype-raw/);
+
+const nonSelfServiceCatalog = {
+  source: "database",
+  currency: "EUR",
+  presets: [],
+  services: [{
+    code: "LINUX-PATCH-MANAGED",
+    name: "Maintenance Linux",
+    category: "Infogérance",
+    scopeType: "subscription",
+    flatMonthlyAmountCents: 1490,
+    tiers: [],
+    discountEligible: true,
+    publicVisible: true,
+    selfServiceOrderable: false,
+  }],
+  commitments: [],
+  checkoutRoutes: [],
+};
+assert.equal(
+  storefrontServiceSelfServiceOrderable("maintenance-linux", nonSelfServiceCatalog),
+  false,
+  "public_visible=true + self_service_orderable=false doit rester non self-service.",
+);
+assert.deepEqual(
+  resolveStorefrontPublicCta({ ctaLabel: "Commander", ctaHref: "/formules" }, false),
+  { label: "Demander un devis", href: "/contact" },
+  "Un CTA CMS /formules doit être remplacé pour un service non self-service.",
+);
+assert.deepEqual(
+  resolveStorefrontPublicCta({ ctaLabel: "Configurer", ctaHref: "/diagnostic" }, false),
+  { label: "Demander un audit", href: "/diagnostic" },
+  "Un libellé Configurer doit être neutralisé même avec une destination non self-service.",
+);
+assert.deepEqual(
+  resolveStorefrontPublicRelatedLinks([
+    { label: "Configurer", href: "/formules" },
+    { label: "Contact", href: "/contact" },
+  ], false),
+  [{ label: "Contact", href: "/contact" }],
+  "A non-self-service service must remove self-service related links.",
+);
+
+assert.deepEqual(
+  resolveStorefrontPublicCta({ ctaLabel: "Demander un devis", ctaHref: "/contact" }, false),
+  { label: "Demander un devis", href: "/contact" },
+  "Un CTA commercial sûr doit rester intact.",
+);
 
 console.log("Vérification du contrat managed content V0.33 réussie.");

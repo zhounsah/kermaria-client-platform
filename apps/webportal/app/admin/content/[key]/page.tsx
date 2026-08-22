@@ -3,12 +3,18 @@ import { notFound } from "next/navigation";
 import { isManagedContentKey } from "@kermaria/shared";
 
 import { AdminManagedContentForm } from "@/components/AdminManagedContentForm";
+import { AdminStorefrontContentForm } from "@/components/AdminStorefrontContentForm";
 import { ErrorState } from "@/components/ErrorState";
 import { MockNotice } from "@/components/MockNotice";
 import { PageHeader } from "@/components/PageHeader";
 import { requireAdminSession } from "@/lib/auth";
 import { formatDateTime } from "@/lib/formatters";
-import { getAdminManagedContent } from "@/lib/internal-api";
+import { getAdminManagedContent, getBillingV2FormulesCatalog } from "@/lib/internal-api";
+import {
+  isStorefrontContentKey,
+  storefrontServiceSelfServiceOrderable,
+  storefrontServiceSlugForContentKey,
+} from "@/lib/storefront-content";
 
 export const metadata = {
   title: "Édition contenu - Administration",
@@ -58,13 +64,32 @@ export default async function AdminManagedContentDetailPage({
   }
 
   const content = result.data;
+  const serviceSlug = isStorefrontContentKey(content.key)
+    ? storefrontServiceSlugForContentKey(content.key)
+    : null;
+  const billingCatalog = serviceSlug ? await getBillingV2FormulesCatalog() : null;
+  const selfServiceOrderable = serviceSlug
+    ? storefrontServiceSelfServiceOrderable(
+      serviceSlug,
+      billingCatalog?.data ?? {
+        source: "unavailable",
+        currency: "EUR",
+        presets: [],
+        services: [],
+        commitments: [],
+        checkoutRoutes: [],
+      },
+    )
+    : null;
 
   return (
     <>
       <PageHeader
         description={`URL publique : ${content.publicPath}`}
         eyebrow={
-          content.contentType === "legal"
+          content.contentType === "storefront_page"
+            ? "Page storefront"
+            : content.contentType === "legal"
             ? "Contenu légal"
             : content.contentType === "page"
               ? "Page du site"
@@ -93,8 +118,8 @@ export default async function AdminManagedContentDetailPage({
           <span className="card-kicker">Métadonnées fixes</span>
           <h2>Clé, URL et historique</h2>
           <p>
-            Le titre, le type et l&apos;URL publique sont définis par la clé de
-            contenu. Seuls le Markdown et le libellé de version sont éditables.
+            L&apos;URL, la clé et le type restent verrouillés. Les pages storefront
+            disposent d&apos;un formulaire structuré ; les autres contenus restent en Markdown.
           </p>
         </div>
         <dl className="profile-details">
@@ -117,7 +142,9 @@ export default async function AdminManagedContentDetailPage({
         </dl>
       </section>
 
-      <AdminManagedContentForm content={content} />
+      {isStorefrontContentKey(content.key)
+        ? <AdminStorefrontContentForm content={content} selfServiceOrderable={selfServiceOrderable} />
+        : <AdminManagedContentForm content={content} />}
 
       <MockNotice
         correlationId={result.correlationId}

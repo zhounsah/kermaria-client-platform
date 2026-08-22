@@ -20,6 +20,7 @@ const contentTypeLabels = {
   legal: { label: "Légal", tone: "warning" as const },
   pack_sheet: { label: "Fiche pack", tone: "info" as const },
   page: { label: "Page", tone: "neutral" as const },
+  storefront_page: { label: "Storefront", tone: "success" as const },
 };
 
 export default async function AdminManagedContentListPage() {
@@ -30,7 +31,7 @@ export default async function AdminManagedContentListPage() {
   return (
     <>
       <PageHeader
-        description="CGV, mentions légales et fiches techniques packs éditables depuis le back-office, avec persistance côté API."
+        description="Pages principales, catégories services, pages SEO, contenus légaux et fiches packs éditables depuis le back-office."
         eyebrow="Administration interne"
         title="Contenus administrables"
       />

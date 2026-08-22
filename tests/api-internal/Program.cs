@@ -5624,8 +5624,10 @@ async Task VerifyManagedContentAsync(
     var expectedDataSource = persistent ? "mariadb" : "mock";
     const string legalKey = "legal:cgv";
     const string packSheetKey = "pack-sheet:pack-dossier-securise";
+    const string storefrontKey = "storefront:vpn-entreprise";
     var encodedLegalKey = Uri.EscapeDataString(legalKey);
     var encodedPackSheetKey = Uri.EscapeDataString(packSheetKey);
+    var encodedStorefrontKey = Uri.EscapeDataString(storefrontKey);
 
     using var publicLegalRequest = new HttpRequestMessage(
         HttpMethod.Get,
@@ -5668,6 +5670,25 @@ async Task VerifyManagedContentAsync(
             ?.Contains("## Présentation", StringComparison.Ordinal) == true,
         "Une fiche technique pack doit être disponible côté public.");
 
+    using var publicStorefrontRequest = new HttpRequestMessage(
+        HttpMethod.Get,
+        $"{baseUrl}/internal/portal/content/{encodedStorefrontKey}");
+    publicStorefrontRequest.Headers.Add(correlationHeader, "managed-content-storefront");
+    using var publicStorefrontResponse = await client.SendAsync(publicStorefrontRequest);
+    using var publicStorefrontPayload = JsonDocument.Parse(
+        await publicStorefrontResponse.Content.ReadAsStringAsync());
+    var publicStorefrontBody = publicStorefrontPayload.RootElement
+        .GetProperty("bodyMarkdown").GetString()
+        ?? throw new InvalidOperationException("Le body storefront est absent.");
+    using var publicStorefrontDocument = JsonDocument.Parse(publicStorefrontBody);
+    Ensure(
+        publicStorefrontResponse.StatusCode == HttpStatusCode.OK
+        && publicStorefrontPayload.RootElement.GetProperty("key").GetString() == storefrontKey
+        && publicStorefrontPayload.RootElement.GetProperty("contentType").GetString() == "storefront_page"
+        && publicStorefrontDocument.RootElement.GetProperty("title").GetString()
+            ?.Contains("Accès VPN sécurisé", StringComparison.Ordinal) == true,
+        "La landing storefront SEO doit être seedée et lisible côté public.");
+
     using var clientForbiddenAdminListRequest = CreateSessionRequest(
         HttpMethod.Get,
         $"{baseUrl}/internal/admin/content",
@@ -5696,8 +5717,11 @@ async Task VerifyManagedContentAsync(
             && item.GetProperty("contentType").GetString() == "legal")
         && adminEntries.Any(item =>
             item.GetProperty("key").GetString() == packSheetKey
-            && item.GetProperty("contentType").GetString() == "pack_sheet"),
-        "La liste admin des contenus doit exposer les contenus légaux et les fiches packs.");
+            && item.GetProperty("contentType").GetString() == "pack_sheet")
+        && adminEntries.Any(item =>
+            item.GetProperty("key").GetString() == storefrontKey
+            && item.GetProperty("contentType").GetString() == "storefront_page"),
+        "La liste admin des contenus doit exposer les contenus légaux, les fiches packs et les pages storefront.");
 
     using var adminDetailRequest = CreateSessionRequest(
         HttpMethod.Get,
@@ -5806,6 +5830,107 @@ async Task VerifyManagedContentAsync(
         Ensure(
             restoreResponse.StatusCode == HttpStatusCode.OK,
             "La restauration de la fiche pack après smoke test doit réussir.");
+    }
+
+    using var originalStorefrontRequest = CreateSessionRequest(
+        HttpMethod.Get,
+        $"{baseUrl}/internal/admin/content/{encodedStorefrontKey}",
+        adminSessionToken);
+    using var originalStorefrontResponse = await client.SendAsync(originalStorefrontRequest);
+    using var originalStorefrontPayload = JsonDocument.Parse(
+        await originalStorefrontResponse.Content.ReadAsStringAsync());
+    var originalStorefrontBody = originalStorefrontPayload.RootElement
+        .GetProperty("bodyMarkdown").GetString()
+        ?? throw new InvalidOperationException("Le seed storefront est absent.");
+
+    const string updatedStorefrontBody = """
+        {"seoTitle":"VPN entreprise test | Zachary IT","seoDescription":"Une description de test suffisamment détaillée pour valider la persistance du contenu storefront administrable.","title":"Accès VPN administrable","lead":"Contenu de test pour valider la mise à jour structurée d’une page storefront depuis le back-office.","ctaLabel":"Demander un audit","ctaHref":"/diagnostic","sections":[{"heading":"Accès privé","bodyMarkdown":"Un accès VPN cadré pour les usages autorisés."}],"faq":[{"question":"Le VPN est-il administrable ?","answer":"Oui, cette question est un test de persistance."},{"question":"Les prix sont-ils inclus ?","answer":"Non, le contenu ne porte aucun montant."}],"relatedLinks":[{"label":"Diagnostic","href":"/diagnostic"}]}
+        """;
+    try
+    {
+        using var updateStorefrontRequest = CreateSessionRequest(
+            HttpMethod.Patch,
+            $"{baseUrl}/internal/admin/content/{encodedStorefrontKey}",
+            adminSessionToken);
+        updateStorefrontRequest.Content = JsonContent.Create(new
+        {
+            bodyMarkdown = updatedStorefrontBody,
+            versionLabel = (string?)null
+        });
+        using var updateStorefrontResponse = await client.SendAsync(updateStorefrontRequest);
+        Ensure(
+            updateStorefrontResponse.StatusCode == HttpStatusCode.OK,
+            "La mise à jour admin d’une page storefront structurée doit réussir.");
+
+        var allowedEditorialQuantities = new[]
+        {
+            "24 heures",
+            "30 jours",
+            "2 utilisateurs"
+        };
+        foreach (var allowedPhrase in allowedEditorialQuantities)
+        {
+            using var allowedQuantityRequest = CreateSessionRequest(
+                HttpMethod.Patch,
+                $"{baseUrl}/internal/admin/content/{encodedStorefrontKey}",
+                adminSessionToken);
+            allowedQuantityRequest.Content = JsonContent.Create(new
+            {
+                bodyMarkdown = updatedStorefrontBody.Replace("aucun montant", allowedPhrase),
+                versionLabel = (string?)null
+            });
+            using var allowedQuantityResponse = await client.SendAsync(allowedQuantityRequest);
+            Ensure(
+                allowedQuantityResponse.StatusCode == HttpStatusCode.OK,
+                $"Une quantité éditoriale non tarifaire doit rester autorisée : {allowedPhrase}.");
+        }
+
+        var forbiddenPricePhrases = new[]
+        {
+            "25 €",
+            "25€",
+            "25 euro",
+            "25 euros",
+            "25 EUR",
+            "25EUR",
+            "25 EUR / mois",
+            "25 eur/mois",
+            "29 EUR",
+            "29EUR/mois",
+            "29 euros HT"
+        };
+        foreach (var forbiddenPricePhrase in forbiddenPricePhrases)
+        {
+            using var invalidPriceRequest = CreateSessionRequest(
+                HttpMethod.Patch,
+                $"{baseUrl}/internal/admin/content/{encodedStorefrontKey}",
+                adminSessionToken);
+            invalidPriceRequest.Content = JsonContent.Create(new
+            {
+                bodyMarkdown = updatedStorefrontBody.Replace("aucun montant", forbiddenPricePhrase),
+                versionLabel = (string?)null
+            });
+            using var invalidPriceResponse = await client.SendAsync(invalidPriceRequest);
+            Ensure(
+                invalidPriceResponse.StatusCode == HttpStatusCode.BadRequest,
+                $"Un montant CMS doit être refusé quelle que soit sa notation : {forbiddenPricePhrase}.");
+        }
+    }
+    finally
+    {
+        using var restoreStorefrontRequest = CreateSessionRequest(
+            HttpMethod.Patch,
+            $"{baseUrl}/internal/admin/content/{encodedStorefrontKey}",
+            adminSessionToken);
+        restoreStorefrontRequest.Content = JsonContent.Create(new
+        {
+            bodyMarkdown = originalStorefrontBody,
+            versionLabel = (string?)null
+        });
+        using var restoreStorefrontResponse = await client.SendAsync(restoreStorefrontRequest);
+        Ensure(
+            restoreStorefrontResponse.StatusCode == HttpStatusCode.OK,
+            "La restauration de la page storefront après smoke test doit réussir.");
     }
 }
 

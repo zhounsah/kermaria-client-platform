@@ -632,13 +632,37 @@ export type PublicPackCode =
 
 export type PublicPackCommitmentMonths = 1 | 6 | 12;
 
-export type ManagedContentType = "legal" | "pack_sheet" | "page";
+export type ManagedContentType = "legal" | "pack_sheet" | "page" | "storefront_page";
+
+export type StorefrontContentKey =
+  | "storefront:services"
+  | "storefront:tarifs"
+  | "storefront:cloud-hebergement"
+  | "storefront:domaines-messagerie"
+  | "storefront:reseau-securite"
+  | "storefront:support-it"
+  | "storefront:vps"
+  | "storefront:infogerance-vps"
+  | "storefront:hebergement-web"
+  | "storefront:maintenance-linux"
+  | "storefront:maintenance-wordpress"
+  | "storefront:sauvegarde-externalisee"
+  | "storefront:supervision-informatique"
+  | "storefront:supervision-nas"
+  | "storefront:vpn-entreprise"
+  | "storefront:bureau-windows-distance"
+  | "storefront:unifi"
+  | "storefront:firewall"
+  | "storefront:cloudflare-waf"
+  | "storefront:gestion-dns-domaines"
+  | "storefront:messagerie-professionnelle";
 
 export type ManagedContentKey =
   | "legal:cgv"
   | "legal:politique-confidentialite"
   | "legal:mentions-legales"
   | "page:a-propos"
+  | StorefrontContentKey
   | `pack-sheet:${PublicPackCode}`;
 
 export interface ManagedContentSummary {
@@ -1616,6 +1640,8 @@ export function isManagedContentKey(value: unknown): value is ManagedContentKey 
       || value === "legal:politique-confidentialite"
       || value === "legal:mentions-legales"
       || value === "page:a-propos"
+      || value.startsWith("storefront:")
+        && STOREFRONT_CONTENT_REGISTRY.some((entry) => entry.key === value)
       || PUBLIC_PACKS.some(
         (pack) => value === buildPackSheetContentKey(pack.key),
       ));
@@ -1655,6 +1681,7 @@ export function getManagedContentRegistry(): readonly ManagedContentRegistryEntr
       sortOrder: 30,
       packCode: null,
     },
+    ...STOREFRONT_CONTENT_REGISTRY,
     ...PUBLIC_PACKS.map((pack) => ({
       key: buildPackSheetContentKey(pack.key),
       contentType: "pack_sheet" as const,
@@ -1665,6 +1692,39 @@ export function getManagedContentRegistry(): readonly ManagedContentRegistryEntr
     })),
   ];
 }
+
+const STOREFRONT_CONTENT_REGISTRY: readonly ManagedContentRegistryEntry[] = [
+  ["storefront:services", "Pages principales", "Catalogue des services", "/services", 40],
+  ["storefront:tarifs", "Pages principales", "Tarifs Zachary IT", "/tarifs", 45],
+  ["storefront:cloud-hebergement", "Catégories services", "Cloud & Hébergement", "/services/cloud-hebergement", 50],
+  ["storefront:domaines-messagerie", "Catégories services", "Domaines & Messagerie", "/services/domaines-messagerie", 51],
+  ["storefront:reseau-securite", "Catégories services", "Réseau & Sécurité", "/services/reseau-securite", 52],
+  ["storefront:support-it", "Catégories services", "Support & IT", "/services/support-it", 53],
+  ["storefront:vps", "Pages services SEO", "VPS", "/services/vps", 60],
+  ["storefront:infogerance-vps", "Pages services SEO", "Infogérance VPS", "/services/infogerance-vps", 61],
+  ["storefront:hebergement-web", "Pages services SEO", "Hébergement web", "/services/hebergement-web", 62],
+  ["storefront:maintenance-linux", "Pages services SEO", "Maintenance Linux", "/services/maintenance-linux", 63],
+  ["storefront:maintenance-wordpress", "Pages services SEO", "Maintenance WordPress", "/services/maintenance-wordpress", 64],
+  ["storefront:sauvegarde-externalisee", "Pages services SEO", "Sauvegarde externalisée", "/services/sauvegarde-externalisee", 65],
+  ["storefront:supervision-informatique", "Pages services SEO", "Supervision informatique", "/services/supervision-informatique", 66],
+  ["storefront:supervision-nas", "Pages services SEO", "Supervision NAS", "/services/supervision-nas", 67],
+  ["storefront:vpn-entreprise", "Pages services SEO", "VPN entreprise", "/services/vpn-entreprise", 68],
+  ["storefront:bureau-windows-distance", "Pages services SEO", "Bureau Windows à distance", "/services/bureau-windows-distance", 69],
+  ["storefront:unifi", "Pages services SEO", "UniFi", "/services/unifi", 70],
+  ["storefront:firewall", "Pages services SEO", "Firewall", "/services/firewall", 71],
+  ["storefront:cloudflare-waf", "Pages services SEO", "Cloudflare WAF", "/services/cloudflare-waf", 72],
+  ["storefront:gestion-dns-domaines", "Pages services SEO", "Gestion DNS et domaines", "/services/gestion-dns-domaines", 73],
+  ["storefront:messagerie-professionnelle", "Pages services SEO", "Messagerie professionnelle", "/services/messagerie-professionnelle", 74],
+].map(([key, group, title, publicPath, sortOrder]) => ({
+  key: key as StorefrontContentKey,
+  contentType: "storefront_page" as const,
+  // Le groupe fait partie du titre admin afin que la liste reste lisible sans
+  // introduire un second registre ou une arborescence modifiable.
+  title: `${group} — ${title}`,
+  publicPath: publicPath as string,
+  sortOrder: sortOrder as number,
+  packCode: null,
+}));
 
 export function getManagedContentEntry(
   key: ManagedContentKey,
@@ -2671,6 +2731,8 @@ export interface BillingV2PublicService {
   flatMonthlyAmountCents: number | null;
   tiers: BillingV2PublicTier[];
   discountEligible: boolean;
+  publicVisible: boolean;
+  selfServiceOrderable: boolean;
 }
 
 export interface BillingV2PublicPresetItem {

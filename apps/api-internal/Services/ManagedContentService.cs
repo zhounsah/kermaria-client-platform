@@ -1,4 +1,6 @@
 using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using Kermaria.ApiInternal.Contracts;
 using Kermaria.ApiInternal.Data.Repositories;
 
@@ -57,7 +59,7 @@ public interface IManagedContentService
         CancellationToken cancellationToken);
 }
 
-public sealed class ManagedContentService : IManagedContentService
+public sealed partial class ManagedContentService : IManagedContentService
 {
     private const int MaxBodyLength = 120_000;
     private const int MaxVersionLength = 160;
@@ -94,6 +96,27 @@ public sealed class ManagedContentService : IManagedContentService
             "/a-propos",
             30,
             SeedFileName: "a-propos.md"),
+        new("storefront:services", "storefront_page", "Pages principales — Catalogue des services", "/services", 40),
+        new("storefront:tarifs", "storefront_page", "Pages principales — Tarifs Zachary IT", "/tarifs", 45),
+        new("storefront:cloud-hebergement", "storefront_page", "Catégories services — Cloud & Hébergement", "/services/cloud-hebergement", 50),
+        new("storefront:domaines-messagerie", "storefront_page", "Catégories services — Domaines & Messagerie", "/services/domaines-messagerie", 51),
+        new("storefront:reseau-securite", "storefront_page", "Catégories services — Réseau & Sécurité", "/services/reseau-securite", 52),
+        new("storefront:support-it", "storefront_page", "Catégories services — Support & IT", "/services/support-it", 53),
+        new("storefront:vps", "storefront_page", "Pages services SEO — VPS", "/services/vps", 60),
+        new("storefront:infogerance-vps", "storefront_page", "Pages services SEO — Infogérance VPS", "/services/infogerance-vps", 61),
+        new("storefront:hebergement-web", "storefront_page", "Pages services SEO — Hébergement web", "/services/hebergement-web", 62),
+        new("storefront:maintenance-linux", "storefront_page", "Pages services SEO — Maintenance Linux", "/services/maintenance-linux", 63),
+        new("storefront:maintenance-wordpress", "storefront_page", "Pages services SEO — Maintenance WordPress", "/services/maintenance-wordpress", 64),
+        new("storefront:sauvegarde-externalisee", "storefront_page", "Pages services SEO — Sauvegarde externalisée", "/services/sauvegarde-externalisee", 65),
+        new("storefront:supervision-informatique", "storefront_page", "Pages services SEO — Supervision informatique", "/services/supervision-informatique", 66),
+        new("storefront:supervision-nas", "storefront_page", "Pages services SEO — Supervision NAS", "/services/supervision-nas", 67),
+        new("storefront:vpn-entreprise", "storefront_page", "Pages services SEO — VPN entreprise", "/services/vpn-entreprise", 68),
+        new("storefront:bureau-windows-distance", "storefront_page", "Pages services SEO — Bureau Windows à distance", "/services/bureau-windows-distance", 69),
+        new("storefront:unifi", "storefront_page", "Pages services SEO — UniFi", "/services/unifi", 70),
+        new("storefront:firewall", "storefront_page", "Pages services SEO — Firewall", "/services/firewall", 71),
+        new("storefront:cloudflare-waf", "storefront_page", "Pages services SEO — Cloudflare WAF", "/services/cloudflare-waf", 72),
+        new("storefront:gestion-dns-domaines", "storefront_page", "Pages services SEO — Gestion DNS et domaines", "/services/gestion-dns-domaines", 73),
+        new("storefront:messagerie-professionnelle", "storefront_page", "Pages services SEO — Messagerie professionnelle", "/services/messagerie-professionnelle", 74),
         new(
             "pack-sheet:pack-dossier-securise",
             "pack_sheet",
@@ -257,9 +280,12 @@ public sealed class ManagedContentService : IManagedContentService
                 : new Dictionary<string, CommercialOfferSummary>(StringComparer.Ordinal);
 
         var seedEntries = missing
-            .Select(definition => definition.ContentType == "pack_sheet"
-                ? CreatePackSheetSeed(definition, offersByReference)
-                : CreateMarkdownFileSeed(definition))
+            .Select(definition => definition.ContentType switch
+            {
+                "pack_sheet" => CreatePackSheetSeed(definition, offersByReference),
+                "storefront_page" => CreateStorefrontSeed(definition),
+                _ => CreateMarkdownFileSeed(definition)
+            })
             .ToArray();
 
         await _repository.SeedMissingAsync(seedEntries, cancellationToken);
@@ -331,6 +357,12 @@ public sealed class ManagedContentService : IManagedContentService
         var versionLabel = NormalizeOptionalText(
             payload.VersionLabel,
             MaxVersionLength);
+
+        if (definition.ContentType == "storefront_page")
+        {
+            bodyMarkdown = ValidateStorefrontJson(bodyMarkdown);
+            versionLabel = null;
+        }
 
         return new ValidatedManagedContentEntry(
             definition.Key,
@@ -454,6 +486,92 @@ public sealed class ManagedContentService : IManagedContentService
             NormalizeMarkdown(builder.ToString()),
             null);
     }
+
+    private static ValidatedManagedContentEntry CreateStorefrontSeed(
+        ManagedContentDefinition definition)
+        => new(
+            definition.Key,
+            definition.ContentType,
+            definition.Title,
+            definition.PublicPath,
+            StorefrontContentSeed.CreateJson(definition.Key),
+            null);
+
+    private static string ValidateStorefrontJson(string value)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(value);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object
+                || !HasText(root, "title", 3, 200)
+                || !HasText(root, "lead", 10, 1200)
+                || !HasText(root, "seoTitle", 10, 200)
+                || !HasText(root, "seoDescription", 30, 400)
+                || !HasText(root, "ctaLabel", 3, 80)
+                || !HasAllowedRoute(root, "ctaHref")
+                || !HasObjectArray(root, "sections", 1, 12, "heading", "bodyMarkdown")
+                || !HasObjectArray(root, "faq", 2, 12, "question", "answer")
+                || !HasObjectArray(root, "relatedLinks", 1, 12, "label", "href", routeField: "href"))
+            {
+                throw new PortalValidationException();
+            }
+
+            // Les montants restent exclusivement dans Billing. Le contenu peut
+            // dire « Sur devis » mais ne peut pas introduire un prix public.
+            if (CurrencyAmountPattern().IsMatch(value))
+            {
+                throw new PortalValidationException();
+            }
+
+            return JsonSerializer.Serialize(root);
+        }
+        catch (JsonException)
+        {
+            throw new PortalValidationException();
+        }
+    }
+
+    private static bool HasText(JsonElement parent, string property, int min, int max)
+        => parent.TryGetProperty(property, out var value)
+            && value.ValueKind == JsonValueKind.String
+            && value.GetString() is { } text
+            && text.Trim().Length >= min
+            && text.Trim().Length <= max;
+
+    private static bool HasAllowedRoute(JsonElement parent, string property)
+        => parent.TryGetProperty(property, out var value)
+            && value.ValueKind == JsonValueKind.String
+            && value.GetString() is { } route
+            && route.StartsWith("/", StringComparison.Ordinal)
+            && !route.StartsWith("//", StringComparison.Ordinal)
+            && route.Length <= 160;
+
+    private static bool HasObjectArray(
+        JsonElement parent,
+        string property,
+        int min,
+        int max,
+        string firstTextProperty,
+        string secondTextProperty,
+        string? routeField = null)
+    {
+        if (!parent.TryGetProperty(property, out var values)
+            || values.ValueKind != JsonValueKind.Array
+            || values.GetArrayLength() < min
+            || values.GetArrayLength() > max)
+        {
+            return false;
+        }
+
+        return values.EnumerateArray().All(item => item.ValueKind == JsonValueKind.Object
+            && HasText(item, firstTextProperty, 2, 4000)
+            && (routeField is null
+                ? HasText(item, secondTextProperty, 3, 12000)
+                : HasAllowedRoute(item, routeField)));
+    }
+    [GeneratedRegex(@"(?<![\p{L}\p{N}])\d{1,6}(?:[.,]\d{1,2})?\s*(?:\u20AC|euros?|eur)(?![\p{L}])", RegexOptions.IgnoreCase)]
+    private static partial Regex CurrencyAmountPattern();
 
     private static string ResolveSeedFilePath(string? seedFileName)
     {

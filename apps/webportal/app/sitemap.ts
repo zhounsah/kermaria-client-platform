@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { connection } from "next/server";
 import {
   buildPackSheetContentKey,
+  getManagedContentRegistry,
   type ManagedContentKey,
   PUBLIC_PACKS,
 } from "@kermaria/shared";
@@ -36,11 +37,8 @@ type PublicRouteEntry = {
 const PUBLIC_ROUTE_ENTRIES: PublicRouteEntry[] = [
   { path: "/", changeFrequency: "monthly", priority: 1 },
   { path: "/offres", changeFrequency: "weekly", priority: 0.9 },
-  { path: "/services", changeFrequency: "monthly", priority: 0.9 },
-  { path: "/services/cloud-hebergement", changeFrequency: "monthly", priority: 0.8 },
-  { path: "/services/domaines-messagerie", changeFrequency: "monthly", priority: 0.8 },
-  { path: "/services/reseau-securite", changeFrequency: "monthly", priority: 0.8 },
-  { path: "/services/support-it", changeFrequency: "monthly", priority: 0.8 },
+  { path: "/services", changeFrequency: "monthly", priority: 0.9, contentKey: "storefront:services" },
+  { path: "/tarifs", changeFrequency: "monthly", priority: 0.85, contentKey: "storefront:tarifs" },
   // Les pages `/formules/<code>` ne sont pas declarees : ce sont des
   // configurateurs dont le contenu depend d'une selection, pas des pages
   // editoriales. Seul le hub l'est.
@@ -131,9 +129,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.7,
     contentKey: buildPackSheetContentKey(pack.key),
   }));
+  const storefrontEntries: PublicRouteEntry[] = getManagedContentRegistry()
+    .filter((entry) => entry.contentType === "storefront_page" && entry.publicPath !== "/services" && entry.publicPath !== "/tarifs")
+    .map((entry) => ({ path: entry.publicPath, changeFrequency: "monthly" as const, priority: entry.publicPath.split("/").length > 2 ? 0.75 : 0.8, contentKey: entry.key }));
 
   const staticEntries = await Promise.all(
-    [...PUBLIC_ROUTE_ENTRIES, ...packEntries].map(
+    [...PUBLIC_ROUTE_ENTRIES, ...storefrontEntries, ...packEntries].map(
       async ({ path, changeFrequency, priority, contentKey }) => {
         const lastModified = await resolveLastModified(contentKey);
 

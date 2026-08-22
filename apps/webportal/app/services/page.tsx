@@ -10,7 +10,7 @@ import { PublicPackCard } from "@/components/PublicPackCard";
 import { SectionHeading } from "@/components/SectionHeading";
 import { ServiceCard } from "@/components/ServiceCard";
 import { StatusBadge } from "@/components/StatusBadge";
-import { PublicServicesLandingPage } from "@/components/PublicServicesPages";
+import { PublicStorefrontPage } from "@/components/PublicStorefrontPage";
 import { requireClientSession } from "@/lib/auth";
 import { buildPublicMetadata } from "@/lib/public-metadata";
 import { getPortalArea } from "@/lib/public-route-config";
@@ -18,24 +18,31 @@ import { getPortalRequestOriginFromHeaders } from "@/lib/public-routes";
 import {
   getPendingPackSelection,
   getPublicCommercialCatalog,
+  getPublicManagedContent,
   getPublicPackCatalogContent,
   getServices,
   resolveDataSource,
 } from "@/lib/internal-api";
+import { parseStorefrontPageContent } from "@/lib/storefront-content";
 import {
   findPendingPackSelectionForPack,
   findPackPresentation,
   resolvePackCatalog,
 } from "@/lib/public-packs";
 
-export const metadata: Metadata = buildPublicMetadata({
-  title: "Services informatiques pour indépendants, associations et PME",
-  description:
-    "Cloud, hébergement, domaines, messagerie, réseau, sécurité et accompagnement IT : Zachary IT vous aide à garder une informatique fiable au quotidien.",
-  path: "/services",
-});
-
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata(): Promise<Metadata> {
+  const content = await getPublicManagedContent("storefront:services");
+  const page = content.data
+    ? parseStorefrontPageContent(content.data.bodyMarkdown)
+    : null;
+  return buildPublicMetadata({
+    title: page?.seoTitle ?? "Services IT gérés pour indépendants, associations et TPE",
+    description: page?.seoDescription ?? "Cloud, hébergement, domaines, messagerie, réseau, sécurité, sauvegarde et support gérés par Zachary IT.",
+    path: "/services",
+  });
+}
 
 export default async function ServicesPage() {
   const requestHeaders = await headers();
@@ -44,7 +51,17 @@ export default async function ServicesPage() {
   );
 
   if (portalArea === "public" || portalArea === "local") {
-    return <PublicServicesLandingPage />;
+    const contentResult = await getPublicManagedContent("storefront:services");
+    const content = contentResult.data
+      ? parseStorefrontPageContent(contentResult.data.bodyMarkdown)
+      : null;
+    return content ? <PublicStorefrontPage content={content} /> : (
+      <ErrorState
+        description="Le catalogue de services est temporairement indisponible."
+        reference={contentResult.correlationId}
+        title="Services indisponibles"
+      />
+    );
   }
 
   await requireClientSession();

@@ -15,7 +15,7 @@ const publicHref = (pathname: string) => `${PUBLIC_SITE_URL}${pathname}`;
 const primaryLinks = [
   { href: publicHref("/services/support-it#infogerance"), label: "Infogérance" },
   { href: publicHref("/services/cloud-hebergement"), label: "Cloud & Hébergement" },
-  { href: publicHref("/formules"), label: "Tarifs" },
+  { href: publicHref("/tarifs"), label: "Tarifs" },
   { href: publicHref("/a-propos"), label: "À propos" },
 ] as const;
 
@@ -59,6 +59,11 @@ function ServicesMegaMenu({ onNavigate }: { onNavigate?: () => void }) {
             </a>
           ))}
         </div>
+        <div className="public-services-mega-grid public-services-mega-featured">
+          <a href={publicHref("/services/vps")} onClick={close}><strong>VPS & infogérance</strong><span>Serveurs gérés ou repris</span></a>
+          <a href={publicHref("/services/vpn-entreprise")} onClick={close}><strong>VPN entreprise</strong><span>Accès distant sécurisé</span></a>
+          <a href={publicHref("/services/messagerie-professionnelle")} onClick={close}><strong>Messagerie professionnelle</strong><span>Boîtes, migration et DNS</span></a>
+        </div>
         <a className="public-services-mega-all" href={publicHref("/services")} onClick={close}>Voir tous les services</a>
       </div>
     </div>
@@ -75,6 +80,9 @@ function MobileServicesMenu({ onNavigate }: { onNavigate: () => void }) {
             <strong>{category.shortTitle}</strong><span>{category.menuSummary}</span>
           </a>
         ))}
+        <a href={publicHref("/services/vps")} onClick={onNavigate}><strong>VPS & infogérance</strong><span>Serveurs gérés ou repris</span></a>
+        <a href={publicHref("/services/vpn-entreprise")} onClick={onNavigate}><strong>VPN entreprise</strong><span>Accès distant sécurisé</span></a>
+        <a href={publicHref("/services/messagerie-professionnelle")} onClick={onNavigate}><strong>Messagerie professionnelle</strong><span>Boîtes, migration et DNS</span></a>
         <a className="public-mobile-services-all" href={publicHref("/services")} onClick={onNavigate}>Voir tous les services</a>
       </div>
     </details>
@@ -115,7 +123,7 @@ export function PublicShell({ children, signupEnabled }: PublicShellProps) {
             <p>Zachary HOUNSA-HOUNKPA EI</p><p>Services informatiques, offres et espace client.</p><p>{APP_VERSION_LABEL}</p>
           </div>
           <nav className="public-footer-nav" aria-label="Liens légaux et navigation">
-            <a href={publicHref("/services")}>Services</a><a href={publicHref("/services/support-it#infogerance")}>Infogérance</a><a href={publicHref("/formules")}>Tarifs</a><a href={publicHref("/offres")}>Offres existantes</a><a href={publicHref("/a-propos")}>À propos</a><a href={publicHref("/ressources")}>Ressources</a><a href={publicHref("/wiki")}>Wiki</a><a href={publicHref("/diagnostic")}>Diagnostic</a><a href={publicHref("/contact")}>Contact</a><a href={publicHref("/mentions-legales")}>Mentions légales</a><a href={publicHref("/politique-confidentialite")}>Politique de confidentialité</a><a href={publicHref("/cgv")}>CGV</a><a href={CLIENT_PORTAL_LOGIN_URL}>Espace client</a>
+            <a href={publicHref("/services")}>Services</a><a href={publicHref("/services/support-it")}>Infogérance</a><a href={publicHref("/tarifs")}>Tarifs</a><a href={publicHref("/formules")}>Formules</a><a href={publicHref("/offres")}>Offres existantes</a><a href={publicHref("/a-propos")}>À propos</a><a href={publicHref("/ressources")}>Ressources</a><a href={publicHref("/wiki")}>Wiki</a><a href={publicHref("/diagnostic")}>Diagnostic</a><a href={publicHref("/contact")}>Contact</a><a href={publicHref("/mentions-legales")}>Mentions légales</a><a href={publicHref("/politique-confidentialite")}>Politique de confidentialité</a><a href={publicHref("/cgv")}>CGV</a><a href={CLIENT_PORTAL_LOGIN_URL}>Espace client</a>
             {signupEnabled ? <a href={publicHref("/signup")}>Inscription</a> : null}
           </nav>
         </div>
