@@ -7815,6 +7815,76 @@ fieldset.form-field > .form-hint {
 .formule-toggle input:disabled + span {
   color: var(--muted);
 }
+.formule-help-label {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  vertical-align: middle;
+}
+.formule-help-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.formule-help-trigger {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  line-height: 1;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.formule-help-trigger:hover {
+  border-color: var(--primary);
+  color: var(--primary-dark);
+}
+.formule-help-trigger:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-color: var(--primary);
+  color: var(--primary-dark);
+}
+.formule-help-popover {
+  position: absolute;
+  z-index: 80;
+  top: calc(100% + 8px);
+  left: 0;
+  width: min(22rem, calc(100vw - 32px));
+  max-height: min(50vh, 18rem);
+  overflow-y: auto;
+  padding: 12px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: 400;
+  line-height: 1.5;
+  text-align: left;
+}
+.formule-help-popover strong,
+.formule-help-popover span {
+  display: block;
+}
+.formule-help-popover strong {
+  margin-bottom: 4px;
+  color: var(--text);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+.formule-help-popover span {
+  color: var(--muted);
+}
 
 /* Compteur d'utilisateurs : deux boutons plutot qu'un champ libre, pour que
    la valeur reste toujours dans la plage acceptee par le catalogue. */
@@ -8077,6 +8147,21 @@ fieldset.form-field > .form-hint {
   .formule-toggle {
     align-items: center;
     min-height: 44px;
+  }
+
+  .formule-help-trigger {
+    width: 28px;
+    height: 28px;
+  }
+
+  .formule-help-popover {
+    position: fixed;
+    top: auto;
+    right: 16px;
+    bottom: 16px;
+    left: 16px;
+    width: auto;
+    max-width: none;
   }
 
   .formule-stepper-controls button {

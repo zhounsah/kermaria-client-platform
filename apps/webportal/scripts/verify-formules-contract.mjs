@@ -40,6 +40,9 @@ const configurator = await read(
   "components/BillingV2FormuleConfigurator.tsx",
 );
 const appShell = await read("components/AppShell.tsx");
+const helpLabel = await read("components/FormuleHelpLabel.tsx");
+const helpContent = await read("lib/formule-help.ts");
+const globalStyles = await read("app/globals.css");
 const loginPage = await read("app/login/page.tsx");
 const loginForm = await read("components/LoginForm.tsx");
 const publicRouteConfig = await read("lib/public-route-config.ts");
@@ -137,7 +140,69 @@ assert.doesNotMatch(
   "Le configurateur ne doit plus promettre implicitement stockage et acces avec la seule place USER-ADDITIONAL.",
 );
 
-// --- 2. Les quatre formules publiques ------------------------------------
+// --- UX locale du configurateur -------------------------------------------
+assert.match(
+  configurator,
+  /const selected = selection\.commitmentCode === item\.code;/,
+  "Le configurateur doit distinguer la duree selectionnee des alternatives.",
+);
+assert.match(
+  configurator,
+  /\{!selected \? \([\s\S]*jusqu'à −\$\{formatDiscountPercent\(best\)\} %/,
+  "La remise marketing maximale ne doit rester visible que sur une duree non selectionnee.",
+);
+assert.match(
+  configurator,
+  /quote\.discountBasisPoints > 0/,
+  "La remise reellement appliquee doit continuer a venir du devis serveur dans le recapitulatif.",
+);
+for (const helpKey of [
+  "personalStorage",
+  "sharedStorage",
+  "personalBackup",
+  "sharedBackup",
+  "vpn",
+  "remoteDesktop",
+  "additionalUser",
+  "supportPlus",
+]) {
+  assert.match(
+    configurator,
+    new RegExp(`helpKey=["']${helpKey}["']`),
+    `Le configurateur doit proposer l'aide ${helpKey}.`,
+  );
+  assert.match(
+    helpContent,
+    new RegExp(`\\b${helpKey}:\\s*\\{`),
+    `Le texte d'aide ${helpKey} doit etre centralise.`,
+  );
+}
+for (const accessibilityContract of [
+  /role="button"/,
+  /tabIndex=\{0\}/,
+  /aria-label=\{`Afficher l\u2019aide : \$\{content\.title\}`\}/,
+  /aria-expanded=\{open\}/,
+  /aria-controls=\{popoverId\}/,
+  /event\.key === "Escape"/,
+  /event\.key === "Enter" \|\| event\.key === " "/,
+  /event\.stopPropagation\(\)/,
+]) {
+  assert.match(
+    helpLabel,
+    accessibilityContract,
+    "La bulle d'aide doit rester accessible au clavier et ne pas activer l'option parente.",
+  );
+}
+assert.match(
+  globalStyles,
+  /\.formule-help-popover[\s\S]*width: min\(22rem, calc\(100vw - 32px\)\)/,
+  "La bulle desktop doit rester bornee a la largeur du viewport.",
+);
+assert.match(
+  globalStyles,
+  /@media \(max-width: 48rem\)[\s\S]*\.formule-help-popover[\s\S]*position: fixed/,
+  "La bulle mobile doit rester dans le viewport.",
+);// --- 2. Les quatre formules publiques ------------------------------------
 
 for (const presetCode of [
   "pack-dossier-securise",

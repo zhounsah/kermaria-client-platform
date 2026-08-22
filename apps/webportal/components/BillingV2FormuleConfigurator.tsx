@@ -8,6 +8,8 @@ import type {
 } from "@kermaria/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { FormuleHelpLabel } from "@/components/FormuleHelpLabel";
+
 import {
   SERVICE_CODES,
   buildBaselineSelection,
@@ -241,8 +243,12 @@ export function BillingV2FormuleConfigurator({
   return (
     <div className="formule-configurator">
       <div className="formule-options">
-        <fieldset className="formule-fieldset">
-          <legend>Stockage personnel</legend>
+        <fieldset className="formule-fieldset" aria-label="Stockage personnel">
+          <legend>
+            <FormuleHelpLabel helpKey="personalStorage">
+              Stockage personnel
+            </FormuleHelpLabel>
+          </legend>
           <p className="formule-hint">
             L&apos;espace attribué à l&apos;utilisateur principal.
           </p>
@@ -268,12 +274,15 @@ export function BillingV2FormuleConfigurator({
           <label className="formule-toggle">
             <input
               type="checkbox"
+              aria-label="Sauvegarde du stockage personnel"
               checked={selection.backupPersonal}
               onChange={(event) =>
                 update({ backupPersonal: event.target.checked })}
             />
             <span>
-              {backupPersonal?.name ?? "Sauvegarde du stockage personnel"}
+              <FormuleHelpLabel helpKey="personalBackup">
+                {backupPersonal?.name ?? "Sauvegarde du stockage personnel"}
+              </FormuleHelpLabel>
               <em className="formule-toggle-note">
                 Le volume protégé suit automatiquement la capacité choisie.
               </em>
@@ -281,8 +290,12 @@ export function BillingV2FormuleConfigurator({
           </label>
         </fieldset>
 
-        <fieldset className="formule-fieldset">
-          <legend>Espace partagé</legend>
+        <fieldset className="formule-fieldset" aria-label={"Espace partag\u00e9"}>
+          <legend>
+            <FormuleHelpLabel helpKey="sharedStorage">
+              Espace partag&eacute;
+            </FormuleHelpLabel>
+          </legend>
           <p className="formule-hint">
             Un espace commun à toute la structure, indépendant des comptes.
           </p>
@@ -318,13 +331,16 @@ export function BillingV2FormuleConfigurator({
           <label className="formule-toggle">
             <input
               type="checkbox"
+              aria-label={"Sauvegarde du stockage partag\u00e9"}
               checked={selection.backupShared}
               disabled={selection.storageSharedTierCode === null}
               onChange={(event) =>
                 update({ backupShared: event.target.checked })}
             />
             <span>
-              {backupShared?.name ?? "Sauvegarde de l'espace partagé"}
+              <FormuleHelpLabel helpKey="sharedBackup">
+                {backupShared?.name ?? "Sauvegarde de l'espace partag\u00e9"}
+              </FormuleHelpLabel>
               <em className="formule-toggle-note">
                 Disponible dès qu&apos;un espace partagé est retenu.
               </em>
@@ -332,8 +348,10 @@ export function BillingV2FormuleConfigurator({
           </label>
         </fieldset>
 
-        <fieldset className="formule-fieldset">
-          <legend>Accès à distance</legend>
+        <fieldset className="formule-fieldset" aria-label={"Acc\u00e8s \u00e0 distance"}>
+          <legend>
+            <FormuleHelpLabel helpKey="vpn">Acc&egrave;s &agrave; distance</FormuleHelpLabel>
+          </legend>
           <div className="formule-choices">
             <label className="formule-choice">
               <input
@@ -370,6 +388,7 @@ export function BillingV2FormuleConfigurator({
           <label className="formule-toggle">
             <input
               type="checkbox"
+              aria-label={"Bureau Windows \u00e0 distance"}
               checked={selection.remoteDesktop}
               onChange={(event) =>
                 update({ remoteDesktop: event.target.checked })}
@@ -380,10 +399,12 @@ export function BillingV2FormuleConfigurator({
                 l'acronyme d'exploitation n'a pas sa place dans une page
                 publique, la traduction commerciale est centralisee.
               */}
-              {resolveServicePublicLabel(
-                SERVICE_CODES.remoteDesktop,
-                remoteDesktop?.name ?? "Bureau Windows à distance",
-              )}
+              <FormuleHelpLabel helpKey="remoteDesktop">
+                {resolveServicePublicLabel(
+                  SERVICE_CODES.remoteDesktop,
+                  remoteDesktop?.name ?? "Bureau Windows \u00e0 distance",
+                )}
+              </FormuleHelpLabel>
               {remoteDesktop?.flatMonthlyAmountCents ? (
                 <em className="formule-toggle-note">
                   {formatCurrencyFromCents(
@@ -406,7 +427,9 @@ export function BillingV2FormuleConfigurator({
           </p>
           <div className="formule-stepper">
             <span className="formule-stepper-label">
-              Utilisateurs supplémentaires
+              <FormuleHelpLabel helpKey="additionalUser">
+                Utilisateurs suppl&eacute;mentaires
+              </FormuleHelpLabel>
               {additionalUser?.flatMonthlyAmountCents ? (
                 <em className="formule-toggle-note">
                   {formatCurrencyFromCents(
@@ -446,12 +469,15 @@ export function BillingV2FormuleConfigurator({
           <label className="formule-toggle">
             <input
               type="checkbox"
+              aria-label="Support Plus"
               checked={selection.supportPlus}
               onChange={(event) =>
                 update({ supportPlus: event.target.checked })}
             />
             <span>
-              {supportPlus?.name ?? "Support Plus"}
+              <FormuleHelpLabel helpKey="supportPlus">
+                {supportPlus?.name ?? "Support Plus"}
+              </FormuleHelpLabel>
               {supportPlus?.flatMonthlyAmountCents ? (
                 <em className="formule-toggle-note">
                   {formatCurrencyFromCents(
@@ -476,24 +502,26 @@ export function BillingV2FormuleConfigurator({
                   Math.max(max, option.discountBasisPoints),
                 0,
               );
-
+              const selected = selection.commitmentCode === item.code;
               return (
                 <label className="formule-choice" key={item.code}>
                   <input
                     type="radio"
                     name="commitment"
                     value={item.code}
-                    checked={selection.commitmentCode === item.code}
+                    checked={selected}
                     onChange={() => update({ commitmentCode: item.code })}
                   />
                   <span className="formule-choice-label">
                     {formatCommitmentDurationLabel(item.months, item.name)}
                   </span>
-                  <span className="formule-choice-price">
-                    {best > 0
-                      ? `jusqu'à −${formatDiscountPercent(best)} %`
-                      : "Prix de base"}
-                  </span>
+                  {!selected ? (
+                    <span className="formule-choice-price">
+                      {best > 0
+                        ? `jusqu'à −${formatDiscountPercent(best)} %`
+                        : "Prix de base"}
+                    </span>
+                  ) : null}
                 </label>
               );
             })}
