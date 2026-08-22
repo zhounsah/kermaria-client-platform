@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -23,14 +24,32 @@ const SERVICE_ICONS: Record<ServiceIconKey, LucideIcon> = {
   headphones: Headphones,
 };
 
-export function ServiceBreadcrumb({ current }: { current: string }) {
+export type ServiceBreadcrumbItem = {
+  name: string;
+  path: string;
+};
+
+export function ServiceBreadcrumb({
+  items,
+}: {
+  items: readonly ServiceBreadcrumbItem[];
+}) {
   return (
     <nav aria-label="Fil d’Ariane" className="service-breadcrumb">
       <Link href="/">Accueil</Link>
-      <span aria-hidden="true">/</span>
-      <Link href="/services">Services</Link>
-      <span aria-hidden="true">/</span>
-      <span aria-current="page">{current}</span>
+      {items.map((item, index) => {
+        const current = index === items.length - 1;
+        return (
+          <Fragment key={item.path}>
+            <span aria-hidden="true">/</span>
+            {current ? (
+              <span aria-current="page">{item.name}</span>
+            ) : (
+              <Link href={item.path}>{item.name}</Link>
+            )}
+          </Fragment>
+        );
+      })}
     </nav>
   );
 }

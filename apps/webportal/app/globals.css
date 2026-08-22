@@ -3040,7 +3040,7 @@ fieldset.form-field > .form-hint {
 .service-feature-list li { display: flex; gap: 12px; align-items: flex-start; color: var(--text); line-height: 1.55; }
 .service-feature-list svg { flex: 0 0 auto; margin-top: 3px; color: var(--primary); }
 
-.service-breadcrumb { display: flex; margin-bottom: 24px; align-items: center; gap: 9px; color: var(--muted); font-size: 0.86rem; }
+.service-breadcrumb { display: flex; flex-wrap: wrap; margin-bottom: 24px; align-items: center; gap: 9px; color: var(--muted); font-size: 0.86rem; }
 .service-breadcrumb a { color: var(--primary-dark); }
 .service-problem-section { margin-top: 28px; background: var(--surface-muted); }
 .service-offer-card { min-height: 310px; }

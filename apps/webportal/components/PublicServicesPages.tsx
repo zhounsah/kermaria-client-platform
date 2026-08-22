@@ -94,7 +94,7 @@ export function PublicServiceCategoryPage({ category }: { category: ServiceCateg
       className="services-page service-category-page"
       id={category.slug === "support-it" ? "infogerance" : undefined}
     >
-      <ServiceBreadcrumb current={category.title} />
+      <ServiceBreadcrumb items={[{ name: "Services", path: "/services" }, { name: category.title, path: `/services/${category.slug}` }]} />
       <ServiceHero
         action={category.cta}
         compact

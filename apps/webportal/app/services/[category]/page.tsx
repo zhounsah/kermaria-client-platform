@@ -7,6 +7,7 @@ import { buildPublicMetadata } from "@/lib/public-metadata";
 import { getBillingV2FormulesCatalog, getPublicManagedContent } from "@/lib/internal-api";
 import {
   parseStorefrontPageContent,
+  resolveStorefrontBreadcrumb,
   storefrontContentKeyForServiceSlug,
   storefrontServiceSelfServiceOrderable,
   STOREFRONT_SERVICE_SLUGS,
@@ -54,6 +55,7 @@ export default async function ServiceCategoryRoute({ params }: CategoryPageProps
     : null;
   return content ? (
     <PublicStorefrontPage
+      breadcrumbItems={resolveStorefrontBreadcrumb(`/services/${slug}`)!}
       content={content}
       selfServiceOrderable={selfServiceOrderable}
     />

@@ -32,6 +32,61 @@ export const STOREFRONT_SERVICE_SLUGS = [
   "messagerie-professionnelle",
 ] as const;
 export type StorefrontServiceSlug = (typeof STOREFRONT_SERVICE_SLUGS)[number];
+export type StorefrontBreadcrumbItem = { name: string; path: string };
+
+const STOREFRONT_CATEGORY_BREADCRUMB_LABELS = {
+  "cloud-hebergement": "Cloud & H\u00e9bergement",
+  "domaines-messagerie": "Domaines & Messagerie",
+  "reseau-securite": "R\u00e9seau & S\u00e9curit\u00e9",
+  "support-it": "Support & IT",
+} as const;
+
+const STOREFRONT_SERVICE_BREADCRUMB_LABELS: Record<StorefrontServiceSlug, string> = {
+  "vps": "VPS",
+  "infogerance-vps": "Infog\u00e9rance VPS",
+  "hebergement-web": "H\u00e9bergement web",
+  "maintenance-linux": "Maintenance Linux",
+  "maintenance-wordpress": "Maintenance WordPress",
+  "sauvegarde-externalisee": "Sauvegarde externalis\u00e9e",
+  "supervision-informatique": "Supervision informatique",
+  "supervision-nas": "Supervision NAS",
+  "vpn-entreprise": "VPN entreprise",
+  "bureau-windows-distance": "Bureau Windows \u00e0 distance",
+  "unifi": "UniFi",
+  "firewall": "Firewall",
+  "cloudflare-waf": "Cloudflare WAF",
+  "gestion-dns-domaines": "Gestion DNS & domaines",
+  "messagerie-professionnelle": "Messagerie professionnelle",
+};
+
+export function resolveStorefrontBreadcrumb(
+  pathname: string,
+): StorefrontBreadcrumbItem[] | null {
+  if (pathname === "/services") return [{ name: "Services", path: "/services" }];
+  if (pathname === "/tarifs") return [{ name: "Tarifs", path: "/tarifs" }];
+  if (!pathname.startsWith("/services/")) return null;
+
+  const slug = pathname.slice("/services/".length);
+  const categoryLabel = STOREFRONT_CATEGORY_BREADCRUMB_LABELS[
+    slug as keyof typeof STOREFRONT_CATEGORY_BREADCRUMB_LABELS
+  ];
+  if (categoryLabel) {
+    return [
+      { name: "Services", path: "/services" },
+      { name: categoryLabel, path: `/services/${slug}` },
+    ];
+  }
+
+  if (!STOREFRONT_SERVICE_SLUGS.includes(slug as StorefrontServiceSlug)) return null;
+  return [
+    { name: "Services", path: "/services" },
+    {
+      name: STOREFRONT_SERVICE_BREADCRUMB_LABELS[slug as StorefrontServiceSlug],
+      path: `/services/${slug}`,
+    },
+  ];
+}
+
 // Mapping fermé et non administrable : le CMS ne choisit jamais le serviceCode.
 // Une page qui agrège plusieurs services n'est self-service que si tous les
 // services Billing visibles qui la composent sont explicitement commandables.

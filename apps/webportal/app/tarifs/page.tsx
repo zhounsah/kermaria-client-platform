@@ -4,7 +4,7 @@ import { ErrorState } from "@/components/ErrorState";
 import { PublicStorefrontPage } from "@/components/PublicStorefrontPage";
 import { getBillingV2FormulesCatalog, getPublicManagedContent } from "@/lib/internal-api";
 import { buildPublicMetadata } from "@/lib/public-metadata";
-import { parseStorefrontPageContent } from "@/lib/storefront-content";
+import { parseStorefrontPageContent, resolveStorefrontBreadcrumb } from "@/lib/storefront-content";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +24,7 @@ export default async function TarifsPage() {
     getBillingV2FormulesCatalog(),
   ]);
   const content = result.data ? parseStorefrontPageContent(result.data.bodyMarkdown) : null;
-  return content ? <><PublicStorefrontPage content={content} /><BillingPriceProjection catalog={catalogResult.data} /></> : (
+  return content ? <><PublicStorefrontPage breadcrumbItems={resolveStorefrontBreadcrumb("/tarifs")!} content={content} /><BillingPriceProjection catalog={catalogResult.data} /></> : (
     <ErrorState description="Les informations tarifaires sont temporairement indisponibles." reference={result.correlationId} title="Tarifs indisponibles" />
   );
 }

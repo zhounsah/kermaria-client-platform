@@ -23,7 +23,7 @@ import {
   getServices,
   resolveDataSource,
 } from "@/lib/internal-api";
-import { parseStorefrontPageContent } from "@/lib/storefront-content";
+import { parseStorefrontPageContent, resolveStorefrontBreadcrumb } from "@/lib/storefront-content";
 import {
   findPendingPackSelectionForPack,
   findPackPresentation,
@@ -55,7 +55,7 @@ export default async function ServicesPage() {
     const content = contentResult.data
       ? parseStorefrontPageContent(contentResult.data.bodyMarkdown)
       : null;
-    return content ? <PublicStorefrontPage content={content} /> : (
+    return content ? <PublicStorefrontPage breadcrumbItems={resolveStorefrontBreadcrumb("/services")!} content={content} /> : (
       <ErrorState
         description="Le catalogue de services est temporairement indisponible."
         reference={contentResult.correlationId}
