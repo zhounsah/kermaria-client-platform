@@ -25,9 +25,6 @@ const adminSignupResendPasswordEmailRoute = await read(
   "app/api/admin/signups/[id]/resend-password-email/route.ts",
 );
 const signupForm = await read("components/SignupForm.tsx");
-const packSelectionSummary = await read(
-  "components/PublicPackSelectionSummary.tsx",
-);
 const setPasswordForm = await read("components/SetPasswordForm.tsx");
 const adminSignupActions = await read("components/AdminSignupActions.tsx");
 const adminNavigation = await read("components/AdminNavigation.tsx");
@@ -49,9 +46,6 @@ const migration034 = await read(
 const migration035 = await read(
   "../../apps/api-internal/Migrations/MariaDb/035_v040_koxo_sync.sql",
 );
-const migration042 = await read(
-  "../../apps/api-internal/Migrations/MariaDb/042_signup_catalog_configuration.sql",
-);
 const signupConfig = await read(
   "../../apps/api-internal/Data/Configuration/SignupRuntimeConfiguration.cs",
 );
@@ -60,9 +54,6 @@ const signupService = await read(
 );
 const portalSetupToken = await read(
   "../../apps/api-internal/Services/PortalSetupToken.cs",
-);
-const catalogConfigurationService = await read(
-  "../../apps/api-internal/Services/CatalogConfigurationService.cs",
 );
 const signupRepoInterface = await read(
   "../../apps/api-internal/Data/Repositories/ISignupRepository.cs",
@@ -113,14 +104,22 @@ check("migration v0.40 ajoute birth_date et l'identifiant KoXo immuable", () => 
   );
   assert.match(migration035, /CREATE TABLE IF NOT EXISTS koxo_identifier_counters/);
 });
-check("migration stocke le snapshot de configuration catalogue separement", () => {
+check("le signup stocke la selection Billing V2, pas un tarif calcule", () => {
+  // L'ancienne colonne `catalog_configuration_snapshot_json` figeait un prix
+  // au moment de l'inscription. Une selection V2 ne porte que des codes : le
+  // montant est etabli au checkout par le pricing engine, seule autorite.
+  // La colonne d'origine est reutilisee, mais son contenu a change de nature :
+  // une enveloppe versionnee `billing_v2` portant la selection, la ou l'ancien
+  // snapshot figeait un tarif.
   assert.match(
-    migration042,
-    /catalog_configuration_snapshot_json LONGTEXT NULL/,
+    signupRepoMaria,
+    /SignupCatalogContextEnvelope\("billing_v2", billingV2Selection\)/,
+    "La persistance signup doit stocker une enveloppe de selection Billing V2.",
   );
-  assert.match(
-    migration042,
-    /AFTER pack_selection_snapshot_json/,
+  assert.doesNotMatch(
+    signupRepoMaria,
+    /pack_selection_snapshot_json|SignupPackSelectionSnapshot|MonthlyPriceAmountCents/,
+    "Le signup ne doit plus lire ni ecrire de snapshot tarifaire legacy.",
   );
 });
 
@@ -166,24 +165,31 @@ check("v0.38 normalise des donnees customer + primaryUser", () => {
   assert.match(signupService, /SignupUserData/);
   assert.match(signupService, /BuildSamAccountNameBase/);
 });
-check("signup recalcule la configuration catalogue cote API interne", () => {
-  assert.match(signupContracts, /CatalogConfigurationInput\? CatalogConfiguration/);
-  assert.match(signupContracts, /CatalogConfigurationSnapshot\? CatalogConfiguration/);
-  assert.match(signupService, /ICatalogConfigurationService/);
-  assert.match(signupService, /_catalogConfigurationService\.ResolveAsync/);
-  assert.match(signupService, /_catalogConfigurationService\.CreateSnapshot/);
-  assert.match(signupService, /resolution\.Status,\s*"ok"/);
-  assert.match(signupRepoInterface, /CatalogConfigurationSnapshot\? CatalogConfiguration/);
-  assert.match(signupRepoMaria, /catalog_configuration_snapshot_json/);
-  assert.match(signupRepoMock, /CatalogConfigurationSnapshot\? CatalogConfiguration/);
-  assert.match(catalogConfigurationService, /GetClientCatalogAsync/);
-  assert.match(catalogConfigurationService, /PriceAmountCents/);
+check("le signup n accepte aucun montant venu du navigateur", () => {
+  assert.match(
+    signupContracts,
+    /BillingV2PublicSelectionInput\? BillingV2Selection/,
+    "Le payload signup ne transporte qu une selection V2.",
+  );
+  assert.match(signupRepoInterface, /BillingV2PublicSelection\? BillingV2Selection/);
+  assert.match(signupRepoMock, /BillingV2PublicSelection\? BillingV2Selection/);
+  assert.match(
+    signupService,
+    /IsValidBillingV2Selection/,
+    "La selection doit etre validee cote serveur avant d etre stockee.",
+  );
   assert.doesNotMatch(
-    catalogConfigurationService,
-    /1900|3500|4900|900/,
-    "Les prix commerciaux ne doivent pas etre hardcodes dans le resolver.",
+    signupService,
+    /ICatalogConfigurationService|PriceAmountCents|MonthlyPriceAmountCents/,
+    "Le signup ne doit plus resoudre ni figer un tarif.",
+  );
+  assert.doesNotMatch(
+    signupContracts,
+    /CatalogConfiguration|SignupPackSelectionSnapshot/,
+    "Les contrats signup ne doivent plus porter de configuration catalogue legacy.",
   );
 });
+
 check("v0.40 impose civilite exportable et date de naissance", () => {
   assert.match(signupService, /AllowedPersonalTitles/);
   assert.match(signupService, /NormalizePersonalTitle/);
@@ -275,49 +281,24 @@ check("BFF signup restreint la civilite et exige la date de naissance", () => {
   assert.match(signupRoute, /errors\.birthDate = "La date de naissance est requise\."/);
   assert.match(signupRoute, /La date de naissance est invalide\./);
 });
-check("BFF signup ignore les packs null ou vides", () => {
-  assert.match(signupRoute, /hasProvidedPackValue\(body\.packKey\)/);
-  assert.match(signupRoute, /hasProvidedPackValue\(body\.commitmentMonths\)/);
-  assert.match(signupRoute, /hasProvidedPackValue\(body\.paymentMode\)/);
-  assert.match(signupRoute, /value === null \|\| value === undefined/);
+check("BFF signup refuse une selection V2 invalide plutot que de la perdre", () => {
+  assert.match(signupRoute, /readBillingV2SelectionPayload\(body\.billingV2Selection\)/);
+  assert.match(signupRoute, /code:\s*"INVALID_BILLING_V2_SELECTION"/);
+  assert.match(signupRoute, /billingV2Selection,/);
 });
-check("BFF signup valide la forme puis transmet une configuration a recalculer", () => {
-  assert.match(signupRoute, /resolvePackSelectionInput\(\{/);
-  assert.match(signupRoute, /packKey:\s*body\.packKey/);
-  assert.match(signupRoute, /commitmentMonths:\s*body\.commitmentMonths/);
-  assert.match(signupRoute, /paymentMode:\s*body\.paymentMode/);
-  assert.match(signupRoute, /normalizeCatalogConfigurationInput\(\{/);
-  assert.match(signupRoute, /users:\s*body\.users/);
-  assert.match(signupRoute, /storageGb:\s*body\.storageGb/);
-  assert.match(signupRoute, /getPublicCommercialCatalog\(\)/);
-  assert.match(signupRoute, /getPublicPackCatalogContent\(\)/);
-  assert.match(signupRoute, /buildSignupPackSnapshot\(/);
-  assert.match(signupRoute, /code:\s*"INVALID_PACK_SELECTION"/);
-  assert.match(signupRoute, /code:\s*"PACK_SELECTION_UNAVAILABLE"/);
-  assert.match(signupRoute, /catalogConfiguration,/);
-  assert.match(signupRoute, /packSelection:\s*catalogConfiguration \? null : packSelection/);
 
-  const resolveIndex = signupRoute.indexOf("resolvePackSelectionInput({");
-  const configurationIndex = signupRoute.indexOf(
-    "catalogConfiguration = normalizeCatalogConfigurationInput",
+check("BFF signup ne connait plus le second catalogue", () => {
+  const code = signupRoute
+    .split(/\r?\n/)
+    .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
+    .join("\n");
+  assert.doesNotMatch(
+    code,
+    /packKey|commitmentMonths|storageGb|getPublicCommercialCatalog|buildSignupPackSnapshot|normalizeCatalogConfigurationInput/,
+    "Le BFF signup ne doit plus lire, normaliser ni ignorer les champs legacy.",
   );
-  const catalogIndex = signupRoute.indexOf("getPublicCommercialCatalog()");
-  const snapshotIndex = signupRoute.indexOf("buildSignupPackSnapshot(");
-  const upstreamIndex = signupRoute.indexOf("const result = await callInternalSignup");
-  for (const [label, index] of [
-    ["validation de selection", resolveIndex],
-    ["normalisation configuration", configurationIndex],
-    ["chargement du catalogue", catalogIndex],
-    ["controle du snapshot public", snapshotIndex],
-    ["appel signup interne", upstreamIndex],
-  ]) {
-    assert.notEqual(index, -1, `${label} introuvable dans la route signup.`);
-  }
-  assert.ok(resolveIndex < configurationIndex);
-  assert.ok(configurationIndex < catalogIndex);
-  assert.ok(catalogIndex < snapshotIndex);
-  assert.ok(snapshotIndex < upstreamIndex);
 });
+
 check("hCaptcha verifie cote serveur, fail-closed en production", () => {
   assert.match(signupServerLib, /hcaptcha\.com\/siteverify/);
   assert.match(signupServerLib, /CAPTCHA_MISCONFIGURED/);
@@ -481,86 +462,32 @@ check("les vues admin signup affichent la date de naissance", () => {
   assert.match(internalApi, /birthDate:\s*string \| null/);
   assert.match(adminSignupDetailPage, /Date de naissance/);
 });
-check("page signup reprend uniquement un snapshot catalogue valide", () => {
-  assert.match(signupPage, /configurationFromSearchParams\(rawSearchParams\)/);
-  assert.match(signupPage, /resolveCatalogConfiguration\(catalogConfiguration\)/);
-  assert.match(signupPage, /selectionFromSearchParams\(rawSearchParams\)/);
-  assert.match(signupPage, /getPublicCommercialCatalog\(\)/);
-  assert.match(signupPage, /getPublicPackCatalogContent\(\)/);
-  assert.match(signupPage, /buildSignupPackSnapshot\(/);
-  assert.match(signupPage, /<PublicPackSelectionSummary/);
-  assert.match(signupPage, /initialPackSelection=\{packSelection/);
-  assert.match(signupPage, /initialCatalogConfiguration=\{resolvedConfiguration\}/);
-  for (const field of [
-    "packKey",
-    "packLabel",
-    "commitmentMonths",
-    "paymentMode",
-    "monthlyPriceAmountCents",
-    "setupFeeAmountCents",
-    "firstChargeAmountCents",
-    "fiscalRegime",
-    "fiscalMention",
-  ]) {
-    assert.match(
-      signupPage,
-      new RegExp(`${field}:\\s*packSelection\\.${field}`),
-      `Le snapshot signup doit transmettre ${field}.`,
-    );
-  }
+check("page signup revalide la selection V2 cote serveur", () => {
+  assert.match(signupPage, /readBillingV2SelectionSearchParams\(rawSearchParams\)/);
+  // Le devis est recalcule par le serveur : l URL peut proposer une
+  // configuration, jamais un prix.
+  assert.match(signupPage, /quoteBillingV2Formule\(/);
+  assert.match(signupPage, /getBillingV2FormulesCatalog\(\)/);
   assert.doesNotMatch(
     signupPage,
     /method:\s*["'](?:POST|PUT|PATCH|DELETE)["']|requestBffJson|callInternalSignup/,
     "Le rendu GET de signup ne doit effectuer aucune mutation.",
   );
 });
-check("formulaire signup transporte et affiche le snapshot sans le recalculer", () => {
-  for (const field of ["packKey", "commitmentMonths", "paymentMode"]) {
-    assert.match(
-      signupForm,
-      new RegExp(`${field}:\\s*initialPackSelection\\?\\.${field} \\?\\? null`),
-      `Le POST signup doit transporter ${field}.`,
-    );
-    assert.match(
-      signupForm,
-      new RegExp(`name=["']${field}["']`),
-      `Le fallback natif doit conserver ${field}.`,
-    );
-  }
-  for (const field of ["users", "storageGb", "needsVpn"]) {
-    assert.match(
-      signupForm,
-      new RegExp(`${field}:\\s*initialCatalogConfiguration\\?\\.${field} \\?\\? null`),
-      `Le POST signup doit transporter ${field}.`,
-    );
-    assert.match(
-      signupForm,
-      new RegExp(`name=["']${field}["']`),
-      `Le fallback natif doit conserver ${field}.`,
-    );
-  }
+
+check("formulaire signup transporte la selection V2 sans la reinterpreter", () => {
   assert.match(
     signupForm,
-    /needsWindowsDesktop:\s*initialCatalogConfiguration\?\.needsWindowsDesktop \?\? null/,
+    /billingV2Selection:\s*initialBillingV2Selection/,
+    "Le POST signup doit transporter la selection V2 telle quelle.",
   );
-  assert.match(signupForm, /name=["']needsWindowsDesktop["']/);
-  assert.match(signupForm, /catalog-configuration-summary/);
-  assert.match(signupForm, /<PublicPackSelectionSummary/);
-  assert.match(signupForm, /initialPackSelection\.packLabel/);
   assert.doesNotMatch(
     signupForm,
-    /normalizeCommitmentMonths|normalizePaymentMode|resolvePackSelectionInput/,
-    "Le formulaire ne doit pas reinterpretter un snapshot valide cote serveur.",
+    /normalizeCommitmentMonths|normalizePaymentMode|resolvePackSelectionInput|monthlyPriceAmountCents/,
+    "Le formulaire ne doit ni reinterpreter la selection ni porter de montant.",
   );
-  assert.match(packSelectionSummary, /aria-label=\{`[^`]*\$\{packLabel\}`\}/);
-  assert.match(packSelectionSummary, /<dt>Engagement<\/dt>/);
-  assert.match(packSelectionSummary, /<dt>Paiement<\/dt>/);
-  assert.match(packSelectionSummary, /<dt>Tarif affich/u);
-  assert.match(packSelectionSummary, /<dt>Total initial estim/u);
-  assert.match(packSelectionSummary, /<dt>Fiscalit/u);
-  assert.match(packSelectionSummary, /fiscalRegime/);
-  assert.match(packSelectionSummary, /fiscalMention/);
 });
+
 check("formulaire mot de passe impose la longueur + confirmation", () => {
   assert.match(setPasswordForm, /MIN_PASSWORD_LENGTH\s*=\s*12/);
   assert.match(setPasswordForm, /MAX_PASSWORD_LENGTH\s*=\s*200/);

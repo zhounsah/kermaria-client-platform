@@ -1071,8 +1071,6 @@ public static class BillingV2ProvisioningScopeTests
         => new(
             new Dictionary<string, IReadOnlyList<string>>(
                 StringComparer.OrdinalIgnoreCase),
-            new Dictionary<string, IReadOnlyList<string>>(
-                StringComparer.OrdinalIgnoreCase),
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
             GroupDistinguishedNames.ToDictionary(
                 entry => entry.Key,

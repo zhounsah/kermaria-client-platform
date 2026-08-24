@@ -119,7 +119,7 @@ export function resetContactRouteTestState() {
     rateDecision: { limited: false, retryAfterSeconds: 0 },
     catalogFailure: false,
     catalogResult: {
-      data: [{ id: "offer-active", status: "active" }],
+      data: { presets: [{ code: "pack-acces-distance" }] },
       source: "api-internal-persistent",
       correlationId: "catalog-correlation",
     },
@@ -161,7 +161,7 @@ const checkRateLimit = () => {
   testState.calls.push("rate-limit");
   return testState.rateDecision;
 };
-const getPublicCommercialCatalog = async () => {
+const getBillingV2FormulesCatalog = async () => {
   testState.calls.push("catalog");
   if (testState.catalogFailure) {
     throw new Error("catalog unavailable");
@@ -220,7 +220,7 @@ const executableContactRoute = contactRoute
     "",
   )
   .replace(
-    /import \{ getPublicCommercialCatalog \} from "@\/lib\/internal-api";/,
+    /import \{ getBillingV2FormulesCatalog \} from "@\/lib\/internal-api";/,
     "",
   );
 
@@ -230,16 +230,32 @@ assert.notEqual(
   "La route contact doit etre preparee pour son execution isolee.",
 );
 assert.doesNotMatch(executableContactRoute, /^import /m);
-assert.match(contactRoute, /getPublicCommercialCatalog\(\)/);
-assert.match(contactRoute, /offer\.id === offerReference\.value/);
-assert.match(contactRoute, /offer\.status === "active"/);
-assert.match(contactRoute, /code: "INVALID_OFFER_REFERENCE"/);
-assert.doesNotMatch(contactRoute, /offer\.externalReference\s*===/);
+// Le contexte joint a un message de contact est un code de formule V2, jamais
+// un identifiant d'offre : il n'existe plus de second catalogue a interroger.
+assert.match(contactRoute, /getBillingV2FormulesCatalog\(\)/);
+assert.match(contactRoute, /preset\?\.code === formuleCode\.value/);
+assert.match(contactRoute, /code: "INVALID_FORMULE_CODE"/);
+assert.doesNotMatch(
+  contactRoute,
+  /offerReference|getPublicCommercialCatalog|commercial_offer/,
+  "La route contact ne doit plus connaitre le catalogue commercial legacy.",
+);
 
 const contactRuntime = await importPureTypeScript(
   `${contactRouteHarness}\n${executableContactRoute}`,
   "contact-route.ts",
 );
+
+const publishedCatalog = {
+  data: {
+    presets: [
+      { code: "pack-acces-distance", name: "Acces a distance" },
+      { code: "pack-dossier-securise", name: "Dossier securise" },
+    ],
+  },
+  source: "api-internal-persistent",
+  correlationId: "catalog-correlation",
+};
 
 const validContactBody = {
   name: "Alice Exemple",
@@ -280,84 +296,82 @@ async function invokeContact(body, configuration = {}, requestOptions = {}) {
   };
 }
 
-for (const [label, offerReference] of [
+// Sans code de formule, aucune lecture de catalogue : un message de contact
+// ordinaire ne doit pas dependre de la disponibilite de la facturation.
+for (const [label, formuleCode] of [
   ["absent", undefined],
   ["null", null],
   ["blank", "   \t  "],
 ]) {
   const input = { ...validContactBody };
-  if (offerReference !== undefined) {
-    input.offerReference = offerReference;
+  if (formuleCode !== undefined) {
+    input.formuleCode = formuleCode;
   }
   const result = await invokeContact(input);
   assert.equal(result.response.status, 200, label);
   assert.equal(result.state.fetchCalls.length, 1, label);
-  assert.equal(result.state.fetchCalls[0].body.offerReference, null, label);
+  assert.equal(result.state.fetchCalls[0].body.formuleCode, null, label);
   assert.equal(result.state.calls.includes("catalog"), false, label);
 }
 
-let stableInvalidOfferBody;
-for (const offerReference of [42, false, {}, [], ["offer-active"]]) {
-  const result = await invokeContact({ ...validContactBody, offerReference });
-  assert.equal(result.response.status, 400, JSON.stringify(offerReference));
-  assert.equal(result.body.code, "INVALID_OFFER_REFERENCE");
+let stableInvalidFormuleBody;
+for (const formuleCode of [
+  42,
+  false,
+  {},
+  [],
+  ["pack-acces-distance"],
+  "pack acces distance",
+  "-pack",
+  "p",
+]) {
+  const result = await invokeContact({ ...validContactBody, formuleCode });
+  assert.equal(result.response.status, 400, JSON.stringify(formuleCode));
+  assert.equal(result.body.code, "INVALID_FORMULE_CODE");
   assert.equal(result.body.correlation_id, "contact-correlation");
   assert.equal(result.state.calls.includes("catalog"), false);
   assert.equal(result.state.fetchCalls.length, 0);
-  stableInvalidOfferBody ??= result.body;
-  assert.deepEqual(result.body, stableInvalidOfferBody);
+  stableInvalidFormuleBody ??= result.body;
+  assert.deepEqual(result.body, stableInvalidFormuleBody);
 }
 
-const overlongOffer = await invokeContact({
+const overlongFormule = await invokeContact({
   ...validContactBody,
-  offerReference: "x".repeat(65),
+  formuleCode: "x".repeat(65),
 });
-assert.equal(overlongOffer.response.status, 400);
-assert.deepEqual(overlongOffer.body, stableInvalidOfferBody);
-assert.equal(overlongOffer.state.calls.includes("catalog"), false);
-assert.equal(overlongOffer.state.fetchCalls.length, 0);
+assert.equal(overlongFormule.response.status, 400);
+assert.deepEqual(overlongFormule.body, stableInvalidFormuleBody);
+assert.equal(overlongFormule.state.calls.includes("catalog"), false);
+assert.equal(overlongFormule.state.fetchCalls.length, 0);
 
-const activeOffer = await invokeContact({
-  ...validContactBody,
-  offerReference: "  offer-active  ",
-});
-assert.equal(activeOffer.response.status, 200);
-assert.equal(activeOffer.state.fetchCalls.length, 1);
-assert.equal(activeOffer.state.fetchCalls[0].body.offerReference, "offer-active");
+const activeFormule = await invokeContact(
+  { ...validContactBody, formuleCode: "  Pack-Acces-Distance  " },
+  { catalogResult: publishedCatalog },
+);
+assert.equal(activeFormule.response.status, 200);
+assert.equal(activeFormule.state.fetchCalls.length, 1);
 assert.equal(
-  activeOffer.state.fetchCalls[0].headers["X-Correlation-Id"],
+  activeFormule.state.fetchCalls[0].body.formuleCode,
+  "pack-acces-distance",
+  "Le code transmis a l API interne doit etre celui du catalogue, normalise.",
+);
+assert.equal(
+  activeFormule.state.fetchCalls[0].headers["X-Correlation-Id"],
   "contact-correlation",
 );
 assert.equal(
-  activeOffer.state.fetchCalls[0].headers["X-Service-Auth"],
+  activeFormule.state.fetchCalls[0].headers["X-Service-Auth"],
   "test-service-token",
 );
 
-const mixedCatalog = {
-  data: [
-    {
-      id: "offer-active",
-      externalReference: "PUBLIC-ACTIVE",
-      status: "active",
-    },
-    { id: "offer-inactive", status: "inactive" },
-  ],
-  source: "api-internal-persistent",
-  correlationId: "catalog-correlation",
-};
-for (const offerReference of [
-  "offer-unknown",
-  "offer-inactive",
-  "PUBLIC-ACTIVE",
-  "OFFER-ACTIVE",
-]) {
+for (const formuleCode of ["pack-inconnu", "pack-pro-association"]) {
   const result = await invokeContact(
-    { ...validContactBody, offerReference },
-    { catalogResult: mixedCatalog },
+    { ...validContactBody, formuleCode },
+    { catalogResult: publishedCatalog },
   );
-  assert.equal(result.response.status, 400, offerReference);
-  assert.deepEqual(result.body, stableInvalidOfferBody, offerReference);
-  assert.equal(result.state.fetchCalls.length, 0, offerReference);
+  assert.equal(result.response.status, 400, formuleCode);
+  assert.deepEqual(result.body, stableInvalidFormuleBody, formuleCode);
+  assert.equal(result.state.fetchCalls.length, 0, formuleCode);
 }
 
 for (const [label, configuration] of [
@@ -365,7 +379,7 @@ for (const [label, configuration] of [
     "unavailable source",
     {
       catalogResult: {
-        data: [{ id: "offer-active", status: "active" }],
+        data: { presets: [{ code: "pack-acces-distance" }] },
         source: "unavailable",
         correlationId: "catalog-correlation",
       },
@@ -375,7 +389,7 @@ for (const [label, configuration] of [
     "catalog error",
     {
       catalogResult: {
-        data: [{ id: "offer-active", status: "active" }],
+        data: { presets: [{ code: "pack-acces-distance" }] },
         source: "api-internal-persistent",
         correlationId: "catalog-correlation",
         error: { code: "INTERNAL_API_UNAVAILABLE" },
@@ -383,70 +397,29 @@ for (const [label, configuration] of [
     },
   ],
   [
-    "malformed data",
+    "donnees absentes",
     {
       catalogResult: {
-        data: { id: "offer-active", status: "active" },
         source: "api-internal-persistent",
         correlationId: "catalog-correlation",
       },
     },
   ],
   [
-    "null catalog entry",
+    "presets absents",
     {
       catalogResult: {
-        data: [null],
+        data: {},
         source: "api-internal-persistent",
         correlationId: "catalog-correlation",
       },
     },
   ],
   [
-    "malformed entry after active offer",
+    "presets non tabulaires",
     {
       catalogResult: {
-        data: [{ id: "offer-active", status: "active" }, null],
-        source: "api-internal-persistent",
-        correlationId: "catalog-correlation",
-      },
-    },
-  ],
-  [
-    "incomplete catalog entry",
-    {
-      catalogResult: {
-        data: [{}],
-        source: "api-internal-persistent",
-        correlationId: "catalog-correlation",
-      },
-    },
-  ],
-  [
-    "catalog entry without id",
-    {
-      catalogResult: {
-        data: [{ status: "active" }],
-        source: "api-internal-persistent",
-        correlationId: "catalog-correlation",
-      },
-    },
-  ],
-  [
-    "catalog entry without status",
-    {
-      catalogResult: {
-        data: [{ id: "offer-active" }],
-        source: "api-internal-persistent",
-        correlationId: "catalog-correlation",
-      },
-    },
-  ],
-  [
-    "catalog entry with invalid field types",
-    {
-      catalogResult: {
-        data: [{ id: 42, status: false }],
+        data: { presets: { code: "pack-acces-distance" } },
         source: "api-internal-persistent",
         correlationId: "catalog-correlation",
       },
@@ -454,8 +427,10 @@ for (const [label, configuration] of [
   ],
   ["catalog exception", { catalogFailure: true }],
 ]) {
+  // Un catalogue illisible n est jamais un catalogue vide : refuser en 400
+  // ferait passer une formule publiee pour une reference inventee.
   const result = await invokeContact(
-    { ...validContactBody, offerReference: "offer-active" },
+    { ...validContactBody, formuleCode: "pack-acces-distance" },
     configuration,
   );
   assert.equal(result.response.status, 503, label);
@@ -486,13 +461,13 @@ assert.equal(invalidJson.state.calls.includes("catalog"), false);
 const invalidOrdinaryField = await invokeContact({
   ...validContactBody,
   name: "",
-  offerReference: "offer-active",
+  formuleCode: "pack-acces-distance",
 });
 assert.equal(invalidOrdinaryField.response.status, 400);
 assert.equal(invalidOrdinaryField.body.code, "INVALID_REQUEST");
 assert.equal(invalidOrdinaryField.state.calls.includes("catalog"), false);
 
-const activeCallOrder = activeOffer.state.calls;
+const activeCallOrder = activeFormule.state.calls;
 for (const [earlier, later] of [
   ["rate-limit", "json"],
   ["json", "catalog"],
@@ -509,7 +484,7 @@ const previousNodeEnv = process.env.NODE_ENV;
 process.env.NODE_ENV = "development";
 try {
   const localFallback = await invokeContact(
-    { ...validContactBody, offerReference: "offer-active" },
+    { ...validContactBody, formuleCode: "pack-acces-distance" },
     { internalApiUrl: undefined },
   );
   assert.equal(localFallback.response.status, 202);

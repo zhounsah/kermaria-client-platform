@@ -11,7 +11,6 @@ import {
 import type { AuthMeResponse, InternalSession } from "@kermaria/shared";
 
 import { AdminNavigation } from "@/components/AdminNavigation";
-import { HeaderCartDrawer } from "@/components/HeaderCartDrawer";
 import { PortalNavigation } from "@/components/PortalNavigation";
 import { PublicShell } from "@/components/PublicShell";
 import { BrandLogo } from "@/components/BrandLogo";
@@ -127,9 +126,6 @@ export function AppShell({
             <BrandLogo className="brand-logo brand-logo-app" priority variant="dark" />
           </Link>
           <div className="site-header-tools">
-            {effectiveSession?.user.role === "client_user" ? (
-              <HeaderCartDrawer />
-            ) : null}
             <div className="demo-chip">{shellLabel}</div>
           </div>
         </div>

@@ -33,26 +33,29 @@ public sealed class CustomerActiveDirectoryAdministrationService
     : ICustomerActiveDirectoryAdministrationService
 {
     private readonly IActiveDirectoryLinkRepository _links;
-    private readonly ISubscriptionRepository _subscriptions;
-    private readonly ISubscriptionProvisioningManager _provisioningManager;
+    private readonly IBillingV2PortalSubscriptionProjection _subscriptions;
+    private readonly IBillingV2SubscriptionAdGroupProjection _subscriptionGroups;
+    private readonly IBillingV2SubscriptionProvisioningManager _provisioningManager;
     private readonly IActiveDirectoryService _activeDirectory;
-    private readonly ICommercialOfferTopologyService _topologyService;
+    private readonly IServiceTopologyService _topologyService;
     private readonly IAdGroupProvisioner _groupProvisioner;
     private readonly SubscriptionProvisioningRuntimeConfiguration _configuration;
     private readonly ILogger<CustomerActiveDirectoryAdministrationService> _logger;
 
     public CustomerActiveDirectoryAdministrationService(
         IActiveDirectoryLinkRepository links,
-        ISubscriptionRepository subscriptions,
-        ISubscriptionProvisioningManager provisioningManager,
+        IBillingV2PortalSubscriptionProjection subscriptions,
+        IBillingV2SubscriptionAdGroupProjection subscriptionGroups,
+        IBillingV2SubscriptionProvisioningManager provisioningManager,
         IActiveDirectoryService activeDirectory,
-        ICommercialOfferTopologyService topologyService,
+        IServiceTopologyService topologyService,
         IAdGroupProvisioner groupProvisioner,
         SubscriptionProvisioningRuntimeConfiguration configuration,
         ILogger<CustomerActiveDirectoryAdministrationService> logger)
     {
         _links = links;
         _subscriptions = subscriptions;
+        _subscriptionGroups = subscriptionGroups;
         _provisioningManager = provisioningManager;
         _activeDirectory = activeDirectory;
         _topologyService = topologyService;
@@ -284,9 +287,13 @@ public sealed class CustomerActiveDirectoryAdministrationService
         var userLinks = await _links.GetCustomerUserLinksAsync(
             customer.CustomerId,
             cancellationToken);
-        var subscriptions = await _subscriptions.GetByCustomerAsync(
+        var subscriptions = await _subscriptions.GetClientSubscriptionsAsync(
             customer.CustomerId,
             cancellationToken);
+        var groupsBySubscription =
+            await _subscriptionGroups.GetGroupsBySubscriptionAsync(
+                customer.CustomerId,
+                cancellationToken);
 
         SubscriptionSummary? scopedSubscription = null;
         if (!string.IsNullOrWhiteSpace(subscriptionId))
@@ -305,9 +312,9 @@ public sealed class CustomerActiveDirectoryAdministrationService
         foreach (var subscription in subscriptions)
         {
             mappedGroupsBySubscriptionId[subscription.Id] =
-                await _topologyService.ResolveMappedGroupsAsync(
-                    subscription,
-                    cancellationToken);
+                groupsBySubscription.TryGetValue(subscription.Id, out var groups)
+                    ? groups
+                    : Array.Empty<string>();
             provisioningSummaries[subscription.Id] =
                 await _provisioningManager.GetSummaryAsync(
                     subscription,
@@ -371,7 +378,7 @@ public sealed class CustomerActiveDirectoryAdministrationService
                 context.MappedGroupsBySubscriptionId,
                 context.TechnicalServices))
             .OrderByDescending(subscription => subscription.Status, StringComparer.Ordinal)
-            .ThenBy(subscription => subscription.OfferName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(subscription => subscription.Label, StringComparer.OrdinalIgnoreCase)
             .ToArray();
         var serviceDefinitions = context.TechnicalServices
             .Where(service => service.GroupSamAccountNames.Count > 0
@@ -434,9 +441,8 @@ public sealed class CustomerActiveDirectoryAdministrationService
 
         return new AdminCustomerAdSubscriptionContext(
             subscription.Id,
-            subscription.OfferName,
-            subscription.OfferExternalReference,
-            subscription.PublicPackCode,
+            subscription.Label,
+            subscription.PresetCode,
             subscription.Status,
             mappedGroups,
             coveredServices);

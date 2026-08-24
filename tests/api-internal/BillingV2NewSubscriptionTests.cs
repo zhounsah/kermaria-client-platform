@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Text;
 using System.Text.Json;
 using Kermaria.ApiInternal.Contracts;
@@ -22,14 +22,12 @@ public static class BillingV2NewSubscriptionTests
         VerifyProviderPriceMappingsMustCoverAllServicePrices();
         VerifyProviderPriceMappingsDetectMissingServicePrice();
         VerifyProviderPriceMappingsDetectAmbiguousServicePrice();
-        VerifyLaunchReadinessIgnoresDemoSubscriptions();
-        VerifyLaunchReadinessBlocksRealCustomerSubscriptions();
-        VerifyLaunchReadinessCarriesBlockingRealSubscriptions();
+        VerifyLaunchReadinessAcceptsRemovedLegacySchema();
+        VerifyLaunchReadinessBlocksRemainingLegacyTables();
         VerifyAuthoritativeCheckoutRequiresDedicatedFlag();
         VerifyAuthoritativeCheckoutRequiresHumanApproval();
         VerifyAuthoritativeCheckoutRequiresProviderOutbox();
         VerifyAuthoritativeCheckoutRequiresProviderExecutor();
-        VerifyAuthoritativeCheckoutBlocksRealLegacySubscriptions();
         VerifyAuthoritativeCheckoutRequiresVerifiedLaunchSnapshot();
         VerifyAuthoritativeCheckoutBlocksIncompleteProviderMappings();
         VerifyAuthoritativeCheckoutBlocksWithoutV2DocumentIssuer();
@@ -84,12 +82,11 @@ public static class BillingV2NewSubscriptionTests
         VerifyFirstRealTestPricingMarksContractualPriceLock();
         VerifyPortalProjectionUsesV2ContractualPriceLock();
         VerifyPortalProjectionFallsBackToSubscriptionItemSnapshots();
-        VerifyDownloadAccessScopeKeepsV2LegacyTargets();
+        VerifyDownloadAccessScopeUsesV2CatalogTargets();
         VerifyAuthoritativeCheckoutLocalGateAllowsReadyRequest();
-        VerifyAdminReadinessRequiresNoRealLegacySubscriptions();
+        VerifyAdminReadinessRequiresLegacySchemaRemoved();
         VerifyAdminReadinessRequiresVerifiedLaunchSnapshot();
         VerifyAdminReadinessRequiresProviderReady();
-        VerifyAdminReadinessExposesBlockingSubscriptions();
         VerifyAdminReadinessExposesOperationalLimitations();
         VerifyAdminReadinessBlocksFirstRealSubscriptionWithoutV2InvoicePath();
         VerifyAdminReadinessAllowsFirstRealSubscriptionWhenHardBlockersCleared();
@@ -382,56 +379,27 @@ public static class BillingV2NewSubscriptionTests
             "Un prix de service V2 avec plusieurs ids provider doit etre detecte comme ambigu.");
     }
 
-    private static void VerifyLaunchReadinessIgnoresDemoSubscriptions()
+    private static void VerifyLaunchReadinessAcceptsRemovedLegacySchema()
     {
-        var snapshot = BillingV2LaunchReadinessGate.Evaluate(
-            realCustomerSubscriptionCount: 0,
-            demoSubscriptionCount: 3);
+        var snapshot = BillingV2LaunchReadinessGate.Evaluate([]);
 
         Ensure(
-            snapshot.NoRealCustomerSubscriptions
-            && snapshot.DemoSubscriptionCount == 3,
-            "Les abonnements demo ne doivent pas etre traites comme des contrats clients reels a migrer.");
+            snapshot.LegacyBillingSchemaRemoved
+            && snapshot.VerifiedAgainstPersistentSql
+            && snapshot.RemainingLegacyTables.Count == 0,
+            "Sans table legacy restante, la readiness de lancement doit etre satisfaite.");
     }
 
-    private static void VerifyLaunchReadinessBlocksRealCustomerSubscriptions()
+    private static void VerifyLaunchReadinessBlocksRemainingLegacyTables()
     {
         var snapshot = BillingV2LaunchReadinessGate.Evaluate(
-            realCustomerSubscriptionCount: 1,
-            demoSubscriptionCount: 0);
+            ["commercial_offers"]);
 
         Ensure(
-            !snapshot.NoRealCustomerSubscriptions,
-            "Un abonnement client reel actif doit bloquer la strategie premier abonnement V2 sans migration.");
-    }
-
-    private static void VerifyLaunchReadinessCarriesBlockingRealSubscriptions()
-    {
-        var updatedAt = new DateTime(2026, 8, 13, 10, 30, 0, DateTimeKind.Utc);
-        var snapshot = BillingV2LaunchReadinessGate.Evaluate(
-            realCustomerSubscriptionCount: 1,
-            demoSubscriptionCount: 2) with
-        {
-            BlockingRealSubscriptions =
-            [
-                new BillingV2BlockingLegacySubscription(
-                    "subscription-real-1",
-                    "active",
-                    "customer-real-1",
-                    "CLIENT-REAL",
-                    "Client reel",
-                    "offer-legacy-1",
-                    updatedAt.AddMonths(-1),
-                    updatedAt)
-            ]
-        };
-
-        Ensure(
-            !snapshot.NoRealCustomerSubscriptions
-            && snapshot.BlockingRealSubscriptions.Count == 1
-            && snapshot.BlockingRealSubscriptions[0].CustomerReference
-                == "CLIENT-REAL",
-            "La readiness doit conserver les abonnements reels bloquants pour revue humaine, sans compter les demos comme contrats reels.");
+            !snapshot.LegacyBillingSchemaRemoved
+            && snapshot.RemainingLegacyTables.SequenceEqual(
+                ["commercial_offers"]),
+            "Une table du modele commercial concurrent encore presente doit bloquer la readiness de lancement.");
     }
 
     private static void VerifyAuthoritativeCheckoutRequiresDedicatedFlag()
@@ -440,7 +408,7 @@ public static class BillingV2NewSubscriptionTests
             V2Runtime(
                 authoritativeCheckoutEnabled: false,
                 firstRealSubscriptionApproved: true),
-            BillingV2LaunchReadinessGate.Evaluate(0, 0),
+            BillingV2LaunchReadinessGate.Evaluate([]),
             ReadyProviderMappings());
 
         Ensure(
@@ -455,7 +423,7 @@ public static class BillingV2NewSubscriptionTests
             V2Runtime(
                 authoritativeCheckoutEnabled: true,
                 firstRealSubscriptionApproved: false),
-            BillingV2LaunchReadinessGate.Evaluate(0, 2),
+            BillingV2LaunchReadinessGate.Evaluate([]),
             ReadyProviderMappings());
 
         Ensure(
@@ -473,7 +441,7 @@ public static class BillingV2NewSubscriptionTests
                 firstRealSubscriptionApproved: true,
                 providerOutboxEnabled: false,
                 providerExecutorEnabled: true),
-            BillingV2LaunchReadinessGate.Evaluate(0, 0),
+            BillingV2LaunchReadinessGate.Evaluate([]),
             ReadyProviderMappings());
 
         Ensure(
@@ -490,31 +458,13 @@ public static class BillingV2NewSubscriptionTests
                 firstRealSubscriptionApproved: true,
                 providerOutboxEnabled: true,
                 providerExecutorEnabled: false),
-            BillingV2LaunchReadinessGate.Evaluate(0, 0),
+            BillingV2LaunchReadinessGate.Evaluate([]),
             ReadyProviderMappings());
 
         Ensure(
             !decision.Authorized
             && decision.ReasonCode == "BILLING_V2_PROVIDER_EXECUTOR_FLAG_OFF",
             "Le checkout V2 autoritaire ne doit pas declarer ready sans executor provider capable de creer l'URL d'approbation.");
-    }
-
-    private static void VerifyAuthoritativeCheckoutBlocksRealLegacySubscriptions()
-    {
-        var decision = BillingV2CheckoutReadinessGate.Evaluate(
-            V2Runtime(
-                authoritativeCheckoutEnabled: true,
-                firstRealSubscriptionApproved: true,
-                providerOutboxEnabled: true,
-                providerExecutorEnabled: true),
-            BillingV2LaunchReadinessGate.Evaluate(1, 0),
-            ReadyProviderMappings());
-
-        Ensure(
-            !decision.Authorized
-            && decision.ReasonCode
-                == "BILLING_V2_REAL_LEGACY_SUBSCRIPTIONS_PRESENT",
-            "La presence d'un abonnement client reel actif doit bloquer la strategie premier abonnement V2.");
     }
 
     private static void VerifyAuthoritativeCheckoutRequiresVerifiedLaunchSnapshot()
@@ -526,8 +476,7 @@ public static class BillingV2NewSubscriptionTests
                 providerOutboxEnabled: true,
                 providerExecutorEnabled: true),
             new BillingV2LaunchReadinessSnapshot(
-                RealCustomerSubscriptionCount: 0,
-                DemoSubscriptionCount: 0,
+                LegacyBillingSchemaRemoved: true,
                 VerifiedAgainstPersistentSql: false),
             ReadyProviderMappings());
 
@@ -535,7 +484,7 @@ public static class BillingV2NewSubscriptionTests
             !decision.Authorized
             && decision.ReasonCode
                 == "BILLING_V2_LAUNCH_READINESS_UNVERIFIED",
-            "Un checkout V2 autoritaire ne doit pas prendre un compteur a zero non verifie comme preuve d'absence de contrats reels.");
+            "Un checkout V2 autoritaire ne doit pas prendre une absence de schema legacy non verifiee comme preuve.");
     }
 
     private static void VerifyAuthoritativeCheckoutBlocksIncompleteProviderMappings()
@@ -546,7 +495,7 @@ public static class BillingV2NewSubscriptionTests
                 firstRealSubscriptionApproved: true,
                 providerOutboxEnabled: true,
                 providerExecutorEnabled: true),
-            BillingV2LaunchReadinessGate.Evaluate(0, 0),
+            BillingV2LaunchReadinessGate.Evaluate([]),
             // Rail exigeant des references de plan provider. Stripe tarifie en
             // ligne et n'entre plus dans ce cas : voir
             // BillingV2StripeRailTests.VerifyStripeIsReadyWithoutProviderPriceMappings.
@@ -571,7 +520,7 @@ public static class BillingV2NewSubscriptionTests
                 firstRealSubscriptionApproved: true,
                 providerOutboxEnabled: true,
                 providerExecutorEnabled: true),
-            BillingV2LaunchReadinessGate.Evaluate(0, 3),
+            BillingV2LaunchReadinessGate.Evaluate([]),
             ReadyProviderMappings());
 
         Ensure(
@@ -589,7 +538,7 @@ public static class BillingV2NewSubscriptionTests
                 firstRealSubscriptionApproved: true,
                 providerOutboxEnabled: true,
                 providerExecutorEnabled: true),
-            BillingV2LaunchReadinessGate.Evaluate(0, 3),
+            BillingV2LaunchReadinessGate.Evaluate([]),
             ReadyProviderMappings(),
             BillingV2DocumentReadinessStatus.ReadyForCheckout);
 
@@ -699,7 +648,7 @@ public static class BillingV2NewSubscriptionTests
                     V2Runtime(
                         authoritativeCheckoutEnabled: false,
                         firstRealSubscriptionApproved: true),
-                    BillingV2LaunchReadinessGate.Evaluate(0, 0),
+                    BillingV2LaunchReadinessGate.Evaluate([]),
                     ReadyProviderMappings()),
                 [Item("STORAGE-PERSONAL", "32", "primary_user")],
                 PricingFor([Item("STORAGE-PERSONAL", "32", "primary_user")]));
@@ -728,7 +677,7 @@ public static class BillingV2NewSubscriptionTests
                 firstRealSubscriptionApproved: true,
                 providerOutboxEnabled: true,
                 providerExecutorEnabled: true),
-            BillingV2LaunchReadinessGate.Evaluate(0, 0),
+            BillingV2LaunchReadinessGate.Evaluate([]),
             BillingV2ProviderPriceMappingGate.Evaluate(
                 items.Select(item => item.ServicePriceId).ToArray(),
                 items.Select((item, index) => new BillingV2ProviderPriceMapping(
@@ -763,7 +712,7 @@ public static class BillingV2NewSubscriptionTests
                 firstRealSubscriptionApproved: true,
                 providerOutboxEnabled: true,
                 providerExecutorEnabled: true),
-            BillingV2LaunchReadinessGate.Evaluate(0, 0),
+            BillingV2LaunchReadinessGate.Evaluate([]),
             BillingV2ProviderPriceMappingGate.Evaluate(
                 items.Select(item => item.ServicePriceId).ToArray(),
                 Array.Empty<BillingV2ProviderPriceMapping>(),
@@ -794,7 +743,7 @@ public static class BillingV2NewSubscriptionTests
                         V2Runtime(
                             authoritativeCheckoutEnabled: false,
                             firstRealSubscriptionApproved: true),
-                        BillingV2LaunchReadinessGate.Evaluate(0, 0),
+                        BillingV2LaunchReadinessGate.Evaluate([]),
                         ReadyProviderMappings())));
             throw new InvalidOperationException(
                 "Une commande provider V2 a ete creee malgre une readiness bloquee.");
@@ -1877,13 +1826,11 @@ public static class BillingV2NewSubscriptionTests
     {
         var now = new DateTime(2026, 8, 13, 12, 0, 0, DateTimeKind.Utc);
         var monthly = BillingV2AuthoritativeCheckoutPriceLockPolicy.Plan(
-            "legacy-offer-monthly",
             BillingV2PaymentModes.Monthly,
             commitmentMonths: 12,
             PricingResult(payableRecurringAmountCents: 3900),
             now);
         var upfront = BillingV2AuthoritativeCheckoutPriceLockPolicy.Plan(
-            "legacy-offer-upfront",
             BillingV2PaymentModes.Upfront,
             commitmentMonths: 12,
             PricingResult(
@@ -1895,13 +1842,11 @@ public static class BillingV2NewSubscriptionTests
             monthly.LockType == BillingV2PriceLockTypes.MonthlyRecurring
             && monthly.AmountCents == 3900
             && monthly.EffectiveUntilUtc == now.AddMonths(12)
-            && monthly.SourceLegacyOfferId == "legacy-offer-monthly"
             && monthly.Reason
                 == BillingV2AuthoritativeCheckoutPriceLockPolicy.CheckoutReason
             && upfront.LockType == BillingV2PriceLockTypes.UpfrontPrepaid
             && upfront.AmountCents == 42000
-            && upfront.EffectiveUntilUtc == now.AddMonths(12)
-            && upfront.SourceLegacyOfferId == "legacy-offer-upfront",
+            && upfront.EffectiveUntilUtc == now.AddMonths(12),
             "Le checkout V2 autoritaire doit creer un price lock contractuel mensuel ou upfront depuis le prix calcule a la souscription.");
     }
 
@@ -1918,7 +1863,8 @@ public static class BillingV2NewSubscriptionTests
         Ensure(
             summary.BillingSystem == "billing_v2"
             && summary.Id == "sub-v2-portal"
-            && summary.CommercialOfferId == "legacy-offer-v2"
+            && summary.PresetId == "preset-v2-portal"
+            && summary.PresetCode == "pack-dossier-securise"
             && summary.PriceAmountCents == 3900
             && summary.StripeSubscriptionId == "sub_v2_portal"
             && summary.PayPalSubscriptionId is null
@@ -1953,20 +1899,20 @@ public static class BillingV2NewSubscriptionTests
             "Si le lock n'est pas present, la projection portail V2 doit utiliser uniquement les snapshots d'items deja materialises.");
     }
 
-    private static void VerifyDownloadAccessScopeKeepsV2LegacyTargets()
+    private static void VerifyDownloadAccessScopeUsesV2CatalogTargets()
     {
         var scope = BillingV2DownloadAccessScopePolicy.Create(
             [" pack-dossier-securise ", "pack-dossier-securise", null],
-            [" PACK-DOSSIER-1M-MENS ", ""],
+            [" STORAGE-PERSONAL ", ""],
             ["GG_VPN", "gg_vpn", " GG_RDS "]);
 
         Ensure(
-            scope.PublicPackCodes.SequenceEqual(["pack-dossier-securise"])
-            && scope.OfferExternalReferences.SequenceEqual(["PACK-DOSSIER-1M-MENS"])
+            scope.PresetCodes.SequenceEqual(["pack-dossier-securise"])
+            && scope.ServiceCodes.SequenceEqual(["STORAGE-PERSONAL"])
             && scope.ProvisioningGroups.Count == 2
             && scope.ProvisioningGroups.Contains("GG_VPN")
             && scope.ProvisioningGroups.Contains("GG_RDS"),
-            "Le scope telechargements V2 doit conserver les cibles legacy equivalentes et dedupliquer les groupes AD.");
+            "Le scope telechargements doit cibler des codes de formule et de service V2, et dedupliquer les groupes AD.");
     }
 
     private static void VerifyAuthoritativeCheckoutLocalGateAllowsReadyRequest()
@@ -1986,22 +1932,20 @@ public static class BillingV2NewSubscriptionTests
             "Le checkout V2 autoritaire local ne doit etre ouvert que quand flags, SQL et idempotence sont presents.");
     }
 
-    private static void VerifyAdminReadinessRequiresNoRealLegacySubscriptions()
+    private static void VerifyAdminReadinessRequiresLegacySchemaRemoved()
     {
         var reason = BillingV2AdminReadinessGate.ResolveReasonCode(
             persistentSqlAvailable: true,
             schemaReady: true,
             AdminRuntimeFlags(),
             new BillingV2AdminLaunchReadiness(
-                RealCustomerSubscriptionCount: 1,
-                DemoSubscriptionCount: 0,
-                NoRealCustomerSubscriptions: false,
+                LegacyBillingSchemaRemoved: false,
                 VerifiedAgainstPersistentSql: true),
             [AdminProvider()]);
 
         Ensure(
-            reason == "BILLING_V2_ADMIN_REAL_LEGACY_SUBSCRIPTIONS_PRESENT",
-            "La readiness admin V2 doit bloquer le premier abonnement V2 si un contrat client reel actif existe.");
+            reason == "BILLING_V2_ADMIN_LEGACY_SCHEMA_PRESENT",
+            "La readiness admin V2 doit bloquer le premier abonnement V2 tant qu'une table du modele commercial concurrent subsiste.");
     }
 
     private static void VerifyAdminReadinessRequiresVerifiedLaunchSnapshot()
@@ -2011,9 +1955,7 @@ public static class BillingV2NewSubscriptionTests
             schemaReady: true,
             AdminRuntimeFlags(),
             new BillingV2AdminLaunchReadiness(
-                RealCustomerSubscriptionCount: 0,
-                DemoSubscriptionCount: 0,
-                NoRealCustomerSubscriptions: true,
+                LegacyBillingSchemaRemoved: true,
                 VerifiedAgainstPersistentSql: false),
             [AdminProvider()]);
 
@@ -2029,50 +1971,13 @@ public static class BillingV2NewSubscriptionTests
             schemaReady: true,
             AdminRuntimeFlags(),
             new BillingV2AdminLaunchReadiness(
-                RealCustomerSubscriptionCount: 0,
-                DemoSubscriptionCount: 3,
-                NoRealCustomerSubscriptions: true,
+                LegacyBillingSchemaRemoved: true,
                 VerifiedAgainstPersistentSql: true),
             [AdminProvider(readyForCheckout: false)]);
 
         Ensure(
             reason == "BILLING_V2_ADMIN_NO_PROVIDER_READY",
             "La readiness admin V2 doit bloquer si aucun provider n'a tous ses mappings et sa configuration.");
-    }
-
-    private static void VerifyAdminReadinessExposesBlockingSubscriptions()
-    {
-        var updatedAt = new DateTime(2026, 8, 13, 11, 15, 0, DateTimeKind.Utc);
-        var snapshot = new BillingV2LaunchReadinessSnapshot(
-            RealCustomerSubscriptionCount: 1,
-            DemoSubscriptionCount: 4,
-            VerifiedAgainstPersistentSql: true)
-        {
-            BlockingRealSubscriptions =
-            [
-                new BillingV2BlockingLegacySubscription(
-                    "subscription-real-admin",
-                    "pending_payment",
-                    "customer-real-admin",
-                    "CLIENT-ADMIN",
-                    "Client admin",
-                    null,
-                    updatedAt.AddDays(-2),
-                    updatedAt)
-            ]
-        };
-
-        var admin = BillingV2AdminReadinessMapper.ToAdminLaunchReadiness(
-            snapshot);
-
-        Ensure(
-            admin.BlockingRealSubscriptions.Count == 1
-            && admin.BlockingRealSubscriptions[0].SubscriptionId
-                == "subscription-real-admin"
-            && admin.BlockingRealSubscriptions[0].CommercialOfferId is null
-            && admin.BlockingRealSubscriptions[0].UpdatedAt
-                == updatedAt.ToString("O"),
-            "Le snapshot admin doit exposer les abonnements reels bloquants issus de la lecture SQL pour verifier manuellement l'absence de migration a prevoir.");
     }
 
     private static void VerifyAdminReadinessExposesOperationalLimitations()
@@ -2103,9 +2008,7 @@ public static class BillingV2NewSubscriptionTests
             schemaReady: true,
             AdminRuntimeFlags(),
             new BillingV2AdminLaunchReadiness(
-                RealCustomerSubscriptionCount: 0,
-                DemoSubscriptionCount: 3,
-                NoRealCustomerSubscriptions: true,
+                LegacyBillingSchemaRemoved: true,
                 VerifiedAgainstPersistentSql: true),
             [AdminProvider()]);
 
@@ -2121,9 +2024,7 @@ public static class BillingV2NewSubscriptionTests
             schemaReady: true,
             AdminRuntimeFlags(),
             new BillingV2AdminLaunchReadiness(
-                RealCustomerSubscriptionCount: 0,
-                DemoSubscriptionCount: 3,
-                NoRealCustomerSubscriptions: true,
+                LegacyBillingSchemaRemoved: true,
                 VerifiedAgainstPersistentSql: true),
             [AdminProvider()],
             operationalLimitations: []);
@@ -2220,7 +2121,6 @@ public static class BillingV2NewSubscriptionTests
     {
         var pricing = PricingResult(payableRecurringAmountCents: 50);
         var plan = BillingV2AuthoritativeCheckoutPriceLockPolicy.Plan(
-            sourceLegacyOfferId: null,
             BillingV2PaymentModes.Monthly,
             commitmentMonths: 1,
             pricing,
@@ -2287,14 +2187,11 @@ public static class BillingV2NewSubscriptionTests
                 "EUR",
                 BillingV2BillingCadences.Monthly,
                 DiscountEligible: true)],
-            LegacyOfferId: null,
             selection.Canonical(),
             BillingV2CheckoutSelectionFingerprint.ForSelection(selection.Canonical()));
 
     private static BillingV2AdminRuntimeFlags AdminRuntimeFlags()
         => new(
-            CatalogShadowModeEnabled: true,
-            ProvisioningShadowModeEnabled: true,
             NewSubscriptionsEnabled: true,
             AuthoritativeCheckoutEnabled: true,
             FirstRealSubscriptionApproved: true,
@@ -2322,8 +2219,6 @@ public static class BillingV2NewSubscriptionTests
         bool providerOutboxEnabled = false,
         bool providerExecutorEnabled = false)
         => new(
-            CatalogShadowModeEnabled: false,
-            ProvisioningShadowModeEnabled: false,
             NewSubscriptionsEnabled: newSubscriptionsEnabled,
             AuthoritativeCheckoutEnabled: authoritativeCheckoutEnabled,
             FirstRealSubscriptionApproved: firstRealSubscriptionApproved,
@@ -2394,7 +2289,7 @@ public static class BillingV2NewSubscriptionTests
                 firstRealSubscriptionApproved: true,
                 providerOutboxEnabled: true,
                 providerExecutorEnabled: true),
-            BillingV2LaunchReadinessGate.Evaluate(0, 0),
+            BillingV2LaunchReadinessGate.Evaluate([]),
             ReadyProviderMappings(),
             BillingV2DocumentReadinessStatus.ReadyForCheckout);
 
@@ -2576,10 +2471,7 @@ public static class BillingV2NewSubscriptionTests
             "CLI-V2-NEW",
             "Client V2",
             "preset-v2-portal",
-            "legacy-offer-v2",
             "Pack V2 Portal",
-            "PACK-V2-PORTAL",
-            "PACK-V2-PORTAL",
             "pack-dossier-securise",
             provider,
             providerSubscriptionId,
@@ -2614,9 +2506,8 @@ public static class BillingV2NewSubscriptionTests
             "customer-v2-new",
             "CLI-V2-NEW",
             "Client V2",
-            "offer-v2-new",
+            "preset-v2-new",
             "Pack V2 New",
-            "PACK-DOSSIER-1M-MENS",
             "pack-dossier-securise",
             rail,
             "P-PAYPAL-PLAN",

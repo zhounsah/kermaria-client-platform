@@ -44,6 +44,7 @@ public sealed class DemoConversionService : IDemoConversionService
     private readonly IAdGroupProvisioner _groupProvisioner;
     private readonly SubscriptionProvisioningRuntimeConfiguration
         _provisioningConfiguration;
+    private readonly IServiceTopologyService _topology;
     private readonly IActiveDirectoryLinkRepository _links;
     private readonly AdRuntimeConfiguration _adConfiguration;
     private readonly DemoConversionRuntimeConfiguration _conversionConfiguration;
@@ -54,6 +55,7 @@ public sealed class DemoConversionService : IDemoConversionService
         IActiveDirectoryService activeDirectory,
         IAdGroupProvisioner groupProvisioner,
         SubscriptionProvisioningRuntimeConfiguration provisioningConfiguration,
+        IServiceTopologyService topology,
         IActiveDirectoryLinkRepository links,
         AdRuntimeConfiguration adConfiguration,
         DemoConversionRuntimeConfiguration conversionConfiguration,
@@ -63,6 +65,7 @@ public sealed class DemoConversionService : IDemoConversionService
         _activeDirectory = activeDirectory;
         _groupProvisioner = groupProvisioner;
         _provisioningConfiguration = provisioningConfiguration;
+        _topology = topology;
         _links = links;
         _adConfiguration = adConfiguration;
         _conversionConfiguration = conversionConfiguration;
@@ -107,7 +110,9 @@ public sealed class DemoConversionService : IDemoConversionService
                 "Seul un compte d'essai peut etre converti en client reel.");
         }
 
-        var realGroups = ResolveRealGroups(request.OfferExternalReference);
+        var realGroups = await ResolveRealGroupsAsync(
+            request.ServiceCodes,
+            cancellationToken);
         var demoGroups = Normalize(candidate.AdGroups);
 
         var removed = new List<string>();
@@ -296,12 +301,40 @@ public sealed class DemoConversionService : IDemoConversionService
         return true;
     }
 
-    private IReadOnlyList<string> ResolveRealGroups(string? offerExternalReference)
-        => string.IsNullOrWhiteSpace(offerExternalReference)
-            ? Array.Empty<string>()
-            : Normalize(
-                _provisioningConfiguration.ResolveMappedGroups(
-                    offerExternalReference));
+    /// <summary>
+    /// Groupes AD que la conversion doit accorder.
+    /// </summary>
+    /// <remarks>
+    /// La resolution passe par la topologie Billing V2, seule a connaitre les
+    /// regles de provisioning reellement appliquees. Un code inconnu ne rend
+    /// aucun groupe : mieux vaut une conversion qui n'accorde rien de visible
+    /// qu'une conversion qui accorde un acces devine.
+    /// </remarks>
+    private async Task<IReadOnlyList<string>> ResolveRealGroupsAsync(
+        IReadOnlyList<string>? serviceCodes,
+        CancellationToken cancellationToken)
+    {
+        if (serviceCodes is null || serviceCodes.Count == 0)
+        {
+            return Array.Empty<string>();
+        }
+
+        var groups = new List<string>();
+        foreach (var serviceCode in serviceCodes)
+        {
+            if (string.IsNullOrWhiteSpace(serviceCode))
+            {
+                continue;
+            }
+
+            groups.AddRange(
+                await _topology.ResolveServiceMappedGroupsAsync(
+                    serviceCode.Trim(),
+                    cancellationToken));
+        }
+
+        return Normalize(groups);
+    }
 
     private string? ResolveGroupDistinguishedName(string groupSamAccountName)
         => _provisioningConfiguration.TryGetGroupDistinguishedName(

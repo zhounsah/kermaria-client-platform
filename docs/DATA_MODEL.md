@@ -145,31 +145,16 @@ Représente les métadonnées d'une facture.
 Contraintes : référence externe unique dans son système source et montants
 cohérents selon les règles métier.
 
-## commercial_offers
+## commercial_offers — supprimee
 
-Catalogue commercial administrable de V0.15.
+Le catalogue commercial historique de V0.15 a ete retire par la migration
+`071_drop_legacy_commercial_model.sql`. Le catalogue courant est decrit par
+`billing_v2_services`, `billing_v2_service_tiers`,
+`billing_v2_service_prices` et `billing_v2_offer_presets`. Voir
+[`BILLING_V2_ONLY.md`](BILLING_V2_ONLY.md).
 
-| Champ | Type logique | Description |
-|---|---|---|
-| `id` | identifier | Clé interne |
-| `name` | text | Nom de l'offre |
-| `description` | text | Description informative |
-| `category` | text | Catégorie d'affichage |
-| `unit_label` | text | `mois`, `heure`, `forfait`, `prestation`, etc. |
-| `price_kind` | text | `ht` dans cette version |
-| `price_amount_cents` | integer | Prix indicatif en centimes |
-| `currency` | text | Devise, `EUR` dans cette version |
-| `status` | text | `active` ou `inactive` |
-| `display_order` | integer | Ordre d'affichage |
-| `tax_rate_basis_points` | integer, nullable | Taux indicatif TVA en basis points (V0.20.1) |
-| `external_reference` | text, nullable, unique | Code d'import catalogue, ex. `AUDIT-SECU-BASE` (V0.20.1) |
-| `created_at` | timestamp | Date de création |
-| `updated_at` | timestamp | Dernière modification |
-
-Aucune suppression définitive n'est requise en V0.15. Une offre inactive peut
-rester référencée par des documents existants. La V0.20.1 ajoute
-`tax_rate_basis_points` et `external_reference` pour l'auto-fill des
-formulaires de ligne et l'import idempotent du catalogue.
+Les lignes de document commercial ne referencent plus d'offre : elles
+portent leur propre instantane (libelle, quantite, prix unitaire, taxe).
 
 ## public_pack_catalog_content
 

@@ -25,12 +25,8 @@ import type {
   ApiError,
   ClientProfile,
   ClientSolution,
-  CartSummary,
-  CatalogConfigurationSnapshot,
-  CheckoutSummary,
   CommercialDocumentDetail,
   CommercialDocumentSummary,
-  CommercialOfferSummary,
   CorrelationId,
   CustomerAdLinkSummary,
   CustomerAdProvisioningMutationPayload,
@@ -54,7 +50,6 @@ import type {
   MockSubmissionResponse,
   NotificationReadResponse,
   PendingBillingV2SelectionSummary,
-  PendingPackSelectionSummary,
   PortalDownloadCategory,
   PortalSummary,
   PortalNotificationSummary,
@@ -68,7 +63,6 @@ import type {
   ServiceRequestSummary,
   ServiceSummary,
   SubscriptionSummary,
-  SignupPackSelectionSnapshot,
   AdminSubscriptionDetail,
   SupportRequestPayload,
   SupportRequestSummary,
@@ -95,7 +89,6 @@ import { readPortalSessionToken } from "@/lib/session-cookie";
 import {
   mockCommercialDocumentDetails,
   mockCommercialDocuments,
-  mockCommercialOffers,
   mockCustomer,
   getMockManagedContent,
   mockInvoices,
@@ -123,12 +116,9 @@ const EMPTY_BILLING_V2_CATALOG: BillingV2PublicCatalog = {
   presets: [],
   services: [],
   commitments: [],
-  checkoutRoutes: [],
 };
 
 export type BillingV2AdminRuntimeFlags = {
-  catalogShadowModeEnabled: boolean;
-  provisioningShadowModeEnabled: boolean;
   newSubscriptionsEnabled: boolean;
   authoritativeCheckoutEnabled: boolean;
   firstRealSubscriptionApproved: boolean;
@@ -137,23 +127,15 @@ export type BillingV2AdminRuntimeFlags = {
   provisioningEnabled: boolean;
 };
 
+/**
+ * Precondition de lancement : le modele commercial legacy a disparu du schema.
+ * Tant qu'une table subsiste, Billing V2 n'est pas la seule autorite et la
+ * porte reste fermee.
+ */
 export type BillingV2AdminLaunchReadiness = {
-  realCustomerSubscriptionCount: number;
-  demoSubscriptionCount: number;
-  noRealCustomerSubscriptions: boolean;
+  legacyBillingSchemaRemoved: boolean;
   verifiedAgainstPersistentSql: boolean;
-  blockingRealSubscriptions: BillingV2AdminBlockingLegacySubscription[];
-};
-
-export type BillingV2AdminBlockingLegacySubscription = {
-  subscriptionId: string;
-  status: string;
-  customerId: string;
-  customerReference: string;
-  customerName: string;
-  commercialOfferId?: string | null;
-  createdAt: string;
-  updatedAt: string;
+  remainingLegacyTables: string[];
 };
 
 export type BillingV2AdminProviderReadiness = {
@@ -526,95 +508,6 @@ export function getServiceCatalog() {
   );
 }
 
-export function getCommercialCatalog() {
-  return getPortalData<CommercialOfferSummary[]>(
-    "/internal/portal/catalog",
-    mockCommercialOffers,
-    [],
-  );
-}
-
-const EMPTY_CART: CartSummary = {
-  items: [],
-  itemCount: 0,
-  subtotalCents: 0,
-  currency: "EUR",
-};
-
-const EMPTY_CHECKOUT_SUMMARY: CheckoutSummary = {
-  cart: EMPTY_CART,
-  recurring: {
-    items: [],
-    itemCount: 0,
-    subtotalCents: 0,
-    currency: "EUR",
-  },
-  totalItemCount: 0,
-  hasMixedCheckout: false,
-};
-
-async function getCheckoutSummaryWithLegacyFallback() {
-  const summary = await getPortalData<CheckoutSummary>(
-    "/internal/portal/checkout/summary",
-    EMPTY_CHECKOUT_SUMMARY,
-    EMPTY_CHECKOUT_SUMMARY,
-  );
-
-  if (!summary.error || !shouldFallbackToLegacyCart(summary.error.code)) {
-    return summary;
-  }
-
-  const cart = await getCart();
-  if (cart.error) {
-    return summary;
-  }
-
-  return {
-    data: buildLegacyCheckoutSummary(cart.data),
-    source: cart.source,
-    correlationId: cart.correlationId,
-  } satisfies PortalDataResult<CheckoutSummary>;
-}
-
-function buildLegacyCheckoutSummary(cart: CartSummary): CheckoutSummary {
-  return {
-    cart,
-    recurring: EMPTY_CHECKOUT_SUMMARY.recurring,
-    totalItemCount: cart.itemCount,
-    hasMixedCheckout: false,
-  };
-}
-
-function shouldFallbackToLegacyCart(code: string) {
-  return [
-    "ROUTE_NOT_FOUND",
-    "SQL_UNAVAILABLE",
-    "INTERNAL_ERROR",
-    "INTERNAL_API_UNAVAILABLE",
-    "INVALID_INTERNAL_RESPONSE",
-  ].includes(code);
-}
-
-export function getCart() {
-  return getPortalData<CartSummary>(
-    "/internal/portal/cart",
-    EMPTY_CART,
-    EMPTY_CART,
-  );
-}
-
-export function getCheckoutSummary() {
-  return getCheckoutSummaryWithLegacyFallback();
-}
-
-export function getPublicCommercialCatalog() {
-  return getPublicData<CommercialOfferSummary[]>(
-    "/internal/portal/catalog",
-    mockCommercialOffers,
-    [],
-  );
-}
-
 /**
  * Catalogue des formules Billing V2.
  *
@@ -785,117 +678,6 @@ export function getClientDownloads() {
     [],
     [],
   );
-}
-
-export async function getPendingPackSelection() {
-  const correlationId = resolveCorrelationId(null);
-  const sessionToken = await readPortalSessionToken();
-
-  if (!sessionToken) {
-    return {
-      data: null,
-      source: "unavailable",
-      correlationId,
-      error: {
-        code: "SESSION_REQUIRED",
-        message: "Une session valide est requise.",
-        correlation_id: correlationId,
-      },
-    } satisfies PortalDataResult<PendingPackSelectionSummary | null>;
-  }
-
-  let internalApiUrl: string | undefined;
-  try {
-    internalApiUrl = getInternalApiUrl();
-  } catch {
-    return {
-      data: null,
-      source: "unavailable",
-      correlationId,
-      error: unavailableError(correlationId),
-    } satisfies PortalDataResult<PendingPackSelectionSummary | null>;
-  }
-
-  if (!internalApiUrl) {
-    if (isDevelopmentFallbackAllowed()) {
-      return {
-        data: null,
-        source: "local-fallback",
-        correlationId,
-      } satisfies PortalDataResult<PendingPackSelectionSummary | null>;
-    }
-
-    return {
-      data: null,
-      source: "unavailable",
-      correlationId,
-      error: unavailableError(correlationId),
-    } satisfies PortalDataResult<PendingPackSelectionSummary | null>;
-  }
-
-  try {
-    const response = await fetch(
-      `${internalApiUrl}/internal/portal/pending-pack-selection`,
-      {
-        cache: "no-store",
-        signal: AbortSignal.timeout(INTERNAL_API_TIMEOUT_MS),
-        headers: {
-          Accept: "application/json",
-          ...getInternalServiceHeaders(),
-          [CORRELATION_HEADER]: correlationId,
-          [PORTAL_SESSION_HEADER]: sessionToken,
-        },
-      },
-    );
-
-    if (!response.ok) {
-      throw await toInternalApiError(response, correlationId);
-    }
-
-    const responseCorrelationId = resolveCorrelationId(
-      response.headers.get(CORRELATION_HEADER),
-    );
-    const source =
-      response.headers.get("X-Data-Source") === "mariadb"
-        ? "api-internal-persistent"
-        : "api-internal-mock";
-    const contentType = response.headers.get("content-type") ?? "";
-    const payloadText = await response.text();
-
-    if (payloadText.trim() === "") {
-      return {
-        data: null,
-        source,
-        correlationId: responseCorrelationId,
-      } satisfies PortalDataResult<PendingPackSelectionSummary | null>;
-    }
-
-    if (!contentType.toLowerCase().includes("application/json")) {
-      throw invalidInternalResponse(responseCorrelationId);
-    }
-
-    try {
-      return {
-        data: JSON.parse(payloadText) as PendingPackSelectionSummary | null,
-        source,
-        correlationId: responseCorrelationId,
-      } satisfies PortalDataResult<PendingPackSelectionSummary | null>;
-    } catch {
-      throw invalidInternalResponse(responseCorrelationId);
-    }
-  } catch (error) {
-    const apiError =
-      error instanceof InternalApiError
-        ? error.apiError
-        : unavailableError(correlationId);
-
-    return {
-      data: null,
-      source: "unavailable",
-      correlationId,
-      error: apiError,
-    } satisfies PortalDataResult<PendingPackSelectionSummary | null>;
-  }
 }
 
 export function getPendingBillingV2Selection() {
@@ -1372,8 +1154,7 @@ export type SignupAdminDetail = {
   email: string;
   phone: string | null;
   message: string | null;
-  packSelection: SignupPackSelectionSnapshot | null;
-  catalogConfiguration: CatalogConfigurationSnapshot | null;
+  billingV2Selection: BillingV2PublicSelection | null;
   sourceAddress: string | null;
   rejectedReason: string | null;
   createdAt: string;
@@ -1507,10 +1288,201 @@ export function getAdminCustomerAdWorkspace(
   );
 }
 
-export function getAdminCatalog() {
-  return getAdminData<CommercialOfferSummary[]>(
-    "/internal/admin/catalog",
+
+// ---------------------------------------------------------------------------
+// Administration du catalogue Billing V2/V2.1
+//
+// Seule autorite commerciale : services, paliers, versions de prix, formules,
+// engagements et rattachements provider. Aucun montant n'est calcule ici — le
+// webportal affiche ce que la base porte et renvoie une intention de revision,
+// jamais un prix resolu.
+// ---------------------------------------------------------------------------
+
+export type BillingV2CatalogStatusValue = "active" | "inactive";
+
+export type BillingV2AdminProviderMapping = {
+  id: string;
+  servicePriceId: string;
+  provider: string;
+  environment: string;
+  externalProductId: string | null;
+  externalPriceId: string | null;
+  externalPlanId: string | null;
+  status: string;
+};
+
+export type BillingV2AdminPrice = {
+  id: string;
+  serviceId: string;
+  tierId: string | null;
+  priceCode: string;
+  priceVersion: number;
+  amountCents: number;
+  currency: string;
+  billingCadence: string;
+  chargeTrigger: string;
+  taxRateBasisPoints: number | null;
+  validFrom: string;
+  validUntil: string | null;
+  status: string;
+  createdByReference: string | null;
+  supersedesPriceId: string | null;
+  createdAt: string;
+  providerMappings: BillingV2AdminProviderMapping[];
+};
+
+export type BillingV2AdminTierAttribute = {
+  attributeCode: string;
+  valueNumeric: number | null;
+  valueText: string | null;
+  unit: string | null;
+};
+
+export type BillingV2AdminTier = {
+  id: string;
+  serviceId: string;
+  code: string;
+  name: string;
+  publicLabel: string | null;
+  description: string | null;
+  numericValue: number | null;
+  unit: string | null;
+  publicSelectable: boolean;
+  status: string;
+  displayOrder: number;
+  attributes: BillingV2AdminTierAttribute[];
+  prices: BillingV2AdminPrice[];
+};
+
+export type BillingV2AdminService = {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  category: string | null;
+  billingType: string;
+  defaultScopeType: string;
+  pricingModel: string;
+  mandatoryForSubscription: boolean;
+  discountEligible: boolean;
+  publicVisible: boolean;
+  selfServiceOrderable: boolean;
+  status: string;
+  displayOrder: number;
+  updatedByReference: string | null;
+  tiers: BillingV2AdminTier[];
+  flatPrices: BillingV2AdminPrice[];
+};
+
+export type BillingV2AdminPresetItem = {
+  id: string;
+  serviceId: string;
+  serviceCode: string;
+  tierId: string | null;
+  tierCode: string | null;
+  scopeTemplate: string;
+  quantity: number;
+  requiredItem: boolean;
+  customerEditable: boolean;
+  displayOrder: number;
+};
+
+export type BillingV2AdminPreset = {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  status: string;
+  isPublic: boolean;
+  displayOrder: number;
+  items: BillingV2AdminPresetItem[];
+};
+
+export type BillingV2AdminCommitmentPaymentOption = {
+  id: string;
+  paymentMode: string;
+  discountBasisPoints: number;
+  status: string;
+  displayOrder: number;
+};
+
+export type BillingV2AdminCommitment = {
+  id: string;
+  code: string;
+  name: string;
+  commitmentMonths: number;
+  discountBasisPoints: number | null;
+  allowMonthlyPayment: boolean;
+  allowUpfrontPayment: boolean;
+  status: string;
+  displayOrder: number;
+  paymentOptions: BillingV2AdminCommitmentPaymentOption[];
+};
+
+export type BillingV2AdminCatalogSnapshot = {
+  source: string;
+  editable: boolean;
+  currency: string;
+  services: BillingV2AdminService[];
+  presets: BillingV2AdminPreset[];
+  commitments: BillingV2AdminCommitment[];
+};
+
+export type BillingV2AdminCatalogProviderCoverage = {
+  provider: string;
+  environment: string;
+  requiresExternalMapping: boolean;
+  currentPriceCount: number;
+  mappedPriceCount: number;
+  unmappedPriceCodes: string[];
+};
+
+export type BillingV2AdminCatalogMutationResponse = {
+  code: string;
+  message: string;
+  id: string | null;
+  correlation_id: string;
+};
+
+const EMPTY_BILLING_V2_ADMIN_CATALOG: BillingV2AdminCatalogSnapshot = {
+  source: "unavailable",
+  editable: false,
+  currency: "EUR",
+  services: [],
+  presets: [],
+  commitments: [],
+};
+
+export function getAdminBillingV2Catalog() {
+  return getAdminData<BillingV2AdminCatalogSnapshot>(
+    "/internal/admin/billing-v2/catalog",
+    EMPTY_BILLING_V2_ADMIN_CATALOG,
+  );
+}
+
+export function getAdminBillingV2CatalogProviders() {
+  return getAdminData<BillingV2AdminCatalogProviderCoverage[]>(
+    "/internal/admin/billing-v2/catalog/providers",
     [],
+  );
+}
+
+export function mutateAdminBillingV2Catalog<TPayload>(
+  path: string,
+  method: "PATCH" | "POST" | "DELETE",
+  payload: TPayload | undefined,
+  sessionToken: string,
+  correlationId?: CorrelationId,
+) {
+  return mutateInternalAdminData<
+    BillingV2AdminCatalogMutationResponse,
+    TPayload
+  >(
+    `/internal/admin/billing-v2/catalog${path}`,
+    method,
+    payload,
+    sessionToken,
+    correlationId,
   );
 }
 

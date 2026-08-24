@@ -649,13 +649,13 @@ public sealed class BillingV2DocumentIssuerService
             command.CommandText =
                 """
                 INSERT INTO commercial_documents (
-                    id, customer_id, service_request_id, subscription_id,
+                    id, customer_id, service_request_id,
                     origin, document_type, status, title, internal_reference,
                     currency, subtotal_amount_cents, tax_amount_cents,
                     total_amount_cents, disclaimer, created_by_user_id,
                     created_at, updated_at, shared_at, cancelled_at
                 ) VALUES (
-                    @id, @customer_id, NULL, NULL,
+                    @id, @customer_id, NULL,
                     @origin, 'informational_invoice', 'shared_with_customer',
                     @title, @reference,
                     @currency, @subtotal, @tax,
@@ -1192,7 +1192,6 @@ public sealed class BillingV2DocumentIssuerService
                     id,
                     customer_id,
                     service_request_id,
-                    subscription_id,
                     origin,
                     document_type,
                     status,
@@ -1211,7 +1210,6 @@ public sealed class BillingV2DocumentIssuerService
                 ) VALUES (
                     @id,
                     @customer_id,
-                    NULL,
                     NULL,
                     @origin,
                     'informational_invoice',
@@ -1391,7 +1389,6 @@ public sealed class BillingV2DocumentIssuerService
             INSERT INTO commercial_document_lines (
                 id,
                 document_id,
-                offer_id,
                 label,
                 description,
                 quantity,
@@ -1405,7 +1402,6 @@ public sealed class BillingV2DocumentIssuerService
             ) VALUES (
                 @id,
                 @document_id,
-                NULL,
                 @label,
                 @description,
                 1.00,

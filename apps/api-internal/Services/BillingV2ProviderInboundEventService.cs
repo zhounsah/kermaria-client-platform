@@ -1147,7 +1147,7 @@ public static class BillingV2ProviderInboundEventPlanner
         var providerSubscriptionId = FirstNonBlank(
             request.ProviderSubscriptionId,
             state.ProviderSubscriptionId);
-        var eventKind = ResolveEventKind(request.EventType);
+        var eventKind = ResolveEventKind(request.EventType, state);
         if (eventKind is null)
         {
             return Blocked("BILLING_V2_PROVIDER_EVENT_UNSUPPORTED");
@@ -1207,8 +1207,15 @@ public static class BillingV2ProviderInboundEventPlanner
             providerSubscriptionId);
     }
 
+    /// <param name="state">
+    /// L'etat local participe a la lecture d'un evenement : le meme
+    /// `billing.subscription.suspended` ne veut pas dire la meme chose selon
+    /// qu'une resiliation est en cours ou non. Voir
+    /// <see cref="IsExpectedSuspension"/>.
+    /// </param>
     private static BillingV2ProviderEventKind? ResolveEventKind(
-        string eventType)
+        string eventType,
+        BillingV2ProviderLocalState state)
     {
         var normalized = eventType.Trim().ToLowerInvariant();
         return normalized switch
@@ -1275,6 +1282,25 @@ public static class BillingV2ProviderInboundEventPlanner
                     AgreementStatus: null,
                     SubscriptionStatus: null,
                     RequiresProviderSubscription: false),
+            // Suspension ATTENDUE : c'est notre propre `/suspend` PayPal qui
+            // nous revient. Une resiliation a fin de terme suspend l'abonnement
+            // pour qu'aucun renouvellement ne parte, puis le resiliera au terme.
+            // Le lire comme un impaye ecraserait `pending_cancellation` en
+            // `past_due` et afficherait au client un incident de paiement que
+            // nous avons nous-memes provoque.
+            //
+            // L'evenement reste enregistre et rattache : il n'est pas ignore,
+            // il est seulement prive de transition.
+            "billing.subscription.suspended"
+                when IsExpectedSuspension(state) =>
+                new BillingV2ProviderEventKind(
+                    "BILLING_V2_PROVIDER_SUBSCRIPTION_SUSPENSION_EXPECTED",
+                    CheckoutStatus: null,
+                    AgreementStatus: null,
+                    SubscriptionStatus: null,
+                    RequiresProviderSubscription: true),
+            // Suspension INATTENDUE, ou echec de paiement declare : incident
+            // reel, il doit rester visible en `past_due`.
             "billing_v2.subscription_payment_failed"
                 or "billing.subscription.suspended" =>
                 new BillingV2ProviderEventKind(
@@ -1295,6 +1321,23 @@ public static class BillingV2ProviderInboundEventPlanner
             _ => null
         };
     }
+
+    /// <summary>
+    /// La suspension observee est-elle celle que nous avons demandee ?
+    /// </summary>
+    /// <remarks>
+    /// <c>pending_cancellation</c> n'est jamais ecrit par un webhook : seul
+    /// <see cref="BillingV2SubscriptionCancellationService"/> le pose, en meme
+    /// temps qu'il met le <c>/suspend</c> en file. C'est donc un marqueur
+    /// d'intention fiable, et le seul signal disponible ici pour distinguer
+    /// notre propre geste d'un vrai incident de paiement.
+    /// </remarks>
+    private static bool IsExpectedSuspension(
+        BillingV2ProviderLocalState state)
+        => string.Equals(
+            state.SubscriptionStatus,
+            "pending_cancellation",
+            StringComparison.Ordinal);
 
     private static BillingV2ProviderInboundEventPlan Blocked(string reason)
         => new(
@@ -1362,6 +1405,11 @@ public static class BillingV2ProviderInboundEventPlanner
             ["pending"] = 1,
             ["active"] = 2,
             ["past_due"] = 3,
+            // Au meme rang que `past_due`, et au-dessus de `active`. Un
+            // evenement d'activation ne peut donc pas ressusciter un abonnement
+            // en cours de resiliation, tandis qu'un impaye REEL garde le droit
+            // de s'afficher : a rang egal, la cible l'emporte.
+            ["pending_cancellation"] = 3,
             ["cancelled"] = 4
         };
 

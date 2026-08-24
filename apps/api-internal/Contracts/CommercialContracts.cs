@@ -2,39 +2,8 @@ using System.Text.Json.Serialization;
 
 namespace Kermaria.ApiInternal.Contracts;
 
-public sealed record CommercialOfferSummary(
-    string Id,
-    string Name,
-    string Description,
-    string Category,
-    string UnitLabel,
-    string PriceKind,
-    int PriceAmountCents,
-    string Currency,
-    int? TaxRateBasisPoints,
-    string FiscalRegime,
-    string FiscalMention,
-    string? ExternalReference,
-    IReadOnlyList<string> TechnicalServiceReferences,
-    IReadOnlyList<string> ProvisioningGroupSamAccountNames,
-    string Status,
-    int DisplayOrder,
-    string BillingCadence,
-    int? SetupFeeAmountCents,
-    int? BillingIntervalMonths,
-    int? CommitmentMonths,
-    string? PaymentMode,
-    string? PublicPackCode,
-    [property: JsonPropertyName("paypalPlanIdSandbox")] string? PayPalPlanIdSandbox,
-    [property: JsonPropertyName("paypalPlanIdLive")] string? PayPalPlanIdLive,
-    [property: JsonPropertyName("stripePriceIdTest")] string? StripePriceIdTest,
-    [property: JsonPropertyName("stripePriceIdLive")] string? StripePriceIdLive,
-    string CreatedAt,
-    string UpdatedAt);
-
 public sealed record CommercialDocumentLine(
     string Id,
-    string? OfferId,
     string Label,
     string Description,
     decimal Quantity,
@@ -180,28 +149,6 @@ public record AdminCommercialDocumentDetail(
         CustomerReference,
         CustomerName);
 
-public sealed record CommercialOfferPayload(
-    string? Name,
-    string? Description,
-    string? Category,
-    string? UnitLabel,
-    int? PriceAmountCents,
-    string? ExternalReference,
-    IReadOnlyList<string>? TechnicalServiceReferences,
-    IReadOnlyList<string>? ProvisioningGroupSamAccountNames,
-    string? Status,
-    int? DisplayOrder,
-    string? BillingCadence,
-    int? SetupFeeAmountCents,
-    int? BillingIntervalMonths,
-    int? CommitmentMonths,
-    string? PaymentMode,
-    string? PublicPackCode,
-    [property: JsonPropertyName("paypalPlanIdSandbox")] string? PayPalPlanIdSandbox,
-    [property: JsonPropertyName("paypalPlanIdLive")] string? PayPalPlanIdLive,
-    [property: JsonPropertyName("stripePriceIdTest")] string? StripePriceIdTest,
-    [property: JsonPropertyName("stripePriceIdLive")] string? StripePriceIdLive);
-
 public sealed record CommercialDocumentPayload(
     string? CustomerReference,
     string? DocumentType,
@@ -216,7 +163,6 @@ public sealed record PaymentConfirmPayload(string? PaymentMethod);
 public sealed record PaymentMethodSelectionPayload(string? PaymentMethod);
 
 public sealed record CommercialDocumentLinePayload(
-    string? OfferId,
     string? Label,
     string? Description,
     decimal? Quantity,
@@ -224,12 +170,6 @@ public sealed record CommercialDocumentLinePayload(
     int? UnitPriceCents,
     int? TaxRateBasisPoints,
     int? SortOrder);
-
-public sealed record CommercialOfferMutationResponse(
-    string Id,
-    string Status,
-    bool Changed,
-    [property: JsonPropertyName("correlation_id")] string CorrelationId);
 
 public sealed record CommercialDocumentMutationResponse(
     string Id,

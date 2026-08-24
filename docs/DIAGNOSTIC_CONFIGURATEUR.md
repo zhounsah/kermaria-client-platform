@@ -1,5 +1,9 @@
 # Diagnostic public — Billing V2
 
+> **Historique.** Le modele commercial decrit ici (`commercial_offers`, panier,
+> checkout recurrent, configurateur `/configurer`) a ete retire du depot. L'etat
+> courant est decrit par [`BILLING_V2_ONLY.md`](BILLING_V2_ONLY.md).
+
 ## Architecture
 
 Le diagnostic public vit dans `apps/webportal/app/diagnostic` et conserve son questionnaire ainsi que son expérience utilisateur. Son moteur pur est `apps/webportal/lib/public-diagnostic.ts`.
@@ -155,7 +159,7 @@ Le snapshot legacy `pack_selection_snapshot_json` et le format `CatalogConfigura
 Les garanties principales sont couvertes par :
 
 ```powershell
-npm --prefix apps/webportal run test:diagnostic-configurator
+npm --prefix apps/webportal run test:diagnostic
 npm --prefix apps/webportal run test:public-site-quality
 npm --prefix apps/webportal run test:formules
 npm --prefix apps/webportal run test:signup

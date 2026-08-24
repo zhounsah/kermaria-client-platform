@@ -77,7 +77,6 @@ export default async function AdminManagedContentDetailPage({
         presets: [],
         services: [],
         commitments: [],
-        checkoutRoutes: [],
       },
     )
     : null;

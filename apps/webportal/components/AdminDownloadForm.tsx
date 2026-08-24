@@ -1,7 +1,6 @@
 "use client";
 
 import type {
-  CommercialOfferSummary,
   DownloadCategory,
   DownloadResource,
   DownloadResourceMutationResponse,
@@ -11,7 +10,6 @@ import type {
 import {
   DOWNLOAD_RESOURCE_TYPES,
   DOWNLOAD_SERVICE_TYPES,
-  PUBLIC_PACKS,
 } from "@kermaria/shared";
 import { FormEvent, startTransition, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -19,12 +17,24 @@ import { useRouter } from "next/navigation";
 import { FormMessage } from "@/components/FormMessage";
 import { SubmitButton } from "@/components/SubmitButton";
 import { requestBffJson } from "@/lib/client-api";
+import type {
+  BillingV2AdminPreset,
+  BillingV2AdminService,
+} from "@/lib/internal-api";
 
+/**
+ * Le ciblage d'une ressource s'exprime dans le vocabulaire du catalogue Billing
+ * V2 : une formule (`billing_v2_offer_presets.code`) ou un service
+ * (`billing_v2_services.code`). C'est la meme reference que celle utilisee par
+ * les projections d'entitlement : une regle de visibilite et un droit d'acces
+ * designent donc bien le meme objet.
+ */
 type AdminDownloadFormProps = {
   mode: "create" | "edit";
   categories: DownloadCategory[];
-  offers: CommercialOfferSummary[];
-  offerCatalogAvailable: boolean;
+  presets: readonly BillingV2AdminPreset[];
+  services: readonly BillingV2AdminService[];
+  catalogAvailable: boolean;
   download?: DownloadResource | null;
 };
 
@@ -40,8 +50,8 @@ type FormState = {
   versionLabel: string;
   installationInstructions: string;
   displayOrder: string;
-  selectedPackCodes: string[];
-  selectedOfferReferences: string[];
+  selectedPresetCodes: string[];
+  selectedServiceCodes: string[];
   selectedServiceTypes: string[];
 };
 
@@ -93,13 +103,13 @@ function buildInitialState(
     versionLabel: download?.versionLabel ?? "",
     installationInstructions: download?.installationInstructions ?? "",
     displayOrder: String(download?.displayOrder ?? 0),
-    selectedPackCodes:
+    selectedPresetCodes:
       download?.rules
-        .filter((rule) => rule.targetType === "public_pack_code")
+        .filter((rule) => rule.targetType === "preset_code")
         .map((rule) => rule.targetValue) ?? [],
-    selectedOfferReferences:
+    selectedServiceCodes:
       download?.rules
-        .filter((rule) => rule.targetType === "offer_external_reference")
+        .filter((rule) => rule.targetType === "service_code")
         .map((rule) => rule.targetValue) ?? [],
     selectedServiceTypes:
       download?.rules
@@ -111,8 +121,9 @@ function buildInitialState(
 export function AdminDownloadForm({
   mode,
   categories,
-  offers,
-  offerCatalogAvailable,
+  presets,
+  services,
+  catalogAvailable,
   download,
 }: AdminDownloadFormProps) {
   const router = useRouter();
@@ -131,8 +142,13 @@ export function AdminDownloadForm({
   } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const offerOptions = offers
-    .filter((offer) => offer.externalReference)
+  const presetOptions = presets
+    .filter((preset) => preset.status === "active")
+    .slice()
+    .sort((left, right) => left.displayOrder - right.displayOrder);
+  const serviceOptions = services
+    .filter((service) => service.status === "active")
+    .slice()
     .sort((left, right) => left.name.localeCompare(right.name, "fr-FR"));
 
   function updateField<Key extends keyof FormState>(
@@ -144,8 +160,8 @@ export function AdminDownloadForm({
 
   function toggleSelection(
     key:
-      | "selectedPackCodes"
-      | "selectedOfferReferences"
+      | "selectedPresetCodes"
+      | "selectedServiceCodes"
       | "selectedServiceTypes",
     value: string,
   ) {
@@ -164,12 +180,12 @@ export function AdminDownloadForm({
 
   function buildVisibilityRules(): DownloadVisibilityRulePayload[] {
     return [
-      ...formState.selectedPackCodes.map((targetValue) => ({
-        targetType: "public_pack_code" as const,
+      ...formState.selectedPresetCodes.map((targetValue) => ({
+        targetType: "preset_code" as const,
         targetValue,
       })),
-      ...formState.selectedOfferReferences.map((targetValue) => ({
-        targetType: "offer_external_reference" as const,
+      ...formState.selectedServiceCodes.map((targetValue) => ({
+        targetType: "service_code" as const,
         targetValue,
       })),
       ...formState.selectedServiceTypes.map((targetValue) => ({
@@ -641,50 +657,65 @@ export function AdminDownloadForm({
             {formState.visibilityMode === "targeted" ? (
               <div className="admin-targeting-grid">
                 <fieldset className="admin-checkbox-group">
-                  <legend>Packs publics</legend>
-                  {PUBLIC_PACKS.map((pack) => (
-                    <label key={pack.key}>
-                      <input
-                        checked={formState.selectedPackCodes.includes(pack.key)}
-                        onChange={() =>
-                          toggleSelection("selectedPackCodes", pack.key)
-                        }
-                        type="checkbox"
-                      />
-                      <span>{pack.label}</span>
-                    </label>
-                  ))}
-                </fieldset>
-
-                <fieldset className="admin-checkbox-group">
-                  <legend>Offres catalogue</legend>
-                  {!offerCatalogAvailable ? (
-                    <FormMessage title="Catalogue temporairement indisponible" tone="info">
-                      Aucune offre catalogue avec référence externe n&apos;est encore disponible.
+                  <legend>Formules</legend>
+                  {!catalogAvailable ? (
+                    <FormMessage
+                      title="Catalogue temporairement indisponible"
+                      tone="info"
+                    >
+                      Le catalogue Billing V2 n&apos;a pas pu être chargé : les
+                      règles déjà enregistrées sont conservées telles quelles.
                     </FormMessage>
-                  ) : offerOptions.length === 0 ? (
+                  ) : presetOptions.length === 0 ? (
                     <p className="field-hint">
-                      Aucune offre catalogue avec rÃ©fÃ©rence externe n&apos;est encore disponible.
+                      Aucune formule active n&apos;est publiée au catalogue.
                     </p>
                   ) : (
-                    offerOptions.map((offer) => (
-                      <label key={offer.id}>
+                    presetOptions.map((preset) => (
+                      <label key={preset.id}>
                         <input
-                          checked={formState.selectedOfferReferences.includes(
-                            offer.externalReference!,
+                          checked={formState.selectedPresetCodes.includes(
+                            preset.code,
                           )}
                           onChange={() =>
-                            toggleSelection(
-                              "selectedOfferReferences",
-                              offer.externalReference!,
-                            )
+                            toggleSelection("selectedPresetCodes", preset.code)
                           }
                           type="checkbox"
                         />
                         <span>
-                          {offer.name}
+                          {preset.name}
                           {" · "}
-                          {offer.externalReference}
+                          {preset.code}
+                        </span>
+                      </label>
+                    ))
+                  )}
+                </fieldset>
+
+                <fieldset className="admin-checkbox-group">
+                  <legend>Services catalogue</legend>
+                  {!catalogAvailable ? (
+                    <p className="field-hint">Catalogue indisponible.</p>
+                  ) : serviceOptions.length === 0 ? (
+                    <p className="field-hint">
+                      Aucun service actif n&apos;est publié au catalogue.
+                    </p>
+                  ) : (
+                    serviceOptions.map((service) => (
+                      <label key={service.id}>
+                        <input
+                          checked={formState.selectedServiceCodes.includes(
+                            service.code,
+                          )}
+                          onChange={() =>
+                            toggleSelection("selectedServiceCodes", service.code)
+                          }
+                          type="checkbox"
+                        />
+                        <span>
+                          {service.name}
+                          {" · "}
+                          {service.code}
                         </span>
                       </label>
                     ))

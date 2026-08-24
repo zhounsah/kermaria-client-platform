@@ -79,7 +79,6 @@ public sealed class MariaDbSignupRepository : ISignupRepository
                 birth_date,
                 initials,
                 is_primary_contact,
-                pack_selection_snapshot_json,
                 catalog_configuration_snapshot_json,
                 verification_token_hash,
                 verification_token_expires_at,
@@ -107,7 +106,6 @@ public sealed class MariaDbSignupRepository : ISignupRepository
                 @birth_date,
                 @initials,
                 @is_primary_contact,
-                @pack_selection_snapshot_json,
                 @catalog_configuration_snapshot_json,
                 @verification_token_hash,
                 @verification_token_expires_at,
@@ -160,13 +158,8 @@ public sealed class MariaDbSignupRepository : ISignupRepository
             "@is_primary_contact",
             insert.PrimaryUser.IsPrimaryContact ?? true);
         command.Parameters.AddWithValue(
-            "@pack_selection_snapshot_json",
-            SerializeSnapshot(insert.PackSelection));
-        command.Parameters.AddWithValue(
             "@catalog_configuration_snapshot_json",
-            SerializeCatalogContext(
-                insert.CatalogConfiguration,
-                insert.BillingV2Selection));
+            SerializeCatalogContext(insert.BillingV2Selection));
         command.Parameters.AddWithValue(
             "@verification_token_hash",
             insert.VerificationTokenHash);
@@ -303,8 +296,7 @@ public sealed class MariaDbSignupRepository : ISignupRepository
             WHERE signup_pending.approved_customer_id = @customer_id
               AND signup_pending.status = 'approved'
               AND (
-                    signup_pending.pack_selection_snapshot_json IS NOT NULL
-                    OR signup_pending.catalog_configuration_snapshot_json IS NOT NULL
+                    signup_pending.catalog_configuration_snapshot_json IS NOT NULL
                   )
             """,
             "ORDER BY signup_pending.approved_at DESC, signup_pending.created_at DESC",
@@ -732,10 +724,7 @@ public sealed class MariaDbSignupRepository : ISignupRepository
                 reader.GetString("email"),
                 ReadNullableString(reader, "phone"),
                 reader.GetBoolean("is_primary_contact")),
-            DeserializeSnapshot(reader, "pack_selection_snapshot_json"),
-            DeserializeCatalogConfiguration(
-                reader,
-                "catalog_configuration_snapshot_json"),
+
             ReadNullableString(reader, "source_address"),
             ReadNullableUtc(reader, "verification_token_expires_at"),
             ReadNullableIdentifier(reader, "approved_user_id"),
@@ -782,7 +771,6 @@ public sealed class MariaDbSignupRepository : ISignupRepository
                 signup_pending.birth_date AS birth_date,
                 signup_pending.initials AS initials,
                 signup_pending.is_primary_contact AS is_primary_contact,
-                signup_pending.pack_selection_snapshot_json AS pack_selection_snapshot_json,
                 signup_pending.catalog_configuration_snapshot_json AS catalog_configuration_snapshot_json,
                 signup_pending.source_address AS source_address,
                 signup_pending.verification_token_expires_at AS verification_token_expires_at,
@@ -817,26 +805,13 @@ public sealed class MariaDbSignupRepository : ISignupRepository
             {limitClause ?? string.Empty}
             """;
 
-    private static object SerializeSnapshot(SignupPackSelectionSnapshot? snapshot)
-        => snapshot is null
-            ? DBNull.Value
-            : JsonSerializer.Serialize(snapshot, JsonOptions);
-
     private static object SerializeCatalogContext(
-        CatalogConfigurationSnapshot? snapshot,
         BillingV2PublicSelection? billingV2Selection)
-    {
-        if (billingV2Selection is not null)
-        {
-            return JsonSerializer.Serialize(
+        => billingV2Selection is null
+            ? DBNull.Value
+            : JsonSerializer.Serialize(
                 new SignupCatalogContextEnvelope("billing_v2", billingV2Selection),
                 JsonOptions);
-        }
-
-        return snapshot is null
-            ? DBNull.Value
-            : JsonSerializer.Serialize(snapshot, JsonOptions);
-    }
 
     private static Task<string> AllocateKoxoUniqueIdentifierAsync(
         MySqlConnection connection,
@@ -846,65 +821,6 @@ public sealed class MariaDbSignupRepository : ISignupRepository
             connection,
             transaction,
             cancellationToken);
-
-    private static SignupPackSelectionSnapshot? DeserializeSnapshot(
-        MySqlDataReader reader,
-        string columnName)
-    {
-        if (reader.IsDBNull(reader.GetOrdinal(columnName)))
-        {
-            return null;
-        }
-
-        var raw = reader.GetString(columnName);
-        if (string.IsNullOrWhiteSpace(raw))
-        {
-            return null;
-        }
-
-        try
-        {
-            return JsonSerializer.Deserialize<SignupPackSelectionSnapshot>(
-                raw,
-                JsonOptions);
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-    }
-
-    private static CatalogConfigurationSnapshot? DeserializeCatalogConfiguration(
-        MySqlDataReader reader,
-        string columnName)
-    {
-        if (reader.IsDBNull(reader.GetOrdinal(columnName)))
-        {
-            return null;
-        }
-
-        var raw = reader.GetString(columnName);
-        if (string.IsNullOrWhiteSpace(raw))
-        {
-            return null;
-        }
-
-        if (TryDeserializeBillingV2Selection(raw) is not null)
-        {
-            return null;
-        }
-
-        try
-        {
-            return JsonSerializer.Deserialize<CatalogConfigurationSnapshot>(
-                raw,
-                JsonOptions);
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-    }
 
     private static BillingV2PublicSelection? DeserializeBillingV2Selection(
         MySqlDataReader reader,

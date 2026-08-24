@@ -7,7 +7,6 @@ public sealed record BillingV2ProvisioningReadinessReviewInputs(
     bool CustomerExists,
     bool CustomerIsDemo,
     int ActiveV2SubscriptionCount,
-    int ActiveLegacySubscriptionCount,
     int UnresolvedRuleCount,
     bool TargetGroupsResolved,
     bool StorageProviderReady,
@@ -17,8 +16,7 @@ public sealed record BillingV2ProvisioningReadinessReviewInputs(
 public sealed record BillingV2ProvisioningReadinessReviewDecision(
     bool Ready,
     bool AddOnlyMode,
-    string ShadowStatus,
-    bool ShadowMatchesLegacy,
+    string ReviewStatus,
     int UnresolvedMismatchCount,
     IReadOnlyList<string> ReasonCodes)
 {
@@ -31,12 +29,10 @@ public sealed record BillingV2ProvisioningReadinessReviewDecision(
 public sealed record BillingV2ProvisioningReadinessReviewResult(
     bool Ready,
     bool AddOnlyMode,
-    string ShadowStatus,
-    bool ShadowMatchesLegacy,
+    string ReviewStatus,
     int UnresolvedMismatchCount,
     IReadOnlyList<string> ReasonCodes,
     int ActiveV2SubscriptionCount,
-    int ActiveLegacySubscriptionCount,
     int DesiredAdGroupCount,
     int StorageTargetCount,
     bool Persisted)
@@ -50,12 +46,10 @@ public sealed record BillingV2ProvisioningReadinessReviewResult(
         = new(
             Ready: false,
             AddOnlyMode: true,
-            ShadowStatus: "failed",
-            ShadowMatchesLegacy: false,
+            ReviewStatus: "failed",
             UnresolvedMismatchCount: 1,
             [BillingV2ProvisioningReadinessReviewReasons.PersistentSqlUnavailable],
             ActiveV2SubscriptionCount: 0,
-            ActiveLegacySubscriptionCount: 0,
             DesiredAdGroupCount: 0,
             StorageTargetCount: 0,
             Persisted: false);
@@ -68,7 +62,6 @@ public static class BillingV2ProvisioningReadinessReviewReasons
     public const string CustomerNotFound = "BILLING_V2_PROVISIONING_READINESS_CUSTOMER_NOT_FOUND";
     public const string DemoCustomer = "BILLING_V2_PROVISIONING_READINESS_DEMO_CUSTOMER";
     public const string NoActiveV2Subscription = "BILLING_V2_PROVISIONING_READINESS_NO_ACTIVE_V2_SUBSCRIPTION";
-    public const string LegacyOverlap = "BILLING_V2_PROVISIONING_READINESS_LEGACY_OVERLAP";
     public const string RulesUnresolved = "BILLING_V2_PROVISIONING_READINESS_RULES_UNRESOLVED";
     public const string TargetGroupsUnresolved = "BILLING_V2_PROVISIONING_READINESS_TARGET_GROUPS_UNRESOLVED";
     public const string StorageProviderNotReady = "BILLING_V2_PROVISIONING_READINESS_STORAGE_PROVIDER_NOT_READY";
@@ -101,7 +94,6 @@ public static class BillingV2ProvisioningReadinessReviewPolicy
         Reject(!inputs.CustomerExists, BillingV2ProvisioningReadinessReviewReasons.CustomerNotFound);
         Reject(inputs.CustomerIsDemo, BillingV2ProvisioningReadinessReviewReasons.DemoCustomer);
         Reject(inputs.ActiveV2SubscriptionCount <= 0, BillingV2ProvisioningReadinessReviewReasons.NoActiveV2Subscription);
-        Reject(inputs.ActiveLegacySubscriptionCount > 0, BillingV2ProvisioningReadinessReviewReasons.LegacyOverlap);
         Reject(inputs.UnresolvedRuleCount > 0, BillingV2ProvisioningReadinessReviewReasons.RulesUnresolved);
         Reject(!inputs.TargetGroupsResolved, BillingV2ProvisioningReadinessReviewReasons.TargetGroupsUnresolved);
         Reject(!inputs.StorageProviderReady, BillingV2ProvisioningReadinessReviewReasons.StorageProviderNotReady);
@@ -112,8 +104,7 @@ public static class BillingV2ProvisioningReadinessReviewPolicy
         return new BillingV2ProvisioningReadinessReviewDecision(
             ready,
             AddOnlyMode: true,
-            ShadowStatus: ready ? "success" : "failed",
-            ShadowMatchesLegacy: inputs.ActiveLegacySubscriptionCount == 0,
+            ReviewStatus: ready ? "success" : "failed",
             mismatchCount,
             reasons);
     }
@@ -149,16 +140,6 @@ public sealed partial class BillingV2ProvisioningService
                 customerId,
                 cancellationToken)
             : new HashSet<string>(StringComparer.Ordinal);
-        var activeLegacySubscriptions = subject.Exists
-            ? (await _subscriptions.GetByCustomerAsync(
-                    customerId,
-                    cancellationToken))
-                .Where(subscription => string.Equals(
-                    subscription.Status,
-                    "active",
-                    StringComparison.Ordinal))
-                .ToArray()
-            : [];
         var plan = activeV2SubscriptionIds.Count > 0
             ? await LoadProvisioningPlanAsync(
                 customerId,
@@ -212,7 +193,6 @@ public sealed partial class BillingV2ProvisioningService
                 CustomerExists: subject.Exists,
                 CustomerIsDemo: subject.IsDemo,
                 ActiveV2SubscriptionCount: activeV2SubscriptionIds.Count,
-                ActiveLegacySubscriptionCount: activeLegacySubscriptions.Length,
                 UnresolvedRuleCount: plan.UnresolvedRuleReferences.Count,
                 targetGroupsResolved,
                 storageProviderReady,
@@ -233,12 +213,10 @@ public sealed partial class BillingV2ProvisioningService
         return new BillingV2ProvisioningReadinessReviewResult(
             decision.Ready,
             decision.AddOnlyMode,
-            decision.ShadowStatus,
-            decision.ShadowMatchesLegacy,
+            decision.ReviewStatus,
             decision.UnresolvedMismatchCount,
             decision.ReasonCodes,
             activeV2SubscriptionIds.Count,
-            activeLegacySubscriptions.Length,
             plan.AllDesiredAdGroups.Count,
             plan.StorageQuotaPlans.Count,
             persisted);
@@ -283,8 +261,7 @@ public sealed partial class BillingV2ProvisioningService
                 customer_id,
                 ready_for_v2_provisioning,
                 add_only_mode,
-                last_shadow_status,
-                last_shadow_matches_legacy,
+                last_review_status,
                 unresolved_mismatch_count,
                 reviewed_by_reference,
                 reviewed_at,
@@ -295,8 +272,7 @@ public sealed partial class BillingV2ProvisioningService
                 @customer_id,
                 @ready,
                 1,
-                @shadow_status,
-                @shadow_matches_legacy,
+                @review_status,
                 @unresolved_mismatch_count,
                 @reviewed_by_reference,
                 UTC_TIMESTAMP(6),
@@ -306,8 +282,7 @@ public sealed partial class BillingV2ProvisioningService
             ON DUPLICATE KEY UPDATE
                 ready_for_v2_provisioning = VALUES(ready_for_v2_provisioning),
                 add_only_mode = 1,
-                last_shadow_status = VALUES(last_shadow_status),
-                last_shadow_matches_legacy = VALUES(last_shadow_matches_legacy),
+                last_review_status = VALUES(last_review_status),
                 unresolved_mismatch_count = VALUES(unresolved_mismatch_count),
                 reviewed_by_reference = VALUES(reviewed_by_reference),
                 reviewed_at = VALUES(reviewed_at),
@@ -316,10 +291,7 @@ public sealed partial class BillingV2ProvisioningService
             """;
         command.Parameters.AddWithValue("@customer_id", customerId);
         command.Parameters.AddWithValue("@ready", decision.Ready ? 1 : 0);
-        command.Parameters.AddWithValue("@shadow_status", decision.ShadowStatus);
-        command.Parameters.AddWithValue(
-            "@shadow_matches_legacy",
-            decision.ShadowMatchesLegacy ? 1 : 0);
+        command.Parameters.AddWithValue("@review_status", decision.ReviewStatus);
         command.Parameters.AddWithValue(
             "@unresolved_mismatch_count",
             decision.UnresolvedMismatchCount);

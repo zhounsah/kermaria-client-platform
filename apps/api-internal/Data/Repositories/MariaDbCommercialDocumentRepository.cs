@@ -1,0 +1,1404 @@
+using System.Data;
+using Kermaria.ApiInternal.Contracts;
+using Kermaria.ApiInternal.Data.Configuration;
+using Kermaria.ApiInternal.Services;
+using MySqlConnector;
+using System.Globalization;
+using System.Text.Json;
+
+namespace Kermaria.ApiInternal.Data.Repositories;
+
+public sealed class MariaDbCommercialDocumentRepository : ICommercialDocumentRepository
+{
+    private static readonly IFiscalPolicy FiscalPolicy = new FiscalPolicy();
+
+    private readonly string _connectionString;
+
+    public MariaDbCommercialDocumentRepository(SqlRuntimeConfiguration configuration)
+    {
+        _connectionString = configuration.ConnectionString
+            ?? throw new InvalidOperationException(
+                "MariaDB connection configuration is unavailable.");
+    }
+
+    public bool IsPersistent => true;
+
+    public async Task<IReadOnlyList<CommercialDocumentSummary>>
+        GetClientDocumentsAsync(
+            PortalSessionContext session,
+            CancellationToken cancellationToken)
+    {
+        var documents = new List<CommercialDocumentSummary>();
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT
+                document.id,
+                document.document_type,
+                document.status,
+                document.title,
+                document.internal_reference,
+                document.currency,
+                document.subtotal_amount_cents,
+                document.tax_amount_cents,
+                document.total_amount_cents,
+                document.disclaimer,
+                document.created_at,
+                document.updated_at,
+                document.shared_at,
+                document.payment_method,
+                document.service_request_id,
+                request.reference AS service_request_reference
+            FROM commercial_documents document
+            LEFT JOIN service_requests request
+                ON request.id = document.service_request_id
+            WHERE document.customer_id = @customer_id
+              AND document.shared_at IS NOT NULL
+            ORDER BY document.updated_at DESC, document.id DESC;
+            """;
+        command.Parameters.AddWithValue("@customer_id", session.CustomerId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            documents.Add(ReadDocumentSummary(reader));
+        }
+
+        return documents;
+    }
+
+    public async Task<CommercialDocumentDetail?> GetClientDocumentAsync(
+        PortalSessionContext session,
+        string documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT
+                document.id,
+                document.document_type,
+                document.status,
+                document.title,
+                document.internal_reference,
+                document.currency,
+                document.subtotal_amount_cents,
+                document.tax_amount_cents,
+                document.total_amount_cents,
+                document.disclaimer,
+                document.created_at,
+                document.updated_at,
+                document.shared_at,
+                document.payment_method,
+                document.service_request_id,
+                request.reference AS service_request_reference
+            FROM commercial_documents document
+            LEFT JOIN service_requests request
+                ON request.id = document.service_request_id
+            WHERE document.id = @document_id
+              AND document.customer_id = @customer_id
+              AND document.shared_at IS NOT NULL
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("@document_id", documentId);
+        command.Parameters.AddWithValue("@customer_id", session.CustomerId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var summary = ReadDocumentSummary(reader);
+        await reader.DisposeAsync();
+
+        return new CommercialDocumentDetail(
+            summary.Id,
+            summary.DocumentType,
+            summary.Status,
+            summary.Title,
+            summary.InternalReference,
+            summary.Currency,
+            summary.SubtotalAmountCents,
+            summary.TaxAmountCents,
+            summary.TotalAmountCents,
+            summary.Disclaimer,
+            summary.CreatedAt,
+            summary.UpdatedAt,
+            summary.SharedAt,
+            summary.ServiceRequestId,
+            summary.ServiceRequestReference,
+            summary.PaymentMethod,
+            await GetLinesAsync(connection, documentId, cancellationToken));
+    }
+
+    public async Task<IReadOnlyList<AdminCommercialDocumentSummary>>
+        GetAdminDocumentsAsync(
+            CancellationToken cancellationToken)
+    {
+        var documents = new List<AdminCommercialDocumentSummary>();
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT
+                document.id,
+                document.document_type,
+                document.status,
+                document.title,
+                document.internal_reference,
+                document.currency,
+                document.subtotal_amount_cents,
+                document.tax_amount_cents,
+                document.total_amount_cents,
+                document.disclaimer,
+                document.created_at,
+                document.updated_at,
+                document.shared_at,
+                document.payment_method,
+                document.service_request_id,
+                request.reference AS service_request_reference,
+                customer.id AS customer_id,
+                customer.external_reference AS customer_reference,
+                customer.display_name AS customer_name
+            FROM commercial_documents document
+            INNER JOIN customers customer
+                ON customer.id = document.customer_id
+            LEFT JOIN service_requests request
+                ON request.id = document.service_request_id
+            ORDER BY document.updated_at DESC, document.id DESC;
+            """;
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            documents.Add(ReadAdminDocumentSummary(reader));
+        }
+
+        return documents;
+    }
+
+    public async Task<AdminCommercialDocumentDetail?> GetAdminDocumentAsync(
+        string documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT
+                document.id,
+                document.document_type,
+                document.status,
+                document.title,
+                document.internal_reference,
+                document.currency,
+                document.subtotal_amount_cents,
+                document.tax_amount_cents,
+                document.total_amount_cents,
+                document.disclaimer,
+                document.created_at,
+                document.updated_at,
+                document.shared_at,
+                document.payment_method,
+                document.service_request_id,
+                request.reference AS service_request_reference,
+                customer.id AS customer_id,
+                customer.external_reference AS customer_reference,
+                customer.display_name AS customer_name,
+                author.display_name AS created_by_display_name
+            FROM commercial_documents document
+            INNER JOIN customers customer
+                ON customer.id = document.customer_id
+            INNER JOIN portal_users author
+                ON author.id = document.created_by_user_id
+            LEFT JOIN service_requests request
+                ON request.id = document.service_request_id
+            WHERE document.id = @document_id
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("@document_id", documentId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var summary = ReadAdminDocumentSummary(reader);
+        var createdByDisplayName =
+            ReadNullableString(reader, "created_by_display_name")
+            ?? "Administration interne";
+        await reader.DisposeAsync();
+
+        return new AdminCommercialDocumentDetail(
+            summary.Id,
+            summary.DocumentType,
+            summary.Status,
+            summary.Title,
+            summary.InternalReference,
+            summary.Currency,
+            summary.SubtotalAmountCents,
+            summary.TaxAmountCents,
+            summary.TotalAmountCents,
+            summary.Disclaimer,
+            summary.CreatedAt,
+            summary.UpdatedAt,
+            summary.SharedAt,
+            summary.ServiceRequestId,
+            summary.ServiceRequestReference,
+            summary.PaymentMethod,
+            summary.CustomerReference,
+            summary.CustomerName,
+            createdByDisplayName,
+            await GetLinesAsync(connection, documentId, cancellationToken));
+    }
+
+    public async Task<CommercialDocumentMutationResponse> CreateDocumentAsync(
+        PortalSessionContext actor,
+        ValidatedCommercialDocument document,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(
+            IsolationLevel.ReadCommitted,
+            cancellationToken);
+        var customerId = await ResolveCustomerIdAsync(
+            connection,
+            transaction,
+            document.CustomerReference!,
+            cancellationToken);
+        _ = await ResolveServiceRequestReferenceAsync(
+            connection,
+            transaction,
+            customerId,
+            document.ServiceRequestId,
+            cancellationToken);
+        var documentId = Guid.NewGuid().ToString("D");
+        var now = DateTime.UtcNow;
+        var reference = CreateReference();
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText =
+                """
+                INSERT INTO commercial_documents (
+                    id,
+                    customer_id,
+                    service_request_id,
+                    document_type,
+                    status,
+                    title,
+                    internal_reference,
+                    currency,
+                    subtotal_amount_cents,
+                    tax_amount_cents,
+                    total_amount_cents,
+                    disclaimer,
+                    created_by_user_id,
+                    created_at,
+                    updated_at,
+                    shared_at,
+                    cancelled_at
+                ) VALUES (
+                    @id,
+                    @customer_id,
+                    @service_request_id,
+                    @document_type,
+                    @status,
+                    @title,
+                    @internal_reference,
+                    @currency,
+                    0,
+                    0,
+                    0,
+                    @disclaimer,
+                    @created_by_user_id,
+                    @created_at,
+                    @updated_at,
+                    NULL,
+                    NULL
+                );
+                """;
+            command.Parameters.AddWithValue("@id", documentId);
+            command.Parameters.AddWithValue("@customer_id", customerId);
+            command.Parameters.AddWithValue(
+                "@service_request_id",
+                DbValue(document.ServiceRequestId));
+            command.Parameters.AddWithValue("@document_type", document.DocumentType);
+            command.Parameters.AddWithValue("@status", document.Status);
+            command.Parameters.AddWithValue("@title", document.Title);
+            command.Parameters.AddWithValue("@internal_reference", reference);
+            command.Parameters.AddWithValue("@currency", document.Currency);
+            command.Parameters.AddWithValue("@disclaimer", document.Disclaimer);
+            command.Parameters.AddWithValue("@created_by_user_id", actor.UserId);
+            command.Parameters.AddWithValue("@created_at", now);
+            command.Parameters.AddWithValue("@updated_at", now);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+
+        return new CommercialDocumentMutationResponse(
+            documentId,
+            reference,
+            document.Status,
+            true,
+            correlationId);
+    }
+
+    public async Task<CommercialDocumentMutationResponse> UpdateDocumentAsync(
+        PortalSessionContext actor,
+        string documentId,
+        ValidatedCommercialDocument document,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(
+            IsolationLevel.ReadCommitted,
+            cancellationToken);
+        var current = await ReadDocumentForUpdateAsync(
+            connection,
+            transaction,
+            documentId,
+            cancellationToken);
+        if (current.Status != CommercialStatuses.Draft)
+        {
+            throw new PortalValidationException();
+        }
+
+        if (document.CustomerReference is not null)
+        {
+            var customerId = await ResolveCustomerIdAsync(
+                connection,
+                transaction,
+                document.CustomerReference,
+                cancellationToken);
+            if (!string.Equals(customerId, current.CustomerId, StringComparison.Ordinal))
+            {
+                throw new PortalValidationException();
+            }
+        }
+
+        _ = await ResolveServiceRequestReferenceAsync(
+            connection,
+            transaction,
+            current.CustomerId,
+            document.ServiceRequestId,
+            cancellationToken);
+        var changed =
+            current.DocumentType != document.DocumentType
+            || current.Status != document.Status
+            || current.Title != document.Title
+            || current.Disclaimer != document.Disclaimer
+            || current.ServiceRequestId != document.ServiceRequestId;
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText =
+                """
+                UPDATE commercial_documents
+                SET service_request_id = @service_request_id,
+                    document_type = @document_type,
+                    status = @status,
+                    title = @title,
+                    disclaimer = @disclaimer,
+                    updated_at = @updated_at
+                WHERE id = @id;
+                """;
+            command.Parameters.AddWithValue("@id", documentId);
+            command.Parameters.AddWithValue(
+                "@service_request_id",
+                DbValue(document.ServiceRequestId));
+            command.Parameters.AddWithValue("@document_type", document.DocumentType);
+            command.Parameters.AddWithValue("@status", document.Status);
+            command.Parameters.AddWithValue("@title", document.Title);
+            command.Parameters.AddWithValue("@disclaimer", document.Disclaimer);
+            command.Parameters.AddWithValue("@updated_at", DateTime.UtcNow);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+
+        return new CommercialDocumentMutationResponse(
+            documentId,
+            current.InternalReference,
+            document.Status,
+            changed,
+            correlationId);
+    }
+
+    public async Task<CommercialDocumentLineMutationResponse> AddLineAsync(
+        PortalSessionContext actor,
+        string documentId,
+        ValidatedCommercialDocumentLine line,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(
+            IsolationLevel.ReadCommitted,
+            cancellationToken);
+        _ = await ReadDraftDocumentForLineMutationAsync(
+            connection,
+            transaction,
+            documentId,
+            cancellationToken);
+        var resolved = ResolveLineInput(line);
+        var lineId = Guid.NewGuid().ToString("D");
+        var now = DateTime.UtcNow;
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText =
+                """
+                INSERT INTO commercial_document_lines (
+                    id,
+                    document_id,
+                    label,
+                    description,
+                    quantity,
+                    unit_label,
+                    unit_price_cents,
+                    tax_rate_basis_points,
+                    line_total_cents,
+                    sort_order,
+                    created_at,
+                    updated_at
+                ) VALUES (
+                    @id,
+                    @document_id,
+                    @label,
+                    @description,
+                    @quantity,
+                    @unit_label,
+                    @unit_price_cents,
+                    @tax_rate_basis_points,
+                    @line_total_cents,
+                    @sort_order,
+                    @created_at,
+                    @updated_at
+                );
+                """;
+            command.Parameters.AddWithValue("@id", lineId);
+            command.Parameters.AddWithValue("@document_id", documentId);
+            command.Parameters.AddWithValue("@label", resolved.Label);
+            command.Parameters.AddWithValue("@description", resolved.Description);
+            command.Parameters.AddWithValue("@quantity", resolved.Quantity);
+            command.Parameters.AddWithValue("@unit_label", resolved.UnitLabel);
+            command.Parameters.AddWithValue("@unit_price_cents", resolved.UnitPriceCents);
+            command.Parameters.AddWithValue(
+                "@tax_rate_basis_points",
+                DbValue(resolved.TaxRateBasisPoints));
+            command.Parameters.AddWithValue("@line_total_cents", resolved.LineTotalCents);
+            command.Parameters.AddWithValue("@sort_order", resolved.SortOrder);
+            command.Parameters.AddWithValue("@created_at", now);
+            command.Parameters.AddWithValue("@updated_at", now);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await RecalculateDocumentTotalsAsync(
+            connection,
+            transaction,
+            documentId,
+            now,
+            cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        return new CommercialDocumentLineMutationResponse(
+            lineId,
+            documentId,
+            true,
+            correlationId);
+    }
+
+    public async Task<CommercialDocumentLineMutationResponse> UpdateLineAsync(
+        PortalSessionContext actor,
+        string documentId,
+        string lineId,
+        ValidatedCommercialDocumentLine line,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(
+            IsolationLevel.ReadCommitted,
+            cancellationToken);
+        _ = await ReadDraftDocumentForLineMutationAsync(
+            connection,
+            transaction,
+            documentId,
+            cancellationToken);
+        var current = await ReadLineForUpdateAsync(
+            connection,
+            transaction,
+            documentId,
+            lineId,
+            cancellationToken);
+        var resolved = ResolveLineInput(line);
+        var changed =
+            current.Label != resolved.Label
+            || current.Description != resolved.Description
+            || current.Quantity != resolved.Quantity
+            || current.UnitLabel != resolved.UnitLabel
+            || current.UnitPriceCents != resolved.UnitPriceCents
+            || current.TaxRateBasisPoints != resolved.TaxRateBasisPoints
+            || current.LineTotalCents != resolved.LineTotalCents
+            || current.SortOrder != resolved.SortOrder;
+        var now = DateTime.UtcNow;
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText =
+                """
+                UPDATE commercial_document_lines
+                SET label = @label,
+                    description = @description,
+                    quantity = @quantity,
+                    unit_label = @unit_label,
+                    unit_price_cents = @unit_price_cents,
+                    tax_rate_basis_points = @tax_rate_basis_points,
+                    line_total_cents = @line_total_cents,
+                    sort_order = @sort_order,
+                    updated_at = @updated_at
+                WHERE id = @id
+                  AND document_id = @document_id;
+                """;
+            command.Parameters.AddWithValue("@id", lineId);
+            command.Parameters.AddWithValue("@document_id", documentId);
+            command.Parameters.AddWithValue("@label", resolved.Label);
+            command.Parameters.AddWithValue("@description", resolved.Description);
+            command.Parameters.AddWithValue("@quantity", resolved.Quantity);
+            command.Parameters.AddWithValue("@unit_label", resolved.UnitLabel);
+            command.Parameters.AddWithValue("@unit_price_cents", resolved.UnitPriceCents);
+            command.Parameters.AddWithValue(
+                "@tax_rate_basis_points",
+                DbValue(resolved.TaxRateBasisPoints));
+            command.Parameters.AddWithValue("@line_total_cents", resolved.LineTotalCents);
+            command.Parameters.AddWithValue("@sort_order", resolved.SortOrder);
+            command.Parameters.AddWithValue("@updated_at", now);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await RecalculateDocumentTotalsAsync(
+            connection,
+            transaction,
+            documentId,
+            now,
+            cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        return new CommercialDocumentLineMutationResponse(
+            lineId,
+            documentId,
+            changed,
+            correlationId);
+    }
+
+    public async Task<CommercialDocumentMutationResponse> ShareDocumentAsync(
+        PortalSessionContext actor,
+        string documentId,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(
+            IsolationLevel.ReadCommitted,
+            cancellationToken);
+        var current = await ReadDocumentForUpdateAsync(
+            connection,
+            transaction,
+            documentId,
+            cancellationToken);
+        if (current.Status == CommercialStatuses.Cancelled)
+        {
+            throw new PortalValidationException();
+        }
+
+        if (current.Status == CommercialStatuses.SharedWithCustomer)
+        {
+            await transaction.CommitAsync(cancellationToken);
+            return new CommercialDocumentMutationResponse(
+                documentId,
+                current.InternalReference,
+                current.Status,
+                false,
+                correlationId);
+        }
+
+        var now = DateTime.UtcNow;
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText =
+                """
+                UPDATE commercial_documents
+                SET status = @status,
+                    shared_at = COALESCE(shared_at, @shared_at),
+                    updated_at = @updated_at
+                WHERE id = @id;
+                """;
+            command.Parameters.AddWithValue("@id", documentId);
+            command.Parameters.AddWithValue(
+                "@status",
+                CommercialStatuses.SharedWithCustomer);
+            command.Parameters.AddWithValue("@shared_at", now);
+            command.Parameters.AddWithValue("@updated_at", now);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+
+        return new CommercialDocumentMutationResponse(
+            documentId,
+            current.InternalReference,
+            CommercialStatuses.SharedWithCustomer,
+            true,
+            correlationId);
+    }
+
+    public async Task<CommercialDocumentMutationResponse> CancelDocumentAsync(
+        PortalSessionContext actor,
+        string documentId,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(
+            IsolationLevel.ReadCommitted,
+            cancellationToken);
+        var current = await ReadDocumentForUpdateAsync(
+            connection,
+            transaction,
+            documentId,
+            cancellationToken);
+        if (current.Status == CommercialStatuses.Cancelled)
+        {
+            await transaction.CommitAsync(cancellationToken);
+            return new CommercialDocumentMutationResponse(
+                documentId,
+                current.InternalReference,
+                current.Status,
+                false,
+                correlationId);
+        }
+
+        var now = DateTime.UtcNow;
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText =
+                """
+                UPDATE commercial_documents
+                SET status = @status,
+                    cancelled_at = COALESCE(cancelled_at, @cancelled_at),
+                    updated_at = @updated_at
+                WHERE id = @id;
+                """;
+            command.Parameters.AddWithValue("@id", documentId);
+            command.Parameters.AddWithValue("@status", CommercialStatuses.Cancelled);
+            command.Parameters.AddWithValue("@cancelled_at", now);
+            command.Parameters.AddWithValue("@updated_at", now);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+
+        return new CommercialDocumentMutationResponse(
+            documentId,
+            current.InternalReference,
+            CommercialStatuses.Cancelled,
+            true,
+            correlationId);
+    }
+
+    private static CommercialDocumentSummary ReadDocumentSummary(
+        MySqlDataReader reader)
+        => new(
+            MariaDbIdentifierReader.ReadRequired(reader, "id"),
+            reader.GetString("document_type"),
+            reader.GetString("status"),
+            reader.GetString("title"),
+            reader.GetString("internal_reference"),
+            reader.GetString("currency"),
+            reader.GetInt32("subtotal_amount_cents"),
+            reader.GetInt32("tax_amount_cents"),
+            reader.GetInt32("total_amount_cents"),
+            reader.GetString("disclaimer"),
+            ToUtcIso(reader.GetDateTime("created_at")),
+            ToUtcIso(reader.GetDateTime("updated_at")),
+            ReadNullableDateTimeIso(reader, "shared_at"),
+            ReadNullableString(reader, "service_request_id"),
+            ReadNullableString(reader, "service_request_reference"),
+            ReadNullableString(reader, "payment_method"));
+
+    private static AdminCommercialDocumentSummary ReadAdminDocumentSummary(
+        MySqlDataReader reader)
+    {
+        var summary = ReadDocumentSummary(reader);
+        var customerId = MariaDbIdentifierReader.ReadRequired(reader, "customer_id");
+        var customerReference =
+            ReadNullableString(reader, "customer_reference") ?? customerId;
+        var customerName =
+            ReadNullableString(reader, "customer_name") ?? customerReference;
+        return new AdminCommercialDocumentSummary(
+            summary.Id,
+            summary.DocumentType,
+            summary.Status,
+            summary.Title,
+            summary.InternalReference,
+            summary.Currency,
+            summary.SubtotalAmountCents,
+            summary.TaxAmountCents,
+            summary.TotalAmountCents,
+            summary.Disclaimer,
+            summary.CreatedAt,
+            summary.UpdatedAt,
+            summary.SharedAt,
+            summary.ServiceRequestId,
+            summary.ServiceRequestReference,
+            summary.PaymentMethod,
+            customerReference,
+            customerName);
+    }
+
+    private static async Task<IReadOnlyList<CommercialDocumentLine>> GetLinesAsync(
+        MySqlConnection connection,
+        string documentId,
+        CancellationToken cancellationToken)
+    {
+        var lines = new List<CommercialDocumentLine>();
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT
+                id,
+                label,
+                description,
+                quantity,
+                unit_label,
+                unit_price_cents,
+                tax_rate_basis_points,
+                line_total_cents,
+                sort_order,
+                created_at,
+                updated_at
+            FROM commercial_document_lines
+            WHERE document_id = @document_id
+            ORDER BY sort_order, created_at, id;
+            """;
+        command.Parameters.AddWithValue("@document_id", documentId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var taxRateBasisPoints =
+                reader.IsDBNull(reader.GetOrdinal("tax_rate_basis_points"))
+                    ? (int?)null
+                    : reader.GetInt32("tax_rate_basis_points");
+            var fiscal = FiscalPolicy.Resolve(taxRateBasisPoints);
+            lines.Add(new CommercialDocumentLine(
+                MariaDbIdentifierReader.ReadRequired(reader, "id"),
+                reader.GetString("label"),
+                reader.GetString("description"),
+                reader.GetDecimal("quantity"),
+                reader.GetString("unit_label"),
+                reader.GetInt32("unit_price_cents"),
+                fiscal.TaxRateBasisPoints,
+                fiscal.FiscalRegime,
+                fiscal.FiscalMention,
+                reader.GetInt32("line_total_cents"),
+                reader.GetInt32("sort_order"),
+                ToUtcIso(reader.GetDateTime("created_at")),
+                ToUtcIso(reader.GetDateTime("updated_at"))));
+        }
+
+        return lines;
+    }
+
+    private static async Task<string> ResolveCustomerIdAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        string customerReference,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            SELECT id
+            FROM customers
+            WHERE external_reference = @customer_reference
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("@customer_reference", customerReference);
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+
+        return result is null or DBNull
+            ? throw new PortalValidationException()
+            : MariaDbIdentifierReader.ConvertRequiredValue(result, "customers.id");
+    }
+
+    private static async Task<string?> ResolveServiceRequestReferenceAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        string customerId,
+        string? serviceRequestId,
+        CancellationToken cancellationToken)
+    {
+        if (serviceRequestId is null)
+        {
+            return null;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            SELECT reference
+            FROM service_requests
+            WHERE id = @id
+              AND customer_id = @customer_id
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("@id", serviceRequestId);
+        command.Parameters.AddWithValue("@customer_id", customerId);
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+
+        return result is null or DBNull
+            ? throw new PortalValidationException()
+            : Convert.ToString(result)!;
+    }
+
+    private static async Task<DocumentRow> ReadDocumentForUpdateAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        string documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            SELECT
+                customer_id,
+                service_request_id,
+                document_type,
+                status,
+                title,
+                internal_reference,
+                disclaimer
+            FROM commercial_documents
+            WHERE id = @id
+            FOR UPDATE;
+            """;
+        command.Parameters.AddWithValue("@id", documentId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new PortalDataNotFoundException();
+        }
+
+        return new DocumentRow(
+            MariaDbIdentifierReader.ReadRequired(reader, "customer_id"),
+            ReadNullableString(reader, "service_request_id"),
+            reader.GetString("document_type"),
+            reader.GetString("status"),
+            reader.GetString("title"),
+            reader.GetString("internal_reference"),
+            reader.GetString("disclaimer"));
+    }
+
+    private static async Task<DocumentRow> ReadDraftDocumentForLineMutationAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        string documentId,
+        CancellationToken cancellationToken)
+    {
+        var document = await ReadDocumentForUpdateAsync(
+            connection,
+            transaction,
+            documentId,
+            cancellationToken);
+        if (document.Status != CommercialStatuses.Draft)
+        {
+            throw new PortalValidationException();
+        }
+
+        return document;
+    }
+
+    private static async Task<LineRow> ReadLineForUpdateAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        string documentId,
+        string lineId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            SELECT
+                label,
+                description,
+                quantity,
+                unit_label,
+                unit_price_cents,
+                tax_rate_basis_points,
+                line_total_cents,
+                sort_order
+            FROM commercial_document_lines
+            WHERE id = @id
+              AND document_id = @document_id
+            FOR UPDATE;
+            """;
+        command.Parameters.AddWithValue("@id", lineId);
+        command.Parameters.AddWithValue("@document_id", documentId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new PortalDataNotFoundException();
+        }
+
+        return new LineRow(
+            reader.GetString("label"),
+            reader.GetString("description"),
+            reader.GetDecimal("quantity"),
+            reader.GetString("unit_label"),
+            reader.GetInt32("unit_price_cents"),
+            reader.IsDBNull(reader.GetOrdinal("tax_rate_basis_points"))
+                ? null
+                : reader.GetInt32("tax_rate_basis_points"),
+            reader.GetInt32("line_total_cents"),
+            reader.GetInt32("sort_order"));
+    }
+
+    // Une ligne est entierement decrite par ce que l'operateur saisit. Elle
+    // n'emprunte plus son libelle ni son prix a une offre : une piece
+    // comptable qui va rechercher son montant dans le catalogue courant change
+    // de montant quand le catalogue change.
+    private static ResolvedLineInput ResolveLineInput(
+        ValidatedCommercialDocumentLine line)
+    {
+        var label = line.Label
+            ?? throw new PortalValidationException();
+        var unitLabel = line.UnitLabel
+            ?? throw new PortalValidationException();
+        var unitPriceCents = line.UnitPriceCents
+            ?? throw new PortalValidationException();
+        if (unitPriceCents < 0)
+        {
+            throw new PortalValidationException();
+        }
+
+        var description = line.Description ?? string.Empty;
+        var lineTotalCents = (int)decimal.Round(
+            line.Quantity * unitPriceCents,
+            0,
+            MidpointRounding.AwayFromZero);
+
+        return new ResolvedLineInput(
+            label,
+            description,
+            line.Quantity,
+            unitLabel,
+            unitPriceCents,
+            line.TaxRateBasisPoints,
+            lineTotalCents,
+            line.SortOrder);
+    }
+
+    private static async Task RecalculateDocumentTotalsAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        string documentId,
+        DateTime updatedAt,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            UPDATE commercial_documents document
+            LEFT JOIN (
+                SELECT
+                    document_id,
+                    COALESCE(SUM(line_total_cents), 0) AS subtotal_amount_cents,
+                    COALESCE(SUM(
+                        CASE
+                            WHEN tax_rate_basis_points IS NULL THEN 0
+                            ELSE ROUND(
+                                line_total_cents * (tax_rate_basis_points / 10000),
+                                0
+                            )
+                        END
+                    ), 0) AS tax_amount_cents
+                FROM commercial_document_lines
+                WHERE document_id = @document_id
+                GROUP BY document_id
+            ) totals
+                ON totals.document_id = document.id
+            SET document.subtotal_amount_cents =
+                    COALESCE(totals.subtotal_amount_cents, 0),
+                document.tax_amount_cents =
+                    COALESCE(totals.tax_amount_cents, 0),
+                document.total_amount_cents =
+                    COALESCE(totals.subtotal_amount_cents, 0)
+                    + COALESCE(totals.tax_amount_cents, 0),
+                document.updated_at = @updated_at
+            WHERE document.id = @document_id;
+            """;
+        command.Parameters.AddWithValue("@document_id", documentId);
+        command.Parameters.AddWithValue("@updated_at", updatedAt);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private async Task<MySqlConnection> OpenConnectionAsync(
+        CancellationToken cancellationToken)
+    {
+        var connection = new MySqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        return connection;
+    }
+
+    private static string? ReadNullableString(
+    MySqlDataReader reader,
+    string columnName)
+    {
+    var ordinal = reader.GetOrdinal(columnName);
+
+    if (reader.IsDBNull(ordinal))
+    {
+        return null;
+    }
+
+    var value = reader.GetValue(ordinal);
+
+    return value switch
+    {
+        string stringValue => stringValue,
+        Guid guidValue => guidValue.ToString("D"),
+        IFormattable formattableValue => formattableValue.ToString(null, CultureInfo.InvariantCulture),
+        _ => value.ToString()
+    };
+    }
+
+    private static string? ReadNullableDateTimeIso(
+        MySqlDataReader reader,
+        string columnName)
+        => reader.IsDBNull(reader.GetOrdinal(columnName))
+            ? null
+            : ToUtcIso(reader.GetDateTime(columnName));
+
+    private static string ToUtcIso(DateTime value)
+        => DateTime.SpecifyKind(value, DateTimeKind.Utc).ToString("O");
+
+    private static string? SerializeStringList(IReadOnlyList<string>? values)
+    {
+        if (values is null || values.Count == 0)
+        {
+            return null;
+        }
+
+        return JsonSerializer.Serialize(
+            values
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Select(value => value.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+                .ToArray());
+    }
+
+    private static IReadOnlyList<string> ParseStringList(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return Array.Empty<string>();
+        }
+
+        try
+        {
+            var parsed = JsonSerializer.Deserialize<string[]>(value);
+            if (parsed is not null)
+            {
+                return parsed
+                    .Where(entry => !string.IsNullOrWhiteSpace(entry))
+                    .Select(entry => entry.Trim())
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(entry => entry, StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+            }
+        }
+        catch (JsonException)
+        {
+        }
+
+        return value
+            .Split(
+                [',', ';', '\n', '\r'],
+                StringSplitOptions.RemoveEmptyEntries
+                | StringSplitOptions.TrimEntries)
+            .Where(entry => !string.IsNullOrWhiteSpace(entry))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(entry => entry, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static object DbValue(string? value)
+        => value is null ? DBNull.Value : value;
+
+    private static object DbValue(int? value)
+        => value is null ? DBNull.Value : value.Value;
+
+    private static string CreateReference()
+        => $"{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid():N}"[..17]
+            .Insert(0, "COM-")
+            .ToUpperInvariant();
+
+    private sealed record DocumentRow(
+        string CustomerId,
+        string? ServiceRequestId,
+        string DocumentType,
+        string Status,
+        string Title,
+        string InternalReference,
+        string Disclaimer);
+
+    private sealed record LineRow(
+        string Label,
+        string Description,
+        decimal Quantity,
+        string UnitLabel,
+        int UnitPriceCents,
+        int? TaxRateBasisPoints,
+        int LineTotalCents,
+        int SortOrder);
+
+    private sealed record ResolvedLineInput(
+        string Label,
+        string Description,
+        decimal Quantity,
+        string UnitLabel,
+        int UnitPriceCents,
+        int? TaxRateBasisPoints,
+        int LineTotalCents,
+        int SortOrder);
+
+    public async Task<DocumentForIssuing?> GetDocumentForIssuingAsync(
+        string documentId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT
+                d.id            AS document_id,
+                d.title,
+                d.internal_reference,
+                d.currency,
+                d.total_amount_cents,
+                d.status,
+                c.id            AS customer_id,
+                c.external_reference,
+                c.display_name,
+                c.billing_email,
+                c.address,
+                c.city,
+                c.country
+            FROM commercial_documents d
+            JOIN customers c ON c.id = d.customer_id
+            WHERE d.id = @documentId
+            """;
+        cmd.Parameters.AddWithValue("documentId", documentId);
+
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var doc = new
+        {
+            DocumentId = MariaDbIdentifierReader.ReadRequired(reader, "document_id"),
+            CustomerId = MariaDbIdentifierReader.ReadRequired(reader, "customer_id"),
+            CustomerExternalReference = reader.GetString("external_reference"),
+            CustomerDisplayName = reader.GetString("display_name"),
+            CustomerBillingEmail = ReadNullableString(reader, "billing_email"),
+            CustomerAddress = ReadNullableString(reader, "address"),
+            CustomerCity = ReadNullableString(reader, "city"),
+            CustomerCountry = ReadNullableString(reader, "country"),
+            DocumentTitle = reader.GetString("title"),
+            InternalReference = reader.GetString("internal_reference"),
+            Currency = reader.GetString("currency"),
+            TotalAmountCents = reader.GetInt32("total_amount_cents"),
+            Status = reader.GetString("status")
+        };
+        await reader.CloseAsync();
+
+        var lines = await GetLinesAsync(
+            connection, documentId, cancellationToken);
+
+        return new DocumentForIssuing(
+            doc.DocumentId,
+            doc.CustomerId,
+            doc.CustomerExternalReference,
+            doc.CustomerDisplayName,
+            doc.CustomerBillingEmail,
+            doc.CustomerAddress,
+            doc.CustomerCity,
+            doc.CustomerCountry,
+            doc.DocumentTitle,
+            doc.InternalReference,
+            doc.Currency,
+            doc.TotalAmountCents,
+            doc.Status,
+            lines);
+    }
+
+    public async Task MarkDocumentIssuedAsync(
+        string documentId,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            UPDATE commercial_documents SET
+                status = 'issued',
+                updated_at = UTC_TIMESTAMP(6)
+            WHERE id = @documentId
+            """;
+        cmd.Parameters.AddWithValue("documentId", documentId);
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task MarkDocumentPaidAsync(
+        string documentId,
+        string correlationId,
+        string paymentMethod,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            UPDATE commercial_documents SET
+                status = 'paid',
+                payment_method = @paymentMethod,
+                updated_at = UTC_TIMESTAMP(6)
+            WHERE id = @documentId
+            """;
+        cmd.Parameters.AddWithValue("documentId", documentId);
+        cmd.Parameters.AddWithValue("paymentMethod", paymentMethod);
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task SetDocumentPaymentMethodAsync(
+        string documentId,
+        string? paymentMethod,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            UPDATE commercial_documents SET
+                payment_method = @paymentMethod,
+                updated_at = UTC_TIMESTAMP(6)
+            WHERE id = @documentId
+            """;
+        cmd.Parameters.AddWithValue("documentId", documentId);
+        cmd.Parameters.AddWithValue(
+            "paymentMethod",
+            paymentMethod is null ? DBNull.Value : paymentMethod);
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<CommercialDocumentSummary>>
+        GetDocumentsForSubscriptionAsync(
+            string subscriptionId,
+            CancellationToken cancellationToken)
+    {
+        var documents = new List<CommercialDocumentSummary>();
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT
+                document.id,
+                document.document_type,
+                document.status,
+                document.title,
+                document.internal_reference,
+                document.currency,
+                document.subtotal_amount_cents,
+                document.tax_amount_cents,
+                document.total_amount_cents,
+                document.disclaimer,
+                document.created_at,
+                document.updated_at,
+                document.shared_at,
+                document.payment_method,
+                document.service_request_id,
+                NULL AS service_request_reference
+            FROM commercial_documents document
+            INNER JOIN billing_v2_subscription_documents link
+                ON link.commercial_document_id = document.id
+            WHERE link.subscription_id = @subscriptionId
+            ORDER BY document.created_at DESC, document.id DESC;
+            """;
+        command.Parameters.AddWithValue("subscriptionId", subscriptionId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            documents.Add(ReadDocumentSummary(reader));
+        }
+
+        return documents;
+    }
+
+    public async Task<IReadOnlyList<string>> GetLinkedSubscriptionIdsForDocumentAsync(
+        string documentId,
+        CancellationToken cancellationToken)
+    {
+        var subscriptionIds = new List<string>();
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT DISTINCT link.subscription_id
+            FROM billing_v2_subscription_documents link
+            WHERE link.commercial_document_id = @documentId
+            ORDER BY link.subscription_id;
+            """;
+        command.Parameters.AddWithValue("documentId", documentId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            subscriptionIds.Add(
+                MariaDbIdentifierReader.ReadRequired(reader, "subscription_id"));
+        }
+
+        return subscriptionIds;
+    }
+
+}

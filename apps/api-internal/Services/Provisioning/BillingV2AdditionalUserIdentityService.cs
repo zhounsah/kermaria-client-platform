@@ -67,11 +67,12 @@ public static class BillingV2AdditionalUserAssignmentPolicy
             return BillingV2AdditionalUserRejectionCodes.SlotNotActive;
         }
 
-        if (!string.Equals(
-                snapshot.SubscriptionStatus,
-                BillingV2AdditionalUserIdentityConventions
-                    .ProvisionableSubscriptionStatus,
-                StringComparison.OrdinalIgnoreCase))
+        // Conserver n'est pas ouvrir. Un abonnement resilie a fin de terme
+        // garde ses places deja attribuees jusqu'au terme paye, mais n'en
+        // materialise plus de nouvelle : l'identite creee serait facturee sur
+        // une periode qui ne sera pas renouvelee, puis deprovisionnee aussitot.
+        if (!BillingV2EntitlementRetentionPolicy.AllowsNewMutations(
+                snapshot.SubscriptionStatus))
         {
             return BillingV2AdditionalUserRejectionCodes
                 .SubscriptionNotProvisionable;

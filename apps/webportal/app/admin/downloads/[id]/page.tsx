@@ -8,7 +8,7 @@ import { SectionCard } from "@/components/SectionCard";
 import { requireAdminSession } from "@/lib/auth";
 import { formatDateTime } from "@/lib/formatters";
 import {
-  getAdminCatalog,
+  getAdminBillingV2Catalog,
   getAdminDownload,
   getAdminDownloadCategories,
 } from "@/lib/internal-api";
@@ -28,7 +28,7 @@ export default async function AdminDownloadDetailPage({ params }: PageProps) {
   const { id } = await params;
   const [categoriesResult, catalogResult, downloadResult] = await Promise.all([
     getAdminDownloadCategories(),
-    getAdminCatalog(),
+    getAdminBillingV2Catalog(),
     getAdminDownload(id),
   ]);
 
@@ -107,8 +107,9 @@ export default async function AdminDownloadDetailPage({ params }: PageProps) {
         categories={categoriesResult.data}
         download={download}
         mode="edit"
-        offerCatalogAvailable={!catalogResult.error}
-        offers={catalogResult.error ? [] : catalogResult.data}
+        catalogAvailable={!catalogResult.error}
+        presets={catalogResult.error ? [] : catalogResult.data.presets}
+        services={catalogResult.error ? [] : catalogResult.data.services}
       />
 
       <MockNotice

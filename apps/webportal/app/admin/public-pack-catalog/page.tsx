@@ -1,9 +1,6 @@
 import Link from "next/link";
 
-import {
-  buildPackSheetContentKey,
-  type ResolvedPublicPackManifest,
-} from "@kermaria/shared";
+import { buildPackSheetContentKey } from "@kermaria/shared";
 
 import { AdminPublicPackCatalogForm } from "@/components/AdminPublicPackCatalogForm";
 import { ErrorState } from "@/components/ErrorState";
@@ -11,73 +8,46 @@ import { MockNotice } from "@/components/MockNotice";
 import { PageHeader } from "@/components/PageHeader";
 import { SectionCard } from "@/components/SectionCard";
 import { requireAdminSession } from "@/lib/auth";
+import { formatCurrencyFromCents } from "@/lib/formatters";
 import {
-  formatCommitmentMonths,
-  formatCurrencyFromCents,
-  formatPaymentModeLabel,
-} from "@/lib/formatters";
-import {
-  getAdminCatalog,
   getAdminPublicPackCatalogContent,
+  getBillingV2FormulesCatalog,
 } from "@/lib/internal-api";
-import { resolvePackCatalog } from "@/lib/public-packs";
+import { buildPublicPackViews } from "@/lib/public-packs";
 
 export const metadata = {
-  title: "Vitrine packs - Administration",
+  title: "Vitrine des formules - Administration",
 };
 
 export const dynamic = "force-dynamic";
 
-function buildVariantRows(pack: ResolvedPublicPackManifest) {
-  return [
-    {
-      label: "1 mois - mensuel",
-      variant: pack.variantsByCommitment[1].monthly,
-    },
-    {
-      label: "6 mois - mensuel",
-      variant: pack.variantsByCommitment[6].monthly,
-    },
-    {
-      label: "6 mois - comptant",
-      variant: pack.variantsByCommitment[6].upfront,
-    },
-    {
-      label: "12 mois - mensuel",
-      variant: pack.variantsByCommitment[12].monthly,
-    },
-    {
-      label: "12 mois - comptant",
-      variant: pack.variantsByCommitment[12].upfront,
-    },
-  ].filter(
-    (
-      entry,
-    ): entry is {
-      label: string;
-      variant: NonNullable<typeof entry.variant>;
-    } => entry.variant !== null,
-  );
-}
-
+/**
+ * Vitrine des formules : présentation seulement.
+ *
+ * Cet écran pilote ce que le visiteur lit — libellés, badges, lignes du
+ * comparatif. Il ne pilote aucun tarif : services, paliers, versions de prix,
+ * formules et engagements se règlent dans `/admin/catalog`, seule autorité
+ * commerciale. Rendre les montants modifiables des deux côtés recréerait
+ * exactement le second catalogue que Billing V2 remplace.
+ */
 export default async function AdminPublicPackCatalogPage() {
   await requireAdminSession();
 
   const [contentResult, catalogResult] = await Promise.all([
     getAdminPublicPackCatalogContent(),
-    getAdminCatalog(),
+    getBillingV2FormulesCatalog(),
   ]);
 
   const publicPacks = catalogResult.error
     ? []
-    : resolvePackCatalog(catalogResult.data, contentResult.data);
+    : buildPublicPackViews(catalogResult.data, contentResult.data);
 
   return (
     <>
       <PageHeader
-        description="Pilotez la présentation publique des packs sans modifier le code ni toucher au socle de facturation."
+        description="Pilotez la présentation publique des formules sans modifier le code ni toucher au socle de facturation."
         eyebrow="Administration interne"
-        title="Vitrine packs"
+        title="Vitrine des formules"
       />
 
       <section className="content-panel page-header-split">
@@ -86,9 +56,9 @@ export default async function AdminPublicPackCatalogPage() {
           <h2>Tout gérer sans retoucher le code</h2>
           <p>
             Cette page centralise la vitrine publique. Les textes, badges et
-            lignes du comparatif se modifient ici. Les prix, frais de mise en
-            service et identifiants de paiement se règlent dans les fiches du
-            catalogue commercial.
+            lignes du comparatif se modifient ici. Les tarifs, les versions de
+            prix et les rattachements provider se règlent dans le catalogue
+            Billing V2.
           </p>
         </div>
         <div className="stack-row">
@@ -96,118 +66,87 @@ export default async function AdminPublicPackCatalogPage() {
             Voir la page /offres
           </Link>
           <Link className="button button-secondary" href="/admin/catalog">
-            Ouvrir le catalogue
+            Ouvrir le catalogue Billing V2
           </Link>
         </div>
       </section>
 
-      <p>
-        <Link className="text-link" href="/admin/catalog">
-          Retour au catalogue commercial
-        </Link>
-      </p>
-
       {publicPacks.length > 0 ? (
-        <SectionCard ariaLabel="Variantes facturables des packs publics">
-          <h2>Tarification et variantes facturables</h2>
+        <SectionCard ariaLabel="Formules publiées">
+          <h2>Formules publiées</h2>
           <p className="field-hint">
-            Chaque ligne ci-dessous renvoie vers la fiche facturable utilisée
-            par le site et par le provisionnement. Vous pouvez y ajuster les
-            montants ou les références PSP depuis le back-office.
+            Une formule n&apos;apparaît ici que si un preset Billing V2 porte
+            son code. Le montant indiqué est le point de départ mensuel calculé
+            par le serveur pour la configuration recommandée ; il n&apos;est pas
+            modifiable depuis cet écran.
           </p>
 
-          <div className="public-pack-admin-grid">
-            {publicPacks.map((pack) => (
-              <section className="public-pack-admin-card" key={pack.key}>
-                <div>
-                  <h3>{pack.label}</h3>
-                  <p className="field-hint">{pack.audience}</p>
-                  <p>
-                    <Link
-                      className="text-link"
-                      href={`/admin/content/${encodeURIComponent(buildPackSheetContentKey(pack.key))}`}
-                    >
-                      Modifier la fiche technique
-                    </Link>
-                  </p>
-                </div>
-
-                <div className="public-pack-admin-table-wrap">
-                  <table className="public-pack-admin-table">
-                    <thead>
-                      <tr>
-                        <th>Variante</th>
-                        <th>Prix HT</th>
-                        <th>Mise en service</th>
-                        <th>Référence</th>
-                        <th>Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {buildVariantRows(pack).map(({ label, variant }) => (
-                        <tr key={variant.offer.id}>
-                          <td>
-                            <strong>{label}</strong>
-                            <div className="cell-secondary">
-                              {formatCommitmentMonths(variant.commitmentMonths)}
-                              {" - "}
-                              {formatPaymentModeLabel(variant.paymentMode)}
-                            </div>
-                          </td>
-                          <td>
-                            <strong>
-                              {variant.paymentMode === "upfront"
-                                ? formatCurrencyFromCents(
-                                    variant.billingPriceAmountCents,
-                                  )
-                                : formatCurrencyFromCents(
-                                    variant.monthlyPriceAmountCents,
-                                  )}
-                            </strong>
-                            <div className="cell-secondary">
-                              {variant.paymentMode === "upfront"
-                                ? `${formatCurrencyFromCents(variant.monthlyPriceAmountCents)} / mois équivalent`
-                                : `${formatCurrencyFromCents(variant.billingPriceAmountCents)} par échéance`}
-                            </div>
-                          </td>
-                          <td>
-                            {formatCurrencyFromCents(variant.setupFeeAmountCents)}
-                          </td>
-                          <td>
-                            <code>{variant.externalReference}</code>
-                          </td>
-                          <td>
-                            <Link
-                              className="table-action"
-                              href={`/admin/catalog/${encodeURIComponent(variant.offer.id)}`}
-                            >
-                              Modifier
-                            </Link>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
-            ))}
+          <div className="public-pack-admin-table-wrap">
+            <table className="public-pack-admin-table">
+              <thead>
+                <tr>
+                  <th>Formule</th>
+                  <th>Code preset</th>
+                  <th>À partir de</th>
+                  <th>Fiche technique</th>
+                  <th>Tarifs</th>
+                </tr>
+              </thead>
+              <tbody>
+                {publicPacks.map((pack) => (
+                  <tr key={pack.key}>
+                    <td>
+                      <strong>{pack.label}</strong>
+                      <div className="cell-secondary">{pack.audience}</div>
+                    </td>
+                    <td>
+                      <code>{pack.presetCode}</code>
+                    </td>
+                    <td>
+                      {formatCurrencyFromCents(pack.baselineMonthlyAmountCents)}
+                      {" / mois"}
+                    </td>
+                    <td>
+                      <Link
+                        aria-label={`Modifier la fiche technique de ${pack.label}`}
+                        className="table-action"
+                        href={`/admin/content/${encodeURIComponent(buildPackSheetContentKey(pack.key))}`}
+                      >
+                        Modifier
+                      </Link>
+                    </td>
+                    <td>
+                      <Link className="table-action" href="/admin/catalog">
+                        Ouvrir le catalogue
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </SectionCard>
-      ) : null}
+      ) : (
+        <ErrorState
+          compact
+          description="Aucune formule publiée : soit le catalogue Billing V2 est injoignable, soit aucun preset ne porte le code d'une formule de la vitrine."
+          reference={catalogResult.correlationId}
+          title="Aucune formule publiée"
+        />
+      )}
 
       {contentResult.error ? (
         <ErrorState
-          description="Impossible de charger la configuration publique des packs pour le moment."
+          description="Impossible de charger la configuration publique des formules pour le moment."
           reference={contentResult.correlationId}
           title="Vitrine indisponible"
         />
       ) : (
-        <SectionCard ariaLabel="Configuration de la vitrine packs">
+        <SectionCard ariaLabel="Configuration de la vitrine des formules">
           <h2>Modifier la vitrine publique</h2>
           <p className="field-hint">
             Cette zone pilote uniquement la présentation client et le tableau
-            comparatif visible sur le site public. Les variantes facturées
-            restent gérées dans le catalogue commercial juste au-dessus.
+            comparatif visible sur le site public.
           </p>
           <AdminPublicPackCatalogForm initialContent={contentResult.data} />
         </SectionCard>

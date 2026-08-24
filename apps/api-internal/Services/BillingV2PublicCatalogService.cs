@@ -32,8 +32,7 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
         "billing_v2_service_tiers",
         "billing_v2_service_prices",
         "billing_v2_commitment_terms",
-        "billing_v2_commitment_payment_options",
-        "billing_v2_legacy_offer_mappings"
+        "billing_v2_commitment_payment_options"
     ];
 
     private readonly SqlRuntimeConfiguration _sql;
@@ -91,9 +90,6 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
             var commitments = await ReadCommitmentsAsync(
                 connection,
                 cancellationToken);
-            var routes = await ReadCheckoutRoutesAsync(
-                connection,
-                cancellationToken);
 
             if (presets.Count == 0 || services.Count == 0)
             {
@@ -105,8 +101,7 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                 BillingV2PublicCatalogSeed.Currency,
                 presets,
                 services,
-                commitments,
-                routes);
+                commitments);
         }
         catch (MySqlException exception)
         {
@@ -150,8 +145,7 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                   'billing_v2_service_tiers',
                   'billing_v2_service_prices',
                   'billing_v2_commitment_terms',
-                  'billing_v2_commitment_payment_options',
-                  'billing_v2_legacy_offer_mappings');
+                  'billing_v2_commitment_payment_options');
             """;
         var value = await command.ExecuteScalarAsync(cancellationToken);
         return Convert.ToInt32(value) == RequiredTables.Length;
@@ -172,6 +166,7 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                     service.code AS service_code,
                     service.name AS service_name,
                     service.category,
+                    service.billing_type,
                     service.default_scope_type,
                     service.discount_eligible,
                     service.public_visible,
@@ -188,6 +183,7 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                     price.amount_cents,
                     price.currency,
                     price.billing_cadence,
+                    price.charge_trigger,
                     price.valid_from,
                     price.id AS service_price_id
                 FROM billing_v2_services service
@@ -198,7 +194,7 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                     ON price.service_id = service.id
                    AND price.tier_id <=> tier.id
                    AND price.status = 'active'
-                   AND price.billing_cadence = 'monthly'
+                   AND price.charge_trigger = @charge_trigger
                    AND price.valid_from <= @now
                    AND (price.valid_until IS NULL OR price.valid_until > @now)
                 WHERE service.status = 'active'
@@ -206,10 +202,14 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                 ORDER BY service.display_order,
                          service.code,
                          tier.display_order,
+                         price.billing_cadence,
                          price.price_version DESC,
                          price.valid_from DESC;
                 """;
             command.Parameters.AddWithValue("@now", now);
+            command.Parameters.AddWithValue(
+                "@charge_trigger",
+                BillingV2ComponentizedPricingPolicy.InitialSubscription);
             await using var reader = await command.ExecuteReaderAsync(
                 cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
@@ -228,6 +228,7 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                     service.code AS service_code,
                     service.name AS service_name,
                     service.category,
+                    service.billing_type,
                     service.default_scope_type,
                     service.discount_eligible,
                     service.public_visible,
@@ -244,6 +245,7 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                     price.amount_cents,
                     price.currency,
                     price.billing_cadence,
+                    price.charge_trigger,
                     price.valid_from,
                     price.id AS service_price_id
                 FROM billing_v2_services service
@@ -251,14 +253,19 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                     ON price.service_id = service.id
                    AND price.tier_id IS NULL
                    AND price.status = 'active'
-                   AND price.billing_cadence = 'monthly'
+                   AND price.charge_trigger = @charge_trigger
                    AND price.valid_from <= @now
                    AND (price.valid_until IS NULL OR price.valid_until > @now)
                 WHERE service.status = 'active'
                   AND service.code = 'BASE-SERVICE'
-                ORDER BY price.price_version DESC, price.valid_from DESC;
+                ORDER BY price.billing_cadence,
+                         price.price_version DESC,
+                         price.valid_from DESC;
                 """;
             command.Parameters.AddWithValue("@now", now);
+            command.Parameters.AddWithValue(
+                "@charge_trigger",
+                BillingV2ComponentizedPricingPolicy.InitialSubscription);
             await using var reader = await command.ExecuteReaderAsync(
                 cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
@@ -270,6 +277,15 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
         return BuildServices(rows);
     }
 
+    /// <summary>
+    /// Assemble la projection publique a partir des lignes de prix.
+    ///
+    /// Un meme (service, palier) peut porter plusieurs composantes tarifaires
+    /// simultanees — mensuel et frais de mise en service, par exemple. Chaque
+    /// cadence est resolue independamment, avec la meme politique d'ambiguite
+    /// que le resolver authoritative : `billing_type` n'intervient pas, il
+    /// reste une metadonnee commerciale.
+    /// </summary>
     private static IReadOnlyList<BillingV2PublicService> BuildServices(
         IReadOnlyList<ServiceRow> rows)
     {
@@ -280,18 +296,19 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
         {
             var first = serviceGroup.First();
             var tiers = new List<BillingV2PublicTier>();
-            long? flatAmountCents = null;
+            IReadOnlyList<BillingV2PublicPriceComponent> flatComponents = [];
 
             foreach (var tierGroup in serviceGroup
                          .GroupBy(row => row.TierCode ?? string.Empty,
                              StringComparer.Ordinal))
             {
                 var tierFirst = tierGroup.First();
-                var resolution = BillingV2ServicePriceResolutionPolicy.Resolve(
-                    tierGroup.Select(row => row.Candidate).ToArray(),
+                var components = ResolveComponents(
+                    tierGroup,
                     first.ServiceCode,
-                    tierFirst.TierCode);
-                if (!resolution.Resolved || resolution.Price is null)
+                    tierFirst.TierCode,
+                    first.DiscountEligible);
+                if (components.Count == 0)
                 {
                     // Une ambiguite de prix ne doit pas rendre la page
                     // publique fausse : le palier concerne disparait de
@@ -301,7 +318,7 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
 
                 if (tierFirst.TierCode is null)
                 {
-                    flatAmountCents = resolution.Price.AmountCents;
+                    flatComponents = components;
                     continue;
                 }
 
@@ -310,8 +327,9 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                     tierFirst.TierLabel ?? tierFirst.TierCode,
                     tierFirst.TierDescription,
                     tierFirst.NumericValue,
-                    resolution.Price.AmountCents,
-                    tierFirst.PublicSelectable));
+                    MonthlyAmountOf(components),
+                    tierFirst.PublicSelectable,
+                    components));
             }
 
             services.Add(new BillingV2PublicService(
@@ -319,16 +337,70 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                 first.ServiceName,
                 first.Category,
                 first.ScopeType,
-                flatAmountCents,
+                // Conserve pour la compatibilite des projections d'affichage.
+                // Il vaut 0 quand le service n'a aucune composante mensuelle,
+                // et n'est jamais l'autorite du calcul.
+                flatComponents.Count == 0
+                    ? null
+                    : MonthlyAmountOf(flatComponents),
                 tiers
                     .OrderBy(tier => tier.NumericValue ?? int.MaxValue)
                     .ToArray(),
                 first.DiscountEligible,
                 first.PublicVisible,
-                first.SelfServiceOrderable));
+                first.SelfServiceOrderable,
+                first.BillingType,
+                flatComponents));
         }
 
         return services;
+    }
+
+    private static long MonthlyAmountOf(
+        IReadOnlyList<BillingV2PublicPriceComponent> components)
+        => components
+            .Where(component => component.IsRecurring)
+            .Sum(component => component.AmountCents);
+
+    /// <summary>
+    /// Resout une composante par cadence. Une ambiguite dans UNE cadence
+    /// invalide l'ensemble : ne jamais choisir un prix arbitrairement.
+    /// </summary>
+    private static IReadOnlyList<BillingV2PublicPriceComponent>
+        ResolveComponents(
+            IEnumerable<ServiceRow> tierRows,
+            string serviceCode,
+            string? tierCode,
+            bool discountEligible)
+    {
+        var components = new List<BillingV2PublicPriceComponent>();
+        foreach (var cadenceGroup in tierRows.GroupBy(
+                     row => (row.Candidate.BillingCadence, row.ChargeTrigger, row.Candidate.Currency)))
+        {
+            var resolution = BillingV2ServicePriceResolutionPolicy.Resolve(
+                cadenceGroup.Select(row => row.Candidate).ToArray(),
+                serviceCode,
+                tierCode);
+            if (!resolution.Resolved || resolution.Price is null)
+            {
+                return [];
+            }
+
+            components.Add(new BillingV2PublicPriceComponent(
+                resolution.Price.BillingCadence,
+                cadenceGroup.Key.ChargeTrigger,
+                resolution.Price.AmountCents,
+                resolution.Price.Currency,
+                // Un frais ponctuel n'est jamais remise : la remise
+                // d'engagement porte sur le recurrent.
+                discountEligible
+                    && resolution.Price.BillingCadence
+                        == BillingV2BillingCadences.Monthly,
+                resolution.Price.ServicePriceId,
+                resolution.Price.PriceCode));
+        }
+
+        return components;
     }
 
     private static async Task<IReadOnlyList<BillingV2PublicPreset>>
@@ -513,45 +585,6 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
             .ToArray();
     }
 
-    private static async Task<IReadOnlyList<BillingV2PublicCheckoutRoute>>
-        ReadCheckoutRoutesAsync(
-            MySqlConnection connection,
-            CancellationToken cancellationToken)
-    {
-        var routes = new List<BillingV2PublicCheckoutRoute>();
-        await using var command = connection.CreateCommand();
-        command.CommandText =
-            """
-            SELECT
-                preset.code AS preset_code,
-                term.code AS commitment_code,
-                mapping.legacy_offer_id
-            FROM billing_v2_legacy_offer_mappings mapping
-            INNER JOIN billing_v2_offer_presets preset
-                ON preset.id = mapping.preset_id
-            INNER JOIN billing_v2_commitment_terms term
-                ON term.id = mapping.commitment_term_id
-            WHERE mapping.status = 'active'
-              AND mapping.payment_mode = 'monthly'
-              AND preset.status = 'active'
-              AND term.status = 'active'
-            ORDER BY preset.display_order, term.display_order;
-            """;
-        await using var reader = await command.ExecuteReaderAsync(
-            cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
-        {
-            routes.Add(new BillingV2PublicCheckoutRoute(
-                reader.GetString("preset_code"),
-                reader.GetString("commitment_code"),
-                MariaDbIdentifierReader.ReadRequired(
-                    reader,
-                    "legacy_offer_id")));
-        }
-
-        return routes;
-    }
-
     /// <summary>
     /// Un service sans palier remonte par LEFT JOIN avec toutes les colonnes
     /// de <c>billing_v2_service_tiers</c> a NULL (RDS-ACCESS, USER-ADDITIONAL,
@@ -574,6 +607,7 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
             reader.GetString("service_code"),
             reader.GetString("service_name"),
             reader.GetString("category"),
+            reader.GetString("billing_type"),
             reader.GetString("default_scope_type"),
             ReadFlag(reader, "discount_eligible", whenNull: false),
             ReadFlag(reader, "public_visible", whenNull: false),
@@ -592,6 +626,7 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                 ? null
                 : reader.GetInt32("numeric_value"),
             ReadFlag(reader, "public_selectable", whenNull: false),
+            reader.GetString("charge_trigger"),
             new BillingV2ServicePriceCandidate(
                 MariaDbIdentifierReader.ReadRequired(reader, "service_price_id"),
                 reader.GetString("price_code"),
@@ -605,6 +640,7 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
         string ServiceCode,
         string ServiceName,
         string Category,
+        string BillingType,
         string ScopeType,
         bool DiscountEligible,
         bool PublicVisible,
@@ -615,6 +651,7 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
         string? TierDescription,
         int? NumericValue,
         bool PublicSelectable,
+        string ChargeTrigger,
         BillingV2ServicePriceCandidate Candidate);
 
     private sealed record CommitmentRow(

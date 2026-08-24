@@ -22,6 +22,16 @@ const koxoService = await read("../../apps/api-internal/Services/KoxoExportServi
 const koxoRepository = await read(
   "../../apps/api-internal/Data/Repositories/MariaDbKoxoRepository.cs",
 );
+// La requete de selection des candidats a ete extraite du repository : c'est
+// elle qui porte desormais la jointure.
+const koxoCandidateQuery = await read(
+  "../../apps/api-internal/Data/Repositories/KoxoExportCandidateQuery.cs",
+);
+// Le format de l'identifiant unique appartient a la topologie annuaire, pas
+// au service d'export.
+const koxoTopology = await read(
+  "../../apps/api-internal/Services/KoxoDirectoryTopology.cs",
+);
 
 const checks = [];
 function check(name, fn) {
@@ -84,15 +94,15 @@ check("service KoXo impose un schema ferme et une validation bloquante", () => {
   assert.match(koxoContracts, /string GroupePrimaire/);
   assert.match(koxoContracts, /string Email/);
   assert.match(koxoService, /SchemaVersion = 2/);
-  assert.match(koxoService, /IdentifierPattern/);
+  assert.match(koxoTopology, /UniqueIdentifierPattern/);
   assert.match(koxoService, /KoxoValidationException/);
   assert.match(koxoService, /validation_failed/);
 });
 
 check("repository KoXo joint portal_users, customers et customer_ad_links", () => {
-  assert.match(koxoRepository, /FROM portal_users/);
-  assert.match(koxoRepository, /JOIN customers/);
-  assert.match(koxoRepository, /JOIN customer_ad_links/);
+  assert.match(koxoCandidateQuery, /FROM portal_users/);
+  assert.match(koxoCandidateQuery, /JOIN customers/);
+  assert.match(koxoCandidateQuery, /JOIN customer_ad_links/);
   assert.match(koxoRepository, /koxo_export_runs/);
 });
 

@@ -1,24 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { PublicPackSelectionSummary } from "@/components/PublicPackSelectionSummary";
 import { SignupForm } from "@/components/SignupForm";
 import { readBillingV2SelectionSearchParams } from "@/lib/billing-v2-selection";
-import { resolveCatalogConfiguration } from "@/lib/catalog-configuration-server";
 import {
-  getPublicCommercialCatalog,
   getBillingV2FormulesCatalog,
   quoteBillingV2Formule,
-  getPublicPackCatalogContent,
 } from "@/lib/internal-api";
-import {
-  configurationFromSearchParams,
-  configurationFromSelection,
-} from "@/lib/public-configurator";
-import {
-  buildSignupPackSnapshot,
-  selectionFromSearchParams,
-} from "@/lib/public-packs";
 import { formatCurrencyFromCents } from "@/lib/formatters";
 import { resolveCorrelationId } from "@/lib/correlation";
 import { isSignupEnabled } from "@/lib/public-routes";
@@ -27,7 +15,7 @@ import styles from "./page.module.css";
 export const metadata: Metadata = {
   title: "Créer un compte",
   description:
-    "Demandez l'ouverture de votre accès client et reprenez, si besoin, le pack déjà sélectionné sur la vitrine.",
+    "Demandez l'ouverture de votre accès client et reprenez, si besoin, la formule déjà configurée sur la vitrine.",
   // Seule route non publique qui n'avait ni `X-Robots-Tag` (via
   // NOINDEX_ROUTE_PREFIXES dans `next.config.ts`) ni `Disallow`. Comme
   // `robots.txt` n'empeche pas l'indexation d'une URL decouverte par un
@@ -62,45 +50,6 @@ export default async function SignupPage({
         (preset) => preset.code === billingV2Selection.presetCode,
       )?.name ?? null
     : null;
-  const catalogConfiguration =
-    billingV2Requested ? null : configurationFromSearchParams(rawSearchParams);
-  const selection =
-    catalogConfiguration
-      ? {
-          packKey: catalogConfiguration.packKey,
-          commitmentMonths: catalogConfiguration.commitmentMonths,
-          paymentMode: catalogConfiguration.paymentMode,
-        }
-      : selectionFromSearchParams(rawSearchParams);
-  const configurationResult = catalogConfiguration
-    ? await resolveCatalogConfiguration(catalogConfiguration)
-    : null;
-  const resolvedConfiguration =
-    configurationResult?.ok
-    && configurationResult.data.status === "ok"
-    && configurationResult.data.resolvedConfiguration
-      ? configurationResult.data.resolvedConfiguration
-      : !catalogConfiguration && selection
-        ? configurationFromSelection(selection)
-        : null;
-  const [catalogResult, packContentResult] = selection && !catalogConfiguration
-    ? await Promise.all([
-        getPublicCommercialCatalog(),
-        getPublicPackCatalogContent(),
-      ])
-    : [null, null];
-  const packSelection =
-    configurationResult?.ok
-    && configurationResult.data.status === "ok"
-    && configurationResult.data.packSelection
-      ? configurationResult.data.packSelection
-      : selection && catalogResult
-        ? buildSignupPackSnapshot(
-            catalogResult.data,
-            selection,
-            packContentResult?.data ?? null,
-          )
-        : null;
 
   return (
     <div className={`signup-page ${styles.page}`}>
@@ -115,7 +64,7 @@ export default async function SignupPage({
           Renseignez vos informations pour demander l&apos;ouverture de votre accès
           client. Le parcours reste simple et assumé : confirmation de votre
           adresse e-mail, validation de votre demande par notre équipe, puis
-          définition du mot de passe avant la finalisation du pack choisi.
+          définition du mot de passe avant la finalisation de la formule choisie.
         </p>
       </header>
 
@@ -155,65 +104,21 @@ export default async function SignupPage({
       ) : null}
 
 
-      {packSelection ? (
-        <div className={styles.selectionStack}>
-          <PublicPackSelectionSummary
-            commitmentMonths={packSelection.commitmentMonths}
-            description="Le pack sélectionné reste attaché à cette demande. Le paiement ne se fait pas sur cet écran : vous retrouverez ensuite ce contexte dans l'espace client."
-            eyebrow="Pack repris"
-            fiscalMention={packSelection.fiscalMention}
-            fiscalRegime={packSelection.fiscalRegime}
-            firstChargeAmountCents={packSelection.firstChargeAmountCents}
-            monthlyPriceAmountCents={packSelection.monthlyPriceAmountCents}
-            packLabel={packSelection.packLabel}
-            paymentMode={packSelection.paymentMode}
-            setupFeeAmountCents={packSelection.setupFeeAmountCents}
-          />
-          <section className={styles.stepsCard} aria-label="Étapes d'ouverture">
-            <h2>Ce qui se passe ensuite</h2>
-            <ol>
-              <li>Vous confirmez votre adresse e-mail.</li>
-              <li>Nous validons l&apos;ouverture de votre accès client.</li>
-              <li>Vous définissez votre mot de passe et activez votre accès client.</li>
-              <li>Si l&apos;écriture AD est active, l&apos;identité clients.home.bzh est finalisée à ce moment-là.</li>
-              <li>Vous finalisez ensuite le pack depuis l&apos;espace client.</li>
-            </ol>
-          </section>
-        </div>
-      ) : null}
-
-      {catalogConfiguration && configurationResult && !configurationResult.ok ? (
-        <section className={styles.stepsCard} aria-label="Configuration indisponible">
-          <h2>Configuration à vérifier</h2>
-          <p>
-            La configuration transmise n&apos;a pas pu être recalculée pour
-            l&apos;instant. Revenez au configurateur pour obtenir une estimation
-            à jour avant de poursuivre.
-          </p>
-          <Link className="button button-secondary" href="/configurer">
-            Reprendre la configuration
-          </Link>
-        </section>
-      ) : null}
+      <section className={styles.stepsCard} aria-label="Étapes d'ouverture">
+        <h2>Ce qui se passe ensuite</h2>
+        <ol>
+          <li>Vous confirmez votre adresse e-mail.</li>
+          <li>Nous validons l&apos;ouverture de votre accès client.</li>
+          <li>Vous définissez votre mot de passe et activez votre accès client.</li>
+          <li>Si l&apos;écriture AD est active, l&apos;identité clients.home.bzh est finalisée à ce moment-là.</li>
+          <li>Vous finalisez ensuite votre formule depuis l&apos;espace client.</li>
+        </ol>
+      </section>
 
       {enabled && (!billingV2Requested || (billingV2Selection && billingV2Quote)) ? (
         <SignupForm
           hcaptchaSiteKey={hcaptchaSiteKey}
           initialBillingV2Selection={billingV2Selection}
-          initialPackSelection={packSelection
-            ? {
-                packKey: packSelection.packKey,
-                packLabel: packSelection.packLabel,
-                commitmentMonths: packSelection.commitmentMonths,
-                paymentMode: packSelection.paymentMode,
-                monthlyPriceAmountCents: packSelection.monthlyPriceAmountCents,
-                setupFeeAmountCents: packSelection.setupFeeAmountCents,
-                firstChargeAmountCents: packSelection.firstChargeAmountCents,
-                fiscalRegime: packSelection.fiscalRegime,
-                fiscalMention: packSelection.fiscalMention,
-              }
-            : null}
-          initialCatalogConfiguration={resolvedConfiguration}
         />
       ) : (
         <section className="signup-closed">

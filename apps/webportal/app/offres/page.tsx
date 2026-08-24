@@ -4,11 +4,11 @@ import Link from "next/link";
 import { PublicPackComparisonTable } from "@/components/PublicPackComparisonTable";
 import { PublicPackOverviewGrid } from "@/components/PublicPackOverviewGrid";
 import {
-  getPublicCommercialCatalog,
+  getBillingV2FormulesCatalog,
   getPublicPackCatalogContent,
 } from "@/lib/internal-api";
 import { buildPublicMetadata } from "@/lib/public-metadata";
-import { resolvePackCatalog } from "@/lib/public-packs";
+import { buildPublicPackViews } from "@/lib/public-packs";
 import { isSignupEnabled } from "@/lib/public-routes";
 
 export const metadata: Metadata = buildPublicMetadata({
@@ -36,12 +36,12 @@ const OFFER_STORY_POINTS = [
 ];
 
 export default async function OffresPage() {
-  const [{ data: offers }, { data: content }] = await Promise.all([
-    getPublicCommercialCatalog(),
+  const [{ data: catalog }, { data: content }] = await Promise.all([
+    getBillingV2FormulesCatalog(),
     getPublicPackCatalogContent(),
   ]);
   const signupEnabled = isSignupEnabled();
-  const packs = resolvePackCatalog(offers, content);
+  const packs = buildPublicPackViews(catalog, content);
 
   return (
     <div className="offres-page">
@@ -117,8 +117,8 @@ export default async function OffresPage() {
 
       {packs.length === 0 ? (
         <p className="offres-empty">
-          Les packs ne sont pas encore disponibles en ligne. Contactez-nous pour
-          obtenir une proposition adaptée.
+          Les formules ne sont pas encore disponibles en ligne. Contactez-nous
+          pour obtenir une proposition adaptée.
         </p>
       ) : (
         <>
@@ -134,7 +134,6 @@ export default async function OffresPage() {
             </div>
 
             <PublicPackOverviewGrid
-              content={content}
               packs={packs}
               signupEnabled={signupEnabled}
             />

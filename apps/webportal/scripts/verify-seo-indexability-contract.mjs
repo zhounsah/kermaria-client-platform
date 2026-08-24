@@ -51,6 +51,7 @@ const PUBLIC_PATHS = [
   "/services/vpn-entreprise",
   "/services/messagerie-professionnelle",
   "/diagnostic",
+  "/formules",
   "/decouvrir-espace-client",
   "/ressources",
   "/a-propos",
@@ -74,7 +75,6 @@ const PUBLIC_PATHS = [
 const METADATA_NOINDEX_PAGES = [
   ["/solutions", "app/solutions/page.tsx"],
   ["/signup", "app/signup/page.tsx"],
-  ["/configurer", "app/configurer/page.tsx"],
 ];
 
 /**
@@ -90,7 +90,7 @@ const CANONICAL_PAGES = [
   ["/decouvrir-espace-client", "app/decouvrir-espace-client/[[...section]]/page.tsx"],
   ["/ressources", "app/ressources/page.tsx"],
   ["/solutions", "app/solutions/page.tsx"],
-  ["/configurer", "app/configurer/page.tsx"],
+  ["/formules", "app/formules/page.tsx"],
   ["/a-propos", "app/a-propos/page.tsx"],
   ["/contact", "app/contact/page.tsx"],
   ["/mentions-legales", "app/mentions-legales/page.tsx"],

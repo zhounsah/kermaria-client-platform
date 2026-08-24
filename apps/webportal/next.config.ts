@@ -21,7 +21,6 @@ export const NOINDEX_ROUTE_PREFIXES = [
   "/invoices",
   "/login",
   "/notifications",
-  "/panier",
   "/password",
   "/profile",
   "/request-service",

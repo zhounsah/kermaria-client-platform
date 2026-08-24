@@ -183,64 +183,6 @@ Demande informative de qualification.',
 );
 -- statement-break
 
-INSERT INTO commercial_offers (
-    id,
-    name,
-    description,
-    category,
-    unit_label,
-    price_kind,
-    price_amount_cents,
-    currency,
-    status,
-    display_order,
-    created_at,
-    updated_at
-) VALUES
-(
-    '60000000-0000-0000-0000-000000000001',
-    'Audit poste de travail',
-    'Revue informative d''un poste ou environnement ciblé.',
-    'Audit',
-    'forfait',
-    'ht',
-    12000,
-    'EUR',
-    'active',
-    10,
-    UTC_TIMESTAMP(6),
-    UTC_TIMESTAMP(6)
-),
-(
-    '60000000-0000-0000-0000-000000000002',
-    'Intervention ponctuelle',
-    'Intervention technique préparée selon le périmètre validé.',
-    'Assistance',
-    'heure',
-    'ht',
-    8500,
-    'EUR',
-    'active',
-    20,
-    UTC_TIMESTAMP(6),
-    UTC_TIMESTAMP(6)
-),
-(
-    '60000000-0000-0000-0000-000000000003',
-    'Sauvegarde additionnelle',
-    'Option informative de sauvegarde supplémentaire.',
-    'Continuité',
-    'mois',
-    'ht',
-    2400,
-    'EUR',
-    'active',
-    30,
-    UTC_TIMESTAMP(6),
-    UTC_TIMESTAMP(6)
-);
--- statement-break
-
 INSERT INTO commercial_documents (
     id,
     customer_id,
@@ -303,7 +245,6 @@ INSERT INTO commercial_documents (
 INSERT INTO commercial_document_lines (
     id,
     document_id,
-    offer_id,
     label,
     description,
     quantity,
@@ -318,7 +259,6 @@ INSERT INTO commercial_document_lines (
 (
     '80000000-0000-0000-0000-000000000001',
     '70000000-0000-0000-0000-000000000001',
-    '60000000-0000-0000-0000-000000000002',
     'Intervention ponctuelle',
     'Qualification informative de l''accès VPN envisagé.',
     2.00,
@@ -333,7 +273,6 @@ INSERT INTO commercial_document_lines (
 (
     '80000000-0000-0000-0000-000000000002',
     '70000000-0000-0000-0000-000000000001',
-    '60000000-0000-0000-0000-000000000003',
     'Sauvegarde additionnelle',
     'Option informative associée à la proposition.',
     1.00,
@@ -348,7 +287,6 @@ INSERT INTO commercial_document_lines (
 (
     '80000000-0000-0000-0000-000000000003',
     '70000000-0000-0000-0000-000000000002',
-    NULL,
     'Accompagnement initial',
     'Brouillon de ligne informative interne.',
     1.00,

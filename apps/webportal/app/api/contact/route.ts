@@ -11,14 +11,14 @@ import {
   getInternalApiUrl,
   getInternalServiceHeaders,
 } from "@/lib/runtime-config";
-import { getPublicCommercialCatalog } from "@/lib/internal-api";
+import { getBillingV2FormulesCatalog } from "@/lib/internal-api";
 
 type ContactRequestBody = {
   name?: unknown;
   email?: unknown;
   subject?: unknown;
   message?: unknown;
-  offerReference?: unknown;
+  formuleCode?: unknown;
 };
 
 type FieldErrors = Partial<
@@ -87,40 +87,47 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const offerReference = normalizeOfferReference(body.offerReference);
-  if (!offerReference.valid) {
-    return invalidOfferReference(correlationId);
+  // Le code de formule est purement contextuel, mais il part dans un e-mail :
+  // on refuse ce qui ne designe pas une formule publiee plutot que de recopier
+  // une chaine arbitraire fournie par le visiteur.
+  const formuleCode = normalizeFormuleCode(body.formuleCode);
+  if (!formuleCode.valid) {
+    return invalidFormuleCode(correlationId);
   }
 
-  if (offerReference.value) {
+  if (formuleCode.value) {
     let catalogResult;
     try {
-      catalogResult = await getPublicCommercialCatalog();
+      catalogResult = await getBillingV2FormulesCatalog();
     } catch {
       return serviceUnavailable(correlationId);
     }
 
-    if (
-      catalogResult.error
-      || catalogResult.source === "unavailable"
-      || !Array.isArray(catalogResult.data)
-      || !catalogResult.data.every(isCatalogOfferReference)
-    ) {
+    if (catalogResult.error || catalogResult.source === "unavailable") {
       return serviceUnavailable(correlationId);
     }
 
-    const isActiveOffer = catalogResult.data.some(
-      (offer) =>
-        offer.id === offerReference.value && offer.status === "active",
+    // Le catalogue est lu depuis l'API interne : une reponse malformee doit
+    // etre traitee comme une indisponibilite, jamais comme un catalogue vide
+    // qui ferait passer une formule publiee pour une reference inventee.
+    const presets = Array.isArray(catalogResult.data?.presets)
+      ? catalogResult.data.presets
+      : null;
+    if (!presets) {
+      return serviceUnavailable(correlationId);
+    }
+
+    const isPublishedPreset = presets.some(
+      (preset) => preset?.code === formuleCode.value,
     );
-    if (!isActiveOffer) {
-      return invalidOfferReference(correlationId);
+    if (!isPublishedPreset) {
+      return invalidFormuleCode(correlationId);
     }
   }
 
   const payload = {
     ...contactPayload,
-    offerReference: offerReference.value,
+    formuleCode: formuleCode.value,
   };
 
   let internalApiUrl: string | undefined;
@@ -212,29 +219,14 @@ function serviceUnavailable(correlationId: string) {
   );
 }
 
-function invalidOfferReference(correlationId: string) {
+function invalidFormuleCode(correlationId: string) {
   return NextResponse.json(
     {
-      code: "INVALID_OFFER_REFERENCE",
-      message: "La référence d'offre est invalide.",
+      code: "INVALID_FORMULE_CODE",
+      message: "La référence de formule est invalide.",
       correlation_id: correlationId,
     },
     { status: 400 },
-  );
-}
-
-function isCatalogOfferReference(
-  value: unknown,
-): value is { id: string; status: "active" | "inactive" } {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return false;
-  }
-
-  const offer = value as Record<string, unknown>;
-  return (
-    typeof offer.id === "string"
-    && offer.id.trim().length > 0
-    && (offer.status === "active" || offer.status === "inactive")
   );
 }
 
@@ -293,7 +285,9 @@ function validateContactPayload(body: ContactRequestBody) {
   };
 }
 
-function normalizeOfferReference(value: unknown) {
+const FORMULE_CODE_PATTERN = /^[a-z0-9][a-z0-9-]{1,63}$/;
+
+function normalizeFormuleCode(value: unknown) {
   if (value === undefined || value === null) {
     return { valid: true as const, value: null };
   }
@@ -302,12 +296,12 @@ function normalizeOfferReference(value: unknown) {
     return { valid: false as const, value: null };
   }
 
-  const normalized = value.trim();
+  const normalized = value.trim().toLowerCase();
   if (!normalized) {
     return { valid: true as const, value: null };
   }
 
-  if (normalized.length > 64) {
+  if (!FORMULE_CODE_PATTERN.test(normalized)) {
     return { valid: false as const, value: null };
   }
 

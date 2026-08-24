@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 import { ErrorState } from "@/components/ErrorState";
 import { PublicStorefrontPage } from "@/components/PublicStorefrontPage";
@@ -62,7 +63,7 @@ function BillingPriceProjection({
           <article className="service-offer-card" key={row.label}>
             <h3>{row.label}</h3>
             <p className="billing-price-projection-amount">{formatCents(row.amountCents)} / mois</p>
-            <a className="service-inline-link" href="/contact">Demander un devis</a>
+            <Link className="service-inline-link" href="/contact">Demander un devis</Link>
           </article>
         ))}
       </div>

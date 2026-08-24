@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Kermaria.ApiInternal.Contracts;
 using Kermaria.ApiInternal.Data.Repositories;
+using Kermaria.ApiInternal.Services.Provisioning;
 
 namespace Kermaria.ApiInternal.Services;
 
@@ -64,7 +65,7 @@ public sealed partial class ManagedContentService : IManagedContentService
     private const int MaxBodyLength = 120_000;
     private const int MaxVersionLength = 160;
     private readonly IManagedContentRepository _repository;
-    private readonly ICommercialRepository _commercialRepository;
+    private readonly IServiceTopologyService _topologyService;
 
     private static readonly IReadOnlyList<ManagedContentDefinition> Definitions =
     [
@@ -131,8 +132,8 @@ public sealed partial class ManagedContentService : IManagedContentService
                 "Un espace de fichiers à distance, sécurisé et sauvegardé, sans jargon technique à gérer.",
             TechnicalServiceReferences:
             [
-                "STOCK-PERSO-32",
-                "SAVE-PERSO"
+                "STORAGE-PERSONAL",
+                "BACKUP-PERSONAL"
             ]),
         new(
             "pack-sheet:pack-acces-distance",
@@ -148,11 +149,11 @@ public sealed partial class ManagedContentService : IManagedContentService
                 "La base du dossier sécurisé, enrichie d'un accès VPN personnel et d'une supervision légère.",
             TechnicalServiceReferences:
             [
-                "STOCK-PERSO-32",
-                "SAVE-PERSO",
-                "ACCES-VPN",
-                "SUPERV-SERVICE",
-                "SUPPORT-LV1"
+                "STORAGE-PERSONAL",
+                "BACKUP-PERSONAL",
+                "VPN-ACCESS",
+                "MONITORING-INTERNAL",
+                "SUPPORT-STANDARD"
             ]),
         new(
             "pack-sheet:pack-bureau-windows-distance",
@@ -168,12 +169,12 @@ public sealed partial class ManagedContentService : IManagedContentService
                 "Un bureau Windows à distance avec accès VPN, stockage, sauvegarde et suivi du service.",
             TechnicalServiceReferences:
             [
-                "ACCES-RDS",
-                "ACCES-VPN",
-                "STOCK-PERSO-32",
-                "SAVE-PERSO",
-                "SUPERV-SERVICE",
-                "SUPPORT-LV1"
+                "RDS-ACCESS",
+                "VPN-ACCESS",
+                "STORAGE-PERSONAL",
+                "BACKUP-PERSONAL",
+                "MONITORING-INTERNAL",
+                "SUPPORT-STANDARD"
             ]),
         new(
             "pack-sheet:pack-pro-association",
@@ -189,14 +190,13 @@ public sealed partial class ManagedContentService : IManagedContentService
                 "Une formule plus complète pour une petite structure, avec plus de capacité.",
             TechnicalServiceReferences:
             [
-                "USER-ADD",
-                "STOCK-PERSO-32",
-                "STOCK-SUP-32",
-                "ACCES-VPN",
-                "SAVE-PERSO",
-                "SUPERV-SERVICE",
-                "SUPPORT-LV1",
-                "DOC-TECH"
+                "USER-ADDITIONAL",
+                "STORAGE-PERSONAL",
+                "STORAGE-SHARED",
+                "VPN-ACCESS",
+                "BACKUP-PERSONAL",
+                "MONITORING-INTERNAL",
+                "SUPPORT-STANDARD"
             ])
     ];
 
@@ -207,10 +207,10 @@ public sealed partial class ManagedContentService : IManagedContentService
 
     public ManagedContentService(
         IManagedContentRepository repository,
-        ICommercialRepository commercialRepository)
+        IServiceTopologyService topologyService)
     {
         _repository = repository;
-        _commercialRepository = commercialRepository;
+        _topologyService = topologyService;
     }
 
     public bool IsPersistent => _repository.IsPersistent;
@@ -274,15 +274,16 @@ public sealed partial class ManagedContentService : IManagedContentService
             return;
         }
 
-        var offersByReference =
+        var servicesByCode =
             missing.Any(definition => definition.ContentType == "pack_sheet")
-                ? await LoadOffersByReferenceAsync(cancellationToken)
-                : new Dictionary<string, CommercialOfferSummary>(StringComparer.Ordinal);
+                ? await LoadServicesByCodeAsync(cancellationToken)
+                : new Dictionary<string, CatalogTechnicalServiceDefinition>(
+                    StringComparer.OrdinalIgnoreCase);
 
         var seedEntries = missing
             .Select(definition => definition.ContentType switch
             {
-                "pack_sheet" => CreatePackSheetSeed(definition, offersByReference),
+                "pack_sheet" => CreatePackSheetSeed(definition, servicesByCode),
                 "storefront_page" => CreateStorefrontSeed(definition),
                 _ => CreateMarkdownFileSeed(definition)
             })
@@ -291,14 +292,15 @@ public sealed partial class ManagedContentService : IManagedContentService
         await _repository.SeedMissingAsync(seedEntries, cancellationToken);
     }
 
-    private async Task<Dictionary<string, CommercialOfferSummary>>
-        LoadOffersByReferenceAsync(CancellationToken cancellationToken)
+    // Les references techniques citees par une fiche de pack designent des
+    // services du catalogue Billing V2 (`billing_v2_services.code`).
+    private async Task<Dictionary<string, CatalogTechnicalServiceDefinition>>
+        LoadServicesByCodeAsync(CancellationToken cancellationToken)
     {
-        return (await _commercialRepository.GetAdminCatalogAsync(cancellationToken))
-            .Where(offer => !string.IsNullOrWhiteSpace(offer.ExternalReference))
+        return (await _topologyService.GetTechnicalServicesAsync(cancellationToken))
             .ToDictionary(
-                offer => offer.ExternalReference!,
-                StringComparer.Ordinal);
+                service => service.TechnicalServiceReference,
+                StringComparer.OrdinalIgnoreCase);
     }
 
     private static ManagedContentDefinition ResolveDefinition(string key)
@@ -415,14 +417,14 @@ public sealed partial class ManagedContentService : IManagedContentService
 
     private static ValidatedManagedContentEntry CreatePackSheetSeed(
         ManagedContentDefinition definition,
-        IReadOnlyDictionary<string, CommercialOfferSummary> offersByReference)
+        IReadOnlyDictionary<string, CatalogTechnicalServiceDefinition> servicesByCode)
     {
         var linkedComponents = (definition.TechnicalServiceReferences ?? [])
             .Select(reference =>
-                offersByReference.TryGetValue(reference, out var offer)
-                    ? offer
+                servicesByCode.TryGetValue(reference, out var service)
+                    ? service
                     : null)
-            .Where(offer => offer is not null)
+            .Where(service => service is not null)
             .ToArray();
         var missingComponentCount =
             (definition.TechnicalServiceReferences?.Count ?? 0)

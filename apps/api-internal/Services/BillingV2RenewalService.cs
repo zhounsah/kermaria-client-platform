@@ -304,44 +304,20 @@ public sealed class BillingV2RenewalService : IBillingV2RenewalService
         return value is null or DBNull ? null : Convert.ToString(value);
     }
 
-    private static async Task<string?> ReadProviderSubscriptionIdAsync(
+    /// <remarks>
+    /// Delegue au resolveur partage : les trois sources autoritaires y sont
+    /// lues au meme endroit que pour la resiliation et la mutation recurrente.
+    /// Trois requetes divergentes finiraient par ne plus repondre la meme chose
+    /// sur le meme contrat.
+    /// </remarks>
+    private static Task<string?> ReadProviderSubscriptionIdAsync(
         MySqlConnection connection,
         string subscriptionId,
         CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText =
-            """
-            SELECT provider_subscription_id
-            FROM billing_v2_payment_agreements
-            WHERE subscription_id = @subscription_id
-              AND provider = 'stripe'
-              AND provider_subscription_id IS NOT NULL
-            UNION ALL
-            SELECT provider_subscription_id
-            FROM billing_v2_provider_checkout_sessions
-            WHERE subscription_id = @subscription_id
-              AND provider = 'stripe'
-              AND provider_subscription_id IS NOT NULL
-            UNION ALL
-            -- Source la plus sure : l'identifiant lie a une tentative REGLEE,
-            -- donc deja confronte au montant, a la devise et au client lors de
-            -- la verification. Un encaissement qui converge par reconciliation
-            -- ne cree ni accord ni session portant cet identifiant.
-            SELECT attempt.provider_subscription_id
-            FROM billing_v2_payment_attempts attempt
-            INNER JOIN billing_v2_billing_events event_row
-                ON event_row.id = attempt.billing_event_id
-            WHERE event_row.subscription_id = @subscription_id
-              AND attempt.provider = 'stripe'
-              AND attempt.status = 'succeeded'
-              AND attempt.provider_subscription_id IS NOT NULL
-            LIMIT 1;
-            """;
-        command.Parameters.AddWithValue("@subscription_id", subscriptionId);
-        var value = await command.ExecuteScalarAsync(cancellationToken);
-        return value is null or DBNull ? null : Convert.ToString(value);
-    }
+        => BillingV2ProviderAnchorReader.ReadStripeSubscriptionIdAsync(
+            connection,
+            subscriptionId,
+            cancellationToken);
 
     public async Task<BillingV2RenewalEnsureResult> EnsureRenewalChargeAsync(
         string subscriptionId,

@@ -2575,8 +2575,6 @@ public static class BillingV2AdditionalUserIdentityTests
                         ConfigurationValid: true),
                     adConfiguration,
                     new BillingV2RuntimeConfiguration(
-                        CatalogShadowModeEnabled: false,
-                        ProvisioningShadowModeEnabled: false,
                         NewSubscriptionsEnabled: false,
                         AuthoritativeCheckoutEnabled: false,
                         FirstRealSubscriptionApproved: false,

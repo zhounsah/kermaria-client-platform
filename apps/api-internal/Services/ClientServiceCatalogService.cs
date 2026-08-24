@@ -1,5 +1,6 @@
 using Kermaria.ApiInternal;
 using Kermaria.ApiInternal.Contracts;
+using Kermaria.ApiInternal.Data.Configuration;
 using Kermaria.ApiInternal.Data.Repositories;
 using Kermaria.ApiInternal.Services.Provisioning;
 
@@ -21,98 +22,54 @@ public interface IClientServiceCatalogService
         CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// Services visibles par un client, projetes depuis Billing V2 seul.
+/// </summary>
+/// <remarks>
+/// <para>
+/// La source unique est <see cref="IBillingV2ClientServiceEntitlementProjection"/> :
+/// un droit vient d'un item d'abonnement V2 actif, jamais d'une ligne de
+/// document commercial. Un document est une trace de facturation, pas un titre
+/// d'acces : le laisser ouvrir un service revenait a accorder un droit sur la
+/// foi d'un devis.
+/// </para>
+/// <para>
+/// Les libelles et categories viennent de <see cref="IServiceTopologyService"/>,
+/// c'est-a-dire de <c>billing_v2_services</c>. Aucune offre commerciale
+/// n'intervient.
+/// </para>
+/// </remarks>
 public sealed class ClientServiceCatalogService : IClientServiceCatalogService
 {
-    private readonly ISubscriptionRepository _subscriptions;
-    private readonly ICommercialRepository _commercialRepository;
-    private readonly ICommercialOfferTopologyService _topologyService;
-    private readonly IBillingV2ClientServiceCatalogShadowService _v2Shadow;
-    private readonly IBillingV2ClientServiceEntitlementProjection _v2Entitlements;
-    private readonly ILogger<ClientServiceCatalogService> _logger;
+    private readonly SqlRuntimeConfiguration _sql;
+    private readonly IServiceTopologyService _topologyService;
+    private readonly IBillingV2ClientServiceEntitlementProjection _entitlements;
 
     public ClientServiceCatalogService(
-        ISubscriptionRepository subscriptions,
-        ICommercialRepository commercialRepository,
-        ICommercialOfferTopologyService topologyService,
-        IBillingV2ClientServiceCatalogShadowService v2Shadow,
-        IBillingV2ClientServiceEntitlementProjection v2Entitlements,
-        ILogger<ClientServiceCatalogService> logger)
+        SqlRuntimeConfiguration sql,
+        IServiceTopologyService topologyService,
+        IBillingV2ClientServiceEntitlementProjection entitlements)
     {
-        _subscriptions = subscriptions;
-        _commercialRepository = commercialRepository;
+        _sql = sql;
         _topologyService = topologyService;
-        _v2Shadow = v2Shadow;
-        _v2Entitlements = v2Entitlements;
-        _logger = logger;
+        _entitlements = entitlements;
     }
 
     public async Task<IReadOnlyList<ServiceSummary>> GetServicesAsync(
         PortalSessionContext session,
         CancellationToken cancellationToken)
     {
-        if (!_subscriptions.IsPersistent
-            && !_commercialRepository.IsPersistent)
+        if (!_sql.IsPersistent)
         {
             return MockPortalData.Services;
         }
 
-        var catalog = await _commercialRepository.GetAdminCatalogAsync(
-            cancellationToken);
-        var offersById = catalog.ToDictionary(
-            offer => offer.Id,
-            StringComparer.Ordinal);
-        var offersByExternalReference = catalog
-            .Where(offer => !string.IsNullOrWhiteSpace(offer.ExternalReference))
-            .GroupBy(
-                offer => offer.ExternalReference!.Trim(),
-                StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(
-                group => group.Key,
-                group => group
-                    .OrderByDescending(offer => offer.UpdatedAt, StringComparer.Ordinal)
-                    .First(),
-                StringComparer.OrdinalIgnoreCase);
-
         var buckets = new Dictionary<string, List<ServiceEntitlementSource>>(
             StringComparer.OrdinalIgnoreCase);
-
-        var subscriptions = await _subscriptions.GetByCustomerAsync(
+        var entitlements = await _entitlements.GetClientEntitlementsAsync(
             session.CustomerId,
             cancellationToken);
-        foreach (var subscription in subscriptions)
-        {
-            var technicalServiceReferences =
-                await _topologyService.ResolveTechnicalServiceReferencesAsync(
-                    subscription,
-                    cancellationToken);
-            var serviceStatus = MapSubscriptionStatus(subscription.Status);
-            if (technicalServiceReferences.Count == 0 || serviceStatus is null)
-            {
-                continue;
-            }
-
-            foreach (var technicalServiceReference in technicalServiceReferences)
-            {
-                AddSource(
-                    buckets,
-                    technicalServiceReference,
-                    new ServiceEntitlementSource(
-                        "subscription",
-                        subscription.Id,
-                        subscription.OfferName,
-                        serviceStatus,
-                        subscription.StartedAt ?? subscription.CreatedAt,
-                        serviceStatus == "pending"
-                            ? CreatePendingSubscriptionMessage(subscription.Status)
-                            : null));
-            }
-        }
-
-        var billingV2Entitlements =
-            await _v2Entitlements.GetClientEntitlementsAsync(
-                session.CustomerId,
-                cancellationToken);
-        foreach (var entitlement in billingV2Entitlements)
+        foreach (var entitlement in entitlements)
         {
             var serviceStatus = MapSubscriptionStatus(
                 entitlement.SubscriptionStatus);
@@ -123,9 +80,8 @@ public sealed class ClientServiceCatalogService : IClientServiceCatalogService
 
             AddSource(
                 buckets,
-                entitlement.TechnicalServiceReference,
+                entitlement.ServiceCode,
                 new ServiceEntitlementSource(
-                    "subscription",
                     entitlement.SubscriptionId,
                     entitlement.SubscriptionLabel,
                     serviceStatus,
@@ -136,62 +92,31 @@ public sealed class ClientServiceCatalogService : IClientServiceCatalogService
                         : null));
         }
 
-        var documentSummaries = await _commercialRepository.GetClientDocumentsAsync(
-            session,
+        var definitions = await _topologyService.GetTechnicalServicesAsync(
             cancellationToken);
-        foreach (var summary in documentSummaries.Where(summary =>
-                     summary.Status != "cancelled"))
+        var definitionsByCode = definitions.ToDictionary(
+            service => service.TechnicalServiceReference,
+            service => service,
+            StringComparer.OrdinalIgnoreCase);
+
+        var services = new List<ServiceSummary>(buckets.Count);
+        foreach (var bucket in buckets)
         {
-            var detail = await _commercialRepository.GetClientDocumentAsync(
-                session,
-                summary.Id,
-                cancellationToken);
-            if (detail is null)
-            {
-                continue;
-            }
-
-            var serviceStatus = MapDocumentStatus(detail.Status);
-            if (serviceStatus is null)
-            {
-                continue;
-            }
-
-            foreach (var line in detail.Lines)
-            {
-                if (line.OfferId is null
-                    || !offersById.TryGetValue(line.OfferId, out var offer))
-                {
-                    continue;
-                }
-
-                foreach (var technicalServiceReference in ResolveTechnicalRefsForOffer(offer))
-                {
-                    AddSource(
-                        buckets,
-                        technicalServiceReference,
-                        new ServiceEntitlementSource(
-                            "document",
-                            detail.Id,
-                            detail.Title,
-                            serviceStatus,
-                            detail.UpdatedAt,
-                            serviceStatus == "pending"
-                                ? "Option enregistrée, en attente de règlement ou d'activation."
-                                : null));
-                }
-            }
+            definitionsByCode.TryGetValue(bucket.Key, out var definition);
+            var label = definition?.Label
+                ?? await _topologyService.ResolveServiceLabelAsync(
+                    bucket.Key,
+                    cancellationToken);
+            services.Add(BuildServiceSummary(
+                bucket.Key,
+                label,
+                definition,
+                bucket.Value));
         }
 
-        var services = buckets
-            .Select(bucket => BuildServiceSummary(
-                bucket.Key,
-                bucket.Value,
-                offersByExternalReference))
+        return services
             .OrderBy(service => service.Name, StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        await CompareV2ShadowAsync(session, services, cancellationToken);
-        return services;
     }
 
     public async Task<bool> IsKnownServiceIdAsync(
@@ -217,10 +142,10 @@ public sealed class ClientServiceCatalogService : IClientServiceCatalogService
 
     private static void AddSource(
         IDictionary<string, List<ServiceEntitlementSource>> buckets,
-        string technicalServiceReference,
+        string serviceCode,
         ServiceEntitlementSource source)
     {
-        var normalizedReference = technicalServiceReference.Trim();
+        var normalizedReference = serviceCode.Trim();
         if (normalizedReference.Length == 0)
         {
             return;
@@ -235,31 +160,12 @@ public sealed class ClientServiceCatalogService : IClientServiceCatalogService
         bucket.Add(source);
     }
 
-    private static IReadOnlyList<string> ResolveTechnicalRefsForOffer(
-        CommercialOfferSummary offer)
-    {
-        if (offer.TechnicalServiceReferences.Count > 0)
-        {
-            return offer.TechnicalServiceReferences;
-        }
-
-        if (!string.IsNullOrWhiteSpace(offer.ExternalReference)
-            && offer.ProvisioningGroupSamAccountNames.Count > 0)
-        {
-            return [offer.ExternalReference];
-        }
-
-        return Array.Empty<string>();
-    }
-
     private static ServiceSummary BuildServiceSummary(
-        string technicalServiceReference,
-        IReadOnlyList<ServiceEntitlementSource> sources,
-        IReadOnlyDictionary<string, CommercialOfferSummary> offersByExternalReference)
+        string serviceCode,
+        string label,
+        CatalogTechnicalServiceDefinition? definition,
+        IReadOnlyList<ServiceEntitlementSource> sources)
     {
-        offersByExternalReference.TryGetValue(
-            technicalServiceReference,
-            out var catalogOffer);
         var status = ResolvePortalStatus(sources);
         var startedAt = sources
             .Select(source => source.StartedAt)
@@ -268,26 +174,23 @@ public sealed class ClientServiceCatalogService : IClientServiceCatalogService
             .FirstOrDefault();
         var sourceLabels = sources
             .Select(source => source.SourceLabel)
-            .Where(label => !string.IsNullOrWhiteSpace(label))
+            .Where(value => !string.IsNullOrWhiteSpace(value))
             .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(label => label, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
         return new ServiceSummary(
-            technicalServiceReference,
-            technicalServiceReference,
-            catalogOffer?.Name ?? CreateFallbackLabel(technicalServiceReference),
-            InferServiceType(catalogOffer, technicalServiceReference),
+            serviceCode,
+            serviceCode,
+            label,
+            InferServiceType(definition, label, serviceCode),
             status,
-            catalogOffer?.Description
-                ?? $"Service dérivé du catalogue pour {technicalServiceReference}.",
+            definition?.Description ?? $"Service du catalogue : {label}.",
             startedAt,
             sourceLabels.Length == 0
                 ? "Aucun rattachement commercial détaillé."
                 : $"Couvert via : {string.Join(", ", sourceLabels)}",
-            sources.Any(source => source.Kind == "document")
-                ? "Option rattachée à vos achats"
-                : "Inclus dans vos souscriptions",
+            "Inclus dans vos souscriptions",
             status == "pending"
                 ? sources.Select(source => source.NextStep)
                     .FirstOrDefault(message => !string.IsNullOrWhiteSpace(message))
@@ -302,12 +205,9 @@ public sealed class ClientServiceCatalogService : IClientServiceCatalogService
             return "active";
         }
 
-        if (sources.Any(source => source.Status == "pending"))
-        {
-            return "pending";
-        }
-
-        return "suspended";
+        return sources.Any(source => source.Status == "pending")
+            ? "pending"
+            : "suspended";
     }
 
     private static string? MapSubscriptionStatus(string subscriptionStatus)
@@ -320,53 +220,6 @@ public sealed class ClientServiceCatalogService : IClientServiceCatalogService
             _ => null
         };
 
-    private static string? MapDocumentStatus(string documentStatus)
-        => documentStatus switch
-        {
-            "paid" => "active",
-            "draft" or "pending_review" or "shared_with_customer" or "issued" =>
-                "pending",
-            _ => null
-        };
-
-    private async Task CompareV2ShadowAsync(
-        PortalSessionContext session,
-        IReadOnlyList<ServiceSummary> services,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            var comparison = await _v2Shadow.CompareAsync(
-                session,
-                services,
-                cancellationToken);
-            if (!comparison.Enabled
-                || !comparison.Succeeded
-                || comparison.IsCovered)
-            {
-                return;
-            }
-
-            _logger.LogWarning(
-                "Billing V2 client service catalog shadow mismatch for customer {CustomerId}. UnsupportedLegacyServices={UnsupportedLegacyServices}. Legacy service catalog remains authoritative.",
-                session.CustomerId,
-                string.Join(
-                    ",",
-                    comparison.UnsupportedLegacyServiceReferences));
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception exception)
-        {
-            _logger.LogWarning(
-                exception,
-                "Billing V2 client service catalog shadow comparison crashed for customer {CustomerId}. Legacy service catalog remains authoritative.",
-                session.CustomerId);
-        }
-    }
-
     private static string CreatePendingSubscriptionMessage(string subscriptionStatus)
         => subscriptionStatus switch
         {
@@ -378,17 +231,18 @@ public sealed class ClientServiceCatalogService : IClientServiceCatalogService
         };
 
     private static string InferServiceType(
-        CommercialOfferSummary? offer,
-        string technicalServiceReference)
+        CatalogTechnicalServiceDefinition? definition,
+        string label,
+        string serviceCode)
     {
         var haystack = string.Join(
             ' ',
             new[]
             {
-                technicalServiceReference,
-                offer?.Name,
-                offer?.Category,
-                offer?.Description
+                serviceCode,
+                label,
+                definition?.Category,
+                definition?.Description
             }.Where(value => !string.IsNullOrWhiteSpace(value)))
             .ToLowerInvariant();
 
@@ -444,24 +298,9 @@ public sealed class ClientServiceCatalogService : IClientServiceCatalogService
 
         return "other";
     }
-
-    private static string CreateFallbackLabel(string technicalServiceReference)
-    {
-        var tokens = technicalServiceReference
-            .Split(['-', '_'], StringSplitOptions.RemoveEmptyEntries)
-            .Select(token => token.ToLowerInvariant())
-            .Select(token => token.Length switch
-            {
-                0 => token,
-                1 => token.ToUpperInvariant(),
-                _ => char.ToUpperInvariant(token[0]) + token[1..]
-            });
-        return string.Join(" ", tokens);
-    }
 }
 
 internal sealed record ServiceEntitlementSource(
-    string Kind,
     string SourceId,
     string SourceLabel,
     string Status,

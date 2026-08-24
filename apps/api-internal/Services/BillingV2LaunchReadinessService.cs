@@ -1,30 +1,42 @@
-﻿using Kermaria.ApiInternal.Data.Configuration;
-using Kermaria.ApiInternal.Data.Repositories;
+using Kermaria.ApiInternal.Data.Configuration;
 using MySqlConnector;
 
 namespace Kermaria.ApiInternal.Services;
 
-public sealed record BillingV2BlockingLegacySubscription(
-    string SubscriptionId,
-    string Status,
-    string CustomerId,
-    string CustomerReference,
-    string CustomerName,
-    string? CommercialOfferId,
-    DateTime CreatedAt,
-    DateTime UpdatedAt);
-
+/// <summary>
+/// Precondition de lancement : le modele commercial legacy a bien disparu du
+/// schema.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Cette porte comptait auparavant les abonnements reels portes par la table
+/// <c>subscriptions</c> : tant qu'il en restait un, Billing V2 ne pouvait pas
+/// devenir l'autorite commerciale sans creer deux verites concurrentes. Le
+/// sujet de cette porte a change, pas son role : la table legacy n'existe plus
+/// et la question devient « la migration destructive a-t-elle ete appliquee sur
+/// cette base ? ».
+/// </para>
+/// <para>
+/// La verification est strictement en lecture seule sur
+/// <c>information_schema.tables</c>. Le compte applicatif n'a aucun droit de
+/// schema : interroger la table elle-meme leverait une <c>MySqlException</c> et
+/// masquerait la vraie cause derriere un <c>SQL_UNAVAILABLE</c>.
+/// </para>
+/// <para>
+/// L'echec est ferme : une base ou l'on ne peut pas conclure n'est pas declaree
+/// prete.
+/// </para>
+/// </remarks>
 public sealed record BillingV2LaunchReadinessSnapshot(
-    int RealCustomerSubscriptionCount,
-    int DemoSubscriptionCount,
+    bool LegacyBillingSchemaRemoved,
     bool VerifiedAgainstPersistentSql)
 {
-    public bool NoRealCustomerSubscriptions =>
-        RealCustomerSubscriptionCount == 0;
-
-    public IReadOnlyList<BillingV2BlockingLegacySubscription>
-        BlockingRealSubscriptions { get; init; } =
-            Array.Empty<BillingV2BlockingLegacySubscription>();
+    /// <summary>
+    /// Tables legacy encore presentes. Vide quand la migration destructive a
+    /// ete appliquee.
+    /// </summary>
+    public IReadOnlyList<string> RemainingLegacyTables { get; init; } =
+        Array.Empty<string>();
 }
 
 public interface IBillingV2LaunchReadinessService
@@ -36,6 +48,16 @@ public interface IBillingV2LaunchReadinessService
 public sealed class BillingV2LaunchReadinessService
     : IBillingV2LaunchReadinessService
 {
+    // Les quatre tables qui portaient le modele commercial concurrent. Les
+    // tables de liaison suivent leur sort et ne sont pas listees deux fois.
+    private static readonly string[] LegacyTables =
+    [
+        "commercial_offers",
+        "subscriptions",
+        "cart_items",
+        "recurring_checkout_items"
+    ];
+
     private readonly SqlRuntimeConfiguration _sql;
 
     public BillingV2LaunchReadinessService(SqlRuntimeConfiguration sql)
@@ -50,129 +72,64 @@ public sealed class BillingV2LaunchReadinessService
             || string.IsNullOrWhiteSpace(_sql.ConnectionString))
         {
             return new BillingV2LaunchReadinessSnapshot(
-                RealCustomerSubscriptionCount: 0,
-                DemoSubscriptionCount: 0,
+                LegacyBillingSchemaRemoved: false,
                 VerifiedAgainstPersistentSql: false);
         }
 
+        var remaining = new List<string>();
         await using var connection = new MySqlConnection(_sql.ConnectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText =
             """
-            SELECT
-                SUM(CASE WHEN COALESCE(customer.is_demo, FALSE) = FALSE
-                         THEN 1 ELSE 0 END) AS real_count,
-                SUM(CASE WHEN COALESCE(customer.is_demo, FALSE) = TRUE
-                         THEN 1 ELSE 0 END) AS demo_count
-            FROM subscriptions subscription
-            INNER JOIN customers customer
-                ON customer.id = subscription.customer_id
-            WHERE subscription.status IN (
-                    'active',
-                    'pending_cancellation',
-                    'suspended',
-                    'pending_activation',
-                    'pending_payment',
-                    'pending_approval'
-                );
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = DATABASE()
+              AND table_name IN (
+                    'commercial_offers',
+                    'subscriptions',
+                    'cart_items',
+                    'recurring_checkout_items'
+                  )
+            ORDER BY table_name;
             """;
 
-        await using var reader = await command.ExecuteReaderAsync(
-            cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken))
+        await using (var reader = await command.ExecuteReaderAsync(
+            cancellationToken))
         {
-            return new BillingV2LaunchReadinessSnapshot(
-                RealCustomerSubscriptionCount: 0,
-                DemoSubscriptionCount: 0,
-                VerifiedAgainstPersistentSql: true);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                remaining.Add(reader.GetString(0));
+            }
         }
 
-        var snapshot = BillingV2LaunchReadinessGate.Evaluate(
-            reader.IsDBNull(reader.GetOrdinal("real_count"))
-                ? 0
-                : reader.GetInt32("real_count"),
-            reader.IsDBNull(reader.GetOrdinal("demo_count"))
-                ? 0
-                : reader.GetInt32("demo_count"));
-        await reader.DisposeAsync();
-
-        if (snapshot.NoRealCustomerSubscriptions)
+        return new BillingV2LaunchReadinessSnapshot(
+            LegacyBillingSchemaRemoved: remaining.Count == 0,
+            VerifiedAgainstPersistentSql: true)
         {
-            return snapshot;
-        }
-
-        return snapshot with
-        {
-            BlockingRealSubscriptions =
-                await LoadBlockingRealSubscriptionsAsync(
-                    connection,
-                    cancellationToken)
+            RemainingLegacyTables = remaining
         };
-    }
-
-    private static async Task<IReadOnlyList<BillingV2BlockingLegacySubscription>>
-        LoadBlockingRealSubscriptionsAsync(
-            MySqlConnection connection,
-            CancellationToken cancellationToken)
-    {
-        var subscriptions = new List<BillingV2BlockingLegacySubscription>();
-        await using var command = connection.CreateCommand();
-        command.CommandText =
-            """
-            SELECT
-                subscription.id AS subscription_id,
-                subscription.status,
-                subscription.customer_id,
-                customer.external_reference AS customer_reference,
-                customer.display_name AS customer_name,
-                subscription.commercial_offer_id,
-                subscription.created_at,
-                subscription.updated_at
-            FROM subscriptions subscription
-            INNER JOIN customers customer
-                ON customer.id = subscription.customer_id
-            WHERE subscription.status IN (
-                    'active',
-                    'pending_cancellation',
-                    'suspended',
-                    'pending_activation',
-                    'pending_payment',
-                    'pending_approval'
-                )
-              AND COALESCE(customer.is_demo, FALSE) = FALSE
-            ORDER BY subscription.updated_at DESC, subscription.id DESC
-            LIMIT 50;
-            """;
-
-        await using var reader = await command.ExecuteReaderAsync(
-            cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
-        {
-            subscriptions.Add(new BillingV2BlockingLegacySubscription(
-                MariaDbIdentifierReader.ReadRequired(reader, "subscription_id"),
-                reader.GetString("status"),
-                MariaDbIdentifierReader.ReadRequired(reader, "customer_id"),
-                reader.GetString("customer_reference"),
-                reader.GetString("customer_name"),
-                MariaDbIdentifierReader.ReadNullable(
-                    reader,
-                    "commercial_offer_id"),
-                reader.GetDateTime("created_at"),
-                reader.GetDateTime("updated_at")));
-        }
-
-        return subscriptions;
     }
 }
 
 public static class BillingV2LaunchReadinessGate
 {
     public static BillingV2LaunchReadinessSnapshot Evaluate(
-        int realCustomerSubscriptionCount,
-        int demoSubscriptionCount)
+        IReadOnlyList<string> remainingLegacyTables)
         => new(
-            Math.Max(0, realCustomerSubscriptionCount),
-            Math.Max(0, demoSubscriptionCount),
-            VerifiedAgainstPersistentSql: true);
+            LegacyBillingSchemaRemoved: remainingLegacyTables.Count == 0,
+            VerifiedAgainstPersistentSql: true)
+        {
+            RemainingLegacyTables = remainingLegacyTables
+        };
+
+    public static IReadOnlyList<string> KnownLegacyTables => LegacyTableNames;
+
+    private static readonly string[] LegacyTableNames =
+    [
+        "commercial_offers",
+        "subscriptions",
+        "cart_items",
+        "recurring_checkout_items"
+    ];
 }

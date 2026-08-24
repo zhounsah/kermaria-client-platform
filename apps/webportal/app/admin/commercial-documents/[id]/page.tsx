@@ -19,8 +19,9 @@ import {
   formatCurrencyFromCents,
   formatDateTime,
 } from "@/lib/formatters";
+import { buildCatalogLineTemplates } from "@/lib/commercial-document-templates";
 import {
-  getAdminCatalog,
+  getAdminBillingV2Catalog,
   getAdminCommercialDocument,
   getAdminCommercialDocumentInvoice,
   getAdminServiceRequests,
@@ -42,7 +43,7 @@ export default async function AdminCommercialDocumentDetailPage({
   const [documentResult, catalogResult, serviceRequestsResult, invoiceResult] =
     await Promise.all([
       getAdminCommercialDocument(id),
-      getAdminCatalog(),
+      getAdminBillingV2Catalog(),
       getAdminServiceRequests(),
       getAdminCommercialDocumentInvoice(id),
     ]);
@@ -67,6 +68,12 @@ export default async function AdminCommercialDocumentDetailPage({
   }
 
   const document = documentResult.data;
+  // Les lignes sont des instantanes : le catalogue ne sert qu'a pre-remplir la
+  // saisie. Son indisponibilite n'empeche donc pas d'ajouter une ligne a la
+  // main.
+  const lineTemplates = catalogResult.error
+    ? []
+    : buildCatalogLineTemplates(catalogResult.data);
   const isFranchiseBaseDocument =
     document.lines.length > 0
     && document.lines.every((line) => line.fiscalRegime === "franchise_base");
@@ -201,26 +208,25 @@ export default async function AdminCommercialDocumentDetailPage({
 
         <SectionCard ariaLabel="Ajout de ligne">
           <h2>Ajouter une ligne</h2>
-          {!catalogResult.error ? (
-            <AdminCommercialDocumentLineForm
-              disabled={!isDraft}
-              documentId={document.id}
-              offers={catalogResult.data}
-            />
-          ) : (
+          {catalogResult.error ? (
             <ErrorState
               compact
-              description="Le catalogue administré est indisponible pour l'ajout de lignes."
+              description="Le catalogue Billing V2 est indisponible : la saisie reste possible, sans pré-remplissage."
               reference={catalogResult.correlationId}
-              title="Catalogue indisponible"
+              title="Pré-remplissage indisponible"
             />
-          )}
+          ) : null}
+          <AdminCommercialDocumentLineForm
+            disabled={!isDraft}
+            documentId={document.id}
+            templates={lineTemplates}
+          />
         </SectionCard>
       </div>
 
       <CommercialDocumentLineTable lines={document.lines} />
 
-      {!catalogResult.error && document.lines.length > 0 ? (
+      {document.lines.length > 0 ? (
         <section className="request-history-section">
           <div className="section-heading">
             <div>
@@ -240,7 +246,7 @@ export default async function AdminCommercialDocumentDetailPage({
                   disabled={!isDraft}
                   documentId={document.id}
                   line={line}
-                  offers={catalogResult.data}
+                  templates={lineTemplates}
                 />
               </SectionCard>
             ))}

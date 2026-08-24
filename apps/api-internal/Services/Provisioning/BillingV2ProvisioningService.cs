@@ -11,8 +11,10 @@ public sealed record BillingV2ProvisioningReadinessState(
     bool AddOnlyMode,
     bool CompleteMaterialization,
     bool RequiredRulesResolved,
-    bool ShadowSucceeded,
-    bool ShadowMatchesLegacy,
+    // Verdict de la derniere revue de conformite du client, telle que
+    // `ReviewClientReadinessAsync` l'a ecrite. Ce n'est plus une comparaison
+    // avec un systeme legacy — il n'y en a plus — mais la revue V2 elle-meme.
+    bool ReviewSucceeded,
     bool HasUnresolvedMismatch,
     bool TargetGroupsResolved);
 
@@ -448,10 +450,6 @@ public sealed record BillingV2ProvisioningTargetResolution(
 
 public interface IBillingV2ProvisioningService
 {
-    Task<ProvisioningExecutionResult?> TryReconcileAsync(
-        SubscriptionProvisioningContext context,
-        CancellationToken cancellationToken);
-
     Task<ProvisioningExecutionResult?> TryReconcileActivatedSubscriptionAsync(
         string subscriptionId,
         CancellationToken cancellationToken);
@@ -471,11 +469,6 @@ public sealed class NoOpBillingV2ProvisioningService
     {
     }
 
-    public Task<ProvisioningExecutionResult?> TryReconcileAsync(
-        SubscriptionProvisioningContext context,
-        CancellationToken cancellationToken)
-        => Task.FromResult<ProvisioningExecutionResult?>(null);
-
     public Task<ProvisioningExecutionResult?> TryReconcileActivatedSubscriptionAsync(
         string subscriptionId,
         CancellationToken cancellationToken)
@@ -492,7 +485,6 @@ public sealed partial class BillingV2ProvisioningService : IBillingV2Provisionin
 {
     private readonly SqlRuntimeConfiguration _sql;
     private readonly BillingV2RuntimeConfiguration _billingV2;
-    private readonly ISubscriptionRepository _subscriptions;
     private readonly IActiveDirectoryLinkRepository _activeDirectoryLinks;
     private readonly IProvisioningService _provisioningService;
     private readonly IBillingV2KoxoStorageProvider _koxoStorageProvider;
@@ -505,7 +497,6 @@ public sealed partial class BillingV2ProvisioningService : IBillingV2Provisionin
     public BillingV2ProvisioningService(
         SqlRuntimeConfiguration sql,
         BillingV2RuntimeConfiguration billingV2,
-        ISubscriptionRepository subscriptions,
         IActiveDirectoryLinkRepository activeDirectoryLinks,
         IProvisioningService provisioningService,
         IBillingV2KoxoStorageProvider koxoStorageProvider,
@@ -515,7 +506,6 @@ public sealed partial class BillingV2ProvisioningService : IBillingV2Provisionin
     {
         _sql = sql;
         _billingV2 = billingV2;
-        _subscriptions = subscriptions;
         _activeDirectoryLinks = activeDirectoryLinks;
         _provisioningService = provisioningService;
         _koxoStorageProvider = koxoStorageProvider;
@@ -615,164 +605,6 @@ public sealed partial class BillingV2ProvisioningService : IBillingV2Provisionin
         return true;
     }
 
-    public async Task<ProvisioningExecutionResult?> TryReconcileAsync(
-        SubscriptionProvisioningContext context,
-        CancellationToken cancellationToken)
-    {
-        if (!_billingV2.ProvisioningEnabled
-            || !_sql.IsPersistent
-            || string.IsNullOrWhiteSpace(_sql.ConnectionString))
-        {
-            return null;
-        }
-
-        var customerId = context.Subscription.CustomerId;
-        var activeLegacySubscriptions =
-            (await _subscriptions.GetByCustomerAsync(
-                customerId,
-                cancellationToken))
-            .Where(subscription => string.Equals(
-                subscription.Status,
-                "active",
-                StringComparison.Ordinal))
-            .ToArray();
-        if (activeLegacySubscriptions.Length == 0)
-        {
-            return null;
-        }
-
-        var readiness = await LoadReadinessAsync(
-            customerId,
-            cancellationToken);
-        var plan = await LoadProvisioningPlanAsync(
-            customerId,
-            activeLegacySubscriptions.Select(subscription => subscription.Id).ToArray(),
-            cancellationToken);
-        var materializedIds = await LoadMaterializedActiveSubscriptionIdsAsync(
-            customerId,
-            cancellationToken);
-        var missingSubscriptions = activeLegacySubscriptions
-            .Select(subscription => subscription.Id)
-            .Except(materializedIds, StringComparer.Ordinal)
-            .ToArray();
-        var desiredAdGroupEnvelope = plan.AllDesiredAdGroups;
-        var targetGroupsResolved = desiredAdGroupEnvelope.All(group =>
-            context.GroupDistinguishedNamesBySamAccountName.TryGetValue(
-                group,
-                out var distinguishedName)
-            && !string.IsNullOrWhiteSpace(distinguishedName));
-
-        // Le shadow legacy reste une condition necessaire de plus, jamais la
-        // source des droits : il raisonne au niveau client et ne peut donc pas
-        // dire quel utilisateur porte quel groupe.
-        var sameAdRights = desiredAdGroupEnvelope.SequenceEqual(
-            context.ReconciledGroups,
-            StringComparer.OrdinalIgnoreCase);
-        var decision = BillingV2ProvisioningReadinessGate.Evaluate(
-            new BillingV2ProvisioningReadinessState(
-                GlobalFlagEnabled: _billingV2.ProvisioningEnabled,
-                ClientReady: readiness.ClientReady,
-                AddOnlyMode: readiness.AddOnlyMode,
-                CompleteMaterialization: missingSubscriptions.Length == 0
-                    && plan.UnresolvedRuleReferences.Count == 0,
-                RequiredRulesResolved: plan.UnresolvedRuleReferences.Count == 0,
-                ShadowSucceeded: readiness.ShadowSucceeded,
-                ShadowMatchesLegacy: readiness.ShadowMatchesLegacy
-                    && sameAdRights,
-                HasUnresolvedMismatch: readiness.HasUnresolvedMismatch,
-                TargetGroupsResolved: targetGroupsResolved));
-        if (!decision.Authorized)
-        {
-            _logger.LogWarning(
-                "Billing V2 provisioning gate denied for customer {CustomerId} subscription {SubscriptionId}: {ReasonCode}. Legacy provisioning remains authoritative.",
-                customerId,
-                context.Subscription.Id,
-                decision.ReasonCode);
-            return null;
-        }
-
-        if (!decision.AddOnlyMode)
-        {
-            _logger.LogWarning(
-                "Billing V2 provisioning is limited to add-only mode for customer {CustomerId} subscription {SubscriptionId}. Legacy provisioning remains authoritative.",
-                customerId,
-                context.Subscription.Id);
-            return null;
-        }
-
-        // Le socle de stockage passe avant tout acces dependant, et son echec
-        // arrete le provisioning : la reconciliation refuse d'elle-meme si
-        // aucun provider n'est configure.
-        if (!await TryReconcileStorageAsync(
-                customerId,
-                plan,
-                context.Subscription.Id,
-                cancellationToken))
-        {
-            return null;
-        }
-
-        if (plan.Users.Count == 0)
-        {
-            _logger.LogWarning(
-                "Billing V2 provisioning skipped for customer {CustomerId}: no user-scoped desired state is available. Legacy provisioning remains authoritative.",
-                customerId);
-            return null;
-        }
-
-        var customerUserLinks =
-            await _activeDirectoryLinks.GetCustomerUserLinksAsync(
-                customerId,
-                cancellationToken);
-
-        // Seuls les acces AD reclament une identite annuaire deja resolue. Un
-        // utilisateur qui n'a que son environnement personnel n'en a pas encore
-        // et ne doit pas faire echouer la resolution des autres.
-        var resolution = await ResolveTargetsAsync(
-            customerId,
-            plan.UsersRequiringAdIdentity,
-            customerUserLinks,
-            cancellationToken);
-        if (!resolution.Resolved)
-        {
-            _logger.LogWarning(
-                "Billing V2 provisioning denied for customer {CustomerId} subscription {SubscriptionId}: {ReasonCode}. Legacy provisioning remains authoritative.",
-                customerId,
-                context.Subscription.Id,
-                resolution.ReasonCode);
-            return null;
-        }
-
-        // Une action manuelle peut avoir restreint la selection a certains
-        // comptes : V2 la respecte et ne l'elargit jamais. L'appartenance a
-        // cette selection se juge sur objectGUID, pas sur sAMAccountName.
-        var allowedObjectGuids = context.TargetUsers
-            .Select(user => BillingV2ProvisioningIdentityResolver
-                .NormalizeObjectGuid(user.ObjectGuid))
-            .OfType<string>()
-            .ToHashSet(StringComparer.Ordinal);
-        var targets = resolution.Targets
-            .Where(target => BillingV2ProvisioningIdentityResolver
-                .NormalizeObjectGuid(target.AdLink.ObjectGuid) is string guid
-                && allowedObjectGuids.Contains(guid))
-            .ToArray();
-        if (targets.Length == 0)
-        {
-            _logger.LogWarning(
-                "Billing V2 provisioning skipped for customer {CustomerId} subscription {SubscriptionId}: no Billing V2 user matches the requested target selection. Legacy provisioning remains authoritative.",
-                customerId,
-                context.Subscription.Id);
-            return null;
-        }
-
-        return await ExecutePerUserAsync(
-            BillingV2ProvisioningExecutionPlanner.BuildPerUserRequests(
-                decision,
-                targets,
-                context.GroupDistinguishedNamesBySamAccountName),
-            cancellationToken);
-    }
-
     public async Task<ProvisioningExecutionResult?> TryReconcileActivatedSubscriptionAsync(
         string subscriptionId,
         CancellationToken cancellationToken)
@@ -830,8 +662,7 @@ public sealed partial class BillingV2ProvisioningService : IBillingV2Provisionin
                 CompleteMaterialization: activeV2SubscriptionIds.Count > 0
                     && plan.UnresolvedRuleReferences.Count == 0,
                 RequiredRulesResolved: plan.UnresolvedRuleReferences.Count == 0,
-                ShadowSucceeded: readiness.ShadowSucceeded,
-                ShadowMatchesLegacy: readiness.ShadowMatchesLegacy,
+                ReviewSucceeded: readiness.ReviewSucceeded,
                 HasUnresolvedMismatch: readiness.HasUnresolvedMismatch,
                 TargetGroupsResolved: targetGroupsResolved));
         if (!decision.Authorized)
@@ -1026,8 +857,7 @@ public sealed partial class BillingV2ProvisioningService : IBillingV2Provisionin
             SELECT
                 ready_for_v2_provisioning,
                 add_only_mode,
-                last_shadow_status,
-                last_shadow_matches_legacy,
+                last_review_status,
                 unresolved_mismatch_count
             FROM billing_v2_provisioning_client_readiness
             WHERE customer_id = @customer_id
@@ -1042,19 +872,16 @@ public sealed partial class BillingV2ProvisioningService : IBillingV2Provisionin
             return BillingV2ProvisioningDbReadiness.NotReady;
         }
 
-        var status = reader.IsDBNull(reader.GetOrdinal("last_shadow_status"))
+        var status = reader.IsDBNull(reader.GetOrdinal("last_review_status"))
             ? null
-            : reader.GetString("last_shadow_status");
+            : reader.GetString("last_review_status");
         return new BillingV2ProvisioningDbReadiness(
             ClientReady: reader.GetBoolean("ready_for_v2_provisioning"),
             AddOnlyMode: reader.GetBoolean("add_only_mode"),
-            ShadowSucceeded: string.Equals(
+            ReviewSucceeded: string.Equals(
                 status,
                 "success",
                 StringComparison.OrdinalIgnoreCase),
-            ShadowMatchesLegacy:
-                !reader.IsDBNull(reader.GetOrdinal("last_shadow_matches_legacy"))
-                && reader.GetBoolean("last_shadow_matches_legacy"),
             HasUnresolvedMismatch:
                 reader.GetInt32("unresolved_mismatch_count") > 0);
     }
@@ -1246,16 +1073,14 @@ public sealed partial class BillingV2ProvisioningService : IBillingV2Provisionin
     private sealed record BillingV2ProvisioningDbReadiness(
         bool ClientReady,
         bool AddOnlyMode,
-        bool ShadowSucceeded,
-        bool ShadowMatchesLegacy,
+        bool ReviewSucceeded,
         bool HasUnresolvedMismatch)
     {
         public static BillingV2ProvisioningDbReadiness NotReady { get; }
             = new(
                 ClientReady: false,
                 AddOnlyMode: true,
-                ShadowSucceeded: false,
-                ShadowMatchesLegacy: false,
+                ReviewSucceeded: false,
                 HasUnresolvedMismatch: false);
     }
 }
@@ -1283,10 +1108,10 @@ public static class BillingV2ProvisioningReadinessGate
                 "BILLING_V2_PROVISIONING_RULES_UNRESOLVED");
         }
 
-        if (!state.ShadowSucceeded || !state.ShadowMatchesLegacy)
+        if (!state.ReviewSucceeded)
         {
             return BillingV2ProvisioningGateDecision.Deny(
-                "BILLING_V2_PROVISIONING_SHADOW_NOT_MATCHING");
+                "BILLING_V2_PROVISIONING_REVIEW_NOT_PASSED");
         }
 
         if (state.HasUnresolvedMismatch)

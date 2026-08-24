@@ -32,6 +32,7 @@ public static class BillingV2StripeRailTests
         // D. Montant Stripe : scenarios 10 et 11
         VerifyMonthlyStripeAmountEqualsLocalAmount();
         VerifyUpfrontProducesSingleChargeWithoutRecurrence();
+        VerifyPureOneTimeSelectionUsesPaymentMode();
         VerifySetupFeeIsASeparateOneShotLine();
         VerifyStripeNeverReceivesAnExternalPriceId();
         VerifyKnownProviderCustomerReplacesEmail();
@@ -42,6 +43,7 @@ public static class BillingV2StripeRailTests
         VerifyApprovalUrlReplayFailsClosedWhenUnrecoverable();
         VerifyStripeIsReadyWithoutProviderPriceMappings();
         VerifyPayPalStillRequiresProviderPriceMappings();
+        VerifyProviderEnvironmentMatrixRefusesImpossibleCouples();
 
         // E. Settlement verifie : scenarios 6, 7, 8
         VerifyAmountMismatchBlocksActivation();
@@ -84,12 +86,12 @@ public static class BillingV2StripeRailTests
     private static void VerifyIntentKeyChangesOnDeliberateNewChoice()
     {
         var baseline = BillingV2SubscriptionIntentKey.Canonical(Intent("req-1"));
-        var otherOffer = BillingV2SubscriptionIntentKey.Canonical(
-            Intent("req-1") with { LegacyOfferId = "PACK-AUTRE" });
+        var otherSelection = BillingV2SubscriptionIntentKey.Canonical(
+            Intent("req-1") with { SelectionFingerprint = "fingerprint-autre" });
         var otherRail = BillingV2SubscriptionIntentKey.Canonical(
             Intent("req-1") with { Provider = "paypal" });
         Ensure(
-            !string.Equals(baseline, otherOffer, StringComparison.Ordinal)
+            !string.Equals(baseline, otherSelection, StringComparison.Ordinal)
             && !string.Equals(baseline, otherRail, StringComparison.Ordinal),
             "Un choix volontairement different doit creer une intention distincte.");
     }
@@ -261,6 +263,43 @@ public static class BillingV2StripeRailTests
             "Scenario 10 : aucune subscription mensuelle Stripe n'est creee.");
     }
 
+    /// <summary>
+    /// Achat purement ponctuel : mode de reglement mensuel au sens du contrat,
+    /// mais aucune ligne recurrente.
+    /// </summary>
+    /// <remarks>
+    /// Deduire le mode Stripe du seul `payment_mode` demandait ici une session
+    /// `mode=subscription` sans aucun prix recurrent — que l'API Stripe refuse.
+    /// Le mode doit suivre les lignes reellement construites.
+    /// </remarks>
+    private static void VerifyPureOneTimeSelectionUsesPaymentMode()
+    {
+        var request = Build(Event() with
+        {
+            PaymentModeSnapshot = BillingV2PaymentModes.Monthly,
+            CommitmentMonthsSnapshot = 1,
+            RecurringAmountCents = 0,
+            OneTimeAmountCents = 19900,
+            TotalAmountCents = 19900
+        });
+
+        Ensure(
+            request.Mode == BillingV2StripeModes.Payment,
+            "Une selection sans composante recurrente n'ouvre pas d'abonnement.");
+        Ensure(
+            request.Lines.Count == 1 && !request.Lines[0].Recurring,
+            "Une seule ligne, ponctuelle.");
+        Ensure(
+            request.ExpectedAmountCents == 19900,
+            "Le montant preleve reste celui du BillingEvent.");
+
+        var parameters =
+            BillingV2StripeCheckoutRequestFactory.ToFormParameters(request);
+        Ensure(
+            !parameters.Keys.Any(key => key.Contains("recurring")),
+            "Aucune recurrence Stripe ne doit etre demandee.");
+    }
+
     private static void VerifySetupFeeIsASeparateOneShotLine()
     {
         var request = Build(Event() with
@@ -430,6 +469,51 @@ public static class BillingV2StripeRailTests
     /// PayPal envoie un `plan_id` et ne sait pas tarifier en ligne : ses
     /// mappings restent exiges. L'assouplissement ne doit pas fuiter.
     /// </summary>
+    /// <summary>
+    /// Un environnement n'existe que rapporte a son fournisseur.
+    /// </summary>
+    /// <remarks>
+    /// Le couple `stripe/sandbox` n'existe pas — Stripe appelle son bac a sable
+    /// « test ». Le couple `paypal/test` n'existe pas non plus. Accepter l'un
+    /// des deux enregistrerait un rattachement de prix que le rail ne
+    /// retrouverait jamais : la commande echouerait au paiement, en production,
+    /// sans qu'aucun controle back-office ne l'ait signale.
+    /// </remarks>
+    private static void VerifyProviderEnvironmentMatrixRefusesImpossibleCouples()
+    {
+        Ensure(
+            BillingV2ProviderEnvironmentPolicy.IsSupported("stripe", "test")
+            && BillingV2ProviderEnvironmentPolicy.IsSupported("stripe", "live"),
+            "Stripe accepte `test` et `live`.");
+        Ensure(
+            !BillingV2ProviderEnvironmentPolicy.IsSupported("stripe", "sandbox"),
+            "Stripe n'a pas de `sandbox` : le couple doit etre refuse.");
+
+        Ensure(
+            BillingV2ProviderEnvironmentPolicy.IsSupported("paypal", "sandbox")
+            && BillingV2ProviderEnvironmentPolicy.IsSupported("paypal", "live"),
+            "PayPal accepte `sandbox` et `live`.");
+        Ensure(
+            !BillingV2ProviderEnvironmentPolicy.IsSupported("paypal", "test"),
+            "PayPal n'a pas de `test` : le couple doit etre refuse.");
+
+        Ensure(
+            !BillingV2ProviderEnvironmentPolicy.IsSupported("adyen", "live"),
+            "Un fournisseur inconnu est refuse quel que soit l'environnement.");
+        Ensure(
+            BillingV2ProviderEnvironmentPolicy.EnvironmentsFor("adyen") is null,
+            "Fournisseur inconnu et environnement invalide restent deux causes "
+            + "distinctes.");
+        Ensure(
+            BillingV2ProviderEnvironmentPolicy.IsSupported("  Stripe ", "LIVE"),
+            "La casse et les espaces ne doivent pas faire refuser un couple "
+            + "valide saisi depuis un formulaire.");
+
+        Ensure(
+            BillingV2ProviderEnvironmentPolicy.Providers.Count == 2,
+            "Ouvrir un troisieme fournisseur doit etre un choix explicite.");
+    }
+
     private static void VerifyPayPalStillRequiresProviderPriceMappings()
     {
         var status = BillingV2ProviderPriceMappingGate.Evaluate(
@@ -741,7 +825,7 @@ public static class BillingV2StripeRailTests
         => new(
             "customer-1",
             clientRequestId,
-            "PACK-PRO-12M",
+            "fingerprint-base",
             "stripe",
             "test");
 

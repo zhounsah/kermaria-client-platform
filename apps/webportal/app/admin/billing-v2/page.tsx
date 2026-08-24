@@ -61,21 +61,31 @@ export default async function AdminBillingV2Page() {
             className="metrics-grid metrics-grid-three"
           >
             <MetricCard
-              detail="Hors comptes démo"
-              label="Contrats réels actifs"
+              detail="Migration 071 appliquée"
+              label="Modèle commercial legacy"
               tone={
-                snapshot.launchReadiness.noRealCustomerSubscriptions
+                snapshot.launchReadiness.legacyBillingSchemaRemoved
                 && snapshot.launchReadiness.verifiedAgainstPersistentSql
                   ? "green"
                   : "amber"
               }
-              value={String(snapshot.launchReadiness.realCustomerSubscriptionCount)}
+              value={
+                snapshot.launchReadiness.legacyBillingSchemaRemoved
+                  ? "Supprimé"
+                  : "Présent"
+              }
             />
             <MetricCard
-              detail="Non traités comme contrats réels"
-              label="Abonnements démo"
-              tone="slate"
-              value={String(snapshot.launchReadiness.demoSubscriptionCount)}
+              detail="Tables encore présentes en base"
+              label="Reliquats legacy"
+              tone={
+                snapshot.launchReadiness.remainingLegacyTables.length === 0
+                  ? "slate"
+                  : "amber"
+              }
+              value={String(
+                snapshot.launchReadiness.remainingLegacyTables.length,
+              )}
             />
             <MetricCard
               detail={snapshot.reasonCode}
@@ -94,8 +104,9 @@ export default async function AdminBillingV2Page() {
                   : "Billing V2 reste fermé"}
               </h2>
               <p>
-                Source autoritaire legacy conservée tant que la décision reste
-                fermée ou incomplète.
+                Billing V2 est la seule autorité commerciale. La porte reste
+                fermée tant que le schéma legacy n&apos;a pas disparu : deux
+                catalogues simultanés produiraient deux vérités tarifaires.
               </p>
             </div>
             <StatusBadge
@@ -187,8 +198,8 @@ export default async function AdminBillingV2Page() {
                   <StatusBadge
                     label={
                       snapshot.launchReadiness.verifiedAgainstPersistentSql
-                        ? "Lecture contrats verifiee"
-                        : "Lecture contrats non verifiee"
+                        ? "Schéma vérifié"
+                        : "Schéma non vérifié"
                     }
                     tone={
                       snapshot.launchReadiness.verifiedAgainstPersistentSql
@@ -211,53 +222,32 @@ export default async function AdminBillingV2Page() {
               )}
             </section>
 
-            {snapshot.launchReadiness.blockingRealSubscriptions.length > 0 ? (
+            {snapshot.launchReadiness.remainingLegacyTables.length > 0 ? (
               <section className="content-panel">
                 <div className="section-heading">
                   <div>
-                    <span className="card-kicker">Contrats bloquants</span>
-                    <h2>Abonnements legacy réels détectés</h2>
+                    <span className="card-kicker">Reliquats bloquants</span>
+                    <h2>Tables du modèle commercial legacy encore présentes</h2>
                     <p>
-                      Ces lignes proviennent de la vérification SQL lecture seule
-                      et empêchent toute activation du premier abonnement V2.
+                      Ces noms viennent d&apos;une lecture seule de
+                      <code> information_schema</code>. Tant qu&apos;une de ces
+                      tables existe, un second catalogue reste interrogeable et
+                      la porte de lancement reste fermée. La migration 071 les
+                      supprime définitivement.
                     </p>
                   </div>
                   <StatusBadge
-                    label={`${snapshot.launchReadiness.blockingRealSubscriptions.length} affiché(s)`}
+                    label={`${snapshot.launchReadiness.remainingLegacyTables.length} table(s)`}
                     tone="warning"
                   />
                 </div>
-                <div className="table-scroll">
-                  <table className="admin-table">
-                    <thead>
-                      <tr>
-                        <th>Abonnement</th>
-                        <th>Client</th>
-                        <th>Statut</th>
-                        <th>Offre</th>
-                        <th>Maj</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {snapshot.launchReadiness.blockingRealSubscriptions.map(
-                        (subscription) => (
-                          <tr key={subscription.subscriptionId}>
-                            <td>{subscription.subscriptionId}</td>
-                            <td>
-                              {subscription.customerName}
-                              <span className="field-hint">
-                                {subscription.customerReference}
-                              </span>
-                            </td>
-                            <td>{subscription.status}</td>
-                            <td>{subscription.commercialOfferId ?? "n/a"}</td>
-                            <td>{formatDate(subscription.updatedAt)}</td>
-                          </tr>
-                        ),
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                <ul className="field-hint">
+                  {snapshot.launchReadiness.remainingLegacyTables.map(
+                    (table) => (
+                      <li key={table}>{table}</li>
+                    ),
+                  )}
+                </ul>
               </section>
             ) : null}
 
@@ -452,17 +442,4 @@ function formatFlagLabel(key: string) {
     .replace(/([A-Z])/g, " $1")
     .replace(/^./, (char) => char.toUpperCase())
     .trim();
-}
-
-function formatDate(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return date.toLocaleDateString("fr-FR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
 }

@@ -125,9 +125,10 @@ public sealed record AdProvisioningDiagnostic(
 
 public sealed record AdminCustomerAdSubscriptionContext(
     string Id,
-    string OfferName,
-    string? OfferExternalReference,
-    string? PublicPackCode,
+    // Libelle et code de la configuration V2 d'origine. `PresetCode` est nul
+    // pour une souscription directe, sans formule.
+    string Label,
+    string? PresetCode,
     string Status,
     IReadOnlyList<string> MappedGroups,
     IReadOnlyList<string> CoveredServiceTechnicalReferences);

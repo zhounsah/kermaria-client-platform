@@ -11,11 +11,17 @@ public static class DemoKinds
 }
 
 /// <summary>Demande de conversion d'un compte d'essai en client reel (Lot 4).</summary>
-/// <param name="OfferExternalReference">
-/// Offre reelle dont les groupes AD remplacent les <c>GG_DEMO_*</c>. Facultative :
-/// sans elle, la conversion se contente de retirer l'acces de demonstration.
+/// <param name="ServiceCodes">
+/// Codes de services Billing V2 (<c>billing_v2_services.code</c>) dont les
+/// groupes AD remplacent les <c>GG_DEMO_*</c>. Facultatifs : sans eux, la
+/// conversion se contente de retirer l'acces de demonstration.
 /// </param>
-public sealed record DemoConversionRequest(string? OfferExternalReference);
+/// <remarks>
+/// La demande porte des codes de <b>services</b>, pas une reference d'offre : la
+/// topologie AD est decrite par <c>billing_v2_provisioning_rules</c>, et une
+/// offre ne portait ces groupes que par recopie.
+/// </remarks>
+public sealed record DemoConversionRequest(IReadOnlyList<string>? ServiceCodes);
 
 /// <summary>Issue d'une conversion essai -> reel.</summary>
 /// <param name="Converted">

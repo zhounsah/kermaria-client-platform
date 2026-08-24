@@ -162,10 +162,22 @@ public sealed record BillingV2SubscriptionLifecyclePlan(
 /// </summary>
 public static class BillingV2SubscriptionLifecyclePolicy
 {
+    /// <summary>
+    /// Dates contractuelles d'une souscription.
+    /// </summary>
+    /// <param name="hasRecurringComponent">
+    /// Vrai quand la composition retenue porte au moins une composante
+    /// tarifaire recurrente. Un achat purement ponctuel ne se renouvelle
+    /// jamais : lui poser un <c>renews_at</c> ferait planifier au moteur de
+    /// renouvellement un cycle sans montant a facturer. Cette information vient
+    /// des composantes reellement resolues, jamais du `billing_type` du
+    /// service, du preset ou du mode de reglement.
+    /// </param>
     public static BillingV2SubscriptionLifecyclePlan Plan(
         string paymentMode,
         int commitmentMonths,
-        DateTime anchorUtc)
+        DateTime anchorUtc,
+        bool hasRecurringComponent = true)
     {
         var commitment = BillingV2BillingCalendar.ResolveCyclePeriod(
             anchorUtc,
@@ -185,6 +197,6 @@ public static class BillingV2SubscriptionLifecyclePolicy
             commitment.EndUtc,
             current.StartUtc,
             current.EndUtc,
-            upfront ? null : current.EndUtc);
+            upfront || !hasRecurringComponent ? null : current.EndUtc);
     }
 }

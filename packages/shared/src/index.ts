@@ -317,11 +317,25 @@ export interface InvoiceSummary {
   currency: "EUR";
 }
 
-export type CommercialOfferStatus = "active" | "inactive";
+/**
+ * Statut d'une entite de catalogue Billing V2 : service, palier, formule,
+ * engagement, rattachement provider.
+ */
+export type BillingV2CatalogStatus = "active" | "inactive";
 
-export type CommercialOfferBillingCadence = "one_time" | "monthly";
+/** Cadence d'une composante tarifaire Billing V2. */
+export type BillingV2BillingCadence = "one_time" | "monthly";
 
-export type CommercialOfferPaymentMode = "monthly" | "upfront";
+/**
+ * Declencheur d'une composante tarifaire. Une meme combinaison
+ * service/palier peut porter un tarif a la souscription initiale et un autre
+ * lors d'un changement de configuration.
+ */
+export type BillingV2ChargeTrigger =
+  | "initial_subscription"
+  | "subscription_change";
+
+export type BillingV2PaymentMode = "monthly" | "upfront";
 
 export type SubscriptionStatus =
   | "pending_approval"
@@ -340,10 +354,14 @@ export interface SubscriptionSummary {
   customerId: string;
   customerReference: string;
   customerName: string;
-  commercialOfferId: string;
-  offerName: string;
-  offerExternalReference: string | null;
-  publicPackCode: PublicPackCode | null;
+  /**
+   * Formule Billing V2 d'origine. `null` pour une souscription directe : elle
+   * n'est rattachee a aucune formule, et forger un identifiant pour combler ce
+   * vide reintroduirait une fausse offre.
+   */
+  presetId: string | null;
+  label: string;
+  presetCode: string | null;
   rail: PaymentRail;
   paypalPlanId: string | null;
   paypalSubscriptionId: string | null;
@@ -357,7 +375,7 @@ export interface SubscriptionSummary {
   fiscalMention: string;
   billingIntervalMonths: number;
   commitmentMonths: number;
-  paymentMode: CommercialOfferPaymentMode;
+  paymentMode: BillingV2PaymentMode;
   paidCyclesCount: number;
   commitmentEndsAt: string | null;
   cancelRequestedAt: string | null;
@@ -368,11 +386,12 @@ export interface SubscriptionSummary {
   cancelledAt: string | null;
   createdAt: string;
   updatedAt: string;
-  billingSystem?: "legacy" | "billing_v2";
   /**
-   * Places USER-ADDITIONAL vendues sur cette souscription, et places
-   * effectivement pourvues. Absentes du rail legacy, qui n'en vend pas.
+   * Conserve pour la lisibilite des journaux et des ecrans d'exploitation. Il
+   * n'existe plus qu'un seul systeme de facturation.
    */
+  billingSystem?: "billing_v2";
+  /** Places USER-ADDITIONAL vendues sur cette souscription, et places pourvues. */
   additionalUserSlotsCount?: number;
   assignedAdditionalUsersCount?: number;
 }
@@ -422,13 +441,6 @@ export interface BillingV2AdditionalUserAssignPayload {
   birthDate?: string | null;
   initials?: string | null;
   phone?: string | null;
-}
-
-export interface SubscriptionCreatePayload {
-  offerId: string;
-  rail: PaymentRail;
-  paypalSubscriptionId?: string;
-  stripeSubscriptionId?: string;
 }
 
 export type SubscriptionProvisioningStatus =
@@ -497,9 +509,10 @@ export interface AdProvisioningDiagnostic {
 
 export interface AdminCustomerAdSubscriptionContext {
   id: string;
-  offerName: string;
-  offerExternalReference: string | null;
-  publicPackCode: PublicPackCode | null;
+  /** Libelle commercial de la souscription, tel que la projection V2 le rend. */
+  label: string;
+  /** Formule d'origine. `null` pour une souscription directe, sans formule. */
+  presetCode: string | null;
   status: SubscriptionStatus;
   mappedGroups: string[];
   coveredServiceTechnicalReferences: string[];
@@ -569,60 +582,6 @@ export interface AdminSubscriptionDetail {
 }
 
 export type FiscalRegime = "franchise_base" | "standard";
-
-export interface CommercialOfferSummary {
-  id: string;
-  name: string;
-  description: string;
-  category: string;
-  unitLabel: string;
-  priceKind: "ht";
-  priceAmountCents: number;
-  currency: "EUR";
-  taxRateBasisPoints: number | null;
-  fiscalRegime: FiscalRegime;
-  fiscalMention: string;
-  externalReference: string | null;
-  technicalServiceReferences: string[];
-  provisioningGroupSamAccountNames: string[];
-  status: CommercialOfferStatus;
-  displayOrder: number;
-  billingCadence: CommercialOfferBillingCadence;
-  setupFeeAmountCents: number | null;
-  billingIntervalMonths: number | null;
-  commitmentMonths: number | null;
-  paymentMode: CommercialOfferPaymentMode | null;
-  publicPackCode: PublicPackCode | null;
-  paypalPlanIdSandbox: string | null;
-  paypalPlanIdLive: string | null;
-  stripePriceIdTest: string | null;
-  stripePriceIdLive: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface CommercialOfferPayload {
-  name: string;
-  description: string;
-  category: string;
-  unitLabel: string;
-  priceAmountCents: number;
-  externalReference: string | null;
-  technicalServiceReferences: string[];
-  provisioningGroupSamAccountNames: string[];
-  status: CommercialOfferStatus;
-  displayOrder: number;
-  billingCadence: CommercialOfferBillingCadence;
-  setupFeeAmountCents: number | null;
-  billingIntervalMonths: number | null;
-  commitmentMonths: number | null;
-  paymentMode: CommercialOfferPaymentMode | null;
-  publicPackCode: PublicPackCode | null;
-  paypalPlanIdSandbox: string | null;
-  paypalPlanIdLive: string | null;
-  stripePriceIdTest: string | null;
-  stripePriceIdLive: string | null;
-}
 
 export type PublicPackCode =
   | "pack-dossier-securise"
@@ -827,8 +786,10 @@ export type DownloadSourceKind = "internal_file" | "external_url";
 export type DownloadVisibilityMode = "all_clients" | "targeted";
 
 export type DownloadVisibilityTargetType =
-  | "public_pack_code"
-  | "offer_external_reference"
+  // `billing_v2_offer_presets.code`
+  | "preset_code"
+  // `billing_v2_services.code`
+  | "service_code"
   | "service_type"
   | "provisioning_group";
 
@@ -1026,32 +987,6 @@ export interface ManagedContentRegistryEntry {
   packCode: PublicPackCode | null;
 }
 
-export interface SignupPackSelectionSnapshot {
-  packKey: PublicPackCode;
-  packLabel: string;
-  offerId: string;
-  offerExternalReference: string;
-  commitmentMonths: PublicPackCommitmentMonths;
-  paymentMode: CommercialOfferPaymentMode;
-  billingIntervalMonths: number;
-  discountPercent: number;
-  monthlyPriceAmountCents: number;
-  billingPriceAmountCents: number;
-  setupFeeAmountCents: number;
-  firstChargeAmountCents: number;
-  fiscalRegime: FiscalRegime;
-  fiscalMention: string;
-  currency: "EUR";
-}
-
-export interface PendingPackSelectionSummary {
-  signupId: string;
-  status: string;
-  approvedAt: string | null;
-  createdAt: string;
-  snapshot: SignupPackSelectionSnapshot;
-}
-
 export interface PendingBillingV2SelectionSummary {
   signupId: string;
   status: string;
@@ -1136,117 +1071,6 @@ export interface DiagnosticRecommendation {
   warnings: readonly DiagnosticRecommendationWarningCode[];
   suggestedOptions: readonly string[];
   selection: BillingV2PublicSelection | null;
-}
-
-export interface PublicPackVariantManifest {
-  commitmentMonths: PublicPackCommitmentMonths;
-  paymentMode: CommercialOfferPaymentMode;
-  externalReference: string;
-}
-
-export type PublicPackAudienceScope =
-  | "individual"
-  | "business"
-  | "association";
-
-export interface PublicPackCapabilities {
-  includedUsers: number;
-  includedStorageGb: number;
-  supportsRemoteFiles: boolean;
-  supportsVpn: boolean;
-  supportsWindowsDesktop: boolean;
-  supportsBackup: boolean;
-  audienceScopes: readonly PublicPackAudienceScope[];
-}
-
-export interface PublicPackManifest {
-  key: PublicPackCode;
-  slug: string;
-  label: string;
-  shortLabel: string;
-  headline: string;
-  audience: string;
-  description: string;
-  highlights: readonly string[];
-  included: readonly string[];
-  technicalServiceReferences: readonly string[];
-  provisioningGroupSamAccountNames: readonly string[];
-  capabilities: PublicPackCapabilities;
-  order: number;
-  variants: readonly PublicPackVariantManifest[];
-}
-
-export type CatalogConfigurationResolutionStatus =
-  | "ok"
-  | "requires_different_offer"
-  | "requires_quote";
-
-export type CatalogConfigurationWarningCode =
-  | "storage_unknown"
-  | "storage_not_standard"
-  | "users_not_standard"
-  | "windows_storage_not_standard"
-  | "windows_team_not_standard"
-  | "requested_pack_adjusted"
-  | "variant_unavailable";
-
-export interface CatalogConfigurationInput {
-  packKey: PublicPackCode;
-  commitmentMonths: PublicPackCommitmentMonths;
-  paymentMode: CommercialOfferPaymentMode;
-  users: number | null;
-  storageGb: number | null;
-  needsVpn: boolean | null;
-  needsWindowsDesktop: boolean | null;
-}
-
-export interface CatalogConfigurationRequestSnapshot
-  extends CatalogConfigurationInput {
-  requestedAt: string;
-}
-
-export interface CatalogPriceLine {
-  label: string;
-  offerId: string;
-  offerExternalReference: string;
-  quantity: number;
-  unitPriceExVatCents: number;
-  unitPriceIncVatCents: number;
-  totalPriceExVatCents: number;
-  totalPriceIncVatCents: number;
-  taxRateBasisPoints: number | null;
-  fiscalRegime: FiscalRegime;
-  fiscalMention: string;
-}
-
-export interface CatalogPriceSimulation {
-  monthlyPriceExVatCents: number;
-  monthlyPriceIncVatCents: number;
-  setupPriceExVatCents: number;
-  setupPriceIncVatCents: number;
-  firstChargeExVatCents: number;
-  firstChargeIncVatCents: number;
-  vatRateBasisPoints: number | null;
-  fiscalRegime: FiscalRegime;
-  fiscalMention: string;
-  recurringItems: readonly CatalogPriceLine[];
-  oneTimeItems: readonly CatalogPriceLine[];
-  warnings: readonly CatalogConfigurationWarningCode[];
-}
-
-export interface CatalogConfigurationResolution {
-  status: CatalogConfigurationResolutionStatus;
-  requestedConfiguration: CatalogConfigurationInput;
-  resolvedConfiguration: CatalogConfigurationInput | null;
-  suggestedPackKey: PublicPackCode | null;
-  packSelection: SignupPackSelectionSnapshot | null;
-  priceSimulation: CatalogPriceSimulation | null;
-  warnings: readonly CatalogConfigurationWarningCode[];
-}
-
-export interface CatalogConfigurationSnapshot {
-  requestedConfiguration: CatalogConfigurationRequestSnapshot;
-  resolution: CatalogConfigurationResolution;
 }
 
 export type PublicPackComparisonValueKind = "included" | "excluded" | "text";
@@ -1339,8 +1163,8 @@ export const DOWNLOAD_VISIBILITY_MODES = [
 ] as const satisfies readonly DownloadVisibilityMode[];
 
 export const DOWNLOAD_VISIBILITY_TARGET_TYPES = [
-  "public_pack_code",
-  "offer_external_reference",
+  "preset_code",
+  "service_code",
   "service_type",
   "provisioning_group",
 ] as const satisfies readonly DownloadVisibilityTargetType[];
@@ -1359,30 +1183,6 @@ export const DOWNLOAD_SERVICE_TYPES = [
   "other",
 ] as const satisfies readonly DownloadServiceType[];
 
-export interface ResolvedPublicPackVariant {
-  offer: CommercialOfferSummary;
-  externalReference: string;
-  commitmentMonths: PublicPackCommitmentMonths;
-  paymentMode: CommercialOfferPaymentMode;
-  billingIntervalMonths: number;
-  discountPercent: number;
-  monthlyPriceAmountCents: number;
-  billingPriceAmountCents: number;
-  setupFeeAmountCents: number;
-  firstChargeAmountCents: number;
-  currency: "EUR";
-}
-
-export interface ResolvedPublicPackManifest extends PublicPackManifest {
-  variantsByCommitment: Record<
-    PublicPackCommitmentMonths,
-    {
-      monthly: ResolvedPublicPackVariant;
-      upfront: ResolvedPublicPackVariant | null;
-    }
-  >;
-}
-
 export const PUBLIC_BACKUP_POLICY_DETAILS_PATH = "/cgv";
 
 export interface PublicPackBackupPolicySummary {
@@ -1392,41 +1192,48 @@ export interface PublicPackBackupPolicySummary {
   detailsLabel: string;
 }
 
-const PUBLIC_PACK_VARIANTS_BY_TERM: ReadonlyArray<PublicPackVariantManifest> = [
-  {
-    commitmentMonths: 1,
-    paymentMode: "monthly",
-    externalReference: "PACK-DOSSIER-1M-MENS",
-  },
-  {
-    commitmentMonths: 6,
-    paymentMode: "monthly",
-    externalReference: "PACK-DOSSIER-6M-MENS",
-  },
-  {
-    commitmentMonths: 6,
-    paymentMode: "upfront",
-    externalReference: "PACK-DOSSIER-6M-COMPT",
-  },
-  {
-    commitmentMonths: 12,
-    paymentMode: "monthly",
-    externalReference: "PACK-DOSSIER-12M-MENS",
-  },
-  {
-    commitmentMonths: 12,
-    paymentMode: "upfront",
-    externalReference: "PACK-DOSSIER-12M-COMPT",
-  },
-] as const;
+export type PublicPackAudienceScope =
+  | "individual"
+  | "business"
+  | "association";
 
-function withVariantPrefix(
-  prefix: string,
-): ReadonlyArray<PublicPackVariantManifest> {
-  return PUBLIC_PACK_VARIANTS_BY_TERM.map((variant) => ({
-    ...variant,
-    externalReference: variant.externalReference.replace("PACK-DOSSIER", prefix),
-  }));
+export interface PublicPackCapabilities {
+  includedUsers: number;
+  includedStorageGb: number;
+  supportsRemoteFiles: boolean;
+  supportsVpn: boolean;
+  supportsWindowsDesktop: boolean;
+  supportsBackup: boolean;
+  audienceScopes: readonly PublicPackAudienceScope[];
+}
+
+/**
+ * Fiche editoriale d'une formule publique.
+ *
+ * Ce manifeste ne porte **aucun** prix, aucune reference d'offre et aucune
+ * variante d'engagement. Le tarif, les paliers et les engagements viennent
+ * exclusivement du catalogue Billing V2, seule autorite commerciale. Ce qui
+ * reste ici est ce que Billing V2 ne sait pas dire : un slug d'URL, un titre
+ * de vitrine, une accroche et un argumentaire.
+ *
+ * `key` est aussi le code de la formule V2 (`billing_v2_offer_presets.code`) :
+ * la fiche `/offres/{slug}` et le configurateur `/formules/{key}` decrivent
+ * donc le meme objet.
+ */
+export interface PublicPackManifest {
+  key: PublicPackCode;
+  slug: string;
+  label: string;
+  shortLabel: string;
+  headline: string;
+  audience: string;
+  description: string;
+  highlights: readonly string[];
+  included: readonly string[];
+  technicalServiceReferences: readonly string[];
+  provisioningGroupSamAccountNames: readonly string[];
+  capabilities: PublicPackCapabilities;
+  order: number;
 }
 
 export const PUBLIC_PACKS: ReadonlyArray<PublicPackManifest> = [
@@ -1452,7 +1259,7 @@ export const PUBLIC_PACKS: ReadonlyArray<PublicPackManifest> = [
       "Sauvegardes quotidiennes",
       "Aide de base en cas de besoin",
     ],
-    technicalServiceReferences: ["STOCK-PERSO-32", "SAVE-PERSO"],
+    technicalServiceReferences: ["STORAGE-PERSONAL", "BACKUP-PERSONAL"],
     provisioningGroupSamAccountNames: [],
     capabilities: {
       includedUsers: 1,
@@ -1464,7 +1271,6 @@ export const PUBLIC_PACKS: ReadonlyArray<PublicPackManifest> = [
       audienceScopes: ["individual", "business"],
     },
     order: 10,
-    variants: withVariantPrefix("PACK-DOSSIER"),
   },
   {
     key: "pack-acces-distance",
@@ -1489,11 +1295,11 @@ export const PUBLIC_PACKS: ReadonlyArray<PublicPackManifest> = [
       "Support niveau 1",
     ],
     technicalServiceReferences: [
-      "STOCK-PERSO-32",
-      "SAVE-PERSO",
-      "ACCES-VPN",
-      "SUPERV-SERVICE",
-      "SUPPORT-LV1",
+      "STORAGE-PERSONAL",
+      "BACKUP-PERSONAL",
+      "VPN-ACCESS",
+      "MONITORING-INTERNAL",
+      "SUPPORT-STANDARD",
     ],
     provisioningGroupSamAccountNames: ["GG_VPN"],
     capabilities: {
@@ -1506,7 +1312,6 @@ export const PUBLIC_PACKS: ReadonlyArray<PublicPackManifest> = [
       audienceScopes: ["individual", "business"],
     },
     order: 20,
-    variants: withVariantPrefix("PACK-ACCES"),
   },
   {
     key: "pack-bureau-windows-distance",
@@ -1531,12 +1336,12 @@ export const PUBLIC_PACKS: ReadonlyArray<PublicPackManifest> = [
       "Supervision et support niveau 1",
     ],
     technicalServiceReferences: [
-      "ACCES-RDS",
-      "ACCES-VPN",
-      "STOCK-PERSO-32",
-      "SAVE-PERSO",
-      "SUPERV-SERVICE",
-      "SUPPORT-LV1",
+      "RDS-ACCESS",
+      "VPN-ACCESS",
+      "STORAGE-PERSONAL",
+      "BACKUP-PERSONAL",
+      "MONITORING-INTERNAL",
+      "SUPPORT-STANDARD",
     ],
     provisioningGroupSamAccountNames: ["GG_VPN", "GG_RDS"],
     capabilities: {
@@ -1549,7 +1354,6 @@ export const PUBLIC_PACKS: ReadonlyArray<PublicPackManifest> = [
       audienceScopes: ["individual", "business"],
     },
     order: 30,
-    variants: withVariantPrefix("PACK-BUREAU"),
   },
   {
     key: "pack-pro-association",
@@ -1574,14 +1378,13 @@ export const PUBLIC_PACKS: ReadonlyArray<PublicPackManifest> = [
       "Support niveau 1 et documentation",
     ],
     technicalServiceReferences: [
-      "USER-ADD",
-      "STOCK-PERSO-32",
-      "STOCK-SUP-32",
-      "ACCES-VPN",
-      "SAVE-PERSO",
-      "SUPERV-SERVICE",
-      "SUPPORT-LV1",
-      "DOC-TECH",
+      "USER-ADDITIONAL",
+      "STORAGE-PERSONAL",
+      "STORAGE-SHARED",
+      "VPN-ACCESS",
+      "BACKUP-PERSONAL",
+      "MONITORING-INTERNAL",
+      "SUPPORT-STANDARD",
     ],
     provisioningGroupSamAccountNames: ["GG_VPN"],
     capabilities: {
@@ -1594,22 +1397,8 @@ export const PUBLIC_PACKS: ReadonlyArray<PublicPackManifest> = [
       audienceScopes: ["business", "association"],
     },
     order: 40,
-    variants: withVariantPrefix("PACK-PRO"),
   },
 ] as const;
-
-export function getPublicPackDiscountPercent(
-  commitmentMonths: PublicPackCommitmentMonths,
-): number {
-  switch (commitmentMonths) {
-    case 6:
-      return 10;
-    case 12:
-      return 20;
-    default:
-      return 0;
-  }
-}
 
 export function getPublicPackManifest(
   packKey: PublicPackCode,
@@ -1730,158 +1519,6 @@ export function getManagedContentEntry(
   key: ManagedContentKey,
 ): ManagedContentRegistryEntry | null {
   return getManagedContentRegistry().find((entry) => entry.key === key) ?? null;
-}
-
-export function resolvePublicPackVariantFromCatalog(
-  catalog: readonly CommercialOfferSummary[],
-  packKey: PublicPackCode,
-  commitmentMonths: PublicPackCommitmentMonths,
-  paymentMode: CommercialOfferPaymentMode,
-): ResolvedPublicPackVariant | null {
-  const pack = getPublicPackManifest(packKey);
-  if (!pack) {
-    return null;
-  }
-
-  const variant = pack.variants.find(
-    (candidate) =>
-      candidate.commitmentMonths === commitmentMonths
-      && candidate.paymentMode === paymentMode,
-  );
-  if (!variant) {
-    return null;
-  }
-
-  const offer = catalog.find(
-    (candidate) => candidate.externalReference === variant.externalReference,
-  );
-  if (!offer) {
-    return null;
-  }
-
-  const billingIntervalMonths =
-    offer.billingIntervalMonths
-    ?? (paymentMode === "upfront" ? commitmentMonths : 1);
-  const setupFeeAmountCents = offer.setupFeeAmountCents ?? 0;
-  const billingPriceAmountCents = offer.priceAmountCents;
-  const monthlyPriceAmountCents =
-    billingIntervalMonths > 1
-      ? Math.round(billingPriceAmountCents / commitmentMonths)
-      : billingPriceAmountCents;
-
-  return {
-    offer,
-    externalReference: variant.externalReference,
-    commitmentMonths,
-    paymentMode,
-    billingIntervalMonths,
-    discountPercent: getPublicPackDiscountPercent(commitmentMonths),
-    monthlyPriceAmountCents,
-    billingPriceAmountCents,
-    setupFeeAmountCents,
-    firstChargeAmountCents: billingPriceAmountCents + setupFeeAmountCents,
-    currency: "EUR",
-  };
-}
-
-export function resolvePublicPackCatalog(
-  catalog: readonly CommercialOfferSummary[],
-): ResolvedPublicPackManifest[] {
-  return PUBLIC_PACKS.flatMap((pack) => {
-    const monthly1 = resolvePublicPackVariantFromCatalog(
-      catalog,
-      pack.key,
-      1,
-      "monthly",
-    );
-    const monthly6 = resolvePublicPackVariantFromCatalog(
-      catalog,
-      pack.key,
-      6,
-      "monthly",
-    );
-    const monthly12 = resolvePublicPackVariantFromCatalog(
-      catalog,
-      pack.key,
-      12,
-      "monthly",
-    );
-
-    // If the billable catalog is not fully seeded yet, hide the incomplete
-    // public pack instead of crashing the whole vitrine/signup flow.
-    if (!monthly1 || !monthly6 || !monthly12) {
-      return [];
-    }
-
-    return [{
-      ...pack,
-      variantsByCommitment: {
-        1: {
-          monthly: monthly1,
-          upfront: null,
-        },
-        6: {
-          monthly: monthly6,
-          upfront:
-            resolvePublicPackVariantFromCatalog(
-              catalog,
-              pack.key,
-              6,
-              "upfront",
-            ),
-        },
-        12: {
-          monthly: monthly12,
-          upfront:
-            resolvePublicPackVariantFromCatalog(
-              catalog,
-              pack.key,
-              12,
-              "upfront",
-            ),
-        },
-      },
-    }];
-  }).sort((left, right) => left.order - right.order);
-}
-
-export function createSignupPackSelectionSnapshot(
-  variant: ResolvedPublicPackVariant,
-): SignupPackSelectionSnapshot {
-  const packKey = variant.offer.publicPackCode ?? inferPublicPackCode(variant);
-  const manifest = getPublicPackManifest(packKey);
-
-  return {
-    packKey,
-    packLabel: manifest?.label ?? variant.offer.name,
-    offerId: variant.offer.id,
-    offerExternalReference: variant.externalReference,
-    commitmentMonths: variant.commitmentMonths,
-    paymentMode: variant.paymentMode,
-    billingIntervalMonths: variant.billingIntervalMonths,
-    discountPercent: variant.discountPercent,
-    monthlyPriceAmountCents: variant.monthlyPriceAmountCents,
-    billingPriceAmountCents: variant.billingPriceAmountCents,
-    setupFeeAmountCents: variant.setupFeeAmountCents,
-    firstChargeAmountCents: variant.firstChargeAmountCents,
-    fiscalRegime: variant.offer.fiscalRegime,
-    fiscalMention: variant.offer.fiscalMention,
-    currency: variant.currency,
-  };
-}
-
-function inferPublicPackCode(
-  variant: ResolvedPublicPackVariant,
-): PublicPackCode {
-  return (
-    variant.offer.publicPackCode
-    ?? PUBLIC_PACKS.find((pack) =>
-      pack.variants.some(
-        (candidate) => candidate.externalReference === variant.externalReference,
-      ),
-    )?.key
-    ?? "pack-dossier-securise"
-  );
 }
 
 function createComparisonValue(
@@ -2058,7 +1695,7 @@ export function createDefaultAdminClientSolutionPortal(): AdminClientSolutionPor
 export function packIncludesBackup(
   pack: Pick<PublicPackManifest, "technicalServiceReferences">,
 ): boolean {
-  return pack.technicalServiceReferences.includes("SAVE-PERSO");
+  return pack.technicalServiceReferences.includes("BACKUP-PERSONAL");
 }
 
 export function getPublicPackBackupPolicySummary(
@@ -2098,7 +1735,11 @@ export type CommercialDocumentStatus =
 
 export interface CommercialDocumentLine {
   id: string;
-  offerId: string | null;
+  /**
+   * Une ligne est auto-portante : libelle, quantite, prix unitaire et taux
+   * lui appartiennent. Elle ne pointe aucun catalogue, sinon reediter une
+   * piece apres une revision tarifaire en changerait le montant affiche.
+   */
   label: string;
   description: string;
   quantity: number;
@@ -2159,7 +1800,6 @@ export interface CommercialDocumentPayload {
 }
 
 export interface CommercialDocumentLinePayload {
-  offerId: string | null;
   label: string;
   description: string;
   quantity: number;
@@ -2167,13 +1807,6 @@ export interface CommercialDocumentLinePayload {
   unitPriceCents: number;
   taxRateBasisPoints: number | null;
   sortOrder: number;
-}
-
-export interface CommercialOfferMutationResponse {
-  id: string;
-  status: CommercialOfferStatus;
-  changed: boolean;
-  correlation_id: CorrelationId;
 }
 
 export interface CommercialDocumentMutationResponse {
@@ -2499,99 +2132,6 @@ export interface MockSubmissionResponse {
   correlation_id: CorrelationId;
 }
 
-// V0.35 — Panier / commande groupee a la carte.
-// Le client compose lui-meme un panier d'options a la carte (offres
-// one-shot uniquement) ; la confirmation materialise un unique document
-// commercial multi-lignes regle via les rails existants (Stripe / PayPal /
-// virement).
-
-export interface CartItem {
-  offerId: string;
-  name: string;
-  description: string;
-  category: string;
-  unitLabel: string;
-  unitPriceCents: number;
-  taxRateBasisPoints: number | null;
-  fiscalRegime: FiscalRegime;
-  fiscalMention: string;
-  quantity: number;
-  lineTotalCents: number;
-}
-
-export interface CartSummary {
-  items: CartItem[];
-  itemCount: number;
-  subtotalCents: number;
-  currency: "EUR";
-}
-
-export interface CartAddPayload {
-  offerId: string;
-  quantity?: number;
-}
-
-export interface CartMutationResponse {
-  cart: CartSummary;
-  correlation_id: CorrelationId;
-}
-
-export interface CartConfirmResponse {
-  documentId: string;
-  itemCount: number;
-  totalAmountCents: number;
-  correlation_id: CorrelationId;
-}
-
-export interface RecurringCheckoutItem {
-  offerId: string;
-  name: string;
-  description: string;
-  category: string;
-  unitLabel: string;
-  publicPackCode: PublicPackCode | null;
-  priceAmountCents: number;
-  setupFeeAmountCents: number;
-  firstChargeAmountCents: number;
-  fiscalRegime: FiscalRegime;
-  fiscalMention: string;
-  billingIntervalMonths: number;
-  commitmentMonths: number;
-  paymentMode: CommercialOfferPaymentMode;
-  currency: "EUR";
-}
-
-export interface CheckoutBucket<TItem> {
-  items: TItem[];
-  itemCount: number;
-  subtotalCents: number;
-  currency: "EUR";
-}
-
-export interface CheckoutSummary {
-  cart: CartSummary;
-  recurring: CheckoutBucket<RecurringCheckoutItem>;
-  totalItemCount: number;
-  hasMixedCheckout: boolean;
-}
-
-export interface CheckoutRecurringAddPayload {
-  offerId: string;
-}
-
-export interface CheckoutRecurringMutationResponse {
-  recurring: CheckoutBucket<RecurringCheckoutItem>;
-  correlation_id: CorrelationId;
-}
-
-export interface CheckoutRecurringConfirmResponse {
-  documentId: string;
-  itemCount: number;
-  totalAmountCents: number;
-  subscriptionIds: string[];
-  correlation_id: CorrelationId;
-}
-
 export type DemoKind = "showcase" | "trial";
 
 export interface DemoCapabilities {
@@ -2651,10 +2191,13 @@ export interface DemoLifecycleSweepResult {
 /** Conversion d'un compte d'essai en client réel (V1.1 Lot 4). */
 export interface DemoConversionRequest {
   /**
-   * Offre réelle dont les groupes AD remplacent les `GG_DEMO_*`. Facultative :
-   * sans elle, la conversion se contente de retirer l'accès de démonstration.
+   * Codes `billing_v2_services.code` dont les groupes AD remplacent les
+   * `GG_DEMO_*`. La topologie « quel service pilote quels groupes » est lue
+   * dans `billing_v2_provisioning_rules` côté API-INTERNAL : le portail ne
+   * nomme que des services, jamais des groupes. Facultatif : sans codes, la
+   * conversion se contente de retirer l'accès de démonstration.
    */
-  offerExternalReference?: string | null;
+  serviceCodes?: string[] | null;
 }
 
 export interface DemoConversionResult {
@@ -2714,13 +2257,33 @@ export interface DemoAccountCreatedResponse {
  * selection ne porte que des codes catalogue, et le devis est le resultat
  * renvoye par le serveur. Le front affiche, il ne calcule pas.
  */
+/**
+ * Composante tarifaire applicable a un service ou a un palier.
+ *
+ * Un meme couple (service, palier) peut en porter plusieurs simultanement :
+ * un abonnement mensuel ET des frais de mise en service ponctuels, par
+ * exemple. C'est cette liste qui decide des lignes facturables, jamais une
+ * pretendue « cadence du service ».
+ */
+export interface BillingV2PublicPriceComponent {
+  billingCadence: "monthly" | "one_time";
+  chargeTrigger: "initial_subscription" | "subscription_change";
+  amountCents: number;
+  currency: string;
+  discountEligible: boolean;
+  servicePriceId: string | null;
+  priceCode: string | null;
+}
+
 export interface BillingV2PublicTier {
   code: string;
   label: string;
   description: string | null;
   numericValue: number | null;
+  /** Somme des composantes mensuelles. Affichage seulement. */
   monthlyAmountCents: number;
   publicSelectable: boolean;
+  priceComponents: BillingV2PublicPriceComponent[] | null;
 }
 
 export interface BillingV2PublicService {
@@ -2728,11 +2291,15 @@ export interface BillingV2PublicService {
   name: string;
   category: string;
   scopeType: string;
+  /** Somme des composantes mensuelles sans palier. Affichage seulement. */
   flatMonthlyAmountCents: number | null;
   tiers: BillingV2PublicTier[];
   discountEligible: boolean;
   publicVisible: boolean;
   selfServiceOrderable: boolean;
+  /** Metadonnee commerciale : sans autorite sur les lignes tarifaires. */
+  billingType: string;
+  flatPriceComponents: BillingV2PublicPriceComponent[] | null;
 }
 
 export interface BillingV2PublicPresetItem {
@@ -2773,24 +2340,23 @@ export interface BillingV2PublicCommitment {
   paymentOptions: BillingV2PublicPaymentOption[];
 }
 
-export interface BillingV2PublicCheckoutRoute {
-  presetCode: string;
-  commitmentCode: string;
-  legacyOfferId: string;
-}
-
 export interface BillingV2PublicCatalog {
   source: string;
   currency: string;
   presets: BillingV2PublicPreset[];
   services: BillingV2PublicService[];
   commitments: BillingV2PublicCommitment[];
-  checkoutRoutes: BillingV2PublicCheckoutRoute[];
 }
 
+/**
+ * Deux formes, aucune n'etant un cas particulier de l'autre :
+ * formule (`presetCode`) ou composants choisis directement (`components`).
+ * `commitmentCode` est nul quand le produit n'engage a rien — typiquement un
+ * achat ponctuel.
+ */
 export interface BillingV2PublicSelection {
-  presetCode: string;
-  commitmentCode: string;
+  presetCode: string | null;
+  commitmentCode: string | null;
   paymentMode: BillingV2PublicPaymentMode;
   storagePersonalTierCode: string;
   backupPersonal: boolean;
@@ -2819,11 +2385,12 @@ export interface BillingV2PublicQuoteLine {
   unitAmountCents: number;
   amountCents: number;
   discountEligible: boolean;
+  billingCadence: "monthly" | "one_time";
 }
 
 export interface BillingV2PublicQuote {
-  presetCode: string;
-  commitmentCode: string;
+  presetCode: string | null;
+  commitmentCode: string | null;
   commitmentMonths: number;
   paymentMode: BillingV2PublicPaymentMode;
   discountBasisPoints: number;
@@ -2841,8 +2408,7 @@ export interface BillingV2PublicQuote {
   lines: BillingV2PublicQuoteLine[];
   matchesPresetBaseline: boolean;
   checkoutAvailable: boolean;
-  /** `native` : souscription V2 sans offre legacy. */
+  /** `native` : souscription V2, avec ou sans formule d'origine. */
   checkoutMode: string;
-  checkoutLegacyOfferId: string | null;
   checkoutReasonCode: string;
 }

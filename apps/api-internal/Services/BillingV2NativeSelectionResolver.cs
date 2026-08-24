@@ -8,11 +8,17 @@ namespace Kermaria.ApiInternal.Services;
 /// (`preset_id`, `commitment_term_id`, `service_price_id`) que le checkout
 /// authoritative attendait jusqu'ici d'une offre legacy.
 /// </summary>
+/// <remarks>
+/// <see cref="PresetId"/> et <see cref="CommitmentTermId"/> sont nuls pour une
+/// selection directe : le schema V2 accepte deja une souscription sans formule
+/// ni engagement (`originating_preset_id` et `commitment_term_id` nullables).
+/// Aucun preset ni terme technique n'est fabrique pour combler ces colonnes.
+/// </remarks>
 public sealed record BillingV2ResolvedNativeSelection(
-    string PresetId,
-    string PresetCode,
-    string CommitmentTermId,
-    string CommitmentCode,
+    string? PresetId,
+    string? PresetCode,
+    string? CommitmentTermId,
+    string? CommitmentCode,
     string PaymentMode,
     int CommitmentMonths,
     int DiscountBasisPoints,
@@ -68,33 +74,46 @@ public static class BillingV2NativeSelectionResolver
             throw new InvalidOperationException(resolution.ReasonCode);
         }
 
-        var commitment = catalog.Commitments.First(
-            item => string.Equals(
-                item.Code,
-                selection.CommitmentCode,
-                StringComparison.Ordinal));
-        var paymentOption = commitment.Option(selection.PaymentMode)
-            ?? throw new InvalidOperationException(PaymentModeUnavailable);
-
-        var presetId = await ReadPresetIdAsync(
-                connection,
-                selection.PresetCode,
-                cancellationToken)
-            ?? throw new InvalidOperationException(PresetUnknown);
-        var term = await ReadCommitmentTermAsync(
-                connection,
-                selection.CommitmentCode,
-                selection.PaymentMode,
-                cancellationToken)
-            ?? throw new InvalidOperationException(CommitmentUnknown);
-
-        // La remise annoncee au client et celle qui sera facturee doivent
-        // provenir de la meme ligne : un ecart signale un catalogue projete
-        // perime, et doit echouer plutot que sous-facturer.
-        if (term.DiscountBasisPoints != paymentOption.DiscountBasisPoints)
+        // Formule d'origine : facultative. Une selection directe n'en a pas,
+        // et la colonne correspondante reste NULL.
+        string? presetId = null;
+        if (selection.PresetCode is { Length: > 0 } presetCode)
         {
-            throw new InvalidOperationException(
-                "BILLING_V2_PUBLIC_DISCOUNT_MISMATCH");
+            presetId = await ReadPresetIdAsync(
+                    connection,
+                    presetCode,
+                    cancellationToken)
+                ?? throw new InvalidOperationException(PresetUnknown);
+        }
+
+        // Engagement : facultatif lui aussi. Sans terme, la duree vaut 1 mois
+        // et la remise 0 — aucune remise ne peut etre accordee par defaut.
+        CommitmentTermRow? term = null;
+        if (selection.CommitmentCode is { Length: > 0 } commitmentCode)
+        {
+            var commitment = catalog.Commitments.First(
+                item => string.Equals(
+                    item.Code,
+                    commitmentCode,
+                    StringComparison.Ordinal));
+            var paymentOption = commitment.Option(selection.PaymentMode)
+                ?? throw new InvalidOperationException(PaymentModeUnavailable);
+
+            term = await ReadCommitmentTermAsync(
+                    connection,
+                    commitmentCode,
+                    selection.PaymentMode,
+                    cancellationToken)
+                ?? throw new InvalidOperationException(CommitmentUnknown);
+
+            // La remise annoncee au client et celle qui sera facturee doivent
+            // provenir de la meme ligne : un ecart signale un catalogue projete
+            // perime, et doit echouer plutot que sous-facturer.
+            if (term.DiscountBasisPoints != paymentOption.DiscountBasisPoints)
+            {
+                throw new InvalidOperationException(
+                    "BILLING_V2_PUBLIC_DISCOUNT_MISMATCH");
+            }
         }
 
         var prices = await ReadServicePricesAsync(
@@ -165,11 +184,11 @@ public static class BillingV2NativeSelectionResolver
         return new BillingV2ResolvedNativeSelection(
             presetId,
             selection.PresetCode,
-            term.CommitmentTermId,
+            term?.CommitmentTermId,
             selection.CommitmentCode,
             selection.PaymentMode,
-            Math.Max(1, term.CommitmentMonths),
-            term.DiscountBasisPoints,
+            Math.Max(1, term?.CommitmentMonths ?? 1),
+            term?.DiscountBasisPoints ?? 0,
             items,
             selection.Canonical());
     }
@@ -242,10 +261,21 @@ public static class BillingV2NativeSelectionResolver
     }
 
     /// <summary>
-    /// Portee de facturation par service, deduite des presets actifs plutot
-    /// que d'une table de correspondance codee en dur. Une portee divergente
-    /// entre deux presets echoue en ferme : elle rendrait le provisioning
-    /// non deterministe.
+    /// Portee de facturation par service.
+    ///
+    /// Deux sources, dans cet ordre :
+    ///
+    /// 1. les presets actifs, qui restent l'autorite pour les services qu'ils
+    ///    composent — une portee divergente entre deux presets echoue en ferme,
+    ///    elle rendrait le provisioning non deterministe ;
+    /// 2. a defaut, `billing_v2_services.default_scope_type`, seule source
+    ///    native pour un service qui n'entre dans aucune formule. Sans cette
+    ///    retombee, tout le catalogue hors formule (DNS, VPS, supervision...)
+    ///    serait insouscriptible alors qu'il est complet en base.
+    ///
+    /// La correspondance est volontairement explicite : `user` designe le
+    /// titulaire du contrat (`primary_user`), jamais un utilisateur
+    /// supplementaire, qui reste porte par les presets.
     /// </summary>
     private static async Task<IReadOnlyDictionary<string, string>>
         ReadScopeTemplatesAsync(
@@ -253,37 +283,74 @@ public static class BillingV2NativeSelectionResolver
             CancellationToken cancellationToken)
     {
         var templates = new Dictionary<string, string>(StringComparer.Ordinal);
-        await using var command = connection.CreateCommand();
-        command.CommandText =
-            """
-            SELECT
-                service.code AS service_code,
-                MIN(item.scope_template) AS scope_template,
-                COUNT(DISTINCT item.scope_template) AS scope_count
-            FROM billing_v2_preset_items item
-            INNER JOIN billing_v2_services service
-                ON service.id = item.service_id
-            INNER JOIN billing_v2_offer_presets preset
-                ON preset.id = item.preset_id
-               AND preset.status = 'active'
-            GROUP BY service.code;
-            """;
-        await using var reader = await command.ExecuteReaderAsync(
-            cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
+        await using (var command = connection.CreateCommand())
         {
-            var serviceCode = reader.GetString("service_code");
-            if (reader.GetInt32("scope_count") != 1)
+            command.CommandText =
+                """
+                SELECT
+                    service.code AS service_code,
+                    MIN(item.scope_template) AS scope_template,
+                    COUNT(DISTINCT item.scope_template) AS scope_count
+                FROM billing_v2_preset_items item
+                INNER JOIN billing_v2_services service
+                    ON service.id = item.service_id
+                INNER JOIN billing_v2_offer_presets preset
+                    ON preset.id = item.preset_id
+                   AND preset.status = 'active'
+                GROUP BY service.code;
+                """;
+            await using var reader = await command.ExecuteReaderAsync(
+                cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
             {
-                throw new InvalidOperationException(
-                    $"{ScopeTemplateAmbiguous}: {serviceCode}");
-            }
+                var serviceCode = reader.GetString("service_code");
+                if (reader.GetInt32("scope_count") != 1)
+                {
+                    throw new InvalidOperationException(
+                        $"{ScopeTemplateAmbiguous}: {serviceCode}");
+                }
 
-            templates[serviceCode] = reader.GetString("scope_template");
+                templates[serviceCode] = reader.GetString("scope_template");
+            }
+        }
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText =
+                """
+                SELECT code, default_scope_type
+                FROM billing_v2_services
+                WHERE status = 'active';
+                """;
+            await using var reader = await command.ExecuteReaderAsync(
+                cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var serviceCode = reader.GetString("code");
+                if (templates.ContainsKey(serviceCode))
+                {
+                    continue;
+                }
+
+                var scopeTemplate = MapDefaultScopeType(
+                    reader.GetString("default_scope_type"));
+                if (scopeTemplate is not null)
+                {
+                    templates[serviceCode] = scopeTemplate;
+                }
+            }
         }
 
         return templates;
     }
+
+    private static string? MapDefaultScopeType(string defaultScopeType)
+        => defaultScopeType switch
+        {
+            "subscription" => "subscription",
+            "user" => "primary_user",
+            _ => null
+        };
 
     private static async Task<IReadOnlyDictionary<string, IReadOnlyList<ServicePriceRow>>>
         ReadServicePricesAsync(
@@ -308,6 +375,7 @@ public static class BillingV2NativeSelectionResolver
                     price.amount_cents,
                     price.currency,
                     price.billing_cadence,
+                    price.charge_trigger,
                     price.valid_from
                 FROM billing_v2_services service
                 LEFT JOIN billing_v2_service_tiers tier
@@ -317,15 +385,23 @@ public static class BillingV2NativeSelectionResolver
                     ON price.service_id = service.id
                    AND price.tier_id <=> tier.id
                    AND price.status = 'active'
+                   AND price.charge_trigger = @charge_trigger
                    AND price.valid_from <= @now
                    AND (price.valid_until IS NULL OR price.valid_until > @now)
                 WHERE service.status = 'active'
                 ORDER BY service.code,
                          tier.code,
+                         price.billing_cadence,
                          price.price_version DESC,
                          price.valid_from DESC;
                 """;
             command.Parameters.AddWithValue("@now", now);
+            // Un prix marque `subscription_change` finance un changement de
+            // configuration, jamais la souscription initiale : il ne doit pas
+            // pouvoir entrer dans un premier checkout.
+            command.Parameters.AddWithValue(
+                "@charge_trigger",
+                BillingV2ComponentizedPricingPolicy.InitialSubscription);
             await using var reader = await command.ExecuteReaderAsync(
                 cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
@@ -338,6 +414,7 @@ public static class BillingV2NativeSelectionResolver
                         ? null
                         : reader.GetString("tier_code"),
                     reader.GetBoolean("discount_eligible"),
+                    reader.GetString("charge_trigger"),
                     new BillingV2ServicePriceCandidate(
                         MariaDbIdentifierReader.ReadRequired(
                             reader,
@@ -358,24 +435,29 @@ public static class BillingV2NativeSelectionResolver
                      StringComparer.Ordinal))
         {
             var first = group.First();
-            var resolvedByCadence = new List<ServicePriceRow>();
-            foreach (var cadenceGroup in group.GroupBy(
-                         row => row.Candidate.BillingCadence,
-                         StringComparer.Ordinal))
+            var resolvedComponents = new List<ServicePriceRow>();
+            // La cle metier d'un prix est le quintuplet
+            // (service, palier, devise, cadence, declencheur). Grouper sur la
+            // seule cadence confondrait deux prix qui n'ont pas le meme role.
+            foreach (var componentGroup in group.GroupBy(
+                         row => (
+                             row.Candidate.Currency,
+                             row.Candidate.BillingCadence,
+                             row.ChargeTrigger)))
             {
                 var resolved = BillingV2ServicePriceResolutionPolicy.Resolve(
-                    cadenceGroup.Select(row => row.Candidate).ToArray(),
+                    componentGroup.Select(row => row.Candidate).ToArray(),
                     first.ServiceCode,
                     first.TierCode);
                 if (!resolved.Resolved || resolved.Price is null)
                 {
-                    // Une ambiguite dans UNE cadence suffit a invalider cette
-                    // configuration : ne jamais choisir arbitrairement.
-                    resolvedByCadence.Clear();
+                    // Une ambiguite dans UNE composante suffit a invalider
+                    // cette configuration : ne jamais choisir arbitrairement.
+                    resolvedComponents.Clear();
                     break;
                 }
 
-                resolvedByCadence.Add(new ServicePriceRow(
+                resolvedComponents.Add(new ServicePriceRow(
                     first.ServiceId,
                     first.TierId,
                     resolved.Price.ServicePriceId,
@@ -383,12 +465,22 @@ public static class BillingV2NativeSelectionResolver
                     resolved.Price.AmountCents,
                     resolved.Price.Currency,
                     resolved.Price.BillingCadence,
-                    first.DiscountEligible));
+                    // Un frais ponctuel n'est jamais remise : la remise
+                    // d'engagement porte sur le recurrent. Meme regle que la
+                    // projection publique, pour que devis et facturation
+                    // retombent sur le meme montant.
+                    first.DiscountEligible
+                        && resolved.Price.BillingCadence
+                            == BillingV2BillingCadences.Monthly));
             }
 
-            if (resolvedByCadence.Count > 0)
+            if (resolvedComponents.Count > 0)
             {
-                prices[group.Key] = resolvedByCadence;
+                prices[group.Key] = resolvedComponents
+                    .OrderByDescending(row =>
+                        row.BillingCadence == BillingV2BillingCadences.Monthly)
+                    .ThenBy(row => row.PriceCode, StringComparer.Ordinal)
+                    .ToArray();
             }
         }
 
@@ -406,6 +498,7 @@ public static class BillingV2NativeSelectionResolver
         string? TierId,
         string? TierCode,
         bool DiscountEligible,
+        string ChargeTrigger,
         BillingV2ServicePriceCandidate Candidate);
 
     private sealed record ServicePriceRow(

@@ -1,8 +1,16 @@
 namespace Kermaria.ApiInternal.Data.Configuration;
 
+/// <summary>
+/// Reglages d'exploitation du provisioning AD.
+/// </summary>
+/// <remarks>
+/// La topologie « quel service pilote quels groupes » n'est plus decrite ici :
+/// elle vient de <c>billing_v2_provisioning_rules</c> via
+/// <c>IServiceTopologyService</c>. Ne subsistent que les valeurs qui ne peuvent
+/// pas venir de la base — les DN d'annuaire et les bornes de reessai — et un
+/// repli de secours pour les references techniques hors catalogue.
+/// </remarks>
 public sealed record SubscriptionProvisioningRuntimeConfiguration(
-    IReadOnlyDictionary<string, IReadOnlyList<string>>
-        GroupsByOfferExternalReference,
     IReadOnlyDictionary<string, IReadOnlyList<string>>
         GroupsByTechnicalServiceReference,
     IReadOnlyDictionary<string, string> ServiceLabelsByTechnicalReference,
@@ -10,28 +18,6 @@ public sealed record SubscriptionProvisioningRuntimeConfiguration(
     int MaxAttempts,
     int RetryDelayMs)
 {
-    public IReadOnlyList<string> ResolveMappedGroups(
-        string? offerExternalReference)
-    {
-        if (string.IsNullOrWhiteSpace(offerExternalReference))
-        {
-            return Array.Empty<string>();
-        }
-
-        return GroupsByOfferExternalReference.TryGetValue(
-            offerExternalReference.Trim(),
-            out var groups)
-            ? groups
-            : Array.Empty<string>();
-    }
-
-    public IReadOnlyList<string> ManagedGroupSamAccountNames =>
-        GroupsByOfferExternalReference.Values
-            .SelectMany(groups => groups)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(group => group, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-
     public IReadOnlyList<string> ServiceManagedGroupSamAccountNames =>
         GroupsByTechnicalServiceReference.Values
             .SelectMany(groups => groups)
@@ -97,37 +83,11 @@ public sealed record SubscriptionProvisioningRuntimeConfiguration(
 
 public static class SubscriptionProvisioningConfigurationResolver
 {
-    private const string GroupsSectionName = "SUBSCRIPTION_PROVISIONING_GROUPS";
     private const string ServiceGroupsSectionName =
         "SUBSCRIPTION_PROVISIONING_SERVICE_GROUPS";
     private const string ServiceLabelsSectionName =
         "SUBSCRIPTION_PROVISIONING_SERVICE_LABELS";
     private const string GroupDnsSectionName = "AD_PROVISIONING_GROUP_DNS";
-
-    private static readonly IReadOnlyDictionary<string, string[]>
-        DefaultGroupsByOfferExternalReference =
-            new Dictionary<string, string[]>(
-                StringComparer.OrdinalIgnoreCase)
-            {
-                ["ACCES-RDS"] = ["GG_RDS"],
-                ["ACCES-VPN"] = ["GG_VPN"],
-                ["PACK-ACCES-1M-MENS"] = ["GG_VPN"],
-                ["PACK-ACCES-6M-MENS"] = ["GG_VPN"],
-                ["PACK-ACCES-6M-COMPT"] = ["GG_VPN"],
-                ["PACK-ACCES-12M-MENS"] = ["GG_VPN"],
-                ["PACK-ACCES-12M-COMPT"] = ["GG_VPN"],
-                ["PACK-BUREAU-1M-MENS"] = ["GG_RDS", "GG_VPN"],
-                ["PACK-BUREAU-6M-MENS"] = ["GG_RDS", "GG_VPN"],
-                ["PACK-BUREAU-6M-COMPT"] = ["GG_RDS", "GG_VPN"],
-                ["PACK-BUREAU-12M-MENS"] = ["GG_RDS", "GG_VPN"],
-                ["PACK-BUREAU-12M-COMPT"] = ["GG_RDS", "GG_VPN"],
-                ["PACK-PRO-1M-MENS"] = ["GG_VPN"],
-                ["PACK-PRO-6M-MENS"] = ["GG_VPN"],
-                ["PACK-PRO-6M-COMPT"] = ["GG_VPN"],
-                ["PACK-PRO-12M-MENS"] = ["GG_VPN"],
-                ["PACK-PRO-12M-COMPT"] = ["GG_VPN"],
-                ["RADIO"] = ["GG_Radio"]
-            };
 
     private static readonly IReadOnlyDictionary<string, string[]>
         DefaultGroupsByTechnicalServiceReference =
@@ -153,19 +113,11 @@ public static class SubscriptionProvisioningConfigurationResolver
     public static SubscriptionProvisioningRuntimeConfiguration Resolve(
         IConfiguration configuration)
     {
-        var groupsByOfferExternalReference =
-            new Dictionary<string, IReadOnlyList<string>>(
-                StringComparer.OrdinalIgnoreCase);
         var groupsByTechnicalServiceReference =
             new Dictionary<string, IReadOnlyList<string>>(
                 StringComparer.OrdinalIgnoreCase);
         var serviceLabelsByTechnicalReference =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var entry in DefaultGroupsByOfferExternalReference)
-        {
-            groupsByOfferExternalReference[entry.Key] = entry.Value;
-        }
 
         foreach (var entry in DefaultGroupsByTechnicalServiceReference)
         {
@@ -175,19 +127,6 @@ public static class SubscriptionProvisioningConfigurationResolver
         foreach (var entry in DefaultServiceLabelsByTechnicalReference)
         {
             serviceLabelsByTechnicalReference[entry.Key] = entry.Value;
-        }
-
-        foreach (var child in ReadSectionEntries(
-            configuration,
-            GroupsSectionName))
-        {
-            var groups = SplitGroups(child.Value);
-            if (groups.Count == 0)
-            {
-                continue;
-            }
-
-            groupsByOfferExternalReference[child.Key] = groups;
         }
 
         foreach (var child in ReadSectionEntries(
@@ -231,7 +170,6 @@ public static class SubscriptionProvisioningConfigurationResolver
         }
 
         return new SubscriptionProvisioningRuntimeConfiguration(
-            groupsByOfferExternalReference,
             groupsByTechnicalServiceReference,
             serviceLabelsByTechnicalReference,
             groupDnsBySamAccountName,

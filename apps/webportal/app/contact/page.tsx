@@ -2,16 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { ContactForm } from "@/components/ContactForm";
-import { PublicPackSelectionSummary } from "@/components/PublicPackSelectionSummary";
-import {
-  getPublicCommercialCatalog,
-  getPublicPackCatalogContent,
-} from "@/lib/internal-api";
+import { getBillingV2FormulesCatalog } from "@/lib/internal-api";
 import { buildPublicMetadata } from "@/lib/public-metadata";
-import {
-  buildSignupPackSnapshot,
-  selectionFromSearchParams,
-} from "@/lib/public-packs";
 
 export const metadata: Metadata = buildPublicMetadata({
   title: "Contact",
@@ -20,56 +12,39 @@ export const metadata: Metadata = buildPublicMetadata({
   path: "/contact",
 });
 
+export const dynamic = "force-dynamic";
+
 type ContactPageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
+/**
+ * Contact, éventuellement pré-rempli depuis une formule.
+ *
+ * Le seul contexte transporté est le code de la formule. Aucun montant n'est
+ * repris : la page contact ne propose rien de chiffré, et recopier ici un
+ * tarif calculé ailleurs créerait une deuxième version du prix, susceptible de
+ * ne plus correspondre à celle que le moteur tarifaire produira.
+ */
 export default async function ContactPage({ searchParams }: ContactPageProps) {
   const resolvedSearchParams = await searchParams;
-  const offerParam = resolvedSearchParams.offer;
-  const trimmedOffer =
-    typeof offerParam === "string" ? offerParam.trim() : "";
-  const selection = selectionFromSearchParams(resolvedSearchParams);
-
-  const [catalogResult, packContentResult] = selection || trimmedOffer
-    ? await Promise.all([
-        getPublicCommercialCatalog(),
-        selection ? getPublicPackCatalogContent() : Promise.resolve(null),
-      ])
-    : [null, null];
-
-  let offerReference: string | null = null;
-  let offerName: string | null = null;
-
-  const activeOffer = catalogResult?.data.find(
-    (entry) => entry.id === trimmedOffer && entry.status === "active",
-  ) ?? null;
-  const candidatePackSelection = selection && catalogResult
-    ? buildSignupPackSnapshot(
-        catalogResult.data,
-        selection,
-        packContentResult?.data ?? null,
-      )
-    : null;
-  const packSelection =
-    candidatePackSelection
-    && activeOffer?.id === candidatePackSelection.offerId
-      ? candidatePackSelection
-      : null;
-
-  if (activeOffer) {
-    offerReference = activeOffer.id;
-    offerName = activeOffer.name;
-  }
-
-  const defaultSubject = packSelection
-    ? `Demande de pack — ${packSelection.packLabel}`
-    : offerName
-      ? `Demande de devis — ${offerName}`
+  const requestedFormule = resolvedSearchParams.formule;
+  const trimmedFormule =
+    typeof requestedFormule === "string"
+      ? requestedFormule.trim().toLowerCase()
       : "";
 
-  const backLink = packSelection || offerReference
-    ? { href: "/offres", label: "Retour aux offres" }
+  const catalogResult = trimmedFormule
+    ? await getBillingV2FormulesCatalog().catch(() => null)
+    : null;
+  const preset =
+    catalogResult?.data.presets.find(
+      (candidate) => candidate.code === trimmedFormule,
+    ) ?? null;
+
+  const defaultSubject = preset ? `Demande de formule — ${preset.name}` : "";
+  const backLink = preset
+    ? { href: "/offres", label: "Retour aux formules" }
     : { href: "/", label: "Retour à l'accueil" };
 
   return (
@@ -89,32 +64,15 @@ export default async function ContactPage({ searchParams }: ContactPageProps) {
         </p>
       </header>
 
-      {packSelection ? (
-        <div className="contact-selection-stack">
-          <PublicPackSelectionSummary
-            commitmentMonths={packSelection.commitmentMonths}
-            description="Votre choix est repris dans le formulaire ci-dessous. Précisez votre contexte ou vos questions dans le message libre."
-            eyebrow="Pack repris"
-            fiscalMention={packSelection.fiscalMention}
-            fiscalRegime={packSelection.fiscalRegime}
-            firstChargeAmountCents={packSelection.firstChargeAmountCents}
-            monthlyPriceAmountCents={packSelection.monthlyPriceAmountCents}
-            packLabel={packSelection.packLabel}
-            paymentMode={packSelection.paymentMode}
-            setupFeeAmountCents={packSelection.setupFeeAmountCents}
-            title={`Demande autour de ${packSelection.packLabel}`}
-          />
-        </div>
-      ) : offerName ? (
+      {preset ? (
         <p className="contact-offer-banner">
-          Demande pré-remplie pour l&apos;offre :{" "}
-          <strong>{offerName}</strong>.
+          Demande pré-remplie pour la formule : <strong>{preset.name}</strong>.
         </p>
       ) : null}
 
       <ContactForm
         defaultSubject={defaultSubject}
-        offerReference={offerReference}
+        formuleCode={preset ? preset.code : null}
       />
     </div>
   );

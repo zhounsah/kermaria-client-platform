@@ -4,16 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { logBffFailure } from "@/lib/bff-observability";
 import { CORRELATION_HEADER, resolveCorrelationId } from "@/lib/correlation";
-import {
-  getPublicCommercialCatalog,
-  getPublicPackCatalogContent,
-} from "@/lib/internal-api";
-import {
-  buildSignupPackSnapshot,
-  resolvePackSelectionInput,
-} from "@/lib/public-packs";
 import { readBillingV2SelectionPayload } from "@/lib/billing-v2-selection";
-import { normalizeCatalogConfigurationInput } from "@/lib/public-configurator";
 import { isSignupEnabled } from "@/lib/public-routes";
 import { checkRateLimit, getRequestIdentifier } from "@/lib/rate-limit";
 import { callInternalSignup, verifyHCaptcha } from "@/lib/signup-server";
@@ -35,13 +26,6 @@ type SignupRequestBody = {
   email?: unknown;
   phone?: unknown;
   message?: unknown;
-  packKey?: unknown;
-  commitmentMonths?: unknown;
-  paymentMode?: unknown;
-  users?: unknown;
-  storageGb?: unknown;
-  needsVpn?: unknown;
-  needsWindowsDesktop?: unknown;
   billingV2Selection?: unknown;
   hcaptchaToken?: unknown;
   website?: unknown;
@@ -190,16 +174,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const hasPackSelection =
-    hasProvidedPackValue(body.packKey)
-    || hasProvidedPackValue(body.commitmentMonths)
-    || hasProvidedPackValue(body.paymentMode);
-  const hasCatalogConfiguration =
-    hasPackSelection
-    || hasProvidedPackValue(body.users)
-    || hasProvidedPackValue(body.storageGb)
-    || hasProvidedPackValue(body.needsVpn)
-    || hasProvidedPackValue(body.needsWindowsDesktop);
+  // Une seule autorite commerciale : la selection Billing V2. Les anciens
+  // champs `packKey` / `commitmentMonths` / `users` decrivaient un second
+  // catalogue ; les accepter encore, meme pour les ignorer, laisserait croire
+  // qu'une inscription peut porter une configuration que plus personne ne sait
+  // tarifer.
   const billingV2SelectionProvided =
     body.billingV2Selection !== undefined && body.billingV2Selection !== null;
   const billingV2Selection = billingV2SelectionProvided
@@ -216,93 +195,10 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (billingV2Selection && hasCatalogConfiguration) {
-    return NextResponse.json(
-      {
-        code: "AMBIGUOUS_COMMERCIAL_SELECTION",
-        message: "Une inscription ne peut pas melanger une formule Billing V2 et un ancien pack.",
-        correlation_id: correlationId,
-      },
-      { status: 400 },
-    );
-  }
-
-
-  let packSelection = null;
-  let catalogConfiguration = null;
-  if (hasPackSelection) {
-    const selection = resolvePackSelectionInput({
-      packKey: body.packKey,
-      commitmentMonths: body.commitmentMonths,
-      paymentMode: body.paymentMode,
-    });
-    if (!selection) {
-      return NextResponse.json(
-        {
-          code: "INVALID_PACK_SELECTION",
-          message: "Le pack choisi n'est pas valide.",
-          correlation_id: correlationId,
-        },
-        { status: 400 },
-      );
-    }
-
-    catalogConfiguration = normalizeCatalogConfigurationInput({
-      packKey: body.packKey,
-      commitmentMonths: body.commitmentMonths,
-      paymentMode: body.paymentMode,
-      users: body.users,
-      storageGb: body.storageGb,
-      needsVpn: body.needsVpn,
-      needsWindowsDesktop: body.needsWindowsDesktop,
-    });
-    if (!catalogConfiguration) {
-      return NextResponse.json(
-        {
-          code: "INVALID_CONFIGURATION",
-          message: "La configuration choisie n'est pas valide.",
-          correlation_id: correlationId,
-        },
-        { status: 400 },
-      );
-    }
-
-    const [catalogResult, packContentResult] = await Promise.all([
-      getPublicCommercialCatalog(),
-      getPublicPackCatalogContent(),
-    ]);
-    packSelection = buildSignupPackSnapshot(
-      catalogResult.data,
-      selection,
-      packContentResult.data,
-    );
-    if (!packSelection) {
-      return NextResponse.json(
-        {
-          code: "PACK_SELECTION_UNAVAILABLE",
-          message: "Le pack choisi n'est plus disponible.",
-          correlation_id: correlationId,
-        },
-        { status: 409 },
-      );
-    }
-  } else if (hasCatalogConfiguration) {
-    return NextResponse.json(
-      {
-        code: "INVALID_CONFIGURATION",
-        message: "La configuration choisie n'est pas complete.",
-        correlation_id: correlationId,
-      },
-      { status: 400 },
-    );
-  }
-
   const result = await callInternalSignup(
     "/internal/signup",
     {
       ...payload,
-      packSelection: catalogConfiguration ? null : packSelection,
-      catalogConfiguration,
       billingV2Selection,
       sourceAddress: identifier === "unknown" ? null : identifier,
       userAgent: request.headers.get("user-agent")?.slice(0, 500) ?? null,
@@ -514,12 +410,4 @@ function buildSignupMessage(message: string, userSize: string) {
   }
 
   return parts.length > 0 ? parts.join("\n\n") : null;
-}
-
-function hasProvidedPackValue(value: unknown) {
-  if (value === null || value === undefined) {
-    return false;
-  }
-
-  return typeof value !== "string" || value.trim().length > 0;
 }

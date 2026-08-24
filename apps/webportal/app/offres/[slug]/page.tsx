@@ -14,7 +14,7 @@ import { PublicPackCard } from "@/components/PublicPackCard";
 import { SectionCard } from "@/components/SectionCard";
 import { formatDateTime } from "@/lib/formatters";
 import {
-  getPublicCommercialCatalog,
+  getBillingV2FormulesCatalog,
   getPublicManagedContent,
   getPublicPackCatalogContent,
 } from "@/lib/internal-api";
@@ -23,7 +23,7 @@ import {
   isSignupEnabled,
 } from "@/lib/public-routes";
 import { buildPublicMetadata } from "@/lib/public-metadata";
-import { resolvePackCatalog } from "@/lib/public-packs";
+import { buildPublicPackViews } from "@/lib/public-packs";
 import { JsonLd, breadcrumbJsonLd, packServiceJsonLd } from "@/lib/seo";
 
 type PageProps = {
@@ -73,7 +73,7 @@ export default async function PublicPackSheetPage({ params }: PageProps) {
   const contentKey = buildPackSheetContentKey(manifest.key);
   const [catalogResult, catalogContentResult, managedContentResult] =
     await Promise.all([
-      getPublicCommercialCatalog(),
+      getBillingV2FormulesCatalog(),
       getPublicPackCatalogContent(),
       getPublicManagedContent(contentKey),
     ]);
@@ -88,7 +88,7 @@ export default async function PublicPackSheetPage({ params }: PageProps) {
     );
   }
 
-  const packs = resolvePackCatalog(
+  const packs = buildPublicPackViews(
     catalogResult.data,
     catalogContentResult.data,
   );
@@ -96,25 +96,29 @@ export default async function PublicPackSheetPage({ params }: PageProps) {
   if (!pack) {
     return (
       <ErrorState
-        description="Cette offre n'est pas encore disponible à la publication."
+        description="Cette formule n'est pas encore publiée au catalogue."
         reference={catalogResult.correlationId}
-        title="Offre non publiée"
+        title="Formule non publiée"
       />
     );
   }
 
   const content = managedContentResult.data;
   const signupEnabled = isSignupEnabled();
-  const componentOffers = manifest.technicalServiceReferences
-    .map((reference) =>
-      catalogResult.data.find(
-        (offer) => offer.status === "active" && offer.externalReference === reference,
-      ) ?? null,
+  // Les references techniques du pack sont des codes `billing_v2_services` :
+  // le bloc ci-dessous decrit donc les services du catalogue V2 reellement
+  // publies, et non une recopie editoriale qui pourrait diverger.
+  const componentServices = manifest.technicalServiceReferences
+    .map(
+      (reference) =>
+        catalogResult.data.services.find(
+          (service) => service.code === reference,
+        ) ?? null,
     )
-    .filter((offer): offer is (typeof catalogResult.data)[number] => offer !== null);
-  const highlightLabel =
-    catalogContentResult.data.packs.find((item) => item.packCode === pack.key)
-      ?.highlightLabel ?? null;
+    .filter(
+      (service): service is (typeof catalogResult.data.services)[number] =>
+        service !== null,
+    );
 
   return (
     <div className="offres-page managed-pack-sheet-page">
@@ -167,12 +171,7 @@ export default async function PublicPackSheetPage({ params }: PageProps) {
           </SectionCard>
         </div>
 
-        <PublicPackCard
-          highlightLabel={highlightLabel}
-          mode="signup"
-          pack={pack}
-          signupEnabled={signupEnabled}
-        />
+        <PublicPackCard pack={pack} signupEnabled={signupEnabled} />
       </section>
 
       <SectionCard ariaLabel={`Composants techniques liés à ${pack.label}`}>
@@ -182,26 +181,27 @@ export default async function PublicPackSheetPage({ params }: PageProps) {
             <h2>Composants techniques liés</h2>
             <p>
               Ce bloc est calculé automatiquement à partir des références
-              techniques du pack et du catalogue commercial actuellement actif.
+              techniques de la formule et du catalogue Billing V2 publié.
             </p>
           </div>
         </div>
 
-        {componentOffers.length === 0 ? (
+        {componentServices.length === 0 ? (
           <p className="field-hint">
-            Aucun composant technique lié n&apos;est actuellement publié pour ce
-            pack.
+            Aucun composant technique lié n&apos;est actuellement publié pour
+            cette formule.
           </p>
         ) : (
           <div className="managed-pack-component-grid">
-            {componentOffers.map((offer) => (
-              <article className="managed-pack-component-card" key={offer.id}>
-                <p className="card-kicker">{offer.category}</p>
-                <h3>{offer.name}</h3>
-                <p className="multiline-text">{offer.description}</p>
+            {componentServices.map((service) => (
+              <article
+                className="managed-pack-component-card"
+                key={service.code}
+              >
+                <p className="card-kicker">{service.category}</p>
+                <h3>{service.name}</h3>
                 <p className="field-hint">
-                  Référence : {offer.externalReference ?? "—"} · Unité :{" "}
-                  {offer.unitLabel}
+                  Référence : {service.code} · Portée : {service.scopeType}
                 </p>
               </article>
             ))}

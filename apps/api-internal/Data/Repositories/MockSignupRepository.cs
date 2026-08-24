@@ -15,8 +15,6 @@ public sealed class MockSignupRow
     public string? Message { get; set; }
     public required SignupCustomerData Customer { get; set; }
     public required SignupUserData PrimaryUser { get; set; }
-    public SignupPackSelectionSnapshot? PackSelection { get; set; }
-    public CatalogConfigurationSnapshot? CatalogConfiguration { get; set; }
     public BillingV2PublicSelection? BillingV2Selection { get; set; }
     public string? VerificationTokenHash { get; set; }
     public DateTime? VerificationTokenExpiresAtUtc { get; set; }
@@ -98,8 +96,6 @@ public sealed class MockSignupRepository : ISignupRepository
             Message = insert.Message,
             Customer = insert.Customer,
             PrimaryUser = insert.PrimaryUser,
-            PackSelection = insert.PackSelection,
-            CatalogConfiguration = insert.CatalogConfiguration,
             BillingV2Selection = insert.BillingV2Selection,
             VerificationTokenHash = insert.VerificationTokenHash,
             VerificationTokenExpiresAtUtc = insert.VerificationTokenExpiresAtUtc,
@@ -180,8 +176,7 @@ public sealed class MockSignupRepository : ISignupRepository
             .Where(candidate =>
                 candidate.Status == "approved"
                 && candidate.ApprovedCustomerId == customerId
-                && (candidate.PackSelection is not null
-                    || candidate.BillingV2Selection is not null))
+                && candidate.BillingV2Selection is not null)
             .OrderByDescending(candidate => candidate.ApprovedAtUtc)
             .ThenByDescending(candidate => candidate.CreatedAtUtc)
             .FirstOrDefault();
@@ -343,8 +338,6 @@ public sealed class MockSignupRepository : ISignupRepository
             row.Message,
             row.Customer,
             row.PrimaryUser,
-            row.PackSelection,
-            row.CatalogConfiguration,
             row.SourceAddress,
             row.VerificationTokenExpiresAtUtc,
             row.ApprovedUserId,

@@ -7,7 +7,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { SectionCard } from "@/components/SectionCard";
 import { requireAdminSession } from "@/lib/auth";
 import {
-  getAdminCatalog,
+  getAdminBillingV2Catalog,
   getAdminDownloadCategories,
 } from "@/lib/internal-api";
 
@@ -21,7 +21,7 @@ export default async function AdminNewDownloadPage() {
   await requireAdminSession();
   const [categoriesResult, catalogResult] = await Promise.all([
     getAdminDownloadCategories(),
-    getAdminCatalog(),
+    getAdminBillingV2Catalog(),
   ]);
 
   if (categoriesResult.error) {
@@ -44,7 +44,7 @@ export default async function AdminNewDownloadPage() {
   return (
     <>
       <PageHeader
-        description="Ajoutez une ressource claire et rassurante pour l'espace client, avec visibilité contrôlée par packs, offres ou services."
+        description="Ajoutez une ressource claire et rassurante pour l'espace client, avec visibilité contrôlée par formules ou services."
         eyebrow="Téléchargements"
         title="Nouveau téléchargement"
       />
@@ -71,8 +71,9 @@ export default async function AdminNewDownloadPage() {
       <AdminDownloadForm
         categories={categoriesResult.data}
         mode="create"
-        offerCatalogAvailable={!catalogResult.error}
-        offers={catalogResult.error ? [] : catalogResult.data}
+        catalogAvailable={!catalogResult.error}
+        presets={catalogResult.error ? [] : catalogResult.data.presets}
+        services={catalogResult.error ? [] : catalogResult.data.services}
       />
 
       <MockNotice

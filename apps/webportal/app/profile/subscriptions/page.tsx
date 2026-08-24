@@ -145,16 +145,14 @@ export default async function ProfileSubscriptionsPage({
                 <article
                   className="content-panel stack-panel"
                   key={item.id}
-                  aria-label={`Souscription ${item.offerName}`}
+                  aria-label={`Souscription ${item.label}`}
                 >
                   <div className="section-heading">
                     <div>
                       <span className="card-kicker">
-                        {item.publicPackCode
-                          ? "Pack grand public"
-                          : "Offre récurrente"}
+                        {item.presetCode ? "Formule" : "Sélection à la carte"}
                       </span>
-                      <h2>{item.offerName}</h2>
+                      <h2>{item.label}</h2>
                       <p>
                         {formatCommercialAmountFromCents(
                           item.priceAmountCents,
@@ -229,8 +227,8 @@ export default async function ProfileSubscriptionsPage({
                       <dd>{String(item.paidCyclesCount)}</dd>
                     </div>
                     <div>
-                      <dt>Référence offre</dt>
-                      <dd>{item.offerExternalReference ?? "—"}</dd>
+                      <dt>Formule</dt>
+                      <dd>{item.presetCode ?? "À la carte"}</dd>
                     </div>
                     <div>
                         <dt>Identifiant de paiement</dt>

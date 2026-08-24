@@ -1,4 +1,4 @@
-using Kermaria.ApiInternal.Services;
+﻿using Kermaria.ApiInternal.Services;
 
 namespace Kermaria.ApiInternal.SmokeTests;
 
@@ -27,7 +27,7 @@ public static class BillingV2PublicCatalogTests
         VerifyUpfrontChargesTheWholeTermOnce();
         VerifyUpfrontIsRefusedWithoutEngagement();
         VerifySelectionCanonicalIsStableAndDiscriminating();
-        VerifyLegacyOfferKeepsItsOwnIdentity();
+        VerifySelectionIdentityIsPerConfiguration();
         VerifyLaunchFlagsBlockCheckoutWithoutHidingThePrice();
         VerifyQuoteIgnoresAnyAmountSentByTheBrowser();
         VerifyUpfrontLifecycleBoundsTheContract();
@@ -37,6 +37,11 @@ public static class BillingV2PublicCatalogTests
         VerifyGenericComponentsAreCanonicalAndServerResolved();
         VerifyVpsUpgradeDoesNotRepeatInitialSetup();
         VerifyFulfillmentNeverEquatesManualDeliveryWithProvisioning();
+        VerifySimultaneousPriceComponentsProduceTwoQuoteLines();
+        VerifySubscriptionChangePriceNeverEntersAnInitialQuote();
+        VerifyPureOneTimeSelectionNeverBecomesASubscription();
+        VerifyDirectRecurringSelectionRenewsWithoutAPreset();
+        VerifyDirectRecurringWithSetupStillRenews();
         return Task.CompletedTask;
     }
 
@@ -280,9 +285,6 @@ public static class BillingV2PublicCatalogTests
             catalog.Commitments.Single(item => item.Code == "FLEX")
                 .Option(BillingV2PaymentModes.Upfront) is null,
             "Pas de comptant sans engagement.");
-        Ensure(
-            catalog.CheckoutRoutes.Count == 12,
-            "Douze routes legacy mensuelles conservees pour compatibilite.");
     }
 
     private static void VerifyCommitmentDiscountsAreAppliedByTheEngine()
@@ -410,15 +412,13 @@ public static class BillingV2PublicCatalogTests
         Ensure(quote.MatchesPresetBaseline, "Formule standard reconnue.");
         Ensure(quote.CheckoutAvailable, "Checkout autorise pour la formule standard.");
         Ensure(
-            quote.CheckoutLegacyOfferId
-                == "61000000-0000-0000-0000-000000000114",
-            "Route vers l'offre legacy 12 mois mensuelle.");
+            quote.CheckoutMode == BillingV2PublicCheckoutModes.Native,
+            "La formule standard passe par la souscription V2 native.");
     }
 
     /// <summary>
-    /// Une configuration personnalisee valide est desormais souscriptible : le
-    /// checkout ne depend plus de l'existence d'une offre legacy. Aucune route
-    /// legacy n'est pour autant inventee.
+    /// Une configuration personnalisee valide est souscriptible : le checkout
+    /// est natif V2 et ne depend d'aucune offre.
     /// </summary>
     private static void VerifyCustomConfigurationIsCheckoutable()
     {
@@ -431,10 +431,7 @@ public static class BillingV2PublicCatalogTests
         Ensure(quote.CheckoutAvailable, "Configuration personnalisee souscriptible.");
         Ensure(
             quote.CheckoutMode == BillingV2PublicCheckoutModes.Native,
-            "Souscription V2 native, sans offre legacy.");
-        Ensure(
-            quote.CheckoutLegacyOfferId is null,
-            "Aucune route legacy inventee pour une configuration personnalisee.");
+            "Souscription V2 native.");
         Ensure(
             quote.MonthlyAfterDiscountCents == 2780,
             "Prix de la configuration personnalisee.");
@@ -530,9 +527,6 @@ public static class BillingV2PublicCatalogTests
                 quote.CommitmentSavingsCents == saved,
                 $"Comptant {term} : economie totale.");
             Ensure(quote.CheckoutAvailable, $"Comptant {term} souscriptible.");
-            Ensure(
-                quote.CheckoutLegacyOfferId is null,
-                $"Comptant {term} : aucune offre legacy mensuelle detournee.");
         }
 
         // Le comptant personnalise doit rester coherent avec le mensuel : le
@@ -630,38 +624,31 @@ public static class BillingV2PublicCatalogTests
     }
 
     /// <summary>
-    /// Le parcours legacy garde une identite propre : son empreinte est
-    /// derivee de l'offre et ne peut pas entrer en collision avec celle d'une
-    /// configuration native.
+    /// L'identite metier d'une demande est la configuration elle-meme : deux
+    /// configurations differentes ne peuvent jamais partager une empreinte, et
+    /// une meme configuration y retombe toujours.
     /// </summary>
-    private static void VerifyLegacyOfferKeepsItsOwnIdentity()
+    private static void VerifySelectionIdentityIsPerConfiguration()
     {
-        var legacy = BillingV2CheckoutSelectionFingerprint.ForLegacyOffer(
-            "61000000-0000-0000-0000-000000000114");
+        var baseline = BillingV2CheckoutSelectionFingerprint.ForSelection(
+            Baseline("pack-bureau-windows-distance", "TERM-12").Canonical());
         Ensure(
-            legacy
-                == BillingV2CheckoutSelectionFingerprint.ForLegacyOffer(
-                    "61000000-0000-0000-0000-000000000114"),
-            "Empreinte legacy stable.");
-        Ensure(
-            legacy
-                != BillingV2CheckoutSelectionFingerprint.ForLegacyOffer(
-                    "61000000-0000-0000-0000-000000000112"),
-            "Deux offres legacy, deux empreintes.");
-        Ensure(
-            legacy
-                != BillingV2CheckoutSelectionFingerprint.ForSelection(
+            baseline
+                == BillingV2CheckoutSelectionFingerprint.ForSelection(
                     Baseline("pack-bureau-windows-distance", "TERM-12")
                         .Canonical()),
-            "Legacy et natif ne partagent jamais une empreinte.");
-
-        // La formule standard payee au mois reste rattachee a son offre
-        // legacy : le parcours historique n'est pas casse.
+            "Empreinte de selection stable.");
         Ensure(
-            Quote("pack-bureau-windows-distance", "TERM-12")
-                    .CheckoutLegacyOfferId
-                == "61000000-0000-0000-0000-000000000114",
-            "Formule standard mensuelle toujours mappee a son offre legacy.");
+            baseline
+                != BillingV2CheckoutSelectionFingerprint.ForSelection(
+                    Baseline("pack-bureau-windows-distance", "TERM-6")
+                        .Canonical()),
+            "Deux engagements, deux empreintes.");
+        Ensure(
+            baseline
+                != BillingV2CheckoutSelectionFingerprint.ForSelection(
+                    Baseline("pack-dossier-securise", "TERM-12").Canonical()),
+            "Deux formules, deux empreintes.");
     }
 
     private static void VerifyLaunchFlagsBlockCheckoutWithoutHidingThePrice()
@@ -739,6 +726,289 @@ public static class BillingV2PublicCatalogTests
                         StringComparison.OrdinalIgnoreCase)),
             "Aucun identifiant de prix fournisseur dans la demande de checkout.");
     }
+
+    /// <summary>
+    /// Un service peut porter plusieurs composantes tarifaires simultanees.
+    /// Le devis public doit alors montrer exactement ce que le checkout
+    /// facturera : une ligne mensuelle ET une ligne de mise en service.
+    ///
+    /// Cas mesure : VPS-LOCAL/NANO a 5,90 EUR par mois avec 19,90 EUR de frais
+    /// initiaux. Mensuel = 5,90 ; du maintenant = 25,80. La cadence vient de la
+    /// composante, jamais du `billing_type` du service.
+    /// </summary>
+    private static void VerifySimultaneousPriceComponentsProduceTwoQuoteLines()
+    {
+        var quote = ComponentQuote(VpsCatalog(), "VPS-LOCAL", "NANO");
+
+        Ensure(
+            quote.Lines.Count == 2,
+            "Un service mensuel avec frais de mise en service produit deux lignes.");
+        var monthly = quote.Lines.Single(
+            line => line.BillingCadence == BillingV2BillingCadences.Monthly);
+        var setup = quote.Lines.Single(
+            line => line.BillingCadence == BillingV2BillingCadences.OneTime);
+        Ensure(monthly.AmountCents == 590, "Ligne mensuelle a 5,90 EUR.");
+        Ensure(setup.AmountCents == 1990, "Ligne de mise en service a 19,90 EUR.");
+        Ensure(
+            !setup.DiscountEligible,
+            "Un frais ponctuel n'est jamais remise.");
+        Ensure(
+            quote.MonthlyAfterDiscountCents == 590,
+            "Le mensuel ne doit pas absorber les frais de mise en service.");
+        Ensure(quote.OneTimeCents == 1990, "Le ponctuel est isole.");
+        Ensure(
+            quote.TotalDueNowCents == 2580,
+            "Du maintenant = 5,90 + 19,90 = 25,80 EUR.");
+    }
+
+    /// <summary>
+    /// Un prix marque `subscription_change` finance un changement de
+    /// configuration. Il ne doit jamais entrer dans un premier checkout, meme
+    /// si sa cadence est mensuelle.
+    /// </summary>
+    private static void VerifySubscriptionChangePriceNeverEntersAnInitialQuote()
+    {
+        var catalog = VpsCatalog(withUpgradeFee: true);
+        var quote = ComponentQuote(catalog, "VPS-LOCAL", "NANO");
+
+        Ensure(
+            quote.Lines.Count == 2,
+            "Le prix de changement reste hors du devis initial.");
+        Ensure(
+            quote.TotalDueNowCents == 2580,
+            "Le prix de changement ne gonfle pas le montant preleve a la souscription.");
+    }
+
+    /// <param name="withMonthly">
+    /// Sans composante mensuelle, le palier decrit une prestation purement
+    /// ponctuelle. Le service reste declare « recurring » : c'est justement ce
+    /// qui permet de verifier que la decision suit les composantes tarifaires
+    /// et non la nature commerciale affichee.
+    /// </param>
+    /// <summary>
+    /// Achat purement ponctuel : ni formule, ni engagement, ni renouvellement.
+    /// </summary>
+    /// <remarks>
+    /// Le service est declare `subscription` et son palier existe : rien dans
+    /// sa nature commerciale ne dit qu'il s'agit d'un achat unique. Seules ses
+    /// composantes tarifaires le disent. Poser un engagement ici fabriquerait
+    /// une duree contractuelle que le client n'a pas souscrite, et un
+    /// `renews_at` ferait planifier au moteur un cycle sans montant.
+    /// </remarks>
+    private static void VerifyPureOneTimeSelectionNeverBecomesASubscription()
+    {
+        var catalog = VpsCatalog(withMonthly: false);
+        var selection = ComponentSelection("VPS-LOCAL", "NANO");
+        var resolution = BillingV2PublicSelectionPolicy.Resolve(
+            catalog, selection);
+
+        Ensure(resolution.Resolved, "Une prestation ponctuelle reste commandable seule.");
+        var hasRecurring = resolution.Lines.Any(line => string.Equals(
+            line.BillingCadence,
+            BillingV2BillingCadences.Monthly,
+            StringComparison.Ordinal));
+        Ensure(!hasRecurring, "Aucune ligne mensuelle dans une prestation ponctuelle.");
+
+        var quote = ComponentQuote(catalog, "VPS-LOCAL", "NANO");
+        Ensure(quote.PresetCode is null, "Aucune formule n'est fabriquee.");
+        Ensure(quote.CommitmentCode is null, "Aucun engagement n'est fabrique.");
+        Ensure(
+            quote.MonthlyAfterDiscountCents == 0,
+            "Rien n'est facture au mois.");
+        Ensure(
+            quote.OneTimeCents == 1990 && quote.TotalDueNowCents == 1990,
+            "Le prix ponctuel est preleve une fois, et une seule.");
+
+        var plan = BillingV2SubscriptionLifecyclePolicy.Plan(
+            BillingV2PaymentModes.Monthly,
+            commitmentMonths: 1,
+            new DateTime(2026, 8, 16, 9, 30, 0, DateTimeKind.Utc),
+            hasRecurringComponent: hasRecurring);
+        Ensure(
+            plan.RenewsAtUtc is null,
+            "Un achat ponctuel n'annonce aucune date de renouvellement.");
+    }
+
+    /// <summary>
+    /// Selection directe recurrente : pas de formule, mais un cycle et un
+    /// renouvellement. L'engagement sans duree du catalogue est accepte.
+    /// </summary>
+    private static void VerifyDirectRecurringSelectionRenewsWithoutAPreset()
+    {
+        var catalog = VpsCatalog(withSetup: false);
+        var selection = ComponentSelection("VPS-LOCAL", "NANO", "FLEX");
+        var resolution = BillingV2PublicSelectionPolicy.Resolve(
+            catalog, selection);
+
+        Ensure(resolution.Resolved, "Un service recurrent est commandable sans formule.");
+        var hasRecurring = resolution.Lines.Any(line => string.Equals(
+            line.BillingCadence,
+            BillingV2BillingCadences.Monthly,
+            StringComparison.Ordinal));
+        Ensure(hasRecurring, "La composante mensuelle est bien reconnue.");
+
+        var quote = ComponentQuote(catalog, "VPS-LOCAL", "NANO", "FLEX");
+        Ensure(quote.PresetCode is null, "Une selection directe n'a pas de formule.");
+        Ensure(
+            quote.CommitmentCode == "FLEX" && quote.CommitmentMonths == 1,
+            "Le sans-engagement du catalogue vaut un mois.");
+        Ensure(
+            quote.DiscountBasisPoints == 0,
+            "Le sans-engagement n'accorde aucune remise.");
+        Ensure(
+            quote.MonthlyAfterDiscountCents == 590 && quote.OneTimeCents == 0,
+            "Seul le mensuel est facture.");
+
+        var plan = BillingV2SubscriptionLifecyclePolicy.Plan(
+            BillingV2PaymentModes.Monthly,
+            commitmentMonths: quote.CommitmentMonths,
+            new DateTime(2026, 8, 16, 9, 30, 0, DateTimeKind.Utc),
+            hasRecurringComponent: hasRecurring);
+        Ensure(
+            plan.RenewsAtUtc == plan.CurrentPeriodEndsAtUtc,
+            "Un abonnement direct annonce sa date de renouvellement.");
+    }
+
+    /// <summary>
+    /// Recurrent PLUS frais de mise en service : deux lignes distinctes pour un
+    /// meme couple service/palier, et un abonnement malgre tout.
+    /// </summary>
+    private static void VerifyDirectRecurringWithSetupStillRenews()
+    {
+        var catalog = VpsCatalog();
+        var quote = ComponentQuote(catalog, "VPS-LOCAL", "NANO", "FLEX");
+
+        Ensure(quote.Lines.Count == 2, "Deux lignes pour un meme service/palier.");
+        Ensure(
+            quote.Lines.Select(line =>
+                    $"{line.ServiceCode}|{line.TierCode}|{line.BillingCadence}")
+                .Distinct(StringComparer.Ordinal)
+                .Count() == 2,
+            "Service, palier et cadence forment une identite de ligne unique.");
+        Ensure(
+            quote.CommitmentCode == "FLEX",
+            "La presence d'un frais ponctuel ne supprime pas l'abonnement.");
+        Ensure(
+            quote.MonthlyAfterDiscountCents == 590
+            && quote.OneTimeCents == 1990
+            && quote.TotalDueNowCents == 2580,
+            "5,90 par mois, 19,90 a la mise en service, 25,80 du maintenant.");
+
+        var plan = BillingV2SubscriptionLifecyclePolicy.Plan(
+            BillingV2PaymentModes.Monthly,
+            commitmentMonths: quote.CommitmentMonths,
+            new DateTime(2026, 8, 16, 9, 30, 0, DateTimeKind.Utc),
+            hasRecurringComponent: true);
+        Ensure(
+            plan.RenewsAtUtc == plan.CurrentPeriodEndsAtUtc,
+            "Le renouvellement suit la composante mensuelle, pas le frais.");
+    }
+
+    private static BillingV2PublicCatalogSnapshot VpsCatalog(
+        bool withUpgradeFee = false,
+        bool withMonthly = true,
+        bool withSetup = true)
+    {
+        var components = new List<BillingV2PublicPriceComponent>();
+        if (withMonthly)
+        {
+            components.Add(new BillingV2PublicPriceComponent(
+                BillingV2BillingCadences.Monthly,
+                BillingV2ComponentizedPricingPolicy.InitialSubscription,
+                590,
+                "EUR",
+                DiscountEligible: true,
+                "price-vps-nano-monthly",
+                "VPS-LOCAL-NANO-MONTHLY-EUR-V1"));
+        }
+
+        if (withSetup)
+        {
+            components.Add(new BillingV2PublicPriceComponent(
+                BillingV2BillingCadences.OneTime,
+                BillingV2ComponentizedPricingPolicy.InitialSubscription,
+                1990,
+                "EUR",
+                DiscountEligible: false,
+                "price-vps-nano-setup",
+                "VPS-LOCAL-NANO-SETUP-EUR-V1"));
+        }
+
+        if (withUpgradeFee)
+        {
+            components.Add(new BillingV2PublicPriceComponent(
+                BillingV2BillingCadences.OneTime,
+                BillingV2ComponentizedPricingPolicy.SubscriptionChange,
+                4900,
+                "EUR",
+                DiscountEligible: false,
+                "price-vps-nano-upgrade",
+                "VPS-LOCAL-NANO-UPGRADE-EUR-V1"));
+        }
+
+        return new BillingV2PublicCatalogSnapshot(
+            "test",
+            "EUR",
+            [],
+            [
+                new BillingV2PublicService(
+                    "VPS-LOCAL",
+                    "VPS local",
+                    "Infrastructure",
+                    "subscription",
+                    FlatMonthlyAmountCents: null,
+                    [
+                        new BillingV2PublicTier(
+                            "NANO",
+                            "Nano",
+                            Description: null,
+                            NumericValue: 1,
+                            MonthlyAmountCents: withMonthly ? 590 : 0,
+                            PublicSelectable: true,
+                            components)
+                    ],
+                    DiscountEligible: true,
+                    PublicVisible: true,
+                    SelfServiceOrderable: true)
+            ],
+            BillingV2PublicCatalogSeed.Commitments());
+    }
+
+    private static BillingV2PublicQuote ComponentQuote(
+        BillingV2PublicCatalogSnapshot catalog,
+        string serviceCode,
+        string? tierCode,
+        string? commitmentCode = null)
+        => BillingV2PublicQuoteBuilder.Build(
+            catalog,
+            ComponentSelection(serviceCode, tierCode, commitmentCode),
+            new BillingV2PricingEngine(),
+            new BillingV2AuthoritativeCheckoutReadiness(
+                Authorized: true,
+                "BILLING_V2_AUTHORITATIVE_CHECKOUT_LOCALLY_READY"));
+
+    /// <summary>
+    /// Selection directe : un composant, aucune formule. L'engagement est un
+    /// parametre parce que c'est precisement ce que la couche publique doit
+    /// deduire des composantes tarifaires, et non supposer.
+    /// </summary>
+    private static BillingV2PublicSelection ComponentSelection(
+        string serviceCode,
+        string? tierCode,
+        string? commitmentCode = null)
+        => new(
+            PresetCode: null,
+            CommitmentCode: commitmentCode,
+            BillingV2PaymentModes.Monthly,
+            StoragePersonalTierCode: string.Empty,
+            BackupPersonal: false,
+            StorageSharedTierCode: null,
+            BackupShared: false,
+            VpnTierCode: null,
+            RemoteDesktop: false,
+            AdditionalUsers: 0,
+            SupportPlus: false,
+            [new BillingV2PublicSelectionComponent(serviceCode, tierCode, 1)]);
 
     private static BillingV2PublicSelection Baseline(
         string presetCode,

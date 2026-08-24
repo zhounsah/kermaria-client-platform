@@ -1,28 +1,24 @@
 import "server-only";
 
-import type {
-  AdminSubscriptionDetail,
-  SubscriptionSummary,
-} from "@kermaria/shared";
+import type { SubscriptionSummary } from "@kermaria/shared";
 import { NextRequest, NextResponse } from "next/server";
 
 import { CORRELATION_HEADER, resolveCorrelationId } from "@/lib/correlation";
 import {
+  getInternalApiError,
   getInternalSession,
   mutateInternalAdminData,
 } from "@/lib/internal-api";
-import { cancelPayPalSubscription, isPayPalConfigured } from "@/lib/paypal";
 import { getSessionCookieName } from "@/lib/session-config";
-import {
-  getInternalApiUrl,
-  getInternalServiceHeaders,
-} from "@/lib/runtime-config";
-import {
-  cancelStripeSubscription,
-  getStripeMode,
-  scheduleStripeSubscriptionCancellationAtPeriodEnd,
-} from "@/lib/stripe";
 
+/**
+ * Résiliation administrative d'un abonnement.
+ *
+ * Comme son homologue client, ce BFF ne contacte aucun opérateur de paiement :
+ * il authentifie l'administrateur et transmet. La coupure immédiate d'une
+ * période déjà payée est une décision humaine, tracée dans le journal d'audit
+ * Billing V2 par API-INTERNAL.
+ */
 export async function POST(
   request: NextRequest,
   context: { params: Promise<{ id: string }> },
@@ -62,133 +58,6 @@ export async function POST(
     );
   }
 
-  let internalApiUrl: string | undefined;
-  try {
-    internalApiUrl = getInternalApiUrl();
-  } catch {
-    /* ignored */
-  }
-  if (!internalApiUrl) {
-    return NextResponse.json(
-      { code: "UNAVAILABLE", message: "API interne indisponible." },
-      { status: 503 },
-    );
-  }
-
-  const detailResponse = await fetch(
-    `${internalApiUrl}/internal/admin/subscriptions/${encodeURIComponent(id)}`,
-    {
-      cache: "no-store",
-      signal: AbortSignal.timeout(10000),
-      headers: {
-        Accept: "application/json",
-        ...getInternalServiceHeaders(),
-        [CORRELATION_HEADER]: correlationId,
-        "X-Portal-Session": sessionToken,
-      },
-    },
-  );
-
-  if (!detailResponse.ok) {
-    return NextResponse.json(
-      { code: "SUBSCRIPTION_NOT_FOUND", message: "Souscription introuvable." },
-      { status: 404 },
-    );
-  }
-
-  const detail = (await detailResponse.json()) as AdminSubscriptionDetail;
-  const subscription = detail.subscription;
-
-  if (subscription.billingSystem === "billing_v2") {
-    return NextResponse.json(
-      {
-        code: "BILLING_V2_CANCELLATION_NOT_AVAILABLE",
-        message:
-          "La résiliation Billing V2 n'est pas encore automatisée. Aucune action de paiement n'a été déclenchée.",
-      },
-      { status: 409 },
-    );
-  }
-
-  if (subscription.status === "pending_cancellation") {
-    return NextResponse.json(subscription);
-  }
-
-  const nextBillingAt = subscription.nextBillingAt
-    ? new Date(subscription.nextBillingAt)
-    : null;
-  const shouldDeferCancellation =
-    (subscription.status === "active" || subscription.status === "suspended")
-    && nextBillingAt !== null
-    && nextBillingAt.getTime() > Date.now();
-
-  try {
-    if (shouldDeferCancellation) {
-      if (subscription.rail === "stripe" && subscription.stripeSubscriptionId) {
-        if (getStripeMode() === "disabled") {
-          return NextResponse.json(
-            {
-              code: "STRIPE_NOT_CONFIGURED",
-              message: "Stripe n'est pas configure.",
-            },
-            { status: 503 },
-          );
-        }
-
-        await scheduleStripeSubscriptionCancellationAtPeriodEnd(
-          subscription.stripeSubscriptionId,
-        );
-      }
-    } else if (
-      subscription.status !== "cancelled"
-      && subscription.status !== "expired"
-    ) {
-      if (subscription.rail === "paypal" && subscription.paypalSubscriptionId) {
-        if (!isPayPalConfigured()) {
-          return NextResponse.json(
-            {
-              code: "PAYPAL_NOT_CONFIGURED",
-              message: "PayPal n'est pas configure.",
-            },
-            { status: 503 },
-          );
-        }
-
-        await cancelPayPalSubscription(
-          subscription.paypalSubscriptionId,
-          "Annulation administrative depuis le portail Kermaria.",
-        );
-      }
-
-      if (subscription.rail === "stripe" && subscription.stripeSubscriptionId) {
-        if (getStripeMode() === "disabled") {
-          return NextResponse.json(
-            {
-              code: "STRIPE_NOT_CONFIGURED",
-              message: "Stripe n'est pas configure.",
-            },
-            { status: 503 },
-          );
-        }
-
-        await cancelStripeSubscription(subscription.stripeSubscriptionId);
-      }
-    }
-  } catch (error) {
-    console.error("Payment cancel subscription error:", error);
-    return NextResponse.json(
-      {
-        code:
-          subscription.rail === "stripe" ? "STRIPE_ERROR" : "PAYPAL_ERROR",
-        message:
-          shouldDeferCancellation
-            ? "L'operateur de paiement n'a pas pu programmer la fin de terme. Le statut local n'a pas ete modifie."
-            : "L'operateur de paiement n'a pas pu annuler la souscription. Le statut local n'a pas ete modifie.",
-      },
-      { status: 502 },
-    );
-  }
-
   try {
     const result = await mutateInternalAdminData<SubscriptionSummary, undefined>(
       `/internal/admin/subscriptions/${encodeURIComponent(id)}/cancel`,
@@ -200,12 +69,10 @@ export async function POST(
     return NextResponse.json(result);
   } catch (error) {
     console.error("Admin cancel subscription error:", error);
-    return NextResponse.json(
-      {
-        code: "PERSIST_ERROR",
-        message: "Impossible d'enregistrer l'annulation locale.",
-      },
-      { status: 503 },
-    );
+    const failure = getInternalApiError(error);
+
+    // Relayé tel quel : un échec de convergence fournisseur doit rester
+    // visible en administration, pas être converti en succès local.
+    return NextResponse.json(failure.error, { status: failure.status });
   }
 }

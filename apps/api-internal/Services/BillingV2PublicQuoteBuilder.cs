@@ -10,16 +10,18 @@ namespace Kermaria.ApiInternal.Services;
 ///
 /// Depuis la souscription V2 native, une configuration personnalisee est
 /// souscriptible : la disponibilite du checkout ne depend plus de l'existence
-/// d'une offre legacy correspondante. L'offre legacy reste exposee quand elle
-/// existe, pour compatibilite, mais n'est plus une condition.
+/// d'une offre legacy correspondante.
+///
+/// Les lignes du devis viennent des composantes tarifaires resolues par
+/// <see cref="BillingV2PublicSelectionPolicy"/>, avec leur cadence reelle. Un
+/// service mensuel assorti de frais de mise en service produit donc ici les
+/// deux memes lignes que le checkout authoritative facturera : le devis public
+/// et le resolver ne peuvent plus diverger.
 /// </summary>
 public static class BillingV2PublicQuoteBuilder
 {
     public const string CheckoutCustomConfiguration =
         "BILLING_V2_PUBLIC_CUSTOM_CONFIGURATION_NOT_CHECKOUTABLE";
-
-    public const string CheckoutRouteMissing =
-        "BILLING_V2_PUBLIC_CHECKOUT_ROUTE_MISSING";
 
     public static BillingV2PublicQuote Build(
         BillingV2PublicCatalogSnapshot catalog,
@@ -35,30 +37,36 @@ public static class BillingV2PublicQuoteBuilder
             throw new InvalidOperationException(resolution.ReasonCode);
         }
 
-        var commitment = catalog.Commitments.First(
-            item => string.Equals(
-                item.Code,
-                selection.CommitmentCode,
-                StringComparison.Ordinal));
+        // Engagement facultatif : un achat ponctuel n'en a pas. Sans terme, la
+        // duree vaut 1 mois et la remise 0 — aucune remise ne peut etre
+        // accordee par defaut.
+        var commitment = selection.CommitmentCode is { Length: > 0 } code
+            ? catalog.Commitments.FirstOrDefault(
+                item => string.Equals(item.Code, code, StringComparison.Ordinal))
+            : null;
         // La resolution a deja verifie l'existence de l'option : la remise
         // affichee est donc toujours celle du catalogue, jamais une valeur de
         // repli fabriquee ici.
-        var paymentOption = commitment.Option(selection.PaymentMode)!;
-        var months = Math.Max(1, commitment.Months);
+        var discountBasisPoints =
+            commitment?.Option(selection.PaymentMode)?.DiscountBasisPoints ?? 0;
+        var months = Math.Max(1, commitment?.Months ?? 1);
 
         var result = pricing.Calculate(new BillingV2PricingRequest(
             resolution.Lines
                 .Select(line => new BillingV2PricingItem(
-                    line.ServiceCode,
+                    $"{line.ServiceCode}/{line.TierCode ?? "-"}#{line.BillingCadence}",
                     line.ServiceCode,
                     line.TierCode,
                     line.ServiceCode,
                     line.UnitAmountCents,
                     line.Quantity,
-                    BillingV2BillingCadences.Monthly,
+                    // La cadence de la ligne, pas celle du service : un setup
+                    // ponctuel ne doit jamais entrer dans le MRR ni dans la
+                    // projection d'engagement.
+                    line.BillingCadence,
                     line.DiscountEligible))
                 .ToArray(),
-            paymentOption.DiscountBasisPoints,
+            discountBasisPoints,
             selection.PaymentMode,
             months,
             MinimumCommitmentAmountCents: null,
@@ -97,22 +105,12 @@ public static class BillingV2PublicQuoteBuilder
             ? scope.ReasonCode
             : checkoutReadiness.ReasonCode;
 
-        var route = catalog.CheckoutRoutes.FirstOrDefault(
-            item => string.Equals(
-                        item.PresetCode,
-                        selection.PresetCode,
-                        StringComparison.Ordinal)
-                    && string.Equals(
-                        item.CommitmentCode,
-                        selection.CommitmentCode,
-                        StringComparison.Ordinal));
-
         return new BillingV2PublicQuote(
             selection.PresetCode,
             selection.CommitmentCode,
-            commitment.Months,
+            months,
             selection.PaymentMode,
-            paymentOption.DiscountBasisPoints,
+            discountBasisPoints,
             catalog.Currency,
             result.RecurringSubtotalCents,
             result.RecurringDiscountCents,
@@ -129,12 +127,6 @@ public static class BillingV2PublicQuoteBuilder
             checkoutAuthorized
                 ? BillingV2PublicCheckoutModes.Native
                 : BillingV2PublicCheckoutModes.Unavailable,
-            // Conserve pour compatibilite : une formule standard payee au mois
-            // reste rattachable a son offre legacy. Le checkout, lui, n'en
-            // depend plus.
-            resolution.MatchesPresetBaseline && !upfront
-                ? route?.LegacyOfferId
-                : null,
             checkoutReasonCode);
     }
 }

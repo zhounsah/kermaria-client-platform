@@ -3,7 +3,14 @@ import { NextRequest } from "next/server";
 
 import { handleAdminMutation } from "@/lib/admin-bff";
 
-type ConvertPayload = { offerExternalReference: string | null };
+/**
+ * La conversion porte des codes de services Billing V2, pas une reference
+ * d'offre : c'est `billing_v2_provisioning_rules` qui decrit les groupes AD
+ * reellement accordes.
+ */
+type ConvertPayload = { serviceCodes: string[] };
+
+const SERVICE_CODE_PATTERN = /^[A-Z0-9][A-Z0-9-]{1,63}$/;
 
 export async function POST(
   request: NextRequest,
@@ -11,23 +18,25 @@ export async function POST(
 ) {
   const { reference } = await context.params;
   const body = await readJson(request);
-  const offer =
-    typeof body?.offerExternalReference === "string"
-      && body.offerExternalReference.trim().length > 0
-      ? body.offerExternalReference.trim()
-      : null;
+  const serviceCodes = Array.isArray(body?.serviceCodes)
+    ? body.serviceCodes
+        .map((value) =>
+          typeof value === "string" ? value.trim().toUpperCase() : "",
+        )
+        .filter((value) => SERVICE_CODE_PATTERN.test(value))
+    : [];
 
   return handleAdminMutation<ConvertPayload, DemoConversionResult>(
     request,
     `/internal/admin/demo/accounts/${encodeURIComponent(reference)}/convert`,
     "POST",
-    { offerExternalReference: offer },
+    { serviceCodes },
   );
 }
 
 async function readJson(
   request: NextRequest,
-): Promise<{ offerExternalReference?: unknown } | null> {
+): Promise<{ serviceCodes?: unknown } | null> {
   try {
     return await request.json();
   } catch {

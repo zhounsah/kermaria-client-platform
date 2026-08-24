@@ -6,8 +6,6 @@ import type {
   AdUserRenamePayload,
   CommercialDocumentLinePayload,
   CommercialDocumentPayload,
-  CommercialOfferPaymentMode,
-  CommercialOfferPayload,
   ClientSolutionPayload,
   ClientSolutionPortalSettingsPayload,
   DemoAccountCreateRequest,
@@ -33,7 +31,6 @@ import {
   DOWNLOAD_VISIBILITY_MODES,
   DOWNLOAD_VISIBILITY_TARGET_TYPES,
   createDefaultPublicPackCatalogContentPayload,
-  getPublicPackManifest,
 } from "@kermaria/shared";
 
 const adUserPrincipalNamePattern = /^[^\s@]+@[^\s@]+$/;
@@ -141,244 +138,6 @@ export function parseProfileUpdatePayload(
     && payload.address.length <= 255
     && payload.city.length <= 160
     && payload.country.length <= 100
-    ? payload
-    : null;
-}
-
-export function parseCommercialOfferPayload(
-  value: unknown,
-): CommercialOfferPayload | null {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-
-  const candidate = value as Partial<CommercialOfferPayload>;
-  if (
-    typeof candidate.name !== "string"
-    || typeof candidate.description !== "string"
-    || typeof candidate.category !== "string"
-    || typeof candidate.unitLabel !== "string"
-    || typeof candidate.priceAmountCents !== "number"
-    || !(
-      typeof candidate.externalReference === "string"
-      || candidate.externalReference === null
-      || candidate.externalReference === undefined
-    )
-    || !Array.isArray(candidate.technicalServiceReferences)
-    || !candidate.technicalServiceReferences.every((entry) => typeof entry === "string")
-    || !Array.isArray(candidate.provisioningGroupSamAccountNames)
-    || !candidate.provisioningGroupSamAccountNames.every((entry) => typeof entry === "string")
-    || typeof candidate.status !== "string"
-    || typeof candidate.displayOrder !== "number"
-    || typeof candidate.billingCadence !== "string"
-    || !(
-      typeof candidate.setupFeeAmountCents === "number"
-      || candidate.setupFeeAmountCents === null
-      || candidate.setupFeeAmountCents === undefined
-    )
-    || !(
-      typeof candidate.billingIntervalMonths === "number"
-      || candidate.billingIntervalMonths === null
-      || candidate.billingIntervalMonths === undefined
-    )
-    || !(
-      typeof candidate.commitmentMonths === "number"
-      || candidate.commitmentMonths === null
-      || candidate.commitmentMonths === undefined
-    )
-    || !(
-      typeof candidate.paymentMode === "string"
-      || candidate.paymentMode === null
-      || candidate.paymentMode === undefined
-    )
-    || !(
-      typeof candidate.publicPackCode === "string"
-      || candidate.publicPackCode === null
-      || candidate.publicPackCode === undefined
-    )
-    || !(
-      typeof candidate.paypalPlanIdSandbox === "string"
-      || candidate.paypalPlanIdSandbox === null
-      || candidate.paypalPlanIdSandbox === undefined
-    )
-    || !(
-      typeof candidate.paypalPlanIdLive === "string"
-      || candidate.paypalPlanIdLive === null
-      || candidate.paypalPlanIdLive === undefined
-    )
-    || !(
-      typeof candidate.stripePriceIdTest === "string"
-      || candidate.stripePriceIdTest === null
-      || candidate.stripePriceIdTest === undefined
-    )
-    || !(
-      typeof candidate.stripePriceIdLive === "string"
-      || candidate.stripePriceIdLive === null
-      || candidate.stripePriceIdLive === undefined
-    )
-  ) {
-    return null;
-  }
-
-  const paypalPlanIdSandbox =
-    typeof candidate.paypalPlanIdSandbox === "string"
-      ? candidate.paypalPlanIdSandbox.trim() || null
-      : null;
-  const paypalPlanIdLive =
-    typeof candidate.paypalPlanIdLive === "string"
-      ? candidate.paypalPlanIdLive.trim() || null
-      : null;
-  const stripePriceIdTest =
-    typeof candidate.stripePriceIdTest === "string"
-      ? candidate.stripePriceIdTest.trim() || null
-      : null;
-  const stripePriceIdLive =
-    typeof candidate.stripePriceIdLive === "string"
-      ? candidate.stripePriceIdLive.trim() || null
-      : null;
-  const setupFeeAmountCents =
-    typeof candidate.setupFeeAmountCents === "number"
-      ? Math.trunc(candidate.setupFeeAmountCents)
-      : null;
-  const billingIntervalMonths =
-    typeof candidate.billingIntervalMonths === "number"
-      ? Math.trunc(candidate.billingIntervalMonths)
-      : null;
-  const commitmentMonths =
-    typeof candidate.commitmentMonths === "number"
-      ? Math.trunc(candidate.commitmentMonths)
-      : null;
-  const paymentMode =
-    typeof candidate.paymentMode === "string"
-      ? candidate.paymentMode.trim() || null
-      : null;
-  const publicPackCode =
-    typeof candidate.publicPackCode === "string"
-      ? candidate.publicPackCode.trim() || null
-      : null;
-  const externalReference =
-    typeof candidate.externalReference === "string"
-      ? candidate.externalReference.trim() || null
-      : null;
-  const technicalServiceReferences = Array.from(new Set(
-    candidate.technicalServiceReferences
-      .map((entry) => entry.trim())
-      .filter((entry) => entry.length > 0),
-  ));
-  const provisioningGroupSamAccountNames = Array.from(new Set(
-    candidate.provisioningGroupSamAccountNames
-      .map((entry) => entry.trim())
-      .filter((entry) => entry.length > 0),
-  ));
-  const payload: CommercialOfferPayload = {
-    name: candidate.name.trim(),
-    description: candidate.description.trim(),
-    category: candidate.category.trim(),
-    unitLabel: candidate.unitLabel.trim(),
-    priceAmountCents: Math.trunc(candidate.priceAmountCents),
-    externalReference,
-    technicalServiceReferences,
-    provisioningGroupSamAccountNames,
-    status: candidate.status as CommercialOfferPayload["status"],
-    displayOrder: Math.trunc(candidate.displayOrder),
-    billingCadence:
-      candidate.billingCadence as CommercialOfferPayload["billingCadence"],
-    setupFeeAmountCents,
-    billingIntervalMonths,
-    commitmentMonths,
-    paymentMode: paymentMode as CommercialOfferPaymentMode | null,
-    publicPackCode: publicPackCode as PublicPackCode | null,
-    paypalPlanIdSandbox,
-    paypalPlanIdLive,
-    stripePriceIdTest,
-    stripePriceIdLive,
-  };
-
-  const planIdPattern = /^[A-Za-z0-9_-]{1,64}$/;
-  const isValidSetupFee =
-    payload.setupFeeAmountCents === null
-    || (Number.isInteger(payload.setupFeeAmountCents)
-      && payload.setupFeeAmountCents >= 0
-      && payload.setupFeeAmountCents <= 100000000);
-  const isValidBillingInterval =
-    payload.billingIntervalMonths === null
-    || (Number.isInteger(payload.billingIntervalMonths)
-      && [1, 6, 12].includes(payload.billingIntervalMonths));
-  const isValidCommitment =
-    payload.commitmentMonths === null
-    || (Number.isInteger(payload.commitmentMonths)
-      && [1, 6, 12].includes(payload.commitmentMonths));
-  const isValidExternalReference =
-    payload.externalReference === null
-    || /^[A-Za-z0-9._-]{1,100}$/.test(payload.externalReference);
-  const isValidTechnicalServiceReferences =
-    payload.technicalServiceReferences.length <= 50
-    && payload.technicalServiceReferences.every((entry) =>
-      /^[A-Za-z0-9._-]{1,100}$/.test(entry)
-    );
-  const isValidProvisioningGroups =
-    payload.provisioningGroupSamAccountNames.length <= 50
-    && payload.provisioningGroupSamAccountNames.every((entry) =>
-      /^[A-Za-z0-9._-]{1,100}$/.test(entry)
-    );
-  const isValidPaymentMode =
-    payload.paymentMode === null
-    || payload.paymentMode === "monthly"
-    || payload.paymentMode === "upfront";
-  const isValidPublicPackCode =
-    payload.publicPackCode === null
-    || getPublicPackManifest(payload.publicPackCode) !== null;
-  const hasPackMetadata =
-    payload.setupFeeAmountCents !== null
-    || payload.billingIntervalMonths !== null
-    || payload.commitmentMonths !== null
-    || payload.paymentMode !== null
-    || payload.publicPackCode !== null;
-
-  return payload.name.length >= 3
-    && payload.name.length <= 200
-    && payload.description.length >= 3
-    && payload.description.length <= 1000
-    && payload.category.length >= 2
-    && payload.category.length <= 100
-    && payload.unitLabel.length >= 1
-    && payload.unitLabel.length <= 40
-    && Number.isInteger(payload.priceAmountCents)
-    && payload.priceAmountCents >= 0
-    && payload.priceAmountCents <= 100000000
-    && ["active", "inactive"].includes(payload.status)
-    && Number.isInteger(payload.displayOrder)
-    && payload.displayOrder >= 0
-    && payload.displayOrder <= 100000
-    && ["one_time", "monthly"].includes(payload.billingCadence)
-    && isValidSetupFee
-    && isValidBillingInterval
-    && isValidCommitment
-    && isValidExternalReference
-    && isValidTechnicalServiceReferences
-    && isValidProvisioningGroups
-    && isValidPaymentMode
-    && isValidPublicPackCode
-    && (payload.paypalPlanIdSandbox === null
-      || planIdPattern.test(payload.paypalPlanIdSandbox))
-    && (payload.paypalPlanIdLive === null
-      || planIdPattern.test(payload.paypalPlanIdLive))
-    && (payload.stripePriceIdTest === null
-      || planIdPattern.test(payload.stripePriceIdTest))
-    && (payload.stripePriceIdLive === null
-      || planIdPattern.test(payload.stripePriceIdLive))
-    && !(
-      (payload.publicPackCode !== null
-        || payload.technicalServiceReferences.length > 0
-        || payload.provisioningGroupSamAccountNames.length > 0)
-      && payload.externalReference === null
-    )
-    && !(
-      payload.billingCadence === "one_time"
-      && (hasPackMetadata
-        || payload.paypalPlanIdSandbox !== null
-        || payload.paypalPlanIdLive !== null)
-    )
     ? payload
     : null;
 }
@@ -1055,12 +814,7 @@ export function parseCommercialDocumentLinePayload(
 
   const candidate = value as Partial<CommercialDocumentLinePayload>;
   if (
-    !(
-      typeof candidate.offerId === "string"
-      || candidate.offerId === null
-      || candidate.offerId === undefined
-    )
-    || typeof candidate.label !== "string"
+    typeof candidate.label !== "string"
     || typeof candidate.description !== "string"
     || typeof candidate.quantity !== "number"
     || typeof candidate.unitLabel !== "string"
@@ -1077,10 +831,6 @@ export function parseCommercialDocumentLinePayload(
 
   const quantity = Number(candidate.quantity);
   const payload: CommercialDocumentLinePayload = {
-    offerId:
-      typeof candidate.offerId === "string"
-        ? candidate.offerId.trim() || null
-        : null,
     label: candidate.label.trim(),
     description: candidate.description.trim(),
     quantity,
@@ -1097,10 +847,8 @@ export function parseCommercialDocumentLinePayload(
     && quantity > 0
     && Math.round(quantity * 100) === quantity * 100
     && quantity <= 1000000
-    && (payload.offerId === null
-      || /^[A-Za-z0-9-]{1,100}$/.test(payload.offerId))
-    && (payload.label.length === 0
-      || (payload.label.length >= 2 && payload.label.length <= 200))
+    && payload.label.length >= 2
+    && payload.label.length <= 200
     && payload.description.length <= 1000
     && payload.unitLabel.length <= 40
     && Number.isInteger(payload.unitPriceCents)

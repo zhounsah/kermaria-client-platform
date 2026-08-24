@@ -120,6 +120,19 @@ export async function handleAdminMutation<
     );
   }
 
+  // Une mutation d'administration exige le meme jeton que la lecture. Le
+  // controle manquait ici alors que `handleAdminGet` le posait : une page
+  // tierce pouvait donc declencher une ecriture avec le cookie de session de
+  // l'exploitant, ce que la lecture — sans effet — interdisait deja.
+  if (!hasValidCsrfToken(request)) {
+    return controlledAdminError(
+      403,
+      "CSRF_FORBIDDEN",
+      "La requête d'administration doit être confirmée par un jeton CSRF valide.",
+      correlationId,
+    );
+  }
+
   try {
     const session = await getInternalSession(sessionToken, correlationId);
     if (session.user.role !== "internal_admin") {

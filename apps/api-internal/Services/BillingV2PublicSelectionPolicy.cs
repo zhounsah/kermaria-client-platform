@@ -56,32 +56,37 @@ public static class BillingV2PublicSelectionPolicy
         BillingV2PublicCatalogSnapshot catalog,
         BillingV2PublicSelection selection)
     {
-        var preset = catalog.Presets.FirstOrDefault(
-            item => string.Equals(
-                item.Code,
-                selection.PresetCode,
-                StringComparison.Ordinal));
-        if (preset is null)
+        // Un engagement n'est exige que s'il est demande. Une selection
+        // ponctuelle n'engage a rien : lui imposer un terme reviendrait a
+        // fabriquer une duree contractuelle que le client n'a pas souscrite.
+        if (selection.CommitmentCode is { Length: > 0 })
         {
-            return Blocked("BILLING_V2_PUBLIC_PRESET_UNKNOWN");
-        }
+            var commitment = catalog.Commitments.FirstOrDefault(
+                item => string.Equals(
+                    item.Code,
+                    selection.CommitmentCode,
+                    StringComparison.Ordinal));
+            if (commitment is null)
+            {
+                return Blocked("BILLING_V2_PUBLIC_COMMITMENT_UNKNOWN");
+            }
 
-        var commitment = catalog.Commitments.FirstOrDefault(
-            item => string.Equals(
-                item.Code,
-                selection.CommitmentCode,
-                StringComparison.Ordinal));
-        if (commitment is null)
-        {
-            return Blocked("BILLING_V2_PUBLIC_COMMITMENT_UNKNOWN");
+            // Le couple (duree, mode de reglement) doit exister dans le
+            // catalogue : c'est lui qui porte la remise, pas la duree seule. Un
+            // "comptant" sur une duree qui ne l'autorise pas est refuse en
+            // ferme plutot que rabattu silencieusement sur le mensuel.
+            if (commitment.Option(selection.PaymentMode) is null)
+            {
+                return Blocked("BILLING_V2_PUBLIC_PAYMENT_MODE_UNAVAILABLE");
+            }
         }
-
-        // Le couple (duree, mode de reglement) doit exister dans le catalogue :
-        // c'est lui qui porte la remise, pas la duree seule. Un "comptant" sur
-        // une duree qui ne l'autorise pas est refuse en ferme plutot que
-        // rabattu silencieusement sur le mensuel.
-        if (commitment.Option(selection.PaymentMode) is null)
+        else if (string.Equals(
+                     selection.PaymentMode,
+                     BillingV2PaymentModes.Upfront,
+                     StringComparison.Ordinal))
         {
+            // Le comptant est un mode de reglement d'un engagement. Sans
+            // engagement il n'a pas de duree a prepayer.
             return Blocked("BILLING_V2_PUBLIC_PAYMENT_MODE_UNAVAILABLE");
         }
 
@@ -91,6 +96,23 @@ public static class BillingV2PublicSelectionPolicy
         if (selection.Components is { Count: > 0 })
         {
             return ResolveGeneric(catalog, selection);
+        }
+
+        // Hors composants explicites, la composition est celle d'une formule :
+        // sans formule, il n'y a rien a facturer.
+        if (selection.PresetCode is not { Length: > 0 })
+        {
+            return Blocked("BILLING_V2_PUBLIC_SELECTION_EMPTY");
+        }
+
+        var preset = catalog.Presets.FirstOrDefault(
+            item => string.Equals(
+                item.Code,
+                selection.PresetCode,
+                StringComparison.Ordinal));
+        if (preset is null)
+        {
+            return Blocked("BILLING_V2_PUBLIC_PRESET_UNKNOWN");
         }
 
         if (selection.AdditionalUsers < 0
@@ -106,17 +128,21 @@ public static class BillingV2PublicSelectionPolicy
             return Blocked("BILLING_V2_PUBLIC_SHARED_BACKUP_WITHOUT_STORAGE");
         }
 
-        var lines = new List<BillingV2PublicQuoteLine>();
+        // Chaque entree est un (service, palier, quantite) retenu. Les lignes
+        // tarifaires n'en sont derivees qu'a la fin : un meme composant peut
+        // produire plusieurs lignes (mensuel + mise en service), mais reste UN
+        // seul composant du point de vue de la selection.
+        var picks = new List<PickedComponent>();
 
         var baseService = FindService(
             catalog,
             BillingV2PublicCatalogCodes.BaseService);
-        if (baseService?.FlatMonthlyAmountCents is null)
+        if (baseService is null || !HasBillableComponent(baseService, null))
         {
             return Blocked("BILLING_V2_PUBLIC_BASE_SERVICE_UNPRICED");
         }
 
-        lines.Add(Line(baseService, null, 1));
+        picks.Add(new PickedComponent(baseService, null, 1));
 
         var storagePersonal = ResolveTier(
             catalog,
@@ -128,7 +154,10 @@ public static class BillingV2PublicSelectionPolicy
             return Blocked("BILLING_V2_PUBLIC_STORAGE_PERSONAL_TIER_UNKNOWN");
         }
 
-        lines.Add(Line(storagePersonal.Value.Service, storagePersonal.Value.Tier, 1));
+        picks.Add(new PickedComponent(
+            storagePersonal.Value.Service,
+            storagePersonal.Value.Tier,
+            1));
 
         if (selection.BackupPersonal)
         {
@@ -144,7 +173,7 @@ public static class BillingV2PublicSelectionPolicy
                     "BILLING_V2_PUBLIC_BACKUP_PERSONAL_TIER_UNAVAILABLE");
             }
 
-            lines.Add(Line(
+            picks.Add(new PickedComponent(
                 backupPersonal.Value.Service,
                 backupPersonal.Value.Tier,
                 1));
@@ -162,7 +191,10 @@ public static class BillingV2PublicSelectionPolicy
                 return Blocked("BILLING_V2_PUBLIC_STORAGE_SHARED_TIER_UNKNOWN");
             }
 
-            lines.Add(Line(storageShared.Value.Service, storageShared.Value.Tier, 1));
+            picks.Add(new PickedComponent(
+                storageShared.Value.Service,
+                storageShared.Value.Tier,
+                1));
 
             if (selection.BackupShared)
             {
@@ -176,7 +208,7 @@ public static class BillingV2PublicSelectionPolicy
                         "BILLING_V2_PUBLIC_BACKUP_SHARED_TIER_UNAVAILABLE");
                 }
 
-                lines.Add(Line(
+                picks.Add(new PickedComponent(
                     backupShared.Value.Service,
                     backupShared.Value.Tier,
                     1));
@@ -195,7 +227,7 @@ public static class BillingV2PublicSelectionPolicy
                 return Blocked("BILLING_V2_PUBLIC_VPN_TIER_UNKNOWN");
             }
 
-            lines.Add(Line(vpn.Value.Service, vpn.Value.Tier, 1));
+            picks.Add(new PickedComponent(vpn.Value.Service, vpn.Value.Tier, 1));
         }
 
         if (selection.RemoteDesktop)
@@ -203,12 +235,13 @@ public static class BillingV2PublicSelectionPolicy
             var remoteDesktop = FindService(
                 catalog,
                 BillingV2PublicCatalogCodes.RemoteDesktop);
-            if (remoteDesktop?.FlatMonthlyAmountCents is null)
+            if (remoteDesktop is null
+                || !HasBillableComponent(remoteDesktop, null))
             {
                 return Blocked("BILLING_V2_PUBLIC_RDS_UNPRICED");
             }
 
-            lines.Add(Line(remoteDesktop, null, 1));
+            picks.Add(new PickedComponent(remoteDesktop, null, 1));
         }
 
         if (selection.AdditionalUsers > 0)
@@ -216,12 +249,16 @@ public static class BillingV2PublicSelectionPolicy
             var additionalUser = FindService(
                 catalog,
                 BillingV2PublicCatalogCodes.AdditionalUser);
-            if (additionalUser?.FlatMonthlyAmountCents is null)
+            if (additionalUser is null
+                || !HasBillableComponent(additionalUser, null))
             {
                 return Blocked("BILLING_V2_PUBLIC_ADDITIONAL_USER_UNPRICED");
             }
 
-            lines.Add(Line(additionalUser, null, selection.AdditionalUsers));
+            picks.Add(new PickedComponent(
+                additionalUser,
+                null,
+                selection.AdditionalUsers));
         }
 
         if (selection.SupportPlus)
@@ -229,12 +266,12 @@ public static class BillingV2PublicSelectionPolicy
             var supportPlus = FindService(
                 catalog,
                 BillingV2PublicCatalogCodes.SupportPlus);
-            if (supportPlus?.FlatMonthlyAmountCents is null)
+            if (supportPlus is null || !HasBillableComponent(supportPlus, null))
             {
                 return Blocked("BILLING_V2_PUBLIC_SUPPORT_PLUS_UNPRICED");
             }
 
-            lines.Add(Line(supportPlus, null, 1));
+            picks.Add(new PickedComponent(supportPlus, null, 1));
         }
 
         var baseline = Baseline(preset) with
@@ -245,15 +282,17 @@ public static class BillingV2PublicSelectionPolicy
         return new BillingV2PublicSelectionResolution(
             Resolved: true,
             Ok,
-            lines,
-            // Les composants sont la projection stricte des lignes en codes
-            // catalogue : ce que le serveur rejouera pour retrouver les vraies
-            // lignes de prix ne peut pas diverger de ce qui a ete affiche.
-            lines
-                .Select(line => new BillingV2PublicSelectionComponent(
-                    line.ServiceCode,
-                    line.TierCode,
-                    line.Quantity))
+            Expand(picks),
+            // Les composants sont la projection stricte des elements retenus en
+            // codes catalogue : ce que le serveur rejouera pour retrouver les
+            // vraies lignes de prix ne peut pas diverger de ce qui a ete
+            // affiche. Un element retenu reste UN composant meme quand il
+            // produit plusieurs lignes tarifaires.
+            picks
+                .Select(pick => new BillingV2PublicSelectionComponent(
+                    pick.Service.Code,
+                    pick.Tier?.Code,
+                    pick.Quantity))
                 .ToArray(),
             MatchesBaseline(baseline, selection));
     }
@@ -288,6 +327,18 @@ public static class BillingV2PublicSelectionPolicy
         BillingV2PublicCatalogSnapshot catalog,
         BillingV2PublicSelection selection)
     {
+        // Une selection directe n'a pas de formule d'origine. Si elle en
+        // declare une, elle doit exister : un code inconnu signale un
+        // catalogue perime cote navigateur, pas une composition libre.
+        if (selection.PresetCode is { Length: > 0 }
+            && !catalog.Presets.Any(item => string.Equals(
+                item.Code,
+                selection.PresetCode,
+                StringComparison.Ordinal)))
+        {
+            return Blocked("BILLING_V2_PUBLIC_PRESET_UNKNOWN");
+        }
+
         var canonicalComponents = selection.Components!
             .GroupBy(
                 component => new
@@ -310,7 +361,7 @@ public static class BillingV2PublicSelectionPolicy
             return Blocked("BILLING_V2_PUBLIC_COMPONENT_INVALID");
         }
 
-        var lines = new List<BillingV2PublicQuoteLine>();
+        var picks = new List<PickedComponent>();
         foreach (var component in canonicalComponents)
         {
             var service = FindService(catalog, component.ServiceCode);
@@ -338,21 +389,33 @@ public static class BillingV2PublicSelectionPolicy
                 return Blocked("BILLING_V2_PUBLIC_COMPONENT_TIER_REQUIRED");
             }
 
-            if (tier is null && service.FlatMonthlyAmountCents is null)
+            // Un service sans aucune composante facturable au declenchement
+            // initial n'est pas commandable : ni mensuel, ni ponctuel.
+            if (!HasBillableComponent(service, tier))
             {
                 return Blocked("BILLING_V2_PUBLIC_COMPONENT_UNPRICED");
             }
 
-            lines.Add(Line(service, tier, component.Quantity));
+            picks.Add(new PickedComponent(service, tier, component.Quantity));
         }
 
         return new BillingV2PublicSelectionResolution(
             true,
             Ok,
-            lines,
+            Expand(picks),
             canonicalComponents,
             MatchesPresetBaseline: false);
     }
+
+    /// <summary>
+    /// Element retenu par la selection : un couple (service, palier) et sa
+    /// quantite. Il ne porte aucun montant — les composantes tarifaires sont
+    /// resolues au moment de produire les lignes.
+    /// </summary>
+    private sealed record PickedComponent(
+        BillingV2PublicService Service,
+        BillingV2PublicTier? Tier,
+        int Quantity);
 
     private static BillingV2PublicPresetItem? FindItem(
         BillingV2PublicPreset preset,
@@ -412,23 +475,73 @@ public static class BillingV2PublicSelectionPolicy
         return tier is null ? null : (service, tier);
     }
 
+    /// <summary>
+    /// Composantes facturables a la souscription initiale pour un element
+    /// retenu, dans un ordre stable : le mensuel d'abord, puis le ponctuel.
+    /// </summary>
+    private static IReadOnlyList<BillingV2PublicPriceComponent>
+        BillableComponents(
+            BillingV2PublicService service,
+            BillingV2PublicTier? tier)
+        => service.ComponentsFor(tier)
+            .Where(component => component.AppliesToInitialSubscription)
+            .OrderByDescending(component => component.IsRecurring)
+            .ThenBy(component => component.BillingCadence, StringComparer.Ordinal)
+            .ThenBy(component => component.PriceCode ?? string.Empty, StringComparer.Ordinal)
+            .ToArray();
+
+    private static bool HasBillableComponent(
+        BillingV2PublicService service,
+        BillingV2PublicTier? tier)
+        => BillableComponents(service, tier).Count > 0;
+
+    /// <summary>
+    /// Developpe les elements retenus en lignes de devis : une ligne par
+    /// composante tarifaire applicable. Un VPS mensuel avec frais de mise en
+    /// service produit donc deux lignes, et le devis public affiche exactement
+    /// ce que le checkout authoritative facturera.
+    /// </summary>
+    private static IReadOnlyList<BillingV2PublicQuoteLine> Expand(
+        IReadOnlyList<PickedComponent> picks)
+        => picks
+            .SelectMany(pick => BillableComponents(pick.Service, pick.Tier)
+                .Select(component => Line(
+                    pick.Service,
+                    pick.Tier,
+                    pick.Quantity,
+                    component)))
+            .ToArray();
+
     private static BillingV2PublicQuoteLine Line(
         BillingV2PublicService service,
         BillingV2PublicTier? tier,
-        int quantity)
-    {
-        var unitAmountCents = tier?.MonthlyAmountCents
-            ?? service.FlatMonthlyAmountCents
-            ?? 0;
-        return new BillingV2PublicQuoteLine(
+        int quantity,
+        BillingV2PublicPriceComponent component)
+        => new(
             service.Code,
             tier?.Code,
             service.Name,
-            tier?.Label,
+            LineDetail(tier, component),
             quantity,
-            unitAmountCents,
-            checked(unitAmountCents * quantity),
-            service.DiscountEligible);
+            component.AmountCents,
+            checked(component.AmountCents * quantity),
+            component.DiscountEligible,
+            component.BillingCadence);
+
+    private const string SetupFeeLabel = "frais de mise en service";
+
+    private static string? LineDetail(
+        BillingV2PublicTier? tier,
+        BillingV2PublicPriceComponent component)
+    {
+        if (component.IsRecurring)
+        {
+            return tier?.Label;
+        }
+
+        return tier?.Label is { Length: > 0 } label
+            ? $"{label} — {SetupFeeLabel}"
+            : "Frais de mise en service";
     }
 
     private static BillingV2PublicSelectionResolution Blocked(string reasonCode)

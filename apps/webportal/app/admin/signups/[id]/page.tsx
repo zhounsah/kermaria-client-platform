@@ -9,7 +9,6 @@ import { SectionCard } from "@/components/SectionCard";
 import { SectionHeading } from "@/components/SectionHeading";
 import { StatusBadge } from "@/components/StatusBadge";
 import { requireAdminSession } from "@/lib/auth";
-import { formatCommercialAmountFromCents } from "@/lib/fiscal-formatters";
 import { formatDateTime } from "@/lib/formatters";
 import { getAdminSignup } from "@/lib/internal-api";
 import {
@@ -47,11 +46,7 @@ export default async function AdminSignupDetailPage({ params }: PageProps) {
   }
 
   const signup = result.data;
-  const catalogConfigurationSnapshot = signup.catalogConfiguration;
-  const resolvedCatalogConfiguration =
-    catalogConfigurationSnapshot?.resolution.resolvedConfiguration ?? null;
-  const catalogPriceSimulation =
-    catalogConfigurationSnapshot?.resolution.priceSimulation ?? null;
+  const billingV2Selection = signup.billingV2Selection;
   const decisionDescription = signup.status === "approved"
     ? "Le compte client existe déjà. Tant que le mot de passe initial n'a pas été défini, vous pouvez l'initialiser vous-même ou renvoyer un nouveau lien. Cette définition de mot de passe finalise aussi l'identité dans clients.home.bzh quand l'écriture AD est active."
     : "L'approbation crée le client et l'utilisateur portail, puis envoie un lien de définition du mot de passe. L'identité Active Directory n'est créée qu'au moment de cette définition dans clients.home.bzh.";
@@ -181,108 +176,35 @@ export default async function AdminSignupDetailPage({ params }: PageProps) {
           </div>
         ) : null}
 
-        {signup.packSelection ? (
+        {billingV2Selection ? (
           <div className="signup-message-block">
-            <h3>Pack choisi</h3>
+            <h3>Formule demandée</h3>
+            {/*
+              Aucun montant n'est affiché ici : la demande ne porte qu'une
+              intention. Le prix est recalculé au moment de la reprise par le
+              client, et figer un chiffre à l'inscription reviendrait à
+              promettre un tarif que rien ne garantit d'ici là.
+            */}
             <dl className="profile-details">
               <div>
-                <dt>Pack</dt>
-                <dd>{signup.packSelection.packLabel}</dd>
-              </div>
-              <div>
-                <dt>Référence</dt>
-                <dd>{signup.packSelection.offerExternalReference}</dd>
+                <dt>Formule</dt>
+                <dd>{billingV2Selection.presetCode ?? "Sélection à la carte"}</dd>
               </div>
               <div>
                 <dt>Engagement</dt>
-                <dd>{signup.packSelection.commitmentMonths} mois</dd>
+                <dd>{billingV2Selection.commitmentCode ?? "Sans engagement"}</dd>
               </div>
               <div>
                 <dt>Paiement</dt>
                 <dd>
-                  {signup.packSelection.paymentMode === "upfront"
+                  {billingV2Selection.paymentMode === "upfront"
                     ? "Comptant"
                     : "Mensualisé"}
                 </dd>
               </div>
               <div>
-                <dt>Mensuel affiché</dt>
-                <dd>
-                  {formatCommercialAmountFromCents(
-                    signup.packSelection.monthlyPriceAmountCents,
-                    { fiscalRegime: signup.packSelection.fiscalRegime },
-                  )}
-                </dd>
-              </div>
-              <div>
-                <dt>Total initial estimé</dt>
-                <dd>
-                  {formatCommercialAmountFromCents(
-                    signup.packSelection.firstChargeAmountCents,
-                    { fiscalRegime: signup.packSelection.fiscalRegime },
-                  )}
-                </dd>
-              </div>
-              <div>
-                <dt>Fiscalité</dt>
-                <dd>{signup.packSelection.fiscalMention}</dd>
-              </div>
-            </dl>
-          </div>
-        ) : null}
-
-        {catalogConfigurationSnapshot
-        && resolvedCatalogConfiguration
-        && catalogPriceSimulation ? (
-          <div className="signup-message-block">
-            <h3>Configuration demandee</h3>
-            <dl className="profile-details">
-              <div>
-                <dt>Pack resolu</dt>
-                <dd>{resolvedCatalogConfiguration.packKey}</dd>
-              </div>
-              <div>
-                <dt>Utilisateurs demandes</dt>
-                <dd>{catalogConfigurationSnapshot.requestedConfiguration.users}</dd>
-              </div>
-              <div>
-                <dt>Stockage demande</dt>
-                <dd>
-                  {catalogConfigurationSnapshot.requestedConfiguration.storageGb
-                    ? `${catalogConfigurationSnapshot.requestedConfiguration.storageGb} Go`
-                    : "A preciser"}
-                </dd>
-              </div>
-              <div>
-                <dt>Mensuel recalcule</dt>
-                <dd>
-                  {formatCommercialAmountFromCents(
-                    catalogPriceSimulation.monthlyPriceIncVatCents,
-                    { fiscalRegime: catalogPriceSimulation.fiscalRegime },
-                  )}
-                </dd>
-              </div>
-              <div>
-                <dt>Mise en service recalculee</dt>
-                <dd>
-                  {formatCommercialAmountFromCents(
-                    catalogPriceSimulation.setupPriceIncVatCents,
-                    { fiscalRegime: catalogPriceSimulation.fiscalRegime },
-                  )}
-                </dd>
-              </div>
-              <div>
-                <dt>Fiscalité</dt>
-                <dd>{catalogPriceSimulation.fiscalMention}</dd>
-              </div>
-              <div>
-                <dt>Catalogue resolu le</dt>
-                <dd>
-                  {formatDateTime(
-                    catalogConfigurationSnapshot.requestedConfiguration
-                      .requestedAt,
-                  )}
-                </dd>
+                <dt>Utilisateurs supplémentaires</dt>
+                <dd>{billingV2Selection.additionalUsers}</dd>
               </div>
             </dl>
           </div>

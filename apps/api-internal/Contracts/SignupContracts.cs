@@ -1,29 +1,5 @@
 namespace Kermaria.ApiInternal.Contracts;
 
-public sealed record SignupPackSelectionSnapshot(
-    string PackKey,
-    string PackLabel,
-    string OfferId,
-    string OfferExternalReference,
-    int CommitmentMonths,
-    string PaymentMode,
-    int BillingIntervalMonths,
-    int DiscountPercent,
-    int MonthlyPriceAmountCents,
-    int BillingPriceAmountCents,
-    int SetupFeeAmountCents,
-    int FirstChargeAmountCents,
-    string FiscalRegime,
-    string FiscalMention,
-    string Currency);
-
-public sealed record PendingPackSelectionSummary(
-    string SignupId,
-    string Status,
-    string? ApprovedAt,
-    string CreatedAt,
-    SignupPackSelectionSnapshot Snapshot);
-
 public sealed record PendingBillingV2SelectionSummary(
     string SignupId,
     string Status,
@@ -63,8 +39,6 @@ public sealed record SignupSubmitPayload(
     string? Message,
     SignupCustomerData? Customer,
     SignupUserData? PrimaryUser,
-    SignupPackSelectionSnapshot? PackSelection,
-    CatalogConfigurationInput? CatalogConfiguration,
     string? SourceAddress,
     string? UserAgent,
     Services.BillingV2PublicSelectionInput? BillingV2Selection = null);
@@ -106,8 +80,7 @@ public sealed record SignupAdminDetail(
     string Email,
     string? Phone,
     string? Message,
-    SignupPackSelectionSnapshot? PackSelection,
-    CatalogConfigurationSnapshot? CatalogConfiguration,
+    Services.BillingV2PublicSelection? BillingV2Selection,
     string? SourceAddress,
     string? RejectedReason,
     string CreatedAt,

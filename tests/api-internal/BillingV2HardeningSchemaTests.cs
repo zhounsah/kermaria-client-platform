@@ -548,15 +548,14 @@ public static class BillingV2HardeningSchemaTests
                 "INSERT INTO billing_v2_authoritative_checkout_requests "
                 + "(id, customer_id, idempotency_key, request_fingerprint_hash, "
                 + "selection_fingerprint, "
-                + "legacy_offer_id, provider, environment, subscription_id, "
+                + "provider, environment, subscription_id, "
                 + "billing_event_id, status, created_at, updated_at) VALUES "
                 + "(@id, @cust, @key, SHA2(@key, 256), "
-                + "SHA2(CONCAT('billing_v2.legacy_offer|', @offer), 256), "
-                + "@offer, 'stripe', 'test', "
+                + "SHA2(CONCAT('billing_v2.selection|', @key), 256), "
+                + "'stripe', 'test', "
                 + "@sub, @evt, 'pending', UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))",
                 ("@id", Guid.NewGuid().ToString("D")), ("@cust", CustomerId),
                 ("@key", $"{Marker}-{keySuffix}"),
-                ("@offer", $"PACK-{Marker[..8]}"),
                 ("@sub", subscriptionId), ("@evt", eventId));
 
             var attemptId = await InsertAttemptAsync(

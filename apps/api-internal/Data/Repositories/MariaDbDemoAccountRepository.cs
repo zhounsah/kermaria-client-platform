@@ -764,6 +764,12 @@ public sealed class MariaDbDemoAccountRepository : IDemoAccountRepository
         // customer_services est desormais gere par la cascade ; on ne compte
         // donc que le contenu metier NON encore couvert. Toute valeur > 0
         // -> on saute ce compte plutot que de risquer une erreur FK.
+        //
+        // Le panier et le tunnel d'abonnement recurrent legacy n'existent plus
+        // (migration 071) : il n'y a plus de contenu transitoire a compter.
+        // `billing_v2_subscriptions` est la seule table d'abonnement, et elle
+        // reste comptee — un compte de demonstration converti en client payant
+        // ne doit jamais etre purge par expiration de sa date de demo.
         await using var command = connection.CreateCommand();
         command.CommandText =
             """
@@ -772,11 +778,9 @@ public sealed class MariaDbDemoAccountRepository : IDemoAccountRepository
               + (SELECT COUNT(*) FROM support_requests WHERE customer_id = @id)
               + (SELECT COUNT(*) FROM service_requests WHERE customer_id = @id)
               + (SELECT COUNT(*) FROM commercial_documents WHERE customer_id = @id)
-              + (SELECT COUNT(*) FROM subscriptions WHERE customer_id = @id)
+              + (SELECT COUNT(*) FROM billing_v2_subscriptions WHERE customer_id = @id)
               + (SELECT COUNT(*) FROM ad_actions WHERE customer_id = @id)
               + (SELECT COUNT(*) FROM bpce_customers WHERE customer_id = @id)
-              + (SELECT COUNT(*) FROM cart_items WHERE customer_id = @id)
-              + (SELECT COUNT(*) FROM recurring_checkout_items WHERE customer_id = @id)
               + (SELECT COUNT(*) FROM portal_notifications WHERE customer_id = @id)
                 AS content_count;
             """;

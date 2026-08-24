@@ -1,4 +1,4 @@
-namespace Kermaria.ApiInternal.Services;
+﻿namespace Kermaria.ApiInternal.Services;
 
 /// <summary>
 /// Reprise fidele du catalogue seede par la migration 048.
@@ -32,8 +32,7 @@ public static class BillingV2PublicCatalogSeed
             Currency,
             Presets(),
             Services(),
-            Commitments(),
-            CheckoutRoutes());
+            Commitments());
 
     /// <summary>
     /// Reprise exacte de `billing_v2_commitment_payment_options` (migration
@@ -55,40 +54,6 @@ public static class BillingV2PublicCatalogSeed
                     new(BillingV2PaymentModes.Monthly, 1500),
                     new(BillingV2PaymentModes.Upfront, 2000)
                 ])
-        ];
-
-    /// <summary>
-    /// Les douze offres legacy a paiement mensuel, conservees pour la
-    /// compatibilite du parcours historique. La souscription V2 native ne s'en
-    /// sert plus.
-    /// </summary>
-    public static IReadOnlyList<BillingV2PublicCheckoutRoute> CheckoutRoutes()
-        =>
-        [
-            new("pack-dossier-securise", "FLEX",
-                "61000000-0000-0000-0000-000000000101"),
-            new("pack-dossier-securise", "TERM-6",
-                "61000000-0000-0000-0000-000000000102"),
-            new("pack-dossier-securise", "TERM-12",
-                "61000000-0000-0000-0000-000000000104"),
-            new("pack-acces-distance", "FLEX",
-                "61000000-0000-0000-0000-000000000106"),
-            new("pack-acces-distance", "TERM-6",
-                "61000000-0000-0000-0000-000000000107"),
-            new("pack-acces-distance", "TERM-12",
-                "61000000-0000-0000-0000-000000000109"),
-            new("pack-bureau-windows-distance", "FLEX",
-                "61000000-0000-0000-0000-000000000111"),
-            new("pack-bureau-windows-distance", "TERM-6",
-                "61000000-0000-0000-0000-000000000112"),
-            new("pack-bureau-windows-distance", "TERM-12",
-                "61000000-0000-0000-0000-000000000114"),
-            new("pack-pro-association", "FLEX",
-                "61000000-0000-0000-0000-000000000116"),
-            new("pack-pro-association", "TERM-6",
-                "61000000-0000-0000-0000-000000000117"),
-            new("pack-pro-association", "TERM-12",
-                "61000000-0000-0000-0000-000000000119")
         ];
 
     public static IReadOnlyList<BillingV2PublicService> Services()

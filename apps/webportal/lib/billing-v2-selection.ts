@@ -30,7 +30,16 @@ export function readBillingV2SelectionPayload(
   const presetCode = readString(source.presetCode);
   const storagePersonalTierCode = readString(source.storagePersonalTierCode);
   const components = readComponents(source.components);
-  if (!presetCode || (!storagePersonalTierCode && !components)) {
+  // Deux formes valides, et deux seulement :
+  //   * formule : un code de formule, avec au minimum un palier de stockage
+  //     personnel ou une liste de composants ;
+  //   * directe : une liste de composants, sans formule ni engagement.
+  // Refuser la seconde obligerait a inventer une formule fictive pour vendre
+  // un service isole, ce qui recreerait un catalogue parallele.
+  const isPresetForm = Boolean(presetCode)
+    && Boolean(storagePersonalTierCode || components);
+  const isDirectForm = !presetCode && Boolean(components);
+  if (!isPresetForm && !isDirectForm) {
     return null;
   }
 
@@ -52,6 +61,9 @@ export function readBillingV2SelectionPayload(
 
   return {
     presetCode,
+    // Une selection directe part sans engagement : FLEX est le seul terme qui
+    // n'engage a rien, et l'imposer evite qu'une absence de choix soit lue
+    // comme un engagement long.
     commitmentCode: readString(source.commitmentCode) ?? "FLEX",
     paymentMode: paymentMode as BillingV2PublicSelection["paymentMode"],
     // Le champ historique reste obligatoire dans le contrat TypeScript ; la
@@ -108,8 +120,14 @@ export function billingV2SelectionToSearchParams(
 ): URLSearchParams {
   const params = new URLSearchParams();
   params.set("v2", "1");
-  params.set("v2Preset", selection.presetCode);
-  params.set("v2Commitment", selection.commitmentCode);
+  // Une selection directe n'a ni formule ni engagement : les parametres
+  // correspondants disparaissent de l'URL plutot que d'en inventer un.
+  if (selection.presetCode) {
+    params.set("v2Preset", selection.presetCode);
+  }
+  if (selection.commitmentCode) {
+    params.set("v2Commitment", selection.commitmentCode);
+  }
   params.set("v2Payment", selection.paymentMode);
   params.set("v2Personal", selection.storagePersonalTierCode);
   params.set("v2BackupPersonal", selection.backupPersonal ? "1" : "0");

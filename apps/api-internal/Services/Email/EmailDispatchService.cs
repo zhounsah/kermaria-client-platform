@@ -14,7 +14,7 @@ public sealed record ContactFormSubmission(
     string VisitorEmail,
     string SubjectLine,
     string Message,
-    string? OfferReference);
+    string? FormuleCode);
 
 public interface IEmailDispatchService
 {
@@ -62,7 +62,7 @@ public interface IEmailDispatchService
 
 public sealed class EmailDispatchService : IEmailDispatchService
 {
-    private readonly ICommercialRepository _commercialRepository;
+    private readonly ICommercialDocumentRepository _commercialRepository;
     private readonly IBpceInvoicingRepository _bpceRepository;
     private readonly IEmailService _emailService;
     private readonly IEmailLogRepository _emailLog;
@@ -70,7 +70,7 @@ public sealed class EmailDispatchService : IEmailDispatchService
     private readonly ILogger<EmailDispatchService> _logger;
 
     public EmailDispatchService(
-        ICommercialRepository commercialRepository,
+        ICommercialDocumentRepository commercialRepository,
         IBpceInvoicingRepository bpceRepository,
         IEmailService emailService,
         IEmailLogRepository emailLog,
@@ -166,7 +166,7 @@ public sealed class EmailDispatchService : IEmailDispatchService
             submission.VisitorEmail,
             submission.SubjectLine,
             submission.Message,
-            submission.OfferReference);
+            submission.FormuleCode);
 
         var message = new EmailMessage(
             recipient,

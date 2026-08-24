@@ -8,7 +8,6 @@ export const PUBLIC_ROUTES = [
   // configuration basculerait sur l'entete « espace client ».
   "/formules",
   "/diagnostic",
-  "/configurer",
   "/ressources",
   "/solutions",
   "/a-propos",
@@ -87,7 +86,6 @@ const PORTAL_APPLICATION_PREFIXES = [
   "/invoices",
   "/login",
   "/notifications",
-  "/panier",
   "/password",
   "/profile",
   "/request-service",

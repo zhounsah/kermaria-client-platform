@@ -381,8 +381,6 @@ public sealed class BillingV2AdminReadinessService
     private static BillingV2AdminRuntimeFlags ToRuntimeFlags(
         BillingV2RuntimeConfiguration runtime)
         => new(
-            runtime.CatalogShadowModeEnabled,
-            runtime.ProvisioningShadowModeEnabled,
             runtime.NewSubscriptionsEnabled,
             runtime.AuthoritativeCheckoutEnabled,
             runtime.FirstRealSubscriptionApproved,
@@ -480,23 +478,10 @@ public static class BillingV2AdminReadinessMapper
     public static BillingV2AdminLaunchReadiness ToAdminLaunchReadiness(
         BillingV2LaunchReadinessSnapshot snapshot)
         => new(
-            snapshot.RealCustomerSubscriptionCount,
-            snapshot.DemoSubscriptionCount,
-            snapshot.NoRealCustomerSubscriptions,
+            snapshot.LegacyBillingSchemaRemoved,
             snapshot.VerifiedAgainstPersistentSql)
         {
-            BlockingRealSubscriptions = snapshot.BlockingRealSubscriptions
-                .Select(subscription =>
-                    new BillingV2AdminBlockingLegacySubscription(
-                        subscription.SubscriptionId,
-                        subscription.Status,
-                        subscription.CustomerId,
-                        subscription.CustomerReference,
-                        subscription.CustomerName,
-                        subscription.CommercialOfferId,
-                        subscription.CreatedAt.ToString("O"),
-                        subscription.UpdatedAt.ToString("O")))
-                .ToArray()
+            RemainingLegacyTables = snapshot.RemainingLegacyTables
         };
 }
 
@@ -531,9 +516,9 @@ public static class BillingV2AdminReadinessGate
             return "BILLING_V2_ADMIN_FLAGS_CLOSED";
         }
 
-        if (!launchReadiness.NoRealCustomerSubscriptions)
+        if (!launchReadiness.LegacyBillingSchemaRemoved)
         {
-            return "BILLING_V2_ADMIN_REAL_LEGACY_SUBSCRIPTIONS_PRESENT";
+            return "BILLING_V2_ADMIN_LEGACY_SCHEMA_PRESENT";
         }
 
         if (!launchReadiness.VerifiedAgainstPersistentSql)

@@ -155,12 +155,17 @@ public sealed record RequestStatusPayload(string? Status);
 
 public sealed record RequestTextPayload(string? Text);
 
+/// <param name="FormuleCode">
+/// Code d'une formule Billing V2 (<c>billing_v2_offer_presets.code</c>) quand le
+/// visiteur arrive depuis une fiche. Purement contextuel : il est repris dans
+/// le message et n'engage rien.
+/// </param>
 public sealed record ContactMessagePayload(
     string? Name,
     string? Email,
     string? Subject,
     string? Message,
-    string? OfferReference);
+    string? FormuleCode);
 
 public sealed record RequestMutationResponse(
     string Id,

@@ -156,8 +156,10 @@ const buildAccessScopeSignature =
   /\bprivate\s+async\s+Task<DownloadAccessScope>\s+BuildAccessScopeAsync\(\s*PortalSessionContext\s+session,\s*CancellationToken\s+cancellationToken\s*\)/;
 const getServicesCall =
   /\bGetServicesAsync\(\s*session,\s*cancellationToken\s*\)/;
-const getSubscriptionsByCustomerCall =
-  /\b_subscriptions\.GetByCustomerAsync\(\s*session\.CustomerId,\s*cancellationToken\s*\)/;
+// Les droits de service viennent desormais de la projection Billing V2 : il
+// n'existe plus de table d'abonnements legacy a interroger.
+const getClientEntitlementsCall =
+  /\b_entitlements\.GetClientEntitlementsAsync\(\s*session\.CustomerId,\s*cancellationToken\s*\)/;
 const getActiveServiceTypesCall =
   /\b_serviceCatalogService\.GetActiveServiceTypesAsync\(\s*session,\s*cancellationToken\s*\)/;
 
@@ -173,6 +175,15 @@ const downloadSchemaEnsurer = await read(
   "../api-internal/Services/DownloadSchemaEnsurer.cs",
 );
 const apiProgram = await read("../api-internal/Program.cs");
+const downloadAccessProjection = await read(
+  "../api-internal/Services/BillingV2DownloadAccessProjection.cs",
+);
+const entitlementRetention = await read(
+  "../api-internal/Services/BillingV2EntitlementRetention.cs",
+);
+const additionalUserRepository = await read(
+  "../api-internal/Data/Repositories/MariaDbBillingV2AdditionalUserIdentityRepository.cs",
+);
 const payloads = await read("lib/bff-payloads.ts");
 const portalNav = await read("components/PortalNavigation.tsx");
 const adminNav = await read("components/AdminNavigation.tsx");
@@ -229,7 +240,12 @@ assert.match(
 );
 assert.match(
   extractCSharpMethodBody(clientServiceCatalogService, getServicesSignature),
-  getSubscriptionsByCustomerCall,
+  getClientEntitlementsCall,
+);
+assert.doesNotMatch(
+  clientServiceCatalogService,
+  /_subscriptions\.|commercial_offers|CommercialOffer/,
+  "Le catalogue de services client ne doit plus lire le modele commercial legacy.",
 );
 
 const commentAndLiteralDecoys = `
@@ -334,6 +350,48 @@ assert.match(downloadSchemaEnsurer, /information_schema\.tables/);
 assert.match(downloadSchemaEnsurer, /DownloadSchemaUnavailableException/);
 assert.match(apiProgram, /DownloadSchemaUnavailableException => \(/);
 assert.match(apiProgram, /"DOWNLOADS_SCHEMA_UNAVAILABLE"/);
+
+// Garde-fou : la porte d'acces aux téléchargements sert la période déjà
+// payée. La politique de résiliation pose `pending_cancellation` puis laisse
+// courir le contrat jusqu'à `current_period_ends_at` ; un filtre
+// `subscription.status = 'active'` écrit en dur coupait les téléchargements dès
+// le clic sur « résilier », sur une période encaissée.
+assert.doesNotMatch(
+  downloadAccessProjection,
+  /AND subscription\.status = 'active'/,
+);
+for (const marker of [
+  "BillingV2EntitlementRetentionSql.SubscriptionGrantsAcquiredRights",
+  "AND {AcquiredRightsSql}",
+]) {
+  assert.ok(
+    downloadAccessProjection.includes(marker),
+    `La projection doit composer le prédicat de conservation partagé (${marker}).`,
+  );
+}
+// Les deux requêtes de la porte, pas seulement celle du catalogue.
+assert.equal(
+  downloadAccessProjection.split("AND {AcquiredRightsSql}").length - 1,
+  2,
+);
+assert.match(entitlementRetention, /pending_cancellation/);
+assert.match(
+  entitlementRetention,
+  /current_period_ends_at > UTC_TIMESTAMP\(6\)/,
+);
+assert.match(
+  entitlementRetention,
+  /BillingV2ContractWindowSql\.SubscriptionStillInForce/,
+);
+
+// Conserver n'est pas ouvrir : le droit d'attribuer une NOUVELLE place reste
+// réservé aux abonnements actifs. Sans cette asymétrie, la correction
+// ci-dessus autoriserait à équiper de nouveaux utilisateurs sur un contrat
+// qu'on est en train de fermer.
+assert.match(
+  additionalUserRepository,
+  /AdministrableSlotPredicate[\s\S]{0,600}?AND subscription\.status = 'active'/,
+);
 
 assert.match(styles, /\.downloads-accordion/);
 assert.match(styles, /\.download-card/);

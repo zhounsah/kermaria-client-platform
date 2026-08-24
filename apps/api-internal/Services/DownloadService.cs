@@ -90,8 +90,8 @@ internal sealed record DownloadCategorySeed(
     int DisplayOrder);
 
 internal sealed record DownloadAccessScope(
-    IReadOnlySet<string> PublicPackCodes,
-    IReadOnlySet<string> OfferExternalReferences,
+    IReadOnlySet<string> PresetCodes,
+    IReadOnlySet<string> ServiceCodes,
     IReadOnlySet<string> ServiceTypes,
     IReadOnlySet<string> ProvisioningGroups);
 
@@ -183,15 +183,6 @@ public sealed class DownloadService : IDownloadService
     private const int MaxExternalUrlLength = 2048;
     private const int MaxRuleValueLength = 160;
 
-    private static readonly IReadOnlySet<string> KnownPublicPackCodes =
-        new HashSet<string>(StringComparer.Ordinal)
-        {
-            "pack-dossier-securise",
-            "pack-acces-distance",
-            "pack-bureau-windows-distance",
-            "pack-pro-association"
-        };
-
     private static readonly IReadOnlySet<string> KnownServiceTypes =
         new HashSet<string>(StringComparer.Ordinal)
         {
@@ -219,9 +210,7 @@ public sealed class DownloadService : IDownloadService
 
     private readonly IDownloadRepository _repository;
     private readonly IDownloadStorageService _storage;
-    private readonly ISubscriptionRepository _subscriptions;
     private readonly IClientServiceCatalogService _serviceCatalogService;
-    private readonly ICommercialOfferTopologyService _topologyService;
     private readonly IBillingV2DownloadAccessProjection _billingV2Access;
     private readonly IDownloadSchemaEnsurer _schemaEnsurer;
     private readonly ILogger<DownloadService> _logger;
@@ -229,18 +218,14 @@ public sealed class DownloadService : IDownloadService
     public DownloadService(
         IDownloadRepository repository,
         IDownloadStorageService storage,
-        ISubscriptionRepository subscriptions,
         IClientServiceCatalogService serviceCatalogService,
-        ICommercialOfferTopologyService topologyService,
         IBillingV2DownloadAccessProjection billingV2Access,
         IDownloadSchemaEnsurer schemaEnsurer,
         ILogger<DownloadService> logger)
     {
         _repository = repository;
         _storage = storage;
-        _subscriptions = subscriptions;
         _serviceCatalogService = serviceCatalogService;
-        _topologyService = topologyService;
         _billingV2Access = billingV2Access;
         _schemaEnsurer = schemaEnsurer;
         _logger = logger;
@@ -692,9 +677,6 @@ public sealed class DownloadService : IDownloadService
         PortalSessionContext session,
         CancellationToken cancellationToken)
     {
-        var subscriptions = await _subscriptions.GetByCustomerAsync(
-            session.CustomerId,
-            cancellationToken);
         var activeServiceTypes = await _serviceCatalogService.GetActiveServiceTypesAsync(
             session,
             cancellationToken);
@@ -702,44 +684,11 @@ public sealed class DownloadService : IDownloadService
             session.CustomerId,
             cancellationToken);
 
-        var activeSubscriptions = subscriptions
-            .Where(subscription =>
-                subscription.Status == "active")
-            .ToArray();
-        var publicPackCodes = activeSubscriptions
-            .Select(subscription => subscription.PublicPackCode)
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Select(value => value!)
-            .ToHashSet(StringComparer.Ordinal);
-        publicPackCodes.UnionWith(billingV2Access.PublicPackCodes);
-        var offerExternalReferences = activeSubscriptions
-            .Select(subscription => subscription.OfferExternalReference)
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Select(value => value!)
-            .ToHashSet(StringComparer.Ordinal);
-        offerExternalReferences.UnionWith(
-            billingV2Access.OfferExternalReferences);
-        var serviceTypes = new HashSet<string>(
-            activeServiceTypes,
-            StringComparer.OrdinalIgnoreCase);
-        var provisioningGroups =
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var subscription in activeSubscriptions)
-        {
-            foreach (var group in await _topologyService.ResolveMappedGroupsAsync(
-                         subscription,
-                         cancellationToken))
-            {
-                provisioningGroups.Add(group);
-            }
-        }
-        provisioningGroups.UnionWith(billingV2Access.ProvisioningGroups);
-
         return new DownloadAccessScope(
-            publicPackCodes,
-            offerExternalReferences,
-            serviceTypes,
-            provisioningGroups);
+            billingV2Access.PresetCodes,
+            billingV2Access.ServiceCodes,
+            new HashSet<string>(activeServiceTypes, StringComparer.OrdinalIgnoreCase),
+            billingV2Access.ProvisioningGroups);
     }
 
     private static DownloadCategory ToAdminCategory(
@@ -817,13 +766,11 @@ public sealed class DownloadService : IDownloadService
         return rules.Any(rule => rule.TargetType switch
         {
             var targetType when
-                targetType == DownloadVisibilityTargetTypes.PublicPackCode =>
-                    accessScope.PublicPackCodes.Contains(rule.TargetValue),
+                targetType == DownloadVisibilityTargetTypes.PresetCode =>
+                    accessScope.PresetCodes.Contains(rule.TargetValue),
             var targetType when
-                targetType == DownloadVisibilityTargetTypes
-                    .OfferExternalReference =>
-                    accessScope.OfferExternalReferences.Contains(
-                        rule.TargetValue),
+                targetType == DownloadVisibilityTargetTypes.ServiceCode =>
+                    accessScope.ServiceCodes.Contains(rule.TargetValue),
             var targetType when
                 targetType == DownloadVisibilityTargetTypes.ServiceType =>
                     accessScope.ServiceTypes.Contains(rule.TargetValue),
@@ -1170,11 +1117,6 @@ public sealed class DownloadService : IDownloadService
         var normalized = NormalizeRequiredText(value, 1, MaxRuleValueLength);
         return targetType switch
         {
-            var current when
-                current == DownloadVisibilityTargetTypes.PublicPackCode =>
-                    KnownPublicPackCodes.Contains(normalized)
-                        ? normalized
-                        : throw new PortalValidationException(),
             var current when
                 current == DownloadVisibilityTargetTypes.ServiceType =>
                     KnownServiceTypes.Contains(normalized)

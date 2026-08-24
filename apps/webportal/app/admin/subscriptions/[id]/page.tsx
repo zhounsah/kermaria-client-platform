@@ -78,23 +78,19 @@ export default async function AdminSubscriptionDetailPage({
         action={<StatusBadge label={status.label} tone={status.tone} />}
         description={`${subscription.customerReference} - ${subscription.customerName}`}
         eyebrow="Administration"
-        title={subscription.offerName}
+        title={subscription.label}
       />
 
       <SectionCard ariaLabel="Informations générales">
         <h2>Informations générales</h2>
         <dl className="profile-details">
           <div>
-            <dt>Offre</dt>
-            <dd>{subscription.offerName}</dd>
+            <dt>Intitulé</dt>
+            <dd>{subscription.label}</dd>
           </div>
           <div>
-            <dt>Référence offre</dt>
-            <dd>{subscription.offerExternalReference ?? "—"}</dd>
-          </div>
-          <div>
-            <dt>Pack public</dt>
-            <dd>{subscription.publicPackCode ?? "—"}</dd>
+            <dt>Formule</dt>
+            <dd>{subscription.presetCode ?? "À la carte"}</dd>
           </div>
           <div>
             <dt>Prix par échéance</dt>

@@ -1,4 +1,4 @@
-using Kermaria.ApiInternal.Services;
+﻿using Kermaria.ApiInternal.Services;
 using MySqlConnector;
 
 namespace Kermaria.ApiInternal.SmokeTests;
@@ -138,16 +138,15 @@ public static class BillingV2StripeRailSchemaTests
                 connection, null, refreshedHash, default) is null,
             "Un nouveau client_request_id ne matche pas par hash.");
 
-        // Depuis 063, la reprise se fait sur l'empreinte de selection, pas sur
-        // l'identifiant d'offre : pour une offre legacy, l'empreinte est
-        // derivee de cet identifiant par la meme formule que le runtime.
+        // Depuis 063, la reprise se fait sur l'empreinte de la selection,
+        // derivee de sa forme canonique par la meme formule que le runtime.
         var recovered = await BillingV2FinancialCoreStore
             .FindOpenIntentForSelectionAsync(
                 connection,
                 null,
                 fixture.CustomerId,
-                BillingV2CheckoutSelectionFingerprint.ForLegacyOffer(
-                    fixture.LegacyOfferId),
+                BillingV2CheckoutSelectionFingerprint.ForSelection(
+                    fixture.SelectionCanonical),
                 "stripe",
                 "test",
                 DateTime.UtcNow,
@@ -401,14 +400,20 @@ public static class BillingV2StripeRailSchemaTests
         string SubscriptionId,
         string ServiceId,
         string ServicePriceId,
-        string LegacyOfferId)
+        string SelectionCanonical)
     {
         public string? BillingEventId { get; set; }
 
         public string? SecondChangeId { get; set; }
 
         public BillingV2SubscriptionIntentRequest Intent(string clientRequestId)
-            => new(CustomerId, clientRequestId, LegacyOfferId, "stripe", "test");
+            => new(
+                CustomerId,
+                clientRequestId,
+                BillingV2CheckoutSelectionFingerprint.ForSelection(
+                    SelectionCanonical),
+                "stripe",
+                "test");
 
         public static async Task<RailFixture> CreateAsync(
             MySqlConnection connection)
@@ -420,7 +425,7 @@ public static class BillingV2StripeRailSchemaTests
                 Guid.NewGuid().ToString("D"),
                 Guid.NewGuid().ToString("D"),
                 Guid.NewGuid().ToString("D"),
-                $"PACK-{marker[..12]}");
+                $"billing_v2.public_selection.components|-|-|monthly|RAIL-{marker[..12]}/-/1");
 
             await ExecuteAsync(
                 connection,
@@ -477,20 +482,20 @@ public static class BillingV2StripeRailSchemaTests
                 """
                 INSERT INTO billing_v2_authoritative_checkout_requests (
                     id, customer_id, idempotency_key, request_fingerprint_hash,
-                    selection_fingerprint,
-                    legacy_offer_id, provider, environment,
+                    selection_fingerprint, selection_canonical,
+                    provider, environment,
                     subscription_id, subscription_change_id,
                     status, created_at, updated_at)
                 VALUES (@id, @customer_id, @key, SHA2(@key, 256),
-                    SHA2(CONCAT('billing_v2.legacy_offer|', @offer), 256),
-                    @offer, 'stripe', 'test',
+                    SHA2(@selection, 256), @selection,
+                    'stripe', 'test',
                     @subscription_id, @change_id,
                     'pending', UTC_TIMESTAMP(6), UTC_TIMESTAMP(6));
                 """,
                 ("@id", Guid.NewGuid().ToString("D")),
                 ("@customer_id", CustomerId),
                 ("@key", clientRequestId),
-                ("@offer", LegacyOfferId),
+                ("@selection", SelectionCanonical),
                 ("@subscription_id", SubscriptionId),
                 ("@change_id", changeId));
 

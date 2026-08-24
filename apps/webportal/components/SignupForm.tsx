@@ -3,27 +3,15 @@
 import Script from "next/script";
 import { useEffect, useRef, useState } from "react";
 
-import type {
-  BillingV2PublicSelection,
-  CatalogConfigurationInput,
-  PublicPackCode,
-} from "@kermaria/shared";
+import type { BillingV2PublicSelection } from "@kermaria/shared";
 
 import { FormMessage } from "@/components/FormMessage";
-import {
-  PublicPackSelectionSummary,
-  type PublicPackSelectionSummaryInput,
-} from "@/components/PublicPackSelectionSummary";
 import { SubmitButton } from "@/components/SubmitButton";
 import { requestBffJson } from "@/lib/client-api";
 import styles from "./SignupForm.module.css";
 
 type SignupFormProps = {
   hcaptchaSiteKey: string | null;
-  initialPackSelection?: (PublicPackSelectionSummaryInput & {
-    packKey: PublicPackCode;
-  }) | null;
-  initialCatalogConfiguration?: CatalogConfigurationInput | null;
   initialBillingV2Selection?: BillingV2PublicSelection | null;
 };
 
@@ -51,8 +39,6 @@ const USER_SIZE_OPTIONS = [
 
 export function SignupForm({
   hcaptchaSiteKey,
-  initialPackSelection = null,
-  initialCatalogConfiguration = null,
   initialBillingV2Selection = null,
 }: SignupFormProps) {
   const isSubmittingRef = useRef(false);
@@ -126,14 +112,6 @@ export function SignupForm({
           email,
           phone,
           message,
-          packKey: initialPackSelection?.packKey ?? null,
-          commitmentMonths: initialPackSelection?.commitmentMonths ?? null,
-          paymentMode: initialPackSelection?.paymentMode ?? null,
-          users: initialCatalogConfiguration?.users ?? null,
-          storageGb: initialCatalogConfiguration?.storageGb ?? null,
-          needsVpn: initialCatalogConfiguration?.needsVpn ?? null,
-          needsWindowsDesktop:
-            initialCatalogConfiguration?.needsWindowsDesktop ?? null,
           billingV2Selection: initialBillingV2Selection,
           hcaptchaToken: hcaptchaToken || null,
           website: honeypot,
@@ -150,10 +128,8 @@ export function SignupForm({
       setState({
         status: "success",
         message: initialBillingV2Selection
-          ? "Demande envoyÉe. VÉrifiez votre boîte mail, activez votre compte puis connectez-vous : votre formule et ses options seront restaurÉes avant le paiement."
-          : initialPackSelection
-            ? "Demande envoyÉe. VÉrifiez votre boîte mail pour confirmer votre adresse, puis attendez notre validation avant de dÉfinir le mot de passe et de reprendre le pack depuis votre espace client."
-            : "Demande envoyÉe. VÉrifiez votre boîte mail pour confirmer votre adresse, puis attendez notre validation avant de dÉfinir votre mot de passe.",
+          ? "Demande envoyée. Vérifiez votre boîte mail, activez votre compte puis connectez-vous : votre formule et ses options seront restaurées avant le paiement."
+          : "Demande envoyée. Vérifiez votre boîte mail pour confirmer votre adresse, puis attendez notre validation avant de définir votre mot de passe.",
       });
     } finally {
       isSubmittingRef.current = false;
@@ -326,11 +302,7 @@ export function SignupForm({
                   maxLength={2000}
                   name="message"
                   onChange={(event) => setMessage(event.target.value)}
-                  placeholder={
-                    initialPackSelection
-                      ? "Précisez ce qu'il faut savoir avant l'ouverture du compte ou la reprise du pack."
-                      : "Précisez votre contexte, vos contraintes ou ce que vous attendez de l'ouverture du compte."
-                  }
+                  placeholder="Précisez votre contexte, vos contraintes ou ce que vous attendez de l'ouverture du compte."
                   rows={5}
                   value={message}
                 />
@@ -441,105 +413,6 @@ export function SignupForm({
           </section>
         </div>
 
-        {initialPackSelection ? (
-          <PublicPackSelectionSummary
-            commitmentMonths={initialPackSelection.commitmentMonths}
-            description="Ce résumé sera repris avec votre demande pour conserver le contexte du pack sélectionné."
-            eyebrow="Pack associé à la demande"
-            fiscalMention={initialPackSelection.fiscalMention}
-            fiscalRegime={initialPackSelection.fiscalRegime}
-            firstChargeAmountCents={initialPackSelection.firstChargeAmountCents}
-            monthlyPriceAmountCents={initialPackSelection.monthlyPriceAmountCents}
-            packLabel={initialPackSelection.packLabel}
-            paymentMode={initialPackSelection.paymentMode}
-            setupFeeAmountCents={initialPackSelection.setupFeeAmountCents}
-            title={initialPackSelection.packLabel}
-          />
-        ) : null}
-
-        {initialCatalogConfiguration ? (
-          <section
-            aria-label="Configuration demandÉe"
-            className="catalog-configuration-summary"
-          >
-            <h2>Configuration demandÉe</h2>
-            <dl>
-              <div>
-                <dt>Utilisateurs</dt>
-                <dd>{initialCatalogConfiguration.users ?? "À prÉciser"}</dd>
-              </div>
-              <div>
-                <dt>Stockage</dt>
-                <dd>
-                  {initialCatalogConfiguration.storageGb
-                    ? `${initialCatalogConfiguration.storageGb} Go`
-                    : "À prÉciser"}
-                </dd>
-              </div>
-              <div>
-                <dt>VPN</dt>
-                <dd>{formatBooleanNeed(initialCatalogConfiguration.needsVpn)}</dd>
-              </div>
-              <div>
-                <dt>Bureau Windows distant</dt>
-                <dd>
-                  {formatBooleanNeed(
-                    initialCatalogConfiguration.needsWindowsDesktop,
-                  )}
-                </dd>
-              </div>
-            </dl>
-          </section>
-        ) : null}
-
-        {initialPackSelection ? (
-          <>
-            <input
-              name="packKey"
-              type="hidden"
-              value={initialPackSelection.packKey}
-            />
-            <input
-              name="commitmentMonths"
-              type="hidden"
-              value={String(initialPackSelection.commitmentMonths)}
-            />
-            <input
-              name="paymentMode"
-              type="hidden"
-              value={initialPackSelection.paymentMode}
-            />
-            {initialCatalogConfiguration ? (
-              <>
-                <input
-                  name="users"
-                  type="hidden"
-                  value={String(initialCatalogConfiguration.users ?? "")}
-                />
-                <input
-                  name="storageGb"
-                  type="hidden"
-                  value={String(initialCatalogConfiguration.storageGb ?? "")}
-                />
-                <input
-                  name="needsVpn"
-                  type="hidden"
-                  value={formatNullableBooleanValue(
-                    initialCatalogConfiguration.needsVpn,
-                  )}
-                />
-                <input
-                  name="needsWindowsDesktop"
-                  type="hidden"
-                  value={formatNullableBooleanValue(
-                    initialCatalogConfiguration.needsWindowsDesktop,
-                  )}
-                />
-              </>
-            ) : null}
-          </>
-        ) : null}
-
         <div aria-hidden="true" className="signup-honeypot">
           <label>
             Ne remplissez pas ce champ
@@ -560,8 +433,8 @@ export function SignupForm({
           En envoyant ce formulaire, vous demandez l&apos;ouverture d&apos;un accès
           client. Vous confirmerez d&apos;abord votre adresse e-mail, puis notre
           équipe validera la demande avant la définition du mot de passe
-          {initialPackSelection
-            ? " et la reprise du pack dans l'espace client."
+          {initialBillingV2Selection
+            ? " et la reprise de votre formule dans l'espace client."
             : "."}
         </p>
 
@@ -573,26 +446,6 @@ export function SignupForm({
       </form>
     </>
   );
-}
-
-function formatBooleanNeed(value: boolean | null) {
-  if (value === true) {
-    return "Oui";
-  }
-  if (value === false) {
-    return "Non";
-  }
-  return "À prÉciser";
-}
-
-function formatNullableBooleanValue(value: boolean | null) {
-  if (value === true) {
-    return "yes";
-  }
-  if (value === false) {
-    return "no";
-  }
-  return "";
 }
 
 function resetCaptcha() {

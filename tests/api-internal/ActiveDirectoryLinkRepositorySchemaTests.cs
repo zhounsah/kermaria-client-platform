@@ -42,7 +42,7 @@ public static class ActiveDirectoryLinkRepositorySchemaTests
             throw new InvalidOperationException(
                 $"Ni {ConnectionVariable} ni {FallbackConnectionVariable} n'est "
                 + "defini. Cette suite exige une MariaDB jetable portant les "
-                + "migrations 001 a 063. Elle ne peut pas etre consideree comme "
+                + "migrations 001 a 071. Elle ne peut pas etre consideree comme "
                 + "passee sans base.");
         }
 

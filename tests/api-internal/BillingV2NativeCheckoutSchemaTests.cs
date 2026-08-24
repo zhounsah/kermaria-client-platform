@@ -38,14 +38,14 @@ public static class BillingV2NativeCheckoutSchemaTests
         {
             throw new InvalidOperationException(
                 $"{ConnectionVariable} n'est pas defini. Cette suite exige une "
-                + "MariaDB jetable portant les migrations 001 a 063. "
+                + "MariaDB jetable portant les migrations 001 a 071. "
                 + "Elle ne peut pas etre consideree comme passee sans base.");
         }
 
         await using var connection = new MySqlConnection(connectionString);
         await connection.OpenAsync();
 
-        await VerifyMigration063ShapeAsync(connection);
+        await VerifyCheckoutRequestShapeAsync(connection);
         await VerifyCatalogHasServicesWithoutTierAsync(connection);
         await VerifyIdempotencyKeyIsUniquePerRailAsync(connection);
         await VerifySelectionFingerprintIsIndexedAsync(connection);
@@ -58,11 +58,12 @@ public static class BillingV2NativeCheckoutSchemaTests
     }
 
     /// <summary>
-    /// Forme attendue apres 063 : l'empreinte de selection est obligatoire et
-    /// l'offre legacy devient facultative, sinon une configuration
-    /// personnalisee ne peut pas exister en base.
+    /// Forme attendue apres 063 puis 071 : l'empreinte de selection est
+    /// obligatoire, et l'offre legacy a entierement disparu. 063 l'avait rendue
+    /// facultative pour laisser exister une configuration personnalisee ; 071
+    /// a supprime le modele commercial historique, donc la colonne elle-meme.
     /// </summary>
-    private static async Task VerifyMigration063ShapeAsync(
+    private static async Task VerifyCheckoutRequestShapeAsync(
         MySqlConnection connection)
     {
         var selection = await ReadColumnAsync(
@@ -78,9 +79,9 @@ public static class BillingV2NativeCheckoutSchemaTests
             "billing_v2_authoritative_checkout_requests",
             "legacy_offer_id");
         Expect(
-            legacy is { IsNullable: true },
-            "legacy_offer_id doit devenir nullable apres 063 : une "
-            + "configuration personnalisee n'a pas d'offre legacy.");
+            legacy is null,
+            "legacy_offer_id doit avoir disparu apres 071 : la laisser en "
+            + "place maintiendrait une ancre vers un catalogue supprime.");
 
         var canonical = await ReadColumnAsync(
             connection,

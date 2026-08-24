@@ -2,20 +2,13 @@ using System.Text.Json.Serialization;
 
 namespace Kermaria.ApiInternal.Contracts;
 
-public sealed record SubscriptionCreatePayload(
-    string? OfferId,
-    string? Rail,
-    [property: JsonPropertyName("paypalSubscriptionId")] string? PayPalSubscriptionId,
-    [property: JsonPropertyName("stripeSubscriptionId")] string? StripeSubscriptionId);
-
 /// <summary>
-/// Charge utile du checkout authoritative. `LegacyOfferId` sert le parcours
-/// historique ; `Selection` porte une configuration V2 native, personnalisee
-/// ou non. Aucun montant n'y figure — ni prix, ni remise, ni reference de prix
-/// fournisseur : tout est recalcule par API-INTERNAL.
+/// Charge utile du checkout authoritative. `Selection` porte une configuration
+/// V2 native — formule ou composants choisis directement. Aucun montant n'y
+/// figure — ni prix, ni remise, ni reference de prix fournisseur : tout est
+/// recalcule par API-INTERNAL.
 /// </summary>
 public sealed record BillingV2AuthoritativeCheckoutPayload(
-    string? LegacyOfferId,
     Services.BillingV2PublicSelectionInput? Selection,
     string? Provider,
     string? IdempotencyKey,
@@ -45,10 +38,13 @@ public sealed record SubscriptionSummary(
     string CustomerId,
     string CustomerReference,
     string CustomerName,
-    string CommercialOfferId,
-    string OfferName,
-    [property: JsonPropertyName("offerExternalReference")] string? OfferExternalReference,
-    [property: JsonPropertyName("publicPackCode")] string? PublicPackCode,
+
+    // Identite V2 de la configuration d'origine. Nulle pour une souscription
+    // directe : elle n'est rattachee a aucune formule, et forger un
+    // identifiant pour combler ce vide reintroduirait une fausse offre.
+    [property: JsonPropertyName("presetId")] string? PresetId,
+    [property: JsonPropertyName("label")] string Label,
+    [property: JsonPropertyName("presetCode")] string? PresetCode,
     string Rail,
     [property: JsonPropertyName("paypalPlanId")] string? PayPalPlanId,
     [property: JsonPropertyName("paypalSubscriptionId")] string? PayPalSubscriptionId,
@@ -73,11 +69,10 @@ public sealed record SubscriptionSummary(
     string? CancelledAt,
     string CreatedAt,
     string UpdatedAt,
-    [property: JsonPropertyName("billingSystem")] string BillingSystem = "legacy",
+    [property: JsonPropertyName("billingSystem")] string BillingSystem = "billing_v2",
 
     // Places USER-ADDITIONAL vendues sur cet abonnement, et places
-    // effectivement pourvues. Zero par defaut : le rail legacy ne vend pas de
-    // place utilisateur et ne doit rien annoncer.
+    // effectivement pourvues.
     [property: JsonPropertyName("additionalUserSlotsCount")]
     int AdditionalUserSlotsCount = 0,
     [property: JsonPropertyName("assignedAdditionalUsersCount")]

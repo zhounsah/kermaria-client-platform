@@ -23,24 +23,30 @@ export function DemoAccountConvertButton({
       return;
     }
 
-    const offer = window.prompt(
+    const codes = window.prompt(
       `Convertir « ${displayName} » en client réel.\n\n`
-        + "Référence de l'offre réelle à appliquer (ex. ACCES-RDS) — laisser vide "
-        + "pour seulement retirer l'accès de démonstration :",
+        + "Codes de services Billing V2 à accorder, séparés par des virgules "
+        + "(ex. RDS-ACCESS,VPN-ACCESS) — laisser vide pour seulement retirer "
+        + "l'accès de démonstration :",
       "",
     );
     // prompt renvoie null si l'admin annule ; une chaîne vide reste un choix
-    // valide (conversion sans nouvelle offre).
-    if (offer === null) {
+    // valide (conversion sans service accordé).
+    if (codes === null) {
       return;
     }
+
+    const serviceCodes = codes
+      .split(",")
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
 
     setIsConverting(true);
     const result = await requestBffJson<DemoConversionResult>(
       `/api/admin/demo/accounts/${encodeURIComponent(customerReference)}/convert`,
       {
         method: "POST",
-        body: JSON.stringify({ offerExternalReference: offer.trim() || null }),
+        body: JSON.stringify({ serviceCodes }),
       },
     );
     setIsConverting(false);

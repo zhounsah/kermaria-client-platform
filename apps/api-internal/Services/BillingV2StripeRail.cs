@@ -41,10 +41,15 @@ public static class BillingV2StripeModes
 // A. ANCRE D'IDEMPOTENCE : L'INTENTION SERVEUR
 // ---------------------------------------------------------------------------
 
+/// <param name="SelectionFingerprint">
+/// Empreinte de la selection Billing V2 resolue cote serveur. C'est elle qui
+/// distingue deux intentions portant sur des configurations differentes ; il
+/// n'existe plus d'identifiant d'offre pour jouer ce role.
+/// </param>
 public sealed record BillingV2SubscriptionIntentRequest(
     string CustomerId,
     string ClientRequestId,
-    string LegacyOfferId,
+    string SelectionFingerprint,
     string Provider,
     string Environment);
 
@@ -54,9 +59,9 @@ public sealed record BillingV2SubscriptionIntentRequest(
 /// stable ; la cle canonique, elle, est derivee cote serveur et inclut tout ce
 /// qui change la nature de l'intention.
 ///
-/// Consequence voulue : un retry (meme client_request_id, meme choix) retrouve
-/// la meme intention ; un choix volontairement different (autre offre, autre
-/// rail) produit une intention distincte.
+/// Consequence voulue : un retry (meme client_request_id, meme selection)
+/// retrouve la meme intention ; un choix volontairement different (autre
+/// configuration, autre rail) produit une intention distincte.
 /// </summary>
 public static class BillingV2SubscriptionIntentKey
 {
@@ -76,7 +81,7 @@ public static class BillingV2SubscriptionIntentKey
             request.CustomerId.Trim(),
             request.Provider.Trim().ToLowerInvariant(),
             request.Environment.Trim().ToLowerInvariant(),
-            request.LegacyOfferId.Trim(),
+            request.SelectionFingerprint.Trim(),
             request.ClientRequestId.Trim());
     }
 
@@ -545,9 +550,17 @@ public static class BillingV2StripeCheckoutRequestFactory
                 "BILLING_V2_STRIPE_DISPATCH_TOTAL_INVALID");
         }
 
-        var mode = upfront
-            ? BillingV2StripeModes.Payment
-            : BillingV2StripeModes.Subscription;
+        // Le mode suit les lignes REELLEMENT construites, pas le mode de
+        // reglement contractuel. Une selection purement ponctuelle (aucun
+        // service recurrent) est mensuelle au sens du contrat mais ne porte
+        // aucune ligne recurrente : la deduire du seul `upfront` demandait a
+        // Stripe une session `subscription` sans prix recurrent, que l'API
+        // refuse. Le comportement des deux cas historiques est inchange :
+        // comptant -> aucune ligne recurrente -> payment ; mensuel avec MRR ->
+        // ligne recurrente -> subscription.
+        var mode = lines.Any(line => line.Recurring)
+            ? BillingV2StripeModes.Subscription
+            : BillingV2StripeModes.Payment;
 
         return new BillingV2StripeCheckoutRequest(
             mode,

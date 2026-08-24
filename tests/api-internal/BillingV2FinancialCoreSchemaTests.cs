@@ -28,7 +28,7 @@ public static class BillingV2FinancialCoreSchemaTests
         {
             throw new InvalidOperationException(
                 $"{ConnectionVariable} n'est pas defini. Cette suite exige une "
-                + "MariaDB jetable portant les migrations 001 a 057. "
+                + "MariaDB jetable portant les migrations 001 a 071. "
                 + "Elle ne peut pas etre consideree comme passee sans base.");
         }
 

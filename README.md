@@ -89,6 +89,35 @@ Repere de version important :
 - la reference de verite est donc le tag Git et l'etat reel du depot, pas les
   seuls champs `version` des packages.
 
+## Autorite commerciale : Billing V2 / V2.1 uniquement
+
+> **Lire ceci avant les sections « Acquis V0.x » plus bas.** Le modele
+> commercial historique — `commercial_offers`, `subscriptions`, `cart_items`,
+> `recurring_checkout_items`, `stripe_webhook_events`,
+> `paypal_webhook_events` — **n'existe plus** : le code ne le lit plus et la
+> migration `071_drop_legacy_commercial_model.sql` supprime les tables. Le
+> catalogue Billing V2 est desormais la seule autorite sur ce qui est vendable
+> et sur les montants.
+>
+> Consequences concretes sur ce qui est decrit plus bas :
+>
+> - le rail Stripe construit ses lignes en **`price_data` inline** a partir du
+>   BillingEvent local. Il n'utilise plus de `price_id` externe, donc plus de
+>   `stripe_price_id_test` / `stripe_price_id_live` : le montant preleve est
+>   exactement le montant calcule localement ;
+> - le mode Stripe (`payment` ou `subscription`) suit les lignes reellement
+>   construites, pas le mode de reglement contractuel ;
+> - le panier, `/panier` et les abonnements PayPal recurrents ont disparu ; la
+>   souscription passe par `/formules` (formule) ou `/souscrire` (selection
+>   directe), toutes deux servies par le meme moteur tarifaire ;
+> - l'administration du catalogue est `/admin/catalog`, sur les tables
+>   `billing_v2_*`.
+>
+> Reference : [`docs/BILLING_V2_ONLY.md`](docs/BILLING_V2_ONLY.md). Les
+> sections « Acquis V0.x » qui suivent restent un **journal historique** : on
+> les conserve pour comprendre l'enchainement des decisions, pas pour decrire
+> l'architecture actuelle.
+
 ## Etat courant V0.27 + V0.29 Stripe + V0.30 partiel + V0.32/V0.33 packs + V0.35/V0.36 checkout + V0.37 downloads + V0.24 infra debout
 
 Le depot couvre aujourd'hui les jalons V0.9 a V0.31 + V0.35 + V0.36 (voir
@@ -255,7 +284,10 @@ Acquis V0.26 (creation de compte self-service, livre le 2026-07-02,
   reservee au test interne tant que `EMAIL_INTEGRATION_MODE=mock`.
 
 Acquis V0.29 (Stripe, rail de paiement parallele a PayPal,
-[`docs/V0.29_STRIPE_PAYMENTS.md`](docs/V0.29_STRIPE_PAYMENTS.md)) :
+[`docs/V0.29_STRIPE_PAYMENTS.md`](docs/V0.29_STRIPE_PAYMENTS.md)) —
+**historique : ce rail a ete remplace par le rail Billing V2 en `price_data`
+inline ; `stripe_price_id_test`, `stripe_price_id_live`, `commercial_offers`,
+`subscriptions` et `stripe_webhook_events` n'existent plus** :
 
 - one-shot via Stripe Checkout Sessions (`mode=payment`) et webhook
   `payment_intent.succeeded` ;

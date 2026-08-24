@@ -1,32 +1,20 @@
-import type {
-  PublicPackCatalogContent,
-  ResolvedPublicPackManifest,
-} from "@kermaria/shared";
-
 import { PublicPackCard } from "@/components/PublicPackCard";
+import type { PublicPackView } from "@/lib/public-packs";
 
 type PublicPackOverviewGridProps = {
-  content: PublicPackCatalogContent;
-  packs: readonly ResolvedPublicPackManifest[];
+  packs: readonly PublicPackView[];
   signupEnabled: boolean;
 };
 
 export function PublicPackOverviewGrid({
-  content,
   packs,
   signupEnabled,
 }: PublicPackOverviewGridProps) {
-  const highlightByPackCode = new Map(
-    content.packs.map((pack) => [pack.packCode, pack.highlightLabel]),
-  );
-
   return (
     <div className="public-pack-grid">
       {packs.map((pack) => (
         <PublicPackCard
-          highlightLabel={highlightByPackCode.get(pack.key) ?? null}
           key={pack.key}
-          mode="signup"
           pack={pack}
           signupEnabled={signupEnabled}
         />

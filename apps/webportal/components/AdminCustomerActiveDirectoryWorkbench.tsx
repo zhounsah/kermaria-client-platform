@@ -237,7 +237,7 @@ export function AdminCustomerActiveDirectoryWorkbench({
               <div>
                 <strong>Abonnement filtré</strong>
                 <span>
-                  {workspace.subscriptionContext.offerName} (
+                  {workspace.subscriptionContext.label} (
                   {localizeSubscriptionStatus(workspace.subscriptionContext.status)})
                 </span>
               </div>
@@ -263,9 +263,9 @@ export function AdminCustomerActiveDirectoryWorkbench({
               return (
                 <article className="stack-row" key={subscription.id}>
                   <div className="stack-row-main">
-                    <strong>{subscription.offerName}</strong>
+                    <strong>{subscription.label}</strong>
                     <span>
-                      {subscription.offerExternalReference ?? "Sans référence offre"}
+                      {subscription.presetCode ?? "Sélection à la carte"}
                     </span>
                     <span>
                       Services couverts :{" "}
@@ -376,7 +376,7 @@ export function AdminCustomerActiveDirectoryWorkbench({
               .map((subscription) => (
                 <article className="stack-row" key={subscription.id}>
                   <div className="stack-row-main">
-                    <strong>{subscription.offerName}</strong>
+                    <strong>{subscription.label}</strong>
                     <span>
                       Réconciliation globale de l&apos;abonnement
                     </span>

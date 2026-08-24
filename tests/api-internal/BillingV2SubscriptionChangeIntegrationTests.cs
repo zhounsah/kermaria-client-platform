@@ -12,7 +12,7 @@ public static class BillingV2SubscriptionChangeIntegrationTests
     {
         var cs=Environment.GetEnvironmentVariable("BILLING_V2_TEST_MARIADB_CONNECTION")??throw new InvalidOperationException("BILLING_V2_TEST_MARIADB_CONNECTION absent");
         var sql=new SqlRuntimeConfiguration(PortalPersistenceMode.MariaDb,"mariadb",cs,"test",true);
-        var runtime=new BillingV2RuntimeConfiguration(false,false,false,false,false,false,false,false,SubscriptionChangesEnabled:true,StripeRecurringMutationEnabled:true);
+        var runtime=new BillingV2RuntimeConfiguration(false,false,false,false,false,false,SubscriptionChangesEnabled:true,StripeRecurringMutationEnabled:true);
         await using var db=new MySqlConnection(cs); await db.OpenAsync();
         var service=new BillingV2SubscriptionChangeService(sql,runtime,new BillingV2PricingEngine());
         await Exec(db,"UPDATE billing_v2_service_prices SET status='retired' WHERE price_code LIKE 'INTEGRATION-CHANGE-FEE-%'");
@@ -47,7 +47,7 @@ public static class BillingV2SubscriptionChangeIntegrationTests
 
     public static async Task RunStripeIndeterminateAsync()
     {
-        var cs=Environment.GetEnvironmentVariable("BILLING_V2_TEST_MARIADB_CONNECTION")??throw new InvalidOperationException("BILLING_V2_TEST_MARIADB_CONNECTION absent"); var sql=new SqlRuntimeConfiguration(PortalPersistenceMode.MariaDb,"mariadb",cs,"test",true); var runtime=new BillingV2RuntimeConfiguration(false,false,false,false,false,false,false,false,SubscriptionChangesEnabled:true,StripeRecurringMutationEnabled:true); await using var db=new MySqlConnection(cs);await db.OpenAsync();
+        var cs=Environment.GetEnvironmentVariable("BILLING_V2_TEST_MARIADB_CONNECTION")??throw new InvalidOperationException("BILLING_V2_TEST_MARIADB_CONNECTION absent"); var sql=new SqlRuntimeConfiguration(PortalPersistenceMode.MariaDb,"mariadb",cs,"test",true); var runtime=new BillingV2RuntimeConfiguration(false,false,false,false,false,false,SubscriptionChangesEnabled:true,StripeRecurringMutationEnabled:true); await using var db=new MySqlConnection(cs);await db.OpenAsync();
         var s1=await SeedRecurringMutationAsync(db,sql,runtime,IndeterminateMode.TimeoutBefore); var d1=new BillingV2StripeRecurringMutationDispatcher(sql,runtime,new StripeRuntimeConfiguration(StripeMode.Test),s1.Gateway); try{await d1.DispatchPendingAsync(CancellationToken.None);throw new InvalidOperationException("S1 timeout not raised");}catch(HttpRequestException){} Equal(0,s1.Gateway.MutationEffectiveCount,"S1 no provider apply before timeout"); await ExpireLeaseAsync(db,s1.OutboxId); Equal(1,await d1.DispatchPendingAsync(CancellationToken.None),"S1 retry dispatch"); Equal(1,s1.Gateway.MutationEffectiveCount,"S1 one effective mutation"); Equal(1,s1.Gateway.Keys.Count,"S1 same idempotency key");
         var s2=await SeedRecurringMutationAsync(db,sql,runtime,IndeterminateMode.TimeoutAfter); var d2=new BillingV2StripeRecurringMutationDispatcher(sql,runtime,new StripeRuntimeConfiguration(StripeMode.Test),s2.Gateway); try{await d2.DispatchPendingAsync(CancellationToken.None);throw new InvalidOperationException("S2 timeout not raised");}catch(HttpRequestException){} Equal(1,s2.Gateway.MutationEffectiveCount,"S2 provider applied once"); await ExpireLeaseAsync(db,s2.OutboxId); Equal(1,await d2.DispatchPendingAsync(CancellationToken.None),"S2 refetch dispatch"); Equal(1,s2.Gateway.MutationEffectiveCount,"S2 no second provider mutation"); Equal(1,s2.Gateway.PostCalls,"S2 refetch before second post");
         var s3=await SeedRecurringMutationAsync(db,sql,runtime,IndeterminateMode.Mismatch); var d3=new BillingV2StripeRecurringMutationDispatcher(sql,runtime,new StripeRuntimeConfiguration(StripeMode.Test),s3.Gateway); Equal(0,await d3.DispatchPendingAsync(CancellationToken.None),"S3 mismatch not confirmed"); Equal(1,await Count(db,"SELECT COUNT(*) FROM billing_v2_outbox_events WHERE id=@id AND status='failed' AND last_error='BILLING_V2_STRIPE_RECURRING_MUTATION_REFETCH_MISMATCH_MANUAL_REVIEW_REQUIRED'",("@id",s3.OutboxId)),"S3 mismatch is terminal and observable");
@@ -63,7 +63,7 @@ public static class BillingV2SubscriptionChangeIntegrationTests
         var cs = Environment.GetEnvironmentVariable("BILLING_V2_TEST_MARIADB_CONNECTION")
             ?? throw new InvalidOperationException("BILLING_V2_TEST_MARIADB_CONNECTION absent");
         var sql = new SqlRuntimeConfiguration(PortalPersistenceMode.MariaDb, "mariadb", cs, "test", true);
-        var runtime = new BillingV2RuntimeConfiguration(false,false,false,false,false,false,false,false,
+        var runtime = new BillingV2RuntimeConfiguration(false,false,false,false,false,false,
             SubscriptionChangesEnabled:true, StripeRecurringMutationEnabled:true);
         await using var db = new MySqlConnection(cs); await db.OpenAsync();
         var c1 = await SeedUpgradeFixtureAsync(db,DateTime.UtcNow.AddMinutes(-4));
@@ -138,7 +138,7 @@ public static class BillingV2SubscriptionChangeIntegrationTests
         var cs = Environment.GetEnvironmentVariable("BILLING_V2_TEST_MARIADB_CONNECTION")
             ?? throw new InvalidOperationException("BILLING_V2_TEST_MARIADB_CONNECTION absent");
         var sql = new SqlRuntimeConfiguration(PortalPersistenceMode.MariaDb, "mariadb", cs, "test", true);
-        var runtime = new BillingV2RuntimeConfiguration(false,false,false,false,false,false,false,false,
+        var runtime = new BillingV2RuntimeConfiguration(false,false,false,false,false,false,
             SubscriptionChangesEnabled:true, StripeRecurringMutationEnabled:true);
         var changes = new BillingV2SubscriptionChangeService(sql, runtime, new BillingV2PricingEngine());
         var requestedAt = new DateTime(2026, 8, 22, 12, 0, 0, DateTimeKind.Utc);
@@ -196,7 +196,7 @@ public static class BillingV2SubscriptionChangeIntegrationTests
         var cs = Environment.GetEnvironmentVariable("BILLING_V2_TEST_MARIADB_CONNECTION")
             ?? throw new InvalidOperationException("BILLING_V2_TEST_MARIADB_CONNECTION absent");
         var sql = new SqlRuntimeConfiguration(PortalPersistenceMode.MariaDb, "mariadb", cs, "test", true);
-        var runtime = new BillingV2RuntimeConfiguration(false,false,false,false,false,false,false,false,
+        var runtime = new BillingV2RuntimeConfiguration(false,false,false,false,false,false,
             SubscriptionChangesEnabled:true, StripeRecurringMutationEnabled:true);
         var service = new BillingV2SubscriptionChangeService(sql, runtime, new BillingV2PricingEngine());
         var now = DateTime.UtcNow.AddMinutes(-2);

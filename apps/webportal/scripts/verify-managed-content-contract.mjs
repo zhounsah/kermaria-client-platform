@@ -137,7 +137,6 @@ const nonSelfServiceCatalog = {
     selfServiceOrderable: false,
   }],
   commitments: [],
-  checkoutRoutes: [],
 };
 assert.equal(
   storefrontServiceSelfServiceOrderable("maintenance-linux", nonSelfServiceCatalog),

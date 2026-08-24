@@ -77,7 +77,6 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
         "/invoices",
         "/login",
         "/notifications",
-        "/panier",
         "/password",
         "/profile",
         "/request-service",

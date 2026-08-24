@@ -9,13 +9,106 @@ namespace Kermaria.ApiInternal.Services;
 /// calcule par BillingV2PricingEngine cote serveur : la selection envoyee par
 /// le navigateur est une intention, jamais un montant.
 /// </summary>
+/// <summary>
+/// Composante tarifaire applicable a un service ou a un palier.
+///
+/// Un meme (service, palier) peut en porter plusieurs simultanement — par
+/// exemple un abonnement mensuel ET des frais de mise en service ponctuels.
+/// C'est cette liste, et non une pretendue « cadence du service », qui decide
+/// des lignes facturables : `billing_v2_services.billing_type` reste une
+/// metadonnee commerciale et n'a aucune autorite tarifaire.
+///
+/// La cle metier d'un prix est le quintuplet
+/// (service, palier, devise, cadence, declencheur) : deux composantes ne se
+/// confondent que si elles partagent les cinq.
+/// </summary>
+public sealed record BillingV2PublicPriceComponent(
+    string BillingCadence,
+    string ChargeTrigger,
+    long AmountCents,
+    string Currency,
+    bool DiscountEligible,
+    string? ServicePriceId = null,
+    string? PriceCode = null)
+{
+    public bool IsRecurring => string.Equals(
+        BillingCadence,
+        BillingV2BillingCadences.Monthly,
+        StringComparison.Ordinal);
+
+    /// <summary>
+    /// Composante facturable a la souscription initiale.
+    /// </summary>
+    /// <remarks>
+    /// Le filtre porte sur le declencheur seul, volontairement : un prix
+    /// marque <c>subscription_change</c> n'est jamais encaisse pendant un
+    /// <c>initial_subscription</c>, quelle que soit sa cadence. Cette regle est
+    /// plus stricte que <see cref="BillingV2ComponentizedPricingPolicy"/>, qui
+    /// s'applique a des composantes DEJA rattachees a un droit (donc choisies a
+    /// leur propre declenchement) ; ici on choisit dans le catalogue vivant, ou
+    /// deux prix mensuels de declencheurs differents pourraient coexister.
+    /// </remarks>
+    public bool AppliesToInitialSubscription => string.Equals(
+        ChargeTrigger,
+        BillingV2ComponentizedPricingPolicy.InitialSubscription,
+        StringComparison.Ordinal);
+}
+
 public sealed record BillingV2PublicTier(
     string Code,
     string Label,
     string? Description,
     int? NumericValue,
     long MonthlyAmountCents,
-    bool PublicSelectable);
+    bool PublicSelectable,
+    IReadOnlyList<BillingV2PublicPriceComponent>? PriceComponents = null)
+{
+    /// <summary>
+    /// Composantes tarifaires du palier. A defaut de liste explicite — seed de
+    /// repli, doubles de test — le montant mensuel declare vaut composante
+    /// unique : la projection publique ne peut donc jamais se retrouver sans
+    /// prix du tout.
+    /// </summary>
+    public IReadOnlyList<BillingV2PublicPriceComponent> Components
+        => PriceComponents is { Count: > 0 }
+            ? PriceComponents
+            : [BillingV2PublicPriceComponents.Monthly(MonthlyAmountCents)];
+}
+
+/// <summary>
+/// Nature commerciale d'un service. Metadonnee d'affichage et de tri
+/// uniquement : elle ne determine aucune ligne tarifaire.
+/// </summary>
+public static class BillingV2PublicBillingTypes
+{
+    public const string Recurring = "recurring";
+    public const string OneTime = "one_time";
+    public const string Included = "included";
+}
+
+public static class BillingV2PublicPriceComponents
+{
+    public const string DefaultCurrency = "EUR";
+
+    public static BillingV2PublicPriceComponent Monthly(
+        long amountCents,
+        bool discountEligible = true)
+        => new(
+            BillingV2BillingCadences.Monthly,
+            BillingV2ComponentizedPricingPolicy.InitialSubscription,
+            amountCents,
+            DefaultCurrency,
+            discountEligible);
+
+    public static BillingV2PublicPriceComponent OneTime(
+        long amountCents)
+        => new(
+            BillingV2BillingCadences.OneTime,
+            BillingV2ComponentizedPricingPolicy.InitialSubscription,
+            amountCents,
+            DefaultCurrency,
+            DiscountEligible: false);
+}
 
 public sealed record BillingV2PublicService(
     string Code,
@@ -26,7 +119,43 @@ public sealed record BillingV2PublicService(
     IReadOnlyList<BillingV2PublicTier> Tiers,
     bool DiscountEligible = true,
     bool PublicVisible = true,
-    bool SelfServiceOrderable = true);
+    bool SelfServiceOrderable = true,
+    string BillingType = BillingV2PublicBillingTypes.Recurring,
+    IReadOnlyList<BillingV2PublicPriceComponent>? FlatPriceComponents = null)
+{
+    /// <summary>
+    /// Composantes tarifaires du service sans palier. Vide quand le service
+    /// n'est tarife que par palier.
+    /// </summary>
+    public IReadOnlyList<BillingV2PublicPriceComponent> FlatComponents
+        => FlatPriceComponents is { Count: > 0 }
+            ? FlatPriceComponents
+            : FlatMonthlyAmountCents is { } monthly
+                ? [BillingV2PublicPriceComponents.Monthly(
+                    monthly,
+                    DiscountEligible)]
+                : [];
+
+    /// <summary>
+    /// Composantes applicables a un palier donne, ou au service lui-meme
+    /// quand il n'a pas de palier. Le repli « montant mensuel declare » herite
+    /// de l'eligibilite a la remise du service : elle n'est jamais supposee.
+    /// </summary>
+    public IReadOnlyList<BillingV2PublicPriceComponent> ComponentsFor(
+        BillingV2PublicTier? tier)
+    {
+        if (tier is null)
+        {
+            return FlatComponents;
+        }
+
+        return tier.PriceComponents is { Count: > 0 }
+            ? tier.PriceComponents
+            : [BillingV2PublicPriceComponents.Monthly(
+                tier.MonthlyAmountCents,
+                DiscountEligible)];
+    }
+}
 
 public sealed record BillingV2PublicPresetItem(
     string ServiceCode,
@@ -76,26 +205,37 @@ public sealed record BillingV2PublicCommitment(
                 StringComparison.Ordinal));
 }
 
-public sealed record BillingV2PublicCheckoutRoute(
-    string PresetCode,
-    string CommitmentCode,
-    string LegacyOfferId);
-
 public sealed record BillingV2PublicCatalogSnapshot(
     string Source,
     string Currency,
     IReadOnlyList<BillingV2PublicPreset> Presets,
     IReadOnlyList<BillingV2PublicService> Services,
-    IReadOnlyList<BillingV2PublicCommitment> Commitments,
-    IReadOnlyList<BillingV2PublicCheckoutRoute> CheckoutRoutes);
+    IReadOnlyList<BillingV2PublicCommitment> Commitments);
 
 /// <summary>
 /// Intention de configuration exprimee par le client. Aucun montant : le
 /// navigateur ne transmet que des codes catalogue.
 /// </summary>
+/// <remarks>
+/// Deux formes coexistent, sans qu'aucune ne soit un cas particulier de
+/// l'autre :
+///
+/// * <b>preset-based</b> : <see cref="PresetCode"/> designe une formule, et
+///   les champs historiques (stockage, sauvegarde, VPN...) decrivent la
+///   configuration retenue ;
+/// * <b>direct-components</b> : <see cref="PresetCode"/> est nul et
+///   <see cref="Components"/> porte integralement la composition. Aucun preset
+///   technique n'est fabrique pour la representer : le modele V2 accepte deja
+///   une souscription sans formule
+///   (`billing_v2_subscriptions.originating_preset_id` nullable).
+///
+/// <see cref="CommitmentCode"/> est nul quand le produit n'engage a rien —
+/// typiquement un achat ponctuel. La remise vaut alors 0 et la duree
+/// d'engagement 1, sans qu'aucun terme ne soit rattache au contrat.
+/// </remarks>
 public sealed record BillingV2PublicSelection(
-    string PresetCode,
-    string CommitmentCode,
+    string? PresetCode,
+    string? CommitmentCode,
     string PaymentMode,
     string StoragePersonalTierCode,
     bool BackupPersonal,
@@ -119,11 +259,15 @@ public sealed record BillingV2PublicSelection(
     {
         if (Components is { Count: > 0 })
         {
+            // L'absence de preset ou d'engagement fait partie de l'identite
+            // metier : deux selections identiques en composants mais l'une
+            // rattachee a une formule et l'autre non ne sont pas la meme
+            // intention, et ne doivent pas partager une empreinte.
             return string.Join(
                 "|",
                 "billing_v2.public_selection.components",
-                PresetCode,
-                CommitmentCode,
+                PresetCode ?? "-",
+                CommitmentCode ?? "-",
                 PaymentMode,
                 string.Join(
                     ";",
@@ -137,8 +281,8 @@ public sealed record BillingV2PublicSelection(
         return string.Join(
             "|",
             "billing_v2.public_selection",
-            PresetCode,
-            CommitmentCode,
+            PresetCode ?? "-",
+            CommitmentCode ?? "-",
             PaymentMode,
             $"sp={StoragePersonalTierCode}",
             $"bp={(BackupPersonal ? 1 : 0)}",
@@ -183,10 +327,19 @@ public sealed class BillingV2PublicSelectionInput
     public List<BillingV2PublicSelectionComponentInput>? Components { get; set; }
 
     public BillingV2PublicSelection ToSelection()
-        => new(
-            (PresetCode ?? string.Empty).Trim(),
+    {
+        var presetCode = string.IsNullOrWhiteSpace(PresetCode)
+            ? null
+            : PresetCode.Trim();
+
+        return new BillingV2PublicSelection(
+            presetCode,
+            // Une formule sans engagement explicite reste en FLEX : c'est le
+            // comportement historique de /formules et du diagnostic. Une
+            // selection directe, elle, n'invente aucun engagement — un achat
+            // ponctuel n'en a pas.
             string.IsNullOrWhiteSpace(CommitmentCode)
-                ? "FLEX"
+                ? (presetCode is null ? null : "FLEX")
                 : CommitmentCode.Trim(),
             string.IsNullOrWhiteSpace(PaymentMode)
                 ? BillingV2PaymentModes.Monthly
@@ -206,6 +359,7 @@ public sealed class BillingV2PublicSelectionInput
             Components?
                 .Select(component => component.ToComponent())
                 .ToArray());
+    }
 }
 
 public sealed class BillingV2PublicSelectionComponentInput
@@ -231,7 +385,8 @@ public sealed record BillingV2PublicQuoteLine(
     int Quantity,
     long UnitAmountCents,
     long AmountCents,
-    bool DiscountEligible);
+    bool DiscountEligible,
+    string BillingCadence = BillingV2BillingCadences.Monthly);
 
 /// <summary>
 /// Composant retenu, exprime en codes catalogue. C'est cette liste — et non
@@ -244,8 +399,8 @@ public sealed record BillingV2PublicSelectionComponent(
     int Quantity);
 
 public sealed record BillingV2PublicQuote(
-    string PresetCode,
-    string CommitmentCode,
+    string? PresetCode,
+    string? CommitmentCode,
     int CommitmentMonths,
     string PaymentMode,
     int DiscountBasisPoints,
@@ -262,12 +417,11 @@ public sealed record BillingV2PublicQuote(
     bool MatchesPresetBaseline,
     bool CheckoutAvailable,
     string CheckoutMode,
-    string? CheckoutLegacyOfferId,
     string CheckoutReasonCode);
 
 public static class BillingV2PublicCheckoutModes
 {
-    /// <summary>Selection V2 native : aucune offre legacy necessaire.</summary>
+    /// <summary>Selection V2 native, avec ou sans formule d'origine.</summary>
     public const string Native = "native";
 
     public const string Unavailable = "unavailable";

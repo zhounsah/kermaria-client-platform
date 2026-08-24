@@ -40,7 +40,7 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
         {
             throw new InvalidOperationException(
                 $"{ConnectionVariable} n'est pas defini. Cette suite exige une "
-                + "MariaDB jetable portant les migrations 001 a 065. Elle ne "
+                + "MariaDB jetable portant les migrations 001 a 071. Elle ne "
                 + "peut pas etre consideree comme passee sans base.");
         }
 
@@ -2005,14 +2005,14 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
                 """
                 INSERT INTO billing_v2_authoritative_checkout_requests (
                     id, customer_id, idempotency_key,
-                    request_fingerprint_hash, legacy_offer_id,
+                    request_fingerprint_hash,
                     selection_fingerprint, provider,
                     environment, subscription_id, status,
                     created_at, updated_at
                 ) VALUES (
                     @id, @customer_id, @key,
-                    SHA2(@key, 256), @offer_id,
-                    SHA2(CONCAT('billing_v2.legacy_offer|', @offer_id), 256), 'stripe',
+                    SHA2(@key, 256),
+                    SHA2(CONCAT('billing_v2.selection|', @key), 256), 'stripe',
                     'test', @subscription_id, 'succeeded',
                     UTC_TIMESTAMP(6), UTC_TIMESTAMP(6)
                 )
@@ -2021,7 +2021,6 @@ public static class BillingV2AdditionalUserIdentitySchemaTests
                 ("@id", Guid.NewGuid().ToString("D")),
                 ("@customer_id", CustomerId),
                 ("@key", $"checkout-{marker}"),
-                ("@offer_id", Guid.NewGuid().ToString("D")),
                 ("@subscription_id", subscriptionId));
 
         public Task SetSubscriptionStatusAsync(

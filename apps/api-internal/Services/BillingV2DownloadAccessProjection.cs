@@ -4,8 +4,8 @@ using MySqlConnector;
 namespace Kermaria.ApiInternal.Services;
 
 public sealed record BillingV2DownloadAccessScope(
-    IReadOnlySet<string> PublicPackCodes,
-    IReadOnlySet<string> OfferExternalReferences,
+    IReadOnlySet<string> PresetCodes,
+    IReadOnlySet<string> ServiceCodes,
     IReadOnlySet<string> ProvisioningGroups);
 
 public interface IBillingV2DownloadAccessProjection
@@ -37,6 +37,12 @@ public sealed class NoOpBillingV2DownloadAccessProjection
 public sealed class BillingV2DownloadAccessProjection
     : IBillingV2DownloadAccessProjection
 {
+    // Le predicat de conservation partage, nomme une fois pour les deux
+    // requetes de cette porte. Declare avant elles : les initialiseurs
+    // statiques s'executent dans l'ordre textuel.
+    private static readonly string AcquiredRightsSql =
+        BillingV2EntitlementRetentionSql.SubscriptionGrantsAcquiredRights;
+
     private readonly string _connectionString;
 
     public BillingV2DownloadAccessProjection(SqlRuntimeConfiguration configuration)
@@ -50,8 +56,8 @@ public sealed class BillingV2DownloadAccessProjection
         string customerId,
         CancellationToken cancellationToken)
     {
-        var publicPackCodes = new List<string>();
-        var offerExternalReferences = new List<string>();
+        var presetCodes = new List<string>();
+        var serviceCodes = new List<string>();
         var provisioningGroups = new List<string>();
 
         await using var connection = new MySqlConnection(_connectionString);
@@ -59,15 +65,14 @@ public sealed class BillingV2DownloadAccessProjection
 
         await using (var command = connection.CreateCommand())
         {
-            command.CommandText = LegacyTargetsSql;
+            command.CommandText = CatalogTargetsSql;
             command.Parameters.AddWithValue("@customer_id", customerId);
             await using var reader = await command.ExecuteReaderAsync(
                 cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {
-                publicPackCodes.Add(ReadNullableString(reader, "public_pack_code"));
-                offerExternalReferences.Add(
-                    ReadNullableString(reader, "offer_external_reference"));
+                presetCodes.Add(ReadNullableString(reader, "preset_code"));
+                serviceCodes.Add(ReadNullableString(reader, "service_code"));
             }
         }
 
@@ -85,37 +90,52 @@ public sealed class BillingV2DownloadAccessProjection
         }
 
         return BillingV2DownloadAccessScopePolicy.Create(
-            publicPackCodes,
-            offerExternalReferences,
+            presetCodes,
+            serviceCodes,
             provisioningGroups);
     }
 
-    // Le statut 'active' ne suffit pas : un contrat comptant arrive a terme le
-    // reste, faute de renouvellement automatique. La fenetre contractuelle est
-    // donc appliquee ici aussi, sinon les telechargements survivaient a la
-    // periode payee.
-    private static readonly string LegacyTargetsSql =
+    // Porte d'acces a des droits deja acquis : le predicat de conservation
+    // partage decide, pas un `status = 'active'` ecrit en dur. Un abonnement
+    // resilie a fin de terme reste `pending_cancellation` jusqu'au terme de la
+    // periode encaissee ; lui couper les telechargements des le clic
+    // reprendrait un service deja paye. La fenetre contractuelle reste
+    // appliquee dans le meme predicat : un contrat comptant arrive a terme
+    // reste `active` en base, faute de renouvellement automatique.
+    //
+    // Les deux axes de ciblage viennent desormais du catalogue V2 : le code de
+    // formule (`billing_v2_offer_presets.code`) et le code de service
+    // (`billing_v2_services.code`). Une souscription directe, sans formule,
+    // n'expose donc que ses services — ce qui est exact : elle n'appartient a
+    // aucune formule.
+    private static readonly string CatalogTargetsSql =
         $"""
         SELECT DISTINCT
-            offer.public_pack_code,
-            offer.external_reference AS offer_external_reference
+            preset.code AS preset_code,
+            service.code AS service_code
         FROM billing_v2_subscriptions subscription
-        INNER JOIN billing_v2_authoritative_checkout_requests request
-            ON request.subscription_id = subscription.id
-        LEFT JOIN commercial_offers offer
-            ON offer.id = request.legacy_offer_id
+        INNER JOIN billing_v2_subscription_items item
+            ON item.subscription_id = subscription.id
+        INNER JOIN billing_v2_services service
+            ON service.id = item.service_id
+        LEFT JOIN billing_v2_offer_presets preset
+            ON preset.id = subscription.originating_preset_id
         WHERE subscription.customer_id = @customer_id
-          AND subscription.status = 'active'
-          AND {BillingV2ContractWindowSql.SubscriptionStillInForce}
-          AND NOT EXISTS (
-              SELECT 1
-              FROM subscriptions legacy_subscription
-              WHERE legacy_subscription.id = subscription.id
-          );
+          AND item.status = 'active'
+          AND item.effective_from <= UTC_TIMESTAMP(6)
+          AND (
+                item.effective_until IS NULL
+                OR item.effective_until > UTC_TIMESTAMP(6)
+              )
+          AND {AcquiredRightsSql};
         """;
 
-    private const string ProvisioningGroupsSql =
-        """
+    // Meme porte, meme predicat : ces groupes AD portent l'acces deja acquis a
+    // un service en cours, pas l'autorisation d'en provisionner un nouveau.
+    // C'est cette derniere qui reste reservee aux abonnements `active`, via
+    // `AllowsNewMutations` et les gardes d'ecriture des depots.
+    private static readonly string ProvisioningGroupsSql =
+        $"""
         SELECT DISTINCT
             rule.target_reference
         FROM billing_v2_subscriptions subscription
@@ -134,18 +154,13 @@ public sealed class BillingV2DownloadAccessProjection
                 OR rule.tier_id = tier.id
            )
         WHERE subscription.customer_id = @customer_id
-          AND subscription.status = 'active'
           AND item.status = 'active'
           AND item.effective_from <= UTC_TIMESTAMP(6)
           AND (
                 item.effective_until IS NULL
                 OR item.effective_until > UTC_TIMESTAMP(6)
               )
-          AND NOT EXISTS (
-              SELECT 1
-              FROM subscriptions legacy_subscription
-              WHERE legacy_subscription.id = subscription.id
-          );
+          AND {AcquiredRightsSql};
         """;
 
     private static string ReadNullableString(
@@ -159,12 +174,12 @@ public sealed class BillingV2DownloadAccessProjection
 public static class BillingV2DownloadAccessScopePolicy
 {
     public static BillingV2DownloadAccessScope Create(
-        IEnumerable<string?> publicPackCodes,
-        IEnumerable<string?> offerExternalReferences,
+        IEnumerable<string?> presetCodes,
+        IEnumerable<string?> serviceCodes,
         IEnumerable<string?> provisioningGroups)
         => new(
-            Normalize(publicPackCodes, StringComparer.Ordinal),
-            Normalize(offerExternalReferences, StringComparer.Ordinal),
+            Normalize(presetCodes, StringComparer.Ordinal),
+            Normalize(serviceCodes, StringComparer.Ordinal),
             Normalize(provisioningGroups, StringComparer.OrdinalIgnoreCase));
 
     private static IReadOnlySet<string> Normalize(

@@ -31,8 +31,6 @@ public sealed record AdminActivityItem(
     string OccurredAt);
 
 public sealed record BillingV2AdminRuntimeFlags(
-    bool CatalogShadowModeEnabled,
-    bool ProvisioningShadowModeEnabled,
     bool NewSubscriptionsEnabled,
     bool AuthoritativeCheckoutEnabled,
     bool FirstRealSubscriptionApproved,
@@ -41,25 +39,13 @@ public sealed record BillingV2AdminRuntimeFlags(
     bool ProvisioningEnabled);
 
 public sealed record BillingV2AdminLaunchReadiness(
-    int RealCustomerSubscriptionCount,
-    int DemoSubscriptionCount,
-    bool NoRealCustomerSubscriptions,
+    bool LegacyBillingSchemaRemoved,
     bool VerifiedAgainstPersistentSql)
 {
-    public IReadOnlyList<BillingV2AdminBlockingLegacySubscription>
-        BlockingRealSubscriptions { get; init; } =
-            Array.Empty<BillingV2AdminBlockingLegacySubscription>();
+    // Tables du modele commercial concurrent encore presentes en base.
+    public IReadOnlyList<string> RemainingLegacyTables { get; init; } =
+        Array.Empty<string>();
 }
-
-public sealed record BillingV2AdminBlockingLegacySubscription(
-    string SubscriptionId,
-    string Status,
-    string CustomerId,
-    string CustomerReference,
-    string CustomerName,
-    string? CommercialOfferId,
-    string CreatedAt,
-    string UpdatedAt);
 
 public sealed record BillingV2AdminProviderReadiness(
     string Provider,

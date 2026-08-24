@@ -390,13 +390,13 @@ public static class BillingV2HardeningTests
     {
         var baseline = BillingV2SubscriptionIntentKey.Canonical(
             new BillingV2SubscriptionIntentRequest(
-                "customer-1", "req-1", "PACK-PRO-12M", "stripe", "test"));
+                "customer-1", "req-1", "fingerprint-base", "stripe", "test"));
 
         // Meme selection, meme client_request_id => meme ancre.
         Ensure(
             BillingV2SubscriptionIntentKey.Canonical(
                 new BillingV2SubscriptionIntentRequest(
-                    "customer-1", "req-1", "PACK-PRO-12M", "stripe", "test"))
+                    "customer-1", "req-1", "fingerprint-base", "stripe", "test"))
                 == baseline,
             "Regle 7 : meme selection et meme requete => meme intention.");
 
@@ -404,13 +404,13 @@ public static class BillingV2HardeningTests
         var variants = new[]
         {
             new BillingV2SubscriptionIntentRequest(
-                "customer-2", "req-1", "PACK-PRO-12M", "stripe", "test"),
+                "customer-2", "req-1", "fingerprint-base", "stripe", "test"),
             new BillingV2SubscriptionIntentRequest(
-                "customer-1", "req-1", "PACK-AUTRE", "stripe", "test"),
+                "customer-1", "req-1", "fingerprint-autre", "stripe", "test"),
             new BillingV2SubscriptionIntentRequest(
-                "customer-1", "req-1", "PACK-PRO-12M", "paypal", "test"),
+                "customer-1", "req-1", "fingerprint-base", "paypal", "test"),
             new BillingV2SubscriptionIntentRequest(
-                "customer-1", "req-1", "PACK-PRO-12M", "stripe", "live")
+                "customer-1", "req-1", "fingerprint-base", "stripe", "live")
         };
         foreach (var variant in variants)
         {

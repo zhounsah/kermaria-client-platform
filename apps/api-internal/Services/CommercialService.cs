@@ -6,8 +6,6 @@ namespace Kermaria.ApiInternal.Services;
 
 public static partial class CommercialStatuses
 {
-    public const string OfferActive = "active";
-    public const string OfferInactive = "inactive";
     public const string Draft = "draft";
     public const string PendingReview = "pending_review";
     public const string SharedWithCustomer = "shared_with_customer";
@@ -36,13 +34,6 @@ public static partial class CommercialStatuses
             PaymentModeUpfront
         };
 
-    public static readonly IReadOnlySet<string> Offer =
-        new HashSet<string>(StringComparer.Ordinal)
-        {
-            OfferActive,
-            OfferInactive
-        };
-
     public static readonly IReadOnlySet<string> Document =
         new HashSet<string>(StringComparer.Ordinal)
         {
@@ -68,28 +59,6 @@ public static partial class CommercialStatuses
         };
 }
 
-public sealed record ValidatedCommercialOffer(
-    string Name,
-    string Description,
-    string Category,
-    string UnitLabel,
-    int PriceAmountCents,
-    string? ExternalReference,
-    IReadOnlyList<string> TechnicalServiceReferences,
-    IReadOnlyList<string> ProvisioningGroupSamAccountNames,
-    string Status,
-    int DisplayOrder,
-    string BillingCadence,
-    int? SetupFeeAmountCents,
-    int? BillingIntervalMonths,
-    int? CommitmentMonths,
-    string? PaymentMode,
-    string? PublicPackCode,
-    string? PayPalPlanIdSandbox,
-    string? PayPalPlanIdLive,
-    string? StripePriceIdTest,
-    string? StripePriceIdLive);
-
 public sealed record ValidatedCommercialDocument(
     string? CustomerReference,
     string DocumentType,
@@ -100,7 +69,6 @@ public sealed record ValidatedCommercialDocument(
     string Status);
 
 public sealed record ValidatedCommercialDocumentLine(
-    string? OfferId,
     string? Label,
     string Description,
     decimal Quantity,
@@ -113,19 +81,6 @@ public interface ICommercialService
 {
     bool IsPersistent { get; }
 
-    Task<IReadOnlyList<CommercialOfferSummary>> GetClientCatalogAsync(
-        CancellationToken cancellationToken);
-    Task<IReadOnlyList<CommercialOfferSummary>> GetAdminCatalogAsync(
-        CancellationToken cancellationToken);
-    Task<CommercialOfferMutationResponse> CreateOfferAsync(
-        CommercialOfferPayload payload,
-        string correlationId,
-        CancellationToken cancellationToken);
-    Task<CommercialOfferMutationResponse> UpdateOfferAsync(
-        string offerId,
-        CommercialOfferPayload payload,
-        string correlationId,
-        CancellationToken cancellationToken);
     Task<IReadOnlyList<CommercialDocumentSummary>> GetClientDocumentsAsync(
         PortalSessionContext session,
         CancellationToken cancellationToken);
@@ -192,42 +147,14 @@ public sealed partial class CommercialService : ICommercialService
     private const int MaxTaxRateBasisPoints = 10000;
     private const decimal MaxQuantity = 1000000m;
     private const int MaxReferenceListLength = 50;
-    private readonly ICommercialRepository _repository;
+    private readonly ICommercialDocumentRepository _repository;
 
-    public CommercialService(ICommercialRepository repository)
+    public CommercialService(ICommercialDocumentRepository repository)
     {
         _repository = repository;
     }
 
     public bool IsPersistent => _repository.IsPersistent;
-
-    public Task<IReadOnlyList<CommercialOfferSummary>> GetClientCatalogAsync(
-        CancellationToken cancellationToken)
-        => _repository.GetClientCatalogAsync(cancellationToken);
-
-    public Task<IReadOnlyList<CommercialOfferSummary>> GetAdminCatalogAsync(
-        CancellationToken cancellationToken)
-        => _repository.GetAdminCatalogAsync(cancellationToken);
-
-    public Task<CommercialOfferMutationResponse> CreateOfferAsync(
-        CommercialOfferPayload payload,
-        string correlationId,
-        CancellationToken cancellationToken)
-        => _repository.CreateOfferAsync(
-            ValidateOfferPayload(payload),
-            correlationId,
-            cancellationToken);
-
-    public Task<CommercialOfferMutationResponse> UpdateOfferAsync(
-        string offerId,
-        CommercialOfferPayload payload,
-        string correlationId,
-        CancellationToken cancellationToken)
-        => _repository.UpdateOfferAsync(
-            ValidateIdentifier(offerId),
-            ValidateOfferPayload(payload),
-            correlationId,
-            cancellationToken);
 
     public Task<IReadOnlyList<CommercialDocumentSummary>> GetClientDocumentsAsync(
         PortalSessionContext session,
@@ -378,134 +305,6 @@ public sealed partial class CommercialService : ICommercialService
             correlationId);
     }
 
-    private static ValidatedCommercialOffer ValidateOfferPayload(
-        CommercialOfferPayload payload)
-    {
-        var name = ValidateText(payload.Name, 3, MaxShortTextLength);
-        var description = ValidateText(
-            payload.Description,
-            3,
-            MaxDescriptionLength);
-        var category = ValidateText(payload.Category, 2, 100);
-        var unitLabel = ValidateText(payload.UnitLabel, 1, 40);
-        var priceAmountCents = payload.PriceAmountCents
-            ?? throw new PortalValidationException();
-        if (priceAmountCents is < 0 or > MaxPriceAmountCents)
-        {
-            throw new PortalValidationException();
-        }
-
-        var externalReference = ValidateOfferExternalReference(
-            payload.ExternalReference);
-        var technicalServiceReferences = ValidateReferenceList(
-            payload.TechnicalServiceReferences,
-            TechnicalReferencePattern());
-        var provisioningGroupSamAccountNames = ValidateReferenceList(
-            payload.ProvisioningGroupSamAccountNames,
-            GroupSamAccountNamePattern());
-
-        var status = Normalize(payload.Status);
-        if (status is null || !CommercialStatuses.Offer.Contains(status))
-        {
-            throw new PortalValidationException();
-        }
-
-        var displayOrder = payload.DisplayOrder
-            ?? throw new PortalValidationException();
-        if (displayOrder is < 0 or > MaxDisplayOrder)
-        {
-            throw new PortalValidationException();
-        }
-
-        var billingCadence = Normalize(payload.BillingCadence)
-            ?? CommercialStatuses.CadenceOneTime;
-        if (!CommercialStatuses.BillingCadences.Contains(billingCadence))
-        {
-            throw new PortalValidationException();
-        }
-
-        var setupFeeAmountCents = payload.SetupFeeAmountCents;
-        if (setupFeeAmountCents is < 0 or > MaxPriceAmountCents)
-        {
-            throw new PortalValidationException();
-        }
-
-        var billingIntervalMonths = payload.BillingIntervalMonths;
-        if (billingIntervalMonths is < 1 or > 12)
-        {
-            throw new PortalValidationException();
-        }
-
-        var commitmentMonths = payload.CommitmentMonths;
-        if (commitmentMonths is < 1 or > 12)
-        {
-            throw new PortalValidationException();
-        }
-
-        var paymentMode = Normalize(payload.PaymentMode);
-        if (paymentMode is not null
-            && !CommercialStatuses.PaymentModes.Contains(paymentMode))
-        {
-            throw new PortalValidationException();
-        }
-
-        var publicPackCode = ValidatePackCode(payload.PublicPackCode);
-
-        var paypalPlanIdSandbox = ValidatePayPalPlanId(payload.PayPalPlanIdSandbox);
-        var paypalPlanIdLive = ValidatePayPalPlanId(payload.PayPalPlanIdLive);
-        var stripePriceIdTest = ValidateStripePriceId(payload.StripePriceIdTest);
-        var stripePriceIdLive = ValidateStripePriceId(payload.StripePriceIdLive);
-
-        if (billingCadence == CommercialStatuses.CadenceOneTime
-            && (billingIntervalMonths is not null
-                || commitmentMonths is not null
-                || paymentMode is not null
-                || publicPackCode is not null
-                || paypalPlanIdSandbox is not null
-                || paypalPlanIdLive is not null
-                || stripePriceIdTest is not null
-                || stripePriceIdLive is not null))
-        {
-            throw new PortalValidationException();
-        }
-
-        if (paymentMode == CommercialStatuses.PaymentModeUpfront
-            && billingCadence != CommercialStatuses.CadenceMonthly)
-        {
-            throw new PortalValidationException();
-        }
-
-        if ((publicPackCode is not null
-                || technicalServiceReferences.Count > 0
-                || provisioningGroupSamAccountNames.Count > 0)
-            && externalReference is null)
-        {
-            throw new PortalValidationException();
-        }
-
-        return new ValidatedCommercialOffer(
-            name,
-            description,
-            category,
-            unitLabel,
-            priceAmountCents,
-            externalReference,
-            technicalServiceReferences,
-            provisioningGroupSamAccountNames,
-            status,
-            displayOrder,
-            billingCadence,
-            setupFeeAmountCents,
-            billingIntervalMonths,
-            commitmentMonths,
-            paymentMode,
-            publicPackCode,
-            paypalPlanIdSandbox,
-            paypalPlanIdLive,
-            stripePriceIdTest,
-            stripePriceIdLive);
-    }
-
     private static string? ValidatePayPalPlanId(string? value)
     {
         var normalized = Normalize(value);
@@ -547,23 +346,6 @@ public sealed partial class CommercialService : ICommercialService
         }
 
         if (normalized.Length > 64 || !PackCodePattern().IsMatch(normalized))
-        {
-            throw new PortalValidationException();
-        }
-
-        return normalized;
-    }
-
-    private static string? ValidateOfferExternalReference(string? value)
-    {
-        var normalized = Normalize(value);
-        if (normalized is null)
-        {
-            return null;
-        }
-
-        if (normalized.Length > 100
-            || !TechnicalReferencePattern().IsMatch(normalized))
         {
             throw new PortalValidationException();
         }
@@ -676,16 +458,16 @@ public sealed partial class CommercialService : ICommercialService
             throw new PortalValidationException();
         }
 
-        var offerId = NormalizeNullableIdentifier(payload.OfferId);
+        // Une ligne doit se suffire a elle-meme : sans libelle, il ne reste
+        // plus rien pour la decrire une fois le catalogue modifie.
         var label = Normalize(payload.Label);
-        if (offerId is null && string.IsNullOrWhiteSpace(label))
+        if (string.IsNullOrWhiteSpace(label))
         {
             throw new PortalValidationException();
         }
 
         return new ValidatedCommercialDocumentLine(
-            offerId,
-            label is null ? null : ValidateText(label, 2, MaxShortTextLength),
+            ValidateText(label, 2, MaxShortTextLength),
             ValidateOptionalText(payload.Description, MaxDescriptionLength),
             quantity,
             ValidateNullableText(payload.UnitLabel, 40),

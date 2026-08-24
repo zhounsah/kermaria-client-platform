@@ -76,16 +76,20 @@ public static class DownloadVisibilityModes
 
 public static class DownloadVisibilityTargetTypes
 {
-    public const string PublicPackCode = "public_pack_code";
-    public const string OfferExternalReference = "offer_external_reference";
+    // Code de formule Billing V2 (`billing_v2_offer_presets.code`).
+    public const string PresetCode = "preset_code";
+
+    // Code de service Billing V2 (`billing_v2_services.code`).
+    public const string ServiceCode = "service_code";
+
     public const string ServiceType = "service_type";
     public const string ProvisioningGroup = "provisioning_group";
 
     public static readonly IReadOnlySet<string> KnownValues =
         new HashSet<string>(StringComparer.Ordinal)
         {
-            PublicPackCode,
-            OfferExternalReference,
+            PresetCode,
+            ServiceCode,
             ServiceType,
             ProvisioningGroup
         };

@@ -198,7 +198,7 @@ Le centre de téléchargements conserve ses règles ciblées existantes. `Billin
 
 L'administration suit les abonnements V2 depuis `/admin/billing-v2`, pas depuis la liste legacy `/admin/subscriptions`. L'endpoint dédié `/internal/admin/billing-v2/subscriptions` est read-only et exclut les jumeaux legacy, ce qui évite d'alimenter les workers legacy avec des lignes V2.
 
-Les routes BFF de résiliation client et admin restent explicitement legacy-only. Si une souscription projetée porte `billingSystem = "billing_v2"`, elles renvoient `BILLING_V2_CANCELLATION_NOT_AVAILABLE` avant tout appel Stripe/PayPal et avant toute mutation locale legacy. La résiliation V2 devra passer par un flux dédié, audité et idempotent, probablement outbox/provider, ou par une décision humaine documentée pendant la toute première activation.
+Les routes BFF de résiliation client et admin ne portent plus aucune logique fournisseur : elles authentifient, bornent et transmettent à API-INTERNAL, qui détient les identifiants persistés. La résiliation V2 passe par le flux dédié `BillingV2SubscriptionCancellationService` — décision, écriture locale et mise en file outbox dans la même transaction — puis par `BillingV2CancellationOutboxDispatcher` pour la convergence fournisseur. Le refus historique `BILLING_V2_CANCELLATION_NOT_AVAILABLE` a disparu avec le modèle legacy retiré par la migration 071.
 
 Si cette preuve reste vraie, Billing V2 peut devenir le système autoritaire du premier vrai nouvel abonnement, après tests et validation humaine. Le legacy reste disponible et les mécanismes de price lock restent conservés comme garde architectural.
 

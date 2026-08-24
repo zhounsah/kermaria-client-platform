@@ -38,9 +38,6 @@ const programCs = await read("../../apps/api-internal/Program.cs");
 const invoiceIssuingCs = await read(
   "../../apps/api-internal/Services/InvoiceIssuingService.cs",
 );
-const billedSubscriptionTriggerCs = await read(
-  "../../apps/api-internal/Services/Provisioning/BilledSubscriptionPaymentTrigger.cs",
-);
 const emailDispatchCs = await read(
   "../../apps/api-internal/Services/Email/EmailDispatchService.cs",
 );
@@ -241,15 +238,15 @@ assert.match(
   /SendPaymentConfirmedAsync/,
   "ConfirmPaymentAsync doit declencher SendPaymentConfirmedAsync.",
 );
-assert.match(
+// En Billing V2, le reglement d'un document ne provisionne rien : c'est
+// l'evenement fournisseur qui active l'abonnement, et l'activation qui
+// declenche la reconciliation. Un document est une trace comptable, pas un
+// ordre de provisioning. Rebrancher un declencheur ici ferait de la
+// comptabilite une seconde autorite d'activation.
+assert.doesNotMatch(
   invoiceIssuingCs,
-  /_billedSubscriptions\.OnDocumentPaidAsync/,
-  "ConfirmPaymentAsync doit aussi declencher les souscriptions facturees apres paiement ou mark-as-paid.",
-);
-assert.match(
-  billedSubscriptionTriggerCs,
-  /pending_payment[\s\S]*ActivateAsync[\s\S]*RecordPaymentAsync/,
-  "Le trigger document paye doit activer les souscriptions facturees puis enregistrer le cycle.",
+  /OnDocumentPaidAsync|ActivateAsync|ProvisionAsync|_provisioning\./,
+  "Le reglement d'un document ne doit declencher aucun provisioning.",
 );
 assert.match(
   invoiceIssuingCs,

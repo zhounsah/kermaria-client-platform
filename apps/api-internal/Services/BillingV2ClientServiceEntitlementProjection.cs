@@ -5,7 +5,7 @@ using MySqlConnector;
 namespace Kermaria.ApiInternal.Services;
 
 public sealed record BillingV2ClientServiceEntitlement(
-    string TechnicalServiceReference,
+    string ServiceCode,
     string SubscriptionId,
     string SubscriptionLabel,
     string SubscriptionStatus,
@@ -67,15 +67,8 @@ public sealed class BillingV2ClientServiceEntitlementProjection
             cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            var technicalReference =
-                BillingV2ClientServiceEntitlementPolicy
-                    .ResolveTechnicalServiceReference(
-                        ReadNullableString(
-                            reader,
-                            "legacy_service_reference"),
-                        reader.GetString("service_code"));
             entitlements.Add(new BillingV2ClientServiceEntitlement(
-                technicalReference,
+                reader.GetString("service_code"),
                 MariaDbIdentifierReader.ReadRequired(reader, "subscription_id"),
                 ReadNullableString(reader, "preset_name")
                     ?? "Souscription Billing V2",
@@ -90,12 +83,6 @@ public sealed class BillingV2ClientServiceEntitlementProjection
     private static readonly string SelectSql =
         $"""
         SELECT DISTINCT
-            COALESCE(
-                tier_mapping.legacy_service_reference,
-                service_mapping.legacy_service_reference,
-                service.code
-            )
-                AS legacy_service_reference,
             service.code AS service_code,
             subscription.id AS subscription_id,
             preset.name AS preset_name,
@@ -109,16 +96,8 @@ public sealed class BillingV2ClientServiceEntitlementProjection
             ON item.subscription_id = subscription.id
         INNER JOIN billing_v2_services service
             ON service.id = item.service_id
-        LEFT JOIN billing_v2_service_tiers tier
-            ON tier.id = item.tier_id
         LEFT JOIN billing_v2_offer_presets preset
             ON preset.id = subscription.originating_preset_id
-        LEFT JOIN billing_v2_legacy_service_mappings tier_mapping
-            ON tier_mapping.v2_service_code = service.code
-           AND tier_mapping.v2_tier_code = tier.code
-        LEFT JOIN billing_v2_legacy_service_mappings service_mapping
-            ON service_mapping.v2_service_code = service.code
-           AND service_mapping.v2_tier_code IS NULL
         WHERE subscription.customer_id = @customer_id
           AND item.status = 'active'
           AND item.effective_from <= UTC_TIMESTAMP(6)
@@ -127,12 +106,7 @@ public sealed class BillingV2ClientServiceEntitlementProjection
                 OR item.effective_until > UTC_TIMESTAMP(6)
               )
           AND {BillingV2ContractWindowSql.SubscriptionStillInForce}
-          AND NOT EXISTS (
-              SELECT 1
-              FROM subscriptions legacy_subscription
-              WHERE legacy_subscription.id = subscription.id
-          )
-        ORDER BY subscription.created_at DESC, legacy_service_reference;
+        ORDER BY subscription.created_at DESC, service.code;
         """;
 
     private static string? ReadNullableString(
@@ -149,14 +123,4 @@ public sealed class BillingV2ClientServiceEntitlementProjection
 
     private static string ToIso(DateTime value)
         => DateTime.SpecifyKind(value, DateTimeKind.Utc).ToString("O");
-}
-
-public static class BillingV2ClientServiceEntitlementPolicy
-{
-    public static string ResolveTechnicalServiceReference(
-        string? legacyServiceReference,
-        string serviceCode)
-        => string.IsNullOrWhiteSpace(legacyServiceReference)
-            ? serviceCode.Trim()
-            : legacyServiceReference.Trim();
 }

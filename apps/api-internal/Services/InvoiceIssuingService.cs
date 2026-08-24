@@ -43,29 +43,23 @@ public interface IInvoiceIssuingService
 
 public sealed class InvoiceIssuingService : IInvoiceIssuingService
 {
-    private readonly ICommercialRepository _commercialRepository;
+    private readonly ICommercialDocumentRepository _commercialRepository;
     private readonly IBpceInvoicingService _bpce;
     private readonly IBpceInvoicingRepository _bpceRepository;
     private readonly IEmailDispatchService _emailDispatch;
-    private readonly ICartProvisioningTrigger _cartProvisioning;
-    private readonly IBilledSubscriptionPaymentTrigger _billedSubscriptions;
     private readonly ILogger<InvoiceIssuingService> _logger;
 
     public InvoiceIssuingService(
-        ICommercialRepository commercialRepository,
+        ICommercialDocumentRepository commercialRepository,
         IBpceInvoicingService bpce,
         IBpceInvoicingRepository bpceRepository,
         IEmailDispatchService emailDispatch,
-        ICartProvisioningTrigger cartProvisioning,
-        IBilledSubscriptionPaymentTrigger billedSubscriptions,
         ILogger<InvoiceIssuingService> logger)
     {
         _commercialRepository = commercialRepository;
         _bpce = bpce;
         _bpceRepository = bpceRepository;
         _emailDispatch = emailDispatch;
-        _cartProvisioning = cartProvisioning;
-        _billedSubscriptions = billedSubscriptions;
         _logger = logger;
     }
 
@@ -309,12 +303,10 @@ public sealed class InvoiceIssuingService : IInvoiceIssuingService
         await _commercialRepository.MarkDocumentPaidAsync(
             documentId, correlationId, paymentMethod, cancellationToken);
 
-        // V0.35 : provisioning « le cas echeant » pour les documents issus
-        // d'un panier client (no-op pour les autres origines). Best-effort.
-        await _cartProvisioning.OnDocumentPaidAsync(
-            documentId, correlationId, cancellationToken);
-        await _billedSubscriptions.OnDocumentPaidAsync(
-            documentId, correlationId, cancellationToken);
+        // Le provisioning n'est plus declenche par le reglement d'un document :
+        // en Billing V2, l'evenement fournisseur active l'abonnement, et
+        // l'activation declenche la reconciliation. Un document est une trace
+        // comptable, pas un ordre de provisioning.
 
         await TryDispatchEmailAsync(
             "payment_confirmed",

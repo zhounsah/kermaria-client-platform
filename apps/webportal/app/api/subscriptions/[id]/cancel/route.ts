@@ -6,18 +6,24 @@ import { NextRequest, NextResponse } from "next/server";
 import { CORRELATION_HEADER, resolveCorrelationId } from "@/lib/correlation";
 import {
   getInternalApiError,
-  getInternalPortalData,
   getInternalSession,
   mutateInternalPortalPayloadTyped,
 } from "@/lib/internal-api";
-import { cancelPayPalSubscription, isPayPalConfigured } from "@/lib/paypal";
 import { getSessionCookieName } from "@/lib/session-config";
-import {
-  cancelStripeSubscription,
-  getStripeMode,
-  scheduleStripeSubscriptionCancellationAtPeriodEnd,
-} from "@/lib/stripe";
 
+/**
+ * Résiliation d'un abonnement par son titulaire.
+ *
+ * Ce BFF ne parle à aucun opérateur de paiement. Il authentifie, borne, et
+ * transmet. C'est API-INTERNAL qui détient les identifiants fournisseur
+ * persistés, met la demande en file dans l'outbox Billing V2 et obtient la
+ * convergence — un portail public n'a rien à faire dans cette chaîne, et
+ * surtout ne doit pas devenir une seconde autorité fournisseur.
+ *
+ * L'appartenance de l'abonnement n'est pas vérifiée ici : elle l'est côté
+ * API-INTERNAL, qui résout l'abonnement dans le périmètre du client de la
+ * session. Un identifiant appartenant à un autre client y ressort en 404.
+ */
 export async function POST(
   request: NextRequest,
   context: { params: Promise<{ id: string }> },
@@ -73,125 +79,6 @@ export async function POST(
     );
   }
 
-  let subscription: SubscriptionSummary | null = null;
-  try {
-    const subscriptions = await getInternalPortalData<SubscriptionSummary[]>(
-      "/internal/portal/subscriptions",
-      sessionToken,
-      correlationId,
-    );
-    subscription =
-      subscriptions.find((candidate) => candidate.id === id) ?? null;
-  } catch {
-    subscription = null;
-  }
-
-  if (!subscription) {
-    return NextResponse.json(
-      {
-        code: "SUBSCRIPTION_NOT_FOUND",
-        message: "Souscription introuvable.",
-        correlation_id: correlationId,
-      },
-      { status: 404 },
-    );
-  }
-
-  if (subscription.billingSystem === "billing_v2") {
-    return NextResponse.json(
-      {
-        code: "BILLING_V2_CANCELLATION_NOT_AVAILABLE",
-        message:
-          "La résiliation Billing V2 n'est pas encore automatisée. Aucune action de paiement n'a été déclenchée.",
-        correlation_id: correlationId,
-      },
-      { status: 409 },
-    );
-  }
-
-  if (subscription.status === "pending_cancellation") {
-    return NextResponse.json(subscription);
-  }
-
-  const nextBillingAt = subscription.nextBillingAt
-    ? new Date(subscription.nextBillingAt)
-    : null;
-  const shouldDeferCancellation =
-    (subscription.status === "active" || subscription.status === "suspended")
-    && nextBillingAt !== null
-    && nextBillingAt.getTime() > Date.now();
-
-  try {
-    if (shouldDeferCancellation) {
-      if (subscription.rail === "stripe" && subscription.stripeSubscriptionId) {
-        if (getStripeMode() === "disabled") {
-          return NextResponse.json(
-            {
-              code: "STRIPE_NOT_CONFIGURED",
-              message: "Stripe n'est pas configuré.",
-              correlation_id: correlationId,
-            },
-            { status: 503 },
-          );
-        }
-
-        await scheduleStripeSubscriptionCancellationAtPeriodEnd(
-          subscription.stripeSubscriptionId,
-        );
-      }
-    } else if (
-      subscription.status !== "cancelled"
-      && subscription.status !== "expired"
-    ) {
-      if (subscription.rail === "paypal" && subscription.paypalSubscriptionId) {
-        if (!isPayPalConfigured()) {
-          return NextResponse.json(
-            {
-              code: "PAYPAL_NOT_CONFIGURED",
-              message: "PayPal n'est pas configuré.",
-              correlation_id: correlationId,
-            },
-            { status: 503 },
-          );
-        }
-
-        await cancelPayPalSubscription(
-          subscription.paypalSubscriptionId,
-          "Résiliation client depuis le portail Kermaria.",
-        );
-      }
-
-      if (subscription.rail === "stripe" && subscription.stripeSubscriptionId) {
-        if (getStripeMode() === "disabled") {
-          return NextResponse.json(
-            {
-              code: "STRIPE_NOT_CONFIGURED",
-              message: "Stripe n'est pas configuré.",
-              correlation_id: correlationId,
-            },
-            { status: 503 },
-          );
-        }
-
-        await cancelStripeSubscription(subscription.stripeSubscriptionId);
-      }
-    }
-  } catch (error) {
-    console.error("Client cancel subscription error:", error);
-    return NextResponse.json(
-      {
-        code:
-          subscription.rail === "stripe" ? "STRIPE_ERROR" : "PAYPAL_ERROR",
-        message:
-          shouldDeferCancellation
-            ? "La résiliation a échoué chez l'opérateur de paiement. Le statut local n'a pas été modifié."
-            : "Le paiement n'a pas pu être résilié. Le statut local n'a pas été modifié.",
-        correlation_id: correlationId,
-      },
-      { status: 502 },
-    );
-  }
-
   try {
     const result = await mutateInternalPortalPayloadTyped<
       SubscriptionSummary,
@@ -204,22 +91,11 @@ export async function POST(
     );
     return NextResponse.json(result);
   } catch (error) {
-    console.error("Client persist cancel error:", error);
+    console.error("Client cancel subscription error:", error);
     const failure = getInternalApiError(error);
-    if (
-      failure.error.code === "SQL_UNAVAILABLE"
-      || failure.error.code === "INTERNAL_ERROR"
-    ) {
-      return NextResponse.json(failure.error, { status: failure.status });
-    }
 
-    return NextResponse.json(
-      {
-        code: "PERSIST_ERROR",
-        message: "Impossible d'enregistrer la résiliation locale.",
-        correlation_id: failure.error.correlation_id,
-      },
-      { status: 503 },
-    );
+    // L'erreur d'API-INTERNAL est relayée telle quelle. La masquer derrière un
+    // succès local afficherait « résilié » à un client encore prélevé.
+    return NextResponse.json(failure.error, { status: failure.status });
   }
 }

@@ -51,9 +51,11 @@ public sealed class NoOpBillingV2CheckoutReadinessService
         BillingV2CheckoutReadinessRequest request,
         CancellationToken cancellationToken)
     {
-        var launchReadiness = BillingV2LaunchReadinessGate.Evaluate(
-            realCustomerSubscriptionCount: 0,
-            demoSubscriptionCount: 0);
+        // Service inactif : la porte reste fermee, sans pretendre avoir
+        // verifie le schema.
+        var launchReadiness = new BillingV2LaunchReadinessSnapshot(
+            LegacyBillingSchemaRemoved: false,
+            VerifiedAgainstPersistentSql: false);
         var providerMappings = BillingV2ProviderPriceMappingGate.Evaluate(
             request.RequiredServicePriceIds,
             Array.Empty<BillingV2ProviderPriceMapping>(),
@@ -168,10 +170,10 @@ public static class BillingV2CheckoutReadinessGate
                 documentReadiness);
         }
 
-        if (!launchReadiness.NoRealCustomerSubscriptions)
+        if (!launchReadiness.LegacyBillingSchemaRemoved)
         {
             return Blocked(
-                "BILLING_V2_REAL_LEGACY_SUBSCRIPTIONS_PRESENT",
+                "BILLING_V2_LEGACY_SCHEMA_PRESENT",
                 launchReadiness,
                 providerMappings,
                 documentReadiness);

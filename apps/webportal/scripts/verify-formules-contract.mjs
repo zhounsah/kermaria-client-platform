@@ -387,8 +387,21 @@ assert.match(
 );
 assert.match(
   signupRoute,
-  /readBillingV2SelectionPayload[\s\S]*AMBIGUOUS_COMMERCIAL_SELECTION[\s\S]*billingV2Selection,/,
-  "Le BFF signup doit reconstruire strictement V2 et refuser le melange legacy.",
+  /readBillingV2SelectionPayload[\s\S]*INVALID_BILLING_V2_SELECTION[\s\S]*billingV2Selection,/,
+  "Le BFF signup doit reconstruire strictement V2 et refuser une selection invalide"
+    + " plutot que de la laisser tomber silencieusement.",
+);
+// Hors commentaires : le nom de ces champs ne doit plus apparaitre dans le
+// code, ni pour les lire, ni pour les ignorer explicitement.
+const signupRouteCode = signupRoute
+  .split(/\r?\n/)
+  .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
+  .join("\n");
+assert.doesNotMatch(
+  signupRouteCode,
+  /packKey|commitmentMonths|offerExternalReference/,
+  "Le BFF signup ne doit plus accepter les champs de l ancien second catalogue,"
+    + " meme pour les ignorer.",
 );
 assert.match(
   signupRepoMaria,
@@ -448,13 +461,14 @@ assert.match(
 );
 assert.match(
   checkoutService,
-  /BILLING_V2_CHECKOUT_AMBIGUOUS_SELECTION/,
-  "Une demande portant les deux identites doit etre refusee.",
+  /BILLING_V2_CHECKOUT_SELECTION_REQUIRED/,
+  "Un checkout sans selection doit etre refuse : il n existe plus d autre"
+    + " identite commerciale sur laquelle retomber.",
 );
-assert.match(
+assert.doesNotMatch(
   checkoutService,
-  /BILLING_V2_LEGACY_OFFER_MAPPING_NOT_FOUND/,
-  "Le parcours legacy doit rester en place.",
+  /legacy_offer_id|LegacyOfferId|commercial_offers/,
+  "Le checkout authoritative ne doit plus connaitre le catalogue legacy.",
 );
 // Le Pricing Engine n'est pas duplique : la composition native retombe sur le
 // meme calcul que le preset.

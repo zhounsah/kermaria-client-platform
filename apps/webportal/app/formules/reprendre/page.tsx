@@ -16,5 +16,9 @@ export default async function ResumeBillingV2FormulePage() {
 
   const selection = result.data.selection;
   const query = billingV2SelectionToSearchParams(selection).toString();
-  redirect(`/formules/${encodeURIComponent(selection.presetCode)}?${query}`);
+  redirect(
+    selection.presetCode
+      ? `/formules/${encodeURIComponent(selection.presetCode)}?${query}`
+      : `/souscrire?${query}`,
+  );
 }

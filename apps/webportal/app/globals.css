@@ -8753,3 +8753,334 @@ fieldset.form-field > .form-hint {
   .public-services-mega-grid a,
   .public-services-mega-grid span { white-space: normal; }
 }
+
+/* ------------------------------------------------------------------ */
+/* Souscription Billing V2 — /souscrire                                */
+/* ------------------------------------------------------------------ */
+
+.subscribe-page {
+  display: grid;
+  gap: var(--space-2xl);
+}
+
+.subscribe-presets,
+.subscribe-a-la-carte {
+  display: grid;
+  gap: var(--space-lg);
+  padding: var(--space-xl);
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.subscribe-presets h2,
+.subscribe-a-la-carte h2 {
+  margin: 0;
+}
+
+.subscribe-section-lead {
+  margin: 0;
+  max-width: 70ch;
+  color: var(--muted);
+}
+
+.subscribe-empty {
+  margin: 0;
+  padding: var(--space-lg);
+  color: var(--muted);
+  background: var(--surface-muted);
+  border-radius: var(--radius-md);
+}
+
+.subscribe-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-lg);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.subscribe-preset-card {
+  display: grid;
+  align-content: start;
+  gap: var(--space-sm);
+  padding: var(--space-xl);
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.subscribe-preset-card h3 {
+  margin: 0;
+}
+
+.subscribe-preset-card .button {
+  justify-self: start;
+  margin-top: var(--space-sm);
+}
+
+.subscribe-preset-tagline {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.subscribe-preset-price {
+  margin: 0;
+  color: var(--text);
+}
+
+.subscribe-preset-price strong {
+  font-size: 1.35rem;
+}
+
+.subscribe-preset-benefits {
+  display: grid;
+  gap: var(--space-xs);
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+/* Composition service par service. Le devis reste a droite sur grand
+   ecran et repasse sous les services des que la place manque. */
+.subscribe-direct {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+  align-items: start;
+  gap: var(--space-xl);
+}
+
+.subscribe-direct-services {
+  display: grid;
+  gap: var(--space-lg);
+}
+
+.subscribe-direct-group {
+  display: grid;
+  gap: var(--space-md);
+  margin: 0;
+  padding: var(--space-lg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.subscribe-direct-group legend {
+  padding-inline: var(--space-sm);
+  font-weight: 700;
+}
+
+.subscribe-direct-service {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.subscribe-direct-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.subscribe-direct-toggle input {
+  width: auto;
+}
+
+.subscribe-direct-tier,
+.subscribe-direct-quantity {
+  display: grid;
+  gap: var(--space-xs);
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.subscribe-direct-quantity input {
+  width: 5.5rem;
+}
+
+.subscribe-direct-summary {
+  position: sticky;
+  top: var(--space-xl);
+  display: grid;
+  gap: var(--space-md);
+  padding: var(--space-xl);
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.subscribe-direct-summary h3 {
+  margin: 0;
+}
+
+.subscribe-direct-lines {
+  display: grid;
+  gap: var(--space-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.86rem;
+}
+
+.subscribe-direct-lines li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.subscribe-direct-total {
+  margin: 0;
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--border-strong);
+}
+
+.subscribe-direct-total strong {
+  font-size: 1.3rem;
+}
+
+.subscribe-direct-onetime,
+.subscribe-direct-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.subscribe-direct-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.86rem;
+}
+
+@media (max-width: 900px) {
+  .subscribe-direct {
+    grid-template-columns: 1fr;
+  }
+
+  .subscribe-direct-summary {
+    position: static;
+  }
+
+  .subscribe-direct-service {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Administration du catalogue Billing V2 — /admin/catalog             */
+/* ------------------------------------------------------------------ */
+
+.admin-catalog-v2 {
+  display: grid;
+  gap: var(--space-xl);
+}
+
+.admin-catalog-service,
+.admin-catalog-preset,
+.admin-catalog-commitment {
+  padding: var(--space-lg);
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.admin-catalog-service > summary,
+.admin-catalog-preset > summary,
+.admin-catalog-commitment > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  cursor: pointer;
+}
+
+.admin-catalog-service > form,
+.admin-catalog-preset > form,
+.admin-catalog-commitment > form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  align-items: end;
+  gap: var(--space-md);
+  margin-top: var(--space-lg);
+}
+
+.admin-catalog-service > form button[type="submit"],
+.admin-catalog-preset > form button[type="submit"],
+.admin-catalog-commitment > form button[type="submit"] {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
+/* Une case a cocher garde sa taille propre : l'etirer sur la largeur de
+   la colonne de formulaire la rendrait illisible. */
+.admin-catalog-checkbox {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: 0.86rem;
+}
+
+.admin-catalog-checkbox input {
+  width: auto;
+}
+
+.admin-catalog-tiers,
+.admin-catalog-preset-items {
+  display: grid;
+  gap: var(--space-md);
+  margin: var(--space-lg) 0 0;
+  padding: var(--space-lg) 0 0;
+  border-top: 1px solid var(--border);
+  list-style: none;
+}
+
+.admin-catalog-tiers h3,
+.admin-catalog-price-group h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.admin-catalog-tier {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  align-items: end;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  background: var(--surface-muted);
+  border-radius: var(--radius-sm);
+}
+
+.admin-catalog-tier button[type="submit"] {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
+/* L'historique tarifaire est versionne : il s'affiche en entier, la
+   version en vigueur n'etant qu'une ligne parmi les autres. */
+.admin-catalog-price-group {
+  display: grid;
+  gap: var(--space-md);
+  margin-top: var(--space-lg);
+}
+
+.admin-catalog-price-group .admin-table {
+  width: 100%;
+}
+
+.admin-catalog-create {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  align-items: end;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+  background: var(--surface-muted);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+}
+
+.admin-catalog-create button[type="submit"] {
+  grid-column: 1 / -1;
+  justify-self: start;
+}

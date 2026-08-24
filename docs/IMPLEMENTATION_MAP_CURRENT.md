@@ -119,9 +119,9 @@ Secure download center:
 
 Billable pack variants:
 
-- DB table `commercial_offers`
-- seeded by migration `023_public_pack_offers.sql`
-- referenced by `external_reference`
+- DB tables `billing_v2_offer_presets` / `billing_v2_preset_items`
+- priced by `BillingV2PricingEngine`, never stored as a total
+- referenced by preset `code` (the pack code itself)
 
 Technical pack structure and provisioning intent:
 
@@ -221,9 +221,10 @@ Identity, signup, and AD alignment:
 ## Important implementation decisions
 
 - No dedicated `packs` SQL table was introduced. Public packs are a
-  presentation and mapping layer over `commercial_offers`.
+  presentation layer over `billing_v2_offer_presets`; the preset `code`
+  is the pack code.
 - Public texts are back-office editable, but technical mapping stays in code.
-- Pack variants are identified by `external_reference`, not by UI labels.
+- Pack variants are identified by their preset `code`, not by UI labels.
 - The recurring checkout creates local subscriptions first, then one issued
   invoice, then waits for invoice payment before activation.
 - Renewals for the `billing` rail are driven locally by a background worker,
@@ -233,10 +234,10 @@ Identity, signup, and AD alignment:
   SQL tables and binaries never enter `apps/webportal/public`.
 - The client JSON for downloads never exposes physical storage paths or raw
   external URLs; every button goes through `/api/downloads/{id}/file`.
-- Download visibility is computed from existing active entitlements only:
-  `subscriptions.publicPackCode`, `subscriptions.offerExternalReference`,
-  active `customer_services.service_type`, and provisioned groups reserved for
-  future extension.
+- Download visibility is computed from existing active entitlements only,
+  projected from Billing V2: preset codes, service codes, active service types
+  and provisioned groups. A `targeted` resource with no rule stays invisible -
+  the default failure is closure, never a leak.
 
 ## Practical reading order for a takeover
 

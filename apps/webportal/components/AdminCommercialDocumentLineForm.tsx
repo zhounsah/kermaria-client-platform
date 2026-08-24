@@ -3,7 +3,6 @@
 import type {
   CommercialDocumentLine,
   CommercialDocumentLineMutationResponse,
-  CommercialOfferSummary,
 } from "@kermaria/shared";
 import { FormEvent, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -11,23 +10,33 @@ import { useRouter } from "next/navigation";
 import { FormMessage } from "@/components/FormMessage";
 import { SubmitButton } from "@/components/SubmitButton";
 import { requestBffJson } from "@/lib/client-api";
+import type { CatalogLineTemplate } from "@/lib/commercial-document-templates";
 
+/**
+ * Ligne d'un document commercial.
+ *
+ * La ligne est un <b>instantane</b> : libelle, description, unite, prix
+ * unitaire et taux de TVA sont recopies dans le document et lui appartiennent
+ * ensuite. Le catalogue ne sert qu'a pre-remplir la saisie ; aucun lien n'est
+ * conserve. C'est ce qui permet a un devis emis l'an dernier de rester lisible
+ * apres une nouvelle version de prix, et c'est pour cela que la colonne
+ * `offer_id` a disparu plutot que d'etre repointee vers Billing V2.
+ */
 type AdminCommercialDocumentLineFormProps = {
   documentId: string;
-  offers: CommercialOfferSummary[];
+  templates: readonly CatalogLineTemplate[];
   line?: CommercialDocumentLine;
   disabled?: boolean;
 };
 
 export function AdminCommercialDocumentLineForm({
   documentId,
-  offers,
+  templates,
   line,
   disabled = false,
 }: AdminCommercialDocumentLineFormProps) {
   const router = useRouter();
   const isSubmittingRef = useRef(false);
-  const [offerId, setOfferId] = useState(line?.offerId ?? "");
   const [label, setLabel] = useState(line?.label ?? "");
   const [description, setDescription] = useState(line?.description ?? "");
   const [quantity, setQuantity] = useState(String(line?.quantity ?? 1));
@@ -60,7 +69,6 @@ export function AdminCommercialDocumentLineForm({
       ? Number.parseInt(taxRateBasisPoints, 10)
       : null;
     const payload = {
-      offerId: offerId.trim() || null,
       label: label.trim(),
       description: description.trim(),
       quantity: parsedQuantity,
@@ -77,10 +85,7 @@ export function AdminCommercialDocumentLineForm({
       || parsedPrice < 0
       || !Number.isInteger(parsedSort)
       || parsedSort < 0
-      || (
-        payload.offerId === null
-        && payload.label.length < 2
-      )
+      || payload.label.length < 2
     ) {
       setMessage({
         tone: "error",
@@ -124,33 +129,37 @@ export function AdminCommercialDocumentLineForm({
     <form className="form-card compact-form-card" onSubmit={handleSubmit}>
       <div className="form-grid">
         <label>
-          Offre liée
+          Pré-remplir depuis le catalogue
           <select
             disabled={disabled}
             onChange={(event) => {
-              const selectedId = event.target.value;
-              setOfferId(selectedId);
-              if (selectedId) {
-                const offer = offers.find((o) => o.id === selectedId);
-                if (offer) {
-                  setLabel(offer.name);
-                  setDescription(offer.description);
-                  setUnitLabel(offer.unitLabel);
-                  setUnitPriceCents(String(offer.priceAmountCents));
-                  if (offer.taxRateBasisPoints != null) {
-                    setTaxRateBasisPoints(String(offer.taxRateBasisPoints));
-                  }
-                }
+              const template = templates.find(
+                (candidate) => candidate.key === event.target.value,
+              );
+              if (!template) {
+                return;
               }
+
+              // Recopie ponctuelle : la ligne ne garde aucune trace du prix
+              // catalogue d'origine, et reste modifiable ensuite.
+              setLabel(template.label);
+              setDescription(template.description ?? "");
+              setUnitLabel(template.unitLabel);
+              setUnitPriceCents(String(template.unitPriceCents));
+              setTaxRateBasisPoints(
+                template.taxRateBasisPoints === null
+                  ? ""
+                  : String(template.taxRateBasisPoints),
+              );
             }}
-            value={offerId}
+            value=""
           >
-            <option value="">Aucune</option>
-            {offers.map((offer) => (
-              <option key={offer.id} value={offer.id}>
-                {offer.externalReference
-                  ? `[${offer.externalReference}] ${offer.name}`
-                  : offer.name}
+            <option value="">Saisie libre</option>
+            {templates.map((template) => (
+              <option key={template.key} value={template.key}>
+                {template.label}
+                {" · "}
+                {template.priceCode}
               </option>
             ))}
           </select>

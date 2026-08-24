@@ -1,194 +1,67 @@
 import Link from "next/link";
 
-import { AdminDataTable } from "@/components/AdminDataTable";
-import { EmptyState } from "@/components/EmptyState";
+import { AdminBillingV2Catalog } from "@/components/AdminBillingV2Catalog";
 import { ErrorState } from "@/components/ErrorState";
-import { MockNotice } from "@/components/MockNotice";
 import { PageHeader } from "@/components/PageHeader";
-import { StatusBadge } from "@/components/StatusBadge";
 import { requireAdminSession } from "@/lib/auth";
 import {
-  commercialOfferBillingCadence,
-  commercialOfferStatus,
-  formatCommitmentMonths,
-  formatCurrencyFromCents,
-  formatPaymentModeLabel,
-} from "@/lib/formatters";
-import { getAdminCatalog } from "@/lib/internal-api";
+  getAdminBillingV2Catalog,
+  getAdminBillingV2CatalogProviders,
+} from "@/lib/internal-api";
 
 export const metadata = {
-  title: "Catalogue - Administration",
+  title: "Catalogue commercial - Administration",
 };
 
 export const dynamic = "force-dynamic";
 
-type CadenceFilter = "all" | "one_time" | "monthly";
-
-function resolveCadenceFilter(value: unknown): CadenceFilter {
-  return value === "monthly" || value === "one_time" ? value : "all";
-}
-
-export default async function AdminCatalogPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ cadence?: string }>;
-}) {
+/**
+ * Administration commerciale.
+ *
+ * Cet écran porte la <b>conception</b> : services, paliers, versions de prix,
+ * formules, engagements et rattachements provider. L'exploitation courante —
+ * readiness, abonnements, paiements, provisioning, réconciliation — reste sur
+ * `/admin/billing-v2`. Deux métiers, deux écrans : les fusionner rendrait les
+ * deux illisibles, les dupliquer recréerait deux catalogues.
+ */
+export default async function AdminCatalogPage() {
   await requireAdminSession();
-  const result = await getAdminCatalog();
-  const { cadence } = await searchParams;
-  const cadenceFilter = resolveCadenceFilter(cadence);
-
-  const offers = result.data
-    .filter((offer) =>
-      cadenceFilter === "all"
-        ? true
-        : offer.billingCadence === cadenceFilter,
-    )
-    .sort((a, b) => a.displayOrder - b.displayOrder);
+  const [catalogResult, providersResult] = await Promise.all([
+    getAdminBillingV2Catalog(),
+    getAdminBillingV2CatalogProviders(),
+  ]);
 
   return (
     <>
       <PageHeader
         action={
-          <Link className="button" href="/admin/catalog/new">
-            Créer une offre
+          <Link className="button button-secondary" href="/admin/billing-v2">
+            Exploitation Billing V2
           </Link>
         }
-        description="Catalogue facturable. Les variantes packs v0.32 y cohabitent avec les anciennes offres techniques."
+        description="Seule autorité commerciale du produit. Un tarif ne se modifie pas : il se remplace par une nouvelle version, l'ancienne restant l'autorité des factures qu'elle a produites."
         eyebrow="Administration interne"
-        title="Catalogue commercial"
+        title="Catalogue Billing V2"
       />
 
       <p>
-        <Link
-          className="button button-secondary"
-          href="/admin/public-pack-catalog"
-        >
-          Gérer la vitrine packs
+        <Link className="button button-secondary" href="/admin/public-pack-catalog">
+          Gérer la vitrine des formules
         </Link>
       </p>
 
-      <section className="content-panel admin-safety-panel">
-        <div>
-          <span className="card-kicker">Avertissement</span>
-          <h2>Socle commercial informatif</h2>
-          <p>
-            Ces documents sont informatifs et ne constituent pas des factures
-            officielles. Aucune numérotation fiscale définitive n&apos;est générée
-            dans cette version.
-          </p>
-        </div>
-        <StatusBadge label="Aucun paiement possible" tone="warning" />
-      </section>
-
-      <section className="content-panel admin-filter-panel">
-        <div>
-          <span className="card-kicker">Filtre</span>
-          <h2>Cadence de facturation</h2>
-        </div>
-        <nav aria-label="Filtre cadence" className="filter-links">
-          <Link
-            aria-current={cadenceFilter === "all" ? "page" : undefined}
-            href="/admin/catalog"
-          >
-            Toutes
-          </Link>
-          <Link
-            aria-current={cadenceFilter === "one_time" ? "page" : undefined}
-            href="/admin/catalog?cadence=one_time"
-          >
-            Ponctuelles
-          </Link>
-          <Link
-            aria-current={cadenceFilter === "monthly" ? "page" : undefined}
-            href="/admin/catalog?cadence=monthly"
-          >
-            Mensuelles
-          </Link>
-        </nav>
-      </section>
-
-      {result.error ? (
+      {catalogResult.error ? (
         <ErrorState
-          description="Impossible de charger le catalogue administré pour le moment."
-          reference={result.correlationId}
+          description="Impossible de charger le catalogue Billing V2 pour le moment."
+          reference={catalogResult.correlationId}
           title="Catalogue indisponible"
         />
-      ) : offers.length === 0 ? (
-        <EmptyState
-          description={
-            cadenceFilter === "all"
-              ? "Aucune offre n'est référencée pour le moment."
-              : "Aucune offre ne correspond à ce filtre."
-          }
-          title="Aucune offre"
-        />
       ) : (
-        <AdminDataTable
-          caption="Offres du catalogue"
-          columns={[
-            "Ordre",
-            "Nom",
-            "Catégorie",
-            "Prix HT",
-            "Cadence",
-            "Statut",
-            "Action",
-          ]}
-          rows={offers.map((offer) => {
-            const status = commercialOfferStatus[offer.status];
-            const cadenceBadge =
-              commercialOfferBillingCadence[offer.billingCadence];
-            return [
-              String(offer.displayOrder),
-              <>
-                <strong key={`${offer.id}-name`}>{offer.name}</strong>
-                <div className="cell-secondary">{offer.unitLabel}</div>
-                {offer.publicPackCode ? (
-                  <div className="cell-secondary">
-                    {formatCommitmentMonths(offer.commitmentMonths)} ·{" "}
-                    {formatPaymentModeLabel(offer.paymentMode)}
-                  </div>
-                ) : null}
-              </>,
-              offer.category,
-              <>
-                <strong key={`${offer.id}-price`}>
-                  {formatCurrencyFromCents(offer.priceAmountCents)}
-                </strong>
-                {offer.setupFeeAmountCents !== null ? (
-                  <div className="cell-secondary">
-                    Mise en service{" "}
-                    {formatCurrencyFromCents(offer.setupFeeAmountCents)}
-                  </div>
-                ) : null}
-              </>,
-              <StatusBadge
-                key={`${offer.id}-cadence`}
-                label={cadenceBadge.label}
-                tone={cadenceBadge.tone}
-              />,
-              <StatusBadge
-                key={`${offer.id}-status`}
-                label={status.label}
-                tone={status.tone}
-              />,
-              <Link
-                className="table-action"
-                href={`/admin/catalog/${encodeURIComponent(offer.id)}`}
-                key={`${offer.id}-detail`}
-              >
-                Modifier
-              </Link>,
-            ];
-          })}
+        <AdminBillingV2Catalog
+          providers={providersResult.data}
+          snapshot={catalogResult.data}
         />
       )}
-
-      <MockNotice
-        correlationId={result.correlationId}
-        source={result.source}
-      />
     </>
   );
 }

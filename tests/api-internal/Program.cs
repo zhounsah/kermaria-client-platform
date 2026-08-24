@@ -77,48 +77,6 @@ async Task<int> RunAsync(string[] arguments)
     if (arguments.Length == 1
         && string.Equals(
             arguments[0],
-            "--billing-legacy-idempotency",
-            StringComparison.Ordinal))
-    {
-        try
-        {
-            await BillingLegacyIdempotencyTests.RunAsync();
-            Console.WriteLine("Tests idempotence Billing legacy reussis.");
-            return 0;
-        }
-        catch (Exception exception)
-        {
-            Console.Error.WriteLine(
-                "Tests idempotence Billing legacy en echec.");
-            Console.Error.WriteLine(exception.ToString());
-            return 1;
-        }
-    }
-
-    if (arguments.Length == 1
-        && string.Equals(
-            arguments[0],
-            "--billing-catalog-compatibility",
-            StringComparison.Ordinal))
-    {
-        try
-        {
-            await BillingCatalogCompatibilityTests.RunAsync();
-            Console.WriteLine("Tests compatibilite catalogue Billing legacy reussis.");
-            return 0;
-        }
-        catch (Exception exception)
-        {
-            Console.Error.WriteLine(
-                "Tests compatibilite catalogue Billing legacy en echec.");
-            Console.Error.WriteLine(exception.ToString());
-            return 1;
-        }
-    }
-
-    if (arguments.Length == 1
-        && string.Equals(
-            arguments[0],
             "--billing-v2-pricing",
             StringComparison.Ordinal))
     {
@@ -152,27 +110,6 @@ async Task<int> RunAsync(string[] arguments)
         {
             Console.Error.WriteLine(
                 "Tests catalogue public Billing V2 en echec.");
-            Console.Error.WriteLine(exception.ToString());
-            return 1;
-        }
-    }
-
-    if (arguments.Length == 1
-        && string.Equals(
-            arguments[0],
-            "--billing-v2-provisioning-shadow",
-            StringComparison.Ordinal))
-    {
-        try
-        {
-            await BillingV2ProvisioningShadowTests.RunAsync();
-            Console.WriteLine("Tests shadow provisioning Billing V2 reussis.");
-            return 0;
-        }
-        catch (Exception exception)
-        {
-            Console.Error.WriteLine(
-                "Tests shadow provisioning Billing V2 en echec.");
             Console.Error.WriteLine(exception.ToString());
             return 1;
         }
@@ -373,6 +310,28 @@ async Task<int> RunAsync(string[] arguments)
     if (arguments.Length == 1
         && string.Equals(
             arguments[0],
+            "--commercial-document-stripe-payment",
+            StringComparison.Ordinal))
+    {
+        try
+        {
+            await CommercialDocumentStripePaymentTests.RunAsync();
+            Console.WriteLine(
+                "Tests reglement Stripe des documents commerciaux reussis.");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine(
+                "Tests reglement Stripe des documents commerciaux en echec.");
+            Console.Error.WriteLine(exception.ToString());
+            return 1;
+        }
+    }
+
+    if (arguments.Length == 1
+        && string.Equals(
+            arguments[0],
             "--billing-v2-renewal",
             StringComparison.Ordinal))
     {
@@ -386,6 +345,26 @@ async Task<int> RunAsync(string[] arguments)
         {
             Console.Error.WriteLine(
                 "Tests renouvellement Billing V2 en echec.");
+            Console.Error.WriteLine(exception.ToString());
+            return 1;
+        }
+    }
+
+    if (arguments.Length == 1
+        && string.Equals(
+            arguments[0],
+            "--billing-v2-cancellation",
+            StringComparison.Ordinal))
+    {
+        try
+        {
+            await BillingV2CancellationTests.RunAsync();
+            Console.WriteLine("Tests resiliation Billing V2 reussis.");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine("Tests resiliation Billing V2 en echec.");
             Console.Error.WriteLine(exception.ToString());
             return 1;
         }
@@ -564,7 +543,7 @@ async Task<int> RunAsync(string[] arguments)
         VerifyBackupProtectionService();
         VerifyActiveDirectoryPathScope();
         VerifyChildProcessEnvironmentGuardrails();
-        await VerifySignupRecalculatesCatalogConfigurationAsync();
+        await VerifySignupStoresPriceFreeBillingV2SelectionAsync();
         await RunMockTestsAsync();
         await RunMockActiveDirectoryModeTestsAsync();
         await RunMockBpceIssuingTestsAsync();
@@ -701,119 +680,24 @@ void VerifyBackupProtectionService()
         "Les messages publics doivent masquer les details techniques Veeam.");
 }
 
-async Task VerifySignupRecalculatesCatalogConfigurationAsync()
+async Task VerifySignupStoresPriceFreeBillingV2SelectionAsync()
 {
-    var commercialStore = new MockCommercialStore();
-    var commercialRepository = new MockCommercialRepository(commercialStore);
-    var fiscalPolicy = new FiscalPolicy();
-    var configurationService = new CatalogConfigurationService(
-        new LegacyBillingCatalogAdapter(
-            commercialRepository,
-            new PayPalRuntimeConfiguration(PayPalMode.Sandbox, "client", "secret"),
-            new StripeRuntimeConfiguration(StripeMode.Test)),
-        fiscalPolicy);
-    var requestedConfiguration = new CatalogConfigurationInput(
-        "pack-dossier-securise",
-        1,
-        "monthly",
-        1,
-        8,
-        false,
-        false);
-
-    var initialResolution = await configurationService.ResolveAsync(
-        requestedConfiguration,
-        CancellationToken.None);
+    // Le configurateur legacy calculait un prix au signup, ce qui obligeait a
+    // verifier que le montant venu du navigateur etait bien ignore. Billing V2
+    // rend l'invariant structurel : la selection ne transporte que des codes
+    // catalogue, et le montant est etabli plus tard par le pricing engine.
+    // Ce test garde les deux moities de cet invariant.
+    var amountLikeProperty = typeof(BillingV2PublicSelection)
+        .GetProperties()
+        .FirstOrDefault(property =>
+            property.Name.Contains("Cents", StringComparison.OrdinalIgnoreCase)
+            || property.Name.Contains("Price", StringComparison.OrdinalIgnoreCase)
+            || property.Name.Contains("Amount", StringComparison.OrdinalIgnoreCase));
     Ensure(
-        initialResolution.PriceSimulation?.MonthlyPriceExVatCents == 900,
-        "Le prix mock initial du Pack Dossier Securise doit rester connu.");
-    var initialSimulation = initialResolution.PriceSimulation
-        ?? throw new InvalidOperationException(
-            "Le resolver catalogue ne retourne aucune simulation initiale.");
-    Ensure(
-        initialResolution.Status == "ok"
-        && initialSimulation.MonthlyPriceIncVatCents == 900
-        && initialSimulation.SetupPriceExVatCents == 1500
-        && initialSimulation.SetupPriceIncVatCents == 1500
-        && initialSimulation.FirstChargeExVatCents == 2400
-        && initialSimulation.FirstChargeIncVatCents == 2400
-        && initialSimulation.VatRateBasisPoints is null
-        && initialSimulation.FiscalRegime == FiscalRegimes.FranchiseBase
-        && initialSimulation.FiscalMention.Contains("TVA non applicable")
-        && initialSimulation.RecurringItems.Count == 1
-        && initialSimulation.OneTimeItems.Count == 1,
-        "Le calcul prix doit appliquer la franchise en base sans ajouter de TVA.");
-
-    var vpnResolution = await configurationService.ResolveAsync(
-        requestedConfiguration with { NeedsVpn = true },
-        CancellationToken.None);
-    Ensure(
-        vpnResolution.Status == "requires_different_offer"
-        && vpnResolution.SuggestedPackKey == "pack-acces-distance"
-        && vpnResolution.PriceSimulation?.MonthlyPriceExVatCents == 1900,
-        "Une demande VPN doit proposer le pack Acces a Distance vendable.");
-
-    var bureauResolution = await configurationService.ResolveAsync(
-        requestedConfiguration with
-        {
-            PackKey = "pack-bureau-windows-distance",
-            StorageGb = 32,
-            NeedsVpn = false,
-            NeedsWindowsDesktop = false
-        },
-        CancellationToken.None);
-    Ensure(
-        bureauResolution.Status == "ok"
-        && bureauResolution.ResolvedConfiguration?.NeedsVpn == true
-        && bureauResolution.ResolvedConfiguration.NeedsWindowsDesktop == true,
-        "Le pack Bureau Windows doit conserver VPN et bureau distant inclus meme si le client tente de les desactiver.");
-
-    var bureauStorageQuote = await configurationService.ResolveAsync(
-        requestedConfiguration with
-        {
-            PackKey = "pack-bureau-windows-distance",
-            StorageGb = 64,
-            NeedsVpn = false,
-            NeedsWindowsDesktop = true
-        },
-        CancellationToken.None);
-    Ensure(
-        bureauStorageQuote.Status == "requires_quote"
-        && bureauStorageQuote.PriceSimulation is null
-        && bureauStorageQuote.RequestedConfiguration.Users == 1
-        && bureauStorageQuote.RequestedConfiguration.NeedsVpn == true
-        && bureauStorageQuote.Warnings.Contains("windows_storage_not_standard")
-        && !bureauStorageQuote.Warnings.Contains("windows_team_not_standard"),
-        "Un bureau Windows 1 utilisateur avec 64 Go doit cadrer le volume, pas afficher un motif multi-utilisateurs.");
-
-    var quotedResolution = await configurationService.ResolveAsync(
-        requestedConfiguration with { Users = 6 },
-        CancellationToken.None);
-    Ensure(
-        quotedResolution.Status == "requires_quote"
-        && quotedResolution.PriceSimulation is null
-        && quotedResolution.Warnings.Contains("users_not_standard"),
-        "Un nombre d'utilisateurs hors standard doit demander un cadrage.");
-
-    try
-    {
-        _ = await configurationService.ResolveAsync(
-            requestedConfiguration with { StorageGb = 12 },
-            CancellationToken.None);
-        throw new InvalidOperationException(
-            "Un stockage arbitraire a ete accepte par le configurateur.");
-    }
-    catch (PortalValidationException)
-    {
-        // attendu : seules les capacites vendables sont acceptees.
-    }
-
-    lock (commercialStore.SyncRoot)
-    {
-        var dossierOffer = commercialStore.Offers.Single(offer =>
-            offer.Id == "offer-pack-dossier-1m-monthly");
-        dossierOffer.PriceAmountCents = 1234;
-    }
+        amountLikeProperty is null,
+        "La selection publique Billing V2 ne doit porter aucun montant : "
+        + "le navigateur ne peut pas devenir une autorite tarifaire "
+        + $"(propriete fautive : {amountLikeProperty?.Name}).");
 
     var authStore = CreateMockAuthenticationStore();
     var signupStore = new MockSignupStore();
@@ -821,7 +705,6 @@ async Task VerifySignupRecalculatesCatalogConfigurationAsync()
     var adMembershipStore = new MockAdGroupMembershipStore();
     var signupService = new SignupService(
         new MockSignupRepository(signupStore, authStore),
-        new MockSubscriptionRepository(new MockSubscriptionStore()),
         new TestEmailDispatchService(),
         new PortalPasswordService(),
         new MockActiveDirectoryService(disabledAdConfiguration, adMembershipStore),
@@ -829,40 +712,31 @@ async Task VerifySignupRecalculatesCatalogConfigurationAsync()
         new MockAdGroupProvisioner(adMembershipStore),
         NewPendingPasswordStore(),
         new RecordingKoxoSyncWebhookTriggerService(),
-        configurationService,
         new SignupRuntimeConfiguration(true, 3, 10, 24, 24, false),
         CreateMockEmailConfiguration(),
         disabledAdConfiguration,
         LoggerFactory.Create(_ => { }).CreateLogger<SignupService>());
 
-    var tamperedPackSelection = new SignupPackSelectionSnapshot(
-        "pack-dossier-securise",
-        "Pack Dossier Securise",
-        "offer-pack-dossier-1m-monthly",
-        "PACK-DOSSIER-1M-MENS",
-        1,
-        "monthly",
-        1,
-        0,
-        1,
-        1,
-        0,
-        1,
-        FiscalRegimes.Standard,
-        "TVA client falsifiee",
-        "EUR");
+    var selectionInput = new BillingV2PublicSelectionInput
+    {
+        PresetCode = "pack-dossier-securise",
+        PaymentMode = BillingV2PaymentModes.Monthly,
+        StoragePersonalTierCode = "STORAGE-PERSONAL-8",
+        BackupPersonal = true,
+        AdditionalUsers = 0
+    };
 
     var result = await signupService.SubmitAsync(
         new SignupSubmitPayload(
-            "Societe Recalcul",
+            "Societe Selection",
             "Alice Martin",
-            "catalog-recalc@example.invalid",
+            "billing-v2-selection@example.invalid",
             "0102030405",
-            "Test de recalcul catalogue.",
+            "Test de selection Billing V2.",
             new SignupCustomerData(
                 "professional",
-                "Societe Recalcul",
-                "billing-recalc@example.invalid",
+                "Societe Selection",
+                "billing-selection@example.invalid",
                 "0102030405",
                 "1 rue du Test",
                 null,
@@ -876,38 +750,34 @@ async Task VerifySignupRecalculatesCatalogConfigurationAsync()
                 "1990-01-02",
                 null,
                 "Alice Martin",
-                "catalog-recalc@example.invalid",
+                "billing-v2-selection@example.invalid",
                 "0102030405",
                 true),
-            tamperedPackSelection,
-            requestedConfiguration,
             "127.0.0.1",
-            "api-smoke-test"),
-        "catalog-config-recalc-test",
+            "api-smoke-test",
+            selectionInput),
+        "billing-v2-selection-test",
         CancellationToken.None);
 
     Ensure(
         result.Succeeded,
-        "Le signup avec configuration catalogue valide doit etre accepte.");
+        "Le signup portant une selection Billing V2 valide doit etre accepte.");
 
     var storedSignup = signupStore.Rows.Values.Single();
+    var storedSelection = storedSignup.BillingV2Selection;
     Ensure(
-        storedSignup.PackSelection?.MonthlyPriceAmountCents == 1234
-        && storedSignup.PackSelection.FirstChargeAmountCents == 2734
-        && storedSignup.PackSelection.FiscalRegime == FiscalRegimes.FranchiseBase,
-        "Le signup doit ignorer le prix navigateur et recalculer le pack contre le catalogue courant.");
+        storedSelection is not null
+        && storedSelection.PresetCode == "pack-dossier-securise"
+        && storedSelection.StoragePersonalTierCode == "STORAGE-PERSONAL-8"
+        && storedSelection.BackupPersonal
+        && storedSelection.PaymentMode == BillingV2PaymentModes.Monthly,
+        "Le signup doit conserver la selection Billing V2 telle qu'elle a ete faite.");
+
+    // Une formule sans engagement explicite retombe sur FLEX cote serveur :
+    // le navigateur ne choisit pas non plus la remise d'engagement.
     Ensure(
-        storedSignup.CatalogConfiguration?.Resolution.PriceSimulation
-            ?.MonthlyPriceExVatCents == 1234
-        && storedSignup.CatalogConfiguration.Resolution.PriceSimulation
-            .MonthlyPriceIncVatCents == 1234
-        && storedSignup.CatalogConfiguration.Resolution.PriceSimulation
-            .FirstChargeIncVatCents == 2734
-        && storedSignup.CatalogConfiguration.Resolution.PriceSimulation
-            .FiscalRegime == FiscalRegimes.FranchiseBase
-        && storedSignup.CatalogConfiguration.RequestedConfiguration.PackKey
-            == "pack-dossier-securise",
-        "Le snapshot catalogue stocke doit separer la demande et le tarif resolu au signup.");
+        storedSelection?.CommitmentCode == "FLEX",
+        "Une formule sans engagement explicite doit etre normalisee en FLEX par le serveur.");
 }
 
 async Task RunMockTestsAsync()
@@ -4149,8 +4019,6 @@ async Task RunKoxoExportServiceTestsAsync()
                 "alice.stable@example.invalid",
                 "0102030405",
                 true),
-            null,
-            null,
             "verification-hash",
             DateTime.UtcNow.AddHours(4),
             "127.0.0.1",
@@ -4303,8 +4171,6 @@ async Task RunSignupKoxoWebhookTriggerTestsAsync()
                 "alice.trigger@example.invalid",
                 "0102030405",
                 true),
-            null,
-            null,
             "verification-hash-trigger",
             DateTime.UtcNow.AddHours(4),
             "127.0.0.1",
@@ -4357,7 +4223,6 @@ async Task RunSignupKoxoWebhookTriggerTestsAsync()
     var adMembershipStore = new MockAdGroupMembershipStore();
     var service = new SignupService(
         signupRepository,
-        new MockSubscriptionRepository(new MockSubscriptionStore()),
         new TestEmailDispatchService(),
         new PortalPasswordService(),
         new MockActiveDirectoryService(
@@ -4367,12 +4232,6 @@ async Task RunSignupKoxoWebhookTriggerTestsAsync()
         new MockAdGroupProvisioner(adMembershipStore),
         NewPendingPasswordStore(),
         trigger,
-        new CatalogConfigurationService(
-            new LegacyBillingCatalogAdapter(
-                new MockCommercialRepository(new MockCommercialStore()),
-                new PayPalRuntimeConfiguration(PayPalMode.Sandbox, "client", "secret"),
-                new StripeRuntimeConfiguration(StripeMode.Test)),
-            new FiscalPolicy()),
         new SignupRuntimeConfiguration(true, 3, 1, 24, 24, false),
         new EmailRuntimeConfiguration(
             EmailIntegrationMode.Mock,
@@ -5946,46 +5805,61 @@ async Task VerifyCommercialFoundationAsync(
 {
     var expectedDataSource = persistent ? "mariadb" : "mock";
 
-    using var clientCatalogRequest = CreateSessionRequest(
+    // Le catalogue commercial legacy n'existe plus : l'autorite est Billing
+    // V2, et les documents commerciaux ne s'y rattachent plus. Ce qui reste a
+    // verifier ici, c'est que l'ancienne surface est bien morte.
+    using var legacyClientCatalogRequest = CreateSessionRequest(
         HttpMethod.Get,
         $"{baseUrl}/internal/portal/catalog",
         clientSessionToken);
-    using var clientCatalogResponse = await client.SendAsync(
-        clientCatalogRequest);
-    using var clientCatalogPayload = JsonDocument.Parse(
-        await clientCatalogResponse.Content.ReadAsStringAsync());
+    using var legacyClientCatalogResponse = await client.SendAsync(
+        legacyClientCatalogRequest);
     Ensure(
-        clientCatalogResponse.StatusCode == HttpStatusCode.OK
-        && clientCatalogResponse.Headers.GetValues(dataSourceHeader).Single()
-            == expectedDataSource
-        && clientCatalogPayload.RootElement.GetArrayLength() >= 1,
-        "Le catalogue commercial client doit être accessible.");
-    var firstCatalogOffer = clientCatalogPayload.RootElement
-        .EnumerateArray()
-        .First();
+        legacyClientCatalogResponse.StatusCode == HttpStatusCode.NotFound,
+        "L'ancienne route catalogue client ne doit plus exister.");
+
+    using var legacyAdminCatalogRequest = CreateSessionRequest(
+        HttpMethod.Get,
+        $"{baseUrl}/internal/admin/catalog",
+        adminSessionToken);
+    using var legacyAdminCatalogResponse = await client.SendAsync(
+        legacyAdminCatalogRequest);
     Ensure(
-        firstCatalogOffer.GetProperty("taxRateBasisPoints").ValueKind
-            == JsonValueKind.Null
-        && firstCatalogOffer.GetProperty("fiscalRegime").GetString()
-            == FiscalRegimes.FranchiseBase
-        && firstCatalogOffer.GetProperty("fiscalMention").GetString()
-            ?.Contains("TVA non applicable", StringComparison.Ordinal) == true,
-        "Le catalogue commercial courant doit appliquer la franchise en base sans ajouter de TVA.");
+        legacyAdminCatalogResponse.StatusCode == HttpStatusCode.NotFound,
+        "L'ancienne route catalogue admin ne doit plus exister.");
 
     using var adminCatalogRequest = CreateSessionRequest(
         HttpMethod.Get,
-        $"{baseUrl}/internal/admin/catalog",
+        $"{baseUrl}/internal/admin/billing-v2/catalog",
         adminSessionToken);
     using var adminCatalogResponse = await client.SendAsync(
         adminCatalogRequest);
     using var adminCatalogPayload = JsonDocument.Parse(
         await adminCatalogResponse.Content.ReadAsStringAsync());
+    var adminCatalogRoot = adminCatalogPayload.RootElement;
+    var adminCatalogSource = adminCatalogRoot.GetProperty("source").GetString();
+    var adminCatalogEditable = adminCatalogRoot.GetProperty("editable").GetBoolean();
     Ensure(
-        adminCatalogResponse.StatusCode == HttpStatusCode.OK
-        && adminCatalogResponse.Headers.GetValues(dataSourceHeader).Single()
-            == expectedDataSource
-        && adminCatalogPayload.RootElement.GetArrayLength() >= 1,
-        "Le catalogue commercial admin doit être accessible.");
+        adminCatalogResponse.StatusCode == HttpStatusCode.OK,
+        "L'administration du catalogue Billing V2 doit répondre à l'admin.");
+    if (persistent)
+    {
+        Ensure(
+            adminCatalogSource == "mariadb"
+            && adminCatalogEditable
+            && adminCatalogRoot.GetProperty("services").GetArrayLength() >= 1,
+            "En persistance réelle, le catalogue Billing V2 doit être lisible et éditable.");
+    }
+    else
+    {
+        // Pas de repli fictif : editer un catalogue absent donnerait
+        // l'illusion d'un enregistrement.
+        Ensure(
+            adminCatalogSource == "unavailable"
+            && !adminCatalogEditable
+            && adminCatalogRoot.GetProperty("services").GetArrayLength() == 0,
+            "Sans persistance, l'administration Billing V2 doit se déclarer non éditable plutôt que d'inventer un catalogue.");
+    }
 
     using var clientDocumentsRequest = CreateSessionRequest(
         HttpMethod.Get,
@@ -6096,55 +5970,39 @@ async Task VerifyCommercialFoundationAsync(
         forbiddenCreateResponse.StatusCode == HttpStatusCode.Forbidden,
         "Un client ne doit pas pouvoir créer un document commercial.");
 
-    using var createOfferRequest = CreateSessionRequest(
+    // Les offres commerciales legacy ne sont plus creables : le tarif se
+    // publie en versions immuables sur billing_v2_service_prices.
+    using var legacyCreateOfferRequest = CreateSessionRequest(
         HttpMethod.Post,
         $"{baseUrl}/internal/admin/catalog",
         adminSessionToken);
-    createOfferRequest.Content = JsonContent.Create(new
+    legacyCreateOfferRequest.Content = JsonContent.Create(new
     {
-        name = "Offre test V0.15",
-        description = "Offre informative créée par les smoke tests.",
-        category = "Tests",
-        unitLabel = "forfait",
-        priceAmountCents = 12345,
-        status = "active",
-        displayOrder = 999
+        name = "Offre legacy interdite",
+        priceAmountCents = 12345
     });
-    using var createOfferResponse = await client.SendAsync(createOfferRequest);
-    using var createOfferPayload = JsonDocument.Parse(
-        await createOfferResponse.Content.ReadAsStringAsync());
+    using var legacyCreateOfferResponse = await client.SendAsync(
+        legacyCreateOfferRequest);
     Ensure(
-        createOfferResponse.StatusCode == HttpStatusCode.OK
-        && createOfferPayload.RootElement.GetProperty("changed").GetBoolean(),
-        "L'admin doit pouvoir créer une offre commerciale.");
-    var createdOfferId = createOfferPayload.RootElement
-        .GetProperty("id")
-        .GetString()
-        ?? throw new InvalidOperationException(
-            "La création d'offre commerciale ne retourne aucun identifiant.");
+        legacyCreateOfferResponse.StatusCode == HttpStatusCode.NotFound,
+        "La création d'offre commerciale legacy ne doit plus être possible.");
 
-    using var updateOfferRequest = CreateSessionRequest(
-        HttpMethod.Patch,
-        $"{baseUrl}/internal/admin/catalog/{createdOfferId}",
-        adminSessionToken);
-    updateOfferRequest.Content = JsonContent.Create(new
+    using var clientPricePublishRequest = CreateSessionRequest(
+        HttpMethod.Post,
+        $"{baseUrl}/internal/admin/billing-v2/catalog/prices",
+        clientSessionToken);
+    clientPricePublishRequest.Content = JsonContent.Create(new
     {
-        name = "Offre test V0.15 modifiée",
-        description = "Offre informative modifiée par les smoke tests.",
-        category = "Tests",
-        unitLabel = "heure",
-        priceAmountCents = 13000,
-        status = "inactive",
-        displayOrder = 1001
+        serviceId = "service-inexistant",
+        amountCents = 1000,
+        currency = "EUR",
+        billingCadence = "monthly"
     });
-    using var updateOfferResponse = await client.SendAsync(updateOfferRequest);
-    using var updateOfferPayload = JsonDocument.Parse(
-        await updateOfferResponse.Content.ReadAsStringAsync());
+    using var clientPricePublishResponse = await client.SendAsync(
+        clientPricePublishRequest);
     Ensure(
-        updateOfferResponse.StatusCode == HttpStatusCode.OK
-        && updateOfferPayload.RootElement.GetProperty("status").GetString()
-            == "inactive",
-        "L'admin doit pouvoir modifier une offre commerciale.");
+        clientPricePublishResponse.StatusCode == HttpStatusCode.Forbidden,
+        "Un client ne doit pas pouvoir publier une révision de tarif Billing V2.");
 
     using var createDocumentRequest = CreateSessionRequest(
         HttpMethod.Post,
@@ -6207,11 +6065,16 @@ async Task VerifyCommercialFoundationAsync(
         HttpMethod.Post,
         $"{baseUrl}/internal/admin/commercial-documents/{createdDocumentId}/lines",
         adminSessionToken);
+    // Une ligne de document est un instantane autonome : elle porte son propre
+    // libelle et son propre prix, et ne pointe vers aucune entree de catalogue.
+    // Une revision tarifaire ne doit pas reecrire un devis deja emis.
     addLineRequest.Content = JsonContent.Create(new
     {
-        offerId = createdOfferId,
+        label = "Prestation informative",
         description = "Ligne informative ajoutée par les smoke tests.",
         quantity = 2,
+        unitLabel = "forfait",
+        unitPriceCents = 12345,
         taxRateBasisPoints = 2000,
         sortOrder = 10
     });
@@ -6234,9 +6097,11 @@ async Task VerifyCommercialFoundationAsync(
         adminSessionToken);
     updateLineRequest.Content = JsonContent.Create(new
     {
-        offerId = createdOfferId,
+        label = "Prestation informative révisée",
         description = "Ligne informative modifiée par les smoke tests.",
         quantity = 3,
+        unitLabel = "forfait",
+        unitPriceCents = 13000,
         taxRateBasisPoints = 2000,
         sortOrder = 20
     });

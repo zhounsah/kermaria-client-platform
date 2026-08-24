@@ -2,7 +2,6 @@ import type {
   ClientProfile,
   CommercialDocumentDetail,
   CommercialDocumentSummary,
-  CommercialOfferSummary,
   InvoiceSummary,
   ManagedContentDetail,
   ManagedContentKey,
@@ -134,296 +133,6 @@ export const mockInvoices: InvoiceSummary[] = [
   },
 ];
 
-const mockTechnicalCommercialOffers: CommercialOfferSummary[] = [
-  {
-    id: "offer-admin-001",
-    name: "Audit poste de travail",
-    description: "Revue informative d'un poste ou environnement ciblé.",
-    category: "Audit",
-    unitLabel: "forfait",
-    priceKind: "ht",
-    priceAmountCents: 12000,
-    currency: "EUR",
-    ...FRANCHISE_BASE_FISCAL,
-    externalReference: null,
-    technicalServiceReferences: [],
-    provisioningGroupSamAccountNames: [],
-    status: "active",
-    displayOrder: 10,
-    billingCadence: "one_time",
-    setupFeeAmountCents: null,
-    billingIntervalMonths: null,
-    commitmentMonths: null,
-    paymentMode: null,
-    publicPackCode: null,
-    paypalPlanIdSandbox: null,
-    paypalPlanIdLive: null,
-    stripePriceIdTest: null,
-    stripePriceIdLive: null,
-    createdAt: "2026-06-01T09:00:00Z",
-    updatedAt: "2026-06-01T09:00:00Z",
-  },
-  {
-    id: "offer-admin-002",
-    name: "Intervention ponctuelle",
-    description:
-      "Intervention technique préparée selon le périmètre validé.",
-    category: "Assistance",
-    unitLabel: "heure",
-    priceKind: "ht",
-    priceAmountCents: 8500,
-    currency: "EUR",
-    ...FRANCHISE_BASE_FISCAL,
-    externalReference: null,
-    technicalServiceReferences: [],
-    provisioningGroupSamAccountNames: [],
-    status: "active",
-    displayOrder: 20,
-    billingCadence: "one_time",
-    setupFeeAmountCents: null,
-    billingIntervalMonths: null,
-    commitmentMonths: null,
-    paymentMode: null,
-    publicPackCode: null,
-    paypalPlanIdSandbox: null,
-    paypalPlanIdLive: null,
-    stripePriceIdTest: null,
-    stripePriceIdLive: null,
-    createdAt: "2026-06-01T09:05:00Z",
-    updatedAt: "2026-06-01T09:05:00Z",
-  },
-  {
-    id: "offer-admin-003",
-    name: "Sauvegarde additionnelle",
-    description: "Option informative de sauvegarde supplémentaire.",
-    category: "Continuité",
-    unitLabel: "mois",
-    priceKind: "ht",
-    priceAmountCents: 2400,
-    currency: "EUR",
-    ...FRANCHISE_BASE_FISCAL,
-    externalReference: null,
-    technicalServiceReferences: [],
-    provisioningGroupSamAccountNames: [],
-    status: "active",
-    displayOrder: 30,
-    billingCadence: "one_time",
-    setupFeeAmountCents: null,
-    billingIntervalMonths: null,
-    commitmentMonths: null,
-    paymentMode: null,
-    publicPackCode: null,
-    paypalPlanIdSandbox: null,
-    paypalPlanIdLive: null,
-    stripePriceIdTest: null,
-    stripePriceIdLive: null,
-    createdAt: "2026-06-01T09:10:00Z",
-    updatedAt: "2026-06-01T09:10:00Z",
-  },
-];
-
-const mockCatalogServiceOffers: CommercialOfferSummary[] = [
-  createMockCatalogServiceOffer(
-    "offer-service-storage-32",
-    "Stockage personnel 32 Go",
-    "Socle de stockage nominatif pour les fichiers personnels du client.",
-    "STOCK-PERSO-32",
-    210,
-  ),
-  createMockCatalogServiceOffer(
-    "offer-service-backup",
-    "Sauvegarde du stockage personnel",
-    "Sauvegarde régulière associée au stockage personnel.",
-    "SAVE-PERSO",
-    220,
-  ),
-  createMockCatalogServiceOffer(
-    "offer-service-vpn",
-    "Accès VPN",
-    "Accès VPN nominatif provisionnable via groupe de sécurité AD.",
-    "ACCES-VPN",
-    230,
-    ["GG_VPN"],
-  ),
-  createMockCatalogServiceOffer(
-    "offer-service-supervision",
-    "Supervision du service",
-    "Supervision et suivi opérationnel du service couvert.",
-    "SUPERV-SERVICE",
-    240,
-  ),
-  createMockCatalogServiceOffer(
-    "offer-service-support-l1",
-    "Support niveau 1",
-    "Support de premier niveau associé au service couvert.",
-    "SUPPORT-LV1",
-    250,
-  ),
-  createMockCatalogServiceOffer(
-    "offer-service-rds",
-    "Bureau Windows / RDS",
-    "Accès bureau distant Windows provisionnable via groupe de sécurité AD.",
-    "ACCES-RDS",
-    260,
-    ["GG_RDS"],
-  ),
-  createMockCatalogServiceOffer(
-    "offer-service-user-add",
-    "Utilisateur supplémentaire",
-    "Ajout d'un utilisateur supplémentaire au périmètre du client.",
-    "USER-ADD",
-    270,
-  ),
-  createMockCatalogServiceOffer(
-    "offer-service-storage-plus",
-    "Stockage supplémentaire 32 Go",
-    "Extension de stockage complémentaire au service principal.",
-    "STOCK-SUP-32",
-    280,
-  ),
-  createMockCatalogServiceOffer(
-    "offer-service-doc-tech",
-    "Documentation technique",
-    "Documentation complémentaire rattachée au service couvert.",
-    "DOC-TECH",
-    290,
-  ),
-  createMockCatalogServiceOffer(
-    "offer-service-nextcloud",
-    "Nextcloud",
-    "Accès Nextcloud provisionnable via groupe de sécurité AD.",
-    "NEXTCLOUD",
-    300,
-    ["GG_NextCloud"],
-  ),
-];
-
-const PUBLIC_PACK_PRICING: Record<
-  PublicPackCode,
-  { monthlyAmountCents: number; setupFeeAmountCents: number }
-> = {
-  "pack-dossier-securise": {
-    monthlyAmountCents: 900,
-    setupFeeAmountCents: 1500,
-  },
-  "pack-acces-distance": {
-    monthlyAmountCents: 1900,
-    setupFeeAmountCents: 2500,
-  },
-  "pack-bureau-windows-distance": {
-    monthlyAmountCents: 3500,
-    setupFeeAmountCents: 3500,
-  },
-  "pack-pro-association": {
-    monthlyAmountCents: 4900,
-    setupFeeAmountCents: 4900,
-  },
-};
-
-function resolveDiscountMultiplier(commitmentMonths: 1 | 6 | 12) {
-  switch (commitmentMonths) {
-    case 6:
-      return 0.9;
-    case 12:
-      return 0.8;
-    default:
-      return 1;
-  }
-}
-
-function createMockPublicPackOffers(): CommercialOfferSummary[] {
-  return PUBLIC_PACKS.flatMap((pack) =>
-    pack.variants.map((variant, index) => {
-      const pricing = PUBLIC_PACK_PRICING[pack.key];
-      const discountedMonthlyAmountCents = Math.round(
-        pricing.monthlyAmountCents
-          * resolveDiscountMultiplier(variant.commitmentMonths),
-      );
-      const billingIntervalMonths =
-        variant.paymentMode === "upfront" ? variant.commitmentMonths : 1;
-      const priceAmountCents =
-        variant.paymentMode === "upfront"
-          ? discountedMonthlyAmountCents * variant.commitmentMonths
-          : discountedMonthlyAmountCents;
-
-      return {
-        id:
-          `offer-${pack.slug}-${variant.commitmentMonths}-`
-          + `${variant.paymentMode}`,
-        name: pack.label,
-        description: pack.description,
-        category: "Pack grand public",
-        unitLabel: variant.paymentMode === "upfront" ? "engagement" : "mois",
-        priceKind: "ht",
-        priceAmountCents,
-        currency: "EUR",
-        ...FRANCHISE_BASE_FISCAL,
-        externalReference: variant.externalReference,
-        technicalServiceReferences: [...pack.technicalServiceReferences],
-        provisioningGroupSamAccountNames: [],
-        status: "active",
-        displayOrder: pack.order + index,
-        billingCadence: "monthly",
-        setupFeeAmountCents: pricing.setupFeeAmountCents,
-        billingIntervalMonths,
-        commitmentMonths: variant.commitmentMonths,
-        paymentMode: variant.paymentMode,
-        publicPackCode: pack.key,
-        paypalPlanIdSandbox: null,
-        paypalPlanIdLive: null,
-        stripePriceIdTest: null,
-        stripePriceIdLive: null,
-        createdAt: "2026-07-07T08:00:00Z",
-        updatedAt: "2026-07-07T08:00:00Z",
-      };
-    }),
-  );
-}
-
-export const mockCommercialOffers: CommercialOfferSummary[] = [
-  ...mockTechnicalCommercialOffers,
-  ...mockCatalogServiceOffers,
-  ...createMockPublicPackOffers(),
-];
-
-function createMockCatalogServiceOffer(
-  id: string,
-  name: string,
-  description: string,
-  externalReference: string,
-  displayOrder: number,
-  provisioningGroupSamAccountNames: string[] = [],
-): CommercialOfferSummary {
-  return {
-    id,
-    name,
-    description,
-    category: "Service technique",
-    unitLabel: "forfait",
-    priceKind: "ht",
-    priceAmountCents: 0,
-    currency: "EUR",
-    ...FRANCHISE_BASE_FISCAL,
-    externalReference,
-    technicalServiceReferences: [externalReference],
-    provisioningGroupSamAccountNames,
-    status: "inactive",
-    displayOrder,
-    billingCadence: "one_time",
-    setupFeeAmountCents: null,
-    billingIntervalMonths: null,
-    commitmentMonths: null,
-    paymentMode: null,
-    publicPackCode: null,
-    paypalPlanIdSandbox: null,
-    paypalPlanIdLive: null,
-    stripePriceIdTest: null,
-    stripePriceIdLive: null,
-    createdAt: "2026-07-14T08:00:00Z",
-    updatedAt: "2026-07-14T08:00:00Z",
-  };
-}
-
 export const mockCommercialDocuments: CommercialDocumentSummary[] = [
   {
     id: "commercial-doc-mock-001",
@@ -452,7 +161,6 @@ export const mockCommercialDocumentDetails: Record<string, CommercialDocumentDet
       lines: [
         {
           id: "commercial-line-mock-001",
-          offerId: "offer-admin-002",
           label: "Intervention ponctuelle",
           description: "Qualification informative de l'accès VPN envisagé.",
           quantity: 2,
@@ -466,7 +174,6 @@ export const mockCommercialDocumentDetails: Record<string, CommercialDocumentDet
         },
         {
           id: "commercial-line-mock-002",
-          offerId: "offer-admin-003",
           label: "Sauvegarde additionnelle",
           description: "Option informative associée à la proposition.",
           quantity: 1,
@@ -614,13 +321,7 @@ function createMockPackSheetBody(packCode: PublicPackCode) {
     return "## Présentation\n\nContenu indisponible.";
   }
 
-  const componentOffers = pack.technicalServiceReferences
-    .map((reference) =>
-      mockCommercialOffers.find(
-        (offer) => offer.externalReference === reference && offer.status === "active",
-      ) ?? null,
-    )
-    .filter((offer): offer is CommercialOfferSummary => offer !== null);
+  const componentCount = pack.technicalServiceReferences.length;
 
   const lines = [
     "## Présentation",
@@ -631,8 +332,8 @@ function createMockPackSheetBody(packCode: PublicPackCode) {
     "",
     "## Composants techniques liés",
     "",
-    componentOffers.length > 0
-      ? `La composition technique active de ce pack est calculée automatiquement. ${componentOffers.length} composant(s) sont actuellement rattaché(s) et affiché(s) séparément sur la page publique.`
+    componentCount > 0
+      ? `La composition technique active de ce pack est calculée automatiquement. ${componentCount} composant(s) sont actuellement rattaché(s) et affiché(s) séparément sur la page publique.`
       : "La composition technique active de ce pack est calculée automatiquement et affichée séparément sur la page publique.",
     "",
     "## Pré-requis",

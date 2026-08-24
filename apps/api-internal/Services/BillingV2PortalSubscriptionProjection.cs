@@ -100,13 +100,10 @@ public sealed class BillingV2PortalSubscriptionProjection
             customer.external_reference AS customer_reference,
             customer.display_name AS customer_name,
             subscription.originating_preset_id,
-            request.legacy_offer_id,
             preset.name AS preset_name,
             -- La colonne s'appelle `code` dans billing_v2_offer_presets ;
             -- `preset_code` est l'alias attendu par la projection.
             preset.code AS preset_code,
-            offer.external_reference AS offer_external_reference,
-            offer.public_pack_code,
             COALESCE(agreement.provider, checkout.provider, request.provider, 'billing')
                 AS provider,
             COALESCE(
@@ -198,7 +195,6 @@ public sealed class BillingV2PortalSubscriptionProjection
             ON term.id = subscription.commitment_term_id
         INNER JOIN (
             SELECT selected.subscription_id,
-                   selected.legacy_offer_id,
                    selected.provider,
                    selected.environment
             FROM billing_v2_authoritative_checkout_requests selected
@@ -211,8 +207,6 @@ public sealed class BillingV2PortalSubscriptionProjection
                AND latest.created_at = selected.created_at
         ) request
             ON request.subscription_id = subscription.id
-        LEFT JOIN commercial_offers offer
-            ON offer.id = request.legacy_offer_id
         LEFT JOIN (
             SELECT item.subscription_id,
                    SUM(CASE
@@ -291,11 +285,6 @@ public sealed class BillingV2PortalSubscriptionProjection
         ) checkout
             ON checkout.subscription_id = subscription.id
         WHERE subscription.customer_id = @customer_id
-          AND NOT EXISTS (
-              SELECT 1
-              FROM subscriptions legacy_subscription
-              WHERE legacy_subscription.id = subscription.id
-          )
         ORDER BY subscription.updated_at DESC, subscription.id DESC;
         """;
 
@@ -307,13 +296,10 @@ public sealed class BillingV2PortalSubscriptionProjection
             customer.external_reference AS customer_reference,
             customer.display_name AS customer_name,
             subscription.originating_preset_id,
-            request.legacy_offer_id,
             preset.name AS preset_name,
             -- La colonne s'appelle `code` dans billing_v2_offer_presets ;
             -- `preset_code` est l'alias attendu par la projection.
             preset.code AS preset_code,
-            offer.external_reference AS offer_external_reference,
-            offer.public_pack_code,
             COALESCE(agreement.provider, checkout.provider, request.provider, 'billing')
                 AS provider,
             COALESCE(
@@ -405,7 +391,6 @@ public sealed class BillingV2PortalSubscriptionProjection
             ON term.id = subscription.commitment_term_id
         INNER JOIN (
             SELECT selected.subscription_id,
-                   selected.legacy_offer_id,
                    selected.provider,
                    selected.environment
             FROM billing_v2_authoritative_checkout_requests selected
@@ -418,8 +403,6 @@ public sealed class BillingV2PortalSubscriptionProjection
                AND latest.created_at = selected.created_at
         ) request
             ON request.subscription_id = subscription.id
-        LEFT JOIN commercial_offers offer
-            ON offer.id = request.legacy_offer_id
         LEFT JOIN (
             SELECT item.subscription_id,
                    SUM(CASE
@@ -497,11 +480,6 @@ public sealed class BillingV2PortalSubscriptionProjection
             GROUP BY subscription_id
         ) checkout
             ON checkout.subscription_id = subscription.id
-        WHERE NOT EXISTS (
-              SELECT 1
-              FROM subscriptions legacy_subscription
-              WHERE legacy_subscription.id = subscription.id
-          )
         ORDER BY subscription.updated_at DESC, subscription.id DESC;
         """;
 
@@ -512,12 +490,9 @@ public sealed class BillingV2PortalSubscriptionProjection
             ReadRequiredString(reader, "customer_reference"),
             ReadRequiredString(reader, "customer_name"),
             ReadNullableString(reader, "originating_preset_id"),
-            ReadNullableString(reader, "legacy_offer_id"),
             ReadNullableString(reader, "preset_name")
                 ?? "Souscription Billing V2",
             ReadNullableString(reader, "preset_code"),
-            ReadNullableString(reader, "offer_external_reference"),
-            ReadNullableString(reader, "public_pack_code"),
             ReadRequiredString(reader, "provider"),
             ReadNullableString(reader, "provider_subscription_id"),
             ReadRequiredString(reader, "status"),
@@ -583,11 +558,8 @@ public sealed record BillingV2PortalSubscriptionRow(
     string CustomerReference,
     string CustomerName,
     string? OriginatingPresetId,
-    string? LegacyOfferId,
     string PresetName,
     string? PresetCode,
-    string? OfferExternalReference,
-    string? PublicPackCode,
     string Provider,
     string? ProviderSubscriptionId,
     string Status,
@@ -635,10 +607,9 @@ public static class BillingV2PortalSubscriptionProjector
             row.CustomerId,
             row.CustomerReference,
             row.CustomerName,
-            row.LegacyOfferId ?? row.OriginatingPresetId ?? row.Id,
+            row.OriginatingPresetId,
             row.PresetName,
-            row.OfferExternalReference ?? row.PresetCode,
-            row.PublicPackCode,
+            row.PresetCode,
             provider,
             null,
             provider == "paypal" ? row.ProviderSubscriptionId : null,

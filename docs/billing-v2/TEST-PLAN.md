@@ -135,7 +135,7 @@ Tester :
 - centre de téléchargements après abonnement V2 actif => accès ciblé par pack/offre/groupe résolu depuis le scope V2 read-only, sans accès global implicite.
 - `/admin/billing-v2` => souscriptions V2 autoritaires visibles en lecture seule via endpoint dédié, sans les exposer à `GetAdminSubscriptionsAsync` legacy ni aux workers legacy.
 
-- routes BFF de résiliation client/admin recevant une souscription `billingSystem = "billing_v2"` => refus `BILLING_V2_CANCELLATION_NOT_AVAILABLE` avant tout appel Stripe/PayPal et avant toute mutation legacy.
+- résiliation V2 (suite `--billing-v2-cancellation` et `verify-billing-v2-lifecycle-contract.mjs`) => ancre résolue sur les trois sources autoritaires, conflit et ancre manquante sur contrat récurrent en échec fermé, `suspended` avec période payée courante résilié au terme, fin de terme PayPal suspendue puis réellement résiliée au terme, appel refusé sur désaccord d'environnement d'exécution, `cancelled` local seulement après acceptation d'un geste terminal.
 
 ## Documents / factures V2
 

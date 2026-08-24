@@ -9,19 +9,15 @@ using MySqlConnector;
 namespace Kermaria.ApiInternal.Services;
 
 /// <summary>
-/// Demande de checkout authoritative. Deux formes, une seule doit etre
-/// renseignee :
+/// Demande de checkout authoritative. Une seule forme existe : la selection
+/// V2 native, ou la configuration elle-meme est l'identite metier. Elle sait
+/// representer aussi bien une formule qu'une liste de composants choisis un a
+/// un, y compris purement ponctuels.
 ///
-/// - <see cref="LegacyOfferId"/> : parcours historique, indexe par offre ;
-/// - <see cref="Selection"/> : souscription V2 native, ou la configuration
-///   elle-meme est l'identite metier. C'est la seule forme capable de
-///   representer une configuration personnalisee.
-///
-/// Aucune des deux ne transporte de montant : le total est recalcule ici par
+/// Elle ne transporte aucun montant : le total est recalcule ici par
 /// BillingV2PricingEngine a partir du catalogue serveur.
 /// </summary>
 public sealed record BillingV2AuthoritativeCheckoutRequest(
-    string? LegacyOfferId,
     BillingV2PublicSelection? Selection,
     string Provider,
     string IdempotencyKey,
@@ -29,35 +25,34 @@ public sealed record BillingV2AuthoritativeCheckoutRequest(
     string CancelUrl);
 
 /// <summary>
-/// Composition facturable resolue, quelle que soit la forme de la demande.
-/// Tout le chemin d'ecriture en aval ne connait plus que ce type : legacy et
-/// natif partagent donc exactement le meme code de creation, de tarification
-/// et de BillingEvent.
+/// Composition facturable resolue. Tout le chemin d'ecriture en aval ne
+/// connait que ce type.
 /// </summary>
+/// <remarks>
+/// <see cref="PresetId"/> et <see cref="CommitmentTermId"/> sont nullables :
+/// une souscription peut n'avoir aucune formule d'origine (composants choisis
+/// directement) et aucun engagement (achat ponctuel). Les colonnes
+/// `billing_v2_subscriptions.originating_preset_id` et `commitment_term_id`
+/// sont nullables depuis la migration 047 : aucun preset technique n'est donc
+/// fabrique pour combler un trou de modele qui n'existe pas.
+/// </remarks>
 public sealed record BillingV2AuthoritativeCheckoutComposition(
-    string PresetId,
-    string CommitmentTermId,
+    string? PresetId,
+    string? CommitmentTermId,
     string PaymentMode,
     int CommitmentMonths,
     int DiscountBasisPoints,
     IReadOnlyList<BillingV2NewSubscriptionPresetItem> Items,
-    string? LegacyOfferId,
     string SelectionCanonical,
     string SelectionFingerprint);
 
 /// <summary>
-/// Empreinte de l'identite metier d'une demande. Elle remplace le
-/// `legacy_offer_id` comme ancre : deux configurations differentes ne peuvent
-/// pas se retrouver rattachees a la meme intention, et deux demandes
-/// identiques y retombent forcement.
+/// Empreinte de l'identite metier d'une demande : deux configurations
+/// differentes ne peuvent pas se retrouver rattachees a la meme intention, et
+/// deux demandes identiques y retombent forcement.
 /// </summary>
 public static class BillingV2CheckoutSelectionFingerprint
 {
-    public const string LegacyPrefix = "billing_v2.legacy_offer|";
-
-    public static string ForLegacyOffer(string legacyOfferId)
-        => Hash($"{LegacyPrefix}{legacyOfferId}");
-
     public static string ForSelection(string selectionCanonical)
         => Hash(selectionCanonical);
 
@@ -88,7 +83,6 @@ public sealed record BillingV2SubscriptionPriceLockPlan(
     string Currency,
     DateTime EffectiveFromUtc,
     DateTime EffectiveUntilUtc,
-    string? SourceLegacyOfferId,
     string Reason);
 
 public interface IBillingV2AuthoritativeCheckoutService
@@ -326,10 +320,17 @@ public sealed class BillingV2AuthoritativeCheckoutService
                 pricing.DiscountedRecurringAmountCents);
         // Dates contractuelles derivees de la MEME ancre que le BillingEvent :
         // la periode facturee et la periode de droits ne peuvent pas diverger.
+        // Le renouvellement suit les composantes reellement resolues : une
+        // selection purement ponctuelle ne planifie aucun cycle suivant.
+        var hasRecurringComponent = presetItems.Any(item => string.Equals(
+            item.BillingCadence,
+            BillingV2BillingCadences.Monthly,
+            StringComparison.Ordinal));
         var lifecycle = BillingV2SubscriptionLifecyclePolicy.Plan(
             mapping.PaymentMode,
             mapping.CommitmentMonths,
-            now);
+            now,
+            hasRecurringComponent);
         await InsertSubscriptionAsync(
             connection,
             transaction,
@@ -493,7 +494,6 @@ public sealed class BillingV2AuthoritativeCheckoutService
         }
 
         var priceLock = BillingV2AuthoritativeCheckoutPriceLockPolicy.Plan(
-            composition.LegacyOfferId,
             mapping.PaymentMode,
             mapping.CommitmentMonths,
             pricing,
@@ -673,10 +673,9 @@ public sealed class BillingV2AuthoritativeCheckoutService
     /// <summary>
     /// Resout la demande en composition facturable.
     ///
-    /// Les deux chemins convergent volontairement vers le meme type : une
-    /// configuration personnalisee ne beneficie d'aucun raccourci, elle passe
-    /// par les memes prix, le meme Pricing Engine et le meme BillingEvent que
-    /// la formule standard.
+    /// Une configuration personnalisee ne beneficie d'aucun raccourci : elle
+    /// passe par les memes prix, le meme Pricing Engine et le meme
+    /// BillingEvent que la formule standard.
     /// </summary>
     private async Task<BillingV2AuthoritativeCheckoutComposition>
         ResolveCompositionAsync(
@@ -685,77 +684,37 @@ public sealed class BillingV2AuthoritativeCheckoutService
             DateTime now,
             CancellationToken cancellationToken)
     {
-        if (request.Selection is { } selection)
-        {
-            if (selection.Components is { Count: > 0 }
-                && !_runtime.GenericSelectionEnabled)
-            {
-                throw new InvalidOperationException(
-                    "BILLING_V2_GENERIC_SELECTION_DISABLED");
-            }
-            if (!string.IsNullOrWhiteSpace(request.LegacyOfferId))
-            {
-                // Deux identites metier pour une meme demande : refus, sinon
-                // c'est l'ordre du code qui deciderait de ce qui est facture.
-                throw new InvalidOperationException(
-                    "BILLING_V2_CHECKOUT_AMBIGUOUS_SELECTION");
-            }
-
-            var catalog = await _catalog.GetCatalogAsync(cancellationToken);
-            var resolved = await BillingV2NativeSelectionResolver.ResolveAsync(
-                connection,
-                catalog,
-                selection,
-                now,
-                cancellationToken);
-
-            return new BillingV2AuthoritativeCheckoutComposition(
-                resolved.PresetId,
-                resolved.CommitmentTermId,
-                resolved.PaymentMode,
-                resolved.CommitmentMonths,
-                resolved.DiscountBasisPoints,
-                resolved.Items,
-                LegacyOfferId: null,
-                resolved.SelectionCanonical,
-                BillingV2CheckoutSelectionFingerprint.ForSelection(
-                    resolved.SelectionCanonical));
-        }
-
-        if (string.IsNullOrWhiteSpace(request.LegacyOfferId))
+        if (request.Selection is not { } selection)
         {
             throw new InvalidOperationException(
                 "BILLING_V2_CHECKOUT_SELECTION_REQUIRED");
         }
 
-        var mapping = await ReadMappingAsync(
-            connection,
-            request.LegacyOfferId,
-            cancellationToken)
-            ?? throw new InvalidOperationException(
-                "BILLING_V2_LEGACY_OFFER_MAPPING_NOT_FOUND");
-        var presetItems = await ReadPresetItemsAsync(
-            connection,
-            mapping.PresetId,
-            now,
-            cancellationToken);
-        if (presetItems.Count == 0)
+        if (selection.Components is { Count: > 0 }
+            && !_runtime.GenericSelectionEnabled)
         {
             throw new InvalidOperationException(
-                "BILLING_V2_PRESET_HAS_NO_ITEMS");
+                "BILLING_V2_GENERIC_SELECTION_DISABLED");
         }
 
+        var catalog = await _catalog.GetCatalogAsync(cancellationToken);
+        var resolved = await BillingV2NativeSelectionResolver.ResolveAsync(
+            connection,
+            catalog,
+            selection,
+            now,
+            cancellationToken);
+
         return new BillingV2AuthoritativeCheckoutComposition(
-            mapping.PresetId,
-            mapping.CommitmentTermId,
-            mapping.PaymentMode,
-            mapping.CommitmentMonths,
-            mapping.DiscountBasisPoints,
-            presetItems,
-            request.LegacyOfferId,
-            $"{BillingV2CheckoutSelectionFingerprint.LegacyPrefix}{request.LegacyOfferId}",
-            BillingV2CheckoutSelectionFingerprint.ForLegacyOffer(
-                request.LegacyOfferId));
+            resolved.PresetId,
+            resolved.CommitmentTermId,
+            resolved.PaymentMode,
+            resolved.CommitmentMonths,
+            resolved.DiscountBasisPoints,
+            resolved.Items,
+            resolved.SelectionCanonical,
+            BillingV2CheckoutSelectionFingerprint.ForSelection(
+                resolved.SelectionCanonical));
     }
 
     private BillingV2PricingResult CalculatePricing(
@@ -779,64 +738,6 @@ public sealed class BillingV2AuthoritativeCheckoutService
             PriceLock: null,
             now));
 
-    private static async Task<BillingV2AuthoritativeCheckoutMapping?>
-        ReadMappingAsync(
-            MySqlConnection connection,
-            string legacyOfferId,
-            CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText =
-            """
-            SELECT
-                mapping.preset_id,
-                mapping.commitment_term_id,
-                mapping.payment_mode,
-                term.commitment_months,
-                option_row.discount_basis_points
-            FROM billing_v2_legacy_offer_mappings mapping
-            INNER JOIN billing_v2_commitment_terms term
-                ON term.id = mapping.commitment_term_id
-               AND term.status = 'active'
-            INNER JOIN billing_v2_commitment_payment_options option_row
-                ON option_row.commitment_term_id = term.id
-               AND option_row.payment_mode = mapping.payment_mode
-               AND option_row.status = 'active'
-            WHERE mapping.legacy_offer_id = @legacy_offer_id
-              AND mapping.status = 'active'
-            LIMIT 1;
-            """;
-        command.Parameters.AddWithValue("@legacy_offer_id", legacyOfferId);
-        await using var reader = await command.ExecuteReaderAsync(
-            cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken))
-        {
-            return null;
-        }
-
-        return new BillingV2AuthoritativeCheckoutMapping(
-            MariaDbIdentifierReader.ReadRequired(reader, "preset_id"),
-            MariaDbIdentifierReader.ReadRequired(reader, "commitment_term_id"),
-            reader.GetString("payment_mode"),
-            reader.GetInt32("commitment_months"),
-            reader.GetInt32("discount_basis_points"));
-    }
-
-    // Lecture deleguee au lecteur partage : meme requete et meme resolution
-    // d'ambiguite de prix que BillingV2NewSubscriptionService, pour que les
-    // deux chemins de creation ne puissent plus diverger.
-    private static async Task<IReadOnlyList<BillingV2NewSubscriptionPresetItem>>
-        ReadPresetItemsAsync(
-            MySqlConnection connection,
-            string presetId,
-            DateTime now,
-            CancellationToken cancellationToken)
-        => await BillingV2PresetItemReader.ReadAsync(
-            connection,
-            transaction: null,
-            presetId,
-            now,
-            cancellationToken);
 
     /// <summary>
     /// Retourne false quand l'unicite
@@ -909,7 +810,6 @@ public sealed class BillingV2AuthoritativeCheckoutService
                 actor_reference,
                 idempotency_key,
                 request_fingerprint_hash,
-                legacy_offer_id,
                 selection_fingerprint,
                 selection_canonical,
                 provider,
@@ -926,7 +826,6 @@ public sealed class BillingV2AuthoritativeCheckoutService
                 @actor_reference,
                 @idempotency_key,
                 @request_fingerprint_hash,
-                @legacy_offer_id,
                 @selection_fingerprint,
                 @selection_canonical,
                 @provider,
@@ -952,11 +851,6 @@ public sealed class BillingV2AuthoritativeCheckoutService
         command.Parameters.AddWithValue(
             "@request_fingerprint_hash",
             requestFingerprintHash);
-        command.Parameters.AddWithValue(
-            "@legacy_offer_id",
-            composition.LegacyOfferId is null
-                ? DBNull.Value
-                : composition.LegacyOfferId);
         command.Parameters.AddWithValue(
             "@selection_fingerprint",
             composition.SelectionFingerprint);
@@ -1120,12 +1014,17 @@ public sealed class BillingV2AuthoritativeCheckoutService
                 : DBNull.Value);
         command.Parameters.AddWithValue("@id", subscriptionId);
         command.Parameters.AddWithValue("@customer_id", customerId);
+        // Formule d'origine et engagement sont facultatifs : une selection
+        // directe ou un achat ponctuel laisse ces colonnes NULL plutot que de
+        // pointer un preset technique fabrique pour l'occasion.
         command.Parameters.AddWithValue(
             "@originating_preset_id",
-            mapping.PresetId);
+            mapping.PresetId is null ? DBNull.Value : mapping.PresetId);
         command.Parameters.AddWithValue(
             "@commitment_term_id",
-            mapping.CommitmentTermId);
+            mapping.CommitmentTermId is null
+                ? DBNull.Value
+                : mapping.CommitmentTermId);
         command.Parameters.AddWithValue("@payment_mode", mapping.PaymentMode);
         command.Parameters.AddWithValue(
             "@discount_basis_points",
@@ -1419,7 +1318,6 @@ public sealed class BillingV2AuthoritativeCheckoutService
                 currency,
                 effective_from,
                 effective_until,
-                source_legacy_offer_id,
                 reason,
                 status,
                 created_at
@@ -1431,7 +1329,6 @@ public sealed class BillingV2AuthoritativeCheckoutService
                 @currency,
                 @effective_from,
                 @effective_until,
-                @source_legacy_offer_id,
                 @reason,
                 'active',
                 UTC_TIMESTAMP(6)
@@ -1448,11 +1345,6 @@ public sealed class BillingV2AuthoritativeCheckoutService
         command.Parameters.AddWithValue(
             "@effective_until",
             priceLock.EffectiveUntilUtc);
-        command.Parameters.AddWithValue(
-            "@source_legacy_offer_id",
-            priceLock.SourceLegacyOfferId is null
-                ? DBNull.Value
-                : priceLock.SourceLegacyOfferId);
         command.Parameters.AddWithValue("@reason", priceLock.Reason);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -1779,7 +1671,6 @@ public static class BillingV2AuthoritativeCheckoutPriceLockPolicy
     public const string CheckoutReason = "v2_authoritative_checkout";
 
     public static BillingV2SubscriptionPriceLockPlan Plan(
-        string? sourceLegacyOfferId,
         string paymentMode,
         int commitmentMonths,
         BillingV2PricingResult pricing,
@@ -1801,7 +1692,6 @@ public static class BillingV2AuthoritativeCheckoutPriceLockPolicy
                 "EUR",
                 nowUtc,
                 nowUtc.AddMonths(months),
-                sourceLegacyOfferId,
                 resolvedReason);
         }
 
@@ -1811,7 +1701,6 @@ public static class BillingV2AuthoritativeCheckoutPriceLockPolicy
             "EUR",
             nowUtc,
             nowUtc.AddMonths(months),
-            sourceLegacyOfferId,
             resolvedReason);
     }
 }

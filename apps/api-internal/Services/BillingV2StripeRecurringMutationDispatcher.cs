@@ -64,7 +64,11 @@ public sealed class BillingV2StripeRecurringMutationDispatcher
         return dispatched;
     }
 
-    private static async Task<string?> ReadProviderSubscriptionIdAsync(MySqlConnection connection,string subscriptionId,CancellationToken ct){await using var q=connection.CreateCommand();q.CommandText="SELECT provider_subscription_id FROM billing_v2_provider_checkout_sessions WHERE subscription_id=@id AND provider='stripe' AND provider_subscription_id IS NOT NULL ORDER BY updated_at DESC LIMIT 1";q.Parameters.AddWithValue("@id",subscriptionId);var value=await q.ExecuteScalarAsync(ct);return value is null or DBNull?null:Convert.ToString(value);}
+    // Meme resolution que la resiliation et le renouvellement : cette ligne ne
+    // lisait que les sessions de checkout et manquait donc l'ancre d'un
+    // abonnement converge par reconciliation.
+    private static Task<string?> ReadProviderSubscriptionIdAsync(MySqlConnection connection,string subscriptionId,CancellationToken ct)
+        => BillingV2ProviderAnchorReader.ReadStripeSubscriptionIdAsync(connection,subscriptionId,ct);
     private sealed record Payload(
         [property: JsonPropertyName("change_id")] string ChangeId,
         [property: JsonPropertyName("subscription_id")] string SubscriptionId,

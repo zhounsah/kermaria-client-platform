@@ -105,7 +105,7 @@ assert.match(ressourcesPage, /ressources-list-title/);
 assert.match(contactPage, /ContactForm/);
 assert.match(contactForm, /noValidate/);
 assert.match(contactForm, /aria-describedby=/);
-assert.match(contactForm, /offerReference/);
+assert.match(contactForm, /formuleCode/);
 assert.doesNotMatch(contactForm, /localStorage|sessionStorage|SERVICE_AUTH_TOKEN|INTERNAL_API_URL/);
 
 for (const [path, key] of [

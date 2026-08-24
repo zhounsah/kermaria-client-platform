@@ -8,7 +8,7 @@ import { requestBffJson } from "@/lib/client-api";
 
 type ContactFormProps = {
   defaultSubject: string;
-  offerReference: string | null;
+  formuleCode: string | null;
 };
 
 type ContactState =
@@ -28,7 +28,7 @@ type ContactResponse = {
 
 export function ContactForm({
   defaultSubject,
-  offerReference,
+  formuleCode,
 }: ContactFormProps) {
   const fieldErrorId = (field: FieldName) => `contact-${field}-error`;
   const isSubmittingRef = useRef(false);
@@ -60,7 +60,7 @@ export function ContactForm({
             email,
             subject,
             message,
-            offerReference,
+            formuleCode,
           }),
         },
       );
@@ -192,8 +192,8 @@ export function ContactForm({
         ) : null}
       </label>
 
-      {offerReference ? (
-        <input type="hidden" name="offerReference" value={offerReference} />
+      {formuleCode ? (
+        <input type="hidden" name="formuleCode" value={formuleCode} />
       ) : null}
 
       <p className="contact-form-note">

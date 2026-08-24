@@ -37,10 +37,6 @@ public interface ISignupService
         string id,
         CancellationToken cancellationToken);
 
-    Task<PendingPackSelectionSummary?> GetPendingPackSelectionAsync(
-        PortalSessionContext session,
-        CancellationToken cancellationToken);
-
     Task<PendingBillingV2SelectionSummary?> GetPendingBillingV2SelectionAsync(
         PortalSessionContext session,
         CancellationToken cancellationToken);
@@ -96,7 +92,6 @@ public sealed class SignupService : ISignupService
         };
 
     private readonly ISignupRepository _repository;
-    private readonly ISubscriptionRepository _subscriptionRepository;
     private readonly IEmailDispatchService _emailDispatch;
     private readonly IPortalPasswordService _passwordService;
     private readonly IActiveDirectoryService _activeDirectoryService;
@@ -104,7 +99,6 @@ public sealed class SignupService : ISignupService
     private readonly IAdGroupProvisioner _adGroupProvisioner;
     private readonly IKoxoPendingPasswordStore _pendingPasswords;
     private readonly IKoxoSyncWebhookTriggerService _koxoSyncWebhookTriggerService;
-    private readonly ICatalogConfigurationService _catalogConfigurationService;
     private readonly SignupRuntimeConfiguration _configuration;
     private readonly EmailRuntimeConfiguration _emailConfiguration;
     private readonly AdRuntimeConfiguration _adConfiguration;
@@ -112,7 +106,6 @@ public sealed class SignupService : ISignupService
 
     public SignupService(
         ISignupRepository repository,
-        ISubscriptionRepository subscriptionRepository,
         IEmailDispatchService emailDispatch,
         IPortalPasswordService passwordService,
         IActiveDirectoryService activeDirectoryService,
@@ -120,14 +113,12 @@ public sealed class SignupService : ISignupService
         IAdGroupProvisioner adGroupProvisioner,
         IKoxoPendingPasswordStore pendingPasswords,
         IKoxoSyncWebhookTriggerService koxoSyncWebhookTriggerService,
-        ICatalogConfigurationService catalogConfigurationService,
         SignupRuntimeConfiguration configuration,
         EmailRuntimeConfiguration emailConfiguration,
         AdRuntimeConfiguration adConfiguration,
         ILogger<SignupService> logger)
     {
         _repository = repository;
-        _subscriptionRepository = subscriptionRepository;
         _emailDispatch = emailDispatch;
         _passwordService = passwordService;
         _activeDirectoryService = activeDirectoryService;
@@ -135,7 +126,6 @@ public sealed class SignupService : ISignupService
         _adGroupProvisioner = adGroupProvisioner;
         _pendingPasswords = pendingPasswords;
         _koxoSyncWebhookTriggerService = koxoSyncWebhookTriggerService;
-        _catalogConfigurationService = catalogConfigurationService;
         _configuration = configuration;
         _emailConfiguration = emailConfiguration;
         _adConfiguration = adConfiguration;
@@ -191,8 +181,6 @@ public sealed class SignupService : ISignupService
             normalized.Message,
             normalized.Customer,
             normalized.PrimaryUser,
-            normalized.PackSelection,
-            normalized.CatalogConfiguration,
             HashToken(token),
             DateTime.UtcNow.AddHours(_configuration.VerificationTokenTtlHours),
             NormalizeOptional(payload.SourceAddress, 45),
@@ -276,36 +264,6 @@ public sealed class SignupService : ISignupService
         return record is null ? null : ToDetail(record);
     }
 
-    public async Task<PendingPackSelectionSummary?> GetPendingPackSelectionAsync(
-        PortalSessionContext session,
-        CancellationToken cancellationToken)
-    {
-        var record = await _repository.GetLatestApprovedByCustomerIdAsync(
-            session.CustomerId,
-            cancellationToken);
-        if (record?.PackSelection is null)
-        {
-            return null;
-        }
-
-        var subscriptions = await _subscriptionRepository.GetByCustomerAsync(
-            session.CustomerId,
-            cancellationToken);
-        if (HasMatchingFinalizedSubscription(
-                subscriptions,
-                record.PackSelection))
-        {
-            return null;
-        }
-
-        return new PendingPackSelectionSummary(
-            record.Id,
-            record.Status,
-            ToNullableIso(record.ApprovedAtUtc),
-            ToIso(record.CreatedAtUtc),
-            record.PackSelection);
-    }
-
     public async Task<PendingBillingV2SelectionSummary?> GetPendingBillingV2SelectionAsync(
         PortalSessionContext session,
         CancellationToken cancellationToken)
@@ -326,50 +284,6 @@ public sealed class SignupService : ISignupService
             record.BillingV2Selection);
     }
 
-
-    private static bool HasMatchingFinalizedSubscription(
-        IReadOnlyList<SubscriptionSummary> subscriptions,
-        SignupPackSelectionSnapshot snapshot)
-    {
-        return subscriptions.Any(subscription =>
-            IsMatchingPackSubscription(subscription, snapshot)
-            && IsFinalizedPackSubscriptionStatus(subscription));
-    }
-
-    private static bool IsMatchingPackSubscription(
-        SubscriptionSummary subscription,
-        SignupPackSelectionSnapshot snapshot)
-    {
-        return string.Equals(
-                subscription.PublicPackCode,
-                snapshot.PackKey,
-                StringComparison.Ordinal)
-            || string.Equals(
-                subscription.CommercialOfferId,
-                snapshot.OfferId,
-                StringComparison.Ordinal)
-            || string.Equals(
-                subscription.OfferExternalReference,
-                snapshot.OfferExternalReference,
-                StringComparison.Ordinal);
-    }
-
-    private static bool IsFinalizedPackSubscriptionStatus(
-        SubscriptionSummary subscription)
-    {
-        if (subscription.PaidCyclesCount > 0)
-        {
-            return true;
-        }
-
-        return subscription.Status is
-            "pending_activation"
-            or "active"
-            or "suspended"
-            or "pending_cancellation"
-            or "cancelled"
-            or "expired";
-    }
 
     public async Task<SignupOperationResult> ApproveAsync(
         string id,
@@ -1254,41 +1168,18 @@ public sealed class SignupService : ISignupService
             primaryPhone ?? customerPhone,
             payload.PrimaryUser?.IsPrimaryContact ?? true);
 
-        CatalogConfigurationSnapshot? catalogConfiguration = null;
-        SignupPackSelectionSnapshot? packSelection = null;
+        // Une demande d'inscription peut arriver sans selection commerciale :
+        // le formulaire de contact ne configure rien. Quand une selection est
+        // presente, elle est necessairement Billing V2 — il n'existe plus
+        // d'autre catalogue.
         BillingV2PublicSelection? billingV2Selection = null;
         if (payload.BillingV2Selection is not null)
         {
-            if (payload.CatalogConfiguration is not null
-                || payload.PackSelection is not null)
-            {
-                return null;
-            }
-
             billingV2Selection = payload.BillingV2Selection.ToSelection();
             if (!IsValidBillingV2Selection(billingV2Selection))
             {
                 return null;
             }
-        }
-        else if (payload.CatalogConfiguration is not null)
-        {
-            var resolution = await _catalogConfigurationService.ResolveAsync(
-                payload.CatalogConfiguration,
-                cancellationToken);
-            if (!string.Equals(resolution.Status, "ok", StringComparison.Ordinal)
-                || resolution.PackSelection is null)
-            {
-                return null;
-            }
-
-            catalogConfiguration =
-                _catalogConfigurationService.CreateSnapshot(resolution);
-            packSelection = catalogConfiguration.Resolution.PackSelection;
-        }
-        else
-        {
-            packSelection = ValidatePackSelection(payload.PackSelection);
         }
 
 
@@ -1300,8 +1191,6 @@ public sealed class SignupService : ISignupService
             message,
             customer,
             primaryUser,
-            packSelection,
-            catalogConfiguration,
             billingV2Selection);
     }
 
@@ -1545,8 +1434,7 @@ public sealed class SignupService : ISignupService
             record.Email,
             record.Phone,
             record.Message,
-            record.PackSelection,
-            record.CatalogConfiguration,
+            record.BillingV2Selection,
             record.SourceAddress,
             record.RejectedReason,
             ToIso(record.CreatedAtUtc),
@@ -1567,72 +1455,33 @@ public sealed class SignupService : ISignupService
                     record.ApprovedUserSamAccountName,
                     record.ApprovedUserPrincipalName));
 
-    private static SignupPackSelectionSnapshot? ValidatePackSelection(
-        SignupPackSelectionSnapshot? snapshot)
-    {
-        if (snapshot is null)
-        {
-            return null;
-        }
-
-        var packKey = snapshot.PackKey?.Trim();
-        var packLabel = snapshot.PackLabel?.Trim();
-        var offerId = snapshot.OfferId?.Trim();
-        var offerExternalReference = snapshot.OfferExternalReference?.Trim();
-        var paymentMode = snapshot.PaymentMode?.Trim();
-        var fiscalRegime =
-            string.IsNullOrWhiteSpace(snapshot.FiscalRegime)
-                ? FiscalRegimes.FranchiseBase
-                : snapshot.FiscalRegime.Trim();
-        var fiscalMention =
-            string.IsNullOrWhiteSpace(snapshot.FiscalMention)
-                ? fiscalRegime == FiscalRegimes.Standard
-                    ? FiscalPolicy.StandardMention
-                    : FiscalPolicy.FranchiseBaseMention
-                : snapshot.FiscalMention.Trim();
-        var currency = snapshot.Currency?.Trim().ToUpperInvariant();
-
-        if (string.IsNullOrWhiteSpace(packKey)
-            || string.IsNullOrWhiteSpace(packLabel)
-            || string.IsNullOrWhiteSpace(offerId)
-            || string.IsNullOrWhiteSpace(offerExternalReference)
-            || string.IsNullOrWhiteSpace(paymentMode)
-            || fiscalRegime is not FiscalRegimes.FranchiseBase
-                and not FiscalRegimes.Standard
-            || string.IsNullOrWhiteSpace(fiscalMention)
-            || string.IsNullOrWhiteSpace(currency)
-            || snapshot.CommitmentMonths is not 1 and not 6 and not 12
-            || snapshot.BillingIntervalMonths is < 1 or > 12
-            || snapshot.DiscountPercent is < 0 or > 100
-            || snapshot.MonthlyPriceAmountCents < 0
-            || snapshot.BillingPriceAmountCents < 0
-            || snapshot.SetupFeeAmountCents < 0
-            || snapshot.FirstChargeAmountCents < 0
-            || currency != "EUR")
-        {
-            throw new PortalValidationException();
-        }
-
-        return snapshot with
-        {
-            PackKey = packKey,
-            PackLabel = packLabel,
-            OfferId = offerId,
-            OfferExternalReference = offerExternalReference,
-            PaymentMode = paymentMode,
-            FiscalRegime = fiscalRegime,
-            FiscalMention = fiscalMention,
-            Currency = currency
-        };
-    }
-
+    // Deux formes sont legitimes : une formule (`PresetCode` + palier de
+    // stockage personnel) ou une selection directe de composants sans formule.
+    // Exiger un preset dans les deux cas obligerait a en fabriquer un faux pour
+    // un simple achat ponctuel.
     private static bool IsValidBillingV2Selection(BillingV2PublicSelection selection)
-        => !string.IsNullOrWhiteSpace(selection.PresetCode)
-            && !string.IsNullOrWhiteSpace(selection.StoragePersonalTierCode)
-            && (selection.PaymentMode == BillingV2PaymentModes.Monthly
-                || selection.PaymentMode == BillingV2PaymentModes.Upfront)
-            && selection.AdditionalUsers >= 0
-            && selection.AdditionalUsers <= 10;
+    {
+        if (selection.PaymentMode != BillingV2PaymentModes.Monthly
+            && selection.PaymentMode != BillingV2PaymentModes.Upfront)
+        {
+            return false;
+        }
+
+        if (selection.AdditionalUsers is < 0 or > 10)
+        {
+            return false;
+        }
+
+        if (selection.Components is { Count: > 0 })
+        {
+            return selection.Components.All(component =>
+                !string.IsNullOrWhiteSpace(component.ServiceCode)
+                && component.Quantity > 0);
+        }
+
+        return !string.IsNullOrWhiteSpace(selection.PresetCode)
+            && !string.IsNullOrWhiteSpace(selection.StoragePersonalTierCode);
+    }
 
 
     private static bool IsAwaitingPasswordSetup(SignupPendingRecord record)
@@ -1654,7 +1503,5 @@ public sealed class SignupService : ISignupService
         string? Message,
         SignupCustomerData Customer,
         SignupUserData PrimaryUser,
-        SignupPackSelectionSnapshot? PackSelection,
-        CatalogConfigurationSnapshot? CatalogConfiguration,
         BillingV2PublicSelection? BillingV2Selection);
 }

@@ -6,7 +6,6 @@ import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { MockNotice } from "@/components/MockNotice";
 import { PageHeader } from "@/components/PageHeader";
-import { PublicPackCard } from "@/components/PublicPackCard";
 import { SectionHeading } from "@/components/SectionHeading";
 import { ServiceCard } from "@/components/ServiceCard";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -16,19 +15,12 @@ import { buildPublicMetadata } from "@/lib/public-metadata";
 import { getPortalArea } from "@/lib/public-route-config";
 import { getPortalRequestOriginFromHeaders } from "@/lib/public-routes";
 import {
-  getPendingPackSelection,
-  getPublicCommercialCatalog,
+  getPendingBillingV2Selection,
   getPublicManagedContent,
-  getPublicPackCatalogContent,
   getServices,
   resolveDataSource,
 } from "@/lib/internal-api";
 import { parseStorefrontPageContent, resolveStorefrontBreadcrumb } from "@/lib/storefront-content";
-import {
-  findPendingPackSelectionForPack,
-  findPackPresentation,
-  resolvePackCatalog,
-} from "@/lib/public-packs";
 
 export const dynamic = "force-dynamic";
 
@@ -65,24 +57,14 @@ export default async function ServicesPage() {
   }
 
   await requireClientSession();
-  const [
-    servicesResult,
-    catalogResult,
-    packContentResult,
-    pendingSelectionResult,
-  ] = await Promise.all([
+  const [servicesResult, pendingSelectionResult] = await Promise.all([
     getServices(),
-    getPublicCommercialCatalog(),
-    getPublicPackCatalogContent(),
-    getPendingPackSelection(),
+    getPendingBillingV2Selection(),
   ]);
   const source = resolveDataSource([
     servicesResult.source,
-    catalogResult.source,
-    packContentResult.source,
     pendingSelectionResult.source,
   ]);
-  const packs = resolvePackCatalog(catalogResult.data, packContentResult.data);
   const pendingSelection = pendingSelectionResult.data;
 
   return (
@@ -118,7 +100,7 @@ export default async function ServicesPage() {
         <EmptyState
           action={
             <Link className="button" href="/souscrire">
-              Découvrir les offres
+              Découvrir les formules
             </Link>
           }
           description="Aucun service n'est actuellement associé à ce compte."
@@ -136,29 +118,18 @@ export default async function ServicesPage() {
         <section className="request-history-section">
           <SectionHeading
             action={<StatusBadge label="À finaliser" tone="warning" />}
-            description="Votre compte a bien été créé. Il ne reste qu'à finaliser le paiement du pack choisi lors de votre demande d'inscription."
-            title="Finaliser mon pack"
+            description="Votre compte a bien été créé. Il ne reste qu'à reprendre la formule choisie lors de votre demande d'inscription, puis à finaliser le paiement."
+            title="Finaliser ma formule"
           />
-          <div className="public-pack-grid">
-            {packs
-              .filter((pack) => pack.key === pendingSelection.snapshot.packKey)
-              .map((pack) => (
-                <PublicPackCard
-                  key={`pending-${pack.key}`}
-                  mode="subscribe"
-                  pack={pack}
-                  initialSelection={findPendingPackSelectionForPack(
-                    pendingSelection,
-                    pack.key,
-                  )}
-                  highlightLabel={
-                    findPackPresentation(
-                      pack.key,
-                      packContentResult.data,
-                    )?.highlightLabel ?? "Sélection reprise"
-                  }
-                />
-              ))}
+          <div className="cta-panel">
+            <p>
+              La configuration retenue à l&apos;inscription est conservée telle
+              quelle. Elle est retarifée par nos serveurs au moment de la
+              reprise : aucun montant n&apos;a été figé entre-temps.
+            </p>
+            <Link className="button" href="/formules/reprendre">
+              Reprendre ma formule
+            </Link>
           </div>
         </section>
       ) : null}
@@ -166,14 +137,14 @@ export default async function ServicesPage() {
       <section className="request-history-section">
         <SectionHeading
           action={<StatusBadge label="Ajouter un service" tone="info" />}
-          description="Souscrivez un pack clé en main ou prenez une option à la carte, sans dépendre d'un mapping technique caché."
+          description="Souscrivez une formule clé en main ou prenez un service à la carte, sans dépendre d'un mapping technique caché."
           title="Étendre mon périmètre"
         />
         <div className="cta-panel">
           <p>
-            L&apos;espace « Souscrire » regroupe les packs grand public et les
-            options individuelles. Chaque option à la carte se prend
-            séparément, sans obligation de pack.
+            L&apos;espace « Souscrire » regroupe les formules recommandées et
+            les services individuels. Chaque service à la carte se prend
+            séparément, sans obligation de formule.
           </p>
           <Link className="button" href="/souscrire">
             Ouvrir l&apos;espace Souscrire

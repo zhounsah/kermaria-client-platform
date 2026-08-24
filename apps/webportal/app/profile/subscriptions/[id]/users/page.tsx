@@ -85,7 +85,7 @@ export default async function SubscriptionAdditionalUsersPage({
             Retour aux souscriptions
           </Link>
         }
-        description={`Souscription ${subscription.offerName}. Chaque place ouvre un accès nominatif à votre espace client et aux services associés.`}
+        description={`Souscription ${subscription.label}. Chaque place ouvre un accès nominatif à votre espace client et aux services associés.`}
         eyebrow="Mes souscriptions"
         title="Utilisateurs supplémentaires"
       />

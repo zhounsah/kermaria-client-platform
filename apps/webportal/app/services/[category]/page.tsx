@@ -50,7 +50,7 @@ export default async function ServiceCategoryRoute({ params }: CategoryPageProps
   const selfServiceOrderable = serviceSlug
     ? storefrontServiceSelfServiceOrderable(
       serviceSlug,
-      catalogResult?.data ?? { source: "unavailable", currency: "EUR", presets: [], services: [], commitments: [], checkoutRoutes: [] },
+      catalogResult?.data ?? { source: "unavailable", currency: "EUR", presets: [], services: [], commitments: [] },
     )
     : null;
   return content ? (

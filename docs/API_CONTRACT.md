@@ -23,15 +23,8 @@ Le navigateur accède uniquement à `WEBPORTAL` :
 - `GET /api/notifications`
 - `POST /api/notifications/{id}/read`
 - `POST /api/notifications/read-all`
-- `GET /api/catalog`
-- `GET /api/cart`
-- `POST /api/cart/items`
-- `POST /api/cart/items/remove`
-- `POST /api/cart/confirm`
-- `GET /api/checkout/summary`
-- `POST /api/checkout/subscriptions/items`
-- `POST /api/checkout/subscriptions/items/remove`
-- `POST /api/checkout/subscriptions/confirm`
+- `POST /api/formules/devis`
+- `POST /api/formules/souscrire`
 - `GET /api/commercial-documents`
 - `GET /api/commercial-documents/{id}`
 - `POST /api/commercial-documents/{id}/payment-method`
@@ -42,9 +35,8 @@ Le navigateur accède uniquement à `WEBPORTAL` :
 - `GET /api/admin/customers`
 - `GET /api/admin/support-requests`
 - `GET /api/admin/service-requests`
-- `GET /api/admin/catalog`
-- `POST /api/admin/catalog`
-- `PATCH /api/admin/catalog/{id}`
+- `GET /api/admin/billing-v2/catalog`
+- `POST /api/admin/billing-v2/catalog` (commandes catalogue V2)
 - `GET /api/admin/content`
 - `GET /api/admin/content/{key}`
 - `PATCH /api/admin/content/{key}`
@@ -101,9 +93,8 @@ publiées par le reverse proxy et jamais appelées directement par le navigateur
 - `GET /internal/admin/customers`
 - `GET /internal/admin/support-requests`
 - `GET /internal/admin/service-requests`
-- `GET /internal/admin/catalog`
-- `POST /internal/admin/catalog`
-- `PATCH /internal/admin/catalog/{id}`
+- `GET /internal/admin/billing-v2/catalog`
+- `POST /internal/admin/billing-v2/catalog` (commandes catalogue V2)
 - `GET /internal/portal/content/{key}`
 - `GET /internal/admin/content`
 - `GET /internal/admin/content/{key}`
@@ -155,15 +146,10 @@ publiées par le reverse proxy et jamais appelées directement par le navigateur
 - `GET /internal/portal/services`
 - `GET /internal/portal/invoices`
 - `GET /internal/portal/service-catalog`
-- `GET /internal/portal/catalog`
-- `GET /internal/portal/cart`
-- `POST /internal/portal/cart/items`
-- `POST /internal/portal/cart/items/remove`
-- `POST /internal/portal/cart/confirm`
-- `GET /internal/portal/checkout/summary`
-- `POST /internal/portal/checkout/subscriptions/items`
-- `POST /internal/portal/checkout/subscriptions/items/remove`
-- `POST /internal/portal/checkout/subscriptions/confirm`
+- `GET /internal/portal/billing-v2/formules`
+- `POST /internal/portal/billing-v2/formules/devis`
+- `POST /internal/portal/billing-v2/subscriptions/checkout`
+- `GET /internal/portal/billing-v2/provider-return`
 - `GET /internal/portal/support-requests`
 - `GET /internal/portal/support-requests/{id}`
 - `POST /internal/portal/support-requests/{id}/messages`
@@ -273,36 +259,33 @@ Notes de contrat :
 - le rendu Markdown public et admin passe par `react-markdown`, sans
   HTML brut.
 
-## Checkout unifie V0.36
+## Souscription Billing V2
 
-Les routes checkout restent strictement dans le flux
+Le modele commercial historique — catalogue `commercial_offers`, panier,
+checkout recurrent — a ete retire. Billing V2 est la seule autorite
+commerciale. Le flux reste
 `Navigateur -> WEBPORTAL/BFF -> API-INTERNAL -> MariaDB`.
 
 Contraintes :
 
-- `GET /api/checkout/summary` et
-  `GET /internal/portal/checkout/summary` exposent un agregat unique
-  `CheckoutSummary` avec :
-  - `cart` pour le panier one-shot ;
-  - `recurring` pour la selection recurrente facturee ;
-  - `totalItemCount` et `hasMixedCheckout` pour l'UI.
-- `POST /api/checkout/subscriptions/items` et son endpoint miroir interne
-  ajoutent une offre `monthly` active et payable a la selection recurrente.
-  Les offres `one_time`, gratuites ou inactives sont refusees via
-  `RECURRING_CHECKOUT_OFFER_NOT_ELIGIBLE`.
-- `POST /api/checkout/subscriptions/items/remove` retire une selection
-  recurrente par `offerId`.
-- `POST /api/checkout/subscriptions/confirm` cree :
-  - une souscription locale `rail='billing'` et `status='pending_payment'`
-    par ligne recurrente ;
-  - un document commercial groupe `origin='recurring_checkout'` ;
-  - les liaisons `commercial_document_line_subscriptions`.
-- `POST /api/cart/confirm` reste reserve au tunnel one-shot et continue de
-  produire un document `origin='client_cart'`.
-- Le BFF peut retomber sur le seul panier historique si
-  `/internal/portal/checkout/summary` n'existe pas encore sur le runtime
-  cible (`ROUTE_NOT_FOUND`, `SQL_UNAVAILABLE`, `INTERNAL_ERROR`,
-  `INTERNAL_API_UNAVAILABLE`, `INVALID_INTERNAL_RESPONSE`).
+- `POST /api/formules/devis` et `POST /api/formules/souscrire` n'acceptent
+  **que** des codes catalogue, des quantites, un engagement et un mode de
+  reglement. Le BFF reconstruit strictement la selection : un corps enrichi
+  d'un montant, d'une remise ou d'un identifiant de prix fournisseur n'atteint
+  jamais API-INTERNAL.
+- Le montant affiche vient integralement du devis serveur, calcule par
+  `BillingV2PricingEngine`. Le navigateur n'est jamais une autorite
+  financiere, ni pour le devis ni pour le checkout.
+- Une selection peut porter une formule (`presetCode`) **ou** des composants
+  choisis directement (`components`), jamais les deux. Une selection directe
+  n'a pas de formule : aucune n'est fabriquee pour combler le vide.
+- `commitmentCode` est nul quand le produit n'engage a rien. Un achat purement
+  ponctuel n'a ni engagement, ni date de renouvellement, et part chez Stripe en
+  `mode=payment` et non `mode=subscription`.
+- `POST /api/formules/souscrire` exige une session client et une cle
+  `Idempotency-Key`. Un rejeu de la meme cle retrouve la meme intention.
+- Le checkout autoritaire reste borne par ses drapeaux d'activation : une
+  reponse `503` avec un `reasonCode` explicite vaut refus, pas panne.
 
 ## Centre de telechargements client V0.37
 
@@ -319,9 +302,12 @@ Contraintes :
   - un `attachment` pour un fichier interne ;
   - une redirection autorisee pour une ressource externe ;
   - `404` si la ressource est inactive ou non autorisee.
-- Les droits portail sont calcules uniquement a partir des droits actifs :
-  `subscriptions.publicPackCode`, `subscriptions.offerExternalReference` et
-  `customer_services.service_type`. Les statuts non actifs ne publient rien.
+- Les droits portail sont calcules uniquement a partir des droits actifs,
+  projetes depuis Billing V2 : codes de formule (`preset_code`), codes de
+  service (`service_code`), types de service (`service_type`) et groupes de
+  provisioning. Les statuts non actifs ne publient rien. Une ressource en mode
+  `targeted` sans aucune regle reste invisible : l'echec par defaut est la
+  fermeture, jamais la fuite.
 - `GET/POST/PATCH/DELETE /api/admin/downloads*` et
   `/api/admin/download-categories*` exigent un role `internal_admin`. Les
   mutations BFF reutilisent la protection CSRF deja en place.
@@ -392,12 +378,13 @@ Les routes commerciales restent strictement dans le flux
 
 Contraintes :
 
-- `GET /api/catalog` et `GET /internal/portal/catalog` exposent uniquement des
-  offres non sensibles et administrables.
+- Le catalogue public passe desormais par
+  `GET /internal/portal/billing-v2/formules` : il expose des codes, des
+  libelles et des composantes tarifaires, jamais de reglage interne.
 - `GET /api/commercial-documents` et `GET /api/commercial-documents/{id}`
   retournent seulement les documents du client de la session et uniquement
   lorsqu'ils ont été partagés.
-- Les mutations `/api/admin/catalog*` et `/api/admin/commercial-documents*`
+- Les mutations `/api/admin/billing-v2/catalog*` et `/api/admin/commercial-documents*`
   exigent toujours `internal_admin`.
 - Les montants commerciaux sont validés et stockés en centimes entiers.
 - `document_type` est borné à `quote_draft`, `billing_draft` ou

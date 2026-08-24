@@ -91,15 +91,15 @@ public static class EmailTemplates
         string visitorEmail,
         string subjectLine,
         string message,
-        string? offerReference)
+        string? formuleCode)
     {
         var trimmedSubject = string.IsNullOrWhiteSpace(subjectLine)
             ? "(sans sujet)"
             : subjectLine.Trim();
         var subject = $"[Vitrine] {trimmedSubject}";
-        var offerLine = string.IsNullOrWhiteSpace(offerReference)
+        var offerLine = string.IsNullOrWhiteSpace(formuleCode)
             ? string.Empty
-            : $"Offre référencée : {offerReference}\n";
+            : $"Formule référencée : {formuleCode}\n";
         var body = $"""
             Nouveau message reçu depuis le formulaire de contact du site vitrine.
 

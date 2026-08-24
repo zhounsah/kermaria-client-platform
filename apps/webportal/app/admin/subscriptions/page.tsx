@@ -173,7 +173,7 @@ export default async function AdminSubscriptionsPage({
             const statusBadge = subscriptionStatus[item.status];
             return (
               <SectionCard
-                ariaLabel={`Abonnement ${item.offerName}`}
+                ariaLabel={`Abonnement ${item.label}`}
                 className="stack-panel"
                 key={item.id}
               >
@@ -182,7 +182,7 @@ export default async function AdminSubscriptionsPage({
                     <span className="card-kicker">
                       {item.customerReference} · {item.customerName}
                     </span>
-                    <h2>{item.offerName}</h2>
+                    <h2>{item.label}</h2>
                     <p>
                       {formatCommercialAmountFromCents(
                         item.priceAmountCents,

@@ -115,8 +115,10 @@ export async function POST(request: NextRequest) {
   const returnPath =
     "/api/subscriptions/billing-v2/return"
     + "?provider=stripe&session_id={CHECKOUT_SESSION_ID}";
-  const cancelPath = `/formules/${encodeURIComponent(selection.presetCode)}`
-    + "?souscription=annulee";
+  const cancelPath = selection.presetCode
+    ? `/formules/${encodeURIComponent(selection.presetCode)}`
+      + "?souscription=annulee"
+    : "/souscrire?souscription=annulee";
 
   let result: BillingV2AuthoritativeCheckoutResponse;
   try {
