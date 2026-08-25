@@ -18,7 +18,29 @@ public sealed record StripeRuntimeConfiguration(
     public bool Enabled => Mode is not StripeMode.Disabled;
 
     public bool IsConfigured
-        => Enabled && !string.IsNullOrWhiteSpace(SecretKey);
+        => Enabled
+            && !string.IsNullOrWhiteSpace(SecretKey)
+            && SecretKeyMatchesMode(SecretKey);
+
+    public bool SecretKeyMatchesMode(string? secretKey)
+    {
+        var normalized = secretKey?.Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return false;
+        }
+
+        return Mode switch
+        {
+            StripeMode.Test =>
+                normalized.StartsWith("sk_test_", StringComparison.Ordinal)
+                || normalized.StartsWith("rk_test_", StringComparison.Ordinal),
+            StripeMode.Live =>
+                normalized.StartsWith("sk_live_", StringComparison.Ordinal)
+                || normalized.StartsWith("rk_live_", StringComparison.Ordinal),
+            _ => false
+        };
+    }
 }
 
 public static class StripeConfigurationResolver

@@ -2200,6 +2200,25 @@ async Task RunProductionConfigurationValidationTestsAsync()
             configuration["RUN_MARIADB_TESTS"] = "true";
         });
 
+    VerifyRejectedProductionConfiguration(
+        "STRIPE_SECRET_KEY",
+        configuration =>
+        {
+            configuration["STRIPE_MODE"] = "live";
+            configuration["STRIPE_SECRET_KEY"] = "sk_test_never_use";
+            configuration["STRIPE_PUBLISHABLE_KEY"] = "pk_live_fake";
+            configuration["STRIPE_WEBHOOK_SECRET"] = "whsec_not_a_real_secret";
+        });
+
+    VerifyRejectedProductionConfiguration(
+        "STRIPE_PUBLISHABLE_KEY",
+        configuration =>
+        {
+            configuration["STRIPE_MODE"] = "test";
+            configuration["STRIPE_SECRET_KEY"] = "sk_test_fake";
+            configuration["STRIPE_PUBLISHABLE_KEY"] = "pk_live_never_use";
+        });
+
     ValidateRuntimeConfiguration(
         new ConfigurationBuilder().Build(),
         "Development");
@@ -2480,6 +2499,12 @@ async Task RunMariaDbReadTestsAsync()
             .GetString()
             ?? throw new InvalidOperationException(
                 "Le login MariaDB ne retourne aucun token.");
+        var mariaDbClientCustomerReference = loginPayload.RootElement
+            .GetProperty("user")
+            .GetProperty("customerReference")
+            .GetString()
+            ?? throw new InvalidOperationException(
+                "Le login MariaDB ne retourne aucune reference client.");
         await VerifyPersistedSessionHashAsync(sessionToken);
         await PrepareIsolationFixtureAsync(
             isolationCustomerId,
@@ -2821,7 +2846,7 @@ async Task RunMariaDbReadTestsAsync()
             mariaDbBaseUrl,
             sessionToken,
             adminSessionToken,
-            "CLI-DEMO-0060",
+            mariaDbClientCustomerReference,
             workflowServiceRequestId,
             persistent: true,
             foreignCustomerId: isolationCustomerId);
@@ -2832,10 +2857,10 @@ async Task RunMariaDbReadTestsAsync()
             adminSessionToken,
             persistent: true);
 
-        adLinkFixtureId = await InsertCustomerAdLinkAsync("CLI-DEMO-0060");
+        adLinkFixtureId = await InsertCustomerAdLinkAsync(mariaDbClientCustomerReference);
         using var adLinksRequest = CreateSessionRequest(
             HttpMethod.Get,
-            $"{mariaDbBaseUrl}/internal/admin/customers/CLI-DEMO-0060/ad-links",
+            $"{mariaDbBaseUrl}/internal/admin/customers/{mariaDbClientCustomerReference}/ad-links",
             adminSessionToken);
         using var adLinksResponse = await client.SendAsync(adLinksRequest);
         using var adLinksPayload = JsonDocument.Parse(
@@ -2845,14 +2870,14 @@ async Task RunMariaDbReadTestsAsync()
             && adLinksPayload.RootElement.EnumerateArray().Any(item =>
                 item.GetProperty("id").GetString() == adLinkFixtureId
                 && item.GetProperty("customerReference").GetString()
-                    == "CLI-DEMO-0060"
+                    == mariaDbClientCustomerReference
                 && !string.IsNullOrWhiteSpace(
                     item.GetProperty("objectGuid").GetString())),
             "La lecture MariaDB des liens AD doit rester lisible aprÃ¨s insertion d'un lien.");
 
         using var refreshedAdminCustomerDetailRequest = CreateSessionRequest(
             HttpMethod.Get,
-            $"{mariaDbBaseUrl}/internal/admin/customers/CLI-DEMO-0060",
+            $"{mariaDbBaseUrl}/internal/admin/customers/{mariaDbClientCustomerReference}",
             adminSessionToken);
         using var refreshedAdminCustomerDetailResponse = await client.SendAsync(
             refreshedAdminCustomerDetailRequest);
@@ -2863,7 +2888,7 @@ async Task RunMariaDbReadTestsAsync()
         Ensure(
             refreshedAdminCustomerDetailResponse.StatusCode
                 == HttpStatusCode.OK,
-            "La fiche client admin CLI-DEMO-0060 doit rester lisible aprÃ¨s ajout d'un document commercial liÃ©.");
+            "La fiche client admin MariaDB doit rester lisible aprÃ¨s ajout d'un document commercial liÃ©.");
         Ensure(
             refreshedAdminCustomerDetailPayload.RootElement
                 .GetProperty("commercialDocuments")
@@ -5504,7 +5529,7 @@ async Task VerifyManagedContentAsync(
         && publicLegalPayload.RootElement
             .GetProperty("versionLabel")
             .GetString()
-            ?.Contains("03 août 2026", StringComparison.Ordinal) == true
+            ?.StartsWith("Version du :", StringComparison.Ordinal) == true
         && publicLegalPayload.RootElement
             .GetProperty("bodyMarkdown")
             .GetString()

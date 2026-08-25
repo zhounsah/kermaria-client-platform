@@ -48,7 +48,8 @@
 --
 -- Les cibles de visibilite nommaient des concepts legacy :
 --   public_pack_code         -> preset_code   (billing_v2_offer_presets.code)
---   offer_external_reference -> service_code  (billing_v2_services.code)
+--   offer_external_reference -> service_code OU preset_code, selon le mapping
+--                               explicite conserve par Billing V2
 --
 -- La reference legacy n'est PAS egale au code V2 : `STOCK-PERSO-32` devient
 -- `STORAGE-PERSONAL`, `SUPPORT-LV1` devient `SUPPORT-STANDARD`,
@@ -73,10 +74,24 @@
 -- defaut est l'invisibilite, pas la fuite.
 -- ----------------------------------------------------------------------------
 
--- 0.a Traduction par le mapping 048. `INSERT IGNORE` absorbe le cas ou deux
---     references legacy d'une meme ressource pointent le meme service V2 :
---     la cle unique (resource_id, target_type, target_value) dedoublonne.
-INSERT IGNORE INTO download_resource_visibility_rules
+-- 0.0 Nettoyage des regles dont la ressource parente n'existe plus.
+--
+-- Ces lignes ne peuvent ouvrir aucun droit : leur `resource_id` ne correspond a
+-- aucun `download_resources.id`. Elles peuvent exister dans un ancien dump si
+-- les contraintes ont ete restaurees avec FOREIGN_KEY_CHECKS=0. Les conserver
+-- ferait surtout masquer une erreur FK pendant la traduction.
+DELETE rule
+FROM download_resource_visibility_rules AS rule
+LEFT JOIN download_resources AS resource
+    ON resource.id = rule.resource_id
+WHERE resource.id IS NULL;
+
+-- statement-break
+
+-- 0.a Traduction par le mapping 048. Les doublons sont absorbes explicitement
+--     par `ON DUPLICATE KEY UPDATE`, sans `INSERT IGNORE` : une erreur FK
+--     ou de donnees doit faire echouer la migration, jamais etre avalee.
+INSERT INTO download_resource_visibility_rules
     (id, resource_id, target_type, target_value, created_at, updated_at)
 SELECT
     UUID(),
@@ -94,12 +109,39 @@ WHERE rule.target_type = 'offer_external_reference'
   AND mapping.mapping_kind NOT IN (
         'storage_increment',
         'legacy_one_time_entitlement'
-      );
+      )
+ON DUPLICATE KEY UPDATE id = download_resource_visibility_rules.id;
 
 -- statement-break
 
--- 0.b Une valeur deja nativement V2 n'a besoin que du changement de type.
-INSERT IGNORE INTO download_resource_visibility_rules
+-- 0.b Une ancienne offre commerciale peut representer une formule complete,
+--     et non un service unitaire. `billing_v2_legacy_offer_mappings` porte ce
+--     rattachement explicite (preset + engagement + mode de paiement). Pour la
+--     visibilite d'un telechargement, seul le preset fait autorite : les variantes
+--     1/6/12 mois ou mensuel/comptant d'une meme formule donnent le meme droit.
+INSERT INTO download_resource_visibility_rules
+    (id, resource_id, target_type, target_value, created_at, updated_at)
+SELECT
+    UUID(),
+    rule.resource_id,
+    'preset_code',
+    preset.code,
+    rule.created_at,
+    UTC_TIMESTAMP()
+FROM download_resource_visibility_rules AS rule
+JOIN billing_v2_legacy_offer_mappings AS offer_mapping
+    ON offer_mapping.legacy_external_reference = rule.target_value
+   AND offer_mapping.status = 'active'
+JOIN billing_v2_offer_presets AS preset
+    ON preset.id = offer_mapping.preset_id
+   AND preset.status = 'active'
+WHERE rule.target_type = 'offer_external_reference'
+ON DUPLICATE KEY UPDATE id = download_resource_visibility_rules.id;
+
+-- statement-break
+
+-- 0.c Une valeur deja nativement V2 n'a besoin que du changement de type.
+INSERT INTO download_resource_visibility_rules
     (id, resource_id, target_type, target_value, created_at, updated_at)
 SELECT
     UUID(),
@@ -111,12 +153,13 @@ SELECT
 FROM download_resource_visibility_rules AS rule
 JOIN billing_v2_services AS service
     ON service.code = rule.target_value
-WHERE rule.target_type = 'offer_external_reference';
+WHERE rule.target_type = 'offer_external_reference'
+ON DUPLICATE KEY UPDATE id = download_resource_visibility_rules.id;
 
 -- statement-break
 
--- 0.c Retrait des regles effectivement traduites. Une regle non traduisible
---     survit volontairement : elle sera signalee en 0.d.
+-- 0.d Retrait des regles effectivement traduites. Une regle non traduisible
+--     survit volontairement : elle sera signalee en 0.e.
 DELETE rule FROM download_resource_visibility_rules AS rule
 LEFT JOIN billing_v2_legacy_service_mappings AS mapping
     ON mapping.legacy_service_reference = rule.target_value
@@ -128,12 +171,22 @@ LEFT JOIN billing_v2_services AS mapped
     ON mapped.code = mapping.v2_service_code
 LEFT JOIN billing_v2_services AS native
     ON native.code = rule.target_value
+LEFT JOIN billing_v2_legacy_offer_mappings AS offer_mapping
+    ON offer_mapping.legacy_external_reference = rule.target_value
+   AND offer_mapping.status = 'active'
+LEFT JOIN billing_v2_offer_presets AS mapped_preset
+    ON mapped_preset.id = offer_mapping.preset_id
+   AND mapped_preset.status = 'active'
 WHERE rule.target_type = 'offer_external_reference'
-  AND (mapped.code IS NOT NULL OR native.code IS NOT NULL);
+  AND (
+        mapped.code IS NOT NULL
+        OR native.code IS NOT NULL
+        OR mapped_preset.id IS NOT NULL
+      );
 
 -- statement-break
 
--- 0.d Refus explicite. Une reference legacy sans equivalent V2 valide ne doit
+-- 0.e Refus explicite. Une reference legacy sans equivalent V2 valide ne doit
 --     jamais etre convertie « au mieux » : elle produirait une regle orpheline
 --     qui ne matche plus rien, donc une ressource muette.
 BEGIN NOT ATOMIC
@@ -153,9 +206,9 @@ END;
 
 -- statement-break
 
--- 0.e Codes de formules. Les presets V2 ont repris les codes de packs publics,
+-- 0.f Codes de formules. Les presets V2 ont repris les codes de packs publics,
 --     mais c'est une propriete a verifier, pas a supposer.
-INSERT IGNORE INTO download_resource_visibility_rules
+INSERT INTO download_resource_visibility_rules
     (id, resource_id, target_type, target_value, created_at, updated_at)
 SELECT
     UUID(),
@@ -167,7 +220,8 @@ SELECT
 FROM download_resource_visibility_rules AS rule
 JOIN billing_v2_offer_presets AS preset
     ON preset.code = rule.target_value
-WHERE rule.target_type = 'public_pack_code';
+WHERE rule.target_type = 'public_pack_code'
+ON DUPLICATE KEY UPDATE id = download_resource_visibility_rules.id;
 
 -- statement-break
 
@@ -195,7 +249,7 @@ END;
 
 -- statement-break
 
--- 0.f Aucune reference orpheline apres traduction. Ce controle porte sur la
+-- 0.g Aucune reference orpheline apres traduction. Ce controle porte sur la
 --     totalite de la table, pas seulement sur les lignes converties : une
 --     regle V2 saisie a la main et pointant un code inexistant est tout aussi
 --     muette.

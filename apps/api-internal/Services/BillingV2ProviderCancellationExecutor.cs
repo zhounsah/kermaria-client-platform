@@ -160,7 +160,7 @@ public sealed class BillingV2ProviderCancellationExecutor
             return await SendAsync(
                 message,
                 "BILLING_V2_STRIPE",
-                ambiguityProbe: null,
+                convergenceProbe: null,
                 cancellationToken);
         }
     }
@@ -250,14 +250,14 @@ public sealed class BillingV2ProviderCancellationExecutor
         return await SendAsync(
             message,
             "BILLING_V2_PAYPAL",
-            ambiguityProbe: () => ProbePayPalConvergenceAsync(
+            convergenceProbe: () => ProbePayPalConvergenceAsync(
                 request,
                 token,
                 cancellationToken),
             cancellationToken);
     }
 
-    /// <param name="ambiguityProbe">
+    /// <param name="convergenceProbe">
     /// Relecture de l'etat fournisseur, appelee uniquement sur un code
     /// ambigu — typiquement le <c>422</c> que PayPal renvoie quand le geste a
     /// deja ete applique. Sans elle, un rejeu apres crash laisserait un
@@ -267,7 +267,7 @@ public sealed class BillingV2ProviderCancellationExecutor
     private async Task<BillingV2ProviderCancellationResult> SendAsync(
         HttpRequestMessage message,
         string codePrefix,
-        Func<Task<BillingV2ProviderCancellationResult?>>? ambiguityProbe,
+        Func<Task<BillingV2ProviderCancellationResult?>>? convergenceProbe,
         CancellationToken cancellationToken)
     {
         HttpResponseMessage response;
@@ -297,6 +297,30 @@ public sealed class BillingV2ProviderCancellationExecutor
 
         using (response)
         {
+            var requiresConvergenceProbe =
+                convergenceProbe is not null
+                && (response.IsSuccessStatusCode
+                    || response.StatusCode == HttpStatusCode.NotFound
+                    || response.StatusCode == HttpStatusCode.Gone
+                    || response.StatusCode == HttpStatusCode.UnprocessableEntity);
+            if (requiresConvergenceProbe)
+            {
+                var probed = await convergenceProbe!();
+                if (probed is not null)
+                {
+                    return probed;
+                }
+
+                if (response.IsSuccessStatusCode)
+                {
+                    return new BillingV2ProviderCancellationResult(
+                        false,
+                        $"{codePrefix}_CONVERGENCE_NOT_CONFIRMED",
+                        $"HTTP {(int)response.StatusCode}: provider state did not confirm the requested cancellation action.",
+                        Retryable: true);
+                }
+            }
+
             if (response.IsSuccessStatusCode)
             {
                 return new BillingV2ProviderCancellationResult(
@@ -306,12 +330,9 @@ public sealed class BillingV2ProviderCancellationExecutor
                     Retryable: false);
             }
 
-            // L'objet n'existe plus chez le fournisseur : la convergence est
-            // atteinte. Cette lecture n'est legitime que parce que
-            // BillingV2ProviderRuntimeEnvironmentPolicy a deja prouve que
-            // l'appel est parti dans l'environnement ou l'abonnement vit.
-            if (response.StatusCode == HttpStatusCode.NotFound
-                || response.StatusCode == HttpStatusCode.Gone)
+            if (convergenceProbe is null
+                && (response.StatusCode == HttpStatusCode.NotFound
+                    || response.StatusCode == HttpStatusCode.Gone))
             {
                 return new BillingV2ProviderCancellationResult(
                     true,
@@ -320,19 +341,7 @@ public sealed class BillingV2ProviderCancellationExecutor
                     Retryable: false);
             }
 
-            var body = await response.Content.ReadAsStringAsync(
-                cancellationToken);
-
-            if (response.StatusCode == HttpStatusCode.UnprocessableEntity
-                && ambiguityProbe is not null)
-            {
-                var probed = await ambiguityProbe();
-                if (probed is not null)
-                {
-                    return probed;
-                }
-            }
-
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
             var retryable =
                 response.StatusCode == HttpStatusCode.TooManyRequests
                 || (int)response.StatusCode >= 500;
@@ -360,19 +369,30 @@ public sealed class BillingV2ProviderCancellationExecutor
             string token,
             CancellationToken cancellationToken)
     {
-        var status = await ReadPayPalSubscriptionStatusAsync(
+        var probe = await ReadPayPalSubscriptionStatusAsync(
             request.ProviderSubscriptionId,
             token,
             cancellationToken);
-        if (status is null)
+        if (probe is null)
         {
             return null;
         }
 
-        var normalized = status.Trim().ToUpperInvariant();
+        if (probe.IsAbsent)
+        {
+            return new BillingV2ProviderCancellationResult(
+                true,
+                "BILLING_V2_PROVIDER_SUBSCRIPTION_ALREADY_ABSENT",
+                null,
+                Retryable: false);
+        }
 
-        // Un abonnement resilie ou expire ne peut plus rien prelever : quel que
-        // soit le geste demande, la convergence est atteinte.
+        var normalized = probe.Status?.Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return null;
+        }
+
         if (normalized is "CANCELLED" or "EXPIRED")
         {
             return new BillingV2ProviderCancellationResult(
@@ -382,12 +402,8 @@ public sealed class BillingV2ProviderCancellationExecutor
                 Retryable: false);
         }
 
-        // Une suspension deja en place satisfait la suspension demandee — et
-        // elle seule. Elle ne satisfait PAS une resiliation : une suspension se
-        // leve, donc l'abonnement reste facturable.
         if (normalized is "SUSPENDED"
-            && request.Operation
-                is BillingV2CancellationOperations.SuspendPendingTermEnd)
+            && request.Operation is BillingV2CancellationOperations.SuspendPendingTermEnd)
         {
             return new BillingV2ProviderCancellationResult(
                 true,
@@ -399,7 +415,7 @@ public sealed class BillingV2ProviderCancellationExecutor
         return null;
     }
 
-    private async Task<string?> ReadPayPalSubscriptionStatusAsync(
+    private async Task<PayPalSubscriptionProbe?> ReadPayPalSubscriptionStatusAsync(
         string providerSubscriptionId,
         string token,
         CancellationToken cancellationToken)
@@ -416,25 +432,32 @@ public sealed class BillingV2ProviderCancellationExecutor
             using var response = await _httpClientFactory
                 .CreateClient(HttpClientName)
                 .SendAsync(request, cancellationToken);
+            if (response.StatusCode == HttpStatusCode.NotFound
+                || response.StatusCode == HttpStatusCode.Gone)
+            {
+                return new PayPalSubscriptionProbe(IsAbsent: true, Status: null);
+            }
+
             if (!response.IsSuccessStatusCode)
             {
                 return null;
             }
 
-            var body = await response.Content.ReadAsStringAsync(
-                cancellationToken);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
             using var document = JsonDocument.Parse(body);
-            return document.RootElement.TryGetProperty("status", out var element)
+            var status = document.RootElement.TryGetProperty("status", out var element)
                 ? element.GetString()
                 : null;
+            return new PayPalSubscriptionProbe(IsAbsent: false, status);
         }
         catch (Exception error)
-            when (error is HttpRequestException or TaskCanceledException
-                      or JsonException)
+            when (error is HttpRequestException or TaskCanceledException or JsonException)
         {
             return null;
         }
     }
+
+    private sealed record PayPalSubscriptionProbe(bool IsAbsent, string? Status);
 
     private async Task<string?> CreatePayPalAccessTokenAsync(
         CancellationToken cancellationToken)

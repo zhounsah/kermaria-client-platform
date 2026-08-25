@@ -1,5 +1,7 @@
 import "server-only";
 
+import { isStripeSecretKeyCompatible } from "./runtime-config";
+
 const API_BASE = "https://api.stripe.com/v1";
 
 export type StripeEnvironment = "disabled" | "test" | "live";
@@ -14,6 +16,11 @@ function getSecretKey(): string {
   if (!key) {
     throw new Error("STRIPE_SECRET_KEY non configur?e.");
   }
+
+  if (!isStripeSecretKeyCompatible(getStripeMode(), key)) {
+    throw new Error("STRIPE_SECRET_KEY incompatible avec STRIPE_MODE.");
+  }
+
   return key;
 }
 

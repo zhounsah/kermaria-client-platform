@@ -71,6 +71,17 @@ WHERE target_type IN ('offer_external_reference', 'public_pack_code')
 GROUP BY target_type, target_value
 ORDER BY target_type, target_value;
 
+-- Regles deja orphelines : informatif, 071 les supprime avant traduction.
+-- Sans ressource parente, elles ne peuvent ouvrir aucun droit.
+SELECT rule.resource_id,
+       COUNT(*) AS orphan_rules
+FROM download_resource_visibility_rules AS rule
+LEFT JOIN download_resources AS resource
+    ON resource.id = rule.resource_id
+WHERE resource.id IS NULL
+GROUP BY rule.resource_id
+ORDER BY orphan_rules DESC;
+
 
 -- ----------------------------------------------------------------------------
 -- 4. BLOQUANT — references legacy SANS equivalent Billing V2
@@ -97,7 +108,8 @@ ORDER BY target_type, target_value;
 SELECT rule.target_value,
        COUNT(*)                        AS rules,
        MAX(mapping.mapping_kind)       AS mapping_kind,
-       MAX(mapping.v2_service_code)    AS mapped_v2_code
+       MAX(mapping.v2_service_code)    AS mapped_v2_code,
+       MAX(mapped_preset.code)         AS mapped_v2_preset
 FROM download_resource_visibility_rules AS rule
 LEFT JOIN billing_v2_legacy_service_mappings AS mapping
     ON mapping.legacy_service_reference = rule.target_value
@@ -106,9 +118,16 @@ LEFT JOIN billing_v2_services AS mapped
     ON mapped.code = mapping.v2_service_code
 LEFT JOIN billing_v2_services AS native
     ON native.code = rule.target_value
+LEFT JOIN billing_v2_legacy_offer_mappings AS offer_mapping
+    ON offer_mapping.legacy_external_reference = rule.target_value
+   AND offer_mapping.status = 'active'
+LEFT JOIN billing_v2_offer_presets AS mapped_preset
+    ON mapped_preset.id = offer_mapping.preset_id
+   AND mapped_preset.status = 'active'
 WHERE rule.target_type = 'offer_external_reference'
   AND mapped.code IS NULL
   AND native.code IS NULL
+  AND mapped_preset.id IS NULL
 GROUP BY rule.target_value
 ORDER BY rules DESC;
 

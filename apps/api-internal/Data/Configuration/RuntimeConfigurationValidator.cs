@@ -159,25 +159,54 @@ public static class RuntimeConfigurationValidator
         var stripeMode = configuration["STRIPE_MODE"]?.Trim();
         if (string.Equals(
                 stripeMode,
+                "test",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                stripeMode,
                 "live",
                 StringComparison.OrdinalIgnoreCase))
         {
-            foreach (var variable in new[]
+            var expectedSecretPrefixes = string.Equals(
+                    stripeMode,
+                    "test",
+                    StringComparison.OrdinalIgnoreCase)
+                ? new[] { "sk_test_", "rk_test_" }
+                : new[] { "sk_live_", "rk_live_" };
+            var expectedPublishablePrefix = string.Equals(
+                    stripeMode,
+                    "test",
+                    StringComparison.OrdinalIgnoreCase)
+                ? "pk_test_"
+                : "pk_live_";
+
+            var stripeSecretKey = configuration["STRIPE_SECRET_KEY"]?.Trim();
+            if (string.IsNullOrWhiteSpace(stripeSecretKey)
+                || !expectedSecretPrefixes.Any(prefix =>
+                    stripeSecretKey.StartsWith(prefix, StringComparison.Ordinal)))
             {
-                "STRIPE_SECRET_KEY",
-                "STRIPE_PUBLISHABLE_KEY"
-            })
-            {
-                if (string.IsNullOrWhiteSpace(configuration[variable]))
-                {
-                    invalidVariables.Add(variable);
-                }
+                invalidVariables.Add("STRIPE_SECRET_KEY");
             }
 
-            ValidateSecret(
-                configuration,
-                "STRIPE_WEBHOOK_SECRET",
-                invalidVariables);
+            var stripePublishableKey =
+                configuration["STRIPE_PUBLISHABLE_KEY"]?.Trim();
+            if (string.IsNullOrWhiteSpace(stripePublishableKey)
+                || !stripePublishableKey.StartsWith(
+                    expectedPublishablePrefix,
+                    StringComparison.Ordinal))
+            {
+                invalidVariables.Add("STRIPE_PUBLISHABLE_KEY");
+            }
+
+            if (string.Equals(
+                    stripeMode,
+                    "live",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                ValidateSecret(
+                    configuration,
+                    "STRIPE_WEBHOOK_SECRET",
+                    invalidVariables);
+            }
         }
 
         foreach (var variable in DevelopmentSeedPasswordVariables)

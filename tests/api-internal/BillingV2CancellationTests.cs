@@ -1,4 +1,5 @@
 using System.Reflection;
+using Kermaria.ApiInternal.Data.Configuration;
 using Kermaria.ApiInternal.Services;
 
 namespace Kermaria.ApiInternal.SmokeTests;
@@ -62,6 +63,7 @@ public static class BillingV2CancellationTests
         // D. Environnement d'execution
         VerifyPersistedEnvironmentMustMatchTheRunningProcess();
         VerifyMatchingEnvironmentIsAllowed();
+        VerifyStripeCredentialModeMustMatchConfiguredEnvironment();
 
         // E. Idempotence de la demande
         VerifySameRequestProducesSameIdempotencyKey();
@@ -98,7 +100,7 @@ public static class BillingV2CancellationTests
         VerifyInactiveItemHidesItsMonthlyComponent();
         VerifyLegacySingleMonthlyProjectionIsRecurring();
 
-        Console.WriteLine("  - 46 scenarios de resiliation verifies.");
+        Console.WriteLine("  - 47 scenarios de resiliation verifies.");
     }
 
     // -----------------------------------------------------------------------
@@ -760,6 +762,36 @@ public static class BillingV2CancellationTests
                 "live",
                 null) is not null,
             "Un environnement d execution inconnu ne vaut pas accord.");
+    }
+
+    private static void VerifyStripeCredentialModeMustMatchConfiguredEnvironment()
+    {
+        foreach (var configuration in new[]
+        {
+            new StripeRuntimeConfiguration(StripeMode.Test, "sk_test_fake"),
+            new StripeRuntimeConfiguration(StripeMode.Test, "rk_test_fake"),
+            new StripeRuntimeConfiguration(StripeMode.Live, "sk_live_fake"),
+            new StripeRuntimeConfiguration(StripeMode.Live, "rk_live_fake")
+        })
+        {
+            Ensure(
+                configuration.IsConfigured,
+                $"Une cle correspondant au mode {configuration.ModeName} doit etre acceptee.");
+        }
+
+        foreach (var configuration in new[]
+        {
+            new StripeRuntimeConfiguration(StripeMode.Test, "sk_live_never_use"),
+            new StripeRuntimeConfiguration(StripeMode.Test, "rk_live_never_use"),
+            new StripeRuntimeConfiguration(StripeMode.Live, "sk_test_fake"),
+            new StripeRuntimeConfiguration(StripeMode.Live, "rk_test_fake"),
+            new StripeRuntimeConfiguration(StripeMode.Disabled, "sk_live_never_use")
+        })
+        {
+            Ensure(
+                !configuration.IsConfigured,
+                "Une cle Stripe d un autre environnement ne doit jamais etre executable.");
+        }
     }
 
     // -----------------------------------------------------------------------

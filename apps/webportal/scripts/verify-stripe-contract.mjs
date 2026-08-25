@@ -118,6 +118,36 @@ assert.match(
   /STRIPE_WEBHOOK_SECRET/,
   "Le garde-fou live doit exiger STRIPE_WEBHOOK_SECRET.",
 );
+assert.match(
+  stripeConfigCs,
+  /SecretKeyMatchesMode/,
+  "API-INTERNAL doit refuser une cle Stripe d un environnement different du mode configure.",
+);
+assert.match(
+  stripeConfigCs,
+  /sk_test_/,
+  "Le garde API-INTERNAL doit reconnaitre explicitement les cles Stripe TEST.",
+);
+assert.match(
+  stripeConfigCs,
+  /sk_live_/,
+  "Le garde API-INTERNAL doit reconnaitre explicitement les cles Stripe LIVE.",
+);
+assert.match(
+  runtimeConfig,
+  /isStripeSecretKeyCompatible/,
+  "Le webportal doit verifier la coherence mode / cle secrete Stripe.",
+);
+assert.match(
+  runtimeConfig,
+  /isStripePublishableKeyCompatible/,
+  "Le webportal doit verifier la coherence mode / cle publiable Stripe.",
+);
+assert.match(
+  stripeLib,
+  /STRIPE_SECRET_KEY incompatible avec STRIPE_MODE/,
+  "Aucun appel Stripe webportal ne doit partir avec une cle d un autre environnement.",
+);
 
 // --- C# contracts ---
 assert.match(

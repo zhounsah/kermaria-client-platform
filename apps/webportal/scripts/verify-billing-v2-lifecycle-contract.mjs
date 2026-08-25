@@ -550,21 +550,30 @@ check("l environnement d execution est verifie avant tout appel HTTP", () => {
   );
 });
 
-check("un 404 ne conclut la convergence qu apres ce controle", () => {
+check("PayPal ne conclut jamais sur 404 ou 2xx sans relecture", () => {
   const send = from(
     cancellationExecutorCs,
     "private async Task<BillingV2ProviderCancellationResult> SendAsync",
   );
   assert.match(
     send,
-    /HttpStatusCode\.NotFound/,
-    "Le 404 doit rester traite explicitement.",
+    /requiresConvergenceProbe/,
+    "PayPal doit exiger une relecture fournisseur apres une mutation ambigue.",
   );
   assert.match(
     send,
-    /BillingV2ProviderRuntimeEnvironmentPolicy/,
-    "La raison pour laquelle un 404 vaut convergence doit rester ecrite la ou"
-      + " la conclusion est tiree.",
+    /response\.IsSuccessStatusCode[\s\S]{0,220}HttpStatusCode\.NotFound[\s\S]{0,220}HttpStatusCode\.UnprocessableEntity/,
+    "Les 2xx, 404 et 422 PayPal doivent passer par la meme preuve de convergence.",
+  );
+  assert.match(
+    send,
+    /convergenceProbe is null[\s\S]{0,160}HttpStatusCode\.NotFound/,
+    "Le succes generique sur 404 doit rester reserve aux rails sans probe PayPal.",
+  );
+  assert.match(
+    send,
+    /CONVERGENCE_NOT_CONFIRMED/,
+    "Un 2xx PayPal sans etat convergent ne doit jamais devenir un succes.",
   );
 });
 

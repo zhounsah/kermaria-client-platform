@@ -10,11 +10,50 @@ export function isPayPalConfigured(): boolean {
   );
 }
 
+export function isStripeSecretKeyCompatible(
+  mode: string | undefined,
+  key: string | undefined,
+): boolean {
+  const normalizedMode = mode?.trim().toLowerCase();
+  const normalizedKey = key?.trim() ?? "";
+
+  if (normalizedMode === "test") {
+    return normalizedKey.startsWith("sk_test_")
+      || normalizedKey.startsWith("rk_test_");
+  }
+
+  if (normalizedMode === "live") {
+    return normalizedKey.startsWith("sk_live_")
+      || normalizedKey.startsWith("rk_live_");
+  }
+
+  return false;
+}
+
+export function isStripePublishableKeyCompatible(
+  mode: string | undefined,
+  key: string | undefined,
+): boolean {
+  const normalizedMode = mode?.trim().toLowerCase();
+  const normalizedKey = key?.trim() ?? "";
+
+  return normalizedMode === "test"
+    ? normalizedKey.startsWith("pk_test_")
+    : normalizedMode === "live"
+      ? normalizedKey.startsWith("pk_live_")
+      : false;
+}
+
 export function isStripeConfigured(): boolean {
   return (
-    process.env.STRIPE_MODE?.trim().toLowerCase() !== "disabled"
-    && !!process.env.STRIPE_SECRET_KEY?.trim()
-    && !!process.env.STRIPE_PUBLISHABLE_KEY?.trim()
+    isStripeSecretKeyCompatible(
+      process.env.STRIPE_MODE,
+      process.env.STRIPE_SECRET_KEY,
+    )
+    && isStripePublishableKeyCompatible(
+      process.env.STRIPE_MODE,
+      process.env.STRIPE_PUBLISHABLE_KEY,
+    )
   );
 }
 

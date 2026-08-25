@@ -84,6 +84,41 @@ assert.match(
   /JOIN\s+billing_v2_legacy_service_mappings/,
   "071 doit lire `billing_v2_legacy_service_mappings` avant de la supprimer.",
 );
+assert.match(
+  migration071,
+  /JOIN\s+billing_v2_legacy_offer_mappings/,
+  "071 doit traduire aussi les offres legacy qui correspondent a un preset V2.",
+);
+
+for (const [legacy, preset] of [
+  ["PACK-BUREAU-12M-COMPT", "pack-bureau-windows-distance"],
+  ["PACK-PRO-12M-COMPT", "pack-pro-association"],
+]) {
+  const offset = migration048.indexOf(`'${legacy}'`);
+  assert.ok(offset >= 0, `048 doit contenir le mapping offer ${legacy}.`);
+  const block = migration048.slice(offset, offset + 700);
+  assert.match(
+    block,
+    new RegExp(`WHERE p\.code = '${preset}'`),
+    `${legacy} doit pointer vers le preset ${preset} dans 048.`,
+  );
+}
+
+assert.match(
+  migration071,
+  /LEFT JOIN\s+download_resources[\s\S]{0,180}?WHERE resource\.id IS NULL/,
+  "071 doit nettoyer explicitement les regles dont la ressource parente n'existe plus.",
+);
+assert.doesNotMatch(
+  migration071,
+  /INSERT IGNORE INTO\s+download_resource_visibility_rules/i,
+  "071 ne doit pas masquer une erreur FK avec INSERT IGNORE pendant la traduction.",
+);
+assert.match(
+  migration071,
+  /ON DUPLICATE KEY UPDATE id = download_resource_visibility_rules\.id/,
+  "071 doit dedoublonner explicitement sans avaler les erreurs de donnees.",
+);
 
 for (const kind of ["storage_increment", "legacy_one_time_entitlement"]) {
   assert.match(
