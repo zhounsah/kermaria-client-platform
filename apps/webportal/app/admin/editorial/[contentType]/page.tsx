@@ -92,6 +92,7 @@ export default async function AdminEditorialListPage({
             {contentType === "seo_page" ? (
               <tr>
                 <th>Titre</th>
+                <th>Catégorie</th>
                 <th>État</th>
                 <th>Slug</th>
                 <th>Indexation</th>
@@ -133,6 +134,7 @@ export default async function AdminEditorialListPage({
                 {contentType === "seo_page" ? (
                   <>
                     <td>{item.title}</td>
+                    <td>{item.categoryName ?? "Sans catégorie"}</td>
                     <td>{statusLabel(item.status)}</td>
                     <td>{item.slug}</td>
                     <td>{item.noIndex ? "Noindex" : "Indexable"}</td>
@@ -172,14 +174,12 @@ export default async function AdminEditorialListPage({
         </div>
       ) : null}
 
-      {contentType !== "seo_page" ? (
-        <AdminEditorialCategoryForm
-          categories={result.data.categories.filter(
-            (category) => category.contentType === contentType,
-          )}
-          contentType={contentType}
-        />
-      ) : null}
+      <AdminEditorialCategoryForm
+        categories={result.data.categories.filter(
+          (category) => category.contentType === contentType,
+        )}
+        contentType={contentType}
+      />
     </div>
   );
 }

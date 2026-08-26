@@ -103,6 +103,10 @@ assert.match(demoClientSpace, /Escape/);
 assert.match(ressourcesPage, /contentType === "seo_page"/);
 assert.match(ressourcesPage, /!entry\.noIndex/);
 assert.match(ressourcesPage, /ressources-list-title/);
+assert.match(ressourcesPage, /Guides et conseils informatiques/);
+assert.match(ressourcesPage, /categoryName/);
+assert.match(ressourcesPage, /sortOrder/);
+assert.doesNotMatch(ressourcesPage, /back-office/i);
 
 assert.match(contactPage, /ContactForm/);
 assert.match(contactForm, /noValidate/);

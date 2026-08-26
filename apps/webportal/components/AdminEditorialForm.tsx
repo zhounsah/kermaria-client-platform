@@ -300,7 +300,6 @@ export function AdminEditorialForm({
             </select>
           </label>
 
-          {contentType !== "seo_page" ? (
             <label>
               Catégorie
               <select
@@ -317,7 +316,6 @@ export function AdminEditorialForm({
                   ))}
               </select>
             </label>
-          ) : null}
 
           {contentType === "faq" ? (
             <label>
