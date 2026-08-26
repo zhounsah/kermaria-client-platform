@@ -3,6 +3,13 @@ export type StorefrontLink = { label: string; href: string };
 export type StorefrontSection = { heading: string; bodyMarkdown: string };
 export type StorefrontFaq = { question: string; answer: string };
 export type StorefrontCta = { label: string; href: string };
+export type StorefrontCommercialMode = "FORMULA" | "QUOTE" | "HYBRID";
+export type StorefrontCommercialActions = {
+  mode: StorefrontCommercialMode;
+  primaryAction: StorefrontCta;
+  secondaryAction: StorefrontCta | null;
+  presetCode: string | null;
+};
 export type StorefrontPageContent = {
   seoTitle: string;
   seoDescription: string;
@@ -107,6 +114,48 @@ const STOREFRONT_SERVICE_BILLING_CODES: Record<StorefrontServiceSlug, readonly s
   "gestion-dns-domaines": ["DOMAIN-MANAGED", "DNS-MANAGED"],
   "messagerie-professionnelle": ["MAIL-MANAGED", "MAIL-DMARC-MANAGED", "M365-MANAGED"],
 };
+
+type StorefrontCommercialRouteDefinition = {
+  mode: Exclude<StorefrontCommercialMode, "QUOTE">;
+  presetCode: string;
+  formulaLabel: string;
+  secondaryLabel: string;
+  requiredPresetServiceCodes: readonly string[];
+};
+
+// Mapping commercial ferme et distinct du mapping technique SEO -> Billing.
+// Toute page non declaree ici reste sur devis par defaut.
+const STOREFRONT_COMMERCIAL_ROUTES: Readonly<Partial<Record<
+  StorefrontServiceSlug,
+  StorefrontCommercialRouteDefinition
+>>> = {
+  "sauvegarde-externalisee": {
+    mode: "HYBRID",
+    presetCode: "pack-dossier-securise",
+    formulaLabel: "Prot\u00e9ger mes fichiers avec une formule",
+    secondaryLabel: "Sauvegarder un serveur ou un NAS",
+    requiredPresetServiceCodes: ["BACKUP-PERSONAL"],
+  },
+  "vpn-entreprise": {
+    mode: "FORMULA",
+    presetCode: "pack-acces-distance",
+    formulaLabel: "Configurer mon acc\u00e8s \u00e0 distance",
+    secondaryLabel: "J'ai un besoin sp\u00e9cifique",
+    requiredPresetServiceCodes: ["VPN-ACCESS"],
+  },
+  "bureau-windows-distance": {
+    mode: "FORMULA",
+    presetCode: "pack-bureau-windows-distance",
+    formulaLabel: "Configurer mon bureau \u00e0 distance",
+    secondaryLabel: "Demander un conseil",
+    requiredPresetServiceCodes: ["RDS-ACCESS"],
+  },
+};
+
+const STOREFRONT_TARIFF_PRESET_BY_SERVICE_CODE: Readonly<Record<string, string>> = {
+  "VPN-ACCESS": "pack-acces-distance",
+  "RDS-ACCESS": "pack-bureau-windows-distance",
+};
 const SELF_SERVICE_LABEL_PATTERN = /\b(command(?:er|ez|e|es)?|achet(?:er|ez|e|es)?|achat|configur(?:er|ez|e|es|ation)?)\b/i;
 export function storefrontContentKeyForServiceSlug(
   slug: StorefrontServiceSlug,
@@ -139,6 +188,76 @@ export function storefrontServiceSelfServiceOrderable(
       && service.selfServiceOrderable === true,
     );
 }
+export function resolveStorefrontCommercialActions(
+  slug: StorefrontServiceSlug,
+  catalog: BillingV2PublicCatalog,
+  content: Pick<StorefrontPageContent, "ctaLabel" | "ctaHref">,
+): StorefrontCommercialActions {
+  const route = STOREFRONT_COMMERCIAL_ROUTES[slug];
+  const quoteAction = resolveStorefrontPublicCta(content, false);
+
+  if (!route) {
+    return { mode: "QUOTE", primaryAction: quoteAction, secondaryAction: null, presetCode: null };
+  }
+
+  const preset = catalog.presets.find((item) => item.code === route.presetCode) ?? null;
+  const presetContainsRequiredServices = preset !== null
+    && route.requiredPresetServiceCodes.every((serviceCode) =>
+      preset.items.some((item) => item.serviceCode === serviceCode),
+    );
+
+  if (!presetContainsRequiredServices) {
+    return { mode: "QUOTE", primaryAction: quoteAction, secondaryAction: null, presetCode: null };
+  }
+
+  return {
+    mode: route.mode,
+    primaryAction: {
+      label: route.formulaLabel,
+      href: `/formules/${encodeURIComponent(route.presetCode)}`,
+    },
+    secondaryAction: { label: route.secondaryLabel, href: quoteAction.href },
+    presetCode: route.presetCode,
+  };
+}
+
+export function resolveStorefrontServicesLandingActions(
+  catalog: BillingV2PublicCatalog,
+  content: Pick<StorefrontPageContent, "ctaLabel" | "ctaHref">,
+): StorefrontCommercialActions {
+  const quoteAction = resolveStorefrontPublicCta(content, false);
+  if (catalog.presets.length === 0) {
+    return { mode: "QUOTE", primaryAction: quoteAction, secondaryAction: null, presetCode: null };
+  }
+
+  return {
+    mode: "HYBRID",
+    primaryAction: quoteAction,
+    secondaryAction: { label: "Comparer les formules", href: "/formules" },
+    presetCode: null,
+  };
+}
+
+export function resolveStorefrontTariffAction(
+  serviceCode: string,
+  catalog: BillingV2PublicCatalog,
+): StorefrontCta {
+  const presetCode = STOREFRONT_TARIFF_PRESET_BY_SERVICE_CODE[serviceCode];
+  const preset = presetCode
+    ? catalog.presets.find((item) => item.code === presetCode) ?? null
+    : null;
+
+  if (preset?.items.some((item) => item.serviceCode === serviceCode)) {
+    return {
+      label: "Voir la formule",
+      href: `/formules/${encodeURIComponent(preset.code)}`,
+    };
+  }
+
+  return { label: "Demander un devis", href: "/contact" };
+}
+
+
 export function isStorefrontSelfServiceCta(label: string, href: string): boolean {
   const normalizedHref = href.trim().toLowerCase();
   return normalizedHref === "/formules"

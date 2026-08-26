@@ -55,6 +55,7 @@ const PUBLIC_PATHS = [
   "/decouvrir-espace-client",
   "/ressources",
   "/a-propos",
+  "/infrastructure",
   "/contact",
   "/wiki",
   "/mentions-legales",
@@ -92,6 +93,7 @@ const CANONICAL_PAGES = [
   ["/solutions", "app/solutions/page.tsx"],
   ["/formules", "app/formules/page.tsx"],
   ["/a-propos", "app/a-propos/page.tsx"],
+  ["/infrastructure", "app/infrastructure/page.tsx"],
   ["/contact", "app/contact/page.tsx"],
   ["/mentions-legales", "app/mentions-legales/page.tsx"],
   ["/politique-confidentialite", "app/politique-confidentialite/page.tsx"],
@@ -262,9 +264,10 @@ for (const [origin, pathname, expected] of [
 // 7c. Le header/footer public utilisent PUBLIC_SITE_URL pour les routes
 //     vitrine et ne codent pas l'ancien domaine comme destination publique.
 for (const pathname of [
-  "/offres",
+  "/formules",
   "/diagnostic",
   "/a-propos",
+  "/infrastructure",
   "/contact",
   "/mentions-legales",
   "/politique-confidentialite",

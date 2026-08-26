@@ -63,7 +63,7 @@ assert.match(appShell, /displayVersion \?\? appPackage\.version/);
 
 assert.match(homePage, /JsonLd data=\{localBusinessJsonLd/);
 assert.match(homePage, /JsonLd data=\{webSiteJsonLd/);
-assert.match(homePage, /href="\/offres"/);
+assert.match(homePage, /href="\/formules"/);
 assert.match(homePage, /href="\/contact"/);
 
 assert.match(publicShell, /skip-link/);
@@ -71,7 +71,8 @@ assert.match(publicShell, /aria-controls="public-header-nav"/);
 assert.match(publicShell, /aria-expanded=\{menuOpen\}/);
 assert.match(publicShell, /aria-label="Navigation principale"/);
 assert.match(publicShell, /aria-label="Liens l/);
-assert.match(publicShell, /publicHref\("\/offres"\)/);
+assert.match(publicShell, /publicHref\("\/formules"\)/);
+assert.doesNotMatch(publicShell, /Offres existantes/);
 assert.match(publicShell, /publicHref\("\/diagnostic"\)/);
 assert.match(publicShell, /publicHref\("\/ressources"\)/);
 assert.match(publicShell, /publicHref\("\/services"\)/);
@@ -110,6 +111,7 @@ assert.doesNotMatch(contactForm, /localStorage|sessionStorage|SERVICE_AUTH_TOKEN
 
 for (const [path, key] of [
   ["app/a-propos/page.tsx", "page:a-propos"],
+  ["app/infrastructure/page.tsx", "page:infrastructure"],
   ["app/mentions-legales/page.tsx", "legal:mentions-legales"],
   ["app/politique-confidentialite/page.tsx", "legal:politique-confidentialite"],
   ["app/cgv/page.tsx", "legal:cgv"],
@@ -142,6 +144,7 @@ assert.match(robots, /sitemap:/);
 assert.match(sitemap, /path:\s*"\/offres"/);
 assert.match(sitemap, /path:\s*"\/ressources"/);
 assert.match(sitemap, /path:\s*"\/services"/);
+assert.match(sitemap, /path:\s*"\/infrastructure"/);
 
 assert.match(styles, /@media \(max-width: 720px\)[\s\S]*\.public-header-nav/);
 assert.match(styles, /\.public-header-inner\s*\{[\s\S]*grid-template-columns:\s*minmax\(230px,\s*1fr\) auto minmax\(230px,\s*1fr\)/);

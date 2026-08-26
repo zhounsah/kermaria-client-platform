@@ -8,6 +8,7 @@ import { getBillingV2FormulesCatalog, getPublicManagedContent } from "@/lib/inte
 import {
   parseStorefrontPageContent,
   resolveStorefrontBreadcrumb,
+  resolveStorefrontCommercialActions,
   storefrontContentKeyForServiceSlug,
   storefrontServiceSelfServiceOrderable,
   STOREFRONT_SERVICE_SLUGS,
@@ -47,15 +48,18 @@ export default async function ServiceCategoryRoute({ params }: CategoryPageProps
   const content = result.data
     ? parseStorefrontPageContent(result.data.bodyMarkdown)
     : null;
+  const catalog = catalogResult?.data
+    ?? { source: "unavailable", currency: "EUR", presets: [], services: [], commitments: [] };
   const selfServiceOrderable = serviceSlug
-    ? storefrontServiceSelfServiceOrderable(
-      serviceSlug,
-      catalogResult?.data ?? { source: "unavailable", currency: "EUR", presets: [], services: [], commitments: [] },
-    )
+    ? storefrontServiceSelfServiceOrderable(serviceSlug, catalog)
+    : null;
+  const commercialActions = serviceSlug && content
+    ? resolveStorefrontCommercialActions(serviceSlug, catalog, content)
     : null;
   return content ? (
     <PublicStorefrontPage
       breadcrumbItems={resolveStorefrontBreadcrumb(`/services/${slug}`)!}
+      commercialActions={commercialActions}
       content={content}
       selfServiceOrderable={selfServiceOrderable}
     />

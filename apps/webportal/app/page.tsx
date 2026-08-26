@@ -179,8 +179,8 @@ export default async function HomePage() {
               j&apos;explique ce qui est installé, protégé et accessible au quotidien.
             </p>
             <div className="vitrine-hero-actions">
-              <Link className="button" href="/offres">
-                Découvrir les offres
+              <Link className="button" href="/formules">
+                Comparer les formules
               </Link>
               <Link className="button button-secondary" href="/contact">
                 Expliquer mon besoin
@@ -215,9 +215,9 @@ export default async function HomePage() {
           <p className="eyebrow">Services</p>
           <h2>Infrastructure, sauvegarde, accès à distance et accompagnement.</h2>
           <p className="vitrine-section-lead">
-            Les prestations se combinent selon votre besoin. Tarifs indicatifs
-            dans le <Link href="/offres">catalogue d&apos;offres</Link> ; exemples
-            de réalisations sur le <a href={PORTFOLIO_URL}>portfolio</a>.
+            Les prestations se combinent selon votre besoin. Comparez les
+            <Link href="/formules">formules configurables</Link>, consultez les <Link href="/tarifs">tarifs</Link>
+            ou voyez des exemples concrets sur le <a href={PORTFOLIO_URL}>portfolio</a>.
           </p>
         </header>
         <ul className="vitrine-services-grid">
@@ -259,8 +259,8 @@ export default async function HomePage() {
           <Link className="button" href="/contact">
             Expliquer mon besoin
           </Link>
-          <Link className="button button-secondary" href="/offres">
-            Découvrir les offres
+          <Link className="button button-secondary" href="/formules">
+            Comparer les formules
           </Link>
         </div>
       </section>

@@ -7,21 +7,28 @@ import {
   resolveStorefrontPublicCta,
   resolveStorefrontPublicRelatedLinks,
   type StorefrontBreadcrumbItem,
+  type StorefrontCommercialActions,
   type StorefrontPageContent,
 } from "@/lib/storefront-content";
 
 type PublicStorefrontPageProps = {
   breadcrumbItems: readonly StorefrontBreadcrumbItem[];
+  commercialActions?: StorefrontCommercialActions | null;
   content: StorefrontPageContent;
   selfServiceOrderable?: boolean | null;
 };
 
 export function PublicStorefrontPage({
   breadcrumbItems,
+  commercialActions = null,
   content,
   selfServiceOrderable = null,
 }: PublicStorefrontPageProps) {
-  const cta = resolveStorefrontPublicCta(content, selfServiceOrderable);
+  const fallbackCta = resolveStorefrontPublicCta(content, selfServiceOrderable);
+  const primaryAction = commercialActions?.primaryAction ?? fallbackCta;
+  const secondaryAction = commercialActions?.secondaryAction ?? null;
+  const hasFormulaPath = commercialActions?.mode === "FORMULA"
+    || commercialActions?.mode === "HYBRID";
   const relatedLinks = resolveStorefrontPublicRelatedLinks(
     content.relatedLinks,
     selfServiceOrderable,
@@ -39,7 +46,14 @@ export function PublicStorefrontPage({
             <h1>{content.title}</h1>
             <p>{content.lead}</p>
           </div>
-          <Link className="button" href={cta.href}>{cta.label}</Link>
+          <div className="button-row storefront-action-row">
+            <Link className="button" href={primaryAction.href}>{primaryAction.label}</Link>
+            {secondaryAction ? (
+              <Link className="button button-secondary" href={secondaryAction.href}>
+                {secondaryAction.label}
+              </Link>
+            ) : null}
+          </div>
         </section>
 
         {content.sections.map((section) => (
@@ -67,10 +81,26 @@ export function PublicStorefrontPage({
 
         <section className="service-cta">
           <div>
-            <h2>Parlons de votre besoin.</h2>
-            <p>Un devis ou un audit permet de confirmer le périmètre, les prérequis et les limites avant mise en service.</p>
+            <h2>{hasFormulaPath ? "Choisissez le parcours adapté." : "Parlons de votre besoin."}</h2>
+            <p>
+              {hasFormulaPath
+                ? "Une formule couvre le besoin standard. Pour un environnement existant ou un périmètre particulier, passez par le diagnostic ou le devis."
+                : "Un devis ou un audit permet de confirmer le périmètre, les prérequis et les limites avant mise en service."}
+            </p>
           </div>
-          <Link className="button button-secondary" href={cta.href}>{cta.label}</Link>
+          <div className="button-row storefront-action-row">
+            <Link
+              className={secondaryAction ? "button" : "button button-secondary"}
+              href={primaryAction.href}
+            >
+              {primaryAction.label}
+            </Link>
+            {secondaryAction ? (
+              <Link className="button button-secondary" href={secondaryAction.href}>
+                {secondaryAction.label}
+              </Link>
+            ) : null}
+          </div>
         </section>
       </div>
     </>

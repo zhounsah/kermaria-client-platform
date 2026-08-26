@@ -26,10 +26,14 @@ const cgvPage = await read("app/cgv/page.tsx");
 const privacyPage = await read("app/politique-confidentialite/page.tsx");
 const mentionsPage = await read("app/mentions-legales/page.tsx");
 const aProposPage = await read("app/a-propos/page.tsx");
+const infrastructurePage = await read("app/infrastructure/page.tsx");
 const packSheetPage = await read("app/offres/[slug]/page.tsx");
 const adminContentRoute = await read("app/api/admin/content/route.ts");
 const adminContentDetailRoute = await read("app/api/admin/content/[key]/route.ts");
 const {
+  resolveStorefrontCommercialActions,
+  resolveStorefrontServicesLandingActions,
+  resolveStorefrontTariffAction,
   resolveStorefrontPublicCta,
   resolveStorefrontPublicRelatedLinks,
   storefrontServiceSelfServiceOrderable,
@@ -37,6 +41,7 @@ const {
 
 assert.match(sharedTypes, /type ManagedContentKey =/);
 assert.match(sharedTypes, /type ManagedContentType =/);
+assert.match(sharedTypes, /page:infrastructure/);
 assert.match(sharedTypes, /interface ManagedContentSummary/);
 assert.match(sharedTypes, /interface ManagedContentDetail/);
 assert.match(sharedTypes, /interface ManagedContentPayload/);
@@ -82,6 +87,11 @@ assert.match(publicStorefrontPage, /Questions fréquentes/);
 assert.match(publicStorefrontPage, /ManagedMarkdown/);
 assert.match(publicStorefrontPage, /resolveStorefrontPublicCta/);
 assert.match(publicStorefrontPage, /resolveStorefrontPublicRelatedLinks/);
+assert.match(publicStorefrontPage, /StorefrontCommercialActions/);
+assert.match(publicStorefrontPage, /secondaryAction/);
+assert.match(storefrontContent, /STOREFRONT_COMMERCIAL_ROUTES/);
+assert.match(storefrontContent, /pack-acces-distance/);
+assert.match(storefrontContent, /STOREFRONT_TARIFF_PRESET_BY_SERVICE_CODE/);
 assert.match(storefrontContent, /STOREFRONT_SERVICE_SLUGS/);
 assert.match(storefrontContent, /"vpn-entreprise": \["VPN-ACCESS"\]/);
 assert.match(servicesPage, /storefront:services/);
@@ -89,6 +99,11 @@ assert.match(serviceDetailPage, /storefrontContentKeyForServiceSlug/);
 assert.match(serviceDetailPage, /getBillingV2FormulesCatalog/);
 assert.match(serviceDetailPage, /storefrontServiceSelfServiceOrderable/);
 assert.match(serviceDetailPage, /selfServiceOrderable=/);
+assert.match(serviceDetailPage, /resolveStorefrontCommercialActions/);
+assert.match(serviceDetailPage, /commercialActions=/);
+assert.match(servicesPage, /resolveStorefrontServicesLandingActions/);
+assert.match(tarifsPage, /resolveStorefrontTariffAction/);
+assert.match(tarifsPage, /serviceCode/);
 assert.match(tarifsPage, /storefront:tarifs/);
 assert.match(adminNavigation, /\/admin\/content/);
 assert.match(
@@ -108,6 +123,7 @@ assert.doesNotMatch(cgvPage, /placeholder/i);
 assert.doesNotMatch(privacyPage, /placeholder/i);
 assert.doesNotMatch(mentionsPage, /placeholder/i);
 assert.doesNotMatch(aProposPage, /placeholder/i);
+assert.doesNotMatch(infrastructurePage, /placeholder/i);
 
 assert.match(packSheetPage, /buildPackSheetContentKey/);
 assert.match(packSheetPage, /getPublicManagedContent/);
@@ -138,6 +154,19 @@ const nonSelfServiceCatalog = {
   }],
   commitments: [],
 };
+
+const commercialCatalog = {
+  source: "database",
+  currency: "EUR",
+  services: [],
+  commitments: [],
+  presets: [
+    { code: "pack-dossier-securise", items: [{ serviceCode: "BACKUP-PERSONAL" }] },
+    { code: "pack-acces-distance", items: [{ serviceCode: "VPN-ACCESS" }] },
+    { code: "pack-bureau-windows-distance", items: [{ serviceCode: "RDS-ACCESS" }] },
+  ],
+};
+
 assert.equal(
   storefrontServiceSelfServiceOrderable("maintenance-linux", nonSelfServiceCatalog),
   false,
@@ -166,6 +195,71 @@ assert.deepEqual(
   resolveStorefrontPublicCta({ ctaLabel: "Demander un devis", ctaHref: "/contact" }, false),
   { label: "Demander un devis", href: "/contact" },
   "Un CTA commercial sûr doit rester intact.",
+);
+
+
+const auditCta = { ctaLabel: "Demander un audit", ctaHref: "/diagnostic" };
+const vpnActions = resolveStorefrontCommercialActions("vpn-entreprise", commercialCatalog, auditCta);
+assert.equal(vpnActions.mode, "FORMULA");
+assert.equal(vpnActions.primaryAction.href, "/formules/pack-acces-distance");
+assert.equal(vpnActions.secondaryAction?.href, "/diagnostic");
+assert.equal(vpnActions.presetCode, "pack-acces-distance");
+
+const rdsActions = resolveStorefrontCommercialActions("bureau-windows-distance", commercialCatalog, auditCta);
+assert.equal(rdsActions.mode, "FORMULA");
+assert.equal(rdsActions.primaryAction.href, "/formules/pack-bureau-windows-distance");
+
+const backupActions = resolveStorefrontCommercialActions("sauvegarde-externalisee", commercialCatalog, auditCta);
+assert.equal(backupActions.mode, "HYBRID");
+assert.equal(backupActions.primaryAction.href, "/formules/pack-dossier-securise");
+assert.equal(backupActions.secondaryAction?.href, "/diagnostic");
+
+const quoteActions = resolveStorefrontCommercialActions("vps", commercialCatalog, auditCta);
+assert.deepEqual(quoteActions, {
+  mode: "QUOTE",
+  primaryAction: { label: "Demander un audit", href: "/diagnostic" },
+  secondaryAction: null,
+  presetCode: null,
+});
+
+const missingPresetActions = resolveStorefrontCommercialActions(
+  "vpn-entreprise",
+  { ...commercialCatalog, presets: [] },
+  auditCta,
+);
+assert.equal(missingPresetActions.mode, "QUOTE");
+assert.equal(missingPresetActions.primaryAction.href, "/diagnostic");
+
+const inconsistentPresetActions = resolveStorefrontCommercialActions(
+  "vpn-entreprise",
+  { ...commercialCatalog, presets: [{ code: "pack-acces-distance", items: [] }] },
+  auditCta,
+);
+assert.equal(inconsistentPresetActions.mode, "QUOTE");
+
+assert.deepEqual(
+  resolveStorefrontTariffAction("VPN-ACCESS", commercialCatalog),
+  { label: "Voir la formule", href: "/formules/pack-acces-distance" },
+);
+assert.deepEqual(
+  resolveStorefrontTariffAction(
+    "VPN-ACCESS",
+    { ...commercialCatalog, presets: [{ code: "pack-acces-distance", items: [] }] },
+  ),
+  { label: "Demander un devis", href: "/contact" },
+);
+assert.deepEqual(
+  resolveStorefrontTariffAction("FIREWALL-MANAGED", commercialCatalog),
+  { label: "Demander un devis", href: "/contact" },
+);
+
+const landingActions = resolveStorefrontServicesLandingActions(commercialCatalog, auditCta);
+assert.equal(landingActions.mode, "HYBRID");
+assert.equal(landingActions.primaryAction.href, "/diagnostic");
+assert.equal(landingActions.secondaryAction?.href, "/formules");
+assert.equal(
+  resolveStorefrontServicesLandingActions({ ...commercialCatalog, presets: [] }, auditCta).mode,
+  "QUOTE",
 );
 
 console.log("Vérification du contrat managed content V0.33 réussie.");

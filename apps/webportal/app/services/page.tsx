@@ -15,12 +15,17 @@ import { buildPublicMetadata } from "@/lib/public-metadata";
 import { getPortalArea } from "@/lib/public-route-config";
 import { getPortalRequestOriginFromHeaders } from "@/lib/public-routes";
 import {
+  getBillingV2FormulesCatalog,
   getPendingBillingV2Selection,
   getPublicManagedContent,
   getServices,
   resolveDataSource,
 } from "@/lib/internal-api";
-import { parseStorefrontPageContent, resolveStorefrontBreadcrumb } from "@/lib/storefront-content";
+import {
+  parseStorefrontPageContent,
+  resolveStorefrontBreadcrumb,
+  resolveStorefrontServicesLandingActions,
+} from "@/lib/storefront-content";
 
 export const dynamic = "force-dynamic";
 
@@ -43,11 +48,23 @@ export default async function ServicesPage() {
   );
 
   if (portalArea === "public" || portalArea === "local") {
-    const contentResult = await getPublicManagedContent("storefront:services");
+    const [contentResult, catalogResult] = await Promise.all([
+      getPublicManagedContent("storefront:services"),
+      getBillingV2FormulesCatalog(),
+    ]);
     const content = contentResult.data
       ? parseStorefrontPageContent(contentResult.data.bodyMarkdown)
       : null;
-    return content ? <PublicStorefrontPage breadcrumbItems={resolveStorefrontBreadcrumb("/services")!} content={content} /> : (
+    const commercialActions = content
+      ? resolveStorefrontServicesLandingActions(catalogResult.data, content)
+      : null;
+    return content ? (
+      <PublicStorefrontPage
+        breadcrumbItems={resolveStorefrontBreadcrumb("/services")!}
+        commercialActions={commercialActions}
+        content={content}
+      />
+    ) : (
       <ErrorState
         description="Le catalogue de services est temporairement indisponible."
         reference={contentResult.correlationId}

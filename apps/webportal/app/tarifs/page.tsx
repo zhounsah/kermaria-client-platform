@@ -5,7 +5,11 @@ import { ErrorState } from "@/components/ErrorState";
 import { PublicStorefrontPage } from "@/components/PublicStorefrontPage";
 import { getBillingV2FormulesCatalog, getPublicManagedContent } from "@/lib/internal-api";
 import { buildPublicMetadata } from "@/lib/public-metadata";
-import { parseStorefrontPageContent, resolveStorefrontBreadcrumb } from "@/lib/storefront-content";
+import {
+  parseStorefrontPageContent,
+  resolveStorefrontBreadcrumb,
+  resolveStorefrontTariffAction,
+} from "@/lib/storefront-content";
 
 export const dynamic = "force-dynamic";
 
@@ -38,10 +42,17 @@ function BillingPriceProjection({
   const rows = catalog.services.flatMap((service) => {
     const flat = service.flatMonthlyAmountCents === null
       ? []
-      : [{ label: service.name, amountCents: service.flatMonthlyAmountCents }];
+      : [{
+          serviceCode: service.code,
+          tierCode: null,
+          label: service.name,
+          amountCents: service.flatMonthlyAmountCents,
+        }];
     return [
       ...flat,
       ...service.tiers.map((tier) => ({
+        serviceCode: service.code,
+        tierCode: tier.code,
         label: `${service.name} — ${tier.label}`,
         amountCents: tier.monthlyAmountCents,
       })),
@@ -59,13 +70,19 @@ function BillingPriceProjection({
         <p>Montants affichés en lecture seule depuis Billing. Ils n’ouvrent pas un achat libre-service lorsque le service est traité sur devis.</p>
       </header>
       <div className="service-offer-grid">
-        {rows.map((row) => (
-          <article className="service-offer-card" key={row.label}>
-            <h3>{row.label}</h3>
-            <p className="billing-price-projection-amount">{formatCents(row.amountCents)} / mois</p>
-            <Link className="service-inline-link" href="/contact">Demander un devis</Link>
-          </article>
-        ))}
+        {rows.map((row) => {
+          const action = resolveStorefrontTariffAction(row.serviceCode, catalog);
+          return (
+            <article
+              className="service-offer-card"
+              key={`${row.serviceCode}-${row.tierCode ?? "flat"}`}
+            >
+              <h3>{row.label}</h3>
+              <p className="billing-price-projection-amount">{formatCents(row.amountCents)} / mois</p>
+              <Link className="service-inline-link" href={action.href}>{action.label}</Link>
+            </article>
+          );
+        })}
       </div>
     </section>
   );
