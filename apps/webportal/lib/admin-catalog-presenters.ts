@@ -36,12 +36,32 @@ export function currentAdminPrices(
   ].filter((price) => classifyAdminPrice(price, asOf) === "current");
 }
 
-/** Présentation uniquement : minimum des composantes mensuelles en vigueur. */
+/** Current admin price matching a cadence and trigger pair. */
+export function currentPriceForSelection(
+  prices: BillingV2AdminPrice[],
+  asOf: Date | string,
+  billingCadence: string,
+  chargeTrigger: string,
+): BillingV2AdminPrice | null {
+  return prices.find(
+    (price) => classifyAdminPrice(price, asOf) === "current"
+      && price.billingCadence === billingCadence
+      && price.chargeTrigger === chargeTrigger,
+  ) ?? null;
+}
+
+/** Presentation only: minimum of current monthly components. */
 export function startingMonthlyPriceCents(
   service: BillingV2AdminService,
   asOf: Date | string,
 ): number | null {
-  const amounts = currentAdminPrices(service, asOf)
+  const amounts = [
+    ...service.flatPrices,
+    ...service.tiers
+      .filter((tier) => tier.status === "active")
+      .flatMap((tier) => tier.prices),
+  ]
+    .filter((price) => classifyAdminPrice(price, asOf) === "current")
     .filter(
       (price) => price.billingCadence === "monthly"
         && price.chargeTrigger === "initial_subscription",

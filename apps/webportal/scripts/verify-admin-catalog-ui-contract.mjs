@@ -9,6 +9,7 @@ import {
 } from "../lib/admin-catalog-units.ts";
 import {
   classifyAdminPrice,
+  currentPriceForSelection,
   startingMonthlyPriceCents,
 } from "../lib/admin-catalog-presenters.ts";
 
@@ -56,6 +57,21 @@ const service = {
     prices: [price({ amountCents: 700 }), price({ amountCents: 500, validFrom: "2026-09-01T00:00:00.000Z" })] }],
 };
 assert.equal(startingMonthlyPriceCents(service, asOf), 700, "prix a partir de courant uniquement");
+const serviceWithInactiveCheaperTier = {
+  ...service,
+  tiers: [
+    ...service.tiers,
+    { ...service.tiers[0], id: "inactive-tier", code: "INACTIVE", status: "inactive", prices: [price({ amountCents: 100 })] },
+  ],
+};
+assert.equal(startingMonthlyPriceCents(serviceWithInactiveCheaperTier, asOf), 700, "inactive tier excluded from starting price");
+const selectionPrices = [
+  price({ id: "monthly-initial", taxRateBasisPoints: 2000 }),
+  price({ id: "monthly-change", chargeTrigger: "subscription_change", taxRateBasisPoints: 1000 }),
+  price({ id: "one-time-initial", billingCadence: "one_time", taxRateBasisPoints: 0 }),
+];
+assert.equal(currentPriceForSelection(selectionPrices, asOf, "monthly", "subscription_change")?.taxRateBasisPoints, 1000);
+assert.equal(currentPriceForSelection(selectionPrices, asOf, "one_time", "initial_subscription")?.taxRateBasisPoints, 0);
 
 async function read(path) {
   return readFile(new URL(`../${path}`, import.meta.url), "utf8");
@@ -104,10 +120,19 @@ assert.match(tiersEditor, /selected\.attributes/);
 assert.match(tiersEditor, /valueNumeric: undefined, valueText: undefined/);
 assert.match(tiersEditor, /confirmDiscardDraft/);
 const formulaEditor = await read("components/admin/catalog/FormulaCatalogEditor.tsx");
+assert.ok(formulaEditor.includes("useUnsavedChangesGuard(itemDirty)"));
+assert.ok(formulaEditor.includes("confirmDiscardItem"));
+assert.ok(formulaEditor.includes("button button-danger button-small"));
 assert.match(formulaEditor, /baselineMonthlyAmountCents/);
 assert.doesNotMatch(formulaEditor, /reduce\([^)]*amount|amountCents\s*\+/);
+const pricingEditor = await read("components/admin/catalog/ServicePricingPanel.tsx");
+assert.ok(pricingEditor.includes("useUnsavedChangesGuard(revisionDirty)"));
+assert.ok(pricingEditor.includes("currentPriceForSelection"));
+assert.ok(!pricingEditor.includes("current[0]?.taxRateBasisPoints"));
 const integrations = await read("components/admin/catalog/CatalogIntegrations.tsx");
 assert.match(integrations, /price_data/);
 assert.match(integrations, /name === "paypal"/);
+assert.ok(integrations.includes("useUnsavedChangesGuard(mappingDirty)"));
+assert.ok(integrations.includes("confirmDiscardMapping"));
 
 console.log("Contrat UI du catalogue admin verifie : conversions, fenetres, routes, tabs et autorite serveur.");
