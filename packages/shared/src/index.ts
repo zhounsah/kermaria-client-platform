@@ -678,6 +678,7 @@ export interface EditorialContentSummary {
   summary: string | null;
   categoryId: string | null;
   categoryName: string | null;
+  categorySortOrder: number | null;
   status: EditorialContentStatus;
   sortOrder: number;
   noIndex: boolean;

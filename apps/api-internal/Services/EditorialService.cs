@@ -464,6 +464,7 @@ public sealed class EditorialService : IEditorialService
                 ? null
                 : payload.CategoryId.Trim(),
             current?.CategoryName,
+            current?.CategorySortOrder,
             status,
             NormalizeOptional(payload.SeoTitle, MaxTitleLength),
             NormalizeOptional(payload.SeoDescription, 320),

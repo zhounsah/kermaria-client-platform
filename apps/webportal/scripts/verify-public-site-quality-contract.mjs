@@ -105,6 +105,8 @@ assert.match(ressourcesPage, /!entry\.noIndex/);
 assert.match(ressourcesPage, /ressources-list-title/);
 assert.match(ressourcesPage, /Guides et conseils informatiques/);
 assert.match(ressourcesPage, /categoryName/);
+assert.match(ressourcesPage, /categorySortOrder/);
+assert.match(ressourcesPage, /Number\.MAX_SAFE_INTEGER/);
 assert.match(ressourcesPage, /sortOrder/);
 assert.doesNotMatch(ressourcesPage, /back-office/i);
 

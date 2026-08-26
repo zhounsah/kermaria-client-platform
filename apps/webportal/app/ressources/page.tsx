@@ -46,23 +46,31 @@ export default async function RessourcesPage() {
     );
 
   type ResourcePage = (typeof pages)[number];
-  const groupedPages = new Map<string, ResourcePage[]>();
+  type ResourceGroup = {
+    name: string;
+    sortOrder: number;
+    items: ResourcePage[];
+  };
+  const groupedPages = new Map<string, ResourceGroup>();
 
   for (const page of pages) {
     const categoryName = page.categoryName?.trim() || UNCATEGORIZED_LABEL;
-    const categoryPages = groupedPages.get(categoryName) ?? [];
-    categoryPages.push(page);
-    groupedPages.set(categoryName, categoryPages);
+    const categoryKey = page.categoryId ?? UNCATEGORIZED_LABEL;
+    const categorySortOrder = page.categorySortOrder ?? Number.MAX_SAFE_INTEGER;
+    const group = groupedPages.get(categoryKey) ?? {
+      name: categoryName,
+      sortOrder: categorySortOrder,
+      items: [],
+    };
+    group.items.push(page);
+    groupedPages.set(categoryKey, group);
   }
 
-  const resourceGroups = Array.from(
-    groupedPages,
-    ([name, items]) => ({ name, items }),
-  ).sort((first, second) => {
-    if (first.name === UNCATEGORIZED_LABEL) return 1;
-    if (second.name === UNCATEGORIZED_LABEL) return -1;
-    return first.name.localeCompare(second.name, "fr");
-  });
+  const resourceGroups = Array.from(groupedPages.values()).sort(
+    (first, second) =>
+      first.sortOrder - second.sortOrder
+      || first.name.localeCompare(second.name, "fr"),
+  );
 
   return (
     <div className="seo-hub-page">

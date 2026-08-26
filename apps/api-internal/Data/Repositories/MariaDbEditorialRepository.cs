@@ -126,7 +126,7 @@ public sealed class MariaDbEditorialRepository : IEditorialRepository
             """
             SELECT
                 c.id, c.content_type, c.title, c.slug, c.summary,
-                c.body_markdown, c.category_id, cat.name AS category_name,
+                c.body_markdown, c.category_id, cat.name AS category_name, cat.sort_order AS category_sort_order,
                 c.status, c.seo_title, c.seo_description, c.canonical_url,
                 c.no_index, c.sort_order, c.published_at, c.created_at,
                 c.updated_at, c.created_by_user_id, c.updated_by_user_id,
@@ -145,7 +145,7 @@ public sealed class MariaDbEditorialRepository : IEditorialRepository
                 )
             GROUP BY
                 c.id, c.content_type, c.title, c.slug, c.summary,
-                c.body_markdown, c.category_id, cat.name, c.status,
+                c.body_markdown, c.category_id, cat.name, cat.sort_order, c.status,
                 c.seo_title, c.seo_description, c.canonical_url, c.no_index,
                 c.sort_order, c.published_at, c.created_at, c.updated_at,
                 c.created_by_user_id, c.updated_by_user_id
@@ -481,7 +481,7 @@ public sealed class MariaDbEditorialRepository : IEditorialRepository
         """
         SELECT
             c.id, c.content_type, c.title, c.slug, c.summary,
-            c.body_markdown, c.category_id, cat.name AS category_name,
+            c.body_markdown, c.category_id, cat.name AS category_name, cat.sort_order AS category_sort_order,
             c.status, c.seo_title, c.seo_description, c.canonical_url,
             c.no_index, c.sort_order, c.published_at, c.created_at,
             c.updated_at, c.created_by_user_id, c.updated_by_user_id,
@@ -495,7 +495,7 @@ public sealed class MariaDbEditorialRepository : IEditorialRepository
     private const string ContentGroupBySql =
         """
         c.id, c.content_type, c.title, c.slug, c.summary,
-        c.body_markdown, c.category_id, cat.name, c.status,
+        c.body_markdown, c.category_id, cat.name, cat.sort_order, c.status,
         c.seo_title, c.seo_description, c.canonical_url, c.no_index,
         c.sort_order, c.published_at, c.created_at, c.updated_at,
         c.created_by_user_id, c.updated_by_user_id
@@ -535,6 +535,7 @@ public sealed class MariaDbEditorialRepository : IEditorialRepository
             ReadString(reader, "body_markdown"),
             IsDbNull(reader, "category_id") ? null : ReadString(reader, "category_id"),
             IsDbNull(reader, "category_name") ? null : ReadString(reader, "category_name"),
+            IsDbNull(reader, "category_sort_order") ? null : ReadInt32(reader, "category_sort_order"),
             ReadString(reader, "status"),
             IsDbNull(reader, "seo_title") ? null : ReadString(reader, "seo_title"),
             IsDbNull(reader, "seo_description")
