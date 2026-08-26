@@ -703,6 +703,7 @@ assert.equal(isPublicRoute("/wiki"), true);
 assert.equal(isPublicRoute("/wiki/article/exemple"), true);
 assert.equal(isPublicRoute("/slug-editorial-inconnu"), true);
 assert.equal(isPublicRoute("/services"), true);
+assert.equal(isPublicRoute("/infrastructure"), true);
 assert.equal(resolveWikiRewritePath("/"), "/wiki");
 assert.equal(resolveWikiRewritePath("/wiki"), "/wiki");
 assert.equal(resolveWikiRewritePath("/wiki/article/exemple"), "/wiki/article/exemple");

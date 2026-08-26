@@ -621,6 +621,7 @@ export type ManagedContentKey =
   | "legal:politique-confidentialite"
   | "legal:mentions-legales"
   | "page:a-propos"
+  | "page:infrastructure"
   | StorefrontContentKey
   | `pack-sheet:${PublicPackCode}`;
 
@@ -1429,6 +1430,7 @@ export function isManagedContentKey(value: unknown): value is ManagedContentKey 
       || value === "legal:politique-confidentialite"
       || value === "legal:mentions-legales"
       || value === "page:a-propos"
+      || value === "page:infrastructure"
       || value.startsWith("storefront:")
         && STOREFRONT_CONTENT_REGISTRY.some((entry) => entry.key === value)
       || PUBLIC_PACKS.some(
@@ -1468,6 +1470,14 @@ export function getManagedContentRegistry(): readonly ManagedContentRegistryEntr
       title: "À propos de Zachary IT",
       publicPath: "/a-propos",
       sortOrder: 30,
+      packCode: null,
+    },
+    {
+      key: "page:infrastructure",
+      contentType: "page",
+      title: "Infrastructure et exploitation des services Zachary IT",
+      publicPath: "/infrastructure",
+      sortOrder: 35,
       packCode: null,
     },
     ...STOREFRONT_CONTENT_REGISTRY,

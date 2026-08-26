@@ -10,6 +10,7 @@ const internalApi = await read("lib/internal-api.ts");
 const payloads = await read("lib/bff-payloads.ts");
 const publicRouteConfig = await read("lib/public-route-config.ts");
 const managedMarkdown = await read("components/ManagedMarkdown.tsx");
+const publicManagedContentArticle = await read("components/PublicManagedContentArticle.tsx");
 const publicPackCard = await read("components/PublicPackCard.tsx");
 const comparisonTable = await read("components/PublicPackComparisonTable.tsx");
 const adminNavigation = await read("components/AdminNavigation.tsx");
@@ -119,6 +120,7 @@ assert.match(
 );
 assert.match(mentionsPage, /getPublicManagedContent\("legal:mentions-legales"\)/);
 assert.match(aProposPage, /getPublicManagedContent\("page:a-propos"\)/);
+assert.match(infrastructurePage, /getPublicManagedContent\("page:infrastructure"\)/);
 assert.doesNotMatch(cgvPage, /placeholder/i);
 assert.doesNotMatch(privacyPage, /placeholder/i);
 assert.doesNotMatch(mentionsPage, /placeholder/i);
@@ -136,6 +138,11 @@ assert.match(comparisonTable, /Voir la fiche technique/);
 assert.match(managedMarkdown, /ReactMarkdown/);
 assert.doesNotMatch(managedMarkdown, /dangerouslySetInnerHTML/);
 assert.doesNotMatch(managedMarkdown, /rehypeRaw|rehype-raw/);
+assert.match(
+  publicManagedContentArticle,
+  /source === "api-internal-persistent" \? null/,
+  "Les pages CMS publiques ne doivent pas afficher le bandeau technique lorsque la source persistante fonctionne.",
+);
 
 const nonSelfServiceCatalog = {
   source: "database",

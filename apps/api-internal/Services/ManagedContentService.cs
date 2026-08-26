@@ -97,6 +97,13 @@ public sealed partial class ManagedContentService : IManagedContentService
             "/a-propos",
             30,
             SeedFileName: "a-propos.md"),
+        new(
+            "page:infrastructure",
+            "page",
+            "Infrastructure et exploitation des services Zachary IT",
+            "/infrastructure",
+            35,
+            SeedFileName: "infrastructure.md"),
         new("storefront:services", "storefront_page", "Pages principales — Catalogue des services", "/services", 40),
         new("storefront:tarifs", "storefront_page", "Pages principales — Tarifs Zachary IT", "/tarifs", 45),
         new("storefront:cloud-hebergement", "storefront_page", "Catégories services — Cloud & Hébergement", "/services/cloud-hebergement", 50),

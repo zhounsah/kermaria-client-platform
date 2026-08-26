@@ -472,6 +472,28 @@ function createMockManagedContentDetail(
         ].join("\n"),
         ...baseTimestamps,
       };
+    case "page:infrastructure":
+      return {
+        ...entry,
+        versionLabel: null,
+        bodyMarkdown: [
+          "Zachary IT combine selon les besoins des briques exploitées directement et des fournisseurs spécialisés, avec des responsabilités identifiées.",
+          "",
+          "## Principes d’exploitation",
+          "",
+          "L’architecture retenue dépend du service, des données, des contraintes de disponibilité et du niveau d’administration attendu.",
+          "",
+          "## Sauvegarde, supervision et disponibilité",
+          "",
+          "Une sauvegarde ne remplace pas une architecture haute disponibilité, et une alerte de supervision ne constitue pas à elle seule une garantie d’intervention immédiate.",
+          "",
+          "## Transparence",
+          "",
+          "Les fournisseurs importants, les dépendances techniques et les limites du service doivent pouvoir être identifiés clairement.",
+        ].join("\n"),
+        ...baseTimestamps,
+      };
+
     default:
       return {
         ...entry,

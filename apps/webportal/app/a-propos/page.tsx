@@ -6,9 +6,9 @@ import { getPublicManagedContent } from "@/lib/internal-api";
 import { buildPublicMetadata } from "@/lib/public-metadata";
 
 export const metadata: Metadata = buildPublicMetadata({
-  title: "À propos",
+  title: "À propos de Zachary IT",
   description:
-    "Présentation de Zachary IT et de ses domaines d'intervention autour de la sauvegarde, du stockage et de l'accès distant.",
+    "Découvrez Zachary IT, entreprise de services informatiques à Guichen : approche, accompagnement, transparence et personne derrière l’entreprise.",
   path: "/a-propos",
 });
 

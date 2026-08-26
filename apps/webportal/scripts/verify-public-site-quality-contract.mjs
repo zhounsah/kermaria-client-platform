@@ -76,6 +76,7 @@ assert.doesNotMatch(publicShell, /Offres existantes/);
 assert.match(publicShell, /publicHref\("\/diagnostic"\)/);
 assert.match(publicShell, /publicHref\("\/ressources"\)/);
 assert.match(publicShell, /publicHref\("\/services"\)/);
+assert.match(publicShell, /publicHref\("\/infrastructure"\)/);
 
 assert.match(offresPage, /PublicPackOverviewGrid/);
 assert.match(offresPage, /PublicPackComparisonTable/);

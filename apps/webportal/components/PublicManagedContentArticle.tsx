@@ -38,7 +38,9 @@ export function PublicManagedContentArticle({
         <ManagedMarkdown markdown={content.bodyMarkdown} />
       </article>
 
-      <MockNotice correlationId={correlationId} source={source} />
+      {source === "api-internal-persistent" ? null : (
+        <MockNotice correlationId={correlationId} source={source} />
+      )}
     </>
   );
 }
