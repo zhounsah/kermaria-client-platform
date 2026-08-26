@@ -24,70 +24,33 @@ Topologie canonique depuis le 20 aout 2026 :
 
 Voir docs/DOMAIN_MIGRATION_2026-08-20.md pour les redirections legacy, les webhooks et les regles de migration.
 
-## Documentation 1.0.0
+## Documentation courante
 
-Le point d'entree documentaire courant est
-[`docs/V1.0.0_DOCUMENTATION.md`](docs/V1.0.0_DOCUMENTATION.md).
+La reference d'etat courant est [`docs/CURRENT_STATE.md`](docs/CURRENT_STATE.md).
 
-Pour une prise en main rapide :
+Ordre de lecture recommande :
 
-1. [`docs/V1.0.0_DOCUMENTATION.md`](docs/V1.0.0_DOCUMENTATION.md)
+1. [`docs/CURRENT_STATE.md`](docs/CURRENT_STATE.md)
 2. [`docs/IMPLEMENTATION_MAP_CURRENT.md`](docs/IMPLEMENTATION_MAP_CURRENT.md)
-3. [`docs/V1.0.0_FUNCTIONAL_REFERENCE.md`](docs/V1.0.0_FUNCTIONAL_REFERENCE.md)
-4. [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
-5. [`docs/OPERATIONS.md`](docs/OPERATIONS.md)
+3. [`docs/BILLING_V2_ONLY.md`](docs/BILLING_V2_ONLY.md)
+4. [`docs/OPERATIONS.md`](docs/OPERATIONS.md)
+5. [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)
+6. [`docs/GUIDE_ADMIN.md`](docs/GUIDE_ADMIN.md)
+7. [`docs/releases/V2.0.0.2.md`](docs/releases/V2.0.0.2.md)
+
+Production courante : `v2.0.0.2`, commit `e227f8e98640dfac939534bd7c9b3d05d78efb57`.
+Billing V2 / V2.1 est l'autorite commerciale unique. Les documents V0.x/V1.x restent des archives d'implementation.
 
 Navigation par besoin :
 
-- vue d'ensemble : [`docs/V1.0.0_DOCUMENTATION.md`](docs/V1.0.0_DOCUMENTATION.md)
-- architecture et frontieres : [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
-- parcours fonctionnels : [`docs/V1.0.0_FUNCTIONAL_REFERENCE.md`](docs/V1.0.0_FUNCTIONAL_REFERENCE.md)
-- exploitation, validation, rollback : [`docs/OPERATIONS.md`](docs/OPERATIONS.md)
-- deploiement et variables : [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)
+- etat production et architecture actuelle : [`docs/CURRENT_STATE.md`](docs/CURRENT_STATE.md)
+- implementation actuelle : [`docs/IMPLEMENTATION_MAP_CURRENT.md`](docs/IMPLEMENTATION_MAP_CURRENT.md)
+- autorite commerciale Billing V2 : [`docs/BILLING_V2_ONLY.md`](docs/BILLING_V2_ONLY.md)
+- release v2.0.0.2 : [`docs/releases/V2.0.0.2.md`](docs/releases/V2.0.0.2.md)
+- exploitation et rollback : [`docs/OPERATIONS.md`](docs/OPERATIONS.md)
+- deploiement : [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)
 - securite : [`docs/SECURITY.md`](docs/SECURITY.md)
-- historique des versions : [`docs/ROADMAP.md`](docs/ROADMAP.md)
-- comptes de demonstration et d'essai (V1.1) :
-  [`docs/v1.1/V1.1_CUSTOM_DEMO_ACCOUNTS.md`](docs/v1.1/V1.1_CUSTOM_DEMO_ACCOUNTS.md)
-- portail public des solutions client `/solutions`, administrable depuis le
-  back-office (V1.1) :
-  [`docs/v1.1/V1.1_PORTAIL_SOLUTIONS.md`](docs/v1.1/V1.1_PORTAIL_SOLUTIONS.md)
-- referencement de la vitrine — canonical, balisage schema.org, image Open
-  Graph et routes hors index (v1.1.12) :
-  [`docs/v1.1/V1.1.12_SEO_BALISAGE.md`](docs/v1.1/V1.1.12_SEO_BALISAGE.md)
-- identite de marque comprise par les moteurs — `Zachary IT` comme nom
-  commercial, `Zachary HOUNSA-HOUNKPA EI` comme identite juridique
-  (v1.3.3.8) :
-  [`docs/v1.3/V1.3.3.8_IDENTITE_MARQUE.md`](docs/v1.3/V1.3.3.8_IDENTITE_MARQUE.md)
-- facturation Billing V2 — coeur financier, rail Stripe et configurateur
-  public `/formules`, **deploye mais dormant** derriere ses drapeaux
-  (v1.4.0.0) :
-  [`docs/v1.4/V1.4.0.0_BILLING_V2.md`](docs/v1.4/V1.4.0.0_BILLING_V2.md),
-  reference technique dans [`docs/billing-v2/`](docs/billing-v2/README.md) et
-  checklist de mise en service dans
-  [`docs/billing-v2/LANCEMENT-CONTROLE.md`](docs/billing-v2/LANCEMENT-CONTROLE.md)
-- diagnostic public migre sur Billing V2 (v1.4.0.1) : recommandations en `BillingV2PublicSelection`, devis serveur via `/api/formules/devis` et sortie vers `/formules/{preset}` :
-  [`docs/v1.4/V1.4.0.1_PUBLIC_DIAGNOSTIC.md`](docs/v1.4/V1.4.0.1_PUBLIC_DIAGNOSTIC.md)
-- identite visuelle Zachary IT 2026 - assets officiels, tokens, favicons et
-  surfaces WEBPORTAL :
-  [`docs/v1.4/V1.4.0.2_IDENTITE_ZACHARY_IT_2026.md`](docs/v1.4/V1.4.0.2_IDENTITE_ZACHARY_IT_2026.md)
-- deploiement des serveurs applicatifs :
-  [`docs/v1.1/deploy/SRV-12_LOT3_DEPLOY.md`](docs/v1.1/deploy/SRV-12_LOT3_DEPLOY.md)
-  (webportal, **Ubuntu/systemd**) et
-  [`docs/v1.1/deploy/SRV-13_LOT3_DEPLOY.md`](docs/v1.1/deploy/SRV-13_LOT3_DEPLOY.md)
-  (api-internal, Windows)
-- synchronisation KoXo : [`docs/koxo-sync.md`](docs/koxo-sync.md) — **KoXo est
-  maitre de l'annuaire depuis la V0.41** : il cree les identites et porte les
-  mots de passe, l'API adopte les comptes par `employeeNumber` et n'ecrit plus
-  par LDAP. Deux profils separes, `CLIENTS` et `CLIENTS DÉMO`
-- pieges d'exploitation verifies en production : section « Exploitation » de
-  [`AGENTS.md`](AGENTS.md)
-
-Repere de version important :
-
-- le tag Git `v1.0.0` existe ;
-- certains manifests techniques restent en `0.1.0` ;
-- la reference de verite est donc le tag Git et l'etat reel du depot, pas les
-  seuls champs `version` des packages.
+- historique : [`docs/ROADMAP.md`](docs/ROADMAP.md)
 
 ## Autorite commerciale : Billing V2 / V2.1 uniquement
 

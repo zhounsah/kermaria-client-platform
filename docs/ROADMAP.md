@@ -1,5 +1,13 @@
 # Feuille de route
 
+> CURRENT CHECKPOINT - 2026-08-26
+>
+> Production is running `v2.0.0.2` on SRV-11/SRV-12/SRV-13 with MariaDB on SRV-06. Billing V2 is authoritative and the legacy commercial model is removed. The R740xd-era deployment described as future work below has already happened.
+>
+> Use [`CURRENT_STATE.md`](CURRENT_STATE.md) and [`IMPLEMENTATION_MAP_CURRENT.md`](IMPLEMENTATION_MAP_CURRENT.md) for current truth. The long V0.x/V1.0 roadmap below is retained as project history and must not be interpreted as the active delivery plan.
+>
+> Open non-blocking maintenance items after v2.0.0.2: deliberate Browser Back/Forward draft handling for admin forms, PayPal product decision/configuration, and gradual archival/cleanup of old documentation.
+
 > Historical domain note - 2026-08-20: zacharyhounsa.ovh names in this document describe the state of that release. Current canonical hosts are zachary-it.fr, dashboard.zachary-it.fr and administration.zachary-it.fr. See docs/DOMAIN_MIGRATION_2026-08-20.md.
 
 > Lecture 1.0.0 : cette feuille de route sert a comprendre l'historique et les

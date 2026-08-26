@@ -1,4 +1,6 @@
-# Guide administrateur - portail interne
+#
+> Current catalog UI - 2026-08-26: `v2.0.0.2` is deployed. See [`CURRENT_STATE.md`](CURRENT_STATE.md) for production truth.
+ Guide administrateur - portail interne
 
 Guides courts d'exploitation admin livres en V0.24. Toutes les sections
 sont accessibles depuis le menu **Administration** du portail interne

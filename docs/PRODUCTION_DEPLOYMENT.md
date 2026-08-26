@@ -1,5 +1,7 @@
 # Procedure de mise en production
 
+> CURRENT STATUS - 2026-08-26: the production cutover described as future work in the original V0.24 text below has already been executed. Current topology is SRV-11 edge/TLS, SRV-12 WEBPORTAL, SRV-13 API-INTERNAL, SRV-06 MariaDB. Current release is `v2.0.0.2`. Use [`CURRENT_STATE.md`](CURRENT_STATE.md), [`DEPLOYMENT.md`](DEPLOYMENT.md) and [`OPERATIONS.md`](OPERATIONS.md) for current operations. The remaining V0.24 narrative is historical planning material.
+
 > Current production note - 2026-08-20: edge/TLS is SRV-11, webportal is SRV-12 and API-INTERNAL is SRV-13. Canonical hosts are zachary-it.fr, dashboard.zachary-it.fr and administration.zachary-it.fr. Older IIS/SRV-01 procedures below are historical or staging-only. See docs/DOMAIN_MIGRATION_2026-08-20.md.
 
 Livrable V0.24 Brique 3. Cette procedure decrit la bascule de la

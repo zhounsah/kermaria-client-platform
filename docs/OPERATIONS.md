@@ -1,9 +1,6 @@
-# Exploitation V0.21
+# Exploitation - current
 
-> Navigation 1.0.0 : ce document reste le runbook principal pour lancer,
-> verifier, superviser et rollbacker la plateforme. Revenir a
-> [`V1.0.0_DOCUMENTATION.md`](V1.0.0_DOCUMENTATION.md) pour la vue
-> d'ensemble et les autres points d'entree.
+> Current navigation - 2026-08-26: [`CURRENT_STATE.md`](CURRENT_STATE.md) is the production truth. This file remains the operational runbook for validation, supervision and rollback. Current deployed release: `v2.0.0.2`.
 
 ## Objectif
 

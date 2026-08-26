@@ -1,13 +1,10 @@
 # Autorité commerciale unique — Billing V2 / V2.1
 
-Statut : **refactor appliqué dans le dépôt, non déployé**. Ce document décrit
-l'état du code après la suppression du modèle commercial historique. Il
-remplace, pour tout ce qui touche au catalogue et à la tarification, les
-documents [`V0.15_COMMERCIAL_FOUNDATION.md`](V0.15_COMMERCIAL_FOUNDATION.md),
-[`V0.35_CART_ALACARTE.md`](V0.35_CART_ALACARTE.md),
-[`V0.36_PANIER_UNIFIE_ABONNEMENTS_FACTURES.md`](V0.36_PANIER_UNIFIE_ABONNEMENTS_FACTURES.md)
-et [`DIAGNOSTIC_CONFIGURATEUR.md`](DIAGNOSTIC_CONFIGURATEUR.md), qui deviennent
-de l'historique.
+Statut : **deployed in production**.
+
+The Billing V2-only cutover was completed with migrations 070/071 in `v2.0.0.0` on 2026-08-25. The redesigned admin catalog is deployed in `v2.0.0.2` on 2026-08-26. This document is the commercial-authority reference; legacy cart/configurator/offer documents are historical.
+
+See also [`CURRENT_STATE.md`](CURRENT_STATE.md) and [`releases/V2.0.0.2.md`](releases/V2.0.0.2.md).
 
 Le socle Billing V2 lui-même reste décrit par
 [`v1.4/V1.4.0.0_BILLING_V2.md`](v1.4/V1.4.0.0_BILLING_V2.md) : invariants

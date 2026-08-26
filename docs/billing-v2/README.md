@@ -1,5 +1,9 @@
 # Billing V2 — Zachary IT
 
+> Current status - 2026-08-26: Billing V2 / V2.1 is the sole commercial authority in production. Migrations 070/071 removed the legacy commercial model in v2.0.0.0. The admin catalog redesign is deployed in v2.0.0.2. Read `../CURRENT_STATE.md` and `../BILLING_V2_ONLY.md` before using the implementation diary below.
+>
+> Sections describing dormant flags, shadow adapters, legacy mappings or legacy checkout are historical implementation notes unless the current code/docs explicitly say otherwise.
+
 ## V2.1
 
 V2.1 introduit le droit contractuel unique avec composantes tarifaires, le

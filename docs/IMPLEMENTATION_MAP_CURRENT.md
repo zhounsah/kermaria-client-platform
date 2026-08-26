@@ -1,281 +1,123 @@
 # Implementation Map - Current State
-
-Purpose: give a fast handoff for a human or another AI agent.
-
-Read this file first, then open the versioned documents listed below.
-
-## 1.0.0 navigation
-
-Current documentation entrypoint:
-
-- [`V1.0.0_DOCUMENTATION.md`](V1.0.0_DOCUMENTATION.md)
-
-Functional overview:
-
-- [`V1.0.0_FUNCTIONAL_REFERENCE.md`](V1.0.0_FUNCTIONAL_REFERENCE.md)
-
-Operational truth:
-
-- [`OPERATIONS.md`](OPERATIONS.md)
-- [`DEPLOYMENT.md`](DEPLOYMENT.md)
-
-Important:
-
-- treat the Git tag `v1.0.0` plus the current repo state as the main version
-  truth;
-- do not infer the platform version only from `package.json` fields;
-- keep the hard boundary `browser -> WEBPORTAL / BFF -> API-INTERNAL ->
-  MariaDB`.
-
-## What exists today
-
-The current repo state is built in layers:
-
-1. `V0.22_SUBSCRIPTIONS.md`
-   Monthly subscriptions via PayPal Subscriptions.
-2. `V0.29_STRIPE_PAYMENTS.md`
-   Stripe payment rail for commercial documents.
-3. `V0.32_PUBLIC_PACKS.md`
-   Public packs, public catalog editor, pack snapshots at signup, and pack to
-   technical-service mapping.
-4. `V0.33_CONTENUS_ADMINISTRABLES.md`
-   Managed content for legal pages, about page, and public pack technical
-   sheets.
-5. `V0.35_CART_ALACARTE.md`
-   Historical base for one-time cart checkout.
-6. `V0.35.1_TIMEZONE_UTC_FIX.md`
-   UTC hardening.
-7. `V0.36_PANIER_UNIFIE_ABONNEMENTS_FACTURES.md`
-   Current unified checkout state: one-time cart + billed recurring checkout,
-   initial invoice, billing rail renewals, deferred cancellation.
-8. `V0.37_CENTRE_TELECHARGEMENTS_CLIENT.md`
-   Secure client download center: dedicated client page, admin CRUD,
-   private binary storage, entitlement-based visibility.
-9. `koxo-sync.md`
-   Private KoXo synchronization chain: validated JSON export, admin checks,
-   PowerShell CSV generation, SRV-21 execution, and guarded KoXo launch.
-
-Identity alignment and KoXo export are now partially implemented:
-
-- `docs/v0.38/V0.38_SITE_AD_ALIGNMENT.md`
-- `docs/v0.38/V0.38_KOXO_SIGNUP_INTEGRATION.md`
-- `docs/koxo-sync.md`
-- target domain: `clients.home.bzh`
-- important: signup remains mono-user, but civilite and birth date are now
-  enforced for KoXo export, `koxo_unique_identifier` is persisted on
-  `portal_users`, and the KoXo chain is executed from SRV-21 through CSV/XML
-
-## Functional picture
-
-Public website:
-
-- `/`: public landing page focused on positioning, reassurance, and entry
-  paths.
-- `/offres`: public comparison page for the 4 packs.
-- `/offres/[slug]`: public technical sheet per pack.
-- `/contact`: optional pack-aware contact capture.
-- `/signup`: optional pack preselection snapshot at request time, with
-  explicit activation steps.
-
-Authenticated client space:
-
-- `/services`: current services + `Finaliser mon pack` block when signup
-  approval carried a pack snapshot.
-- `/downloads`: secure download center grouped by category.
-- `/souscrire`: one-time offers, recurring packs, quote-only services.
-- `/panier`: unified summary page.
-- `/commercial-documents/[id]`: payment page for issued invoices.
-- `/profile/subscriptions`: customer subscription history and cancellation.
-
-Back-office:
-
-- `/admin/catalog`: billable offers, prices, cadence, PSP ids.
-- `/admin/public-pack-catalog`: public pack presentation editor.
-- `/admin/content/[key]`: legal pages, about page, pack technical sheets.
-- `/admin/downloads`: download list, detail, binary upload, visibility rules.
-- `/admin/downloads/categories`: download categories.
-- `/admin/subscriptions`: subscription list, detail, cancellation,
-  provisioning visibility.
-
-## Source of truth by concern
-
-Public pack presentation:
-
-- DB table `public_pack_catalog_content`
-- edited from `/admin/public-pack-catalog`
-
-Managed editorial content:
-
-- DB table `managed_content_entries`
-- edited from `/admin/content/[key]`
-
-Secure download center:
-
-- DB tables `download_categories`, `download_resources`,
-  `download_resource_visibility_rules`
-- binary payloads stored under private `DOWNLOAD_STORAGE_ROOT`
-- access resolved by `apps/api-internal/Services/DownloadService.cs`
-- edited from `/admin/downloads` and `/admin/downloads/categories`
-
-Billable pack variants:
-
-- DB tables `billing_v2_offer_presets` / `billing_v2_preset_items`
-- priced by `BillingV2PricingEngine`, never stored as a total
-- referenced by preset `code` (the pack code itself)
-
-Technical pack structure and provisioning intent:
-
-- `packages/shared/src/index.ts`
-- `PUBLIC_PACKS`
-- `technicalServiceReferences`
-- `provisioningGroupSamAccountNames`
-
-Recurring checkout persistence:
-
-- DB table `recurring_checkout_items`
-- DB table `commercial_document_line_subscriptions`
-
-Subscription lifecycle:
-
-- DB table `subscriptions`
-- handled by `SubscriptionService`
-- renewed by `BillingSubscriptionRenewalWorker`
-
-Identity and AD baseline:
-
-- current signup persistence: `signup_pending`
-- current customer auth identity: `customers` + `portal_users`
-- current AD link persistence: `customer_ad_links`
-- current KoXo run persistence: `koxo_export_runs`
-- current KoXo unique user identifier: `portal_users.koxo_unique_identifier`
-- current configurable AD root: `AD_DOMAIN`, `AD_CLIENTS_OU_DN`,
-  `AD_REQUIRED_OU_ROOT`, `AD_ALLOWED_ROOTS`
-- future alignment target documented in `docs/v0.38/V0.38_SITE_AD_ALIGNMENT.md`
-
-## Files to open first
-
-Shared model and pack manifest:
-
-- `packages/shared/src/index.ts`
-
-Public pack helpers:
-
-- `apps/webportal/lib/public-packs.ts`
-
-Public pack UI:
-
-- `apps/webportal/app/page.tsx`
-- `apps/webportal/app/offres/page.tsx`
-- `apps/webportal/components/PublicPackComparisonTable.tsx`
-- `apps/webportal/components/PublicPackCard.tsx`
-- `apps/webportal/components/PublicPackOverviewGrid.tsx`
-- `apps/webportal/components/PublicPackSelectionSummary.tsx`
-- `apps/webportal/app/contact/page.tsx`
-- `apps/webportal/app/signup/page.tsx`
-- `apps/webportal/app/admin/public-pack-catalog/page.tsx`
-- `apps/webportal/components/AdminPublicPackCatalogForm.tsx`
-
-Recurring checkout:
-
-- `apps/api-internal/Services/RecurringCheckoutService.cs`
-- `apps/api-internal/Services/BillingSubscriptionRenewalWorker.cs`
-- `apps/api-internal/Services/Provisioning/BilledSubscriptionPaymentTrigger.cs`
-- `apps/api-internal/Services/BilledRecurringCheckoutSchemaEnsurer.cs`
-- `apps/webportal/app/panier/page.tsx`
-- `apps/webportal/app/souscrire/page.tsx`
-
-Secure downloads:
-
-- `apps/api-internal/Services/DownloadService.cs`
-- `apps/api-internal/Services/DownloadStorageService.cs`
-- `apps/api-internal/Data/Repositories/MariaDbDownloadRepository.cs`
-- `apps/webportal/app/downloads/page.tsx`
-- `apps/webportal/components/AdminDownloadForm.tsx`
-- `apps/webportal/components/AdminDownloadCategoriesManager.tsx`
-
-Commercial document materialization:
-
-- `apps/api-internal/Data/Repositories/MariaDbCommercialRepository.cs`
-
-Subscription persistence:
-
-- `apps/api-internal/Data/Repositories/MariaDbSubscriptionRepository.cs`
-- `apps/api-internal/Services/SubscriptionService.cs`
-
-Identity, signup, and AD alignment:
-
-- `apps/api-internal/Services/SignupService.cs`
-- `apps/api-internal/Data/Repositories/MariaDbSignupRepository.cs`
-- `apps/api-internal/Services/KoxoExportService.cs`
-- `apps/api-internal/Data/Repositories/MariaDbKoxoRepository.cs`
-- `apps/webportal/app/api/internal/koxo/users/route.ts`
-- `apps/webportal/app/admin/koxo/page.tsx`
-- `scripts/koxo/Sync-KoXoClients.ps1`
-- `scripts/koxo/KoxoSync.Common.psm1`
-- `apps/api-internal/Data/Configuration/AdRuntimeConfiguration.cs`
-- `apps/api-internal/Services/ActiveDirectory/LdapActiveDirectoryService.cs`
-- `apps/api-internal/Migrations/MariaDb/007_customer_ad_links.sql`
-- `apps/api-internal/Migrations/MariaDb/020_signup_pending.sql`
-- `apps/api-internal/Migrations/MariaDb/035_v040_koxo_sync.sql`
-
-## Important implementation decisions
-
-- No dedicated `packs` SQL table was introduced. Public packs are a
-  presentation layer over `billing_v2_offer_presets`; the preset `code`
-  is the pack code.
-- Public texts are back-office editable, but technical mapping stays in code.
-- Pack variants are identified by their preset `code`, not by UI labels.
-- The recurring checkout creates local subscriptions first, then one issued
-  invoice, then waits for invoice payment before activation.
-- Renewals for the `billing` rail are driven locally by a background worker,
-  not by a PSP subscription plan.
-- Cancellation can become `pending_cancellation` and is finalized at term end.
-- Downloads do not reuse `managed_content_entries`: metadata lives in dedicated
-  SQL tables and binaries never enter `apps/webportal/public`.
-- The client JSON for downloads never exposes physical storage paths or raw
-  external URLs; every button goes through `/api/downloads/{id}/file`.
-- Download visibility is computed from existing active entitlements only,
-  projected from Billing V2: preset codes, service codes, active service types
-  and provisioned groups. A `targeted` resource with no rule stays invisible -
-  the default failure is closure, never a leak.
-
-## Practical reading order for a takeover
-
-If you want to understand the public offer model:
-
-1. `docs/V0.32_PUBLIC_PACKS.md`
-2. `packages/shared/src/index.ts`
-3. `apps/webportal/lib/public-packs.ts`
-4. `apps/webportal/app/admin/public-pack-catalog/page.tsx`
-
-If you want to understand the current checkout and subscription behavior:
-
-1. `docs/V0.36_PANIER_UNIFIE_ABONNEMENTS_FACTURES.md`
-2. `apps/webportal/app/souscrire/page.tsx`
-3. `apps/webportal/app/panier/page.tsx`
-4. `apps/api-internal/Services/RecurringCheckoutService.cs`
-5. `apps/api-internal/Services/Provisioning/BilledSubscriptionPaymentTrigger.cs`
-6. `apps/api-internal/Services/BillingSubscriptionRenewalWorker.cs`
-
-If you want to understand the secure download center:
-
-1. `docs/V0.37_CENTRE_TELECHARGEMENTS_CLIENT.md`
-2. `apps/api-internal/Services/DownloadService.cs`
-3. `apps/api-internal/Data/Repositories/MariaDbDownloadRepository.cs`
-4. `apps/webportal/app/downloads/page.tsx`
-5. `apps/webportal/components/AdminDownloadForm.tsx`
-
-If you want to debug provisioning:
-
-1. `docs/V0.32_PUBLIC_PACKS.md`
-2. `apps/api-internal/Data/Configuration/SubscriptionProvisioningRuntimeConfiguration.cs`
-3. `apps/api-internal/Services/Provisioning/*`
-
-If you want to work on identity alignment toward `clients.home.bzh`:
-
-1. `docs/v0.38/V0.38_SITE_AD_ALIGNMENT.md`
-2. `docs/v0.38/V0.38_KOXO_SIGNUP_INTEGRATION.md`
-3. `apps/api-internal/Services/SignupService.cs`
-4. `apps/api-internal/Data/Repositories/MariaDbSignupRepository.cs`
-5. `apps/api-internal/Migrations/MariaDb/007_customer_ad_links.sql`
-6. `apps/api-internal/Data/Configuration/AdRuntimeConfiguration.cs`
+Last verified: 2026-08-26
+Production release: `v2.0.0.2` (`e227f8e98640dfac939534bd7c9b3d05d78efb57`)
+Purpose: fast handoff for a human or another AI agent. Read `CURRENT_STATE.md` first for production truth.
+## Architecture boundary
+```text
+browser -> WEBPORTAL / BFF -> API-INTERNAL -> MariaDB
+```
+- WEBPORTAL: Next.js on SRV-12.
+- API-INTERNAL: .NET on SRV-13.
+- MariaDB production: SRV-06.
+- Edge/TLS: SRV-11.
+- Active Directory and provisioning are reached from API-INTERNAL only.
+## Canonical production hosts
+- `zachary-it.fr` - public site
+- `dashboard.zachary-it.fr` - authenticated client portal
+- `administration.zachary-it.fr` - administration portal
+## Commercial model
+Billing V2 / V2.1 is the sole commercial authority.
+The legacy `commercial_offers` / legacy subscription / cart / recurring checkout authority was removed in the v2 cutover. Historical V0.35/V0.36 docs describe removed architecture and must not be used as current implementation instructions.
+Current commercial building blocks:
+- `billing_v2_services`
+- service tiers
+- immutable/versioned service prices
+- presets/formulas
+- commitments and payment options
+- Billing V2 subscriptions/items/effective price components
+- provider checkout/agreement state
+- document snapshots
+- provisioning projections
+## Public commercial flow
+Primary surfaces:
+- `/services`
+- `/services/[category]`
+- `/formules`
+- `/formules/[code]`
+- `/tarifs`
+- `/souscrire`
+- `/signup`
+The former `/panier` and `/configurer` commercial flows are not current authority.
+## Administration catalog
+Root: `/admin/catalog`
+Main navigation:
+- Services
+- Formules
+- Engagements
+- Integrations
+Routes:
+- `/admin/catalog/services/new`
+- `/admin/catalog/services/[id]`
+- `/admin/catalog/formules/new`
+- `/admin/catalog/formules/[id]`
+- `/admin/catalog/engagements/new`
+- `/admin/catalog/engagements/[id]`
+- `/admin/catalog/integrations`
+Important WEBPORTAL implementation:
+- `apps/webportal/components/admin/catalog/CatalogHome.tsx`
+- `ServiceCatalogEditor.tsx`
+- `ServiceTiersPanel.tsx`
+- `ServicePricingPanel.tsx`
+- `FormulaCatalogEditor.tsx`
+- `CommitmentCatalogEditor.tsx`
+- `CatalogIntegrations.tsx`
+- `AdminCatalogUi.tsx`
+- `AdminCatalog.module.css`
+- `useAdminCatalogCommand.ts`
+- `apps/webportal/lib/admin-catalog-units.ts`
+- `apps/webportal/lib/admin-catalog-presenters.ts`
+- `apps/webportal/lib/billing-v2-catalog-commands.ts`
+The old `AdminBillingV2Catalog.tsx` monolith was removed in `v2.0.0.2`.
+## Pricing invariants
+- Never edit an existing price version in place.
+- Publish a new price version and close/supersede the applicable window.
+- Historical price versions remain authoritative for historical commercial output.
+- Browser/UI helpers may format/convert values but must not become an authoritative pricing engine.
+- Formula preview uses a server projection.
+- `A partir de` is presentation-only and excludes inactive tiers.
+## Provider integrations
+Stripe:
+- Billing V2 can build checkout lines with inline `price_data`.
+- A Stripe external price mapping is not a general checkout prerequisite.
+PayPal:
+- provider plans/mappings may be required by the configured PayPal rail.
+- PayPal configuration was not changed by `v2.0.0.2`.
+## Subscription cancellation
+Current architecture:
+```text
+request -> policy -> local transaction(status + outbox + audit)
+        -> dispatcher -> provider -> convergence
+```
+Term-end cancellation preserves paid entitlements until the contractual period end while blocking inappropriate new mutations.
+## Commercial documents
+Commercial documents retain independent snapshots and do not rely on a current catalog row to remain historically valid.
+## Provisioning
+Billing V2 service topology and subscription projections drive provisioning. Do not reintroduce offer-based legacy topology.
+## Admin/client areas outside catalog
+Administration includes customers, signups, service/support requests, payments, subscriptions, downloads, editorial/content, audit/activity, KoXo, sessions and Billing V2 operations/readiness.
+Client portal includes dashboard, profile, subscriptions, documents/invoices, downloads, backups, solutions, support/service requests and notifications.
+## Validation entry points
+Important commands include:
+```text
+npm run lint:webportal
+npm run typecheck:shared
+npm run typecheck:webportal
+npm run build:webportal
+npm run test:catalog
+npm run test:formules
+npm run test:billing
+npm --prefix apps/webportal run test:admin
+npm --prefix apps/webportal run test:forms
+```
+API Release builds with .NET 10. The Windows production service requires an apphost executable; release publishing therefore uses `-r win-x64 --self-contained false -p:UseAppHost=true`.
+## Production deployment truth
+See:
+- `CURRENT_STATE.md`
+- `DEPLOYMENT.md`
+- `OPERATIONS.md`
+- `WEBPORTAL_SRV12_DEPLOYMENT.md`
+- `releases/V2.0.0.2.md`
+Current active commit on API and WEBPORTAL: `e227f8e98640dfac939534bd7c9b3d05d78efb57`.
+## Known non-blocking debt
+- Browser Back/Forward draft protection is intentionally not implemented with fragile history hacks.
+- Many old V0.x/V1.x documents remain in the repository as historical implementation records. When they conflict with current docs/code, current docs/code win.
