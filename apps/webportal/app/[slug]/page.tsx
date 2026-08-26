@@ -66,8 +66,11 @@ export default async function EditorialSeoPage({
   return (
     <article className="seo-editorial-page">
       <header className="seo-editorial-header">
-        {page.summary ? <p className="eyebrow">{page.summary}</p> : null}
+        {page.categoryName ? <p className="eyebrow">{page.categoryName}</p> : null}
         <h1>{page.title}</h1>
+        {page.summary ? (
+          <p className="seo-editorial-summary">{page.summary}</p>
+        ) : null}
       </header>
       <ManagedMarkdown markdown={page.bodyMarkdown} withAnchors />
     </article>

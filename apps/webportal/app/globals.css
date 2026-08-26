@@ -6092,6 +6092,13 @@ fieldset.form-field > .form-hint {
   color: var(--muted);
   line-height: 1.6;
 }
+.seo-editorial-summary {
+  margin: 0;
+  max-width: 780px;
+  color: var(--muted);
+  font-size: 1.08rem;
+  line-height: 1.65;
+}
 
 .seo-hub-list {
   display: grid;
