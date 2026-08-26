@@ -402,7 +402,7 @@ assert.match(
 // ---------------------------------------------------------------------------
 
 const catalogCommandsTs = await read("lib/billing-v2-catalog-commands.ts");
-const catalogAdminTsx = await read("components/AdminBillingV2Catalog.tsx");
+const catalogAdminTsx = await read("components/admin/catalog/CatalogIntegrations.tsx");
 
 for (const source of [adminServiceCs, catalogCommandsTs, catalogAdminTsx]) {
   assert.match(

@@ -4581,6 +4581,24 @@ app.MapGet(
         return Results.Ok(await service.GetProviderCoverageAsync(
             context.RequestAborted));
     });
+app.MapPost(
+    "/internal/admin/billing-v2/catalog/services",
+    async (
+        BillingV2AdminServiceCreatePayload payload,
+        HttpContext context,
+        IBillingV2CatalogAdministrationService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context, authenticationService, auditService,
+            "admin.billing_v2.catalog.service.create");
+        var result = await service.CreateServiceAsync(
+            payload, actor.UserId, context.RequestAborted);
+        return await CatalogMutationResultAsync(
+            context, auditService, actor, "billing_v2.catalog.service.create",
+            "billing_v2_service", result.Id ?? payload.Code ?? "unknown", result);
+    });
 app.MapPatch(
     "/internal/admin/billing-v2/catalog/services/{id}",
     async (
@@ -4599,6 +4617,25 @@ app.MapPatch(
         return await CatalogMutationResultAsync(
             context, auditService, actor, "billing_v2.catalog.service.update",
             "billing_v2_service", id, result);
+    });
+app.MapPost(
+    "/internal/admin/billing-v2/catalog/services/{id}/tiers",
+    async (
+        string id,
+        BillingV2AdminTierCreatePayload payload,
+        HttpContext context,
+        IBillingV2CatalogAdministrationService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context, authenticationService, auditService,
+            "admin.billing_v2.catalog.tier.create");
+        var result = await service.CreateTierAsync(
+            id, payload, actor.UserId, context.RequestAborted);
+        return await CatalogMutationResultAsync(
+            context, auditService, actor, "billing_v2.catalog.tier.create",
+            "billing_v2_service_tier", result.Id ?? id, result);
     });
 app.MapPatch(
     "/internal/admin/billing-v2/catalog/tiers/{id}",

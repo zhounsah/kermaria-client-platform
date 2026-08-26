@@ -1,13 +1,10 @@
 import Link from "next/link";
 
-import { AdminBillingV2Catalog } from "@/components/AdminBillingV2Catalog";
+import { CatalogHome } from "@/components/admin/catalog/CatalogHome";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
 import { requireAdminSession } from "@/lib/auth";
-import {
-  getAdminBillingV2Catalog,
-  getAdminBillingV2CatalogProviders,
-} from "@/lib/internal-api";
+import { getAdminBillingV2Catalog, getBillingV2FormulesCatalog } from "@/lib/internal-api";
 
 export const metadata = {
   title: "Catalogue commercial - Administration",
@@ -24,12 +21,17 @@ export const dynamic = "force-dynamic";
  * `/admin/billing-v2`. Deux métiers, deux écrans : les fusionner rendrait les
  * deux illisibles, les dupliquer recréerait deux catalogues.
  */
-export default async function AdminCatalogPage() {
+type PageProps = { searchParams: Promise<{ section?: string }> };
+
+export default async function AdminCatalogPage({ searchParams }: PageProps) {
   await requireAdminSession();
-  const [catalogResult, providersResult] = await Promise.all([
+  const [{ section: requestedSection }, catalogResult, publicCatalog] = await Promise.all([
+    searchParams,
     getAdminBillingV2Catalog(),
-    getAdminBillingV2CatalogProviders(),
+    getBillingV2FormulesCatalog(),
   ]);
+  const section = requestedSection === "formules" || requestedSection === "engagements" ? requestedSection : "services";
+  const baselineByCode = Object.fromEntries(publicCatalog.data.presets.map((preset) => [preset.code, preset.baselineMonthlyAmountCents]));
 
   return (
     <>
@@ -41,7 +43,7 @@ export default async function AdminCatalogPage() {
         }
         description="Seule autorité commerciale du produit. Un tarif ne se modifie pas : il se remplace par une nouvelle version, l'ancienne restant l'autorité des factures qu'elle a produites."
         eyebrow="Administration interne"
-        title="Catalogue Billing V2"
+        title="Catalogue commercial"
       />
 
       <p>
@@ -57,10 +59,7 @@ export default async function AdminCatalogPage() {
           title="Catalogue indisponible"
         />
       ) : (
-        <AdminBillingV2Catalog
-          providers={providersResult.data}
-          snapshot={catalogResult.data}
-        />
+        catalogResult.data.editable ? <CatalogHome asOf={new Date().toISOString()} baselineByCode={baselineByCode} section={section} snapshot={catalogResult.data} /> : <ErrorState description="La persistance catalogue n’est pas disponible sur cet environnement. Aucune modification n’est possible." reference={catalogResult.correlationId} title="Catalogue non administrable" />
       )}
     </>
   );

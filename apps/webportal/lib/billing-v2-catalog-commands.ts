@@ -28,6 +28,9 @@ const CATALOG_SCOPES = new Set([
   "additional_user",
 ]);
 const CATALOG_PAYMENT_MODES = new Set(["monthly", "upfront"]);
+const CATALOG_BILLING_TYPES = new Set(["recurring", "one_time", "included"]);
+const CATALOG_DEFAULT_SCOPES = new Set(["subscription", "user"]);
+const CATALOG_PRICING_MODELS = new Set(["fixed", "tiered"]);
 /**
  * Environnements reellement existants chez chaque fournisseur.
  *
@@ -62,8 +65,12 @@ export function parseBillingV2CatalogAdminCommand(
   const kind = typeof source.kind === "string" ? source.kind : null;
 
   switch (kind) {
+    case "service.create":
+      return buildServiceCreate(source);
     case "service.update":
       return buildServiceUpdate(source);
+    case "tier.create":
+      return buildTierCreate(source);
     case "tier.update":
       return buildTierUpdate(source);
     case "price.publish":
@@ -91,6 +98,33 @@ export function parseBillingV2CatalogAdminCommand(
     default:
       return null;
   }
+}
+
+function buildServiceCreate(source: Record<string, unknown>) {
+  const code = readCatalogCode(source.code);
+  const name = optionalString(source.name, 160);
+  const billingType = optionalEnum(source.billingType, CATALOG_BILLING_TYPES);
+  const defaultScopeType = optionalEnum(source.defaultScopeType, CATALOG_DEFAULT_SCOPES);
+  const pricingModel = optionalEnum(source.pricingModel, CATALOG_PRICING_MODELS);
+  if (!code || !name || !billingType || !defaultScopeType || !pricingModel) {
+    return null;
+  }
+  return {
+    path: "/services",
+    method: "POST" as const,
+    payload: {
+      code,
+      name,
+      description: optionalString(source.description, 4000),
+      category: optionalString(source.category, 80),
+      billingType,
+      defaultScopeType,
+      pricingModel,
+      mandatoryForSubscription: source.mandatoryForSubscription === true,
+      discountEligible: source.discountEligible !== false,
+      displayOrder: optionalInteger(source.displayOrder, 0, 100000) ?? 0,
+    },
+  };
 }
 
 function buildServiceUpdate(source: Record<string, unknown>) {
@@ -139,6 +173,30 @@ function buildTierUpdate(source: Record<string, unknown>) {
       status: optionalEnum(source.status, CATALOG_STATUSES),
       displayOrder: optionalInteger(source.displayOrder, 0, 100000),
       publicSelectable: optionalBoolean(source.publicSelectable),
+      numericValue: optionalInteger(source.numericValue, 0, 1e12),
+      unit: optionalString(source.unit, 32),
+      attributes,
+    },
+  };
+}
+
+function buildTierCreate(source: Record<string, unknown>) {
+  const serviceId = readUuid(source.serviceId);
+  const code = readCatalogCode(source.code);
+  const label = optionalString(source.label, 160);
+  const attributes = readTierAttributes(source.attributes);
+  if (!serviceId || !code || !label || attributes === false) {
+    return null;
+  }
+  return {
+    path: "/services/" + serviceId + "/tiers",
+    method: "POST" as const,
+    payload: {
+      code,
+      label,
+      publicLabel: optionalString(source.publicLabel, 160),
+      description: optionalString(source.description, 4000),
+      displayOrder: optionalInteger(source.displayOrder, 0, 100000) ?? 0,
       numericValue: optionalInteger(source.numericValue, 0, 1e12),
       unit: optionalString(source.unit, 32),
       attributes,

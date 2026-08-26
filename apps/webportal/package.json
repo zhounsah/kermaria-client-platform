@@ -34,7 +34,7 @@
     "test:signup": "node scripts/verify-signup-contract.mjs",
     "test:koxo": "node scripts/verify-koxo-contract.mjs",
     "test:email-live": "node scripts/verify-email-live-contract.mjs",
-    "test:catalog": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-billing-v2-catalog-contract.mjs",
+    "test:catalog": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-billing-v2-catalog-contract.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-admin-catalog-ui-contract.mjs",
     "test:formules": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-formules-contract.mjs",
     "test:client-solutions": "node scripts/verify-client-solutions-contract.mjs",
     "test:backups": "node scripts/verify-backups-contract.mjs",

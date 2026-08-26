@@ -15,6 +15,34 @@ Rappel de cadrage :
 
 ---
 
+## Catalogue commercial Billing V2 — `/admin/catalog`
+
+Le catalogue est l'unique autorité commerciale. La page principale sépare les
+listes **Services**, **Formules** et **Engagements** ; **Intégrations** regroupe
+Stripe, PayPal et les identifiants externes avancés.
+
+- Ouvrir **Modifier** pour travailler dans une fiche dédiée. Les onglets sont
+  adressables et peuvent être partagés ou rechargés sans perdre la section.
+- Un service se configure dans l'ordre : informations essentielles, paliers,
+  tarification, puis commercialisation.
+- Un tarif existant n'est jamais corrigé en place. Utiliser **Créer une nouvelle
+  version**, vérifier l'ancien et le nouveau montant, puis choisir sa date
+  d'effet. L'historique reste consultable.
+- Les remises et la TVA se saisissent en pourcentage ; le portail effectue la
+  conversion technique attendue par Billing V2.
+- Une formule est une composition. Son aperçu de prix vient de la projection
+  serveur et ne constitue pas un calcul local.
+- Les codes immuables restent copiables dans les fiches. Les paramètres
+  techniques structurants restent visibles en lecture seule.
+- Tant qu'un formulaire affiche **Modifications non enregistrées**, utiliser la
+  barre d'actions fixe pour enregistrer ou annuler les changements.
+
+Un mapping Stripe est facultatif : Billing V2 continue à construire ses lignes
+avec `price_data` inline. Un mapping PayPal manquant peut en revanche demander
+une action selon le rail configuré.
+
+---
+
 ## 1. Paiements - `/admin/payments`
 
 Menu **Pilotage > Paiements**.

@@ -87,7 +87,11 @@ champ de montant y est réintroduit.
 
 | Écran | Rôle |
 |---|---|
-| `/admin/catalog` | Administration du catalogue V2 : services, paliers, prix, formules, engagements, mappings provider |
+| `/admin/catalog` | Listes métier du catalogue V2 : services, formules et engagements |
+| `/admin/catalog/services/{id}` | Fiche service : essentiel, paliers, tarification et commercialisation |
+| `/admin/catalog/formules/{id}` | Fiche formule : essentiel, composition et aperçu commercial calculé côté serveur |
+| `/admin/catalog/engagements/{id}` | Fiche engagement : essentiel, modes de règlement et remises |
+| `/admin/catalog/integrations` | État Stripe/PayPal et mappings externes avancés ; Stripe conserve `price_data` inline |
 | `/admin/billing-v2` | Écran d'exploitation : abonnements, outbox, réconciliation, drapeaux |
 | `/admin/public-pack-catalog` | Vitrine éditoriale des formules (textes, fiches techniques) |
 
@@ -95,6 +99,11 @@ Les anciennes pages `/admin/catalog/new` et `/admin/catalog/[id]`, les composant
 `AdminCatalogOfferForm` / `AdminCatalogOfferStatusToggleButton`, les routes BFF
 `/api/admin/catalog*` et les routes API `/internal/admin/catalog*` sont
 supprimés.
+
+Les onglets de fiche sont des liens adressables (`?tab=...`). Les codes et les
+paramètres structurants sont définis à la création puis présentés en lecture
+seule. Les créations de service et de palier sont toujours inactives et non
+publiques ; leur publication reste une action d'édition explicite.
 
 ### Prix : versionnement strict
 

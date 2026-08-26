@@ -69,9 +69,20 @@ public interface IBillingV2CatalogAdministrationService
     Task<IReadOnlyList<BillingV2AdminCatalogProviderCoverage>> GetProviderCoverageAsync(
         CancellationToken cancellationToken);
 
+    Task<BillingV2AdminCatalogMutationResponse> CreateServiceAsync(
+        BillingV2AdminServiceCreatePayload payload,
+        string actorReference,
+        CancellationToken cancellationToken);
+
     Task<BillingV2AdminCatalogMutationResponse> UpdateServiceAsync(
         string serviceId,
         BillingV2AdminServicePayload payload,
+        string actorReference,
+        CancellationToken cancellationToken);
+
+    Task<BillingV2AdminCatalogMutationResponse> CreateTierAsync(
+        string serviceId,
+        BillingV2AdminTierCreatePayload payload,
         string actorReference,
         CancellationToken cancellationToken);
 
@@ -188,6 +199,9 @@ public sealed class BillingV2CatalogAdministrationService
     private static readonly string[] AllowedScopeTemplates =
         ["subscription", "primary_user", "additional_user"];
     private static readonly string[] AllowedPaymentModes = ["monthly", "upfront"];
+    private static readonly string[] AllowedBillingTypes = ["recurring", "one_time", "included"];
+    private static readonly string[] AllowedDefaultScopeTypes = ["subscription", "user"];
+    private static readonly string[] AllowedPricingModels = ["fixed", "tiered"];
     private static readonly IReadOnlyDictionary<string, string[]>
         ProviderEnvironments = BillingV2ProviderEnvironmentPolicy.Matrix;
 
@@ -323,6 +337,65 @@ public sealed class BillingV2CatalogAdministrationService
     // Services et paliers
     // ------------------------------------------------------------------
 
+    public async Task<BillingV2AdminCatalogMutationResponse> CreateServiceAsync(
+        BillingV2AdminServiceCreatePayload payload,
+        string actorReference,
+        CancellationToken cancellationToken)
+    {
+        RequirePersistence();
+        var id = Guid.NewGuid().ToString();
+        var code = RequireCode(payload.Code, 64);
+        var name = RequireText(payload.Name, 160);
+        var billingType = RequireEnum(payload.BillingType, AllowedBillingTypes);
+        var defaultScope = RequireEnum(payload.DefaultScopeType, AllowedDefaultScopeTypes);
+        var pricingModel = RequireEnum(payload.PricingModel, AllowedPricingModels);
+
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            INSERT INTO billing_v2_services
+                (id, code, name, description, category, billing_type,
+                 default_scope_type, pricing_model, mandatory_for_subscription,
+                 discount_eligible, public_selectable, public_visible, self_service_orderable,
+                 status, display_order, updated_by_reference)
+            VALUES
+                (@id, @code, @name, @description, @category, @billing_type,
+                 @default_scope, @pricing_model, @mandatory,
+                 @discount_eligible, @public_selectable, @public_visible, @self_service_orderable,
+                 @status, @display_order, @actor);
+            """;
+        command.Parameters.AddWithValue("@id", id);
+        command.Parameters.AddWithValue("@code", code);
+        command.Parameters.AddWithValue("@name", name);
+        command.Parameters.AddWithValue("@description", (object?)OptionalText(payload.Description, 4000) ?? DBNull.Value);
+        command.Parameters.AddWithValue("@category", (object?)OptionalText(payload.Category, 80) ?? DBNull.Value);
+        command.Parameters.AddWithValue("@billing_type", billingType);
+        command.Parameters.AddWithValue("@default_scope", defaultScope);
+        command.Parameters.AddWithValue("@pricing_model", pricingModel);
+        command.Parameters.AddWithValue("@mandatory", payload.MandatoryForSubscription == true ? 1 : 0);
+        command.Parameters.AddWithValue("@discount_eligible", payload.DiscountEligible == false ? 0 : 1);
+        command.Parameters.AddWithValue("@public_selectable", 0);
+        command.Parameters.AddWithValue("@public_visible", 0);
+        command.Parameters.AddWithValue("@self_service_orderable", 0);
+        command.Parameters.AddWithValue("@status", "inactive");
+        command.Parameters.AddWithValue("@display_order", payload.DisplayOrder ?? 0);
+        command.Parameters.AddWithValue("@actor", Truncate(actorReference, 255));
+        try
+        {
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+        catch (MySqlException exception) when (exception.Number == 1062)
+        {
+            throw new PortalValidationException();
+        }
+
+        return new BillingV2AdminCatalogMutationResponse(
+            "BILLING_V2_CATALOG_SERVICE_CREATED",
+            "Service cree inactif. Configurez ses paliers et tarifs avant publication.",
+            id);
+    }
+
     public async Task<BillingV2AdminCatalogMutationResponse> UpdateServiceAsync(
         string serviceId,
         BillingV2AdminServicePayload payload,
@@ -402,6 +475,98 @@ public sealed class BillingV2CatalogAdministrationService
         return new BillingV2AdminCatalogMutationResponse(
             "BILLING_V2_CATALOG_SERVICE_UPDATED",
             "Service mis a jour.",
+            id);
+    }
+
+    public async Task<BillingV2AdminCatalogMutationResponse> CreateTierAsync(
+        string serviceId,
+        BillingV2AdminTierCreatePayload payload,
+        string actorReference,
+        CancellationToken cancellationToken)
+    {
+        RequirePersistence();
+        var service = RequireIdentifier(serviceId);
+        var id = Guid.NewGuid().ToString();
+        var code = RequireCode(payload.Code, 64);
+        var label = RequireText(payload.Label, 160);
+
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText =
+                """
+                INSERT INTO billing_v2_service_tiers
+                    (id, service_id, code, name, public_label, description,
+                     numeric_value, unit, public_selectable, status,
+                     display_order, updated_by_reference)
+                VALUES
+                    (@id, @service_id, @code, @label, @public_label, @description,
+                     @numeric_value, @unit, @public_selectable, @status,
+                     @display_order, @actor);
+                """;
+            command.Parameters.AddWithValue("@id", id);
+            command.Parameters.AddWithValue("@service_id", service);
+            command.Parameters.AddWithValue("@code", code);
+            command.Parameters.AddWithValue("@label", label);
+            command.Parameters.AddWithValue("@public_label", (object?)OptionalText(payload.PublicLabel, 160) ?? DBNull.Value);
+            command.Parameters.AddWithValue("@description", (object?)OptionalText(payload.Description, 4000) ?? DBNull.Value);
+            command.Parameters.AddWithValue("@numeric_value", (object?)payload.NumericValue ?? DBNull.Value);
+            command.Parameters.AddWithValue("@unit", (object?)OptionalText(payload.Unit, 32) ?? DBNull.Value);
+            command.Parameters.AddWithValue("@public_selectable", 0);
+            command.Parameters.AddWithValue("@status", "inactive");
+            command.Parameters.AddWithValue("@display_order", payload.DisplayOrder ?? 0);
+            command.Parameters.AddWithValue("@actor", Truncate(actorReference, 255));
+            try
+            {
+                await command.ExecuteNonQueryAsync(cancellationToken);
+            }
+            catch (MySqlException exception) when (exception.Number == 1452)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw new PortalDataNotFoundException();
+            }
+            catch (MySqlException exception) when (exception.Number == 1062)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw new PortalValidationException();
+            }
+        }
+
+        if (payload.Attributes is { Count: > 0 })
+        {
+            foreach (var attribute in payload.Attributes)
+            {
+                var attributeCode = RequireText(attribute.AttributeCode, 64);
+                var text = OptionalText(attribute.ValueText, 255);
+                if (attribute.ValueNumeric is null && text is null)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    throw new PortalValidationException();
+                }
+                await using var insert = connection.CreateCommand();
+                insert.Transaction = transaction;
+                insert.CommandText =
+                    """
+                    INSERT INTO billing_v2_service_tier_attributes
+                        (id, tier_id, attribute_code, value_numeric, value_text, unit)
+                    VALUES (@id, @tier_id, @code, @numeric, @text, @unit);
+                    """;
+                insert.Parameters.AddWithValue("@id", Guid.NewGuid().ToString());
+                insert.Parameters.AddWithValue("@tier_id", id);
+                insert.Parameters.AddWithValue("@code", attributeCode);
+                insert.Parameters.AddWithValue("@numeric", (object?)attribute.ValueNumeric ?? DBNull.Value);
+                insert.Parameters.AddWithValue("@text", (object?)text ?? DBNull.Value);
+                insert.Parameters.AddWithValue("@unit", (object?)OptionalText(attribute.Unit, 32) ?? DBNull.Value);
+                await insert.ExecuteNonQueryAsync(cancellationToken);
+            }
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return new BillingV2AdminCatalogMutationResponse(
+            "BILLING_V2_CATALOG_TIER_CREATED",
+            "Palier cree inactif. Publiez ensuite ses versions tarifaires.",
             id);
     }
 
@@ -1592,7 +1757,7 @@ public sealed class BillingV2CatalogAdministrationService
             """
             SELECT id, code, name, description, category, billing_type,
                    default_scope_type, pricing_model, mandatory_for_subscription,
-                   discount_eligible, public_visible, self_service_orderable,
+                   discount_eligible, public_selectable, public_visible, self_service_orderable,
                    status, display_order, updated_by_reference
             FROM billing_v2_services
             ORDER BY display_order, code;

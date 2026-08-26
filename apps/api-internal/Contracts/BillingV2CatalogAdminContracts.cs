@@ -175,6 +175,18 @@ public sealed record BillingV2AdminServicePayload(
     bool? DiscountEligible,
     bool? MandatoryForSubscription);
 
+public sealed record BillingV2AdminServiceCreatePayload(
+    string? Code,
+    string? Name,
+    string? Description,
+    string? Category,
+    string? BillingType,
+    string? DefaultScopeType,
+    string? PricingModel,
+    bool? MandatoryForSubscription,
+    bool? DiscountEligible,
+    int? DisplayOrder);
+
 public sealed record BillingV2AdminTierPayload(
     string? Label,
     string? PublicLabel,
@@ -182,6 +194,16 @@ public sealed record BillingV2AdminTierPayload(
     string? Status,
     int? DisplayOrder,
     bool? PublicSelectable,
+    long? NumericValue,
+    string? Unit,
+    IReadOnlyList<BillingV2AdminTierAttributePayload>? Attributes);
+
+public sealed record BillingV2AdminTierCreatePayload(
+    string? Code,
+    string? Label,
+    string? PublicLabel,
+    string? Description,
+    int? DisplayOrder,
     long? NumericValue,
     string? Unit,
     IReadOnlyList<BillingV2AdminTierAttributePayload>? Attributes);
