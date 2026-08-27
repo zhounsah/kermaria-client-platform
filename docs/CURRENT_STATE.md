@@ -1,7 +1,7 @@
 # Current state - Zachary IT platform
-Last verified: 2026-08-26
-Current production release: `v2.0.0.2`
-Release commit: `e227f8e98640dfac939534bd7c9b3d05d78efb57`
+Last verified: 2026-08-27
+Current production release: `v2.0.0.4`
+Release commit: `b66e89dff6c1c99205f27931f942b7c4735c38da`
 This document is the primary entry point for the current platform state. Older V0.x/V1.x documents remain useful as implementation history, but they must not override this file, the current code, or the current deployment runbooks.
 ## Production topology
 ```text
@@ -61,18 +61,18 @@ Known non-blocking UX debt: browser Back/Forward navigation is not fully interce
 API-INTERNAL active runtime:
 - host: SRV-13
 - service: `KermariaApiInternal`
-- active commit marker: `e227f8e98640dfac939534bd7c9b3d05d78efb57`
-- pre-release backup: `C:\apps\api-internal-backup-pre-v2.0.0.2-20260826-081115`
+- active commit marker: `b66e89dff6c1c99205f27931f942b7c4735c38da`
+- pre-release backup: `C:\apps\api-internal-backup-pre-v2.0.0.4-20260827-130738`
 WEBPORTAL active runtime:
 - host: SRV-12
 - service: `kermaria-webportal`
-- active release: `/opt/kermaria/releases/20260826-0812-v2.0.0.2-e227f8e`
-- previous release retained: `/opt/kermaria/releases/20260825-1816-v2.0.0.1-45caa4b`
+- active release: `/opt/kermaria/releases/20260827-111656-v2.0.0.4-b66e89d`
+- previous release retained: `/opt/kermaria/releases/20260826-160733-v2.0.0.3-d0e0fee`
 Release artifacts:
-- API zip SHA-256: `B0B09E9B4B188B581C45DED09CD6031CC36E057AC1A7B7E2BE2E0CF9C0528AC6`
-- WEBPORTAL tar.gz SHA-256: `68A132DCA58DC6818251DBAA1A1776F4E554662989C536B2892DAC71AD690A9D`
-No SQL migration was executed for `v2.0.0.2`.
-## Production smoke test - 2026-08-26
+- API zip SHA-256: `2A732BCC9632BE3B2C40EFB970A311DF3C704B3329B567989A7BC1720BAED7C1`
+- WEBPORTAL tar.gz SHA-256: `58E5669C898ECD70629CBB29C3BAF730B2429512C9D39EBDFA70CC6FFF020DC6`
+Migration `072_editorial_resource_redirects` is present in production and was already applied before the v2.0.0.4 runtime cutover. No SQL write was required during the cutover.
+## Production smoke test - 2026-08-27
 Verified after deployment:
 - API `/health` -> 200
 - API `/health/live` -> 200

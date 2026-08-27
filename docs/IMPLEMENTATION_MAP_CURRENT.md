@@ -1,6 +1,6 @@
 # Implementation Map - Current State
-Last verified: 2026-08-26
-Production release: `v2.0.0.2` (`e227f8e98640dfac939534bd7c9b3d05d78efb57`)
+Last verified: 2026-08-27
+Production release: `v2.0.0.4` (`b66e89dff6c1c99205f27931f942b7c4735c38da`)
 Purpose: fast handoff for a human or another AI agent. Read `CURRENT_STATE.md` first for production truth.
 ## Architecture boundary
 ```text
@@ -116,8 +116,8 @@ See:
 - `DEPLOYMENT.md`
 - `OPERATIONS.md`
 - `WEBPORTAL_SRV12_DEPLOYMENT.md`
-- `releases/V2.0.0.2.md`
-Current active commit on API and WEBPORTAL: `e227f8e98640dfac939534bd7c9b3d05d78efb57`.
+- `releases/V2.0.0.4.md`
+Current active commit on API and WEBPORTAL: `b66e89dff6c1c99205f27931f942b7c4735c38da`.
 ## Known non-blocking debt
 - Browser Back/Forward draft protection is intentionally not implemented with fragile history hacks.
 - Many old V0.x/V1.x documents remain in the repository as historical implementation records. When they conflict with current docs/code, current docs/code win.
