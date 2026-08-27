@@ -80,8 +80,8 @@ assert.match(styles, /\.public-pack-header h2\s*\{[^}]*color:\s*var\(--primary-d
 assert.match(styles, /\.offres-demo-access/);
 assert.match(offresPage, /\/decouvrir-espace-client/);
 assert.match(ressourcesPage, /contentType === "seo_page"/);
-assert.match(ressourcesPage, /Pages publi/);
-assert.match(ressourcesPage, /Aucune ressource publi/);
+assert.match(ressourcesPage, /resourceGroups\.length > 0/);
+assert.match(ressourcesPage, /Guides en pr/);
 
 for (const page of [
   "dashboard",

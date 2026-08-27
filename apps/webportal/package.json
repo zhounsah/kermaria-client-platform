@@ -20,7 +20,7 @@
     "test:activity": "node scripts/verify-admin-activity-contract.mjs",
     "test:commercial": "node scripts/verify-commercial-documents-contract.mjs",
     "test:diagnostic": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-diagnostic-contract.mjs",
-    "test:managed-content": "node scripts/verify-managed-content-contract.mjs",
+    "test:managed-content": "node scripts/verify-managed-content-contract.mjs && node scripts/verify-services-landing-contract.mjs",
     "test:editorial": "node scripts/verify-editorial-platform-contract.mjs",
     "test:markdown-anchors": "node scripts/verify-markdown-anchors.mjs",
     "test:ad-security": "node scripts/verify-ad-security-contract.mjs",

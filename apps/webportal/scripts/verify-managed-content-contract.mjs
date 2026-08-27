@@ -33,7 +33,6 @@ const adminContentRoute = await read("app/api/admin/content/route.ts");
 const adminContentDetailRoute = await read("app/api/admin/content/[key]/route.ts");
 const {
   resolveStorefrontCommercialActions,
-  resolveStorefrontServicesLandingActions,
   resolveStorefrontTariffAction,
   resolveStorefrontPublicCta,
   resolveStorefrontPublicRelatedLinks,
@@ -102,7 +101,7 @@ assert.match(serviceDetailPage, /storefrontServiceSelfServiceOrderable/);
 assert.match(serviceDetailPage, /selfServiceOrderable=/);
 assert.match(serviceDetailPage, /resolveStorefrontCommercialActions/);
 assert.match(serviceDetailPage, /commercialActions=/);
-assert.match(servicesPage, /resolveStorefrontServicesLandingActions/);
+assert.match(servicesPage, /PublicServicesLandingPage/);
 assert.match(tarifsPage, /resolveStorefrontTariffAction/);
 assert.match(tarifsPage, /serviceCode/);
 assert.match(tarifsPage, /storefront:tarifs/);
@@ -260,13 +259,5 @@ assert.deepEqual(
   { label: "Demander un devis", href: "/contact" },
 );
 
-const landingActions = resolveStorefrontServicesLandingActions(commercialCatalog, auditCta);
-assert.equal(landingActions.mode, "HYBRID");
-assert.equal(landingActions.primaryAction.href, "/diagnostic");
-assert.equal(landingActions.secondaryAction?.href, "/formules");
-assert.equal(
-  resolveStorefrontServicesLandingActions({ ...commercialCatalog, presets: [] }, auditCta).mode,
-  "QUOTE",
-);
 
 console.log("Vérification du contrat managed content V0.33 réussie.");

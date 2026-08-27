@@ -88,7 +88,11 @@ export function ServiceCategoryCard({ category }: { category: ServiceCategory })
       </div>
       <h3>{category.shortTitle}</h3>
       <p>{category.description}</p>
-      <Link className="service-inline-link" href={`/services/${category.slug}`}>
+      <Link
+        aria-label={`Découvrir ${category.shortTitle}`}
+        className="service-inline-link"
+        href={`/services/${category.slug}`}
+      >
         Découvrir <ArrowRight aria-hidden="true" size={17} strokeWidth={1.8} />
       </Link>
     </article>

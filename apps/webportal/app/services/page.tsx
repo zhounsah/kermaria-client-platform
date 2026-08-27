@@ -9,22 +9,20 @@ import { PageHeader } from "@/components/PageHeader";
 import { SectionHeading } from "@/components/SectionHeading";
 import { ServiceCard } from "@/components/ServiceCard";
 import { StatusBadge } from "@/components/StatusBadge";
-import { PublicStorefrontPage } from "@/components/PublicStorefrontPage";
+import { PublicServicesLandingPage } from "@/components/PublicServicesLandingPage";
 import { requireClientSession } from "@/lib/auth";
 import { buildPublicMetadata } from "@/lib/public-metadata";
 import { getPortalArea } from "@/lib/public-route-config";
 import { getPortalRequestOriginFromHeaders } from "@/lib/public-routes";
 import {
-  getBillingV2FormulesCatalog,
   getPendingBillingV2Selection,
   getPublicManagedContent,
   getServices,
   resolveDataSource,
 } from "@/lib/internal-api";
 import {
-  parseStorefrontPageContent,
+  parseStorefrontServicesLandingContent,
   resolveStorefrontBreadcrumb,
-  resolveStorefrontServicesLandingActions,
 } from "@/lib/storefront-content";
 
 export const dynamic = "force-dynamic";
@@ -32,7 +30,7 @@ export const dynamic = "force-dynamic";
 export async function generateMetadata(): Promise<Metadata> {
   const content = await getPublicManagedContent("storefront:services");
   const page = content.data
-    ? parseStorefrontPageContent(content.data.bodyMarkdown)
+    ? parseStorefrontServicesLandingContent(content.data.bodyMarkdown, true)
     : null;
   return buildPublicMetadata({
     title: page?.seoTitle ?? "Services IT gérés pour indépendants, associations et TPE",
@@ -48,20 +46,13 @@ export default async function ServicesPage() {
   );
 
   if (portalArea === "public" || portalArea === "local") {
-    const [contentResult, catalogResult] = await Promise.all([
-      getPublicManagedContent("storefront:services"),
-      getBillingV2FormulesCatalog(),
-    ]);
+    const contentResult = await getPublicManagedContent("storefront:services");
     const content = contentResult.data
-      ? parseStorefrontPageContent(contentResult.data.bodyMarkdown)
-      : null;
-    const commercialActions = content
-      ? resolveStorefrontServicesLandingActions(catalogResult.data, content)
+      ? parseStorefrontServicesLandingContent(contentResult.data.bodyMarkdown, true)
       : null;
     return content ? (
-      <PublicStorefrontPage
+      <PublicServicesLandingPage
         breadcrumbItems={resolveStorefrontBreadcrumb("/services")!}
-        commercialActions={commercialActions}
         content={content}
       />
     ) : (

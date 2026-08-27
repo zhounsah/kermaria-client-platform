@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Kermaria.ApiInternal.Services;
 
@@ -12,6 +13,7 @@ internal static class StorefrontContentSeed
     private sealed record Link(string Label, string Href);
     private sealed record Section(string Heading, string BodyMarkdown);
     private sealed record Faq(string Question, string Answer);
+    private sealed record ProblemEntry(string Title, string Description, string Href);
     private sealed record Page(
         string SeoTitle,
         string SeoDescription,
@@ -21,11 +23,13 @@ internal static class StorefrontContentSeed
         string CtaHref,
         IReadOnlyList<Section> Sections,
         IReadOnlyList<Faq> Faq,
-        IReadOnlyList<Link> RelatedLinks);
+        IReadOnlyList<Link> RelatedLinks,
+        IReadOnlyList<ProblemEntry>? ProblemEntries = null);
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
     public static string CreateJson(string key)
@@ -38,17 +42,24 @@ internal static class StorefrontContentSeed
         {
             ["storefront:services"] = PageOf(
                 "Services IT gérés pour indépendants, associations et TPE | Zachary IT",
-                "Cloud, hébergement, domaines, messagerie, réseau, sécurité, sauvegarde et support : Zachary IT met en place et gère les services IT utiles à votre activité.",
-                "L’informatique dont votre activité a besoin. Gérée pour vous.",
-                "Domaines, messagerie, réseau, cloud, sauvegarde, supervision et support : choisissez les services utiles à votre activité, Zachary IT les met en place et les suit.",
+                "Messagerie, sauvegarde, accès distant, réseau, hébergement et support : partez de votre problème pour identifier le service IT adapté avec Zachary IT.",
+                "L'informatique dont votre activité a besoin. Gérée pour vous.",
+                "Un problème de messagerie, des données à protéger, un accès distant à organiser, un Wi-Fi instable ou un serveur à maintenir ? Partez de votre besoin : Zachary IT vous oriente vers la solution adaptée.",
                 "Demander un audit", "/diagnostic",
                 [
-                    S("Des services modulaires, pas un catalogue figé", "Vous pouvez confier une brique précise ou un ensemble cohérent : un domaine, une messagerie, un VPS, un accès distant, une sauvegarde, un réseau ou une maintenance. Certaines prestations sont préparées sur devis : elles ne sont pas forcément commandables en ligne."),
-                    S("Ce que Zachary IT prend en charge", "Cadrage, mise en service, documentation utile, suivi, maintenance et support selon le périmètre retenu. Les responsabilités et les limites sont expliquées avant intervention."),
-                    S("Choisir le bon point de départ", "Parcourez les univers ci-dessous, consultez les tarifs quand une unité publique est disponible, ou demandez un diagnostic pour un besoin transversal."),
+                    S("Des services modulaires, pas un catalogue figé", "Vous pouvez confier une brique précise ou un ensemble cohérent. Le périmètre est défini selon votre besoin, l'existant et les dépendances utiles ; les prestations nécessitant une étude restent traitées sur devis."),
                 ],
-                [F("Puis-je choisir un seul service ?", "Oui. Les services sont modulaires ; un devis permet de cadrer les dépendances éventuelles."), F("Tout est-il commandable en ligne ?", "Non. Les services nécessitant une étude, une migration ou une mise en service restent traités par devis."), F("À qui s’adressent ces services ?", "Aux indépendants, associations, TPE et petites structures qui veulent déléguer une informatique utile et maintenable.")],
-                [L("Cloud & Hébergement", "/services/cloud-hebergement"), L("Domaines & Messagerie", "/services/domaines-messagerie"), L("Réseau & Sécurité", "/services/reseau-securite"), L("Tarifs", "/tarifs")]),
+                [F("Puis-je choisir un seul service ?", "Oui. Les services sont modulaires ; les dépendances éventuelles sont expliquées avant la mise en place."), F("Tout est-il commandable en ligne ?", "Non. Les services nécessitant une étude, une migration ou une mise en service restent traités par devis."), F("À qui s'adressent ces services ?", "Aux indépendants, associations, TPE et petites structures qui veulent déléguer une informatique utile et maintenable.")],
+                [L("Cloud & Hébergement", "/services/cloud-hebergement"), L("Domaines & Messagerie", "/services/domaines-messagerie"), L("Réseau & Sécurité", "/services/reseau-securite"), L("Support & IT", "/services/support-it")],
+                problemEntries:
+                [
+                    P("Mes emails posent problème", "Spam, migration, domaine, comptes ou configuration : identifiez le bon point de départ pour remettre la messagerie au propre.", "/services/messagerie-professionnelle"),
+                    P("Je veux protéger mes données", "Sauvegarde, restauration et conservation : protégez les fichiers importants avec une stratégie adaptée à leur usage.", "/services/sauvegarde-externalisee"),
+                    P("Je dois travailler à distance", "VPN et bureau Windows distant ne répondent pas au même besoin. Comparez les deux approches avant de choisir.", "/vpn-ou-bureau-a-distance-que-choisir"),
+                    P("Mon réseau ou mon Wi-Fi fonctionne mal", "Coupures, couverture, lenteurs ou segmentation : partez des usages réels pour fiabiliser le réseau et le Wi-Fi.", "/services/unifi"),
+                    P("J'ai un serveur, un site ou une application à maintenir", "Hébergement, mises à jour, supervision et sauvegarde : identifiez les briques à suivre pour garder le service maintenable.", "/services/cloud-hebergement"),
+                    P("Je veux déléguer mon informatique", "Support, maintenance, supervision et coordination : confiez le quotidien IT avec un périmètre clair et adapté à votre structure.", "/services/support-it"),
+                ]),
             ["storefront:tarifs"] = PageOf(
                 "Tarifs des services IT Zachary IT | unités et devis",
                 "Comprenez les unités de facturation des services Zachary IT : domaine, utilisateur, site, serveur ou instance. Les prestations étudiées restent sur devis.",
@@ -124,10 +135,11 @@ internal static class StorefrontContentSeed
         => PageOf(seoTitle, seoDescription, title, lead, ctaLabel, ctaHref,
             [S(firstHeading, firstBody), S(secondHeading, secondBody), S("Tarif et devis", "Le service est qualifié avant mise en œuvre. Lorsqu’aucune projection Billing autoritative n’est disponible, Zachary IT propose un devis plutôt qu’un prix inventé.")], faq, links);
 
-    private static Page PageOf(string seoTitle, string seoDescription, string title, string lead, string ctaLabel, string ctaHref, IReadOnlyList<Section> sections, IReadOnlyList<Faq> faq, IReadOnlyList<Link> links)
-        => new(seoTitle, seoDescription, title, lead, ctaLabel, ctaHref, sections, faq, links);
+    private static Page PageOf(string seoTitle, string seoDescription, string title, string lead, string ctaLabel, string ctaHref, IReadOnlyList<Section> sections, IReadOnlyList<Faq> faq, IReadOnlyList<Link> links, IReadOnlyList<ProblemEntry>? problemEntries = null)
+        => new(seoTitle, seoDescription, title, lead, ctaLabel, ctaHref, sections, faq, links, problemEntries);
 
     private static Section S(string heading, string body) => new(heading, body);
     private static Faq F(string question, string answer) => new(question, answer);
     private static Link L(string label, string href) => new(label, href);
+    private static ProblemEntry P(string title, string description, string href) => new(title, description, href);
 }

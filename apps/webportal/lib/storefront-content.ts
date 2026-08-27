@@ -1,5 +1,26 @@
 import type { BillingV2PublicCatalog, ManagedContentKey } from "@kermaria/shared";
 export type StorefrontLink = { label: string; href: string };
+export const STOREFRONT_SERVICES_PROBLEM_DESTINATIONS = [
+  "/services/messagerie-professionnelle",
+  "/services/sauvegarde-externalisee",
+  "/vpn-ou-bureau-a-distance-que-choisir",
+  "/services/unifi",
+  "/services/cloud-hebergement",
+  "/services/support-it",
+] as const;
+export const STOREFRONT_SERVICES_CATEGORY_DESTINATIONS = [
+  "/services/cloud-hebergement",
+  "/services/domaines-messagerie",
+  "/services/reseau-securite",
+  "/services/support-it",
+] as const;
+export type StorefrontServicesProblemDestination =
+  (typeof STOREFRONT_SERVICES_PROBLEM_DESTINATIONS)[number];
+export type StorefrontProblemEntry = {
+  title: string;
+  description: string;
+  href: StorefrontServicesProblemDestination;
+};
 export type StorefrontSection = { heading: string; bodyMarkdown: string };
 export type StorefrontFaq = { question: string; answer: string };
 export type StorefrontCta = { label: string; href: string };
@@ -21,6 +42,77 @@ export type StorefrontPageContent = {
   faq: StorefrontFaq[];
   relatedLinks: StorefrontLink[];
 };
+export type StorefrontServicesLandingContent = StorefrontPageContent & {
+  problemEntries: StorefrontProblemEntry[];
+};
+
+export const DEFAULT_STOREFRONT_SERVICES_PROBLEM_ENTRIES: readonly StorefrontProblemEntry[] = [
+  {
+    title: "Mes emails posent problème",
+    description: "Spam, migration, domaine, comptes ou configuration : identifiez le bon point de départ pour remettre la messagerie au propre.",
+    href: "/services/messagerie-professionnelle",
+  },
+  {
+    title: "Je veux protéger mes données",
+    description: "Sauvegarde, restauration et conservation : protégez les fichiers importants avec une stratégie adaptée à leur usage.",
+    href: "/services/sauvegarde-externalisee",
+  },
+  {
+    title: "Je dois travailler à distance",
+    description: "VPN et bureau Windows distant ne répondent pas au même besoin. Comparez les deux approches avant de choisir.",
+    href: "/vpn-ou-bureau-a-distance-que-choisir",
+  },
+  {
+    title: "Mon réseau ou mon Wi-Fi fonctionne mal",
+    description: "Coupures, couverture, lenteurs ou segmentation : partez des usages réels pour fiabiliser le réseau et le Wi-Fi.",
+    href: "/services/unifi",
+  },
+  {
+    title: "J'ai un serveur, un site ou une application à maintenir",
+    description: "Hébergement, mises à jour, supervision et sauvegarde : identifiez les briques à suivre pour garder le service maintenable.",
+    href: "/services/cloud-hebergement",
+  },
+  {
+    title: "Je veux déléguer mon informatique",
+    description: "Support, maintenance, supervision et coordination : confiez le quotidien IT avec un périmètre clair et adapté à votre structure.",
+    href: "/services/support-it",
+  },
+];
+
+export const DEFAULT_STOREFRONT_SERVICES_CATEGORY_LINKS: readonly StorefrontLink[] = [
+  { label: "Cloud & Hébergement", href: "/services/cloud-hebergement" },
+  { label: "Domaines & Messagerie", href: "/services/domaines-messagerie" },
+  { label: "Réseau & Sécurité", href: "/services/reseau-securite" },
+  { label: "Support & IT", href: "/services/support-it" },
+];
+export const DEFAULT_STOREFRONT_SERVICES_LEAD =
+  "Un problème de messagerie, des données à protéger, un accès distant à organiser, un Wi-Fi instable ou un serveur à maintenir ? Partez de votre besoin : Zachary IT vous oriente vers la solution adaptée.";
+
+export const DEFAULT_STOREFRONT_SERVICES_SEO_DESCRIPTION =
+  "Messagerie, sauvegarde, accès distant, réseau, hébergement et support : partez de votre problème pour identifier le service IT adapté avec Zachary IT.";
+
+export const DEFAULT_STOREFRONT_SERVICES_SECTIONS: readonly StorefrontSection[] = [
+  {
+    heading: "Des services modulaires, pas un catalogue figé",
+    bodyMarkdown: "Vous pouvez confier une brique précise ou un ensemble cohérent. Le périmètre est défini selon votre besoin, l'existant et les dépendances utiles ; les prestations nécessitant une étude restent traitées sur devis.",
+  },
+];
+
+export const DEFAULT_STOREFRONT_SERVICES_FAQ: readonly StorefrontFaq[] = [
+  {
+    question: "Puis-je choisir un seul service ?",
+    answer: "Oui. Les services sont modulaires ; les dépendances éventuelles sont expliquées avant la mise en place.",
+  },
+  {
+    question: "Tout est-il commandable en ligne ?",
+    answer: "Non. Les services nécessitant une étude, une migration ou une mise en service restent traités par devis.",
+  },
+  {
+    question: "À qui s'adressent ces services ?",
+    answer: "Aux indépendants, associations, TPE et petites structures qui veulent déléguer une informatique utile et maintenable.",
+  },
+];
+
 export const STOREFRONT_SERVICE_SLUGS = [
   "vps",
   "infogerance-vps",
@@ -221,23 +313,6 @@ export function resolveStorefrontCommercialActions(
   };
 }
 
-export function resolveStorefrontServicesLandingActions(
-  catalog: BillingV2PublicCatalog,
-  content: Pick<StorefrontPageContent, "ctaLabel" | "ctaHref">,
-): StorefrontCommercialActions {
-  const quoteAction = resolveStorefrontPublicCta(content, false);
-  if (catalog.presets.length === 0) {
-    return { mode: "QUOTE", primaryAction: quoteAction, secondaryAction: null, presetCode: null };
-  }
-
-  return {
-    mode: "HYBRID",
-    primaryAction: quoteAction,
-    secondaryAction: { label: "Comparer les formules", href: "/formules" },
-    presetCode: null,
-  };
-}
-
 export function resolveStorefrontTariffAction(
   serviceCode: string,
   catalog: BillingV2PublicCatalog,
@@ -340,6 +415,67 @@ export function parseStorefrontPageContent(
         href: link.href.trim(),
       })),
     };
+  } catch {
+    return null;
+  }
+}
+export function parseStorefrontServicesLandingContent(
+  value: string,
+  allowLegacy = false,
+): StorefrontServicesLandingContent | null {
+  const base = parseStorefrontPageContent(value);
+  if (!base) return null;
+
+  try {
+    const candidate = JSON.parse(value) as { problemEntries?: unknown };
+    const hasValidProblemEntries = Array.isArray(candidate.problemEntries)
+      && candidate.problemEntries.length === 6
+      && candidate.problemEntries.every((entry) => {
+        if (!entry || typeof entry !== "object") return false;
+        const item = entry as Partial<StorefrontProblemEntry>;
+        return isText(item.title, 3, 120)
+          && isText(item.description, 10, 400)
+          && typeof item.href === "string"
+          && STOREFRONT_SERVICES_PROBLEM_DESTINATIONS.includes(
+            item.href as StorefrontServicesProblemDestination,
+          );
+      });
+
+    const hasValidCategoryLinks = base.relatedLinks.length === 4
+      && base.relatedLinks.every((link) =>
+        STOREFRONT_SERVICES_CATEGORY_DESTINATIONS.includes(
+          link.href as (typeof STOREFRONT_SERVICES_CATEGORY_DESTINATIONS)[number],
+        )
+      )
+      && new Set(base.relatedLinks.map((link) => link.href)).size === 4;
+
+    if (!hasValidProblemEntries || !hasValidCategoryLinks) {
+      if (!allowLegacy) return null;
+      return {
+        ...base,
+        seoDescription: DEFAULT_STOREFRONT_SERVICES_SEO_DESCRIPTION,
+        lead: DEFAULT_STOREFRONT_SERVICES_LEAD,
+        sections: DEFAULT_STOREFRONT_SERVICES_SECTIONS.map((section) => ({ ...section })),
+        faq: DEFAULT_STOREFRONT_SERVICES_FAQ.map((item) => ({ ...item })),
+        relatedLinks: DEFAULT_STOREFRONT_SERVICES_CATEGORY_LINKS.map((link) => ({ ...link })),
+        problemEntries: DEFAULT_STOREFRONT_SERVICES_PROBLEM_ENTRIES.map((entry) => ({ ...entry })),
+      };
+    }
+
+    const problemEntries = (candidate.problemEntries as unknown[]).map((entry: unknown) => {
+      const item = entry as StorefrontProblemEntry;
+      return {
+        title: item.title.trim(),
+        description: item.description.trim(),
+        href: item.href,
+      };
+    });
+
+    if (new Set(problemEntries.map((entry) => entry.href)).size !== problemEntries.length) {
+      return null;
+    }
+
+    return { ...base, problemEntries };
   } catch {
     return null;
   }

@@ -369,7 +369,7 @@ public sealed partial class ManagedContentService : IManagedContentService
 
         if (definition.ContentType == "storefront_page")
         {
-            bodyMarkdown = ValidateStorefrontJson(bodyMarkdown);
+            bodyMarkdown = ValidateStorefrontJson(definition.Key, bodyMarkdown);
             versionLabel = null;
         }
 
@@ -506,7 +506,7 @@ public sealed partial class ManagedContentService : IManagedContentService
             StorefrontContentSeed.CreateJson(definition.Key),
             null);
 
-    private static string ValidateStorefrontJson(string value)
+    private static string ValidateStorefrontJson(string definitionKey, string value)
     {
         try
         {
@@ -528,6 +528,12 @@ public sealed partial class ManagedContentService : IManagedContentService
 
             // Les montants restent exclusivement dans Billing. Le contenu peut
             // dire « Sur devis » mais ne peut pas introduire un prix public.
+            if (definitionKey == "storefront:services"
+                && (!HasServicesLandingProblemEntries(root)
+                    || !HasServicesLandingCategories(root)))
+            {
+                throw new PortalValidationException();
+            }
             if (CurrencyAmountPattern().IsMatch(value))
             {
                 throw new PortalValidationException();
@@ -579,6 +585,72 @@ public sealed partial class ManagedContentService : IManagedContentService
                 ? HasText(item, secondTextProperty, 3, 12000)
                 : HasAllowedRoute(item, routeField)));
     }
+    private static bool HasServicesLandingProblemEntries(JsonElement root)
+    {
+        if (!root.TryGetProperty("problemEntries", out var values)
+            || values.ValueKind != JsonValueKind.Array
+            || values.GetArrayLength() != 6)
+        {
+            return false;
+        }
+
+        var destinations = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var item in values.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object
+                || !HasText(item, "title", 3, 120)
+                || !HasText(item, "description", 10, 400)
+                || !item.TryGetProperty("href", out var hrefValue)
+                || hrefValue.ValueKind != JsonValueKind.String
+                || hrefValue.GetString() is not { } href
+                || !IsAllowedServicesProblemRoute(href)
+                || !destinations.Add(href))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool HasServicesLandingCategories(JsonElement root)
+    {
+        if (!root.TryGetProperty("relatedLinks", out var values)
+            || values.ValueKind != JsonValueKind.Array
+            || values.GetArrayLength() != 4)
+        {
+            return false;
+        }
+
+        var destinations = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var item in values.EnumerateArray())
+        {
+            if (!item.TryGetProperty("href", out var hrefValue)
+                || hrefValue.ValueKind != JsonValueKind.String
+                || hrefValue.GetString() is not { } href
+                || !IsServicesCategoryRoute(href)
+                || !destinations.Add(href))
+            {
+                return false;
+            }
+        }
+
+        return destinations.Count == 4;
+    }
+
+    private static bool IsAllowedServicesProblemRoute(string route)
+        => route is "/services/messagerie-professionnelle"
+            or "/services/sauvegarde-externalisee"
+            or "/vpn-ou-bureau-a-distance-que-choisir"
+            or "/services/unifi"
+            or "/services/cloud-hebergement"
+            or "/services/support-it";
+
+    private static bool IsServicesCategoryRoute(string route)
+        => route is "/services/cloud-hebergement"
+            or "/services/domaines-messagerie"
+            or "/services/reseau-securite"
+            or "/services/support-it";
     [GeneratedRegex(@"(?<![\p{L}\p{N}])\d{1,6}(?:[.,]\d{1,2})?\s*(?:\u20AC|euros?|eur)(?![\p{L}])", RegexOptions.IgnoreCase)]
     private static partial Regex CurrencyAmountPattern();
 

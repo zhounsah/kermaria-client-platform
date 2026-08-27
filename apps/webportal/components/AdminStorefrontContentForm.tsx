@@ -8,7 +8,11 @@ import { requestBffJson } from "@/lib/client-api";
 import {
   isStorefrontSelfServiceCta,
   parseStorefrontPageContent,
+  parseStorefrontServicesLandingContent,
+  STOREFRONT_SERVICES_CATEGORY_DESTINATIONS,
+  STOREFRONT_SERVICES_PROBLEM_DESTINATIONS,
   type StorefrontPageContent,
+  type StorefrontServicesLandingContent,
 } from "@/lib/storefront-content";
 const ALLOWED_DESTINATIONS = [
   "/contact", "/diagnostic", "/tarifs", "/services", "/formules",
@@ -27,17 +31,36 @@ export function AdminStorefrontContentForm({
 }: AdminStorefrontContentFormProps) {
   const router = useRouter();
   const isSubmittingRef = useRef(false);
-  const parsed = parseStorefrontPageContent(content.bodyMarkdown);
-  const [page, setPage] = useState<StorefrontPageContent | null>(parsed);
+  const isServicesLanding = content.key === "storefront:services";
+  const parsed = isServicesLanding
+    ? parseStorefrontServicesLandingContent(content.bodyMarkdown, true)
+    : parseStorefrontPageContent(content.bodyMarkdown);
+  const [page, setPage] = useState<
+    StorefrontPageContent | StorefrontServicesLandingContent | null
+  >(parsed);
   const [message, setMessage] = useState<{ tone: "success" | "error"; text: string } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const allowedDestinations = selfServiceOrderable === false
     ? ALLOWED_DESTINATIONS.filter((href) => href !== "/formules")
     : [...ALLOWED_DESTINATIONS];
+  const relatedDestinations = isServicesLanding
+    ? [...STOREFRONT_SERVICES_CATEGORY_DESTINATIONS]
+    : allowedDestinations;
   if (!page) {
     return <FormMessage title="Contenu invalide" tone="error"><p>Ce contenu structuré ne peut pas être affiché dans le formulaire. Il n’a pas été modifié.</p></FormMessage>;
   }
-  const change = <K extends keyof StorefrontPageContent>(key: K, value: StorefrontPageContent[K]) => setPage((current) => current ? { ...current, [key]: value } : current);
+  const change = <K extends keyof StorefrontPageContent>(
+    key: K,
+    value: StorefrontPageContent[K],
+  ) => setPage((current) => current ? { ...current, [key]: value } : current);
+
+  const changeProblemEntries = (
+    updater: (entries: StorefrontServicesLandingContent["problemEntries"]) =>
+      StorefrontServicesLandingContent["problemEntries"],
+  ) => setPage((current) => {
+    if (!current || !("problemEntries" in current)) return current;
+    return { ...current, problemEntries: updater(current.problemEntries) };
+  });
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (isSubmittingRef.current) return;
@@ -77,9 +100,67 @@ export function AdminStorefrontContentForm({
       </div>
       <div className="managed-content-preview-card"><span className="card-kicker">Aperçu du haut de page</span><h3>{page.title}</h3><p>{page.lead}</p><p className="managed-content-preview-meta">SEO : {page.seoTitle}</p></div>
     </div>
+    {isServicesLanding && "problemEntries" in page ? (
+      <fieldset>
+        <legend>Problèmes / besoins</legend>
+        <p className="form-hint">
+          Ces six entrées orientent vers une Ressource, une catégorie ou une page service.
+          Elles ne doivent jamais pointer directement vers un configurateur Billing.
+        </p>
+        {page.problemEntries.map((entry, index) => (
+          <div className="storefront-admin-item" key={`${entry.href}-${index}`}>
+            <label>
+              Titre du besoin
+              <input
+                maxLength={120}
+                onChange={(event) => changeProblemEntries((entries) =>
+                  entries.map((item, current) =>
+                    current === index ? { ...item, title: event.target.value } : item
+                  )
+                )}
+                value={entry.title}
+              />
+            </label>
+            <label>
+              Description
+              <textarea
+                maxLength={400}
+                onChange={(event) => changeProblemEntries((entries) =>
+                  entries.map((item, current) =>
+                    current === index ? { ...item, description: event.target.value } : item
+                  )
+                )}
+                rows={3}
+                value={entry.description}
+              />
+            </label>
+            <label>
+              Destination
+              <select
+                onChange={(event) => changeProblemEntries((entries) =>
+                  entries.map((item, current) =>
+                    current === index
+                      ? {
+                          ...item,
+                          href: event.target.value as StorefrontServicesLandingContent["problemEntries"][number]["href"],
+                        }
+                      : item
+                  )
+                )}
+                value={entry.href}
+              >
+                {STOREFRONT_SERVICES_PROBLEM_DESTINATIONS.map((href) => (
+                  <option key={href} value={href}>{href}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+        ))}
+      </fieldset>
+    ) : null}
     <fieldset><legend>Sections pédagogiques</legend>{page.sections.map((section, index) => <div className="storefront-admin-item" key={`${section.heading}-${index}`}><label>Titre de section<input maxLength={4000} onChange={(event) => change("sections", page.sections.map((entry, current) => current === index ? { ...entry, heading: event.target.value } : entry))} value={section.heading} /></label><label>Contenu Markdown<textarea maxLength={12000} onChange={(event) => change("sections", page.sections.map((entry, current) => current === index ? { ...entry, bodyMarkdown: event.target.value } : entry))} rows={5} value={section.bodyMarkdown} /></label></div>)}</fieldset>
     <fieldset><legend>Questions fréquentes</legend>{page.faq.map((item, index) => <div className="storefront-admin-item" key={`${item.question}-${index}`}><label>Question<input maxLength={4000} onChange={(event) => change("faq", page.faq.map((entry, current) => current === index ? { ...entry, question: event.target.value } : entry))} value={item.question} /></label><label>Réponse<textarea maxLength={12000} onChange={(event) => change("faq", page.faq.map((entry, current) => current === index ? { ...entry, answer: event.target.value } : entry))} rows={3} value={item.answer} /></label></div>)}</fieldset>
-    <fieldset><legend>Pages associées</legend>{page.relatedLinks.map((link, index) => <div className="storefront-admin-item storefront-admin-link" key={`${link.href}-${index}`}><label>Libellé<input maxLength={4000} onChange={(event) => change("relatedLinks", page.relatedLinks.map((entry, current) => current === index ? { ...entry, label: event.target.value } : entry))} value={link.label} /></label><label>Destination<select onChange={(event) => change("relatedLinks", page.relatedLinks.map((entry, current) => current === index ? { ...entry, href: event.target.value } : entry))} value={link.href}>{!allowedDestinations.includes(link.href as typeof allowedDestinations[number]) ? <option value={link.href}>{link.href}</option> : null}{allowedDestinations.map((href) => <option key={href} value={href}>{href}</option>)}</select></label></div>)}</fieldset>
+    <fieldset><legend>{isServicesLanding ? "Domaines d'intervention" : "Pages associées"}</legend>{page.relatedLinks.map((link, index) => <div className="storefront-admin-item storefront-admin-link" key={`${link.href}-${index}`}><label>Libellé<input maxLength={4000} onChange={(event) => change("relatedLinks", page.relatedLinks.map((entry, current) => current === index ? { ...entry, label: event.target.value } : entry))} value={link.label} /></label><label>Destination<select onChange={(event) => change("relatedLinks", page.relatedLinks.map((entry, current) => current === index ? { ...entry, href: event.target.value } : entry))} value={link.href}>{!relatedDestinations.some((href) => href === link.href) ? <option value={link.href}>{link.href}</option> : null}{relatedDestinations.map((href) => <option key={href} value={href}>{href}</option>)}</select></label></div>)}</fieldset>
     {message ? <FormMessage title={message.tone === "success" ? "Enregistrement" : "Erreur"} tone={message.tone}><p>{message.text}</p></FormMessage> : null}
     <div className="stack-row"><SubmitButton idleLabel="Enregistrer la page" isSubmitting={isSubmitting} submittingLabel="Enregistrement..." /></div>
   </form>;
