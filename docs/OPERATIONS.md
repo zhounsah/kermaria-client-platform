@@ -1,6 +1,6 @@
 # Exploitation - current
 
-> Current navigation - 2026-08-27: [`CURRENT_STATE.md`](CURRENT_STATE.md) is the production truth. This file remains the operational runbook for validation, supervision and rollback. Current deployed release: `v2.0.0.4`.
+> Current navigation - 2026-08-27: [`CURRENT_STATE.md`](CURRENT_STATE.md) is the production truth. This file remains the operational runbook for validation, supervision and rollback. Current deployed release: `v2.0.0.5`.
 
 ## Objectif
 

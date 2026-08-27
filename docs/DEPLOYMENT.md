@@ -1,15 +1,15 @@
 # Deploiement
 
-> Current navigation - 2026-08-27: start with [`CURRENT_STATE.md`](CURRENT_STATE.md), then use [`OPERATIONS.md`](OPERATIONS.md) for validation and rollback. Production release: `v2.0.0.4` (`b66e89dff6c1c99205f27931f942b7c4735c38da`).
+> Current navigation - 2026-08-27: start with [`CURRENT_STATE.md`](CURRENT_STATE.md), then use [`OPERATIONS.md`](OPERATIONS.md) for validation and rollback. Production release: `v2.0.0.5` (`a6eefcd09833bb7e2384f5a7694e47a4e6621cd1`).
 
 Production actuelle : SRV-11 porte edge/TLS, SRV-12 porte WEBPORTAL sous Ubuntu/systemd, SRV-13 porte API-INTERNAL sous Windows et SRV-06 porte MariaDB.
 
-Runtime v2.0.0.4 verifie le 27 aout 2026 :
+Runtime v2.0.0.5 verifie le 27 aout 2026 :
 
-- WEBPORTAL : `/opt/kermaria/releases/20260827-111656-v2.0.0.4-b66e89d` ;
-- API-INTERNAL : `C:\apps\api-internal`, commit marker `b66e89dff6c1c99205f27931f942b7c4735c38da` ;
-- migration `072_editorial_resource_redirects` presente et deja appliquee avant la bascule runtime ;
-- details et hashes : [`releases/V2.0.0.4.md`](releases/V2.0.0.4.md).
+- WEBPORTAL : `/opt/kermaria/releases/20260827-191145-v2.0.0.5-a6eefcd` ;
+- API-INTERNAL : `C:\apps\api-internal`, commit marker `a6eefcd09833bb7e2384f5a7694e47a4e6621cd1` ;
+- aucune migration SQL requise par v2.0.0.5 ;
+- details et hashes : [`releases/V2.0.0.5.md`](releases/V2.0.0.5.md).
 
 Le runbook DEPLOYMENT_WINDOWS.md decrit l ancienne topologie SRV-01/SRV-02 et reste utile uniquement comme historique/staging.
 Voir aussi DOMAIN_MIGRATION_2026-08-20.md. Le present document reste la reference des variables, modes et garde-fous generaux.

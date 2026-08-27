@@ -1,7 +1,7 @@
 # Current state - Zachary IT platform
 Last verified: 2026-08-27
-Current production release: `v2.0.0.4`
-Release commit: `b66e89dff6c1c99205f27931f942b7c4735c38da`
+Current production release: `v2.0.0.5`
+Release commit: `a6eefcd09833bb7e2384f5a7694e47a4e6621cd1`
 This document is the primary entry point for the current platform state. Older V0.x/V1.x documents remain useful as implementation history, but they must not override this file, the current code, or the current deployment runbooks.
 ## Production topology
 ```text
@@ -57,20 +57,27 @@ Important behavior:
 - inactive tiers do not lower the admin "A partir de" price;
 - provider mapping remains advanced configuration; Stripe `price_data` inline does not require a pre-created Stripe price mapping.
 Known non-blocking UX debt: browser Back/Forward navigation is not fully interceptable for unsaved drafts. Do not add fragile `popstate` history hacks without a dedicated design/review.
+## Public services landing
+Since `v2.0.0.5`, public `/services` is a problem-to-solution router before the technical catalog:
+- six customer-need entry points route to the relevant service or educational resource;
+- the four service universes remain the second navigation level;
+- the hero keeps the audit action and no longer injects `Comparer les formules`;
+- the public renderer accepts the legacy `storefront:services` JSON through a deterministic transition fallback; the next normal authenticated CMS save persists the strict `problemEntries` shape.
+The client-portal `/services` route remains a separate authenticated surface and stays `noindex, nofollow` on portal hosts.
 ## Current production deployment
 API-INTERNAL active runtime:
 - host: SRV-13
 - service: `KermariaApiInternal`
-- active commit marker: `b66e89dff6c1c99205f27931f942b7c4735c38da`
-- pre-release backup: `C:\apps\api-internal-backup-pre-v2.0.0.4-20260827-130738`
+- active commit marker: `a6eefcd09833bb7e2384f5a7694e47a4e6621cd1`
+- pre-release backup: `C:\apps\api-internal-backups\20260827-190441-v2.0.0.4-b66e89d`
 WEBPORTAL active runtime:
 - host: SRV-12
 - service: `kermaria-webportal`
-- active release: `/opt/kermaria/releases/20260827-111656-v2.0.0.4-b66e89d`
-- previous release retained: `/opt/kermaria/releases/20260826-160733-v2.0.0.3-d0e0fee`
+- active release: `/opt/kermaria/releases/20260827-191145-v2.0.0.5-a6eefcd`
+- previous release retained: `/opt/kermaria/releases/20260827-111656-v2.0.0.4-b66e89d`
 Release artifacts:
-- API zip SHA-256: `2A732BCC9632BE3B2C40EFB970A311DF3C704B3329B567989A7BC1720BAED7C1`
-- WEBPORTAL tar.gz SHA-256: `58E5669C898ECD70629CBB29C3BAF730B2429512C9D39EBDFA70CC6FFF020DC6`
+- API zip SHA-256: `7F87D6B816B65AC9AC27F82BCF2F61107B77DF766F09EDD30117700271DE4E00`
+- WEBPORTAL tar.gz SHA-256: `019D28D0F2BE26A80AD96338BE1C117B3CB96CFC36ABB2BF0FEEC444E164C60C`
 Migration `072_editorial_resource_redirects` is present in production and was already applied before the v2.0.0.4 runtime cutover. No SQL write was required during the cutover.
 ## Production smoke test - 2026-08-27
 Verified after deployment:
@@ -97,5 +104,5 @@ For current work, read in this order:
 4. `docs/OPERATIONS.md`
 5. `docs/DEPLOYMENT.md`
 6. `docs/GUIDE_ADMIN.md`
-7. `docs/releases/V2.0.0.2.md`
+7. `docs/releases/V2.0.0.5.md`
 Historical documents under V0.x, V1.x and `docs/v1.4/` document how the platform got here. They are not automatically current operational truth.
