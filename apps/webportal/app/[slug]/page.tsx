@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { notFound, redirect } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import { connection } from "next/server";
 
 import { ManagedMarkdown } from "@/components/ManagedMarkdown";
@@ -52,7 +52,7 @@ export default async function EditorialSeoPage({
   const path = `/${slug}`;
   const redirectResult = await getEditorialRedirect(path);
   if (redirectResult.data?.newPath && redirectResult.data.newPath !== path) {
-    redirect(redirectResult.data.newPath);
+    permanentRedirect(redirectResult.data.newPath);
   }
 
   const result = await getPublicSeoPage(slug);

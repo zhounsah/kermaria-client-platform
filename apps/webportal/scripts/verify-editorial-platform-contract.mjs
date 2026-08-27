@@ -13,6 +13,9 @@ const sharedTypes = await readRoot("packages/shared/src/index.ts");
 const migration = await readRoot(
   "apps/api-internal/Migrations/MariaDb/045_editorial_platform.sql",
 );
+const resourceRedirectMigration = await readRoot(
+  "apps/api-internal/Migrations/MariaDb/072_editorial_resource_redirects.sql",
+);
 const contracts = await readRoot("apps/api-internal/Contracts/EditorialContracts.cs");
 const service = await readRoot("apps/api-internal/Services/EditorialService.cs");
 const program = await readRoot("apps/api-internal/Program.cs");
@@ -107,6 +110,21 @@ assert.match(wikiHome, /Aucun article publié/);
 assert.match(wikiArticle, /wikiCanonical/);
 assert.match(wikiArticle, /ManagedMarkdown/);
 assert.match(seoPage, /getEditorialRedirect/);
+assert.match(seoPage, /permanentRedirect/);
+assert.match(proxy, /kind: "redirect"; newPath: string/);
+assert.ok(proxy.includes("PUBLIC_ROUTES.some"));
+assert.ok(!proxy.includes("isPublicRoute(pathname)"));
+assert.ok(proxy.includes("NextResponse.redirect(editorialResolution.newPath, 308)"));
+for (const expected of [
+  "/securite-des-donnees",
+  "https://wiki.zacharyhounsa.ovh/article/securite-des-donnees",
+  "/fonctionnement-sauvegarde-zachary-it",
+  "https://wiki.zacharyhounsa.ovh/article/fonctionnement-sauvegarde-zachary-it",
+  "/ou-sont-stockees-les-donnees-zachary-it",
+  "https://wiki.zacharyhounsa.ovh/article/ou-sont-stockees-les-donnees-zachary-it",
+]) {
+  assert.ok(resourceRedirectMigration.includes(expected));
+}
 assert.match(seoPage, /getPublicSeoPage/);
 assert.match(seoPage, /page\.categoryName/);
 assert.match(seoPage, /className="eyebrow"/);

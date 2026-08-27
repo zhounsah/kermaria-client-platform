@@ -1,11 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import {
+  PUBLIC_ROUTES,
   getWikiHostKind,
   isClientCheckoutContinuationPath,
   isClientOrAdminPortalHost,
   isPortalApplicationPath,
-  isPublicRoute,
   resolveCanonicalPublicUrl,
   resolvePortalPublicRedirectUrl,
   resolveWikiRewritePath,
@@ -16,6 +16,7 @@ const INTERNAL_API_TIMEOUT_MS = 3000;
 type EditorialSlugResolution =
   | { kind: "missing" }
   | { kind: "present" }
+  | { kind: "redirect"; newPath: string }
   | { kind: "unknown" };
 
 function getRequestHost(request: NextRequest): string | null {
@@ -39,7 +40,7 @@ function getInternalServiceHeaders(): Record<string, string> {
 
 function isEditorialSlugCandidate(pathname: string): boolean {
   if (
-    isPublicRoute(pathname)
+    PUBLIC_ROUTES.some((route) => route === pathname)
     || isPortalApplicationPath(pathname)
     || pathname !== `/${pathname.slice(1)}`
     || pathname.slice(1).includes("/")
@@ -91,8 +92,14 @@ async function resolveEditorialSlug(
         encodeURIComponent(pathname)
       }`,
     );
-    if (redirect && typeof redirect === "object" && "newPath" in redirect) {
-      return { kind: "present" };
+    if (
+      redirect
+      && typeof redirect === "object"
+      && "newPath" in redirect
+      && typeof redirect.newPath === "string"
+      && redirect.newPath.trim()
+    ) {
+      return { kind: "redirect", newPath: redirect.newPath };
     }
 
     const page = await readInternalJsonOrNull(
@@ -148,15 +155,16 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(publicHostRedirectUrl, 301);
   }
 
-  if (
-    !isClientOrAdminPortalHost(requestHost)
-    && !getWikiHostKind(requestHost)
-    && (await resolveEditorialSlug(request.nextUrl.pathname)).kind === "missing"
-  ) {
-    return notFoundResponse();
-  }
-
   const wikiHostKind = getWikiHostKind(requestHost);
+  if (!isClientOrAdminPortalHost(requestHost) && !wikiHostKind) {
+    const editorialResolution = await resolveEditorialSlug(request.nextUrl.pathname);
+    if (editorialResolution.kind === "redirect") {
+      return NextResponse.redirect(editorialResolution.newPath, 308);
+    }
+    if (editorialResolution.kind === "missing") {
+      return notFoundResponse();
+    }
+  }
   if (wikiHostKind) {
     if (
       request.nextUrl.pathname === "/robots.txt"
