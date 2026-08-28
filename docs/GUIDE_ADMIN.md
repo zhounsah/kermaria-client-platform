@@ -325,6 +325,46 @@ Dans les trois cas, **Restaurer le texte par defaut** reecrit la valeur du
 code comme nouvelle version ; rien n'est supprime et l'historique reste
 consultable.
 
+## 7 quater. Diagnostic - `/admin/settings/diagnostic`
+
+Le parcours public `/diagnostic` est entierement administrable : contextes,
+libelles, questions, options, conditions d'affichage, textes de resultat et
+correspondance vers les besoins Billing V2.
+
+Deux etats coexistent :
+
+- **Brouillon** : ce que vous editez. Il n'est jamais visible du public.
+- **Publie** : ce que voient les visiteurs.
+
+Marche a suivre :
+
+1. choisir le contexte a modifier dans la liste ;
+2. modifier presentation, questions et textes de resultat ;
+3. verifier le bandeau d'erreurs : tant qu'il est present, l'enregistrement
+   est refuse ;
+4. utiliser l'onglet **Simulateur** pour repondre comme un visiteur et lire le
+   resultat, la selection Billing V2 et les identifiants des regles
+   appliquees ;
+5. **Enregistrer le brouillon** ;
+6. **Publier** apres confirmation : le parcours public bascule d'un seul coup
+   sur la nouvelle version.
+
+Points de vigilance :
+
+- la derniere regle de resultat d'un contexte doit rester sans condition ;
+  elle garantit qu'un visiteur obtient toujours une reponse ;
+- un contexte « eligible a une formule » sans correspondance Billing V2 sort
+  systematiquement en cadrage/devis ;
+- le diagnostic ne calcule aucun prix : la tarification reste l'affaire de
+  Billing V2 ;
+- sans version publiee, le site utilise la configuration integree au code : ce
+  n'est pas une panne ;
+- le bouton « Repartir de la configuration du code » ne modifie que le
+  brouillon en cours d'edition ; il faut ensuite enregistrer puis publier ;
+- les mutations exigent la permission `settings.diagnostic.write` ;
+- l'onglet **Historique** liste les enregistrements et publications avec leur
+  reference de correlation.
+
 ## 8. Diagnostic rapide
 
 Quand un client remonte un probleme de panier, paiement, abonnement ou

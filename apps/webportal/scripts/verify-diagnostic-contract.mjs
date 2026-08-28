@@ -6,7 +6,7 @@ async function read(path) {
   return readFile(new URL(`../${path}`, import.meta.url), "utf8");
 }
 
-async function importPureTypeScript(source, label) {
+function transpileToDataUrl(source, label) {
   const transpiled = ts.transpileModule(source, {
     compilerOptions: {
       module: ts.ModuleKind.ES2022,
@@ -20,7 +20,11 @@ async function importPureTypeScript(source, label) {
   );
   assert.deepEqual(errors, [], `${label} doit etre transpile sans erreur.`);
   const encoded = Buffer.from(transpiled.outputText).toString("base64");
-  return import(`data:text/javascript;base64,${encoded}`);
+  return `data:text/javascript;base64,${encoded}`;
+}
+
+async function importPureTypeScript(source, label) {
+  return import(transpileToDataUrl(source, label));
 }
 
 const billingV2FormulesStub = String.raw`
@@ -106,6 +110,26 @@ const publicRoutes = await read("lib/public-route-config.ts");
 const sitemap = await read("app/sitemap.ts");
 const signupPage = await read("app/signup/page.tsx");
 const signupRoute = await read("app/api/signup/route.ts");
+const diagnosticValidation = await read("lib/diagnostic-configuration-validation.ts");
+const diagnosticConfigurationLib = await read("lib/diagnostic-configuration.ts");
+const diagnosticAdminPage = await read("app/admin/settings/diagnostic/page.tsx");
+const diagnosticAdminCenter = await read("components/AdminDiagnosticCenter.tsx");
+const diagnosticAdminEditor = await read("components/AdminDiagnosticEditor.tsx");
+const diagnosticAdminSimulator = await read("components/AdminDiagnosticSimulator.tsx");
+const diagnosticDraftRoute = await read("app/api/admin/diagnostic/draft/route.ts");
+const diagnosticPublishRoute = await read("app/api/admin/diagnostic/publish/route.ts");
+const diagnosticRegistryCs = await read(
+  "../../apps/api-internal/Data/Configuration/DiagnosticConfigurationRegistry.cs",
+);
+const diagnosticServiceCs = await read(
+  "../../apps/api-internal/Services/DiagnosticConfigurationService.cs",
+);
+const diagnosticRepositoryCs = await read(
+  "../../apps/api-internal/Data/Repositories/MariaDbDiagnosticConfigurationRepository.cs",
+);
+const diagnosticMigration = await read(
+  "../../apps/api-internal/Migrations/MariaDb/075_diagnostic_configuration.sql",
+);
 const programCs = await read("../../apps/api-internal/Program.cs");
 const fiscalPolicy = await read("../../apps/api-internal/Services/FiscalPolicy.cs");
 
@@ -117,16 +141,48 @@ const billingV2FormulesRuntime = await importPureTypeScript(
   billingV2Formules,
   "billing-v2-formules.ts",
 );
-const contextRuntime = await importPureTypeScript(
+// `diagnostic-context.ts` n'a plus que des imports de types : il se transpile
+// en module autonome, reutilisable tel quel comme dependance reelle de
+// l'interpreteur adaptatif. Le moteur de recommandation, lui, reste stube
+// pour que ce contrat teste la DSL et non la tarification.
+const diagnosticContextUrl = transpileToDataUrl(
   diagnosticContext,
   "diagnostic-context.ts",
 );
+const contextRuntime = await import(diagnosticContextUrl);
 const adaptiveRuntime = await importPureTypeScript(
-  adaptiveDiagnostic.replaceAll(
-    '"@/lib/public-diagnostic"',
-    JSON.stringify(recommendationStubUrl),
-  ),
+  adaptiveDiagnostic
+    .replaceAll('"@/lib/public-diagnostic"', JSON.stringify(recommendationStubUrl))
+    .replaceAll('"@/lib/diagnostic-context"', JSON.stringify(diagnosticContextUrl)),
   "adaptive-diagnostic.ts",
+);
+
+// Seule la constante d'operateurs est importee a l'execution depuis le contrat
+// partage : on la stube, et on verifie juste apres qu'elle correspond bien a la
+// liste declaree dans `packages/shared`.
+const DSL_OPERATORS = ["equals", "not_equals", "one_of", "includes", "only", "answered"];
+const sharedDiagnosticStubUrl = `data:text/javascript;base64,${Buffer.from(
+  `export const DIAGNOSTIC_CONDITION_OPERATORS=${JSON.stringify(DSL_OPERATORS)};`,
+).toString("base64")}`;
+const sharedOperatorBlock =
+  /DIAGNOSTIC_CONDITION_OPERATORS = \[([\s\S]*?)\] as const;/.exec(sharedTypes)?.[1] ?? "";
+for (const operator of DSL_OPERATORS) {
+  assert.ok(
+    sharedOperatorBlock.includes(`"${operator}"`),
+    `Operateur absent du contrat partage : ${operator}`,
+  );
+}
+assert.equal(
+  (sharedOperatorBlock.match(/"[a-z_]+",/g) ?? []).length,
+  DSL_OPERATORS.length,
+  "La DSL doit rester fermee : aucun operateur supplementaire.",
+);
+
+const validationRuntime = await importPureTypeScript(
+  diagnosticValidation
+    .replaceAll('"@/lib/diagnostic-context"', JSON.stringify(diagnosticContextUrl))
+    .replaceAll('"@kermaria/shared"', JSON.stringify(sharedDiagnosticStubUrl)),
+  "diagnostic-configuration-validation.ts",
 );
 
 const catalog = {
@@ -706,5 +762,129 @@ assert.doesNotMatch(
     .join("\n"),
   /catalogConfiguration|packSelection/,
 );
+
+// --- Diagnostic administrable (Centre de configuration, section 9) ---------
+
+// La configuration integree au code doit satisfaire le registre ferme : sinon
+// le repli du parcours public serait lui-meme refuse a la publication.
+const defaultValidation = validationRuntime.validateDiagnosticConfiguration(
+  contextRuntime.DEFAULT_DIAGNOSTIC_CONFIGURATION,
+);
+assert.deepEqual(
+  defaultValidation.errors,
+  [],
+  "La configuration integree au code doit passer la validation fermee.",
+);
+assert.notEqual(defaultValidation.configuration, null);
+
+// Une configuration inconnue ou incomplete est refusee, jamais tronquee.
+assert.notEqual(
+  validationRuntime.validateDiagnosticConfiguration({ schemaVersion: 1, contexts: [] })
+    .errors.length,
+  0,
+);
+assert.notEqual(
+  validationRuntime.validateDiagnosticConfiguration(null).errors.length,
+  0,
+);
+
+// Un operateur hors DSL est refuse : la base ne stocke aucun script.
+const forgedOperator = JSON.parse(
+  JSON.stringify(contextRuntime.DEFAULT_DIAGNOSTIC_CONFIGURATION),
+);
+forgedOperator.contexts
+  .find((context) => context.id === "backup")
+  .guidance[0].when[0].operator = "eval";
+assert.notEqual(
+  validationRuntime.validateDiagnosticConfiguration(forgedOperator).errors.length,
+  0,
+  "Un operateur inconnu doit etre refuse.",
+);
+
+// La derniere regle de chaque contexte reste inconditionnelle : un resultat
+// existe donc toujours, quelle que soit la combinaison de reponses.
+for (const context of contextRuntime.DEFAULT_DIAGNOSTIC_CONFIGURATION.contexts) {
+  const last = context.guidance[context.guidance.length - 1];
+  assert.equal(
+    last.when.length,
+    0,
+    `Le contexte ${context.id} doit finir par une regle inconditionnelle.`,
+  );
+}
+
+// Les contextes fermes cote API-INTERNAL et cote WebPortal ne peuvent pas
+// diverger : une divergence rendrait toute publication impossible.
+for (const id of contextRuntime.DIAGNOSTIC_CONTEXT_IDS) {
+  assert.ok(
+    diagnosticRegistryCs.includes(`"${id}"`),
+    `Le registre C# doit connaitre le contexte ${id}.`,
+  );
+}
+for (const operator of ["equals", "not_equals", "one_of", "includes", "only", "answered"]) {
+  assert.ok(diagnosticRegistryCs.includes(`"${operator}"`));
+  assert.ok(adaptiveDiagnostic.includes(`case "${operator}"`));
+}
+
+// Aucun moteur de scripting : ni evaluation, ni construction de fonction.
+assert.doesNotMatch(adaptiveDiagnostic, /eval\(|new Function|Function\(/);
+assert.doesNotMatch(diagnosticValidation, /eval\(|new Function/);
+
+// Versioning, publication atomique et repli.
+assert.match(diagnosticMigration, /CREATE TABLE IF NOT EXISTS diagnostic_configurations/);
+assert.match(
+  diagnosticMigration,
+  /CREATE TABLE IF NOT EXISTS diagnostic_configuration_revisions/,
+);
+assert.match(diagnosticMigration, /state IN \('draft', 'published'\)/);
+assert.match(diagnosticRepositoryCs, /BeginTransactionAsync/);
+assert.match(diagnosticRepositoryCs, /FOR UPDATE/);
+assert.match(diagnosticRepositoryCs, /MariaDbIdentifierReader\.ReadNullable/);
+assert.doesNotMatch(diagnosticRepositoryCs, /CREATE TABLE|ALTER TABLE/);
+assert.match(diagnosticServiceCs, /DIAGNOSTIC_VERSION_CONFLICT/);
+assert.match(diagnosticServiceCs, /DIAGNOSTIC_PUBLISHED/);
+// La revalidation avant publication interdit qu'un brouillon accepte autrefois
+// atteigne le public apres un durcissement du registre.
+assert.match(diagnosticServiceCs, /Revalidation avant publication/);
+
+// API : les routes existent et la mutation est bornee par la permission dediee.
+for (const route of [
+  "/internal/admin/diagnostic/configuration",
+  "/internal/admin/diagnostic/revisions",
+  "/internal/admin/diagnostic/validate",
+  "/internal/admin/diagnostic/draft",
+  "/internal/admin/diagnostic/publish",
+  "/internal/public/diagnostic/configuration",
+]) {
+  assert.ok(programCs.includes(route), `Route manquante : ${route}`);
+}
+assert.match(programCs, /"settings\.diagnostic\.write"/);
+
+// Le parcours public lit la version publiee, jamais le brouillon.
+assert.match(diagnosticConfigurationLib, /getPublicDiagnosticConfiguration/);
+assert.match(diagnosticConfigurationLib, /DEFAULT_DIAGNOSTIC_CONFIGURATION/);
+assert.match(diagnosticPage, /resolvePublishedDiagnosticConfiguration/);
+assert.match(diagnosticPage, /configuration=\{configuration\}/);
+
+// BFF : enveloppe verifiee, autorite laissee a API-INTERNAL.
+assert.match(diagnosticDraftRoute, /handleAdminMutation/);
+assert.match(diagnosticDraftRoute, /"PUT"/);
+assert.match(diagnosticPublishRoute, /expectedDraftVersion/);
+assert.match(diagnosticPublishRoute, /expectedPublishedVersion/);
+
+// Simulateur : il appelle le moteur reel, il ne le reimplemente pas.
+assert.match(diagnosticAdminSimulator, /buildAdaptiveDiagnosticOutcome/);
+assert.match(diagnosticAdminSimulator, /getVisibleDiagnosticQuestions/);
+assert.match(diagnosticAdminSimulator, /pruneHiddenDiagnosticAnswers/);
+assert.match(diagnosticAdminSimulator, /outcome\.appliedRuleIds/);
+// Le diagnostic ne calcule jamais de prix, pas meme dans l'administration.
+assert.doesNotMatch(diagnosticAdminSimulator, /monthlyAmountCents|toIncVat|vatRate/);
+
+// Administration : publication explicite et confirmee, jamais implicite.
+assert.match(diagnosticAdminCenter, /\/api\/admin\/diagnostic\/draft/);
+assert.match(diagnosticAdminCenter, /\/api\/admin\/diagnostic\/publish/);
+assert.match(diagnosticAdminCenter, /window\.confirm/);
+assert.match(diagnosticAdminCenter, /validateDiagnosticConfiguration/);
+assert.match(diagnosticAdminPage, /requireAdminSession/);
+assert.match(diagnosticAdminEditor, /DIAGNOSTIC_CONDITION_OPERATORS/);
 
 console.log("Verification diagnostic adaptatif WEBPORTAL reussie.");

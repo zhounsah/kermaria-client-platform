@@ -103,7 +103,7 @@ export async function handleAdminMutation<
 >(
   request: NextRequest,
   internalPath: string,
-  method: "PATCH" | "POST" | "DELETE",
+  method: "PATCH" | "POST" | "PUT" | "DELETE",
   payload?: TPayload,
 ) {
   const correlationId = resolveCorrelationId(

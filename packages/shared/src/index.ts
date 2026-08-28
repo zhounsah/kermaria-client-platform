@@ -2648,3 +2648,164 @@ export type CommunicationTemplateScope = "email" | "notification" | "snippet";
 export interface PublicSystemSnippets {
   snippets: Record<string, string>;
 }
+
+// --- Diagnostic administrable (Centre de configuration, section 9) ----------
+// DSL declarative et fermee : aucun script, aucune expression arbitraire. Les
+// operateurs disponibles sont definis ici et interpretes par le code.
+
+export const DIAGNOSTIC_CONDITION_OPERATORS = [
+  /** La reponse simple vaut exactement `values[0]`. */
+  "equals",
+  /** La reponse simple n'appartient pas a `values` (non repondu = vrai). */
+  "not_equals",
+  /** La reponse simple appartient a `values`. */
+  "one_of",
+  /** La reponse multiple contient au moins une valeur de `values`. */
+  "includes",
+  /** La reponse multiple vaut exactement l'ensemble `values`. */
+  "only",
+  /** La question a recu une reponse non vide. */
+  "answered",
+] as const;
+
+export type DiagnosticConditionOperator =
+  (typeof DIAGNOSTIC_CONDITION_OPERATORS)[number];
+
+export interface DiagnosticConditionConfig {
+  questionId: string;
+  operator: DiagnosticConditionOperator;
+  values: string[];
+}
+
+export interface DiagnosticQuestionOptionConfig {
+  value: string;
+  label: string;
+  /** Option qui vide les autres choix d'une question multiple. */
+  exclusive: boolean;
+}
+
+export interface DiagnosticQuestionVisibilityConfig {
+  questionId: string;
+  values: string[];
+}
+
+export interface DiagnosticQuestionConfig {
+  id: string;
+  legend: string;
+  summaryLabel: string;
+  mode: "single" | "multi";
+  hint: string | null;
+  when: DiagnosticQuestionVisibilityConfig | null;
+  options: DiagnosticQuestionOptionConfig[];
+}
+
+/** Regle de texte de resultat. La premiere regle satisfaite gagne. */
+export interface DiagnosticGuidanceRuleConfig {
+  /** Identifiant stable affiche par le simulateur, ex. `DIA-BACKUP-STD`. */
+  id: string;
+  when: DiagnosticConditionConfig[];
+  title: string;
+  body: string;
+  points: string[];
+}
+
+/**
+ * Traduction declarative des reponses vers les besoins Billing V2. Le
+ * diagnostic ne calcule jamais de prix : il ne produit qu'une intention.
+ */
+export interface DiagnosticBillingMappingConfig {
+  /** Toutes ces conditions doivent tenir, sinon cadrage/devis. */
+  requireAll: DiagnosticConditionConfig[];
+  usersQuestionId: string | null;
+  structureQuestionId: string | null;
+  storageQuestionId: string | null;
+  restoreTestQuestionId: string | null;
+  needsRemoteFilesWhen: DiagnosticConditionConfig[] | null;
+  needsVpnWhen: DiagnosticConditionConfig[] | null;
+  needsWindowsDesktopWhen: DiagnosticConditionConfig[] | null;
+  individualDataKind: string;
+  organisationDataKind: string;
+}
+
+export interface DiagnosticContextConfig {
+  id: string;
+  label: string;
+  eyebrow: string;
+  title: string;
+  intro: string;
+  contactSubject: string;
+  formulaEligible: boolean;
+  questions: DiagnosticQuestionConfig[];
+  /** Ordonnee ; la derniere regle doit etre inconditionnelle. */
+  guidance: DiagnosticGuidanceRuleConfig[];
+  billingMapping: DiagnosticBillingMappingConfig | null;
+}
+
+export interface DiagnosticConfiguration {
+  schemaVersion: 1;
+  contexts: DiagnosticContextConfig[];
+}
+
+export type DiagnosticConfigurationState = "draft" | "published";
+
+export interface DiagnosticConfigurationRevisionItem {
+  state: DiagnosticConfigurationState;
+  version: number;
+  outcome: string;
+  actorUserId: string | null;
+  correlationId: string;
+  createdAt: string;
+}
+
+export interface DiagnosticConfigurationSnapshot {
+  state: DiagnosticConfigurationState;
+  version: number;
+  /** `code` quand aucune version n'est enregistree. */
+  source: "code" | "database";
+  updatedAt: string | null;
+  /**
+   * `null` tant qu'aucune version n'est enregistree : le WebPortal retombe
+   * alors sur la configuration integree a son code. L'API ne duplique pas
+   * cette valeur par defaut, ce qui evite deux sources de verite.
+   */
+  configuration: DiagnosticConfiguration | null;
+}
+
+/** Version publiee exposee au parcours public. */
+export interface PublicDiagnosticConfigurationResponse {
+  version: number;
+  source: "code" | "database";
+  updatedAt: string | null;
+  configuration: DiagnosticConfiguration | null;
+}
+
+export interface DiagnosticConfigurationAdminView {
+  draft: DiagnosticConfigurationSnapshot;
+  published: DiagnosticConfigurationSnapshot;
+  /** Vrai quand le brouillon differe de la version publiee. */
+  draftDiffers: boolean;
+  persistent: boolean;
+}
+
+export interface DiagnosticConfigurationUpdatePayload {
+  configuration: DiagnosticConfiguration;
+  expectedVersion: number;
+}
+
+export interface DiagnosticConfigurationPublishPayload {
+  expectedDraftVersion: number;
+  expectedPublishedVersion: number;
+}
+
+export interface DiagnosticConfigurationMutationResponse {
+  code: string;
+  message: string;
+  /** Erreurs de validation renvoyees par le registre ferme cote API. */
+  errors: string[];
+  view: DiagnosticConfigurationAdminView | null;
+  correlationId: string;
+}
+
+export interface DiagnosticConfigurationRevisionsResponse {
+  revisions: DiagnosticConfigurationRevisionItem[];
+}

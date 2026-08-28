@@ -175,6 +175,15 @@ cookie HttpOnly -> BFF -> session API-INTERNAL -> user_id -> customer_id
 - L'envoi de test d'un e-mail ne peut viser que l'adresse de
   l'administrateur connecte ; la route refuse toute autre destination, et
   l'allowlist SMTP de `EMAIL_LIVE_ALLOWLIST` continue de s'appliquer.
+- La configuration du diagnostic est une **DSL declarative fermee** : les
+  operateurs sont definis dans le code, la charge est reserialisee a partir du
+  modele, et aucun script ni expression arbitraire ne peut etre stocke. Elle
+  est validee a l'enregistrement **et** de nouveau avant publication.
+- Le parcours public ne lit que l'etat `published` du diagnostic ; le
+  brouillon reste invisible des visiteurs. La publication est atomique.
+- Toute mutation du diagnostic exige la permission
+  `settings.diagnostic.write` : un parcours mal configure orienterait de vrais
+  clients vers une mauvaise formule.
 - Les replis sont fail-closed au sens metier : en cas de panne SQL ou de
   ligne absente, le runtime utilise le gabarit integre au code, jamais un
   texte vide, et jamais une configuration plus permissive que l'absence de

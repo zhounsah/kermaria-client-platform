@@ -207,6 +207,65 @@ Points clefs :
   `/internal/public/system-snippets` et fusionnes cote portail avec des
   valeurs de repli identiques a celles du code.
 
+## Flux de publication du diagnostic
+
+```mermaid
+sequenceDiagram
+    participant A as Admin interne
+    participant W as WEBPORTAL / BFF
+    participant I as API-INTERNAL
+    participant M as MariaDB
+    participant V as Visiteur
+
+    A->>W: PUT /api/admin/diagnostic/draft
+    W->>W: session + role + CSRF
+    W->>I: PUT /internal/admin/diagnostic/draft
+    I->>I: registre ferme (DSL) + canonicalisation
+    I->>M: UPDATE diagnostic_configurations WHERE state='draft' AND version=?
+    I->>M: INSERT diagnostic_configuration_revisions (draft_saved)
+    I-->>W: brouillon + version
+
+    A->>W: POST /api/admin/diagnostic/publish
+    W->>I: POST /internal/admin/diagnostic/publish
+    I->>M: BEGIN
+    I->>M: SELECT version FROM ... state='draft' FOR UPDATE
+    I->>I: revalidation de la charge enregistree
+    I->>M: UPSERT state='published' + INSERT revision (published)
+    I->>M: COMMIT
+    I->>I: invalidation du cache publie
+    I->>M: audit diagnostic_published
+
+    V->>W: GET /diagnostic
+    W->>I: GET /internal/public/diagnostic/configuration
+    alt aucune publication, base indisponible ou version devenue invalide
+        I-->>W: configuration = null
+        W->>W: configuration integree au code
+    else version publiee valide
+        I-->>W: configuration publiee
+    end
+```
+
+Points clefs :
+
+- la DSL est **declarative et fermee** : les operateurs vivent dans le code,
+  la charge est reserialisee depuis le modele, et rien d'interpretable
+  n'entre en base ;
+- le brouillon et la version publiee sont deux lignes distinctes : une
+  redaction en cours ne peut pas atteindre un visiteur ;
+- la publication est **atomique** — brouillon verrouille, version publiee et
+  revision ecrites dans une seule transaction — donc le public voit soit
+  l'ancienne version complete, soit la nouvelle ;
+- la charge est revalidee avant publication : un brouillon accepte sous un
+  registre plus permissif ne peut pas passer en production apres
+  durcissement ;
+- le repli code est systematique, ce qui rend une panne SQL non bloquante
+  pour le parcours public ;
+- le simulateur d'administration execute le **meme moteur TypeScript** que le
+  parcours public : il n'existe pas de seconde implementation susceptible de
+  diverger ;
+- le diagnostic ne calcule jamais de prix : Billing V2 reste l'autorite
+  commerciale et fiscale.
+
 ## Flux réseau autorisés
 
 | Source | Destination | Usage | Conditions |

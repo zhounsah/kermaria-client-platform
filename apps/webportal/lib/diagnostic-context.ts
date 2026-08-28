@@ -1,3 +1,12 @@
+import type {
+  DiagnosticBillingMappingConfig,
+  DiagnosticConfiguration,
+  DiagnosticContextConfig,
+  DiagnosticGuidanceRuleConfig,
+  DiagnosticQuestionConfig,
+  DiagnosticQuestionOptionConfig,
+} from "@kermaria/shared";
+
 export const DIAGNOSTIC_CONTEXT_IDS = [
   "backup",
   "remote-access",
@@ -13,32 +22,18 @@ export type DiagnosticContextId = (typeof DIAGNOSTIC_CONTEXT_IDS)[number];
 export type DiagnosticAnswerValue = string | readonly string[];
 export type DiagnosticAnswerMap = Record<string, DiagnosticAnswerValue | undefined>;
 
-export type DiagnosticQuestionOption = {
-  value: string;
-  label: string;
-  exclusive?: boolean;
-};
+// Le parcours est desormais decrit par une configuration administrable. Les
+// types ci-dessous sont ceux du contrat partage : le code et la base parlent
+// exactement la meme structure, il n'y a pas de second modele a maintenir.
+export type DiagnosticQuestionOption = DiagnosticQuestionOptionConfig;
+export type DiagnosticQuestion = DiagnosticQuestionConfig;
+export type DiagnosticContextDefinition = DiagnosticContextConfig;
 
-export type DiagnosticQuestion = {
-  id: string;
-  legend: string;
-  summaryLabel: string;
-  mode: "single" | "multi";
-  options: readonly DiagnosticQuestionOption[];
-  hint?: string;
-  when?: { questionId: string; values: readonly string[] };
-};
-
-export type DiagnosticContextDefinition = {
-  id: DiagnosticContextId;
-  label: string;
-  eyebrow: string;
-  title: string;
-  intro: string;
-  contactSubject: string;
-  formulaEligible: boolean;
-  questions: readonly DiagnosticQuestion[];
-};
+/** Partie presentation d'un contexte, avant assemblage de la configuration. */
+type DiagnosticContextShell = Omit<
+  DiagnosticContextConfig,
+  "guidance" | "billingMapping"
+>;
 
 const o = (value: string, label: string, exclusive = false): DiagnosticQuestionOption => ({
   value,
@@ -53,8 +48,16 @@ const q = (
   options: readonly DiagnosticQuestionOption[],
   mode: "single" | "multi" = "single",
   hint?: string,
-  when?: DiagnosticQuestion["when"],
-): DiagnosticQuestion => ({ id, legend, summaryLabel, options, mode, hint, when });
+  when?: { questionId: string; values: readonly string[] },
+): DiagnosticQuestion => ({
+  id,
+  legend,
+  summaryLabel,
+  options: [...options],
+  mode,
+  hint: hint ?? null,
+  when: when ? { questionId: when.questionId, values: [...when.values] } : null,
+});
 
 const STRUCTURES = [
   o("individual", "Moi-même / un particulier"),
@@ -63,13 +66,15 @@ const STRUCTURES = [
   o("other", "Une autre structure"),
 ] as const;
 
+// `USERS` sert uniquement des questions a choix unique : un marqueur
+// « exclusif » n'y aurait aucun effet et la validation fermee le refuse.
 const USERS = [
   ...Array.from({ length: 11 }, (_, index) => o(String(index + 1), String(index + 1))),
   o("12-plus", "12 ou plus"),
-  o("unknown", "Je ne sais pas", true),
+  o("unknown", "Je ne sais pas"),
 ] as const;
 
-const CONTEXTS: Record<DiagnosticContextId, DiagnosticContextDefinition> = {
+const CONTEXT_SHELLS: Record<DiagnosticContextId, DiagnosticContextShell> = {
   general: {
     id: "general",
     label: "Besoin à préciser",
@@ -441,6 +446,264 @@ const CONTEXTS: Record<DiagnosticContextId, DiagnosticContextDefinition> = {
   },
 };
 
+/**
+ * Textes de resultat, exprimes en regles ordonnees. La premiere regle dont
+ * toutes les conditions tiennent gagne ; la derniere de chaque contexte est
+ * inconditionnelle, si bien qu'un resultat existe toujours.
+ *
+ * Ces regles reprennent a l'identique les branches auparavant codees en dur
+ * dans `buildGuidance` : l'interpretation n'a pas change, seule sa source est
+ * devenue administrable.
+ */
+const BUILT_IN_GUIDANCE: Record<DiagnosticContextId, DiagnosticGuidanceRuleConfig[]> = {
+  general: [
+    {
+      id: "DIA-GENERAL-000",
+      when: [],
+      title: "Votre besoin doit d'abord être orienté vers le bon sujet.",
+      body: "Choisissez le problème principal pour obtenir des questions réellement pertinentes.",
+      points: [],
+    },
+  ],
+  backup: [
+    {
+      id: "DIA-BACKUP-010",
+      when: [{ questionId: "backup-targets", operator: "only", values: ["files"] }],
+      title: "Votre besoin ressemble à une protection de fichiers standard.",
+      body:
+        "Le volume et le nombre de personnes permettent de vérifier si une formule en ligne peut couvrir ce cas simple. Le tarif reste recalculé à partir du catalogue au moment utile.",
+      points: [
+        "Vérifier qu'une restauration réelle est possible.",
+        "Conserver une copie distincte des fichiers principaux.",
+      ],
+    },
+    {
+      id: "DIA-BACKUP-000",
+      when: [],
+      title: "Un cadrage de la sauvegarde est préférable avant de chiffrer.",
+      body:
+        "Un poste complet, un serveur, un NAS ou un périmètre encore incertain demande de vérifier la source des données, la restauration et les accès avant de choisir une solution.",
+      points: [
+        "Confirmer précisément ce qui doit être protégé.",
+        "Vérifier où se trouvent les données aujourd'hui.",
+        "Définir comment une restauration devra se dérouler.",
+      ],
+    },
+  ],
+  "remote-access": [
+    {
+      id: "DIA-REMOTE-030",
+      when: [{ questionId: "remote-target", operator: "equals", values: ["windows-desktop"] }],
+      title: "Votre usage se rapproche d'un bureau Windows distant.",
+      body:
+        "Vous cherchez surtout à retrouver un environnement Windows complet avec ses logiciels, plutôt qu'à ouvrir simplement un accès au réseau.",
+      points: [
+        "Vérifier les logiciels et appareils utilisés.",
+        "Confirmer le nombre de personnes concernées.",
+        "Préciser les données qui doivent rester dans l'environnement distant.",
+      ],
+    },
+    {
+      id: "DIA-REMOTE-020",
+      when: [
+        { questionId: "remote-target", operator: "one_of", values: ["files", "internal-app"] },
+        { questionId: "sites", operator: "equals", values: ["several"] },
+      ],
+      title: "L'accès distant doit être cadré avec l'architecture des différents sites.",
+      body:
+        "Relier plusieurs lieux peut demander des règles réseau et des chemins d'accès différents. Un échange est préférable avant de choisir la mise en place.",
+      points: [
+        "Lister les ressources réellement nécessaires à distance.",
+        "Limiter l'accès aux personnes et appareils autorisés.",
+        "Vérifier l'existant avant d'ouvrir ou de remplacer un accès.",
+      ],
+    },
+    {
+      id: "DIA-REMOTE-010",
+      when: [{ questionId: "remote-target", operator: "one_of", values: ["files", "internal-app"] }],
+      title: "Votre usage se rapproche d'un accès privé aux ressources existantes.",
+      body:
+        "L'objectif est d'atteindre des fichiers ou une application interne sans les exposer directement sur Internet.",
+      points: [
+        "Lister les ressources réellement nécessaires à distance.",
+        "Limiter l'accès aux personnes et appareils autorisés.",
+        "Vérifier l'existant avant d'ouvrir ou de remplacer un accès.",
+      ],
+    },
+    {
+      id: "DIA-REMOTE-000",
+      when: [],
+      title: "Le type d'accès doit encore être précisé.",
+      body:
+        "Vos réponses ne permettent pas de choisir proprement entre un accès au réseau et un environnement de travail hébergé.",
+      points: [
+        "Identifier les applications et fichiers réellement utilisés.",
+        "Vérifier où ils sont hébergés aujourd'hui.",
+      ],
+    },
+  ],
+  network: [
+    {
+      id: "DIA-NETWORK-000",
+      when: [],
+      title: "Un audit réseau ciblé est la prochaine étape utile.",
+      body:
+        "La couverture, les coupures et les performances dépendent des locaux, de l'installation existante et des usages. Le diagnostic prépare l'audit, pas un achat de matériel à l'aveugle.",
+      points: [
+        "Identifier les zones ou usages réellement gênés.",
+        "Relever l'installation et les accès d'administration existants.",
+        "Distinguer couverture Wi-Fi, réseau filaire et besoin de séparation.",
+      ],
+    },
+  ],
+  messaging: [
+    {
+      id: "DIA-MAIL-000",
+      when: [],
+      title: "Votre messagerie peut maintenant être étudiée sur le bon périmètre.",
+      body:
+        "Le nombre de boîtes, le domaine, l'existant et les éventuelles données à reprendre déterminent la suite. Les licences éventuelles restent distinctes de l'accompagnement.",
+      points: [
+        "Confirmer qui contrôle le domaine et les comptes administrateurs.",
+        "Lister les boîtes, alias et données à conserver.",
+        "Vérifier les services qui envoient déjà des messages avec votre domaine.",
+      ],
+    },
+  ],
+  "domain-dns": [
+    {
+      id: "DIA-DOMAIN-000",
+      when: [],
+      title: "Le domaine doit être repris sans casser les services qui en dépendent.",
+      body:
+        "Avant toute modification, il faut confirmer les accès et repérer le site, la messagerie ou les autres services déjà raccordés.",
+      points: [
+        "Identifier le compte qui contrôle le domaine.",
+        "Recenser les services actuellement liés au domaine.",
+        "Préparer les changements avant de modifier les réglages.",
+      ],
+    },
+  ],
+  server: [
+    {
+      id: "DIA-SERVER-000",
+      when: [],
+      title: "Une reprise ou une mise en place serveur doit commencer par l'état de l'existant.",
+      body:
+        "Les usages, les accès, la maintenance actuelle et l'impact d'une panne permettent de définir un périmètre réaliste avant devis.",
+      points: [
+        "Confirmer les accès d'administration disponibles.",
+        "Identifier ce qui tourne réellement sur le serveur.",
+        "Vérifier sauvegardes, mises à jour et dépendances avant intervention.",
+      ],
+    },
+  ],
+  "web-hosting": [
+    {
+      id: "DIA-WEB-000",
+      when: [],
+      title: "L'hébergement doit être adapté au site réel, pas l'inverse.",
+      body:
+        "Le type de site, le domaine, les accès et l'état des sauvegardes ou mises à jour permettent de préparer une migration ou une reprise sans promettre une compatibilité automatique.",
+      points: [
+        "Confirmer les accès au site, au domaine et à l'hébergement.",
+        "Vérifier le site, ses extensions éventuelles et sa maintenance actuelle.",
+        "Prévoir une copie restaurable avant une migration ou une reprise importante.",
+      ],
+    },
+  ],
+};
+
+/**
+ * Traduction des reponses vers les besoins Billing V2. Seuls `backup` et
+ * `remote-access` peuvent produire une formule ; partout ailleurs le parcours
+ * sort volontairement en cadrage/devis. Aucun prix n'est calcule ici.
+ */
+const BUILT_IN_BILLING_MAPPINGS:
+  Record<DiagnosticContextId, DiagnosticBillingMappingConfig | null> = {
+  general: null,
+  backup: {
+    // Une formule publique represente une protection de fichiers. Un poste
+    // complet, un serveur ou un NAS reste hors selection automatique afin que
+    // le diagnostic ne fabrique pas une offre inadaptee.
+    requireAll: [
+      { questionId: "backup-targets", operator: "only", values: ["files"] },
+      { questionId: "storage", operator: "answered", values: [] },
+    ],
+    usersQuestionId: "users",
+    structureQuestionId: "structure",
+    storageQuestionId: "storage",
+    restoreTestQuestionId: "restore-test",
+    needsRemoteFilesWhen: null,
+    needsVpnWhen: null,
+    needsWindowsDesktopWhen: null,
+    individualDataKind: "personal_documents",
+    organisationDataKind: "business_documents",
+  },
+  "remote-access": {
+    requireAll: [
+      {
+        questionId: "remote-target",
+        operator: "one_of",
+        values: ["files", "internal-app", "windows-desktop"],
+      },
+      { questionId: "sites", operator: "not_equals", values: ["several"] },
+    ],
+    usersQuestionId: "users",
+    structureQuestionId: "structure",
+    storageQuestionId: null,
+    restoreTestQuestionId: null,
+    needsRemoteFilesWhen: [
+      { questionId: "remote-target", operator: "equals", values: ["files"] },
+    ],
+    needsVpnWhen: [
+      { questionId: "remote-target", operator: "one_of", values: ["files", "internal-app"] },
+    ],
+    needsWindowsDesktopWhen: [
+      { questionId: "remote-target", operator: "equals", values: ["windows-desktop"] },
+    ],
+    individualDataKind: "work_files",
+    organisationDataKind: "work_files",
+  },
+  network: null,
+  messaging: null,
+  "domain-dns": null,
+  server: null,
+  "web-hosting": null,
+};
+
+/**
+ * Configuration integree au code. Elle sert de repli quand aucune version
+ * n'est publiee en base, et de reference lors d'une restauration.
+ */
+export const DEFAULT_DIAGNOSTIC_CONFIGURATION: DiagnosticConfiguration = {
+  schemaVersion: 1,
+  contexts: DIAGNOSTIC_CONTEXT_IDS.map((id) => ({
+    ...CONTEXT_SHELLS[id],
+    guidance: BUILT_IN_GUIDANCE[id],
+    billingMapping: BUILT_IN_BILLING_MAPPINGS[id],
+  })),
+};
+
+/**
+ * Un contexte perdu par une configuration administree ne doit pas casser la
+ * page publique : on retombe sur la definition integree au code.
+ */
+export function resolveDiagnosticContextConfig(
+  context: DiagnosticContextId,
+  configuration: DiagnosticConfiguration = DEFAULT_DIAGNOSTIC_CONFIGURATION,
+): DiagnosticContextConfig {
+  const found = configuration.contexts.find((item) => item.id === context);
+  if (found) return found;
+  const builtIn = DEFAULT_DIAGNOSTIC_CONFIGURATION.contexts.find(
+    (item) => item.id === context,
+  );
+  if (!builtIn) {
+    throw new Error(`Contexte de diagnostic inconnu : ${context}`);
+  }
+  return builtIn;
+}
+
 export const GENERAL_CONTEXT_CHOICES = [
   { context: "backup", title: "Protéger mes données", description: "Sauvegarde, restauration, ordinateur, serveur ou NAS." },
   { context: "remote-access", title: "Travailler à distance", description: "Accéder à des fichiers, applications ou à un environnement Windows." },
@@ -481,8 +744,11 @@ export function resolveDiagnosticContext(value: unknown): DiagnosticContextId {
     : "general";
 }
 
-export function getDiagnosticContextDefinition(context: DiagnosticContextId) {
-  return CONTEXTS[context];
+export function getDiagnosticContextDefinition(
+  context: DiagnosticContextId,
+  configuration: DiagnosticConfiguration = DEFAULT_DIAGNOSTIC_CONFIGURATION,
+): DiagnosticContextDefinition {
+  return resolveDiagnosticContextConfig(context, configuration);
 }
 
 export function diagnosticContextForServiceSlug(slug: string): DiagnosticContextId {
@@ -504,8 +770,9 @@ export function contextualizeDiagnosticHref(
 export function getVisibleDiagnosticQuestions(
   context: DiagnosticContextId,
   answers: DiagnosticAnswerMap,
+  configuration: DiagnosticConfiguration = DEFAULT_DIAGNOSTIC_CONFIGURATION,
 ): readonly DiagnosticQuestion[] {
-  return CONTEXTS[context].questions.filter((question) => {
+  return resolveDiagnosticContextConfig(context, configuration).questions.filter((question) => {
     if (!question.when) return true;
     const value = answers[question.when.questionId];
     return typeof value === "string" && question.when.values.includes(value);
@@ -515,8 +782,12 @@ export function getVisibleDiagnosticQuestions(
 export function pruneHiddenDiagnosticAnswers(
   context: DiagnosticContextId,
   answers: DiagnosticAnswerMap,
+  configuration: DiagnosticConfiguration = DEFAULT_DIAGNOSTIC_CONFIGURATION,
 ): DiagnosticAnswerMap {
-  const visibleIds = new Set(getVisibleDiagnosticQuestions(context, answers).map((question) => question.id));
+  const visibleIds = new Set(
+    getVisibleDiagnosticQuestions(context, answers, configuration)
+      .map((question) => question.id),
+  );
   return Object.fromEntries(Object.entries(answers).filter(([id]) => visibleIds.has(id)));
 }
 
@@ -533,8 +804,9 @@ export function isDiagnosticQuestionAnswered(
 export function describeDiagnosticAnswers(
   context: DiagnosticContextId,
   answers: DiagnosticAnswerMap,
+  configuration: DiagnosticConfiguration = DEFAULT_DIAGNOSTIC_CONFIGURATION,
 ): readonly { label: string; value: string }[] {
-  return getVisibleDiagnosticQuestions(context, answers).flatMap((question) => {
+  return getVisibleDiagnosticQuestions(context, answers, configuration).flatMap((question) => {
     const raw = answers[question.id];
     const values = Array.isArray(raw) ? raw : typeof raw === "string" ? [raw] : [];
     if (values.length === 0) return [];
@@ -548,9 +820,10 @@ export function describeDiagnosticAnswers(
 export function buildDiagnosticContactMessage(
   context: DiagnosticContextId,
   answers: DiagnosticAnswerMap,
+  configuration: DiagnosticConfiguration = DEFAULT_DIAGNOSTIC_CONFIGURATION,
 ): string {
-  const definition = CONTEXTS[context];
-  const lines = describeDiagnosticAnswers(context, answers)
+  const definition = resolveDiagnosticContextConfig(context, configuration);
+  const lines = describeDiagnosticAnswers(context, answers, configuration)
     .map((item) => `- ${item.label} : ${item.value}`);
   return [
     `Bonjour, je souhaite être conseillé à partir de mon ${definition.label.toLowerCase()}.`,

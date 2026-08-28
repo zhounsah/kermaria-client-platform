@@ -183,6 +183,13 @@ builder.Services.AddScoped<
 builder.Services.AddScoped<
     IPortalNotificationContentService,
     PortalNotificationContentService>();
+builder.Services.AddScoped<IDiagnosticConfigurationRepository>(
+    _ => sqlConfiguration.IsPersistent
+        ? new MariaDbDiagnosticConfigurationRepository(sqlConfiguration)
+        : new MockDiagnosticConfigurationRepository());
+builder.Services.AddScoped<
+    IDiagnosticConfigurationService,
+    DiagnosticConfigurationService>();
 builder.Services.AddScoped<IRequestWorkflowRepository>(
     serviceProvider => sqlConfiguration.IsPersistent
         ? new MariaDbRequestWorkflowRepository(
@@ -2289,6 +2296,13 @@ app.MapGet(
     });
 // Textes courts affiches par le portail public (confirmation de formulaire,
 // mention RGPD...). Aucun secret, aucune donnee client : lecture anonyme.
+// Le parcours public ne lit que la version publiee ; `configuration` vaut
+// `null` tant qu'aucune publication n'a eu lieu et le WebPortal retombe alors
+// sur la configuration integree a son code.
+app.MapGet(
+    "/internal/public/diagnostic/configuration",
+    async (HttpContext context, IDiagnosticConfigurationService service) =>
+        Results.Ok(await service.GetPublishedAsync(context.RequestAborted)));
 app.MapGet(
     "/internal/public/system-snippets",
     async (
@@ -4256,6 +4270,82 @@ app.MapPost(
         var result = await service.RestoreSnippetAsync(key, request.ExpectedVersion, actor.UserId, context.GetCorrelationId(), context.RequestAborted);
         await RecordTemplateAuditAsync(context, auditService, actor.UserId, "system_snippet_restored", "system_snippet", key, result.Code);
         return Results.Json(result, statusCode: ResolveTemplateStatusCode(result.Code));
+    });
+// --- Diagnostic administrable (specification, section 9) -------------------
+// La DSL est validee cote API : le BFF n'est jamais l'autorite. Le brouillon
+// et la version publiee sont deux lignes distinctes, si bien qu'une redaction
+// en cours ne peut pas atteindre un visiteur.
+app.MapGet(
+    "/internal/admin/diagnostic/configuration",
+    async (
+        HttpContext context,
+        IDiagnosticConfigurationService service,
+        IEditorialRepository editorialRepository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(context, authenticationService, auditService, "admin.diagnostic.read");
+        if (!await editorialRepository.HasAdminPermissionAsync(actor.UserId, "settings.read", context.RequestAborted)) throw new PortalAccessDeniedException();
+        context.Response.Headers["X-Data-Source"] = service.IsPersistent ? "mariadb" : "mock";
+        return Results.Ok(await service.GetAdminViewAsync(context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/admin/diagnostic/revisions",
+    async (
+        HttpContext context,
+        IDiagnosticConfigurationService service,
+        IEditorialRepository editorialRepository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(context, authenticationService, auditService, "admin.diagnostic.read");
+        if (!await editorialRepository.HasAdminPermissionAsync(actor.UserId, "settings.read", context.RequestAborted)) throw new PortalAccessDeniedException();
+        return Results.Ok(new { revisions = await service.GetRevisionsAsync(context.RequestAborted) });
+    });
+app.MapPost(
+    "/internal/admin/diagnostic/validate",
+    async (
+        HttpContext context,
+        IDiagnosticConfigurationService service,
+        IEditorialRepository editorialRepository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveDiagnosticWriterAsync(context, editorialRepository, authenticationService, auditService);
+        _ = actor;
+        var request = await ReadPayload<DiagnosticConfigurationValidateRequest>(context) ?? throw new PortalValidationException();
+        var result = service.Validate(request, context.GetCorrelationId());
+        return Results.Json(result, statusCode: ResolveDiagnosticStatusCode(result.Code));
+    });
+app.MapPut(
+    "/internal/admin/diagnostic/draft",
+    async (
+        HttpContext context,
+        IDiagnosticConfigurationService service,
+        IEditorialRepository editorialRepository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveDiagnosticWriterAsync(context, editorialRepository, authenticationService, auditService);
+        var request = await ReadPayload<DiagnosticConfigurationUpdateRequest>(context) ?? throw new PortalValidationException();
+        var result = await service.SaveDraftAsync(request, actor.UserId, context.GetCorrelationId(), context.RequestAborted);
+        await RecordDiagnosticAuditAsync(context, auditService, actor.UserId, "diagnostic_draft_changed", result.Code, "DIAGNOSTIC_DRAFT_SAVED");
+        return Results.Json(result, statusCode: ResolveDiagnosticStatusCode(result.Code));
+    });
+app.MapPost(
+    "/internal/admin/diagnostic/publish",
+    async (
+        HttpContext context,
+        IDiagnosticConfigurationService service,
+        IEditorialRepository editorialRepository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveDiagnosticWriterAsync(context, editorialRepository, authenticationService, auditService);
+        var request = await ReadPayload<DiagnosticConfigurationPublishRequest>(context) ?? throw new PortalValidationException();
+        var result = await service.PublishAsync(request, actor.UserId, context.GetCorrelationId(), context.RequestAborted);
+        await RecordDiagnosticAuditAsync(context, auditService, actor.UserId, "diagnostic_published", result.Code, "DIAGNOSTIC_PUBLISHED");
+        return Results.Json(result, statusCode: ResolveDiagnosticStatusCode(result.Code));
     });
 app.MapGet(
     "/internal/admin/customers",
@@ -7433,6 +7523,58 @@ static Task RecordTemplateAuditAsync(
             SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
         context.RequestAborted);
 }
+
+// Toute mutation du diagnostic exige `settings.diagnostic.write` : un parcours
+// public mal configure oriente de vrais clients vers une mauvaise formule.
+static async Task<PortalSessionContext> ResolveDiagnosticWriterAsync(
+    HttpContext context,
+    IEditorialRepository editorialRepository,
+    IAuthenticationService authenticationService,
+    IAuditService auditService)
+{
+    var actor = await ResolveAdminSessionAsync(
+        context,
+        authenticationService,
+        auditService,
+        "admin.diagnostic.write");
+    if (!await editorialRepository.HasAdminPermissionAsync(
+            actor.UserId,
+            "settings.diagnostic.write",
+            context.RequestAborted))
+    {
+        throw new PortalAccessDeniedException();
+    }
+
+    return actor;
+}
+
+static Task RecordDiagnosticAuditAsync(
+    HttpContext context,
+    IAuditService auditService,
+    string actorUserId,
+    string action,
+    string code,
+    string successCode)
+    => auditService.RecordAsync(
+        new AuditEvent(
+            context.GetCorrelationId(),
+            action,
+            code == successCode ? "success" : "refused",
+            code,
+            "diagnostic_configuration",
+            action == "diagnostic_published" ? "published" : "draft",
+            ActorUserId: actorUserId,
+            SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+        context.RequestAborted);
+
+static int ResolveDiagnosticStatusCode(string code)
+    => code switch
+    {
+        "DIAGNOSTIC_VALID" or "DIAGNOSTIC_DRAFT_SAVED" or "DIAGNOSTIC_PUBLISHED"
+            => StatusCodes.Status200OK,
+        "DIAGNOSTIC_VERSION_CONFLICT" => StatusCodes.Status409Conflict,
+        _ => StatusCodes.Status400BadRequest,
+    };
 
 static int ResolveTemplateStatusCode(string code)
     => code switch

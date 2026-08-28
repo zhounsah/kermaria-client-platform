@@ -1,13 +1,18 @@
 import type {
   BillingV2PublicCatalog,
   DiagnosticAnswers,
+  DiagnosticBillingMappingConfig,
+  DiagnosticConditionConfig,
+  DiagnosticConfiguration,
   DiagnosticRecommendation,
   DiagnosticRecommendationConfig,
 } from "@kermaria/shared";
 
-import type {
-  DiagnosticAnswerMap,
-  DiagnosticContextId,
+import {
+  DEFAULT_DIAGNOSTIC_CONFIGURATION,
+  resolveDiagnosticContextConfig,
+  type DiagnosticAnswerMap,
+  type DiagnosticContextId,
 } from "@/lib/diagnostic-context";
 import { recommendOffer } from "@/lib/public-diagnostic";
 
@@ -20,10 +25,34 @@ export type AdaptiveDiagnosticGuidance = {
 export type AdaptiveDiagnosticOutcome = {
   guidance: AdaptiveDiagnosticGuidance;
   recommendation: DiagnosticRecommendation | null;
+  /**
+   * Identifiants des regles reellement appliquees. Le simulateur
+   * d'administration les affiche pour rendre la decision explicable ; le
+   * parcours public les ignore.
+   */
+  appliedRuleIds: readonly string[];
 };
 
-export function canContextProduceFormula(context: DiagnosticContextId): boolean {
-  return context === "backup" || context === "remote-access";
+/**
+ * Constantes du contrat Billing V2 que le diagnostic ne cherche pas a deviner.
+ * Les rendre administrables reviendrait a laisser un texte decider d'une
+ * severite commerciale sans qu'aucune question ne l'ait mesuree.
+ */
+const FIXED_ANSWER_DEFAULTS = {
+  recoveryImportance: "normal",
+  backupFrequency: "unknown",
+  continuityPlan: "unknown",
+} as const satisfies Pick<
+  DiagnosticAnswers,
+  "recoveryImportance" | "backupFrequency" | "continuityPlan"
+>;
+
+export function canContextProduceFormula(
+  context: DiagnosticContextId,
+  configuration: DiagnosticConfiguration = DEFAULT_DIAGNOSTIC_CONFIGURATION,
+): boolean {
+  const definition = resolveDiagnosticContextConfig(context, configuration);
+  return definition.formulaEligible && definition.billingMapping !== null;
 }
 
 export function buildAdaptiveDiagnosticOutcome(
@@ -31,86 +60,114 @@ export function buildAdaptiveDiagnosticOutcome(
   answers: DiagnosticAnswerMap,
   catalog: BillingV2PublicCatalog,
   recommendationConfig?: DiagnosticRecommendationConfig,
+  configuration: DiagnosticConfiguration = DEFAULT_DIAGNOSTIC_CONFIGURATION,
 ): AdaptiveDiagnosticOutcome {
-  const billingAnswers = buildBillingAnswers(context, answers);
+  const definition = resolveDiagnosticContextConfig(context, configuration);
+  const guidanceRule = definition.guidance.find((rule) =>
+    matchesAll(rule.when, answers));
+  const billingAnswers = definition.formulaEligible
+    ? buildBillingAnswers(definition.billingMapping, answers)
+    : null;
+
   return {
-    guidance: buildGuidance(context, answers),
+    guidance: guidanceRule
+      ? {
+          title: guidanceRule.title,
+          body: guidanceRule.body,
+          points: guidanceRule.points,
+        }
+      // Une configuration sans regle inconditionnelle ne doit pas produire un
+      // ecran vide : le repli reste le texte d'orientation generique.
+      : {
+          title: "Votre besoin doit d'abord être orienté vers le bon sujet.",
+          body: "Choisissez le problème principal pour obtenir des questions réellement pertinentes.",
+          points: [],
+        },
     recommendation: billingAnswers
       ? recommendOffer(billingAnswers, catalog, recommendationConfig)
       : null,
+    appliedRuleIds: guidanceRule ? [guidanceRule.id] : [],
   };
 }
 
+/** Evalue une condition de la DSL fermee. Aucun autre operateur n'existe. */
+export function evaluateDiagnosticCondition(
+  condition: DiagnosticConditionConfig,
+  answers: DiagnosticAnswerMap,
+): boolean {
+  const raw = answers[condition.questionId];
+  const single = typeof raw === "string" ? raw : null;
+  const multi = Array.isArray(raw) ? [...raw] : single !== null ? [single] : [];
+
+  switch (condition.operator) {
+    case "equals":
+      return single !== null && single === condition.values[0];
+    case "not_equals":
+      // Une question sans reponse n'est pas egale a la valeur interdite : la
+      // condition tient, comme dans le code d'origine.
+      return single === null || !condition.values.includes(single);
+    case "one_of":
+      return single !== null && condition.values.includes(single);
+    case "includes":
+      return condition.values.some((value) => multi.includes(value));
+    case "only":
+      return multi.length === condition.values.length
+        && condition.values.every((value) => multi.includes(value));
+    case "answered":
+      return multi.length > 0;
+    default:
+      // Operateur inconnu : refus ferme, jamais une acceptation par defaut.
+      return false;
+  }
+}
+
+function matchesAll(
+  conditions: readonly DiagnosticConditionConfig[],
+  answers: DiagnosticAnswerMap,
+): boolean {
+  return conditions.every((condition) =>
+    evaluateDiagnosticCondition(condition, answers));
+}
+
 function buildBillingAnswers(
-  context: DiagnosticContextId,
+  mapping: DiagnosticBillingMappingConfig | null,
   answers: DiagnosticAnswerMap,
 ): DiagnosticAnswers | null {
-  if (!canContextProduceFormula(context)) return null;
+  if (!mapping || !matchesAll(mapping.requireAll, answers)) return null;
 
-  const users = readUsers(answers);
-  const customerType = readCustomerType(answers);
+  const users = readUsers(answers, mapping.usersQuestionId);
+  const customerType = readCustomerType(answers, mapping.structureQuestionId);
   if (users === null || customerType === null) return null;
 
-  if (context === "backup") {
-    const targets = readMulti(answers, "backup-targets");
-    // Les formules publiques représentent ici une protection de fichiers.
-    // Un poste complet, un serveur ou un NAS reste volontairement hors
-    // sélection automatique afin que le diagnostic ne crée pas une offre.
-    if (targets.length !== 1 || targets[0] !== "files") return null;
-
-    const storage = readStorage(answers);
-    if (storage === undefined) return null;
-    const restoreTest = readSingle(answers, "restore-test");
-
-    return {
-      customerType,
-      users,
-      dataKinds: customerType === "individual"
-        ? ["personal_documents"]
-        : ["business_documents"],
-      estimatedStorageGb: storage,
-      needsRemoteFiles: false,
-      needsVpn: false,
-      needsWindowsDesktop: false,
-      recoveryImportance: "normal",
-      backupFrequency: "unknown",
-      restoreTestRecency:
-        restoreTest === "recent"
-          ? "less_than_12_months"
-          : restoreTest === "old"
-            ? "more_than_12_months"
-            : restoreTest === "never"
-              ? "never"
-              : "unknown",
-      continuityPlan: "unknown",
-    };
-  }
-
-  const target = readSingle(answers, "remote-target");
-  const sites = readSingle(answers, "sites");
-  if (
-    !target
-    || target === "unknown"
-    || target === "several"
-    || sites === "several"
-    || !["files", "internal-app", "windows-desktop"].includes(target)
-  ) {
-    return null;
-  }
+  const storage = readStorage(answers, mapping.storageQuestionId);
+  if (storage === undefined) return null;
 
   return {
     customerType,
     users,
-    dataKinds: ["work_files"],
-    estimatedStorageGb: null,
-    needsRemoteFiles: target === "files",
-    needsVpn: target === "files" || target === "internal-app",
-    needsWindowsDesktop: target === "windows-desktop",
-    recoveryImportance: "normal",
-    backupFrequency: "unknown",
-    restoreTestRecency: "unknown",
-    continuityPlan: "unknown",
+    dataKinds: [
+      customerType === "individual"
+        ? mapping.individualDataKind
+        : mapping.organisationDataKind,
+    ] as DiagnosticAnswers["dataKinds"],
+    estimatedStorageGb: storage,
+    needsRemoteFiles: matchesOptional(mapping.needsRemoteFilesWhen, answers),
+    needsVpn: matchesOptional(mapping.needsVpnWhen, answers),
+    needsWindowsDesktop: matchesOptional(mapping.needsWindowsDesktopWhen, answers),
+    recoveryImportance: FIXED_ANSWER_DEFAULTS.recoveryImportance,
+    backupFrequency: FIXED_ANSWER_DEFAULTS.backupFrequency,
+    restoreTestRecency: readRestoreTest(answers, mapping.restoreTestQuestionId),
+    continuityPlan: FIXED_ANSWER_DEFAULTS.continuityPlan,
   };
+}
+
+/** Absence de conditions = besoin non exprime, donc `false`. */
+function matchesOptional(
+  conditions: readonly DiagnosticConditionConfig[] | null,
+  answers: DiagnosticAnswerMap,
+): boolean {
+  return conditions !== null && conditions.length > 0
+    && matchesAll(conditions, answers);
 }
 
 function readSingle(answers: DiagnosticAnswerMap, id: string): string | null {
@@ -118,13 +175,12 @@ function readSingle(answers: DiagnosticAnswerMap, id: string): string | null {
   return typeof value === "string" ? value : null;
 }
 
-function readMulti(answers: DiagnosticAnswerMap, id: string): readonly string[] {
-  const value = answers[id];
-  return Array.isArray(value) ? value : [];
-}
-
-function readUsers(answers: DiagnosticAnswerMap): number | null {
-  const raw = readSingle(answers, "users");
+function readUsers(
+  answers: DiagnosticAnswerMap,
+  questionId: string | null,
+): number | null {
+  if (!questionId) return 1;
+  const raw = readSingle(answers, questionId);
   if (!raw || raw === "unknown") return null;
   if (raw === "12-plus") return 12;
   const users = Number(raw);
@@ -133,8 +189,10 @@ function readUsers(answers: DiagnosticAnswerMap): number | null {
 
 function readCustomerType(
   answers: DiagnosticAnswerMap,
+  questionId: string | null,
 ): DiagnosticAnswers["customerType"] | null {
-  const structure = readSingle(answers, "structure");
+  if (!questionId) return null;
+  const structure = readSingle(answers, questionId);
   return structure === "individual"
     || structure === "business"
     || structure === "association"
@@ -143,10 +201,13 @@ function readCustomerType(
     : null;
 }
 
+/** `undefined` signifie « reponse attendue mais absente », donc pas de formule. */
 function readStorage(
   answers: DiagnosticAnswerMap,
+  questionId: string | null,
 ): DiagnosticAnswers["estimatedStorageGb"] | undefined {
-  const raw = readSingle(answers, "storage");
+  if (!questionId) return null;
+  const raw = readSingle(answers, questionId);
   if (!raw) return undefined;
   if (raw === "unknown") return null;
   if (raw === "above-public-max") return "above_public_max";
@@ -154,143 +215,19 @@ function readStorage(
   return Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
-function buildGuidance(
-  context: DiagnosticContextId,
+function readRestoreTest(
   answers: DiagnosticAnswerMap,
-): AdaptiveDiagnosticGuidance {
-  switch (context) {
-    case "backup": {
-      const targets = readMulti(answers, "backup-targets");
-      const standardFiles = targets.length === 1 && targets[0] === "files";
-      return standardFiles
-        ? {
-            title: "Votre besoin ressemble à une protection de fichiers standard.",
-            body:
-              "Le volume et le nombre de personnes permettent de vérifier si une formule en ligne peut couvrir ce cas simple. Le tarif reste recalculé à partir du catalogue au moment utile.",
-            points: [
-              "Vérifier qu'une restauration réelle est possible.",
-              "Conserver une copie distincte des fichiers principaux.",
-            ],
-          }
-        : {
-            title: "Un cadrage de la sauvegarde est préférable avant de chiffrer.",
-            body:
-              "Un poste complet, un serveur, un NAS ou un périmètre encore incertain demande de vérifier la source des données, la restauration et les accès avant de choisir une solution.",
-            points: [
-              "Confirmer précisément ce qui doit être protégé.",
-              "Vérifier où se trouvent les données aujourd'hui.",
-              "Définir comment une restauration devra se dérouler.",
-            ],
-          };
-    }
-
-    case "remote-access": {
-      const target = readSingle(answers, "remote-target");
-      const multipleSites = readSingle(answers, "sites") === "several";
-      if (target === "windows-desktop") {
-        return {
-          title: "Votre usage se rapproche d'un bureau Windows distant.",
-          body:
-            "Vous cherchez surtout à retrouver un environnement Windows complet avec ses logiciels, plutôt qu'à ouvrir simplement un accès au réseau.",
-          points: [
-            "Vérifier les logiciels et appareils utilisés.",
-            "Confirmer le nombre de personnes concernées.",
-            "Préciser les données qui doivent rester dans l'environnement distant.",
-          ],
-        };
-      }
-      if (target === "files" || target === "internal-app") {
-        return {
-          title: multipleSites
-            ? "L'accès distant doit être cadré avec l'architecture des différents sites."
-            : "Votre usage se rapproche d'un accès privé aux ressources existantes.",
-          body: multipleSites
-            ? "Relier plusieurs lieux peut demander des règles réseau et des chemins d'accès différents. Un échange est préférable avant de choisir la mise en place."
-            : "L'objectif est d'atteindre des fichiers ou une application interne sans les exposer directement sur Internet.",
-          points: [
-            "Lister les ressources réellement nécessaires à distance.",
-            "Limiter l'accès aux personnes et appareils autorisés.",
-            "Vérifier l'existant avant d'ouvrir ou de remplacer un accès.",
-          ],
-        };
-      }
-      return {
-        title: "Le type d'accès doit encore être précisé.",
-        body:
-          "Vos réponses ne permettent pas de choisir proprement entre un accès au réseau et un environnement de travail hébergé.",
-        points: [
-          "Identifier les applications et fichiers réellement utilisés.",
-          "Vérifier où ils sont hébergés aujourd'hui.",
-        ],
-      };
-    }
-
-    case "network":
-      return {
-        title: "Un audit réseau ciblé est la prochaine étape utile.",
-        body:
-          "La couverture, les coupures et les performances dépendent des locaux, de l'installation existante et des usages. Le diagnostic prépare l'audit, pas un achat de matériel à l'aveugle.",
-        points: [
-          "Identifier les zones ou usages réellement gênés.",
-          "Relever l'installation et les accès d'administration existants.",
-          "Distinguer couverture Wi-Fi, réseau filaire et besoin de séparation.",
-        ],
-      };
-
-    case "messaging":
-      return {
-        title: "Votre messagerie peut maintenant être étudiée sur le bon périmètre.",
-        body:
-          "Le nombre de boîtes, le domaine, l'existant et les éventuelles données à reprendre déterminent la suite. Les licences éventuelles restent distinctes de l'accompagnement.",
-        points: [
-          "Confirmer qui contrôle le domaine et les comptes administrateurs.",
-          "Lister les boîtes, alias et données à conserver.",
-          "Vérifier les services qui envoient déjà des messages avec votre domaine.",
-        ],
-      };
-
-    case "domain-dns":
-      return {
-        title: "Le domaine doit être repris sans casser les services qui en dépendent.",
-        body:
-          "Avant toute modification, il faut confirmer les accès et repérer le site, la messagerie ou les autres services déjà raccordés.",
-        points: [
-          "Identifier le compte qui contrôle le domaine.",
-          "Recenser les services actuellement liés au domaine.",
-          "Préparer les changements avant de modifier les réglages.",
-        ],
-      };
-
-    case "server":
-      return {
-        title: "Une reprise ou une mise en place serveur doit commencer par l'état de l'existant.",
-        body:
-          "Les usages, les accès, la maintenance actuelle et l'impact d'une panne permettent de définir un périmètre réaliste avant devis.",
-        points: [
-          "Confirmer les accès d'administration disponibles.",
-          "Identifier ce qui tourne réellement sur le serveur.",
-          "Vérifier sauvegardes, mises à jour et dépendances avant intervention.",
-        ],
-      };
-
-    case "web-hosting":
-      return {
-        title: "L'hébergement doit être adapté au site réel, pas l'inverse.",
-        body:
-          "Le type de site, le domaine, les accès et l'état des sauvegardes ou mises à jour permettent de préparer une migration ou une reprise sans promettre une compatibilité automatique.",
-        points: [
-          "Confirmer les accès au site, au domaine et à l'hébergement.",
-          "Vérifier le site, ses extensions éventuelles et sa maintenance actuelle.",
-          "Prévoir une copie restaurable avant une migration ou une reprise importante.",
-        ],
-      };
-
-    case "general":
+  questionId: string | null,
+): DiagnosticAnswers["restoreTestRecency"] {
+  if (!questionId) return "unknown";
+  switch (readSingle(answers, questionId)) {
+    case "recent":
+      return "less_than_12_months";
+    case "old":
+      return "more_than_12_months";
+    case "never":
+      return "never";
     default:
-      return {
-        title: "Votre besoin doit d'abord être orienté vers le bon sujet.",
-        body: "Choisissez le problème principal pour obtenir des questions réellement pertinentes.",
-        points: [],
-      };
+      return "unknown";
   }
 }

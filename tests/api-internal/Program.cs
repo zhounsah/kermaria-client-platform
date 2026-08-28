@@ -545,6 +545,7 @@ async Task<int> RunAsync(string[] arguments)
         VerifyChildProcessEnvironmentGuardrails();
         await VerifySignupStoresPriceFreeBillingV2SelectionAsync();
         await VerifyCommunicationTemplatesAsync();
+        await VerifyDiagnosticConfigurationAsync();
         await RunMockTestsAsync();
         await RunMockActiveDirectoryModeTestsAsync();
         await RunMockBpceIssuingTestsAsync();
@@ -4443,6 +4444,192 @@ static async Task VerifyCommunicationTemplatesAsync()
         "Les textes systeme publics doivent rester exposes meme sans personnalisation.");
 
     CommunicationTemplateService.Invalidate();
+}
+
+static async Task VerifyDiagnosticConfigurationAsync()
+{
+    var repository = new MockDiagnosticConfigurationRepository();
+    var service = new DiagnosticConfigurationService(
+        repository,
+        LoggerFactory.Create(_ => { }).CreateLogger<DiagnosticConfigurationService>());
+    DiagnosticConfigurationService.Invalidate();
+    const string actor = "00000000-0000-0000-0000-0000000000bb";
+    const string correlation = "smoke-diagnostic";
+    var token = CancellationToken.None;
+
+    var initial = await service.GetAdminViewAsync(token);
+    Ensure(
+        initial.Draft.Source == "code" && initial.Published.Source == "code",
+        "Sans ligne enregistree, le diagnostic doit se declarer integre au code.");
+    Ensure(
+        initial.Draft.Configuration is null && initial.Published.Configuration is null,
+        "L'API ne duplique pas la configuration par defaut du WebPortal.");
+
+    // Une configuration incomplete est refusee : le registre ferme exige les
+    // huit contextes du parcours public.
+    var incomplete = service.Validate(
+        new DiagnosticConfigurationValidateRequest(
+            ParseJson("""{"schemaVersion":1,"contexts":[]}""")),
+        correlation);
+    Ensure(
+        incomplete.Code == "DIAGNOSTIC_INVALID" && incomplete.Errors.Count > 0,
+        "Une configuration sans contexte doit etre refusee avec des erreurs explicites.");
+
+    var valid = BuildSmokeDiagnosticConfiguration();
+    Ensure(
+        service.Validate(new DiagnosticConfigurationValidateRequest(valid), correlation)
+            .Code == "DIAGNOSTIC_VALID",
+        "La configuration de reference doit passer le registre ferme.");
+
+    // Un operateur hors DSL doit etre refuse : aucune expression arbitraire ne
+    // peut atteindre la base.
+    var forged = ParseJson(
+        JsonSerializer.Serialize(valid).Replace("\"answered\"", "\"eval\""));
+    Ensure(
+        service.Validate(new DiagnosticConfigurationValidateRequest(forged), correlation)
+            .Code == "DIAGNOSTIC_INVALID",
+        "Un operateur inconnu doit etre refuse.");
+
+    var saved = await service.SaveDraftAsync(
+        new DiagnosticConfigurationUpdateRequest(valid, 0),
+        actor,
+        correlation,
+        token);
+    Ensure(
+        saved.Code == "DIAGNOSTIC_DRAFT_SAVED" && saved.View!.Draft.Version == 1,
+        "Le premier enregistrement doit produire la version 1 du brouillon.");
+    Ensure(
+        saved.View!.Published.Source == "code",
+        "Enregistrer un brouillon ne doit jamais modifier la version publiee.");
+    Ensure(
+        saved.View!.DraftDiffers,
+        "Un brouillon non publie doit etre signale comme different.");
+
+    var stale = await service.SaveDraftAsync(
+        new DiagnosticConfigurationUpdateRequest(valid, 0),
+        actor,
+        correlation,
+        token);
+    Ensure(
+        stale.Code == "DIAGNOSTIC_VERSION_CONFLICT",
+        "Une version attendue perimee doit etre refusee, jamais ecrasee.");
+
+    var wrongDraft = await service.PublishAsync(
+        new DiagnosticConfigurationPublishRequest(99, 0),
+        actor,
+        correlation,
+        token);
+    Ensure(
+        wrongDraft.Code == "DIAGNOSTIC_VERSION_CONFLICT",
+        "Publier un brouillon deplace doit etre refuse.");
+
+    var published = await service.PublishAsync(
+        new DiagnosticConfigurationPublishRequest(1, 0),
+        actor,
+        correlation,
+        token);
+    Ensure(
+        published.Code == "DIAGNOSTIC_PUBLISHED"
+        && published.View!.Published.Version == 1
+        && published.View!.Published.Source == "database",
+        "La publication doit produire la version 1 publiee.");
+    Ensure(
+        !published.View!.DraftDiffers,
+        "Apres publication, brouillon et version publiee doivent coincider.");
+
+    var publicView = await service.GetPublishedAsync(token);
+    Ensure(
+        publicView.Source == "database" && publicView.Configuration is not null,
+        "Le parcours public doit voir la version publiee.");
+
+    var revisions = await service.GetRevisionsAsync(token);
+    Ensure(
+        revisions.Count == 2
+        && revisions[0].Outcome == "published"
+        && revisions[1].Outcome == "draft_saved",
+        "L'historique doit tracer l'enregistrement puis la publication.");
+
+    DiagnosticConfigurationService.Invalidate();
+}
+
+/// <summary>
+/// Configuration minimale mais complete : les huit contextes fermes, chacun
+/// avec une question, une regle inconditionnelle finale et, pour `backup`, une
+/// correspondance Billing V2 reelle.
+/// </summary>
+static JsonElement BuildSmokeDiagnosticConfiguration()
+{
+    var contexts = DiagnosticConfigurationRegistry.ContextIds
+        .Select(id => new
+        {
+            id,
+            label = $"Contexte {id}",
+            eyebrow = "Diagnostic IT",
+            title = $"Titre du contexte {id}",
+            intro = "Introduction suffisamment longue pour la validation.",
+            contactSubject = $"Sujet {id}",
+            formulaEligible = id == "backup",
+            questions = new object[]
+            {
+                new
+                {
+                    id = "structure",
+                    legend = "Quelle est votre structure ?",
+                    summaryLabel = "Structure",
+                    mode = "single",
+                    hint = (string?)null,
+                    when = (object?)null,
+                    options = new object[]
+                    {
+                        new { value = "individual", label = "Particulier", exclusive = false },
+                        new { value = "business", label = "Entreprise", exclusive = false },
+                    },
+                },
+            },
+            guidance = new object[]
+            {
+                new
+                {
+                    id = "DIA-SMOKE-000",
+                    when = Array.Empty<object>(),
+                    title = "Orientation par defaut",
+                    body = "Texte de repli affiche lorsque aucune autre regle ne tient.",
+                    points = Array.Empty<string>(),
+                },
+            },
+            billingMapping = id == "backup"
+                ? new
+                {
+                    requireAll = new object[]
+                    {
+                        new
+                        {
+                            questionId = "structure",
+                            @operator = "answered",
+                            values = Array.Empty<string>(),
+                        },
+                    },
+                    usersQuestionId = (string?)null,
+                    structureQuestionId = "structure",
+                    storageQuestionId = (string?)null,
+                    restoreTestQuestionId = (string?)null,
+                    needsRemoteFilesWhen = (object?)null,
+                    needsVpnWhen = (object?)null,
+                    needsWindowsDesktopWhen = (object?)null,
+                    individualDataKind = "personal_documents",
+                    organisationDataKind = "business_documents",
+                }
+                : null,
+        })
+        .ToArray();
+
+    return ParseJson(JsonSerializer.Serialize(new { schemaVersion = 1, contexts }));
+}
+
+static JsonElement ParseJson(string payload)
+{
+    using var document = JsonDocument.Parse(payload);
+    return document.RootElement.Clone();
 }
 
 static KoxoPendingPasswordStore NewPendingPasswordStore()

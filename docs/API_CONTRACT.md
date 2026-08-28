@@ -285,6 +285,63 @@ Endpoints :
 - `GET /internal/portal/billing-configuration` : coordonnees de reglement
   effectives, servies par API-INTERNAL et jamais recopiees dans le portail.
 
+## Diagnostic administrable
+
+Le parcours `/diagnostic` est decrit par une configuration versionnee
+(migration `075`), stockee en deux etats : `draft` et `published`. Le parcours
+public ne lit **que** `published` ; une redaction en cours ne peut donc pas
+atteindre un visiteur.
+
+Contraintes :
+
+- DSL declarative et **fermee** : contextes, questions, options, conditions,
+  textes de resultat et correspondance Billing V2. Les operateurs disponibles
+  sont `equals`, `not_equals`, `one_of`, `includes`, `only` et `answered` ;
+  aucun autre n'existe ;
+- aucun script, aucune expression arbitraire, aucun acces environnement : la
+  base ne stocke que des donnees interpretees par du code fixe ;
+- validation cote API-INTERNAL avant tout enregistrement, puis **de nouveau**
+  avant publication : un brouillon accepte sous un registre plus permissif ne
+  peut pas atteindre le public apres durcissement ;
+- la charge est reserialisee a partir du modele : un champ inconnu envoye par
+  un client n'est jamais stocke ;
+- la derniere regle de resultat de chaque contexte doit etre
+  inconditionnelle : un resultat existe donc toujours ;
+- concurrence optimiste par `expectedVersion`, puis
+  `409 DIAGNOSTIC_VERSION_CONFLICT` ;
+- publication **atomique** : le brouillon est verrouille, la version publiee
+  et sa trace d'historique sont ecrites dans une seule transaction ;
+- repli ferme : sans version publiee, sans base ou avec une version publiee
+  devenue invalide, le WebPortal utilise la configuration integree a son
+  code ;
+- le diagnostic ne calcule **jamais** de prix : la tarification reste
+  l'autorite de Billing V2 ;
+- toutes les mutations exigent la permission `settings.diagnostic.write`.
+
+Endpoints admin :
+
+- `GET /internal/admin/diagnostic/configuration` : brouillon et version
+  publiee, leurs versions et leur source (`code` ou `database`) ;
+- `GET /internal/admin/diagnostic/revisions` : historique des enregistrements
+  et publications ;
+- `POST /internal/admin/diagnostic/validate` : validation sans ecriture ;
+- `PUT /internal/admin/diagnostic/draft` : enregistrement du brouillon ;
+- `POST /internal/admin/diagnostic/publish` : publication atomique.
+
+Endpoint public :
+
+- `GET /internal/public/diagnostic/configuration` : version publiee
+  uniquement. `configuration` vaut `null` tant qu'aucune publication n'a eu
+  lieu, et le WebPortal retombe alors sur sa configuration de code.
+
+Le simulateur d'administration n'a **pas** d'endpoint dedie : il execute le
+meme moteur TypeScript que le parcours public
+(`buildAdaptiveDiagnosticOutcome`), sur la configuration en cours d'edition.
+Une seconde implementation cote API creerait justement le second moteur que la
+specification interdit.
+
+Evenements d'audit : `diagnostic_draft_changed`, `diagnostic_published`.
+
 ## Messages et communications
 
 Les gabarits transactionnels, les notifications du portail et les textes

@@ -35,6 +35,8 @@ import type {
   CustomerAdLinkSummary,
   CustomerAdProvisioningMutationPayload,
   CustomerAdProvisioningMutationResponse,
+  DiagnosticConfigurationAdminView,
+  DiagnosticConfigurationSnapshot,
   DownloadCategory,
   DataSource,
   DownloadResource,
@@ -59,6 +61,7 @@ import type {
   PortalNotificationSummary,
   PortalServiceRequestDetail,
   PortalSupportRequestDetail,
+  PublicDiagnosticConfigurationResponse,
   PublicSystemSnippets,
   PublicClientSolutionPortal,
   PublicPackCatalogContent,
@@ -606,6 +609,14 @@ export function getPublicSystemSnippets() {
   );
 }
 
+export function getPublicDiagnosticConfiguration() {
+  return getPublicData<PublicDiagnosticConfigurationResponse | null>(
+    "/internal/public/diagnostic/configuration",
+    null,
+    null,
+  );
+}
+
 export function getPublicWikiHome() {
   return getPublicData<EditorialListResponse>(
     "/internal/public/editorial/wiki/home",
@@ -973,7 +984,7 @@ export async function mutateInternalAdminData<
   TPayload = unknown,
 >(
   path: string,
-  method: "PATCH" | "POST" | "DELETE",
+  method: "PATCH" | "POST" | "PUT" | "DELETE",
   payload: TPayload | undefined,
   sessionToken: string,
   correlationId = resolveCorrelationId(null),
@@ -1109,6 +1120,18 @@ export function getAdminApplicationSettings() {
   );
 }
 
+/**
+ * Repli d'indisponibilite : aucune version connue, donc `source: "code"`. La
+ * page d'administration affiche l'erreur plutot qu'un faux etat vide.
+ */
+const EMPTY_DIAGNOSTIC_SNAPSHOT: DiagnosticConfigurationSnapshot = {
+  state: "draft",
+  version: 0,
+  source: "code",
+  updatedAt: null,
+  configuration: null,
+};
+
 export function getAdminCommunicationTemplates() {
   return getAdminData<CommunicationTemplateCollection>(
     "/internal/admin/communications",
@@ -1116,6 +1139,18 @@ export function getAdminCommunicationTemplates() {
       emailTemplates: [],
       notificationTemplates: [],
       snippets: [],
+      persistent: false,
+    },
+  );
+}
+
+export function getAdminDiagnosticConfiguration() {
+  return getAdminData<DiagnosticConfigurationAdminView>(
+    "/internal/admin/diagnostic/configuration",
+    {
+      draft: EMPTY_DIAGNOSTIC_SNAPSHOT,
+      published: { ...EMPTY_DIAGNOSTIC_SNAPSHOT, state: "published" },
+      draftDiffers: false,
       persistent: false,
     },
   );

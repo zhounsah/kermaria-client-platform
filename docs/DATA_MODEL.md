@@ -579,6 +579,33 @@ Registre ferme de parametres metier du centre de configuration
 | `created_at` | timestamp | Date de creation |
 | `updated_at` | timestamp | Derniere modification |
 
+## diagnostic_configurations
+
+Configuration versionnee du parcours `/diagnostic` (migration `075`). La table
+porte au plus deux lignes, `draft` et `published` ; l'historique vit dans
+`diagnostic_configuration_revisions`.
+
+| Champ | Type logique | Description |
+|---|---|---|
+| `state` | text | `draft` ou `published`, contraint en SQL |
+| `payload_json` | json | Configuration canonique validee par le registre ferme |
+| `version` | int | Version pour la concurrence optimiste |
+| `updated_by_user_id` | uuid, nullable | Administrateur auteur |
+| `created_at` / `updated_at` | timestamp | Dates UTC |
+
+Contraintes :
+
+- `version > 0` et `state IN ('draft','published')` sont verifies par
+  contrainte SQL ;
+- `payload_json` est reserialise depuis le modele C# : la base ne contient
+  jamais un champ inconnu envoye par un client ;
+- l'absence de ligne n'est pas une erreur : le WebPortal utilise la
+  configuration integree a son code ;
+- la publication verrouille le brouillon (`SELECT ... FOR UPDATE`) et ecrit la
+  version publiee **et** sa revision dans une seule transaction ;
+- `diagnostic_configuration_revisions` conserve la charge complete, l'auteur,
+  le `correlation_id` et un `outcome` (`draft_saved` ou `published`).
+
 ## email_templates / notification_templates / system_snippets
 
 Gabarits administrables des communications (migration `074`). Chaque famille

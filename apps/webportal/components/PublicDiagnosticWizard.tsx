@@ -7,6 +7,7 @@ import type {
   BillingV2PublicCatalog,
   BillingV2PublicQuote,
   BillingV2PublicSelection,
+  DiagnosticConfiguration,
   DiagnosticRecommendationConfig,
 } from "@kermaria/shared";
 
@@ -19,6 +20,7 @@ import { buildAdaptiveDiagnosticOutcome } from "@/lib/adaptive-diagnostic";
 import { describeSelectionConfiguration } from "@/lib/billing-v2-formules";
 import { billingV2SelectionToSearchParams } from "@/lib/billing-v2-selection";
 import {
+  DEFAULT_DIAGNOSTIC_CONFIGURATION,
   GENERAL_CONTEXT_CHOICES,
   buildDiagnosticContactMessage,
   buildDiagnosticHref,
@@ -39,6 +41,12 @@ type PublicDiagnosticWizardProps = {
   recommendationConfig: DiagnosticRecommendationConfig;
   /** Textes systeme administrables ; repli sur les valeurs de code. */
   snippets?: SystemSnippetMap;
+  /**
+   * Version publiee du parcours. Absente, le composant utilise la
+   * configuration integree au code : le parcours reste complet meme sans
+   * base.
+   */
+  configuration?: DiagnosticConfiguration;
 };
 
 const BENEFITS = [
@@ -52,8 +60,9 @@ export function PublicDiagnosticWizard({
   initialContext,
   recommendationConfig,
   snippets = SYSTEM_SNIPPET_DEFAULTS,
+  configuration = DEFAULT_DIAGNOSTIC_CONFIGURATION,
 }: PublicDiagnosticWizardProps) {
-  const definition = getDiagnosticContextDefinition(initialContext);
+  const definition = getDiagnosticContextDefinition(initialContext, configuration);
   const [answers, setAnswers] = useState<DiagnosticAnswerMap>({});
   const [step, setStep] = useState(0);
   const [completed, setCompleted] = useState(false);
@@ -64,8 +73,8 @@ export function PublicDiagnosticWizard({
   const hasEnteredWizardRef = useRef(false);
 
   const visibleQuestions = useMemo(
-    () => getVisibleDiagnosticQuestions(initialContext, answers),
-    [initialContext, answers],
+    () => getVisibleDiagnosticQuestions(initialContext, answers, configuration),
+    [initialContext, answers, configuration],
   );
   const currentQuestion = visibleQuestions[step] ?? null;
   const outcome = useMemo(
@@ -74,8 +83,9 @@ export function PublicDiagnosticWizard({
       answers,
       catalog,
       recommendationConfig,
+      configuration,
     ),
-    [initialContext, answers, catalog, recommendationConfig],
+    [initialContext, answers, catalog, recommendationConfig, configuration],
   );
   const selection = outcome.recommendation?.selection ?? null;
   const recommendedPreset = selection
@@ -130,7 +140,7 @@ export function PublicDiagnosticWizard({
   if (initialContext === "general") {
     return (
       <div className="diagnostic-page">
-        <DiagnosticHeader definition={definition} />
+        <DiagnosticHeader context={initialContext} definition={definition} />
         <section className="diagnostic-context-picker" aria-labelledby="diagnostic-context-title">
           <div className="diagnostic-context-picker-heading">
             <p className="eyebrow">Votre besoin</p>
@@ -158,10 +168,11 @@ export function PublicDiagnosticWizard({
   if (completed) {
     return (
       <div className="diagnostic-page">
-        <DiagnosticHeader definition={definition} compact />
+        <DiagnosticHeader context={initialContext} definition={definition} compact />
         <DiagnosticResult
           answers={answers}
           catalog={catalog}
+          configuration={configuration}
           context={initialContext}
           definition={definition}
           outcome={outcome}
@@ -187,7 +198,7 @@ export function PublicDiagnosticWizard({
   if (!currentQuestion) {
     return (
       <div className="diagnostic-page">
-        <DiagnosticHeader definition={definition} />
+        <DiagnosticHeader context={initialContext} definition={definition} />
         <section className="diagnostic-wizard">
           <p>Ce parcours est temporairement indisponible.</p>
           <Link className="button" href="/contact">Nous contacter</Link>
@@ -200,7 +211,7 @@ export function PublicDiagnosticWizard({
 
   return (
     <div className="diagnostic-page">
-      <DiagnosticHeader definition={definition} />
+      <DiagnosticHeader context={initialContext} definition={definition} />
 
       <section className="diagnostic-wizard" aria-label={`Diagnostic ${definition.label}`}>
         <div className="diagnostic-wizard-toolbar">
@@ -240,7 +251,7 @@ export function PublicDiagnosticWizard({
           onChange={(nextValue) => {
             setAnswers((current) => {
               const next = { ...current, [currentQuestion.id]: nextValue };
-              return pruneHiddenDiagnosticAnswers(initialContext, next);
+              return pruneHiddenDiagnosticAnswers(initialContext, next, configuration);
             });
           }}
         />
@@ -284,16 +295,20 @@ export function PublicDiagnosticWizard({
 }
 
 function DiagnosticHeader({
+  context,
   definition,
   compact = false,
 }: {
+  // L'identifiant vient du routage, pas de la configuration administree :
+  // l'icone reste ainsi bornee au jeu de contextes connu du code.
+  context: DiagnosticContextId;
   definition: ReturnType<typeof getDiagnosticContextDefinition>;
   compact?: boolean;
 }) {
   return (
     <header className={`diagnostic-header${compact ? " diagnostic-header-compact" : ""}`}>
       <div className="diagnostic-header-copy">
-        <span className="diagnostic-header-icon" aria-hidden="true"><DiagnosticIcon context={definition.id} /></span>
+        <span className="diagnostic-header-icon" aria-hidden="true"><DiagnosticIcon context={context} /></span>
         <div>
           <p className="eyebrow">{definition.eyebrow}</p>
           <h1>{definition.title}</h1>
@@ -392,6 +407,7 @@ function updateMultiSelection(
 type ResultProps = {
   answers: DiagnosticAnswerMap;
   catalog: BillingV2PublicCatalog;
+  configuration: DiagnosticConfiguration;
   context: DiagnosticContextId;
   definition: ReturnType<typeof getDiagnosticContextDefinition>;
   outcome: ReturnType<typeof buildAdaptiveDiagnosticOutcome>;
@@ -407,6 +423,7 @@ type ResultProps = {
 function DiagnosticResult({
   answers,
   catalog,
+  configuration,
   context,
   definition,
   outcome,
@@ -418,7 +435,7 @@ function DiagnosticResult({
   snippets,
   onRestart,
 }: ResultProps) {
-  const summary = describeDiagnosticAnswers(context, answers);
+  const summary = describeDiagnosticAnswers(context, answers, configuration);
   const formulaConfiguration = selection
     ? describeSelectionConfiguration(selection, catalog)
     : [];
@@ -518,7 +535,7 @@ function DiagnosticResult({
         </div>
         <ContactForm
           confirmationText={snippets.contact_form_confirmation}
-          defaultMessage={buildDiagnosticContactMessage(context, answers)}
+          defaultMessage={buildDiagnosticContactMessage(context, answers, configuration)}
           defaultSubject={definition.contactSubject}
           formuleCode={hasFormula ? recommendedPreset.code : null}
           privacyNotice={snippets.contact_form_privacy_notice}

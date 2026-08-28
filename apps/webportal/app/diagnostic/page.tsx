@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { PublicDiagnosticWizard } from "@/components/PublicDiagnosticWizard";
+import { resolvePublishedDiagnosticConfiguration } from "@/lib/diagnostic-configuration";
 import { resolveDiagnosticContext } from "@/lib/diagnostic-context";
 import {
   DEFAULT_DIAGNOSTIC_RECOMMENDATION_CONFIG,
@@ -32,11 +33,13 @@ export default async function DiagnosticPage({ searchParams }: DiagnosticPagePro
   const params = await searchParams;
   const rawContext = Array.isArray(params.context) ? params.context[0] : params.context;
   const initialContext = resolveDiagnosticContext(rawContext);
-  const [catalogResult, recommendationContentResult, snippets] = await Promise.all([
-    getBillingV2FormulesCatalog(),
-    getPublicManagedContent(DIAGNOSTIC_RECOMMENDATION_CONTENT_KEY),
-    resolveSystemSnippets(),
-  ]);
+  const [catalogResult, recommendationContentResult, snippets, configuration] =
+    await Promise.all([
+      getBillingV2FormulesCatalog(),
+      getPublicManagedContent(DIAGNOSTIC_RECOMMENDATION_CONTENT_KEY),
+      resolveSystemSnippets(),
+      resolvePublishedDiagnosticConfiguration(),
+    ]);
   const recommendationConfig =
     parseDiagnosticRecommendationConfig(recommendationContentResult.data?.bodyMarkdown)
     ?? DEFAULT_DIAGNOSTIC_RECOMMENDATION_CONFIG;
@@ -50,6 +53,7 @@ export default async function DiagnosticPage({ searchParams }: DiagnosticPagePro
       </div>
       <PublicDiagnosticWizard
         catalog={catalogResult.data}
+        configuration={configuration}
         initialContext={initialContext}
         recommendationConfig={recommendationConfig}
         snippets={snippets}
