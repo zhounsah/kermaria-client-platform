@@ -1,6 +1,6 @@
 # Implementation Map - Current State
-Last verified: 2026-08-27
-Production release: `v2.0.0.5` (`a6eefcd09833bb7e2384f5a7694e47a4e6621cd1`)
+Last verified: 2026-08-28
+Production release: `v2.0.0.6` (`9f47f2558bb5a2cc4b2b0f880f3ea97456cae1b2`)
 Purpose: fast handoff for a human or another AI agent. Read `CURRENT_STATE.md` first for production truth.
 ## Architecture boundary
 ```text
@@ -33,6 +33,9 @@ Primary surfaces:
 - `/services` uses `PublicServicesLandingPage` on the public/local commercial surface and routes six customer needs before the four service universes;
 - `/services`
 - `/services/[category]`
+- priority service pages (`messagerie-professionnelle`, `vpn-entreprise`, `sauvegarde-externalisee`, `unifi`, `infogerance-vps`, `hebergement-web`) use `PublicPriorityServicePage`;
+- `/services/domaines-messagerie` uses `PublicMessagingCategoryPage`;
+- `/diagnostic` uses bounded contexts from `lib/diagnostic-context.ts` and adaptive outcomes from `lib/adaptive-diagnostic.ts`;
 - `/formules`
 - `/formules/[code]`
 - `/tarifs`

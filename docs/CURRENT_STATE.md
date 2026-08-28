@@ -1,7 +1,7 @@
 # Current state - Zachary IT platform
-Last verified: 2026-08-27
-Current production release: `v2.0.0.5`
-Release commit: `a6eefcd09833bb7e2384f5a7694e47a4e6621cd1`
+Last verified: 2026-08-28
+Current production release: `v2.0.0.6`
+Release commit: `9f47f2558bb5a2cc4b2b0f880f3ea97456cae1b2`
 This document is the primary entry point for the current platform state. Older V0.x/V1.x documents remain useful as implementation history, but they must not override this file, the current code, or the current deployment runbooks.
 ## Production topology
 ```text
@@ -64,6 +64,13 @@ Since `v2.0.0.5`, public `/services` is a problem-to-solution router before the 
 - the hero keeps the audit action and no longer injects `Comparer les formules`;
 - the public renderer accepts the legacy `storefront:services` JSON through a deterministic transition fallback; the next normal authenticated CMS save persists the strict `problemEntries` shape.
 The client-portal `/services` route remains a separate authenticated surface and stays `noindex, nofollow` on portal hosts.
+## Priority services and adaptive diagnostic
+Since `v2.0.0.6`:
+- six priority service pages use a customer-oriented renderer while Billing keeps authority over formula availability;
+- `/services/domaines-messagerie` routes visitors from concrete messaging/domain problems instead of internal product vocabulary;
+- `/diagnostic` accepts bounded contexts: `backup`, `remote-access`, `network`, `messaging`, `domain-dns`, `server`, `web-hosting`;
+- unknown or missing diagnostic contexts fall back to the general orientation flow;
+- service CTAs pass the relevant diagnostic context without changing Billing authority or creating a second pricing source.
 ## Current production deployment
 API-INTERNAL active runtime:
 - host: SRV-13
@@ -73,13 +80,13 @@ API-INTERNAL active runtime:
 WEBPORTAL active runtime:
 - host: SRV-12
 - service: `kermaria-webportal`
-- active release: `/opt/kermaria/releases/20260827-191145-v2.0.0.5-a6eefcd`
-- previous release retained: `/opt/kermaria/releases/20260827-111656-v2.0.0.4-b66e89d`
+- active release: `/opt/kermaria/releases/20260828-104050-v2.0.0.6-9f47f25`
+- previous release retained: `/opt/kermaria/releases/20260827-191145-v2.0.0.5-a6eefcd`
 Release artifacts:
 - API zip SHA-256: `7F87D6B816B65AC9AC27F82BCF2F61107B77DF766F09EDD30117700271DE4E00`
-- WEBPORTAL tar.gz SHA-256: `019D28D0F2BE26A80AD96338BE1C117B3CB96CFC36ABB2BF0FEEC444E164C60C`
+- WEBPORTAL tar.gz SHA-256: `C0B93D3C84F5D9696FC8F774C5397D90D94E612E144284823AFB54E1C1F9580A`
 Migration `072_editorial_resource_redirects` is present in production and was already applied before the v2.0.0.4 runtime cutover. No SQL write was required during the cutover.
-## Production smoke test - 2026-08-27
+## Production smoke test - 2026-08-28
 Verified after deployment:
 - API `/health` -> 200
 - API `/health/live` -> 200
@@ -88,6 +95,12 @@ Verified after deployment:
 - AD check -> `controlled_write`
 - WEBPORTAL readiness from SRV-12 -> 200
 - public dashboard readiness -> 200
+- adaptive diagnostic general route -> 200;
+- all seven bounded diagnostic contexts -> 200;
+- invalid diagnostic context -> safe general fallback, 200;
+- six priority service pages -> 200 with contextual diagnostic links;
+- `/services/domaines-messagerie` -> 200 with customer-oriented renderer;
+- checked service canonicals unchanged and no mojibake detected.
 - `https://zachary-it.fr/` -> 200
 - `/formules` -> 200
 - `/tarifs` -> 200

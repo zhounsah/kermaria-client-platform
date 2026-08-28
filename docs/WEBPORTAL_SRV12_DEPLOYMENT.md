@@ -1,5 +1,5 @@
 #
-> Current deployed example - 2026-08-27: `v2.0.0.5` / `a6eefcd`, active release `/opt/kermaria/releases/20260827-191145-v2.0.0.5-a6eefcd`. The generic procedure below remains valid.
+> Current deployed example - 2026-08-28: `v2.0.0.6` / `9f47f25`, active release `/opt/kermaria/releases/20260828-104050-v2.0.0.6-9f47f25`. The generic procedure below remains valid.
  Redeploiement WEBPORTAL sur SRV-12
 
 Ce runbook couvre le redeploiement du front `apps/webportal` sur `KERMARIA-SRV-12`
