@@ -5,12 +5,17 @@ import { useRef, useState } from "react";
 import { FormMessage } from "@/components/FormMessage";
 import { SubmitButton } from "@/components/SubmitButton";
 import { requestBffJson } from "@/lib/client-api";
+import { SYSTEM_SNIPPET_DEFAULTS } from "@/lib/system-snippet-defaults";
 
 type ContactFormProps = {
   defaultSubject: string;
   formuleCode: string | null;
   defaultMessage?: string;
   submitLabel?: string;
+  /** Texte systeme administrable ; repli sur la valeur de code. */
+  confirmationText?: string;
+  /** Note de confidentialite administrable ; repli sur la valeur de code. */
+  privacyNotice?: string;
 };
 
 type ContactState =
@@ -33,6 +38,8 @@ export function ContactForm({
   formuleCode,
   defaultMessage = "",
   submitLabel = "Envoyer le message",
+  confirmationText = SYSTEM_SNIPPET_DEFAULTS.contact_form_confirmation,
+  privacyNotice = SYSTEM_SNIPPET_DEFAULTS.contact_form_privacy_notice,
 }: ContactFormProps) {
   const fieldErrorId = (field: FieldName) => `contact-${field}-error`;
   const isSubmittingRef = useRef(false);
@@ -81,7 +88,7 @@ export function ContactForm({
 
       setState({
         status: "success",
-        message: "Message envoyé. Nous reviendrons vers vous par e-mail.",
+        message: confirmationText,
       });
       setName("");
       setEmail("");
@@ -197,10 +204,7 @@ export function ContactForm({
         <input type="hidden" name="formuleCode" value={formuleCode} />
       ) : null}
 
-      <p className="contact-form-note">
-        Vos données ne sont utilisées que pour répondre à votre message.
-        Aucun traceur ni cookie de mesure n&apos;est déposé sur ce site.
-      </p>
+      <p className="contact-form-note">{privacyNotice}</p>
 
       <SubmitButton
         idleLabel={submitLabel}

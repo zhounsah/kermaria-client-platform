@@ -173,12 +173,25 @@ builder.Services.AddScoped<IDemoProfileRepository>(
     _ => sqlConfiguration.IsPersistent
         ? new MariaDbDemoProfileRepository(sqlConfiguration)
         : new MockDemoProfileRepository());
+builder.Services.AddScoped<ICommunicationTemplateRepository>(
+    _ => sqlConfiguration.IsPersistent
+        ? new MariaDbCommunicationTemplateRepository(sqlConfiguration)
+        : new MockCommunicationTemplateRepository());
+builder.Services.AddScoped<
+    ICommunicationTemplateService,
+    CommunicationTemplateService>();
+builder.Services.AddScoped<
+    IPortalNotificationContentService,
+    PortalNotificationContentService>();
 builder.Services.AddScoped<IRequestWorkflowRepository>(
     serviceProvider => sqlConfiguration.IsPersistent
-        ? new MariaDbRequestWorkflowRepository(sqlConfiguration)
+        ? new MariaDbRequestWorkflowRepository(
+            sqlConfiguration,
+            serviceProvider.GetRequiredService<IPortalNotificationContentService>())
         : new MockRequestWorkflowRepository(
             serviceProvider.GetRequiredService<MockRequestWorkflowStore>(),
-            serviceProvider.GetRequiredService<MockPortalNotificationStore>()));
+            serviceProvider.GetRequiredService<MockPortalNotificationStore>(),
+            serviceProvider.GetRequiredService<IPortalNotificationContentService>()));
 builder.Services.AddScoped<IPortalNotificationRepository>(
     serviceProvider => sqlConfiguration.IsPersistent
         ? new MariaDbPortalNotificationRepository(sqlConfiguration)
@@ -2274,6 +2287,15 @@ app.MapGet(
         if (!await editorialRepository.HasAdminPermissionAsync(actor.UserId, "settings.read", context.RequestAborted)) throw new PortalAccessDeniedException();
         return Results.Ok(service.GetSnapshot());
     });
+// Textes courts affiches par le portail public (confirmation de formulaire,
+// mention RGPD...). Aucun secret, aucune donnee client : lecture anonyme.
+app.MapGet(
+    "/internal/public/system-snippets",
+    async (
+        HttpContext context,
+        ICommunicationTemplateService service) =>
+        Results.Ok(new PublicSystemSnippets(
+            await service.GetPublicSnippetsAsync(context.RequestAborted))));
 app.MapGet(
     "/internal/public/editorial/wiki/home",
     async (
@@ -4040,6 +4062,200 @@ app.MapPatch(
         var outcome = result.Code == "SETTINGS_UPDATED" ? "success" : "refused";
         await auditService.RecordAsync(new AuditEvent(context.GetCorrelationId(), "setting_changed", outcome, result.Code, "application_setting", key, ActorUserId: actor.UserId, SourceAddress: context.Connection.RemoteIpAddress?.ToString()), context.RequestAborted);
         return Results.Json(result, statusCode: result.Code == "SETTINGS_VERSION_CONFLICT" ? StatusCodes.Status409Conflict : result.Code == "SETTINGS_UPDATED" ? StatusCodes.Status200OK : StatusCodes.Status400BadRequest);
+    });
+
+// --- Messages & communications (specification, section 8) ------------------
+// Les modeles vivent dans des tables specialisees, jamais dans le registre
+// generique. Chaque mutation revalide la whitelist de variables cote API.
+app.MapGet(
+    "/internal/admin/communications",
+    async (
+        HttpContext context,
+        ICommunicationTemplateService service,
+        IEditorialRepository editorialRepository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(context, authenticationService, auditService, "admin.communications.read");
+        if (!await editorialRepository.HasAdminPermissionAsync(actor.UserId, "settings.read", context.RequestAborted)) throw new PortalAccessDeniedException();
+        context.Response.Headers["X-Data-Source"] = service.IsPersistent ? "mariadb" : "mock";
+        return Results.Ok(await service.GetAdminCollectionAsync(context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/admin/communications/{scope}/{key}/revisions",
+    async (
+        string scope,
+        string key,
+        HttpContext context,
+        ICommunicationTemplateService service,
+        IEditorialRepository editorialRepository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(context, authenticationService, auditService, "admin.communications.read");
+        if (!await editorialRepository.HasAdminPermissionAsync(actor.UserId, "settings.read", context.RequestAborted)) throw new PortalAccessDeniedException();
+        return Results.Ok(new { revisions = await service.GetRevisionsAsync(scope, key, context.RequestAborted) });
+    });
+app.MapPatch(
+    "/internal/admin/communications/email/{key}",
+    async (
+        string key,
+        HttpContext context,
+        ICommunicationTemplateService service,
+        IEditorialRepository editorialRepository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveTemplateWriterAsync(context, editorialRepository, authenticationService, auditService);
+        var request = await ReadPayload<EmailTemplateUpdateRequest>(context) ?? throw new PortalValidationException();
+        var result = await service.UpdateEmailTemplateAsync(key, request, actor.UserId, context.GetCorrelationId(), context.RequestAborted);
+        await RecordTemplateAuditAsync(context, auditService, actor.UserId, "email_template_changed", "email_template", key, result.Code);
+        return Results.Json(result, statusCode: ResolveTemplateStatusCode(result.Code));
+    });
+app.MapPost(
+    "/internal/admin/communications/email/{key}/restore-default",
+    async (
+        string key,
+        HttpContext context,
+        ICommunicationTemplateService service,
+        IEditorialRepository editorialRepository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveTemplateWriterAsync(context, editorialRepository, authenticationService, auditService);
+        var request = await ReadPayload<CommunicationTemplateRestoreRequest>(context) ?? throw new PortalValidationException();
+        var result = await service.RestoreEmailTemplateAsync(key, request.ExpectedVersion, actor.UserId, context.GetCorrelationId(), context.RequestAborted);
+        await RecordTemplateAuditAsync(context, auditService, actor.UserId, "email_template_restored", "email_template", key, result.Code);
+        return Results.Json(result, statusCode: ResolveTemplateStatusCode(result.Code));
+    });
+app.MapPost(
+    "/internal/admin/communications/email/{key}/preview",
+    async (
+        string key,
+        HttpContext context,
+        ICommunicationTemplateService service,
+        IEditorialRepository editorialRepository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(context, authenticationService, auditService, "admin.communications.preview");
+        if (!await editorialRepository.HasAdminPermissionAsync(actor.UserId, "settings.read", context.RequestAborted)) throw new PortalAccessDeniedException();
+        var request = await ReadPayload<EmailTemplatePreviewRequest>(context) ?? throw new PortalValidationException();
+        var result = service.PreviewEmailTemplate(key, request, context.GetCorrelationId());
+        return Results.Json(result, statusCode: result.Code == "TEMPLATE_PREVIEW" ? StatusCodes.Status200OK : StatusCodes.Status400BadRequest);
+    });
+app.MapPost(
+    "/internal/admin/communications/email/{key}/test",
+    async (
+        string key,
+        HttpContext context,
+        ICommunicationTemplateService service,
+        IEmailService emailService,
+        IEmailLogRepository emailLog,
+        IEditorialRepository editorialRepository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveTemplateWriterAsync(context, editorialRepository, authenticationService, auditService);
+        var request = await ReadPayload<EmailTemplateTestRequest>(context) ?? throw new PortalValidationException();
+        var correlationId = context.GetCorrelationId();
+        var definition = CommunicationTemplateRegistry.FindEmail(key);
+        // L'envoi de test ne vise que l'adresse de l'administrateur connecte :
+        // aucune adresse arbitraire ne peut etre atteinte depuis cette route.
+        if (definition is null || !definition.TestSendSupported
+            || !string.Equals(request.Recipient?.Trim(), actor.Email, StringComparison.OrdinalIgnoreCase))
+        {
+            await RecordTemplateAuditAsync(context, auditService, actor.UserId, "email_template_test", "email_template", key, "TEMPLATE_TEST_REFUSED");
+            return Results.Json(
+                new CommunicationTemplateSimpleResponse(
+                    "TEMPLATE_TEST_REFUSED",
+                    "L'envoi de test n'est possible que vers votre propre adresse, pour un modèle qui le permet.",
+                    correlationId),
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var sample = definition.Variables.ToDictionary(
+            variable => variable.Name,
+            variable => (string?)$"[{variable.Name}]",
+            StringComparer.Ordinal);
+        var (subject, body) = await service.RenderEmailAsync(key, sample, context.RequestAborted);
+        var delivery = await emailService.SendAsync(
+            new EmailMessage(actor.Email, $"[TEST] {subject}", body, key, null, correlationId),
+            context.RequestAborted);
+        await emailLog.RecordAsync(key, actor.Email, $"[TEST] {subject}", body, delivery.Status, delivery.ErrorMessage, null, correlationId, delivery.Succeeded, context.RequestAborted);
+        await RecordTemplateAuditAsync(context, auditService, actor.UserId, "email_template_test", "email_template", key, delivery.Succeeded ? "TEMPLATE_TEST_SENT" : "TEMPLATE_TEST_FAILED");
+        return Results.Json(
+            new CommunicationTemplateSimpleResponse(
+                delivery.Succeeded ? "TEMPLATE_TEST_SENT" : "TEMPLATE_TEST_FAILED",
+                delivery.Succeeded
+                    ? $"E-mail de test envoyé à {actor.Email}."
+                    : "L'envoi de test a échoué. Consultez le journal des e-mails.",
+                correlationId),
+            statusCode: delivery.Succeeded ? StatusCodes.Status200OK : StatusCodes.Status502BadGateway);
+    });
+app.MapPatch(
+    "/internal/admin/communications/notification/{key}",
+    async (
+        string key,
+        HttpContext context,
+        ICommunicationTemplateService service,
+        IEditorialRepository editorialRepository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveTemplateWriterAsync(context, editorialRepository, authenticationService, auditService);
+        var request = await ReadPayload<NotificationTemplateUpdateRequest>(context) ?? throw new PortalValidationException();
+        var result = await service.UpdateNotificationTemplateAsync(key, request, actor.UserId, context.GetCorrelationId(), context.RequestAborted);
+        await RecordTemplateAuditAsync(context, auditService, actor.UserId, "notification_template_changed", "notification_template", key, result.Code);
+        return Results.Json(result, statusCode: ResolveTemplateStatusCode(result.Code));
+    });
+app.MapPost(
+    "/internal/admin/communications/notification/{key}/restore-default",
+    async (
+        string key,
+        HttpContext context,
+        ICommunicationTemplateService service,
+        IEditorialRepository editorialRepository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveTemplateWriterAsync(context, editorialRepository, authenticationService, auditService);
+        var request = await ReadPayload<CommunicationTemplateRestoreRequest>(context) ?? throw new PortalValidationException();
+        var result = await service.RestoreNotificationTemplateAsync(key, request.ExpectedVersion, actor.UserId, context.GetCorrelationId(), context.RequestAborted);
+        await RecordTemplateAuditAsync(context, auditService, actor.UserId, "notification_template_restored", "notification_template", key, result.Code);
+        return Results.Json(result, statusCode: ResolveTemplateStatusCode(result.Code));
+    });
+app.MapPatch(
+    "/internal/admin/communications/snippet/{key}",
+    async (
+        string key,
+        HttpContext context,
+        ICommunicationTemplateService service,
+        IEditorialRepository editorialRepository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveTemplateWriterAsync(context, editorialRepository, authenticationService, auditService);
+        var request = await ReadPayload<SystemSnippetUpdateRequest>(context) ?? throw new PortalValidationException();
+        var result = await service.UpdateSnippetAsync(key, request, actor.UserId, context.GetCorrelationId(), context.RequestAborted);
+        await RecordTemplateAuditAsync(context, auditService, actor.UserId, "system_snippet_changed", "system_snippet", key, result.Code);
+        return Results.Json(result, statusCode: ResolveTemplateStatusCode(result.Code));
+    });
+app.MapPost(
+    "/internal/admin/communications/snippet/{key}/restore-default",
+    async (
+        string key,
+        HttpContext context,
+        ICommunicationTemplateService service,
+        IEditorialRepository editorialRepository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveTemplateWriterAsync(context, editorialRepository, authenticationService, auditService);
+        var request = await ReadPayload<CommunicationTemplateRestoreRequest>(context) ?? throw new PortalValidationException();
+        var result = await service.RestoreSnippetAsync(key, request.ExpectedVersion, actor.UserId, context.GetCorrelationId(), context.RequestAborted);
+        await RecordTemplateAuditAsync(context, auditService, actor.UserId, "system_snippet_restored", "system_snippet", key, result.Code);
+        return Results.Json(result, statusCode: ResolveTemplateStatusCode(result.Code));
     });
 app.MapGet(
     "/internal/admin/customers",
@@ -7167,6 +7383,65 @@ static async Task<PortalSessionContext> ResolveAdminSessionAsync(
         context.RequestAborted);
     return session;
 }
+
+// Toute mutation de gabarit exige la permission dediee `settings.templates.write`
+// (specification, section 20) : la permission generique `settings.write` ne suffit
+// pas, un contenu envoye a des clients n'ayant pas le meme niveau de risque.
+static async Task<PortalSessionContext> ResolveTemplateWriterAsync(
+    HttpContext context,
+    IEditorialRepository editorialRepository,
+    IAuthenticationService authenticationService,
+    IAuditService auditService)
+{
+    var actor = await ResolveAdminSessionAsync(
+        context,
+        authenticationService,
+        auditService,
+        "admin.communications.write");
+    if (!await editorialRepository.HasAdminPermissionAsync(
+            actor.UserId,
+            "settings.templates.write",
+            context.RequestAborted))
+    {
+        throw new PortalAccessDeniedException();
+    }
+
+    return actor;
+}
+
+static Task RecordTemplateAuditAsync(
+    HttpContext context,
+    IAuditService auditService,
+    string actorUserId,
+    string action,
+    string targetType,
+    string targetId,
+    string code)
+{
+    var outcome = code is "TEMPLATE_UPDATED" or "TEMPLATE_TEST_SENT"
+        ? "success"
+        : "refused";
+    return auditService.RecordAsync(
+        new AuditEvent(
+            context.GetCorrelationId(),
+            action,
+            outcome,
+            code,
+            targetType,
+            targetId,
+            ActorUserId: actorUserId,
+            SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+        context.RequestAborted);
+}
+
+static int ResolveTemplateStatusCode(string code)
+    => code switch
+    {
+        "TEMPLATE_UPDATED" => StatusCodes.Status200OK,
+        "TEMPLATE_VERSION_CONFLICT" => StatusCodes.Status409Conflict,
+        "TEMPLATE_UNKNOWN_KEY" => StatusCodes.Status404NotFound,
+        _ => StatusCodes.Status400BadRequest,
+    };
 
 static string? GetPortalSessionToken(HttpContext context)
     => context.Request.Headers[

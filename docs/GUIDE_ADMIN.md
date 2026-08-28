@@ -282,6 +282,49 @@ voir aussi :
 
 ---
 
+## 7 bis. Centre de configuration - `/admin/settings`
+
+Les parametres metier centralises se modifient sans deploiement. Chaque
+parametre affiche sa classe :
+
+- **Dynamique** : la valeur prend effet des l'enregistrement ;
+- **Redemarrage requis** : lecture seule, la valeur vient du demarrage ;
+- **Secret** : jamais affiche, seulement « Configure » ou « Non configure » ;
+- **Invariant code** : non modifiable par principe.
+
+Si un message « ce parametre a ete modifie ailleurs » apparait, un autre
+administrateur a enregistre entre-temps : recharger la page avant de
+recommencer, sinon le travail de l'autre serait ecrase.
+
+## 7 ter. Messages et communications - `/admin/settings/messages`
+
+Trois familles de textes, chacune avec son historique et sa restauration.
+
+**E-mails transactionnels.** Objet et corps en texte brut. Les variables
+autorisees sont listees sous chaque modele et s'inserent d'un clic ; toute
+autre variable fait echouer l'enregistrement, volontairement. Le bouton
+**Apercu** rend le texte avec des valeurs d'exemple, sans rien envoyer.
+L'**envoi de test** n'accepte que votre propre adresse et n'existe que pour
+les modeles independants d'un document commercial reel.
+
+Mettre un modele sur **Inactif** ne casse rien : le texte integre au code
+reprend la main. C'est le repli a utiliser si une modification s'avere
+mauvaise et que l'historique n'est pas a portee de main.
+
+**Notifications du portail.** Titre et message affiches au client lors d'un
+changement de statut ou d'une reponse publique. Les identifiants de
+notification et les codes de statut restent des invariants du code : seuls
+les textes changent.
+
+**Textes systeme.** Textes courts reellement operationnels : confirmation du
+formulaire de contact, note de confidentialite, message de fermeture
+temporaire, mention commerciale. Ce n'est pas un second CMS : les pages
+editoriales restent dans `/admin/content` et le wiki.
+
+Dans les trois cas, **Restaurer le texte par defaut** reecrit la valeur du
+code comme nouvelle version ; rien n'est supprime et l'historique reste
+consultable.
+
 ## 8. Diagnostic rapide
 
 Quand un client remonte un probleme de panier, paiement, abonnement ou

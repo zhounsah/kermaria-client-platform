@@ -544,6 +544,7 @@ async Task<int> RunAsync(string[] arguments)
         VerifyActiveDirectoryPathScope();
         VerifyChildProcessEnvironmentGuardrails();
         await VerifySignupStoresPriceFreeBillingV2SelectionAsync();
+        await VerifyCommunicationTemplatesAsync();
         await RunMockTestsAsync();
         await RunMockActiveDirectoryModeTestsAsync();
         await RunMockBpceIssuingTestsAsync();
@@ -713,6 +714,7 @@ async Task VerifySignupStoresPriceFreeBillingV2SelectionAsync()
         NewPendingPasswordStore(),
         new RecordingKoxoSyncWebhookTriggerService(),
         new SignupRuntimeConfiguration(true, 3, 10, 24, 24, false),
+        NewApplicationSettingsService(),
         CreateMockEmailConfiguration(),
         disabledAdConfiguration,
         LoggerFactory.Create(_ => { }).CreateLogger<SignupService>());
@@ -4258,6 +4260,7 @@ async Task RunSignupKoxoWebhookTriggerTestsAsync()
         NewPendingPasswordStore(),
         trigger,
         new SignupRuntimeConfiguration(true, 3, 1, 24, 24, false),
+        NewApplicationSettingsService(),
         new EmailRuntimeConfiguration(
             EmailIntegrationMode.Mock,
             "smtp.example.invalid",
@@ -4293,8 +4296,162 @@ async Task RunSignupKoxoWebhookTriggerTestsAsync()
         "Le set-password doit declencher exactement une notification KoXo pour SRV-21.");
 }
 
+// Communications administrables (specification, section 8). Les smoke tests
+// tournent en persistance mock : ils valident les regles de service (whitelist
+// fermee, bornes, concurrence, repli code) et non le SQL, qui reste couvert par
+// `validate:mariadb`.
+static async Task VerifyCommunicationTemplatesAsync()
+{
+    var repository = new MockCommunicationTemplateRepository();
+    var service = new CommunicationTemplateService(
+        repository,
+        LoggerFactory.Create(_ => { }).CreateLogger<CommunicationTemplateService>());
+    CommunicationTemplateService.Invalidate();
+    const string actor = "00000000-0000-0000-0000-0000000000aa";
+    const string correlation = "smoke-communications";
+    var token = CancellationToken.None;
+
+    var collection = await service.GetAdminCollectionAsync(token);
+    Ensure(
+        collection.EmailTemplates.Count == 7,
+        "Les sept modeles e-mail du cadrage doivent etre exposes.");
+    Ensure(
+        collection.EmailTemplates.All(item => !item.Customized && item.Source == "code"),
+        "Sans ligne enregistree, chaque modele doit se declarer par defaut.");
+    Ensure(
+        collection.Snippets.Count > 0 && collection.NotificationTemplates.Count > 0,
+        "Notifications et textes systeme doivent aussi etre exposes.");
+
+    var unknownKey = await service.UpdateEmailTemplateAsync(
+        "modele_inexistant",
+        new EmailTemplateUpdateRequest("Objet", "Corps", true, 0),
+        actor,
+        correlation,
+        token);
+    Ensure(
+        unknownKey.Code == "TEMPLATE_UNKNOWN_KEY",
+        "Une cle hors registre doit etre refusee, jamais creee.");
+
+    var unknownVariable = await service.UpdateEmailTemplateAsync(
+        "signup_verification",
+        new EmailTemplateUpdateRequest(
+            "Objet",
+            "Bonjour {{contactName}}, jeton {{secretToken}}.",
+            true,
+            0),
+        actor,
+        correlation,
+        token);
+    Ensure(
+        unknownVariable.Code == "TEMPLATE_UNKNOWN_VARIABLE",
+        "Une variable hors whitelist doit faire echouer la sauvegarde.");
+
+    var tooLong = await service.UpdateSnippetAsync(
+        "contact_form_confirmation",
+        new SystemSnippetUpdateRequest(new string('x', 5000), 0),
+        actor,
+        correlation,
+        token);
+    Ensure(
+        tooLong.Code == "TEMPLATE_TOO_LONG",
+        "Un texte systeme au-dela de sa borne doit etre refuse.");
+
+    var saved = await service.UpdateEmailTemplateAsync(
+        "signup_verification",
+        new EmailTemplateUpdateRequest(
+            "Objet administre",
+            "Bonjour {{contactName}}, lien : {{verificationUrl}}",
+            true,
+            0),
+        actor,
+        correlation,
+        token);
+    Ensure(
+        saved.Code == "TEMPLATE_UPDATED"
+        && saved.Template is { Version: 1, Customized: true, Source: "database" },
+        "Un enregistrement valide doit produire la version 1 en base.");
+
+    var stale = await service.UpdateEmailTemplateAsync(
+        "signup_verification",
+        new EmailTemplateUpdateRequest("Autre objet", "Bonjour {{contactName}}", true, 0),
+        actor,
+        correlation,
+        token);
+    Ensure(
+        stale.Code == "TEMPLATE_VERSION_CONFLICT",
+        "Une version attendue perimee doit etre refusee, pas ecrasee.");
+
+    var rendered = await service.RenderEmailAsync(
+        "signup_verification",
+        EmailTemplates.SignupVerificationVariables("Alice", "https://portail.invalid/v/1"),
+        token);
+    Ensure(
+        rendered.Subject == "Objet administre"
+        && rendered.Body.Contains("Alice", StringComparison.Ordinal)
+        && rendered.Body.Contains("https://portail.invalid/v/1", StringComparison.Ordinal),
+        "Le runtime doit utiliser le modele administre et substituer ses variables.");
+
+    var disabled = await service.UpdateEmailTemplateAsync(
+        "signup_verification",
+        new EmailTemplateUpdateRequest(
+            "Objet administre",
+            "Bonjour {{contactName}}, lien : {{verificationUrl}}",
+            false,
+            1),
+        actor,
+        correlation,
+        token);
+    Ensure(disabled.Code == "TEMPLATE_UPDATED", "La desactivation doit etre acceptee.");
+    var fallback = await service.RenderEmailAsync(
+        "signup_verification",
+        EmailTemplates.SignupVerificationVariables("Alice", "https://portail.invalid/v/1"),
+        token);
+    var (defaultSubject, _) = EmailTemplates.Default("signup_verification");
+    Ensure(
+        fallback.Subject == defaultSubject,
+        "Un modele desactive doit retomber sur le gabarit integre au code.");
+
+    var restored = await service.RestoreEmailTemplateAsync(
+        "signup_verification",
+        expectedVersion: 2,
+        actor,
+        correlation,
+        token);
+    Ensure(
+        restored.Code == "TEMPLATE_UPDATED"
+        && restored.Template is { Customized: false },
+        "La restauration doit reecrire le gabarit de code sans casser l'historique.");
+
+    var revisions = await service.GetRevisionsAsync("email", "signup_verification", token);
+    Ensure(
+        revisions.Count == 3 && revisions[0].Outcome == "restored",
+        "Chaque mutation acceptee doit laisser une revision horodatee.");
+
+    var preview = service.PreviewEmailTemplate(
+        "signup_verification",
+        new EmailTemplatePreviewRequest("Objet {{contactName}}", "Corps {{verificationUrl}}"),
+        correlation);
+    Ensure(
+        preview.Code == "TEMPLATE_PREVIEW"
+        && preview.Subject == "Objet [contactName]"
+        && preview.Body == "Corps [verificationUrl]",
+        "L'apercu doit substituer des valeurs d'exemple sans envoyer d'e-mail.");
+
+    var snippets = await service.GetPublicSnippetsAsync(token);
+    Ensure(
+        snippets.ContainsKey("contact_form_confirmation"),
+        "Les textes systeme publics doivent rester exposes meme sans personnalisation.");
+
+    CommunicationTemplateService.Invalidate();
+}
+
 static KoxoPendingPasswordStore NewPendingPasswordStore()
     => new(LoggerFactory.Create(_ => { }).CreateLogger<KoxoPendingPasswordStore>());
+
+// Registre de parametres en memoire : les smoke tests n'ont pas de MariaDB, donc
+// le service retombe sur les valeurs par defaut du registre ferme.
+static IApplicationSettingsService NewApplicationSettingsService()
+    => new ApplicationSettingsService(new MockApplicationSettingsRepository());
 
 static AdRuntimeConfiguration CreateDisabledAdConfiguration()
     => new(

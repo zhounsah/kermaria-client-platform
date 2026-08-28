@@ -158,6 +158,28 @@ cookie HttpOnly -> BFF -> session API-INTERNAL -> user_id -> customer_id
   basculement `BPCE_INTEGRATION_MODE=live` ou `PAYPAL_MODE=live` requiert
   une validation explicite (V1.0 beta 1).
 
+### Centre de configuration
+
+- Le registre de parametres et les registres de gabarits sont **fermes cote
+  code** : ni l'API ni l'interface ne peuvent creer une cle. Une cle presente
+  en base mais inconnue du code est ignoree sans erreur.
+- Les valeurs classees `secret` ne sont jamais renvoyees ; l'API n'expose
+  qu'un etat « Configure » / « Non configure ».
+- Les gabarits de communication n'acceptent que du texte brut et des
+  placeholders `{{variable}}` d'une whitelist fermee par modele. Aucun moteur
+  d'expression, aucun acces environnement, aucune reflection, aucun include :
+  une variable inconnue fait echouer la sauvegarde.
+- Toute mutation de gabarit exige la permission `settings.templates.write`,
+  distincte de `settings.write` : un texte envoye a des clients n'a pas le
+  meme niveau de risque qu'un reglage interne.
+- L'envoi de test d'un e-mail ne peut viser que l'adresse de
+  l'administrateur connecte ; la route refuse toute autre destination, et
+  l'allowlist SMTP de `EMAIL_LIVE_ALLOWLIST` continue de s'appliquer.
+- Les replis sont fail-closed au sens metier : en cas de panne SQL ou de
+  ligne absente, le runtime utilise le gabarit integre au code, jamais un
+  texte vide, et jamais une configuration plus permissive que l'absence de
+  configuration.
+
 ## Logs, audits et erreurs
 
 Les audits conservent uniquement :

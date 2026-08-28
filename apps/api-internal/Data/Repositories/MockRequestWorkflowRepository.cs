@@ -81,12 +81,16 @@ public sealed class MockRequestWorkflowRepository
     private readonly MockRequestWorkflowStore _store;
     private readonly MockPortalNotificationStore _notificationStore;
 
+    private readonly IPortalNotificationContentService _notificationContent;
+
     public MockRequestWorkflowRepository(
         MockRequestWorkflowStore store,
-        MockPortalNotificationStore notificationStore)
+        MockPortalNotificationStore notificationStore,
+        IPortalNotificationContentService notificationContent)
     {
         _store = store;
         _notificationStore = notificationStore;
+        _notificationContent = notificationContent;
     }
 
     public bool IsPersistent => false;
@@ -401,7 +405,7 @@ public sealed class MockRequestWorkflowRepository
         }
     }
 
-    public Task<RequestMutationResponse> UpdateStatusAsync(
+    public async Task<RequestMutationResponse> UpdateStatusAsync(
         PortalSessionContext actor,
         string requestType,
         string requestId,
@@ -409,17 +413,20 @@ public sealed class MockRequestWorkflowRepository
         string correlationId,
         CancellationToken cancellationToken)
     {
+        // Instantane charge hors du verrou : aucune attente ne doit se produire
+        // pendant que le store en memoire est verrouille.
+        await _notificationContent.PrimeAsync(cancellationToken);
         lock (_store.SyncRoot)
         {
             var target = FindTarget(requestType, requestId);
             if (target.Status == status)
             {
-                return Task.FromResult(new RequestMutationResponse(
+                return new RequestMutationResponse(
                     requestId,
                     target.Reference,
                     status,
                     false,
-                    correlationId));
+                    correlationId);
             }
 
             var previousStatus = target.Status;
@@ -432,18 +439,18 @@ public sealed class MockRequestWorkflowRepository
                 now));
             AddNotification(
                 target,
-                PortalNotificationFactory.ForStatus(
+                _notificationContent.ForStatus(
                     requestType,
                     requestId,
                     status),
                 now);
 
-            return Task.FromResult(new RequestMutationResponse(
+            return new RequestMutationResponse(
                 requestId,
                 target.Reference,
                 status,
                 true,
-                correlationId));
+                correlationId);
         }
     }
 
@@ -481,7 +488,7 @@ public sealed class MockRequestWorkflowRepository
         }
     }
 
-    public Task<RequestMutationResponse> AddPublicMessageAsync(
+    public async Task<RequestMutationResponse> AddPublicMessageAsync(
         PortalSessionContext actor,
         string requestType,
         string requestId,
@@ -489,6 +496,7 @@ public sealed class MockRequestWorkflowRepository
         string correlationId,
         CancellationToken cancellationToken)
     {
+        await _notificationContent.PrimeAsync(cancellationToken);
         lock (_store.SyncRoot)
         {
             var target = FindTarget(requestType, requestId);
@@ -509,17 +517,17 @@ public sealed class MockRequestWorkflowRepository
                 now));
             AddNotification(
                 target,
-                PortalNotificationFactory.ForPublicMessage(
+                _notificationContent.ForPublicMessage(
                     requestType,
                     requestId),
                 now);
 
-            return Task.FromResult(new RequestMutationResponse(
+            return new RequestMutationResponse(
                 requestId,
                 target.Reference,
                 target.Status,
                 true,
-                correlationId));
+                correlationId);
         }
     }
 

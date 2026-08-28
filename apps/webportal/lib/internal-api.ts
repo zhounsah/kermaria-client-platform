@@ -30,6 +30,7 @@ import type {
   ClientSolution,
   CommercialDocumentDetail,
   CommercialDocumentSummary,
+  CommunicationTemplateCollection,
   CorrelationId,
   CustomerAdLinkSummary,
   CustomerAdProvisioningMutationPayload,
@@ -58,6 +59,7 @@ import type {
   PortalNotificationSummary,
   PortalServiceRequestDetail,
   PortalSupportRequestDetail,
+  PublicSystemSnippets,
   PublicClientSolutionPortal,
   PublicPackCatalogContent,
   RequestMutationResponse,
@@ -596,6 +598,14 @@ export function getPublicManagedContent(key: ManagedContentKey) {
   );
 }
 
+export function getPublicSystemSnippets() {
+  return getPublicData<PublicSystemSnippets | null>(
+    "/internal/public/system-snippets",
+    null,
+    null,
+  );
+}
+
 export function getPublicWikiHome() {
   return getPublicData<EditorialListResponse>(
     "/internal/public/editorial/wiki/home",
@@ -1096,6 +1106,18 @@ export function getAdminApplicationSettings() {
   return getAdminData<ApplicationSettingsSnapshot>(
     "/internal/admin/settings",
     { settings: [], persistent: false },
+  );
+}
+
+export function getAdminCommunicationTemplates() {
+  return getAdminData<CommunicationTemplateCollection>(
+    "/internal/admin/communications",
+    {
+      emailTemplates: [],
+      notificationTemplates: [],
+      snippets: [],
+      persistent: false,
+    },
   );
 }
 

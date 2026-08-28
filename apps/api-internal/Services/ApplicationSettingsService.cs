@@ -11,7 +11,6 @@ public interface IApplicationSettingsService
     Task<ApplicationSettingsSnapshot> GetSnapshotAsync(CancellationToken cancellationToken);
     Task<SignupRuntimeConfiguration> GetSignupConfigurationAsync(SignupRuntimeConfiguration fallback, CancellationToken cancellationToken);
     Task<AuthRuntimeConfiguration> GetAuthConfigurationAsync(AuthRuntimeConfiguration fallback, CancellationToken cancellationToken);
-    Task<(string Subject, string Body)> RenderEmailTemplateAsync(string templateKey, string fallbackSubject, string fallbackBody, IReadOnlyDictionary<string, string?> variables, CancellationToken cancellationToken);
     Task<PortalBillingConfiguration> GetPortalBillingConfigurationAsync(PortalBillingConfiguration fallback, CancellationToken cancellationToken);
     Task<ApplicationSettingMutationResponse> UpdateAsync(string key, ApplicationSettingUpdateRequest request, string actorUserId, string correlationId, CancellationToken cancellationToken);
 }
@@ -49,12 +48,11 @@ public sealed class ApplicationSettingsService : IApplicationSettingsService
         new("session_duration_minutes", "security", "Durée de session", "Borne fonctionnelle : 5 à 10 080 minutes.", "int", "60", 5, 10080, Risk: "medium"),
         new("login_max_failures", "security", "Échecs de connexion autorisés", "Borne fonctionnelle : 2 à 20.", "int", "5", 2, 20, Risk: "medium"),
         new("login_lockout_minutes", "security", "Verrouillage de connexion", "Borne fonctionnelle : 1 à 120 minutes.", "int", "10", 1, 120, Risk: "medium"),
-        new("email_signup_verification_subject", "messages", "E-mail · vérification · sujet", "Variables : {{contactName}}, {{verificationUrl}}.", "string", "\"\"", MaxLength: 240),
-        new("email_signup_verification_body", "messages", "E-mail · vérification · corps", "Texte brut. Variables contrôlées uniquement.", "string", "\"\"", MaxLength: 4000),
-        new("email_account_approved_subject", "messages", "E-mail · compte validé · sujet", "Variables : {{contactName}}, {{setPasswordUrl}}.", "string", "\"\"", MaxLength: 240),
-        new("email_account_approved_body", "messages", "E-mail · compte validé · corps", "Texte brut. Variables contrôlées uniquement.", "string", "\"\"", MaxLength: 4000),
-        new("email_account_rejected_subject", "messages", "E-mail · compte refusé · sujet", "Variables : {{contactName}}, {{reason}}.", "string", "\"\"", MaxLength: 240),
-        new("email_account_rejected_body", "messages", "E-mail · compte refusé · corps", "Texte brut. Variables contrôlées uniquement.", "string", "\"\"", MaxLength: 4000),
+        // Les contenus d'e-mail ont quitte ce registre generique au profit des
+        // tables specialisees `email_templates` (migration 074) : whitelist de
+        // variables par modele, revisions dediees et repli code. Les anciennes
+        // cles `email_*` eventuellement presentes en base sont ignorees, comme
+        // toute cle hors registre.
         new("billing_iban", "billing", "IBAN de règlement", "Coordonnée de règlement pour les nouveaux documents et l'espace client.", "string", "\"\"", MaxLength: 34),
         new("billing_bic", "billing", "BIC", "Code BIC associé au compte de règlement.", "string", "\"\"", MaxLength: 11),
         new("billing_paypal_url", "billing", "Lien PayPal", "URL HTTPS facultative de règlement.", "url", "\"\"", MaxLength: 500),
@@ -81,15 +79,6 @@ public sealed class ApplicationSettingsService : IApplicationSettingsService
     {
         var values = await StoredValuesAsync(cancellationToken);
         return fallback with { SessionDuration = TimeSpan.FromMinutes(Int(values, "session_duration_minutes", (int)fallback.SessionDuration.TotalMinutes)), LoginMaxFailures = Int(values, "login_max_failures", fallback.LoginMaxFailures), LoginLockoutDuration = TimeSpan.FromMinutes(Int(values, "login_lockout_minutes", (int)fallback.LoginLockoutDuration.TotalMinutes)) };
-    }
-
-    public async Task<(string Subject, string Body)> RenderEmailTemplateAsync(string templateKey, string fallbackSubject, string fallbackBody, IReadOnlyDictionary<string, string?> variables, CancellationToken cancellationToken)
-    {
-        var values = await StoredValuesAsync(cancellationToken);
-        var subject = Text(values, $"email_{templateKey}_subject", fallbackSubject);
-        var body = Text(values, $"email_{templateKey}_body", fallbackBody);
-        foreach (var (name, value) in variables) { subject = subject.Replace("{{" + name + "}}", value ?? string.Empty, StringComparison.Ordinal); body = body.Replace("{{" + name + "}}", value ?? string.Empty, StringComparison.Ordinal); }
-        return (subject, body);
     }
 
     public async Task<PortalBillingConfiguration> GetPortalBillingConfigurationAsync(PortalBillingConfiguration fallback, CancellationToken cancellationToken)
@@ -122,7 +111,6 @@ public sealed class ApplicationSettingsService : IApplicationSettingsService
             var text = value.GetString()?.Trim() ?? "";
             if (definition.Key is "billing_iban" or "billing_bic") text = text.Replace(" ", "", StringComparison.Ordinal).ToUpperInvariant();
             if (text.Length > (definition.MaxLength ?? 4000) || text.Any(char.IsControl) || text.Contains('<') || text.Contains('>')) return false;
-            if (definition.Key.StartsWith("email_", StringComparison.Ordinal) && !HasOnlyAllowedTemplateVariables(definition.Key, text)) return false;
             if (definition.ValueType == "email" && text.Length > 0 && (!text.Contains('@') || text.Contains(' '))) return false;
             if (definition.ValueType == "url" && text.Length > 0 && (!Uri.TryCreate(text, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)) return false;
             if (definition.Key == "billing_iban" && text.Length > 0 && !System.Text.RegularExpressions.Regex.IsMatch(text.Replace(" ", ""), "^[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}$", System.Text.RegularExpressions.RegexOptions.CultureInvariant)) return false;
@@ -142,10 +130,4 @@ public sealed class ApplicationSettingsService : IApplicationSettingsService
         => values.TryGetValue(key, out var value) && value.ValueKind == JsonValueKind.String
             ? string.IsNullOrWhiteSpace(value.GetString()) ? null : value.GetString()
             : fallback;
-    private static bool HasOnlyAllowedTemplateVariables(string key, string text)
-    {
-        var allowed = key.Contains("signup_verification", StringComparison.Ordinal) ? new[] { "contactName", "verificationUrl" } : key.Contains("account_approved", StringComparison.Ordinal) ? new[] { "contactName", "setPasswordUrl" } : key.Contains("account_rejected", StringComparison.Ordinal) ? new[] { "contactName", "reason" } : Array.Empty<string>();
-        var remaining = System.Text.RegularExpressions.Regex.Replace(text, "\\{\\{([A-Za-z][A-Za-z0-9]*)\\}\\}", match => allowed.Contains(match.Groups[1].Value, StringComparer.Ordinal) ? string.Empty : match.Value);
-        return !remaining.Contains("{{", StringComparison.Ordinal) && !remaining.Contains("}}", StringComparison.Ordinal);
-    }
 }

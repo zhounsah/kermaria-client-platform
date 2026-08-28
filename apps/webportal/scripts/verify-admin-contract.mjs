@@ -24,6 +24,28 @@ const settingsRoute = await read("app/api/admin/settings/route.ts");
 const settingsMutationRoute = await read("app/api/admin/settings/[key]/route.ts");
 const settingsStatusRoute = await read("app/api/admin/settings/status/route.ts");
 const settingsCenter = await read("components/AdminSettingsCenter.tsx");
+const communicationsPage = await read("app/admin/settings/messages/page.tsx");
+const communicationsCenter = await read("components/AdminCommunicationsCenter.tsx");
+const communicationsRoute = await read("app/api/admin/communications/route.ts");
+const communicationsEmailRoute = await read(
+  "app/api/admin/communications/email/[key]/route.ts",
+);
+const communicationsEmailTestRoute = await read(
+  "app/api/admin/communications/email/[key]/test/route.ts",
+);
+const communicationsEmailRestoreRoute = await read(
+  "app/api/admin/communications/email/[key]/restore-default/route.ts",
+);
+const communicationsNotificationRoute = await read(
+  "app/api/admin/communications/notification/[key]/route.ts",
+);
+const communicationsSnippetRoute = await read(
+  "app/api/admin/communications/snippet/[key]/route.ts",
+);
+const communicationsBff = await read("lib/admin-communications-bff.ts");
+const snippetDefaults = await read("lib/system-snippet-defaults.ts");
+const snippetsServer = await read("lib/system-snippets.ts");
+const contactForm = await read("components/ContactForm.tsx");
 
 assert.match(adminBff, /getInternalSession/);
 assert.match(adminBff, /session\.user\.role !== "internal_admin"/);
@@ -118,5 +140,53 @@ assert.match(customerDetailPage, /Documents commerciaux associés/);
 assert.match(customerDetailPage, /Audits récents du client/);
 assert.match(customerDetailPage, /Active Directory V0\.18/);
 assert.match(customerDetailPage, /controlled_write/);
+
+// --- Messages & communications ---------------------------------------------
+// Les gabarits transitent par le meme BFF controle que le reste de
+// l'administration : session, role, CSRF, puis relais vers API-INTERNAL.
+assert.match(communicationsPage, /await requireAdminSession\(\)/);
+assert.match(communicationsPage, /getAdminCommunicationTemplates/);
+assert.doesNotMatch(
+  communicationsPage,
+  /sessionToken|passwordHash|SQL_PASSWORD|INTERNAL_API_URL/,
+);
+assert.match(communicationsRoute, /handleAdminGet/);
+assert.match(communicationsRoute, /\/internal\/admin\/communications/);
+for (const route of [
+  communicationsEmailRoute,
+  communicationsNotificationRoute,
+  communicationsSnippetRoute,
+]) {
+  assert.match(route, /handleAdminMutation/);
+  assert.match(route, /expectedVersion/);
+  assert.match(route, /isTemplateKey/);
+}
+assert.match(communicationsEmailRestoreRoute, /handleTemplateRestore/);
+assert.match(communicationsEmailTestRoute, /handleAdminMutation/);
+assert.match(communicationsBff, /import "server-only"/);
+assert.match(communicationsBff, /handleAdminMutation/);
+assert.match(communicationsBff, /\^\[a-z\]\[a-z0-9_\.\]/);
+assert.doesNotMatch(communicationsBff, /SERVICE_AUTH_TOKEN|INTERNAL_API_URL/);
+
+// L'interface doit exposer la liste fermee des variables, l'apercu, la
+// restauration du modele de code et l'historique (specification, section 8.1).
+assert.match(communicationsCenter, /Variables autorisées/);
+assert.match(communicationsCenter, /Restaurer le modèle par défaut/);
+assert.match(communicationsCenter, /\/preview/);
+assert.match(communicationsCenter, /RevisionHistory/);
+assert.match(communicationsCenter, /TEMPLATE_VERSION_CONFLICT/);
+assert.match(communicationsCenter, /votre propre adresse/);
+
+// Les textes systeme publics gardent un repli de code : jamais de chaine vide
+// si API-INTERNAL est indisponible.
+assert.match(snippetDefaults, /contact_form_confirmation/);
+assert.match(snippetDefaults, /contact_form_privacy_notice/);
+assert.match(snippetDefaults, /mergeSystemSnippets/);
+assert.doesNotMatch(snippetDefaults, /import "server-only"/);
+assert.match(snippetsServer, /import "server-only"/);
+assert.match(snippetsServer, /getPublicSystemSnippets/);
+assert.match(contactForm, /SYSTEM_SNIPPET_DEFAULTS\.contact_form_confirmation/);
+assert.match(contactForm, /SYSTEM_SNIPPET_DEFAULTS\.contact_form_privacy_notice/);
+assert.match(internalApi, /\/internal\/public\/system-snippets/);
 
 console.log("Vérification du contrat d'administration BFF réussie.");

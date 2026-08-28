@@ -11,6 +11,10 @@ import type {
 } from "@kermaria/shared";
 
 import { ContactForm } from "@/components/ContactForm";
+import {
+  SYSTEM_SNIPPET_DEFAULTS,
+  type SystemSnippetMap,
+} from "@/lib/system-snippet-defaults";
 import { buildAdaptiveDiagnosticOutcome } from "@/lib/adaptive-diagnostic";
 import { describeSelectionConfiguration } from "@/lib/billing-v2-formules";
 import { billingV2SelectionToSearchParams } from "@/lib/billing-v2-selection";
@@ -33,6 +37,8 @@ type PublicDiagnosticWizardProps = {
   catalog: BillingV2PublicCatalog;
   initialContext: DiagnosticContextId;
   recommendationConfig: DiagnosticRecommendationConfig;
+  /** Textes systeme administrables ; repli sur les valeurs de code. */
+  snippets?: SystemSnippetMap;
 };
 
 const BENEFITS = [
@@ -45,6 +51,7 @@ export function PublicDiagnosticWizard({
   catalog,
   initialContext,
   recommendationConfig,
+  snippets = SYSTEM_SNIPPET_DEFAULTS,
 }: PublicDiagnosticWizardProps) {
   const definition = getDiagnosticContextDefinition(initialContext);
   const [answers, setAnswers] = useState<DiagnosticAnswerMap>({});
@@ -163,6 +170,7 @@ export function PublicDiagnosticWizard({
           quotePending={quotePending}
           recommendedPreset={recommendedPreset}
           selection={selection}
+          snippets={snippets}
           onRestart={() => {
             setAnswers({});
             setStep(0);
@@ -392,6 +400,7 @@ type ResultProps = {
   quotePending: boolean;
   recommendedPreset: BillingV2PublicCatalog["presets"][number] | null;
   selection: BillingV2PublicSelection | null;
+  snippets: SystemSnippetMap;
   onRestart: () => void;
 };
 
@@ -406,6 +415,7 @@ function DiagnosticResult({
   quotePending,
   recommendedPreset,
   selection,
+  snippets,
   onRestart,
 }: ResultProps) {
   const summary = describeDiagnosticAnswers(context, answers);
@@ -507,9 +517,11 @@ function DiagnosticResult({
           </p>
         </div>
         <ContactForm
+          confirmationText={snippets.contact_form_confirmation}
           defaultMessage={buildDiagnosticContactMessage(context, answers)}
           defaultSubject={definition.contactSubject}
           formuleCode={hasFormula ? recommendedPreset.code : null}
+          privacyNotice={snippets.contact_form_privacy_notice}
           submitLabel="Envoyer mon diagnostic"
         />
       </div>

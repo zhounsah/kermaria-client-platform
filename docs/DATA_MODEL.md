@@ -565,6 +565,51 @@ Suit le cycle de vie des demandes AD sans stocker les secrets transmis.
 Pour un changement de mot de passe, aucun champ ne doit recevoir l'ancien ou le
 nouveau mot de passe.
 
+## application_settings
+
+Registre ferme de parametres metier du centre de configuration
+(migration `073`). Une cle absente du registre applicatif est ignoree.
+
+| Champ | Type logique | Description |
+|---|---|---|
+| `setting_key` | text | Cle canonique, ex. `signup_enabled` |
+| `setting_value` | text | Valeur serialisee en texte |
+| `version` | int | Version pour la concurrence optimiste |
+| `updated_by_user_id` | uuid, nullable | Administrateur auteur |
+| `created_at` | timestamp | Date de creation |
+| `updated_at` | timestamp | Derniere modification |
+
+## email_templates / notification_templates / system_snippets
+
+Gabarits administrables des communications (migration `074`). Chaque famille
+possede sa table d'historique : `email_template_revisions`,
+`notification_template_revisions`, `system_snippet_revisions`.
+
+| Champ | Type logique | Description |
+|---|---|---|
+| `template_key` / `snippet_key` | text | Cle du registre ferme |
+| `display_name` | text | Libelle lisible, redondant avec le code |
+| `subject_template` / `title_template` | text | Objet ou titre, hors snippets |
+| `body_template` / `message_template` / `body_text` | text | Corps en texte brut |
+| `enabled` | bool | Hors snippets : `false` force le repli code |
+| `version` | int | Version pour la concurrence optimiste |
+| `updated_by_user_id` | uuid, nullable | Administrateur auteur |
+| `created_at` / `updated_at` | timestamp | Dates UTC |
+
+Contraintes :
+
+- registre ferme cote code : une ligne dont la cle est inconnue est ignoree
+  a la lecture et ne peut pas etre creee par l'API ;
+- `version > 0` est verifie par contrainte SQL ;
+- le corps ne contient que du texte brut et des placeholders `{{variable}}`
+  appartenant a la whitelist du modele ;
+- l'absence de ligne n'est pas une erreur : le runtime utilise le gabarit
+  integre au code ;
+- chaque table de revisions porte une cle etrangere vers sa table parente,
+  un `correlation_id` et un `outcome` (`updated` ou `restored`) ;
+- « restaurer le modele par defaut » reecrit le texte de code comme nouvelle
+  version, sans supprimer de ligne : l'historique reste intact.
+
 ## Relations principales
 
 ```mermaid

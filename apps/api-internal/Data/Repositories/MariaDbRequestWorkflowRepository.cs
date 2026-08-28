@@ -10,13 +10,16 @@ public sealed class MariaDbRequestWorkflowRepository
 {
     private const int DefaultLimit = 100;
     private readonly string _connectionString;
+    private readonly IPortalNotificationContentService _notificationContent;
 
     public MariaDbRequestWorkflowRepository(
-        SqlRuntimeConfiguration configuration)
+        SqlRuntimeConfiguration configuration,
+        IPortalNotificationContentService notificationContent)
     {
         _connectionString = configuration.ConnectionString
             ?? throw new InvalidOperationException(
                 "MariaDB connection configuration is unavailable.");
+        _notificationContent = notificationContent;
     }
 
     public bool IsPersistent => true;
@@ -774,6 +777,10 @@ public sealed class MariaDbRequestWorkflowRepository
         string correlationId,
         CancellationToken cancellationToken)
     {
+        // Les modeles de notification sont charges AVANT la transaction : leur
+        // lecture ouvre sa propre connexion et n'a rien a faire au milieu d'une
+        // transaction de workflow.
+        await _notificationContent.PrimeAsync(cancellationToken);
         await using var connection = await OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(
             cancellationToken);
@@ -840,7 +847,7 @@ public sealed class MariaDbRequestWorkflowRepository
             current.CustomerId,
             requestType,
             requestId,
-            PortalNotificationFactory.ForStatus(
+            _notificationContent.ForStatus(
                 requestType,
                 requestId,
                 status),
@@ -929,6 +936,8 @@ public sealed class MariaDbRequestWorkflowRepository
         bool createClientNotification,
         CancellationToken cancellationToken)
     {
+        // Meme regle que UpdateStatusAsync : instantane charge hors transaction.
+        await _notificationContent.PrimeAsync(cancellationToken);
         await using var connection = await OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(
             cancellationToken);
@@ -1005,7 +1014,7 @@ public sealed class MariaDbRequestWorkflowRepository
                 current.CustomerId,
                 requestType,
                 requestId,
-                PortalNotificationFactory.ForPublicMessage(
+                _notificationContent.ForPublicMessage(
                     requestType,
                     requestId),
                 now,

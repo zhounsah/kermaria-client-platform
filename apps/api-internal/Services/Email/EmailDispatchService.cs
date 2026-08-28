@@ -67,7 +67,7 @@ public sealed class EmailDispatchService : IEmailDispatchService
     private readonly IEmailService _emailService;
     private readonly IEmailLogRepository _emailLog;
     private readonly EmailRuntimeConfiguration _configuration;
-    private readonly IApplicationSettingsService _settings;
+    private readonly ICommunicationTemplateService _templates;
     private readonly ILogger<EmailDispatchService> _logger;
 
     public EmailDispatchService(
@@ -76,7 +76,7 @@ public sealed class EmailDispatchService : IEmailDispatchService
         IEmailService emailService,
         IEmailLogRepository emailLog,
         EmailRuntimeConfiguration configuration,
-        IApplicationSettingsService settings,
+        ICommunicationTemplateService templates,
         ILogger<EmailDispatchService> logger)
     {
         _commercialRepository = commercialRepository;
@@ -84,7 +84,7 @@ public sealed class EmailDispatchService : IEmailDispatchService
         _emailService = emailService;
         _emailLog = emailLog;
         _configuration = configuration;
-        _settings = settings;
+        _templates = templates;
         _logger = logger;
     }
 
@@ -96,7 +96,7 @@ public sealed class EmailDispatchService : IEmailDispatchService
             documentId,
             EmailTemplates.InvoiceIssued,
             correlationId,
-            (doc, record) => EmailTemplates.RenderInvoiceIssued(
+            (doc, record) => EmailTemplates.DocumentVariables(
                 doc.CustomerDisplayName,
                 doc.InternalReference,
                 record?.FiscalNumber,
@@ -113,7 +113,7 @@ public sealed class EmailDispatchService : IEmailDispatchService
             documentId,
             EmailTemplates.PaymentReminder,
             correlationId,
-            (doc, record) => EmailTemplates.RenderPaymentReminder(
+            (doc, record) => EmailTemplates.DocumentVariables(
                 doc.CustomerDisplayName,
                 doc.InternalReference,
                 record?.FiscalNumber,
@@ -130,12 +130,13 @@ public sealed class EmailDispatchService : IEmailDispatchService
             documentId,
             EmailTemplates.PaymentConfirmed,
             correlationId,
-            (doc, record) => EmailTemplates.RenderPaymentConfirmed(
+            (doc, record) => EmailTemplates.DocumentVariables(
                 doc.CustomerDisplayName,
                 doc.InternalReference,
                 record?.FiscalNumber,
                 doc.TotalAmountCents,
-                doc.Currency),
+                doc.Currency,
+                portalUrl: null),
             cancellationToken);
 
     public async Task<EmailDispatchResult> SendContactFormAsync(
@@ -164,12 +165,15 @@ public sealed class EmailDispatchService : IEmailDispatchService
                 "L'adresse de destination du formulaire de contact n'est pas configurée.");
         }
 
-        var (subject, body) = EmailTemplates.RenderContactForm(
-            submission.VisitorName,
-            submission.VisitorEmail,
-            submission.SubjectLine,
-            submission.Message,
-            submission.FormuleCode);
+        var (subject, body) = await _templates.RenderEmailAsync(
+            EmailTemplates.ContactForm,
+            EmailTemplates.ContactFormVariables(
+                submission.VisitorName,
+                submission.VisitorEmail,
+                submission.SubjectLine,
+                submission.Message,
+                submission.FormuleCode),
+            cancellationToken);
 
         var message = new EmailMessage(
             recipient,
@@ -212,9 +216,10 @@ public sealed class EmailDispatchService : IEmailDispatchService
         string correlationId,
         CancellationToken cancellationToken)
     {
-        var (fallbackSubject, fallbackBody) = EmailTemplates.RenderSignupVerification(
-            contactName, verificationUrl);
-        var (subject, body) = await _settings.RenderEmailTemplateAsync(EmailTemplates.SignupVerification, fallbackSubject, fallbackBody, new Dictionary<string, string?> { ["contactName"] = contactName, ["verificationUrl"] = verificationUrl }, cancellationToken);
+        var (subject, body) = await _templates.RenderEmailAsync(
+            EmailTemplates.SignupVerification,
+            EmailTemplates.SignupVerificationVariables(contactName, verificationUrl),
+            cancellationToken);
         return await SendAdHocAsync(
             email,
             subject,
@@ -231,9 +236,10 @@ public sealed class EmailDispatchService : IEmailDispatchService
         string correlationId,
         CancellationToken cancellationToken)
     {
-        var (fallbackSubject, fallbackBody) = EmailTemplates.RenderAccountApproved(
-            contactName, setPasswordUrl);
-        var (subject, body) = await _settings.RenderEmailTemplateAsync(EmailTemplates.AccountApproved, fallbackSubject, fallbackBody, new Dictionary<string, string?> { ["contactName"] = contactName, ["setPasswordUrl"] = setPasswordUrl }, cancellationToken);
+        var (subject, body) = await _templates.RenderEmailAsync(
+            EmailTemplates.AccountApproved,
+            EmailTemplates.AccountApprovedVariables(contactName, setPasswordUrl),
+            cancellationToken);
         return await SendAdHocAsync(
             email,
             subject,
@@ -250,9 +256,10 @@ public sealed class EmailDispatchService : IEmailDispatchService
         string correlationId,
         CancellationToken cancellationToken)
     {
-        var (fallbackSubject, fallbackBody) = EmailTemplates.RenderAccountRejected(
-            contactName, reason);
-        var (subject, body) = await _settings.RenderEmailTemplateAsync(EmailTemplates.AccountRejected, fallbackSubject, fallbackBody, new Dictionary<string, string?> { ["contactName"] = contactName, ["reason"] = reason }, cancellationToken);
+        var (subject, body) = await _templates.RenderEmailAsync(
+            EmailTemplates.AccountRejected,
+            EmailTemplates.AccountRejectedVariables(contactName, reason),
+            cancellationToken);
         return await SendAdHocAsync(
             email,
             subject,
@@ -317,7 +324,7 @@ public sealed class EmailDispatchService : IEmailDispatchService
         string documentId,
         string templateName,
         string correlationId,
-        Func<DocumentForIssuing, BpceInvoiceRecord?, (string Subject, string Body)> render,
+        Func<DocumentForIssuing, BpceInvoiceRecord?, IReadOnlyDictionary<string, string?>> buildVariables,
         CancellationToken cancellationToken)
     {
         var doc = await _commercialRepository.GetDocumentForIssuingAsync(
@@ -354,7 +361,10 @@ public sealed class EmailDispatchService : IEmailDispatchService
 
         var record = await _bpceRepository.GetInvoiceRecordAsync(
             documentId, cancellationToken);
-        var (subject, body) = render(doc, record);
+        var (subject, body) = await _templates.RenderEmailAsync(
+            templateName,
+            buildVariables(doc, record),
+            cancellationToken);
 
         var message = new EmailMessage(
             recipient,

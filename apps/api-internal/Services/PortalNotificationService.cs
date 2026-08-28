@@ -9,50 +9,80 @@ public sealed record PortalNotificationContent(
     string Message,
     string LinkUrl);
 
+/// <summary>
+/// Contenu integre au code d'une notification, avant application d'un eventuel
+/// modele administrable. Le type de notification et l'URL de lien restent des
+/// invariants (specification, section 8.2) : seuls le titre et le message sont
+/// administrables.
+/// </summary>
+public sealed record PortalNotificationDescriptor(
+    string NotificationType,
+    string DefaultTitle,
+    string DefaultMessage,
+    string LinkTemplate);
+
 public static class PortalNotificationFactory
 {
     public static PortalNotificationContent ForStatus(
         string requestType,
         string requestId,
         string status)
-    {
-        var encodedId = Uri.EscapeDataString(requestId);
-        return requestType switch
+        => ToContent(DescribeStatus(requestType, status), requestId);
+
+    public static PortalNotificationContent ForPublicMessage(
+        string requestType,
+        string requestId)
+        => ToContent(DescribePublicMessage(requestType), requestId);
+
+    public static PortalNotificationDescriptor DescribeStatus(
+        string requestType,
+        string status)
+        => requestType switch
         {
             RequestTypes.Support => new(
                 "support_status_changed",
                 "Mise à jour de votre demande support",
                 SupportStatusMessage(status),
-                $"/support/{encodedId}"),
+                "/support/{0}"),
             RequestTypes.Service => new(
                 "service_status_changed",
                 "Mise à jour de votre demande de service",
                 ServiceStatusMessage(status),
-                $"/request-service/{encodedId}"),
+                "/request-service/{0}"),
             _ => throw new PortalValidationException()
         };
-    }
 
-    public static PortalNotificationContent ForPublicMessage(
-        string requestType,
-        string requestId)
-    {
-        var encodedId = Uri.EscapeDataString(requestId);
-        return requestType switch
+    public static PortalNotificationDescriptor DescribePublicMessage(
+        string requestType)
+        => requestType switch
         {
             RequestTypes.Support => new(
                 "support_public_message",
                 "Nouveau message sur votre demande support",
                 "Un nouveau message est disponible sur votre demande.",
-                $"/support/{encodedId}"),
+                "/support/{0}"),
             RequestTypes.Service => new(
                 "service_public_message",
                 "Nouveau message sur votre demande de service",
                 "Un nouveau message est disponible sur votre demande de service.",
-                $"/request-service/{encodedId}"),
+                "/request-service/{0}"),
             _ => throw new PortalValidationException()
         };
-    }
+
+    public static string BuildLinkUrl(string linkTemplate, string requestId)
+        => string.Format(
+            System.Globalization.CultureInfo.InvariantCulture,
+            linkTemplate,
+            Uri.EscapeDataString(requestId));
+
+    private static PortalNotificationContent ToContent(
+        PortalNotificationDescriptor descriptor,
+        string requestId)
+        => new(
+            descriptor.NotificationType,
+            descriptor.DefaultTitle,
+            descriptor.DefaultMessage,
+            BuildLinkUrl(descriptor.LinkTemplate, requestId));
 
     private static string SupportStatusMessage(string status)
         => status switch

@@ -13,6 +13,7 @@ import {
   getPublicManagedContent,
 } from "@/lib/internal-api";
 import { buildPublicMetadata } from "@/lib/public-metadata";
+import { resolveSystemSnippets } from "@/lib/system-snippets";
 
 export const metadata: Metadata = buildPublicMetadata({
   title: "Diagnostic informatique adapté à votre besoin",
@@ -31,9 +32,10 @@ export default async function DiagnosticPage({ searchParams }: DiagnosticPagePro
   const params = await searchParams;
   const rawContext = Array.isArray(params.context) ? params.context[0] : params.context;
   const initialContext = resolveDiagnosticContext(rawContext);
-  const [catalogResult, recommendationContentResult] = await Promise.all([
+  const [catalogResult, recommendationContentResult, snippets] = await Promise.all([
     getBillingV2FormulesCatalog(),
     getPublicManagedContent(DIAGNOSTIC_RECOMMENDATION_CONTENT_KEY),
+    resolveSystemSnippets(),
   ]);
   const recommendationConfig =
     parseDiagnosticRecommendationConfig(recommendationContentResult.data?.bodyMarkdown)
@@ -50,6 +52,7 @@ export default async function DiagnosticPage({ searchParams }: DiagnosticPagePro
         catalog={catalogResult.data}
         initialContext={initialContext}
         recommendationConfig={recommendationConfig}
+        snippets={snippets}
       />
     </>
   );

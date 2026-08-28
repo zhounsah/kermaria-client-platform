@@ -259,6 +259,85 @@ Notes de contrat :
 - le rendu Markdown public et admin passe par `react-markdown`, sans
   HTML brut.
 
+## Centre de configuration — parametres applicatifs
+
+Registre **ferme** de parametres metier, defini dans le code
+(`ApplicationSettingsService`) et persiste dans `application_settings`.
+
+Contraintes :
+
+- aucune creation libre de cle par l'API ni par l'interface ;
+- une cle presente en base mais absente du registre est ignoree sans erreur ;
+- chaque parametre porte une classification `dynamic`, `restart_required`,
+  `secret` ou `code_invariant` ; seules les cles `dynamic` sont modifiables ;
+- concurrence optimiste : `expectedVersion` obligatoire, conflit en `409`
+  avec le code `SETTINGS_VERSION_CONFLICT` ;
+- aucun secret n'est renvoye : les valeurs sensibles sont resumees en
+  « Configure » / « Non configure ».
+
+Endpoints :
+
+- `GET /internal/admin/settings` : instantane du registre (`settings.read`) ;
+- `GET /internal/admin/settings/status` : etat des domaines runtime, sans
+  secret (`settings.read`) ;
+- `PATCH /internal/admin/settings/{key}` : mise a jour bornee
+  (`settings.write`), journalisee en `setting_changed` ;
+- `GET /internal/portal/billing-configuration` : coordonnees de reglement
+  effectives, servies par API-INTERNAL et jamais recopiees dans le portail.
+
+## Messages et communications
+
+Les gabarits transactionnels, les notifications du portail et les textes
+systeme sont administrables via des tables specialisees (migration `074`).
+Ils ne passent **pas** par le registre generique de parametres.
+
+Contraintes :
+
+- registre ferme : 7 modeles e-mail, les notifications de statut du workflow
+  et 4 textes systeme ; une cle inconnue est refusee en `404`
+  (`TEMPLATE_UNKNOWN_KEY`) ;
+- substitution `{{variable}}` uniquement, avec **whitelist fermee par
+  modele** : une variable inconnue fait echouer la sauvegarde
+  (`TEMPLATE_UNKNOWN_VARIABLE`) ;
+- aucun moteur d'expression, aucun acces environnement, aucune reflection,
+  aucun include de fichier ;
+- texte brut uniquement : caracteres de controle refuses, CRLF normalises,
+  longueur bornee par modele (`TEMPLATE_TOO_LONG`) ;
+- concurrence optimiste identique aux parametres : `expectedVersion`, puis
+  `409 TEMPLATE_VERSION_CONFLICT` ;
+- repli systematique sur le gabarit integre au code lorsque la ligne est
+  absente, desactivee ou la base indisponible : une panne SQL ne bloque
+  jamais un e-mail critique ;
+- toutes les mutations exigent la permission `settings.templates.write`,
+  distincte de `settings.write`.
+
+Endpoints admin :
+
+- `GET /internal/admin/communications` : modeles e-mail, notifications et
+  textes systeme, avec leur valeur par defaut et leur whitelist ;
+- `GET /internal/admin/communications/{scope}/{key}/revisions` : historique,
+  `scope` valant `email`, `notification` ou `snippet` ;
+- `PATCH /internal/admin/communications/email/{key}` ;
+- `POST /internal/admin/communications/email/{key}/preview` : rendu avec des
+  valeurs d'exemple, sans aucun envoi ;
+- `POST /internal/admin/communications/email/{key}/test` : envoi de test
+  **uniquement vers l'adresse de l'administrateur connecte**, et seulement
+  pour un modele qui ne depend pas d'un document commercial reel ;
+- `POST /internal/admin/communications/email/{key}/restore-default` ;
+- `PATCH|POST /internal/admin/communications/notification/{key}[/restore-default]` ;
+- `PATCH|POST /internal/admin/communications/snippet/{key}[/restore-default]`.
+
+Endpoint public :
+
+- `GET /internal/public/system-snippets` : textes systeme affiches par le
+  site public. Aucune donnee client, aucun secret ; le portail fusionne la
+  reponse avec ses propres valeurs de repli.
+
+Evenements d'audit : `email_template_changed`, `email_template_restored`,
+`email_template_test`, `notification_template_changed`,
+`notification_template_restored`, `system_snippet_changed`,
+`system_snippet_restored`.
+
 ## Souscription Billing V2
 
 Le modele commercial historique — catalogue `commercial_offers`, panier,

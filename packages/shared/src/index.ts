@@ -2495,3 +2495,156 @@ export interface ConfigurationStatusFact { label: string; value: string; sensiti
 export interface ConfigurationStatusDomain { key: string; label: string; state: "healthy" | "warning" | "info"; facts: ConfigurationStatusFact[]; warning: string | null; }
 export interface ConfigurationStatusSnapshot { domains: ConfigurationStatusDomain[]; }
 export interface PortalBillingConfiguration { iban: string | null; bic: string | null; paypalUrl: string | null; transferLabel: string; }
+
+// --- Messages et communications (Centre de configuration, section 8) --------
+// Contrats non sensibles : aucune adresse serveur, aucun secret. Les gabarits
+// sont administrables mais leurs cles et variables restent fermees cote code.
+
+export interface CommunicationTemplateVariable {
+  name: string;
+  description: string;
+}
+
+export interface CommunicationTemplateRevisionItem {
+  key: string;
+  version: number;
+  outcome: string;
+  actorUserId: string | null;
+  correlationId: string;
+  createdAt: string;
+}
+
+export interface EmailTemplateItem {
+  key: string;
+  displayName: string;
+  description: string;
+  subject: string;
+  body: string;
+  enabled: boolean;
+  /** `code` : gabarit integre au code ; `database` : gabarit administre. */
+  source: "code" | "database";
+  customized: boolean;
+  version: number;
+  updatedAt: string | null;
+  defaultSubject: string;
+  defaultBody: string;
+  testSendSupported: boolean;
+  variables: CommunicationTemplateVariable[];
+}
+
+export interface NotificationTemplateItem {
+  key: string;
+  displayName: string;
+  description: string;
+  title: string;
+  message: string;
+  enabled: boolean;
+  /** `code` : gabarit integre au code ; `database` : gabarit administre. */
+  source: "code" | "database";
+  customized: boolean;
+  version: number;
+  updatedAt: string | null;
+  defaultTitle: string;
+  defaultMessage: string;
+  variables: CommunicationTemplateVariable[];
+}
+
+export interface SystemSnippetItem {
+  key: string;
+  displayName: string;
+  description: string;
+  body: string;
+  /** `code` : gabarit integre au code ; `database` : gabarit administre. */
+  source: "code" | "database";
+  customized: boolean;
+  version: number;
+  updatedAt: string | null;
+  defaultBody: string;
+  maxLength: number;
+}
+
+export interface CommunicationTemplateCollection {
+  emailTemplates: EmailTemplateItem[];
+  notificationTemplates: NotificationTemplateItem[];
+  snippets: SystemSnippetItem[];
+  persistent: boolean;
+}
+
+export interface EmailTemplateUpdatePayload {
+  subject: string;
+  body: string;
+  enabled: boolean;
+  expectedVersion: number;
+}
+
+export interface NotificationTemplateUpdatePayload {
+  title: string;
+  message: string;
+  enabled: boolean;
+  expectedVersion: number;
+}
+
+export interface SystemSnippetUpdatePayload {
+  body: string;
+  expectedVersion: number;
+}
+
+export interface CommunicationTemplateRestorePayload {
+  expectedVersion: number;
+}
+
+export interface EmailTemplatePreviewPayload {
+  subject: string;
+  body: string;
+}
+
+export interface EmailTemplatePreviewResponse {
+  code: string;
+  message: string;
+  subject: string | null;
+  body: string | null;
+  correlationId: string;
+}
+
+export interface EmailTemplateTestPayload {
+  recipient: string;
+}
+
+export interface EmailTemplateMutationResponse {
+  code: string;
+  message: string;
+  template: EmailTemplateItem | null;
+  correlationId: string;
+}
+
+export interface NotificationTemplateMutationResponse {
+  code: string;
+  message: string;
+  template: NotificationTemplateItem | null;
+  correlationId: string;
+}
+
+export interface SystemSnippetMutationResponse {
+  code: string;
+  message: string;
+  snippet: SystemSnippetItem | null;
+  correlationId: string;
+}
+
+export interface CommunicationTemplateSimpleResponse {
+  code: string;
+  message: string;
+  correlationId: string;
+}
+
+export interface CommunicationTemplateRevisionsResponse {
+  revisions: CommunicationTemplateRevisionItem[];
+}
+
+/** Portee d'un historique de gabarit. */
+export type CommunicationTemplateScope = "email" | "notification" | "snippet";
+
+/** Textes systeme publics, exposes sans authentification. */
+export interface PublicSystemSnippets {
+  snippets: Record<string, string>;
+}

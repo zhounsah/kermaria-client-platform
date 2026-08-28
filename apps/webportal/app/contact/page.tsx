@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ContactForm } from "@/components/ContactForm";
 import { getBillingV2FormulesCatalog } from "@/lib/internal-api";
 import { buildPublicMetadata } from "@/lib/public-metadata";
+import { resolveSystemSnippets } from "@/lib/system-snippets";
 
 export const metadata: Metadata = buildPublicMetadata({
   title: "Contact",
@@ -42,6 +43,7 @@ export default async function ContactPage({ searchParams }: ContactPageProps) {
       (candidate) => candidate.code === trimmedFormule,
     ) ?? null;
 
+  const snippets = await resolveSystemSnippets();
   const defaultSubject = preset ? `Demande de formule — ${preset.name}` : "";
   const backLink = preset
     ? { href: "/offres", label: "Retour aux formules" }
@@ -71,8 +73,10 @@ export default async function ContactPage({ searchParams }: ContactPageProps) {
       ) : null}
 
       <ContactForm
+        confirmationText={snippets.contact_form_confirmation}
         defaultSubject={defaultSubject}
         formuleCode={preset ? preset.code : null}
+        privacyNotice={snippets.contact_form_privacy_notice}
       />
     </div>
   );

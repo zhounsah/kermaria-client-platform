@@ -160,6 +160,53 @@ Points clefs :
 - la page `/offres` et la page `/offres/[slug]` ne portent pas le meme
   contenu : vitrine comparative d'un cote, fiche detaillee de l'autre.
 
+## Flux du centre de configuration
+
+```mermaid
+sequenceDiagram
+    participant A as Admin interne
+    participant W as WEBPORTAL / BFF
+    participant I as API-INTERNAL
+    participant M as MariaDB
+
+    A->>W: PATCH /api/admin/communications/email/{key}
+    W->>W: session + role + CSRF
+    W->>I: PATCH /internal/admin/communications/email/{key}
+    I->>I: registre ferme + whitelist de variables + bornes
+    I->>M: UPDATE ... WHERE version = expectedVersion
+    I->>M: INSERT email_template_revisions
+    I->>I: invalidation du cache de gabarits
+    I->>M: audit email_template_changed
+    I-->>W: modele + version + correlationId
+    W-->>A: confirmation
+
+    participant E as Envoi transactionnel
+    E->>I: RenderEmailAsync(cle, variables)
+    I->>M: lecture de l'instantane (cache 30 s)
+    alt ligne absente, desactivee ou base indisponible
+        I-->>E: gabarit integre au code
+    else ligne active
+        I-->>E: gabarit administre
+    end
+```
+
+Points clefs :
+
+- le registre de parametres et les registres de gabarits sont **fermes cote
+  code** : la base ne peut qu'y surcharger une valeur, jamais y ajouter une
+  cle ;
+- la concurrence est optimiste : l'`UPDATE` est borne par la version
+  attendue, un conflit remonte en `409` plutot que d'ecraser ;
+- le repli code est systematique, ce qui rend une panne SQL non bloquante
+  pour un e-mail critique ;
+- les gabarits de notification sont **precharges avant** l'ouverture de la
+  transaction du workflow : lire un gabarit au milieu d'une transaction
+  MySQL ouvrirait une seconde connexion et casserait l'atomicite du
+  changement de statut ;
+- les textes systeme publics sont servis anonymement par
+  `/internal/public/system-snippets` et fusionnes cote portail avec des
+  valeurs de repli identiques a celles du code.
+
 ## Flux réseau autorisés
 
 | Source | Destination | Usage | Conditions |
