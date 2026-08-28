@@ -546,6 +546,12 @@ builder.Services.AddSingleton<
     IClientSolutionSchemaEnsurer,
     ClientSolutionSchemaEnsurer>();
 builder.Services.AddScoped<IManagedContentService, ManagedContentService>();
+builder.Services.AddScoped<IApplicationSettingsRepository>(
+    _ => sqlConfiguration.IsPersistent
+        ? new MariaDbApplicationSettingsRepository(sqlConfiguration)
+        : new MockApplicationSettingsRepository());
+builder.Services.AddScoped<IApplicationSettingsService, ApplicationSettingsService>();
+builder.Services.AddSingleton<IConfigurationStatusService, ConfigurationStatusService>();
 builder.Services.AddScoped<IEditorialService, EditorialService>();
 builder.Services.AddScoped<IDownloadService, DownloadService>();
 builder.Services.AddScoped<IClientSolutionService, ClientSolutionService>();
@@ -2250,6 +2256,23 @@ app.MapPatch(
                 SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
             context.RequestAborted);
         return ManagedContentOk(context, service, result);
+    });
+app.MapGet(
+    "/internal/portal/billing-configuration",
+    async (HttpContext context, IApplicationSettingsService service, IAuthenticationService authenticationService, IConfiguration configuration) =>
+    {
+        await ResolveClientSessionAsync(context, authenticationService, context.RequestServices.GetRequiredService<IAuditService>());
+        var fallback = new PortalBillingConfiguration(configuration["BILLING_IBAN"]?.Trim(), configuration["BILLING_BIC"]?.Trim(), configuration["BILLING_PAYPAL_URL"]?.Trim(), configuration["BILLING_TRANSFER_LABEL"]?.Trim() ?? "Zachary HOUNSA-HOUNKPA EI");
+        context.Response.Headers["X-Data-Source"] = service.IsPersistent ? "mariadb" : "mock";
+        return Results.Ok(await service.GetPortalBillingConfigurationAsync(fallback, context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/admin/settings/status",
+    async (HttpContext context, IConfigurationStatusService service, IEditorialRepository editorialRepository, IAuthenticationService authenticationService, IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(context, authenticationService, auditService, "admin.settings.read");
+        if (!await editorialRepository.HasAdminPermissionAsync(actor.UserId, "settings.read", context.RequestAborted)) throw new PortalAccessDeniedException();
+        return Results.Ok(service.GetSnapshot());
     });
 app.MapGet(
     "/internal/public/editorial/wiki/home",
@@ -3985,6 +4008,38 @@ app.MapGet(
                 adConfiguration.ModeName,
                 adConfiguration.WritesEnabled,
                 context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/admin/settings",
+    async (
+        HttpContext context,
+        IApplicationSettingsService service,
+        IEditorialRepository editorialRepository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(context, authenticationService, auditService, "admin.settings.read");
+        if (!await editorialRepository.HasAdminPermissionAsync(actor.UserId, "settings.read", context.RequestAborted)) throw new PortalAccessDeniedException();
+        context.Response.Headers["X-Data-Source"] = service.IsPersistent ? "mariadb" : "mock";
+        return Results.Ok(await service.GetSnapshotAsync(context.RequestAborted));
+    });
+app.MapPatch(
+    "/internal/admin/settings/{key}",
+    async (
+        string key,
+        HttpContext context,
+        IApplicationSettingsService service,
+        IEditorialRepository editorialRepository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(context, authenticationService, auditService, "admin.settings.write");
+        if (!await editorialRepository.HasAdminPermissionAsync(actor.UserId, "settings.write", context.RequestAborted)) throw new PortalAccessDeniedException();
+        var request = await ReadPayload<ApplicationSettingUpdateRequest>(context) ?? throw new PortalValidationException();
+        var result = await service.UpdateAsync(key, request, actor.UserId, context.GetCorrelationId(), context.RequestAborted);
+        var outcome = result.Code == "SETTINGS_UPDATED" ? "success" : "refused";
+        await auditService.RecordAsync(new AuditEvent(context.GetCorrelationId(), "setting_changed", outcome, result.Code, "application_setting", key, ActorUserId: actor.UserId, SourceAddress: context.Connection.RemoteIpAddress?.ToString()), context.RequestAborted);
+        return Results.Json(result, statusCode: result.Code == "SETTINGS_VERSION_CONFLICT" ? StatusCodes.Status409Conflict : result.Code == "SETTINGS_UPDATED" ? StatusCodes.Status200OK : StatusCodes.Status400BadRequest);
     });
 app.MapGet(
     "/internal/admin/customers",

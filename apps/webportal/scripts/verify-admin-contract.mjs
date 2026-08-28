@@ -19,6 +19,11 @@ const downloadCategoriesRoute = await read(
 );
 const internalApi = await read("lib/internal-api.ts");
 const appShell = await read("components/AppShell.tsx");
+const settingsPage = await read("app/admin/settings/page.tsx");
+const settingsRoute = await read("app/api/admin/settings/route.ts");
+const settingsMutationRoute = await read("app/api/admin/settings/[key]/route.ts");
+const settingsStatusRoute = await read("app/api/admin/settings/status/route.ts");
+const settingsCenter = await read("components/AdminSettingsCenter.tsx");
 
 assert.match(adminBff, /getInternalSession/);
 assert.match(adminBff, /session\.user\.role !== "internal_admin"/);
@@ -51,6 +56,14 @@ assert.match(downloadDetailRoute, /handleAdminMutation/);
 assert.match(downloadFileRoute, /hasValidCsrfToken/);
 assert.match(downloadCategoriesRoute, /handleAdminGet/);
 assert.match(downloadCategoriesRoute, /handleAdminMutation/);
+assert.match(settingsPage, /await requireAdminSession\(\)/);
+assert.match(settingsRoute, /handleAdminGet/);
+assert.match(settingsStatusRoute, /handleAdminGet/);
+assert.match(settingsMutationRoute, /handleAdminMutation/);
+assert.match(settingsMutationRoute, /expectedVersion/);
+assert.match(settingsCenter, /beforeunload/);
+assert.match(settingsCenter, /SETTINGS_VERSION_CONFLICT/);
+assert.doesNotMatch(settingsCenter, /SQL_PASSWORD|SERVICE_AUTH_TOKEN|ClientSecret/);
 
 for (const route of [
   "overview",

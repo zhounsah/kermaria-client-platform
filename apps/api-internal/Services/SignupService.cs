@@ -100,6 +100,7 @@ public sealed class SignupService : ISignupService
     private readonly IKoxoPendingPasswordStore _pendingPasswords;
     private readonly IKoxoSyncWebhookTriggerService _koxoSyncWebhookTriggerService;
     private readonly SignupRuntimeConfiguration _configuration;
+    private readonly IApplicationSettingsService _settings;
     private readonly EmailRuntimeConfiguration _emailConfiguration;
     private readonly AdRuntimeConfiguration _adConfiguration;
     private readonly ILogger<SignupService> _logger;
@@ -114,6 +115,7 @@ public sealed class SignupService : ISignupService
         IKoxoPendingPasswordStore pendingPasswords,
         IKoxoSyncWebhookTriggerService koxoSyncWebhookTriggerService,
         SignupRuntimeConfiguration configuration,
+        IApplicationSettingsService settings,
         EmailRuntimeConfiguration emailConfiguration,
         AdRuntimeConfiguration adConfiguration,
         ILogger<SignupService> logger)
@@ -127,6 +129,7 @@ public sealed class SignupService : ISignupService
         _pendingPasswords = pendingPasswords;
         _koxoSyncWebhookTriggerService = koxoSyncWebhookTriggerService;
         _configuration = configuration;
+        _settings = settings;
         _emailConfiguration = emailConfiguration;
         _adConfiguration = adConfiguration;
         _logger = logger;
@@ -141,7 +144,8 @@ public sealed class SignupService : ISignupService
         string correlationId,
         CancellationToken cancellationToken)
     {
-        if (!_configuration.Enabled)
+        var runtime = await _settings.GetSignupConfigurationAsync(_configuration, cancellationToken);
+        if (!runtime.Enabled)
         {
             return new SignupOperationResult(
                 false,
@@ -182,7 +186,7 @@ public sealed class SignupService : ISignupService
             normalized.Customer,
             normalized.PrimaryUser,
             HashToken(token),
-            DateTime.UtcNow.AddHours(_configuration.VerificationTokenTtlHours),
+            DateTime.UtcNow.AddHours(runtime.VerificationTokenTtlHours),
             NormalizeOptional(payload.SourceAddress, 45),
             NormalizeOptional(payload.UserAgent, 500),
             BillingV2Selection: normalized.BillingV2Selection);
@@ -319,7 +323,7 @@ public sealed class SignupService : ISignupService
             record.PrimaryUser,
             Guid.NewGuid().ToString("D"),
             HashToken(passwordToken),
-            DateTime.UtcNow.AddHours(_configuration.PasswordSetupTokenTtlHours));
+            DateTime.UtcNow.AddHours((await _settings.GetSignupConfigurationAsync(_configuration, cancellationToken)).PasswordSetupTokenTtlHours));
 
         var result = await _repository.ApproveAsync(request, cancellationToken);
         if (result is null)
@@ -481,7 +485,7 @@ public sealed class SignupService : ISignupService
         await _repository.RefreshPasswordSetupTokenAsync(
             record.Id,
             HashToken(passwordToken),
-            DateTime.UtcNow.AddHours(_configuration.PasswordSetupTokenTtlHours),
+            DateTime.UtcNow.AddHours((await _settings.GetSignupConfigurationAsync(_configuration, cancellationToken)).PasswordSetupTokenTtlHours),
             cancellationToken);
 
         var setPasswordUrl = BuildUrl("/set-password", passwordToken);

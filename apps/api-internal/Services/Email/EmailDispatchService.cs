@@ -67,6 +67,7 @@ public sealed class EmailDispatchService : IEmailDispatchService
     private readonly IEmailService _emailService;
     private readonly IEmailLogRepository _emailLog;
     private readonly EmailRuntimeConfiguration _configuration;
+    private readonly IApplicationSettingsService _settings;
     private readonly ILogger<EmailDispatchService> _logger;
 
     public EmailDispatchService(
@@ -75,6 +76,7 @@ public sealed class EmailDispatchService : IEmailDispatchService
         IEmailService emailService,
         IEmailLogRepository emailLog,
         EmailRuntimeConfiguration configuration,
+        IApplicationSettingsService settings,
         ILogger<EmailDispatchService> logger)
     {
         _commercialRepository = commercialRepository;
@@ -82,6 +84,7 @@ public sealed class EmailDispatchService : IEmailDispatchService
         _emailService = emailService;
         _emailLog = emailLog;
         _configuration = configuration;
+        _settings = settings;
         _logger = logger;
     }
 
@@ -202,16 +205,17 @@ public sealed class EmailDispatchService : IEmailDispatchService
             $"Message transmis à {recipient}.");
     }
 
-    public Task<EmailDispatchResult> SendSignupVerificationAsync(
+    public async Task<EmailDispatchResult> SendSignupVerificationAsync(
         string email,
         string contactName,
         string verificationUrl,
         string correlationId,
         CancellationToken cancellationToken)
     {
-        var (subject, body) = EmailTemplates.RenderSignupVerification(
+        var (fallbackSubject, fallbackBody) = EmailTemplates.RenderSignupVerification(
             contactName, verificationUrl);
-        return SendAdHocAsync(
+        var (subject, body) = await _settings.RenderEmailTemplateAsync(EmailTemplates.SignupVerification, fallbackSubject, fallbackBody, new Dictionary<string, string?> { ["contactName"] = contactName, ["verificationUrl"] = verificationUrl }, cancellationToken);
+        return await SendAdHocAsync(
             email,
             subject,
             body,
@@ -220,16 +224,17 @@ public sealed class EmailDispatchService : IEmailDispatchService
             cancellationToken);
     }
 
-    public Task<EmailDispatchResult> SendAccountApprovedAsync(
+    public async Task<EmailDispatchResult> SendAccountApprovedAsync(
         string email,
         string contactName,
         string setPasswordUrl,
         string correlationId,
         CancellationToken cancellationToken)
     {
-        var (subject, body) = EmailTemplates.RenderAccountApproved(
+        var (fallbackSubject, fallbackBody) = EmailTemplates.RenderAccountApproved(
             contactName, setPasswordUrl);
-        return SendAdHocAsync(
+        var (subject, body) = await _settings.RenderEmailTemplateAsync(EmailTemplates.AccountApproved, fallbackSubject, fallbackBody, new Dictionary<string, string?> { ["contactName"] = contactName, ["setPasswordUrl"] = setPasswordUrl }, cancellationToken);
+        return await SendAdHocAsync(
             email,
             subject,
             body,
@@ -238,16 +243,17 @@ public sealed class EmailDispatchService : IEmailDispatchService
             cancellationToken);
     }
 
-    public Task<EmailDispatchResult> SendAccountRejectedAsync(
+    public async Task<EmailDispatchResult> SendAccountRejectedAsync(
         string email,
         string contactName,
         string? reason,
         string correlationId,
         CancellationToken cancellationToken)
     {
-        var (subject, body) = EmailTemplates.RenderAccountRejected(
+        var (fallbackSubject, fallbackBody) = EmailTemplates.RenderAccountRejected(
             contactName, reason);
-        return SendAdHocAsync(
+        var (subject, body) = await _settings.RenderEmailTemplateAsync(EmailTemplates.AccountRejected, fallbackSubject, fallbackBody, new Dictionary<string, string?> { ["contactName"] = contactName, ["reason"] = reason }, cancellationToken);
+        return await SendAdHocAsync(
             email,
             subject,
             body,

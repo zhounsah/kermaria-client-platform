@@ -2454,3 +2454,44 @@ export interface BillingV2PublicQuote {
   checkoutMode: string;
   checkoutReasonCode: string;
 }
+
+export type ApplicationSettingValue = string | number | boolean;
+
+export interface ApplicationSettingItem {
+  key: string;
+  category: string;
+  label: string;
+  description: string;
+  valueType: "bool" | "int" | "string" | "email" | "url" | "enum" | "json";
+  value: ApplicationSettingValue;
+  classification: "dynamic" | "restart_required" | "secret" | "code_invariant";
+  risk: "low" | "medium" | "high" | "critical";
+  editable: boolean;
+  restartRequired: boolean;
+  sensitive: boolean;
+  source: "default" | "database" | "env" | "json";
+  version: number;
+  updatedAt: string | null;
+}
+
+export interface ApplicationSettingsSnapshot {
+  settings: ApplicationSettingItem[];
+  persistent: boolean;
+}
+
+export interface ApplicationSettingUpdatePayload {
+  value: ApplicationSettingValue;
+  expectedVersion: number;
+}
+
+export interface ApplicationSettingMutationResponse {
+  code: string;
+  message: string;
+  setting: ApplicationSettingItem | null;
+  correlationId: string;
+}
+
+export interface ConfigurationStatusFact { label: string; value: string; sensitive: boolean; }
+export interface ConfigurationStatusDomain { key: string; label: string; state: "healthy" | "warning" | "info"; facts: ConfigurationStatusFact[]; warning: string | null; }
+export interface ConfigurationStatusSnapshot { domains: ConfigurationStatusDomain[]; }
+export interface PortalBillingConfiguration { iban: string | null; bic: string | null; paypalUrl: string | null; transferLabel: string; }

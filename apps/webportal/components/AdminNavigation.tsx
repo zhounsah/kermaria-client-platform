@@ -17,6 +17,7 @@ import {
   Package,
   ScrollText,
   ShieldCheck,
+  Settings,
   UserPlus,
   Users,
   WalletCards,
@@ -35,6 +36,7 @@ const navigationSections: NavSection[] = [
     label: "Pilotage",
     items: [
       { href: "/admin", label: "Vue d'ensemble", icon: LayoutDashboard, exact: true },
+      { href: "/admin/settings", label: "Configuration", icon: Settings },
       { href: "/admin/koxo", label: "KoXo", icon: Boxes },
       { href: "/admin/activity", label: "Flux d'activité", icon: Activity },
       { href: "/admin/audit-logs", label: "Journal d'audit", icon: ScrollText },

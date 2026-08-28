@@ -42,6 +42,7 @@ public sealed class AuthenticationService : IAuthenticationService
     private readonly ISessionTokenService _tokenService;
     private readonly IAuditService _auditService;
     private readonly AuthRuntimeConfiguration _configuration;
+    private readonly IApplicationSettingsService _settings;
     private readonly string _dummyPasswordHash;
 
     public AuthenticationService(
@@ -49,13 +50,15 @@ public sealed class AuthenticationService : IAuthenticationService
         IPortalPasswordService passwordService,
         ISessionTokenService tokenService,
         IAuditService auditService,
-        AuthRuntimeConfiguration configuration)
+        AuthRuntimeConfiguration configuration,
+        IApplicationSettingsService settings)
     {
         _repository = repository;
         _passwordService = passwordService;
         _tokenService = tokenService;
         _auditService = auditService;
         _configuration = configuration;
+        _settings = settings;
         _dummyPasswordHash = passwordService.DummyHash;
     }
 
@@ -66,6 +69,7 @@ public sealed class AuthenticationService : IAuthenticationService
         string? userAgent,
         CancellationToken cancellationToken)
     {
+        var runtime = await _settings.GetAuthConfigurationAsync(_configuration, cancellationToken);
         if (string.IsNullOrWhiteSpace(request.Email)
             || string.IsNullOrWhiteSpace(request.Password)
             || request.Email.Length > 254
@@ -114,9 +118,9 @@ public sealed class AuthenticationService : IAuthenticationService
                 failureState = await _repository.RecordFailedLoginAsync(
                     user.Id,
                     now,
-                    now.Subtract(_configuration.LoginLockoutDuration),
-                    _configuration.LoginMaxFailures,
-                    now.Add(_configuration.LoginLockoutDuration),
+                    now.Subtract(runtime.LoginLockoutDuration),
+                    runtime.LoginMaxFailures,
+                    now.Add(runtime.LoginLockoutDuration),
                     cancellationToken);
             }
 
@@ -149,7 +153,7 @@ public sealed class AuthenticationService : IAuthenticationService
         await _repository.ResetLoginFailuresAsync(
             user.Id,
             cancellationToken);
-        var expiresAt = now.Add(_configuration.SessionDuration);
+        var expiresAt = now.Add(runtime.SessionDuration);
         var token = _tokenService.Generate();
         var tokenHash = _tokenService.Hash(token);
         var sessionId = Guid.NewGuid().ToString("D");

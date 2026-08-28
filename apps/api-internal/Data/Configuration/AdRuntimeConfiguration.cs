@@ -51,6 +51,15 @@ public sealed record AdRuntimeConfiguration(
     /// </remarks>
     public bool KoxoOwnsDirectory => Mode is AdIntegrationMode.ControlledWrite;
 
+    // Politique explicite exposee au centre de configuration. Elle separe la
+    // capacite technique LDAP du mandat fonctionnel : KoXo reste l'autorite
+    // d'identite/mot de passe, API-INTERNAL ne pilote que les groupes services.
+    public string IdentityAuthority => KoxoOwnsDirectory ? "KoXo" : "API-INTERNAL / mode local";
+    public string PasswordAuthority => KoxoOwnsDirectory ? "KoXo" : "API-INTERNAL / mode local";
+    public string DirectoryAccess => ReadsEnabled ? WritesEnabled ? "Lecture + groupes de services" : "Lecture seule" : "Désactivé";
+    public string GroupMembershipWritePolicy => WritesEnabled ? "Autorisée, périmètre borné" : "Interdite";
+    public string UserLifecycleWritePolicy => KoxoOwnsDirectory ? "Interdite à API-INTERNAL" : WritesEnabled ? "Mode local uniquement" : "Interdite";
+
     public bool IsWithinAllowedRoots(string? distinguishedName)
     {
         var normalized = NormalizeDistinguishedName(distinguishedName);

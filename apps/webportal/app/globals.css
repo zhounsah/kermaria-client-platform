@@ -714,6 +714,25 @@ h3 {
   padding-top: 6px;
 }
 
+/* Centre de configuration : des cartes d'exploitation compactes, inspirees du
+   panneau de controle plutot que d'une liste de variables d'environnement. */
+.admin-settings-center { display: grid; gap: 1.25rem; }
+.admin-settings-grid { display: grid; gap: 1.25rem; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); align-items: start; }
+.admin-settings-status-grid { display: grid; gap: .85rem; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
+.admin-settings-status { border: 1px solid var(--border, #d7dee8); border-radius: .75rem; padding: 1rem; background: var(--surface, #fff); }
+.admin-settings-status-healthy { border-top: 3px solid #21855b; }.admin-settings-status-warning { border-top: 3px solid #c47c17; }.admin-settings-status-info { border-top: 3px solid #145a82; }
+.admin-settings-status h2 { margin: 0; font-size: 1rem; }.admin-settings-status dl { display: grid; gap: .35rem; margin: .85rem 0 0; }.admin-settings-status dl div { display:flex; justify-content:space-between; gap:.75rem; font-size:.85rem; }.admin-settings-status dt { color: var(--text-muted, #536273); }.admin-settings-status dd { margin:0; font-weight:600; text-align:right; }.admin-settings-status > p { margin:.8rem 0 0; color:#8a5c0c; font-size:.85rem; }
+.admin-settings-card { border: 1px solid var(--border, #d7dee8); border-top: 3px solid var(--accent, #145a82); border-radius: .85rem; background: var(--surface, #fff); box-shadow: 0 .6rem 1.5rem rgb(30 55 80 / .06); overflow: hidden; }
+.admin-settings-card > header { padding: 1rem 1.1rem .75rem; background: linear-gradient(135deg, rgb(20 90 130 / .07), transparent); }
+.admin-settings-card h2 { margin: 0; font-size: 1.1rem; }
+.admin-settings-row { display: grid; gap: .85rem; padding: 1rem 1.1rem; border-top: 1px solid var(--border, #d7dee8); }
+.admin-settings-row label { display: block; font-weight: 700; }
+.admin-settings-row p { margin: .3rem 0; color: var(--text-muted, #536273); font-size: .9rem; }
+.admin-settings-row small { color: var(--text-muted, #536273); }
+.admin-settings-control { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.admin-settings-control input, .admin-settings-control select { min-width: 12rem; flex: 1 1 14rem; }
+@media (max-width: 40rem) { .admin-settings-grid { grid-template-columns: 1fr; } .admin-settings-control > * { width: 100%; } }
+
 .service-symbol {
   display: grid;
   flex: 0 0 auto;

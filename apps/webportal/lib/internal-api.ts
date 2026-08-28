@@ -5,6 +5,9 @@ import type {
   AdminCommercialDocumentDetail,
   AdminCommercialDocumentSummary,
   AdminActivityOverview,
+  ApplicationSettingsSnapshot,
+  ConfigurationStatusSnapshot,
+  PortalBillingConfiguration,
   AdminAuditLogEntry,
   AdminCustomerDetail,
   AdminCustomerAdWorkspace,
@@ -1087,6 +1090,21 @@ export function getAdminOverview() {
     "/internal/admin/overview",
     null,
   );
+}
+
+export function getAdminApplicationSettings() {
+  return getAdminData<ApplicationSettingsSnapshot>(
+    "/internal/admin/settings",
+    { settings: [], persistent: false },
+  );
+}
+
+export function getAdminConfigurationStatus() {
+  return getAdminData<ConfigurationStatusSnapshot>("/internal/admin/settings/status", { domains: [] });
+}
+
+export function getPortalBillingConfiguration(localFallback: PortalBillingConfiguration) {
+  return getPortalData<PortalBillingConfiguration>("/internal/portal/billing-configuration", localFallback, localFallback);
 }
 
 export function getAdminActivity() {

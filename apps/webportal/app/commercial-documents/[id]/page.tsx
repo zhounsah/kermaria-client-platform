@@ -20,6 +20,7 @@ import {
 import {
   getCommercialDocument,
   getCommercialDocumentInvoice,
+  getPortalBillingConfiguration,
 } from "@/lib/internal-api";
 import {
   getBillingConfig,
@@ -45,9 +46,10 @@ export default async function CommercialDocumentDetailPage({
   await requireClientSession();
   const { id } = await params;
   const { payment } = await searchParams;
-  const [result, invoiceResult] = await Promise.all([
+  const [result, invoiceResult, billingResult] = await Promise.all([
     getCommercialDocument(id),
     getCommercialDocumentInvoice(id),
+    getPortalBillingConfiguration(getBillingConfig()),
   ]);
 
   if (result.error) {
@@ -70,7 +72,7 @@ export default async function CommercialDocumentDetailPage({
   }
 
   const document = result.data;
-  const billing = getBillingConfig();
+  const billing = billingResult.data;
   const paypalEnabled = isPayPalConfigured();
   const stripeEnabled = isStripeConfigured();
   const status = commercialDocumentStatus[document.status] ?? {
