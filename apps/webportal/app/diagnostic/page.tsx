@@ -3,7 +3,15 @@ import Link from "next/link";
 
 import { PublicDiagnosticWizard } from "@/components/PublicDiagnosticWizard";
 import { resolveDiagnosticContext } from "@/lib/diagnostic-context";
-import { getBillingV2FormulesCatalog } from "@/lib/internal-api";
+import {
+  DEFAULT_DIAGNOSTIC_RECOMMENDATION_CONFIG,
+  DIAGNOSTIC_RECOMMENDATION_CONTENT_KEY,
+  parseDiagnosticRecommendationConfig,
+} from "@/lib/diagnostic-recommendation-config";
+import {
+  getBillingV2FormulesCatalog,
+  getPublicManagedContent,
+} from "@/lib/internal-api";
 import { buildPublicMetadata } from "@/lib/public-metadata";
 
 export const metadata: Metadata = buildPublicMetadata({
@@ -23,7 +31,13 @@ export default async function DiagnosticPage({ searchParams }: DiagnosticPagePro
   const params = await searchParams;
   const rawContext = Array.isArray(params.context) ? params.context[0] : params.context;
   const initialContext = resolveDiagnosticContext(rawContext);
-  const { data: catalog } = await getBillingV2FormulesCatalog();
+  const [catalogResult, recommendationContentResult] = await Promise.all([
+    getBillingV2FormulesCatalog(),
+    getPublicManagedContent(DIAGNOSTIC_RECOMMENDATION_CONTENT_KEY),
+  ]);
+  const recommendationConfig =
+    parseDiagnosticRecommendationConfig(recommendationContentResult.data?.bodyMarkdown)
+    ?? DEFAULT_DIAGNOSTIC_RECOMMENDATION_CONFIG;
 
   return (
     <>
@@ -32,7 +46,11 @@ export default async function DiagnosticPage({ searchParams }: DiagnosticPagePro
           <span aria-hidden="true">{"<-"}</span> Retour aux services
         </Link>
       </div>
-      <PublicDiagnosticWizard catalog={catalog} initialContext={initialContext} />
+      <PublicDiagnosticWizard
+        catalog={catalogResult.data}
+        initialContext={initialContext}
+        recommendationConfig={recommendationConfig}
+      />
     </>
   );
 }

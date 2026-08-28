@@ -17,6 +17,7 @@ export const metadata = {
 export const dynamic = "force-dynamic";
 
 const contentTypeLabels = {
+  diagnostic_config: { label: "Diagnostic", tone: "info" as const },
   legal: { label: "Légal", tone: "warning" as const },
   pack_sheet: { label: "Fiche pack", tone: "info" as const },
   page: { label: "Page", tone: "neutral" as const },
@@ -81,7 +82,9 @@ export default async function AdminManagedContentListPage() {
               entry.updatedAt ? formatDateTime(entry.updatedAt) : "—",
               <Link
                 className="table-action"
-                href={`/admin/content/${encodeURIComponent(entry.key)}`}
+                href={entry.key === "diagnostic:recommendations"
+                  ? "/admin/diagnostic"
+                  : `/admin/content/${encodeURIComponent(entry.key)}`}
                 key={`${entry.key}-edit`}
               >
                 Modifier

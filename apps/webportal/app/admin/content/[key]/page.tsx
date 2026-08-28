@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { isManagedContentKey } from "@kermaria/shared";
 
 import { AdminManagedContentForm } from "@/components/AdminManagedContentForm";
@@ -43,6 +43,10 @@ export default async function AdminManagedContentDetailPage({
 
   if (!isManagedContentKey(normalizedKey)) {
     notFound();
+  }
+
+  if (normalizedKey === "diagnostic:recommendations") {
+    redirect("/admin/diagnostic");
   }
 
   const result = await getAdminManagedContent(normalizedKey);

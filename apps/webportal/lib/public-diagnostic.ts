@@ -3,6 +3,8 @@ import type {
   BillingV2PublicSelection,
   DiagnosticAnswers,
   DiagnosticRecommendation,
+  DiagnosticRecommendationConfig,
+  DiagnosticRecommendationProfileId,
   DiagnosticRecommendationReasonCode,
   DiagnosticRecommendationWarningCode,
 } from "@kermaria/shared";
@@ -13,11 +15,11 @@ import {
   selectableTiers,
 } from "@/lib/billing-v2-formules";
 import { MAX_ADDITIONAL_USERS } from "@/lib/billing-v2-selection";
+import {
+  DEFAULT_DIAGNOSTIC_RECOMMENDATION_CONFIG,
+  resolveDiagnosticPresetCode,
+} from "@/lib/diagnostic-recommendation-config";
 
-const PRESET_DOSSIER = "pack-dossier-securise";
-const PRESET_ACCESS = "pack-acces-distance";
-const PRESET_WINDOWS = "pack-bureau-windows-distance";
-const PRESET_PRO = "pack-pro-association";
 const MAX_TOTAL_USERS = MAX_ADDITIONAL_USERS + 1;
 
 /**
@@ -30,6 +32,8 @@ const MAX_TOTAL_USERS = MAX_ADDITIONAL_USERS + 1;
 export function recommendOffer(
   answers: DiagnosticAnswers,
   catalog: BillingV2PublicCatalog,
+  recommendationConfig: DiagnosticRecommendationConfig =
+    DEFAULT_DIAGNOSTIC_RECOMMENDATION_CONFIG,
 ): DiagnosticRecommendation {
   const reasons = new Set<DiagnosticRecommendationReasonCode>();
   const warnings = new Set<DiagnosticRecommendationWarningCode>();
@@ -101,19 +105,23 @@ export function recommendOffer(
     reasons.add("strong_recovery_need");
   }
 
-  let presetCode = PRESET_DOSSIER;
+  let profileId: DiagnosticRecommendationProfileId;
   if (needsWindows && teamOrStructure) {
-    // Une structure reste sur la base Pro afin de conserver l'espace partagé
-    // et le support, puis le bureau Windows est ajouté comme composant V2.
-    presetCode = PRESET_PRO;
+    profileId = "team_windows_desktop";
   } else if (needsWindows) {
-    presetCode = PRESET_WINDOWS;
+    profileId = "windows_desktop";
   } else if (teamOrStructure) {
-    presetCode = PRESET_PRO;
+    profileId = "team_or_structure";
   } else if (needsVpn) {
-    presetCode = PRESET_ACCESS;
+    profileId = "vpn_access";
   } else {
+    profileId = "simple_backup";
     reasons.add("simple_backup");
+  }
+
+  const presetCode = resolveDiagnosticPresetCode(profileId, recommendationConfig);
+  if (!presetCode) {
+    return requiresQuote(reasons, warnings);
   }
 
   const preset = catalog.presets.find((item) => item.code === presetCode);

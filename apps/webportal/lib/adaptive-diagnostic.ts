@@ -2,6 +2,7 @@ import type {
   BillingV2PublicCatalog,
   DiagnosticAnswers,
   DiagnosticRecommendation,
+  DiagnosticRecommendationConfig,
 } from "@kermaria/shared";
 
 import type {
@@ -29,11 +30,14 @@ export function buildAdaptiveDiagnosticOutcome(
   context: DiagnosticContextId,
   answers: DiagnosticAnswerMap,
   catalog: BillingV2PublicCatalog,
+  recommendationConfig?: DiagnosticRecommendationConfig,
 ): AdaptiveDiagnosticOutcome {
   const billingAnswers = buildBillingAnswers(context, answers);
   return {
     guidance: buildGuidance(context, answers),
-    recommendation: billingAnswers ? recommendOffer(billingAnswers, catalog) : null,
+    recommendation: billingAnswers
+      ? recommendOffer(billingAnswers, catalog, recommendationConfig)
+      : null,
   };
 }
 

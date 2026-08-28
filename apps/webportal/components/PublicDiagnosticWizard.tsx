@@ -7,10 +7,12 @@ import type {
   BillingV2PublicCatalog,
   BillingV2PublicQuote,
   BillingV2PublicSelection,
+  DiagnosticRecommendationConfig,
 } from "@kermaria/shared";
 
 import { ContactForm } from "@/components/ContactForm";
 import { buildAdaptiveDiagnosticOutcome } from "@/lib/adaptive-diagnostic";
+import { describeSelectionConfiguration } from "@/lib/billing-v2-formules";
 import { billingV2SelectionToSearchParams } from "@/lib/billing-v2-selection";
 import {
   GENERAL_CONTEXT_CHOICES,
@@ -30,6 +32,7 @@ import { formatCurrencyFromCents } from "@/lib/formatters";
 type PublicDiagnosticWizardProps = {
   catalog: BillingV2PublicCatalog;
   initialContext: DiagnosticContextId;
+  recommendationConfig: DiagnosticRecommendationConfig;
 };
 
 const BENEFITS = [
@@ -41,6 +44,7 @@ const BENEFITS = [
 export function PublicDiagnosticWizard({
   catalog,
   initialContext,
+  recommendationConfig,
 }: PublicDiagnosticWizardProps) {
   const definition = getDiagnosticContextDefinition(initialContext);
   const [answers, setAnswers] = useState<DiagnosticAnswerMap>({});
@@ -50,6 +54,7 @@ export function PublicDiagnosticWizard({
   const [quotePending, setQuotePending] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const stepTitleRef = useRef<HTMLLegendElement>(null);
+  const hasEnteredWizardRef = useRef(false);
 
   const visibleQuestions = useMemo(
     () => getVisibleDiagnosticQuestions(initialContext, answers),
@@ -57,8 +62,13 @@ export function PublicDiagnosticWizard({
   );
   const currentQuestion = visibleQuestions[step] ?? null;
   const outcome = useMemo(
-    () => buildAdaptiveDiagnosticOutcome(initialContext, answers, catalog),
-    [initialContext, answers, catalog],
+    () => buildAdaptiveDiagnosticOutcome(
+      initialContext,
+      answers,
+      catalog,
+      recommendationConfig,
+    ),
+    [initialContext, answers, catalog, recommendationConfig],
   );
   const selection = outcome.recommendation?.selection ?? null;
   const recommendedPreset = selection
@@ -67,6 +77,10 @@ export function PublicDiagnosticWizard({
 
   useEffect(() => {
     if (completed || !currentQuestion) return;
+    if (!hasEnteredWizardRef.current) {
+      hasEnteredWizardRef.current = true;
+      return;
+    }
     const frame = window.requestAnimationFrame(() => {
       stepTitleRef.current?.focus({ preventScroll: true });
       stepTitleRef.current?.scrollIntoView({ block: "start", inline: "nearest" });
@@ -123,9 +137,9 @@ export function PublicDiagnosticWizard({
                 href={buildDiagnosticHref(choice.context)}
                 key={choice.context}
               >
-                <strong>{choice.title}</strong>
-                <span>{choice.description}</span>
-                <span className="diagnostic-context-card-action">Commencer →</span>
+                <span className="diagnostic-context-card-icon" aria-hidden="true"><DiagnosticIcon context={choice.context} /></span>
+                <span className="diagnostic-context-card-copy"><strong>{choice.title}</strong><span>{choice.description}</span></span>
+                <span className="diagnostic-context-card-action" aria-hidden="true"><ArrowRightIcon /></span>
               </Link>
             ))}
           </div>
@@ -140,6 +154,7 @@ export function PublicDiagnosticWizard({
         <DiagnosticHeader definition={definition} compact />
         <DiagnosticResult
           answers={answers}
+          catalog={catalog}
           context={initialContext}
           definition={definition}
           outcome={outcome}
@@ -182,7 +197,10 @@ export function PublicDiagnosticWizard({
       <section className="diagnostic-wizard" aria-label={`Diagnostic ${definition.label}`}>
         <div className="diagnostic-wizard-toolbar">
           <div>
-            <span className="diagnostic-context-badge">{definition.label}</span>
+            <span className="diagnostic-context-badge">
+              <span aria-hidden="true"><DiagnosticIcon context={initialContext} /></span>
+              {definition.label}
+            </span>
             <p className="diagnostic-progress-text" aria-live="polite">
               Question {step + 1} sur {visibleQuestions.length}
             </p>
@@ -193,8 +211,12 @@ export function PublicDiagnosticWizard({
         </div>
 
         <div
-          aria-hidden="true"
+          aria-label={`Progression du diagnostic : question ${step + 1} sur ${visibleQuestions.length}`}
+          aria-valuemax={visibleQuestions.length}
+          aria-valuemin={1}
+          aria-valuenow={step + 1}
           className="diagnostic-progress-bar"
+          role="progressbar"
           style={{
             "--diagnostic-progress": `${((step + 1) / visibleQuestions.length) * 100}%`,
           } as CSSProperties}
@@ -204,6 +226,7 @@ export function PublicDiagnosticWizard({
 
         <DiagnosticQuestionFieldset
           answers={answers}
+          key={currentQuestion.id}
           legendRef={stepTitleRef}
           question={currentQuestion}
           onChange={(nextValue) => {
@@ -261,18 +284,23 @@ function DiagnosticHeader({
 }) {
   return (
     <header className={`diagnostic-header${compact ? " diagnostic-header-compact" : ""}`}>
-      <div>
-        <p className="eyebrow">{definition.eyebrow}</p>
-        <h1>{definition.title}</h1>
-        <p>{definition.intro}</p>
+      <div className="diagnostic-header-copy">
+        <span className="diagnostic-header-icon" aria-hidden="true"><DiagnosticIcon context={definition.id} /></span>
+        <div>
+          <p className="eyebrow">{definition.eyebrow}</p>
+          <h1>{definition.title}</h1>
+          <p>{definition.intro}</p>
+        </div>
       </div>
       {!compact ? (
-        <div className="diagnostic-benefits" aria-label="Bénéfices du diagnostic">
+        <div className="diagnostic-benefits" aria-label="B├®n├®fices du diagnostic">
           {BENEFITS.map((benefit) => (
             <article key={benefit.title}>
-              <span aria-hidden="true">✓</span>
-              <h2>{benefit.title}</h2>
-              <p>{benefit.body}</p>
+              <span className="diagnostic-benefit-icon" aria-hidden="true"><CheckIcon /></span>
+              <div>
+                <h2>{benefit.title}</h2>
+                <p>{benefit.body}</p>
+              </div>
             </article>
           ))}
         </div>
@@ -308,7 +336,7 @@ function DiagnosticQuestionFieldset({
         {question.options.map((option) => {
           const checked = selectedValues.includes(option.value);
           return (
-            <label key={option.value}>
+            <label className="diagnostic-option" data-selected={checked ? "true" : "false"} key={option.value}>
               <input
                 checked={checked}
                 name={question.id}
@@ -355,6 +383,7 @@ function updateMultiSelection(
 
 type ResultProps = {
   answers: DiagnosticAnswerMap;
+  catalog: BillingV2PublicCatalog;
   context: DiagnosticContextId;
   definition: ReturnType<typeof getDiagnosticContextDefinition>;
   outcome: ReturnType<typeof buildAdaptiveDiagnosticOutcome>;
@@ -368,6 +397,7 @@ type ResultProps = {
 
 function DiagnosticResult({
   answers,
+  catalog,
   context,
   definition,
   outcome,
@@ -379,6 +409,9 @@ function DiagnosticResult({
   onRestart,
 }: ResultProps) {
   const summary = describeDiagnosticAnswers(context, answers);
+  const formulaConfiguration = selection
+    ? describeSelectionConfiguration(selection, catalog)
+    : [];
   const formulaHref = selection ? buildFormulaHref(selection) : null;
   const hasFormula = outcome.recommendation?.status === "standard"
     && recommendedPreset !== null
@@ -387,9 +420,14 @@ function DiagnosticResult({
   return (
     <section className="diagnostic-result" aria-live="polite">
       <div className="diagnostic-result-main">
-        <p className="eyebrow">Votre orientation</p>
-        <h2>{outcome.guidance.title}</h2>
-        <p>{outcome.guidance.body}</p>
+        <div className="diagnostic-result-heading">
+          <span className="diagnostic-result-icon" aria-hidden="true"><DiagnosticIcon context={context} /></span>
+          <div>
+            <p className="eyebrow">Votre orientation</p>
+            <h2>{outcome.guidance.title}</h2>
+          </div>
+        </div>
+        <p className="diagnostic-result-lead">{outcome.guidance.body}</p>
 
         {outcome.guidance.points.length > 0 ? (
           <ul className="check-list diagnostic-guidance-points">
@@ -402,6 +440,20 @@ function DiagnosticResult({
             <p className="card-kicker">Parcours standard disponible</p>
             <h3>{recommendedPreset.name}</h3>
             <p>{recommendedPreset.description}</p>
+            <div className="diagnostic-formula-configuration" aria-label="Configuration recommandée">
+              <div className="diagnostic-formula-configuration-heading">
+                <span>Configuration issue de votre diagnostic</span>
+                <strong>Ajustée à vos réponses</strong>
+              </div>
+              <dl>
+                {formulaConfiguration.map((item) => (
+                  <div data-enabled={item.enabled ? "true" : "false"} key={item.key}>
+                    <dt>{item.label}</dt>
+                    <dd>{item.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
             <div className="diagnostic-price">
               <strong>
                 {quotePending
@@ -462,6 +514,47 @@ function DiagnosticResult({
         />
       </div>
     </section>
+  );
+}
+
+const DIAGNOSTIC_ICON_PATHS: Record<DiagnosticContextId, string> = {
+  backup: "M12 3 5 6v5c0 4.6 2.8 8.7 7 10 4.2-1.3 7-5.4 7-10V6l-7-3Zm-3 9 2 2 4-4",
+  "remote-access": "M3 4h18v13H3V4Zm5 17h8m-4-4v4m-3-11h6m-2-2 2 2-2 2",
+  network: "M5 12.5a10 10 0 0 1 14 0M8 15.5a6 6 0 0 1 8 0m-5.2 2.8a2 2 0 0 1 2.4 0M12 20h.01",
+  messaging: "M3 5h18v14H3V5Zm1 2 8 6 8-6",
+  "domain-dns": "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18ZM3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18",
+  server: "M4 4h16v6H4V4Zm0 10h16v6H4v-6Zm4-7h.01M8 17h.01M12 7h5M12 17h5",
+  "web-hosting": "M3 4h18v16H3V4Zm0 5h18M7 6.5h.01M10 6.5h.01",
+  general: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm3.5 5.5-2 5-5 2 2-5 5-2Z",
+};
+
+function DiagnosticIcon({ context }: { context: DiagnosticContextId }) {
+  return (
+    <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
+      <path
+        d={DIAGNOSTIC_ICON_PATHS[context]}
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+    </svg>
+  );
+}
+
+function ArrowRightIcon() {
+  return (
+    <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
+      <path d="M5 12h14m-5-5 5 5-5 5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
+      <path d="m6 12 4 4 8-9" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+    </svg>
   );
 }
 

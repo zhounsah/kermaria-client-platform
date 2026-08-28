@@ -408,3 +408,147 @@ Le message passe par le pipeline du formulaire de contact existant. L'e-mail int
 ## 16. Publication
 
 Aucun commit, push, tag ni déploiement n'est réalisé dans ce chantier sans accord explicite.
+
+
+## Association du diagnostic aux formules
+
+Le résultat commercial d'un diagnostic éligible n'utilise pas un second modèle
+de capacités propre au wizard. Le contrat canonique est directement
+`BillingV2PublicSelection`.
+
+La chaîne est donc :
+
+```text
+réponses client
+    -> DiagnosticAnswers
+    -> recommendOffer()
+    -> BillingV2PublicSelection
+    -> formule de base + configuration
+    -> /api/formules/devis
+```
+
+La sélection contient déjà les dimensions nécessaires à l'association avec les
+formules :
+
+- stockage personnel ;
+- sauvegarde personnelle ;
+- espace partagé ;
+- sauvegarde partagée ;
+- accès sécurisé à distance ;
+- bureau Windows à distance ;
+- utilisateurs supplémentaires ;
+- Support+.
+
+Les codes techniques restent internes. Le résultat public traduit la sélection
+en libellés client avant affichage.
+
+Exemple de contrat ajouté aux tests :
+
+```text
+À protéger                Fichiers et documents
+Volume                    128 Go
+Contexte                   Particulier
+Utilisateurs               1
+Sauvegarde actuelle        En partie
+Restauration testée        Jamais
+
+=> Formule de base         Dossier sécurisé
+=> Stockage personnel      128 Go
+=> Sauvegarde personnelle  Incluse
+=> Espace partagé          Non
+=> Sauvegarde partagée     Non
+=> Accès distant           Non
+=> Bureau Windows distant  Non
+=> Utilisateurs            1
+=> Support renforcé        Non
+```
+
+L'état de l'existant, par exemple une sauvegarde partielle ou une restauration
+jamais testée, influence les conseils et avertissements. Il ne déclenche pas à
+lui seul une formule plus coûteuse.
+
+La dépendance de palier de sauvegarde reste gérée côté API-INTERNAL :
+la sauvegarde personnelle suit automatiquement la valeur numérique du palier de
+stockage personnel. Une sélection 128 Go + sauvegarde active est donc tarifée
+avec la sauvegarde 128 Go sans exposer un second choix de palier au navigateur.
+
+Les quatre familles de formules sont couvertes par le contrat de diagnostic :
+
+- Dossier sécurisé : stockage + sauvegarde personnelle ;
+- Accès à Distance : base précédente + accès sécurisé ;
+- Bureau Windows à Distance : accès sécurisé + bureau Windows ;
+- Pro / Association : petite structure, espace partagé, sauvegarde partagée,
+  utilisateur supplémentaire et support renforcé.
+
+Billing V2 reste l'unique autorité de prix et de validité de la sélection.
+
+
+## Configuration back-office des recommandations
+
+L'association entre un profil diagnostique et sa formule de base n'est plus une
+constante TypeScript. Elle est persistée comme contenu administrable structuré
+sous la clé `diagnostic:recommendations` et se règle depuis
+`/admin/diagnostic`.
+
+Les cinq profils commerciaux actuellement détectés sont :
+
+- sauvegarde simple ;
+- accès distant ;
+- bureau Windows distant ;
+- équipe / structure ;
+- équipe + bureau Windows distant.
+
+Pour chacun, l'administrateur choisit une formule issue du catalogue public
+Billing V2 courant, ou **Aucun parcours standard — demander un devis**.
+
+La liste proposée dans l'administration est construite dynamiquement depuis le
+catalogue Billing V2. Aucune liste de formules n'est dupliquée dans l'interface
+d'administration. Une nouvelle formule publique peut donc devenir une cible du
+diagnostic sans modification du code du WebPortal.
+
+La frontière d'autorité reste fail-closed :
+
+1. le WebPortal valide la structure de la configuration ;
+2. API-INTERNAL revalide la structure lors du `PATCH` ;
+3. API-INTERNAL vérifie que chaque `presetCode` non nul existe réellement dans
+   le catalogue public Billing V2 courant ;
+4. le moteur public recherche de nouveau le preset dans le catalogue au moment
+   du diagnostic ;
+5. une formule absente, supprimée, dépubliée ou un profil réglé sur `null`
+   bascule vers cadrage/devis et n'est jamais proposé au client.
+
+L'éditeur générique `/admin/content/[key]` redirige
+`diagnostic:recommendations` vers `/admin/diagnostic`, afin que la configuration
+soit manipulée uniquement via le formulaire structuré. Le BFF générique reste
+protégé par la validation API-INTERNAL en cas de requête forgée.
+
+Aucune migration SQL n'est nécessaire : la configuration réutilise le stockage
+de contenus administrables existant et est seedée avec les correspondances
+historiques pour préserver le comportement lors du premier démarrage.
+
+## Validation finale de la configuration administrable
+
+Après raccordement du back-office :
+
+- `lint:webportal` : **OK**
+- `typecheck:shared` : **OK**
+- `typecheck:webportal` : **OK**
+- `test:diagnostic` : **OK**
+- `test:formules` : **OK**
+- `test:catalog` : **OK**
+- `test:managed-content` : **OK**
+- `test:public-site-quality` : **OK**
+- `build:web` : **OK**
+- `build:api` : **OK**
+- `test:api` : **OK**
+- `git diff --check` : **OK**
+- `npm run validate` global : **OK (exit 0)**
+
+Smokes locaux réels sur `localhost:3000` :
+
+- `/admin/backups` : HTTP 200 — la régression
+  `getManagedContentRegistry is not defined` est corrigée ;
+- `/admin/diagnostic` : HTTP 200 ;
+- `/diagnostic?context=backup` : HTTP 200.
+
+Aucun commit, push, tag ni déploiement n'a été effectué.

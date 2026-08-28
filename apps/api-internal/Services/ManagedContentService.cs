@@ -66,6 +66,7 @@ public sealed partial class ManagedContentService : IManagedContentService
     private const int MaxVersionLength = 160;
     private readonly IManagedContentRepository _repository;
     private readonly IServiceTopologyService _topologyService;
+    private readonly IBillingV2PublicCatalogService _billingCatalogService;
 
     private static readonly IReadOnlyList<ManagedContentDefinition> Definitions =
     [
@@ -104,6 +105,12 @@ public sealed partial class ManagedContentService : IManagedContentService
             "/infrastructure",
             35,
             SeedFileName: "infrastructure.md"),
+        new(
+            "diagnostic:recommendations",
+            "diagnostic_config",
+            "Diagnostic - Règles de recommandation",
+            "/diagnostic",
+            37),
         new("storefront:services", "storefront_page", "Pages principales — Catalogue des services", "/services", 40),
         new("storefront:tarifs", "storefront_page", "Pages principales — Tarifs Zachary IT", "/tarifs", 45),
         new("storefront:cloud-hebergement", "storefront_page", "Catégories services — Cloud & Hébergement", "/services/cloud-hebergement", 50),
@@ -214,10 +221,12 @@ public sealed partial class ManagedContentService : IManagedContentService
 
     public ManagedContentService(
         IManagedContentRepository repository,
-        IServiceTopologyService topologyService)
+        IServiceTopologyService topologyService,
+        IBillingV2PublicCatalogService billingCatalogService)
     {
         _repository = repository;
         _topologyService = topologyService;
+        _billingCatalogService = billingCatalogService;
     }
 
     public bool IsPersistent => _repository.IsPersistent;
@@ -263,6 +272,12 @@ public sealed partial class ManagedContentService : IManagedContentService
         var definition = ResolveDefinition(key);
         await EnsureSeededAsync([definition], cancellationToken);
         var validated = ValidatePayload(definition, payload);
+        if (definition.ContentType == "diagnostic_config")
+        {
+            await ValidateDiagnosticRecommendationPresetsAsync(
+                validated.BodyMarkdown,
+                cancellationToken);
+        }
 
         return await _repository.UpsertAsync(
             validated,
@@ -292,6 +307,7 @@ public sealed partial class ManagedContentService : IManagedContentService
             {
                 "pack_sheet" => CreatePackSheetSeed(definition, servicesByCode),
                 "storefront_page" => CreateStorefrontSeed(definition),
+                "diagnostic_config" => CreateDiagnosticRecommendationSeed(definition),
                 _ => CreateMarkdownFileSeed(definition)
             })
             .ToArray();
@@ -372,6 +388,11 @@ public sealed partial class ManagedContentService : IManagedContentService
             bodyMarkdown = ValidateStorefrontJson(definition.Key, bodyMarkdown);
             versionLabel = null;
         }
+        else if (definition.ContentType == "diagnostic_config")
+        {
+            bodyMarkdown = ValidateDiagnosticRecommendationJson(bodyMarkdown);
+            versionLabel = null;
+        }
 
         return new ValidatedManagedContentEntry(
             definition.Key,
@@ -380,6 +401,31 @@ public sealed partial class ManagedContentService : IManagedContentService
             definition.PublicPath,
             NormalizeMarkdown(bodyMarkdown),
             versionLabel);
+    }
+
+    private static ValidatedManagedContentEntry CreateDiagnosticRecommendationSeed(
+        ManagedContentDefinition definition)
+    {
+        var content = JsonSerializer.Serialize(new
+        {
+            schemaVersion = 1,
+            rules = new[]
+            {
+                new { profileId = "simple_backup", presetCode = "pack-dossier-securise" },
+                new { profileId = "vpn_access", presetCode = "pack-acces-distance" },
+                new { profileId = "windows_desktop", presetCode = "pack-bureau-windows-distance" },
+                new { profileId = "team_or_structure", presetCode = "pack-pro-association" },
+                new { profileId = "team_windows_desktop", presetCode = "pack-pro-association" }
+            }
+        });
+
+        return new ValidatedManagedContentEntry(
+            definition.Key,
+            definition.ContentType,
+            definition.Title,
+            definition.PublicPath,
+            content,
+            null);
     }
 
     private static ValidatedManagedContentEntry CreateMarkdownFileSeed(
@@ -505,6 +551,102 @@ public sealed partial class ManagedContentService : IManagedContentService
             definition.PublicPath,
             StorefrontContentSeed.CreateJson(definition.Key),
             null);
+
+    private async Task ValidateDiagnosticRecommendationPresetsAsync(
+        string value,
+        CancellationToken cancellationToken)
+    {
+        using var document = JsonDocument.Parse(value);
+        var configuredPresetCodes = document.RootElement
+            .GetProperty("rules")
+            .EnumerateArray()
+            .Select(rule => rule.GetProperty("presetCode"))
+            .Where(element => element.ValueKind == JsonValueKind.String)
+            .Select(element => element.GetString()!)
+            .ToHashSet(StringComparer.Ordinal);
+
+        if (configuredPresetCodes.Count == 0)
+        {
+            return;
+        }
+
+        var catalog = await _billingCatalogService.GetCatalogAsync(cancellationToken);
+        var publicPresetCodes = catalog.Presets
+            .Select(preset => preset.Code)
+            .ToHashSet(StringComparer.Ordinal);
+
+        if (!configuredPresetCodes.IsSubsetOf(publicPresetCodes))
+        {
+            throw new PortalValidationException();
+        }
+    }
+
+    private static string ValidateDiagnosticRecommendationJson(string value)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(value);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object
+                || !root.TryGetProperty("schemaVersion", out var schemaVersionElement)
+                || !schemaVersionElement.TryGetInt32(out var schemaVersion)
+                || schemaVersion != 1
+                || !root.TryGetProperty("rules", out var rules)
+                || rules.ValueKind != JsonValueKind.Array
+                || rules.GetArrayLength() != 5)
+            {
+                throw new PortalValidationException();
+            }
+
+            var allowedProfiles = new HashSet<string>(StringComparer.Ordinal)
+            {
+                "simple_backup",
+                "vpn_access",
+                "windows_desktop",
+                "team_or_structure",
+                "team_windows_desktop"
+            };
+            var seenProfiles = new HashSet<string>(StringComparer.Ordinal);
+
+            foreach (var rule in rules.EnumerateArray())
+            {
+                if (rule.ValueKind != JsonValueKind.Object
+                    || !rule.TryGetProperty("profileId", out var profileIdElement)
+                    || profileIdElement.ValueKind != JsonValueKind.String
+                    || profileIdElement.GetString() is not { } profileId
+                    || !allowedProfiles.Contains(profileId)
+                    || !seenProfiles.Add(profileId)
+                    || !rule.TryGetProperty("presetCode", out var presetCodeElement))
+                {
+                    throw new PortalValidationException();
+                }
+
+                if (presetCodeElement.ValueKind != JsonValueKind.Null
+                    && (presetCodeElement.ValueKind != JsonValueKind.String
+                        || presetCodeElement.GetString() is not { } presetCode
+                        || !IsValidDiagnosticPresetCode(presetCode)))
+                {
+                    throw new PortalValidationException();
+                }
+            }
+
+            if (seenProfiles.Count != allowedProfiles.Count)
+            {
+                throw new PortalValidationException();
+            }
+
+            return JsonSerializer.Serialize(root);
+        }
+        catch (JsonException)
+        {
+            throw new PortalValidationException();
+        }
+    }
+
+    private static bool IsValidDiagnosticPresetCode(string value)
+        => value.Length is >= 2 and <= 120
+            && value.All(character => char.IsLetterOrDigit(character)
+                || character is '-' or '_' or '.');
 
     private static string ValidateStorefrontJson(string definitionKey, string value)
     {

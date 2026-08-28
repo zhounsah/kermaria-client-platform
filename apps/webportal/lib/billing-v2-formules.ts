@@ -236,6 +236,96 @@ export function buildBaselineSelection(
   };
 }
 
+export type PublicSelectionConfigurationEntry = {
+  key: string;
+  label: string;
+  value: string;
+  enabled: boolean;
+};
+
+/**
+ * Traduit la selection Billing V2 canonique en configuration lisible.
+ *
+ * Cette fonction n'invente aucune capacite et ne choisit aucune formule. Elle
+ * decrit seulement la selection deja produite par le moteur de recommandation.
+ * Les codes catalogue restent internes et aucun prix n'est calcule ici.
+ */
+export function describeSelectionConfiguration(
+  selection: BillingV2PublicSelection,
+  catalog: BillingV2PublicCatalog,
+): PublicSelectionConfigurationEntry[] {
+  const personalStorage = resolveSelectedTierLabel(
+    catalog,
+    SERVICE_CODES.storagePersonal,
+    selection.storagePersonalTierCode,
+  );
+  const sharedStorage = selection.storageSharedTierCode
+    ? resolveSelectedTierLabel(
+        catalog,
+        SERVICE_CODES.storageShared,
+        selection.storageSharedTierCode,
+      )
+    : null;
+
+  return [
+    { key: "storage-personal", label: "Stockage personnel", value: personalStorage, enabled: true },
+    {
+      key: "backup-personal",
+      label: "Sauvegarde personnelle",
+      value: selection.backupPersonal ? "Incluse" : "Non",
+      enabled: selection.backupPersonal,
+    },
+    {
+      key: "storage-shared",
+      label: "Espace partagé",
+      value: sharedStorage ?? "Non",
+      enabled: sharedStorage !== null,
+    },
+    {
+      key: "backup-shared",
+      label: "Sauvegarde partagée",
+      value: selection.backupShared ? "Incluse" : "Non",
+      enabled: selection.backupShared,
+    },
+    {
+      key: "vpn",
+      label: "Accès sécurisé à distance",
+      value: selection.vpnTierCode ? "Inclus" : "Non",
+      enabled: selection.vpnTierCode !== null,
+    },
+    {
+      key: "remote-desktop",
+      label: "Bureau Windows à distance",
+      value: selection.remoteDesktop ? "Inclus" : "Non",
+      enabled: selection.remoteDesktop,
+    },
+    {
+      key: "users",
+      label: "Utilisateurs",
+      value: String(selection.additionalUsers + 1),
+      enabled: true,
+    },
+    {
+      key: "support-plus",
+      label: "Support renforcé",
+      value: selection.supportPlus ? "Inclus" : "Non",
+      enabled: selection.supportPlus,
+    },
+  ];
+}
+
+function resolveSelectedTierLabel(
+  catalog: BillingV2PublicCatalog,
+  serviceCode: string,
+  tierCode: string,
+) {
+  const label = resolveTierLabel(findService(catalog, serviceCode), tierCode);
+  if (label && label !== tierCode) {
+    return label;
+  }
+  return /^\d+$/.test(tierCode) ? `${tierCode} Go` : tierCode;
+}
+
 const CHECKOUT_REASON_MESSAGES: Record<string, string> = {
   BILLING_V2_PUBLIC_CHECKOUT_ROUTE_MISSING:
     "Cette combinaison formule / engagement n'est pas ouverte à la "

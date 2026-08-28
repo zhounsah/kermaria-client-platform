@@ -591,7 +591,7 @@ export type PublicPackCode =
 
 export type PublicPackCommitmentMonths = 1 | 6 | 12;
 
-export type ManagedContentType = "legal" | "pack_sheet" | "page" | "storefront_page";
+export type ManagedContentType = "diagnostic_config" | "legal" | "pack_sheet" | "page" | "storefront_page";
 
 export type StorefrontContentKey =
   | "storefront:services"
@@ -622,6 +622,7 @@ export type ManagedContentKey =
   | "legal:mentions-legales"
   | "page:a-propos"
   | "page:infrastructure"
+  | "diagnostic:recommendations"
   | StorefrontContentKey
   | `pack-sheet:${PublicPackCode}`;
 
@@ -997,6 +998,27 @@ export interface PendingBillingV2SelectionSummary {
   selection: BillingV2PublicSelection;
 }
 
+
+export const DIAGNOSTIC_RECOMMENDATION_PROFILE_IDS = [
+  "simple_backup",
+  "vpn_access",
+  "windows_desktop",
+  "team_or_structure",
+  "team_windows_desktop",
+] as const;
+
+export type DiagnosticRecommendationProfileId =
+  typeof DIAGNOSTIC_RECOMMENDATION_PROFILE_IDS[number];
+
+export interface DiagnosticRecommendationRuleConfig {
+  profileId: DiagnosticRecommendationProfileId;
+  presetCode: string | null;
+}
+
+export interface DiagnosticRecommendationConfig {
+  schemaVersion: 1;
+  rules: readonly DiagnosticRecommendationRuleConfig[];
+}
 
 export type DiagnosticCustomerType =
   | "individual"
@@ -1432,6 +1454,7 @@ export function isManagedContentKey(value: unknown): value is ManagedContentKey 
       || value === "legal:mentions-legales"
       || value === "page:a-propos"
       || value === "page:infrastructure"
+      || value === "diagnostic:recommendations"
       || value.startsWith("storefront:")
         && STOREFRONT_CONTENT_REGISTRY.some((entry) => entry.key === value)
       || PUBLIC_PACKS.some(
@@ -1479,6 +1502,14 @@ export function getManagedContentRegistry(): readonly ManagedContentRegistryEntr
       title: "Infrastructure et exploitation des services Zachary IT",
       publicPath: "/infrastructure",
       sortOrder: 35,
+      packCode: null,
+    },
+    {
+      key: "diagnostic:recommendations",
+      contentType: "diagnostic_config",
+      title: "Diagnostic - Règles de recommandation",
+      publicPath: "/diagnostic",
+      sortOrder: 37,
       packCode: null,
     },
     ...STOREFRONT_CONTENT_REGISTRY,

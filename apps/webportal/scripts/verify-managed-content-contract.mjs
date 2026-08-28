@@ -14,6 +14,10 @@ const publicManagedContentArticle = await read("components/PublicManagedContentA
 const publicPackCard = await read("components/PublicPackCard.tsx");
 const comparisonTable = await read("components/PublicPackComparisonTable.tsx");
 const adminNavigation = await read("components/AdminNavigation.tsx");
+const adminDiagnosticPage = await read("app/admin/diagnostic/page.tsx");
+const adminDiagnosticForm = await read("components/AdminDiagnosticRecommendationForm.tsx");
+const diagnosticRecommendationConfig = await read("lib/diagnostic-recommendation-config.ts");
+const managedContentService = await read("../../apps/api-internal/Services/ManagedContentService.cs");
 const adminContentPage = await read("app/admin/content/page.tsx");
 const adminContentDetailPage = await read("app/admin/content/[key]/page.tsx");
 const adminStorefrontContentForm = await read("components/AdminStorefrontContentForm.tsx");
@@ -106,6 +110,21 @@ assert.match(tarifsPage, /resolveStorefrontTariffAction/);
 assert.match(tarifsPage, /serviceCode/);
 assert.match(tarifsPage, /storefront:tarifs/);
 assert.match(adminNavigation, /\/admin\/content/);
+assert.match(sharedTypes, /diagnostic:recommendations/);
+assert.match(sharedTypes, /diagnostic_config/);
+assert.match(adminNavigation, /\/admin\/diagnostic/);
+assert.match(adminDiagnosticPage, /getBillingV2FormulesCatalog/);
+assert.match(adminDiagnosticPage, /catalogResult\.data\.presets/);
+assert.match(adminDiagnosticForm, /Aucun parcours standard/);
+assert.match(adminDiagnosticForm, /api\/admin\/content/);
+assert.match(diagnosticRecommendationConfig, /resolveDiagnosticPresetCode/);
+assert.match(managedContentService, /ValidateDiagnosticRecommendationJson/);
+assert.match(managedContentService, /IsValidDiagnosticPresetCode/);
+assert.match(managedContentService, /ValidateDiagnosticRecommendationPresetsAsync/);
+assert.match(managedContentService, /IBillingV2PublicCatalogService/);
+assert.match(managedContentService, /GetCatalogAsync/);
+assert.match(adminContentDetailPage, /redirect\("\/admin\/diagnostic"\)/);
+assert.doesNotMatch(managedContentService, /allowedPresets/);
 assert.match(
   adminPackCatalogPage,
   /Modifier la fiche technique/,

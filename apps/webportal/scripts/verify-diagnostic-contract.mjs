@@ -34,12 +34,26 @@ const billingV2FormulesStubUrl =
   `data:text/javascript;base64,${Buffer.from(billingV2FormulesStub).toString("base64")}`;
 const billingV2SelectionStubUrl =
   `data:text/javascript;base64,${Buffer.from("export const MAX_ADDITIONAL_USERS=10;").toString("base64")}`;
+const diagnosticRecommendationConfigStub = String.raw`
+export const DEFAULT_DIAGNOSTIC_RECOMMENDATION_CONFIG={schemaVersion:1,rules:[
+{profileId:"simple_backup",presetCode:"pack-dossier-securise"},
+{profileId:"vpn_access",presetCode:"pack-acces-distance"},
+{profileId:"windows_desktop",presetCode:"pack-bureau-windows-distance"},
+{profileId:"team_or_structure",presetCode:"pack-pro-association"},
+{profileId:"team_windows_desktop",presetCode:"pack-pro-association"}
+]};
+export function resolveDiagnosticPresetCode(profileId,config=DEFAULT_DIAGNOSTIC_RECOMMENDATION_CONFIG){return config.rules.find(rule=>rule.profileId===profileId)?.presetCode??null}
+`;
+const diagnosticRecommendationConfigStubUrl =
+  `data:text/javascript;base64,${Buffer.from(diagnosticRecommendationConfigStub).toString("base64")}`;
+
 
 async function importBillingV2Runtime(source, label) {
   return importPureTypeScript(
     source
       .replaceAll('"@/lib/billing-v2-formules"', JSON.stringify(billingV2FormulesStubUrl))
-      .replaceAll('"@/lib/billing-v2-selection"', JSON.stringify(billingV2SelectionStubUrl)),
+      .replaceAll('"@/lib/billing-v2-selection"', JSON.stringify(billingV2SelectionStubUrl))
+      .replaceAll('"@/lib/diagnostic-recommendation-config"', JSON.stringify(diagnosticRecommendationConfigStubUrl)),
     label,
   );
 }
@@ -59,7 +73,7 @@ export function recommendOffer(answers){
           :"pack-dossier-securise",
       commitmentCode:"FLEX",
       paymentMode:"monthly",
-      storagePersonalTierCode:"32",
+      storagePersonalTierCode:typeof answers.estimatedStorageGb==="number"?String(answers.estimatedStorageGb):"32",
       backupPersonal:true,
       storageSharedTierCode:null,
       backupShared:false,
@@ -76,6 +90,7 @@ const recommendationStubUrl =
 
 const sharedTypes = await read("../../packages/shared/src/index.ts");
 const diagnosticEngine = await read("lib/public-diagnostic.ts");
+const billingV2Formules = await read("lib/billing-v2-formules.ts");
 const diagnosticContext = await read("lib/diagnostic-context.ts");
 const adaptiveDiagnostic = await read("lib/adaptive-diagnostic.ts");
 const diagnosticPage = await read("app/diagnostic/page.tsx");
@@ -97,6 +112,10 @@ const fiscalPolicy = await read("../../apps/api-internal/Services/FiscalPolicy.c
 const diagnosticRuntime = await importBillingV2Runtime(
   diagnosticEngine,
   "public-diagnostic.ts",
+);
+const billingV2FormulesRuntime = await importPureTypeScript(
+  billingV2Formules,
+  "billing-v2-formules.ts",
 );
 const contextRuntime = await importPureTypeScript(
   diagnosticContext,
@@ -235,10 +254,72 @@ function recommendation(overrides = {}) {
 assert.equal(recommendation({ needsRemoteFiles: false }).selection?.presetCode, "pack-dossier-securise");
 assert.equal(recommendation({ needsVpn: true }).selection?.presetCode, "pack-acces-distance");
 assert.equal(recommendation({ needsWindowsDesktop: true }).selection?.presetCode, "pack-bureau-windows-distance");
+const proRecommendation = recommendation({ customerType: "business", users: 2 });
+assert.equal(proRecommendation.selection?.presetCode, "pack-pro-association");
+assert.deepEqual(
+  {
+    sharedStorage: proRecommendation.selection?.storageSharedTierCode,
+    sharedBackup: proRecommendation.selection?.backupShared,
+    vpn: proRecommendation.selection?.vpnTierCode !== null,
+    remoteDesktop: proRecommendation.selection?.remoteDesktop,
+    additionalUsers: proRecommendation.selection?.additionalUsers,
+    supportPlus: proRecommendation.selection?.supportPlus,
+  },
+  {
+    sharedStorage: "128",
+    sharedBackup: true,
+    vpn: true,
+    remoteDesktop: false,
+    additionalUsers: 1,
+    supportPlus: true,
+  },
+  "Une petite structure doit conserver le profil de base Pro / Association.",
+);
 assert.equal(recommendation({ estimatedStorageGb: 256 }).status, "standard");
 assert.equal(recommendation({ estimatedStorageGb: "above_public_max" }).status, "requires_quote");
 assert.equal(recommendation({ users: 12 }).status, "requires_quote");
 assert.equal(recommendation({ customerType: "other" }).status, "requires_quote");
+
+const remappedConfig = {
+  schemaVersion: 1,
+  rules: [
+    { profileId: "simple_backup", presetCode: "pack-acces-distance" },
+    { profileId: "vpn_access", presetCode: "pack-acces-distance" },
+    { profileId: "windows_desktop", presetCode: "pack-bureau-windows-distance" },
+    { profileId: "team_or_structure", presetCode: "pack-pro-association" },
+    { profileId: "team_windows_desktop", presetCode: "pack-pro-association" },
+  ],
+};
+assert.equal(
+  diagnosticRuntime.recommendOffer(baseAnswers({ needsRemoteFiles: false }), catalog, remappedConfig).selection?.presetCode,
+  "pack-acces-distance",
+  "La configuration back-office doit pouvoir changer la formule sans modifier le moteur.",
+);
+
+const quoteOnlyConfig = {
+  ...remappedConfig,
+  rules: remappedConfig.rules.map((rule) =>
+    rule.profileId === "simple_backup" ? { ...rule, presetCode: null } : rule
+  ),
+};
+assert.equal(
+  diagnosticRuntime.recommendOffer(baseAnswers({ needsRemoteFiles: false }), catalog, quoteOnlyConfig).status,
+  "requires_quote",
+  "Un profil admin sans formule doit basculer vers un cadrage/devis.",
+);
+
+const missingPresetConfig = {
+  ...remappedConfig,
+  rules: remappedConfig.rules.map((rule) =>
+    rule.profileId === "simple_backup" ? { ...rule, presetCode: "future-formula" } : rule
+  ),
+};
+assert.equal(
+  diagnosticRuntime.recommendOffer(baseAnswers({ needsRemoteFiles: false }), catalog, missingPresetConfig).status,
+  "requires_quote",
+  "Un preset configure mais absent du catalogue Billing ne doit jamais etre propose.",
+);
+
 assert.doesNotMatch(
   diagnosticEngine,
   /AmountCents|monthlyAmountCents|setupFeeAmountCents|formatCurrencyFromCents/,
@@ -375,6 +456,76 @@ const backupSimple = adaptiveRuntime.buildAdaptiveDiagnosticOutcome(
 );
 assert.equal(backupSimple.recommendation?.selection?.presetCode, "pack-dossier-securise");
 
+const backup128Answers = {
+  "backup-targets": ["files"],
+  storage: "128",
+  structure: "individual",
+  users: "1",
+  "backup-existing": "partial",
+  "restore-test": "never",
+};
+const backup128Adaptive = adaptiveRuntime.buildAdaptiveDiagnosticOutcome(
+  "backup",
+  backup128Answers,
+  catalog,
+);
+assert.deepEqual(
+  backup128Adaptive.recommendation?.selection,
+  {
+    presetCode: "pack-dossier-securise",
+    commitmentCode: "FLEX",
+    paymentMode: "monthly",
+    storagePersonalTierCode: "128",
+    backupPersonal: true,
+    storageSharedTierCode: null,
+    backupShared: false,
+    vpnTierCode: null,
+    remoteDesktop: false,
+    additionalUsers: 0,
+    supportPlus: false,
+  },
+  "Le diagnostic sauvegarde 128 Go individuel doit produire le profil Dossier securise attendu.",
+);
+
+const backup128Recommendation = diagnosticRuntime.recommendOffer(
+  baseAnswers({
+    estimatedStorageGb: 128,
+    needsRemoteFiles: false,
+    needsVpn: false,
+    needsWindowsDesktop: false,
+    backupFrequency: "unknown",
+    restoreTestRecency: "never",
+    continuityPlan: "unknown",
+  }),
+  catalog,
+);
+assert.equal(backup128Recommendation.status, "standard");
+assert.deepEqual(
+  backup128Recommendation.selection,
+  backup128Adaptive.recommendation?.selection,
+  "Le moteur commercial reel et le parcours adaptatif doivent converger vers la meme selection.",
+);
+
+const backup128Configuration = billingV2FormulesRuntime.describeSelectionConfiguration(
+  backup128Recommendation.selection,
+  catalog,
+);
+assert.deepEqual(
+  backup128Configuration.map(({ label, value }) => [label, value]),
+  [
+    ["Stockage personnel", "128 Go"],
+    ["Sauvegarde personnelle", "Incluse"],
+    ["Espace partag\u00e9", "Non"],
+    ["Sauvegarde partag\u00e9e", "Non"],
+    ["Acc\u00e8s s\u00e9curis\u00e9 \u00e0 distance", "Non"],
+    ["Bureau Windows \u00e0 distance", "Non"],
+    ["Utilisateurs", "1"],
+    ["Support renforc\u00e9", "Non"],
+  ],
+  "Le profil Billing doit etre traduit en configuration publique sans codes internes.",
+);
+
+
 for (const complexTargets of [
   ["workstations"],
   ["server"],
@@ -492,6 +643,15 @@ assert.match(diagnosticWizard, /aria-live="polite"/);
 assert.match(diagnosticWizard, /aria-describedby=\{hintId\}/);
 assert.match(globalsCss, /@media \(max-width: 820px\)[\s\S]*\.diagnostic-options[\s\S]*grid-template-columns: 1fr/);
 assert.match(globalsCss, /@media \(max-width: 560px\)[\s\S]*\.diagnostic-actions[\s\S]*flex-direction: column/);
+assert.match(diagnosticWizard, /role="progressbar"/);
+assert.match(diagnosticWizard, /<DiagnosticIcon context=/);
+assert.match(diagnosticWizard, /data-selected=\{checked \? "true" : "false"\}/);
+assert.match(diagnosticWizard, /describeSelectionConfiguration\(selection, catalog\)/);
+assert.match(diagnosticWizard, /formulaConfiguration\.map/);
+assert.match(diagnosticWizard, /Configuration issue de votre diagnostic/);
+assert.match(globalsCss, /diagnostic-options label:has\(input:checked\)/);
+assert.match(globalsCss, /@media \(prefers-reduced-motion:reduce\)/);
+assert.doesNotMatch(globalsCss, /\.diagnostic-result-details\s*\{[^}]*position\s*:\s*sticky/);
 // Garde-fous structurels : fieldset et legend, annonces de progression et repli mobile.
 assert.match(contactForm, /defaultMessage\?: string/);
 assert.match(contactForm, /submitLabel\?: string/);

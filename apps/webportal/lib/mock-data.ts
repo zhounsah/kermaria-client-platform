@@ -17,6 +17,8 @@ import {
   PUBLIC_PACKS,
 } from "@kermaria/shared";
 
+import { DEFAULT_DIAGNOSTIC_RECOMMENDATION_CONFIG } from "@/lib/diagnostic-recommendation-config";
+
 const FRANCHISE_BASE_FISCAL = {
   taxRateBasisPoints: null,
   fiscalRegime: "franchise_base" as const,
@@ -491,6 +493,14 @@ function createMockManagedContentDetail(
           "",
           "Les fournisseurs importants, les dépendances techniques et les limites du service doivent pouvoir être identifiés clairement.",
         ].join("\n"),
+        ...baseTimestamps,
+      };
+
+    case "diagnostic:recommendations":
+      return {
+        ...entry,
+        versionLabel: null,
+        bodyMarkdown: JSON.stringify(DEFAULT_DIAGNOSTIC_RECOMMENDATION_CONFIG),
         ...baseTimestamps,
       };
 
