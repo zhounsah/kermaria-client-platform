@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { ManagedMarkdown } from "@/components/ManagedMarkdown";
 import { ServiceBreadcrumb } from "@/components/PublicServiceComponents";
+import {
+  contextualizeDiagnosticHref,
+  diagnosticContextForServiceSlug,
+} from "@/lib/diagnostic-context";
 import { PUBLIC_SITE_URL } from "@/lib/public-route-config";
 import { breadcrumbJsonLd, JsonLd } from "@/lib/seo";
 import {
@@ -9,12 +13,14 @@ import {
   type StorefrontBreadcrumbItem,
   type StorefrontCommercialActions,
   type StorefrontPageContent,
+  type StorefrontServiceSlug,
 } from "@/lib/storefront-content";
 
 type PublicStorefrontPageProps = {
   breadcrumbItems: readonly StorefrontBreadcrumbItem[];
   commercialActions?: StorefrontCommercialActions | null;
   content: StorefrontPageContent;
+  serviceSlug?: StorefrontServiceSlug | null;
   selfServiceOrderable?: boolean | null;
 };
 
@@ -22,11 +28,25 @@ export function PublicStorefrontPage({
   breadcrumbItems,
   commercialActions = null,
   content,
+  serviceSlug = null,
   selfServiceOrderable = null,
 }: PublicStorefrontPageProps) {
   const fallbackCta = resolveStorefrontPublicCta(content, selfServiceOrderable);
-  const primaryAction = commercialActions?.primaryAction ?? fallbackCta;
-  const secondaryAction = commercialActions?.secondaryAction ?? null;
+  const diagnosticContext = serviceSlug
+    ? diagnosticContextForServiceSlug(serviceSlug)
+    : "general";
+  const rawPrimaryAction = commercialActions?.primaryAction ?? fallbackCta;
+  const primaryAction = {
+    ...rawPrimaryAction,
+    href: contextualizeDiagnosticHref(rawPrimaryAction.href, diagnosticContext),
+  };
+  const rawSecondaryAction = commercialActions?.secondaryAction ?? null;
+  const secondaryAction = rawSecondaryAction
+    ? {
+        ...rawSecondaryAction,
+        href: contextualizeDiagnosticHref(rawSecondaryAction.href, diagnosticContext),
+      }
+    : null;
   const hasFormulaPath = commercialActions?.mode === "FORMULA"
     || commercialActions?.mode === "HYBRID";
   const relatedLinks = resolveStorefrontPublicRelatedLinks(

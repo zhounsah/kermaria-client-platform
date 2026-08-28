@@ -131,6 +131,23 @@ export const STOREFRONT_SERVICE_SLUGS = [
   "messagerie-professionnelle",
 ] as const;
 export type StorefrontServiceSlug = (typeof STOREFRONT_SERVICE_SLUGS)[number];
+export const STOREFRONT_PRIORITY_SERVICE_SLUGS = [
+  "messagerie-professionnelle",
+  "vpn-entreprise",
+  "sauvegarde-externalisee",
+  "unifi",
+  "infogerance-vps",
+  "hebergement-web",
+] as const satisfies readonly StorefrontServiceSlug[];
+export type StorefrontPriorityServiceSlug =
+  (typeof STOREFRONT_PRIORITY_SERVICE_SLUGS)[number];
+export function isStorefrontPriorityServiceSlug(
+  slug: StorefrontServiceSlug,
+): slug is StorefrontPriorityServiceSlug {
+  return STOREFRONT_PRIORITY_SERVICE_SLUGS.includes(
+    slug as StorefrontPriorityServiceSlug,
+  );
+}
 export type StorefrontBreadcrumbItem = { name: string; path: string };
 
 const STOREFRONT_CATEGORY_BREADCRUMB_LABELS = {

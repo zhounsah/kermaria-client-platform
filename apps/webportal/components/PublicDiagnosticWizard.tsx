@@ -1,143 +1,81 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
 
 import type {
   BillingV2PublicCatalog,
   BillingV2PublicQuote,
   BillingV2PublicSelection,
-  DiagnosticAnswers,
-  DiagnosticDataKind,
-  DiagnosticRecommendationReasonCode,
-  DiagnosticRecommendationWarningCode,
 } from "@kermaria/shared";
 
-import { buildDiagnosticBeforeAfterSummary } from "@/lib/diagnostic-before-after";
-import { formatCurrencyFromCents } from "@/lib/formatters";
+import { ContactForm } from "@/components/ContactForm";
+import { buildAdaptiveDiagnosticOutcome } from "@/lib/adaptive-diagnostic";
 import { billingV2SelectionToSearchParams } from "@/lib/billing-v2-selection";
-import { recommendOffer } from "@/lib/public-diagnostic";
+import {
+  GENERAL_CONTEXT_CHOICES,
+  buildDiagnosticContactMessage,
+  buildDiagnosticHref,
+  describeDiagnosticAnswers,
+  getDiagnosticContextDefinition,
+  getVisibleDiagnosticQuestions,
+  isDiagnosticQuestionAnswered,
+  pruneHiddenDiagnosticAnswers,
+  type DiagnosticAnswerMap,
+  type DiagnosticContextId,
+  type DiagnosticQuestion,
+} from "@/lib/diagnostic-context";
+import { formatCurrencyFromCents } from "@/lib/formatters";
 
 type PublicDiagnosticWizardProps = {
   catalog: BillingV2PublicCatalog;
+  initialContext: DiagnosticContextId;
 };
 
-const STEPS = ["Profil", "Données", "Accès", "Reprise"] as const;
+const BENEFITS = [
+  { title: "Questions ciblées", body: "Seulement ce qui est utile pour votre situation." },
+  { title: "Sans jargon", body: "Décrivez vos usages, pas une solution technique." },
+  { title: "Sans engagement", body: "Aucun compte ni achat n'est nécessaire pour commencer." },
+] as const;
 
-const DATA_KIND_OPTIONS: Array<{ value: DiagnosticDataKind; label: string }> = [
-  { value: "personal_documents", label: "Documents personnels ou administratifs" },
-  { value: "business_documents", label: "Documents professionnels" },
-  { value: "photos", label: "Photos" },
-  { value: "association_data", label: "Données d'une association" },
-  { value: "work_files", label: "Fichiers de travail" },
-  { value: "other_important_files", label: "Autres fichiers importants" },
-];
-
-const REASON_LABELS: Record<DiagnosticRecommendationReasonCode, string> = {
-  simple_backup: "Vous cherchez surtout à protéger des fichiers importants.",
-  needs_remote_files: "Vous souhaitez retrouver vos fichiers à distance.",
-  needs_vpn: "Vous avez besoin d'un accès sécurisé à distance.",
-  needs_windows_desktop:
-    "Vous avez besoin d'un bureau Windows accessible à distance.",
-  team_or_structure: "Le besoin concerne plusieurs utilisateurs ou une structure.",
-  association_context: "Le contexte association demande un cadre plus structuré.",
-  storage_within_pack: "Le volume estimé correspond à un palier disponible en ligne.",
-  strong_recovery_need:
-    "Vous avez indiqué avoir besoin de retrouver rapidement vos fichiers.",
-};
-
-const WARNING_MESSAGES: Record<
-  DiagnosticRecommendationWarningCode,
-  { title: string; body: string }
-> = {
-  storage_unknown: {
-    title: "Confirmer le volume à protéger",
-    body:
-      "Vous ne connaissez pas encore le volume exact. La formule proposée reste ajustable avant la souscription.",
-  },
-  backup_frequency_unknown: {
-    title: "Vérifier la fréquence de vos sauvegardes",
-    body:
-      "Vous ne savez pas encore à quelle fréquence vos données importantes sont sauvegardées.",
-  },
-  storage_requires_quote: {
-    title: "Prévoir un cadrage stockage",
-    body:
-      "Le volume indiqué dépasse les paliers de stockage proposés en ligne. Une vérification est nécessaire avant de chiffrer.",
-  },
-  users_require_quote: {
-    title: "Valider le nombre d'utilisateurs",
-    body:
-      "Le besoin dépasse 11 utilisateurs au total. Un cadrage permet de dimensionner correctement les comptes et les accès.",
-  },
-  other_structure_requires_review: {
-    title: "Préciser votre contexte",
-    body:
-      "Votre profil ne correspond pas aux cas simples du diagnostic public. Quelques échanges permettront d'orienter correctement la solution.",
-  },
-  no_recent_restore_test: {
-    title: "Tester une restauration",
-    body:
-      "Vous n'avez pas indiqué de test récent. Le premier réflexe est de vérifier qu'un fichier peut réellement être restauré.",
-  },
-  no_continuity_plan: {
-    title: "Prévoir quoi faire en cas de panne",
-    body:
-      "Vous n'avez pas encore indiqué comment vous retrouveriez vos fichiers si votre matériel devenait indisponible.",
-  },
-};
-
-const INITIAL_ANSWERS: DiagnosticAnswers = {
-  customerType: "individual",
-  users: 1,
-  dataKinds: [],
-  estimatedStorageGb: null,
-  needsRemoteFiles: null,
-  needsVpn: null,
-  needsWindowsDesktop: null,
-  recoveryImportance: "normal",
-  backupFrequency: "unknown",
-  restoreTestRecency: "unknown",
-  continuityPlan: "unknown",
-};
-
-export function PublicDiagnosticWizard({ catalog }: PublicDiagnosticWizardProps) {
-  const [answers, setAnswers] = useState<DiagnosticAnswers>(INITIAL_ANSWERS);
+export function PublicDiagnosticWizard({
+  catalog,
+  initialContext,
+}: PublicDiagnosticWizardProps) {
+  const definition = getDiagnosticContextDefinition(initialContext);
+  const [answers, setAnswers] = useState<DiagnosticAnswerMap>({});
   const [step, setStep] = useState(0);
   const [completed, setCompleted] = useState(false);
   const [quote, setQuote] = useState<BillingV2PublicQuote | null>(null);
   const [quotePending, setQuotePending] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
-  const stepTitleRef = useRef<HTMLLegendElement | null>(null);
-  const recommendation = useMemo(
-    () => recommendOffer(answers, catalog),
-    [answers, catalog],
+  const stepTitleRef = useRef<HTMLLegendElement>(null);
+
+  const visibleQuestions = useMemo(
+    () => getVisibleDiagnosticQuestions(initialContext, answers),
+    [initialContext, answers],
   );
-  const selection = recommendation.selection;
+  const currentQuestion = visibleQuestions[step] ?? null;
+  const outcome = useMemo(
+    () => buildAdaptiveDiagnosticOutcome(initialContext, answers, catalog),
+    [initialContext, answers, catalog],
+  );
+  const selection = outcome.recommendation?.selection ?? null;
   const recommendedPreset = selection
-    ? (catalog.presets.find((preset) => preset.code === selection.presetCode) ?? null)
+    ? catalog.presets.find((preset) => preset.code === selection.presetCode) ?? null
     : null;
-  const canContinue = step !== 1 || answers.dataKinds.length > 0;
 
   useEffect(() => {
-    if (completed) {
-      return;
-    }
-
-    const stepTitle = stepTitleRef.current;
+    if (completed || !currentQuestion) return;
     const frame = window.requestAnimationFrame(() => {
-      stepTitle?.focus({ preventScroll: true });
-      stepTitle?.scrollIntoView({ block: "start", inline: "nearest" });
+      stepTitleRef.current?.focus({ preventScroll: true });
+      stepTitleRef.current?.scrollIntoView({ block: "start", inline: "nearest" });
     });
-
     return () => window.cancelAnimationFrame(frame);
-  }, [completed, step]);
+  }, [completed, currentQuestion, step]);
 
   useEffect(() => {
-    if (!completed || !selection) {
-      return;
-    }
-
+    if (!completed || !selection) return;
     const controller = new AbortController();
 
     fetch("/api/formules/devis", {
@@ -147,10 +85,7 @@ export function PublicDiagnosticWizard({ catalog }: PublicDiagnosticWizardProps)
       signal: controller.signal,
     })
       .then(async (response) => {
-        if (!response.ok) {
-          throw new Error(String(response.status));
-        }
-
+        if (!response.ok) throw new Error(String(response.status));
         return (await response.json()) as BillingV2PublicQuote;
       })
       .then((payload) => {
@@ -158,494 +93,380 @@ export function PublicDiagnosticWizard({ catalog }: PublicDiagnosticWizardProps)
         setQuotePending(false);
       })
       .catch((error: unknown) => {
-        if (controller.signal.aborted) {
-          return;
-        }
-
+        if (controller.signal.aborted) return;
         setQuote(null);
         setQuotePending(false);
         setQuoteError(
           error instanceof Error && error.message === "400"
             ? "Cette configuration n'est plus disponible dans le catalogue."
-            : "Le tarif est temporairement indisponible. La formule le recalculera avant toute souscription.",
+            : "Le tarif est temporairement indisponible. Il sera recalculé avant toute souscription.",
         );
       });
 
     return () => controller.abort();
   }, [completed, selection]);
 
-  if (completed) {
-    const beforeAfterSummary = buildDiagnosticBeforeAfterSummary({
-      answers,
-      recommendation,
-      catalog,
-    });
-    const formulaHref = selection ? buildFormulaHref(selection) : null;
-
+  if (initialContext === "general") {
     return (
-      <section className="diagnostic-result" aria-live="polite">
-        <div className="diagnostic-result-main">
-          <p className="eyebrow">Résultat immédiat</p>
-          {recommendedPreset && selection && formulaHref ? (
-            <>
-              <h2>Votre besoin correspond à la formule {recommendedPreset.name}</h2>
-              <p>{recommendedPreset.description}</p>
-              <dl className="diagnostic-price">
-                <div>
-                  <dt>Votre configuration</dt>
-                  <dd>
-                    <strong>
-                      {quotePending
-                        ? "Calcul du tarif…"
-                        : quote
-                          ? `${formatCurrencyFromCents(quote.monthlyAfterDiscountCents)} / mois`
-                          : "Tarif à recalculer"}
-                    </strong>
-                    <span>
-                      {quoteError
-                        ?? "Montant calculé par Billing V2 à partir de la sélection ci-dessous, hors taxes applicables."}
-                    </span>
-                  </dd>
-                </div>
-              </dl>
-              <div className="diagnostic-result-actions">
-                <Link className="button" href={formulaHref}>
-                  Personnaliser cette configuration
-                </Link>
-                <Link
-                  className="text-link"
-                  href={`/formules/${recommendedPreset.code}`}
-                >
-                  Voir la formule
-                </Link>
-              </div>
-            </>
-          ) : (
-            <>
-              <h2>Votre besoin nécessite un cadrage</h2>
-              <p>
-                Les réponses indiquent un besoin qui dépasse les options
-                actuellement proposées en ligne.
-              </p>
-              <Link className="button" href="/contact">
-                Demander un cadrage
+      <div className="diagnostic-page">
+        <DiagnosticHeader definition={definition} />
+        <section className="diagnostic-context-picker" aria-labelledby="diagnostic-context-title">
+          <div className="diagnostic-context-picker-heading">
+            <p className="eyebrow">Votre besoin</p>
+            <h2 id="diagnostic-context-title">{"Qu'est-ce qui vous am\u00e8ne ici ?"}</h2>
+            <p>Choisissez le sujet le plus proche. Vous pourrez toujours préciser votre situation ensuite.</p>
+          </div>
+          <div className="diagnostic-context-grid">
+            {GENERAL_CONTEXT_CHOICES.map((choice) => (
+              <Link
+                className="diagnostic-context-card"
+                href={buildDiagnosticHref(choice.context)}
+                key={choice.context}
+              >
+                <strong>{choice.title}</strong>
+                <span>{choice.description}</span>
+                <span className="diagnostic-context-card-action">Commencer →</span>
               </Link>
-            </>
-          )}
-
-          <DiagnosticBeforeAfterBlock summary={beforeAfterSummary} />
-        </div>
-
-        <div className="diagnostic-result-details">
-          <h3>Pourquoi ?</h3>
-          <ul className="check-list">
-            {recommendation.reasons.slice(0, 4).map((reason) => (
-              <li key={reason}>{REASON_LABELS[reason]}</li>
             ))}
-          </ul>
-
-          {recommendation.warnings.length ? (
-            <>
-              <h3>Points à vérifier</h3>
-              <ul className="diagnostic-warning-list">
-                {recommendation.warnings.map((warning) => (
-                  <li key={warning}>
-                    <strong>{WARNING_MESSAGES[warning].title}</strong>
-                    <span>{WARNING_MESSAGES[warning].body}</span>
-                  </li>
-                ))}
-              </ul>
-            </>
-          ) : null}
-
-          <button
-            className="button button-secondary"
-            onClick={() => {
-              setAnswers(INITIAL_ANSWERS);
-              setStep(0);
-              setCompleted(false);
-              setQuote(null);
-              setQuotePending(false);
-              setQuoteError(null);
-            }}
-            type="button"
-          >
-            Recommencer le diagnostic
-          </button>
-        </div>
-      </section>
+          </div>
+        </section>
+      </div>
     );
   }
 
+  if (completed) {
+    return (
+      <div className="diagnostic-page">
+        <DiagnosticHeader definition={definition} compact />
+        <DiagnosticResult
+          answers={answers}
+          context={initialContext}
+          definition={definition}
+          outcome={outcome}
+          quote={quote}
+          quoteError={quoteError}
+          quotePending={quotePending}
+          recommendedPreset={recommendedPreset}
+          selection={selection}
+          onRestart={() => {
+            setAnswers({});
+            setStep(0);
+            setCompleted(false);
+            setQuote(null);
+            setQuotePending(false);
+            setQuoteError(null);
+          }}
+        />
+      </div>
+    );
+  }
+
+  if (!currentQuestion) {
+    return (
+      <div className="diagnostic-page">
+        <DiagnosticHeader definition={definition} />
+        <section className="diagnostic-wizard">
+          <p>Ce parcours est temporairement indisponible.</p>
+          <Link className="button" href="/contact">Nous contacter</Link>
+        </section>
+      </div>
+    );
+  }
+
+  const canContinue = isDiagnosticQuestionAnswered(currentQuestion, answers);
+
   return (
-    <section className="diagnostic-wizard" aria-label="Diagnostic interactif">
-      <div className="diagnostic-progress" aria-label="Progression" aria-live="polite">
-        {STEPS.map((label, index) => (
-          <span
-            className={index === step ? "is-active" : index < step ? "is-done" : ""}
-            key={label}
+    <div className="diagnostic-page">
+      <DiagnosticHeader definition={definition} />
+
+      <section className="diagnostic-wizard" aria-label={`Diagnostic ${definition.label}`}>
+        <div className="diagnostic-wizard-toolbar">
+          <div>
+            <span className="diagnostic-context-badge">{definition.label}</span>
+            <p className="diagnostic-progress-text" aria-live="polite">
+              Question {step + 1} sur {visibleQuestions.length}
+            </p>
+          </div>
+          <Link className="diagnostic-change-context" href="/diagnostic">
+            Changer de sujet
+          </Link>
+        </div>
+
+        <div
+          aria-hidden="true"
+          className="diagnostic-progress-bar"
+          style={{
+            "--diagnostic-progress": `${((step + 1) / visibleQuestions.length) * 100}%`,
+          } as CSSProperties}
+        >
+          <span />
+        </div>
+
+        <DiagnosticQuestionFieldset
+          answers={answers}
+          legendRef={stepTitleRef}
+          question={currentQuestion}
+          onChange={(nextValue) => {
+            setAnswers((current) => {
+              const next = { ...current, [currentQuestion.id]: nextValue };
+              return pruneHiddenDiagnosticAnswers(initialContext, next);
+            });
+          }}
+        />
+
+        {!canContinue ? (
+          <p className="diagnostic-answer-hint" role="status">
+            Choisissez une réponse pour continuer.
+          </p>
+        ) : null}
+
+        <div className="diagnostic-actions">
+          <button
+            className="button button-secondary"
+            disabled={step === 0}
+            onClick={() => setStep((current) => Math.max(0, current - 1))}
+            type="button"
           >
-            {index + 1}. {label}
-          </span>
-        ))}
+            Précédent
+          </button>
+          <button
+            className="button"
+            disabled={!canContinue}
+            onClick={() => {
+              if (step >= visibleQuestions.length - 1) {
+                setQuote(null);
+                setQuotePending(selection !== null);
+                setQuoteError(null);
+                setCompleted(true);
+                return;
+              }
+              setStep((current) => current + 1);
+            }}
+            type="button"
+          >
+            {step >= visibleQuestions.length - 1 ? "Voir mon orientation" : "Continuer"}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function DiagnosticHeader({
+  definition,
+  compact = false,
+}: {
+  definition: ReturnType<typeof getDiagnosticContextDefinition>;
+  compact?: boolean;
+}) {
+  return (
+    <header className={`diagnostic-header${compact ? " diagnostic-header-compact" : ""}`}>
+      <div>
+        <p className="eyebrow">{definition.eyebrow}</p>
+        <h1>{definition.title}</h1>
+        <p>{definition.intro}</p>
+      </div>
+      {!compact ? (
+        <div className="diagnostic-benefits" aria-label="Bénéfices du diagnostic">
+          {BENEFITS.map((benefit) => (
+            <article key={benefit.title}>
+              <span aria-hidden="true">✓</span>
+              <h2>{benefit.title}</h2>
+              <p>{benefit.body}</p>
+            </article>
+          ))}
+        </div>
+      ) : null}
+    </header>
+  );
+}
+
+function DiagnosticQuestionFieldset({
+  question,
+  answers,
+  onChange,
+  legendRef,
+}: {
+  question: DiagnosticQuestion;
+  answers: DiagnosticAnswerMap;
+  onChange: (value: string | readonly string[]) => void;
+  legendRef: RefObject<HTMLLegendElement | null>;
+}) {
+  const value = answers[question.id];
+  const selectedValues = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? [value]
+      : [];
+  const hintId = question.hint ? `${question.id}-hint` : undefined;
+
+  return (
+    <fieldset className="diagnostic-step" aria-describedby={hintId}>
+      <legend ref={legendRef} tabIndex={-1}>{question.legend}</legend>
+      {question.hint ? <p className="field-hint" id={hintId}>{question.hint}</p> : null}
+      <div className={`diagnostic-options${question.mode === "multi" ? " diagnostic-options-multi" : ""}`}>
+        {question.options.map((option) => {
+          const checked = selectedValues.includes(option.value);
+          return (
+            <label key={option.value}>
+              <input
+                checked={checked}
+                name={question.id}
+                onChange={(event) => {
+                  if (question.mode === "single") {
+                    onChange(option.value);
+                    return;
+                  }
+                  onChange(updateMultiSelection(
+                    question,
+                    selectedValues,
+                    option.value,
+                    event.target.checked,
+                  ));
+                }}
+                type={question.mode === "single" ? "radio" : "checkbox"}
+                value={option.value}
+              />
+              <span>{option.label}</span>
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+}
+
+function updateMultiSelection(
+  question: DiagnosticQuestion,
+  current: readonly string[],
+  changedValue: string,
+  checked: boolean,
+): readonly string[] {
+  const changedOption = question.options.find((option) => option.value === changedValue);
+  if (!changedOption) return current;
+  if (!checked) return current.filter((value) => value !== changedValue);
+  if (changedOption.exclusive) return [changedValue];
+
+  const exclusiveValues = new Set(
+    question.options.filter((option) => option.exclusive).map((option) => option.value),
+  );
+  return [...current.filter((value) => !exclusiveValues.has(value)), changedValue];
+}
+
+type ResultProps = {
+  answers: DiagnosticAnswerMap;
+  context: DiagnosticContextId;
+  definition: ReturnType<typeof getDiagnosticContextDefinition>;
+  outcome: ReturnType<typeof buildAdaptiveDiagnosticOutcome>;
+  quote: BillingV2PublicQuote | null;
+  quoteError: string | null;
+  quotePending: boolean;
+  recommendedPreset: BillingV2PublicCatalog["presets"][number] | null;
+  selection: BillingV2PublicSelection | null;
+  onRestart: () => void;
+};
+
+function DiagnosticResult({
+  answers,
+  context,
+  definition,
+  outcome,
+  quote,
+  quoteError,
+  quotePending,
+  recommendedPreset,
+  selection,
+  onRestart,
+}: ResultProps) {
+  const summary = describeDiagnosticAnswers(context, answers);
+  const formulaHref = selection ? buildFormulaHref(selection) : null;
+  const hasFormula = outcome.recommendation?.status === "standard"
+    && recommendedPreset !== null
+    && formulaHref !== null;
+
+  return (
+    <section className="diagnostic-result" aria-live="polite">
+      <div className="diagnostic-result-main">
+        <p className="eyebrow">Votre orientation</p>
+        <h2>{outcome.guidance.title}</h2>
+        <p>{outcome.guidance.body}</p>
+
+        {outcome.guidance.points.length > 0 ? (
+          <ul className="check-list diagnostic-guidance-points">
+            {outcome.guidance.points.map((point) => <li key={point}>{point}</li>)}
+          </ul>
+        ) : null}
+
+        {hasFormula ? (
+          <div className="diagnostic-formula-card">
+            <p className="card-kicker">Parcours standard disponible</p>
+            <h3>{recommendedPreset.name}</h3>
+            <p>{recommendedPreset.description}</p>
+            <div className="diagnostic-price">
+              <strong>
+                {quotePending
+                  ? "Calcul du tarif…"
+                  : quote
+                    ? `${formatCurrencyFromCents(quote.monthlyAfterDiscountCents)} / mois`
+                    : "Tarif à recalculer"}
+              </strong>
+              <span>
+                {quoteError ?? "Le montant est recalculé à partir du catalogue avant toute souscription."}
+              </span>
+            </div>
+            <div className="diagnostic-result-actions">
+              <Link className="button" href={formulaHref}>Personnaliser cette formule</Link>
+              <Link className="text-link" href={`/formules/${recommendedPreset.code}`}>Voir la formule</Link>
+            </div>
+          </div>
+        ) : (
+          <div className="diagnostic-cadrage-card">
+            <p className="card-kicker">Suite recommandée</p>
+            <h3>Un échange est préférable avant de chiffrer.</h3>
+            <p>
+              {"Vos r\u00e9ponses d\u00e9crivent un environnement qui m\u00e9rite d'\u00eatre v\u00e9rifi\u00e9 avant de proposer une solution ou un tarif."}
+            </p>
+          </div>
+        )}
       </div>
 
-      {step === 0 ? (
-        <fieldset className="diagnostic-step">
-          <legend ref={stepTitleRef} tabIndex={-1}>
-            Qui utilisera le service
-          </legend>
-          <div className="diagnostic-options">
-            {[
-              ["individual", "Particulier"],
-              ["business", "Indépendant / petite entreprise"],
-              ["association", "Association"],
-              ["other", "Autre structure"],
-            ].map(([value, label]) => (
-              <label key={value}>
-                <input
-                  checked={answers.customerType === value}
-                  name="customerType"
-                  onChange={() =>
-                    setAnswers((current) => ({
-                      ...current,
-                      customerType: value as DiagnosticAnswers["customerType"],
-                    }))}
-                  type="radio"
-                />
-                <span>{label}</span>
-              </label>
-            ))}
-          </div>
-
-          <label className="diagnostic-field">
-            <span>Nombre d&apos;utilisateurs</span>
-            <select
-              value={String(answers.users ?? "")}
-              onChange={(event) =>
-                setAnswers((current) => ({
-                  ...current,
-                  users: event.target.value ? Number(event.target.value) : null,
-                }))}
-            >
-              {Array.from({ length: 11 }, (_, index) => index + 1).map((users) => (
-                <option key={users} value={users}>
-                  {users}
-                </option>
-              ))}
-              <option value="12">12 ou plus</option>
-            </select>
-          </label>
-        </fieldset>
-      ) : null}
-
-      {step === 1 ? (
-        <fieldset
-          aria-describedby={!canContinue ? "diagnostic-data-error" : undefined}
-          className="diagnostic-step"
-        >
-          <legend ref={stepTitleRef} tabIndex={-1}>
-            Quelles données souhaitez-vous protéger ?
-          </legend>
-          <div className="diagnostic-options diagnostic-options-multi">
-            {DATA_KIND_OPTIONS.map((option) => (
-              <label key={option.value}>
-                <input
-                  checked={answers.dataKinds.includes(option.value)}
-                  onChange={() => toggleDataKind(option.value)}
-                  type="checkbox"
-                />
-                <span>{option.label}</span>
-              </label>
-            ))}
-          </div>
-          {!canContinue ? (
-            <p className="field-error" id="diagnostic-data-error">
-              Sélectionnez au moins un type de données.
-            </p>
-          ) : null}
-
-          <label className="diagnostic-field">
-            <span>Volume à protéger</span>
-            <select
-              value={String(answers.estimatedStorageGb ?? "")}
-              onChange={(event) => {
-                const value = event.target.value;
-                setAnswers((current) => ({
-                  ...current,
-                  estimatedStorageGb:
-                    value === ""
-                      ? null
-                      : value === "above_public_max"
-                        ? "above_public_max"
-                        : Number(value),
-                }));
-              }}
-            >
-              <option value="">Je ne sais pas</option>
-              <option value="16">Jusqu&apos;à 16 Go</option>
-              <option value="32">Jusqu&apos;à 32 Go</option>
-              <option value="64">Jusqu&apos;à 64 Go</option>
-              <option value="128">Jusqu&apos;à 128 Go</option>
-              <option value="256">Jusqu&apos;à 256 Go</option>
-              <option value="above_public_max">Plus de 256 Go</option>
-            </select>
-          </label>
-        </fieldset>
-      ) : null}
-
-      {step === 2 ? (
-        <fieldset className="diagnostic-step">
-          <legend ref={stepTitleRef} tabIndex={-1}>
-            Quels accès sont utiles ?
-          </legend>
-          <NullableBooleanQuestion
-            id="needsRemoteFiles"
-            label="Souhaitez-vous accéder à vos fichiers à distance ?"
-            value={answers.needsRemoteFiles}
-            onChange={(needsRemoteFiles) =>
-              setAnswers((current) => ({ ...current, needsRemoteFiles }))}
-          />
-          <NullableBooleanQuestion
-            hint="Un VPN peut servir à créer ce type d'accès lorsque c'est nécessaire."
-            id="needsVpn"
-            label="Avez-vous besoin d'un accès sécurisé à distance à un réseau ou à des ressources internes ?"
-            value={answers.needsVpn}
-            onChange={(needsVpn) =>
-              setAnswers((current) => ({ ...current, needsVpn }))}
-          />
-          <NullableBooleanQuestion
-            id="needsWindowsDesktop"
-            label="Souhaitez-vous disposer d'un bureau Windows accessible à distance avec vos logiciels et vos fichiers ?"
-            value={answers.needsWindowsDesktop}
-            onChange={(needsWindowsDesktop) =>
-              setAnswers((current) => ({
-                ...current,
-                needsWindowsDesktop,
-              }))}
-          />
-        </fieldset>
-      ) : null}
-
-      {step === 3 ? (
-        <fieldset className="diagnostic-step">
-          <legend ref={stepTitleRef} tabIndex={-1}>
-            En cas de panne ou de perte de votre matériel, à quelle vitesse
-            souhaitez-vous retrouver vos fichiers
-          </legend>
-          <label className="diagnostic-field">
-            <span>Délai souhaité pour retrouver vos fichiers</span>
-            <select
-              value={answers.recoveryImportance}
-              onChange={(event) =>
-                setAnswers((current) => ({
-                  ...current,
-                  recoveryImportance:
-                    event.target.value as DiagnosticAnswers["recoveryImportance"],
-                }))}
-            >
-              <option value="low">Faible - je peux attendre plusieurs jours</option>
-              <option value="normal">Normale - retrouver mes fichiers rapidement</option>
-              <option value="high">Élevée - j&apos;ai besoin de retrouver mes fichiers très rapidement</option>
-            </select>
-          </label>
-
-          <label className="diagnostic-field">
-            <span>À quelle fréquence vos données importantes sont-elles sauvegardées ?</span>
-            <select
-              value={answers.backupFrequency}
-              onChange={(event) =>
-                setAnswers((current) => ({
-                  ...current,
-                  backupFrequency:
-                    event.target.value as DiagnosticAnswers["backupFrequency"],
-                }))}
-            >
-              <option value="daily">Tous les jours</option>
-              <option value="weekly">Chaque semaine</option>
-              <option value="monthly">Chaque mois</option>
-              <option value="rarely">Rarement</option>
-              <option value="unknown">Je ne sais pas</option>
-            </select>
-          </label>
-
-          <label className="diagnostic-field">
-            <span>Quand avez-vous testé une restauration pour la dernière fois ?</span>
-            <select
-              value={answers.restoreTestRecency}
-              onChange={(event) =>
-                setAnswers((current) => ({
-                  ...current,
-                  restoreTestRecency:
-                    event.target.value as DiagnosticAnswers["restoreTestRecency"],
-                }))}
-            >
-              <option value="less_than_3_months">Il y a moins de 3 mois</option>
-              <option value="less_than_12_months">Il y a moins d&apos;un an</option>
-              <option value="more_than_12_months">Il y a plus d&apos;un an</option>
-              <option value="never">Jamais</option>
-              <option value="unknown">Je ne sais pas</option>
-            </select>
-          </label>
-
-          <label className="diagnostic-field">
-            <span>
-              Savez-vous comment continuer à accéder à vos données si votre
-              matériel devient indisponible ?
-            </span>
-            <select
-              value={answers.continuityPlan}
-              onChange={(event) =>
-                setAnswers((current) => ({
-                  ...current,
-                  continuityPlan:
-                    event.target.value as DiagnosticAnswers["continuityPlan"],
-                }))}
-            >
-              <option value="yes">Oui</option>
-              <option value="partial">En partie</option>
-              <option value="no">Non</option>
-              <option value="unknown">Je ne sais pas</option>
-            </select>
-          </label>
-        </fieldset>
-      ) : null}
-
-      <div className="diagnostic-actions">
-        <button
-          className="button button-secondary"
-          disabled={step === 0}
-          onClick={() => setStep((current) => Math.max(0, current - 1))}
-          type="button"
-        >
-          Précédent
+      <aside className="diagnostic-result-details" aria-labelledby="diagnostic-summary-title">
+        <h3 id="diagnostic-summary-title">Résumé de vos réponses</h3>
+        <dl className="diagnostic-answer-summary">
+          {summary.map((item) => (
+            <div key={item.label}>
+              <dt>{item.label}</dt>
+              <dd>{item.value}</dd>
+            </div>
+          ))}
+        </dl>
+        <button className="button button-secondary" onClick={onRestart} type="button">
+          Recommencer ce diagnostic
         </button>
-        <button
-          className="button"
-          disabled={!canContinue}
-          onClick={() => {
-            if (step === STEPS.length - 1) {
-              setQuote(null);
-              setQuotePending(recommendation.selection !== null);
-              setQuoteError(null);
-              setCompleted(true);
-            } else {
-              setStep((current) => current + 1);
-            }
-          }}
-          type="button"
-        >
-          {step === STEPS.length - 1 ? "Voir mon résultat" : "Continuer"}
-        </button>
+        <Link className="text-link" href="/diagnostic">Choisir un autre sujet</Link>
+      </aside>
+
+      <div className="diagnostic-contact-panel">
+        <div className="diagnostic-contact-copy">
+          <p className="eyebrow">{"Besoin d'un avis humain ?"}</p>
+          <h2>Transmettez ce diagnostic avec vos coordonnées.</h2>
+          <p>
+            {"Le r\u00e9sum\u00e9 est d\u00e9j\u00e0 pr\u00e9par\u00e9. Vous pouvez le compl\u00e9ter avant l'envoi ; aucune souscription n'est cr\u00e9\u00e9e par ce formulaire."}
+          </p>
+        </div>
+        <ContactForm
+          defaultMessage={buildDiagnosticContactMessage(context, answers)}
+          defaultSubject={definition.contactSubject}
+          formuleCode={hasFormula ? recommendedPreset.code : null}
+          submitLabel="Envoyer mon diagnostic"
+        />
       </div>
     </section>
   );
-
-  function toggleDataKind(kind: DiagnosticDataKind) {
-    setAnswers((current) => ({
-      ...current,
-      dataKinds: current.dataKinds.includes(kind)
-        ? current.dataKinds.filter((item) => item !== kind)
-        : [...current.dataKinds, kind],
-    }));
-  }
 }
 
 function buildFormulaHref(selection: BillingV2PublicSelection) {
   const params = billingV2SelectionToSearchParams(selection);
   params.set("source", "diagnostic");
   return `/formules/${selection.presetCode}?${params.toString()}`;
-}
-
-function DiagnosticBeforeAfterBlock({
-  summary,
-}: {
-  summary: {
-    title: string;
-    items: Array<{ before: string; after: string }>;
-  };
-}) {
-  return (
-    <section className="diagnostic-before-after" aria-labelledby="before-after-title">
-      <div className="diagnostic-before-after-heading">
-        <h3 id="before-after-title">{summary.title}</h3>
-        <span aria-hidden="true">Avant - Après</span>
-      </div>
-      <div className="diagnostic-before-after-grid">
-        <div>
-          <h4>Avant</h4>
-          <ul>
-            {summary.items.map((item) => (
-              <li key={`before-${item.before}`}>{item.before}</li>
-            ))}
-          </ul>
-        </div>
-        <div>
-          <h4>Après</h4>
-          <ul>
-            {summary.items.map((item) => (
-              <li key={`after-${item.after}`}>{item.after}</li>
-            ))}
-          </ul>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function NullableBooleanQuestion({
-  id,
-  label,
-  hint,
-  value,
-  onChange,
-}: {
-  id: string;
-  label: string;
-  hint?: string;
-  value: boolean | null;
-  onChange: (value: boolean | null) => void;
-}) {
-  const labelId = `${id}-label`;
-  const hintId = hint ? `${id}-hint` : undefined;
-
-  return (
-    <div className="diagnostic-inline-question">
-      <span id={labelId}>{label}</span>
-      {hint ? (
-        <p className="field-hint" id={hintId}>
-          {hint}
-        </p>
-      ) : null}
-      <div
-        aria-describedby={hintId}
-        aria-labelledby={labelId}
-        className="diagnostic-yes-no"
-        role="radiogroup"
-      >
-        {[
-          ["yes", "Oui"],
-          ["no", "Non"],
-          ["unknown", "Je ne sais pas"],
-        ].map(([optionValue, optionLabel]) => (
-          <label key={optionValue}>
-            <input
-              checked={
-                optionValue === "unknown"
-                  ? value === null
-                  : value === (optionValue === "yes")
-              }
-              name={id}
-              onChange={() =>
-                onChange(
-                  optionValue === "unknown" ? null : optionValue === "yes",
-                )}
-              type="radio"
-            />
-            <span>{optionLabel}</span>
-          </label>
-        ))}
-      </div>
-    </div>
-  );
 }

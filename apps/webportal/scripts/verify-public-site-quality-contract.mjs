@@ -11,6 +11,8 @@ const [
   offresPage,
   packSheetPage,
   diagnosticWizard,
+  diagnosticContext,
+  adaptiveDiagnostic,
   demoPage,
   demoClientSpace,
   ressourcesPage,
@@ -29,6 +31,8 @@ const [
   read("app/offres/page.tsx"),
   read("app/offres/[slug]/page.tsx"),
   read("components/PublicDiagnosticWizard.tsx"),
+  read("lib/diagnostic-context.ts"),
+  read("lib/adaptive-diagnostic.ts"),
   read("app/decouvrir-espace-client/[[...section]]/page.tsx"),
   read("components/DemoClientSpace.tsx"),
   read("app/ressources/page.tsx"),
@@ -85,9 +89,10 @@ assert.doesNotMatch(offresPage, /priceAmountCents|setupFeeAmountCents/);
 assert.match(packSheetPage, /Détails opérationnels/);
 assert.doesNotMatch(packSheetPage, /Contenu éditable|back-office|administrable en Markdown/);
 
-assert.match(diagnosticWizard, /<option value="256">/);
-assert.match(diagnosticWizard, /<option value="above_public_max">Plus de 256 Go<\/option>/);
-assert.match(diagnosticWizard, /storage_requires_quote/);
+assert.match(diagnosticContext, /o\("256", "Jusqu'/);
+assert.match(diagnosticContext, /o\("above-public-max", "Plus de 256 Go"\)/);
+assert.match(adaptiveDiagnostic, /raw === "above-public-max"/);
+assert.match(adaptiveDiagnostic, /return "above_public_max"/);
 assert.match(diagnosticWizard, /aria-live="polite"/);
 
 assert.match(demoPage, /buildPublicMetadata\(/);

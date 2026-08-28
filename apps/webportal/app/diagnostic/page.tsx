@@ -2,72 +2,37 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { PublicDiagnosticWizard } from "@/components/PublicDiagnosticWizard";
+import { resolveDiagnosticContext } from "@/lib/diagnostic-context";
 import { getBillingV2FormulesCatalog } from "@/lib/internal-api";
 import { buildPublicMetadata } from "@/lib/public-metadata";
 
 export const metadata: Metadata = buildPublicMetadata({
-  title: "Diagnostic sauvegarde et accès distant",
+  title: "Diagnostic informatique adapté à votre besoin",
   description:
-    "Répondez à quelques questions pour identifier la solution Zachary IT adaptée à vos besoins de sauvegarde, stockage et accès distant.",
+    "Décrivez votre besoin de sauvegarde, accès distant, réseau, messagerie, domaine, serveur ou hébergement et obtenez une orientation ciblée.",
   path: "/diagnostic",
 });
 
 export const dynamic = "force-dynamic";
 
-const BENEFITS = [
-  {
-    title: "Résultat immédiat",
-    body: "Un niveau de risque clair, sans jargon.",
-  },
-  {
-    title: "Conseils prioritaires",
-    body: "Les premières actions à mettre en place.",
-  },
-  {
-    title: "Sans inscription",
-    body: "Aucun compte ni achat nécessaire pour obtenir votre résultat.",
-  },
-];
+type DiagnosticPageProps = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
 
-export default async function DiagnosticPage() {
+export default async function DiagnosticPage({ searchParams }: DiagnosticPageProps) {
+  const params = await searchParams;
+  const rawContext = Array.isArray(params.context) ? params.context[0] : params.context;
+  const initialContext = resolveDiagnosticContext(rawContext);
   const { data: catalog } = await getBillingV2FormulesCatalog();
 
   return (
-    <div className="diagnostic-page">
-      <Link className="back-link" href="/formules">
-        <span aria-hidden="true">{"<-"}</span> Retour aux formules
-      </Link>
-
-      <header className="diagnostic-header">
-        <div>
-          <p className="eyebrow">Diagnostic</p>
-          <h1>Vos données importantes pourraient-elles disparaître demain ?</h1>
-          <p>
-            Répondez à quelques questions simples. Le diagnostic s&apos;adresse aux
-            particuliers, indépendants, associations et petites structures qui
-            veulent un premier avis sur leurs sauvegardes, leur stockage et
-            leur accès distant.
-          </p>
-        </div>
-        <div className="diagnostic-benefits" aria-label="Bénéfices du diagnostic">
-          {BENEFITS.map((benefit) => (
-            <article key={benefit.title}>
-              <span aria-hidden="true">✓</span>
-              <h2>{benefit.title}</h2>
-              <p>{benefit.body}</p>
-            </article>
-          ))}
-        </div>
-      </header>
-
-      {catalog.presets.length === 0 ? (
-        <section className="offres-empty">
-          Les formules ne sont pas encore disponibles en ligne. Contactez-nous pour
-          obtenir une proposition adaptée.
-        </section>
-      ) : (
-        <PublicDiagnosticWizard catalog={catalog} />
-      )}
-    </div>
+    <>
+      <div className="diagnostic-page diagnostic-page-nav">
+        <Link className="back-link" href="/services">
+          <span aria-hidden="true">{"<-"}</span> Retour aux services
+        </Link>
+      </div>
+      <PublicDiagnosticWizard catalog={catalog} initialContext={initialContext} />
+    </>
   );
 }

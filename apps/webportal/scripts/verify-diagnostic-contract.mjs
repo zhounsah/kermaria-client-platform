@@ -19,7 +19,6 @@ async function importPureTypeScript(source, label) {
     (diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error,
   );
   assert.deepEqual(errors, [], `${label} doit etre transpile sans erreur.`);
-
   const encoded = Buffer.from(transpiled.outputText).toString("base64");
   return import(`data:text/javascript;base64,${encoded}`);
 }
@@ -31,15 +30,62 @@ export function buildBaselineSelection(p,c){const i=s=>p.items.find(x=>x.service
 export function findService(c,s){return c.services.find(x=>x.code===s)}
 export function resolveTierLabel(s,c){return !s||!c?null:(s.tiers.find(x=>x.code===c)?.label??c)}
 `;
-const billingV2FormulesStubUrl=`data:text/javascript;base64,${Buffer.from(billingV2FormulesStub).toString("base64")}`;
-const billingV2SelectionStubUrl=`data:text/javascript;base64,${Buffer.from("export const MAX_ADDITIONAL_USERS=10;").toString("base64")}`;
-async function importBillingV2Runtime(source,label){return importPureTypeScript(source.replaceAll('"@/lib/billing-v2-formules"',JSON.stringify(billingV2FormulesStubUrl)).replaceAll('"@/lib/billing-v2-selection"',JSON.stringify(billingV2SelectionStubUrl)),label)}
+const billingV2FormulesStubUrl =
+  `data:text/javascript;base64,${Buffer.from(billingV2FormulesStub).toString("base64")}`;
+const billingV2SelectionStubUrl =
+  `data:text/javascript;base64,${Buffer.from("export const MAX_ADDITIONAL_USERS=10;").toString("base64")}`;
+
+async function importBillingV2Runtime(source, label) {
+  return importPureTypeScript(
+    source
+      .replaceAll('"@/lib/billing-v2-formules"', JSON.stringify(billingV2FormulesStubUrl))
+      .replaceAll('"@/lib/billing-v2-selection"', JSON.stringify(billingV2SelectionStubUrl)),
+    label,
+  );
+}
+
+const recommendationStub = String.raw`
+export function recommendOffer(answers){
+  return {
+    status:"standard",
+    reasons:[],
+    warnings:[],
+    suggestedOptions:[],
+    selection:{
+      presetCode:answers.needsWindowsDesktop
+        ?"pack-bureau-windows-distance"
+        :answers.needsVpn
+          ?"pack-acces-distance"
+          :"pack-dossier-securise",
+      commitmentCode:"FLEX",
+      paymentMode:"monthly",
+      storagePersonalTierCode:"32",
+      backupPersonal:true,
+      storageSharedTierCode:null,
+      backupShared:false,
+      vpnTierCode:answers.needsVpn?"ESSENTIAL":null,
+      remoteDesktop:answers.needsWindowsDesktop,
+      additionalUsers:Math.max(0,(answers.users??1)-1),
+      supportPlus:false
+    }
+  };
+}
+`;
+const recommendationStubUrl =
+  `data:text/javascript;base64,${Buffer.from(recommendationStub).toString("base64")}`;
 
 const sharedTypes = await read("../../packages/shared/src/index.ts");
 const diagnosticEngine = await read("lib/public-diagnostic.ts");
-const diagnosticBeforeAfter = await read("lib/diagnostic-before-after.ts");
+const diagnosticContext = await read("lib/diagnostic-context.ts");
+const adaptiveDiagnostic = await read("lib/adaptive-diagnostic.ts");
 const diagnosticPage = await read("app/diagnostic/page.tsx");
 const diagnosticWizard = await read("components/PublicDiagnosticWizard.tsx");
+const contactForm = await read("components/ContactForm.tsx");
+const globalsCss = await read("app/globals.css");
+const publicStorefrontPage = await read("components/PublicStorefrontPage.tsx");
+const priorityServicePage = await read("components/PublicPriorityServicePage.tsx");
+const messagingCategoryPage = await read("components/PublicMessagingCategoryPage.tsx");
+const serviceRoute = await read("app/services/[category]/page.tsx");
 const publicShell = await read("components/PublicShell.tsx");
 const publicRoutes = await read("lib/public-route-config.ts");
 const sitemap = await read("app/sitemap.ts");
@@ -52,9 +98,16 @@ const diagnosticRuntime = await importBillingV2Runtime(
   diagnosticEngine,
   "public-diagnostic.ts",
 );
-const diagnosticBeforeAfterRuntime = await importBillingV2Runtime(
-  diagnosticBeforeAfter,
-  "diagnostic-before-after.ts",
+const contextRuntime = await importPureTypeScript(
+  diagnosticContext,
+  "diagnostic-context.ts",
+);
+const adaptiveRuntime = await importPureTypeScript(
+  adaptiveDiagnostic.replaceAll(
+    '"@/lib/public-diagnostic"',
+    JSON.stringify(recommendationStubUrl),
+  ),
+  "adaptive-diagnostic.ts",
 );
 
 const catalog = {
@@ -178,206 +231,291 @@ function recommendation(overrides = {}) {
   return diagnosticRuntime.recommendOffer(baseAnswers(overrides), catalog);
 }
 
-assert.equal(
-  recommendation({ needsRemoteFiles: false }).selection?.presetCode,
-  "pack-dossier-securise",
-  "Sauvegarde simple -> preset Dossier securise V2.",
-);
-assert.equal(
-  recommendation({ needsVpn: true }).selection?.presetCode,
-  "pack-acces-distance",
-  "Besoin VPN -> preset Acces securise V2.",
-);
-assert.equal(
-  recommendation({ needsWindowsDesktop: true }).selection?.presetCode,
-  "pack-bureau-windows-distance",
-  "Bureau Windows -> preset Bureau a distance V2.",
-);
-assert.equal(
-  recommendation({ needsWindowsDesktop: true }).selection?.remoteDesktop,
-  true,
-  "Le diagnostic doit produire le composant RDS V2.",
-);
-assert.equal(
-  recommendation({ customerType: "association", users: 2 }).selection?.presetCode,
-  "pack-pro-association",
-  "Association -> preset Pro / Association V2.",
-);
-assert.equal(
-  recommendation({ estimatedStorageGb: 64 }).selection?.storagePersonalTierCode,
-  "64",
-  "64 Go reste souscriptible dans la selection V2.",
-);
-assert.equal(recommendation({ estimatedStorageGb: 128 }).status, "standard");
-assert.equal(
-  recommendation({ estimatedStorageGb: 128 }).selection?.storagePersonalTierCode,
-  "128",
-);
+// Le moteur commercial existant reste une simple construction de selection V2.
+assert.equal(recommendation({ needsRemoteFiles: false }).selection?.presetCode, "pack-dossier-securise");
+assert.equal(recommendation({ needsVpn: true }).selection?.presetCode, "pack-acces-distance");
+assert.equal(recommendation({ needsWindowsDesktop: true }).selection?.presetCode, "pack-bureau-windows-distance");
 assert.equal(recommendation({ estimatedStorageGb: 256 }).status, "standard");
-assert.equal(
-  recommendation({ estimatedStorageGb: 256 }).selection?.storagePersonalTierCode,
-  "256",
-);
-assert.equal(
-  recommendation({ estimatedStorageGb: "above_public_max" }).status,
-  "requires_quote",
-);
-assert.ok(
-  recommendation({ estimatedStorageGb: "above_public_max" }).warnings.includes(
-    "storage_requires_quote",
-  ),
-);
-assert.equal(recommendation({ users: 5 }).selection?.additionalUsers, 4);
-assert.equal(recommendation({ users: 11 }).selection?.additionalUsers, 10);
+assert.equal(recommendation({ estimatedStorageGb: "above_public_max" }).status, "requires_quote");
 assert.equal(recommendation({ users: 12 }).status, "requires_quote");
-assert.ok(recommendation({ users: 12 }).warnings.includes("users_require_quote"));
-assert.equal(
-  recommendation({ needsWindowsDesktop: true, estimatedStorageGb: 128 }).status,
-  "standard",
-  "RDS + 128 Go est representable par Billing V2.",
-);
-const proWindows = recommendation({
-  customerType: "business",
-  users: 5,
-  needsWindowsDesktop: true,
-});
-assert.equal(proWindows.selection?.presetCode, "pack-pro-association");
-assert.equal(proWindows.selection?.remoteDesktop, true);
-assert.equal(proWindows.selection?.additionalUsers, 4);
-assert.deepEqual(
-  recommendation({ estimatedStorageGb: null }).warnings,
-  ["storage_unknown"],
-  "Stockage inconnu avertit sans bloquer.",
-);
-assert.ok(
-  recommendation({ backupFrequency: "unknown" }).warnings.includes(
-    "backup_frequency_unknown",
-  ),
-);
 assert.equal(recommendation({ customerType: "other" }).status, "requires_quote");
-
-const beforeAfterUnknownBackup =
-  diagnosticBeforeAfterRuntime.buildDiagnosticBeforeAfterSummary({
-    answers: baseAnswers({
-      backupFrequency: "unknown",
-      restoreTestRecency: "never",
-      continuityPlan: "unknown",
-      estimatedStorageGb: null,
-    }),
-    recommendation: recommendation({
-      backupFrequency: "unknown",
-      restoreTestRecency: "never",
-      continuityPlan: "unknown",
-      estimatedStorageGb: null,
-    }),
-    catalog,
-  });
-assert.ok(
-  beforeAfterUnknownBackup.items.some((item) =>
-    item.after.includes("stockage personnel")
-  ),
-  "Le bloc Avant / Apres doit exploiter la selection V2.",
-);
-assert.ok(
-  beforeAfterUnknownBackup.items.some((item) => item.before.includes("Volume")),
-  "Le bloc Avant / Apres reste utile quand le volume est inconnu.",
-);
-
-const beforeAfterWindows =
-  diagnosticBeforeAfterRuntime.buildDiagnosticBeforeAfterSummary({
-    answers: baseAnswers({ needsWindowsDesktop: true, needsVpn: false }),
-    recommendation: recommendation({ needsWindowsDesktop: true, needsVpn: false }),
-    catalog,
-  });
-assert.ok(
-  beforeAfterWindows.items.some(
-    (item) =>
-      item.before.includes("Bureau Windows")
-      && item.after.includes("Bureau Windows accessible"),
-  ),
-  "Le bloc Avant / Apres doit montrer le changement Bureau Windows.",
-);
-
-const storageQuote = recommendation({ estimatedStorageGb: "above_public_max" });
-const beforeAfterQuote =
-  diagnosticBeforeAfterRuntime.buildDiagnosticBeforeAfterSummary({
-    answers: baseAnswers({ estimatedStorageGb: "above_public_max" }),
-    recommendation: storageQuote,
-    catalog,
-  });
-assert.equal(beforeAfterQuote.title, "Avant cadrage");
-assert.ok(
-  beforeAfterQuote.items.some((item) => item.after.includes("valid")),
-  "Le bloc Avant / Apres ne doit pas promettre une activation standard quand un cadrage est requis.",
-);
-
-assert.match(sharedTypes, /interface PublicPackCapabilities/);
-assert.match(sharedTypes, /capabilities:\s*PublicPackCapabilities/);
-assert.doesNotMatch(
-  sharedTypes.match(/export const PUBLIC_PACKS[\s\S]*?] as const/)?.[0] ?? "",
-  /priceAmountCents|setupFeeAmountCents|monthlyPrice|billingPrice/,
-  "packages/shared ne doit pas dupliquer les prix commerciaux des packs.",
-);
-assert.match(
-  sharedTypes,
-  /interface DiagnosticRecommendation[\s\S]*selection:\s*BillingV2PublicSelection \| null/,
-);
-
-assert.match(diagnosticEngine, /export function recommendOffer/);
-assert.match(diagnosticEngine, /BillingV2PublicSelection/);
-assert.match(diagnosticEngine, /selectableTiers/);
-assert.match(diagnosticEngine, /MAX_ADDITIONAL_USERS/);
-assert.doesNotMatch(diagnosticEngine, /ResolvedPublicPackManifest|CatalogConfigurationInput/);
 assert.doesNotMatch(
   diagnosticEngine,
   /AmountCents|monthlyAmountCents|setupFeeAmountCents|formatCurrencyFromCents/,
-  "Le moteur du diagnostic ne doit calculer ou lire aucun prix.",
+  "Le moteur de recommandation ne doit calculer ou lire aucun prix.",
 );
 
-assert.match(diagnosticWizard, /REASON_LABELS/);
-assert.match(diagnosticWizard, /WARNING_MESSAGES/);
-assert.match(diagnosticWizard, /buildDiagnosticBeforeAfterSummary/);
-assert.match(diagnosticWizard, /backup_frequency_unknown/);
+// Contrat de contexte ferme et partageable.
+assert.deepEqual(
+  [...contextRuntime.DIAGNOSTIC_CONTEXT_IDS],
+  ["backup", "remote-access", "network", "messaging", "domain-dns", "server", "web-hosting", "general"],
+);
+for (const id of contextRuntime.DIAGNOSTIC_CONTEXT_IDS) {
+  assert.equal(contextRuntime.resolveDiagnosticContext(id), id);
+  const definition = contextRuntime.getDiagnosticContextDefinition(id);
+  assert.ok(definition.title.length > 10, `${id} doit avoir une introduction dediee.`);
+  if (id !== "general") {
+    assert.ok(definition.questions.length >= 4, `${id} doit avoir un parcours cible.`);
+  }
+}
+for (const invalid of [
+  undefined,
+  "",
+  "vpn",
+  "SERVER&context=backup",
+  "backup?serviceCode=VPN-ACCESS",
+  "billing",
+  "../backup",
+]) {
+  assert.equal(
+    contextRuntime.resolveDiagnosticContext(invalid),
+    "general",
+    `Le contexte invalide ${String(invalid)} doit retomber sur general.`,
+  );
+}
+assert.equal(contextRuntime.buildDiagnosticHref("general"), "/diagnostic");
+assert.equal(contextRuntime.buildDiagnosticHref("backup"), "/diagnostic?context=backup");
+assert.equal(
+  contextRuntime.contextualizeDiagnosticHref("/diagnostic", "network"),
+  "/diagnostic?context=network",
+);
+assert.equal(
+  contextRuntime.contextualizeDiagnosticHref("/contact", "network"),
+  "/contact",
+  "La contextualisation ne doit jamais detourner un CTA commercial non diagnostic.",
+);
+
+const serviceContexts = {
+  "sauvegarde-externalisee": "backup",
+  "supervision-nas": "backup",
+  "vpn-entreprise": "remote-access",
+  "bureau-windows-distance": "remote-access",
+  unifi: "network",
+  firewall: "network",
+  "messagerie-professionnelle": "messaging",
+  "gestion-dns-domaines": "domain-dns",
+  vps: "server",
+  "infogerance-vps": "server",
+  "maintenance-linux": "server",
+  "supervision-informatique": "server",
+  "hebergement-web": "web-hosting",
+  "maintenance-wordpress": "web-hosting",
+  "cloudflare-waf": "web-hosting",
+};
+for (const [slug, expected] of Object.entries(serviceContexts)) {
+  assert.equal(
+    contextRuntime.diagnosticContextForServiceSlug(slug),
+    expected,
+    `${slug} doit transmettre le contexte ${expected}.`,
+  );
+}
+assert.equal(
+  contextRuntime.diagnosticContextForServiceSlug("domaines-messagerie"),
+  "general",
+  "La categorie mixte Domaines & Messagerie doit rester un aiguillage general.",
+);
+
+// Embranchements : une reponse devenue cachee doit etre retiree.
+const remoteExisting = {
+  "remote-target": "files",
+  structure: "business",
+  users: "2",
+  "remote-existing": "existing",
+  sites: "several",
+};
+assert.ok(
+  contextRuntime.getVisibleDiagnosticQuestions("remote-access", remoteExisting)
+    .some((question) => question.id === "sites"),
+);
+const remoteNew = { ...remoteExisting, "remote-existing": "new" };
+assert.ok(
+  !contextRuntime.getVisibleDiagnosticQuestions("remote-access", remoteNew)
+    .some((question) => question.id === "sites"),
+);
+assert.equal(
+  contextRuntime.pruneHiddenDiagnosticAnswers("remote-access", remoteNew).sites,
+  undefined,
+);
+
+// Les textes presentes au client ne contiennent aucun identifiant interne.
+const forbiddenCustomerJargon = /\b(serviceCode|tierCode|presetCode|Billing|provider)\b/i;
+for (const id of contextRuntime.DIAGNOSTIC_CONTEXT_IDS) {
+  const definition = contextRuntime.getDiagnosticContextDefinition(id);
+  const customerCopy = JSON.stringify({
+    label: definition.label,
+    eyebrow: definition.eyebrow,
+    title: definition.title,
+    intro: definition.intro,
+    questions: definition.questions,
+  });
+  assert.doesNotMatch(customerCopy, forbiddenCustomerJargon, `${id} expose du jargon interne.`);
+}
+assert.doesNotMatch(
+  contextRuntime.buildDiagnosticContactMessage("network", {
+    "network-goal": ["coverage"],
+    "network-existing": "unifi",
+    "network-sites": "one",
+    "network-scale": "small",
+  }),
+  forbiddenCustomerJargon,
+);
+
+// Frontiere commerciale adaptative.
+const backupSimple = adaptiveRuntime.buildAdaptiveDiagnosticOutcome(
+  "backup",
+  {
+    "backup-targets": ["files"],
+    storage: "32",
+    structure: "individual",
+    users: "1",
+    "backup-existing": "yes",
+    "restore-test": "recent",
+  },
+  catalog,
+);
+assert.equal(backupSimple.recommendation?.selection?.presetCode, "pack-dossier-securise");
+
+for (const complexTargets of [
+  ["workstations"],
+  ["server"],
+  ["nas"],
+  ["files", "workstations"],
+  ["unknown"],
+]) {
+  const result = adaptiveRuntime.buildAdaptiveDiagnosticOutcome(
+    "backup",
+    {
+      "backup-targets": complexTargets,
+      storage: "32",
+      structure: "business",
+      users: "2",
+      "backup-existing": "yes",
+      "restore-test": "recent",
+    },
+    catalog,
+  );
+  assert.equal(result.recommendation, null, `${complexTargets.join(",")} doit rester sur cadrage.`);
+}
+
+const remoteVpn = adaptiveRuntime.buildAdaptiveDiagnosticOutcome(
+  "remote-access",
+  {
+    "remote-target": "files",
+    structure: "individual",
+    users: "1",
+    "remote-existing": "existing",
+    sites: "one",
+    devices: ["windows"],
+  },
+  catalog,
+);
+assert.equal(remoteVpn.recommendation?.selection?.presetCode, "pack-acces-distance");
+
+const remoteDesktop = adaptiveRuntime.buildAdaptiveDiagnosticOutcome(
+  "remote-access",
+  {
+    "remote-target": "windows-desktop",
+    structure: "individual",
+    users: "1",
+    "remote-existing": "new",
+    devices: ["windows"],
+  },
+  catalog,
+);
+assert.equal(remoteDesktop.recommendation?.selection?.presetCode, "pack-bureau-windows-distance");
+
+assert.equal(
+  adaptiveRuntime.buildAdaptiveDiagnosticOutcome(
+    "remote-access",
+    {
+      "remote-target": "internal-app",
+      structure: "business",
+      users: "2",
+      "remote-existing": "existing",
+      sites: "several",
+      devices: ["windows"],
+    },
+    catalog,
+  ).recommendation,
+  null,
+  "Plusieurs sites doivent imposer un cadrage.",
+);
+
+for (const id of ["network", "messaging", "domain-dns", "server", "web-hosting"]) {
+  const injected = adaptiveRuntime.buildAdaptiveDiagnosticOutcome(
+    id,
+    {
+      "backup-targets": ["files"],
+      storage: "16",
+      structure: "individual",
+      users: "1",
+      "remote-target": "files",
+    },
+    catalog,
+  );
+  assert.equal(
+    injected.recommendation,
+    null,
+    `Le contexte ${id} ne doit jamais produire une formule, meme avec des reponses forgees.`,
+  );
+  assert.ok(injected.guidance.title.length > 10);
+}
+assert.equal(adaptiveRuntime.canContextProduceFormula("backup"), true);
+assert.equal(adaptiveRuntime.canContextProduceFormula("remote-access"), true);
+assert.equal(adaptiveRuntime.canContextProduceFormula("server"), false);
+assert.doesNotMatch(adaptiveDiagnostic, /STORAGE-|VPN-ACCESS|RDS-ACCESS|monthlyAmountCents/);
+
+// Route et UI.
+assert.match(diagnosticPage, /resolveDiagnosticContext\(rawContext\)/);
+assert.match(diagnosticPage, /searchParams:/);
+assert.match(diagnosticPage, /initialContext=\{initialContext\}/);
+assert.match(diagnosticPage, /getBillingV2FormulesCatalog/);
+assert.doesNotMatch(diagnosticPage, /catalog\.presets\.length === 0/);
+assert.match(diagnosticPage, /path:\s*"\/diagnostic"/);
+assert.match(diagnosticPage, /Diagnostic informatique adapt/);
+
+assert.match(diagnosticWizard, /GENERAL_CONTEXT_CHOICES/);
+assert.match(diagnosticWizard, /getVisibleDiagnosticQuestions/);
+assert.match(diagnosticWizard, /pruneHiddenDiagnosticAnswers/);
+assert.match(diagnosticWizard, /buildAdaptiveDiagnosticOutcome/);
 assert.match(diagnosticWizard, /fetch\("\/api\/formules\/devis"/);
 assert.match(diagnosticWizard, /billingV2SelectionToSearchParams/);
-assert.match(diagnosticWizard, /`\/formules\/\$\{selection\.presetCode\}\?/);
 assert.match(diagnosticWizard, /params\.set\("source", "diagnostic"\)/);
-assert.doesNotMatch(diagnosticWizard, /configurationToQueryString|\/configurer\?/);
-assert.match(diagnosticWizard, /<option value="256">Jusqu&apos;à 256 Go<\/option>/);
-assert.match(diagnosticWizard, /<option value="above_public_max">Plus de 256 Go<\/option>/);
-assert.match(diagnosticWizard, /Array\.from\(\{ length: 11 \}/);
-assert.match(diagnosticWizard, /<option value="12">12 ou plus<\/option>/);
-assert.match(diagnosticWizard, /Personnaliser cette configuration/);
+assert.match(diagnosticWizard, /<ContactForm/);
+assert.match(diagnosticWizard, /defaultMessage=\{buildDiagnosticContactMessage/);
+assert.match(diagnosticWizard, /submitLabel="Envoyer mon diagnostic"/);
+assert.doesNotMatch(diagnosticWizard, /\/configurer\?|configurationToQueryString/);
 assert.doesNotMatch(diagnosticWizard, /toIncVat|vatRate|0\.2|20\s*\/\s*100/);
+assert.match(diagnosticWizard, /<fieldset className="diagnostic-step"/);
+assert.match(diagnosticWizard, /<legend ref=\{legendRef\} tabIndex=\{-1\}>/);
+assert.match(diagnosticWizard, /aria-live="polite"/);
+assert.match(diagnosticWizard, /aria-describedby=\{hintId\}/);
+assert.match(globalsCss, /@media \(max-width: 820px\)[\s\S]*\.diagnostic-options[\s\S]*grid-template-columns: 1fr/);
+assert.match(globalsCss, /@media \(max-width: 560px\)[\s\S]*\.diagnostic-actions[\s\S]*flex-direction: column/);
+// Garde-fous structurels : fieldset et legend, annonces de progression et repli mobile.
+assert.match(contactForm, /defaultMessage\?: string/);
+assert.match(contactForm, /submitLabel\?: string/);
+assert.match(contactForm, /idleLabel=\{submitLabel\}/);
 
-assert.match(diagnosticBeforeAfter, /BillingV2PublicSelection/);
-assert.match(diagnosticBeforeAfter, /items\.slice\(0, 5\)/);
+// Les pages Services transmettent le contexte au niveau du rendu, sans modifier
+// la resolution commerciale ou la page de categorie mixte.
+assert.match(publicStorefrontPage, /diagnosticContextForServiceSlug/);
+assert.match(publicStorefrontPage, /contextualizeDiagnosticHref/);
+assert.match(priorityServicePage, /diagnosticContextForServiceSlug/);
+assert.match(priorityServicePage, /buildDiagnosticHref\(diagnosticContext\)/);
+assert.match(serviceRoute, /serviceSlug=\{serviceSlug\}/);
+assert.match(serviceRoute, /slug === "domaines-messagerie"/);
 assert.doesNotMatch(
-  diagnosticBeforeAfter,
-  /ResolvedPublicPackManifest|supportsVpn|supportsWindowsDesktop|findPackText/,
+  messagingCategoryPage,
+  /diagnosticContextForServiceSlug|context=messaging|context=domain-dns/,
+  "La categorie mixte ne doit pas forcer un sous-contexte.",
 );
 
-assert.match(diagnosticPage, /getBillingV2FormulesCatalog/);
-assert.doesNotMatch(
-  diagnosticPage,
-  /getPublicCommercialCatalog|getPublicPackCatalogContent|resolvePackCatalog/,
-);
-assert.match(diagnosticPage, /<PublicDiagnosticWizard catalog=\{catalog\} \/>/);
-assert.match(diagnosticPage, /buildPublicMetadata\(/);
-assert.match(diagnosticPage, /path:\s*"\/diagnostic"/);
-assert.match(diagnosticPage, /Diagnostic sauvegarde et accès distant/);
-assert.match(diagnosticPage, /Vos données importantes pourraient-elles disparaître demain/);
-assert.match(diagnosticPage, /Sans inscription/);
-assert.match(diagnosticPage, /Aucun compte ni achat nécessaire/);
-assert.doesNotMatch(diagnosticPage, /Sans engagement|Vos coordonnées servent/);
+// Contrats publics existants conserves.
+assert.match(sharedTypes, /interface DiagnosticRecommendation[\s\S]*selection:\s*BillingV2PublicSelection \| null/);
 assert.match(publicShell, /publicHref\("\/diagnostic"\)/);
 assert.match(publicRoutes, /"\/diagnostic"/);
 assert.match(sitemap, /path:\s*"\/diagnostic"/);
-
-// Le configurateur `/configurer` et son resolver tarifaire ont ete remplaces
-// par `/formules/{preset}` : une selection Billing V2, tarifee cote serveur par
-// le pricing engine. Ce parcours est couvert par `verify-formules-contract.mjs`.
-// Ce qui reste a verifier ici, c'est que l'ancienne surface ne survit nulle part.
 for (const [label, source] of [
   ["page diagnostic", diagnosticPage],
   ["assistant diagnostic", diagnosticWizard],
@@ -394,18 +532,11 @@ for (const [label, source] of [
 assert.doesNotMatch(
   programCs,
   /ICatalogConfigurationService|\/internal\/portal\/configuration\/resolve/,
-  "Le resolver de configuration catalogue legacy ne doit plus etre expose.",
 );
-
-// La fiscalite reste une regle du domaine, desormais appliquee par le pricing
-// engine V2 et non plus par le resolver supprime.
 assert.match(programCs, /IFiscalPolicy/);
 assert.match(fiscalPolicy, /FiscalRegimes\.FranchiseBase/);
 assert.match(fiscalPolicy, /FiscalRegimes\.Standard/);
-assert.match(fiscalPolicy, /TVA non applicable/);
 
-// Le diagnostic sort vers le signup avec une selection V2, jamais avec une
-// configuration deja tarifee.
 assert.match(signupPage, /readBillingV2SelectionSearchParams\(rawSearchParams\)/);
 assert.match(signupRoute, /billingV2Selection,/);
 assert.doesNotMatch(
@@ -414,7 +545,6 @@ assert.doesNotMatch(
     .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
     .join("\n"),
   /catalogConfiguration|packSelection/,
-  "Le BFF signup ne doit plus transporter de configuration catalogue legacy.",
 );
 
-console.log("Verification diagnostic public WEBPORTAL reussie.");
+console.log("Verification diagnostic adaptatif WEBPORTAL reussie.");

@@ -9,6 +9,8 @@ import { requestBffJson } from "@/lib/client-api";
 type ContactFormProps = {
   defaultSubject: string;
   formuleCode: string | null;
+  defaultMessage?: string;
+  submitLabel?: string;
 };
 
 type ContactState =
@@ -29,21 +31,21 @@ type ContactResponse = {
 export function ContactForm({
   defaultSubject,
   formuleCode,
+  defaultMessage = "",
+  submitLabel = "Envoyer le message",
 }: ContactFormProps) {
   const fieldErrorId = (field: FieldName) => `contact-${field}-error`;
   const isSubmittingRef = useRef(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [subject, setSubject] = useState(defaultSubject);
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState(defaultMessage);
   const [state, setState] = useState<ContactState>({ status: "idle" });
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (isSubmittingRef.current) {
-      return;
-    }
+    if (isSubmittingRef.current) return;
 
     isSubmittingRef.current = true;
     setState({ status: "submitting" });
@@ -79,13 +81,12 @@ export function ContactForm({
 
       setState({
         status: "success",
-        message:
-          "Message envoyé. Nous reviendrons vers vous par e-mail.",
+        message: "Message envoyé. Nous reviendrons vers vous par e-mail.",
       });
       setName("");
       setEmail("");
       setSubject(defaultSubject);
-      setMessage("");
+      setMessage(defaultMessage);
     } finally {
       isSubmittingRef.current = false;
     }
@@ -202,7 +203,7 @@ export function ContactForm({
       </p>
 
       <SubmitButton
-        idleLabel="Envoyer le message"
+        idleLabel={submitLabel}
         isSubmitting={state.status === "submitting"}
         submittingLabel="Envoi en cours..."
       />

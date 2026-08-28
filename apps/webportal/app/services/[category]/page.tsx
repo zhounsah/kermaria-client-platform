@@ -2,10 +2,13 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import type { ManagedContentKey } from "@kermaria/shared";
 import { ErrorState } from "@/components/ErrorState";
+import { PublicMessagingCategoryPage } from "@/components/PublicMessagingCategoryPage";
+import { PublicPriorityServicePage } from "@/components/PublicPriorityServicePage";
 import { PublicStorefrontPage } from "@/components/PublicStorefrontPage";
 import { buildPublicMetadata } from "@/lib/public-metadata";
 import { getBillingV2FormulesCatalog, getPublicManagedContent } from "@/lib/internal-api";
 import {
+  isStorefrontPriorityServiceSlug,
   parseStorefrontPageContent,
   resolveStorefrontBreadcrumb,
   resolveStorefrontCommercialActions,
@@ -30,7 +33,7 @@ export async function generateMetadata({ params }: CategoryPageProps): Promise<M
     : null;
   return buildPublicMetadata({
     title: content?.seoTitle ?? "Services Zachary IT",
-    description: content?.seoDescription ?? "Services IT gérés, sur devis ou accompagnés par Zachary IT.",
+    description: content?.seoDescription ?? "Services IT g\u00e9r\u00e9s, sur devis ou accompagn\u00e9s par Zachary IT.",
     path: `/services/${slug}`,
   });
 }
@@ -57,12 +60,28 @@ export default async function ServiceCategoryRoute({ params }: CategoryPageProps
     ? resolveStorefrontCommercialActions(serviceSlug, catalog, content)
     : null;
   return content ? (
-    <PublicStorefrontPage
-      breadcrumbItems={resolveStorefrontBreadcrumb(`/services/${slug}`)!}
-      commercialActions={commercialActions}
-      content={content}
-      selfServiceOrderable={selfServiceOrderable}
-    />
+    slug === "domaines-messagerie" ? (
+      <PublicMessagingCategoryPage
+        breadcrumbItems={resolveStorefrontBreadcrumb(`/services/${slug}`)!}
+        content={content}
+      />
+    ) : serviceSlug && commercialActions && isStorefrontPriorityServiceSlug(serviceSlug) ? (
+      <PublicPriorityServicePage
+        breadcrumbItems={resolveStorefrontBreadcrumb(`/services/${slug}`)!}
+        commercialActions={commercialActions}
+        content={content}
+        selfServiceOrderable={selfServiceOrderable ?? false}
+        serviceSlug={serviceSlug}
+      />
+    ) : (
+      <PublicStorefrontPage
+        breadcrumbItems={resolveStorefrontBreadcrumb(`/services/${slug}`)!}
+        commercialActions={commercialActions}
+        content={content}
+        serviceSlug={serviceSlug}
+        selfServiceOrderable={selfServiceOrderable}
+      />
+    )
   ) : (
     <ErrorState
       description="Cette page de service est temporairement indisponible."
