@@ -34,8 +34,22 @@
   route par route ; les groupes de services restent le mandat de l'API.
   `/internal/profile/password` passe par le relais KoXo et le déplacement LDAP
   de `DemoConversionService` est supprimé.
+- **Remise du mot de passe à KoXo rendue atomique (2026-08-29).** Le secret
+  destiné à KoXo, le condensat du portail et l'état `pending` sont écrits par
+  **une seule transaction** — le mot de passe est scellé sans écriture, puis le
+  chiffré est écrit avec le condensat. Déposés l'un après l'autre, ils
+  laissaient KoXo appliquer plus tard à l'annuaire un mot de passe que le portail
+  ignorait. Un réordonnancement crée la panne symétrique : ne pas « simplifier »
+  vers deux écritures successives. Même correction sur `SignupService`.
+- **La version d'un régime fiscal ne peut pas être un décompte** :
+  `TryDeleteScheduledAsync` supprime réellement une ligne, donc le décompte
+  redescend et un `expectedVersion` périmé redevient valide. Version monotone
+  explicite, migration `080` (additive, non appliquée).
 - **Limite de preuve** : validations en persistance **mock** uniquement. Le
-  verrouillage InnoDB n'est pas exercé ; migration `079` non appliquée.
+  verrouillage InnoDB n'est **pas** exercé ; migrations `079` et `080` non
+  appliquées. Aucune base de test n'est accessible (`kermaria_migrator` n'a de
+  droits que sur la base de production) : protocole reproductible en section
+  38.4 de `docs/ADMIN_CONFIGURATION_CENTER_IMPLEMENTATION.md`.
 
 ### Vitrine, SEO et éditorial
 

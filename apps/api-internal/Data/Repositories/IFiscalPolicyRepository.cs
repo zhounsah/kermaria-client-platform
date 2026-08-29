@@ -18,7 +18,7 @@ public enum FiscalMentionAddOutcome
     Added,
 
     /// <summary>
-    /// Le nombre de versions du regime ne correspond plus a celui que
+    /// Le numero de version du regime ne correspond plus a celui que
     /// l'administrateur avait sous les yeux.
     /// </summary>
     VersionConflict,
@@ -38,6 +38,26 @@ public interface IFiscalPolicyRepository
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Numero de version courant de chaque regime.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Ce numero <b>ne redescend jamais</b>. Le decompte des mentions faisait
+    /// office de version, mais une suppression le fait diminuer : apres
+    /// « ajout, ajout, annulation, ajout », il retrouve sa valeur d'avant et un
+    /// <c>expectedVersion</c> devenu obsolete redevient acceptable. L'ecran
+    /// d'un administrateur qui n'a jamais vu la version intermediaire passe
+    /// alors sans conflit — sur un texte qui s'imprime sur des factures.
+    /// </para>
+    /// <para>
+    /// Un regime absent de la table n'a jamais ete versionne : sa version est
+    /// alors le nombre de mentions qu'il porte.
+    /// </para>
+    /// </remarks>
+    Task<IReadOnlyDictionary<string, int>> GetRegimeVersionsAsync(
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Verifie la version attendue et ajoute la mention dans la meme unite de
     /// travail.
     /// </summary>
@@ -52,8 +72,11 @@ public interface IFiscalPolicyRepository
     /// silencieux.
     /// </para>
     /// <para>
-    /// La verification et l'ecriture doivent donc partager la meme transaction
-    /// et le meme verrou sur le regime.
+    /// La verification et l'ecriture partagent donc la meme transaction et le
+    /// meme verrou : celui de la ligne de version du regime. Verrouiller une
+    /// ligne <b>presente</b> plutot qu'un intervalle vide est volontaire — le
+    /// verrou d'intervalle n'existe qu'en REPEATABLE READ, et l'isolation du
+    /// serveur n'est pas une garantie de cette application.
     /// </para>
     /// </remarks>
     Task<FiscalMentionAddOutcome> TryAddAsync(
@@ -67,6 +90,11 @@ public interface IFiscalPolicyRepository
     /// appliquee n'est jamais supprimable : elle documente ce qui a ete imprime
     /// sur de vrais documents.
     /// </summary>
+    /// <remarks>
+    /// Incremente le numero de version du regime, dans la meme transaction. Une
+    /// suppression est une modification comme une autre : ne pas la compter
+    /// laisserait un <c>expectedVersion</c> anterieur redevenir valide.
+    /// </remarks>
     Task<bool> TryDeleteScheduledAsync(
         string id,
         DateTime nowUtc,

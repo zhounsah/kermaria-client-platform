@@ -218,6 +218,7 @@ public sealed class MockPortalPasswordSetupRepository
 
     private bool TryApplyHandoff(PortalPasswordHandoff handoff)
     {
+        var attached = false;
         try
         {
             if (handoff.Secret is not null)
@@ -228,20 +229,34 @@ public sealed class MockPortalPasswordSetupRepository
                 }
 
                 SealSink.AttachSealed(handoff.PortalUserId, handoff.Secret);
+                attached = true;
             }
 
-            return LifecycleSink is not null
+            if (LifecycleSink is not null
                 && LifecycleSink.TryMarkKoxoPending(
                     handoff.LifecycleId,
                     handoff.PortalUserId,
-                    handoff.AtUtc);
+                    handoff.AtUtc))
+            {
+                return true;
+            }
         }
         catch (InvalidOperationException)
         {
             // Panne simulee du relais : traitee comme un echec de transaction,
             // pas comme une exception qui remonterait a l'appelant.
-            return false;
         }
+
+        // La transition a echoue apres l'attache. Laisser le scelle en place
+        // publierait un mot de passe que le portail vient de reprendre : KoXo
+        // l'appliquerait plus tard a l'annuaire seul. La transaction reelle
+        // annule les deux ecritures, le mock doit faire de meme.
+        if (attached && handoff.Secret is not null)
+        {
+            SealSink?.DiscardSealed(handoff.PortalUserId, handoff.Secret);
+        }
+
+        return false;
     }
 
     /// <summary>Force l'expiration d'un jeton, pour les tests.</summary>

@@ -654,7 +654,7 @@ public sealed class SignupService : ISignupService
                 "Le compte approuve est incomplet.");
         }
 
-        var adError = await ProvisionActiveDirectoryAsync(
+        var (adError, koxoSecret) = await ProvisionActiveDirectoryAsync(
             record,
             password,
             cancellationToken);
@@ -666,11 +666,34 @@ public sealed class SignupService : ISignupService
         var passwordHash = _passwordService.HashPassword(
             record.ApprovedUserId,
             password);
-        await _repository.SetPasswordAsync(
-            record.Id,
-            record.ApprovedUserId,
-            passwordHash,
-            cancellationToken);
+
+        // Une seule unite de travail : condensat portail, retrait du jeton et
+        // secret destine a KoXo. Un echec ne doit laisser aucun secret derriere
+        // lui — le jeton reste alors utilisable et la personne peut recommencer.
+        try
+        {
+            await _repository.SetPasswordAsync(
+                record.Id,
+                record.ApprovedUserId,
+                passwordHash,
+                koxoSecret,
+                DateTime.UtcNow,
+                cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            _logger.LogError(
+                exception,
+                "Signup password could not be stored for portal_user_id {PortalUserId}",
+                record.ApprovedUserId);
+            return new SignupOperationResult(
+                false,
+                "PASSWORD_CHANGE_STORAGE_UNAVAILABLE",
+                "Le mot de passe n'a pas pu etre enregistre : rien n'a ete modifie. Reessayez plus tard.");
+        }
+
+        // Apres le COMMIT seulement, et en rattrapage : la synchronisation
+        // planifiee repassera de toute facon sur le secret desormais durable.
         await TriggerKoxoSyncWebhookAsync(record, cancellationToken);
         return null;
     }
@@ -744,31 +767,38 @@ public sealed class SignupService : ISignupService
         }
     }
 
-    private async Task<SignupOperationResult?> ProvisionActiveDirectoryAsync(
+    /// <remarks>
+    /// Rend le secret <b>scelle</b> destine a KoXo, sans l'ecrire : son depot a
+    /// lieu dans la transaction qui pose le condensat du portail. Publie ici,
+    /// il survivait a l'echec de cette transaction, et KoXo appliquait alors a
+    /// l'annuaire un mot de passe que le portail ne connaissait pas.
+    /// </remarks>
+    private async Task<(SignupOperationResult? error, PortalPasswordSecret? secret)>
+        ProvisionActiveDirectoryAsync(
         SignupPendingRecord record,
         string password,
         CancellationToken cancellationToken)
     {
         if (!_adConfiguration.WritesEnabled)
         {
-            return null;
+            return (null, null);
         }
 
         if (!_adConfiguration.ConfigurationValid)
         {
-            return new SignupOperationResult(
+            return (new SignupOperationResult(
                 false,
                 "AD_CONFIGURATION_INVALID",
-                "La configuration Active Directory est incomplete.");
+                "La configuration Active Directory est incomplete."), null);
         }
 
         if (record.ApprovedUserId is null
             || string.IsNullOrWhiteSpace(record.ApprovedCustomerReference))
         {
-            return new SignupOperationResult(
+            return (new SignupOperationResult(
                 false,
                 "INVALID_STATE",
-                "Le compte approuve ne peut pas etre relie a Active Directory.");
+                "Le compte approuve ne peut pas etre relie a Active Directory."), null);
         }
 
         var now = DateTime.UtcNow;
@@ -781,24 +811,23 @@ public sealed class SignupService : ISignupService
         {
             if (_adConfiguration.KoxoOwnsDirectory)
             {
-                if (!_pendingPasswords.IsOperational
-                    || !await _pendingPasswords.PublishAsync(
-                        record.ApprovedUserId,
-                        password,
-                        cancellationToken))
+                // Fail-closed avant tout point de non-retour : sans magasin
+                // exploitable, le secret n'atteindrait jamais l'annuaire.
+                var sealed_ = _pendingPasswords.IsOperational
+                    ? _pendingPasswords.Seal(record.ApprovedUserId, password)
+                    : null;
+                if (sealed_ is null)
                 {
-                    return new SignupOperationResult(
+                    return (new SignupOperationResult(
                         false,
                         "KOXO_PASSWORD_HANDOFF_UNAVAILABLE",
-                        "Le mot de passe ne peut pas etre transmis a KoXo pour le moment.");
+                        "Le mot de passe ne peut pas etre transmis a KoXo pour le moment."), null);
                 }
 
-                await _activeDirectoryLinkRepository.UpdateUserPasswordSyncStatusAsync(
-                    record.ApprovedUserId,
-                    "pending",
-                    now,
-                    cancellationToken);
-                return null;
+                // L'etat de synchronisation est pose par la meme transaction que
+                // le secret : l'annoncer ici le rendrait vrai avant que le
+                // secret n'existe.
+                return (null, sealed_);
             }
 
             var syncResult = await _activeDirectoryService.SetUserPasswordAsync(
@@ -808,9 +837,9 @@ public sealed class SignupService : ISignupService
                 cancellationToken);
             if (syncResult.StatusCode >= 400 || syncResult.Value is null)
             {
-                return MapAdProvisioningFailure(
+                return (MapAdProvisioningFailure(
                     syncResult,
-                    "Le compte Active Directory n'a pas pu etre synchronise.");
+                    "Le compte Active Directory n'a pas pu etre synchronise."), null);
             }
 
             await _activeDirectoryLinkRepository.UpsertPortalUserLinkAsync(
@@ -825,7 +854,7 @@ public sealed class SignupService : ISignupService
                 now,
                 existingLink.KoxoExportStatus ?? "koxo_pending",
                 cancellationToken);
-            return null;
+            return (null, null);
         }
 
         // Quand KoXo est reellement en place, c'est LUI qui cree l'identite :
@@ -844,7 +873,7 @@ public sealed class SignupService : ISignupService
             var adoption = await AdoptKoxoIdentityAsync(record, cancellationToken);
             if (adoption.error is not null)
             {
-                return adoption.error;
+                return (adoption.error, null);
             }
 
             adUserObject = adoption.directoryObject;
@@ -856,31 +885,32 @@ public sealed class SignupService : ISignupService
                 cancellationToken);
             if (adUser.error is not null)
             {
-                return adUser.error;
+                return (adUser.error, null);
             }
 
             adUserObject = adUser.directoryObject;
         }
 
+        PortalPasswordSecret? koxoSecret = null;
         if (_adConfiguration.KoxoOwnsDirectory)
         {
             // On n'ecrit PAS le mot de passe par LDAP. Avec ForcePasswords=1,
             // KoXo reecrit le mot de passe de l'annuaire a chaque
             // synchronisation depuis la colonne 14 du CSV : une ecriture LDAP
             // serait ecrasee au passage suivant et le client perdrait
-            // NextCloud, RDS et le VPN sans aucune erreur visible. On publie
-            // donc le mot de passe pour l'export, et le declenchement qui suit
-            // dans ApplyPasswordAsync le fait appliquer par KoXo.
-            if (!_pendingPasswords.IsOperational
-                || !await _pendingPasswords.PublishAsync(
-                    record.ApprovedUserId,
-                    password,
-                    cancellationToken))
+            // NextCloud, RDS et le VPN sans aucune erreur visible. On scelle
+            // donc le mot de passe pour l'export ; son depot a lieu dans la
+            // transaction qui pose le condensat du portail, et le declenchement
+            // qui suit dans ApplyPasswordAsync le fait appliquer par KoXo.
+            koxoSecret = _pendingPasswords.IsOperational
+                ? _pendingPasswords.Seal(record.ApprovedUserId, password)
+                : null;
+            if (koxoSecret is null)
             {
-                return new SignupOperationResult(
+                return (new SignupOperationResult(
                     false,
                     "KOXO_PASSWORD_HANDOFF_UNAVAILABLE",
-                    "Le mot de passe ne peut pas etre transmis a KoXo pour le moment.");
+                    "Le mot de passe ne peut pas etre transmis a KoXo pour le moment."), null);
             }
         }
         else
@@ -895,9 +925,9 @@ public sealed class SignupService : ISignupService
                 cancellationToken);
             if (passwordResult.StatusCode >= 400 || passwordResult.Value is null)
             {
-                return MapAdProvisioningFailure(
+                return (MapAdProvisioningFailure(
                     passwordResult,
-                    "Le mot de passe Active Directory n'a pas pu etre applique.");
+                    "Le mot de passe Active Directory n'a pas pu etre applique."), null);
             }
 
             adUserObject = passwordResult.Value;
@@ -916,7 +946,7 @@ public sealed class SignupService : ISignupService
             "koxo_pending",
             cancellationToken);
 
-        return null;
+        return (null, koxoSecret);
     }
 
     /// <summary>

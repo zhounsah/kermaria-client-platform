@@ -253,6 +253,16 @@ cookie HttpOnly -> BFF -> session API-INTERNAL -> user_id -> customer_id
   synchronisation suivante (`ForcePasswords=1` reecrit depuis le CSV), sans
   erreur visible et apres que le portail a annonce l'inverse. Un relais
   inexploitable refuse le changement plutot que d'ecrire.
+- Le secret destine a KoXo et le condensat du portail sont ecrits par une
+  **seule transaction**. Deposes l'un apres l'autre, ils laissaient une fenetre :
+  le secret devenait durable, l'ecriture du condensat echouait, et KoXo
+  appliquait plus tard a l'annuaire un mot de passe que le portail ignorait —
+  NextCloud, RDS et VPN sous un mot de passe, le portail sous un autre, sans
+  rien pour le signaler. Le mot de passe est donc scelle en memoire, sans
+  ecriture, et le chiffre est ecrit dans la meme unite de travail que le
+  condensat. Une persistance indisponible repond
+  `PASSWORD_CHANGE_STORAGE_UNAVAILABLE` et rien n'a ete modifie. Le clair ne
+  franchit jamais la frontiere du depot et n'est jamais journalise.
 - Un test de non-regression verifie qu'aucune ecriture de cycle de vie n'est
   meme *tentee* sous autorite KoXo : un appel refuse laisserait quand meme une
   trace d'intention sur un annuaire de production.

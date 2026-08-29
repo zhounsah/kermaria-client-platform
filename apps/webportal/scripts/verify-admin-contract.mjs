@@ -348,6 +348,28 @@ assert.match(
   "Le conflit de version fiscal doit venir du dépôt, pas d'un décompte lu en amont.",
 );
 
+// La version d'un régime ne redescend jamais. Le décompte des mentions ne peut
+// pas jouer ce rôle : `TryDeleteScheduledAsync` supprime réellement une ligne,
+// donc après « ajout, ajout, annulation » le décompte retrouve sa valeur d'avant
+// et un `expectedVersion` périmé redevient acceptable — sur un texte imprimé sur
+// des factures. Le verrou porte donc sur une ligne présente, ce qui le rend
+// aussi indépendant des verrous d'intervalle, absents en READ COMMITTED.
+assert.match(
+  fiscalRepository,
+  /fiscal_policy_regime_versions/,
+  "La version fiscale doit être une colonne monotone, pas un décompte de lignes.",
+);
+assert.match(
+  fiscalRepository,
+  /DELETE FROM fiscal_policy_mentions[\s\S]{0,900}?BumpRegimeVersionAsync/,
+  "Une annulation doit incrémenter la version dans la même transaction.",
+);
+assert.match(
+  fiscalService,
+  /GetRegimeVersionsAsync/,
+  "La vue d'administration doit publier la version monotone du dépôt.",
+);
+
 // Les permissions du Centre sont fail-closed : sans attribution explicite,
 // personne n'y accède. Le bootstrap permissif reste borné à l'éditorial.
 const editorialRepository = await readRepo(

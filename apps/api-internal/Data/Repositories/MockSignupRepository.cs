@@ -310,25 +310,65 @@ public sealed class MockSignupRepository : ISignupRepository
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Point d'attache du secret scelle, renseigne apres construction.
+    /// </summary>
+    public IKoxoPendingPasswordSealSink? SealSink { get; set; }
+
+    /// <remarks>
+    /// Tout ou rien, comme la transaction reelle : le scelle est attache avant
+    /// l'ecriture du condensat et defait si celle-ci echoue. C'est l'ordre qui
+    /// exerce l'annulation ; l'ordre inverse ne prouverait rien.
+    /// </remarks>
     public Task SetPasswordAsync(
         string signupId,
         string portalUserId,
         string passwordHash,
+        PortalPasswordSecret? koxoSecret,
+        DateTime atUtc,
         CancellationToken cancellationToken)
     {
-        var credential = _authenticationStore.Users.Values.FirstOrDefault(
-            user => user.Id == portalUserId);
-        if (credential is not null)
+        if (koxoSecret is not null)
         {
-            _authenticationStore.Users[credential.Email] =
-                credential with { PasswordHash = passwordHash };
+            if (SealSink is null)
+            {
+                throw new InvalidOperationException(
+                    "Aucun point d'attache pour le secret KoXo.");
+            }
+
+            SealSink.AttachSealed(portalUserId, koxoSecret);
         }
 
-        if (_rows.TryGetValue(signupId, out var row))
+        try
         {
-            row.PasswordSetupTokenHash = null;
-            row.PasswordSetupExpiresAtUtc = null;
-            row.UpdatedAtUtc = DateTime.UtcNow;
+            MockPortalPasswordFailureSwitch.ThrowIfArmed();
+
+            var credential = _authenticationStore.Users.Values.FirstOrDefault(
+                user => user.Id == portalUserId);
+            if (credential is not null)
+            {
+                _authenticationStore.Users[credential.Email] =
+                    credential with { PasswordHash = passwordHash };
+            }
+
+            if (_rows.TryGetValue(signupId, out var row))
+            {
+                row.PasswordSetupTokenHash = null;
+                row.PasswordSetupExpiresAtUtc = null;
+                row.LastPasswordSyncStatus = koxoSecret is not null
+                    ? "pending"
+                    : row.LastPasswordSyncStatus;
+                row.UpdatedAtUtc = DateTime.UtcNow;
+            }
+        }
+        catch
+        {
+            if (koxoSecret is not null)
+            {
+                SealSink!.DiscardSealed(portalUserId, koxoSecret);
+            }
+
+            throw;
         }
 
         return Task.CompletedTask;

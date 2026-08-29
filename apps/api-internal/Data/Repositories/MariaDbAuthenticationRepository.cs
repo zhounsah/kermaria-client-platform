@@ -368,6 +368,98 @@ public sealed class MariaDbAuthenticationRepository : IAuthenticationRepository
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    public async Task<bool> TryChangePasswordWithKoxoHandoffAsync(
+        string userId,
+        string passwordHash,
+        PortalPasswordSecret? koxoSecret,
+        DateTime atUtc,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(
+            cancellationToken);
+
+        await using (var passwordCommand = connection.CreateCommand())
+        {
+            passwordCommand.Transaction = transaction;
+            passwordCommand.CommandText =
+                """
+                UPDATE portal_users
+                SET password_hash = @password_hash,
+                    updated_at = @updated_at
+                WHERE id = @id;
+                """;
+            passwordCommand.Parameters.AddWithValue("@password_hash", passwordHash);
+            passwordCommand.Parameters.AddWithValue("@updated_at", atUtc);
+            passwordCommand.Parameters.AddWithValue("@id", userId);
+            if (await passwordCommand.ExecuteNonQueryAsync(cancellationToken) != 1)
+            {
+                // L'utilisateur portail n'existe plus. Deposer quand meme le
+                // secret ferait appliquer par KoXo un mot de passe qui n'a
+                // aucun compte portail en face.
+                await transaction.RollbackAsync(cancellationToken);
+                return false;
+            }
+        }
+
+        if (koxoSecret is null)
+        {
+            await transaction.CommitAsync(cancellationToken);
+            return true;
+        }
+
+        await using (var secretCommand = connection.CreateCommand())
+        {
+            secretCommand.Transaction = transaction;
+            // Le compteur de relectures repart de zero : c'est un nouveau
+            // secret, pas la suite du precedent.
+            secretCommand.CommandText =
+                """
+                INSERT INTO koxo_pending_directory_passwords (
+                    portal_user_id, ciphertext, key_id, expires_at,
+                    published_count, created_at, updated_at
+                ) VALUES (
+                    @portal_user_id, @ciphertext, @key_id, @expires_at,
+                    0, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6)
+                )
+                ON DUPLICATE KEY UPDATE
+                    ciphertext = VALUES(ciphertext),
+                    key_id = VALUES(key_id),
+                    expires_at = VALUES(expires_at),
+                    published_count = 0,
+                    last_published_at = NULL,
+                    updated_at = UTC_TIMESTAMP(6);
+                """;
+            secretCommand.Parameters.AddWithValue("@portal_user_id", userId);
+            secretCommand.Parameters.AddWithValue("@ciphertext", koxoSecret.Ciphertext);
+            secretCommand.Parameters.AddWithValue("@key_id", koxoSecret.KeyId);
+            secretCommand.Parameters.AddWithValue("@expires_at", koxoSecret.ExpiresAtUtc);
+            await secretCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var syncCommand = connection.CreateCommand())
+        {
+            syncCommand.Transaction = transaction;
+            // L'etat de synchronisation fait partie de la meme ecriture :
+            // c'est le depot du secret qui rend la synchronisation due, et un
+            // etat annonce sans secret derriere serait faux.
+            syncCommand.CommandText =
+                """
+                UPDATE customer_ad_links
+                SET last_password_sync_at = @changed_at,
+                    last_password_sync_status = 'pending'
+                WHERE portal_user_id = @portal_user_id
+                  AND object_type = 'user';
+                """;
+            syncCommand.Parameters.AddWithValue("@changed_at", atUtc);
+            syncCommand.Parameters.AddWithValue("@portal_user_id", userId);
+            await syncCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return true;
+    }
+
     private async Task<MySqlConnection> OpenConnectionAsync(
         CancellationToken cancellationToken)
     {

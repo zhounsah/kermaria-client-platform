@@ -342,13 +342,19 @@ Invariant central : une mention n'est **jamais retroactive**.
   (`FISCAL_EFFECTIVE_DATE_TAKEN`) ;
 - une version deja appliquee n'est pas supprimable : elle documente ce qui a ete
   imprime. Seule une version encore planifiee peut etre annulee ;
-- concurrence optimiste par `expectedVersion` (nombre de versions du regime),
-  conflit en `409 FISCAL_VERSION_CONFLICT`. Le decompte est pris **avec verrou
-  dans la transaction d'insertion** : sur un regime encore vide, InnoDB verrouille
-  l'intervalle, ce qui est exactement ce qui rend un decompte utilisable comme
-  version. Lu sur une connexion separee avant l'insertion, il laissait passer
-  deux planifications concurrentes, et la mention appliquee devenait
-  silencieusement celle dont la date d'effet etait la plus proche ;
+- concurrence optimiste par `expectedVersion`, conflit en
+  `409 FISCAL_VERSION_CONFLICT`. `expectedVersion` est un **numero de version
+  monotone par regime**, tenu par `fiscal_policy_regime_versions` et incremente
+  par tout ajout **et par toute annulation**. Le nombre de mentions ne peut pas
+  jouer ce role : l'annulation d'une version planifiee supprime reellement la
+  ligne, donc apres « ajout, ajout, annulation » le decompte retrouve sa valeur
+  d'avant et un `expectedVersion` perime redevient acceptable — l'ecran d'un
+  administrateur qui n'a jamais vu la version intermediaire passe alors sans
+  conflit, sur un texte imprime sur des factures. La verification et l'ecriture
+  partagent la meme transaction et le meme verrou, pris sur la **ligne de
+  version** du regime : verrouiller une ligne presente vaut dans toutes les
+  isolations, alors que le verrou d'intervalle du decompte n'existait qu'en
+  REPEATABLE READ ;
 - une indisponibilite d'ecriture repond `FISCAL_STORAGE_UNAVAILABLE` et n'est
   jamais presentee comme un conflit ;
 - repli ferme : sans base lisible, les documents affichent la mention integree
@@ -542,15 +548,28 @@ n'est pas bloquee : c'est elle qui ouvre et ferme les acces.
 
 Consequences sur les parcours :
 
-- `POST /internal/profile/password` publie le nouveau mot de passe dans le
-  relais KoXo, marque la synchronisation `pending` et la declenche, au lieu
-  d'ecrire en LDAP. Avec `ForcePasswords=1`, KoXo reecrit de toute facon le mot
+- `POST /internal/profile/password` remet le nouveau mot de passe a KoXo au
+  lieu d'ecrire en LDAP. Avec `ForcePasswords=1`, KoXo reecrit de toute facon le mot
   de passe depuis le CSV a chaque passage : une ecriture directe aurait ete
   effacee sans erreur, apres que le portail a annonce le contraire. La reponse
   porte `AD_PASSWORD_CHANGE_PENDING_KOXO` et annonce une application a la
   prochaine synchronisation, pas une synchronisation deja faite. Un relais
   inexploitable refuse le changement en `503 KOXO_PASSWORD_HANDOFF_UNAVAILABLE`
-  plutot que de laisser croire l'operation faite ;
+  plutot que de laisser croire l'operation faite. Le secret destine a KoXo, le
+  condensat du portail et l'etat `pending` de la synchronisation sont ecrits
+  **par une seule transaction** : le mot de passe est scelle en memoire, sans
+  rien ecrire, et l'ecriture a lieu dans la meme unite de travail que le
+  condensat. Deposes l'un apres l'autre, ils laissaient une fenetre — le secret
+  devenait durable, l'ecriture du condensat echouait, l'appel repondait en
+  erreur, et KoXo appliquait plus tard a l'annuaire un mot de passe que le
+  portail ignorait : NextCloud, RDS et VPN sous un mot de passe, le portail
+  sous un autre, sans rien pour le signaler. Une persistance indisponible
+  repond desormais `503 PASSWORD_CHANGE_STORAGE_UNAVAILABLE` et rien n'a ete
+  modifie ; le declenchement de la synchronisation n'a lieu qu'apres le commit
+  et reste un rattrapage, dont l'echec ne remet pas le mot de passe en cause.
+  Le parcours d'inscription (`SetPasswordAsync`) suit exactement la meme
+  regle : en cas d'echec, aucun secret ne subsiste et le jeton reste
+  utilisable ;
 - la conversion d'un compte de demonstration ne deplace plus l'identite en
   LDAP : l'OU cible est portee par `GroupeSecondaire` dans le CSV, que KoXo
   cree au besoin et reapplique. Le deplacement direct etait hors mandat, sans
@@ -1405,6 +1424,8 @@ production n'est exposé.
   aux services à la prochaine synchronisation KoXo ;
 - `KOXO_PASSWORD_HANDOFF_UNAVAILABLE` : relais de mot de passe KoXo
   inexploitable, changement refusé plutôt qu'écrit directement en LDAP ;
+- `PASSWORD_CHANGE_STORAGE_UNAVAILABLE` : mot de passe non enregistré, rien
+  n'a été modifié — ni le condensat du portail, ni le secret destiné à KoXo ;
 - `SETTINGS_STORAGE_UNAVAILABLE` : paramètre non enregistré, rien n'a été
   modifié ;
 - `TEMPLATE_STORAGE_UNAVAILABLE` : modèle non enregistré, rien n'a été modifié ;

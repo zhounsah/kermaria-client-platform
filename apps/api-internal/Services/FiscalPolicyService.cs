@@ -98,19 +98,21 @@ public sealed class FiscalPolicyService : IFiscalPolicyService
     public async Task<FiscalPolicyAdminView> GetAdminViewAsync(
         CancellationToken cancellationToken)
     {
-        IReadOnlyList<StoredFiscalMention> stored;
         try
         {
-            stored = await _repository.ListAsync(cancellationToken);
+            return BuildView(
+                await _repository.ListAsync(cancellationToken),
+                await _repository.GetRegimeVersionsAsync(cancellationToken));
         }
         catch (Exception exception)
         {
             _logger.LogWarning(exception, "Fiscal mentions unavailable for administration.");
-            stored = [];
+            return BuildView([], EmptyVersions);
         }
-
-        return BuildView(stored);
     }
+
+    private static readonly IReadOnlyDictionary<string, int> EmptyVersions =
+        new Dictionary<string, int>(StringComparer.Ordinal);
 
     public async Task<FiscalPolicyMutationResponse> AddMentionAsync(
         FiscalMentionCreateRequest request,
@@ -209,7 +211,9 @@ public sealed class FiscalPolicyService : IFiscalPolicyService
         return new FiscalPolicyMutationResponse(
             "FISCAL_MENTION_SCHEDULED",
             "Mention enregistree. Elle s'appliquera aux documents emis a partir de sa date d'effet.",
-            BuildView(await _repository.ListAsync(cancellationToken)),
+            BuildView(
+                await _repository.ListAsync(cancellationToken),
+                await _repository.GetRegimeVersionsAsync(cancellationToken)),
             correlationId);
     }
 
@@ -234,20 +238,30 @@ public sealed class FiscalPolicyService : IFiscalPolicyService
         return new FiscalPolicyMutationResponse(
             "FISCAL_MENTION_CANCELLED",
             "Mention planifiee annulee.",
-            BuildView(await _repository.ListAsync(cancellationToken)),
+            BuildView(
+                await _repository.ListAsync(cancellationToken),
+                await _repository.GetRegimeVersionsAsync(cancellationToken)),
             correlationId);
     }
 
-    private FiscalPolicyAdminView BuildView(IReadOnlyList<StoredFiscalMention> stored)
+    /// <param name="versions">
+    /// Version monotone par regime. Un regime absent retombe sur le nombre de
+    /// mentions : cette valeur est toujours <b>inferieure ou egale</b> a la
+    /// version reelle, donc un envoi fonde sur elle produit au pire un conflit,
+    /// jamais une acceptation a tort.
+    /// </param>
+    private FiscalPolicyAdminView BuildView(
+        IReadOnlyList<StoredFiscalMention> stored,
+        IReadOnlyDictionary<string, int> versions)
     {
         var now = DateTime.UtcNow;
         var regimes = Regimes.Select(definition =>
         {
-            var versions = stored
+            var versionItems = stored
                 .Where(item => string.Equals(item.Regime, definition.Regime, StringComparison.Ordinal))
                 .OrderBy(item => item.EffectiveFromUtc)
                 .ToArray();
-            var active = versions.LastOrDefault(item => item.EffectiveFromUtc <= now);
+            var active = versionItems.LastOrDefault(item => item.EffectiveFromUtc <= now);
             var defaultMention = FiscalPolicy.DefaultMention(definition.Regime);
             return new FiscalPolicyRegimeView(
                 definition.Regime,
@@ -257,8 +271,10 @@ public sealed class FiscalPolicyService : IFiscalPolicyService
                 active?.Mention ?? defaultMention,
                 active is null ? null : Iso(active.EffectiveFromUtc),
                 active is null ? "code" : "database",
-                versions.Length,
-                versions.Select(item => new FiscalMentionVersionItem(
+                versions.TryGetValue(definition.Regime, out var regimeVersion)
+                    ? regimeVersion
+                    : versionItems.Length,
+                versionItems.Select(item => new FiscalMentionVersionItem(
                     item.Id,
                     item.Regime,
                     item.Mention,

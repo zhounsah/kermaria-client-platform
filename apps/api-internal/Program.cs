@@ -159,7 +159,13 @@ builder.Services.AddScoped<IAuthenticationRepository>(
     serviceProvider => sqlConfiguration.IsPersistent
         ? new MariaDbAuthenticationRepository(sqlConfiguration)
         : new MockAuthenticationRepository(
-            serviceProvider.GetRequiredService<MockAuthenticationStore>()));
+            serviceProvider.GetRequiredService<MockAuthenticationStore>())
+        {
+            // Meme role qu'ailleurs : en mock, le magasin en memoire tient lieu
+            // de transaction pour le secret KoXo.
+            SealSink = serviceProvider.GetRequiredService<IKoxoPendingPasswordStore>()
+                as IKoxoPendingPasswordSealSink
+        });
 builder.Services.AddScoped<IAdminRepository>(
     serviceProvider => sqlConfiguration.IsPersistent
         ? new MariaDbAdminRepository(sqlConfiguration)
@@ -306,7 +312,15 @@ builder.Services.AddScoped<ISignupRepository>(
         ? new MariaDbSignupRepository(sqlConfiguration)
         : new MockSignupRepository(
             serviceProvider.GetRequiredService<MockSignupStore>(),
-            serviceProvider.GetRequiredService<MockAuthenticationStore>()));
+            serviceProvider.GetRequiredService<MockAuthenticationStore>())
+        {
+            // En mock, le magasin en memoire tient lieu de transaction pour le
+            // secret : il ne le rend visible qu'au moment ou l'unite de travail
+            // aboutit. En persistance SQL, le depot MariaDB l'ecrit lui-meme
+            // dans sa transaction et ce point d'attache reste nul.
+            SealSink = serviceProvider.GetRequiredService<IKoxoPendingPasswordStore>()
+                as IKoxoPendingPasswordSealSink
+        });
 builder.Services.AddScoped<IKoxoRepository>(
     _ => sqlConfiguration.IsPersistent
         ? new MariaDbKoxoRepository(sqlConfiguration)
@@ -1233,16 +1247,22 @@ app.MapPost(
         // passage suivant et le client perdrait NextCloud, RDS et le VPN, sans
         // aucune erreur — apres avoir lu « mot de passe synchronise ».
         var koxoOwnsPassword = link is not null && adConfiguration.KoxoOwnsDirectory;
+
+        // Scelle, sans rien ecrire. Le depot du secret a lieu plus bas, dans la
+        // meme transaction que le condensat du portail : les deux autorites
+        // decrivent le meme fait, et une seule des deux qui bascule laisse la
+        // personne avec un mot de passe pour ses services et un autre pour le
+        // portail, sans erreur pour l'expliquer.
+        PortalPasswordSecret? koxoSecret = null;
         if (koxoOwnsPassword)
         {
             // Fail-closed avant tout point de non-retour : sans magasin
             // exploitable, le secret n'atteindrait jamais l'annuaire et le
             // portail afficherait pourtant un mot de passe change.
-            if (!pendingPasswords.IsOperational
-                || !await pendingPasswords.PublishAsync(
-                    session.UserId,
-                    request.NewPassword,
-                    context.RequestAborted))
+            koxoSecret = pendingPasswords.IsOperational
+                ? pendingPasswords.Seal(session.UserId, request.NewPassword)
+                : null;
+            if (koxoSecret is null)
             {
                 rateLimiter.RegisterFailure(session.UserId, now);
                 await linkRepository.UpdateUserPasswordSyncStatusAsync(
@@ -1266,34 +1286,6 @@ app.MapPost(
                         "Le mot de passe ne peut pas etre transmis a KoXo pour le moment. Reessayez plus tard.",
                         context.GetCorrelationId()),
                     statusCode: StatusCodes.Status503ServiceUnavailable);
-            }
-
-            await linkRepository.UpdateUserPasswordSyncStatusAsync(
-                session.UserId,
-                "pending",
-                now,
-                context.RequestAborted);
-
-            // Rattrapage, pas condition de succes : la synchronisation planifiee
-            // repassera de toute facon sur le mot de passe publie.
-            try
-            {
-                await koxoSyncTrigger.TriggerAsync(
-                    new KoxoSyncWebhookTriggerRequest(
-                        $"profile-{session.UserId}",
-                        session.UserId,
-                        link!.CustomerReference,
-                        "password_set",
-                        context.GetCorrelationId(),
-                        DateTime.UtcNow.ToString("O")),
-                    context.RequestAborted);
-            }
-            catch (Exception exception) when (exception is not OperationCanceledException)
-            {
-                app.Logger.LogWarning(
-                    exception,
-                    "KoXo sync trigger failed after a portal password change for portal_user_id {PortalUserId}",
-                    session.UserId);
             }
         }
         else if (link is not null)
@@ -1344,12 +1336,77 @@ app.MapPost(
                 context.RequestAborted);
         }
 
-        await authenticationRepository.UpdatePasswordHashAsync(
-            session.UserId,
-            portalPasswordService.HashPassword(
+        // Une seule unite de travail : condensat portail, secret KoXo et etat
+        // de synchronisation. En cas d'echec, rien n'est ecrit — surtout pas un
+        // secret que KoXo appliquerait plus tard tout seul.
+        bool applied;
+        try
+        {
+            applied = await authenticationRepository
+                .TryChangePasswordWithKoxoHandoffAsync(
+                    session.UserId,
+                    portalPasswordService.HashPassword(
+                        session.UserId,
+                        request.NewPassword),
+                    koxoSecret,
+                    now,
+                    context.RequestAborted);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            app.Logger.LogError(
+                exception,
+                "Portal password change could not be stored for portal_user_id {PortalUserId}",
+                session.UserId);
+            applied = false;
+        }
+
+        if (!applied)
+        {
+            rateLimiter.RegisterFailure(session.UserId, now);
+            await RecordAdAuditAsync(
+                context,
+                auditService,
+                "ad.password_change",
+                "refused",
+                "PASSWORD_CHANGE_STORAGE_UNAVAILABLE",
+                "portal_user",
                 session.UserId,
-                request.NewPassword),
-            context.RequestAborted);
+                session.UserId,
+                session.CustomerId);
+            return Results.Json(
+                new ApiError(
+                    "PASSWORD_CHANGE_STORAGE_UNAVAILABLE",
+                    "Le mot de passe n'a pas pu etre enregistre : rien n'a ete modifie. Reessayez plus tard.",
+                    context.GetCorrelationId()),
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+
+        // Apres le COMMIT seulement. Rattrapage, pas condition de succes : la
+        // synchronisation planifiee repassera de toute facon sur le secret
+        // desormais durable, et l'appel est idempotent.
+        if (koxoOwnsPassword)
+        {
+            try
+            {
+                await koxoSyncTrigger.TriggerAsync(
+                    new KoxoSyncWebhookTriggerRequest(
+                        $"profile-{session.UserId}",
+                        session.UserId,
+                        link!.CustomerReference,
+                        "password_set",
+                        context.GetCorrelationId(),
+                        DateTime.UtcNow.ToString("O")),
+                    context.RequestAborted);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                app.Logger.LogWarning(
+                    exception,
+                    "KoXo sync trigger failed after a portal password change for portal_user_id {PortalUserId}",
+                    session.UserId);
+            }
+        }
 
         rateLimiter.Reset(session.UserId);
         await RecordAdAuditAsync(

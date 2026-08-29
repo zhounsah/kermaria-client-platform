@@ -249,6 +249,68 @@ public sealed class MockAuthenticationRepository : IAuthenticationRepository
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Point d'attache du secret scelle, renseigne apres construction.
+    /// </summary>
+    /// <remarks>
+    /// En mock il n'y a pas de transaction : c'est le magasin en memoire qui
+    /// joue ce role, et le secret ne devient visible qu'au moment ou l'unite de
+    /// travail simulee aboutit.
+    /// </remarks>
+    public IKoxoPendingPasswordSealSink? SealSink { get; set; }
+
+    /// <remarks>
+    /// Tout ou rien, comme la transaction reelle. Le scelle est attache
+    /// <b>avant</b> l'ecriture du condensat, puis defait si celle-ci echoue :
+    /// c'est exactement l'ordre qui rendait le bug possible, et le seul qui
+    /// exerce reellement l'annulation. Sans cela, le mock validerait un chemin
+    /// que la base refuse.
+    /// </remarks>
+    public Task<bool> TryChangePasswordWithKoxoHandoffAsync(
+        string userId,
+        string passwordHash,
+        PortalPasswordSecret? koxoSecret,
+        DateTime atUtc,
+        CancellationToken cancellationToken)
+    {
+        lock (_store.Users)
+        {
+            var user = _store.Users.Values.FirstOrDefault(item => item.Id == userId);
+            if (user is null)
+            {
+                return Task.FromResult(false);
+            }
+
+            if (koxoSecret is not null)
+            {
+                if (SealSink is null)
+                {
+                    throw new InvalidOperationException(
+                        "Aucun point d'attache pour le secret KoXo.");
+                }
+
+                SealSink.AttachSealed(userId, koxoSecret);
+            }
+
+            try
+            {
+                MockPortalPasswordFailureSwitch.ThrowIfArmed();
+                ReplaceUser(user with { PasswordHash = passwordHash });
+            }
+            catch
+            {
+                if (koxoSecret is not null)
+                {
+                    SealSink!.DiscardSealed(userId, koxoSecret);
+                }
+
+                throw;
+            }
+
+            return Task.FromResult(true);
+        }
+    }
+
     private PortalUserCredential FindUser(string userId)
         => _store.Users.Values.FirstOrDefault(user => user.Id == userId)
             ?? throw new InvalidOperationException(

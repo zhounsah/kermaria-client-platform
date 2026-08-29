@@ -107,6 +107,11 @@ public sealed class KoxoPendingPasswordStore
     // travail n'a pas abouti.
     private readonly ConcurrentDictionary<string, Entry> _staged =
         new(StringComparer.Ordinal);
+    // Ce que l'attache a remplace, retenu le temps que l'unite de travail
+    // aboutisse ou non. C'est l'equivalent en memoire de ce qu'un ROLLBACK
+    // restitue.
+    private readonly ConcurrentDictionary<string, Entry?> _replaced =
+        new(StringComparer.Ordinal);
     private readonly TimeSpan _lifetime;
     private readonly ILogger<KoxoPendingPasswordStore> _logger;
 
@@ -147,7 +152,26 @@ public sealed class KoxoPendingPasswordStore
                 "Le scelle presente n'existe pas ou a deja ete attache.");
         }
 
+        _entries.TryGetValue(portalUserId, out var previous);
+        _replaced[secret.Ciphertext] = previous;
         _entries[portalUserId] = entry;
+    }
+
+    public void DiscardSealed(string portalUserId, PortalPasswordSecret secret)
+    {
+        if (!_replaced.TryRemove(secret.Ciphertext, out var previous))
+        {
+            // Rien n'a ete attache pour ce scelle : il n'y a rien a defaire.
+            return;
+        }
+
+        if (previous is null)
+        {
+            _entries.TryRemove(portalUserId, out _);
+            return;
+        }
+
+        _entries[portalUserId] = previous;
     }
 
     public Task<bool> PublishAsync(

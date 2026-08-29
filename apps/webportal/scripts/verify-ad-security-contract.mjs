@@ -221,6 +221,54 @@ assert.match(
   "Le message doit dire que l'application aux services attend la synchronisation.",
 );
 
+// Le condensat portail et le secret destiné à KoXo forment une seule unité de
+// travail. Les déposer l'un après l'autre laisse une fenêtre : si la seconde
+// écriture échoue, KoXo applique plus tard à l'annuaire un mot de passe que le
+// portail ignore, et le client ouvre NextCloud, RDS et VPN avec un mot de passe
+// et le portail avec un autre — sans que rien ne le signale.
+const passwordRouteBody = apiProgram.slice(
+  apiProgram.indexOf('"/internal/profile/password"'),
+  apiProgram.indexOf('"/internal/profile/password"') + 14000,
+);
+assert.match(
+  passwordRouteBody,
+  /pendingPasswords\.Seal\(/,
+  "La route doit sceller le secret sans l'écrire, pour que l'écriture ait lieu dans la transaction du condensat.",
+);
+assert.match(
+  passwordRouteBody,
+  /TryChangePasswordWithKoxoHandoffAsync/,
+  "Condensat portail et secret KoXo doivent être écrits par la même unité de travail.",
+);
+assert.doesNotMatch(
+  passwordRouteBody,
+  /pendingPasswords\.PublishAsync/,
+  "Publier le secret hors de la transaction rouvre la fenêtre de désynchronisation.",
+);
+assert.match(
+  passwordRouteBody,
+  /PASSWORD_CHANGE_STORAGE_UNAVAILABLE/,
+  "Une persistance indisponible doit être annoncée telle quelle, sans succès partiel.",
+);
+
+// Même invariant sur le parcours d'inscription, qui partage le magasin.
+const signupService = await readApi("apps/api-internal/Services/SignupService.cs");
+assert.match(
+  signupService,
+  /_pendingPasswords\.Seal\(/,
+  "L'inscription doit sceller le secret destiné à KoXo au lieu de le publier.",
+);
+assert.doesNotMatch(
+  signupService,
+  /_pendingPasswords\.PublishAsync/,
+  "L'inscription ne doit pas déposer le secret avant le commit du mot de passe portail.",
+);
+assert.match(
+  signupService,
+  /PASSWORD_CHANGE_STORAGE_UNAVAILABLE/,
+  "Un échec d'enregistrement du mot de passe d'inscription doit être annoncé, pas masqué.",
+);
+
 // La conversion d'un essai ne déplace pas l'identité en LDAP sous autorité KoXo.
 const demoConversion = await readApi(
   "apps/api-internal/Services/DemoConversionService.cs",

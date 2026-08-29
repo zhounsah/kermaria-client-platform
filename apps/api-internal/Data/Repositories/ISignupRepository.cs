@@ -150,10 +150,30 @@ public interface ISignupRepository
         DateTime passwordSetupExpiresAtUtc,
         CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Pose le mot de passe du portail, retire le jeton de definition et, quand
+    /// KoXo fait autorite, depose le secret qui lui est destine — le tout dans
+    /// une seule transaction.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Le secret etait auparavant publie <b>avant</b> cet appel. Un echec ici
+    /// laissait donc un mot de passe pret pour l'annuaire alors que le portail
+    /// gardait l'ancien : a la synchronisation suivante, KoXo appliquait le
+    /// nouveau a NextCloud, RDS et au VPN, et la personne ne pouvait plus se
+    /// connecter au portail avec. Aucune erreur n'exprimait cet ecart.
+    /// </para>
+    /// <para>
+    /// <paramref name="koxoSecret"/> arrive deja scelle : le clair ne franchit
+    /// pas cette frontiere. Nul quand KoXo n'est pas l'autorite.
+    /// </para>
+    /// </remarks>
     Task SetPasswordAsync(
         string signupId,
         string portalUserId,
         string passwordHash,
+        PortalPasswordSecret? koxoSecret,
+        DateTime atUtc,
         CancellationToken cancellationToken);
 
     /// <summary>

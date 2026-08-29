@@ -554,6 +554,9 @@ async Task<int> RunAsync(string[] arguments)
         await VerifyDirectoryOverviewAsync();
         await VerifyConfigurationAtomicityAsync();
         await VerifyDirectoryAuthorityEnforcementAsync();
+        await VerifyPasswordHandoffAtomicityAsync();
+        await VerifySignupPasswordHandoffAsync();
+        await VerifyFiscalVersionMonotonicityAsync();
         VerifyBillingV2FeatureFlagRegistry();
         await VerifyCommunicationTemplatesAsync();
         await VerifyDiagnosticConfigurationAsync();
@@ -5884,6 +5887,448 @@ static async Task VerifySettingsAuditAsync()
     MockSettingsAuditRepository.Clear();
 }
 
+// Atomicite metier entre les deux autorites du mot de passe. Le condensat
+// portail et le secret destine a KoXo doivent former une seule unite de
+// travail : sinon une panne entre les deux laisse KoXo appliquer plus tard a
+// l'annuaire un mot de passe que le portail ne connait pas, et la personne
+// ouvre NextCloud, RDS et VPN avec un mot de passe et le portail avec un
+// autre. Le test verifie l'etat reel apres l'echec, pas un code HTTP.
+static async Task VerifyPasswordHandoffAtomicityAsync()
+{
+    MockPortalPasswordFailureSwitch.Disarm();
+    var token = CancellationToken.None;
+    var passwordService = new PortalPasswordService();
+    var authStore = CreateMockAuthenticationStore();
+    var pendingPasswords = NewPendingPasswordStore();
+    var repository = new MockAuthenticationRepository(authStore)
+    {
+        SealSink = pendingPasswords
+    };
+
+    const string userId = "mock-portal-user";
+    const string firstPassword = "NOT_A_REAL_PASSWORD_HANDOFF_1";
+    const string secondPassword = "NOT_A_REAL_PASSWORD_HANDOFF_2";
+
+    bool HashMatches(string candidate)
+    {
+        var credential = authStore.Users.Values.Single(user => user.Id == userId);
+        return credential.PasswordHash is { } hash
+            && passwordService.Verify(userId, hash, candidate)
+                != Microsoft.AspNetCore.Identity.PasswordVerificationResult.Failed;
+    }
+
+    // Chemin nominal : les deux ecritures aboutissent ensemble.
+    var firstSecret = pendingPasswords.Seal(userId, firstPassword);
+    Ensure(
+        firstSecret is not null,
+        "Le magasin en memoire doit pouvoir sceller un mot de passe.");
+    Ensure(
+        await repository.TryChangePasswordWithKoxoHandoffAsync(
+            userId,
+            passwordService.HashPassword(userId, firstPassword),
+            firstSecret,
+            DateTime.UtcNow,
+            token),
+        "Le changement de mot de passe nominal doit aboutir.");
+    Ensure(
+        await pendingPasswords.PeekAsync(userId, token) == firstPassword,
+        "Apres succes, KoXo doit retenir exactement le mot de passe enregistre.");
+    Ensure(
+        HashMatches(firstPassword),
+        "Apres succes, le condensat portail doit correspondre au meme mot de passe.");
+
+    // Le scenario signale : le scelle est attache, puis l'ecriture du condensat
+    // echoue. Rien ne doit survivre de la moitie deja ecrite.
+    var secondSecret = pendingPasswords.Seal(userId, secondPassword);
+    MockPortalPasswordFailureSwitch.ArmOnce();
+    var threw = false;
+    try
+    {
+        await repository.TryChangePasswordWithKoxoHandoffAsync(
+            userId,
+            passwordService.HashPassword(userId, secondPassword),
+            secondSecret,
+            DateTime.UtcNow,
+            token);
+    }
+    catch (InvalidOperationException)
+    {
+        threw = true;
+    }
+
+    Ensure(
+        threw,
+        "Une persistance indisponible doit remonter, jamais etre avalee.");
+    Ensure(
+        await pendingPasswords.PeekAsync(userId, token) == firstPassword,
+        "Apres echec, KoXo ne doit jamais detenir un mot de passe que le portail ignore.");
+    Ensure(
+        HashMatches(firstPassword) && !HashMatches(secondPassword),
+        "Apres echec, le condensat portail doit etre reste celui d'avant.");
+    MockPortalPasswordFailureSwitch.Disarm();
+
+    // Une nouvelle tentative converge : rien n'a ete consomme.
+    var retrySecret = pendingPasswords.Seal(userId, secondPassword);
+    Ensure(
+        await repository.TryChangePasswordWithKoxoHandoffAsync(
+            userId,
+            passwordService.HashPassword(userId, secondPassword),
+            retrySecret,
+            DateTime.UtcNow,
+            token),
+        "Une nouvelle tentative apres echec doit aboutir.");
+    Ensure(
+        await pendingPasswords.PeekAsync(userId, token) == secondPassword
+        && HashMatches(secondPassword),
+        "Apres la reprise, les deux autorites doivent porter le meme mot de passe.");
+
+    // Un utilisateur portail introuvable n'ecrit rien, et ne laisse donc aucun
+    // secret derriere lui.
+    const string unknownUserId = "portal-user-handoff-inconnu";
+    var orphanSecret = pendingPasswords.Seal(unknownUserId, firstPassword);
+    Ensure(
+        !await repository.TryChangePasswordWithKoxoHandoffAsync(
+            unknownUserId,
+            passwordService.HashPassword(unknownUserId, firstPassword),
+            orphanSecret,
+            DateTime.UtcNow,
+            token),
+        "Un utilisateur portail inconnu doit rendre faux.");
+    Ensure(
+        await pendingPasswords.PeekAsync(unknownUserId, token) is null,
+        "Un refus ne doit deposer aucun secret pour KoXo.");
+
+    // Hors autorite KoXo, aucun secret n'est depose du tout.
+    Ensure(
+        await repository.TryChangePasswordWithKoxoHandoffAsync(
+            userId,
+            passwordService.HashPassword(userId, firstPassword),
+            null,
+            DateTime.UtcNow,
+            token),
+        "Sans secret KoXo, le changement de mot de passe doit rester possible.");
+    Ensure(
+        await pendingPasswords.PeekAsync(userId, token) == secondPassword,
+        "Un changement sans autorite KoXo ne doit pas toucher au secret en attente.");
+}
+
+// Meme invariant sur le parcours d'inscription, qui partage le magasin.
+static async Task VerifySignupPasswordHandoffAsync()
+{
+    MockPortalPasswordFailureSwitch.Disarm();
+    var token = CancellationToken.None;
+    var passwordService = new PortalPasswordService();
+
+    // Chemin nominal.
+    var nominalTrigger = new RecordingKoxoSyncWebhookTriggerService();
+    var nominal = await CreateSignupHandoffFixtureAsync("nominal", nominalTrigger);
+    const string password = "NOT_A_REAL_PASSWORD_SIGNUP_HANDOFF";
+    var applied = await nominal.Service.SetPasswordAsync(
+        nominal.PasswordToken,
+        password,
+        token);
+    Ensure(
+        applied.Succeeded && applied.Code == "PASSWORD_SET",
+        "Sous autorite KoXo, la definition du mot de passe d'inscription doit aboutir.");
+    Ensure(
+        await nominal.PendingPasswords.PeekAsync(nominal.PortalUserId, token) == password,
+        "Le secret destine a KoXo doit etre en attente apres succes.");
+    Ensure(
+        nominalTrigger.Requests.Count == 1,
+        "Le declenchement KoXo doit avoir lieu apres l'ecriture, exactement une fois.");
+    Ensure(
+        nominal.Directory.LifecycleWriteCount == 0,
+        "Sous autorite KoXo, aucune ecriture de cycle de vie ne doit etre tentee.");
+
+    // Persistance indisponible : ni secret, ni jeton consomme.
+    var failingTrigger = new RecordingKoxoSyncWebhookTriggerService();
+    var failing = await CreateSignupHandoffFixtureAsync("panne", failingTrigger);
+    MockPortalPasswordFailureSwitch.ArmOnce();
+    var refused = await failing.Service.SetPasswordAsync(
+        failing.PasswordToken,
+        password,
+        token);
+    MockPortalPasswordFailureSwitch.Disarm();
+    Ensure(
+        !refused.Succeeded && refused.Code == "PASSWORD_CHANGE_STORAGE_UNAVAILABLE",
+        "Une persistance indisponible doit etre annoncee telle quelle, sans succes partiel.");
+    Ensure(
+        await failing.PendingPasswords.PeekAsync(failing.PortalUserId, token) is null,
+        "Apres echec, aucun secret ne doit rester en attente pour KoXo.");
+    Ensure(
+        failingTrigger.Requests.Count == 0,
+        "Aucune synchronisation ne doit etre demandee sur une ecriture qui n'a pas eu lieu.");
+    Ensure(
+        failing.Directory.LifecycleWriteCount == 0,
+        "Un echec de persistance ne doit avoir laisse aucune trace dans l'annuaire.");
+
+    // Le jeton reste utilisable : la reprise converge.
+    var retried = await failing.Service.SetPasswordAsync(
+        failing.PasswordToken,
+        password,
+        token);
+    Ensure(
+        retried.Succeeded && retried.Code == "PASSWORD_SET",
+        "Le jeton doit rester utilisable apres un echec de persistance.");
+    Ensure(
+        await failing.PendingPasswords.PeekAsync(failing.PortalUserId, token) == password,
+        "La reprise doit deposer le secret destine a KoXo.");
+
+    // Declenchement KoXo en panne : c'est un rattrapage, pas une condition de
+    // succes. Le secret est deja durable, la synchronisation planifiee le
+    // reprendra.
+    var brokenTrigger = new FailingKoxoSyncWebhookTriggerService();
+    var recoverable = await CreateSignupHandoffFixtureAsync("rattrapage", brokenTrigger);
+    var stillApplied = await recoverable.Service.SetPasswordAsync(
+        recoverable.PasswordToken,
+        password,
+        token);
+    Ensure(
+        stillApplied.Succeeded && stillApplied.Code == "PASSWORD_SET",
+        "Un declenchement KoXo en panne ne doit pas annuler un mot de passe deja enregistre.");
+    Ensure(
+        await recoverable.PendingPasswords.PeekAsync(recoverable.PortalUserId, token) == password,
+        "Le secret reste en attente : la synchronisation planifiee le reprendra.");
+}
+
+static async Task<SignupHandoffFixture> CreateSignupHandoffFixtureAsync(
+    string discriminator,
+    IKoxoSyncWebhookTriggerService trigger)
+{
+    var token = CancellationToken.None;
+    var configuration = new ConfigurationBuilder()
+        .AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["DEMO_PORTAL_EMAIL"] = mockEmail,
+            ["DEMO_PORTAL_PASSWORD"] = mockPassword,
+            ["DEMO_PORTAL_STATUS"] = "active",
+            ["DEMO_INTERNAL_ADMIN_EMAIL"] = mockAdminEmail,
+            ["DEMO_INTERNAL_ADMIN_PASSWORD"] = mockAdminPassword
+        })
+        .Build();
+    var authStore = new MockAuthenticationStore(configuration, new PortalPasswordService());
+    var pendingPasswords = NewPendingPasswordStore();
+    var signupRepository = new MockSignupRepository(new MockSignupStore(), authStore)
+    {
+        SealSink = pendingPasswords
+    };
+
+    var signupId = $"signup-handoff-{discriminator}";
+    var portalUserId = $"portal-user-handoff-{discriminator}";
+    var passwordToken = $"token-handoff-{discriminator}";
+    const string customerReference = "CLI-DEMO-0042";
+    var customerData = new SignupCustomerData(
+        "professionnel",
+        "Client remise KoXo",
+        "handoff@example.invalid",
+        "0102030405",
+        "1 rue de la Remise",
+        null,
+        "29000",
+        "Quimper",
+        "France");
+    var userData = new SignupUserData(
+        "madame",
+        "Anne",
+        "Remise",
+        "1990-01-02",
+        "AR",
+        "Anne Remise",
+        "handoff@example.invalid",
+        "0102030405",
+        true);
+
+    await signupRepository.InsertPendingAsync(
+        new SignupInsert(
+            signupId,
+            "Client remise KoXo",
+            "Anne Remise",
+            "handoff@example.invalid",
+            "0102030405",
+            "Remise KoXo",
+            customerData,
+            userData,
+            $"verification-hash-{discriminator}",
+            DateTime.UtcNow.AddHours(4),
+            "127.0.0.1",
+            "SmokeTests"),
+        token);
+    await signupRepository.MarkEmailVerifiedAsync(signupId, token);
+    await signupRepository.ApproveAsync(
+        new SignupApprovalRequest(
+            signupId,
+            $"customer-handoff-{discriminator}",
+            customerReference,
+            customerData,
+            userData,
+            portalUserId,
+            HashTokenForTests(passwordToken),
+            DateTime.UtcNow.AddHours(24)),
+        token);
+
+    // KoXo fait autorite : c'est le seul mode ou le mot de passe part par le
+    // magasin plutot que par une ecriture LDAP.
+    var adConfiguration = new AdRuntimeConfiguration(
+        AdIntegrationMode.ControlledWrite,
+        "clients.home.bzh",
+        "OU=Clients,DC=clients,DC=home,DC=bzh",
+        "OU=Clients,DC=clients,DC=home,DC=bzh",
+        ["OU=Clients,DC=clients,DC=home,DC=bzh"],
+        false,
+        null,
+        null,
+        3000,
+        5000,
+        25,
+        true);
+    var adMembershipStore = new MockAdGroupMembershipStore();
+    var directory = new RecordingActiveDirectoryService(
+        new MockActiveDirectoryService(adConfiguration, adMembershipStore));
+    var linkRepository = new MockActiveDirectoryLinkRepository();
+
+    // Identite deja creee par KoXo et adoptee : le parcours prend alors la
+    // branche « lien existant », celle qui scelle le mot de passe.
+    var now = DateTime.UtcNow;
+    await linkRepository.UpsertPortalUserLinkAsync(
+        customerReference,
+        portalUserId,
+        null,
+        new AdDirectoryObjectSummary(
+            Guid.NewGuid().ToString("D"),
+            $"S-1-5-21-0-0-0-{Math.Abs(discriminator.GetHashCode() % 100000)}",
+            "user",
+            $"anne.remise.{discriminator}",
+            $"anne.remise.{discriminator}@clients.home.bzh",
+            "Anne Remise",
+            $"CN=Anne Remise {discriminator},OU=Clients,DC=clients,DC=home,DC=bzh",
+            customerReference,
+            false),
+        "clients.home.bzh",
+        "succeeded",
+        now,
+        "succeeded",
+        now,
+        "koxo_pending",
+        token);
+
+    var service = new SignupService(
+        signupRepository,
+        new TestEmailDispatchService(),
+        new PortalPasswordService(),
+        directory,
+        linkRepository,
+        new MockAdGroupProvisioner(adMembershipStore),
+        pendingPasswords,
+        trigger,
+        new SignupRuntimeConfiguration(true, 3, 1, 24, 24, false),
+        NewApplicationSettingsService(),
+        new EmailRuntimeConfiguration(
+            EmailIntegrationMode.Mock,
+            "smtp.example.invalid",
+            25,
+            false,
+            null,
+            null,
+            "noreply@example.invalid",
+            "Kermaria",
+            "https://portal.example.invalid",
+            "contact@example.invalid",
+            10000,
+            false,
+            Array.Empty<string>(),
+            true),
+        adConfiguration,
+        LoggerFactory.Create(_ => { }).CreateLogger<SignupService>());
+
+    return new SignupHandoffFixture(
+        service,
+        pendingPasswords,
+        directory,
+        portalUserId,
+        passwordToken);
+}
+
+// La version d'un regime fiscal ne doit jamais redescendre. Le decompte des
+// mentions jouait ce role, mais une annulation le fait diminuer : apres
+// « ajout, ajout, annulation », un `expectedVersion` perime redevenait valide,
+// et l'ecran d'un administrateur qui n'avait jamais vu la version
+// intermediaire passait sans conflit — sur un texte imprime sur des factures.
+static async Task VerifyFiscalVersionMonotonicityAsync()
+{
+    MockFiscalPolicyRepository.Clear();
+    FiscalMentionDirectory.Reset();
+    var repository = new MockFiscalPolicyRepository();
+    var service = new FiscalPolicyService(
+        repository,
+        LoggerFactory.Create(_ => { }).CreateLogger<FiscalPolicyService>());
+    var token = CancellationToken.None;
+    const string actor = "00000000-0000-0000-0000-0000000000ee";
+    const string correlation = "smoke-fiscal-version";
+
+    int VersionOf(FiscalPolicyMutationResponse response)
+        => response.View!.Regimes
+            .Single(regime => regime.Regime == FiscalRegimes.FranchiseBase)
+            .Version;
+
+    var first = DateTime.UtcNow.AddDays(30);
+    var second = DateTime.UtcNow.AddDays(60);
+
+    var added = await service.AddMentionAsync(
+        new FiscalMentionCreateRequest(
+            FiscalRegimes.FranchiseBase, "Premiere mention de version.", Iso(first), 0),
+        actor, correlation, token);
+    Ensure(added.Code == "FISCAL_MENTION_SCHEDULED", "Le premier ajout doit aboutir.");
+    Ensure(VersionOf(added) == 1, "Le premier ajout doit porter la version a 1.");
+
+    var addedAgain = await service.AddMentionAsync(
+        new FiscalMentionCreateRequest(
+            FiscalRegimes.FranchiseBase, "Deuxieme mention de version.", Iso(second), 1),
+        actor, correlation, token);
+    Ensure(addedAgain.Code == "FISCAL_MENTION_SCHEDULED", "Le second ajout doit aboutir.");
+    Ensure(VersionOf(addedAgain) == 2, "Le second ajout doit porter la version a 2.");
+
+    var scheduledId = addedAgain.View!.Regimes
+        .Single(regime => regime.Regime == FiscalRegimes.FranchiseBase)
+        .Versions.Single(item => item.Mention == "Deuxieme mention de version.")
+        .Id;
+    var cancelled = await service.DeleteScheduledMentionAsync(scheduledId, correlation, token);
+    Ensure(cancelled.Code == "FISCAL_MENTION_CANCELLED", "L'annulation doit aboutir.");
+
+    var afterCancel = cancelled.View!.Regimes
+        .Single(regime => regime.Regime == FiscalRegimes.FranchiseBase);
+    Ensure(
+        afterCancel.Versions.Count == 1,
+        "L'annulation doit avoir retire la mention planifiee.");
+    Ensure(
+        afterCancel.Version == 3,
+        "L'annulation doit compter comme une modification : la version ne redescend pas.");
+
+    // Le coeur de la regression : la version d'avant l'annulation ne doit plus
+    // jamais etre acceptee.
+    var stale = await service.AddMentionAsync(
+        new FiscalMentionCreateRequest(
+            FiscalRegimes.FranchiseBase, "Mention issue d'un ecran perime.", Iso(second), 2),
+        actor, correlation, token);
+    Ensure(
+        stale.Code == "FISCAL_VERSION_CONFLICT",
+        "Une version anterieure a l'annulation ne doit jamais redevenir acceptable.");
+    Ensure(
+        (await repository.ListAsync(token)).Count == 1,
+        "Un envoi refuse ne doit rien avoir enregistre.");
+
+    var fresh = await service.AddMentionAsync(
+        new FiscalMentionCreateRequest(
+            FiscalRegimes.FranchiseBase, "Mention issue d'un ecran a jour.", Iso(second), 3),
+        actor, correlation, token);
+    Ensure(
+        fresh.Code == "FISCAL_MENTION_SCHEDULED",
+        "La version courante doit rester acceptee.");
+    Ensure(VersionOf(fresh) == 4, "Un ajout accepte incremente encore la version.");
+
+    MockFiscalPolicyRepository.Clear();
+    FiscalMentionDirectory.Reset();
+}
+
 static async Task VerifyFiscalPolicyAsync()
 {
     MockFiscalPolicyRepository.Clear();
@@ -9592,4 +10037,24 @@ static class SmokeTestRuntimeHelpers
             File.Copy(file, destinationPath, overwrite: true);
         }
     }
+}
+
+sealed record SignupHandoffFixture(
+    SignupService Service,
+    KoxoPendingPasswordStore PendingPasswords,
+    RecordingActiveDirectoryService Directory,
+    string PortalUserId,
+    string PasswordToken);
+
+/// <summary>
+/// Declenchement KoXo en panne. Il n'est qu'un rattrapage : son echec ne doit
+/// jamais annuler un mot de passe deja enregistre.
+/// </summary>
+sealed class FailingKoxoSyncWebhookTriggerService : IKoxoSyncWebhookTriggerService
+{
+    public Task TriggerAsync(
+        KoxoSyncWebhookTriggerRequest request,
+        CancellationToken cancellationToken)
+        => throw new InvalidOperationException(
+            "Recepteur KoXo injoignable (panne simulee).");
 }

@@ -2687,6 +2687,14 @@ public static class BillingV2AdditionalUserIdentityTests
             _inner.AttachSealed(portalUserId, secret);
         }
 
+        /// <summary>
+        /// Annule l'attache, comme le ROLLBACK de la transaction reelle.
+        /// </summary>
+        public void DiscardSealed(
+            string portalUserId,
+            PortalPasswordSecret secret)
+            => _inner.DiscardSealed(portalUserId, secret);
+
         public Task<bool> PublishAsync(
             string portalUserId,
             string password,

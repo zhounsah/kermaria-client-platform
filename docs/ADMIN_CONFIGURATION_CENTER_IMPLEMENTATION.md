@@ -1948,3 +1948,123 @@ Des gardes structurels sont ajoutés à `verify-admin-contract.mjs` et
   exécution sur MariaDB.
 - La migration `079_configuration_permissions_fail_closed.sql` reste à appliquer
   explicitement ; aucune migration n'est appliquée au démarrage.
+
+## 38. Lot correctif « remise KoXo atomique et version fiscale »
+
+Deux défauts restaient ouverts après la section 37. Ils sont fermés ici. Le
+périmètre s'arrête là : rien d'autre n'a été revu.
+
+### 38.1 Atomicité métier du mot de passe portail ↔ KoXo
+
+Deux autorités détiennent le mot de passe d'un client : le portail, par son
+condensat, et KoXo, qui le réapplique à l'annuaire depuis la colonne 14 du CSV
+à chaque synchronisation. L'ordre précédent déposait le secret destiné à KoXo,
+posait la synchronisation à `pending`, déclenchait KoXo, puis écrivait le
+condensat du portail. Un échec de cette dernière écriture laissait le secret
+durable : l'appel répondait en erreur, la personne recommençait ou renonçait, et
+KoXo appliquait plus tard à l'annuaire un mot de passe que le portail ignorait.
+NextCloud, RDS et le VPN sous un mot de passe, le portail sous un autre, sans
+aucune erreur pour l'expliquer.
+
+Un simple réordonnancement ne corrige rien : écrire le condensat en premier
+crée la panne symétrique — le portail bascule, KoXo ne reçoit rien, et les
+services restent sur l'ancien mot de passe.
+
+La correction n'introduit aucun mécanisme nouveau : elle réutilise la brique
+`Seal` / attache déjà employée par `MariaDbPortalPasswordSetupRepository`.
+`IKoxoPendingPasswordStore.Seal` rend un secret chiffré **sans rien écrire** ;
+le dépôt l'écrit ensuite dans la **même transaction** que le condensat du
+portail et que `customer_ad_links.last_password_sync_status = 'pending'`. Il n'y
+a donc plus de fenêtre : les trois écritures tombent ensemble ou aucune. Le
+clair ne franchit jamais la frontière du dépôt, aucun secret n'est journalisé,
+et le déclenchement KoXo n'a lieu qu'**après** le commit — c'est un rattrapage,
+la synchronisation planifiée repassera de toute façon sur un secret désormais
+durable.
+
+Comportement par point de panne :
+
+| Point de panne | Résultat |
+| --- | --- |
+| Magasin KoXo inexploitable | `503 KOXO_PASSWORD_HANDOFF_UNAVAILABLE`, avant tout point de non-retour. Rien n'est écrit, aucune écriture LDAP de repli. |
+| Base portail indisponible | `503 PASSWORD_CHANGE_STORAGE_UNAVAILABLE`. Ni condensat, ni secret, ni `pending`. Le message décrit exactement cet état. |
+| Utilisateur portail introuvable | Refus, aucune écriture, aucun secret déposé. |
+| Déclenchement KoXo injoignable | L'opération reste un succès : le secret est déjà durable et la synchronisation planifiée le reprendra. |
+| Nouvelle tentative | Sûre et idempotente : le dépôt du secret est un `INSERT … ON DUPLICATE KEY UPDATE` qui remet le compteur de publication à zéro. Pour l'inscription, le jeton n'est consommé que dans la transaction qui réussit. |
+
+`SignupService` partageait exactement le même ordre et reçoit exactement la même
+correction, sans élargir le chantier : `ProvisionActiveDirectoryAsync` scelle au
+lieu de publier, et `ISignupRepository.SetPasswordAsync` écrit le secret dans la
+transaction qui efface déjà le jeton de définition du mot de passe.
+
+L'autorité KoXo est intacte : aucune écriture LDAP de mot de passe n'a été
+réintroduite, et les groupes de services restent le mandat d'API-INTERNAL.
+
+### 38.2 La version d'un régime fiscal ne redescend plus
+
+Vérification demandée : `MariaDbFiscalPolicyRepository.TryDeleteScheduledAsync`
+supprime-t-elle réellement une ligne ? **Oui** — `DELETE FROM
+fiscal_policy_mentions WHERE id = @id AND effective_from > @now`. Le décompte
+des mentions, qui servait d'`expectedVersion`, redescendait donc, et après
+« ajout, ajout, annulation » un `expectedVersion` périmé redevenait valide.
+
+La correction est un numéro de version explicite et monotone par régime, table
+`fiscal_policy_regime_versions` (migration **080**, additive, amorcée sur le
+décompte existant pour qu'un écran ouvert avant la bascule reste cohérent).
+Ajout comme annulation l'incrémentent, dans la transaction qui écrit. Les
+contraintes d'unicité existantes sont conservées : `INSERT IGNORE` sur
+`(regime, effective_from)` reste la garantie de dernier recours.
+
+Bénéfice secondaire, délibéré : le verrou porte désormais sur une **ligne
+présente** (`SELECT version … FOR UPDATE`) et non plus sur un intervalle vide.
+Le verrou d'intervalle n'existe qu'en REPEATABLE READ ; sur un régime encore
+vide en READ COMMITTED, deux ajouts concurrents comptaient tous les deux zéro et
+passaient tous les deux. L'isolation du serveur n'est plus une hypothèse de
+l'application.
+
+### 38.3 Tests
+
+- `VerifyPasswordHandoffAtomicityAsync` : scelle un secret, arme une panne de la
+  persistance du condensat (`MockPortalPasswordFailureSwitch`), et vérifie
+  **l'état réel** après l'échec — KoXo ne détient pas de mot de passe que le
+  portail ignore, le condensat est resté celui d'avant, et une nouvelle
+  tentative converge. Couvre aussi le cas nominal, l'utilisateur inconnu et
+  l'absence d'autorité KoXo.
+- `VerifySignupPasswordHandoffAsync` : même invariant sur l'inscription, plus le
+  jeton resté utilisable après échec, le déclenchement KoXo en panne mais
+  récupérable, et l'absence de toute écriture de cycle de vie dans l'annuaire.
+- `VerifyFiscalVersionMonotonicityAsync` : création → création → annulation →
+  nouvelle création ; la version vaut 3 alors que le décompte est retombé à 1,
+  et l'`expectedVersion` d'avant l'annulation est refusé sans rien enregistrer.
+- Gardes structurels dans `verify-ad-security-contract.mjs` (la route scelle et
+  écrit par `TryChangePasswordWithKoxoHandoffAsync`, ne publie pas hors
+  transaction) et `verify-admin-contract.mjs` (table de version, annulation qui
+  incrémente, vue qui publie la version du dépôt).
+
+### 38.4 Limite de preuve
+
+**La concurrence InnoDB réelle n'a pas été vérifiée.** Le harnais existe et
+exerce le dépôt réel, mais aucune base de test n'est accessible : sur
+`BASE-SQL-01`, `kermaria_migrator` ne porte de droits que sur `kermaria`
+(`GRANT … ON kermaria.*`), c'est-à-dire la base de production, et ne peut pas
+créer de base temporaire. Le protocole reste donc à exécuter le jour où un
+compte le permet :
+
+1. Créer une base temporaire `fiscal_version_validation_<AAAAMMJJ_HHMM>` et un
+   compte cantonné à elle. **Ne jamais utiliser `kermaria`.**
+2. Y appliquer les migrations `076` puis `080`.
+3. Relever l'isolation réellement utilisée (`SELECT @@transaction_isolation;`)
+   et la consigner : la correction ne doit dépendre d'aucun verrou d'intervalle.
+4. Lancer deux `TryAddAsync` concurrents, même `expectedVersion`, **dates d'effet
+   distinctes** — sinon c'est la clé unique qui tranche, pas le verrou de
+   version. Exactement un `Added`, un `VersionConflict`, une seule ligne en base,
+   version à 1.
+5. Rejouer l'ABA : ajout, ajout, annulation, puis `expectedVersion` d'avant
+   l'annulation. Décompte à 1, version à 3, refus, rien d'enregistré.
+6. Lancer deux `TryDeleteScheduledAsync` concurrents sur la même ligne : une
+   seule doit aboutir, et la version n'être incrémentée qu'une fois.
+7. Supprimer la base temporaire et le compte.
+
+Tant que ce protocole n'a pas tourné, les suites existantes ne prouvent que la
+persistance mock : le verrouillage InnoDB et la migration `080` ne sont pas
+exercés. Ce lot lève le dernier blocage logique ; il ne vaut pas « GO
+production ».

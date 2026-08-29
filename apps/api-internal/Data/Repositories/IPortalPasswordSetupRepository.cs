@@ -75,6 +75,26 @@ public sealed record PortalPasswordHandoff(
 public interface IKoxoPendingPasswordSealSink
 {
     void AttachSealed(string portalUserId, PortalPasswordSecret secret);
+
+    /// <summary>
+    /// Defait un attachement, comme le ferait un ROLLBACK.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Indispensable des lors que l'unite de travail simulee peut echouer
+    /// <b>apres</b> l'attache. Sans cela le mock laisse un secret en attente
+    /// alors que le mot de passe portail a ete repris : KoXo appliquerait plus
+    /// tard a l'annuaire un mot de passe que le portail ne connait pas — la
+    /// divergence exacte que la transaction reelle interdit.
+    /// </para>
+    /// <para>
+    /// L'etat precedent est restaure, pas simplement efface : un secret en
+    /// attente d'un changement anterieur doit survivre a l'annulation du
+    /// suivant, comme le ferait le ROLLBACK d'un
+    /// <c>INSERT ... ON DUPLICATE KEY UPDATE</c>.
+    /// </para>
+    /// </remarks>
+    void DiscardSealed(string portalUserId, PortalPasswordSecret secret);
 }
 
 /// <summary>

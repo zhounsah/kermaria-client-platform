@@ -676,6 +676,8 @@ public sealed class MariaDbSignupRepository : ISignupRepository
         string signupId,
         string portalUserId,
         string passwordHash,
+        PortalPasswordSecret? koxoSecret,
+        DateTime atUtc,
         CancellationToken cancellationToken)
     {
         await using var connection = new MySqlConnection(
@@ -712,6 +714,55 @@ public sealed class MariaDbSignupRepository : ISignupRepository
                 """;
             signupCommand.Parameters.AddWithValue("@id", signupId);
             await signupCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        if (koxoSecret is not null)
+        {
+            // Meme transaction que le condensat, volontairement : le secret
+            // destine a KoXo et le mot de passe du portail decrivent le meme
+            // fait. Publie separement, il survivait a l'echec de l'autre.
+            await using (var secretCommand = connection.CreateCommand())
+            {
+                secretCommand.Transaction = transaction;
+                secretCommand.CommandText =
+                    """
+                    INSERT INTO koxo_pending_directory_passwords (
+                        portal_user_id, ciphertext, key_id, expires_at,
+                        published_count, created_at, updated_at
+                    ) VALUES (
+                        @portal_user_id, @ciphertext, @key_id, @expires_at,
+                        0, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6)
+                    )
+                    ON DUPLICATE KEY UPDATE
+                        ciphertext = VALUES(ciphertext),
+                        key_id = VALUES(key_id),
+                        expires_at = VALUES(expires_at),
+                        published_count = 0,
+                        last_published_at = NULL,
+                        updated_at = UTC_TIMESTAMP(6);
+                    """;
+                secretCommand.Parameters.AddWithValue("@portal_user_id", portalUserId);
+                secretCommand.Parameters.AddWithValue("@ciphertext", koxoSecret.Ciphertext);
+                secretCommand.Parameters.AddWithValue("@key_id", koxoSecret.KeyId);
+                secretCommand.Parameters.AddWithValue("@expires_at", koxoSecret.ExpiresAtUtc);
+                await secretCommand.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await using (var syncCommand = connection.CreateCommand())
+            {
+                syncCommand.Transaction = transaction;
+                syncCommand.CommandText =
+                    """
+                    UPDATE customer_ad_links
+                    SET last_password_sync_at = @changed_at,
+                        last_password_sync_status = 'pending'
+                    WHERE portal_user_id = @portal_user_id
+                      AND object_type = 'user';
+                    """;
+                syncCommand.Parameters.AddWithValue("@changed_at", atUtc);
+                syncCommand.Parameters.AddWithValue("@portal_user_id", portalUserId);
+                await syncCommand.ExecuteNonQueryAsync(cancellationToken);
+            }
         }
 
         await transaction.CommitAsync(cancellationToken);

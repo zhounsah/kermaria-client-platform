@@ -52,13 +52,13 @@ Trois pièges déjà payés :
 - un échec de stockage doit **lever** et remonter `*_STORAGE_UNAVAILABLE`.
   Confondu avec un conflit de version, il dit à l'administrateur l'inverse de la
   vérité (« quelqu'un a modifié » au lieu de « rien n'a été enregistré ») ;
-- la concurrence fiscale utilise le **nombre de versions** comme version
+- la concurrence fiscale utilisait le **nombre de versions** comme version
   optimiste. Lu sur une connexion séparée avant l'insertion, il ne protégeait
   rien : deux administrateurs partis du même écran passaient tous les deux et la
   mention appliquée devenait silencieusement celle dont la date d'effet était la
-  plus proche. Le décompte est maintenant pris `FOR UPDATE` dans la transaction
-  d'insertion — sur un régime vide, InnoDB verrouille l'intervalle, ce qui est
-  exactement ce qui rend un décompte utilisable comme version.
+  plus proche. **Le décompte a été abandonné** : voir « Version fiscale
+  monotone » plus bas — une annulation le fait redescendre, donc il ne peut pas
+  être une version.
 
 L'amorce des modèles de démonstration est **tout ou rien**, vacuité vérifiée
 *dans* la transaction : une amorce partielle laissait une table non vide, donc
@@ -78,9 +78,11 @@ C'était le point décisif de la revue. Voir [[koxo-ad-password-mastery]],
   remarquerait pas. Refus : `409 AD_LIFECYCLE_KOXO_AUTHORITY`.
 - Les opérations de **groupe** ne sont pas bloquées : c'est le mandat que l'API
   conserve, et ce sont elles qui ouvrent et ferment réellement l'accès.
-- `/internal/profile/password` publie dans `IKoxoPendingPasswordStore`, marque
-  la synchronisation `pending`, déclenche le webhook en rattrapage, et répond
-  `AD_PASSWORD_CHANGE_PENDING_KOXO`. Avec `ForcePasswords=1`, KoXo réécrit le
+- `/internal/profile/password` **scelle** le mot de passe
+  (`IKoxoPendingPasswordStore.Seal`, qui n'écrit rien), puis écrit le chiffré,
+  le condensat du portail et la synchronisation `pending` **dans une seule
+  transaction** ; le webhook n'est déclenché qu'après le commit, en rattrapage,
+  et la réponse porte `AD_PASSWORD_CHANGE_PENDING_KOXO`. Avec `ForcePasswords=1`, KoXo réécrit le
   mot de passe depuis la colonne 14 du CSV à chaque passage : une écriture LDAP
   aurait été effacée sans erreur, **après** que le portail a annoncé
   « synchronisé avec Active Directory ». Relais inexploitable →
@@ -113,9 +115,62 @@ C'était le point décisif de la revue. Voir [[koxo-ad-password-mastery]],
   ne remplace pas une exécution sur MariaDB. Toute validation SQL réelle se
   fait sur le serveur, dans une base temporaire clonée — jamais en local.
 
+## Remise du mot de passe à KoXo : une seule transaction
+
+Deux autorités détiennent le mot de passe : le portail (condensat) et KoXo (qui
+le réapplique depuis la colonne 14 du CSV, `ForcePasswords=1`). Les écrire l'une
+après l'autre laisse une fenêtre, **dans les deux sens** :
+
+- secret déposé puis condensat en échec → KoXo applique plus tard un mot de
+  passe que le portail ignore. NextCloud, RDS et VPN sous un mot de passe, le
+  portail sous un autre, sans rien pour le signaler ;
+- condensat écrit puis secret en échec → le portail bascule, les services non.
+
+Un réordonnancement ne corrige donc rien. La solution retenue **n'invente aucun
+mécanisme** : elle réutilise le motif `Seal` / attache déjà employé par
+`MariaDbPortalPasswordSetupRepository`. `Seal` rend un chiffré authentifié sans
+rien écrire ; `IAuthenticationRepository.TryChangePasswordWithKoxoHandoffAsync`
+écrit condensat + secret + `last_password_sync_status = 'pending'` dans la même
+transaction. Le clair ne franchit jamais la frontière du dépôt.
+
+`SignupService` partageait le même défaut et reçoit la même correction :
+`ProvisionActiveDirectoryAsync` scelle, et `SetPasswordAsync` écrit le secret
+dans la transaction qui efface déjà le jeton — un échec laisse donc le jeton
+utilisable et aucun secret derrière lui.
+
+Invariants à ne pas défaire : le déclenchement KoXo est **après** le commit et
+son échec n'annule rien ; une persistance indisponible répond
+`PASSWORD_CHANGE_STORAGE_UNAVAILABLE` et non un succès partiel ; aucune écriture
+LDAP de mot de passe n'est réintroduite.
+
+## Version fiscale monotone
+
+`TryDeleteScheduledAsync` **supprime réellement** une ligne. Le décompte des
+mentions ne pouvait donc pas servir de version : après « ajout, ajout,
+annulation », il retrouve sa valeur d'avant et un `expectedVersion` périmé
+redevient acceptable — sur un texte imprimé sur des factures.
+
+Version explicite et monotone par régime : table
+`fiscal_policy_regime_versions`, migration **080**, additive, amorcée sur le
+décompte existant, **non appliquée**. Ajout *et* annulation l'incrémentent, dans
+la transaction qui écrit.
+
+Bénéfice secondaire délibéré : le verrou porte sur une **ligne présente**
+(`SELECT version … FOR UPDATE`) et non sur un intervalle vide. Le verrou
+d'intervalle n'existe qu'en REPEATABLE READ ; l'isolation du serveur n'est plus
+une hypothèse de l'application. (Relevé le 2026-08-29 : `BASE-SQL-01` est en
+MariaDB 11.8.6, session et global en REPEATABLE-READ — mais c'est un constat,
+pas une garantie sur laquelle s'appuyer.)
+
+**Concurrence InnoDB réelle : non vérifiée.** Aucune base de test n'est
+accessible — `kermaria_migrator` n'a de droits que sur `kermaria`, la base de
+production, et ne peut pas créer de base temporaire. Protocole reproductible en
+section 38.4 de `docs/ADMIN_CONFIGURATION_CENTER_IMPLEMENTATION.md`. Ce lot lève
+le dernier blocage logique ; il ne vaut pas « GO production ».
+
 ## Codes de réponse ajoutés
 
 `SETTINGS_STORAGE_UNAVAILABLE`, `TEMPLATE_STORAGE_UNAVAILABLE`,
 `FISCAL_STORAGE_UNAVAILABLE`, `DEMO_TEMPLATE_STORAGE_UNAVAILABLE`,
 `AD_LIFECYCLE_KOXO_AUTHORITY`, `AD_PASSWORD_CHANGE_PENDING_KOXO`,
-`KOXO_PASSWORD_HANDOFF_UNAVAILABLE`.
+`KOXO_PASSWORD_HANDOFF_UNAVAILABLE`, `PASSWORD_CHANGE_STORAGE_UNAVAILABLE`.

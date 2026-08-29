@@ -210,7 +210,17 @@ check("set-password respecte l'autorite KoXo", () => {
   assert.match(signupService, /_adConfiguration\.KoxoOwnsDirectory/);
   assert.match(signupService, /_pendingPasswords\.IsOperational/);
   assert.match(signupService, /KOXO_PASSWORD_HANDOFF_UNAVAILABLE/);
-  assert.match(signupService, /UpdateUserPasswordSyncStatusAsync/);
+  // Le secret est scellé sans écriture, puis écrit par la transaction qui pose
+  // le condensat et efface le jeton. Annoncer la synchronisation `pending`
+  // depuis le service la rendrait vraie avant que le secret n'existe.
+  assert.match(signupService, /_pendingPasswords\.Seal\(/);
+  assert.doesNotMatch(signupService, /_pendingPasswords\.PublishAsync/);
+  assert.match(signupService, /PASSWORD_CHANGE_STORAGE_UNAVAILABLE/);
+  assert.match(
+    signupRepoMaria,
+    /UPDATE customer_ad_links[\s\S]{0,300}?last_password_sync_status/,
+  );
+  assert.match(signupRepoMaria, /koxo_pending_directory_passwords/);
 });
 check("repository mock partage un store singleton", () => {
   assert.match(signupRepoMock, /class MockSignupStore/);
@@ -258,7 +268,10 @@ check("audit trace a chaque etape", () => {
 check("route profil change le mot de passe portail puis AD", () => {
   assert.match(programCs, /"\/internal\/profile\/password"/);
   assert.match(programCs, /FindUserLinkByPortalUserIdAsync/);
-  assert.match(programCs, /UpdatePasswordHashAsync/);
+  // Condensat portail et secret KoXo forment une seule unité de travail : les
+  // écrire l'un après l'autre laisse KoXo appliquer plus tard un mot de passe
+  // que le portail ignore.
+  assert.match(programCs, /TryChangePasswordWithKoxoHandoffAsync/);
   assert.match(programCs, /UpdateUserPasswordSyncStatusAsync/);
 });
 
