@@ -2581,6 +2581,80 @@ export interface IntegrationTestResponse {
   correlationId: string;
 }
 
+// --- Audit et permissions du Centre de configuration (sections 20 et 29)
+// Contrats non sensibles : l'audit ne transporte que des references de cible et
+// une adresse source deja masquee cote API. Aucune valeur de parametre, aucun
+// secret et aucun contenu de modele n'y figure.
+
+export interface SettingsAuditActionView {
+  action: string;
+  label: string;
+  category: string;
+  risk: string;
+}
+
+export interface SettingsAuditCategoryView {
+  key: string;
+  label: string;
+}
+
+export interface SettingsAuditEntryView {
+  occurredAt: string;
+  actor: string;
+  action: string;
+  actionLabel: string;
+  category: string;
+  risk: string;
+  outcome: string;
+  reasonCode: string | null;
+  targetType: string | null;
+  targetReference: string | null;
+  correlationId: string;
+  sourceAddress: string | null;
+}
+
+export interface SettingsAuditFilterEcho {
+  from: string | null;
+  to: string | null;
+  actor: string | null;
+  category: string | null;
+  risk: string | null;
+  outcome: string | null;
+  correlationId: string | null;
+  target: string | null;
+  limit: number;
+}
+
+export interface SettingsAuditView {
+  entries: SettingsAuditEntryView[];
+  actions: SettingsAuditActionView[];
+  categories: SettingsAuditCategoryView[];
+  risks: string[];
+  outcomes: string[];
+  filters: SettingsAuditFilterEcho;
+  persistent: boolean;
+  truncated: boolean;
+  warning: string | null;
+}
+
+export interface SettingsPermissionView {
+  code: string;
+  label: string;
+  description: string;
+  risk: string;
+  surfaces: string[];
+  /** "granted" : au moins une attribution explicite. "open" : aucune, donc
+   * l'acces reste ouvert par amorcage a tout administrateur interne. */
+  state: string;
+  grantCount: number;
+}
+
+export interface SettingsPermissionOverview {
+  permissions: SettingsPermissionView[];
+  bootstrapOpen: boolean;
+  notice: string;
+}
+
 // --- Modeles de contenu de demonstration (Centre de configuration, section 15)
 // Contrats non sensibles : un modele decrit seulement ce qui sera affiche sur un
 // compte de demonstration. Le type de service reste borne par un registre ferme

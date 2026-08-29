@@ -11,6 +11,16 @@ public interface IEditorialRepository
         string permissionCode,
         CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Nombre d'attributions explicites par code de permission. Un code absent
+    /// du resultat n'a aucune attribution : l'acces y reste ouvert par
+    /// amorcage, et c'est precisement ce que la page de permissions doit
+    /// rendre visible.
+    /// </summary>
+    Task<IReadOnlyDictionary<string, int>> GetAdminPermissionGrantCountsAsync(
+        IReadOnlyList<string> permissionCodes,
+        CancellationToken cancellationToken);
+
     Task<IReadOnlyList<EditorialCategory>> GetCategoriesAsync(
         string? contentType,
         CancellationToken cancellationToken);

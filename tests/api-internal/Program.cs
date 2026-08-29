@@ -549,6 +549,7 @@ async Task<int> RunAsync(string[] arguments)
         await VerifyDemoContentTemplatesAsync();
         await VerifyIntegrationsOverviewAsync();
         await VerifyRuntimeOverviewAsync();
+        await VerifySettingsAuditAsync();
         VerifyBillingV2FeatureFlagRegistry();
         await VerifyCommunicationTemplatesAsync();
         await VerifyDiagnosticConfigurationAsync();
@@ -5214,6 +5215,180 @@ static async Task VerifyRuntimeOverviewAsync()
         (await mock.GetAsync(token))
             .Sections.Single(section => section.Key == "database").State == "critical",
         "Une persistance mock hors developpement doit etre signalee comme bloquante.");
+}
+
+static async Task VerifySettingsAuditAsync()
+{
+    MockSettingsAuditRepository.Clear();
+    var token = CancellationToken.None;
+    var repository = new MockSettingsAuditRepository();
+    var service = new SettingsAuditService(
+        repository,
+        new MockEditorialRepository(new MockEditorialStore()),
+        LoggerFactory.Create(_ => { }).CreateLogger<SettingsAuditService>());
+
+    // Le registre d'audit et le registre de permissions se referencent : une
+    // action classee dans une categorie absente du registre serait invisible
+    // dans la page, sans qu'aucun test ne le signale.
+    Ensure(
+        SettingsAuditRegistry.All.All(action =>
+            SettingsAuditRegistry.Categories.Contains(action.Category)
+            && SettingsAuditRegistry.Risks.Contains(action.Risk)),
+        "Chaque action auditee doit porter une categorie et un risque connus.");
+
+    var empty = await service.SearchAsync(
+        null, null, null, null, null, null, null, null, null, token);
+    Ensure(
+        empty.Entries.Count == 0 && empty.Actions.Count == SettingsAuditRegistry.All.Count,
+        "Sans evenement, la vue doit rester vide mais decrire le registre complet.");
+    Ensure(
+        !empty.Persistent,
+        "La persistance mock doit etre annoncee comme non durable.");
+
+    // Le journal general contient toute l'activite du portail : un evenement
+    // hors registre ne doit pas apparaitre dans l'audit de configuration.
+    MockSettingsAuditRepository.Append(new AuditEvent(
+        "smoke-audit-hors-perimetre",
+        "customer_profile_updated",
+        "success",
+        ActorUserId: "Alice Martin"));
+    MockSettingsAuditRepository.Append(new AuditEvent(
+        "smoke-audit-parametre",
+        "setting_changed",
+        "success",
+        ReasonCode: "SETTING_SAVED",
+        TargetType: "application_setting",
+        TargetReference: "portal.support.hours",
+        ActorUserId: "Alice Martin",
+        SourceAddress: "192.168.100.37"));
+    MockSettingsAuditRepository.Append(new AuditEvent(
+        "smoke-audit-fiscal",
+        "fiscal_mention_scheduled",
+        "success",
+        TargetType: "fiscal_mention",
+        TargetReference: "franchise_base",
+        ActorUserId: "Bruno Le Gall"));
+    MockSettingsAuditRepository.Append(new AuditEvent(
+        "smoke-audit-refus",
+        "diagnostic_published",
+        "refused",
+        ReasonCode: "DIAGNOSTIC_VERSION_CONFLICT",
+        ActorUserId: "Bruno Le Gall"));
+
+    var all = await service.SearchAsync(
+        null, null, null, null, null, null, null, null, null, token);
+    Ensure(
+        all.Entries.Count == 3,
+        "Seuls les evenements du registre de configuration doivent etre retenus.");
+    Ensure(
+        all.Entries.All(entry => entry.Action != "customer_profile_updated"),
+        "Une action hors registre ne doit jamais apparaitre dans l'audit de configuration.");
+
+    // La categorie et le risque viennent du registre, pas de la base : les
+    // deduire du nom produirait des classements faux au premier renommage.
+    var fiscal = all.Entries.Single(entry => entry.Action == "fiscal_mention_scheduled");
+    Ensure(
+        fiscal is { Category: "billing", Risk: "critical" },
+        "Une mention fiscale planifiee doit etre classee en facturation, au risque critique.");
+
+    // L'adresse source est masquee avant de sortir : l'audit ne doit pas
+    // devenir un moyen detourne de lire une adresse complete.
+    var setting = all.Entries.Single(entry => entry.Action == "setting_changed");
+    Ensure(
+        setting.SourceAddress == "192.168.100.0",
+        "L'adresse source doit etre masquee comme dans le reste de l'administration.");
+    Ensure(
+        setting.TargetReference == "portal.support.hours"
+        && setting.ActionLabel != setting.Action,
+        "La cible et le libelle lisible doivent accompagner l'evenement.");
+
+    // Un refus est un evenement d'audit a part entiere : c'est lui qui montre
+    // qu'une mutation a ete tentee sans aboutir.
+    var refused = await service.SearchAsync(
+        null, null, null, null, null, "refused", null, null, null, token);
+    Ensure(
+        refused.Entries.Count == 1
+        && refused.Entries[0].ReasonCode == "DIAGNOSTIC_VERSION_CONFLICT",
+        "Le filtre par resultat doit isoler les mutations refusees.");
+
+    var billing = await service.SearchAsync(
+        null, null, null, "billing", null, null, null, null, null, token);
+    Ensure(
+        billing.Entries.Count == 1 && billing.Warning is null,
+        "Un filtre par domaine connu doit restreindre sans avertir.");
+
+    var byActor = await service.SearchAsync(
+        null, null, "alice", null, null, null, null, null, null, token);
+    Ensure(
+        byActor.Entries.Count == 1 && byActor.Entries[0].Actor == "Alice Martin",
+        "La recherche par acteur doit etre insensible a la casse.");
+
+    var byCorrelation = await service.SearchAsync(
+        null, null, null, null, null, null, "smoke-audit-fiscal", null, null, token);
+    Ensure(
+        byCorrelation.Entries.Count == 1,
+        "Une reference de correlation doit retrouver l'evenement exact.");
+
+    // Un filtre inconnu ne selectionne rien plutot que d'etre ignore : un
+    // filtre ignore laisserait croire que l'exhaustivite a ete verifiee.
+    var unknownCategory = await service.SearchAsync(
+        null, null, null, "inventee", null, null, null, null, null, token);
+    Ensure(
+        unknownCategory.Entries.Count == 0 && unknownCategory.Warning is not null,
+        "Une categorie inconnue doit ne rien selectionner et le dire.");
+
+    var unknownRisk = await service.SearchAsync(
+        null, null, null, null, "apocalyptique", null, null, null, null, token);
+    Ensure(
+        unknownRisk.Entries.Count == 0 && unknownRisk.Warning is not null,
+        "Un niveau de risque inconnu doit ne rien selectionner et le dire.");
+
+    // Une fenetre inversee est refusee et non redressee : la corriger en
+    // silence masquerait la saisie fautive.
+    var inverted = await service.SearchAsync(
+        Iso(DateTime.UtcNow.AddDays(1)),
+        Iso(DateTime.UtcNow.AddDays(-1)),
+        null, null, null, null, null, null, null, token);
+    Ensure(
+        inverted.Entries.Count == 0 && inverted.Warning is not null,
+        "Une periode inversee doit etre refusee explicitement.");
+
+    var future = await service.SearchAsync(
+        Iso(DateTime.UtcNow.AddMinutes(5)), null, null, null, null, null, null, null, null, token);
+    Ensure(
+        future.Entries.Count == 0,
+        "Une borne de debut posterieure aux evenements ne doit rien retenir.");
+
+    var limited = await service.SearchAsync(
+        null, null, null, null, null, null, null, null, 1, token);
+    Ensure(
+        limited.Entries.Count == 1 && limited.Truncated,
+        "Un resultat coupe par la limite doit etre annonce comme tronque.");
+
+    // Les permissions : sans attribution explicite, l'acces reste ouvert par
+    // amorcage. Presenter cet etat comme « attribue » ferait croire a un
+    // cloisonnement qui n'existe pas encore.
+    var permissions = await service.GetPermissionsAsync(token);
+    Ensure(
+        permissions.Permissions.Count == SettingsPermissionRegistry.All.Count
+        && permissions.Permissions.All(permission => permission.State == "open")
+        && permissions.BootstrapOpen,
+        "Sans attribution, chaque permission doit etre annoncee ouverte par amorcage.");
+    Ensure(
+        permissions.Permissions.All(permission =>
+            permission.Surfaces.Count > 0
+            && SettingsAuditRegistry.Risks.Contains(permission.Risk)),
+        "Chaque permission doit nommer ses surfaces et porter un risque connu.");
+
+    // Rien de ce qui sort ne doit ressembler a une valeur de parametre : la
+    // page d'audit n'est pas une porte derobee vers la configuration.
+    var serialized = JsonSerializer.Serialize(all);
+    Ensure(
+        !serialized.Contains("Password", StringComparison.OrdinalIgnoreCase)
+        && !serialized.Contains("secret", StringComparison.OrdinalIgnoreCase),
+        "L'audit de configuration ne doit transporter aucun secret ni valeur sensible.");
+
+    MockSettingsAuditRepository.Clear();
 }
 
 static async Task VerifyFiscalPolicyAsync()

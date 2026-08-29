@@ -1105,29 +1105,5 @@ public sealed class MariaDbAdminRepository : IAdminRepository
             : value.Trim()[..Math.Min(value.Trim().Length, maximumLength)];
 
     private static string? MaskAddress(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return null;
-        }
-
-        if (System.Net.IPAddress.TryParse(value, out var address))
-        {
-            var bytes = address.GetAddressBytes();
-            if (bytes.Length == 4)
-            {
-                bytes[3] = 0;
-                return new System.Net.IPAddress(bytes).ToString();
-            }
-
-            for (var index = 8; index < bytes.Length; index++)
-            {
-                bytes[index] = 0;
-            }
-
-            return new System.Net.IPAddress(bytes).ToString();
-        }
-
-        return "masquée";
-    }
+        => MariaDbAddressMask.Apply(value);
 }

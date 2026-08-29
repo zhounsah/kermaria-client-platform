@@ -179,6 +179,13 @@ builder.Services.AddScoped<
 builder.Services.AddScoped<
     IRuntimeOverviewService,
     RuntimeOverviewService>();
+builder.Services.AddScoped<ISettingsAuditRepository>(
+    _ => sqlConfiguration.IsPersistent
+        ? new MariaDbSettingsAuditRepository(sqlConfiguration)
+        : new MockSettingsAuditRepository());
+builder.Services.AddScoped<
+    ISettingsAuditService,
+    SettingsAuditService>();
 builder.Services.AddScoped<IDemoContentTemplateRepository>(
     _ => sqlConfiguration.IsPersistent
         ? new MariaDbDemoContentTemplateRepository(sqlConfiguration)
@@ -4439,6 +4446,44 @@ app.MapPost(
         var result = await service.PublishAsync(request, actor.UserId, context.GetCorrelationId(), context.RequestAborted);
         await RecordDiagnosticAuditAsync(context, auditService, actor.UserId, "diagnostic_published", result.Code, "DIAGNOSTIC_PUBLISHED");
         return Results.Json(result, statusCode: ResolveDiagnosticStatusCode(result.Code));
+    });
+// --- Audit consolide de la configuration (specification, sections 20 et 29) -
+app.MapGet(
+    "/internal/admin/settings/audit",
+    async (
+        HttpContext context,
+        ISettingsAuditService service,
+        IEditorialRepository editorialRepository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(context, authenticationService, auditService, "admin.settings.read");
+        if (!await editorialRepository.HasAdminPermissionAsync(actor.UserId, "settings.read", context.RequestAborted)) throw new PortalAccessDeniedException();
+        var query = context.Request.Query;
+        return Results.Ok(await service.SearchAsync(
+            query["from"],
+            query["to"],
+            query["actor"],
+            query["category"],
+            query["risk"],
+            query["outcome"],
+            query["correlationId"],
+            query["target"],
+            int.TryParse(query["limit"], out var limit) ? limit : null,
+            context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/admin/settings/permissions",
+    async (
+        HttpContext context,
+        ISettingsAuditService service,
+        IEditorialRepository editorialRepository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(context, authenticationService, auditService, "admin.settings.read");
+        if (!await editorialRepository.HasAdminPermissionAsync(actor.UserId, "settings.read", context.RequestAborted)) throw new PortalAccessDeniedException();
+        return Results.Ok(await service.GetPermissionsAsync(context.RequestAborted));
     });
 // --- Vue runtime consolidee (specification, section 17) --------------------
 app.MapGet(

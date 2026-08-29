@@ -40,6 +40,12 @@ public sealed class MockEditorialRepository : IEditorialRepository
         CancellationToken cancellationToken)
         => Task.FromResult(true);
 
+    public Task<IReadOnlyDictionary<string, int>> GetAdminPermissionGrantCountsAsync(
+        IReadOnlyList<string> permissionCodes,
+        CancellationToken cancellationToken)
+        => Task.FromResult<IReadOnlyDictionary<string, int>>(
+            new Dictionary<string, int>(StringComparer.Ordinal));
+
     public Task<IReadOnlyList<EditorialCategory>> GetCategoriesAsync(
         string? contentType,
         CancellationToken cancellationToken)

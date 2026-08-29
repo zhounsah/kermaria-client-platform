@@ -211,6 +211,17 @@ cookie HttpOnly -> BFF -> session API-INTERNAL -> user_id -> customer_id
   n'execute aucun DDL — le compte applicatif n'en a pas le droit.
 - Une persistance mock hors developpement est remontee comme bloquante : c'est
   une perte de donnees silencieuse.
+- L'audit de configuration lit le journal existant et n'en cree pas un second :
+  un journal parallele divergerait, et c'est le premier qui fait foi. L'adresse
+  source y est masquee par le meme code que le reste de l'administration.
+- Un filtre d'audit inconnu (categorie, niveau de risque) ne selectionne rien et
+  le dit ; une periode inversee est refusee et non redressee. Un filtre ignore
+  laisserait croire que l'exhaustivite a ete verifiee.
+- Une permission du Centre sans attribution explicite est annoncee ouverte par
+  amorcage : tout administrateur interne y accede tant que personne n'a ete
+  designe. L'afficher comme attribuee ferait croire a un cloisonnement inexistant.
+- Un test de non-regression serialise la reponse d'audit et echoue si une valeur
+  sensible y apparait.
 - La console d'integrations ne transporte aucun secret : un mot de passe SMTP,
   une cle Stripe, un secret PayPal, un jeton BPCE ou KoXo n'y apparaissent que
   par leur presence. Un test de non-regression serialise la reponse et echoue si

@@ -9678,3 +9678,23 @@ fieldset.form-field > .form-hint {
 .admin-runtime-table tbody th { font-weight:600; }
 .admin-runtime-table small { display:block; color:var(--muted); font-weight:400; }
 @media (max-width:820px) { .admin-billing-flag dl div { grid-template-columns:1fr; } }
+
+/* Centre de configuration - audit et permissions */
+.admin-audit { display:grid; gap:20px; }
+.admin-audit [role="status"] { margin:0; color:#8a5300; }
+.admin-audit-filters { display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); align-items:end; padding:16px; border:1px solid var(--border,#d7dee8); border-radius:12px; background:var(--surface,#fff); }
+.admin-audit-filters div { display:grid; gap:4px; }
+.admin-audit-filters label { font-size:.78rem; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+.admin-audit-filters input, .admin-audit-filters select { padding:8px 10px; border:1px solid var(--border,#d7dee8); border-radius:8px; background:var(--surface,#fff); color:inherit; font:inherit; min-width:0; }
+.admin-audit-filters-actions { display:flex; gap:8px; flex-wrap:wrap; }
+.admin-audit-table-scroll { overflow-x:auto; }
+.admin-audit-table { width:100%; border-collapse:collapse; }
+.admin-audit-table caption { text-align:left; padding-bottom:8px; color:var(--muted); }
+.admin-audit-table th, .admin-audit-table td { padding:8px 10px; border-bottom:1px solid var(--border,#d7dee8); text-align:left; vertical-align:top; }
+.admin-audit-table tbody th { font-weight:600; }
+.admin-audit-table small { display:block; color:var(--muted); font-weight:400; }
+.admin-audit-table code { overflow-wrap:anywhere; }
+/* Le risque se lit d'un coup d'oeil : une mention fiscale ne doit pas se
+   confondre avec un enregistrement de brouillon. */
+.admin-audit-risk-high td:first-child { box-shadow:inset 3px 0 0 #c98a00; }
+.admin-audit-risk-critical td:first-child { box-shadow:inset 3px 0 0 #b3261e; }

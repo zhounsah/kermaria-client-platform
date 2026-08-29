@@ -547,6 +547,47 @@ simple « Configure ».
 Rien ne se modifie ici. Ces reglages sont resolus au demarrage du service et se
 corrigent sur la machine, avant un redemarrage.
 
+## 7 nonies. Audit et permissions - `/admin/settings/audit`
+
+Page de lecture. Elle repond a : **qui a change quoi, quand, et avec quel
+resultat.**
+
+Ce n'est pas un second journal : c'est le journal d'audit du portail, restreint
+aux actions du Centre de configuration. Le domaine et le niveau de risque
+viennent d'un registre du code — une action ne peut donc pas etre mal classee
+sans que le code le soit aussi.
+
+### Filtrer
+
+Periode, acteur, domaine, niveau de risque, resultat, cle ou cible, et
+reference de correlation. Les filtres vivent dans l'URL : une recherche se
+partage et se recharge telle quelle, ce qui compte quand on suit un incident.
+
+Deux comportements a connaitre :
+
+- un domaine ou un niveau de risque inconnu **ne ramene rien** et l'affiche.
+  Le filtre n'est pas ignore : mieux vaut une liste vide qu'une liste qu'on
+  croirait complete ;
+- une periode a l'envers est **refusee**, pas corrigee.
+
+Un resultat coupe par la limite est annonce comme tronque : resserrez la
+periode pour voir les plus anciens.
+
+### Ce qui n'y figure pas
+
+Aucune valeur de parametre, aucun secret, aucun contenu de modele. Seules la
+cible et la reference de correlation sont affichees, et l'adresse source y est
+deja masquee. La « Reference » est le `correlation_id` : c'est elle qu'on
+transmet pour retrouver l'evenement dans les journaux du service.
+
+### Permissions
+
+Le bas de page liste les sept permissions du Centre, leur portee et leur niveau
+de risque. Une permission marquee **« Ouverte par amorcage »** n'a encore aucune
+attribution : tout administrateur interne y accede. Attribuer la permission a un
+compte referme l'acces aux seuls comptes designes — c'est l'action a faire avant
+d'ouvrir le Centre a plusieurs personnes.
+
 ## 8. Diagnostic rapide
 
 Quand un client remonte un probleme de panier, paiement, abonnement ou

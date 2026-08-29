@@ -58,6 +58,45 @@ public sealed class MariaDbEditorialRepository : IEditorialRepository
         return total == 0 || user > 0;
     }
 
+    public async Task<IReadOnlyDictionary<string, int>> GetAdminPermissionGrantCountsAsync(
+        IReadOnlyList<string> permissionCodes,
+        CancellationToken cancellationToken)
+    {
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        if (permissionCodes.Count == 0)
+        {
+            return counts;
+        }
+
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+
+        var parameters = new List<string>(permissionCodes.Count);
+        for (var index = 0; index < permissionCodes.Count; index++)
+        {
+            var name = $"@code{index}";
+            parameters.Add(name);
+            command.Parameters.AddWithValue(name, permissionCodes[index]);
+        }
+
+        command.CommandText =
+            $"""
+            SELECT permission_code, COUNT(*) AS grant_count
+            FROM admin_permission_grants
+            WHERE permission_code IN ({string.Join(", ", parameters)})
+            GROUP BY permission_code;
+            """;
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            counts[reader.GetString("permission_code")] =
+                Convert.ToInt32(reader["grant_count"]);
+        }
+
+        return counts;
+    }
+
     public async Task<IReadOnlyList<EditorialCategory>> GetCategoriesAsync(
         string? contentType,
         CancellationToken cancellationToken)

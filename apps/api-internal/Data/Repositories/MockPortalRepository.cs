@@ -105,7 +105,13 @@ public sealed class MockPortalRepository : IPortalRepository
     public Task AppendAuditAsync(
         AuditEvent auditEvent,
         CancellationToken cancellationToken)
-        => Task.CompletedTask;
+    {
+        // Sans persistance, un evenement d'audit disparaitrait immediatement et
+        // la page d'audit de configuration serait vide en developpement, sans
+        // qu'on puisse distinguer « aucune mutation » de « mauvaise lecture ».
+        MockSettingsAuditRepository.Append(auditEvent);
+        return Task.CompletedTask;
+    }
 
     private static ClientProfile BuildProfile(PortalSessionContext session)
     {

@@ -431,6 +431,54 @@ specification interdit.
 
 Evenements d'audit : `diagnostic_draft_changed`, `diagnostic_published`.
 
+## Audit et permissions de la configuration
+
+`GET /internal/admin/settings/audit` (`settings.read`) et
+`GET /internal/admin/settings/permissions` (`settings.read`).
+
+L'audit **ne cree pas un second journal**. Il lit `audit_logs`, le journal du
+portail, en le restreignant a un registre ferme d'actions
+(`SettingsAuditRegistry`). Un journal parallele divergerait du premier, et c'est
+le premier qui fait foi.
+
+La **categorie** et le **niveau de risque** ne sont pas stockes en base : ils
+sont rattaches depuis le registre au moment de la lecture. Les deduire du nom de
+l'action produirait des classements faux des qu'une action serait renommee.
+
+Filtres acceptes, tous facultatifs : `from`, `to` (bornes UTC), `actor`
+(nom affiche ou service, sous-chaine), `category`, `risk`, `outcome`,
+`correlationId` (egalite stricte), `target` (sous-chaine de la cible) et
+`limit` (borne a 200).
+
+Deux regles de filtrage sont explicites :
+
+- une **categorie ou un risque inconnu ne selectionne rien**, plutot que d'etre
+  ignore. Un filtre ignore laisserait croire que l'exhaustivite a ete verifiee ;
+- une **periode inversee est refusee**, pas redressee. La corriger en silence
+  masquerait la saisie fautive.
+
+La reponse porte `warning` dans ces deux cas, `persistent` (faux en persistance
+mock : les evenements ne survivent pas au redemarrage) et `truncated` quand la
+limite a coupe le resultat.
+
+Ce qui sort : date, acteur, action et son libelle, categorie, risque, resultat,
+code de raison, type et reference de cible, `correlation_id`, adresse source
+**deja masquee**. Aucune valeur de parametre, aucun secret, aucun contenu de
+modele.
+
+`GET /internal/admin/settings/permissions` decrit le registre ferme des sept
+permissions du Centre et, pour chacune, le nombre d'attributions explicites.
+Une permission sans aucune attribution est annoncee `open` : l'acces y reste
+ouvert par **amorcage** a tout administrateur interne, tant que personne n'a ete
+designe. La presenter comme « attribuee » ferait croire a un cloisonnement qui
+n'existe pas encore.
+
+Ce registre ne **decide** rien : l'autorisation reste
+`HasAdminPermissionAsync`, revalidee cote API-INTERNAL a chaque mutation.
+
+Migration `078` : index `(action, occurred_at)` sur `audit_logs`. Sans lui, la
+lecture filtree parcourt un journal qui grossit indefiniment.
+
 ## Vue runtime consolidee
 
 `GET /internal/admin/settings/runtime` (`settings.read`) decrit API-INTERNAL,

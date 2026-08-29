@@ -40,6 +40,8 @@ import type {
   DemoContentTemplateAdminView,
   IntegrationsOverview,
   RuntimeOverview,
+  SettingsAuditView,
+  SettingsPermissionOverview,
   FiscalPolicyAdminView,
   DiagnosticConfigurationSnapshot,
   DownloadCategory,
@@ -1172,6 +1174,72 @@ export function getAdminRuntimeOverview() {
       startedAt: "",
       uptimeSeconds: 0,
       sections: [],
+    },
+  );
+}
+
+/**
+ * Filtres d'audit tels qu'ils arrivent de la page. Ils sont recopies tels quels
+ * vers API-INTERNAL, qui reste seule a decider ce qu'un filtre inconnu
+ * selectionne : un filtre normalise ici pourrait diverger de la regle serveur et
+ * laisser croire a une recherche exhaustive.
+ */
+export interface AdminSettingsAuditFilters {
+  from?: string;
+  to?: string;
+  actor?: string;
+  category?: string;
+  risk?: string;
+  outcome?: string;
+  correlationId?: string;
+  target?: string;
+  limit?: string;
+}
+
+const EMPTY_SETTINGS_AUDIT: SettingsAuditView = {
+  entries: [],
+  actions: [],
+  categories: [],
+  risks: [],
+  outcomes: [],
+  filters: {
+    from: null,
+    to: null,
+    actor: null,
+    category: null,
+    risk: null,
+    outcome: null,
+    correlationId: null,
+    target: null,
+    limit: 100,
+  },
+  persistent: false,
+  truncated: false,
+  warning: null,
+};
+
+export function getAdminSettingsAudit(filters: AdminSettingsAuditFilters = {}) {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (typeof value === "string" && value.trim().length > 0) {
+      query.set(key, value.trim());
+    }
+  }
+
+  const suffix = query.size > 0 ? `?${query.toString()}` : "";
+  return getAdminData<SettingsAuditView>(
+    `/internal/admin/settings/audit${suffix}`,
+    EMPTY_SETTINGS_AUDIT,
+  );
+}
+
+export function getAdminSettingsPermissions() {
+  return getAdminData<SettingsPermissionOverview>(
+    "/internal/admin/settings/permissions",
+    {
+      permissions: [],
+      bootstrapOpen: false,
+      notice: "",
     },
   );
 }
