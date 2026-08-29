@@ -174,3 +174,10 @@ le dernier blocage logique ; il ne vaut pas « GO production ».
 `FISCAL_STORAGE_UNAVAILABLE`, `DEMO_TEMPLATE_STORAGE_UNAVAILABLE`,
 `AD_LIFECYCLE_KOXO_AUTHORITY`, `AD_PASSWORD_CHANGE_PENDING_KOXO`,
 `KOXO_PASSWORD_HANDOFF_UNAVAILABLE`, `PASSWORD_CHANGE_STORAGE_UNAVAILABLE`.
+
+
+## Release UI v2.0.1.1 - 2026-08-29
+
+Le Centre de configuration utilise desormais un modele cible : selection du domaine, selection d un seul element, puis detail ou edition de cet element. Messages, Diagnostic, Facturation, Demonstrations, Integrations, Annuaire & KoXo, Runtime et Audit & permissions n affichent plus tous leurs editeurs ou tableaux simultanement.
+
+Invariants conserves : aucune route, permission, mutation, migration ou logique metier n a ete elargie. `AdminDirectoryCenter` reste un Server Component en lecture seule ; seul le selecteur d onglets est client. Release applicative `v2.0.1.1`, commit `f4a91af5ae326be62085e270d099acfd2073076f`. Production SRV-12 active : `/opt/kermaria/releases/20260829-131801-v2.0.1.1-f4a91af`; rollback : `/opt/kermaria/releases/20260829-125652-v2.0.1.0-9f09fa4`.
