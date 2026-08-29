@@ -1,6 +1,7 @@
 import { AdminBillingConfigurationCenter } from "@/components/AdminBillingConfigurationCenter";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
+import { AdminSettingsNavigation } from "@/components/AdminSettingsNavigation";
 import { requireAdminSession } from "@/lib/auth";
 import {
   getAdminBillingV2Configuration,
@@ -25,6 +26,7 @@ export default async function AdminBillingSettingsPage() {
         title="Facturation et fiscalité"
         description="Mentions fiscales datées, résumé Billing V2 et état des drapeaux. Le calcul des montants et des taxes reste l'autorité d'API-INTERNAL."
       />
+      <AdminSettingsNavigation />
       {fiscalResult.error ? (
         <ErrorState
           title="Fiscalité indisponible"

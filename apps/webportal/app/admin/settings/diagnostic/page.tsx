@@ -1,8 +1,7 @@
-import Link from "next/link";
-
 import { AdminDiagnosticCenter } from "@/components/AdminDiagnosticCenter";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
+import { AdminSettingsNavigation } from "@/components/AdminSettingsNavigation";
 import { requireAdminSession } from "@/lib/auth";
 import {
   DEFAULT_DIAGNOSTIC_RECOMMENDATION_CONFIG,
@@ -38,11 +37,7 @@ export default async function AdminDiagnosticPage() {
         title="Diagnostic"
         description="Contextes, questions, conditions, textes de résultat et correspondance Billing V2. Le brouillon n'est jamais visible du public : seule une publication bascule le parcours, en une seule fois."
       />
-      <p>
-        <Link className="back-link" href="/admin/settings">
-          <span aria-hidden="true">←</span> Retour au centre de configuration
-        </Link>
-      </p>
+      <AdminSettingsNavigation />
       {view.error ? (
         <ErrorState
           title="Configuration indisponible"

@@ -1,6 +1,7 @@
 import { AdminDirectoryCenter } from "@/components/AdminDirectoryCenter";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
+import { AdminSettingsNavigation } from "@/components/AdminSettingsNavigation";
 import { requireAdminSession } from "@/lib/auth";
 import { getAdminDirectoryOverview } from "@/lib/internal-api";
 
@@ -19,6 +20,7 @@ export default async function AdminDirectoryPage() {
         title="Annuaire et KoXo"
         description="Autorités, périmètres d'écriture, racines autorisées et écritures réellement demandées par l'API. Lecture seule."
       />
+      <AdminSettingsNavigation />
       {result.error ? (
         <ErrorState
           title="Vue annuaire indisponible"

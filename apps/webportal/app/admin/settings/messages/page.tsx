@@ -1,8 +1,7 @@
-import Link from "next/link";
-
 import { AdminCommunicationsCenter } from "@/components/AdminCommunicationsCenter";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
+import { AdminSettingsNavigation } from "@/components/AdminSettingsNavigation";
 import { requireAdminSession } from "@/lib/auth";
 import { getAdminCommunicationTemplates } from "@/lib/internal-api";
 
@@ -19,11 +18,7 @@ export default async function AdminCommunicationsPage() {
         title="Messages & communications"
         description="E-mails transactionnels, notifications du portail et textes système. Chaque modèle possède une liste fermée de variables ; un modèle absent ou désactivé retombe sur le texte intégré au code."
       />
-      <p>
-        <Link className="back-link" href="/admin/settings">
-          <span aria-hidden="true">←</span> Retour au centre de configuration
-        </Link>
-      </p>
+      <AdminSettingsNavigation />
       {result.error ? (
         <ErrorState
           title="Modèles indisponibles"

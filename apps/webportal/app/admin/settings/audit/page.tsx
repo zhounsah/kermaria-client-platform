@@ -1,6 +1,7 @@
 import { AdminSettingsAuditCenter } from "@/components/AdminSettingsAuditCenter";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
+import { AdminSettingsNavigation } from "@/components/AdminSettingsNavigation";
 import { requireAdminSession } from "@/lib/auth";
 import {
   getAdminSettingsAudit,
@@ -54,6 +55,7 @@ export default async function AdminSettingsAuditPage({
         title="Audit de la configuration"
         description="Qui a changé quoi, quand, avec quel résultat et sous quelle référence. Le journal du portail est lu tel quel, restreint aux actions du Centre."
       />
+      <AdminSettingsNavigation />
       {auditResult.error || permissionsResult.error ? (
         <ErrorState
           title="Audit indisponible"

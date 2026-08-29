@@ -10,6 +10,7 @@ import type {
   DiagnosticContextConfig,
   DiagnosticRecommendationConfig,
 } from "@kermaria/shared";
+import { Activity, ArrowRight, History, PencilLine, PlayCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { AdminDiagnosticContextEditor } from "@/components/AdminDiagnosticEditor";
@@ -19,7 +20,6 @@ import { requestBffJson } from "@/lib/client-api";
 import { validateDiagnosticConfiguration } from "@/lib/diagnostic-configuration-validation";
 import {
   DEFAULT_DIAGNOSTIC_CONFIGURATION,
-  DIAGNOSTIC_CONTEXT_IDS,
   type DiagnosticContextId,
 } from "@/lib/diagnostic-context";
 
@@ -197,13 +197,25 @@ export function AdminDiagnosticCenter({
   }
 
   return (
-    <section aria-label="Diagnostic administrable" className="admin-settings-center">
-      <p className="muted">
-        {view.persistent
-          ? "La configuration est persistée dans MariaDB. Sans version publiée, le parcours public utilise la configuration intégrée au code."
-          : "Mode de démonstration : les modifications disparaissent au redémarrage."}
-      </p>
-      <dl className="admin-diagnostic-status">
+    <section
+      aria-label="Diagnostic administrable"
+      className="content-panel section-card admin-settings-surface admin-settings-focused-page"
+    >
+      <header className="admin-settings-focused-header">
+        <div>
+          <h2>Diagnostic</h2>
+          <p>
+            Modifiez un contexte à la fois. Le brouillon, la validation et la
+            publication restent séparés pour que l&apos;impact de chaque action soit
+            explicite.
+          </p>
+        </div>
+        <span className="admin-settings-persistence-note">
+          {view.persistent ? "Persisté dans MariaDB" : "Mode temporaire"}
+        </span>
+      </header>
+
+      <dl className="admin-settings-summary-strip admin-diagnostic-status">
         <div>
           <dt>Brouillon</dt>
           <dd>
@@ -235,7 +247,11 @@ export function AdminDiagnosticCenter({
       {banner ? (
         <FormMessage
           tone={banner.tone}
-          title={banner.tone === "success" ? "Opération effectuée" : "Opération refusée"}
+          title={
+            banner.tone === "success"
+              ? "Opération effectuée"
+              : "Opération refusée"
+          }
         >
           {banner.text}
         </FormMessage>
@@ -256,43 +272,49 @@ export function AdminDiagnosticCenter({
         <div className="admin-diagnostic-errors" role="status">
           <p>Refus d&apos;API-INTERNAL :</p>
           <ul>
-            {serverErrors.slice(0, 20).map((error) => <li key={error}>{error}</li>)}
+            {serverErrors.slice(0, 20).map((error) => (
+              <li key={error}>{error}</li>
+            ))}
           </ul>
         </div>
       ) : null}
 
-      <div className="admin-diagnostic-toolbar">
-        <button
-          className="button"
-          disabled={pending || localValidation.errors.length > 0}
-          onClick={save}
-          type="button"
-        >
-          Enregistrer le brouillon
-        </button>
-        <button
-          className="button button-secondary"
-          disabled={pending}
-          onClick={validateOnServer}
-          type="button"
-        >
-          Valider côté API
-        </button>
-        <button
-          className="button button-secondary"
-          disabled={pending || dirty || view.draft.source === "code"}
-          onClick={publish}
-          type="button"
-        >
-          Publier
-        </button>
+      <div className="admin-settings-command-bar">
+        <div>
+          <button
+            className="button"
+            disabled={pending || localValidation.errors.length > 0}
+            onClick={save}
+            type="button"
+          >
+            Enregistrer le brouillon
+          </button>
+          <button
+            className="button button-secondary"
+            disabled={pending}
+            onClick={validateOnServer}
+            type="button"
+          >
+            Valider côté API
+          </button>
+          <button
+            className="button button-secondary"
+            disabled={pending || dirty || view.draft.source === "code"}
+            onClick={publish}
+            type="button"
+          >
+            Publier
+          </button>
+        </div>
         <button
           className="button button-link"
           disabled={pending}
           onClick={() => {
-            if (!window.confirm(
-              "Remplacer le brouillon en cours d'édition par la configuration intégrée au code ?",
-            )) {
+            if (
+              !window.confirm(
+                "Remplacer le brouillon en cours d'édition par la configuration intégrée au code ?",
+              )
+            ) {
               return;
             }
             setDraft(DEFAULT_DIAGNOSTIC_CONFIGURATION);
@@ -308,54 +330,112 @@ export function AdminDiagnosticCenter({
         </button>
       </div>
 
-      <div className="admin-tablist" role="tablist">
-        {TABS.map((entry) => (
-          <button
-            aria-selected={tab === entry.id}
-            className={tab === entry.id ? "button button-secondary" : "button button-link"}
-            key={entry.id}
-            onClick={() => setTab(entry.id)}
-            role="tab"
-            type="button"
-          >
-            {entry.label}
-          </button>
-        ))}
+      <div
+        aria-label="Mode de travail"
+        className="admin-settings-segmented"
+        role="tablist"
+      >
+        {TABS.map((entry) => {
+          const Icon =
+            entry.id === "editor"
+              ? PencilLine
+              : entry.id === "simulator"
+                ? PlayCircle
+                : History;
+          return (
+            <button
+              aria-selected={tab === entry.id}
+              className={tab === entry.id ? "is-active" : undefined}
+              key={entry.id}
+              onClick={() => setTab(entry.id)}
+              role="tab"
+              type="button"
+            >
+              <Icon aria-hidden="true" size={17} />
+              {entry.label}
+            </button>
+          );
+        })}
       </div>
 
       {tab === "editor" ? (
-        <>
-          <label className="admin-diagnostic-field">
-            <span>Contexte édité</span>
-            <select
-              onChange={(event) => setContextId(event.target.value as DiagnosticContextId)}
-              value={contextId}
-            >
-              {DIAGNOSTIC_CONTEXT_IDS.map((id) => (
-                <option key={id} value={id}>{id}</option>
+        <div className="admin-settings-workspace admin-settings-diagnostic-workspace">
+          <aside
+            aria-label="Contextes du diagnostic"
+            className="admin-settings-selector"
+          >
+            <div className="admin-settings-selector-heading">
+              <strong>
+                {draft.contexts.length} contexte{draft.contexts.length > 1 ? "s" : ""}
+              </strong>
+              <span>Sélectionnez le parcours à modifier.</span>
+            </div>
+            <div className="admin-settings-selector-list">
+              {draft.contexts.map((item) => (
+                <button
+                  aria-current={context?.id === item.id ? "true" : undefined}
+                  className="admin-settings-selector-item"
+                  key={item.id}
+                  onClick={() => setContextId(item.id as DiagnosticContextId)}
+                  type="button"
+                >
+                  <span>{item.label || item.id}</span>
+                  <small>
+                    {item.questions.length} question
+                    {item.questions.length > 1 ? "s" : ""}
+                  </small>
+                  <ArrowRight aria-hidden="true" size={16} />
+                </button>
               ))}
-            </select>
-          </label>
-          {context ? (
-            <AdminDiagnosticContextEditor
-              context={context}
-              onChange={(next) => setDraft((current) => replaceContext(current, next))}
-            />
-          ) : (
-            <p className="muted">Contexte introuvable dans le brouillon.</p>
-          )}
-        </>
+            </div>
+          </aside>
+
+          <div className="admin-settings-detail-panel admin-settings-diagnostic-detail">
+            {context ? (
+              <section className="admin-settings-single-editor">
+                <header>
+                  <div className="admin-settings-editor-icon">
+                    <Activity aria-hidden="true" size={20} />
+                  </div>
+                  <div>
+                    <p className="eyebrow">Contexte sélectionné</p>
+                    <h3>{context.label}</h3>
+                    <p>{context.title}</p>
+                  </div>
+                </header>
+                <AdminDiagnosticContextEditor
+                  context={context}
+                  onChange={(next) =>
+                    setDraft((current) => replaceContext(current, next))
+                  }
+                />
+              </section>
+            ) : (
+              <p className="admin-settings-inline-state muted">
+                Contexte introuvable dans le brouillon.
+              </p>
+            )}
+          </div>
+        </div>
       ) : null}
 
       {tab === "simulator" ? (
-        <AdminDiagnosticSimulator
-          catalog={catalog}
-          configuration={localValidation.configuration ?? DEFAULT_DIAGNOSTIC_CONFIGURATION}
-          recommendationConfig={recommendationConfig}
-        />
+        <div className="admin-settings-detail-panel admin-settings-standalone-detail">
+          <AdminDiagnosticSimulator
+            catalog={catalog}
+            configuration={
+              localValidation.configuration ?? DEFAULT_DIAGNOSTIC_CONFIGURATION
+            }
+            recommendationConfig={recommendationConfig}
+          />
+        </div>
       ) : null}
 
-      {tab === "history" ? <DiagnosticHistory /> : null}
+      {tab === "history" ? (
+        <div className="admin-settings-detail-panel admin-settings-standalone-detail">
+          <DiagnosticHistory />
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -393,10 +473,10 @@ function DiagnosticHistory() {
     return () => { cancelled = true; };
   }, []);
 
-  if (error) return <p role="status">{error}</p>;
-  if (revisions === null) return <p className="muted">Chargement de l&apos;historique…</p>;
+  if (error) return <p className="admin-settings-inline-state admin-settings-inline-state-error" role="status">{error}</p>;
+  if (revisions === null) return <p aria-busy="true" className="admin-settings-inline-state muted">Chargement de l&apos;historique…</p>;
   if (revisions.length === 0) {
-    return <p className="muted">Aucune modification enregistrée.</p>;
+    return <p className="admin-settings-inline-state muted">Aucune modification enregistrée.</p>;
   }
 
   return (

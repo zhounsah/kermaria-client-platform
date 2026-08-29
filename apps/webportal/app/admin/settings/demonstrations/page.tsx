@@ -1,6 +1,7 @@
 import { AdminDemoTemplatesCenter } from "@/components/AdminDemoTemplatesCenter";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
+import { AdminSettingsNavigation } from "@/components/AdminSettingsNavigation";
 import { requireAdminSession } from "@/lib/auth";
 import { getAdminDemoTemplateConfiguration } from "@/lib/internal-api";
 
@@ -19,6 +20,7 @@ export default async function AdminDemoTemplatesPage() {
         title="Modèles de démonstration"
         description="Contenu semé sur un compte de démonstration : services affichés, ordre et périmètre. Les profils, comptes et conversions restent administrés depuis la page Démonstrations."
       />
+      <AdminSettingsNavigation />
       {result.error ? (
         <ErrorState
           title="Modèles indisponibles"
