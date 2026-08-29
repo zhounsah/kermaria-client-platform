@@ -38,6 +38,15 @@ public sealed record StoredTemplateRevision(
 /// specialisees (migration 074) : elles ne transitent jamais par
 /// <c>application_settings</c>.
 /// </summary>
+/// <remarks>
+/// Chaque enregistrement porte sa propre revision : le modele et sa trace sont
+/// ecrits dans la meme unite de travail. Separes, un modele d'e-mail pouvait
+/// changer sans que l'historique le dise — et c'est l'historique qui sert a
+/// savoir qui a change un message envoye a de vrais clients.
+///
+/// <c>false</c> signifie conflit de version. Une indisponibilite de la
+/// persistance leve, pour ne pas se confondre avec un conflit.
+/// </remarks>
 public interface ICommunicationTemplateRepository
 {
     bool IsPersistent { get; }
@@ -45,14 +54,10 @@ public interface ICommunicationTemplateRepository
     Task<IReadOnlyList<StoredEmailTemplate>> GetEmailTemplatesAsync(
         CancellationToken cancellationToken);
 
-    Task<bool> TryUpsertEmailTemplateAsync(
+    Task<bool> TrySaveEmailTemplateAsync(
         StoredEmailTemplate template,
         string displayName,
         int expectedVersion,
-        CancellationToken cancellationToken);
-
-    Task AddEmailRevisionAsync(
-        StoredEmailTemplate template,
         string outcome,
         string correlationId,
         CancellationToken cancellationToken);
@@ -65,14 +70,10 @@ public interface ICommunicationTemplateRepository
     Task<IReadOnlyList<StoredNotificationTemplate>> GetNotificationTemplatesAsync(
         CancellationToken cancellationToken);
 
-    Task<bool> TryUpsertNotificationTemplateAsync(
+    Task<bool> TrySaveNotificationTemplateAsync(
         StoredNotificationTemplate template,
         string displayName,
         int expectedVersion,
-        CancellationToken cancellationToken);
-
-    Task AddNotificationRevisionAsync(
-        StoredNotificationTemplate template,
         string outcome,
         string correlationId,
         CancellationToken cancellationToken);
@@ -85,14 +86,10 @@ public interface ICommunicationTemplateRepository
     Task<IReadOnlyList<StoredSystemSnippet>> GetSnippetsAsync(
         CancellationToken cancellationToken);
 
-    Task<bool> TryUpsertSnippetAsync(
+    Task<bool> TrySaveSnippetAsync(
         StoredSystemSnippet snippet,
         string displayName,
         int expectedVersion,
-        CancellationToken cancellationToken);
-
-    Task AddSnippetRevisionAsync(
-        StoredSystemSnippet snippet,
         string outcome,
         string correlationId,
         CancellationToken cancellationToken);

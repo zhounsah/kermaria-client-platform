@@ -266,8 +266,8 @@ export function AdminSettingsAuditCenter({
                   <td>{riskLabels[permission.risk] ?? permission.risk}</td>
                   <td>
                     {permission.state === "granted"
-                      ? `Attribuée (${permission.grantCount})`
-                      : "Ouverte par amorçage"}
+                      ? `Attribuee (${permission.grantCount})`
+                      : "Refusee sans attribution"}
                   </td>
                 </tr>
               ))}

@@ -226,11 +226,36 @@ cookie HttpOnly -> BFF -> session API-INTERNAL -> user_id -> customer_id
 - Un filtre d'audit inconnu (categorie, niveau de risque) ne selectionne rien et
   le dit ; une periode inversee est refusee et non redressee. Un filtre ignore
   laisserait croire que l'exhaustivite a ete verifiee.
-- Une permission du Centre sans attribution explicite est annoncee ouverte par
-  amorcage : tout administrateur interne y accede tant que personne n'a ete
-  designe. L'afficher comme attribuee ferait croire a un cloisonnement inexistant.
+- Une permission du Centre sans attribution explicite est refusee par defaut
+  (fail-closed). La migration d'activation attribue explicitement les permissions
+  aux administrateurs internes actifs existants ; un futur compte doit recevoir
+  ses grants explicitement avant d'acceder au Centre.
 - Un test de non-regression serialise la reponse d'audit et echoue si une valeur
   sensible y apparait.
+- Mutation et historisation sont ecrites dans la meme transaction, pour les
+  parametres, les communications et les modeles de demonstration. Une valeur
+  appliquee sans trace est indistinguable d'une valeur jamais modifiee : c'est
+  la seule defaillance qu'un audit ne peut pas rattraper apres coup. Un echec
+  de stockage remonte un code distinct du conflit de version et ne modifie rien.
+- La version attendue est verifiee sous verrou, dans la transaction qui ecrit.
+  Verifiee sur une lecture anterieure, la concurrence optimiste ne protegeait
+  rien : deux administrateurs partis du meme ecran passaient tous les deux.
+- L'amorce des modeles de demonstration est tout ou rien. Une amorce partielle
+  laissait une table non vide, donc consideree comme faisant autorite, et les
+  modeles manquants devenaient invisibles sans possibilite de reamorcer.
+- Sous autorite KoXo, aucune ecriture LDAP de cycle de vie n'est possible :
+  creation, desactivation, deplacement, renommage et pose de mot de passe sont
+  refuses en `AD_LIFECYCLE_KOXO_AUTHORITY`. Le refus est porte par le service
+  d'annuaire et non par chaque route : une route ajoutee plus tard en herite.
+  L'appartenance aux groupes de services, elle, reste le mandat de l'API.
+- Le changement de mot de passe du portail passe par le relais KoXo quand KoXo
+  en est l'autorite. Une ecriture LDAP directe aurait ete ecrasee a la
+  synchronisation suivante (`ForcePasswords=1` reecrit depuis le CSV), sans
+  erreur visible et apres que le portail a annonce l'inverse. Un relais
+  inexploitable refuse le changement plutot que d'ecrire.
+- Un test de non-regression verifie qu'aucune ecriture de cycle de vie n'est
+  meme *tentee* sous autorite KoXo : un appel refuse laisserait quand meme une
+  trace d'intention sur un annuaire de production.
 - La console d'integrations ne transporte aucun secret : un mot de passe SMTP,
   une cle Stripe, un secret PayPal, un jeton BPCE ou KoXo n'y apparaissent que
   par leur presence. Un test de non-regression serialise la reponse et echoue si

@@ -20,6 +20,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 const string correlationHeader = "X-Correlation-Id";
 const string dataSourceHeader = "X-Data-Source";
@@ -551,6 +552,8 @@ async Task<int> RunAsync(string[] arguments)
         await VerifyRuntimeOverviewAsync();
         await VerifySettingsAuditAsync();
         await VerifyDirectoryOverviewAsync();
+        await VerifyConfigurationAtomicityAsync();
+        await VerifyDirectoryAuthorityEnforcementAsync();
         VerifyBillingV2FeatureFlagRegistry();
         await VerifyCommunicationTemplatesAsync();
         await VerifyDiagnosticConfigurationAsync();
@@ -4648,7 +4651,7 @@ static JsonElement ParseJson(string payload)
 static async Task VerifySignupGuardrailsAsync()
 {
     var settingsRepository = new TestApplicationSettingsRepository();
-    var settings = new ApplicationSettingsService(settingsRepository);
+    var settings = new ApplicationSettingsService(settingsRepository, NullLogger<ApplicationSettingsService>.Instance);
     var token = CancellationToken.None;
     const string actor = "00000000-0000-0000-0000-0000000000cc";
     const string correlation = "smoke-signup-guardrails";
@@ -5218,6 +5221,379 @@ static async Task VerifyRuntimeOverviewAsync()
         "Une persistance mock hors developpement doit etre signalee comme bloquante.");
 }
 
+/// <summary>
+/// Atomicite mutation + revision, et concurrence fiscale reelle.
+/// </summary>
+/// <remarks>
+/// Ces scenarios ne verifient pas qu'une ecriture fonctionne — c'est deja
+/// couvert ailleurs. Ils verifient ce qui se passe quand elle echoue a
+/// mi-parcours : une valeur appliquee sans trace, ou deux administrateurs qui
+/// ecrivent l'un sur l'autre sans le savoir, sont des resultats faux et
+/// silencieux, la seule categorie que l'exploitation ne peut pas rattraper.
+/// </remarks>
+static async Task VerifyConfigurationAtomicityAsync()
+{
+    var token = CancellationToken.None;
+    const string actor = "00000000-0000-0000-0000-0000000000ee";
+    const string correlation = "smoke-atomicity";
+
+    // --- Parametres applicatifs ------------------------------------------
+    var settingsRepository = new TestApplicationSettingsRepository();
+    var settings = new ApplicationSettingsService(
+        settingsRepository,
+        NullLogger<ApplicationSettingsService>.Instance);
+
+    var first = await settings.UpdateAsync(
+        "brand_name",
+        new ApplicationSettingUpdateRequest(
+            JsonSerializer.SerializeToElement("Zachary IT"), 0),
+        actor,
+        correlation,
+        token);
+    Ensure(
+        first.Code == "SETTINGS_UPDATED" && settingsRepository.RevisionCount == 1,
+        "Une ecriture reussie doit poser la valeur et sa revision.");
+
+    settingsRepository.FailRevision = true;
+    var refused = await settings.UpdateAsync(
+        "brand_name",
+        new ApplicationSettingUpdateRequest(
+            JsonSerializer.SerializeToElement("Nom fantome"), 1),
+        actor,
+        correlation,
+        token);
+    settingsRepository.FailRevision = false;
+
+    Ensure(
+        refused.Code == "SETTINGS_STORAGE_UNAVAILABLE",
+        "Une historisation impossible doit etre annoncee comme un echec d'ecriture, pas comme un conflit.");
+    var snapshot = await settings.GetSnapshotAsync(token);
+    var brand = snapshot.Settings.Single(item => item.Key == "brand_name");
+    Ensure(
+        brand.Value.GetString() == "Zachary IT" && brand.Version == 1,
+        "Une valeur ne doit pas survivre a l'echec de sa propre revision.");
+    Ensure(
+        settingsRepository.RevisionCount == 1,
+        "Aucune revision supplementaire ne doit avoir ete enregistree.");
+
+    // --- Communications ---------------------------------------------------
+    MockCommunicationTemplateRepository.Clear();
+    MockRevisionFailureSwitch.Disarm();
+    var communications = new CommunicationTemplateService(
+        new MockCommunicationTemplateRepository(),
+        LoggerFactory.Create(_ => { }).CreateLogger<CommunicationTemplateService>());
+    var emailKey = CommunicationTemplateRegistry.EmailTemplateDefinitions[0].Key;
+    var savedEmail = await communications.UpdateEmailTemplateAsync(
+        emailKey,
+        new EmailTemplateUpdateRequest("Sujet enregistre", "Corps enregistre.", true, 0),
+        actor,
+        correlation,
+        token);
+    Ensure(
+        savedEmail.Code == "TEMPLATE_UPDATED"
+        && MockCommunicationTemplateRepository.EmailRevisionCount(emailKey) == 1,
+        "Un modele enregistre doit laisser exactement une revision.");
+
+    MockRevisionFailureSwitch.ArmOnce();
+    var refusedEmail = await communications.UpdateEmailTemplateAsync(
+        emailKey,
+        new EmailTemplateUpdateRequest("Sujet fantome", "Corps fantome.", true, 1),
+        actor,
+        correlation,
+        token);
+    MockRevisionFailureSwitch.Disarm();
+
+    Ensure(
+        refusedEmail.Code == "TEMPLATE_STORAGE_UNAVAILABLE",
+        "Une historisation impossible doit refuser l'enregistrement du modele.");
+    var storedEmail = MockCommunicationTemplateRepository.PeekEmail(emailKey);
+    Ensure(
+        storedEmail is not null
+        && storedEmail.Subject == "Sujet enregistre"
+        && storedEmail.Version == 1,
+        "Le modele doit rester a sa version precedente.");
+    Ensure(
+        MockCommunicationTemplateRepository.EmailRevisionCount(emailKey) == 1,
+        "Aucune revision de modele ne doit avoir ete ajoutee.");
+    MockCommunicationTemplateRepository.Clear();
+
+    // --- Modeles de demonstration ----------------------------------------
+    MockDemoContentTemplateRepository.Clear();
+    var demo = new DemoContentTemplateService(
+        new MockDemoContentTemplateRepository(),
+        new MockDemoProfileRepository(),
+        CreateDisabledAdConfiguration(),
+        new DemoConversionRuntimeConfiguration(null),
+        LoggerFactory.Create(_ => { }).CreateLogger<DemoContentTemplateService>());
+
+    var imported = await demo.ImportCodeTemplatesAsync(actor, correlation, token);
+    Ensure(
+        imported.Code == "DEMO_TEMPLATE_IMPORTED"
+        && MockDemoContentTemplateRepository.TemplateCount()
+            == DemoContentTemplateRegistry.All.Count
+        && MockDemoContentTemplateRepository.RevisionCount()
+            == DemoContentTemplateRegistry.All.Count,
+        "L'amorce doit recopier tous les modeles du code, chacun avec sa revision.");
+
+    // Amorce interrompue : tout ou rien. Une table a moitie peuplee serait
+    // ensuite consideree comme faisant autorite, et les modeles manquants
+    // deviendraient invisibles sans possibilite de reamorcer.
+    MockDemoContentTemplateRepository.Clear();
+    MockRevisionFailureSwitch.ArmOnce();
+    var brokenImport = await demo.ImportCodeTemplatesAsync(actor, correlation, token);
+    MockRevisionFailureSwitch.Disarm();
+    Ensure(
+        brokenImport.Code == "DEMO_TEMPLATE_STORAGE_UNAVAILABLE",
+        "Une amorce interrompue doit etre annoncee comme un echec.");
+    Ensure(
+        MockDemoContentTemplateRepository.TemplateCount() == 0
+        && MockDemoContentTemplateRepository.RevisionCount() == 0,
+        "Une amorce interrompue ne doit laisser aucun modele derriere elle.");
+
+    // Une amorce ne s'applique qu'a une table vide.
+    await demo.ImportCodeTemplatesAsync(actor, correlation, token);
+    var secondImport = await demo.ImportCodeTemplatesAsync(actor, correlation, token);
+    Ensure(
+        secondImport.Code == "DEMO_TEMPLATE_ALREADY_ADMINISTERED",
+        "Une seconde amorce sur une table peuplee doit etre refusee.");
+    MockDemoContentTemplateRepository.Clear();
+
+    // --- Concurrence fiscale ---------------------------------------------
+    MockFiscalPolicyRepository.Clear();
+    FiscalMentionDirectory.Reset();
+    var fiscalRepository = new MockFiscalPolicyRepository();
+    var fiscal = new FiscalPolicyService(
+        fiscalRepository,
+        LoggerFactory.Create(_ => { }).CreateLogger<FiscalPolicyService>());
+    var horizon = DateTime.UtcNow.AddDays(45);
+
+    // Deux administrateurs partis du meme ecran : meme version attendue, dates
+    // d'effet differentes. Sans verification sous verrou, les deux passaient et
+    // la mention appliquee devenait celle de la date la plus proche, sans que
+    // personne ne soit averti d'avoir ete double.
+    var contenders = await Task.WhenAll(
+        fiscal.AddMentionAsync(
+            new FiscalMentionCreateRequest(
+                FiscalRegimes.Standard,
+                "TVA au taux en vigueur (version A).",
+                Iso(horizon),
+                0),
+            actor,
+            correlation,
+            token),
+        fiscal.AddMentionAsync(
+            new FiscalMentionCreateRequest(
+                FiscalRegimes.Standard,
+                "TVA au taux en vigueur (version B).",
+                Iso(horizon.AddDays(1)),
+                0),
+            actor,
+            correlation,
+            token));
+
+    Ensure(
+        contenders.Count(item => item.Code == "FISCAL_MENTION_SCHEDULED") == 1
+        && contenders.Count(item => item.Code == "FISCAL_VERSION_CONFLICT") == 1,
+        "Deux ajouts concurrents partant de la meme version : un seul doit passer, l'autre doit voir le conflit.");
+
+    var fiscalStored = await fiscalRepository.ListAsync(token);
+    Ensure(
+        fiscalStored.Count(item => item.Regime == FiscalRegimes.Standard) == 1,
+        "Une seule des deux mentions concurrentes doit avoir ete enregistree.");
+
+    MockFiscalPolicyRepository.Clear();
+    FiscalMentionDirectory.Reset();
+}
+
+/// <summary>
+/// Autorite KoXo : ni ecriture LDAP de cycle de vie, ni mot de passe pose
+/// directement quand KoXo fait autorite.
+/// </summary>
+static async Task VerifyDirectoryAuthorityEnforcementAsync()
+{
+    var token = CancellationToken.None;
+
+    AdRuntimeConfiguration Ad(AdIntegrationMode mode)
+        => new(
+            mode,
+            "clients.home.bzh",
+            "OU=KoXoAdm,DC=clients,DC=home,DC=bzh",
+            "OU=KoXoAdm,DC=clients,DC=home,DC=bzh",
+            ["OU=KoXoAdm,DC=clients,DC=home,DC=bzh"],
+            false,
+            "HOME\\svc_api_portal_ad",
+            "mot-de-passe-ldap",
+            3000,
+            5000,
+            25,
+            ConfigurationValid: true);
+
+    var ldap = new LdapActiveDirectoryService(
+        Ad(AdIntegrationMode.ControlledWrite),
+        LoggerFactory.Create(_ => { }).CreateLogger<LdapActiveDirectoryService>());
+
+    // Le refus doit intervenir AVANT toute liaison LDAP : ces appels ne
+    // touchent aucun annuaire, et c'est precisement ce qui est verifie.
+    var lifecycle = new (string Operation, Task<AdServiceResult<AdDirectoryObjectSummary>> Result)[]
+    {
+        ("create", ldap.CreateUserAsync(
+            "CLI-000001",
+            new CreateAdUserRequest(
+                "a.dupont", "Alice Dupont", null, null, null, null, null, null,
+                "alice@example.invalid", null, null, "CLI-000001"),
+            token)),
+        ("disable", ldap.DisableUserAsync("CLI-000001", "a.dupont", token)),
+        ("move_to_disabled", ldap.MoveUserToDisabledAsync("CLI-000001", "a.dupont", token)),
+        ("rename", ldap.RenameUserAsync(
+            "CLI-000001", "a.dupont", new RenameAdUserRequest(null, "Alice Martin", null), token)),
+        ("move", ldap.MoveUserAsync(
+            "CLI-000001",
+            "a.dupont",
+            new MoveAdUserRequest(null, null, "OU=KoXoAdm,DC=clients,DC=home,DC=bzh"),
+            token)),
+        ("set_password", ldap.SetUserPasswordAsync(
+            "CLI-000001", "a.dupont", "NOT_A_REAL_PASSWORD", token)),
+        ("change_password", ldap.ChangeUserPasswordAsync(
+            "CLI-000001", "a.dupont", "NOT_A_REAL_PASSWORD", "NOT_A_REAL_PASSWORD_2", token)),
+    };
+
+    foreach (var (operation, task) in lifecycle)
+    {
+        var result = await task;
+        Ensure(
+            result.Code == "AD_LIFECYCLE_KOXO_AUTHORITY"
+            && result.StatusCode == 409
+            && !result.Changed,
+            $"Sous autorite KoXo, l'operation {operation} ne doit jamais atteindre l'annuaire.");
+    }
+
+    // Le mandat conserve : les groupes de services restent pilotes ici. Le
+    // refus attendu est une validation d'entree, pas l'autorite KoXo.
+    var membership = await ldap.AddGroupMemberAsync(
+        "reference-invalide", "GRP-TEST", "a.dupont", token);
+    Ensure(
+        membership.Code != "AD_LIFECYCLE_KOXO_AUTHORITY",
+        "L'appartenance aux groupes de services reste du ressort d'API-INTERNAL.");
+
+    // --- Fail-closed du relais de mot de passe ---------------------------
+    var configuration = new ConfigurationBuilder()
+        .AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["DEMO_PORTAL_EMAIL"] = mockEmail,
+            ["DEMO_PORTAL_PASSWORD"] = mockPassword,
+            ["DEMO_PORTAL_STATUS"] = "active",
+            ["DEMO_INTERNAL_ADMIN_EMAIL"] = mockAdminEmail,
+            ["DEMO_INTERNAL_ADMIN_PASSWORD"] = mockAdminPassword
+        })
+        .Build();
+    var authStore = new MockAuthenticationStore(configuration, new PortalPasswordService());
+    var signupRepository = new MockSignupRepository(new MockSignupStore(), authStore);
+    const string signupId = "signup-koxo-failclosed";
+    const string userId = "portal-user-koxo-failclosed";
+    const string customerId = "customer-koxo-failclosed";
+    const string customerReference = "CLI-DEMO-0043";
+    const string passwordToken = "token-koxo-failclosed";
+
+    var customer = new SignupCustomerData(
+        "professionnel",
+        "Client KoXo fail-closed",
+        "koxo.failclosed@example.invalid",
+        "0102030405",
+        "1 rue du Relais",
+        null,
+        "29000",
+        "Quimper",
+        "France");
+    var user = new SignupUserData(
+        "madame",
+        "Alice",
+        "Relais",
+        "1990-01-02",
+        "AR",
+        "Alice Relais",
+        "koxo.failclosed@example.invalid",
+        "0102030405",
+        true);
+
+    await signupRepository.InsertPendingAsync(
+        new SignupInsert(
+            signupId,
+            "Client KoXo fail-closed",
+            "Alice Relais",
+            "koxo.failclosed@example.invalid",
+            "0102030405",
+            "Relais KoXo",
+            customer,
+            user,
+            "verification-hash-failclosed",
+            DateTime.UtcNow.AddHours(4),
+            "127.0.0.1",
+            "SmokeTests"),
+        token);
+    await signupRepository.MarkEmailVerifiedAsync(signupId, token);
+    await signupRepository.ApproveAsync(
+        new SignupApprovalRequest(
+            signupId,
+            customerId,
+            customerReference,
+            customer,
+            user,
+            userId,
+            HashTokenForTests(passwordToken),
+            DateTime.UtcNow.AddHours(24)),
+        token);
+
+    var adConfiguration = Ad(AdIntegrationMode.ControlledWrite);
+    var linkRepository = new MockActiveDirectoryLinkRepository();
+    await linkRepository.UpsertPortalUserLinkAsync(
+        customerReference,
+        userId,
+        null,
+        new AdDirectoryObjectSummary(
+            Guid.NewGuid().ToString("D"),
+            "S-1-5-21-0-0-0-1001",
+            "user",
+            "alice.relais",
+            "alice.relais@clients.home.bzh",
+            "Alice Relais",
+            "CN=Alice Relais,OU=KoXoAdm,DC=clients,DC=home,DC=bzh",
+            customerReference,
+            false),
+        adConfiguration.Domain,
+        "succeeded",
+        DateTime.UtcNow,
+        null,
+        null,
+        "koxo_provisioned",
+        token);
+
+    var membershipStore = new MockAdGroupMembershipStore();
+    var recordingDirectory = new RecordingActiveDirectoryService(
+        new MockActiveDirectoryService(adConfiguration, membershipStore));
+    var signup = new SignupService(
+        signupRepository,
+        new TestEmailDispatchService(),
+        new PortalPasswordService(),
+        recordingDirectory,
+        linkRepository,
+        new MockAdGroupProvisioner(membershipStore),
+        new UnavailableKoxoPendingPasswordStore(),
+        new RecordingKoxoSyncWebhookTriggerService(),
+        new SignupRuntimeConfiguration(true, 3, 1, 24, 24, false),
+        NewApplicationSettingsService(),
+        CreateMockEmailConfiguration(),
+        adConfiguration,
+        LoggerFactory.Create(_ => { }).CreateLogger<SignupService>());
+
+    var outcome = await signup.SetPasswordAsync(passwordToken, "NOT_A_REAL_PASSWORD_KOXO", token);
+    Ensure(
+        !outcome.Succeeded && outcome.Code == "KOXO_PASSWORD_HANDOFF_UNAVAILABLE",
+        "Sans relais KoXo exploitable, la definition du mot de passe doit etre refusee, pas ecrite en LDAP.");
+    Ensure(
+        recordingDirectory.LifecycleWriteCount == 0,
+        "Aucune ecriture de cycle de vie ne doit avoir ete tentee sur l'annuaire.");
+}
+
 static async Task VerifyDirectoryOverviewAsync()
 {
     var token = CancellationToken.None;
@@ -5483,15 +5859,14 @@ static async Task VerifySettingsAuditAsync()
         limited.Entries.Count == 1 && limited.Truncated,
         "Un resultat coupe par la limite doit etre annonce comme tronque.");
 
-    // Les permissions : sans attribution explicite, l'acces reste ouvert par
-    // amorcage. Presenter cet etat comme « attribue » ferait croire a un
-    // cloisonnement qui n'existe pas encore.
+    // Les permissions du Centre sont fail-closed : sans attribution explicite,
+    // elles sont refusees. Le bootstrap historique ne s'applique qu'a l'editorial.
     var permissions = await service.GetPermissionsAsync(token);
     Ensure(
         permissions.Permissions.Count == SettingsPermissionRegistry.All.Count
-        && permissions.Permissions.All(permission => permission.State == "open")
-        && permissions.BootstrapOpen,
-        "Sans attribution, chaque permission doit etre annoncee ouverte par amorcage.");
+        && permissions.Permissions.All(permission => permission.State == "denied")
+        && !permissions.BootstrapOpen,
+        "Sans attribution, chaque permission Settings doit etre refusee (fail-closed).");
     Ensure(
         permissions.Permissions.All(permission =>
             permission.Surfaces.Count > 0
@@ -5608,7 +5983,8 @@ static async Task VerifyFiscalPolicyAsync()
         DateTime.UtcNow.AddDays(-10),
         actor);
     Ensure(
-        await repository.TryAddAsync(applied, correlation, token),
+        await repository.TryAddAsync(applied, 0, correlation, token)
+            == FiscalMentionAddOutcome.Added,
         "Le double de depot doit accepter une version historique.");
     Ensure(
         (await service.DeleteScheduledMentionAsync(applied.Id, correlation, token)).Code
@@ -5756,7 +6132,7 @@ static KoxoPendingPasswordStore NewPendingPasswordStore()
 // Registre de parametres en memoire : les smoke tests n'ont pas de MariaDB, donc
 // le service retombe sur les valeurs par defaut du registre ferme.
 static IApplicationSettingsService NewApplicationSettingsService()
-    => new ApplicationSettingsService(new MockApplicationSettingsRepository());
+    => new ApplicationSettingsService(new MockApplicationSettingsRepository(), NullLogger<ApplicationSettingsService>.Instance);
 
 static AdRuntimeConfiguration CreateDisabledAdConfiguration()
     => new(
@@ -8846,6 +9222,180 @@ sealed class RecordingKoxoSyncWebhookTriggerService : IKoxoSyncWebhookTriggerSer
     }
 }
 
+/// <summary>
+/// Enveloppe qui compte les ecritures de cycle de vie tentees sur l'annuaire.
+/// </summary>
+/// <remarks>
+/// L'assertion utile n'est pas « l'ecriture a echoue » mais « l'ecriture n'a
+/// pas ete tentee ». Sous autorite KoXo, un appel qui part et se fait refuser
+/// laisse quand meme une trace d'intention dans l'annuaire de production.
+/// </remarks>
+sealed class RecordingActiveDirectoryService : IActiveDirectoryService
+{
+    private readonly IActiveDirectoryService _inner;
+
+    public RecordingActiveDirectoryService(IActiveDirectoryService inner)
+        => _inner = inner;
+
+    public int LifecycleWriteCount { get; private set; }
+
+    public string ModeName => _inner.ModeName;
+
+    public Task<AdStatusResponse> GetStatusAsync(CancellationToken cancellationToken)
+        => _inner.GetStatusAsync(cancellationToken);
+
+    public Task<AdServiceResult<IReadOnlyList<AdDirectoryObjectSummary>>> SearchUsersAsync(
+        string? query,
+        string? customerReference,
+        CancellationToken cancellationToken)
+        => _inner.SearchUsersAsync(query, customerReference, cancellationToken);
+
+    public Task<AdServiceResult<IReadOnlyList<AdDirectoryObjectSummary>>> SearchGroupsAsync(
+        string? query,
+        string? customerReference,
+        CancellationToken cancellationToken)
+        => _inner.SearchGroupsAsync(query, customerReference, cancellationToken);
+
+    public Task<AdServiceResult<AdDirectoryObjectSummary>> ResolveObjectForLinkAsync(
+        string customerReference,
+        string? distinguishedName,
+        CancellationToken cancellationToken)
+        => _inner.ResolveObjectForLinkAsync(
+            customerReference, distinguishedName, cancellationToken);
+
+    public Task<AdServiceResult<AdDirectoryObjectSummary>> CreateUserAsync(
+        string customerReference,
+        CreateAdUserRequest? request,
+        CancellationToken cancellationToken)
+    {
+        LifecycleWriteCount++;
+        return _inner.CreateUserAsync(customerReference, request, cancellationToken);
+    }
+
+    public Task<AdServiceResult<AdDirectoryObjectSummary>> CreateGroupAsync(
+        string customerReference,
+        CreateAdGroupRequest? request,
+        CancellationToken cancellationToken)
+        => _inner.CreateGroupAsync(customerReference, request, cancellationToken);
+
+    public Task<AdServiceResult<AdDirectoryObjectSummary>> AddGroupMemberAsync(
+        string customerReference,
+        string? groupSamAccountName,
+        string? userSamAccountName,
+        CancellationToken cancellationToken)
+        => _inner.AddGroupMemberAsync(
+            customerReference, groupSamAccountName, userSamAccountName, cancellationToken);
+
+    public Task<AdServiceResult<AdDirectoryObjectSummary>> RemoveGroupMemberAsync(
+        string customerReference,
+        string? groupSamAccountName,
+        string? userSamAccountName,
+        CancellationToken cancellationToken)
+        => _inner.RemoveGroupMemberAsync(
+            customerReference, groupSamAccountName, userSamAccountName, cancellationToken);
+
+    public Task<AdServiceResult<AdDirectoryObjectSummary>> DisableUserAsync(
+        string customerReference,
+        string? samAccountName,
+        CancellationToken cancellationToken)
+    {
+        LifecycleWriteCount++;
+        return _inner.DisableUserAsync(customerReference, samAccountName, cancellationToken);
+    }
+
+    public Task<AdServiceResult<AdDirectoryObjectSummary>> MoveUserToDisabledAsync(
+        string customerReference,
+        string? samAccountName,
+        CancellationToken cancellationToken)
+    {
+        LifecycleWriteCount++;
+        return _inner.MoveUserToDisabledAsync(customerReference, samAccountName, cancellationToken);
+    }
+
+    public Task<AdServiceResult<IReadOnlyList<AdDirectoryObjectSummary>>> GetUserEffectiveGroupsAsync(
+        string customerReference,
+        string? samAccountName,
+        CancellationToken cancellationToken)
+        => _inner.GetUserEffectiveGroupsAsync(customerReference, samAccountName, cancellationToken);
+
+    public Task<AdServiceResult<AdDirectoryObjectSummary>> RenameUserAsync(
+        string customerReference,
+        string? currentSamAccountName,
+        RenameAdUserRequest? request,
+        CancellationToken cancellationToken)
+    {
+        LifecycleWriteCount++;
+        return _inner.RenameUserAsync(
+            customerReference, currentSamAccountName, request, cancellationToken);
+    }
+
+    public Task<AdServiceResult<AdDirectoryObjectSummary>> MoveUserAsync(
+        string customerReference,
+        string? samAccountName,
+        MoveAdUserRequest? request,
+        CancellationToken cancellationToken)
+    {
+        LifecycleWriteCount++;
+        return _inner.MoveUserAsync(customerReference, samAccountName, request, cancellationToken);
+    }
+
+    public Task<AdServiceResult<AdDirectoryObjectSummary>> ChangeUserPasswordAsync(
+        string customerReference,
+        string? samAccountName,
+        string? currentPassword,
+        string? newPassword,
+        CancellationToken cancellationToken)
+    {
+        LifecycleWriteCount++;
+        return _inner.ChangeUserPasswordAsync(
+            customerReference, samAccountName, currentPassword, newPassword, cancellationToken);
+    }
+
+    public Task<AdServiceResult<AdDirectoryObjectSummary>> SetUserPasswordAsync(
+        string customerReference,
+        string? samAccountName,
+        string? newPassword,
+        CancellationToken cancellationToken)
+    {
+        LifecycleWriteCount++;
+        return _inner.SetUserPasswordAsync(
+            customerReference, samAccountName, newPassword, cancellationToken);
+    }
+}
+
+/// <summary>
+/// Relais KoXo hors service : il ne retient rien et le dit.
+/// </summary>
+/// <remarks>
+/// Reproduit une configuration incomplete en production. Le comportement
+/// attendu est un refus avant tout point de non-retour : consommer le jeton a
+/// usage unique pour decouvrir ensuite que le mot de passe n'atteindra jamais
+/// l'annuaire laisserait le client sans second lien pour recommencer.
+/// </remarks>
+sealed class UnavailableKoxoPendingPasswordStore : IKoxoPendingPasswordStore
+{
+    public bool IsOperational => false;
+
+    public PortalPasswordSecret? Seal(string portalUserId, string password) => null;
+
+    public Task<bool> PublishAsync(
+        string portalUserId,
+        string password,
+        CancellationToken cancellationToken) => Task.FromResult(false);
+
+    public Task<string?> PeekAsync(
+        string portalUserId,
+        CancellationToken cancellationToken) => Task.FromResult<string?>(null);
+
+    public Task AcknowledgeAsync(
+        string portalUserId,
+        CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task<IReadOnlyList<string>> DrainExpiredAsync(
+        CancellationToken cancellationToken)
+        => Task.FromResult<IReadOnlyList<string>>([]);
+}
+
 sealed class TestApplicationSettingsRepository : IApplicationSettingsRepository
 {
     private readonly Dictionary<string, StoredApplicationSetting> _values =
@@ -8873,9 +9423,17 @@ sealed class TestApplicationSettingsRepository : IApplicationSettingsRepository
         CancellationToken cancellationToken)
         => Task.FromResult(_values.GetValueOrDefault(key));
 
-    public Task<bool> TryUpsertAsync(
+    /// <summary>
+    /// Panne d'historisation, pour prouver qu'une valeur ne survit pas seule.
+    /// </summary>
+    public bool FailRevision { get; set; }
+
+    public int RevisionCount { get; private set; }
+
+    public Task<bool> TryApplyAsync(
         StoredApplicationSetting setting,
         int expectedVersion,
+        string correlationId,
         CancellationToken cancellationToken)
     {
         if (_values.TryGetValue(setting.Key, out var current))
@@ -8883,18 +9441,18 @@ sealed class TestApplicationSettingsRepository : IApplicationSettingsRepository
             if (current.Version != expectedVersion) return Task.FromResult(false);
         }
         else if (expectedVersion != 0) return Task.FromResult(false);
+
+        // La panne survient avant toute publication : c'est la position du
+        // ROLLBACK cote MariaDB.
+        if (FailRevision)
+        {
+            throw new InvalidOperationException("Ecriture de revision indisponible.");
+        }
+
         _values[setting.Key] = setting;
+        RevisionCount++;
         return Task.FromResult(true);
     }
-
-    public Task AddRevisionAsync(
-        string key,
-        int version,
-        string? oldValueJson,
-        string newValueJson,
-        string? actorUserId,
-        string correlationId,
-        CancellationToken cancellationToken) => Task.CompletedTask;
 }
 
 sealed class TestEmailDispatchService : IEmailDispatchService

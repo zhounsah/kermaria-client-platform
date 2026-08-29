@@ -1117,7 +1117,10 @@ app.MapPost(
         IPortalPasswordService portalPasswordService,
         IAuditService auditService,
         IAdPasswordRateLimiter rateLimiter,
-        AdPasswordRuntimeConfiguration adPasswordConfig) =>
+        AdPasswordRuntimeConfiguration adPasswordConfig,
+        AdRuntimeConfiguration adConfiguration,
+        IKoxoPendingPasswordStore pendingPasswords,
+        IKoxoSyncWebhookTriggerService koxoSyncTrigger) =>
     {
         var session = await ResolveClientSessionAsync(
             context,
@@ -1223,7 +1226,77 @@ app.MapPost(
         var link = await linkRepository.FindUserLinkByPortalUserIdAsync(
             session.UserId,
             context.RequestAborted);
-        if (link is not null)
+        // Quand KoXo fait autorite sur les mots de passe, l'ecriture LDAP est
+        // non seulement interdite mais inutile : avec ForcePasswords=1, KoXo
+        // reecrit le mot de passe de l'annuaire depuis la colonne 14 du CSV a
+        // chaque synchronisation. Un mot de passe pose ici serait ecrase au
+        // passage suivant et le client perdrait NextCloud, RDS et le VPN, sans
+        // aucune erreur — apres avoir lu « mot de passe synchronise ».
+        var koxoOwnsPassword = link is not null && adConfiguration.KoxoOwnsDirectory;
+        if (koxoOwnsPassword)
+        {
+            // Fail-closed avant tout point de non-retour : sans magasin
+            // exploitable, le secret n'atteindrait jamais l'annuaire et le
+            // portail afficherait pourtant un mot de passe change.
+            if (!pendingPasswords.IsOperational
+                || !await pendingPasswords.PublishAsync(
+                    session.UserId,
+                    request.NewPassword,
+                    context.RequestAborted))
+            {
+                rateLimiter.RegisterFailure(session.UserId, now);
+                await linkRepository.UpdateUserPasswordSyncStatusAsync(
+                    session.UserId,
+                    "failed",
+                    now,
+                    context.RequestAborted);
+                await RecordAdAuditAsync(
+                    context,
+                    auditService,
+                    "ad.password_change",
+                    "refused",
+                    "KOXO_PASSWORD_HANDOFF_UNAVAILABLE",
+                    "portal_user",
+                    session.UserId,
+                    session.UserId,
+                    session.CustomerId);
+                return Results.Json(
+                    new ApiError(
+                        "KOXO_PASSWORD_HANDOFF_UNAVAILABLE",
+                        "Le mot de passe ne peut pas etre transmis a KoXo pour le moment. Reessayez plus tard.",
+                        context.GetCorrelationId()),
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+
+            await linkRepository.UpdateUserPasswordSyncStatusAsync(
+                session.UserId,
+                "pending",
+                now,
+                context.RequestAborted);
+
+            // Rattrapage, pas condition de succes : la synchronisation planifiee
+            // repassera de toute facon sur le mot de passe publie.
+            try
+            {
+                await koxoSyncTrigger.TriggerAsync(
+                    new KoxoSyncWebhookTriggerRequest(
+                        $"profile-{session.UserId}",
+                        session.UserId,
+                        link!.CustomerReference,
+                        "password_set",
+                        context.GetCorrelationId(),
+                        DateTime.UtcNow.ToString("O")),
+                    context.RequestAborted);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                app.Logger.LogWarning(
+                    exception,
+                    "KoXo sync trigger failed after a portal password change for portal_user_id {PortalUserId}",
+                    session.UserId);
+            }
+        }
+        else if (link is not null)
         {
             var result = await adService.SetUserPasswordAsync(
                 link.CustomerReference,
@@ -1290,14 +1363,21 @@ app.MapPost(
             session.UserId,
             session.CustomerId);
 
+        // Le message dit ce qui s'est reellement produit. Annoncer « synchronise
+        // avec Active Directory » alors que KoXo n'a pas encore repasse
+        // ferait croire l'acces retabli avant qu'il ne le soit.
         return Results.Json(
             new AdPasswordChangeResponse(
                 link is null
                     ? "PORTAL_PASSWORD_CHANGED"
-                    : "AD_PASSWORD_CHANGED",
+                    : koxoOwnsPassword
+                        ? "AD_PASSWORD_CHANGE_PENDING_KOXO"
+                        : "AD_PASSWORD_CHANGED",
                 link is null
                     ? "Le mot de passe du portail a ete change."
-                    : "Le mot de passe du portail a ete change et synchronise avec Active Directory.",
+                    : koxoOwnsPassword
+                        ? "Le mot de passe du portail a ete change. Il sera applique a vos services a la prochaine synchronisation de l'annuaire."
+                        : "Le mot de passe du portail a ete change et synchronise avec Active Directory.",
                 adService.ModeName,
                 context.GetCorrelationId()),
             statusCode: StatusCodes.Status200OK);

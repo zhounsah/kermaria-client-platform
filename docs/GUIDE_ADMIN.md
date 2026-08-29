@@ -270,6 +270,10 @@ Menu **Relation client > Clients** puis fiche client.
 - move cross-client borne a l'OU configuree ;
 - changement de mot de passe AD via `/password` si active.
 
+Sous autorite KoXo (`controlled_write`), les quatre dernieres actions sont
+refusees : voir la section
+[Annuaire et KoXo](#7-octies-bis-annuaire-et-koxo---adminsettingsdirectory).
+
 Le detail du cadrage AD reste documente dans
 [`V0.25_AD_FINALISATION.md`](V0.25_AD_FINALISATION.md) et
 [`AD_PRODUCTION_MIGRATION.md`](AD_PRODUCTION_MIGRATION.md).
@@ -559,6 +563,19 @@ Le tableau des autorites se lit d'abord. En production, KoXo fait autorite sur
 les identites et les mots de passe ; API-INTERNAL lit, rattache par
 `employeeNumber` et pilote les groupes de services. La suppression d'utilisateur
 est interdite a l'API, quel que soit le mode.
+
+Ce tableau n'est pas indicatif : il est applique. Sous autorite KoXo, les
+actions de cycle de vie de la fiche client — creation, desactivation,
+deplacement, renommage, mot de passe — sont refusees avec le message
+« KoXo fait autorite ». Elles se font par la synchronisation, pas depuis cette
+interface. Les groupes de services restent, eux, pilotables ici : ce sont eux
+qui ouvrent et ferment reellement l'acces.
+
+Consequence visible cote client : un changement de mot de passe depuis l'espace
+client annonce desormais une application « a la prochaine synchronisation de
+l'annuaire », et non une synchronisation deja faite. Si le relais KoXo est
+indisponible, le changement est refuse — plutot que d'ecrire un mot de passe que
+la synchronisation suivante effacerait sans prevenir.
 
 ### Perimetres
 

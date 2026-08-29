@@ -206,6 +206,12 @@ check("set-password branche la creation et la synchro AD", () => {
   assert.match(signupService, /SetUserPasswordAsync/);
   assert.match(signupService, /clients\.home\.bzh|_adConfiguration\.Domain/);
 });
+check("set-password respecte l'autorite KoXo", () => {
+  assert.match(signupService, /_adConfiguration\.KoxoOwnsDirectory/);
+  assert.match(signupService, /_pendingPasswords\.IsOperational/);
+  assert.match(signupService, /KOXO_PASSWORD_HANDOFF_UNAVAILABLE/);
+  assert.match(signupService, /UpdateUserPasswordSyncStatusAsync/);
+});
 check("repository mock partage un store singleton", () => {
   assert.match(signupRepoMock, /class MockSignupStore/);
   assert.match(signupRepoInterface, /interface ISignupRepository/);

@@ -10,6 +10,26 @@ public sealed record StoredFiscalMention(
     DateTime CreatedAtUtc,
     string? CreatedByUserId);
 
+/// <summary>
+/// Issue d'un ajout de mention.
+/// </summary>
+public enum FiscalMentionAddOutcome
+{
+    Added,
+
+    /// <summary>
+    /// Le nombre de versions du regime ne correspond plus a celui que
+    /// l'administrateur avait sous les yeux.
+    /// </summary>
+    VersionConflict,
+
+    /// <summary>
+    /// Une version du meme regime prend deja effet exactement au meme instant :
+    /// la version applicable serait indeterminee.
+    /// </summary>
+    EffectiveDateTaken
+}
+
 public interface IFiscalPolicyRepository
 {
     bool IsPersistent { get; }
@@ -18,12 +38,27 @@ public interface IFiscalPolicyRepository
         CancellationToken cancellationToken);
 
     /// <summary>
-    /// Ajoute une version. Retourne `false` si une version du meme regime prend
-    /// deja effet exactement au meme instant : la version applicable serait
-    /// alors indeterminee.
+    /// Verifie la version attendue et ajoute la mention dans la meme unite de
+    /// travail.
     /// </summary>
-    Task<bool> TryAddAsync(
+    /// <remarks>
+    /// <para>
+    /// Le decompte servait auparavant de version, mais il etait lu sur une
+    /// connexion distincte, avant l'insertion. Deux administrateurs partant du
+    /// meme ecran lisaient donc tous les deux la meme version et inseraient
+    /// tous les deux : la mention appliquee devenait celle de la date d'effet
+    /// la plus proche, sans que ni l'un ni l'autre ne voie de conflit. Sur un
+    /// texte qui s'imprime sur des factures, c'est un resultat faux et
+    /// silencieux.
+    /// </para>
+    /// <para>
+    /// La verification et l'ecriture doivent donc partager la meme transaction
+    /// et le meme verrou sur le regime.
+    /// </para>
+    /// </remarks>
+    Task<FiscalMentionAddOutcome> TryAddAsync(
         StoredFiscalMention mention,
+        int expectedVersion,
         string correlationId,
         CancellationToken cancellationToken);
 

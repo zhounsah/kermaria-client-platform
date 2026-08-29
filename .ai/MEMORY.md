@@ -16,6 +16,27 @@
 
 - **v1.4.0.1 (2026-08-20)** : diagnostic public migre vers Billing V2 et deploye sur SRV-12 (`20260820-093552-v1.4.0.1-bf535b7`, commit applicatif `bf535b7`). Aucun changement SQL/pricing/provisioning ni redeploiement SRV-13. Voir [billing-v2-public-diagnostic.md](topics/billing-v2-public-diagnostic.md). Version de base Billing V2 : v1.4.0.0.
 
+### Centre de configuration administrateur (2026-08-29)
+
+- Chantier **local, non poussé, non déployé**. Une revue finale indépendante
+  avait conclu NO-GO ; les huit bloqueurs sont fermés. Détail :
+  [admin-configuration-center.md](topics/admin-configuration-center.md),
+  spécification `docs/ADMIN_CONFIGURATION_CENTER_IMPLEMENTATION.md` (section 37
+  pour le lot correctif).
+- Invariants à ne pas défaire : mutation + révision dans **une seule
+  transaction** avec `SELECT … FOR UPDATE` qui sert à la fois de contrôle de
+  version et de relecture de la valeur remplacée ; un échec de stockage lève et
+  remonte `*_STORAGE_UNAVAILABLE`, jamais un conflit de version ; l'amorce des
+  modèles de démonstration est tout ou rien, vacuité vérifiée *dans* la
+  transaction.
+- **Les autorités KoXo sont désormais appliquées, pas seulement affichées.** Le
+  garde est dans `LdapActiveDirectoryService` (7 méthodes de cycle de vie), pas
+  route par route ; les groupes de services restent le mandat de l'API.
+  `/internal/profile/password` passe par le relais KoXo et le déplacement LDAP
+  de `DemoConversionService` est supprimé.
+- **Limite de preuve** : validations en persistance **mock** uniquement. Le
+  verrouillage InnoDB n'est pas exercé ; migration `079` non appliquée.
+
 ### Vitrine, SEO et éditorial
 
 - **Référence la plus récente importée : v1.3.3.4, vérifiée en production le 2026-08-11.** Routage canonique `www` / `dashboard` / `administration`, métadonnées, robots/sitemap, favicon et vraie 404 ont été validés.
@@ -125,6 +146,7 @@
 
 ## Tous les topics Claude importés
 
+- [admin-configuration-center.md](topics/admin-configuration-center.md)
 - [billing-v2-koxo-storage-targets.md](topics/billing-v2-koxo-storage-targets.md)
 - [bpce-invoicing-api.md](topics/bpce-invoicing-api.md)
 - [custom-demo-accounts.md](topics/custom-demo-accounts.md)

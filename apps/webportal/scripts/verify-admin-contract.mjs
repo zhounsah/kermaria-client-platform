@@ -23,8 +23,15 @@ const settingsPermissionsRoute = await read(
   "app/api/admin/settings/permissions/route.ts",
 );
 const settingsAuditCenter = await read("components/AdminSettingsAuditCenter.tsx");
+const settingsPermissionMigration = await read(
+  "../api-internal/Migrations/MariaDb/079_configuration_permissions_fail_closed.sql",
+);
 const settingsFederation = await read("components/AdminSettingsFederation.tsx");
 const billingFormules = await read("lib/billing-v2-formules.ts");
+
+async function readRepo(path) {
+  return readFile(new URL(`../../../${path}`, import.meta.url), "utf8");
+}
 const settingsDirectoryRoute = await read(
   "app/api/admin/settings/directory/route.ts",
 );
@@ -94,6 +101,9 @@ assert.match(settingsRoute, /handleAdminGet/);
 assert.match(settingsStatusRoute, /handleAdminGet/);
 assert.match(settingsMutationRoute, /handleAdminMutation/);
 assert.match(settingsMutationRoute, /expectedVersion/);
+assert.match(settingsPermissionMigration, /settings\.read/);
+assert.match(settingsPermissionMigration, /settings\.billing\.write/);
+assert.match(settingsPermissionMigration, /users\.role = 'internal_admin'/);
 assert.match(settingsCenter, /beforeunload/);
 assert.match(settingsCenter, /SETTINGS_VERSION_CONFLICT/);
 assert.doesNotMatch(settingsCenter, /SQL_PASSWORD|SERVICE_AUTH_TOKEN|ClientSecret/);
@@ -229,7 +239,7 @@ assert.match(
 // serveur et laisser croire a une recherche exhaustive.
 assert.match(settingsAuditCenter, /audit\.warning/);
 assert.match(settingsAuditCenter, /truncated/);
-assert.match(settingsAuditCenter, /Ouverte par amorçage/);
+assert.match(settingsAuditCenter, /Refus.e sans attribution/);
 
 // Federation : le Centre pointe vers les modules deja autorites, sans recreer
 // un second editeur de CMS.
@@ -261,5 +271,92 @@ assert.doesNotMatch(settingsDirectoryRoute, /handleAdminMutation|export function
 assert.doesNotMatch(directoryCenter, /"use client"/);
 assert.match(directoryCenter, /valeur jamais transmise/);
 assert.match(directoryCenter, /writesNotice/);
+
+// Atomicité mutation + révision. Une valeur appliquée sans trace est
+// indistinguable d'une valeur jamais modifiée : c'est exactement ce qu'un audit
+// de configuration doit pouvoir trancher.
+const atomicWrites = [
+  ["apps/api-internal/Data/Repositories/MariaDbApplicationSettingsRepository.cs", "TryApplyAsync", "application_setting_revisions"],
+  ["apps/api-internal/Data/Repositories/MariaDbCommunicationTemplateRepository.cs", "SaveAsync", "revision"],
+  ["apps/api-internal/Data/Repositories/MariaDbDemoContentTemplateRepository.cs", "TrySaveAsync", "demo_content_template_revisions"],
+];
+for (const [file, method, revisionMarker] of atomicWrites) {
+  const source = await readRepo(file);
+  const start = source.indexOf(method);
+  assert.notEqual(start, -1, `${file} doit exposer ${method}.`);
+  assert.match(
+    source,
+    /BeginTransactionAsync/,
+    `${file} doit écrire la mutation et sa révision dans une transaction.`,
+  );
+  assert.ok(
+    source.includes(revisionMarker),
+    `${file} doit inscrire la révision dans la même unité de travail.`,
+  );
+  assert.match(
+    source,
+    /FOR UPDATE/,
+    `${file} doit vérifier la version sous verrou, pas sur une lecture antérieure.`,
+  );
+}
+
+// Les dépôts n'exposent plus d'historisation séparée : la séparation est
+// justement ce qui permettait la mutation sans trace.
+for (const file of [
+  "apps/api-internal/Data/Repositories/IApplicationSettingsRepository.cs",
+  "apps/api-internal/Data/Repositories/ICommunicationTemplateRepository.cs",
+  "apps/api-internal/Data/Repositories/IDemoContentTemplateRepository.cs",
+]) {
+  const source = await readRepo(file);
+  assert.doesNotMatch(
+    source,
+    /Task AddRevisionAsync|Task Add\w+RevisionAsync/,
+    `${file} ne doit plus exposer d'écriture de révision indépendante.`,
+  );
+}
+
+// Amorce des modèles de démonstration : tout ou rien. Une table à moitié peuplée
+// est ensuite considérée comme faisant autorité, et les modèles manquants
+// deviennent invisibles sans possibilité de réamorcer.
+const demoRepository = await readRepo(
+  "apps/api-internal/Data/Repositories/MariaDbDemoContentTemplateRepository.cs",
+);
+assert.match(
+  demoRepository,
+  /TryImportAsync/,
+  "L'amorce des modèles de démonstration doit être une seule opération.",
+);
+assert.match(
+  demoRepository,
+  /SELECT COUNT\(\*\) FROM demo_content_templates FOR UPDATE/,
+  "La vacuité de la table doit être vérifiée dans la transaction d'amorce.",
+);
+
+// Concurrence fiscale : la version attendue est vérifiée sous verrou, dans la
+// transaction qui écrit. Vérifiée en amont, deux administrateurs partis du même
+// écran passaient tous les deux sans voir de conflit.
+const fiscalRepository = await readRepo(
+  "apps/api-internal/Data/Repositories/MariaDbFiscalPolicyRepository.cs",
+);
+assert.match(fiscalRepository, /BeginTransactionAsync/);
+assert.match(fiscalRepository, /FOR UPDATE/);
+assert.match(fiscalRepository, /expectedVersion/);
+const fiscalService = await readRepo("apps/api-internal/Services/FiscalPolicyService.cs");
+assert.match(
+  fiscalService,
+  /FiscalMentionAddOutcome\.VersionConflict/,
+  "Le conflit de version fiscal doit venir du dépôt, pas d'un décompte lu en amont.",
+);
+
+// Les permissions du Centre sont fail-closed : sans attribution explicite,
+// personne n'y accède. Le bootstrap permissif reste borné à l'éditorial.
+const editorialRepository = await readRepo(
+  "apps/api-internal/Data/Repositories/MariaDbEditorialRepository.cs",
+);
+assert.match(
+  editorialRepository,
+  /SettingsPermissionRegistry\.Contains/,
+  "Une permission du Centre sans attribution doit être refusée, pas ouverte par amorçage.",
+);
 
 console.log("Vérification du contrat d'administration BFF réussie.");

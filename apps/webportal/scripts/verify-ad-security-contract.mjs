@@ -5,6 +5,10 @@ async function read(path) {
   return readFile(new URL(`../${path}`, import.meta.url), "utf8");
 }
 
+async function readApi(path) {
+  return readFile(new URL(`../../../${path}`, import.meta.url), "utf8");
+}
+
 const adminBff = await read("lib/admin-bff.ts");
 const csrfServer = await read("lib/csrf-server.ts");
 const csrfClient = await read("lib/csrf.ts");
@@ -150,5 +154,84 @@ for (const [label, source] of [
     `Aucun chemin ou domaine interne ne doit apparaitre dans ${label}.`,
   );
 }
+
+// Autorité KoXo : aucune écriture LDAP de cycle de vie quand KoXo fait autorité.
+// Le contrôle est structurel — une nouvelle route héritera du garde sans qu'on
+// ait à y penser, ce qui est précisément la raison de le poser dans le service.
+const ldapService = await readApi(
+  "apps/api-internal/Services/ActiveDirectory/LdapActiveDirectoryService.cs",
+);
+const lifecycleWrites = [
+  "CreateUserAsync",
+  "DisableUserAsync",
+  "MoveUserToDisabledAsync",
+  "RenameUserAsync",
+  "MoveUserAsync",
+  "ChangeUserPasswordAsync",
+  "SetUserPasswordAsync",
+];
+for (const method of lifecycleWrites) {
+  const start = ldapService.indexOf(
+    `public Task<AdServiceResult<AdDirectoryObjectSummary>> ${method}(`,
+  );
+  assert.notEqual(start, -1, `${method} doit exister dans le service LDAP.`);
+  const guard = ldapService.indexOf("KoxoAuthorityResult()", start);
+  const writesEnabled = ldapService.indexOf("_configuration.WritesEnabled", start);
+  assert.ok(
+    guard !== -1 && writesEnabled !== -1 && guard - writesEnabled < 900,
+    `${method} doit refuser l'écriture quand KoXo fait autorité, avant toute liaison LDAP.`,
+  );
+}
+assert.match(
+  ldapService,
+  /AD_LIFECYCLE_KOXO_AUTHORITY/,
+  "Le refus d'autorité KoXo doit porter un code explicite.",
+);
+
+// Le mandat conservé : les groupes de services restent pilotés par API-INTERNAL.
+for (const method of ["AddGroupMemberAsync", "RemoveGroupMemberAsync"]) {
+  const start = ldapService.indexOf(
+    `public Task<AdServiceResult<AdDirectoryObjectSummary>> ${method}(`,
+  );
+  const body = ldapService.slice(start, start + 700);
+  assert.doesNotMatch(
+    body,
+    /KoxoAuthorityResult/,
+    `${method} ne doit pas être bloquée : l'appartenance aux groupes reste le mandat d'API-INTERNAL.`,
+  );
+}
+
+// Le changement de mot de passe du portail passe par KoXo quand KoXo en est
+// l'autorité : une écriture LDAP serait écrasée à la synchronisation suivante,
+// sans erreur visible, et le client perdrait ses accès.
+const apiProgram = await readApi("apps/api-internal/Program.cs");
+assert.match(
+  apiProgram,
+  /koxoOwnsPassword/,
+  "La route /internal/profile/password doit distinguer le cas où KoXo fait autorité.",
+);
+assert.match(
+  apiProgram,
+  /KOXO_PASSWORD_HANDOFF_UNAVAILABLE/,
+  "Un relais KoXo indisponible doit refuser le changement plutôt que d'écrire en LDAP.",
+);
+assert.match(
+  apiProgram,
+  /AD_PASSWORD_CHANGE_PENDING_KOXO/,
+  "Le message doit dire que l'application aux services attend la synchronisation.",
+);
+
+// La conversion d'un essai ne déplace pas l'identité en LDAP sous autorité KoXo.
+const demoConversion = await readApi(
+  "apps/api-internal/Services/DemoConversionService.cs",
+);
+const moveIdentity = demoConversion.slice(
+  demoConversion.indexOf("private async Task<bool> MoveIdentityAsync("),
+);
+assert.match(
+  moveIdentity.slice(0, 400),
+  /_adConfiguration\.KoxoOwnsDirectory/,
+  "Le déplacement d'identité doit être court-circuité quand KoXo fait autorité.",
+);
 
 console.log("Vérification du contrat sécurité AD V0.19 + V0.25 briques 1/2a/2b/2c réussie.");

@@ -20,22 +20,34 @@ public sealed class MockFiscalPolicyRepository : IFiscalPolicyRepository
         }
     }
 
-    public Task<bool> TryAddAsync(
+    /// <summary>
+    /// Verification de version et ajout sous le meme verrou : deux ajouts
+    /// concurrents ne peuvent pas partir de la meme version.
+    /// </summary>
+    public Task<FiscalMentionAddOutcome> TryAddAsync(
         StoredFiscalMention mention,
+        int expectedVersion,
         string correlationId,
         CancellationToken cancellationToken)
     {
         lock (Gate)
         {
+            var storedVersion = Items.Count(item =>
+                string.Equals(item.Regime, mention.Regime, StringComparison.Ordinal));
+            if (storedVersion != expectedVersion)
+            {
+                return Task.FromResult(FiscalMentionAddOutcome.VersionConflict);
+            }
+
             if (Items.Any(item =>
                 string.Equals(item.Regime, mention.Regime, StringComparison.Ordinal)
                 && item.EffectiveFromUtc == mention.EffectiveFromUtc))
             {
-                return Task.FromResult(false);
+                return Task.FromResult(FiscalMentionAddOutcome.EffectiveDateTaken);
             }
 
             Items.Add(mention);
-            return Task.FromResult(true);
+            return Task.FromResult(FiscalMentionAddOutcome.Added);
         }
     }
 

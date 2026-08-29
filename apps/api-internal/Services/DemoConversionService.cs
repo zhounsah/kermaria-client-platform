@@ -27,6 +27,18 @@ namespace Kermaria.ApiInternal.Services;
 /// emplacement de l'identite). L'acte <b>commercial</b> — souscription,
 /// facturation — reste le parcours existant et n'est pas duplique ici.
 /// </para>
+///
+/// <para>
+/// <b>Autorite d'annuaire.</b> Quand KoXo fait autorite, l'emplacement de
+/// l'identite n'est pas deplace en LDAP par cette application : l'OU cible est
+/// decrite par <c>GroupeSecondaire</c> dans le CSV, que KoXo cree au besoin et
+/// reapplique a chaque synchronisation. Un <c>MoveUserAsync</c> direct etait
+/// donc a la fois hors mandat et sans effet durable — et il retournait
+/// pourtant <c>identityMoved: true</c>, affirmant une bascule que la
+/// synchronisation suivante defaisait. La conversion se contente donc de
+/// reserver le code de groupe reel et de declencher la synchronisation.
+/// Les groupes de services, eux, restent pilotes par API-INTERNAL.
+/// </para>
 /// </summary>
 public interface IDemoConversionService
 {
@@ -48,6 +60,7 @@ public sealed class DemoConversionService : IDemoConversionService
     private readonly IActiveDirectoryLinkRepository _links;
     private readonly AdRuntimeConfiguration _adConfiguration;
     private readonly DemoConversionRuntimeConfiguration _conversionConfiguration;
+    private readonly IKoxoSyncWebhookTriggerService _koxoTrigger;
     private readonly ILogger<DemoConversionService> _logger;
 
     public DemoConversionService(
@@ -59,6 +72,7 @@ public sealed class DemoConversionService : IDemoConversionService
         IActiveDirectoryLinkRepository links,
         AdRuntimeConfiguration adConfiguration,
         DemoConversionRuntimeConfiguration conversionConfiguration,
+        IKoxoSyncWebhookTriggerService koxoTrigger,
         ILogger<DemoConversionService> logger)
     {
         _accounts = accounts;
@@ -69,6 +83,7 @@ public sealed class DemoConversionService : IDemoConversionService
         _links = links;
         _adConfiguration = adConfiguration;
         _conversionConfiguration = conversionConfiguration;
+        _koxoTrigger = koxoTrigger;
         _logger = logger;
     }
 
@@ -175,7 +190,11 @@ public sealed class DemoConversionService : IDemoConversionService
                 link,
                 candidate.CustomerReference,
                 cancellationToken);
+            // Sous autorite KoXo, l'absence de deplacement n'est pas un echec :
+            // c'est le fonctionnement attendu. Traiter ce cas comme partiel
+            // bloquerait toute conversion en production.
             if (!identityMoved
+                && !_adConfiguration.KoxoOwnsDirectory
                 && _conversionConfiguration.TargetOrganizationalUnitDn is not null)
             {
                 return Partial(candidate, removed, granted, false);
@@ -207,6 +226,34 @@ public sealed class DemoConversionService : IDemoConversionService
             candidate.ProfileKey,
             cancellationToken);
 
+        // Le code de groupe reel vient d'etre reserve : c'est lui qui decrit
+        // desormais l'OU cible dans l'export. La synchronisation la reapplique.
+        // Rattrapage, pas condition de succes — la synchronisation planifiee
+        // repassera de toute facon.
+        if (_adConfiguration.KoxoOwnsDirectory
+            && !string.IsNullOrWhiteSpace(candidate.PortalUserId))
+        {
+            try
+            {
+                await _koxoTrigger.TriggerAsync(
+                    new KoxoSyncWebhookTriggerRequest(
+                        $"conversion-{candidate.PortalUserId}",
+                        candidate.PortalUserId,
+                        candidate.CustomerReference,
+                        "converted",
+                        Guid.NewGuid().ToString("D"),
+                        DateTime.UtcNow.ToString("O")),
+                    cancellationToken);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                _logger.LogWarning(
+                    exception,
+                    "Demo conversion: KoXo sync trigger failed for {CustomerReference}.",
+                    candidate.CustomerReference);
+            }
+        }
+
         _logger.LogInformation(
             "Demo conversion for {CustomerReference}: demoGroupsRemoved={Removed} realGroupsGranted={Granted} identityMoved={Moved}",
             candidate.CustomerReference,
@@ -225,15 +272,24 @@ public sealed class DemoConversionService : IDemoConversionService
     }
 
     /// <summary>
-    /// Deplace l'identite hors de l'OU de demonstration. Sans OU cible
-    /// configuree, l'etape est volontairement neutre : le cloisonnement reste
-    /// alors porte par les groupes seuls.
+    /// Deplace l'identite hors de l'OU de demonstration, en mode local
+    /// uniquement. Sans OU cible configuree, l'etape est volontairement neutre :
+    /// le cloisonnement reste alors porte par les groupes seuls.
     /// </summary>
+    /// <remarks>
+    /// Sous autorite KoXo, aucun deplacement LDAP n'est tente : l'OU cible est
+    /// portee par le CSV, et KoXo la reappliquerait de toute facon.
+    /// </remarks>
     private async Task<bool> MoveIdentityAsync(
         PortalUserAdLinkRecord link,
         string customerReference,
         CancellationToken cancellationToken)
     {
+        if (_adConfiguration.KoxoOwnsDirectory)
+        {
+            return false;
+        }
+
         var targetOu = _conversionConfiguration.TargetOrganizationalUnitDn;
         if (targetOu is null)
         {

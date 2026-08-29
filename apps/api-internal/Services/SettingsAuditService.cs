@@ -205,23 +205,19 @@ public sealed class SettingsAuditService : ISettingsAuditService
                     permission.Description,
                     permission.Risk,
                     permission.Surfaces,
-                    granted > 0 ? "granted" : "open",
+                    granted > 0 ? "granted" : "denied",
                     granted);
             })
             .ToArray();
 
-        var bootstrapOpen = permissions.Any(
-            permission => permission.State == "open");
-
+        var missingGrant = permissions.Any(
+            permission => permission.State == "denied");
         return new SettingsPermissionOverview(
             permissions,
-            bootstrapOpen,
-            bootstrapOpen
-                ? "Au moins une permission n'a encore aucune attribution explicite : "
-                    + "tout administrateur interne y accede, par amorcage. "
-                    + "Attribuer la permission a un compte referme l'acces aux seuls comptes designes."
-                : "Chaque permission possede au moins une attribution explicite : "
-                    + "seuls les comptes designes y accedent.");
+            BootstrapOpen: false,
+            missingGrant
+                ? "Au moins une permission n'a aucune attribution explicite : elle est refusee a tous les comptes (fail-closed)."
+                : "Chaque permission possede au moins une attribution explicite : seuls les comptes designes y accedent.");
     }
 
     private static SettingsAuditEntryView Project(SettingsAuditEntry entry)

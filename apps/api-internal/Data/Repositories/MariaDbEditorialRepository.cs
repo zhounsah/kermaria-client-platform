@@ -52,9 +52,13 @@ public sealed class MariaDbEditorialRepository : IEditorialRepository
             ? 0
             : Convert.ToInt32(reader["user_grants"]);
 
-        // Bootstrap compatibility: once explicit grants exist for a permission,
-        // only granted admins keep access. Before that, existing internal_admin
-        // users can still initialize the editorial module.
+        // Le Centre de configuration est fail-closed : une permission Settings
+        // sans attribution explicite n'autorise personne. Le bootstrap permissif
+        // historique reste limite aux permissions editoriales anterieures.
+        if (SettingsPermissionRegistry.Contains(permissionCode))
+        {
+            return user > 0;
+        }
         return total == 0 || user > 0;
     }
 

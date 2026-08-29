@@ -779,6 +779,28 @@ public sealed class SignupService : ISignupService
 
         if (existingLink is not null)
         {
+            if (_adConfiguration.KoxoOwnsDirectory)
+            {
+                if (!_pendingPasswords.IsOperational
+                    || !await _pendingPasswords.PublishAsync(
+                        record.ApprovedUserId,
+                        password,
+                        cancellationToken))
+                {
+                    return new SignupOperationResult(
+                        false,
+                        "KOXO_PASSWORD_HANDOFF_UNAVAILABLE",
+                        "Le mot de passe ne peut pas etre transmis a KoXo pour le moment.");
+                }
+
+                await _activeDirectoryLinkRepository.UpdateUserPasswordSyncStatusAsync(
+                    record.ApprovedUserId,
+                    "pending",
+                    now,
+                    cancellationToken);
+                return null;
+            }
+
             var syncResult = await _activeDirectoryService.SetUserPasswordAsync(
                 existingLink.CustomerReference,
                 existingLink.SamAccountName,
@@ -849,10 +871,17 @@ public sealed class SignupService : ISignupService
             // NextCloud, RDS et le VPN sans aucune erreur visible. On publie
             // donc le mot de passe pour l'export, et le declenchement qui suit
             // dans ApplyPasswordAsync le fait appliquer par KoXo.
-            await _pendingPasswords.PublishAsync(
-                record.ApprovedUserId,
-                password,
-                cancellationToken);
+            if (!_pendingPasswords.IsOperational
+                || !await _pendingPasswords.PublishAsync(
+                    record.ApprovedUserId,
+                    password,
+                    cancellationToken))
+            {
+                return new SignupOperationResult(
+                    false,
+                    "KOXO_PASSWORD_HANDOFF_UNAVAILABLE",
+                    "Le mot de passe ne peut pas etre transmis a KoXo pour le moment.");
+            }
         }
         else
         {

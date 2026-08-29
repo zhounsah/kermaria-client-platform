@@ -4,6 +4,10 @@ namespace Kermaria.ApiInternal.Data.Repositories;
 /// Persistance de developpement uniquement. L'etat vit en memoire de processus
 /// et disparait au redemarrage : l'UI l'annonce explicitement.
 /// </summary>
+/// <remarks>
+/// Le modele et sa revision sont poses sous le meme verrou : soit les deux,
+/// soit aucun. C'est l'equivalent en memoire de la transaction MariaDB.
+/// </remarks>
 public sealed class MockCommunicationTemplateRepository
     : ICommunicationTemplateRepository
 {
@@ -30,10 +34,12 @@ public sealed class MockCommunicationTemplateRepository
         }
     }
 
-    public Task<bool> TryUpsertEmailTemplateAsync(
+    public Task<bool> TrySaveEmailTemplateAsync(
         StoredEmailTemplate template,
         string displayName,
         int expectedVersion,
+        string outcome,
+        string correlationId,
         CancellationToken cancellationToken)
     {
         lock (Gate)
@@ -43,19 +49,9 @@ public sealed class MockCommunicationTemplateRepository
                 return Task.FromResult(false);
             }
 
-            Emails[template.Key] = template;
-            return Task.FromResult(true);
-        }
-    }
+            MockRevisionFailureSwitch.ThrowIfArmed();
 
-    public Task AddEmailRevisionAsync(
-        StoredEmailTemplate template,
-        string outcome,
-        string correlationId,
-        CancellationToken cancellationToken)
-    {
-        lock (Gate)
-        {
+            Emails[template.Key] = template;
             EmailRevisions.Add(new StoredTemplateRevision(
                 template.Key,
                 template.Version,
@@ -63,9 +59,8 @@ public sealed class MockCommunicationTemplateRepository
                 template.UpdatedByUserId,
                 correlationId,
                 DateTime.UtcNow));
+            return Task.FromResult(true);
         }
-
-        return Task.CompletedTask;
     }
 
     public Task<IReadOnlyList<StoredTemplateRevision>> GetEmailRevisionsAsync(
@@ -84,10 +79,12 @@ public sealed class MockCommunicationTemplateRepository
         }
     }
 
-    public Task<bool> TryUpsertNotificationTemplateAsync(
+    public Task<bool> TrySaveNotificationTemplateAsync(
         StoredNotificationTemplate template,
         string displayName,
         int expectedVersion,
+        string outcome,
+        string correlationId,
         CancellationToken cancellationToken)
     {
         lock (Gate)
@@ -97,19 +94,9 @@ public sealed class MockCommunicationTemplateRepository
                 return Task.FromResult(false);
             }
 
-            Notifications[template.Key] = template;
-            return Task.FromResult(true);
-        }
-    }
+            MockRevisionFailureSwitch.ThrowIfArmed();
 
-    public Task AddNotificationRevisionAsync(
-        StoredNotificationTemplate template,
-        string outcome,
-        string correlationId,
-        CancellationToken cancellationToken)
-    {
-        lock (Gate)
-        {
+            Notifications[template.Key] = template;
             NotificationRevisions.Add(new StoredTemplateRevision(
                 template.Key,
                 template.Version,
@@ -117,9 +104,8 @@ public sealed class MockCommunicationTemplateRepository
                 template.UpdatedByUserId,
                 correlationId,
                 DateTime.UtcNow));
+            return Task.FromResult(true);
         }
-
-        return Task.CompletedTask;
     }
 
     public Task<IReadOnlyList<StoredTemplateRevision>> GetNotificationRevisionsAsync(
@@ -138,10 +124,12 @@ public sealed class MockCommunicationTemplateRepository
         }
     }
 
-    public Task<bool> TryUpsertSnippetAsync(
+    public Task<bool> TrySaveSnippetAsync(
         StoredSystemSnippet snippet,
         string displayName,
         int expectedVersion,
+        string outcome,
+        string correlationId,
         CancellationToken cancellationToken)
     {
         lock (Gate)
@@ -151,19 +139,9 @@ public sealed class MockCommunicationTemplateRepository
                 return Task.FromResult(false);
             }
 
-            Snippets[snippet.Key] = snippet;
-            return Task.FromResult(true);
-        }
-    }
+            MockRevisionFailureSwitch.ThrowIfArmed();
 
-    public Task AddSnippetRevisionAsync(
-        StoredSystemSnippet snippet,
-        string outcome,
-        string correlationId,
-        CancellationToken cancellationToken)
-    {
-        lock (Gate)
-        {
+            Snippets[snippet.Key] = snippet;
             SnippetRevisions.Add(new StoredTemplateRevision(
                 snippet.Key,
                 snippet.Version,
@@ -171,9 +149,8 @@ public sealed class MockCommunicationTemplateRepository
                 snippet.UpdatedByUserId,
                 correlationId,
                 DateTime.UtcNow));
+            return Task.FromResult(true);
         }
-
-        return Task.CompletedTask;
     }
 
     public Task<IReadOnlyList<StoredTemplateRevision>> GetSnippetRevisionsAsync(
@@ -181,6 +158,35 @@ public sealed class MockCommunicationTemplateRepository
         int limit,
         CancellationToken cancellationToken)
         => ReadRevisions(SnippetRevisions, snippetKey, limit);
+
+    /// <summary>Etat brut d'un modele d'e-mail, pour les tests.</summary>
+    public static StoredEmailTemplate? PeekEmail(string key)
+    {
+        lock (Gate) return Emails.GetValueOrDefault(key);
+    }
+
+    /// <summary>Nombre de revisions d'e-mail enregistrees, pour les tests.</summary>
+    public static int EmailRevisionCount(string key)
+    {
+        lock (Gate)
+        {
+            return EmailRevisions.Count(
+                item => string.Equals(item.Key, key, StringComparison.Ordinal));
+        }
+    }
+
+    public static void Clear()
+    {
+        lock (Gate)
+        {
+            Emails.Clear();
+            Notifications.Clear();
+            Snippets.Clear();
+            EmailRevisions.Clear();
+            NotificationRevisions.Clear();
+            SnippetRevisions.Clear();
+        }
+    }
 
     private static bool MatchesVersion(bool exists, int? currentVersion, int expectedVersion)
         => exists ? currentVersion == expectedVersion : expectedVersion == 0;

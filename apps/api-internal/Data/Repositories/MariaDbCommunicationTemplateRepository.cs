@@ -49,13 +49,20 @@ public sealed class MariaDbCommunicationTemplateRepository
         return items;
     }
 
-    public Task<bool> TryUpsertEmailTemplateAsync(
+    public Task<bool> TrySaveEmailTemplateAsync(
         StoredEmailTemplate template,
         string displayName,
         int expectedVersion,
+        string outcome,
+        string correlationId,
         CancellationToken cancellationToken)
-        => UpsertAsync(
+        => SaveAsync(
+            "email_templates",
+            "template_key",
+            template.Key,
             expectedVersion,
+            outcome,
+            correlationId,
             cancellationToken,
             update:
             """
@@ -67,7 +74,7 @@ public sealed class MariaDbCommunicationTemplateRepository
             """,
             insert:
             """
-            INSERT IGNORE INTO email_templates
+            INSERT INTO email_templates
                 (template_key, display_name, subject_template, body_template,
                  enabled, version, updated_by_user_id, created_at, updated_at)
             VALUES (@key, @display_name, @subject, @body, @enabled, @next_version,
@@ -85,14 +92,8 @@ public sealed class MariaDbCommunicationTemplateRepository
                     "@actor",
                     (object?)template.UpdatedByUserId ?? DBNull.Value);
                 command.Parameters.AddWithValue("@updated_at", template.UpdatedAtUtc);
-            });
-
-    public Task AddEmailRevisionAsync(
-        StoredEmailTemplate template,
-        string outcome,
-        string correlationId,
-        CancellationToken cancellationToken)
-        => AddRevisionAsync(
+            },
+            revision:
             """
             INSERT INTO email_template_revisions
                 (id, template_key, version, subject_template, body_template,
@@ -100,7 +101,7 @@ public sealed class MariaDbCommunicationTemplateRepository
             VALUES (@id, @key, @version, @subject, @body, @enabled, @actor,
                     @correlation, @outcome, UTC_TIMESTAMP(6));
             """,
-            command =>
+            bindRevision: command =>
             {
                 command.Parameters.AddWithValue("@key", template.Key);
                 command.Parameters.AddWithValue("@version", template.Version);
@@ -110,10 +111,7 @@ public sealed class MariaDbCommunicationTemplateRepository
                 command.Parameters.AddWithValue(
                     "@actor",
                     (object?)template.UpdatedByUserId ?? DBNull.Value);
-            },
-            outcome,
-            correlationId,
-            cancellationToken);
+            });
 
     public Task<IReadOnlyList<StoredTemplateRevision>> GetEmailRevisionsAsync(
         string templateKey,
@@ -154,13 +152,20 @@ public sealed class MariaDbCommunicationTemplateRepository
         return items;
     }
 
-    public Task<bool> TryUpsertNotificationTemplateAsync(
+    public Task<bool> TrySaveNotificationTemplateAsync(
         StoredNotificationTemplate template,
         string displayName,
         int expectedVersion,
+        string outcome,
+        string correlationId,
         CancellationToken cancellationToken)
-        => UpsertAsync(
+        => SaveAsync(
+            "notification_templates",
+            "template_key",
+            template.Key,
             expectedVersion,
+            outcome,
+            correlationId,
             cancellationToken,
             update:
             """
@@ -173,7 +178,7 @@ public sealed class MariaDbCommunicationTemplateRepository
             """,
             insert:
             """
-            INSERT IGNORE INTO notification_templates
+            INSERT INTO notification_templates
                 (template_key, display_name, title_template, message_template,
                  enabled, version, updated_by_user_id, created_at, updated_at)
             VALUES (@key, @display_name, @title, @message, @enabled,
@@ -191,14 +196,8 @@ public sealed class MariaDbCommunicationTemplateRepository
                     "@actor",
                     (object?)template.UpdatedByUserId ?? DBNull.Value);
                 command.Parameters.AddWithValue("@updated_at", template.UpdatedAtUtc);
-            });
-
-    public Task AddNotificationRevisionAsync(
-        StoredNotificationTemplate template,
-        string outcome,
-        string correlationId,
-        CancellationToken cancellationToken)
-        => AddRevisionAsync(
+            },
+            revision:
             """
             INSERT INTO notification_template_revisions
                 (id, template_key, version, title_template, message_template,
@@ -206,7 +205,7 @@ public sealed class MariaDbCommunicationTemplateRepository
             VALUES (@id, @key, @version, @title, @message, @enabled, @actor,
                     @correlation, @outcome, UTC_TIMESTAMP(6));
             """,
-            command =>
+            bindRevision: command =>
             {
                 command.Parameters.AddWithValue("@key", template.Key);
                 command.Parameters.AddWithValue("@version", template.Version);
@@ -216,10 +215,7 @@ public sealed class MariaDbCommunicationTemplateRepository
                 command.Parameters.AddWithValue(
                     "@actor",
                     (object?)template.UpdatedByUserId ?? DBNull.Value);
-            },
-            outcome,
-            correlationId,
-            cancellationToken);
+            });
 
     public Task<IReadOnlyList<StoredTemplateRevision>> GetNotificationRevisionsAsync(
         string templateKey,
@@ -257,13 +253,20 @@ public sealed class MariaDbCommunicationTemplateRepository
         return items;
     }
 
-    public Task<bool> TryUpsertSnippetAsync(
+    public Task<bool> TrySaveSnippetAsync(
         StoredSystemSnippet snippet,
         string displayName,
         int expectedVersion,
+        string outcome,
+        string correlationId,
         CancellationToken cancellationToken)
-        => UpsertAsync(
+        => SaveAsync(
+            "system_snippets",
+            "snippet_key",
+            snippet.Key,
             expectedVersion,
+            outcome,
+            correlationId,
             cancellationToken,
             update:
             """
@@ -275,7 +278,7 @@ public sealed class MariaDbCommunicationTemplateRepository
             """,
             insert:
             """
-            INSERT IGNORE INTO system_snippets
+            INSERT INTO system_snippets
                 (snippet_key, display_name, body_text, version,
                  updated_by_user_id, created_at, updated_at)
             VALUES (@key, @display_name, @body, @next_version, @actor,
@@ -291,14 +294,8 @@ public sealed class MariaDbCommunicationTemplateRepository
                     "@actor",
                     (object?)snippet.UpdatedByUserId ?? DBNull.Value);
                 command.Parameters.AddWithValue("@updated_at", snippet.UpdatedAtUtc);
-            });
-
-    public Task AddSnippetRevisionAsync(
-        StoredSystemSnippet snippet,
-        string outcome,
-        string correlationId,
-        CancellationToken cancellationToken)
-        => AddRevisionAsync(
+            },
+            revision:
             """
             INSERT INTO system_snippet_revisions
                 (id, snippet_key, version, body_text, actor_user_id,
@@ -306,7 +303,7 @@ public sealed class MariaDbCommunicationTemplateRepository
             VALUES (@id, @key, @version, @body, @actor, @correlation, @outcome,
                     UTC_TIMESTAMP(6));
             """,
-            command =>
+            bindRevision: command =>
             {
                 command.Parameters.AddWithValue("@key", snippet.Key);
                 command.Parameters.AddWithValue("@version", snippet.Version);
@@ -314,10 +311,7 @@ public sealed class MariaDbCommunicationTemplateRepository
                 command.Parameters.AddWithValue(
                     "@actor",
                     (object?)snippet.UpdatedByUserId ?? DBNull.Value);
-            },
-            outcome,
-            correlationId,
-            cancellationToken);
+            });
 
     public Task<IReadOnlyList<StoredTemplateRevision>> GetSnippetRevisionsAsync(
         string snippetKey,
@@ -339,53 +333,86 @@ public sealed class MariaDbCommunicationTemplateRepository
     }
 
     /// <summary>
-    /// Concurrence optimiste : la version attendue borne l'UPDATE. La version
-    /// attendue 0 signifie « aucune ligne persistee », donc un INSERT IGNORE
-    /// qui echoue si un autre administrateur a cree la ligne entre-temps.
+    /// Enregistrement et revision dans une seule transaction.
     /// </summary>
-    private async Task<bool> UpsertAsync(
+    /// <remarks>
+    /// <para>
+    /// Le <c>SELECT ... FOR UPDATE</c> remplace le couple UPDATE-puis-INSERT :
+    /// il verrouille la ligne existante, ou l'intervalle quand elle n'existe
+    /// pas encore, ce qui serialise deux creations concurrentes de la meme cle.
+    /// La comparaison de version se fait alors sur l'etat verrouille, pas sur
+    /// un etat lu avant.
+    /// </para>
+    /// <para>
+    /// La revision est insérée dans la meme transaction. Un modele enregistre
+    /// sans trace laisserait croire qu'un message parti a de vrais clients n'a
+    /// jamais ete modifie.
+    /// </para>
+    /// <para>
+    /// Les noms de table et de colonne proviennent exclusivement d'appels
+    /// internes a cette classe, jamais d'une entree utilisateur.
+    /// </para>
+    /// </remarks>
+    private async Task<bool> SaveAsync(
+        string tableName,
+        string keyColumn,
+        string keyValue,
         int expectedVersion,
+        string outcome,
+        string correlationId,
         CancellationToken cancellationToken,
         string update,
         string insert,
-        Action<MySqlCommand> bind)
+        Action<MySqlCommand> bind,
+        string revision,
+        Action<MySqlCommand> bindRevision)
     {
         await using var connection = await OpenAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = update;
-        bind(command);
-        command.Parameters.AddWithValue("@expected_version", expectedVersion);
-        if (await command.ExecuteNonQueryAsync(cancellationToken) == 1)
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        int storedVersion;
+        await using (var check = connection.CreateCommand())
         {
-            return true;
+            check.Transaction = transaction;
+            check.CommandText =
+                $"SELECT version FROM {tableName} WHERE {keyColumn} = @lock_key FOR UPDATE;";
+            check.Parameters.AddWithValue("@lock_key", keyValue);
+            var scalar = await check.ExecuteScalarAsync(cancellationToken);
+            storedVersion = scalar is null or DBNull ? 0 : Convert.ToInt32(scalar);
         }
 
-        if (expectedVersion != 0)
+        if (storedVersion != expectedVersion)
         {
+            await transaction.RollbackAsync(cancellationToken);
             return false;
         }
 
-        command.Parameters.Clear();
-        command.CommandText = insert;
-        bind(command);
-        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
-    }
+        await using (var write = connection.CreateCommand())
+        {
+            write.Transaction = transaction;
+            write.CommandText = storedVersion == 0 ? insert : update;
+            bind(write);
+            if (storedVersion != 0)
+            {
+                write.Parameters.AddWithValue("@expected_version", expectedVersion);
+            }
 
-    private async Task AddRevisionAsync(
-        string commandText,
-        Action<MySqlCommand> bind,
-        string outcome,
-        string correlationId,
-        CancellationToken cancellationToken)
-    {
-        await using var connection = await OpenAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = commandText;
-        bind(command);
-        command.Parameters.AddWithValue("@id", Guid.NewGuid().ToString("D"));
-        command.Parameters.AddWithValue("@correlation", correlationId);
-        command.Parameters.AddWithValue("@outcome", outcome);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+            await write.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var history = connection.CreateCommand())
+        {
+            history.Transaction = transaction;
+            history.CommandText = revision;
+            bindRevision(history);
+            history.Parameters.AddWithValue("@id", Guid.NewGuid().ToString("D"));
+            history.Parameters.AddWithValue("@correlation", correlationId);
+            history.Parameters.AddWithValue("@outcome", outcome);
+            await history.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return true;
     }
 
     private async Task<IReadOnlyList<StoredTemplateRevision>> GetRevisionsAsync(

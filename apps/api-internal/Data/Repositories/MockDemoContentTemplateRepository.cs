@@ -4,6 +4,10 @@ namespace Kermaria.ApiInternal.Data.Repositories;
 /// Persistance de developpement uniquement. L'etat vit en memoire de processus
 /// et disparait au redemarrage : l'UI l'annonce explicitement.
 /// </summary>
+/// <remarks>
+/// Modele et revision sont poses sous le meme verrou, et l'amorce l'est en
+/// bloc : c'est l'equivalent en memoire des transactions MariaDB.
+/// </remarks>
 public sealed class MockDemoContentTemplateRepository : IDemoContentTemplateRepository
 {
     private static readonly Dictionary<string, StoredDemoContentTemplate> Templates =
@@ -29,6 +33,9 @@ public sealed class MockDemoContentTemplateRepository : IDemoContentTemplateRepo
     public Task<bool> TrySaveAsync(
         StoredDemoContentTemplate template,
         int expectedVersion,
+        string payloadJson,
+        string correlationId,
+        string outcome,
         CancellationToken cancellationToken)
     {
         lock (Gate)
@@ -40,6 +47,8 @@ public sealed class MockDemoContentTemplateRepository : IDemoContentTemplateRepo
                 return Task.FromResult(false);
             }
 
+            MockRevisionFailureSwitch.ThrowIfArmed();
+
             var order = 0;
             var services = template.Services
                 .Select(service => service with { DisplayOrder = order += 10 })
@@ -50,6 +59,13 @@ public sealed class MockDemoContentTemplateRepository : IDemoContentTemplateRepo
                 UpdatedAtUtc = DateTime.UtcNow,
                 Services = services,
             };
+            Revisions.Add(new StoredTemplateRevision(
+                template.TemplateKey,
+                expectedVersion + 1,
+                outcome,
+                template.UpdatedByUserId,
+                correlationId,
+                DateTime.UtcNow));
             return Task.FromResult(true);
         }
     }
@@ -57,6 +73,8 @@ public sealed class MockDemoContentTemplateRepository : IDemoContentTemplateRepo
     public Task<bool> TryDeleteAsync(
         string templateKey,
         int expectedVersion,
+        string? actorUserId,
+        string correlationId,
         CancellationToken cancellationToken)
     {
         lock (Gate)
@@ -67,32 +85,60 @@ public sealed class MockDemoContentTemplateRepository : IDemoContentTemplateRepo
                 return Task.FromResult(false);
             }
 
+            MockRevisionFailureSwitch.ThrowIfArmed();
+
             Templates.Remove(templateKey);
+            Revisions.Add(new StoredTemplateRevision(
+                templateKey,
+                expectedVersion,
+                "deleted",
+                actorUserId,
+                correlationId,
+                DateTime.UtcNow));
             return Task.FromResult(true);
         }
     }
 
-    public Task AddRevisionAsync(
-        string templateKey,
-        int version,
-        string payloadJson,
-        string? actorUserId,
+    /// <summary>
+    /// Amorce tout ou rien : la panne simulee est levee avant toute
+    /// publication, donc aucun modele ne subsiste a moitie.
+    /// </summary>
+    public Task<bool> TryImportAsync(
+        IReadOnlyList<DemoContentTemplateImportItem> items,
         string correlationId,
-        string outcome,
         CancellationToken cancellationToken)
     {
         lock (Gate)
         {
-            Revisions.Add(new StoredTemplateRevision(
-                templateKey,
-                version,
-                outcome,
-                actorUserId,
-                correlationId,
-                DateTime.UtcNow));
-        }
+            if (Templates.Count > 0)
+            {
+                return Task.FromResult(false);
+            }
 
-        return Task.CompletedTask;
+            MockRevisionFailureSwitch.ThrowIfArmed();
+
+            foreach (var item in items)
+            {
+                var order = 0;
+                var services = item.Template.Services
+                    .Select(service => service with { DisplayOrder = order += 10 })
+                    .ToArray();
+                Templates[item.Template.TemplateKey] = item.Template with
+                {
+                    UpdatedAtUtc = DateTime.UtcNow,
+                    Services = services,
+                };
+                Revisions.Add(new StoredTemplateRevision(
+                    item.Template.TemplateKey,
+                    item.Template.Version,
+                    "imported",
+                    item.Template.UpdatedByUserId,
+                    correlationId,
+                    DateTime.UtcNow));
+            }
+
+            return Task.FromResult(true);
+        }
     }
 
     public Task<IReadOnlyList<StoredTemplateRevision>> GetRevisionsAsync(
@@ -106,6 +152,18 @@ public sealed class MockDemoContentTemplateRepository : IDemoContentTemplateRepo
                     .Take(100)
                     .ToArray());
         }
+    }
+
+    /// <summary>Nombre de modeles stockes, pour les tests.</summary>
+    public static int TemplateCount()
+    {
+        lock (Gate) return Templates.Count;
+    }
+
+    /// <summary>Nombre de revisions enregistrees, pour les tests.</summary>
+    public static int RevisionCount()
+    {
+        lock (Gate) return Revisions.Count;
     }
 
     /// <summary>Reinitialise l'etat entre deux scenarios de test.</summary>

@@ -130,6 +130,15 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
             return Task.FromResult(ReadOnlyResult());
         }
 
+        if (_configuration.KoxoOwnsDirectory)
+        {
+            // Mandat, pas capacite : la liaison LDAP saurait ecrire, mais la creation d'un utilisateur
+            // appartient a KoXo. Une ecriture directe serait reecrite a la
+            // synchronisation suivante — sans erreur visible, et apres que
+            // l'administration a affirme le contraire.
+            return Task.FromResult(KoxoAuthorityResult());
+        }
+
         var normalizedCustomerReference =
             ActiveDirectoryInputValidator.NormalizeCustomerReference(
                 customerReference);
@@ -340,6 +349,15 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
             return Task.FromResult(ReadOnlyResult());
         }
 
+        if (_configuration.KoxoOwnsDirectory)
+        {
+            // Mandat, pas capacite : la liaison LDAP saurait ecrire, mais la desactivation d'un utilisateur
+            // appartient a KoXo. Une ecriture directe serait reecrite a la
+            // synchronisation suivante — sans erreur visible, et apres que
+            // l'administration a affirme le contraire.
+            return Task.FromResult(KoxoAuthorityResult());
+        }
+
         var resolvedUser = ResolveBySam(customerReference, samAccountName, "user");
         if (resolvedUser.Value is null)
         {
@@ -380,6 +398,15 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
         if (!_configuration.WritesEnabled)
         {
             return Task.FromResult(ReadOnlyResult());
+        }
+
+        if (_configuration.KoxoOwnsDirectory)
+        {
+            // Mandat, pas capacite : la liaison LDAP saurait ecrire, mais la mise au rebut d'un utilisateur
+            // appartient a KoXo. Une ecriture directe serait reecrite a la
+            // synchronisation suivante — sans erreur visible, et apres que
+            // l'administration a affirme le contraire.
+            return Task.FromResult(KoxoAuthorityResult());
         }
 
         var resolvedUser = ResolveBySam(customerReference, samAccountName, "user");
@@ -441,6 +468,15 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
         if (!_configuration.WritesEnabled)
         {
             return Task.FromResult(ReadOnlyResult());
+        }
+
+        if (_configuration.KoxoOwnsDirectory)
+        {
+            // Mandat, pas capacite : la liaison LDAP saurait ecrire, mais le renommage d'un utilisateur
+            // appartient a KoXo. Une ecriture directe serait reecrite a la
+            // synchronisation suivante — sans erreur visible, et apres que
+            // l'administration a affirme le contraire.
+            return Task.FromResult(KoxoAuthorityResult());
         }
 
         var resolvedUser = ResolveBySam(customerReference, currentSamAccountName, "user");
@@ -523,6 +559,15 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
         if (!_configuration.WritesEnabled)
         {
             return Task.FromResult(ReadOnlyResult());
+        }
+
+        if (_configuration.KoxoOwnsDirectory)
+        {
+            // Mandat, pas capacite : la liaison LDAP saurait ecrire, mais le deplacement d'un utilisateur
+            // appartient a KoXo. Une ecriture directe serait reecrite a la
+            // synchronisation suivante — sans erreur visible, et apres que
+            // l'administration a affirme le contraire.
+            return Task.FromResult(KoxoAuthorityResult());
         }
 
         var resolvedUser = ResolveBySam(customerReference, samAccountName, "user");
@@ -620,6 +665,15 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
             return Task.FromResult(ReadOnlyResult());
         }
 
+        if (_configuration.KoxoOwnsDirectory)
+        {
+            // Mandat, pas capacite : la liaison LDAP saurait ecrire, mais le changement de mot de passe
+            // appartient a KoXo. Une ecriture directe serait reecrite a la
+            // synchronisation suivante — sans erreur visible, et apres que
+            // l'administration a affirme le contraire.
+            return Task.FromResult(KoxoAuthorityResult());
+        }
+
         var resolvedUser = ResolveBySam(customerReference, samAccountName, "user");
         if (resolvedUser.Value is null)
         {
@@ -697,6 +751,15 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
         if (!_configuration.WritesEnabled)
         {
             return Task.FromResult(ReadOnlyResult());
+        }
+
+        if (_configuration.KoxoOwnsDirectory)
+        {
+            // Mandat, pas capacite : la liaison LDAP saurait ecrire, mais la definition d'un mot de passe
+            // appartient a KoXo. Une ecriture directe serait reecrite a la
+            // synchronisation suivante — sans erreur visible, et apres que
+            // l'administration a affirme le contraire.
+            return Task.FromResult(KoxoAuthorityResult());
         }
 
         var resolvedUser = ResolveBySam(customerReference, samAccountName, "user");
@@ -1552,4 +1615,23 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
             StatusCodes.Status403Forbidden,
             "AD_READ_ONLY",
             "Active Directory writes are disabled in read-only mode.");
+
+    /// <summary>
+    /// Refus fail-closed : KoXo fait autorite sur le cycle de vie des
+    /// identites et sur les mots de passe.
+    /// </summary>
+    /// <remarks>
+    /// Le refus est structurel et non conditionne a une route : toute ecriture
+    /// LDAP de cycle de vie passe par ce service, quelle qu'en soit l'origine.
+    /// Poser le controle route par route laisserait la prochaine route ecrite
+    /// sans garde, et un doublon d'identite ou un mot de passe ecrase ne se
+    /// voit pas au moment ou il se produit.
+    /// </remarks>
+    private static AdServiceResult<AdDirectoryObjectSummary> KoxoAuthorityResult()
+        => new(
+            StatusCodes.Status409Conflict,
+            "AD_LIFECYCLE_KOXO_AUTHORITY",
+            "KoXo fait autorite sur les identites et les mots de passe de l'annuaire : "
+                + "cette operation doit passer par la synchronisation KoXo, "
+                + "pas par une ecriture LDAP directe.");
 }

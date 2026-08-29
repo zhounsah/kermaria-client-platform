@@ -271,7 +271,16 @@ Contraintes :
 - chaque parametre porte une classification `dynamic`, `restart_required`,
   `secret` ou `code_invariant` ; seules les cles `dynamic` sont modifiables ;
 - concurrence optimiste : `expectedVersion` obligatoire, conflit en `409`
-  avec le code `SETTINGS_VERSION_CONFLICT` ;
+  avec le code `SETTINGS_VERSION_CONFLICT`. La version attendue est verifiee
+  **sous verrou, dans la transaction qui ecrit** : verifiee sur une lecture
+  anterieure, deux administrateurs partis du meme ecran passaient tous les deux ;
+- la mutation et sa revision sont ecrites dans **une seule transaction**. Une
+  valeur appliquee sans trace serait indistinguable d'une valeur jamais
+  modifiee, ce qu'un audit de configuration doit precisement pouvoir trancher.
+  La valeur remplacee est relue sous le meme verrou, donc l'historique porte ce
+  qui a reellement ete ecrase. Si l'enregistrement echoue, rien n'est applique
+  et l'API repond `SETTINGS_STORAGE_UNAVAILABLE` — distinct d'un conflit de
+  version, qui lui signale une valeur entre-temps modifiee par quelqu'un ;
 - une valeur relue depuis MariaDB repasse par la **validation d'ecriture** :
   une ligne hors bornes — heritee d'un registre plus permissif, posee a la main
   ou restauree — est ignoree et le repli est la valeur d'environnement. Une
@@ -334,7 +343,14 @@ Invariant central : une mention n'est **jamais retroactive**.
 - une version deja appliquee n'est pas supprimable : elle documente ce qui a ete
   imprime. Seule une version encore planifiee peut etre annulee ;
 - concurrence optimiste par `expectedVersion` (nombre de versions du regime),
-  conflit en `409 FISCAL_VERSION_CONFLICT` ;
+  conflit en `409 FISCAL_VERSION_CONFLICT`. Le decompte est pris **avec verrou
+  dans la transaction d'insertion** : sur un regime encore vide, InnoDB verrouille
+  l'intervalle, ce qui est exactement ce qui rend un decompte utilisable comme
+  version. Lu sur une connexion separee avant l'insertion, il laissait passer
+  deux planifications concurrentes, et la mention appliquee devenait
+  silencieusement celle dont la date d'effet etait la plus proche ;
+- une indisponibilite d'ecriture repond `FISCAL_STORAGE_UNAVAILABLE` et n'est
+  jamais presentee comme un conflit ;
 - repli ferme : sans base lisible, les documents affichent la mention integree
   au code, jamais un texte vide ;
 - toute mutation exige la permission `settings.billing.write`, distincte de
@@ -508,6 +524,40 @@ Un etat `warning` est remonte quand `AD_USE_CURRENT_WINDOWS_CREDENTIALS` vaut
 `true` avec les lectures actives : la liaison se fait alors sous l'identite du
 service Windows, qui n'a aucune delegation, et le refus qui en resulte ressemble
 a une delegation manquante.
+
+### Application des autorites
+
+Les autorites ne sont plus seulement decrites : elles sont **appliquees**.
+
+Quand `AD_INTEGRATION_MODE=controlled_write`, KoXo fait autorite sur les
+identites et les mots de passe. Le service LDAP refuse alors toute ecriture de
+cycle de vie — creation, desactivation, deplacement, renommage, pose ou
+changement de mot de passe — avec `409 AD_LIFECYCLE_KOXO_AUTHORITY`. Le refus
+est pose dans le service, pas route par route : une route ajoutee plus tard en
+herite sans qu'on ait a y penser, et une identite doublee ou un mot de passe
+ecrase sont invisibles au moment ou ils se produisent.
+
+L'appartenance aux **groupes de services** reste le mandat d'API-INTERNAL et
+n'est pas bloquee : c'est elle qui ouvre et ferme les acces.
+
+Consequences sur les parcours :
+
+- `POST /internal/profile/password` publie le nouveau mot de passe dans le
+  relais KoXo, marque la synchronisation `pending` et la declenche, au lieu
+  d'ecrire en LDAP. Avec `ForcePasswords=1`, KoXo reecrit de toute facon le mot
+  de passe depuis le CSV a chaque passage : une ecriture directe aurait ete
+  effacee sans erreur, apres que le portail a annonce le contraire. La reponse
+  porte `AD_PASSWORD_CHANGE_PENDING_KOXO` et annonce une application a la
+  prochaine synchronisation, pas une synchronisation deja faite. Un relais
+  inexploitable refuse le changement en `503 KOXO_PASSWORD_HANDOFF_UNAVAILABLE`
+  plutot que de laisser croire l'operation faite ;
+- la conversion d'un compte de demonstration ne deplace plus l'identite en
+  LDAP : l'OU cible est portee par `GroupeSecondaire` dans le CSV, que KoXo
+  cree au besoin et reapplique. Le deplacement direct etait hors mandat, sans
+  effet durable, et rapportait pourtant `identityMoved: true`. La conversion
+  reserve le code de groupe reel puis declenche la synchronisation ;
+- la revocation d'un essai retire les groupes de services — l'axe qui ferme
+  reellement l'acces — et delegue la desactivation du compte a KoXo.
 
 Aucune migration.
 
@@ -691,7 +741,14 @@ Garde-fous :
 - desactiver un modele le retire des propositions sans le retirer de
   l'administration ni toucher aux comptes deja crees ;
 - l'amorce ne s'applique qu'a une table vide (`DEMO_TEMPLATE_ALREADY_ADMINISTERED`) :
-  c'est une recopie initiale, pas une restauration.
+  c'est une recopie initiale, pas une restauration. Elle est **tout ou rien**,
+  et la vacuite est verifiee **dans la transaction** : une amorce interrompue a
+  mi-parcours laissait une table non vide, donc consideree comme faisant
+  autorite par la regle de bascule ci-dessus — les modeles manquants devenaient
+  invisibles et l'amorce n'etait plus rejouable ;
+- enregistrement et suppression d'un modele ecrivent la ligne et sa revision
+  dans une seule transaction ; un echec de stockage repond
+  `DEMO_TEMPLATE_STORAGE_UNAVAILABLE` sans rien appliquer.
 
 Endpoints (`admin.demo.read` / `admin.demo.write`, plus `settings.read` en
 lecture et `settings.demo.write` en ecriture) :
@@ -735,7 +792,11 @@ Contraintes :
 - texte brut uniquement : caracteres de controle refuses, CRLF normalises,
   longueur bornee par modele (`TEMPLATE_TOO_LONG`) ;
 - concurrence optimiste identique aux parametres : `expectedVersion`, puis
-  `409 TEMPLATE_VERSION_CONFLICT` ;
+  `409 TEMPLATE_VERSION_CONFLICT`, la version etant verifiee sous verrou dans la
+  transaction d'ecriture ;
+- gabarit et revision sont ecrits ensemble : un modele ne peut pas changer sans
+  laisser d'historique. Un echec de stockage repond
+  `TEMPLATE_STORAGE_UNAVAILABLE` et ne modifie rien ;
 - repli systematique sur le gabarit integre au code lorsque la ligne est
   absente, desactivee ou la base indisponible : une panne SQL ne bloque
   jamais un e-mail critique ;
@@ -1338,5 +1399,17 @@ production n'est exposé.
 - `AD_GROUP_MEMBER_ALREADY_ABSENT` : membership déjà absent, sans changement ;
 - `AD_SCOPE_NOT_ALLOWED` : cible ou groupe non autorisé ;
 - `AD_CONFIGURATION_INVALID` : configuration de test incomplète ;
+- `AD_LIFECYCLE_KOXO_AUTHORITY` : écriture de cycle de vie refusée parce que
+  KoXo fait autorité sur les identités et les mots de passe ;
+- `AD_PASSWORD_CHANGE_PENDING_KOXO` : mot de passe portail changé, application
+  aux services à la prochaine synchronisation KoXo ;
+- `KOXO_PASSWORD_HANDOFF_UNAVAILABLE` : relais de mot de passe KoXo
+  inexploitable, changement refusé plutôt qu'écrit directement en LDAP ;
+- `SETTINGS_STORAGE_UNAVAILABLE` : paramètre non enregistré, rien n'a été
+  modifié ;
+- `TEMPLATE_STORAGE_UNAVAILABLE` : modèle non enregistré, rien n'a été modifié ;
+- `FISCAL_STORAGE_UNAVAILABLE` : mention fiscale non enregistrée ;
+- `DEMO_TEMPLATE_STORAGE_UNAVAILABLE` : modèle de démonstration non
+  enregistré ;
 - `ROUTE_NOT_FOUND` : route inconnue ;
 - `INTERNAL_ERROR` : erreur interne contrôlée.

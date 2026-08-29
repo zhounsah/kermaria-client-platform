@@ -2,6 +2,7 @@ using System.Text.Json;
 using Kermaria.ApiInternal.Contracts;
 using Kermaria.ApiInternal.Data.Configuration;
 using Kermaria.ApiInternal.Data.Repositories;
+using MySqlConnector;
 
 namespace Kermaria.ApiInternal.Services;
 
@@ -65,7 +66,15 @@ public sealed class ApplicationSettingsService : IApplicationSettingsService
     ];
     private static readonly Dictionary<string, Definition> ByKey = Definitions.ToDictionary(item => item.Key, StringComparer.Ordinal);
     private readonly IApplicationSettingsRepository _repository;
-    public ApplicationSettingsService(IApplicationSettingsRepository repository) => _repository = repository;
+    private readonly ILogger<ApplicationSettingsService> _logger;
+
+    public ApplicationSettingsService(
+        IApplicationSettingsRepository repository,
+        ILogger<ApplicationSettingsService> logger)
+    {
+        _repository = repository;
+        _logger = logger;
+    }
     public bool IsPersistent => _repository.IsPersistent;
 
     public async Task<ApplicationSettingsSnapshot> GetSnapshotAsync(CancellationToken cancellationToken)
@@ -97,10 +106,24 @@ public sealed class ApplicationSettingsService : IApplicationSettingsService
         if (!ByKey.TryGetValue(key, out var definition)) return new("SETTINGS_UNKNOWN_KEY", "Ce paramètre n'appartient pas au registre autorisé.", null, correlationId);
         if (!definition.Editable) return new("SETTINGS_READ_ONLY", "Ce paramètre est verrouillé par le code et ne peut pas être modifié depuis l'administration.", null, correlationId);
         if (!TryNormalize(definition, request.Value, out var valueJson)) return new("SETTINGS_INVALID_VALUE", "La valeur ne respecte pas les contraintes de ce paramètre.", null, correlationId);
-        var previous = await _repository.GetAsync(key, cancellationToken);
         var next = new StoredApplicationSetting(key, definition.Category, valueJson, definition.ValueType, request.ExpectedVersion + 1, DateTime.UtcNow, actorUserId);
-        if (!await _repository.TryUpsertAsync(next, request.ExpectedVersion, cancellationToken)) return new("SETTINGS_VERSION_CONFLICT", "Ce paramètre a été modifié par un autre administrateur. Rechargez la page.", null, correlationId);
-        await _repository.AddRevisionAsync(key, next.Version, previous?.ValueJson, next.ValueJson, actorUserId, correlationId, cancellationToken);
+
+        // La valeur et sa revision partent ensemble. Historiser apres coup
+        // laissait la porte a un parametre modifie sans trace : l'audit
+        // presenterait alors une configuration inchangee alors qu'elle a
+        // change, ce qui est le seul resultat vraiment dangereux ici.
+        bool applied;
+        try
+        {
+            applied = await _repository.TryApplyAsync(next, request.ExpectedVersion, correlationId, cancellationToken);
+        }
+        catch (Exception exception) when (exception is MySqlException or InvalidOperationException)
+        {
+            _logger.LogError(exception, "Ecriture impossible du parametre {SettingKey}.", key);
+            return new("SETTINGS_STORAGE_UNAVAILABLE", "Le paramètre n'a pas pu être enregistré : rien n'a été modifié.", null, correlationId);
+        }
+
+        if (!applied) return new("SETTINGS_VERSION_CONFLICT", "Ce paramètre a été modifié par un autre administrateur. Rechargez la page.", null, correlationId);
         return new("SETTINGS_UPDATED", "Paramètre enregistré.", ToItem(definition, next), correlationId);
     }
 

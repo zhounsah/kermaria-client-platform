@@ -24,28 +24,103 @@ public sealed class MariaDbApplicationSettingsRepository : IApplicationSettingsR
     public async Task<StoredApplicationSetting?> GetAsync(string key, CancellationToken cancellationToken)
         => (await GetAllAsync(cancellationToken)).FirstOrDefault(item => item.Key == key);
 
-    public async Task<bool> TryUpsertAsync(StoredApplicationSetting setting, int expectedVersion, CancellationToken cancellationToken)
+    /// <summary>
+    /// Valeur et revision dans la meme transaction.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Le <c>SELECT ... FOR UPDATE</c> sert deux fois : il verrouille la ligne
+    /// (ou l'intervalle, quand elle n'existe pas encore, ce qui serialise deux
+    /// creations concurrentes de la meme cle) et il fournit la valeur remplacee
+    /// telle qu'elle est au moment de l'ecriture, pas telle qu'un appelant l'a
+    /// lue plus tot.
+    /// </para>
+    /// <para>
+    /// Toute erreur remonte apres <c>ROLLBACK</c> : ni la valeur ni la revision
+    /// ne subsistent. Un reglage applique sans trace serait pire qu'un reglage
+    /// refuse.
+    /// </para>
+    /// </remarks>
+    public async Task<bool> TryApplyAsync(
+        StoredApplicationSetting setting,
+        int expectedVersion,
+        string correlationId,
+        CancellationToken cancellationToken)
     {
         await using var connection = new MySqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = "UPDATE application_settings SET category=@category, value_json=@value_json, value_type=@value_type, version=@next_version, updated_by_user_id=@updated_by_user_id, updated_at=@updated_at WHERE setting_key=@key AND version=@expected_version;";
-        command.Parameters.AddWithValue("@category", setting.Category); command.Parameters.AddWithValue("@value_json", setting.ValueJson); command.Parameters.AddWithValue("@value_type", setting.ValueType); command.Parameters.AddWithValue("@next_version", setting.Version); command.Parameters.AddWithValue("@updated_by_user_id", setting.UpdatedByUserId is null ? DBNull.Value : setting.UpdatedByUserId); command.Parameters.AddWithValue("@updated_at", setting.UpdatedAtUtc); command.Parameters.AddWithValue("@key", setting.Key); command.Parameters.AddWithValue("@expected_version", expectedVersion);
-        if (await command.ExecuteNonQueryAsync(cancellationToken) == 1) return true;
-        if (expectedVersion != 0) return false;
-        command.Parameters.Clear();
-        command.CommandText = "INSERT IGNORE INTO application_settings (setting_key, category, value_json, value_type, version, updated_by_user_id, created_at, updated_at) VALUES (@key, @category, @value_json, @value_type, @version, @updated_by_user_id, @created_at, @updated_at);";
-        command.Parameters.AddWithValue("@key", setting.Key); command.Parameters.AddWithValue("@category", setting.Category); command.Parameters.AddWithValue("@value_json", setting.ValueJson); command.Parameters.AddWithValue("@value_type", setting.ValueType); command.Parameters.AddWithValue("@version", setting.Version); command.Parameters.AddWithValue("@updated_by_user_id", setting.UpdatedByUserId is null ? DBNull.Value : setting.UpdatedByUserId); command.Parameters.AddWithValue("@created_at", setting.UpdatedAtUtc); command.Parameters.AddWithValue("@updated_at", setting.UpdatedAtUtc);
-        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
-    }
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
-    public async Task AddRevisionAsync(string key, int version, string? oldValueJson, string newValueJson, string? actorUserId, string correlationId, CancellationToken cancellationToken)
-    {
-        await using var connection = new MySqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = "INSERT INTO application_setting_revisions (id, setting_key, version, old_value_json, new_value_json, actor_user_id, correlation_id, outcome, created_at) VALUES (@id, @key, @version, @old, @new, @actor, @correlation, 'success', UTC_TIMESTAMP(6));";
-        command.Parameters.AddWithValue("@id", Guid.NewGuid().ToString("D")); command.Parameters.AddWithValue("@key", key); command.Parameters.AddWithValue("@version", version); command.Parameters.AddWithValue("@old", oldValueJson is null ? DBNull.Value : oldValueJson); command.Parameters.AddWithValue("@new", newValueJson); command.Parameters.AddWithValue("@actor", actorUserId is null ? DBNull.Value : actorUserId); command.Parameters.AddWithValue("@correlation", correlationId);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        int storedVersion;
+        string? previousValueJson;
+        await using (var check = connection.CreateCommand())
+        {
+            check.Transaction = transaction;
+            check.CommandText = "SELECT version, value_json FROM application_settings WHERE setting_key = @key FOR UPDATE;";
+            check.Parameters.AddWithValue("@key", setting.Key);
+            await using var reader = await check.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                storedVersion = reader.GetInt32("version");
+                previousValueJson = reader.GetString("value_json");
+            }
+            else
+            {
+                storedVersion = 0;
+                previousValueJson = null;
+            }
+        }
+
+        if (storedVersion != expectedVersion)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return false;
+        }
+
+        await using (var upsert = connection.CreateCommand())
+        {
+            upsert.Transaction = transaction;
+            upsert.CommandText =
+                """
+                INSERT INTO application_settings (
+                    setting_key, category, value_json, value_type, version,
+                    updated_by_user_id, created_at, updated_at)
+                VALUES (
+                    @key, @category, @value_json, @value_type, @version,
+                    @updated_by_user_id, @updated_at, @updated_at)
+                ON DUPLICATE KEY UPDATE
+                    category = VALUES(category),
+                    value_json = VALUES(value_json),
+                    value_type = VALUES(value_type),
+                    version = VALUES(version),
+                    updated_by_user_id = VALUES(updated_by_user_id),
+                    updated_at = VALUES(updated_at);
+                """;
+            upsert.Parameters.AddWithValue("@key", setting.Key);
+            upsert.Parameters.AddWithValue("@category", setting.Category);
+            upsert.Parameters.AddWithValue("@value_json", setting.ValueJson);
+            upsert.Parameters.AddWithValue("@value_type", setting.ValueType);
+            upsert.Parameters.AddWithValue("@version", setting.Version);
+            upsert.Parameters.AddWithValue("@updated_by_user_id", setting.UpdatedByUserId is null ? DBNull.Value : setting.UpdatedByUserId);
+            upsert.Parameters.AddWithValue("@updated_at", setting.UpdatedAtUtc);
+            await upsert.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var revision = connection.CreateCommand())
+        {
+            revision.Transaction = transaction;
+            revision.CommandText = "INSERT INTO application_setting_revisions (id, setting_key, version, old_value_json, new_value_json, actor_user_id, correlation_id, outcome, created_at) VALUES (@id, @key, @version, @old, @new, @actor, @correlation, 'success', UTC_TIMESTAMP(6));";
+            revision.Parameters.AddWithValue("@id", Guid.NewGuid().ToString("D"));
+            revision.Parameters.AddWithValue("@key", setting.Key);
+            revision.Parameters.AddWithValue("@version", setting.Version);
+            revision.Parameters.AddWithValue("@old", previousValueJson is null ? DBNull.Value : previousValueJson);
+            revision.Parameters.AddWithValue("@new", setting.ValueJson);
+            revision.Parameters.AddWithValue("@actor", setting.UpdatedByUserId is null ? DBNull.Value : setting.UpdatedByUserId);
+            revision.Parameters.AddWithValue("@correlation", correlationId);
+            await revision.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return true;
     }
 }

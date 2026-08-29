@@ -123,9 +123,9 @@ public sealed class DemoContentTemplateService : IDemoContentTemplateService
         CancellationToken cancellationToken)
     {
         var stored = await ReadStoredAsync(cancellationToken);
-        var usage = await ReadUsageAsync(cancellationToken);
+        var usageRead = await ReadUsageAsync(cancellationToken);
         var revisions = await ReadRevisionsAsync(cancellationToken);
-        return BuildView(stored, usage, revisions);
+        return BuildView(stored, usageRead.Usage, revisions);
     }
 
     public async Task<DemoContentTemplateMutationResponse> SaveAsync(
@@ -243,12 +243,18 @@ public sealed class DemoContentTemplateService : IDemoContentTemplateService
             actorUserId,
             normalizedServices);
 
+        // Modele et revision partent ensemble : un modele enregistre sans trace
+        // laisse l'historique affirmer que rien n'a change alors que ce que
+        // voient les prospects a change.
         bool saved;
         try
         {
             saved = await _repository.TrySaveAsync(
                 template,
                 payload.ExpectedVersion,
+                Describe(template),
+                correlationId,
+                "saved",
                 cancellationToken);
         }
         catch (Exception exception)
@@ -259,7 +265,7 @@ public sealed class DemoContentTemplateService : IDemoContentTemplateService
                 key);
             return await FailureAsync(
                 "DEMO_TEMPLATE_STORAGE_UNAVAILABLE",
-                "La persistance des modeles de demonstration est indisponible.",
+                "La persistance des modeles de demonstration est indisponible : rien n'a ete modifie.",
                 correlationId,
                 cancellationToken);
         }
@@ -272,15 +278,6 @@ public sealed class DemoContentTemplateService : IDemoContentTemplateService
                 correlationId,
                 cancellationToken);
         }
-
-        await RecordRevisionAsync(
-            key,
-            payload.ExpectedVersion + 1,
-            template,
-            actorUserId,
-            correlationId,
-            "saved",
-            cancellationToken);
 
         return await SuccessAsync(
             "DEMO_TEMPLATE_SAVED",
@@ -308,8 +305,17 @@ public sealed class DemoContentTemplateService : IDemoContentTemplateService
 
         // Un profil qui pointe vers un modele disparu creerait des comptes de
         // demonstration sans aucun service, silencieusement.
-        var usage = await ReadUsageAsync(cancellationToken);
-        if (usage.TryGetValue(key, out var profiles) && profiles.Count > 0)
+        var usageRead = await ReadUsageAsync(cancellationToken);
+        if (!usageRead.Reliable)
+        {
+            return await FailureAsync(
+                "DEMO_TEMPLATE_USAGE_UNAVAILABLE",
+                "Impossible de verifier si ce modele est utilise. Suppression refusee par securite.",
+                correlationId,
+                cancellationToken);
+        }
+
+        if (usageRead.Usage.TryGetValue(key, out var profiles) && profiles.Count > 0)
         {
             return await FailureAsync(
                 "DEMO_TEMPLATE_IN_USE",
@@ -321,7 +327,12 @@ public sealed class DemoContentTemplateService : IDemoContentTemplateService
         bool deleted;
         try
         {
-            deleted = await _repository.TryDeleteAsync(key, expectedVersion, cancellationToken);
+            deleted = await _repository.TryDeleteAsync(
+                key,
+                expectedVersion,
+                actorUserId,
+                correlationId,
+                cancellationToken);
         }
         catch (Exception exception)
         {
@@ -331,7 +342,7 @@ public sealed class DemoContentTemplateService : IDemoContentTemplateService
                 key);
             return await FailureAsync(
                 "DEMO_TEMPLATE_STORAGE_UNAVAILABLE",
-                "La persistance des modeles de demonstration est indisponible.",
+                "La persistance des modeles de demonstration est indisponible : rien n'a ete supprime.",
                 correlationId,
                 cancellationToken);
         }
@@ -345,15 +356,6 @@ public sealed class DemoContentTemplateService : IDemoContentTemplateService
                 cancellationToken);
         }
 
-        await RecordRevisionAsync(
-            key,
-            expectedVersion,
-            null,
-            actorUserId,
-            correlationId,
-            "deleted",
-            cancellationToken);
-
         return await SuccessAsync(
             "DEMO_TEMPLATE_DELETED",
             "Modele supprime.",
@@ -366,69 +368,64 @@ public sealed class DemoContentTemplateService : IDemoContentTemplateService
         string correlationId,
         CancellationToken cancellationToken)
     {
-        var stored = await ReadStoredAsync(cancellationToken);
-        if (stored.Count > 0)
+        var order = 0;
+        var serviceOrder = 0;
+        var items = DemoContentTemplateRegistry.All
+            .Select(template =>
+            {
+                serviceOrder = 0;
+                var candidate = new StoredDemoContentTemplate(
+                    template.Key,
+                    template.Label,
+                    string.Empty,
+                    true,
+                    order += 10,
+                    1,
+                    DateTime.UtcNow,
+                    actorUserId,
+                    template.Services
+                        .Select(service => new StoredDemoTemplateService(
+                            service.ServiceType,
+                            service.Name,
+                            service.Description,
+                            service.Scope,
+                            serviceOrder += 10))
+                        .ToArray());
+                return new DemoContentTemplateImportItem(candidate, Describe(candidate));
+            })
+            .ToArray();
+
+        // Tout ou rien. Une amorce partielle laissait une table non vide, que
+        // la regle de bascule considere ensuite comme faisant autorite : les
+        // modeles manquants devenaient invisibles, et l'amorce refusait de
+        // recommencer parce que la table n'etait plus vide.
+        bool imported;
+        try
+        {
+            imported = await _repository.TryImportAsync(
+                items,
+                correlationId,
+                cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(
+                exception,
+                "Amorce impossible des modeles de demonstration : aucun modele recopie.");
+            return await FailureAsync(
+                "DEMO_TEMPLATE_STORAGE_UNAVAILABLE",
+                "La persistance des modeles de demonstration est indisponible : aucun modele n'a ete recopie.",
+                correlationId,
+                cancellationToken);
+        }
+
+        if (!imported)
         {
             return await FailureAsync(
                 "DEMO_TEMPLATE_ALREADY_ADMINISTERED",
                 "Les modeles sont deja administres en base : l'amorce ne s'applique qu'a une table vide.",
                 correlationId,
                 cancellationToken);
-        }
-
-        var order = 0;
-        foreach (var template in DemoContentTemplateRegistry.All)
-        {
-            var serviceOrder = 0;
-            var services = template.Services
-                .Select(service => new StoredDemoTemplateService(
-                    service.ServiceType,
-                    service.Name,
-                    service.Description,
-                    service.Scope,
-                    serviceOrder += 10))
-                .ToArray();
-
-            var candidate = new StoredDemoContentTemplate(
-                template.Key,
-                template.Label,
-                string.Empty,
-                true,
-                order += 10,
-                1,
-                DateTime.UtcNow,
-                actorUserId,
-                services);
-
-            bool saved;
-            try
-            {
-                saved = await _repository.TrySaveAsync(candidate, 0, cancellationToken);
-            }
-            catch (Exception exception)
-            {
-                _logger.LogError(
-                    exception,
-                    "Amorce impossible du modele de demonstration {TemplateKey}.",
-                    template.Key);
-                return await FailureAsync(
-                    "DEMO_TEMPLATE_STORAGE_UNAVAILABLE",
-                    "La persistance des modeles de demonstration est indisponible.",
-                    correlationId,
-                    cancellationToken);
-            }
-
-            if (saved)
-            {
-                await RecordRevisionAsync(
-                    template.Key,
-                    1,
-                    candidate,
-                    actorUserId,
-                    correlationId,
-                    "imported",
-                    cancellationToken);
-            }
         }
 
         return await SuccessAsync(
@@ -456,7 +453,7 @@ public sealed class DemoContentTemplateService : IDemoContentTemplateService
         }
     }
 
-    private async Task<IReadOnlyDictionary<string, List<string>>> ReadUsageAsync(
+    private async Task<(IReadOnlyDictionary<string, List<string>> Usage, bool Reliable)> ReadUsageAsync(
         CancellationToken cancellationToken)
     {
         var usage = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
@@ -484,11 +481,10 @@ public sealed class DemoContentTemplateService : IDemoContentTemplateService
             _logger.LogError(
                 exception,
                 "Lecture impossible des profils de demonstration : usage des modeles inconnu.");
-            // Une suppression reste possible mais sera evaluee sans garde-fou
-            // d'usage ; l'appelant voit une liste d'usage vide, pas une erreur.
+            return (usage, false);
         }
 
-        return usage;
+        return (usage, true);
     }
 
     private async Task<IReadOnlyList<StoredTemplateRevision>> ReadRevisionsAsync(
@@ -507,54 +503,25 @@ public sealed class DemoContentTemplateService : IDemoContentTemplateService
         }
     }
 
-    private async Task RecordRevisionAsync(
-        string templateKey,
-        int version,
-        StoredDemoContentTemplate? template,
-        string? actorUserId,
-        string correlationId,
-        string outcome,
-        CancellationToken cancellationToken)
-    {
-        try
+    /// <summary>
+    /// Charge historisee d'un modele : ce qui a ete enregistre, pas un resume.
+    /// </summary>
+    private static string Describe(StoredDemoContentTemplate template)
+        => JsonSerializer.Serialize(new
         {
-            var payload = template is null
-                ? "{}"
-                : JsonSerializer.Serialize(new
-                {
-                    template.TemplateKey,
-                    template.Label,
-                    template.Description,
-                    template.Enabled,
-                    template.DisplayOrder,
-                    Services = template.Services.Select(service => new
-                    {
-                        service.ServiceType,
-                        service.Name,
-                        service.Description,
-                        service.Scope,
-                    }),
-                });
-
-            await _repository.AddRevisionAsync(
-                templateKey,
-                version,
-                payload,
-                actorUserId,
-                correlationId,
-                outcome,
-                cancellationToken);
-        }
-        catch (Exception exception)
-        {
-            // L'historique est une trace, pas une condition de l'ecriture : son
-            // echec ne doit pas faire croire que la mutation a echoue.
-            _logger.LogError(
-                exception,
-                "Historisation impossible du modele de demonstration {TemplateKey}.",
-                templateKey);
-        }
-    }
+            template.TemplateKey,
+            template.Label,
+            template.Description,
+            template.Enabled,
+            template.DisplayOrder,
+            Services = template.Services.Select(service => new
+            {
+                service.ServiceType,
+                service.Name,
+                service.Description,
+                service.Scope,
+            }),
+        });
 
     private async Task<DemoContentTemplateMutationResponse> SuccessAsync(
         string code,

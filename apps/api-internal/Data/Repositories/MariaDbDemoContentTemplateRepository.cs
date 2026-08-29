@@ -79,9 +79,15 @@ public sealed class MariaDbDemoContentTemplateRepository : IDemoContentTemplateR
         return templates;
     }
 
+    /// <summary>
+    /// Modele, services et revision dans la meme transaction.
+    /// </summary>
     public async Task<bool> TrySaveAsync(
         StoredDemoContentTemplate template,
         int expectedVersion,
+        string payloadJson,
+        string correlationId,
+        string outcome,
         CancellationToken cancellationToken)
     {
         await using var connection = new MySqlConnection(_configuration.ConnectionString);
@@ -105,6 +111,159 @@ public sealed class MariaDbDemoContentTemplateRepository : IDemoContentTemplateR
             return false;
         }
 
+        await WriteTemplateAsync(
+            connection,
+            transaction,
+            template,
+            expectedVersion + 1,
+            cancellationToken);
+
+        await WriteRevisionAsync(
+            connection,
+            transaction,
+            template.TemplateKey,
+            expectedVersion + 1,
+            payloadJson,
+            template.UpdatedByUserId,
+            correlationId,
+            outcome,
+            cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+        return true;
+    }
+
+    public async Task<bool> TryDeleteAsync(
+        string templateKey,
+        int expectedVersion,
+        string? actorUserId,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(_configuration.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText =
+                """
+                DELETE FROM demo_content_templates
+                WHERE template_key = @key AND version = @version;
+                """;
+            command.Parameters.AddWithValue("@key", templateKey);
+            command.Parameters.AddWithValue("@version", expectedVersion);
+            if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return false;
+            }
+        }
+
+        // La revision de suppression est la seule trace restante : la perdre
+        // ferait disparaitre le modele *et* le fait qu'il ait existe.
+        await WriteRevisionAsync(
+            connection,
+            transaction,
+            templateKey,
+            expectedVersion,
+            "{}",
+            actorUserId,
+            correlationId,
+            "deleted",
+            cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+        return true;
+    }
+
+    public async Task<bool> TryImportAsync(
+        IReadOnlyList<DemoContentTemplateImportItem> items,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(_configuration.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        // La table est verrouillee en lecture pour la duree de l'amorce : deux
+        // amorces simultanees ne peuvent pas la trouver vide toutes les deux.
+        await using (var check = connection.CreateCommand())
+        {
+            check.Transaction = transaction;
+            check.CommandText =
+                "SELECT COUNT(*) FROM demo_content_templates FOR UPDATE;";
+            var scalar = await check.ExecuteScalarAsync(cancellationToken);
+            if (scalar is not null and not DBNull && Convert.ToInt32(scalar) > 0)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return false;
+            }
+        }
+
+        foreach (var item in items)
+        {
+            await WriteTemplateAsync(
+                connection,
+                transaction,
+                item.Template,
+                item.Template.Version,
+                cancellationToken);
+            await WriteRevisionAsync(
+                connection,
+                transaction,
+                item.Template.TemplateKey,
+                item.Template.Version,
+                item.PayloadJson,
+                item.Template.UpdatedByUserId,
+                correlationId,
+                "imported",
+                cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return true;
+    }
+
+    public async Task<IReadOnlyList<StoredTemplateRevision>> GetRevisionsAsync(
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(_configuration.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT template_key, version, outcome, actor_user_id, correlation_id, created_at
+            FROM demo_content_template_revisions
+            ORDER BY created_at DESC
+            LIMIT 100;
+            """;
+
+        var items = new List<StoredTemplateRevision>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            items.Add(new StoredTemplateRevision(
+                reader.GetString("template_key"),
+                reader.GetInt32("version"),
+                reader.GetString("outcome"),
+                MariaDbIdentifierReader.ReadNullable(reader, "actor_user_id"),
+                reader.GetString("correlation_id"),
+                DateTime.SpecifyKind(reader.GetDateTime("created_at"), DateTimeKind.Utc)));
+        }
+
+        return items;
+    }
+
+    private static async Task WriteTemplateAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        StoredDemoContentTemplate template,
+        int version,
+        CancellationToken cancellationToken)
+    {
         var now = DateTime.UtcNow;
         await using (var upsert = connection.CreateCommand())
         {
@@ -131,7 +290,7 @@ public sealed class MariaDbDemoContentTemplateRepository : IDemoContentTemplateR
             upsert.Parameters.AddWithValue("@description", template.Description);
             upsert.Parameters.AddWithValue("@enabled", template.Enabled);
             upsert.Parameters.AddWithValue("@display_order", template.DisplayOrder);
-            upsert.Parameters.AddWithValue("@version", expectedVersion + 1);
+            upsert.Parameters.AddWithValue("@version", version);
             upsert.Parameters.AddWithValue(
                 "@updated_by",
                 (object?)template.UpdatedByUserId ?? DBNull.Value);
@@ -170,31 +329,11 @@ public sealed class MariaDbDemoContentTemplateRepository : IDemoContentTemplateR
             insert.Parameters.AddWithValue("@display_order", (order += 10));
             await insert.ExecuteNonQueryAsync(cancellationToken);
         }
-
-        await transaction.CommitAsync(cancellationToken);
-        return true;
     }
 
-    public async Task<bool> TryDeleteAsync(
-        string templateKey,
-        int expectedVersion,
-        CancellationToken cancellationToken)
-    {
-        await using var connection = new MySqlConnection(_configuration.ConnectionString);
-        await connection.OpenAsync(cancellationToken);
-
-        await using var command = connection.CreateCommand();
-        command.CommandText =
-            """
-            DELETE FROM demo_content_templates
-            WHERE template_key = @key AND version = @version;
-            """;
-        command.Parameters.AddWithValue("@key", templateKey);
-        command.Parameters.AddWithValue("@version", expectedVersion);
-        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
-    }
-
-    public async Task AddRevisionAsync(
+    private static async Task WriteRevisionAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
         string templateKey,
         int version,
         string payloadJson,
@@ -203,10 +342,8 @@ public sealed class MariaDbDemoContentTemplateRepository : IDemoContentTemplateR
         string outcome,
         CancellationToken cancellationToken)
     {
-        await using var connection = new MySqlConnection(_configuration.ConnectionString);
-        await connection.OpenAsync(cancellationToken);
-
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText =
             """
             INSERT INTO demo_content_template_revisions (
@@ -225,36 +362,5 @@ public sealed class MariaDbDemoContentTemplateRepository : IDemoContentTemplateR
         command.Parameters.AddWithValue("@outcome", outcome);
         command.Parameters.AddWithValue("@created_at", DateTime.UtcNow);
         await command.ExecuteNonQueryAsync(cancellationToken);
-    }
-
-    public async Task<IReadOnlyList<StoredTemplateRevision>> GetRevisionsAsync(
-        CancellationToken cancellationToken)
-    {
-        await using var connection = new MySqlConnection(_configuration.ConnectionString);
-        await connection.OpenAsync(cancellationToken);
-
-        await using var command = connection.CreateCommand();
-        command.CommandText =
-            """
-            SELECT template_key, version, outcome, actor_user_id, correlation_id, created_at
-            FROM demo_content_template_revisions
-            ORDER BY created_at DESC
-            LIMIT 100;
-            """;
-
-        var items = new List<StoredTemplateRevision>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
-        {
-            items.Add(new StoredTemplateRevision(
-                reader.GetString("template_key"),
-                reader.GetInt32("version"),
-                reader.GetString("outcome"),
-                MariaDbIdentifierReader.ReadNullable(reader, "actor_user_id"),
-                reader.GetString("correlation_id"),
-                DateTime.SpecifyKind(reader.GetDateTime("created_at"), DateTimeKind.Utc)));
-        }
-
-        return items;
     }
 }

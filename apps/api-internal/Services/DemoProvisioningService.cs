@@ -309,19 +309,36 @@ public sealed class DemoProvisioningService : IDemoProvisioningService
         }
 
         // Desactivation du compte AD apres retrait des groupes.
-        var disableResult = await _activeDirectory.DisableUserAsync(
-            link.CustomerReference,
-            link.SamAccountName,
-            cancellationToken);
-        var userDisabled = disableResult.StatusCode < 400;
-        if (!userDisabled)
+        //
+        // Sous autorite KoXo, la desactivation ne se fait pas en LDAP : elle se
+        // fait en retirant la ligne du CSV, ce que la synchronisation applique.
+        // Une ecriture directe serait refusee, et la compter comme un echec
+        // ferait rejouer indefiniment une revocation deja complete cote acces —
+        // les groupes de services, eux, ont bien ete retires ci-dessus.
+        bool userDisabled;
+        if (_adConfiguration.KoxoOwnsDirectory)
         {
-            allSucceeded = false;
-            _logger.LogWarning(
-                "Demo trial revocation: could not disable {UserSam} for {CustomerReference} ({Code}).",
+            userDisabled = false;
+            _logger.LogInformation(
+                "Demo trial revocation: account disabling delegated to KoXo for {CustomerReference}; service groups removed by API-INTERNAL.",
+                customerReference);
+        }
+        else
+        {
+            var disableResult = await _activeDirectory.DisableUserAsync(
+                link.CustomerReference,
                 link.SamAccountName,
-                customerReference,
-                disableResult.Code);
+                cancellationToken);
+            userDisabled = disableResult.StatusCode < 400;
+            if (!userDisabled)
+            {
+                allSucceeded = false;
+                _logger.LogWarning(
+                    "Demo trial revocation: could not disable {UserSam} for {CustomerReference} ({Code}).",
+                    link.SamAccountName,
+                    customerReference,
+                    disableResult.Code);
+            }
         }
 
         return new DemoRevocationOutcome(

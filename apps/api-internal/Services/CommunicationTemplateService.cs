@@ -2,6 +2,7 @@ using Kermaria.ApiInternal.Contracts;
 using Kermaria.ApiInternal.Data.Repositories;
 using Kermaria.ApiInternal.Services.Email;
 using Microsoft.Extensions.Logging;
+using MySqlConnector;
 
 namespace Kermaria.ApiInternal.Services;
 
@@ -458,8 +459,25 @@ public sealed class CommunicationTemplateService : ICommunicationTemplateService
             expectedVersion + 1,
             DateTime.UtcNow,
             actorUserId);
-        if (!await _repository.TryUpsertEmailTemplateAsync(
-                next, definition.DisplayName, expectedVersion, cancellationToken))
+        bool saved;
+        try
+        {
+            saved = await _repository.TrySaveEmailTemplateAsync(
+                next, definition.DisplayName, expectedVersion, outcome,
+                correlationId, cancellationToken);
+        }
+        catch (Exception exception) when (
+            exception is MySqlException or InvalidOperationException)
+        {
+            _logger.LogError(exception, "Ecriture impossible du modele {TemplateKey}.", key);
+            return new EmailTemplateMutationResponse(
+                "TEMPLATE_STORAGE_UNAVAILABLE",
+                "Le modèle n'a pas pu être enregistré : rien n'a été modifié.",
+                null,
+                correlationId);
+        }
+
+        if (!saved)
         {
             return new EmailTemplateMutationResponse(
                 "TEMPLATE_VERSION_CONFLICT",
@@ -468,8 +486,6 @@ public sealed class CommunicationTemplateService : ICommunicationTemplateService
                 correlationId);
         }
 
-        await _repository.AddEmailRevisionAsync(
-            next, outcome, correlationId, cancellationToken);
         Invalidate();
         return new EmailTemplateMutationResponse(
             "TEMPLATE_UPDATED",
@@ -513,8 +529,25 @@ public sealed class CommunicationTemplateService : ICommunicationTemplateService
 
         var next = new StoredNotificationTemplate(
             key, title, message, Enabled, expectedVersion + 1, DateTime.UtcNow, actorUserId);
-        if (!await _repository.TryUpsertNotificationTemplateAsync(
-                next, definition.DisplayName, expectedVersion, cancellationToken))
+        bool saved;
+        try
+        {
+            saved = await _repository.TrySaveNotificationTemplateAsync(
+                next, definition.DisplayName, expectedVersion, outcome,
+                correlationId, cancellationToken);
+        }
+        catch (Exception exception) when (
+            exception is MySqlException or InvalidOperationException)
+        {
+            _logger.LogError(exception, "Ecriture impossible de la notification {TemplateKey}.", key);
+            return new NotificationTemplateMutationResponse(
+                "TEMPLATE_STORAGE_UNAVAILABLE",
+                "La notification n'a pas pu être enregistrée : rien n'a été modifié.",
+                null,
+                correlationId);
+        }
+
+        if (!saved)
         {
             return new NotificationTemplateMutationResponse(
                 "TEMPLATE_VERSION_CONFLICT",
@@ -523,8 +556,6 @@ public sealed class CommunicationTemplateService : ICommunicationTemplateService
                 correlationId);
         }
 
-        await _repository.AddNotificationRevisionAsync(
-            next, outcome, correlationId, cancellationToken);
         Invalidate();
         return new NotificationTemplateMutationResponse(
             "TEMPLATE_UPDATED",
@@ -564,8 +595,25 @@ public sealed class CommunicationTemplateService : ICommunicationTemplateService
 
         var next = new StoredSystemSnippet(
             key, body, expectedVersion + 1, DateTime.UtcNow, actorUserId);
-        if (!await _repository.TryUpsertSnippetAsync(
-                next, definition.DisplayName, expectedVersion, cancellationToken))
+        bool saved;
+        try
+        {
+            saved = await _repository.TrySaveSnippetAsync(
+                next, definition.DisplayName, expectedVersion, outcome,
+                correlationId, cancellationToken);
+        }
+        catch (Exception exception) when (
+            exception is MySqlException or InvalidOperationException)
+        {
+            _logger.LogError(exception, "Ecriture impossible du texte {SnippetKey}.", key);
+            return new SystemSnippetMutationResponse(
+                "TEMPLATE_STORAGE_UNAVAILABLE",
+                "Le texte n'a pas pu être enregistré : rien n'a été modifié.",
+                null,
+                correlationId);
+        }
+
+        if (!saved)
         {
             return new SystemSnippetMutationResponse(
                 "TEMPLATE_VERSION_CONFLICT",
@@ -574,8 +622,6 @@ public sealed class CommunicationTemplateService : ICommunicationTemplateService
                 correlationId);
         }
 
-        await _repository.AddSnippetRevisionAsync(
-            next, outcome, correlationId, cancellationToken);
         Invalidate();
         return new SystemSnippetMutationResponse(
             "TEMPLATE_UPDATED",

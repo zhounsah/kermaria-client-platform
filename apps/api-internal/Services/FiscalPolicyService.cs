@@ -159,10 +159,37 @@ public sealed class FiscalPolicyService : IFiscalPolicyService
                 correlationId);
         }
 
-        var stored = await _repository.ListAsync(cancellationToken);
-        var currentVersion = stored.Count(item =>
-            string.Equals(item.Regime, regime.Regime, StringComparison.Ordinal));
-        if (currentVersion != request.ExpectedVersion)
+        // La version attendue est verifiee par le depot, sous le meme verrou que
+        // l'insertion. La verifier ici, sur une lecture prealable, laissait deux
+        // administrateurs partis du meme ecran ajouter chacun une mention sans
+        // qu'aucun ne voie de conflit : la mention appliquee devenait celle a la
+        // date d'effet la plus proche, et personne n'etait averti d'avoir ete
+        // double sur un texte qui s'imprime sur des factures.
+        FiscalMentionAddOutcome outcome;
+        try
+        {
+            outcome = await _repository.TryAddAsync(
+                new StoredFiscalMention(
+                    Guid.NewGuid().ToString("D"),
+                    regime.Regime,
+                    mention,
+                    effectiveFrom,
+                    now,
+                    actorUserId),
+                request.ExpectedVersion,
+                correlationId,
+                cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(exception, "Ecriture impossible d'une mention fiscale.");
+            return Failure(
+                "FISCAL_STORAGE_UNAVAILABLE",
+                "La mention n'a pas pu etre enregistree : rien n'a ete modifie.",
+                correlationId);
+        }
+
+        if (outcome == FiscalMentionAddOutcome.VersionConflict)
         {
             return Failure(
                 "FISCAL_VERSION_CONFLICT",
@@ -170,17 +197,7 @@ public sealed class FiscalPolicyService : IFiscalPolicyService
                 correlationId);
         }
 
-        var added = await _repository.TryAddAsync(
-            new StoredFiscalMention(
-                Guid.NewGuid().ToString("D"),
-                regime.Regime,
-                mention,
-                effectiveFrom,
-                now,
-                actorUserId),
-            correlationId,
-            cancellationToken);
-        if (!added)
+        if (outcome == FiscalMentionAddOutcome.EffectiveDateTaken)
         {
             return Failure(
                 "FISCAL_EFFECTIVE_DATE_TAKEN",
