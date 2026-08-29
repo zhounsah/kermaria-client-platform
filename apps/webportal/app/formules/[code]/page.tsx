@@ -8,6 +8,7 @@ import { getBillingV2FormulesCatalog } from "@/lib/internal-api";
 import { buildPublicMetadata } from "@/lib/public-metadata";
 import { resolvePresetTagline } from "@/lib/billing-v2-formules";
 import { readBillingV2SelectionSearchParams } from "@/lib/billing-v2-selection";
+import { resolveSystemSnippets } from "@/lib/system-snippets";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +36,10 @@ export async function generateMetadata({
 export default async function FormuleConfigurationPage({ params, searchParams }: PageProps) {
   const { code } = await params;
   const resumedSelection = readBillingV2SelectionSearchParams(await searchParams);
-  const { data: catalog } = await getBillingV2FormulesCatalog();
+  const [{ data: catalog }, snippets] = await Promise.all([
+    getBillingV2FormulesCatalog(),
+    resolveSystemSnippets(),
+  ]);
   const preset = catalog.presets.find((item) => item.code === code);
 
   if (catalog.presets.length > 0 && !preset) {
@@ -61,7 +65,7 @@ export default async function FormuleConfigurationPage({ params, searchParams }:
           <header className="formule-header">
             <p className="eyebrow">Formule</p>
             <h1>{preset.name}</h1>
-            <p className="formule-lead">{resolvePresetTagline(preset.code)}</p>
+            <p className="formule-lead">{resolvePresetTagline(preset)}</p>
             <p className="formule-baseline">
               Configuration recommandée :{" "}
               <strong>
@@ -75,6 +79,11 @@ export default async function FormuleConfigurationPage({ params, searchParams }:
             catalog={catalog}
             preset={preset}
             initialSelection={resumedSelection?.presetCode === preset.code ? resumedSelection : null}
+            checkoutSnippets={{
+              checkout_not_open_yet: snippets.checkout_not_open_yet,
+              checkout_temporarily_unavailable:
+                snippets.checkout_temporarily_unavailable,
+            }}
           />
 
           <section className="formule-footnote">

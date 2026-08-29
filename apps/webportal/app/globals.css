@@ -9698,3 +9698,11 @@ fieldset.form-field > .form-hint {
    confondre avec un enregistrement de brouillon. */
 .admin-audit-risk-high td:first-child { box-shadow:inset 3px 0 0 #c98a00; }
 .admin-audit-risk-critical td:first-child { box-shadow:inset 3px 0 0 #b3261e; }
+
+/* Centre de configuration - federation vers les modules specialises */
+.admin-settings-federation { display:grid; gap:12px; margin-top:26px; padding-top:22px; border-top:1px solid var(--border,#d7dee8); }
+.admin-settings-federation h2 { margin:0; }
+.admin-settings-federation ul { list-style:none; margin:0; padding:0; display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); }
+.admin-settings-federation li { display:grid; gap:4px; padding:14px 16px; border:1px solid var(--border,#d7dee8); border-radius:10px; background:var(--surface,#fff); }
+.admin-settings-federation li p { margin:0; }
+.admin-settings-federation li a { font-weight:600; }

@@ -14,6 +14,7 @@ import {
   SERVICE_CODES,
   buildBaselineSelection,
   describeCheckoutReason,
+  type CheckoutSnippets,
   findService,
   formatCommitmentDurationLabel,
   formatDiscountPercent,
@@ -31,6 +32,12 @@ type Props = {
   preset: BillingV2PublicPreset;
   catalog: BillingV2PublicCatalog;
   initialSelection?: BillingV2PublicSelection | null;
+  /**
+   * Textes administrables des refus de souscription, resolus par la page
+   * serveur. Le composant est client : il ne peut pas les lire lui-meme, et
+   * les laisser absents ferait retomber l'affichage sur le repli de code.
+   */
+  checkoutSnippets?: CheckoutSnippets;
 };
 
 /**
@@ -45,6 +52,7 @@ export function BillingV2FormuleConfigurator({
   preset,
   catalog,
   initialSelection: resumedSelection = null,
+  checkoutSnippets,
 }: Props) {
   const initialSelection = useMemo(
     () => resumedSelection?.presetCode === preset.code
@@ -714,7 +722,7 @@ export function BillingV2FormuleConfigurator({
 
             {quote.checkoutAvailable ? null : (
               <p className="formule-summary-blocked">
-                {describeCheckoutReason(quote.checkoutReasonCode)}
+                {describeCheckoutReason(quote.checkoutReasonCode, checkoutSnippets)}
               </p>
             )}
 

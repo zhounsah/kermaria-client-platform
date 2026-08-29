@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
 import { AdminSettingsCenter } from "@/components/AdminSettingsCenter";
+import { AdminSettingsFederation } from "@/components/AdminSettingsFederation";
 import { requireAdminSession } from "@/lib/auth";
 import { getAdminApplicationSettings } from "@/lib/internal-api";
 import { getAdminConfigurationStatus } from "@/lib/internal-api";
@@ -25,5 +26,6 @@ export default async function AdminSettingsPage() {
       <Link className="button button-secondary" href="/admin/settings/audit">Audit & permissions</Link>
     </nav>
     {result.error ? <ErrorState title="Configuration indisponible" description="Le centre de configuration ne peut pas être chargé pour le moment." reference={result.correlationId} /> : <AdminSettingsCenter initialSnapshot={result.data} statusDomains={statusResult.error ? [] : statusResult.data.domains} />}
+    <AdminSettingsFederation />
   </>;
 }

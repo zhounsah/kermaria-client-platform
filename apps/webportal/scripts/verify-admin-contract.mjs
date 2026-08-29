@@ -18,6 +18,13 @@ const downloadCategoriesRoute = await read(
   "app/api/admin/download-categories/route.ts",
 );
 const internalApi = await read("lib/internal-api.ts");
+const settingsAuditRoute = await read("app/api/admin/settings/audit/route.ts");
+const settingsPermissionsRoute = await read(
+  "app/api/admin/settings/permissions/route.ts",
+);
+const settingsAuditCenter = await read("components/AdminSettingsAuditCenter.tsx");
+const settingsFederation = await read("components/AdminSettingsFederation.tsx");
+const billingFormules = await read("lib/billing-v2-formules.ts");
 const appShell = await read("components/AppShell.tsx");
 const settingsPage = await read("app/admin/settings/page.tsx");
 const settingsRoute = await read("app/api/admin/settings/route.ts");
@@ -188,5 +195,58 @@ assert.match(snippetsServer, /getPublicSystemSnippets/);
 assert.match(contactForm, /SYSTEM_SNIPPET_DEFAULTS\.contact_form_confirmation/);
 assert.match(contactForm, /SYSTEM_SNIPPET_DEFAULTS\.contact_form_privacy_notice/);
 assert.match(internalApi, /\/internal\/public\/system-snippets/);
+
+// Audit de configuration : la liste des filtres transmis reste fermee cote BFF.
+// Recopier la chaine de requete telle quelle laisserait passer des parametres
+// inconnus vers API-INTERNAL.
+for (const filter of [
+  "from",
+  "to",
+  "actor",
+  "category",
+  "risk",
+  "outcome",
+  "correlationId",
+  "target",
+  "limit",
+]) {
+  assert.match(settingsAuditRoute, new RegExp(`"${filter}"`));
+}
+assert.match(settingsAuditRoute, /handleAdminGet/);
+assert.match(settingsAuditRoute, /\/internal\/admin\/settings\/audit/);
+assert.match(settingsPermissionsRoute, /handleAdminGet/);
+assert.match(
+  settingsPermissionsRoute,
+  /\/internal\/admin\/settings\/permissions/,
+);
+
+// La page d'audit affiche l'avertissement du serveur plutot que de filtrer
+// elle-meme : un filtre normalise cote portail pourrait diverger de la regle
+// serveur et laisser croire a une recherche exhaustive.
+assert.match(settingsAuditCenter, /audit\.warning/);
+assert.match(settingsAuditCenter, /truncated/);
+assert.match(settingsAuditCenter, /Ouverte par amorçage/);
+
+// Federation : le Centre pointe vers les modules deja autorites, sans recreer
+// un second editeur de CMS.
+for (const href of [
+  "/admin/content",
+  "/admin/editorial",
+  "/admin/catalog",
+  "/admin/downloads",
+  "/admin/backups",
+  "/admin/koxo",
+  "/admin/email-log",
+]) {
+  assert.match(settingsFederation, new RegExp(href.replace(/\//g, "\\/")));
+}
+
+// Presentation commerciale : le catalogue prime sur le libelle code, et aucun
+// calcul de prix ne remonte cote portail.
+assert.match(billingFormules, /resolveServiceBenefit/);
+assert.match(billingFormules, /preset\.description\?\.trim\(\)/);
+assert.match(billingFormules, /service\?\.description\?\.trim\(\)/);
+assert.match(snippetDefaults, /checkout_not_open_yet/);
+assert.match(snippetDefaults, /checkout_temporarily_unavailable/);
 
 console.log("Vérification du contrat d'administration BFF réussie.");

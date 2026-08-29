@@ -72,7 +72,7 @@ export default async function SubscribePage() {
                 <li className="subscribe-preset-card" key={preset.code}>
                   <h3>{preset.name}</h3>
                   <p className="subscribe-preset-tagline">
-                    {resolvePresetTagline(preset.code)}
+                    {resolvePresetTagline(preset)}
                   </p>
                   <p className="subscribe-preset-price">
                     <strong>{formatCurrencyFromCents(monthlyCents)}</strong>

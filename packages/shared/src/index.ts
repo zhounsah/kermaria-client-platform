@@ -2342,6 +2342,12 @@ export interface BillingV2PublicService {
   /** Metadonnee commerciale : sans autorite sur les lignes tarifaires. */
   billingType: string;
   flatPriceComponents: BillingV2PublicPriceComponent[] | null;
+  /**
+   * Description commerciale du catalogue. Presentation seulement : elle n'a
+   * aucune autorite sur les lignes tarifaires. Quand elle est renseignee, elle
+   * remplace le libelle code cote portail (specification, section 19).
+   */
+  description: string | null;
 }
 
 export interface BillingV2PublicPresetItem {

@@ -46,9 +46,34 @@ export function resolveServicePublicLabel(serviceCode: string, fallback: string)
 }
 
 /**
+ * Bénéfice affiché pour un service : la description commerciale du catalogue
+ * si elle existe, la phrase du code sinon.
+ *
+ * L'ordre compte. Le catalogue est déjà l'autorité commerciale et se modifie
+ * sans livraison ; laisser le code gagner rendrait la description
+ * administrable invisible, ce qui est exactement le défaut que la
+ * spécification demande de corriger.
+ */
+export function resolveServiceBenefit(
+  serviceCode: string,
+  service: BillingV2PublicService | undefined,
+): string | undefined {
+  const described = service?.description?.trim();
+  return described && described.length > 0
+    ? described
+    : SERVICE_BENEFITS[serviceCode];
+}
+
+/**
  * Ce que le client obtient réellement, en une phrase. Une carte de formule
  * doit se lire en quelques secondes : la liste exhaustive des composants
  * facturés appartient au configurateur et au récapitulatif, pas à la vitrine.
+ *
+ * Ces phrases sont désormais un **repli** : quand le catalogue porte une
+ * description commerciale pour le service, c'est elle qui s'affiche
+ * (spécification, section 19). Le repli reste dans le code pour qu'un service
+ * sans description ne disparaisse pas de la carte au lieu de s'y décrire
+ * approximativement.
  */
 const SERVICE_BENEFITS: Record<string, string> = {
   [SERVICE_CODES.storagePersonal]: "Un espace de stockage personnel",
@@ -89,9 +114,25 @@ const PRESET_TAGLINES: Record<string, string> = {
     "Travailler à plusieurs sur un espace partagé, avec un support renforcé.",
 };
 
-export function resolvePresetTagline(presetCode: string) {
+/**
+ * Accroche d'une formule : la description du catalogue si elle est renseignée,
+ * l'accroche du code sinon, puis une phrase générique.
+ *
+ * La description de formule est déjà administrable dans `/admin/catalog` : la
+ * lire ici ferme l'écart de la section 19 sans créer ni table ni écran
+ * supplémentaire. Le repli de code n'est pas de la redondance — il évite
+ * qu'une formule sans description s'affiche sans accroche du tout.
+ */
+export function resolvePresetTagline(
+  preset: Pick<BillingV2PublicPreset, "code" | "description">,
+) {
+  const described = preset.description?.trim();
+  if (described && described.length > 0) {
+    return described;
+  }
+
   return (
-    PRESET_TAGLINES[presetCode]
+    PRESET_TAGLINES[preset.code]
     ?? "Configuration recommandée, ajustable à vos besoins."
   );
 }
@@ -151,16 +192,14 @@ export function describePresetBenefits(
       continue;
     }
 
-    const benefit = SERVICE_BENEFITS[item.serviceCode];
+    const service = findService(catalog, item.serviceCode);
+    const benefit = resolveServiceBenefit(item.serviceCode, service);
     if (!benefit || seen.has(item.serviceCode)) {
       continue;
     }
 
     seen.add(item.serviceCode);
-    const tierLabel = resolveTierLabel(
-      findService(catalog, item.serviceCode),
-      item.tierCode,
-    );
+    const tierLabel = resolveTierLabel(service, item.tierCode);
     const capacity =
       item.serviceCode === SERVICE_CODES.storagePersonal
       || item.serviceCode === SERVICE_CODES.storageShared;
@@ -326,23 +365,30 @@ function resolveSelectedTierLabel(
   return /^\d+$/.test(tierCode) ? `${tierCode} Go` : tierCode;
 }
 
+/**
+ * Deux situations de refus sont administrables par un fragment système
+ * (spécification, section 19) : « pas encore ouverte » et « indisponible
+ * momentanément ». Ce sont celles dont le texte change réellement pendant la
+ * phase de lancement.
+ *
+ * Les autres restent codées à dessein : elles décrivent une situation produit
+ * précise — cette combinaison-là, ce mode de règlement-là. Les rendre
+ * modifiables inviterait à les remplacer par un texte générique, et le
+ * visiteur perdrait la seule information qui lui dit quoi changer.
+ */
+const CHECKOUT_SNIPPET_REASONS: Record<string, CheckoutSnippetKey> = {
+  BILLING_V2_FIRST_REAL_SUBSCRIPTION_NOT_APPROVED: "checkout_not_open_yet",
+  BILLING_V2_NEW_SUBSCRIPTIONS_FLAG_OFF: "checkout_not_open_yet",
+  BILLING_V2_AUTHORITATIVE_CHECKOUT_FLAG_OFF: "checkout_not_open_yet",
+  BILLING_V2_AUTHORITATIVE_CHECKOUT_NO_SQL: "checkout_temporarily_unavailable",
+};
+
 const CHECKOUT_REASON_MESSAGES: Record<string, string> = {
   BILLING_V2_PUBLIC_CHECKOUT_ROUTE_MISSING:
     "Cette combinaison formule / engagement n'est pas ouverte à la "
     + "souscription en ligne.",
   BILLING_V2_PUBLIC_PAYMENT_MODE_UNAVAILABLE:
     "Ce mode de règlement n'est pas proposé pour cette durée.",
-  BILLING_V2_FIRST_REAL_SUBSCRIPTION_NOT_APPROVED:
-    "La souscription en ligne n'est pas encore ouverte. Contactez-nous pour "
-    + "mettre en place cette formule.",
-  BILLING_V2_NEW_SUBSCRIPTIONS_FLAG_OFF:
-    "La souscription en ligne n'est pas encore ouverte. Contactez-nous pour "
-    + "mettre en place cette formule.",
-  BILLING_V2_AUTHORITATIVE_CHECKOUT_FLAG_OFF:
-    "La souscription en ligne n'est pas encore ouverte. Contactez-nous pour "
-    + "mettre en place cette formule.",
-  BILLING_V2_AUTHORITATIVE_CHECKOUT_NO_SQL:
-    "La souscription en ligne est momentanément indisponible.",
   BILLING_V2_SCOPE_UPFRONT_OUT_OF_LAUNCH_SCOPE:
     "Le règlement en une fois n'est pas encore ouvert en ligne. Choisissez le "
     + "règlement au mois, ou contactez-nous.",
@@ -351,9 +397,34 @@ const CHECKOUT_REASON_MESSAGES: Record<string, string> = {
     + "Rechargez la page pour repartir d'une demande propre.",
 };
 
-export function describeCheckoutReason(reasonCode: string) {
+export type CheckoutSnippetKey =
+  | "checkout_not_open_yet"
+  | "checkout_temporarily_unavailable";
+
+/** Textes administrables passés par la page serveur. */
+export type CheckoutSnippets = Record<CheckoutSnippetKey, string>;
+
+export function describeCheckoutReason(
+  reasonCode: string,
+  snippets?: CheckoutSnippets,
+) {
+  const snippetKey = CHECKOUT_SNIPPET_REASONS[reasonCode];
+  if (snippetKey) {
+    // Sans texte administré transmis, on retombe sur le repli de code : une
+    // page ne doit jamais afficher un refus sans explication.
+    return snippets?.[snippetKey] ?? CHECKOUT_SNIPPET_FALLBACKS[snippetKey];
+  }
+
   return (
     CHECKOUT_REASON_MESSAGES[reasonCode]
     ?? "La souscription en ligne n'est pas disponible pour cette configuration."
   );
 }
+
+const CHECKOUT_SNIPPET_FALLBACKS: CheckoutSnippets = {
+  checkout_not_open_yet:
+    "La souscription en ligne n'est pas encore ouverte. Contactez-nous pour "
+    + "mettre en place cette formule.",
+  checkout_temporarily_unavailable:
+    "La souscription en ligne est momentanément indisponible.",
+};

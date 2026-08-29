@@ -121,7 +121,10 @@ public sealed record BillingV2PublicService(
     bool PublicVisible = true,
     bool SelfServiceOrderable = true,
     string BillingType = BillingV2PublicBillingTypes.Recurring,
-    IReadOnlyList<BillingV2PublicPriceComponent>? FlatPriceComponents = null)
+    IReadOnlyList<BillingV2PublicPriceComponent>? FlatPriceComponents = null,
+    // Presentation seulement : la description commerciale du catalogue, sans
+    // aucune autorite sur les lignes tarifaires (specification, section 19).
+    string? Description = null)
 {
     /// <summary>
     /// Composantes tarifaires du service sans palier. Vide quand le service

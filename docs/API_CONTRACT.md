@@ -431,6 +431,41 @@ specification interdit.
 
 Evenements d'audit : `diagnostic_draft_changed`, `diagnostic_published`.
 
+## Presentation commerciale : le catalogue plutot que le code
+
+Le portail portait en dur des libelles, des benefices et des accroches de
+formule. Ils migrent vers la source qui en est deja l'autorite — le catalogue —
+sans creer de table ni d'ecran supplementaire.
+
+`BillingV2PublicService` expose desormais `description`. Cette colonne existait
+deja dans `billing_v2_services` et s'edite dans `/admin/catalog` ; elle
+n'etait simplement pas projetee publiquement. Elle est de **presentation
+seulement** : aucune autorite sur les lignes tarifaires.
+
+Ordre de resolution, cote portail :
+
+- **benefice d'un service** : `service.description` du catalogue, puis la
+  phrase du code ;
+- **accroche d'une formule** : `preset.description` du catalogue, puis
+  l'accroche du code, puis une phrase generique.
+
+Le repli de code n'est pas de la redondance : sans lui, un service ou une
+formule sans description s'afficherait sans texte du tout. Le catalogue passe
+en premier — laisser le code gagner rendrait la description administrable
+invisible, ce qui est exactement le defaut a corriger.
+
+Deux messages de refus de souscription deviennent des fragments systeme
+administrables : `checkout_not_open_yet` et
+`checkout_temporarily_unavailable`. Ce sont ceux dont le texte change
+reellement pendant la phase de lancement. Les autres restent codes a dessein :
+ils decrivent une situation produit precise — cette combinaison-la, ce mode de
+reglement-la — et un texte generique priverait le visiteur de la seule
+information qui lui dit quoi changer.
+
+Le configurateur est un composant client : les fragments lui sont transmis par
+la page serveur, avec repli de code s'ils manquent. **Aucun calcul de prix ne
+passe cote portail.**
+
 ## Audit et permissions de la configuration
 
 `GET /internal/admin/settings/audit` (`settings.read`) et

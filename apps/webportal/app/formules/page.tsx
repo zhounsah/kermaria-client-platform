@@ -70,7 +70,7 @@ export default async function FormulesPage() {
                   <header className="formule-card-header">
                     <h2>{preset.name}</h2>
                     <p className="formule-card-tagline">
-                      {resolvePresetTagline(preset.code)}
+                      {resolvePresetTagline(preset)}
                     </p>
                   </header>
 

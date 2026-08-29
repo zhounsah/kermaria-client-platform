@@ -165,6 +165,7 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                 SELECT
                     service.code AS service_code,
                     service.name AS service_name,
+                    service.description AS service_description,
                     service.category,
                     service.billing_type,
                     service.default_scope_type,
@@ -227,6 +228,7 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                 SELECT
                     service.code AS service_code,
                     service.name AS service_name,
+                    service.description AS service_description,
                     service.category,
                     service.billing_type,
                     service.default_scope_type,
@@ -350,7 +352,8 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                 first.PublicVisible,
                 first.SelfServiceOrderable,
                 first.BillingType,
-                flatComponents));
+                flatComponents,
+                first.ServiceDescription));
         }
 
         return services;
@@ -606,6 +609,9 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
         => new(
             reader.GetString("service_code"),
             reader.GetString("service_name"),
+            reader.IsDBNull(reader.GetOrdinal("service_description"))
+                ? null
+                : reader.GetString("service_description"),
             reader.GetString("category"),
             reader.GetString("billing_type"),
             reader.GetString("default_scope_type"),
@@ -639,6 +645,7 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
     private sealed record ServiceRow(
         string ServiceCode,
         string ServiceName,
+        string? ServiceDescription,
         string Category,
         string BillingType,
         string ScopeType,

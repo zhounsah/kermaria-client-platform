@@ -201,6 +201,21 @@ public static class CommunicationTemplateRegistry
             "Mention affichable au bas des pages commerciales publiques.",
             "Les tarifs affichés sont recalculés à partir du catalogue au moment de la commande.",
             400),
+        new(
+            "checkout_not_open_yet",
+            "Souscription · pas encore ouverte",
+            "Message affiché quand la souscription en ligne n'est pas encore ouverte. "
+            + "C'est le texte qui change le plus souvent pendant la phase de lancement.",
+            "La souscription en ligne n'est pas encore ouverte. Contactez-nous pour "
+            + "mettre en place cette formule.",
+            400),
+        new(
+            "checkout_temporarily_unavailable",
+            "Souscription · indisponible momentanément",
+            "Message affiché quand la souscription échoue pour une raison technique "
+            + "passagère. Il ne doit pas nommer la cause : le visiteur n'en fait rien.",
+            "La souscription en ligne est momentanément indisponible.",
+            400),
     ];
 
     private static readonly Dictionary<string, EmailTemplateDefinition> EmailByKey =

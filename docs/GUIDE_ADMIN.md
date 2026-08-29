@@ -588,6 +588,32 @@ attribution : tout administrateur interne y accede. Attribuer la permission a un
 compte referme l'acces aux seuls comptes designes — c'est l'action a faire avant
 d'ouvrir le Centre a plusieurs personnes.
 
+## 7 decies. Ce qui se change ailleurs
+
+Le bas de `/admin/settings` liste les modules qui restent l'autorite sur leur
+domaine : contenus, editorial, catalogue commercial, telechargements,
+sauvegardes, KoXo, journal d'envoi, comptes de demonstration, journal d'audit
+general.
+
+Le Centre ne les recree pas. Une seconde surface d'edition finirait par diverger
+de la premiere, et il n'y aurait plus de reponse claire a « laquelle fait foi ».
+Chaque entree indique ce que le module detient et ce que le Centre laisse
+volontairement hors de sa portee.
+
+### Textes commerciaux : ou les changer
+
+- **Benefice d'un service** et **accroche d'une formule** : dans
+  `/admin/catalog`, champ « Description » du service ou de la formule. Le texte
+  saisi remplace celui du code sur la vitrine. Laisser la description vide
+  conserve le texte de reference — la carte ne reste jamais sans accroche ;
+- **« La souscription n'est pas encore ouverte »** et **« momentanement
+  indisponible »** : dans `/admin/settings/messages`, section des fragments
+  systeme. Ce sont les deux textes qui bougent pendant la phase de lancement.
+
+Les autres messages de refus restent codes : ils nomment une situation precise
+(cette combinaison, ce mode de reglement), et un texte generique ferait perdre
+au visiteur la seule indication de ce qu'il doit changer.
+
 ## 8. Diagnostic rapide
 
 Quand un client remonte un probleme de panier, paiement, abonnement ou
