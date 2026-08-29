@@ -199,6 +199,20 @@ cookie HttpOnly -> BFF -> session API-INTERNAL -> user_id -> customer_id
 - Une valeur de configuration relue depuis MariaDB repasse par la validation
   d'ecriture : les bornes du registre ne peuvent pas etre contournees en
   ecrivant directement en base.
+- La fiscalite n'est **pas** scriptable : le regime et le calcul restent dans
+  le code, seule la formulation de la mention est administrable, et uniquement
+  pour un regime deja connu.
+- Une mention fiscale ne peut pas etre antidatee, et la resolution se fait a la
+  date de la ligne de document : un document deja etabli ne peut donc pas etre
+  modifie retroactivement depuis l'administration.
+- Une mention deja en vigueur n'est pas supprimable ; elle documente ce qui a
+  ete imprime sur de vrais documents.
+- Les mutations fiscales exigent `settings.billing.write`, distincte de
+  `settings.write`.
+- Les drapeaux Billing V2 restent en lecture seule dans le Centre de
+  configuration : ils commandent des appels sortants reels chez un prestataire
+  de paiement et des ecritures d'infrastructure. Leur modification passe par la
+  machine puis un redemarrage, jamais par une page web.
 - Les replis sont fail-closed au sens metier : en cas de panne SQL ou de
   ligne absente, le runtime utilise le gabarit integre au code, jamais un
   texte vide, et jamais une configuration plus permissive que l'absence de

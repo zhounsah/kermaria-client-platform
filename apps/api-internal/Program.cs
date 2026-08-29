@@ -190,6 +190,11 @@ builder.Services.AddScoped<IDiagnosticConfigurationRepository>(
 builder.Services.AddScoped<
     IDiagnosticConfigurationService,
     DiagnosticConfigurationService>();
+builder.Services.AddScoped<IFiscalPolicyRepository>(
+    _ => sqlConfiguration.IsPersistent
+        ? new MariaDbFiscalPolicyRepository(sqlConfiguration)
+        : new MockFiscalPolicyRepository());
+builder.Services.AddScoped<IFiscalPolicyService, FiscalPolicyService>();
 builder.Services.AddScoped<IRequestWorkflowRepository>(
     serviceProvider => sqlConfiguration.IsPersistent
         ? new MariaDbRequestWorkflowRepository(
@@ -402,6 +407,9 @@ builder.Services.AddScoped<
 builder.Services.AddScoped<
     IBillingV2AdminReadinessService,
     BillingV2AdminReadinessService>();
+builder.Services.AddScoped<
+    IBillingV2ConfigurationOverviewService,
+    BillingV2ConfigurationOverviewService>();
 builder.Services.AddScoped<
     IBillingV2CheckoutReadinessService,
     BillingV2CheckoutReadinessService>();
@@ -4084,6 +4092,72 @@ app.MapPatch(
         return Results.Json(result, statusCode: result.Code == "SETTINGS_VERSION_CONFLICT" ? StatusCodes.Status409Conflict : result.Code == "SETTINGS_UPDATED" ? StatusCodes.Status200OK : StatusCodes.Status400BadRequest);
     });
 
+// --- Fiscalite (specification, section 14.2) -------------------------------
+// Le calcul de la taxe reste dans le code : seule la formulation de la mention
+// est administrable, pour un regime deja connu, et jamais retroactivement.
+app.MapGet(
+    "/internal/admin/settings/fiscal-policy",
+    async (
+        HttpContext context,
+        IFiscalPolicyService service,
+        IEditorialRepository editorialRepository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(context, authenticationService, auditService, "admin.settings.read");
+        if (!await editorialRepository.HasAdminPermissionAsync(actor.UserId, "settings.read", context.RequestAborted)) throw new PortalAccessDeniedException();
+        context.Response.Headers["X-Data-Source"] = service.IsPersistent ? "mariadb" : "mock";
+        return Results.Ok(await service.GetAdminViewAsync(context.RequestAborted));
+    });
+app.MapPost(
+    "/internal/admin/settings/fiscal-policy/mentions",
+    async (
+        HttpContext context,
+        IFiscalPolicyService service,
+        IEditorialRepository editorialRepository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveBillingWriterAsync(context, editorialRepository, authenticationService, auditService);
+        var request = await ReadPayload<FiscalMentionCreateRequest>(context) ?? throw new PortalValidationException();
+        var result = await service.AddMentionAsync(request, actor.UserId, context.GetCorrelationId(), context.RequestAborted);
+        await RecordFiscalAuditAsync(context, auditService, actor.UserId, "fiscal_mention_scheduled", result.Code, "FISCAL_MENTION_SCHEDULED");
+        return Results.Json(result, statusCode: ResolveFiscalStatusCode(result.Code));
+    });
+app.MapDelete(
+    "/internal/admin/settings/fiscal-policy/mentions/{id}",
+    async (
+        string id,
+        HttpContext context,
+        IFiscalPolicyService service,
+        IEditorialRepository editorialRepository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveBillingWriterAsync(context, editorialRepository, authenticationService, auditService);
+        var result = await service.DeleteScheduledMentionAsync(id, context.GetCorrelationId(), context.RequestAborted);
+        await RecordFiscalAuditAsync(context, auditService, actor.UserId, "fiscal_mention_cancelled", result.Code, "FISCAL_MENTION_CANCELLED");
+        return Results.Json(result, statusCode: ResolveFiscalStatusCode(result.Code));
+    });
+
+// --- Resume Billing V2 (specification, sections 14.3 et 14.4) ---------------
+// Vue federee : le catalogue reste administre dans `/admin/catalog` et la
+// readiness dans `/admin/billing-v2`. Les drapeaux sont en lecture seule, leur
+// mutation exigeant une intervention sur la machine puis un redemarrage.
+app.MapGet(
+    "/internal/admin/settings/billing-v2",
+    async (
+        HttpContext context,
+        IBillingV2ConfigurationOverviewService service,
+        IEditorialRepository editorialRepository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(context, authenticationService, auditService, "admin.settings.read");
+        if (!await editorialRepository.HasAdminPermissionAsync(actor.UserId, "settings.read", context.RequestAborted)) throw new PortalAccessDeniedException();
+        return Results.Ok(await service.GetAsync(context.GetCorrelationId(), context.RequestAborted));
+    });
+
 // --- Messages & communications (specification, section 8) ------------------
 // Les modeles vivent dans des tables specialisees, jamais dans le registre
 // generique. Chaque mutation revalide la whitelist de variables cote API.
@@ -6941,6 +7015,16 @@ app.MapPost(
         });
     });
 
+// Les mentions fiscales sont projetees de maniere synchrone dans les lignes de
+// document : elles doivent donc etre chargees avant de servir la premiere
+// requete. En cas d'echec, le service repart sur les mentions integrees au code.
+using (var fiscalScope = app.Services.CreateScope())
+{
+    await fiscalScope.ServiceProvider
+        .GetRequiredService<IFiscalPolicyService>()
+        .RefreshAsync(CancellationToken.None);
+}
+
 app.MapFallback((HttpContext context) =>
     Results.Json(
         new ApiError(
@@ -7529,6 +7613,61 @@ static Task RecordTemplateAuditAsync(
             SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
         context.RequestAborted);
 }
+
+// La fiscalite n'est pas un reglage comme un autre : une mention erronee sur une
+// facture engage l'entreprise. La permission est donc distincte de
+// `settings.write`.
+static async Task<PortalSessionContext> ResolveBillingWriterAsync(
+    HttpContext context,
+    IEditorialRepository editorialRepository,
+    IAuthenticationService authenticationService,
+    IAuditService auditService)
+{
+    var actor = await ResolveAdminSessionAsync(
+        context,
+        authenticationService,
+        auditService,
+        "admin.billing.settings.write");
+    if (!await editorialRepository.HasAdminPermissionAsync(
+            actor.UserId,
+            "settings.billing.write",
+            context.RequestAborted))
+    {
+        throw new PortalAccessDeniedException();
+    }
+
+    return actor;
+}
+
+static Task RecordFiscalAuditAsync(
+    HttpContext context,
+    IAuditService auditService,
+    string actorUserId,
+    string action,
+    string code,
+    string successCode)
+    => auditService.RecordAsync(
+        new AuditEvent(
+            context.GetCorrelationId(),
+            action,
+            code == successCode ? "success" : "refused",
+            code,
+            "fiscal_policy",
+            action,
+            ActorUserId: actorUserId,
+            SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+        context.RequestAborted);
+
+static int ResolveFiscalStatusCode(string code)
+    => code switch
+    {
+        "FISCAL_MENTION_SCHEDULED" or "FISCAL_MENTION_CANCELLED"
+            => StatusCodes.Status200OK,
+        "FISCAL_VERSION_CONFLICT" or "FISCAL_EFFECTIVE_DATE_TAKEN"
+            => StatusCodes.Status409Conflict,
+        "FISCAL_MENTION_NOT_CANCELLABLE" => StatusCodes.Status404NotFound,
+        _ => StatusCodes.Status400BadRequest
+    };
 
 // Toute mutation du diagnostic exige `settings.diagnostic.write` : un parcours
 // public mal configure oriente de vrais clients vers une mauvaise formule.

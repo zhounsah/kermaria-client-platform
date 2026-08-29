@@ -315,6 +315,65 @@ API-INTERNAL, pas seulement par le portail :
 - `signup_auto_approve` n'existe qu'en lecture : la valeur appliquee est
   toujours `false`, quelle que soit la ligne en base.
 
+## Fiscalite administrable
+
+Le **calcul** de la taxe n'est pas administrable : le regime et le montant sont
+decides par `FiscalPolicy` a partir du taux porte par le document. Seule la
+**formulation de la mention** est editable, et uniquement pour un regime deja
+connu du code (`franchise_base`, `standard`).
+
+Invariant central : une mention n'est **jamais retroactive**.
+
+- une version porte une date d'effet ; une date passee est refusee
+  (`FISCAL_EFFECTIVE_DATE_IN_PAST`) ;
+- la mention d'une ligne de document est resolue **a la date de la ligne** : un
+  document deja etabli conserve la formulation en vigueur au moment ou il l'a
+  ete, meme apres modification du texte ;
+- deux versions d'un meme regime ne peuvent pas prendre effet au meme instant
+  (`FISCAL_EFFECTIVE_DATE_TAKEN`) ;
+- une version deja appliquee n'est pas supprimable : elle documente ce qui a ete
+  imprime. Seule une version encore planifiee peut etre annulee ;
+- concurrence optimiste par `expectedVersion` (nombre de versions du regime),
+  conflit en `409 FISCAL_VERSION_CONFLICT` ;
+- repli ferme : sans base lisible, les documents affichent la mention integree
+  au code, jamais un texte vide ;
+- toute mutation exige la permission `settings.billing.write`, distincte de
+  `settings.write`.
+
+Endpoints :
+
+- `GET /internal/admin/settings/fiscal-policy` : regimes, mention appliquee,
+  origine (`code` / `database`), versions planifiees et historique
+  (`settings.read`) ;
+- `POST /internal/admin/settings/fiscal-policy/mentions` : planifie une version
+  datee ;
+- `DELETE /internal/admin/settings/fiscal-policy/mentions/{id}` : annule une
+  version pas encore en vigueur.
+
+Evenements d'audit : `fiscal_mention_scheduled`, `fiscal_mention_cancelled`.
+
+## Resume Billing V2
+
+`GET /internal/admin/settings/billing-v2` (`settings.read`) federe l'etat
+commercial sans deplacer aucune autorite : le catalogue reste administre par
+`/internal/admin/billing-v2/catalog`, la readiness par
+`/internal/admin/billing-v2/readiness`.
+
+La reponse porte :
+
+- un resume du catalogue (services et formules actifs, engagements) ;
+- un resume de readiness (persistance, schema, prestataires, limitations) ;
+- les **drapeaux Billing V2** decrits : libelle, description, etat, niveau de
+  risque, dependances, dependances non satisfaites, variable d'environnement.
+
+Les drapeaux sont **en lecture seule**. Ils sont resolus au demarrage du service
+et injectes en singleton ; les rendre mutables depuis une page web reviendrait a
+pouvoir declencher un appel sortant reel chez un prestataire de paiement, ou une
+ecriture d'infrastructure, sans qu'un exploitant soit devant la machine. La
+specification autorise explicitement ce choix pour une premiere version. Leur
+modification passe donc par la configuration de la machine puis un redemarrage,
+ce que l'interface indique.
+
 ## Diagnostic administrable
 
 Le parcours `/diagnostic` est decrit par une configuration versionnee

@@ -597,7 +597,9 @@ public static class BillingV2PortalSubscriptionProjector
 
     public static SubscriptionSummary Project(BillingV2PortalSubscriptionRow row)
     {
-        var fiscal = FiscalPolicy.Resolve(row.TaxRateBasisPoints);
+        // Une souscription est un etat courant, pas un document emis : la
+        // mention affichee est celle en vigueur aujourd'hui.
+        var fiscal = FiscalPolicy.Resolve(row.TaxRateBasisPoints, DateTime.UtcNow);
         var provider = NormalizeProvider(row.Provider);
         var priceAmountCents = ToInt32(ResolvePriceAmountCents(row));
         var setupFeeAmountCents = ToInt32(row.OneTimeCents);

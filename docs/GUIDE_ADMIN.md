@@ -398,6 +398,45 @@ Points de vigilance :
 - l'onglet **Historique** liste les enregistrements et publications avec leur
   reference de correlation.
 
+## 7 quinquies. Facturation et fiscalite - `/admin/settings/billing`
+
+### Mentions fiscales
+
+La page affiche, pour chaque regime connu, la mention **reellement appliquee**
+et son origine : integree au code, ou enregistree avec une date d'effet.
+
+Pour changer une mention :
+
+1. ecrire le nouveau texte ;
+2. choisir une **date d'effet future** ;
+3. confirmer.
+
+Points de vigilance :
+
+- une date passee est refusee. C'est volontaire : une mention ne doit jamais
+  modifier un document deja etabli ;
+- la mention d'une ligne est figee a la date de cette ligne. Une facture emise
+  le mois dernier gardera sa formulation, quoi qu'on ecrive aujourd'hui ;
+- une mention planifiee peut etre annulee tant qu'elle n'a pas pris effet.
+  Ensuite, elle reste dans l'historique et n'est plus supprimable ;
+- le **taux** de TVA ne se regle pas ici : il vient du document. Cette page ne
+  touche jamais un montant.
+
+### Billing V2
+
+Le resume federe le catalogue et la readiness sans les dupliquer : les boutons
+renvoient vers `/admin/catalog` et `/admin/billing-v2`, qui restent les pages
+d'administration.
+
+Les **drapeaux** sont presentes avec leur description, leur niveau de risque et
+leurs dependances. Ils sont en lecture seule : ils commandent de vrais appels
+chez un prestataire de paiement ou de vraies ecritures d'infrastructure, et se
+modifient sur la machine avant un redemarrage du service.
+
+Un drapeau signale « active mais sans effet » lorsque ses dependances sont
+fermees : la fonction est annoncee comme ouverte alors que rien ne peut
+aboutir.
+
 ## 8. Diagnostic rapide
 
 Quand un client remonte un probleme de panier, paiement, abonnement ou

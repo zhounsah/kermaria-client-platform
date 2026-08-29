@@ -758,7 +758,16 @@ public sealed class MockCommercialDocumentRepository : ICommercialDocumentReposi
 
     private static CommercialDocumentLine ToLine(MockCommercialDocumentLine line)
     {
-        var fiscal = FiscalPolicy.Resolve(line.TaxRateBasisPoints);
+        var fiscal = FiscalPolicy.Resolve(
+            line.TaxRateBasisPoints,
+            DateTime.TryParse(
+                line.CreatedAt,
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AdjustToUniversal
+                    | System.Globalization.DateTimeStyles.AssumeUniversal,
+                out var createdAt)
+                ? DateTime.SpecifyKind(createdAt, DateTimeKind.Utc)
+                : DateTime.UtcNow);
         return new CommercialDocumentLine(
             line.Id,
             line.Label,

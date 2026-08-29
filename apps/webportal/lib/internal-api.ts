@@ -36,6 +36,8 @@ import type {
   CustomerAdProvisioningMutationPayload,
   CustomerAdProvisioningMutationResponse,
   DiagnosticConfigurationAdminView,
+  BillingV2ConfigurationOverview,
+  FiscalPolicyAdminView,
   DiagnosticConfigurationSnapshot,
   DownloadCategory,
   DataSource,
@@ -1152,6 +1154,26 @@ export function getAdminDiagnosticConfiguration() {
       published: { ...EMPTY_DIAGNOSTIC_SNAPSHOT, state: "published" },
       draftDiffers: false,
       persistent: false,
+    },
+  );
+}
+
+export function getAdminFiscalPolicy() {
+  return getAdminData<FiscalPolicyAdminView>(
+    "/internal/admin/settings/fiscal-policy",
+    { regimes: [], persistent: false },
+  );
+}
+
+export function getAdminBillingV2Configuration() {
+  return getAdminData<BillingV2ConfigurationOverview>(
+    "/internal/admin/settings/billing-v2",
+    {
+      catalog: null,
+      readiness: null,
+      flags: [],
+      reconciliationIntervalSeconds: 0,
+      correlationId: "",
     },
   );
 }

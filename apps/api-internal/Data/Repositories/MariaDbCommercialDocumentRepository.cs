@@ -804,7 +804,12 @@ public sealed class MariaDbCommercialDocumentRepository : ICommercialDocumentRep
                 reader.IsDBNull(reader.GetOrdinal("tax_rate_basis_points"))
                     ? (int?)null
                     : reader.GetInt32("tax_rate_basis_points");
-            var fiscal = FiscalPolicy.Resolve(taxRateBasisPoints);
+            // Mention resolue « a la date » de la ligne : une facture deja
+            // emise garde la formulation en vigueur au moment ou elle a ete
+            // etablie, meme si le texte est modifie ensuite.
+            var fiscal = FiscalPolicy.Resolve(
+                taxRateBasisPoints,
+                DateTime.SpecifyKind(reader.GetDateTime("created_at"), DateTimeKind.Utc));
             lines.Add(new CommercialDocumentLine(
                 MariaDbIdentifierReader.ReadRequired(reader, "id"),
                 reader.GetString("label"),

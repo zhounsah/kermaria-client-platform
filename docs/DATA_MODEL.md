@@ -579,6 +579,32 @@ Registre ferme de parametres metier du centre de configuration
 | `created_at` | timestamp | Date de creation |
 | `updated_at` | timestamp | Derniere modification |
 
+## fiscal_policy_mentions
+
+Versions datees des mentions fiscales (migration `076`). La table ne porte
+aucun taux et aucun montant : le calcul reste dans le code.
+
+| Champ | Type logique | Description |
+|---|---|---|
+| `id` | uuid | Identifiant de la version |
+| `regime` | text | `franchise_base` ou `standard`, contraint en SQL |
+| `mention` | text | Formulation imprimee, 300 caracteres au plus |
+| `effective_from` | timestamp | Date d'effet UTC |
+| `created_at` | timestamp | Date de creation UTC |
+| `created_by_user_id` | uuid, nullable | Administrateur auteur |
+| `correlation_id` | text | Reference de correlation de la mutation |
+
+Contraintes :
+
+- unicite `(regime, effective_from)` : la version applicable a un instant donne
+  est toujours determinee ;
+- la resolution se fait « a la date » de la ligne de document, si bien qu'une
+  facture deja etablie ne change jamais ;
+- l'absence de ligne n'est pas une erreur : la mention integree au code
+  s'applique ;
+- une version deja en vigueur n'est pas supprimable ; seule une version future
+  peut etre annulee.
+
 ## diagnostic_configurations
 
 Configuration versionnee du parcours `/diagnostic` (migration `075`). La table

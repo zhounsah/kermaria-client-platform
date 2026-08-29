@@ -545,6 +545,8 @@ async Task<int> RunAsync(string[] arguments)
         VerifyChildProcessEnvironmentGuardrails();
         await VerifySignupStoresPriceFreeBillingV2SelectionAsync();
         await VerifySignupGuardrailsAsync();
+        await VerifyFiscalPolicyAsync();
+        VerifyBillingV2FeatureFlagRegistry();
         await VerifyCommunicationTemplatesAsync();
         await VerifyDiagnosticConfigurationAsync();
         await RunMockTestsAsync();
@@ -4763,6 +4765,197 @@ static async Task VerifySignupGuardrailsAsync()
 
     settingsRepository.Clear();
 }
+
+/// <summary>
+/// Mentions fiscales : le texte est administrable, le calcul ne l'est pas, et
+/// une mention ne doit jamais changer un document deja etabli.
+/// </summary>
+static async Task VerifyFiscalPolicyAsync()
+{
+    MockFiscalPolicyRepository.Clear();
+    FiscalMentionDirectory.Reset();
+    var repository = new MockFiscalPolicyRepository();
+    var service = new FiscalPolicyService(
+        repository,
+        LoggerFactory.Create(_ => { }).CreateLogger<FiscalPolicyService>());
+    var token = CancellationToken.None;
+    const string actor = "00000000-0000-0000-0000-0000000000dd";
+    const string correlation = "smoke-fiscal";
+
+    var view = await service.GetAdminViewAsync(token);
+    Ensure(
+        view.Regimes.Count == 2
+        && view.Regimes.All(regime => regime.ActiveSource == "code"),
+        "Sans version enregistree, les deux regimes doivent afficher la mention du code.");
+    Ensure(
+        view.Regimes.Single(regime => regime.Regime == FiscalRegimes.FranchiseBase)
+            .ActiveMention == FiscalPolicy.FranchiseBaseMention,
+        "La mention appliquee par defaut doit etre celle du code.");
+
+    var future = DateTime.UtcNow.AddDays(30);
+
+    // Registre ferme : un regime inconnu n'est pas administrable.
+    Ensure(
+        (await service.AddMentionAsync(
+            new FiscalMentionCreateRequest("exoneration_speciale", "Mention inventee.", Iso(future), 0),
+            actor, correlation, token)).Code == "FISCAL_UNKNOWN_REGIME",
+        "Un regime hors registre doit etre refuse.");
+
+    // Aucune balise : la mention part dans des documents rendus.
+    Ensure(
+        (await service.AddMentionAsync(
+            new FiscalMentionCreateRequest(
+                FiscalRegimes.FranchiseBase, "<b>TVA non applicable</b>", Iso(future), 0),
+            actor, correlation, token)).Code == "FISCAL_INVALID_MENTION",
+        "Une mention contenant du balisage doit etre refusee.");
+
+    // Antidatage interdit : c'est l'invariant de non-retroactivite.
+    Ensure(
+        (await service.AddMentionAsync(
+            new FiscalMentionCreateRequest(
+                FiscalRegimes.FranchiseBase,
+                "TVA non applicable, art. 293 B du CGI (ancienne).",
+                Iso(DateTime.UtcNow.AddDays(-1)),
+                0),
+            actor, correlation, token)).Code == "FISCAL_EFFECTIVE_DATE_IN_PAST",
+        "Une date d'effet passee doit etre refusee : un document emis ne doit jamais changer.");
+
+    const string nextMention = "TVA au taux en vigueur, art. 293 B abandonne.";
+    var scheduled = await service.AddMentionAsync(
+        new FiscalMentionCreateRequest(FiscalRegimes.FranchiseBase, nextMention, Iso(future), 0),
+        actor, correlation, token);
+    Ensure(
+        scheduled.Code == "FISCAL_MENTION_SCHEDULED",
+        "Une mention future valide doit etre acceptee.");
+
+    var franchise = scheduled.View!.Regimes
+        .Single(regime => regime.Regime == FiscalRegimes.FranchiseBase);
+    Ensure(
+        franchise.ActiveSource == "code" && franchise.ActiveMention == FiscalPolicy.FranchiseBaseMention,
+        "Une mention planifiee ne doit pas s'appliquer avant sa date d'effet.");
+    Ensure(
+        franchise.Versions.Count == 1 && franchise.Versions[0].Scheduled,
+        "La version doit apparaitre comme planifiee, pas comme appliquee.");
+
+    // Le coeur de l'invariant : la resolution est faite « a la date ».
+    var policy = new FiscalPolicy();
+    Ensure(
+        policy.Resolve(null, DateTime.UtcNow).FiscalMention == FiscalPolicy.FranchiseBaseMention,
+        "Un document etabli aujourd'hui garde la mention en vigueur aujourd'hui.");
+    Ensure(
+        policy.Resolve(null, future.AddDays(1)).FiscalMention == nextMention,
+        "Un document etabli apres la date d'effet doit porter la nouvelle mention.");
+
+    Ensure(
+        (await service.AddMentionAsync(
+            new FiscalMentionCreateRequest(
+                FiscalRegimes.FranchiseBase, "Autre mention de test.", Iso(future.AddDays(2)), 0),
+            actor, correlation, token)).Code == "FISCAL_VERSION_CONFLICT",
+        "Une version attendue perimee doit etre refusee.");
+
+    Ensure(
+        (await service.AddMentionAsync(
+            new FiscalMentionCreateRequest(FiscalRegimes.FranchiseBase, "Doublon exact.", Iso(future), 1),
+            actor, correlation, token)).Code == "FISCAL_EFFECTIVE_DATE_TAKEN",
+        "Deux versions ne peuvent pas prendre effet au meme instant.");
+
+    // Une version deja appliquee documente ce qui a ete imprime : elle n'est
+    // pas supprimable.
+    var applied = new StoredFiscalMention(
+        Guid.NewGuid().ToString("D"),
+        FiscalRegimes.Standard,
+        "TVA au taux en vigueur (historique).",
+        DateTime.UtcNow.AddDays(-10),
+        DateTime.UtcNow.AddDays(-10),
+        actor);
+    Ensure(
+        await repository.TryAddAsync(applied, correlation, token),
+        "Le double de depot doit accepter une version historique.");
+    Ensure(
+        (await service.DeleteScheduledMentionAsync(applied.Id, correlation, token)).Code
+            == "FISCAL_MENTION_NOT_CANCELLABLE",
+        "Une mention deja en vigueur ne doit pas pouvoir etre supprimee.");
+
+    var cancelled = await service.DeleteScheduledMentionAsync(
+        scheduled.View!.Regimes
+            .Single(regime => regime.Regime == FiscalRegimes.FranchiseBase)
+            .Versions[0].Id,
+        correlation,
+        token);
+    Ensure(
+        cancelled.Code == "FISCAL_MENTION_CANCELLED",
+        "Une mention encore planifiee doit pouvoir etre annulee.");
+    Ensure(
+        policy.Resolve(null, future.AddDays(1)).FiscalMention == FiscalPolicy.FranchiseBaseMention,
+        "Apres annulation, la mention du code redevient celle qui s'applique.");
+
+    MockFiscalPolicyRepository.Clear();
+    FiscalMentionDirectory.Reset();
+}
+
+/// <summary>
+/// Les drapeaux Billing V2 sont decrits, pas seulement listes : sans contexte,
+/// un exploitant ne peut pas decider.
+/// </summary>
+static void VerifyBillingV2FeatureFlagRegistry()
+{
+    var keys = BillingV2FeatureFlagRegistry.Definitions
+        .Select(definition => definition.Key)
+        .ToArray();
+    Ensure(
+        keys.Length == keys.Distinct(StringComparer.Ordinal).Count(),
+        "Deux drapeaux ne peuvent pas partager la meme cle.");
+    Ensure(
+        BillingV2FeatureFlagRegistry.Definitions.All(definition =>
+            definition.Dependencies.All(dependency => keys.Contains(dependency))),
+        "Une dependance doit designer un drapeau existant.");
+
+    var described = BillingV2FeatureFlagRegistry.Describe(
+        new BillingV2RuntimeConfiguration(
+            NewSubscriptionsEnabled: true,
+            AuthoritativeCheckoutEnabled: false,
+            FirstRealSubscriptionApproved: false,
+            ProviderOutboxEnabled: false,
+            ProviderExecutorEnabled: false,
+            ProvisioningEnabled: false));
+    Ensure(
+        described.Count == keys.Length
+        && described.All(flag =>
+            flag.RestartRequired
+            && flag.Classification == "restart_required"),
+        "Tous les drapeaux Billing V2 sont resolus au demarrage : aucun ne doit se declarer dynamique.");
+    Ensure(
+        described.All(flag => !string.IsNullOrWhiteSpace(flag.Description)
+            && !string.IsNullOrWhiteSpace(flag.EnvironmentVariable)
+            && flag.Risk is "low" or "medium" or "high" or "critical"),
+        "Chaque drapeau doit porter description, variable et niveau de risque.");
+
+    var checkout = described.Single(flag => flag.Key == "authoritative_checkout");
+    Ensure(
+        !checkout.Enabled && checkout.UnsatisfiedDependencies.Count == 0,
+        "Un drapeau ferme ne signale pas de dependance manquante : il ne promet rien.");
+    var subscriptions = described.Single(flag => flag.Key == "new_subscriptions");
+    Ensure(
+        subscriptions.Enabled && subscriptions.UnsatisfiedDependencies.Count == 0,
+        "Un drapeau ouvert sans dependance ne doit rien signaler.");
+
+    var changes = BillingV2FeatureFlagRegistry.Describe(
+        new BillingV2RuntimeConfiguration(
+            NewSubscriptionsEnabled: false,
+            AuthoritativeCheckoutEnabled: false,
+            FirstRealSubscriptionApproved: false,
+            ProviderOutboxEnabled: false,
+            ProviderExecutorEnabled: false,
+            ProvisioningEnabled: false) with { SubscriptionChangesEnabled = true })
+        .Single(flag => flag.Key == "subscription_changes");
+    Ensure(
+        changes.Enabled && changes.UnsatisfiedDependencies.Count == 2,
+        "Un drapeau ouvert dont les dependances sont fermees doit etre signale comme sans effet.");
+}
+
+static string Iso(DateTime value)
+    => DateTime.SpecifyKind(value, DateTimeKind.Utc)
+        .ToString("yyyy-MM-ddTHH:mm:ssZ", System.Globalization.CultureInfo.InvariantCulture);
 
 static SignupService NewSignupService(
     MockSignupStore signupStore,

@@ -2496,6 +2496,114 @@ export interface ConfigurationStatusDomain { key: string; label: string; state: 
 export interface ConfigurationStatusSnapshot { domains: ConfigurationStatusDomain[]; }
 export interface PortalBillingConfiguration { iban: string | null; bic: string | null; paypalUrl: string | null; transferLabel: string; }
 
+// --- Fiscalite et Billing V2 (Centre de configuration, section 14) ----------
+// Contrats non sensibles : ni taux, ni montant, ni secret. Le calcul de la taxe
+// reste cote API-INTERNAL ; seule la formulation de la mention est administrable.
+
+// `FiscalRegime` est deja declare plus haut : le registre reste ferme, cette
+// constante ne fait qu'en donner la forme enumerable pour l'interface.
+export const FISCAL_REGIMES: readonly FiscalRegime[] = ["franchise_base", "standard"];
+
+export interface FiscalMentionVersionItem {
+  id: string;
+  regime: FiscalRegime;
+  mention: string;
+  effectiveFrom: string;
+  createdAt: string;
+  createdByUserId: string | null;
+  active: boolean;
+  scheduled: boolean;
+}
+
+export interface FiscalPolicyRegimeView {
+  regime: FiscalRegime;
+  label: string;
+  description: string;
+  defaultMention: string;
+  activeMention: string;
+  activeEffectiveFrom: string | null;
+  activeSource: "code" | "database";
+  version: number;
+  versions: FiscalMentionVersionItem[];
+}
+
+export interface FiscalPolicyAdminView {
+  regimes: FiscalPolicyRegimeView[];
+  persistent: boolean;
+}
+
+export interface FiscalMentionCreatePayload {
+  regime: FiscalRegime;
+  mention: string;
+  effectiveFrom: string;
+  expectedVersion: number;
+}
+
+export interface FiscalPolicyMutationResponse {
+  code: string;
+  message: string;
+  view: FiscalPolicyAdminView | null;
+  correlationId: string;
+}
+
+export interface BillingV2FeatureFlagItem {
+  key: string;
+  environmentVariable: string;
+  label: string;
+  description: string;
+  enabled: boolean;
+  risk: "low" | "medium" | "high" | "critical";
+  dependencies: string[];
+  unsatisfiedDependencies: string[];
+  restartRequired: boolean;
+  classification: "dynamic" | "restart_required" | "secret" | "code_invariant";
+  source: string;
+}
+
+export interface BillingV2CatalogSummary {
+  source: string;
+  editable: boolean;
+  currency: string;
+  serviceCount: number;
+  activeServiceCount: number;
+  presetCount: number;
+  activePresetCount: number;
+  commitmentCount: number;
+}
+
+export interface BillingV2ConfigurationProviderReadiness {
+  provider: string;
+  environment: string;
+  providerConfigured: boolean;
+  priceMappingsReady: boolean;
+  requiredServicePriceCount: number;
+  resolvedMappingCount: number;
+  readyForCheckout: boolean;
+}
+
+export interface BillingV2ConfigurationLimitation {
+  code: string;
+  severity: string;
+  message: string;
+}
+
+export interface BillingV2ReadinessSummary {
+  persistentSqlAvailable: boolean;
+  schemaReady: boolean;
+  canRequestFirstRealSubscription: boolean;
+  reasonCode: string;
+  providers: BillingV2ConfigurationProviderReadiness[];
+  limitations: BillingV2ConfigurationLimitation[];
+}
+
+export interface BillingV2ConfigurationOverview {
+  catalog: BillingV2CatalogSummary | null;
+  readiness: BillingV2ReadinessSummary | null;
+  flags: BillingV2FeatureFlagItem[];
+  reconciliationIntervalSeconds: number;
+  correlationId: string;
+}
+
 // --- Messages et communications (Centre de configuration, section 8) --------
 // Contrats non sensibles : aucune adresse serveur, aucun secret. Les gabarits
 // sont administrables mais leurs cles et variables restent fermees cote code.

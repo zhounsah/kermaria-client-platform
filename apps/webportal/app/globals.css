@@ -9565,3 +9565,42 @@ fieldset.form-field > .form-hint {
 .admin-diagnostic-rules-safety { display:grid; gap:6px; margin:0; background:var(--surface-muted); }
 .admin-diagnostic-rules-safety p { margin:0; color:var(--muted); line-height:1.6; }
 @media (max-width:820px) { .admin-diagnostic-rules-grid { grid-template-columns:1fr; } }
+
+/* Centre de configuration - facturation et fiscalite */
+.admin-billing-center { display:grid; gap:28px; }
+.admin-billing-center > section { display:grid; gap:16px; }
+.admin-billing-center h2 { margin:0; }
+.admin-billing-center h3 { margin:0; }
+.admin-billing-regime { display:grid; gap:14px; padding:18px; border:1px solid var(--border,#d7dee8); border-radius:12px; background:var(--surface,#fff); }
+.admin-billing-regime header p { margin:6px 0 0; color:var(--muted); line-height:1.55; }
+.admin-billing-regime dl { display:grid; gap:10px; margin:0; }
+.admin-billing-regime dl div { display:grid; gap:2px; }
+.admin-billing-regime dt { font-size:.8rem; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+.admin-billing-regime dd { margin:0; }
+.admin-billing-regime form { display:grid; gap:8px; }
+.admin-billing-regime form label { font-weight:700; font-size:.86rem; }
+.admin-billing-regime form button { justify-self:start; }
+.admin-billing-regime ul { display:grid; gap:8px; margin:0; padding:0; list-style:none; }
+.admin-billing-regime li { display:grid; gap:2px; padding:10px 12px; border-left:3px solid var(--border,#d7dee8); background:var(--surface-muted,#f4f6fa); }
+.admin-billing-regime li small { color:var(--muted); }
+.admin-billing-regime li button { justify-self:start; }
+.admin-billing-summary { display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); margin:0; }
+.admin-billing-summary div { display:grid; gap:3px; padding:12px 14px; border:1px solid var(--border,#d7dee8); border-radius:10px; }
+.admin-billing-summary dt { font-size:.78rem; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+.admin-billing-summary dd { margin:0; font-weight:600; }
+.admin-billing-providers { width:100%; border-collapse:collapse; }
+.admin-billing-providers caption { text-align:left; padding-bottom:8px; color:var(--muted); }
+.admin-billing-providers th, .admin-billing-providers td { padding:8px 10px; border-bottom:1px solid var(--border,#d7dee8); text-align:left; }
+.admin-billing-flags { display:grid; gap:14px; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); }
+.admin-billing-flag { display:grid; gap:10px; padding:16px; border:1px solid var(--border,#d7dee8); border-left-width:4px; border-radius:10px; }
+.admin-billing-flag-on { border-left-color:#1f7a4d; }
+.admin-billing-flag-off { border-left-color:var(--border,#d7dee8); }
+.admin-billing-flag h4 { margin:2px 0 0; }
+.admin-billing-flag p { margin:0; color:var(--muted); line-height:1.55; }
+.admin-billing-flag dl { display:grid; gap:6px; margin:0; }
+.admin-billing-flag dl div { display:grid; grid-template-columns:9rem 1fr; gap:8px; }
+.admin-billing-flag dt { font-size:.8rem; color:var(--muted); }
+.admin-billing-flag dd { margin:0; font-size:.88rem; }
+.admin-billing-flag [role="status"] { color:#8a5300; }
+.admin-billing-links { display:flex; flex-wrap:wrap; gap:10px; }
+@media (max-width:820px) { .admin-billing-flag dl div { grid-template-columns:1fr; } }

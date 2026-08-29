@@ -18,6 +18,7 @@ export default async function AdminSettingsPage() {
     <nav aria-label="Sections du centre de configuration" className="admin-settings-subnav">
       <Link className="button button-secondary" href="/admin/settings/messages">Messages & communications</Link>
       <Link className="button button-secondary" href="/admin/settings/diagnostic">Diagnostic</Link>
+      <Link className="button button-secondary" href="/admin/settings/billing">Facturation & fiscalité</Link>
     </nav>
     {result.error ? <ErrorState title="Configuration indisponible" description="Le centre de configuration ne peut pas être chargé pour le moment." reference={result.correlationId} /> : <AdminSettingsCenter initialSnapshot={result.data} statusDomains={statusResult.error ? [] : statusResult.data.domains} />}
   </>;
