@@ -12,6 +12,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import { FormMessage } from "@/components/FormMessage";
+import { StatusBadge } from "@/components/StatusBadge";
 import { requestBffJson } from "@/lib/client-api";
 
 const riskLabels: Record<string, string> = {
@@ -40,14 +41,32 @@ export function AdminBillingConfigurationCenter({
   const [message, setMessage] = useState<
     { tone: "success" | "error"; text: string } | null
   >(null);
+  const [surface, setSurface] = useState<"fiscal" | "billing">("fiscal");
+  const [selectedRegimeKey, setSelectedRegimeKey] = useState(
+    initialFiscalPolicy.regimes[0]?.regime ?? "",
+  );
+  const selectedRegime = policy.regimes.find(
+    (regime) => regime.regime === selectedRegimeKey,
+  ) ?? policy.regimes[0] ?? null;
 
   return (
-    <section aria-label="Facturation et fiscalité" className="admin-billing-center">
-      <p className="muted">
-        {policy.persistent
-          ? "Les mentions fiscales sont persistées dans MariaDB."
-          : "Mode de démonstration : les mentions disparaissent au redémarrage."}
-      </p>
+    <section
+      aria-label="Facturation et fiscalité"
+      className="content-panel section-card admin-settings-surface admin-settings-focused-page admin-billing-center"
+    >
+      <header className="admin-settings-focused-header">
+        <div>
+          <h2>Facturation et fiscalité</h2>
+          <p>
+            Séparez les mentions fiscales administrables de l’état opérationnel de
+            Billing V2. Chaque modification reste limitée à l’élément sélectionné.
+          </p>
+        </div>
+        <span className="admin-settings-persistence-note">
+          {policy.persistent ? "Persistance MariaDB" : "Mode temporaire"}
+        </span>
+      </header>
+
       {message ? (
         <FormMessage
           tone={message.tone}
@@ -57,40 +76,114 @@ export function AdminBillingConfigurationCenter({
         </FormMessage>
       ) : null}
 
-      <section aria-label="Fiscalité">
-        <h2>Fiscalité</h2>
-        <p className="muted">
-          Le calcul de la taxe reste établi par API-INTERNAL à partir du taux
-          porté par le document. Seule la formulation de la mention est
-          administrable, et uniquement pour un régime déjà connu du code. Une
-          mention prend effet à une date choisie et ne modifie jamais un
-          document déjà émis.
-        </p>
-        {policy.regimes.map((regime) => (
-          <RegimeEditor
-            key={regime.regime}
-            regime={regime}
-            onResult={(result) => {
-              if (result.view) setPolicy(result.view);
-              setMessage({
-                tone: result.view ? "success" : "error",
-                text: result.message,
-              });
-            }}
-          />
-        ))}
-      </section>
+      <div
+        aria-label="Rubrique de facturation"
+        className="admin-settings-segmented"
+        role="tablist"
+      >
+        <button
+          aria-selected={surface === "fiscal"}
+          className={surface === "fiscal" ? "is-active" : undefined}
+          onClick={() => {
+            setSurface("fiscal");
+            setMessage(null);
+          }}
+          role="tab"
+          type="button"
+        >
+          Fiscalité
+        </button>
+        <button
+          aria-selected={surface === "billing"}
+          className={surface === "billing" ? "is-active" : undefined}
+          onClick={() => {
+            setSurface("billing");
+            setMessage(null);
+          }}
+          role="tab"
+          type="button"
+        >
+          Billing V2
+        </button>
+      </div>
 
-      <section aria-label="Billing V2">
-        <h2>Billing V2</h2>
-        {billingV2 === null ? (
-          <p className="muted">
-            Le résumé Billing V2 n&apos;est pas disponible pour le moment.
-          </p>
-        ) : (
-          <BillingV2Summary overview={billingV2} />
-        )}
-      </section>
+      {surface === "fiscal" ? (
+        <div className="admin-settings-workspace admin-settings-billing-workspace">
+          <aside aria-label="Régimes fiscaux" className="admin-settings-selector">
+            <div className="admin-settings-selector-heading">
+              <strong>
+                {policy.regimes.length} régime{policy.regimes.length > 1 ? "s" : ""}
+              </strong>
+              <span>Choisissez le régime dont vous voulez gérer la mention.</span>
+            </div>
+            <div className="admin-settings-selector-list">
+              {policy.regimes.map((regime) => (
+                <button
+                  aria-current={
+                    selectedRegime?.regime === regime.regime ? "true" : undefined
+                  }
+                  className="admin-settings-selector-item"
+                  key={regime.regime}
+                  onClick={() => {
+                    setSelectedRegimeKey(regime.regime);
+                    setMessage(null);
+                  }}
+                  type="button"
+                >
+                  <span>{regime.label}</span>
+                  <small>
+                    {regime.activeSource === "code"
+                      ? "Mention du code"
+                      : "Mention enregistrée"}
+                    {" · "}
+                    v{regime.version}
+                  </small>
+                </button>
+              ))}
+            </div>
+          </aside>
+
+          <div className="admin-settings-detail-panel">
+            {selectedRegime ? (
+              <RegimeEditor
+                key={`${selectedRegime.regime}-${selectedRegime.version}`}
+                regime={selectedRegime}
+                onResult={(result) => {
+                  if (result.view) setPolicy(result.view);
+                  setMessage({
+                    tone: result.view ? "success" : "error",
+                    text: result.message,
+                  });
+                }}
+              />
+            ) : (
+              <p className="admin-settings-inline-state muted">
+                Aucun régime fiscal disponible.
+              </p>
+            )}
+          </div>
+        </div>
+      ) : (
+        <section
+          aria-labelledby="billing-v2-title"
+          className="admin-settings-single-surface"
+        >
+          <header>
+            <h3 id="billing-v2-title">Billing V2</h3>
+            <p>
+              État du catalogue, des prestataires, des feature flags et de la préparation
+              au checkout. Cette vue reste en lecture.
+            </p>
+          </header>
+          {billingV2 === null ? (
+            <p className="admin-settings-inline-state muted">
+              Le résumé Billing V2 n&apos;est pas disponible pour le moment.
+            </p>
+          ) : (
+            <BillingV2Summary overview={billingV2} />
+          )}
+        </section>
+      )}
     </section>
   );
 }
@@ -323,7 +416,8 @@ function BillingV2Summary({
       </dl>
 
       {overview.readiness && overview.readiness.providers.length > 0 ? (
-        <table className="admin-billing-providers">
+        <div className="admin-settings-table-scroll">
+          <table className="admin-billing-providers">
           <caption>Prestataires et correspondances de prix</caption>
           <thead>
             <tr>
@@ -339,16 +433,17 @@ function BillingV2Summary({
               <tr key={`${provider.provider}-${provider.environment}`}>
                 <th scope="row">{provider.provider}</th>
                 <td>{provider.environment}</td>
-                <td>{provider.providerConfigured ? "Oui" : "Non"}</td>
+                <td><StatusBadge label={provider.providerConfigured ? "Configur\u00e9" : "Incomplet"} tone={provider.providerConfigured ? "success" : "warning"} /></td>
                 <td>
                   {provider.resolvedMappingCount}/
                   {provider.requiredServicePriceCount}
                 </td>
-                <td>{provider.readyForCheckout ? "Prêt" : "Non prêt"}</td>
+                <td><StatusBadge label={provider.readyForCheckout ? "Pr\u00eat" : "Non pr\u00eat"} tone={provider.readyForCheckout ? "success" : "warning"} /></td>
               </tr>
             ))}
           </tbody>
         </table>
+        </div>
       ) : null}
 
       {overview.readiness && overview.readiness.limitations.length > 0 ? (
@@ -406,7 +501,7 @@ function FlagCard({ flag }: { flag: BillingV2FeatureFlagItem }) {
         <div>
           <dt>État</dt>
           <dd>
-            <strong>{flag.enabled ? "Activé" : "Désactivé"}</strong>
+            <StatusBadge label={flag.enabled ? "Activ\u00e9" : "D\u00e9sactiv\u00e9"} tone={flag.enabled ? "success" : "neutral"} />
           </dd>
         </div>
         <div>

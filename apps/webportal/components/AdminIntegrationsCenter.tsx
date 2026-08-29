@@ -7,6 +7,7 @@ import type {
 import { useState } from "react";
 
 import { FormMessage } from "@/components/FormMessage";
+import { StatusBadge } from "@/components/StatusBadge";
 import { requestBffJson } from "@/lib/client-api";
 
 const stateLabels: Record<IntegrationView["state"], string> = {
@@ -34,17 +35,28 @@ export function AdminIntegrationsCenter({
   const [message, setMessage] = useState<
     { tone: "success" | "error"; text: string } | null
   >(null);
+  const [selectedKey, setSelectedKey] = useState(integrations[0]?.key ?? "");
+  const selected = integrations.find((integration) => integration.key === selectedKey)
+    ?? integrations[0]
+    ?? null;
 
   return (
-    <section aria-label="Intégrations" className="admin-integrations">
-      <p className="muted">
-        Cette page observe les intégrations sans jamais afficher leurs secrets :
-        un mot de passe, une clé ou un jeton n&apos;y apparaît que par sa
-        présence. Les modes ne se règlent pas ici — ils commandent des appels
-        réels chez des tiers et se changent sur la machine, avant un redémarrage
-        du service.
-      </p>
-      <p className="muted">Dernier relevé : {formatDate(checkedAt)}</p>
+    <section
+      aria-label="Intégrations"
+      className="content-panel section-card admin-settings-surface admin-settings-focused-page admin-integrations"
+    >
+      <header className="admin-settings-focused-header">
+        <div>
+          <h2>Intégrations</h2>
+          <p>
+            Sélectionnez le service externe à contrôler. Les secrets restent masqués et
+            une seule intégration est détaillée à la fois.
+          </p>
+        </div>
+        <span className="admin-settings-persistence-note">
+          Relevé {formatDate(checkedAt)}
+        </span>
+      </header>
 
       {message ? (
         <FormMessage
@@ -55,81 +67,146 @@ export function AdminIntegrationsCenter({
         </FormMessage>
       ) : null}
 
-      <ul className="admin-integration-list">
-        {integrations.map((integration) => (
-          <li
-            className={`admin-integration admin-integration-${integration.state}`}
-            key={integration.key}
-          >
-            <header>
-              <h3>{integration.label}</h3>
-              <p className="muted">
-                {stateLabels[integration.state]} · mode {integration.mode} ·{" "}
-                {integration.configured ? "configurée" : "incomplète"}
-              </p>
-            </header>
+      <div className="admin-settings-workspace admin-settings-integrations-workspace">
+        <aside aria-label="Intégrations disponibles" className="admin-settings-selector">
+          <div className="admin-settings-selector-heading">
+            <strong>{integrations.length} intégration{integrations.length > 1 ? "s" : ""}</strong>
+            <span>Ouvrez uniquement le service que vous voulez examiner.</span>
+          </div>
+          <div className="admin-settings-selector-list">
+            {integrations.map((integration) => (
+              <button
+                aria-current={selected?.key === integration.key ? "true" : undefined}
+                className="admin-settings-selector-item"
+                key={integration.key}
+                onClick={() => {
+                  setSelectedKey(integration.key);
+                  setMessage(null);
+                }}
+                type="button"
+              >
+                <span>{integration.label}</span>
+                <small>
+                  {integration.configured ? "Configurée" : "Configuration incomplète"}
+                  {" · "}
+                  {stateLabels[integration.state]}
+                </small>
+                <StatusBadge
+                  label={integration.state === "healthy" ? "Prêt" : stateLabels[integration.state]}
+                  tone={
+                    integration.state === "healthy"
+                      ? "success"
+                      : integration.state === "warning"
+                        ? "warning"
+                        : integration.state === "critical"
+                          ? "danger"
+                          : "info"
+                  }
+                />
+              </button>
+            ))}
+          </div>
+        </aside>
 
-            {integration.warning ? (
-              <p role="status">{integration.warning}</p>
-            ) : null}
-            {integration.riskNote ? (
-              <p className="muted">{integration.riskNote}</p>
-            ) : null}
-
-            <dl className="admin-integration-facts">
-              {integration.facts.map((fact) => (
-                <div key={fact.label}>
-                  <dt>{fact.label}</dt>
-                  <dd>
-                    {fact.value}
-                    {fact.kind === "secret" ? (
-                      <span className="admin-integration-secret">
-                        {" "}
-                        (valeur jamais transmise)
-                      </span>
-                    ) : null}
-                  </dd>
+        <div className="admin-settings-detail-panel">
+          {selected ? (
+            <article className={`admin-integration admin-integration-${selected.state}`}>
+              <header className="admin-integration-heading">
+                <div>
+                  <p className="eyebrow">Service sélectionné</p>
+                  <h3>{selected.label}</h3>
+                  <p className="muted">
+                    Mode {selected.mode} {" · "}
+                    {selected.configured ? "configuration complète" : "configuration incomplète"}
+                  </p>
                 </div>
-              ))}
-            </dl>
+                <StatusBadge
+                  label={stateLabels[selected.state]}
+                  tone={
+                    selected.state === "healthy"
+                      ? "success"
+                      : selected.state === "warning"
+                        ? "warning"
+                        : selected.state === "critical"
+                          ? "danger"
+                          : "info"
+                  }
+                />
+              </header>
 
-            <dl className="admin-integration-facts">
-              <div>
-                <dt>Dernier succès</dt>
-                <dd>{formatDate(integration.lastSuccessAt)}</dd>
-              </div>
-              <div>
-                <dt>Dernière erreur</dt>
-                <dd>
-                  {formatDate(integration.lastErrorAt)}
-                  {integration.lastErrorSummary
-                    ? ` — ${integration.lastErrorSummary}`
-                    : ""}
-                </dd>
-              </div>
-            </dl>
+              {selected.warning ? <p role="status">{selected.warning}</p> : null}
+              {selected.riskNote ? <p className="muted">{selected.riskNote}</p> : null}
 
-            <ul className="admin-integration-operations">
-              {integration.operations.map((operation) => (
-                <li key={operation.key}>
-                  <strong>{operation.label}</strong>
-                  <small>{operation.description}</small>
-                  {operation.available && operation.key === "smtp_test" ? (
-                    <SmtpTestForm onResult={setMessage} />
-                  ) : (
-                    <small>
-                      Indisponible
-                      {operation.unavailableReason
-                        ? ` — ${operation.unavailableReason}`
-                        : ""}
-                    </small>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </li>
-        ))}
-      </ul>
+              <section className="admin-settings-detail-section" aria-labelledby="integration-config-title">
+                <header>
+                  <h4 id="integration-config-title">Configuration effective</h4>
+                  <p>Valeurs non sensibles observées pour ce service.</p>
+                </header>
+                <dl className="admin-integration-facts">
+                  {selected.facts.map((fact) => (
+                    <div key={fact.label}>
+                      <dt>{fact.label}</dt>
+                      <dd>
+                        {fact.value}
+                        {fact.kind === "secret" ? (
+                          <span className="admin-integration-secret"> (valeur jamais transmise)</span>
+                        ) : null}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </section>
+
+              <section className="admin-settings-detail-section" aria-labelledby="integration-health-title">
+                <header>
+                  <h4 id="integration-health-title">Activité récente</h4>
+                  <p>Dernier succès et dernière erreur connus.</p>
+                </header>
+                <dl className="admin-integration-facts">
+                  <div>
+                    <dt>Dernier succès</dt>
+                    <dd>{formatDate(selected.lastSuccessAt)}</dd>
+                  </div>
+                  <div>
+                    <dt>Dernière erreur</dt>
+                    <dd>
+                      {formatDate(selected.lastErrorAt)}
+                      {selected.lastErrorSummary ? ` · ${selected.lastErrorSummary}` : ""}
+                    </dd>
+                  </div>
+                </dl>
+              </section>
+
+              {selected.operations.length > 0 ? (
+                <section className="admin-settings-detail-section" aria-labelledby="integration-actions-title">
+                  <header>
+                    <h4 id="integration-actions-title">Actions disponibles</h4>
+                    <p>Les opérations restent bornées par API-INTERNAL.</p>
+                  </header>
+                  <ul className="admin-integration-operations">
+                    {selected.operations.map((operation) => (
+                      <li key={operation.key}>
+                        <strong>{operation.label}</strong>
+                        <small>{operation.description}</small>
+                        {operation.available && operation.key === "smtp_test" ? (
+                          <SmtpTestForm onResult={setMessage} />
+                        ) : (
+                          <small>
+                            {operation.available ? "Disponible" : "Indisponible"}
+                            {operation.unavailableReason ? ` · ${operation.unavailableReason}` : ""}
+                          </small>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
+            </article>
+          ) : (
+            <p className="admin-settings-inline-state muted">Aucune intégration disponible.</p>
+          )}
+        </div>
+      </div>
     </section>
   );
 }

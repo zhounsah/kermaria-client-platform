@@ -62,6 +62,12 @@ export function AdminDemoTemplatesCenter({
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [surface, setSurface] = useState<"templates" | "conversion" | "history">(
+    "templates",
+  );
+  const [selectedKey, setSelectedKey] = useState(
+    initialView.templates[0]?.templateKey ?? "",
+  );
 
   function applyResult(result: DemoContentTemplateMutationResponse) {
     if (result.view) setView(result.view);
@@ -119,23 +125,31 @@ export function AdminDemoTemplatesCenter({
   }
 
   const administered = view.authority === "database";
+  const selectedTemplate = view.templates.find(
+    (template) => template.templateKey === selectedKey,
+  ) ?? view.templates[0] ?? null;
 
   return (
-    <section aria-label="Modèles de démonstration" className="admin-demo-templates">
-      <p className="muted">
-        {administered
-          ? view.persistent
-            ? "Les modèles sont administrés en base MariaDB : ils font autorité."
-            : "Mode de démonstration : les modèles administrés disparaissent au redémarrage."
-          : "Aucun modèle administré : le registre intégré au code fait autorité. Recopiez-le en base pour pouvoir le modifier."}
-      </p>
-      <p className="muted">
-        Un modèle décrit les services affichés sur un compte de démonstration.
-        Le type de service reste borné par le code : un type inconnu serait
-        refusé, car ni le provisionnement ni l&apos;affichage ne sauraient le
-        traiter. Les conditions commerciales affichées restent «{" "}
-        {view.commercialTermsLabel} ».
-      </p>
+    <section
+      aria-label="Modèles de démonstration"
+      className="content-panel section-card admin-settings-surface admin-settings-focused-page admin-demo-templates"
+    >
+      <header className="admin-settings-focused-header">
+        <div>
+          <h2>Démonstrations</h2>
+          <p>
+            Gérez les modèles de compte sans mélanger l’édition, les paramètres de
+            conversion et l’historique.
+          </p>
+        </div>
+        <span className="admin-settings-persistence-note">
+          {administered
+            ? view.persistent
+              ? "Autorité MariaDB"
+              : "Autorité temporaire"
+            : "Autorité du code"}
+        </span>
+      </header>
 
       {message ? (
         <FormMessage
@@ -147,186 +161,306 @@ export function AdminDemoTemplatesCenter({
       ) : null}
 
       {!administered ? (
-        <button
-          className="button button-primary"
-          disabled={busy}
-          onClick={() =>
-            void send("/api/admin/settings/demo-templates/import", "POST")
-          }
-          type="button"
-        >
-          {busy ? "Recopie…" : "Recopier les modèles du code en base"}
-        </button>
+        <div className="admin-settings-callout">
+          <div>
+            <strong>Les modèles du code font actuellement autorité.</strong>
+            <p>
+              Recopiez-les en base pour pouvoir les modifier depuis le Centre de
+              configuration.
+            </p>
+          </div>
+          <button
+            className="button button-primary"
+            disabled={busy}
+            onClick={() => void send("/api/admin/settings/demo-templates/import", "POST")}
+            type="button"
+          >
+            {busy ? "Recopie…" : "Recopier les modèles en base"}
+          </button>
+        </div>
       ) : null}
 
-      <ul className="admin-demo-template-list">
-        {view.templates.map((template) => (
-          <li className="admin-demo-template" key={template.templateKey}>
-            <header>
-              <h3>{template.label}</h3>
-              <p className="muted">
-                <code>{template.templateKey}</code> ·{" "}
-                {template.source === "code"
-                  ? "porté par le code"
-                  : `version ${template.version}, modifié le ${formatDate(template.updatedAt)}`}
-                {template.enabled ? "" : " · désactivé"}
-              </p>
-              {template.description ? <p>{template.description}</p> : null}
-              {template.usedByProfileKeys.length > 0 ? (
-                <p className="muted">
-                  Référencé par : {template.usedByProfileKeys.join(", ")}
-                </p>
-              ) : null}
-            </header>
+      <div
+        aria-label="Rubrique des démonstrations"
+        className="admin-settings-segmented"
+        role="tablist"
+      >
+        <button
+          aria-selected={surface === "templates"}
+          className={surface === "templates" ? "is-active" : undefined}
+          onClick={() => setSurface("templates")}
+          role="tab"
+          type="button"
+        >
+          Modèles
+        </button>
+        <button
+          aria-selected={surface === "conversion"}
+          className={surface === "conversion" ? "is-active" : undefined}
+          onClick={() => setSurface("conversion")}
+          role="tab"
+          type="button"
+        >
+          Conversion
+        </button>
+        <button
+          aria-selected={surface === "history"}
+          className={surface === "history" ? "is-active" : undefined}
+          onClick={() => setSurface("history")}
+          role="tab"
+          type="button"
+        >
+          Historique
+        </button>
+      </div>
 
-            <section aria-label={`Aperçu — ${template.label}`}>
-              <h4>Aperçu du compte de démonstration</h4>
-              <ul className="admin-demo-template-services">
-                {template.services.map((service) => (
-                  <li key={service.name}>
-                    <strong>{service.name}</strong>
-                    <small>
-                      {serviceTypeLabels[service.serviceType] ?? service.serviceType}
-                      {" · "}
-                      {view.commercialTermsLabel}
-                    </small>
-                    <span>{service.description}</span>
-                    <small>{service.scope}</small>
-                  </li>
-                ))}
-              </ul>
-            </section>
+      {surface === "templates" ? (
+        <div className="admin-settings-workspace admin-settings-demo-workspace">
+          <aside aria-label="Modèles disponibles" className="admin-settings-selector">
+            <div className="admin-settings-selector-heading">
+              <strong>{view.templates.length} modèle{view.templates.length > 1 ? "s" : ""}</strong>
+              <span>Sélectionnez le compte de démonstration à examiner.</span>
+            </div>
+            {administered ? (
+              <button
+                className="button button-secondary admin-settings-selector-create"
+                disabled={busy}
+                onClick={() => {
+                  setCreating(true);
+                  setEditingKey(null);
+                }}
+                type="button"
+              >
+                Ajouter un modèle
+              </button>
+            ) : null}
+            <div className="admin-settings-selector-list">
+              {view.templates.map((template) => (
+                <button
+                  aria-current={
+                    !creating && selectedTemplate?.templateKey === template.templateKey
+                      ? "true"
+                      : undefined
+                  }
+                  className="admin-settings-selector-item"
+                  key={template.templateKey}
+                  onClick={() => {
+                    setSelectedKey(template.templateKey);
+                    setCreating(false);
+                    setEditingKey(null);
+                    setMessage(null);
+                  }}
+                  type="button"
+                >
+                  <span>{template.label}</span>
+                  <small>
+                    {template.enabled ? "Actif" : "Désactivé"}
+                    {" · "}
+                    {template.source === "code" ? "Code" : `v${template.version}`}
+                  </small>
+                </button>
+              ))}
+            </div>
+          </aside>
 
-            {template.editable ? (
-              editingKey === template.templateKey ? (
+          <div className="admin-settings-detail-panel">
+            {creating ? (
+              <section className="admin-settings-single-surface">
+                <header>
+                  <h3>Nouveau modèle</h3>
+                  <p>Définissez le modèle puis les services présentés au compte.</p>
+                </header>
                 <TemplateEditor
                   busy={busy}
-                  initial={toDraft(template)}
+                  initial={{
+                    templateKey: "",
+                    label: "",
+                    description: "",
+                    enabled: true,
+                    displayOrder: 100,
+                    expectedVersion: 0,
+                    services: [emptyService()],
+                  }}
                   knownServiceTypes={view.knownServiceTypes}
-                  lockKey
-                  onCancel={() => setEditingKey(null)}
+                  lockKey={false}
+                  onCancel={() => setCreating(false)}
                   onSubmit={(payload) =>
                     send("/api/admin/settings/demo-templates", "PUT", payload)
                   }
                 />
-              ) : (
-                <div className="admin-demo-template-actions">
-                  <button
-                    className="button button-secondary"
-                    disabled={busy}
-                    onClick={() => setEditingKey(template.templateKey)}
-                    type="button"
-                  >
-                    Modifier
-                  </button>
-                  <button
-                    className="button button-link"
-                    disabled={busy || template.usedByProfileKeys.length > 0}
-                    onClick={() => void remove(template)}
-                    type="button"
-                  >
-                    Supprimer
-                  </button>
-                </div>
-              )
-            ) : (
-              <p className="muted">
-                Lecture seule tant que les modèles du code n&apos;ont pas été
-                recopiés en base.
-              </p>
-            )}
-          </li>
-        ))}
-      </ul>
+              </section>
+            ) : selectedTemplate ? (
+              <article className="admin-demo-template admin-settings-selected-entity">
+                <header>
+                  <div>
+                    <p className="eyebrow">Modèle sélectionné</p>
+                    <h3>{selectedTemplate.label}</h3>
+                    {selectedTemplate.description ? <p>{selectedTemplate.description}</p> : null}
+                    <small>
+                      <code>{selectedTemplate.templateKey}</code>
+                      {" · "}
+                      {selectedTemplate.source === "code"
+                        ? "porté par le code"
+                        : `version ${selectedTemplate.version}, modifié le ${formatDate(selectedTemplate.updatedAt)}`}
+                    </small>
+                  </div>
+                </header>
 
-      {administered ? (
-        creating ? (
-          <TemplateEditor
-            busy={busy}
-            initial={{
-              templateKey: "",
-              label: "",
-              description: "",
-              enabled: true,
-              displayOrder: 100,
-              expectedVersion: 0,
-              services: [emptyService()],
-            }}
-            knownServiceTypes={view.knownServiceTypes}
-            lockKey={false}
-            onCancel={() => setCreating(false)}
-            onSubmit={(payload) =>
-              send("/api/admin/settings/demo-templates", "PUT", payload)
-            }
-          />
-        ) : (
-          <button
-            className="button button-primary"
-            disabled={busy}
-            onClick={() => setCreating(true)}
-            type="button"
-          >
-            Ajouter un modèle
-          </button>
-        )
+                {selectedTemplate.usedByProfileKeys.length > 0 ? (
+                  <p className="admin-settings-entity-note">
+                    Référencé par : {selectedTemplate.usedByProfileKeys.join(", ")}
+                  </p>
+                ) : null}
+
+                <section
+                  aria-label={`Aperçu — ${selectedTemplate.label}`}
+                  className="admin-settings-detail-section"
+                >
+                  <header>
+                    <h4>Aperçu du compte</h4>
+                    <p>
+                      {selectedTemplate.services.length} service
+                      {selectedTemplate.services.length > 1 ? "s" : ""} présenté
+                      {selectedTemplate.services.length > 1 ? "s" : ""}.
+                    </p>
+                  </header>
+                  <ul className="admin-demo-template-services">
+                    {selectedTemplate.services.map((service) => (
+                      <li key={`${service.serviceType}-${service.name}`}>
+                        <strong>{service.name}</strong>
+                        <small>
+                          {serviceTypeLabels[service.serviceType] ?? service.serviceType}
+                          {" · "}
+                          {view.commercialTermsLabel}
+                        </small>
+                        <span>{service.description}</span>
+                        <small>{service.scope}</small>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+
+                {selectedTemplate.editable ? (
+                  editingKey === selectedTemplate.templateKey ? (
+                    <TemplateEditor
+                      busy={busy}
+                      initial={toDraft(selectedTemplate)}
+                      knownServiceTypes={view.knownServiceTypes}
+                      lockKey
+                      onCancel={() => setEditingKey(null)}
+                      onSubmit={(payload) =>
+                        send("/api/admin/settings/demo-templates", "PUT", payload)
+                      }
+                    />
+                  ) : (
+                    <div className="admin-demo-template-actions">
+                      <button
+                        className="button button-secondary"
+                        disabled={busy}
+                        onClick={() => setEditingKey(selectedTemplate.templateKey)}
+                        type="button"
+                      >
+                        Modifier ce modèle
+                      </button>
+                      <button
+                        className="button button-link"
+                        disabled={busy || selectedTemplate.usedByProfileKeys.length > 0}
+                        onClick={() => void remove(selectedTemplate)}
+                        type="button"
+                      >
+                        Supprimer
+                      </button>
+                    </div>
+                  )
+                ) : (
+                  <p className="admin-settings-inline-state muted">
+                    Lecture seule tant que les modèles du code n&apos;ont pas été
+                    recopiés en base.
+                  </p>
+                )}
+              </article>
+            ) : (
+              <p className="admin-settings-inline-state muted">Aucun modèle disponible.</p>
+            )}
+          </div>
+        </div>
       ) : null}
 
-      <section aria-label="Conversion vers un compte client">
-        <h3>Conversion vers un compte client</h3>
-        <p className="muted">
-          Une conversion déplace une vraie identité dans l&apos;annuaire. La
-          destination est en lecture seule ici : elle se règle sur la machine
-          (<code>{view.conversion.environmentVariable}</code>) et prend effet au
-          redémarrage du service.
-        </p>
-        <dl className="admin-demo-conversion">
-          <div>
-            <dt>OU cible</dt>
-            <dd>
-              {view.conversion.targetOrganizationalUnitDn ?? "Non configurée"}
-            </dd>
-          </div>
-          <div>
-            <dt>Racines autorisées</dt>
-            <dd>
-              {view.conversion.allowedRoots.length > 0
-                ? view.conversion.allowedRoots.join(" · ")
-                : "Aucune"}
-            </dd>
-          </div>
-          <div>
-            <dt>Mode annuaire</dt>
-            <dd>{view.conversion.adIntegrationMode}</dd>
-          </div>
-        </dl>
-        {!view.conversion.configured ? (
-          <p role="status">
-            Aucune destination configurée : la conversion vers un compte client
-            sera refusée.
-          </p>
-        ) : !view.conversion.withinAllowedRoots ? (
-          <p role="status">
-            La destination configurée sort des racines autorisées. Le
-            déplacement sera refusé au moment de la conversion.
-          </p>
-        ) : null}
-      </section>
+      {surface === "conversion" ? (
+        <section
+          aria-labelledby="demo-conversion-title"
+          className="admin-settings-single-surface"
+        >
+          <header>
+            <h3 id="demo-conversion-title">Conversion vers un compte client</h3>
+            <p>
+              La destination d’annuaire reste volontairement en lecture seule et se
+              configure sur la machine.
+            </p>
+          </header>
+          <dl className="admin-demo-conversion">
+            <div>
+              <dt>OU cible</dt>
+              <dd>{view.conversion.targetOrganizationalUnitDn ?? "Non configurée"}</dd>
+            </div>
+            <div>
+              <dt>Racines autorisées</dt>
+              <dd>
+                {view.conversion.allowedRoots.length > 0
+                  ? view.conversion.allowedRoots.join(" · ")
+                  : "Aucune"}
+              </dd>
+            </div>
+            <div>
+              <dt>Mode annuaire</dt>
+              <dd>{view.conversion.adIntegrationMode}</dd>
+            </div>
+            <div>
+              <dt>Variable d’environnement</dt>
+              <dd><code>{view.conversion.environmentVariable}</code></dd>
+            </div>
+          </dl>
+          {!view.conversion.configured ? (
+            <p role="status">
+              Aucune destination configurée : la conversion vers un compte client sera
+              refusée.
+            </p>
+          ) : !view.conversion.withinAllowedRoots ? (
+            <p role="status">
+              La destination configurée sort des racines autorisées. Le déplacement sera
+              refusé.
+            </p>
+          ) : null}
+        </section>
+      ) : null}
 
-      {view.revisions.length > 0 ? (
-        <section aria-label="Historique des modèles">
-          <h3>Historique</h3>
-          <ul className="admin-demo-template-history">
-            {view.revisions.map((revision) => (
-              <li key={`${revision.templateKey}-${revision.version}-${revision.createdAt}`}>
-                <strong>{revision.templateKey}</strong>
-                <small>
-                  version {revision.version} · {revision.outcome} ·{" "}
-                  {formatDate(revision.createdAt)}
-                </small>
-                <small>Référence : {revision.correlationId}</small>
-              </li>
-            ))}
-          </ul>
+      {surface === "history" ? (
+        <section
+          aria-labelledby="demo-history-title"
+          className="admin-settings-single-surface"
+        >
+          <header>
+            <h3 id="demo-history-title">Historique des modèles</h3>
+            <p>Dernières versions et résultats d’enregistrement.</p>
+          </header>
+          {view.revisions.length > 0 ? (
+            <ul className="admin-demo-template-history">
+              {view.revisions.map((revision) => (
+                <li key={`${revision.templateKey}-${revision.version}-${revision.createdAt}`}>
+                  <strong>{revision.templateKey}</strong>
+                  <small>
+                    version {revision.version} · {revision.outcome} ·{" "}
+                    {formatDate(revision.createdAt)}
+                  </small>
+                  <small>Référence : {revision.correlationId}</small>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="admin-settings-inline-state muted">
+              Aucune révision enregistrée.
+            </p>
+          )}
         </section>
       ) : null}
     </section>

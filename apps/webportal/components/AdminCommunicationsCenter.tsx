@@ -15,6 +15,7 @@ import type {
   SystemSnippetItem,
   SystemSnippetMutationResponse,
 } from "@kermaria/shared";
+import { ArrowRight, Mail, MessageSquareText, TextCursorInput } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { FormMessage } from "@/components/FormMessage";
@@ -53,104 +54,205 @@ export function AdminCommunicationsCenter({
 }) {
   const [collection, setCollection] = useState(initialCollection);
   const [tab, setTab] = useState<TabId>("email");
+  const [selectedKey, setSelectedKey] = useState(
+    initialCollection.emailTemplates[0]?.key ?? "",
+  );
   const [banner, setBanner] = useState<Banner | null>(null);
 
   const notify = useCallback((next: Banner) => setBanner(next), []);
+  const entries: Array<
+    EmailTemplateItem | NotificationTemplateItem | SystemSnippetItem
+  > =
+    tab === "email"
+      ? collection.emailTemplates
+      : tab === "notification"
+        ? collection.notificationTemplates
+        : collection.snippets;
+  const selectedEntry =
+    entries.find((entry) => entry.key === selectedKey) ?? entries[0] ?? null;
+
+  function changeTab(next: TabId) {
+    const nextEntries =
+      next === "email"
+        ? collection.emailTemplates
+        : next === "notification"
+          ? collection.notificationTemplates
+          : collection.snippets;
+    setTab(next);
+    setSelectedKey(nextEntries[0]?.key ?? "");
+    setBanner(null);
+  }
 
   return (
-    <section aria-label="Messages et communications" className="admin-settings-center">
-      <p className="muted">
-        {collection.persistent
-          ? "Les modèles sont persistés dans MariaDB. Une clé absente retombe sur le modèle intégré au code."
-          : "Mode de démonstration : les modifications disparaissent au redémarrage."}
-      </p>
+    <section
+      aria-label="Messages et communications"
+      className="content-panel section-card admin-settings-surface admin-settings-focused-page"
+    >
+      <header className="admin-settings-focused-header">
+        <div>
+          <h2>Messages et communications</h2>
+          <p>
+            Choisissez un type puis un modèle précis. Un seul contenu est édité à
+            la fois pour éviter toute modification au mauvais endroit.
+          </p>
+        </div>
+        <span className="admin-settings-persistence-note">
+          {collection.persistent ? "Persisté dans MariaDB" : "Mode temporaire"}
+        </span>
+      </header>
 
       {banner ? (
         <FormMessage
           tone={banner.tone}
-          title={banner.tone === "success" ? "Modèle enregistré" : "Modification refusée"}
+          title={
+            banner.tone === "success"
+              ? "Modèle enregistré"
+              : "Modification refusée"
+          }
         >
           {banner.text}
         </FormMessage>
       ) : null}
 
-      <div className="admin-tablist" role="tablist">
-        {TABS.map((entry) => (
-          <button
-            aria-selected={tab === entry.id}
-            className={tab === entry.id ? "button button-secondary" : "button button-link"}
-            key={entry.id}
-            onClick={() => setTab(entry.id)}
-            role="tab"
-            type="button"
-          >
-            {entry.label}
-          </button>
-        ))}
+      <div
+        aria-label="Type de communication"
+        className="admin-settings-segmented"
+        role="tablist"
+      >
+        {TABS.map((entry) => {
+          const Icon =
+            entry.id === "email"
+              ? Mail
+              : entry.id === "notification"
+                ? MessageSquareText
+                : TextCursorInput;
+          return (
+            <button
+              aria-selected={tab === entry.id}
+              className={tab === entry.id ? "is-active" : undefined}
+              key={entry.id}
+              onClick={() => changeTab(entry.id)}
+              role="tab"
+              type="button"
+            >
+              <Icon aria-hidden="true" size={17} />
+              {entry.label}
+            </button>
+          );
+        })}
       </div>
 
-      {tab === "email" ? (
-        <div className="admin-settings-grid">
-          {collection.emailTemplates.map((template) => (
-            <EmailTemplateEditor
-              key={template.key}
-              onError={(text) => notify({ tone: "error", text })}
-              onSaved={(next, text) => {
-                setCollection((current) => ({
-                  ...current,
-                  emailTemplates: current.emailTemplates.map((item) =>
-                    item.key === next.key ? next : item,
-                  ),
-                }));
-                notify({ tone: "success", text });
-              }}
-              template={template}
-            />
-          ))}
-        </div>
-      ) : null}
+      <div className="admin-settings-workspace admin-settings-communications-workspace">
+        <aside
+          aria-label="Modèles disponibles"
+          className="admin-settings-selector"
+        >
+          <div className="admin-settings-selector-heading">
+            <strong>
+              {entries.length} modèle{entries.length > 1 ? "s" : ""}
+            </strong>
+            <span>Sélectionnez le contenu à ouvrir.</span>
+          </div>
+          <div className="admin-settings-selector-list">
+            {entries.map((entry) => (
+              <button
+                aria-current={
+                  selectedEntry?.key === entry.key ? "true" : undefined
+                }
+                className="admin-settings-selector-item"
+                key={entry.key}
+                onClick={() => {
+                  setSelectedKey(entry.key);
+                  setBanner(null);
+                }}
+                type="button"
+              >
+                <span>{entry.displayName}</span>
+                <small>
+                  {entry.customized ? "Personnalisé" : "Valeur par défaut"} · v
+                  {entry.version}
+                </small>
+                <ArrowRight aria-hidden="true" size={16} />
+              </button>
+            ))}
+          </div>
+        </aside>
 
-      {tab === "notification" ? (
-        <div className="admin-settings-grid">
-          {collection.notificationTemplates.map((template) => (
-            <NotificationTemplateEditor
-              key={template.key}
-              onError={(text) => notify({ tone: "error", text })}
-              onSaved={(next, text) => {
-                setCollection((current) => ({
-                  ...current,
-                  notificationTemplates: current.notificationTemplates.map((item) =>
-                    item.key === next.key ? next : item,
-                  ),
-                }));
-                notify({ tone: "success", text });
-              }}
-              template={template}
-            />
-          ))}
-        </div>
-      ) : null}
+        <div className="admin-settings-detail-panel admin-settings-communication-detail">
+          {tab === "email" ? (() => {
+            const template =
+              collection.emailTemplates.find((item) => item.key === selectedEntry?.key)
+              ?? collection.emailTemplates[0];
+            return template ? (
+              <EmailTemplateEditor
+                key={template.key}
+                onError={(text) => notify({ tone: "error", text })}
+                onSaved={(next, text) => {
+                  setCollection((current) => ({
+                    ...current,
+                    emailTemplates: current.emailTemplates.map((item) =>
+                      item.key === next.key ? next : item,
+                    ),
+                  }));
+                  notify({ tone: "success", text });
+                }}
+                template={template}
+              />
+            ) : null;
+          })() : null}
 
-      {tab === "snippet" ? (
-        <div className="admin-settings-grid">
-          {collection.snippets.map((snippet) => (
-            <SnippetEditor
-              key={snippet.key}
-              onError={(text) => notify({ tone: "error", text })}
-              onSaved={(next, text) => {
-                setCollection((current) => ({
-                  ...current,
-                  snippets: current.snippets.map((item) =>
-                    item.key === next.key ? next : item,
-                  ),
-                }));
-                notify({ tone: "success", text });
-              }}
-              snippet={snippet}
-            />
-          ))}
+          {tab === "notification" ? (() => {
+            const template =
+              collection.notificationTemplates.find(
+                (item) => item.key === selectedEntry?.key,
+              ) ?? collection.notificationTemplates[0];
+            return template ? (
+              <NotificationTemplateEditor
+                key={template.key}
+                onError={(text) => notify({ tone: "error", text })}
+                onSaved={(next, text) => {
+                  setCollection((current) => ({
+                    ...current,
+                    notificationTemplates: current.notificationTemplates.map(
+                      (item) => (item.key === next.key ? next : item),
+                    ),
+                  }));
+                  notify({ tone: "success", text });
+                }}
+                template={template}
+              />
+            ) : null;
+          })() : null}
+
+          {tab === "snippet" ? (() => {
+            const snippet =
+              collection.snippets.find((item) => item.key === selectedEntry?.key)
+              ?? collection.snippets[0];
+            return snippet ? (
+              <SnippetEditor
+                key={snippet.key}
+                onError={(text) => notify({ tone: "error", text })}
+                onSaved={(next, text) => {
+                  setCollection((current) => ({
+                    ...current,
+                    snippets: current.snippets.map((item) =>
+                      item.key === next.key ? next : item,
+                    ),
+                  }));
+                  notify({ tone: "success", text });
+                }}
+                snippet={snippet}
+              />
+            ) : null;
+          })() : null}
+
+          {!selectedEntry ? (
+            <p className="admin-settings-inline-state muted">
+              Aucun modèle disponible.
+            </p>
+          ) : null}
         </div>
-      ) : null}
+      </div>
     </section>
   );
 }
@@ -385,7 +487,7 @@ function EmailTemplateEditor({
   }
 
   return (
-    <section className="admin-settings-card">
+    <section className="admin-settings-single-editor admin-settings-template-editor-surface">
       <header>
         <p className="eyebrow">E-mail transactionnel</p>
         <h2>{template.displayName}</h2>
@@ -587,7 +689,7 @@ function NotificationTemplateEditor({
   }
 
   return (
-    <section className="admin-settings-card">
+    <section className="admin-settings-single-editor admin-settings-template-editor-surface">
       <header>
         <p className="eyebrow">Notification portail</p>
         <h2>{template.displayName}</h2>
@@ -714,7 +816,7 @@ function SnippetEditor({
   }
 
   return (
-    <section className="admin-settings-card">
+    <section className="admin-settings-single-editor admin-settings-template-editor-surface">
       <header>
         <p className="eyebrow">Texte système</p>
         <h2>{snippet.displayName}</h2>

@@ -1,6 +1,7 @@
 import { AdminRuntimeCenter } from "@/components/AdminRuntimeCenter";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
+import { AdminSettingsNavigation } from "@/components/AdminSettingsNavigation";
 import { requireAdminSession } from "@/lib/auth";
 import { getAdminRuntimeOverview } from "@/lib/internal-api";
 
@@ -19,6 +20,7 @@ export default async function AdminRuntimePage() {
         title="Infrastructure et runtime"
         description="API-INTERNAL, MariaDB, stockage et journalisation, avec la source réelle de chaque valeur appliquée. Lecture seule : ces réglages sont résolus au démarrage du service."
       />
+      <AdminSettingsNavigation />
       {result.error ? (
         <ErrorState
           title="Vue runtime indisponible"

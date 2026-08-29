@@ -104,8 +104,9 @@ export function AdminSettingsFederation() {
   return (
     <section
       aria-label="Modules spécialisés"
-      className="admin-settings-federation"
+      className="content-panel section-card admin-settings-federation"
     >
+      <span className="card-kicker">Navigation</span>
       <h2>Ce qui se change ailleurs</h2>
       <p className="muted">
         Ces modules sont déjà l&apos;autorité sur leur domaine. Le Centre ne les

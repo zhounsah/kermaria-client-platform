@@ -1,6 +1,7 @@
 import { AdminIntegrationsCenter } from "@/components/AdminIntegrationsCenter";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
+import { AdminSettingsNavigation } from "@/components/AdminSettingsNavigation";
 import { requireAdminSession } from "@/lib/auth";
 import { describeHCaptchaIntegration } from "@/lib/integrations-hcaptcha";
 import { getAdminIntegrations } from "@/lib/internal-api";
@@ -23,6 +24,7 @@ export default async function AdminIntegrationsPage() {
         title="Intégrations"
         description="Observer sans révéler : modes, configuration et dernières opérations des intégrations. Aucun secret n'est affiché, aucun mode n'est modifiable depuis cette page."
       />
+      <AdminSettingsNavigation />
       {result.error ? (
         <ErrorState
           title="Intégrations indisponibles"
