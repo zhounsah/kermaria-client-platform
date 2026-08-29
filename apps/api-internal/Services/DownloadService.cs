@@ -1,4 +1,5 @@
 using Kermaria.ApiInternal.Contracts;
+using Kermaria.ApiInternal.Data.Configuration;
 using Kermaria.ApiInternal.Data.Repositories;
 using Kermaria.ApiInternal.Services.Provisioning;
 
@@ -183,21 +184,11 @@ public sealed class DownloadService : IDownloadService
     private const int MaxExternalUrlLength = 2048;
     private const int MaxRuleValueLength = 160;
 
+    // Liste unique pour toute la plateforme : deux copies auraient fini par
+    // diverger, et un type accepte ici mais inconnu ailleurs serait une regle
+    // d'acces sans effet.
     private static readonly IReadOnlySet<string> KnownServiceTypes =
-        new HashSet<string>(StringComparer.Ordinal)
-        {
-            "personal_hosting",
-            "storage",
-            "backup",
-            "vpn",
-            "rds",
-            "support",
-            "cloud",
-            "documentation",
-            "monitoring",
-            "user",
-            "other"
-        };
+        ServiceTypeRegistry.Known;
 
     private static readonly IReadOnlyList<DownloadCategorySeed> DefaultCategories =
     [

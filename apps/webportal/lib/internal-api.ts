@@ -37,6 +37,7 @@ import type {
   CustomerAdProvisioningMutationResponse,
   DiagnosticConfigurationAdminView,
   BillingV2ConfigurationOverview,
+  DemoContentTemplateAdminView,
   FiscalPolicyAdminView,
   DiagnosticConfigurationSnapshot,
   DownloadCategory,
@@ -1154,6 +1155,30 @@ export function getAdminDiagnosticConfiguration() {
       published: { ...EMPTY_DIAGNOSTIC_SNAPSHOT, state: "published" },
       draftDiffers: false,
       persistent: false,
+    },
+  );
+}
+
+export function getAdminDemoTemplateConfiguration() {
+  return getAdminData<DemoContentTemplateAdminView>(
+    "/internal/admin/settings/demo-templates",
+    {
+      templates: [],
+      knownServiceTypes: [],
+      revisions: [],
+      authority: "code",
+      persistent: false,
+      commercialTermsLabel: "",
+      conversion: {
+        environmentVariable: "DEMO_CONVERSION_TARGET_OU_DN",
+        targetOrganizationalUnitDn: null,
+        configured: false,
+        withinAllowedRoots: false,
+        allowedRoots: [],
+        adIntegrationMode: "disabled",
+        classification: "restart_required",
+        restartRequired: true,
+      },
     },
   );
 }

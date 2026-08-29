@@ -199,6 +199,17 @@ cookie HttpOnly -> BFF -> session API-INTERNAL -> user_id -> customer_id
 - Une valeur de configuration relue depuis MariaDB repasse par la validation
   d'ecriture : les bornes du registre ne peuvent pas etre contournees en
   ecrivant directement en base.
+- Les modeles de demonstration ne peuvent pas introduire un type de service
+  inconnu du code : le registre ferme `ServiceTypeRegistry` refuse la valeur,
+  ce qui evite de contourner les validations de provisionnement et d'affichage.
+- Un modele reference par un profil de demonstration n'est pas supprimable :
+  sa disparition creerait des comptes sans aucun service, sans erreur visible.
+- La destination AD de conversion reste en lecture seule dans le Centre de
+  configuration et son appartenance a `AD_ALLOWED_ROOTS` est affichee : elle
+  deplace de vraies identites, et le deplacement est de toute facon revalide au
+  moment de la conversion.
+- Les mutations des modeles de demonstration exigent `settings.demo.write`,
+  distincte de `settings.write`.
 - La fiscalite n'est **pas** scriptable : le regime et le calcul restent dans
   le code, seule la formulation de la mention est administrable, et uniquement
   pour un regime deja connu.

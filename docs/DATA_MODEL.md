@@ -632,6 +632,42 @@ Contraintes :
 - `diagnostic_configuration_revisions` conserve la charge complete, l'auteur,
   le `correlation_id` et un `outcome` (`draft_saved` ou `published`).
 
+## demo_content_templates / demo_content_template_services / demo_content_template_revisions
+
+Modeles de contenu de demonstration administrables (migration `077`). Ces tables
+ne portent aucune donnee client : elles decrivent ce qui sera affiche sur un
+compte de demonstration.
+
+`demo_content_templates` :
+
+| Champ | Type logique | Description |
+|---|---|---|
+| `template_key` | text | Cle du modele, referencee par `demo_profiles.content_template_key` |
+| `label` | text | Libelle affiche |
+| `description` | text | Description interne, facultative |
+| `enabled` | bool | Modele propose a la creation d'un compte |
+| `display_order` | int | Ordre d'affichage |
+| `version` | int | Concurrence optimiste |
+| `updated_by_user_id` | uuid, nullable | Administrateur auteur |
+| `created_at` / `updated_at` | timestamp | Horodatages UTC |
+
+`demo_content_template_services` porte les services d'un modele
+(`service_type`, `name`, `description`, `scope`, `display_order`), en cascade sur
+la suppression du modele. Le couple `(template_key, name)` est unique : le nom
+identifie le service dans la composition a la carte.
+
+`demo_content_template_revisions` conserve la charge enregistree a chaque
+ecriture (`payload_json`), l'auteur, la reference de correlation et l'issue.
+
+Points de vigilance :
+
+- table vide = registre du code ; table non vide = base seule. Aucune fusion ;
+- `service_type` reste contraint applicativement par le registre ferme des types
+  de service : la colonne est libre en SQL, l'API refuse tout type inconnu ;
+- supprimer un modele reference par un profil est refuse par l'API, la contrainte
+  n'existant pas au niveau SQL (`demo_profiles` peut pointer vers le registre du
+  code).
+
 ## email_templates / notification_templates / system_snippets
 
 Gabarits administrables des communications (migration `074`). Chaque famille

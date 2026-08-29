@@ -546,6 +546,7 @@ async Task<int> RunAsync(string[] arguments)
         await VerifySignupStoresPriceFreeBillingV2SelectionAsync();
         await VerifySignupGuardrailsAsync();
         await VerifyFiscalPolicyAsync();
+        await VerifyDemoContentTemplatesAsync();
         VerifyBillingV2FeatureFlagRegistry();
         await VerifyCommunicationTemplatesAsync();
         await VerifyDiagnosticConfigurationAsync();
@@ -4770,6 +4771,196 @@ static async Task VerifySignupGuardrailsAsync()
 /// Mentions fiscales : le texte est administrable, le calcul ne l'est pas, et
 /// une mention ne doit jamais changer un document deja etabli.
 /// </summary>
+// Les modeles de demonstration passent d'un registre C# a une persistance
+// administrable. Ce qui est verifie ici, c'est la bascule elle-meme : tant que
+// la table est vide, le code fait autorite ; des qu'elle contient un modele,
+// c'est elle — et jamais une fusion des deux, qui produirait des modeles
+// fantomes.
+static async Task VerifyDemoContentTemplatesAsync()
+{
+    MockDemoContentTemplateRepository.Clear();
+    var repository = new MockDemoContentTemplateRepository();
+    var profiles = new MockDemoProfileRepository();
+    var adConfiguration = new AdRuntimeConfiguration(
+        AdIntegrationMode.Mock,
+        "clients.home.bzh",
+        "OU=Clients,DC=clients,DC=home,DC=bzh",
+        "OU=Clients,DC=clients,DC=home,DC=bzh",
+        ["OU=KoXoAdm,DC=clients,DC=home,DC=bzh"],
+        false,
+        null,
+        null,
+        3000,
+        5000,
+        25,
+        true);
+    var service = new DemoContentTemplateService(
+        repository,
+        profiles,
+        adConfiguration,
+        new DemoConversionRuntimeConfiguration(
+            "OU=CLI-DEMO,OU=KoXoAdm,DC=clients,DC=home,DC=bzh"),
+        LoggerFactory.Create(_ => { }).CreateLogger<DemoContentTemplateService>());
+    var token = CancellationToken.None;
+    const string actor = "00000000-0000-0000-0000-0000000000de";
+    const string correlation = "smoke-demo-templates";
+
+    var view = await service.GetAdminViewAsync(token);
+    Ensure(
+        view.Authority == "code"
+        && view.Templates.Count == DemoContentTemplateRegistry.All.Count
+        && view.Templates.All(template => !template.Editable && template.Version == 0),
+        "Table vide : le registre du code doit faire autorite, en lecture seule.");
+    Ensure(
+        view.Conversion.Configured
+        && view.Conversion.WithinAllowedRoots
+        && view.Conversion.RestartRequired
+        && view.Conversion.Classification == "restart_required",
+        "La destination de conversion doit etre presentee, validee et non editable.");
+
+    var outsideRoots = new DemoContentTemplateService(
+        repository,
+        profiles,
+        adConfiguration,
+        new DemoConversionRuntimeConfiguration("OU=Ailleurs,DC=home,DC=bzh"),
+        LoggerFactory.Create(_ => { }).CreateLogger<DemoContentTemplateService>());
+    Ensure(
+        !(await outsideRoots.GetAdminViewAsync(token)).Conversion.WithinAllowedRoots,
+        "Une destination hors des racines autorisees doit etre signalee comme telle.");
+
+    var active = await service.ListActiveAsync(token);
+    Ensure(
+        active.Count == DemoContentTemplateRegistry.All.Count,
+        "Sans persistance, les modeles servis doivent etre exactement ceux du code.");
+
+    // Registre ferme des types de service : l'administration ne doit pas pouvoir
+    // introduire un type que le code ne sait ni provisionner ni afficher.
+    var unknownType = await service.SaveAsync(
+        new DemoContentTemplateSavePayload(
+            "atelier", "Atelier", string.Empty, true, 10, 0,
+            [new DemoContentTemplateServicePayload("quantique", "Service", "Description", "Perimetre")]),
+        actor, correlation, token);
+    Ensure(
+        unknownType.Code == "DEMO_TEMPLATE_UNKNOWN_SERVICE_TYPE",
+        "Un type de service inconnu du code doit etre refuse.");
+
+    Ensure(
+        (await service.SaveAsync(
+            new DemoContentTemplateSavePayload(
+                "Atelier Majuscule", "Atelier", string.Empty, true, 10, 0,
+                [new DemoContentTemplateServicePayload("storage", "Service", "Description", "Perimetre")]),
+            actor, correlation, token)).Code == "DEMO_TEMPLATE_INVALID_KEY",
+        "Une cle non normalisee doit etre refusee.");
+
+    Ensure(
+        (await service.SaveAsync(
+            new DemoContentTemplateSavePayload(
+                "atelier", "Atelier", string.Empty, true, 10, 0, []),
+            actor, correlation, token)).Code == "DEMO_TEMPLATE_NO_SERVICE",
+        "Un modele sans service doit etre refuse.");
+
+    // La composition a la carte identifie un service par son nom, sans casse :
+    // deux noms equivalents rendraient la selection ambigue.
+    Ensure(
+        (await service.SaveAsync(
+            new DemoContentTemplateSavePayload(
+                "atelier", "Atelier", string.Empty, true, 10, 0,
+                [
+                    new DemoContentTemplateServicePayload("storage", "Stockage", "Description", "Perimetre"),
+                    new DemoContentTemplateServicePayload("backup", "STOCKAGE", "Description", "Perimetre"),
+                ]),
+            actor, correlation, token)).Code == "DEMO_TEMPLATE_DUPLICATE_SERVICE_NAME",
+        "Deux services d'un meme modele ne doivent pas pouvoir porter le meme nom.");
+
+    var created = await service.SaveAsync(
+        new DemoContentTemplateSavePayload(
+            "atelier", "Atelier", "Modele administre.", true, 10, 0,
+            [
+                new DemoContentTemplateServicePayload("storage", "Stockage", "Stockage de demonstration.", "Perimetre"),
+                new DemoContentTemplateServicePayload("vpn", "Acces VPN", "VPN de demonstration.", "Perimetre"),
+            ]),
+        actor, correlation, token);
+    Ensure(created.Code == "DEMO_TEMPLATE_SAVED", "Un modele valide doit etre enregistre.");
+
+    view = await service.GetAdminViewAsync(token);
+    Ensure(
+        view.Authority == "database"
+        && view.Templates.Count == 1
+        && view.Templates[0].TemplateKey == "atelier"
+        && view.Templates[0].Editable,
+        "Des qu'un modele est enregistre, la base fait autorite seule : pas de fusion avec le code.");
+    Ensure(
+        view.Revisions.Any(revision => revision.TemplateKey == "atelier" && revision.Outcome == "saved"),
+        "Chaque ecriture doit laisser une trace dans l'historique.");
+
+    active = await service.ListActiveAsync(token);
+    Ensure(
+        active.Count == 1 && active[0].Services.Count == 2,
+        "Les modeles servis doivent venir de la base des qu'elle en contient.");
+
+    // Concurrence optimiste : la seconde ecriture sur la meme version perd.
+    Ensure(
+        (await service.SaveAsync(
+            new DemoContentTemplateSavePayload(
+                "atelier", "Atelier", string.Empty, true, 10, 0,
+                [new DemoContentTemplateServicePayload("storage", "Stockage", "Description", "Perimetre")]),
+            actor, correlation, token)).Code == "DEMO_TEMPLATE_VERSION_CONFLICT",
+        "Une ecriture sur une version perimee doit etre refusee.");
+
+    // Amorce : elle n'est pas une restauration et ne doit pas ecraser l'existant.
+    Ensure(
+        (await service.ImportCodeTemplatesAsync(actor, correlation, token)).Code
+            == "DEMO_TEMPLATE_ALREADY_ADMINISTERED",
+        "L'amorce ne doit s'appliquer qu'a une table vide.");
+
+    // Un modele desactive ne doit plus etre propose, sans disparaitre de l'admin.
+    Ensure(
+        (await service.SaveAsync(
+            new DemoContentTemplateSavePayload(
+                "atelier", "Atelier", "Modele administre.", false, 10, 1,
+                [new DemoContentTemplateServicePayload("storage", "Stockage", "Stockage.", "Perimetre")]),
+            actor, correlation, token)).Code == "DEMO_TEMPLATE_SAVED",
+        "La desactivation d'un modele doit etre acceptee.");
+    Ensure(
+        (await service.ListActiveAsync(token)).Count == 0
+        && (await service.GetAdminViewAsync(token)).Templates.Count == 1,
+        "Un modele desactive ne doit plus etre propose mais rester administrable.");
+    Ensure(
+        await service.FindActiveAsync("atelier", token) is null,
+        "Un modele desactive ne doit plus etre resolu a la creation d'un compte.");
+
+    // Un profil qui pointe vers un modele supprime creerait des comptes sans
+    // aucun service, silencieusement.
+    await profiles.UpsertAsync(
+        new DemoProfile(
+            string.Empty, "vitrine", "Vitrine", DemoKinds.Showcase, "atelier",
+            "mock", "mock", "mock", "off", [], null, "none", 7, "active"),
+        token);
+    Ensure(
+        (await service.DeleteAsync("atelier", 2, actor, correlation, token)).Code
+            == "DEMO_TEMPLATE_IN_USE",
+        "Un modele reference par un profil ne doit pas etre supprimable.");
+
+    await profiles.DeleteByKeyAsync("vitrine", token);
+    Ensure(
+        (await service.DeleteAsync("atelier", 99, actor, correlation, token)).Code
+            == "DEMO_TEMPLATE_VERSION_CONFLICT",
+        "Une suppression sur une version perimee doit etre refusee.");
+
+    var deleted = await service.DeleteAsync("atelier", 2, actor, correlation, token);
+    Ensure(deleted.Code == "DEMO_TEMPLATE_DELETED", "Un modele libre doit etre supprimable.");
+
+    // Retour au repli : vider la table suffit a revenir au code, la bascule est
+    // donc reversible.
+    view = await service.GetAdminViewAsync(token);
+    Ensure(
+        view.Authority == "code"
+        && (await service.ListActiveAsync(token)).Count == DemoContentTemplateRegistry.All.Count,
+        "Table videe : le registre du code doit reprendre autorite.");
+
+    MockDemoContentTemplateRepository.Clear();
+}
+
 static async Task VerifyFiscalPolicyAsync()
 {
     MockFiscalPolicyRepository.Clear();

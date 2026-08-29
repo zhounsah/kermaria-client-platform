@@ -431,6 +431,61 @@ specification interdit.
 
 Evenements d'audit : `diagnostic_draft_changed`, `diagnostic_published`.
 
+## Modeles de demonstration administrables
+
+Le registre C# `DemoContentTemplateRegistry` cesse d'etre l'autorite au profit
+de la table `demo_content_templates`, mais reste le **repli**.
+
+Regle de bascule, volontairement binaire :
+
+- table vide ou illisible : le registre du code fait autorite, l'administration
+  est en lecture seule (`authority = "code"`, `version = 0`, `editable = false`) ;
+- table non vide : elle fait autorite **entierement** (`authority = "database"`).
+
+Aucune fusion des deux sources : elle produirait des modeles fantomes,
+affiches mais impossibles a supprimer. Vider la table suffit a revenir au code,
+donc la bascule est reversible.
+
+Garde-fous :
+
+- `service_type` est valide contre le registre ferme `ServiceTypeRegistry`
+  (`DEMO_TEMPLATE_UNKNOWN_SERVICE_TYPE`) : l'administration ne peut pas
+  introduire un type que ni le provisionnement ni l'affichage ne savent traiter ;
+- les noms de service sont uniques **sans tenir compte de la casse** : la
+  composition a la carte (`SelectedServiceNames`) identifie un service par son
+  nom, deux noms equivalents rendraient la selection ambigue ;
+- concurrence optimiste par `expectedVersion`, conflit en `409` ;
+- un modele reference par un profil de demonstration n'est pas supprimable
+  (`DEMO_TEMPLATE_IN_USE`) : sa disparition creerait des comptes sans aucun
+  service, silencieusement ;
+- desactiver un modele le retire des propositions sans le retirer de
+  l'administration ni toucher aux comptes deja crees ;
+- l'amorce ne s'applique qu'a une table vide (`DEMO_TEMPLATE_ALREADY_ADMINISTERED`) :
+  c'est une recopie initiale, pas une restauration.
+
+Endpoints (`admin.demo.read` / `admin.demo.write`, plus `settings.read` en
+lecture et `settings.demo.write` en ecriture) :
+
+- `GET /internal/admin/settings/demo-templates` : modeles, types de service
+  connus, historique, autorite courante et destination de conversion ;
+- `PUT /internal/admin/settings/demo-templates` : cree ou remplace un modele et
+  ses services, dans l'ordre envoye ;
+- `DELETE /internal/admin/settings/demo-templates/{templateKey}?expectedVersion=N` ;
+- `POST /internal/admin/settings/demo-templates/import` : recopie les modeles du
+  code en base.
+
+`GET /internal/admin/demo/content-templates` reste le point de lecture utilise
+par la creation d'un compte de demonstration ; il sert desormais les modeles
+**actifs** issus de la meme autorite.
+
+La destination AD de conversion (`DEMO_CONVERSION_TARGET_OU_DN`) est **presentee
+en lecture seule** avec son verdict de validation contre `AD_ALLOWED_ROOTS`.
+Elle deplace de vraies identites : elle se regle sur la machine, puis au
+redemarrage.
+
+Evenements d'audit : `demo_template_saved`, `demo_template_deleted`,
+`demo_template_imported`.
+
 ## Messages et communications
 
 Les gabarits transactionnels, les notifications du portail et les textes

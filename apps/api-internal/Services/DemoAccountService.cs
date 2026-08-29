@@ -20,7 +20,8 @@ public interface IDemoAccountService
         string key,
         CancellationToken cancellationToken);
 
-    IReadOnlyList<DemoContentTemplateSummary> GetContentTemplates();
+    Task<IReadOnlyList<DemoContentTemplateSummary>> GetContentTemplatesAsync(
+        CancellationToken cancellationToken);
 
     Task<IReadOnlyList<DemoAccountSummary>> ListAccountsAsync(
         CancellationToken cancellationToken);
@@ -61,6 +62,7 @@ public sealed class DemoAccountService : IDemoAccountService
     private readonly IDemoAccountRepository _accounts;
     private readonly IPortalPasswordService _passwordService;
     private readonly IDemoProvisioningService _provisioning;
+    private readonly IDemoContentTemplateService _contentTemplates;
     private readonly ILogger<DemoAccountService> _logger;
 
     public DemoAccountService(
@@ -68,12 +70,14 @@ public sealed class DemoAccountService : IDemoAccountService
         IDemoAccountRepository accounts,
         IPortalPasswordService passwordService,
         IDemoProvisioningService provisioning,
+        IDemoContentTemplateService contentTemplates,
         ILogger<DemoAccountService> logger)
     {
         _profiles = profiles;
         _accounts = accounts;
         _passwordService = passwordService;
         _provisioning = provisioning;
+        _contentTemplates = contentTemplates;
         _logger = logger;
     }
 
@@ -103,8 +107,17 @@ public sealed class DemoAccountService : IDemoAccountService
         return await _profiles.DeleteByKeyAsync(normalized, cancellationToken);
     }
 
-    public IReadOnlyList<DemoContentTemplateSummary> GetContentTemplates()
-        => DemoContentTemplateRegistry.Summaries();
+    public async Task<IReadOnlyList<DemoContentTemplateSummary>> GetContentTemplatesAsync(
+        CancellationToken cancellationToken)
+    {
+        var templates = await _contentTemplates.ListActiveAsync(cancellationToken);
+        return templates
+            .Select(template => new DemoContentTemplateSummary(
+                template.Key,
+                template.Label,
+                template.Services.Select(service => service.Name).ToArray()))
+            .ToArray();
+    }
 
     public Task<IReadOnlyList<DemoAccountSummary>> ListAccountsAsync(
         CancellationToken cancellationToken)
@@ -237,7 +250,9 @@ public sealed class DemoAccountService : IDemoAccountService
             ? displayName
             : RequireText(request.UserDisplayName, 200);
 
-        var template = DemoContentTemplateRegistry.Find(profile.ContentTemplateKey);
+        var template = await _contentTemplates.FindActiveAsync(
+            profile.ContentTemplateKey,
+            cancellationToken);
         var templateServices = template?.Services ?? [];
         // Composition a la carte : si une selection est fournie, on ne retient
         // que les services du template dont le nom est coche.

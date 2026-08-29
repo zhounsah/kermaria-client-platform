@@ -173,6 +173,13 @@ builder.Services.AddScoped<IDemoProfileRepository>(
     _ => sqlConfiguration.IsPersistent
         ? new MariaDbDemoProfileRepository(sqlConfiguration)
         : new MockDemoProfileRepository());
+builder.Services.AddScoped<IDemoContentTemplateRepository>(
+    _ => sqlConfiguration.IsPersistent
+        ? new MariaDbDemoContentTemplateRepository(sqlConfiguration)
+        : new MockDemoContentTemplateRepository());
+builder.Services.AddScoped<
+    IDemoContentTemplateService,
+    DemoContentTemplateService>();
 builder.Services.AddScoped<ICommunicationTemplateRepository>(
     _ => sqlConfiguration.IsPersistent
         ? new MariaDbCommunicationTemplateRepository(sqlConfiguration)
@@ -4427,6 +4434,66 @@ app.MapPost(
         await RecordDiagnosticAuditAsync(context, auditService, actor.UserId, "diagnostic_published", result.Code, "DIAGNOSTIC_PUBLISHED");
         return Results.Json(result, statusCode: ResolveDiagnosticStatusCode(result.Code));
     });
+// --- Modeles de contenu de demonstration (specification, section 15) --------
+app.MapGet(
+    "/internal/admin/settings/demo-templates",
+    async (
+        HttpContext context,
+        IDemoContentTemplateService service,
+        IEditorialRepository editorialRepository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(context, authenticationService, auditService, "admin.demo.read");
+        if (!await editorialRepository.HasAdminPermissionAsync(actor.UserId, "settings.read", context.RequestAborted)) throw new PortalAccessDeniedException();
+        context.Response.Headers["X-Data-Source"] = service.IsPersistent ? "mariadb" : "mock";
+        return Results.Ok(await service.GetAdminViewAsync(context.RequestAborted));
+    });
+app.MapPut(
+    "/internal/admin/settings/demo-templates",
+    async (
+        HttpContext context,
+        IDemoContentTemplateService service,
+        IEditorialRepository editorialRepository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveDemoTemplateWriterAsync(context, editorialRepository, authenticationService, auditService);
+        var payload = await ReadPayload<DemoContentTemplateSavePayload>(context) ?? throw new PortalValidationException();
+        var result = await service.SaveAsync(payload, actor.UserId, context.GetCorrelationId(), context.RequestAborted);
+        await RecordDemoTemplateAuditAsync(context, auditService, actor.UserId, "demo_template_saved", result.Code, "DEMO_TEMPLATE_SAVED", payload.TemplateKey);
+        return Results.Json(result, statusCode: ResolveDemoTemplateStatusCode(result.Code));
+    });
+app.MapDelete(
+    "/internal/admin/settings/demo-templates/{templateKey}",
+    async (
+        string templateKey,
+        int expectedVersion,
+        HttpContext context,
+        IDemoContentTemplateService service,
+        IEditorialRepository editorialRepository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveDemoTemplateWriterAsync(context, editorialRepository, authenticationService, auditService);
+        var result = await service.DeleteAsync(templateKey, expectedVersion, actor.UserId, context.GetCorrelationId(), context.RequestAborted);
+        await RecordDemoTemplateAuditAsync(context, auditService, actor.UserId, "demo_template_deleted", result.Code, "DEMO_TEMPLATE_DELETED", templateKey);
+        return Results.Json(result, statusCode: ResolveDemoTemplateStatusCode(result.Code));
+    });
+app.MapPost(
+    "/internal/admin/settings/demo-templates/import",
+    async (
+        HttpContext context,
+        IDemoContentTemplateService service,
+        IEditorialRepository editorialRepository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveDemoTemplateWriterAsync(context, editorialRepository, authenticationService, auditService);
+        var result = await service.ImportCodeTemplatesAsync(actor.UserId, context.GetCorrelationId(), context.RequestAborted);
+        await RecordDemoTemplateAuditAsync(context, auditService, actor.UserId, "demo_template_imported", result.Code, "DEMO_TEMPLATE_IMPORTED", null);
+        return Results.Json(result, statusCode: ResolveDemoTemplateStatusCode(result.Code));
+    });
 app.MapGet(
     "/internal/admin/customers",
     async (
@@ -4561,7 +4628,10 @@ app.MapGet(
             authenticationService,
             auditService,
             "admin.demo.read");
-        return DemoOk(context, service, service.GetContentTemplates());
+        return DemoOk(
+            context,
+            service,
+            await service.GetContentTemplatesAsync(context.RequestAborted));
     });
 app.MapGet(
     "/internal/admin/demo/accounts",
@@ -7666,6 +7736,63 @@ static int ResolveFiscalStatusCode(string code)
         "FISCAL_VERSION_CONFLICT" or "FISCAL_EFFECTIVE_DATE_TAKEN"
             => StatusCodes.Status409Conflict,
         "FISCAL_MENTION_NOT_CANCELLABLE" => StatusCodes.Status404NotFound,
+        _ => StatusCodes.Status400BadRequest
+    };
+
+// Les modeles de demonstration decident du contenu semé sur de vrais comptes :
+// la permission est donc distincte de `settings.write`.
+static async Task<PortalSessionContext> ResolveDemoTemplateWriterAsync(
+    HttpContext context,
+    IEditorialRepository editorialRepository,
+    IAuthenticationService authenticationService,
+    IAuditService auditService)
+{
+    var actor = await ResolveAdminSessionAsync(
+        context,
+        authenticationService,
+        auditService,
+        "admin.demo.write");
+    if (!await editorialRepository.HasAdminPermissionAsync(
+            actor.UserId,
+            "settings.demo.write",
+            context.RequestAborted))
+    {
+        throw new PortalAccessDeniedException();
+    }
+
+    return actor;
+}
+
+static Task RecordDemoTemplateAuditAsync(
+    HttpContext context,
+    IAuditService auditService,
+    string actorUserId,
+    string action,
+    string code,
+    string successCode,
+    string? templateKey)
+    => auditService.RecordAsync(
+        new AuditEvent(
+            context.GetCorrelationId(),
+            action,
+            code == successCode ? "success" : "refused",
+            code,
+            "demo_content_template",
+            templateKey,
+            ActorUserId: actorUserId,
+            SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+        context.RequestAborted);
+
+static int ResolveDemoTemplateStatusCode(string code)
+    => code switch
+    {
+        "DEMO_TEMPLATE_SAVED" or "DEMO_TEMPLATE_DELETED" or "DEMO_TEMPLATE_IMPORTED"
+            => StatusCodes.Status200OK,
+        "DEMO_TEMPLATE_VERSION_CONFLICT" or "DEMO_TEMPLATE_IN_USE"
+            or "DEMO_TEMPLATE_ALREADY_ADMINISTERED"
+            => StatusCodes.Status409Conflict,
+        "DEMO_TEMPLATE_STORAGE_UNAVAILABLE"
+            => StatusCodes.Status503ServiceUnavailable,
         _ => StatusCodes.Status400BadRequest
     };
 

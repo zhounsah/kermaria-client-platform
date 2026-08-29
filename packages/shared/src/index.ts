@@ -2496,6 +2496,90 @@ export interface ConfigurationStatusDomain { key: string; label: string; state: 
 export interface ConfigurationStatusSnapshot { domains: ConfigurationStatusDomain[]; }
 export interface PortalBillingConfiguration { iban: string | null; bic: string | null; paypalUrl: string | null; transferLabel: string; }
 
+// --- Modeles de contenu de demonstration (Centre de configuration, section 15)
+// Contrats non sensibles : un modele decrit seulement ce qui sera affiche sur un
+// compte de demonstration. Le type de service reste borne par un registre ferme
+// cote API, qui refuse tout type inconnu du code.
+
+export interface DemoContentTemplateServiceItem {
+  serviceType: string;
+  name: string;
+  description: string;
+  scope: string;
+}
+
+export interface DemoContentTemplateItem {
+  templateKey: string;
+  label: string;
+  description: string;
+  enabled: boolean;
+  displayOrder: number;
+  /** 0 pour un modele encore porte par le code : sa premiere ecriture attend `expectedVersion = 0`. */
+  version: number;
+  source: "code" | "database";
+  editable: boolean;
+  updatedAt: string | null;
+  updatedByUserId: string | null;
+  services: DemoContentTemplateServiceItem[];
+  usedByProfileKeys: string[];
+}
+
+export interface DemoContentTemplateRevisionItem {
+  templateKey: string;
+  version: number;
+  outcome: string;
+  actorUserId: string | null;
+  correlationId: string;
+  createdAt: string;
+}
+
+export interface DemoConversionTargetView {
+  environmentVariable: string;
+  targetOrganizationalUnitDn: string | null;
+  configured: boolean;
+  /** Faux quand la valeur sort des racines autorisees : la conversion serait refusee. */
+  withinAllowedRoots: boolean;
+  allowedRoots: string[];
+  adIntegrationMode: string;
+  classification: "dynamic" | "restart_required" | "secret" | "code_invariant";
+  restartRequired: boolean;
+}
+
+export interface DemoContentTemplateAdminView {
+  templates: DemoContentTemplateItem[];
+  knownServiceTypes: string[];
+  revisions: DemoContentTemplateRevisionItem[];
+  /** "code" tant que la table est vide : le registre C# fait alors autorite. */
+  authority: "code" | "database";
+  persistent: boolean;
+  commercialTermsLabel: string;
+  conversion: DemoConversionTargetView;
+}
+
+export interface DemoContentTemplateServicePayload {
+  serviceType: string;
+  name: string;
+  description: string;
+  scope: string;
+}
+
+export interface DemoContentTemplateSavePayload {
+  templateKey: string;
+  label: string;
+  description: string;
+  enabled: boolean;
+  displayOrder: number;
+  expectedVersion: number;
+  services: DemoContentTemplateServicePayload[];
+}
+
+export interface DemoContentTemplateMutationResponse {
+  code: string;
+  message: string;
+  view: DemoContentTemplateAdminView | null;
+  correlationId: string;
+}
+
 // --- Fiscalite et Billing V2 (Centre de configuration, section 14) ----------
 // Contrats non sensibles : ni taux, ni montant, ni secret. Le calcul de la taxe
 // reste cote API-INTERNAL ; seule la formulation de la mention est administrable.

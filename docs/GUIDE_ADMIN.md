@@ -437,6 +437,48 @@ Un drapeau signale « active mais sans effet » lorsque ses dependances sont
 fermees : la fonction est annoncee comme ouverte alors que rien ne peut
 aboutir.
 
+## 7 sexies. Demonstrations - `/admin/settings/demonstrations`
+
+Cette page administre le **contenu** d'un compte de demonstration : quels
+services y apparaissent, dans quel ordre, avec quel perimetre. Les profils, les
+comptes et les conversions restent sur `/admin/demo`.
+
+### Premiere visite
+
+Tant que rien n'a ete enregistre, les modeles affiches sont ceux integres au
+code et la page est en lecture seule. Le bouton « Recopier les modeles du code
+en base » les rend modifiables. C'est une amorce : elle ne fonctionne qu'une
+fois, sur une base encore vide.
+
+### Ensuite
+
+Vous pouvez creer un modele, le desactiver, renommer ses services, changer leur
+ordre, leur description et leur perimetre.
+
+Points de vigilance :
+
+- la **cle** est definitive : les profils de demonstration la referencent ;
+- un **type de service** inconnu du code est refuse. La liste proposee est
+  exactement celle que la plateforme sait provisionner et afficher ;
+- deux services d'un meme modele ne peuvent pas porter le meme nom, meme avec
+  une casse differente : la composition a la carte les distinguerait mal ;
+- un modele **reference par un profil** ne peut pas etre supprime. Modifiez
+  d'abord le profil concerne, qui est nomme dans la page ;
+- desactiver un modele le retire des propositions **sans** toucher aux comptes
+  de demonstration deja crees ;
+- vider entierement la table fait revenir aux modeles du code. C'est le retour
+  arriere prevu.
+
+### Conversion vers un compte client
+
+La destination AD des identites converties est affichee, avec les racines
+autorisees et le verdict de validation. Elle est en **lecture seule** : elle
+deplace de vraies identites et se regle sur la machine
+(`DEMO_CONVERSION_TARGET_OU_DN`), avant un redemarrage du service.
+
+Si la page signale une destination absente ou hors racines autorisees, la
+conversion sera refusee au moment de l'operation, pas ici.
+
 ## 8. Diagnostic rapide
 
 Quand un client remonte un probleme de panier, paiement, abonnement ou
