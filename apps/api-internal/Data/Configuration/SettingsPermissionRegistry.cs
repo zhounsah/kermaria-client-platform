@@ -38,6 +38,7 @@ public static class SettingsPermissionRegistry
                 "/admin/settings/demonstrations",
                 "/admin/settings/integrations",
                 "/admin/settings/runtime",
+                "/admin/settings/directory",
                 "/admin/settings/audit"
             ]),
         new(

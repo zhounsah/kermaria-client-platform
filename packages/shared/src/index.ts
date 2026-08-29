@@ -2587,6 +2587,53 @@ export interface IntegrationTestResponse {
   correlationId: string;
 }
 
+// --- Annuaire et KoXo (Centre de configuration, section 12)
+// Contrats non sensibles : ni mot de passe de compte de service, ni jeton de
+// webhook. Un secret n'y figure que par sa presence.
+
+export interface DirectoryAuthorityItem {
+  operation: string;
+  authority: string;
+  note: string;
+}
+
+export interface DirectoryPolicyItem {
+  key: string;
+  label: string;
+  value: string;
+  classification: string;
+  restartRequired: boolean;
+  sensitive: boolean;
+}
+
+export interface DirectoryWriteEntry {
+  occurredAt: string;
+  operation: string;
+  /** `api_internal` : les ecritures KoXo ne passent pas par cette table. */
+  engine: string;
+  actor: string | null;
+  workflow: string;
+  customerReference: string | null;
+  targetReference: string;
+  status: string;
+  resultCode: string | null;
+  changed: boolean | null;
+  correlationId: string;
+}
+
+export interface DirectoryOverview {
+  mode: string;
+  configurationValid: boolean;
+  state: string;
+  warning: string | null;
+  authorities: DirectoryAuthorityItem[];
+  policies: DirectoryPolicyItem[];
+  allowedRoots: string[];
+  writes: DirectoryWriteEntry[];
+  writesPersistent: boolean;
+  writesNotice: string;
+}
+
 // --- Audit et permissions du Centre de configuration (sections 20 et 29)
 // Contrats non sensibles : l'audit ne transporte que des references de cible et
 // une adresse source deja masquee cote API. Aucune valeur de parametre, aucun

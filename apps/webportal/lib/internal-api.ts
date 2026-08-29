@@ -40,6 +40,7 @@ import type {
   DemoContentTemplateAdminView,
   IntegrationsOverview,
   RuntimeOverview,
+  DirectoryOverview,
   SettingsAuditView,
   SettingsPermissionOverview,
   FiscalPolicyAdminView,
@@ -1230,6 +1231,24 @@ export function getAdminSettingsAudit(filters: AdminSettingsAuditFilters = {}) {
   return getAdminData<SettingsAuditView>(
     `/internal/admin/settings/audit${suffix}`,
     EMPTY_SETTINGS_AUDIT,
+  );
+}
+
+export function getAdminDirectoryOverview() {
+  return getAdminData<DirectoryOverview>(
+    "/internal/admin/settings/directory",
+    {
+      mode: "disabled",
+      configurationValid: false,
+      state: "info",
+      warning: null,
+      authorities: [],
+      policies: [],
+      allowedRoots: [],
+      writes: [],
+      writesPersistent: false,
+      writesNotice: "",
+    },
   );
 }
 

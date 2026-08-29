@@ -25,6 +25,10 @@ const settingsPermissionsRoute = await read(
 const settingsAuditCenter = await read("components/AdminSettingsAuditCenter.tsx");
 const settingsFederation = await read("components/AdminSettingsFederation.tsx");
 const billingFormules = await read("lib/billing-v2-formules.ts");
+const settingsDirectoryRoute = await read(
+  "app/api/admin/settings/directory/route.ts",
+);
+const directoryCenter = await read("components/AdminDirectoryCenter.tsx");
 const appShell = await read("components/AppShell.tsx");
 const settingsPage = await read("app/admin/settings/page.tsx");
 const settingsRoute = await read("app/api/admin/settings/route.ts");
@@ -248,5 +252,14 @@ assert.match(billingFormules, /preset\.description\?\.trim\(\)/);
 assert.match(billingFormules, /service\?\.description\?\.trim\(\)/);
 assert.match(snippetDefaults, /checkout_not_open_yet/);
 assert.match(snippetDefaults, /checkout_temporarily_unavailable/);
+
+// Annuaire : la page reste en lecture. Une mutation ici permettrait d'elargir
+// la portee d'ecriture sur un annuaire de production depuis un navigateur.
+assert.match(settingsDirectoryRoute, /handleAdminGet/);
+assert.match(settingsDirectoryRoute, /\/internal\/admin\/settings\/directory/);
+assert.doesNotMatch(settingsDirectoryRoute, /handleAdminMutation|export function (POST|PUT|PATCH|DELETE)/);
+assert.doesNotMatch(directoryCenter, /"use client"/);
+assert.match(directoryCenter, /valeur jamais transmise/);
+assert.match(directoryCenter, /writesNotice/);
 
 console.log("Vérification du contrat d'administration BFF réussie.");

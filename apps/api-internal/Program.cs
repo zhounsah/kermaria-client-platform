@@ -179,6 +179,13 @@ builder.Services.AddScoped<
 builder.Services.AddScoped<
     IRuntimeOverviewService,
     RuntimeOverviewService>();
+builder.Services.AddScoped<IDirectoryAuditRepository>(
+    _ => sqlConfiguration.IsPersistent
+        ? new MariaDbDirectoryAuditRepository(sqlConfiguration)
+        : new MockDirectoryAuditRepository());
+builder.Services.AddScoped<
+    IDirectoryOverviewService,
+    DirectoryOverviewService>();
 builder.Services.AddScoped<ISettingsAuditRepository>(
     _ => sqlConfiguration.IsPersistent
         ? new MariaDbSettingsAuditRepository(sqlConfiguration)
@@ -4446,6 +4453,20 @@ app.MapPost(
         var result = await service.PublishAsync(request, actor.UserId, context.GetCorrelationId(), context.RequestAborted);
         await RecordDiagnosticAuditAsync(context, auditService, actor.UserId, "diagnostic_published", result.Code, "DIAGNOSTIC_PUBLISHED");
         return Results.Json(result, statusCode: ResolveDiagnosticStatusCode(result.Code));
+    });
+// --- Annuaire et KoXo : autorites et ecritures (specification, section 12) --
+app.MapGet(
+    "/internal/admin/settings/directory",
+    async (
+        HttpContext context,
+        IDirectoryOverviewService service,
+        IEditorialRepository editorialRepository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(context, authenticationService, auditService, "admin.settings.read");
+        if (!await editorialRepository.HasAdminPermissionAsync(actor.UserId, "settings.read", context.RequestAborted)) throw new PortalAccessDeniedException();
+        return Results.Ok(await service.GetAsync(context.RequestAborted));
     });
 // --- Audit consolide de la configuration (specification, sections 20 et 29) -
 app.MapGet(

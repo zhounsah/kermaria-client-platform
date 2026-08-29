@@ -550,6 +550,7 @@ async Task<int> RunAsync(string[] arguments)
         await VerifyIntegrationsOverviewAsync();
         await VerifyRuntimeOverviewAsync();
         await VerifySettingsAuditAsync();
+        await VerifyDirectoryOverviewAsync();
         VerifyBillingV2FeatureFlagRegistry();
         await VerifyCommunicationTemplatesAsync();
         await VerifyDiagnosticConfigurationAsync();
@@ -5215,6 +5216,123 @@ static async Task VerifyRuntimeOverviewAsync()
         (await mock.GetAsync(token))
             .Sections.Single(section => section.Key == "database").State == "critical",
         "Une persistance mock hors developpement doit etre signalee comme bloquante.");
+}
+
+static async Task VerifyDirectoryOverviewAsync()
+{
+    var token = CancellationToken.None;
+    const string ldapPassword = "mot-de-passe-ldap-tres-secret";
+    const string koxoToken = "jeton-koxo-tres-secret";
+
+    var koxo = new KoxoSyncWebhookRuntimeConfiguration(
+        new Uri("https://srv-21.home.bzh:8443/internal/koxo/sync/"),
+        koxoToken,
+        TimeSpan.FromSeconds(10),
+        AllowInsecureHttp: false);
+
+    AdRuntimeConfiguration Ad(
+        AdIntegrationMode mode,
+        bool useCurrentWindowsCredentials = false)
+        => new(
+            mode,
+            "clients.home.bzh",
+            "OU=KoXoAdm,DC=clients,DC=home,DC=bzh",
+            "OU=KoXoAdm,DC=clients,DC=home,DC=bzh",
+            ["OU=KoXoAdm,DC=clients,DC=home,DC=bzh"],
+            useCurrentWindowsCredentials,
+            "HOME\\svc_api_portal_ad",
+            ldapPassword,
+            3000,
+            5000,
+            25,
+            ConfigurationValid: true);
+
+    DirectoryOverviewService Service(
+        AdRuntimeConfiguration ad,
+        IDirectoryAuditRepository? repository = null)
+        => new(
+            ad,
+            koxo,
+            repository ?? new MockDirectoryAuditRepository(),
+            LoggerFactory.Create(_ => { }).CreateLogger<DirectoryOverviewService>());
+
+    var controlled = await Service(Ad(AdIntegrationMode.ControlledWrite))
+        .GetAsync(token);
+    var serialized = JsonSerializer.Serialize(controlled);
+
+    // Un secret d'annuaire dans une page web serait exactement le contraire du
+    // bornage que cette page documente.
+    Ensure(
+        !serialized.Contains(ldapPassword, StringComparison.Ordinal)
+        && !serialized.Contains(koxoToken, StringComparison.Ordinal),
+        "Ni le mot de passe LDAP ni le jeton KoXo ne doivent apparaitre dans la vue annuaire.");
+    Ensure(
+        controlled.Policies
+            .Where(policy => policy.Sensitive)
+            .All(policy => policy.Value is "Configure" or "Non configure"),
+        "Un reglage sensible ne doit apparaitre que par sa presence.");
+
+    // L'autorite est un mandat, pas une capacite : meme quand l'API sait ecrire
+    // en LDAP, la creation d'identite reste a KoXo.
+    Ensure(
+        controlled.Authorities
+            .Single(item => item.Operation == "Creation d'un utilisateur")
+            .Authority == "KoXo",
+        "En controlled_write, la creation d'identite doit rester a KoXo.");
+    Ensure(
+        controlled.Authorities
+            .Single(item => item.Operation == "Suppression d'un utilisateur")
+            .Authority == "Aucune",
+        "La suppression d'utilisateur doit rester interdite a API-INTERNAL.");
+
+    // Aucune ligne d'annuaire ne doit se presenter comme modifiable a chaud :
+    // ce serait autoriser l'elargissement du perimetre depuis un navigateur.
+    Ensure(
+        controlled.Policies.All(policy => policy.RestartRequired)
+        && controlled.Policies.All(policy =>
+            policy.Classification is "restart_required" or "secret" or "code_invariant"),
+        "Aucun reglage d'annuaire ne doit etre annonce modifiable a chaud.");
+    Ensure(
+        controlled.Policies
+            .Single(policy => policy.Key == "manual_admin_write_policy")
+            is { Value: "Interdite", Classification: "code_invariant" },
+        "L'ecriture administrateur manuelle doit rester interdite par le code.");
+
+    // Sans persistance, il n'y a pas d'ecriture a montrer : en inventer ferait
+    // croire que l'annuaire a ete touche.
+    Ensure(
+        controlled.Writes.Count == 0 && !controlled.WritesPersistent,
+        "Sans persistance, aucune ecriture d'annuaire ne doit etre affichee.");
+
+    // Se lier sous l'identite du service Windows ignore le compte delegue : le
+    // refus qui suit ressemble a une delegation manquante.
+    var windowsIdentity = await Service(
+            Ad(AdIntegrationMode.ControlledWrite, useCurrentWindowsCredentials: true))
+        .GetAsync(token);
+    Ensure(
+        windowsIdentity.State == "warning"
+        && windowsIdentity.Warning is not null
+        && windowsIdentity.Warning.Contains(
+            "AD_USE_CURRENT_WINDOWS_CREDENTIALS",
+            StringComparison.Ordinal),
+        "L'identite Windows du service doit etre signalee explicitement.");
+
+    // Mode desactive : la lecture reste possible, mais rien ne doit laisser
+    // croire qu'une ecriture partirait.
+    var disabled = await Service(Ad(AdIntegrationMode.Disabled)).GetAsync(token);
+    Ensure(
+        disabled.Authorities
+            .Single(item => item.Operation == "Appartenance aux groupes de services")
+            .Authority == "Aucune",
+        "En mode desactive, aucune autorite d'ecriture de groupe ne doit etre annoncee.");
+
+    // Configuration invalide : bloquant, et le message le dit.
+    var invalid = await Service(
+            Ad(AdIntegrationMode.ControlledWrite) with { ConfigurationValid = false })
+        .GetAsync(token);
+    Ensure(
+        invalid.State == "critical" && invalid.Warning is not null,
+        "Une configuration d'annuaire invalide doit etre remontee comme bloquante.");
 }
 
 static async Task VerifySettingsAuditAsync()

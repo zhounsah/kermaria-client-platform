@@ -466,6 +466,51 @@ Le configurateur est un composant client : les fragments lui sont transmis par
 la page serveur, avec repli de code s'ils manquent. **Aucun calcul de prix ne
 passe cote portail.**
 
+## Annuaire et KoXo : autorites et ecritures
+
+`GET /internal/admin/settings/directory` (`settings.read`).
+
+La vue existe pour lever une ambiguite, pas pour ajouter un reglage.
+`AD_INTEGRATION_MODE=controlled_write` melangeait deux notions : « KoXo fait
+autorite sur les identites » et « API-INTERNAL sait ecrire en LDAP ». Elles sont
+ici separees ligne par ligne — **qui a le mandat** d'un cote, **ce que cette
+application s'autorise** de l'autre. Une capacite technique n'est pas une
+autorite.
+
+Contenu :
+
+- **Autorites** (section 12.1), derivees du mode courant et non recopiees : une
+  table figee finirait par decrire un autre deploiement que celui qui tourne.
+  La suppression d'utilisateur y est « Aucune » quel que soit le mode ;
+- **Perimetres et configuration** : mode, acces annuaire, autorites d'identite
+  et de mot de passe, politiques d'ecriture groupes / cycle de vie / admin
+  manuelle, domaine, OU clients, racine imposee, compte LDAP, webhook KoXo. Les
+  secrets — mot de passe du compte de service, jeton du webhook — n'y figurent
+  que par leur presence ;
+- **Racines autorisees** en entier : toute ecriture hors de ces racines est
+  refusee, quel que soit le mode ;
+- **Ecritures d'annuaire** (section 12.6), lues dans `ad_actions` : date,
+  operation, demandeur, parcours, client, cible, resultat, `correlation_id`.
+
+Deux limites sont enoncees plutot que masquees :
+
+- l'historique ne contient que les ecritures **demandees par API-INTERNAL**. Les
+  identites creees ou renommees par KoXo n'y passent pas ; les afficher ici
+  donnerait une vue faussement complete de l'annuaire ;
+- en persistance mock, la liste est vide et la page le dit. Fabriquer des
+  entrees ferait croire que l'annuaire a ete touche.
+
+Tout est en lecture. Rendre le mode annuaire modifiable depuis une page web
+permettrait d'elargir la portee d'ecriture sur un annuaire de production depuis
+un navigateur — precisement ce que le bornage par racines existe pour empecher.
+
+Un etat `warning` est remonte quand `AD_USE_CURRENT_WINDOWS_CREDENTIALS` vaut
+`true` avec les lectures actives : la liaison se fait alors sous l'identite du
+service Windows, qui n'a aucune delegation, et le refus qui en resulte ressemble
+a une delegation manquante.
+
+Aucune migration.
+
 ## Audit et permissions de la configuration
 
 `GET /internal/admin/settings/audit` (`settings.read`) et

@@ -211,6 +211,15 @@ cookie HttpOnly -> BFF -> session API-INTERNAL -> user_id -> customer_id
   n'execute aucun DDL — le compte applicatif n'en a pas le droit.
 - Une persistance mock hors developpement est remontee comme bloquante : c'est
   une perte de donnees silencieuse.
+- La vue annuaire n'expose ni le mot de passe du compte de service LDAP ni le
+  jeton du webhook KoXo : ils n'y figurent que par leur presence, et un test de
+  non-regression echoue si l'une de ces valeurs apparait dans la reponse.
+- Aucun reglage d'annuaire n'est modifiable depuis le Centre. Le rendre mutable
+  permettrait d'elargir la portee d'ecriture sur un annuaire de production depuis
+  un navigateur, ce que le bornage par racines autorisees existe pour empecher.
+- L'historique d'ecritures ne montre que ce qu'API-INTERNAL a demande. Les
+  ecritures KoXo n'y figurent pas et ne sont pas simulees : une vue faussement
+  complete serait plus dangereuse qu'une vue partielle annoncee.
 - L'audit de configuration lit le journal existant et n'en cree pas un second :
   un journal parallele divergerait, et c'est le premier qui fait foi. L'adresse
   source y est masquee par le meme code que le reste de l'administration.

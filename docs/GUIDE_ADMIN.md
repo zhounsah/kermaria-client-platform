@@ -547,6 +547,49 @@ simple « Configure ».
 Rien ne se modifie ici. Ces reglages sont resolus au demarrage du service et se
 corrigent sur la machine, avant un redemarrage.
 
+## 7 octies bis. Annuaire et KoXo - `/admin/settings/directory`
+
+Page de lecture. Elle repond a deux questions que le mode `controlled_write`
+melangeait : **qui a le mandat** sur une operation d'annuaire, et **ce que
+l'application s'autorise**.
+
+### Autorites
+
+Le tableau des autorites se lit d'abord. En production, KoXo fait autorite sur
+les identites et les mots de passe ; API-INTERNAL lit, rattache par
+`employeeNumber` et pilote les groupes de services. La suppression d'utilisateur
+est interdite a l'API, quel que soit le mode.
+
+### Perimetres
+
+Les reglages sont affiches avec leur classification : tous demandent un
+redemarrage, l'ecriture administrateur manuelle est fixee par le code. Le mot de
+passe du compte LDAP et le jeton du webhook KoXo n'apparaissent que comme
+« Configure » ou « Non configure ».
+
+Un avertissement apparait si `AD_USE_CURRENT_WINDOWS_CREDENTIALS` vaut `true` :
+la liaison se fait alors sous l'identite du service Windows, qui n'a aucune
+delegation. Le refus d'acces qui suit ressemble a une delegation manquante alors
+qu'elle est correctement posee — c'est le piege le plus couteux de cette
+configuration.
+
+### Racines autorisees
+
+Toute ecriture hors de ces racines est refusee. Une liste vide signifie que rien
+ne peut etre ecrit.
+
+### Ecritures d'annuaire
+
+Repond a « qui a ecrit dans l'AD, quoi, quand, pour quel parcours ». Deux limites
+a garder en tete :
+
+- seules les ecritures **demandees par API-INTERNAL** y figurent. Une identite
+  creee par KoXo n'y apparait pas : elle ne passe pas par cette application ;
+- en persistance non durable, la liste est vide et la page le dit.
+
+Rien ne se modifie ici. Ces reglages se corrigent sur la machine, avant un
+redemarrage.
+
 ## 7 nonies. Audit et permissions - `/admin/settings/audit`
 
 Page de lecture. Elle repond a : **qui a change quoi, quand, et avec quel

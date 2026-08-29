@@ -22,6 +22,7 @@ export default async function AdminSettingsPage() {
       <Link className="button button-secondary" href="/admin/settings/billing">Facturation & fiscalité</Link>
       <Link className="button button-secondary" href="/admin/settings/demonstrations">Démonstrations</Link>
       <Link className="button button-secondary" href="/admin/settings/integrations">Intégrations</Link>
+      <Link className="button button-secondary" href="/admin/settings/directory">Annuaire &amp; KoXo</Link>
       <Link className="button button-secondary" href="/admin/settings/runtime">Infrastructure & runtime</Link>
       <Link className="button button-secondary" href="/admin/settings/audit">Audit & permissions</Link>
     </nav>

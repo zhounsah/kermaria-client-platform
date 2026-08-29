@@ -9706,3 +9706,10 @@ fieldset.form-field > .form-hint {
 .admin-settings-federation li { display:grid; gap:4px; padding:14px 16px; border:1px solid var(--border,#d7dee8); border-radius:10px; background:var(--surface,#fff); }
 .admin-settings-federation li p { margin:0; }
 .admin-settings-federation li a { font-weight:600; }
+
+/* Centre de configuration - annuaire et KoXo */
+.admin-directory { display:grid; gap:22px; padding:18px; border:1px solid var(--border,#d7dee8); border-left-width:4px; border-radius:12px; background:var(--surface,#fff); }
+.admin-directory h3 { margin:0 0 8px; }
+.admin-directory [role="status"] { margin:0; color:#8a5300; }
+.admin-directory-roots { list-style:none; margin:0; padding:0; display:grid; gap:6px; }
+.admin-directory-roots li { padding:8px 10px; border:1px solid var(--border,#d7dee8); border-radius:8px; overflow-wrap:anywhere; }
