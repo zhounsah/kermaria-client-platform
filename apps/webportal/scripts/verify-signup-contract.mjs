@@ -152,8 +152,12 @@ check("jetons hashes en SHA-256", () => {
 check("token aleatoire 32 octets", () => {
   assert.match(portalSetupToken, /RandomNumberGenerator\.GetBytes\(32\)/);
 });
-check("non-leak : reponse identique via HasRecentSignupOrUserAsync", () => {
-  assert.match(signupService, /HasRecentSignupOrUserAsync/);
+// Le blocage non-divulgation a ete separe de la fenetre de debit : il porte
+// desormais le nom `HasBlockingSignupOrUserAsync`. Le garde-fou suit le
+// renommage plutot que de disparaitre — c'est l'invariant qui compte, pas le
+// nom : une adresse connue doit obtenir la meme reponse qu'un succes.
+check("non-leak : reponse identique via HasBlockingSignupOrUserAsync", () => {
+  assert.match(signupService, /HasBlockingSignupOrUserAsync/);
   assert.match(signupService, /return Accepted\(\);/);
 });
 check("mot de passe : longueur minimale imposee", () => {
