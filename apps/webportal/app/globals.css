@@ -729,6 +729,9 @@ h3 {
 .admin-settings-row label { display: block; font-weight: 700; }
 .admin-settings-row p { margin: .3rem 0; color: var(--text-muted, #536273); font-size: .9rem; }
 .admin-settings-row small { color: var(--text-muted, #536273); }
+.admin-settings-row .admin-settings-label { font-weight: 700; color: inherit; }
+.admin-settings-row-readonly { background: var(--surface-muted, #f4f6fa); }
+.admin-settings-row-readonly .admin-settings-control p { margin: .1rem 0; }
 .admin-settings-control { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
 .admin-settings-control input, .admin-settings-control select { min-width: 12rem; flex: 1 1 14rem; }
 @media (max-width: 40rem) { .admin-settings-grid { grid-template-columns: 1fr; } .admin-settings-control > * { width: 100%; } }

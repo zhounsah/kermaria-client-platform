@@ -63,9 +63,8 @@ public sealed class MockSignupRepository : ISignupRepository
 
     public bool IsPersistent => false;
 
-    public Task<bool> HasRecentSignupOrUserAsync(
+    public Task<bool> HasBlockingSignupOrUserAsync(
         string normalizedEmail,
-        DateTime windowStartUtc,
         CancellationToken cancellationToken)
     {
         if (_authenticationStore.Users.ContainsKey(normalizedEmail))
@@ -75,10 +74,25 @@ public sealed class MockSignupRepository : ISignupRepository
 
         var exists = _rows.Values.Any(row =>
             string.Equals(row.Email, normalizedEmail, StringComparison.Ordinal)
-            && (row.Status is "email_pending" or "email_verified" or "approved"
-                || row.CreatedAtUtc >= windowStartUtc));
+            && row.Status is "email_pending" or "email_verified" or "approved");
         return Task.FromResult(exists);
     }
+
+    public Task<int> CountRecentSignupsByEmailAsync(
+        string normalizedEmail,
+        DateTime windowStartUtc,
+        CancellationToken cancellationToken)
+        => Task.FromResult(_rows.Values.Count(row =>
+            string.Equals(row.Email, normalizedEmail, StringComparison.Ordinal)
+            && row.CreatedAtUtc >= windowStartUtc));
+
+    public Task<int> CountRecentSignupsBySourceAddressAsync(
+        string sourceAddress,
+        DateTime windowStartUtc,
+        CancellationToken cancellationToken)
+        => Task.FromResult(_rows.Values.Count(row =>
+            string.Equals(row.SourceAddress, sourceAddress, StringComparison.Ordinal)
+            && row.CreatedAtUtc >= windowStartUtc));
 
     public Task InsertPendingAsync(
         SignupInsert insert,

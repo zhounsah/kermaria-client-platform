@@ -17,7 +17,6 @@ public sealed record SignupOperationResult(
 
 public interface ISignupService
 {
-    bool Enabled { get; }
     bool IsPersistent { get; }
 
     Task<SignupOperationResult> SubmitAsync(
@@ -135,8 +134,6 @@ public sealed class SignupService : ISignupService
         _logger = logger;
     }
 
-    public bool Enabled => _configuration.Enabled;
-
     public bool IsPersistent => _repository.IsPersistent;
 
     public async Task<SignupOperationResult> SubmitAsync(
@@ -162,15 +159,53 @@ public sealed class SignupService : ISignupService
                 "Les informations transmises sont invalides.");
         }
 
-        var windowStart = DateTime.UtcNow.AddHours(-24);
-        var alreadyKnown = await _repository.HasRecentSignupOrUserAsync(
-            normalized.Email,
-            windowStart,
-            cancellationToken);
-        if (alreadyKnown)
+        // Compte existant ou demande deja active : reponse identique a un succes,
+        // pour ne pas reveler qu'une adresse est connue.
+        if (await _repository.HasBlockingSignupOrUserAsync(
+                normalized.Email,
+                cancellationToken))
         {
             _logger.LogInformation(
                 "Signup submission ignored (duplicate or existing account) correlation_id {CorrelationId}",
+                correlationId);
+            return Accepted();
+        }
+
+        var now = DateTime.UtcNow;
+        var sourceAddress = NormalizeOptional(payload.SourceAddress, 45);
+
+        // Limite par adresse : refus explicite, aucune information sur le
+        // demandeur. Le BFF pose deja un limiteur en memoire ; celui-ci est
+        // compte en base, donc insensible a un redemarrage du portail et pilote
+        // par le parametre administrable.
+        if (!string.IsNullOrEmpty(sourceAddress))
+        {
+            var perAddress = await _repository.CountRecentSignupsBySourceAddressAsync(
+                sourceAddress,
+                now.AddHours(-1),
+                cancellationToken);
+            if (perAddress >= runtime.RateLimitPerIpPerHour)
+            {
+                _logger.LogInformation(
+                    "Signup submission rate limited by source address correlation_id {CorrelationId}",
+                    correlationId);
+                return new SignupOperationResult(
+                    false,
+                    "RATE_LIMITED",
+                    "Trop de demandes successives. Reessayez plus tard.");
+            }
+        }
+
+        // Limite par adresse e-mail : silencieuse, meme motif de non-divulgation
+        // que le doublon ci-dessus.
+        var perEmail = await _repository.CountRecentSignupsByEmailAsync(
+            normalized.Email,
+            now.AddHours(-24),
+            cancellationToken);
+        if (perEmail >= runtime.RateLimitPerEmailPer24h)
+        {
+            _logger.LogInformation(
+                "Signup submission rate limited by email correlation_id {CorrelationId}",
                 correlationId);
             return Accepted();
         }
@@ -186,8 +221,8 @@ public sealed class SignupService : ISignupService
             normalized.Customer,
             normalized.PrimaryUser,
             HashToken(token),
-            DateTime.UtcNow.AddHours(runtime.VerificationTokenTtlHours),
-            NormalizeOptional(payload.SourceAddress, 45),
+            now.AddHours(runtime.VerificationTokenTtlHours),
+            sourceAddress,
             NormalizeOptional(payload.UserAgent, 500),
             BillingV2Selection: normalized.BillingV2Selection);
         await _repository.InsertPendingAsync(insert, cancellationToken);

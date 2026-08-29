@@ -544,6 +544,7 @@ async Task<int> RunAsync(string[] arguments)
         VerifyActiveDirectoryPathScope();
         VerifyChildProcessEnvironmentGuardrails();
         await VerifySignupStoresPriceFreeBillingV2SelectionAsync();
+        await VerifySignupGuardrailsAsync();
         await VerifyCommunicationTemplatesAsync();
         await VerifyDiagnosticConfigurationAsync();
         await RunMockTestsAsync();
@@ -4632,6 +4633,191 @@ static JsonElement ParseJson(string payload)
     return document.RootElement.Clone();
 }
 
+/// <summary>
+/// Garde-fous d'inscription : le kill switch et les limites de debit doivent
+/// etre appliques par API-INTERNAL, pas seulement par le portail, et une valeur
+/// venue de MariaDB ne doit jamais assouplir le registre.
+/// </summary>
+static async Task VerifySignupGuardrailsAsync()
+{
+    var settingsRepository = new TestApplicationSettingsRepository();
+    var settings = new ApplicationSettingsService(settingsRepository);
+    var token = CancellationToken.None;
+    const string actor = "00000000-0000-0000-0000-0000000000cc";
+    const string correlation = "smoke-signup-guardrails";
+
+    // Configuration de demarrage volontairement permissive : tout durcissement
+    // observe ensuite vient donc bien du registre ou de la base.
+    var startup = new SignupRuntimeConfiguration(true, 3, 10, 24, 24, false);
+
+    // --- Cle verrouillee par le code -------------------------------------
+    var refused = await settings.UpdateAsync(
+        "signup_auto_approve",
+        new ApplicationSettingUpdateRequest(ParseJson("true"), 0),
+        actor,
+        correlation,
+        token);
+    Ensure(
+        refused.Code == "SETTINGS_READ_ONLY",
+        "L'approbation automatique ne doit pas etre modifiable depuis l'administration.");
+
+    // Meme posee directement en base, elle reste inoperante.
+    settingsRepository.Seed("signup_auto_approve", "signup", "true", "bool");
+    Ensure(
+        !(await settings.GetSignupConfigurationAsync(startup, token)).AutoApprove,
+        "Une ligne 'true' en base ne doit pas activer l'approbation automatique.");
+    var lockedItem = (await settings.GetSnapshotAsync(token))
+        .Settings.Single(item => item.Key == "signup_auto_approve");
+    Ensure(
+        !lockedItem.Editable
+        && lockedItem.Source == "default"
+        && !lockedItem.Value.GetBoolean(),
+        "L'administration doit afficher la valeur reellement appliquee, pas la ligne stockee.");
+
+    // --- Bornes preservees a la lecture ----------------------------------
+    settingsRepository.Seed("signup_rate_limit_per_ip_per_hour", "signup", "100000", "int");
+    Ensure(
+        (await settings.GetSignupConfigurationAsync(startup, token)).RateLimitPerIpPerHour
+            == startup.RateLimitPerIpPerHour,
+        "Une valeur hors bornes lue en base doit etre ignoree, pas appliquee.");
+    settingsRepository.Seed("signup_rate_limit_per_ip_per_hour", "signup", "1", "int");
+    Ensure(
+        (await settings.GetSignupConfigurationAsync(startup, token)).RateLimitPerIpPerHour == 1,
+        "Une valeur dans les bornes doit bien devenir la valeur appliquee.");
+
+    // --- Kill switch applique cote API -----------------------------------
+    settingsRepository.Seed("signup_enabled", "signup", "false", "bool");
+    var authStore = CreateMockAuthenticationStore();
+    var signupStore = new MockSignupStore();
+    var service = NewSignupService(signupStore, authStore, startup, settings);
+    var disabled = await service.SubmitAsync(
+        SmokeSignupPayload("kill-switch@example.invalid", "203.0.113.10"),
+        correlation,
+        token);
+    Ensure(
+        !disabled.Succeeded && disabled.Code == "SIGNUP_DISABLED",
+        "Le kill switch doit fermer l'inscription cote API, meme si la configuration de demarrage l'ouvre.");
+    Ensure(
+        signupStore.Rows.IsEmpty,
+        "Une inscription refusee ne doit laisser aucune demande en base.");
+
+    // --- Limite par adresse : refus explicite -----------------------------
+    settingsRepository.Seed("signup_enabled", "signup", "true", "bool");
+    var accepted = await service.SubmitAsync(
+        SmokeSignupPayload("premiere@example.invalid", "203.0.113.10"),
+        correlation,
+        token);
+    Ensure(accepted.Succeeded, "La premiere demande doit etre acceptee.");
+    var limited = await service.SubmitAsync(
+        SmokeSignupPayload("seconde@example.invalid", "203.0.113.10"),
+        correlation,
+        token);
+    Ensure(
+        !limited.Succeeded && limited.Code == "RATE_LIMITED",
+        "Une seconde demande depuis la meme adresse doit etre refusee quand la limite vaut 1.");
+    Ensure(
+        signupStore.Rows.Count == 1,
+        "Une demande limitee ne doit pas etre enregistree.");
+
+    // Une autre adresse n'est pas concernee : la limite porte bien sur la
+    // source, pas sur le service entier.
+    Ensure(
+        (await service.SubmitAsync(
+            SmokeSignupPayload("autre-source@example.invalid", "203.0.113.11"),
+            correlation,
+            token)).Succeeded,
+        "Une adresse differente ne doit pas heriter du compteur de la premiere.");
+
+    // --- Limite par e-mail : silencieuse ----------------------------------
+    // Une demande encore active bloque deja par non-divulgation ; la limite de
+    // debit couvre le cas suivant, ou la demande precedente a ete refusee et ou
+    // seule la fenetre de 24 h empeche de recommencer indefiniment.
+    foreach (var row in signupStore.Rows.Values.Where(row =>
+        string.Equals(row.Email, "premiere@example.invalid", StringComparison.Ordinal)))
+    {
+        row.Status = "rejected";
+    }
+
+    settingsRepository.Seed("signup_rate_limit_per_email_per_24h", "signup", "1", "int");
+    var before = signupStore.Rows.Count;
+    var silent = await service.SubmitAsync(
+        SmokeSignupPayload("premiere@example.invalid", "203.0.113.12"),
+        correlation,
+        token);
+    Ensure(
+        silent.Succeeded && silent.Code == "SIGNUP_ACCEPTED",
+        "Une demande au-dela de la limite par e-mail doit rester indiscernable d'un succes.");
+    Ensure(
+        signupStore.Rows.Count == before,
+        "Une demande au-dela de la limite par e-mail ne doit rien enregistrer.");
+
+    // Au-dela de la fenetre, la meme adresse redevient recevable.
+    settingsRepository.Seed("signup_rate_limit_per_email_per_24h", "signup", "2", "int");
+    Ensure(
+        (await service.SubmitAsync(
+            SmokeSignupPayload("premiere@example.invalid", "203.0.113.13"),
+            correlation,
+            token)).Succeeded
+        && signupStore.Rows.Count == before + 1,
+        "Relever la limite par e-mail doit reellement autoriser une demande de plus.");
+
+    settingsRepository.Clear();
+}
+
+static SignupService NewSignupService(
+    MockSignupStore signupStore,
+    MockAuthenticationStore authStore,
+    SignupRuntimeConfiguration startup,
+    IApplicationSettingsService settings)
+{
+    var adConfiguration = CreateDisabledAdConfiguration();
+    var adMembershipStore = new MockAdGroupMembershipStore();
+    return new SignupService(
+        new MockSignupRepository(signupStore, authStore),
+        new TestEmailDispatchService(),
+        new PortalPasswordService(),
+        new MockActiveDirectoryService(adConfiguration, adMembershipStore),
+        new MockActiveDirectoryLinkRepository(),
+        new MockAdGroupProvisioner(adMembershipStore),
+        NewPendingPasswordStore(),
+        new RecordingKoxoSyncWebhookTriggerService(),
+        startup,
+        settings,
+        CreateMockEmailConfiguration(),
+        adConfiguration,
+        LoggerFactory.Create(_ => { }).CreateLogger<SignupService>());
+}
+
+static SignupSubmitPayload SmokeSignupPayload(string email, string sourceAddress)
+    => new(
+        "Societe Garde-fou",
+        "Alice Martin",
+        email,
+        "0102030405",
+        "Test des garde-fous d'inscription.",
+        new SignupCustomerData(
+            "professional",
+            "Societe Garde-fou",
+            email,
+            "0102030405",
+            "1 rue du Test",
+            null,
+            "75001",
+            "Paris",
+            "FR"),
+        new SignupUserData(
+            "madame",
+            "Alice",
+            "Martin",
+            "1990-01-02",
+            null,
+            "Alice Martin",
+            email,
+            "0102030405",
+            true),
+        sourceAddress,
+        "api-smoke-test");
+
 static KoxoPendingPasswordStore NewPendingPasswordStore()
     => new(LoggerFactory.Create(_ => { }).CreateLogger<KoxoPendingPasswordStore>());
 
@@ -7726,6 +7912,57 @@ sealed class RecordingKoxoSyncWebhookTriggerService : IKoxoSyncWebhookTriggerSer
         Requests.Add(request);
         return Task.CompletedTask;
     }
+}
+
+sealed class TestApplicationSettingsRepository : IApplicationSettingsRepository
+{
+    private readonly Dictionary<string, StoredApplicationSetting> _values =
+        new(StringComparer.Ordinal);
+
+    public bool IsPersistent => false;
+
+    public void Seed(string key, string category, string valueJson, string valueType)
+        => _values[key] = new StoredApplicationSetting(
+            key,
+            category,
+            valueJson,
+            valueType,
+            _values.TryGetValue(key, out var current) ? current.Version + 1 : 1,
+            DateTime.UtcNow);
+
+    public void Clear() => _values.Clear();
+
+    public Task<IReadOnlyList<StoredApplicationSetting>> GetAllAsync(
+        CancellationToken cancellationToken)
+        => Task.FromResult<IReadOnlyList<StoredApplicationSetting>>(_values.Values.ToArray());
+
+    public Task<StoredApplicationSetting?> GetAsync(
+        string key,
+        CancellationToken cancellationToken)
+        => Task.FromResult(_values.GetValueOrDefault(key));
+
+    public Task<bool> TryUpsertAsync(
+        StoredApplicationSetting setting,
+        int expectedVersion,
+        CancellationToken cancellationToken)
+    {
+        if (_values.TryGetValue(setting.Key, out var current))
+        {
+            if (current.Version != expectedVersion) return Task.FromResult(false);
+        }
+        else if (expectedVersion != 0) return Task.FromResult(false);
+        _values[setting.Key] = setting;
+        return Task.FromResult(true);
+    }
+
+    public Task AddRevisionAsync(
+        string key,
+        int version,
+        string? oldValueJson,
+        string newValueJson,
+        string? actorUserId,
+        string correlationId,
+        CancellationToken cancellationToken) => Task.CompletedTask;
 }
 
 sealed class TestEmailDispatchService : IEmailDispatchService

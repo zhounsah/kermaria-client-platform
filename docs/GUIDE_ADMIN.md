@@ -296,6 +296,39 @@ Si un message « ce parametre a ete modifie ailleurs » apparait, un autre
 administrateur a enregistre entre-temps : recharger la page avant de
 recommencer, sinon le travail de l'autre serait ecrase.
 
+Un parametre marque **Risque high** demande une confirmation avant
+enregistrement : il change le comportement du service en production
+immediatement, sans redeploiement.
+
+Un parametre verrouille par le code s'affiche en lecture seule, avec sa valeur
+appliquee. Il reste visible volontairement : son etat doit pouvoir etre
+constate, meme s'il ne se modifie pas ici.
+
+### Inscriptions
+
+- **Inscriptions ouvertes** ferme le parcours cote serveur. Ce n'est pas un
+  simple masquage d'interface : une soumission directe est refusee par
+  API-INTERNAL.
+- **Limite IP par heure** est comptee en base. Un depassement donne un refus
+  explicite au visiteur.
+- **Limite e-mail par 24 h** est comptee de la meme facon, mais le depassement
+  renvoie une reponse identique a un succes : c'est volontaire, l'API ne doit
+  pas reveler qu'une adresse est deja connue. Une demande apparemment acceptee
+  peut donc ne rien avoir enregistre.
+- **Durees des liens** bornent la validite des e-mails de verification et de
+  definition de mot de passe. Les liens deja envoyes conservent leur echeance.
+- **Approbation automatique** est verrouillee a « desactivee ». Toute demande
+  reste soumise a une revue humaine dans `/admin/signups`.
+
+### Securite
+
+Duree de session, nombre d'echecs de connexion autorises et duree de
+verrouillage prennent effet immediatement, dans les bornes du registre. Les
+sessions deja ouvertes gardent l'echeance posee a leur creation.
+
+Les proprietes de securite des cookies ne sont pas modifiables ici : elles
+restent pilotees par la configuration de deploiement.
+
 ## 7 ter. Messages et communications - `/admin/settings/messages`
 
 Trois familles de textes, chacune avec son historique et sa restauration.

@@ -272,6 +272,17 @@ Contraintes :
   `secret` ou `code_invariant` ; seules les cles `dynamic` sont modifiables ;
 - concurrence optimiste : `expectedVersion` obligatoire, conflit en `409`
   avec le code `SETTINGS_VERSION_CONFLICT` ;
+- une valeur relue depuis MariaDB repasse par la **validation d'ecriture** :
+  une ligne hors bornes — heritee d'un registre plus permissif, posee a la main
+  ou restauree — est ignoree et le repli est la valeur d'environnement. Une
+  configuration ne peut donc jamais devenir plus permissive parce qu'elle vient
+  de la base ;
+- une cle non editable (`code_invariant`) est refusee en ecriture avec
+  `SETTINGS_READ_ONLY`, et une ligne posee directement en base pour cette cle
+  reste sans effet ;
+- l'instantane affiche la valeur **reellement appliquee** : une valeur stockee
+  devenue inacceptable est presentee comme la valeur par defaut, tout en
+  conservant sa version pour rester corrigeable ;
 - aucun secret n'est renvoye : les valeurs sensibles sont resumees en
   « Configure » / « Non configure ».
 
@@ -284,6 +295,25 @@ Endpoints :
   (`settings.write`), journalisee en `setting_changed` ;
 - `GET /internal/portal/billing-configuration` : coordonnees de reglement
   effectives, servies par API-INTERNAL et jamais recopiees dans le portail.
+
+### Garde-fous d'inscription
+
+Le kill switch et les limites de debit d'inscription sont appliques par
+API-INTERNAL, pas seulement par le portail :
+
+- `signup_enabled` est relu a chaque soumission : masquer le parcours cote
+  WebPortal ne ferme pas l'inscription, `POST /internal/signup` repond
+  `403 SIGNUP_DISABLED` ;
+- `signup_rate_limit_per_ip_per_hour` est compte en base sur l'adresse
+  transmise par le BFF ; le depassement repond `429 RATE_LIMITED`. Le limiteur
+  en memoire du portail reste une premiere barriere, mais il ne survit pas a un
+  redemarrage : l'autorite est ici ;
+- `signup_rate_limit_per_email_per_24h` est compte sur les demandes creees dans
+  les 24 heures. Son depassement, comme un compte deja existant ou une demande
+  encore active, repond **comme un succes** : rien n'est enregistre, et l'API ne
+  revele pas qu'une adresse est connue ;
+- `signup_auto_approve` n'existe qu'en lecture : la valeur appliquee est
+  toujours `false`, quelle que soit la ligne en base.
 
 ## Diagnostic administrable
 

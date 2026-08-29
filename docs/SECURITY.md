@@ -184,6 +184,21 @@ cookie HttpOnly -> BFF -> session API-INTERNAL -> user_id -> customer_id
 - Toute mutation du diagnostic exige la permission
   `settings.diagnostic.write` : un parcours mal configure orienterait de vrais
   clients vers une mauvaise formule.
+- Le kill switch d'inscription est verifie **cote API-INTERNAL** a chaque
+  soumission : masquer le parcours dans le portail ne suffit pas a fermer
+  l'inscription.
+- Les limites de debit d'inscription sont comptees en base par API-INTERNAL.
+  Le limiteur en memoire du BFF reste utile en premiere barriere, mais il est
+  par processus et disparait au redeploiement.
+- Le depassement de la limite par e-mail, comme un compte deja existant,
+  renvoie une reponse indiscernable d'un succes : l'API ne revele jamais qu'une
+  adresse est connue. Seule la limite par adresse IP donne un refus explicite.
+- L'approbation automatique des inscriptions est verrouillee dans le code : la
+  cle est visible, non editable, et une ligne posee directement en base ne la
+  reactive pas.
+- Une valeur de configuration relue depuis MariaDB repasse par la validation
+  d'ecriture : les bornes du registre ne peuvent pas etre contournees en
+  ecrivant directement en base.
 - Les replis sont fail-closed au sens metier : en cas de panne SQL ou de
   ligne absente, le runtime utilise le gabarit integre au code, jamais un
   texte vide, et jamais une configuration plus permissive que l'absence de

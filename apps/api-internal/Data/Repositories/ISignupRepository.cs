@@ -83,10 +83,23 @@ public interface ISignupRepository
 {
     bool IsPersistent { get; }
 
-    // Idempotence + non-leak : true si un compte ou une demande active
-    // existe deja pour cet e-mail dans la fenetre donnee.
-    Task<bool> HasRecentSignupOrUserAsync(
+    // Idempotence + non-leak : true si un compte existe deja ou si une demande
+    // est encore active pour cet e-mail. Independant de toute limite de debit :
+    // ce cas doit rester bloquant quelle que soit la configuration.
+    Task<bool> HasBlockingSignupOrUserAsync(
         string normalizedEmail,
+        CancellationToken cancellationToken);
+
+    // Limites de debit appliquees cote API-INTERNAL. Elles sont comptees en
+    // base et survivent donc a un redemarrage du portail, contrairement au
+    // limiteur en memoire du BFF qui reste une premiere barriere.
+    Task<int> CountRecentSignupsByEmailAsync(
+        string normalizedEmail,
+        DateTime windowStartUtc,
+        CancellationToken cancellationToken);
+
+    Task<int> CountRecentSignupsBySourceAddressAsync(
+        string sourceAddress,
         DateTime windowStartUtc,
         CancellationToken cancellationToken);
 

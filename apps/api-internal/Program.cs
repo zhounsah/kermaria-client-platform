@@ -1636,7 +1636,10 @@ app.MapPost(
     });
 
 // V0.26 : inscription self-service (anonyme, protégé par X-Service-Auth).
-// hCaptcha, honeypot et rate limit IP sont assurés côté webportal BFF.
+// hCaptcha et honeypot restent assurés côté webportal BFF, qui pose aussi un
+// premier limiteur en mémoire. Le kill switch et les limites de débit
+// administrables sont, eux, appliqués ici : masquer le parcours côté portail
+// ne suffit pas à fermer l'inscription.
 app.MapPost(
     "/internal/signup",
     async (
@@ -1692,9 +1695,12 @@ app.MapPost(
 
         if (!result.Succeeded)
         {
-            var statusCode = result.Code == "SIGNUP_DISABLED"
-                ? StatusCodes.Status403Forbidden
-                : StatusCodes.Status400BadRequest;
+            var statusCode = result.Code switch
+            {
+                "SIGNUP_DISABLED" => StatusCodes.Status403Forbidden,
+                "RATE_LIMITED" => StatusCodes.Status429TooManyRequests,
+                _ => StatusCodes.Status400BadRequest,
+            };
             return Results.Json(
                 new ApiError(result.Code, result.Message, correlationId),
                 statusCode: statusCode);

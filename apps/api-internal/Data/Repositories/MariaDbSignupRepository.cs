@@ -21,9 +21,8 @@ public sealed class MariaDbSignupRepository : ISignupRepository
 
     public bool IsPersistent => true;
 
-    public async Task<bool> HasRecentSignupOrUserAsync(
+    public async Task<bool> HasBlockingSignupOrUserAsync(
         string normalizedEmail,
-        DateTime windowStartUtc,
         CancellationToken cancellationToken)
     {
         await using var connection = new MySqlConnection(
@@ -38,14 +37,58 @@ public sealed class MariaDbSignupRepository : ISignupRepository
                  WHERE LOWER(email) = @email)
               + (SELECT COUNT(*) FROM signup_pending
                  WHERE email = @email
-                   AND (status IN ('email_pending', 'email_verified', 'approved')
-                        OR created_at >= @window_start));
+                   AND status IN ('email_pending', 'email_verified', 'approved'));
             """;
         command.Parameters.AddWithValue("@email", normalizedEmail);
-        command.Parameters.AddWithValue("@window_start", windowStartUtc);
         var count = Convert.ToInt64(
             await command.ExecuteScalarAsync(cancellationToken));
         return count > 0;
+    }
+
+    public Task<int> CountRecentSignupsByEmailAsync(
+        string normalizedEmail,
+        DateTime windowStartUtc,
+        CancellationToken cancellationToken)
+        => CountRecentAsync(
+            "email = @value",
+            normalizedEmail,
+            windowStartUtc,
+            cancellationToken);
+
+    public Task<int> CountRecentSignupsBySourceAddressAsync(
+        string sourceAddress,
+        DateTime windowStartUtc,
+        CancellationToken cancellationToken)
+        => CountRecentAsync(
+            "source_address = @value",
+            sourceAddress,
+            windowStartUtc,
+            cancellationToken);
+
+    private async Task<int> CountRecentAsync(
+        string predicate,
+        string value,
+        DateTime windowStartUtc,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(
+            _configuration.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        // `predicate` n'est jamais construit a partir d'une entree utilisateur :
+        // les deux seules formes possibles sont litterales ci-dessus, et la
+        // valeur comparee reste un parametre.
+        command.CommandText =
+            $"""
+            SELECT COUNT(*) FROM signup_pending
+            WHERE {predicate}
+              AND created_at >= @window_start;
+            """;
+        command.Parameters.AddWithValue("@value", value);
+        command.Parameters.AddWithValue("@window_start", windowStartUtc);
+        return Convert.ToInt32(
+            await command.ExecuteScalarAsync(cancellationToken));
     }
 
     public async Task InsertPendingAsync(
