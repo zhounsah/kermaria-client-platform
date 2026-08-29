@@ -19,27 +19,82 @@ public sealed class MariaDbFiscalPolicyRepository : IFiscalPolicyRepository
         await connection.OpenAsync(cancellationToken);
 
         await using var command = connection.CreateCommand();
-        command.CommandText =
-            """
-            SELECT id, regime, mention, effective_from, created_at, created_by_user_id
-            FROM fiscal_policy_mentions
-            ORDER BY regime, effective_from;
-            """;
+        command.CommandText = ListSql;
 
         var items = new List<StoredFiscalMention>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            items.Add(new StoredFiscalMention(
-                MariaDbIdentifierReader.ReadRequired(reader, "id"),
-                reader.GetString("regime"),
-                reader.GetString("mention"),
-                DateTime.SpecifyKind(reader.GetDateTime("effective_from"), DateTimeKind.Utc),
-                DateTime.SpecifyKind(reader.GetDateTime("created_at"), DateTimeKind.Utc),
-                MariaDbIdentifierReader.ReadNullable(reader, "created_by_user_id")));
+            items.Add(ReadMention(reader));
         }
 
         return items;
+    }
+
+    private const string ListSql =
+        """
+        SELECT id, regime, mention, effective_from, created_at, created_by_user_id
+        FROM fiscal_policy_mentions
+        ORDER BY regime, effective_from;
+        """;
+
+    private const string VersionsSql =
+        """
+        SELECT regime, version
+        FROM fiscal_policy_regime_versions;
+        """;
+
+    private static StoredFiscalMention ReadMention(MySqlDataReader reader)
+        => new(
+            MariaDbIdentifierReader.ReadRequired(reader, "id"),
+            reader.GetString("regime"),
+            reader.GetString("mention"),
+            DateTime.SpecifyKind(reader.GetDateTime("effective_from"), DateTimeKind.Utc),
+            DateTime.SpecifyKind(reader.GetDateTime("created_at"), DateTimeKind.Utc),
+            MariaDbIdentifierReader.ReadNullable(reader, "created_by_user_id"));
+
+    /// <remarks>
+    /// Transaction de lecture courte, explicitement en <c>REPEATABLE READ</c> :
+    /// les deux requetes voient le meme instantane, quelle que soit l'isolation
+    /// par defaut du serveur. En <c>READ COMMITTED</c>, chaque requete prendrait
+    /// son propre instantane et une mutation concurrente pourrait se glisser
+    /// entre les deux. Aucune ligne n'est verrouillee : ce sont deux lectures.
+    /// </remarks>
+    public async Task<FiscalPolicyAdminSnapshot> GetSnapshotAsync(
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(_configuration.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(
+            System.Data.IsolationLevel.RepeatableRead,
+            cancellationToken);
+
+        var mentions = new List<StoredFiscalMention>();
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = ListSql;
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                mentions.Add(ReadMention(reader));
+            }
+        }
+
+        var versions = new Dictionary<string, int>(StringComparer.Ordinal);
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = VersionsSql;
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                versions[reader.GetString("regime")] = Convert.ToInt32(reader.GetValue(1));
+            }
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return new FiscalPolicyAdminSnapshot(mentions, versions);
     }
 
     public async Task<IReadOnlyDictionary<string, int>> GetRegimeVersionsAsync(
@@ -49,11 +104,7 @@ public sealed class MariaDbFiscalPolicyRepository : IFiscalPolicyRepository
         await connection.OpenAsync(cancellationToken);
 
         await using var command = connection.CreateCommand();
-        command.CommandText =
-            """
-            SELECT regime, version
-            FROM fiscal_policy_regime_versions;
-            """;
+        command.CommandText = VersionsSql;
 
         var versions = new Dictionary<string, int>(StringComparer.Ordinal);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);

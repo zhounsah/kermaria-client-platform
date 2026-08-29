@@ -30,9 +30,28 @@ public enum FiscalMentionAddOutcome
     EffectiveDateTaken
 }
 
+/// <summary>
+/// Mentions et versions lues ensemble, dans la meme unite de lecture.
+/// </summary>
+/// <remarks>
+/// Assemblees par deux lectures separees, elles peuvent decrire deux instants
+/// differents : l'administrateur recoit alors les mentions d'avant une mutation
+/// concurrente avec le numero de version d'apres. Son ecran est coherent en
+/// apparence, son prochain envoi part sur une version qu'il n'a jamais vue, et
+/// le controle optimiste le laisse passer.
+/// </remarks>
+public sealed record FiscalPolicyAdminSnapshot(
+    IReadOnlyList<StoredFiscalMention> Mentions,
+    IReadOnlyDictionary<string, int> Versions);
+
 public interface IFiscalPolicyRepository
 {
     bool IsPersistent { get; }
+
+    /// <summary>
+    /// Mentions et versions dans une seule lecture coherente.
+    /// </summary>
+    Task<FiscalPolicyAdminSnapshot> GetSnapshotAsync(CancellationToken cancellationToken);
 
     Task<IReadOnlyList<StoredFiscalMention>> ListAsync(
         CancellationToken cancellationToken);

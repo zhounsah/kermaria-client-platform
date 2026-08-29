@@ -5982,6 +5982,37 @@ static async Task VerifyPasswordHandoffAtomicityAsync()
         && HashMatches(secondPassword),
         "Apres la reprise, les deux autorites doivent porter le meme mot de passe.");
 
+    // Le troisieme membre de l'unite de travail : l'etat de synchronisation.
+    // Sans lien annuaire touche, le secret partirait a KoXo sans que rien ne
+    // dise qu'une synchronisation est due. Rien ne doit etre valide.
+    var strandedSecret = pendingPasswords.Seal(userId, firstPassword);
+    repository.PasswordSyncRowsAffected = 0;
+    var syncThrew = false;
+    try
+    {
+        await repository.TryChangePasswordWithKoxoHandoffAsync(
+            userId,
+            passwordService.HashPassword(userId, firstPassword),
+            strandedSecret,
+            DateTime.UtcNow,
+            token);
+    }
+    catch (InvalidOperationException)
+    {
+        syncThrew = true;
+    }
+
+    repository.PasswordSyncRowsAffected = 1;
+    Ensure(
+        syncThrew,
+        "Un etat de synchronisation non pose doit lever, jamais etre ignore.");
+    Ensure(
+        await pendingPasswords.PeekAsync(userId, token) == secondPassword,
+        "Sans etat de synchronisation, aucun secret ne doit rester pour KoXo.");
+    Ensure(
+        HashMatches(secondPassword) && !HashMatches(firstPassword),
+        "Sans etat de synchronisation, le condensat portail doit rester celui d'avant.");
+
     // Un utilisateur portail introuvable n'ecrit rien, et ne laisse donc aucun
     // secret derriere lui.
     const string unknownUserId = "portal-user-handoff-inconnu";
@@ -6073,6 +6104,31 @@ static async Task VerifySignupPasswordHandoffAsync()
     Ensure(
         await failing.PendingPasswords.PeekAsync(failing.PortalUserId, token) == password,
         "La reprise doit deposer le secret destine a KoXo.");
+
+    // Meme unite de travail a l'inscription : sans lien annuaire touche, ni
+    // secret, ni condensat, ni jeton consomme.
+    var strandedTrigger = new RecordingKoxoSyncWebhookTriggerService();
+    var stranded = await CreateSignupHandoffFixtureAsync("lien", strandedTrigger);
+    stranded.Repository.PasswordSyncRowsAffected = 0;
+    var strandedResult = await stranded.Service.SetPasswordAsync(
+        stranded.PasswordToken,
+        password,
+        token);
+    stranded.Repository.PasswordSyncRowsAffected = 1;
+    Ensure(
+        !strandedResult.Succeeded
+        && strandedResult.Code == "PASSWORD_CHANGE_STORAGE_UNAVAILABLE",
+        "Un etat de synchronisation non pose doit refuser, sans succes partiel.");
+    Ensure(
+        await stranded.PendingPasswords.PeekAsync(stranded.PortalUserId, token) is null,
+        "Aucun secret ne doit rester pour KoXo si l'etat de synchronisation manque.");
+    Ensure(
+        strandedTrigger.Requests.Count == 0,
+        "Aucune synchronisation ne doit etre demandee sur une ecriture annulee.");
+    Ensure(
+        (await stranded.Service.SetPasswordAsync(stranded.PasswordToken, password, token))
+            is { Succeeded: true },
+        "Le jeton doit etre reste utilisable apres l'annulation.");
 
     // Declenchement KoXo en panne : c'est un rattrapage, pas une condition de
     // succes. Le secret est deja durable, la synchronisation planifiee le
@@ -6242,6 +6298,7 @@ static async Task<SignupHandoffFixture> CreateSignupHandoffFixtureAsync(
 
     return new SignupHandoffFixture(
         service,
+        signupRepository,
         pendingPasswords,
         directory,
         portalUserId,
@@ -6324,6 +6381,42 @@ static async Task VerifyFiscalVersionMonotonicityAsync()
         fresh.Code == "FISCAL_MENTION_SCHEDULED",
         "La version courante doit rester acceptee.");
     Ensure(VersionOf(fresh) == 4, "Un ajout accepte incremente encore la version.");
+
+    // Le snapshot doit venir d'une seule unite de lecture. Assemble par deux
+    // lectures separees, il rendait les mentions d'avant une mutation
+    // concurrente avec le numero de version d'apres : l'ecran paraissait
+    // coherent, et le prochain envoi partait sur une version jamais vue.
+    var snapshot = await repository.GetSnapshotAsync(token);
+    Ensure(
+        snapshot.Mentions.Count == 2
+        && snapshot.Versions[FiscalRegimes.FranchiseBase] == 4,
+        "Le snapshot doit rendre mentions et version ensemble.");
+
+    // Une mutation concurrente survenue apres la prise du snapshot ne doit pas
+    // le modifier : les deux moities decrivent le meme instant.
+    Ensure(
+        await service.DeleteScheduledMentionAsync(
+            snapshot.Mentions.Single(item => item.Mention == "Mention issue d'un ecran a jour.").Id,
+            correlation,
+            token) is { Code: "FISCAL_MENTION_CANCELLED" },
+        "L'annulation concurrente doit aboutir.");
+    Ensure(
+        snapshot.Mentions.Count == 2
+        && snapshot.Versions[FiscalRegimes.FranchiseBase] == 4,
+        "Un snapshot deja rendu ne doit pas bouger sous une mutation concurrente.");
+
+    var after = await repository.GetSnapshotAsync(token);
+    Ensure(
+        after.Mentions.Count == 1
+        && after.Versions[FiscalRegimes.FranchiseBase] == 5,
+        "Le snapshot suivant doit rendre les deux moities a jour, ensemble.");
+
+    // Ce que la vue publie vient du meme snapshot que ses mentions.
+    var view = (await service.GetAdminViewAsync(token)).Regimes
+        .Single(regime => regime.Regime == FiscalRegimes.FranchiseBase);
+    Ensure(
+        view.Versions.Count == after.Mentions.Count && view.Version == 5,
+        "La vue d'administration doit publier la version de la meme lecture que ses mentions.");
 
     MockFiscalPolicyRepository.Clear();
     FiscalMentionDirectory.Reset();
@@ -10041,6 +10134,7 @@ static class SmokeTestRuntimeHelpers
 
 sealed record SignupHandoffFixture(
     SignupService Service,
+    MockSignupRepository Repository,
     KoxoPendingPasswordStore PendingPasswords,
     RecordingActiveDirectoryService Directory,
     string PortalUserId,

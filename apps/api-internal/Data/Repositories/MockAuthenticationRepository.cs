@@ -296,9 +296,13 @@ public sealed class MockAuthenticationRepository : IAuthenticationRepository
             {
                 MockPortalPasswordFailureSwitch.ThrowIfArmed();
                 ReplaceUser(user with { PasswordHash = passwordHash });
+                ThrowIfSyncLinkMissing(koxoSecret);
             }
             catch
             {
+                // Les trois ecritures forment une seule unite de travail : la
+                // derniere qui echoue defait les precedentes, condensat inclus.
+                ReplaceUser(user);
                 if (koxoSecret is not null)
                 {
                     SealSink!.DiscardSealed(userId, koxoSecret);
@@ -309,6 +313,20 @@ public sealed class MockAuthenticationRepository : IAuthenticationRepository
 
             return Task.FromResult(true);
         }
+    }
+
+    /// <summary>
+    /// Nombre de liens annuaire que l'ecriture de l'etat de synchronisation
+    /// toucherait. Reserve aux tests : la persistance reelle exige exactement
+    /// un, et rien ne doit etre commit sans cet etat.
+    /// </summary>
+    public int PasswordSyncRowsAffected { get; set; } = 1;
+
+    private void ThrowIfSyncLinkMissing(PortalPasswordSecret? koxoSecret)
+    {
+        if (koxoSecret is null || PasswordSyncRowsAffected == 1) return;
+        throw new InvalidOperationException(
+            "L'etat de synchronisation KoXo n'a pas pu etre pose sur exactement un lien annuaire.");
     }
 
     private PortalUserCredential FindUser(string userId)

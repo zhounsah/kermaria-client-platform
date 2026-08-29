@@ -364,10 +364,23 @@ assert.match(
   /DELETE FROM fiscal_policy_mentions[\s\S]{0,900}?BumpRegimeVersionAsync/,
   "Une annulation doit incrémenter la version dans la même transaction.",
 );
+// Mentions et version viennent de la MÊME lecture. Assemblées séparément, elles
+// peuvent décrire deux instants : l'administrateur repart alors avec un
+// `expectedVersion` correspondant à un écran qu'il n'a jamais vu.
 assert.match(
   fiscalService,
+  /GetSnapshotAsync/,
+  "La vue d'administration doit venir d'une seule unité de lecture.",
+);
+assert.doesNotMatch(
+  fiscalService,
   /GetRegimeVersionsAsync/,
-  "La vue d'administration doit publier la version monotone du dépôt.",
+  "Assembler mentions et version par deux lectures rouvre la fenêtre d'incohérence.",
+);
+assert.match(
+  fiscalRepository,
+  /BeginTransactionAsync\([\s\S]{0,80}?IsolationLevel\.RepeatableRead/,
+  "Le snapshot fiscal doit lire les deux tables dans le même instantané.",
 );
 
 // Les permissions du Centre sont fail-closed : sans attribution explicite,

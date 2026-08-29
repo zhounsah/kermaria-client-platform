@@ -26,6 +26,21 @@ public sealed class MockFiscalPolicyRepository : IFiscalPolicyRepository
         }
     }
 
+    /// <remarks>
+    /// Le verrou joue ici le role de la transaction de lecture : mentions et
+    /// versions sortent du meme instant, jamais de deux lectures separees.
+    /// </remarks>
+    public Task<FiscalPolicyAdminSnapshot> GetSnapshotAsync(
+        CancellationToken cancellationToken)
+    {
+        lock (Gate)
+        {
+            return Task.FromResult(new FiscalPolicyAdminSnapshot(
+                Items.ToArray(),
+                new Dictionary<string, int>(Versions, StringComparer.Ordinal)));
+        }
+    }
+
     public Task<IReadOnlyDictionary<string, int>> GetRegimeVersionsAsync(
         CancellationToken cancellationToken)
     {

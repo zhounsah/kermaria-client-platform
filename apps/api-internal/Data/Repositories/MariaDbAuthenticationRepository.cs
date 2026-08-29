@@ -453,7 +453,16 @@ public sealed class MariaDbAuthenticationRepository : IAuthenticationRepository
                 """;
             syncCommand.Parameters.AddWithValue("@changed_at", atUtc);
             syncCommand.Parameters.AddWithValue("@portal_user_id", userId);
-            await syncCommand.ExecuteNonQueryAsync(cancellationToken);
+            // Exactement une ligne. Zero signifierait qu'aucun lien annuaire ne
+            // porte cet utilisateur : le secret partirait a KoXo sans que rien
+            // ne dise qu'une synchronisation est due. Plusieurs signifierait
+            // que l'unicite du lien est rompue, et l'etat pose serait
+            // ambigu. Dans les deux cas, mieux vaut ne rien avoir ecrit.
+            if (await syncCommand.ExecuteNonQueryAsync(cancellationToken) != 1)
+            {
+                throw new InvalidOperationException(
+                    "L'etat de synchronisation KoXo n'a pas pu etre pose sur exactement un lien annuaire.");
+            }
         }
 
         await transaction.CommitAsync(cancellationToken);

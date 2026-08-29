@@ -315,6 +315,12 @@ public sealed class MockSignupRepository : ISignupRepository
     /// </summary>
     public IKoxoPendingPasswordSealSink? SealSink { get; set; }
 
+    /// <summary>
+    /// Nombre de liens annuaire que l'ecriture de l'etat de synchronisation
+    /// toucherait. Reserve aux tests.
+    /// </summary>
+    public int PasswordSyncRowsAffected { get; set; } = 1;
+
     /// <remarks>
     /// Tout ou rien, comme la transaction reelle : le scelle est attache avant
     /// l'ecriture du condensat et defait si celle-ci echoue. C'est l'ordre qui
@@ -339,19 +345,24 @@ public sealed class MockSignupRepository : ISignupRepository
             SealSink.AttachSealed(portalUserId, koxoSecret);
         }
 
+        var credential = _authenticationStore.Users.Values.FirstOrDefault(
+            user => user.Id == portalUserId);
+        _rows.TryGetValue(signupId, out var row);
+        var previousTokenHash = row?.PasswordSetupTokenHash;
+        var previousTokenExpiry = row?.PasswordSetupExpiresAtUtc;
+        var previousSyncStatus = row?.LastPasswordSyncStatus;
+
         try
         {
             MockPortalPasswordFailureSwitch.ThrowIfArmed();
 
-            var credential = _authenticationStore.Users.Values.FirstOrDefault(
-                user => user.Id == portalUserId);
             if (credential is not null)
             {
                 _authenticationStore.Users[credential.Email] =
                     credential with { PasswordHash = passwordHash };
             }
 
-            if (_rows.TryGetValue(signupId, out var row))
+            if (row is not null)
             {
                 row.PasswordSetupTokenHash = null;
                 row.PasswordSetupExpiresAtUtc = null;
@@ -360,9 +371,31 @@ public sealed class MockSignupRepository : ISignupRepository
                     : row.LastPasswordSyncStatus;
                 row.UpdatedAtUtc = DateTime.UtcNow;
             }
+
+            // Exactement un lien annuaire, comme la persistance reelle : sinon
+            // le secret partirait a KoXo sans etat de synchronisation en face.
+            if (koxoSecret is not null && PasswordSyncRowsAffected != 1)
+            {
+                throw new InvalidOperationException(
+                    "L'etat de synchronisation KoXo n'a pas pu etre pose sur exactement un lien annuaire.");
+            }
         }
         catch
         {
+            // Une seule unite de travail : le jeton reste utilisable et rien
+            // n'a bouge.
+            if (credential is not null)
+            {
+                _authenticationStore.Users[credential.Email] = credential;
+            }
+
+            if (row is not null)
+            {
+                row.PasswordSetupTokenHash = previousTokenHash;
+                row.PasswordSetupExpiresAtUtc = previousTokenExpiry;
+                row.LastPasswordSyncStatus = previousSyncStatus;
+            }
+
             if (koxoSecret is not null)
             {
                 SealSink!.DiscardSealed(portalUserId, koxoSecret);

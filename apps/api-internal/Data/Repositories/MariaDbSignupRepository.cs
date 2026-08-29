@@ -761,7 +761,13 @@ public sealed class MariaDbSignupRepository : ISignupRepository
                     """;
                 syncCommand.Parameters.AddWithValue("@changed_at", atUtc);
                 syncCommand.Parameters.AddWithValue("@portal_user_id", portalUserId);
-                await syncCommand.ExecuteNonQueryAsync(cancellationToken);
+                // Exactement une ligne : sans lien annuaire touche, le secret
+                // partirait a KoXo sans etat de synchronisation en face.
+                if (await syncCommand.ExecuteNonQueryAsync(cancellationToken) != 1)
+                {
+                    throw new InvalidOperationException(
+                        "L'etat de synchronisation KoXo n'a pas pu etre pose sur exactement un lien annuaire.");
+                }
             }
         }
 

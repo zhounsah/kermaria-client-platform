@@ -100,19 +100,20 @@ public sealed class FiscalPolicyService : IFiscalPolicyService
     {
         try
         {
-            return BuildView(
-                await _repository.ListAsync(cancellationToken),
-                await _repository.GetRegimeVersionsAsync(cancellationToken));
+            // Une seule unite de lecture : assemblees separement, les mentions
+            // et le numero de version peuvent decrire deux instants differents,
+            // et l'administrateur repart avec une version qu'il n'a jamais vue.
+            return BuildView(await _repository.GetSnapshotAsync(cancellationToken));
         }
         catch (Exception exception)
         {
             _logger.LogWarning(exception, "Fiscal mentions unavailable for administration.");
-            return BuildView([], EmptyVersions);
+            return BuildView(EmptySnapshot);
         }
     }
 
-    private static readonly IReadOnlyDictionary<string, int> EmptyVersions =
-        new Dictionary<string, int>(StringComparer.Ordinal);
+    private static readonly FiscalPolicyAdminSnapshot EmptySnapshot =
+        new([], new Dictionary<string, int>(StringComparer.Ordinal));
 
     public async Task<FiscalPolicyMutationResponse> AddMentionAsync(
         FiscalMentionCreateRequest request,
@@ -211,9 +212,7 @@ public sealed class FiscalPolicyService : IFiscalPolicyService
         return new FiscalPolicyMutationResponse(
             "FISCAL_MENTION_SCHEDULED",
             "Mention enregistree. Elle s'appliquera aux documents emis a partir de sa date d'effet.",
-            BuildView(
-                await _repository.ListAsync(cancellationToken),
-                await _repository.GetRegimeVersionsAsync(cancellationToken)),
+            BuildView(await _repository.GetSnapshotAsync(cancellationToken)),
             correlationId);
     }
 
@@ -238,22 +237,20 @@ public sealed class FiscalPolicyService : IFiscalPolicyService
         return new FiscalPolicyMutationResponse(
             "FISCAL_MENTION_CANCELLED",
             "Mention planifiee annulee.",
-            BuildView(
-                await _repository.ListAsync(cancellationToken),
-                await _repository.GetRegimeVersionsAsync(cancellationToken)),
+            BuildView(await _repository.GetSnapshotAsync(cancellationToken)),
             correlationId);
     }
 
-    /// <param name="versions">
-    /// Version monotone par regime. Un regime absent retombe sur le nombre de
-    /// mentions : cette valeur est toujours <b>inferieure ou egale</b> a la
-    /// version reelle, donc un envoi fonde sur elle produit au pire un conflit,
-    /// jamais une acceptation a tort.
+    /// <param name="snapshot">
+    /// Mentions et versions issues d'une meme lecture. Un regime absent de la
+    /// table de versions retombe sur le nombre de mentions : cette valeur est
+    /// toujours <b>inferieure ou egale</b> a la version reelle, donc un envoi
+    /// fonde sur elle produit au pire un conflit, jamais une acceptation a tort.
     /// </param>
-    private FiscalPolicyAdminView BuildView(
-        IReadOnlyList<StoredFiscalMention> stored,
-        IReadOnlyDictionary<string, int> versions)
+    private FiscalPolicyAdminView BuildView(FiscalPolicyAdminSnapshot snapshot)
     {
+        var stored = snapshot.Mentions;
+        var versions = snapshot.Versions;
         var now = DateTime.UtcNow;
         var regimes = Regimes.Select(definition =>
         {
