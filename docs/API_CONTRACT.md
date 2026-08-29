@@ -431,6 +431,50 @@ specification interdit.
 
 Evenements d'audit : `diagnostic_draft_changed`, `diagnostic_published`.
 
+## Vue runtime consolidee
+
+`GET /internal/admin/settings/runtime` (`settings.read`) decrit API-INTERNAL,
+MariaDB, le stockage et la journalisation.
+
+Le but est de rendre l'exploitation **comprehensible**, pas d'exposer le contenu
+brut du fichier de configuration. Chaque ligne porte donc :
+
+```text
+Parametre · Valeur non sensible / etat · Source · Classification · Redemarrage
+```
+
+La **source** distingue `environment`, `json`, `default` et `database`. Cette
+distinction n'est pas cosmetique : un reglage corrige a un seul des deux
+endroits — variable d'environnement ou fichier JSON — revient a sa valeur
+precedente a la regeneration du fichier. La vue rend l'ecart visible.
+
+La **chaine de connexion n'est jamais renvoyee**. Ses composants non sensibles
+(hote, port, base, compte) le sont un a un, et le mot de passe reste une simple
+presence. Un test de non-regression serialise la reponse et echoue si le mot de
+passe ou un fragment de chaine (`Password=`, `User ID=`) y figure.
+
+Contenu par section :
+
+- **API-INTERNAL** : environnement, version, chemin et presence du fichier de
+  configuration, duree de fonctionnement, mode annuaire et racines autorisees,
+  proprietes de session. Les proprietes du cookie de session sont **montrees,
+  pas editees** (section 11.2) : les rendre modifiables permettrait de
+  desactiver `Secure` en production depuis une page web ;
+- **MariaDB** : fournisseur, mode de persistance, composants de connexion,
+  connectivite et derniere migration appliquee. La sonde est en **deux temps** —
+  presence de `schema_migrations` dans `information_schema`, puis lecture — car
+  interroger directement une table absente ferait passer une base joignable pour
+  injoignable. Aucun DDL n'est execute : le compte applicatif n'en a pas le
+  droit. Une persistance mock hors developpement est signalee **bloquante** ;
+- **Stockage** : racine des telechargements et etat d'acces. Une racine implicite
+  est signalee : elle suit le repertoire de l'application, qui change a chaque
+  deploiement ;
+- **Journalisation** : niveau global, journal fichier, repertoire, niveau
+  fichier, retention.
+
+Tout y est en lecture seule. Ces reglages sont resolus au demarrage, avant le
+graphe d'injection : les rendre mutables supposerait de recharger le processus.
+
 ## Console d'integrations
 
 `GET /internal/admin/settings/integrations` (`settings.read`) decrit SMTP,

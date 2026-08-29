@@ -199,6 +199,18 @@ cookie HttpOnly -> BFF -> session API-INTERNAL -> user_id -> customer_id
 - Une valeur de configuration relue depuis MariaDB repasse par la validation
   d'ecriture : les bornes du registre ne peuvent pas etre contournees en
   ecrivant directement en base.
+- La vue runtime ne renvoie jamais la chaine de connexion SQL. Ses composants
+  non sensibles sont extraits un a un et le mot de passe reste une presence ; un
+  test de non-regression echoue si le mot de passe ou un fragment de chaine
+  apparait dans la reponse.
+- Les proprietes du cookie de session sont affichees et non editables : les
+  rendre modifiables permettrait de desactiver `Secure` en production depuis une
+  page web.
+- La sonde de connectivite MariaDB est strictement en lecture : elle verifie la
+  presence de `schema_migrations` dans `information_schema` avant de la lire, et
+  n'execute aucun DDL — le compte applicatif n'en a pas le droit.
+- Une persistance mock hors developpement est remontee comme bloquante : c'est
+  une perte de donnees silencieuse.
 - La console d'integrations ne transporte aucun secret : un mot de passe SMTP,
   une cle Stripe, un secret PayPal, un jeton BPCE ou KoXo n'y apparaissent que
   par leur presence. Un test de non-regression serialise la reponse et echoue si

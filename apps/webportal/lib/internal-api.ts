@@ -39,6 +39,7 @@ import type {
   BillingV2ConfigurationOverview,
   DemoContentTemplateAdminView,
   IntegrationsOverview,
+  RuntimeOverview,
   FiscalPolicyAdminView,
   DiagnosticConfigurationSnapshot,
   DownloadCategory,
@@ -1156,6 +1157,21 @@ export function getAdminDiagnosticConfiguration() {
       published: { ...EMPTY_DIAGNOSTIC_SNAPSHOT, state: "published" },
       draftDiffers: false,
       persistent: false,
+    },
+  );
+}
+
+export function getAdminRuntimeOverview() {
+  return getAdminData<RuntimeOverview>(
+    "/internal/admin/settings/runtime",
+    {
+      environment: "",
+      version: "",
+      configurationPath: null,
+      configurationFilePresent: false,
+      startedAt: "",
+      uptimeSeconds: 0,
+      sections: [],
     },
   );
 }

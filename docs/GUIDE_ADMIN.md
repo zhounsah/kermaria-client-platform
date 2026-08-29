@@ -515,6 +515,38 @@ une verification chez Stripe, PayPal ou BPCE serait un vrai appel sortant, ou
 consommerait un quota. La synchronisation KoXo, elle, est globale — elle
 desactive les comptes absents du CSV — et reste sur `/admin/koxo`.
 
+## 7 octies. Infrastructure et runtime - `/admin/settings/runtime`
+
+Page de lecture. Elle repond a une question precise : **d'ou vient la valeur qui
+s'applique reellement ?**
+
+Chaque ligne indique sa source : variable d'environnement, fichier de
+configuration, valeur par defaut, ou base de donnees. C'est le point important :
+sur SRV-13, un reglage corrige uniquement dans les variables d'environnement,
+sans l'etre dans `kermaria-client-platform.local.env.ps1`, revient a sa valeur
+precedente des que le fichier de configuration est regenere. Cette colonne rend
+l'ecart visible avant qu'il ne surprenne.
+
+### Ce qu'il faut y regarder
+
+- **Fichier de configuration** : « Absent » signifie que seules les variables
+  d'environnement s'appliquent ;
+- **MariaDB** : la connectivite et la derniere migration appliquee. Une
+  persistance « Mock » hors developpement est signalee comme bloquante — rien
+  n'est conserve ;
+- **Stockage** : une racine « par defaut » suit le repertoire de
+  l'application, qui change a chaque deploiement. En production, elle doit etre
+  explicite ;
+- **Journalisation** : sans journal fichier, seule la sortie console du service
+  conserve une trace.
+
+Aucun secret n'est affiche, et la chaine de connexion n'est jamais renvoyee :
+seuls l'hote, le port, la base et le compte le sont, le mot de passe restant un
+simple « Configure ».
+
+Rien ne se modifie ici. Ces reglages sont resolus au demarrage du service et se
+corrigent sur la machine, avant un redemarrage.
+
 ## 8. Diagnostic rapide
 
 Quand un client remonte un probleme de panier, paiement, abonnement ou

@@ -176,6 +176,9 @@ builder.Services.AddScoped<IDemoProfileRepository>(
 builder.Services.AddScoped<
     IIntegrationsOverviewService,
     IntegrationsOverviewService>();
+builder.Services.AddScoped<
+    IRuntimeOverviewService,
+    RuntimeOverviewService>();
 builder.Services.AddScoped<IDemoContentTemplateRepository>(
     _ => sqlConfiguration.IsPersistent
         ? new MariaDbDemoContentTemplateRepository(sqlConfiguration)
@@ -4436,6 +4439,20 @@ app.MapPost(
         var result = await service.PublishAsync(request, actor.UserId, context.GetCorrelationId(), context.RequestAborted);
         await RecordDiagnosticAuditAsync(context, auditService, actor.UserId, "diagnostic_published", result.Code, "DIAGNOSTIC_PUBLISHED");
         return Results.Json(result, statusCode: ResolveDiagnosticStatusCode(result.Code));
+    });
+// --- Vue runtime consolidee (specification, section 17) --------------------
+app.MapGet(
+    "/internal/admin/settings/runtime",
+    async (
+        HttpContext context,
+        IRuntimeOverviewService service,
+        IEditorialRepository editorialRepository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(context, authenticationService, auditService, "admin.settings.read");
+        if (!await editorialRepository.HasAdminPermissionAsync(actor.UserId, "settings.read", context.RequestAborted)) throw new PortalAccessDeniedException();
+        return Results.Ok(await service.GetAsync(context.RequestAborted));
     });
 // --- Integrations : observer sans reveler (specification, section 16) -------
 app.MapGet(

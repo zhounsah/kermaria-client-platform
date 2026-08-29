@@ -21,6 +21,7 @@ export default async function AdminSettingsPage() {
       <Link className="button button-secondary" href="/admin/settings/billing">Facturation & fiscalité</Link>
       <Link className="button button-secondary" href="/admin/settings/demonstrations">Démonstrations</Link>
       <Link className="button button-secondary" href="/admin/settings/integrations">Intégrations</Link>
+      <Link className="button button-secondary" href="/admin/settings/runtime">Infrastructure & runtime</Link>
     </nav>
     {result.error ? <ErrorState title="Configuration indisponible" description="Le centre de configuration ne peut pas être chargé pour le moment." reference={result.correlationId} /> : <AdminSettingsCenter initialSnapshot={result.data} statusDomains={statusResult.error ? [] : statusResult.data.domains} />}
   </>;

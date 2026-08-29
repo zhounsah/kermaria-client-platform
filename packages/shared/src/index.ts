@@ -2496,6 +2496,40 @@ export interface ConfigurationStatusDomain { key: string; label: string; state: 
 export interface ConfigurationStatusSnapshot { domains: ConfigurationStatusDomain[]; }
 export interface PortalBillingConfiguration { iban: string | null; bic: string | null; paypalUrl: string | null; transferLabel: string; }
 
+// --- Runtime et infrastructure (Centre de configuration, section 17) -------
+// Vue de lecture. Aucun secret n'y transite et la chaine de connexion n'est
+// jamais renvoyee : ses composants non sensibles le sont, un a un.
+
+export interface RuntimeParameterItem {
+  key: string;
+  label: string;
+  value: string;
+  /** D'ou vient reellement la valeur appliquee. */
+  source: "environment" | "json" | "default" | "database";
+  classification: "dynamic" | "restart_required" | "secret" | "code_invariant";
+  restartRequired: boolean;
+  sensitive: boolean;
+  lastChangedAt: string | null;
+}
+
+export interface RuntimeSectionView {
+  key: string;
+  label: string;
+  state: "healthy" | "warning" | "critical" | "info";
+  warning: string | null;
+  parameters: RuntimeParameterItem[];
+}
+
+export interface RuntimeOverview {
+  environment: string;
+  version: string;
+  configurationPath: string | null;
+  configurationFilePresent: boolean;
+  startedAt: string;
+  uptimeSeconds: number;
+  sections: RuntimeSectionView[];
+}
+
 // --- Integrations (Centre de configuration, section 16) --------------------
 // Contrats d'observation : aucun secret n'y transite. Un secret est reduit a sa
 // presence ("Configure" / "Non configure"), jamais a un prefixe ni a une

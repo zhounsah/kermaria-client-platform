@@ -548,6 +548,7 @@ async Task<int> RunAsync(string[] arguments)
         await VerifyFiscalPolicyAsync();
         await VerifyDemoContentTemplatesAsync();
         await VerifyIntegrationsOverviewAsync();
+        await VerifyRuntimeOverviewAsync();
         VerifyBillingV2FeatureFlagRegistry();
         await VerifyCommunicationTemplatesAsync();
         await VerifyDiagnosticConfigurationAsync();
@@ -5104,6 +5105,115 @@ static async Task VerifyIntegrationsOverviewAsync()
     Ensure(
         !stripe.Configured && stripe.Warning is not null,
         "Une cle Stripe incoherente avec le mode doit etre signalee.");
+}
+
+// La vue runtime a une promesse etroite : rendre l'exploitation lisible sans
+// exposer la configuration brute. Le piege reel est la chaine de connexion, qui
+// porte le mot de passe SQL : elle ne doit jamais sortir, meme partiellement.
+static async Task VerifyRuntimeOverviewAsync()
+{
+    const string sqlPassword = "mot-de-passe-sql-tres-secret";
+    var connectionString =
+        $"Server=sql.example.test;Port=3306;Database=kermaria;User ID=kermaria_api;Password={sqlPassword};";
+    var token = CancellationToken.None;
+
+    var configuration = new ConfigurationBuilder()
+        .AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["LOG_LEVEL"] = "Warning",
+            ["SESSION_COOKIE_SECURE"] = "true",
+        })
+        .Build();
+
+    var service = new RuntimeOverviewService(
+        new TestHostEnvironment("Staging"),
+        configuration,
+        new SqlRuntimeConfiguration(
+            PortalPersistenceMode.MariaDb,
+            "mariadb",
+            connectionString,
+            "MariaDB configuree",
+            ConfigurationValid: true),
+        new AdRuntimeConfiguration(
+            AdIntegrationMode.Disabled,
+            "clients.home.bzh",
+            null,
+            null,
+            ["OU=KoXoAdm,DC=clients,DC=home,DC=bzh"],
+            false,
+            null,
+            null,
+            3000,
+            5000,
+            25,
+            true),
+        new DownloadStorageRuntimeConfiguration(
+            Path.Combine(Path.GetTempPath(), "kermaria-smoke-downloads"),
+            IsExplicitlyConfigured: true),
+        new AuthRuntimeConfiguration(
+            TimeSpan.FromMinutes(60),
+            5,
+            TimeSpan.FromMinutes(10)),
+        LoggerFactory.Create(_ => { }).CreateLogger<RuntimeOverviewService>());
+
+    var overview = await service.GetAsync(token);
+    var serialized = JsonSerializer.Serialize(overview);
+
+    Ensure(
+        !serialized.Contains(sqlPassword, StringComparison.Ordinal),
+        "Le mot de passe SQL ne doit jamais apparaitre dans la vue runtime.");
+    Ensure(
+        !serialized.Contains("Password=", StringComparison.OrdinalIgnoreCase)
+        && !serialized.Contains("User ID=", StringComparison.OrdinalIgnoreCase),
+        "La chaine de connexion ne doit jamais etre renvoyee, meme partiellement.");
+
+    var database = overview.Sections.Single(section => section.Key == "database");
+    Ensure(
+        database.Parameters.Any(parameter =>
+            parameter.Key == "SQL_HOST" && parameter.Value == "sql.example.test")
+        && database.Parameters.Any(parameter =>
+            parameter.Key == "SQL_USERNAME" && parameter.Value == "kermaria_api"),
+        "Les composants non sensibles de la connexion doivent rester lisibles.");
+    Ensure(
+        database.Parameters.Single(parameter => parameter.Key == "SQL_PASSWORD")
+            is { Value: "Configure", Sensitive: true },
+        "Le mot de passe SQL ne doit apparaitre que par sa presence.");
+
+    // La source rend l'exploitation comprehensible : une valeur posee en
+    // variable d'environnement et une valeur venue du fichier JSON se corrigent
+    // a des endroits differents, et l'une annule l'autre a la regeneration.
+    var logging = overview.Sections.Single(section => section.Key == "logging");
+    Ensure(
+        logging.Parameters.Single(parameter => parameter.Key == "LOG_LEVEL")
+            is { Value: "Warning", Source: "json" },
+        "Une valeur venue de la configuration en memoire doit etre attribuee, pas presentee comme un defaut.");
+
+    Ensure(
+        overview.Sections
+            .SelectMany(section => section.Parameters)
+            .Where(parameter => parameter.Classification is "restart_required" or "secret")
+            .All(parameter => parameter.RestartRequired),
+        "Un parametre de classe restart_required doit etre annonce comme tel.");
+
+    // Persistance mock hors developpement : c'est une perte de donnees
+    // silencieuse, elle doit remonter en bloquant.
+    var mock = new RuntimeOverviewService(
+        new TestHostEnvironment("Production"),
+        configuration,
+        new SqlRuntimeConfiguration(
+            PortalPersistenceMode.Mock, "mock", null, "Persistance mock", true),
+        new AdRuntimeConfiguration(
+            AdIntegrationMode.Disabled, null, null, null, [], false, null, null,
+            3000, 5000, 25, true),
+        new DownloadStorageRuntimeConfiguration(
+            Path.Combine(Path.GetTempPath(), "kermaria-smoke-downloads"), true),
+        new AuthRuntimeConfiguration(
+            TimeSpan.FromMinutes(60), 5, TimeSpan.FromMinutes(10)),
+        LoggerFactory.Create(_ => { }).CreateLogger<RuntimeOverviewService>());
+    Ensure(
+        (await mock.GetAsync(token))
+            .Sections.Single(section => section.Key == "database").State == "critical",
+        "Une persistance mock hors developpement doit etre signalee comme bloquante.");
 }
 
 static async Task VerifyFiscalPolicyAsync()
