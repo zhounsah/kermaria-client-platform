@@ -479,6 +479,42 @@ deplace de vraies identites et se regle sur la machine
 Si la page signale une destination absente ou hors racines autorisees, la
 conversion sera refusee au moment de l'operation, pas ici.
 
+## 7 septies. Integrations - `/admin/settings/integrations`
+
+Cette page **observe**. Elle ne change rien : les modes d'integration commandent
+de vrais appels chez des tiers et se reglent sur la machine, avant un
+redemarrage du service.
+
+Aucun secret n'y est affiche. Un mot de passe, une cle ou un jeton n'apparait
+que par « Configure » ou « Non configure ».
+
+### Ce qu'il faut y regarder
+
+- **SMTP** : le mode, l'expediteur, et surtout l'etat de l'allowlist. Allowlist
+  desactivee en mode live = n'importe quel destinataire peut recevoir un
+  message ;
+- **Stripe** : la ligne « Coherence cle / mode ». Une cle de production posee
+  sur un mode test — ou l'inverse — fait echouer tous les appels sans message
+  clair ailleurs ;
+- **BPCE** : en mode live sans jeton, aucune facture ne peut etre emise ;
+- **Veeam** : le nombre de jobs en erreur et la date du dernier releve. Le
+  collecteur est externe : il pousse ses releves, on ne le declenche pas d'ici ;
+- **KoXo** : « HTTP non chiffre autorise » doit rester a « Refuse » en
+  production, sans quoi le jeton circulerait en clair ;
+- **hCaptcha** : en production, une cle absente ou factice fait refuser toute
+  demande d'inscription.
+
+### Le seul test disponible
+
+L'envoi de test SMTP. Le destinataire **doit** figurer dans l'allowlist
+d'envoi : c'est ce qui garantit qu'un test ne peut pas atteindre un vrai client
+par erreur. Chaque tentative est journalisee et auditee.
+
+Les autres integrations n'ont pas de bouton de test, et la page dit pourquoi :
+une verification chez Stripe, PayPal ou BPCE serait un vrai appel sortant, ou
+consommerait un quota. La synchronisation KoXo, elle, est globale — elle
+desactive les comptes absents du CSV — et reste sur `/admin/koxo`.
+
 ## 8. Diagnostic rapide
 
 Quand un client remonte un probleme de panier, paiement, abonnement ou

@@ -199,6 +199,17 @@ cookie HttpOnly -> BFF -> session API-INTERNAL -> user_id -> customer_id
 - Une valeur de configuration relue depuis MariaDB repasse par la validation
   d'ecriture : les bornes du registre ne peuvent pas etre contournees en
   ecrivant directement en base.
+- La console d'integrations ne transporte aucun secret : un mot de passe SMTP,
+  une cle Stripe, un secret PayPal, un jeton BPCE ou KoXo n'y apparaissent que
+  par leur presence. Un test de non-regression serialise la reponse et echoue si
+  une valeur secrete configuree y figure.
+- Aucun mode d'integration n'est modifiable depuis le Centre de configuration :
+  ils commandent des appels reels chez des tiers et se changent sur la machine.
+- L'envoi de test SMTP est borne par l'allowlist d'envoi, pas par le mode : une
+  page d'administration ne peut donc pas ecrire a un vrai client.
+- Stripe, PayPal, BPCE et KoXo n'exposent pas de test de connectivite : une
+  verification authentifiee serait un appel sortant reel, un quota consomme, ou
+  une operation trop large. L'absence est affichee avec sa raison.
 - Les modeles de demonstration ne peuvent pas introduire un type de service
   inconnu du code : le registre ferme `ServiceTypeRegistry` refuse la valeur,
   ce qui evite de contourner les validations de provisionnement et d'affichage.

@@ -173,6 +173,9 @@ builder.Services.AddScoped<IDemoProfileRepository>(
     _ => sqlConfiguration.IsPersistent
         ? new MariaDbDemoProfileRepository(sqlConfiguration)
         : new MockDemoProfileRepository());
+builder.Services.AddScoped<
+    IIntegrationsOverviewService,
+    IntegrationsOverviewService>();
 builder.Services.AddScoped<IDemoContentTemplateRepository>(
     _ => sqlConfiguration.IsPersistent
         ? new MariaDbDemoContentTemplateRepository(sqlConfiguration)
@@ -4434,6 +4437,48 @@ app.MapPost(
         await RecordDiagnosticAuditAsync(context, auditService, actor.UserId, "diagnostic_published", result.Code, "DIAGNOSTIC_PUBLISHED");
         return Results.Json(result, statusCode: ResolveDiagnosticStatusCode(result.Code));
     });
+// --- Integrations : observer sans reveler (specification, section 16) -------
+app.MapGet(
+    "/internal/admin/settings/integrations",
+    async (
+        HttpContext context,
+        IIntegrationsOverviewService service,
+        IEditorialRepository editorialRepository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(context, authenticationService, auditService, "admin.settings.read");
+        if (!await editorialRepository.HasAdminPermissionAsync(actor.UserId, "settings.read", context.RequestAborted)) throw new PortalAccessDeniedException();
+        return Results.Ok(await service.GetAsync(context.RequestAborted));
+    });
+// Seule operation de test cablee : elle est bornee par l'allowlist d'envoi, ce
+// qui interdit d'ecrire a un vrai client depuis une page d'administration.
+app.MapPost(
+    "/internal/admin/settings/integrations/smtp/test",
+    async (
+        HttpContext context,
+        IIntegrationsOverviewService service,
+        IEditorialRepository editorialRepository,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(context, authenticationService, auditService, "admin.settings.write");
+        if (!await editorialRepository.HasAdminPermissionAsync(actor.UserId, "settings.integrations.test", context.RequestAborted)) throw new PortalAccessDeniedException();
+        var payload = await ReadPayload<IntegrationTestRequest>(context) ?? throw new PortalValidationException();
+        var result = await service.SendSmtpTestAsync(payload.Recipient, context.GetCorrelationId(), context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "integration_smtp_test",
+                result.Code == "SMTP_TEST_SENT" ? "success" : "refused",
+                result.Code,
+                "integration",
+                "smtp",
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return Results.Json(result, statusCode: ResolveIntegrationTestStatusCode(result.Code));
+    });
 // --- Modeles de contenu de demonstration (specification, section 15) --------
 app.MapGet(
     "/internal/admin/settings/demo-templates",
@@ -7736,6 +7781,16 @@ static int ResolveFiscalStatusCode(string code)
         "FISCAL_VERSION_CONFLICT" or "FISCAL_EFFECTIVE_DATE_TAKEN"
             => StatusCodes.Status409Conflict,
         "FISCAL_MENTION_NOT_CANCELLABLE" => StatusCodes.Status404NotFound,
+        _ => StatusCodes.Status400BadRequest
+    };
+
+static int ResolveIntegrationTestStatusCode(string code)
+    => code switch
+    {
+        "SMTP_TEST_SENT" => StatusCodes.Status200OK,
+        "SMTP_TEST_BLOCKED_ALLOWLIST" or "SMTP_TEST_DISABLED"
+            => StatusCodes.Status409Conflict,
+        "SMTP_TEST_FAILED" => StatusCodes.Status502BadGateway,
         _ => StatusCodes.Status400BadRequest
     };
 

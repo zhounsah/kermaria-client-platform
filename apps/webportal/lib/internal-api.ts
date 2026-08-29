@@ -38,6 +38,7 @@ import type {
   DiagnosticConfigurationAdminView,
   BillingV2ConfigurationOverview,
   DemoContentTemplateAdminView,
+  IntegrationsOverview,
   FiscalPolicyAdminView,
   DiagnosticConfigurationSnapshot,
   DownloadCategory,
@@ -1156,6 +1157,13 @@ export function getAdminDiagnosticConfiguration() {
       draftDiffers: false,
       persistent: false,
     },
+  );
+}
+
+export function getAdminIntegrations() {
+  return getAdminData<IntegrationsOverview>(
+    "/internal/admin/settings/integrations",
+    { integrations: [], checkedAt: "" },
   );
 }
 

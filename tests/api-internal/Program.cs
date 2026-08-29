@@ -547,6 +547,7 @@ async Task<int> RunAsync(string[] arguments)
         await VerifySignupGuardrailsAsync();
         await VerifyFiscalPolicyAsync();
         await VerifyDemoContentTemplatesAsync();
+        await VerifyIntegrationsOverviewAsync();
         VerifyBillingV2FeatureFlagRegistry();
         await VerifyCommunicationTemplatesAsync();
         await VerifyDiagnosticConfigurationAsync();
@@ -4959,6 +4960,150 @@ static async Task VerifyDemoContentTemplatesAsync()
         "Table videe : le registre du code doit reprendre autorite.");
 
     MockDemoContentTemplateRepository.Clear();
+}
+
+// La console d'integrations a une seule promesse structurante : « observer et
+// tester sans reveler les secrets ». Ce test la verifie litteralement — aucune
+// valeur secrete configuree ne doit apparaitre dans la reponse — puis controle
+// que l'unique operation de test cablee reste bornee par l'allowlist d'envoi.
+static async Task VerifyIntegrationsOverviewAsync()
+{
+    const string smtpPassword = "mot-de-passe-smtp-tres-secret";
+    const string stripeKey = "sk_test_cle_secrete_stripe";
+    const string paypalSecret = "secret-client-paypal";
+    const string bpceToken = "jeton-de-rafraichissement-bpce";
+    const string koxoToken = "jeton-webhook-koxo";
+    var token = CancellationToken.None;
+
+    var email = new EmailRuntimeConfiguration(
+        EmailIntegrationMode.Mock,
+        "ssl0.ovh.net",
+        587,
+        true,
+        "contact@example.test",
+        smtpPassword,
+        "contact@example.test",
+        "Kermaria",
+        "https://example.test",
+        null,
+        10000,
+        LiveAllowlistOnly: true,
+        LiveAllowlist: ["autorise@example.test"],
+        ConfigurationValid: true);
+    var service = new IntegrationsOverviewService(
+        email,
+        new StripeRuntimeConfiguration(StripeMode.Test, stripeKey),
+        new PayPalRuntimeConfiguration(PayPalMode.Sandbox, "client-id", paypalSecret),
+        new BpceRuntimeConfiguration(
+            BpceIntegrationMode.Live,
+            "https://www.gestion-factures.banquepopulaire.fr",
+            bpceToken,
+            "EMETTEUR",
+            10000,
+            ConfigurationValid: true),
+        new KoxoSyncWebhookRuntimeConfiguration(
+            new Uri("https://koxo.example.test/internal/koxo/sync/"),
+            koxoToken,
+            TimeSpan.FromSeconds(10),
+            AllowInsecureHttp: false),
+        new BillingV2RuntimeConfiguration(false, false, false, false, false, false),
+        new MockEmailLogRepository(),
+        new MockEmailService(
+            email,
+            LoggerFactory.Create(_ => { }).CreateLogger<MockEmailService>()),
+        new MockBackupRepository(
+            new MockBackupStore(),
+            new BackupProtectionService()),
+        LoggerFactory.Create(_ => { }).CreateLogger<IntegrationsOverviewService>());
+
+    var overview = await service.GetAsync(token);
+    Ensure(
+        overview.Integrations.Count == 6,
+        "La console doit couvrir SMTP, Stripe, PayPal, BPCE, Veeam et KoXo.");
+
+    var serialized = JsonSerializer.Serialize(overview);
+    foreach (var secret in new[] { smtpPassword, stripeKey, paypalSecret, bpceToken, koxoToken })
+    {
+        Ensure(
+            !serialized.Contains(secret, StringComparison.Ordinal),
+            "Aucune valeur secrete ne doit apparaitre dans la vue des integrations.");
+    }
+
+    Ensure(
+        overview.Integrations
+            .SelectMany(integration => integration.Facts)
+            .Where(fact => fact.Kind == "secret")
+            .All(fact => fact.Value is "Configure" or "Non configure"),
+        "Un secret ne doit etre reduit qu'a sa presence.");
+
+    // Une operation indisponible doit porter sa raison : sans elle, l'absence
+    // de test se lit comme un test reussi.
+    Ensure(
+        overview.Integrations
+            .SelectMany(integration => integration.Operations)
+            .Where(operation => !operation.Available)
+            .All(operation => !string.IsNullOrWhiteSpace(operation.UnavailableReason)),
+        "Une operation indisponible doit expliquer pourquoi elle l'est.");
+
+    // Le garde-fou central de l'envoi de test : l'allowlist, pas le mode.
+    Ensure(
+        (await service.SendSmtpTestAsync("inconnu@example.test", "smoke-smtp", token)).Code
+            == "SMTP_TEST_BLOCKED_ALLOWLIST",
+        "Un destinataire hors allowlist doit etre refuse.");
+    Ensure(
+        (await service.SendSmtpTestAsync("pas-une-adresse", "smoke-smtp", token)).Code
+            == "SMTP_TEST_INVALID_RECIPIENT",
+        "Une adresse invalide doit etre refusee avant tout envoi.");
+    Ensure(
+        (await service.SendSmtpTestAsync("autorise@example.test", "smoke-smtp", token)).Code
+            == "SMTP_TEST_SENT",
+        "Un destinataire de l'allowlist doit etre accepte.");
+
+    var disabledEmail = email with { Mode = EmailIntegrationMode.Disabled };
+    var disabled = new IntegrationsOverviewService(
+        disabledEmail,
+        new StripeRuntimeConfiguration(StripeMode.Disabled),
+        new PayPalRuntimeConfiguration(PayPalMode.Sandbox, null, null),
+        new BpceRuntimeConfiguration(
+            BpceIntegrationMode.Disabled, "https://example.test", null, null, 10000, true),
+        new KoxoSyncWebhookRuntimeConfiguration(null, null, TimeSpan.FromSeconds(10), false),
+        new BillingV2RuntimeConfiguration(false, false, false, false, false, false),
+        new MockEmailLogRepository(),
+        new MockEmailService(
+            disabledEmail,
+            LoggerFactory.Create(_ => { }).CreateLogger<MockEmailService>()),
+        new MockBackupRepository(
+            new MockBackupStore(),
+            new BackupProtectionService()),
+        LoggerFactory.Create(_ => { }).CreateLogger<IntegrationsOverviewService>());
+    Ensure(
+        (await disabled.SendSmtpTestAsync("autorise@example.test", "smoke-smtp", token)).Code
+            == "SMTP_TEST_DISABLED",
+        "Aucun envoi ne doit etre tente quand l'integration e-mail est desactivee.");
+
+    // Une cle Stripe live sur un mode test serait acceptee sans controle : la
+    // console doit le dire, c'est exactement le genre d'ecart invisible.
+    var mismatched = new IntegrationsOverviewService(
+        disabledEmail,
+        new StripeRuntimeConfiguration(StripeMode.Test, "sk_live_cle_de_production"),
+        new PayPalRuntimeConfiguration(PayPalMode.Sandbox, null, null),
+        new BpceRuntimeConfiguration(
+            BpceIntegrationMode.Disabled, "https://example.test", null, null, 10000, true),
+        new KoxoSyncWebhookRuntimeConfiguration(null, null, TimeSpan.FromSeconds(10), false),
+        new BillingV2RuntimeConfiguration(false, false, false, false, false, false),
+        new MockEmailLogRepository(),
+        new MockEmailService(
+            disabledEmail,
+            LoggerFactory.Create(_ => { }).CreateLogger<MockEmailService>()),
+        new MockBackupRepository(
+            new MockBackupStore(),
+            new BackupProtectionService()),
+        LoggerFactory.Create(_ => { }).CreateLogger<IntegrationsOverviewService>());
+    var stripe = (await mismatched.GetAsync(token))
+        .Integrations.Single(integration => integration.Key == "stripe");
+    Ensure(
+        !stripe.Configured && stripe.Warning is not null,
+        "Une cle Stripe incoherente avec le mode doit etre signalee.");
 }
 
 static async Task VerifyFiscalPolicyAsync()

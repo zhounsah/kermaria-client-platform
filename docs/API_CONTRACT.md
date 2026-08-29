@@ -431,6 +431,64 @@ specification interdit.
 
 Evenements d'audit : `diagnostic_draft_changed`, `diagnostic_published`.
 
+## Console d'integrations
+
+`GET /internal/admin/settings/integrations` (`settings.read`) decrit SMTP,
+Stripe, PayPal, BPCE, Veeam et KoXo.
+
+Trois regles tenues partout :
+
+1. **aucun secret ne sort**. Un secret est reduit a `Configure` /
+   `Non configure`, jamais a un prefixe ni a une longueur, qui aideraient a le
+   reconstituer. Un test de non-regression serialise la reponse et verifie
+   qu'aucune valeur secrete configuree n'y figure ;
+2. **une absence de test est dite**, avec sa raison (`unavailableReason`). Une
+   page qui ne montre rien laisse croire que tout va bien ;
+3. **rien n'est mutable**. Les modes commandent des appels reels chez des
+   tiers : ils se changent sur la machine, puis au redemarrage.
+
+Ce que la console rapporte au-dela des modes :
+
+- SMTP : hote, port, STARTTLS, compte, expediteur, nom affiche, delai, etat de
+  l'allowlist, dernier envoi delivre et dernier envoi en echec (journal
+  e-mails) ;
+- Stripe : coherence **cle / mode** — une cle `sk_live_` sur un mode `test` est
+  signalee, c'est un ecart autrement invisible — et l'etat des drapeaux Billing
+  V2 qui conditionnent un appel reel ;
+- PayPal : presence des identifiants et URL d'API publique derivee du mode ;
+- BPCE : URL de base, identifiant emetteur, presence du jeton, delai, validite ;
+- Veeam : agregat des jobs suivis, jamais collectes et en erreur. Le collecteur
+  est **externe et pousse** ses releves : l'API ne peut pas le declencher, et
+  ses identifiants ne transitent pas par API-INTERNAL ;
+- KoXo : point d'entree sans jeton, presence du jeton, delai, autorisation HTTP
+  non chiffre. La synchronisation n'est pas declenchable ici : elle est globale
+  et desactive les comptes absents du CSV.
+
+hCaptcha est ajoute **par le BFF** : sa configuration vit cote WEBPORTAL, qui
+verifie le jeton a l'inscription ; API-INTERNAL ne voit ni la cle publique ni le
+secret.
+
+### Envoi de test SMTP
+
+`POST /internal/admin/settings/integrations/smtp/test`
+(`settings.integrations.test`) est la **seule** operation de test cablee.
+
+Elle est bornee par l'allowlist d'envoi, et non par le mode : c'est le garde-fou
+qui empeche d'ecrire a un vrai client depuis une page d'administration.
+
+- `SMTP_TEST_SENT` (200) ;
+- `SMTP_TEST_BLOCKED_ALLOWLIST` (409) : destinataire hors allowlist ;
+- `SMTP_TEST_DISABLED` (409) : integration e-mail desactivee ;
+- `SMTP_TEST_INVALID_RECIPIENT` (400) ;
+- `SMTP_TEST_FAILED` (502).
+
+Chaque tentative est journalisee dans le journal e-mails et auditee
+(`integration_smtp_test`).
+
+Stripe, PayPal, BPCE et KoXo n'ont volontairement **pas** de test : une
+verification authentifiee y est un appel sortant reel, ou consomme un quota, ou
+porte trop loin. L'interface le dit plutot que de le taire.
+
 ## Modeles de demonstration administrables
 
 Le registre C# `DemoContentTemplateRegistry` cesse d'etre l'autorite au profit

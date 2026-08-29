@@ -2496,6 +2496,57 @@ export interface ConfigurationStatusDomain { key: string; label: string; state: 
 export interface ConfigurationStatusSnapshot { domains: ConfigurationStatusDomain[]; }
 export interface PortalBillingConfiguration { iban: string | null; bic: string | null; paypalUrl: string | null; transferLabel: string; }
 
+// --- Integrations (Centre de configuration, section 16) --------------------
+// Contrats d'observation : aucun secret n'y transite. Un secret est reduit a sa
+// presence ("Configure" / "Non configure"), jamais a un prefixe ni a une
+// longueur, qui aideraient a le reconstituer.
+
+export interface IntegrationFact {
+  label: string;
+  value: string;
+  /** `secret` marque une presence, jamais une valeur. */
+  kind: "value" | "state" | "secret";
+}
+
+/** Une operation absente porte sa raison : sinon l'absence se lit comme un succes. */
+export interface IntegrationOperation {
+  key: string;
+  label: string;
+  description: string;
+  available: boolean;
+  unavailableReason: string | null;
+}
+
+export interface IntegrationView {
+  key: string;
+  label: string;
+  mode: string;
+  configured: boolean;
+  state: "healthy" | "warning" | "critical" | "info";
+  warning: string | null;
+  riskNote: string | null;
+  facts: IntegrationFact[];
+  operations: IntegrationOperation[];
+  lastSuccessAt: string | null;
+  lastErrorAt: string | null;
+  lastErrorSummary: string | null;
+}
+
+export interface IntegrationsOverview {
+  integrations: IntegrationView[];
+  checkedAt: string;
+}
+
+export interface IntegrationTestPayload {
+  recipient: string;
+}
+
+export interface IntegrationTestResponse {
+  code: string;
+  message: string;
+  correlationId: string;
+}
+
 // --- Modeles de contenu de demonstration (Centre de configuration, section 15)
 // Contrats non sensibles : un modele decrit seulement ce qui sera affiche sur un
 // compte de demonstration. Le type de service reste borne par un registre ferme
