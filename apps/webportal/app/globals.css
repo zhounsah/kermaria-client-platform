@@ -8980,6 +8980,13 @@ fieldset.form-field > .form-hint {
   width: 5.5rem;
 }
 
+.subscribe-direct-tier-description {
+  max-width: 26rem;
+  color: var(--text);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
 .subscribe-direct-summary {
   position: sticky;
   top: var(--space-xl);

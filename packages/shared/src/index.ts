@@ -2317,6 +2317,17 @@ export interface BillingV2PublicPriceComponent {
   priceCode: string | null;
 }
 
+/**
+ * Métadonnée d'affichage d'un palier Billing V2. Sa valeur est administrée
+ * dans le catalogue ; le portail peut seulement la mettre en forme.
+ */
+export interface BillingV2PublicTierAttribute {
+  code: string;
+  valueNumeric: number | null;
+  valueText: string | null;
+  unit: string | null;
+}
+
 export interface BillingV2PublicTier {
   code: string;
   label: string;
@@ -2326,6 +2337,7 @@ export interface BillingV2PublicTier {
   monthlyAmountCents: number;
   publicSelectable: boolean;
   priceComponents: BillingV2PublicPriceComponent[] | null;
+  attributes: BillingV2PublicTierAttribute[];
 }
 
 export interface BillingV2PublicService {

@@ -1,8 +1,25 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import ts from "typescript";
 
 async function read(path) {
   return readFile(new URL(`../${path}`, import.meta.url), "utf8");
+}
+
+function transpileToDataUrl(source, label) {
+  const transpiled = ts.transpileModule(source, {
+    compilerOptions: {
+      module: ts.ModuleKind.ES2022,
+      target: ts.ScriptTarget.ES2022,
+    },
+    fileName: label,
+    reportDiagnostics: true,
+  });
+  const errors = (transpiled.diagnostics ?? []).filter(
+    (diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error,
+  );
+  assert.deepEqual(errors, [], `${label} doit etre transpile sans erreur.`);
+  return `data:text/javascript;base64,${Buffer.from(transpiled.outputText).toString("base64")}`;
 }
 
 // --- Artefacts ---
@@ -39,6 +56,7 @@ const configuratorPage = await read("app/formules/[code]/page.tsx");
 const configurator = await read(
   "components/BillingV2FormuleConfigurator.tsx",
 );
+const directSubscribe = await read("components/BillingV2DirectSubscribe.tsx");
 const appShell = await read("components/AppShell.tsx");
 const helpLabel = await read("components/FormuleHelpLabel.tsx");
 const helpContent = await read("lib/formule-help.ts");
@@ -59,6 +77,64 @@ const signupService = await read(
 );
 const offersPage = await read("app/offres/page.tsx");
 const sitemap = await read("app/sitemap.ts");
+const helpersRuntime = await import(transpileToDataUrl(
+  helpers,
+  "billing-v2-formules.ts",
+));
+
+// Les valeurs des caractéristiques restent dans le catalogue. Le portail ne
+// connait que l'ordre et le format de trois codes publicement presentables.
+const tierAttributesInDifferentOrder = {
+  attributes: [
+    { code: "disk_gib", valueNumeric: 80, valueText: null, unit: "GiB" },
+    { code: "unknown_attribute", valueNumeric: 123, valueText: null, unit: null },
+    { code: "ram_gib", valueNumeric: null, valueText: "8", unit: "GiB" },
+    { code: "vcpu_count", valueNumeric: 4, valueText: null, unit: "count" },
+  ],
+};
+assert.equal(
+  helpersRuntime.describeTierAttributes(tierAttributesInDifferentOrder).join(" · "),
+  "4 vCPU · 8 Go RAM · 80 Go stockage",
+  "Les attributs du catalogue sont ordonnes et formates sans valeur de palier codee en dur.",
+);
+assert.equal(
+  helpersRuntime.describeTierAttributes({
+    attributes: tierAttributesInDifferentOrder.attributes.map((attribute) => (
+      attribute.code === "ram_gib"
+        ? { ...attribute, valueNumeric: 12, valueText: null }
+        : attribute
+    )),
+  }).join(" · "),
+  "4 vCPU · 12 Go RAM · 80 Go stockage",
+  "Une mise a jour administrative de ram_gib se reflete sans modifier le prix ni le code frontend.",
+);
+assert.deepEqual(
+  helpersRuntime.describeTierAttributes({ attributes: [] }),
+  [],
+  "Un palier sans attribut n'ajoute aucune caracteristique vide.",
+);
+assert.deepEqual(
+  helpersRuntime.describeTierAttributes({
+    attributes: [{ code: "unknown_attribute", valueNumeric: 1, valueText: null, unit: null }],
+  }),
+  [],
+  "Un attribut inconnu ne casse pas la presentation publique.",
+);
+assert.match(
+  helpers,
+  /vcpu_count[\s\S]*ram_gib[\s\S]*disk_gib/,
+  "Le portail ne mappe que les codes de presentation VPS connus.",
+);
+assert.doesNotMatch(
+  helpers,
+  /tier\.code\s*===\s*["'](?:NANO|MICRO|SMALL|MEDIUM)["']/,
+  "Aucune capacite VPS ne depend du code d'un palier.",
+);
+assert.match(
+  directSubscribe,
+  /describeTierAttributes\(selectedTier\)\.join\(" · "\)/,
+  "La souscription directe affiche les caracteristiques du palier selectionne.",
+);
 
 // --- 1. Le serveur reste la seule autorite financiere ---------------------
 
@@ -582,6 +658,7 @@ for (const contract of [
   "BillingV2PublicQuote",
   "BillingV2PublicSelection",
   "BillingV2PublicPaymentOption",
+  "BillingV2PublicTierAttribute",
   "baselineMonthlyAmountCents",
   "commitmentSavingsCents",
   "paymentMode",
@@ -592,5 +669,10 @@ for (const contract of [
     `Le contrat partage ${contract} doit exister.`,
   );
 }
+assert.match(
+  sharedTypes,
+  /attributes:\s*BillingV2PublicTierAttribute\[\];/,
+  "Un palier public expose toujours sa collection d'attributs.",
+);
 
 console.log("Contrat formules Billing V2 verifie.");

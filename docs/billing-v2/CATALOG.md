@@ -2,6 +2,33 @@
 
 Tous les prix ci-dessous sont HT.
 
+## Attributs publics des paliers
+
+Les valeurs techniques et commerciales d'un palier sont administrées dans
+Billing V2.1. Le frontend peut les formater pour l'affichage, mais ne possède
+aucune copie autoritaire de leurs valeurs et ne les utilise jamais pour
+calculer un prix.
+
+Le flux public est strictement en lecture seule :
+
+```text
+billing_v2_service_tier_attributes
+        ↓
+BillingV2PublicCatalogService
+        ↓
+BillingV2PublicTier.attributes
+        ↓
+@kermaria/shared
+        ↓
+WebPortal
+```
+
+Par exemple, changer `ram_gib` d'un palier de `8` à `12` met à jour la
+présentation publique au prochain chargement du catalogue, sans révision
+tarifaire ni modification du moteur de pricing. `publicVisible`,
+`selfServiceOrderable` et `publicSelectable` restent trois décisions
+commerciales indépendantes.
+
 ## Socle
 
 | Service | Prix mensuel |

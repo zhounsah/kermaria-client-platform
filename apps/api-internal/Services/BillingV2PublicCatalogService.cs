@@ -30,6 +30,7 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
         "billing_v2_preset_items",
         "billing_v2_services",
         "billing_v2_service_tiers",
+        "billing_v2_service_tier_attributes",
         "billing_v2_service_prices",
         "billing_v2_commitment_terms",
         "billing_v2_commitment_payment_options"
@@ -79,9 +80,13 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
             }
 
             var now = DateTime.UtcNow;
+            var attributesByTier = await ReadTierAttributesAsync(
+                connection,
+                cancellationToken);
             var services = await ReadServicesAsync(
                 connection,
                 now,
+                attributesByTier,
                 cancellationToken);
             var presets = await ReadPresetsAsync(
                 connection,
@@ -143,6 +148,7 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                   'billing_v2_preset_items',
                   'billing_v2_services',
                   'billing_v2_service_tiers',
+                  'billing_v2_service_tier_attributes',
                   'billing_v2_service_prices',
                   'billing_v2_commitment_terms',
                   'billing_v2_commitment_payment_options');
@@ -155,6 +161,8 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
         ReadServicesAsync(
             MySqlConnection connection,
             DateTime now,
+            IReadOnlyDictionary<string, IReadOnlyList<BillingV2PublicTierAttribute>>
+                attributesByTier,
             CancellationToken cancellationToken)
     {
         var rows = new List<ServiceRow>();
@@ -173,6 +181,7 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                     service.public_visible,
                     service.self_service_orderable,
                     service.display_order,
+                    tier.id AS tier_id,
                     tier.code AS tier_code,
                     tier.public_label,
                     tier.description AS tier_description,
@@ -236,6 +245,7 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                     service.public_visible,
                     service.self_service_orderable,
                     service.display_order,
+                    NULL AS tier_id,
                     NULL AS tier_code,
                     NULL AS public_label,
                     NULL AS tier_description,
@@ -276,7 +286,58 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
             }
         }
 
-        return BuildServices(rows);
+        return BuildServices(rows, attributesByTier);
+    }
+
+    /// <summary>
+    /// Lit les attributs dans une requete distincte des prix : joindre les
+    /// trois tables du catalogue multiplierait les composantes tarifaires par
+    /// attribut. L'index unique SQL (tier_id, attribute_code) interdit deja
+    /// les doublons ; l'ordre explicite rend la projection stable.
+    /// </summary>
+    private static async Task<
+        IReadOnlyDictionary<string, IReadOnlyList<BillingV2PublicTierAttribute>>>
+        ReadTierAttributesAsync(
+            MySqlConnection connection,
+            CancellationToken cancellationToken)
+    {
+        var attributesByTier = new Dictionary<
+            string,
+            List<BillingV2PublicTierAttribute>>(StringComparer.Ordinal);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT tier_id, attribute_code, value_numeric, value_text, unit
+            FROM billing_v2_service_tier_attributes
+            ORDER BY tier_id, attribute_code;
+            """;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var tierId = MariaDbIdentifierReader.ReadRequired(reader, "tier_id");
+            if (!attributesByTier.TryGetValue(tierId, out var attributes))
+            {
+                attributes = [];
+                attributesByTier[tierId] = attributes;
+            }
+
+            attributes.Add(new BillingV2PublicTierAttribute(
+                reader.GetString("attribute_code"),
+                reader.IsDBNull(reader.GetOrdinal("value_numeric"))
+                    ? null
+                    : reader.GetInt64("value_numeric"),
+                reader.IsDBNull(reader.GetOrdinal("value_text"))
+                    ? null
+                    : reader.GetString("value_text"),
+                reader.IsDBNull(reader.GetOrdinal("unit"))
+                    ? null
+                    : reader.GetString("unit")));
+        }
+
+        return attributesByTier.ToDictionary(
+            pair => pair.Key,
+            pair => (IReadOnlyList<BillingV2PublicTierAttribute>)pair.Value,
+            StringComparer.Ordinal);
     }
 
     /// <summary>
@@ -289,7 +350,9 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
     /// reste une metadonnee commerciale.
     /// </summary>
     private static IReadOnlyList<BillingV2PublicService> BuildServices(
-        IReadOnlyList<ServiceRow> rows)
+        IReadOnlyList<ServiceRow> rows,
+        IReadOnlyDictionary<string, IReadOnlyList<BillingV2PublicTierAttribute>>
+            attributesByTier)
     {
         var services = new List<BillingV2PublicService>();
         foreach (var serviceGroup in rows
@@ -331,7 +394,13 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                     tierFirst.NumericValue,
                     MonthlyAmountOf(components),
                     tierFirst.PublicSelectable,
-                    components));
+                    components)
+                {
+                    Attributes = tierFirst.TierId is { } tierId
+                        && attributesByTier.TryGetValue(tierId, out var attributes)
+                        ? attributes
+                        : []
+                });
             }
 
             services.Add(new BillingV2PublicService(
@@ -619,6 +688,7 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
             ReadFlag(reader, "public_visible", whenNull: false),
             ReadFlag(reader, "self_service_orderable", whenNull: false),
             reader.GetInt32("display_order"),
+            MariaDbIdentifierReader.ReadNullable(reader, "tier_id"),
             reader.IsDBNull(reader.GetOrdinal("tier_code"))
                 ? null
                 : reader.GetString("tier_code"),
@@ -653,6 +723,7 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
         bool PublicVisible,
         bool SelfServiceOrderable,
         int DisplayOrder,
+        string? TierId,
         string? TierCode,
         string? TierLabel,
         string? TierDescription,

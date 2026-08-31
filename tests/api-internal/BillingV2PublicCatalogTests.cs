@@ -15,6 +15,7 @@ public static class BillingV2PublicCatalogTests
     public static Task RunAsync()
     {
         VerifyPresetBaselinePricesMatchPublishedOffers();
+        VerifyTierAttributesStayDisplayOnly();
         VerifyCommitmentPaymentOptionsMatchTheCatalog();
         VerifyCommitmentDiscountsAreAppliedByTheEngine();
         VerifyBackupTierFollowsCoveredStorage();
@@ -43,6 +44,73 @@ public static class BillingV2PublicCatalogTests
         VerifyDirectRecurringSelectionRenewsWithoutAPreset();
         VerifyDirectRecurringWithSetupStillRenews();
         return Task.CompletedTask;
+    }
+
+    private static void VerifyTierAttributesStayDisplayOnly()
+    {
+        var small = new BillingV2PublicTier(
+            "SMALL", "Small", null, 30, 1290, true)
+        {
+            Attributes =
+            [
+                new("vcpu_count", 2, null, "count"),
+                new("ram_gib", 4, null, "GiB")
+            ]
+        };
+        var medium = new BillingV2PublicTier(
+            "MEDIUM", "Medium", null, 40, 1990, true)
+        {
+            Attributes =
+            [
+                new("vcpu_count", 4, null, "count"),
+                new("ram_gib", 8, null, "GiB"),
+                new("disk_gib", 80, null, "GiB"),
+                new("operating_system", null, "Linux", null)
+            ]
+        };
+        var withoutAttributes = new BillingV2PublicTier(
+            "NONE", "Sans attribut", null, null, 0, false);
+
+        Ensure(
+            medium.Attributes.Take(3).SequenceEqual(
+            [
+                new BillingV2PublicTierAttribute("vcpu_count", 4, null, "count"),
+                new BillingV2PublicTierAttribute("ram_gib", 8, null, "GiB"),
+                new BillingV2PublicTierAttribute("disk_gib", 80, null, "GiB")
+            ]),
+            "Les valeurs numeriques des attributs restent exactes sur Medium.");
+        Ensure(withoutAttributes.Attributes.Count == 0,
+            "Un palier sans attribut expose une collection vide.");
+        Ensure(
+            medium.Attributes.Single(attribute => attribute.Code == "operating_system")
+                .ValueText == "Linux",
+            "Une valeur textuelle reste une valeur textuelle.");
+        Ensure(
+            medium.Attributes.All(attribute => attribute.ValueNumeric != 2)
+            && small.Attributes.Any(attribute => attribute.ValueNumeric == 2),
+            "Les attributs de Small ne contaminent jamais Medium.");
+
+        var catalogBefore = VpsCatalog(attributes:
+        [
+            new("vcpu_count", 4, null, "count"),
+            new("ram_gib", 8, null, "GiB"),
+            new("disk_gib", 80, null, "GiB")
+        ]);
+        var catalogAfter = VpsCatalog(attributes:
+        [
+            new("vcpu_count", 4, null, "count"),
+            new("ram_gib", 12, null, "GiB"),
+            new("disk_gib", 80, null, "GiB")
+        ]);
+        var before = ComponentQuote(catalogBefore, "VPS-LOCAL", "NANO");
+        var after = ComponentQuote(catalogAfter, "VPS-LOCAL", "NANO");
+
+        Ensure(
+            before.MonthlyAfterDiscountCents == after.MonthlyAfterDiscountCents
+            && before.OneTimeCents == after.OneTimeCents
+            && before.Lines.Select(line => line.AmountCents)
+                .SequenceEqual(after.Lines.Select(line => line.AmountCents)),
+            "Modifier ram_gib ne modifie ni composante, ni devis, ni prix.");
     }
 
     private static void VerifyGenericComponentsAreCanonicalAndServerResolved()
@@ -907,7 +975,8 @@ public static class BillingV2PublicCatalogTests
     private static BillingV2PublicCatalogSnapshot VpsCatalog(
         bool withUpgradeFee = false,
         bool withMonthly = true,
-        bool withSetup = true)
+        bool withSetup = true,
+        IReadOnlyList<BillingV2PublicTierAttribute>? attributes = null)
     {
         var components = new List<BillingV2PublicPriceComponent>();
         if (withMonthly)
@@ -966,6 +1035,9 @@ public static class BillingV2PublicCatalogTests
                             MonthlyAmountCents: withMonthly ? 590 : 0,
                             PublicSelectable: true,
                             components)
+                        {
+                            Attributes = attributes ?? []
+                        }
                     ],
                     DiscountEligible: true,
                     PublicVisible: true,

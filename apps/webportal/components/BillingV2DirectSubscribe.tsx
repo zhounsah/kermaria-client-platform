@@ -12,7 +12,10 @@ import type {
 } from "@kermaria/shared";
 
 import { formatCurrencyFromCents } from "@/lib/formatters";
-import { resolveServicePublicLabel } from "@/lib/billing-v2-formules";
+import {
+  describeTierAttributes,
+  resolveServicePublicLabel,
+} from "@/lib/billing-v2-formules";
 
 /**
  * Souscription Billing V2 « directe » : sans formule.
@@ -252,6 +255,12 @@ export function BillingV2DirectSubscribe({ catalog }: Props) {
             {categoryServices.map((service) => {
               const entry = draft.get(service.code);
               const tiers = selectableTiers(service);
+              const selectedTier = entry?.tierCode
+                ? tiers.find((tier) => tier.code === entry.tierCode)
+                : undefined;
+              const tierDescription = selectedTier
+                ? describeTierAttributes(selectedTier).join(" · ")
+                : "";
               return (
                 <div className="subscribe-direct-service" key={service.code}>
                   <label className="subscribe-direct-toggle">
@@ -282,6 +291,11 @@ export function BillingV2DirectSubscribe({ catalog }: Props) {
                           </option>
                         ))}
                       </select>
+                      {tierDescription ? (
+                        <span className="subscribe-direct-tier-description">
+                          {tierDescription}
+                        </span>
+                      ) : null}
                     </label>
                   ) : null}
 

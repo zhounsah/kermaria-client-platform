@@ -64,6 +64,14 @@ public sealed record BillingV2PublicTier(
     IReadOnlyList<BillingV2PublicPriceComponent>? PriceComponents = null)
 {
     /// <summary>
+    /// Attributs commerciaux et techniques du palier, exclusivement destines
+    /// a l'affichage. Ils ne participent jamais a la resolution du prix, qui
+    /// reste integralement assuree par <see cref="BillingV2PricingEngine"/>.
+    /// </summary>
+    public IReadOnlyList<BillingV2PublicTierAttribute> Attributes { get; init; }
+        = [];
+
+    /// <summary>
     /// Composantes tarifaires du palier. A defaut de liste explicite — seed de
     /// repli, doubles de test — le montant mensuel declare vaut composante
     /// unique : la projection publique ne peut donc jamais se retrouver sans
@@ -74,6 +82,17 @@ public sealed record BillingV2PublicTier(
             ? PriceComponents
             : [BillingV2PublicPriceComponents.Monthly(MonthlyAmountCents)];
 }
+
+/// <summary>
+/// Metadonnee publique d'un palier Billing V2. La valeur reste structuree
+/// afin que le portail puisse la presenter sans posseder de copie autoritaire
+/// des capacites du catalogue.
+/// </summary>
+public sealed record BillingV2PublicTierAttribute(
+    string Code,
+    long? ValueNumeric,
+    string? ValueText,
+    string? Unit);
 
 /// <summary>
 /// Nature commerciale d'un service. Metadonnee d'affichage et de tri

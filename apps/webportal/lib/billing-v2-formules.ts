@@ -3,6 +3,7 @@ import type {
   BillingV2PublicPreset,
   BillingV2PublicSelection,
   BillingV2PublicService,
+  BillingV2PublicTier,
 } from "@kermaria/shared";
 
 /**
@@ -242,6 +243,41 @@ export function selectableTiers(
       (tier) => tier.publicSelectable,
     ) ?? []
   );
+}
+
+/**
+ * Présentation courte des caractéristiques administrées d'un palier.
+ *
+ * Les codes connus portent seulement leur libellé et leur format public. Les
+ * valeurs viennent toujours de `tier.attributes` : aucune capacité de palier
+ * n'est recopiée dans le portail. Un attribut inconnu est volontairement
+ * ignoré jusqu'à ce que le catalogue lui attribue une présentation adaptée.
+ */
+const TIER_ATTRIBUTE_PRESENTERS: ReadonlyArray<{
+  code: string;
+  present: (value: string) => string;
+}> = [
+  { code: "vcpu_count", present: (value) => `${value} vCPU` },
+  { code: "ram_gib", present: (value) => `${value} Go RAM` },
+  { code: "disk_gib", present: (value) => `${value} Go stockage` },
+];
+
+export function describeTierAttributes(
+  tier: Pick<BillingV2PublicTier, "attributes">,
+): string[] {
+  const valuesByCode = new Map(
+    tier.attributes.map((attribute) => [
+      attribute.code,
+      attribute.valueNumeric === null
+        ? attribute.valueText
+        : String(attribute.valueNumeric),
+    ]),
+  );
+
+  return TIER_ATTRIBUTE_PRESENTERS.flatMap(({ code, present }) => {
+    const value = valuesByCode.get(code)?.trim();
+    return value ? [present(value)] : [];
+  });
 }
 
 /**
