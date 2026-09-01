@@ -3131,6 +3131,26 @@ fieldset.form-field > .form-hint {
 .storefront-faq-grid p { margin: 12px 0 0; color: var(--muted); line-height: 1.6; }
 .storefront-related { align-items: start; }
 .storefront-link-list { display: grid; gap: 12px; align-content: start; }
+.billing-price-projection-specifications { margin: 0 0 16px; }
+.vps-storefront-hero { padding-block: clamp(28px, 4vw, 46px); }
+.vps-storefront-hero h1 { margin-bottom: 12px; }
+.vps-catalog { display: grid; gap: 32px; }
+.vps-catalog-intro { margin-bottom: 0; }
+.vps-service { display: grid; gap: 16px; }
+.vps-service > header { max-width: 760px; }
+.vps-service > header h2 { margin-bottom: 8px; font-size: clamp(1.35rem, 2.4vw, 1.75rem); }
+.vps-service > header p, .vps-tier-setup { color: var(--muted); font-size: 0.9rem; }
+.vps-service-empty-state { margin: 0; padding: 18px 20px; border: 1px dashed var(--border); border-radius: 14px; color: var(--muted); background: var(--surface-muted); }
+.vps-tier-card { min-height: 0; gap: 0; }
+.vps-tier-availability { margin: 0 0 12px !important; color: var(--primary-dark) !important; font-size: 0.72rem !important; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+.vps-tier-card h3 { margin-bottom: 8px; font-size: 1.14rem; }
+.vps-tier-description { min-height: 3.2em; margin: 0 0 20px; }
+.vps-tier-monthly-price { margin: 0 0 8px !important; color: var(--primary-dark) !important; font-size: clamp(1.45rem, 2.8vw, 1.85rem) !important; font-weight: 800; line-height: 1.2 !important; }
+.vps-tier-monthly-price span { color: var(--muted); font-size: 0.86rem; font-weight: 600; }
+.vps-tier-setup { min-height: 1.6em; margin: 0 0 18px !important; }
+.vps-tier-specifications { display: grid !important; margin: 0 0 24px !important; padding: 16px 0 !important; border-block: 1px solid var(--border); gap: 9px !important; list-style: none; }
+.vps-tier-specifications li { color: var(--text); font-size: 0.9rem; font-weight: 650; }
+.vps-tier-cta { width: 100%; margin-top: auto; text-align: center; }
 .billing-price-projection-amount { margin: 0 0 20px; color: var(--primary); font-size: 1.35rem; font-weight: 800; }
 .storefront-admin-form fieldset { display: grid; gap: 16px; margin: 28px 0 0; padding: 20px; border: 1px solid var(--border); border-radius: 16px; }
 .storefront-admin-form legend { padding-inline: 6px; font-weight: 700; }

@@ -22,6 +22,7 @@ const adminContentPage = await read("app/admin/content/page.tsx");
 const adminContentDetailPage = await read("app/admin/content/[key]/page.tsx");
 const adminStorefrontContentForm = await read("components/AdminStorefrontContentForm.tsx");
 const publicStorefrontPage = await read("components/PublicStorefrontPage.tsx");
+const publicVpsServicePage = await read("components/PublicVpsServicePage.tsx");
 const storefrontContent = await read("lib/storefront-content.ts");
 const servicesPage = await read("app/services/page.tsx");
 const serviceDetailPage = await read("app/services/[category]/page.tsx");
@@ -109,6 +110,60 @@ assert.match(servicesPage, /PublicServicesLandingPage/);
 assert.match(tarifsPage, /resolveStorefrontTariffAction/);
 assert.match(tarifsPage, /serviceCode/);
 assert.match(tarifsPage, /storefront:tarifs/);
+assert.match(tarifsPage, /Voir les offres VPS[\s\S]*\/services\/vps/);
+assert.match(tarifsPage, /service\.code === "VPS-LOCAL" \|\| service\.code === "VPS-CLOUD"/);
+assert.match(serviceDetailPage, /PublicVpsServicePage/);
+assert.match(
+  serviceDetailPage,
+  /serviceSlug === "vps"[\s\S]*<PublicVpsServicePage[\s\S]*catalog=\{catalog\}/,
+  "La route VPS doit confier la composition complete au storefront specialise.",
+);
+assert.match(publicVpsServicePage, /getBillingV2FormulesCatalog|BillingV2PublicCatalog/);
+assert.match(publicVpsServicePage, /service\.publicVisible && service\.code\.startsWith\("VPS-"\)/);
+assert.match(publicVpsServicePage, /describeTierAttributes\(tier\)/);
+assert.match(publicVpsServicePage, /filter\(\(tier\) => tier\.publicSelectable\)/);
+assert.match(publicVpsServicePage, /tier\.monthlyAmountCents/);
+assert.match(publicVpsServicePage, /billingCadence === "one_time"[\s\S]*initial_subscription/);
+assert.match(publicVpsServicePage, /serviceCode=.*tierCode=/);
+assert.match(publicVpsServicePage, /Configurer et commander/);
+assert.match(publicVpsServicePage, /tier\.description \?\? service\.description/);
+assert.match(publicVpsServicePage, /ServiceBreadcrumb[\s\S]*content\.sections[\s\S]*Questions fréquentes[\s\S]*Services associés[\s\S]*service-cta/);
+assert.ok(
+  publicVpsServicePage.indexOf('className="vps-catalog"')
+    < publicVpsServicePage.indexOf("content.sections.map"),
+  "Le comparatif VPS doit preceder le contenu CMS explicatif.",
+);
+assert.doesNotMatch(
+  publicVpsServicePage,
+  /\b(?:4\s*vCPU|8\s*Go|80\s*Go|22[,.]90)\b/,
+  "Aucune capacite ou prix VPS ne doit etre code en dur dans la landing.",
+);
+assert.doesNotMatch(publicVpsServicePage, /api\/formules\/(?:devis|souscrire)/);
+assert.match(
+  tarifsPage,
+  /describeTierAttributes\(tier\)/,
+  "Les specifications tarifaires doivent reutiliser le formatter partage des attributs de palier.",
+);
+assert.match(
+  tarifsPage,
+  /tierAttributeDescription:\s*describeTierAttributes\(tier\)/,
+  "La description d'un palier doit provenir de ses attributs projetes.",
+);
+assert.match(
+  tarifsPage,
+  /tierAttributeDescription\.length > 0/,
+  "Un palier sans attribut reconnu ne doit pas rendre une ligne de specifications vide.",
+);
+assert.match(
+  tarifsPage,
+  /amountCents:\s*tier\.monthlyAmountCents[\s\S]*formatCents\(row\.amountCents!\)/,
+  "La page tarifs doit continuer a afficher le montant Billing du palier sans le recalculer.",
+);
+assert.match(
+  tarifsPage,
+  /tierCode:\s*null,[\s\S]*label:\s*service\.name,[\s\S]*tierAttributeDescription:\s*null/,
+  "Une ligne tarifaire sans palier ne doit pas recevoir de specifications de palier.",
+);
 assert.match(adminNavigation, /\/admin\/content/);
 assert.match(sharedTypes, /diagnostic:recommendations/);
 assert.match(sharedTypes, /diagnostic_config/);
@@ -192,6 +247,37 @@ const commercialCatalog = {
   ],
 };
 
+const nonSelfServiceTieredCatalog = {
+  source: "database",
+  currency: "EUR",
+  presets: [],
+  services: [{
+    code: "VPS-LOCAL",
+    name: "VPS local",
+    category: "Infrastructure",
+    scopeType: "subscription",
+    flatMonthlyAmountCents: null,
+    tiers: [{
+      code: "MEDIUM",
+      label: "Medium",
+      description: null,
+      numericValue: null,
+      monthlyAmountCents: 2290,
+      publicSelectable: true,
+      priceComponents: null,
+      attributes: [
+        { code: "vcpu_count", valueNumeric: 4, valueText: null, unit: "count" },
+        { code: "ram_gib", valueNumeric: 8, valueText: null, unit: "GiB" },
+        { code: "disk_gib", valueNumeric: 80, valueText: null, unit: "GiB" },
+      ],
+    }],
+    discountEligible: false,
+    publicVisible: true,
+    selfServiceOrderable: false,
+  }],
+  commitments: [],
+};
+
 assert.equal(
   storefrontServiceSelfServiceOrderable("maintenance-linux", nonSelfServiceCatalog),
   false,
@@ -220,6 +306,12 @@ assert.deepEqual(
   resolveStorefrontPublicCta({ ctaLabel: "Demander un devis", ctaHref: "/contact" }, false),
   { label: "Demander un devis", href: "/contact" },
   "Un CTA commercial sûr doit rester intact.",
+);
+
+assert.deepEqual(
+  resolveStorefrontTariffAction("VPS-LOCAL", nonSelfServiceTieredCatalog),
+  { label: "Demander un devis", href: "/contact" },
+  "Un service public non self-service avec palier reste oriente devis sur /tarifs.",
 );
 
 

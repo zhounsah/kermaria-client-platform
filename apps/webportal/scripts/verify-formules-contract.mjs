@@ -114,6 +114,11 @@ assert.deepEqual(
   "Un palier sans attribut n'ajoute aucune caracteristique vide.",
 );
 assert.deepEqual(
+  helpersRuntime.describeTierAttributes({}),
+  [],
+  "Un catalogue transitoirement sans propriete attributes ne doit pas faire echouer la vitrine.",
+);
+assert.deepEqual(
   helpersRuntime.describeTierAttributes({
     attributes: [{ code: "unknown_attribute", valueNumeric: 1, valueText: null, unit: null }],
   }),

@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { ErrorState } from "@/components/ErrorState";
 import { PublicStorefrontPage } from "@/components/PublicStorefrontPage";
+import { describeTierAttributes } from "@/lib/billing-v2-formules";
 import { getBillingV2FormulesCatalog, getPublicManagedContent } from "@/lib/internal-api";
 import { buildPublicMetadata } from "@/lib/public-metadata";
 import {
@@ -10,6 +11,15 @@ import {
   resolveStorefrontBreadcrumb,
   resolveStorefrontTariffAction,
 } from "@/lib/storefront-content";
+
+type TariffRow = {
+  serviceCode: string;
+  tierCode: string | null;
+  label: string;
+  amountCents: number | null;
+  tierAttributeDescription: string[] | null;
+  vpsOverview: boolean;
+};
 
 export const dynamic = "force-dynamic";
 
@@ -39,7 +49,17 @@ function BillingPriceProjection({
 }: {
   catalog: Awaited<ReturnType<typeof getBillingV2FormulesCatalog>>["data"];
 }) {
-  const rows = catalog.services.flatMap((service) => {
+  const rows: TariffRow[] = catalog.services.flatMap((service): TariffRow[] => {
+    if (service.code === "VPS-LOCAL" || service.code === "VPS-CLOUD") {
+      return [{
+        serviceCode: service.code,
+        tierCode: null,
+        label: service.name,
+        amountCents: null,
+        tierAttributeDescription: null,
+        vpsOverview: true,
+      }];
+    }
     const flat = service.flatMonthlyAmountCents === null
       ? []
       : [{
@@ -47,6 +67,8 @@ function BillingPriceProjection({
           tierCode: null,
           label: service.name,
           amountCents: service.flatMonthlyAmountCents,
+          tierAttributeDescription: null,
+          vpsOverview: false,
         }];
     return [
       ...flat,
@@ -55,6 +77,8 @@ function BillingPriceProjection({
         tierCode: tier.code,
         label: `${service.name} — ${tier.label}`,
         amountCents: tier.monthlyAmountCents,
+        tierAttributeDescription: describeTierAttributes(tier),
+        vpsOverview: false,
       })),
     ];
   });
@@ -71,14 +95,21 @@ function BillingPriceProjection({
       </header>
       <div className="service-offer-grid">
         {rows.map((row) => {
-          const action = resolveStorefrontTariffAction(row.serviceCode, catalog);
+          const action = row.vpsOverview
+            ? { label: "Voir les offres VPS", href: "/services/vps" }
+            : resolveStorefrontTariffAction(row.serviceCode, catalog);
           return (
             <article
               className="service-offer-card"
               key={`${row.serviceCode}-${row.tierCode ?? "flat"}`}
             >
               <h3>{row.label}</h3>
-              <p className="billing-price-projection-amount">{formatCents(row.amountCents)} / mois</p>
+              {row.tierAttributeDescription && row.tierAttributeDescription.length > 0 ? (
+                <p className="billing-price-projection-specifications">
+                  {row.tierAttributeDescription.join(" · ")}
+                </p>
+              ) : null}
+              {row.vpsOverview ? <p>Comparez les paliers et leurs caractéristiques sur la page VPS.</p> : <p className="billing-price-projection-amount">{formatCents(row.amountCents!)} / mois</p>}
               <Link className="service-inline-link" href={action.href}>{action.label}</Link>
             </article>
           );

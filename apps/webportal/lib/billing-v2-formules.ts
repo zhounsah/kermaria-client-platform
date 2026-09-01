@@ -266,12 +266,12 @@ export function describeTierAttributes(
   tier: Pick<BillingV2PublicTier, "attributes">,
 ): string[] {
   const valuesByCode = new Map(
-    tier.attributes.map((attribute) => [
+    tier.attributes?.map((attribute) => [
       attribute.code,
       attribute.valueNumeric === null
         ? attribute.valueText
         : String(attribute.valueNumeric),
-    ]),
+    ]) ?? [],
   );
 
   return TIER_ATTRIBUTE_PRESENTERS.flatMap(({ code, present }) => {

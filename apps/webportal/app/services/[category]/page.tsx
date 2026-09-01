@@ -5,6 +5,7 @@ import { ErrorState } from "@/components/ErrorState";
 import { PublicMessagingCategoryPage } from "@/components/PublicMessagingCategoryPage";
 import { PublicPriorityServicePage } from "@/components/PublicPriorityServicePage";
 import { PublicStorefrontPage } from "@/components/PublicStorefrontPage";
+import { PublicVpsServicePage } from "@/components/PublicVpsServicePage";
 import { buildPublicMetadata } from "@/lib/public-metadata";
 import { getBillingV2FormulesCatalog, getPublicManagedContent } from "@/lib/internal-api";
 import {
@@ -64,6 +65,15 @@ export default async function ServiceCategoryRoute({ params }: CategoryPageProps
       <PublicMessagingCategoryPage
         breadcrumbItems={resolveStorefrontBreadcrumb(`/services/${slug}`)!}
         content={content}
+      />
+    ) : serviceSlug === "vps" ? (
+      <PublicVpsServicePage
+        breadcrumbItems={resolveStorefrontBreadcrumb(`/services/${slug}`)!}
+        catalog={catalog}
+        commercialActions={commercialActions}
+        content={content}
+        serviceSlug={serviceSlug}
+        selfServiceOrderable={selfServiceOrderable}
       />
     ) : serviceSlug && commercialActions && isStorefrontPriorityServiceSlug(serviceSlug) ? (
       <PublicPriorityServicePage
