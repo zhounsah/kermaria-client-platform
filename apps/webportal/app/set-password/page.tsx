@@ -156,11 +156,9 @@ export default async function SetPasswordPage({
           ) : (
             <p className="signup-lead">
               Votre compte a été validé. Choisissez un mot de passe pour activer
-              votre accès à l&apos;espace client. Cette définition du mot de
-              passe finalise aussi l&apos;identité cible dans clients.home.bzh
-              lorsque l&apos;écriture AD est active. Une fois connecté, votre
-              tableau de bord vous guidera vers les prochaines étapes, notamment
-              la finalisation de votre pack si vous en aviez choisi un.
+              votre accès à l&apos;espace client. Une fois connecté, votre tableau
+              de bord vous guidera vers les prochaines étapes, notamment la
+              finalisation de votre pack si vous en aviez choisi un.
             </p>
           )
         ) : null}

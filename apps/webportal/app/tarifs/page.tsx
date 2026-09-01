@@ -90,8 +90,8 @@ function BillingPriceProjection({
   return (
     <section className="service-section billing-price-projection" aria-labelledby="billing-price-title">
       <header className="service-section-heading">
-        <h2 id="billing-price-title">Unités et tarifs du catalogue public</h2>
-        <p>Montants affichés en lecture seule depuis Billing. Ils n’ouvrent pas un achat libre-service lorsque le service est traité sur devis.</p>
+        <h2 id="billing-price-title">Unités et tarifs des services</h2>
+        <p>Les montants sont affichés à titre d’information. Un service reste disponible à la commande en ligne uniquement lorsque le parcours le précise.</p>
       </header>
       <div className="service-offer-grid">
         {rows.map((row) => {

@@ -52,7 +52,7 @@ export default async function VpsCheckoutConfirmationPage({
     ? "Mise en service en préparation."
     : paid
       ? "Validation technique en cours."
-      : "Nous vérifions la confirmation réelle de votre paiement auprès du provider.";
+      : "Nous vérifions la confirmation réelle de votre paiement.";
 
   return (
     <main className="services-page vps-configurator-page">
@@ -75,7 +75,7 @@ export default async function VpsCheckoutConfirmationPage({
         </div>
         <p className="vps-configurator-notice">
           Le retour navigateur n’est jamais une preuve de paiement : ce statut vient
-          uniquement de la confirmation Billing V2 côté serveur.
+          uniquement d’une vérification côté serveur.
         </p>
         <div className="vps-configurator-actions">
           <Link className="button" href="/profile/subscriptions">Voir mes souscriptions</Link>

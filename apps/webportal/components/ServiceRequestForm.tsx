@@ -130,7 +130,7 @@ export function ServiceRequestForm({
             {submission.result.persisted
               ? "Votre demande a été transmise. Elle sera étudiée avant toute activation."
               : "Aucune donnée durable n’a été créée."}{" "}
-            Aucun devis, contrat, paiement ou provisioning automatique n’a été
+            Aucun devis, contrat, paiement ni mise en service automatique n’a été
             déclenché.
           </p>
         </FormMessage>

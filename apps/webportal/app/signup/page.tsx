@@ -77,14 +77,14 @@ export default async function SignupPage({
           <h2>Votre configuration sera conservée</h2>
           <p>
             Après la création du compte, vous reviendrez à votre configurateur
-            VPS pour relire le devis Billing V2 avant le paiement.
+            VPS pour relire le récapitulatif de votre commande avant le paiement.
           </p>
         </section>
       ) : null}
 
       {billingV2Selection && billingV2Quote ? (
         <div className={styles.selectionStack}>
-          <section className={styles.stepsCard} aria-label="Formule Billing V2 sélectionnée">
+          <section className={styles.stepsCard} aria-label="Formule sélectionnée">
             <p className="eyebrow">Formule sélectionnée</p>
             <h2>{billingV2PresetName ?? "Votre formule"}</h2>
             <p>
@@ -103,14 +103,14 @@ export default async function SignupPage({
             <p>
               Cette configuration est attachée à votre inscription. Aucun paiement
               n&apos;est effectué ici : après activation puis connexion, vous la retrouverez
-              telle quelle avant le passage chez Stripe.
+              telle quelle avant le paiement sécurisé.
             </p>
           </section>
         </div>
       ) : null}
 
       {billingV2Requested && (!billingV2Selection || !billingV2Quote) ? (
-        <section className={styles.stepsCard} aria-label="Configuration Billing V2 invalide">
+        <section className={styles.stepsCard} aria-label="Configuration invalide">
           <h2>Configuration à reprendre</h2>
           <p>La formule transmise ne peut pas être revalidée. Revenez au configurateur avant de créer le compte.</p>
           <Link className="button button-secondary" href="/formules">Reprendre ma formule</Link>
@@ -124,14 +124,13 @@ export default async function SignupPage({
           <ol>
             <li>Vous créez votre accès client et choisissez votre mot de passe.</li>
             <li>Votre session client est ouverte immédiatement.</li>
-            <li>Vous reprenez votre configurateur VPS puis le devis authoritative.</li>
+            <li>Vous reprenez votre configurateur VPS puis le récapitulatif de votre commande.</li>
           </ol>
         ) : (
           <ol>
             <li>Vous confirmez votre adresse e-mail.</li>
             <li>Nous validons l&apos;ouverture de votre accès client.</li>
             <li>Vous définissez votre mot de passe et activez votre accès client.</li>
-            <li>Si l&apos;écriture AD est active, l&apos;identité clients.home.bzh est finalisée à ce moment-là.</li>
             <li>Vous finalisez ensuite votre formule depuis l&apos;espace client.</li>
           </ol>
         )}

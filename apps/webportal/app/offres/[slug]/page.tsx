@@ -180,8 +180,7 @@ export default async function PublicPackSheetPage({ params }: PageProps) {
             <span className="card-kicker">Catalogue actif</span>
             <h2>Composants techniques liés</h2>
             <p>
-              Ce bloc est calculé automatiquement à partir des références
-              techniques de la formule et du catalogue Billing V2 publié.
+              Ce bloc présente les éléments associés à cette formule.
             </p>
           </div>
         </div>

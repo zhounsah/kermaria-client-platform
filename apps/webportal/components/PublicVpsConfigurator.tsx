@@ -1,8 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import type { FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import type { FormEvent, RefObject } from "react";
 import type {
   BillingV2PublicQuote,
   BillingV2VpsCheckoutResponse,
@@ -68,11 +75,6 @@ type VpsConfiguratorDraft = {
   configuration: VpsConfiguration;
 };
 
-/**
- * Préparation durable de la configuration technique, avant toute commande.
- * Le serveur revalide le catalogue et produit le devis ; ce composant ne crée
- * ni tentative de paiement, ni checkout, ni action de provisioning.
- */
 export function PublicVpsConfigurator({ selection }: Props) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [quote, setQuote] = useState<BillingV2PublicQuote | null>(null);
@@ -87,6 +89,9 @@ export function PublicVpsConfigurator({ selection }: Props) {
   );
   const idempotencyKey = useRef<string | null>(null);
   const checkoutIdempotencyKey = useRef<string | null>(null);
+  const identityDialogRef = useRef<HTMLDivElement | null>(null);
+  const identityCloseButtonRef = useRef<HTMLButtonElement | null>(null);
+  const identityReturnFocusRef = useRef<HTMLElement | null>(null);
   const [useRestoredDraft, setUseRestoredDraft] = useState(true);
   const draftStorageKey = useMemo(
     () => getVpsDraftStorageKey(selection),
@@ -112,6 +117,58 @@ export function PublicVpsConfigurator({ selection }: Props) {
     : null;
   const effectiveConfiguration = restoredDraft?.configuration ?? configuration;
   const effectiveStep = restoredDraft && step === 1 ? 2 : step;
+
+  const closeIdentityDialog = useCallback(() => {
+    setIdentityRequired(false);
+    window.requestAnimationFrame(() => {
+      identityReturnFocusRef.current?.focus();
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!identityRequired) {
+      return undefined;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const focusFrame = window.requestAnimationFrame(() => {
+      identityCloseButtonRef.current?.focus();
+    });
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeIdentityDialog();
+        return;
+      }
+      if (event.key !== "Tab") {
+        return;
+      }
+
+      const focusable = identityDialogRef.current?.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      if (!focusable?.length) {
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [closeIdentityDialog, identityRequired]);
 
   function updateConfiguration<Key extends keyof VpsConfiguration>(
     key: Key,
@@ -153,6 +210,9 @@ export function PublicVpsConfigurator({ selection }: Props) {
 
   function requireIdentity() {
     saveDraft();
+    identityReturnFocusRef.current = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
     setIdentityRequired(true);
   }
 
@@ -237,7 +297,8 @@ export function PublicVpsConfigurator({ selection }: Props) {
   }
 
   return (
-    <main className="services-page vps-configurator-page">
+    <>
+      <main className="services-page vps-configurator-page">
       <nav aria-label="Fil d’Ariane" className="service-breadcrumb">
         <Link href="/">Accueil</Link>
         <span aria-hidden="true">/</span>
@@ -382,7 +443,6 @@ export function PublicVpsConfigurator({ selection }: Props) {
               </button>
             </div>
             {submissionError ? <p className="field-error" role="alert">{submissionError}</p> : null}
-            {identityRequired ? <IdentityContinuation selection={selection} /> : null}
           </form>
         </section>
       ) : null}
@@ -394,9 +454,9 @@ export function PublicVpsConfigurator({ selection }: Props) {
               <p className="card-kicker">Récapitulatif</p>
               <h2 id="vps-summary-title">Votre préparation VPS</h2>
               <p>
-                Les montants ci-dessous viennent du devis Billing V2 authoritative
-                obtenu après enregistrement de votre configuration. Aucune commande
-                ni aucun paiement n’est créé à cette étape.
+                Vérifiez votre configuration et les montants associés avant de
+                poursuivre. Aucun paiement n’est effectué tant que vous ne choisissez
+                pas de continuer.
               </p>
             </div>
           </div>
@@ -412,8 +472,8 @@ export function PublicVpsConfigurator({ selection }: Props) {
             ) : null}
           </dl>
           <p className="vps-configurator-notice">
-            Votre configuration technique est enregistrée. Le paiement est créé
-            par Billing V2 après une dernière revalidation serveur du catalogue.
+            Votre configuration technique est enregistrée. Votre commande sera
+            vérifiée une dernière fois avant l’ouverture du paiement sécurisé.
           </p>
           <div className="vps-configurator-actions">
             <button className="button button-secondary" onClick={() => setStep(2)} type="button">
@@ -429,41 +489,84 @@ export function PublicVpsConfigurator({ selection }: Props) {
             </button>
           </div>
           {paymentError ? <p className="field-error" role="alert">{paymentError}</p> : null}
-          {identityRequired ? <IdentityContinuation selection={selection} /> : null}
         </section>
       ) : null}
-    </main>
+      </main>
+      {identityRequired ? (
+        <IdentityContinuationDialog
+          closeButtonRef={identityCloseButtonRef}
+          dialogRef={identityDialogRef}
+          onDismiss={closeIdentityDialog}
+          selection={selection}
+        />
+      ) : null}
+    </>
   );
 }
 
-function IdentityContinuation({
+function IdentityContinuationDialog({
+  closeButtonRef,
+  dialogRef,
+  onDismiss,
   selection,
 }: {
+  closeButtonRef: RefObject<HTMLButtonElement | null>;
+  dialogRef: RefObject<HTMLDivElement | null>;
+  onDismiss: () => void;
   selection: PublicVpsConfiguratorSelection;
 }) {
   const next = `/services/vps/choisir?serviceCode=${encodeURIComponent(selection.serviceCode)}&tierCode=${encodeURIComponent(selection.tierCode)}`;
   return (
-    <aside className="vps-configurator-notice" role="status">
-      <strong>Pour continuer votre commande VPS</strong>
-      <p>
-        Connectez-vous si vous avez déjà un compte, ou créez-en un pour
-        reprendre cette configuration sans la perdre.
-      </p>
-      <div className="vps-configurator-actions">
-        <Link
-          className="button"
-          href={`/signup?flow=vps_self_service&next=${encodeURIComponent(next)}`}
+    <div
+      className="vps-identity-dialog-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onDismiss();
+        }
+      }}
+    >
+      <section
+        aria-describedby="vps-identity-dialog-description"
+        aria-labelledby="vps-identity-dialog-title"
+        aria-modal="true"
+        className="vps-identity-dialog"
+        ref={dialogRef}
+        role="dialog"
+      >
+        <button
+          aria-label="Fermer la fenêtre"
+          className="vps-identity-dialog-close"
+          onClick={onDismiss}
+          ref={closeButtonRef}
+          type="button"
         >
-          Créer un compte
-        </Link>
-        <Link
-          className="button button-secondary"
-          href={`/login?next=${encodeURIComponent(next)}`}
-        >
-          Se connecter
-        </Link>
-      </div>
-    </aside>
+          <span aria-hidden="true">×</span>
+        </button>
+        <p className="card-kicker">Votre VPS</p>
+        <h2 id="vps-identity-dialog-title">Votre configuration est prête</h2>
+        <p id="vps-identity-dialog-description">
+          Pour consulter le récapitulatif et poursuivre votre commande,
+          connectez-vous ou créez votre espace client.
+        </p>
+        <p className="vps-identity-dialog-reassurance">
+          Votre configuration sera conservée.
+        </p>
+        <div className="vps-identity-dialog-actions">
+          <Link
+            className="button"
+            href={`/signup?flow=vps_self_service&next=${encodeURIComponent(next)}`}
+          >
+            Créer un compte
+          </Link>
+          <Link
+            className="button button-secondary"
+            href={`/login?next=${encodeURIComponent(next)}`}
+          >
+            Se connecter
+          </Link>
+        </div>
+      </section>
+    </div>
   );
 }
 
