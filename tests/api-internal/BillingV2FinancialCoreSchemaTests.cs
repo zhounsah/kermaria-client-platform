@@ -10,7 +10,7 @@ namespace Kermaria.ApiInternal.SmokeTests;
 /// s'execute pas et le dit clairement : elle n'est jamais silencieusement
 /// "verte" par absence de base.
 ///
-/// La base pointee doit deja porter les migrations 001 a 057. Ces tests
+/// La base pointee doit deja porter les migrations 001 a 082. Ces tests
 /// n'ecrivent que dans les tables du coeur financier et nettoient derriere eux.
 ///
 /// Ne JAMAIS pointer cette variable vers une base de recette ou de production.
@@ -28,7 +28,7 @@ public static class BillingV2FinancialCoreSchemaTests
         {
             throw new InvalidOperationException(
                 $"{ConnectionVariable} n'est pas defini. Cette suite exige une "
-                + "MariaDB jetable portant les migrations 001 a 071. "
+                + "MariaDB jetable portant les migrations 001 a 082. "
                 + "Elle ne peut pas etre consideree comme passee sans base.");
         }
 
@@ -55,6 +55,7 @@ public static class BillingV2FinancialCoreSchemaTests
                 connection,
                 fixture);
             await VerifyOptimisticLockingAsync(connection, fixture);
+            await VerifyRefundPersistenceAndOutboxScenarioAsync(connection, fixture);
         }
         finally
         {
@@ -164,7 +165,49 @@ public static class BillingV2FinancialCoreSchemaTests
                       'uq_billing_v2_subscription_document_billing_event'
                   AND NON_UNIQUE = 0;
                 """) == 1,
-            "DB-18 : un document V2 ne peut referencer qu'un BillingEvent.");
+                "DB-18 : un document V2 ne peut referencer qu'un BillingEvent.");
+
+        // REF-DB-1 a REF-DB-4 : le refund est une entite financiere durable,
+        // liee au settlement et non une simple valeur ecrite sur l'evenement.
+        Ensure(
+            await ScalarLongAsync(
+                connection,
+                """
+                SELECT COUNT(*) FROM information_schema.TABLES
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = 'billing_v2_refunds';
+                """) == 1,
+            "La table canonique billing_v2_refunds doit exister.");
+        foreach (var column in new[]
+                 {
+                     "billing_event_id", "payment_attempt_id", "provider",
+                     "provider_payment_id", "provider_refund_id", "amount_cents",
+                     "currency", "status", "idempotency_key_hash",
+                     "correlation_id", "provider_confirmed_at", "failure_code"
+                 })
+        {
+            Ensure(
+                await ScalarLongAsync(
+                    connection,
+                    $"""
+                     SELECT COUNT(*) FROM information_schema.COLUMNS
+                     WHERE TABLE_SCHEMA = DATABASE()
+                       AND TABLE_NAME = 'billing_v2_refunds'
+                       AND COLUMN_NAME = '{column}';
+                     """) == 1,
+                $"billing_v2_refunds.{column} doit exister.");
+        }
+        Ensure(
+            await ScalarLongAsync(
+                connection,
+                """
+                SELECT COUNT(*) FROM information_schema.STATISTICS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = 'billing_v2_refunds'
+                  AND INDEX_NAME = 'uq_billing_v2_refunds_event'
+                  AND NON_UNIQUE = 0;
+                """) == 1,
+            "Un BillingEvent ne peut avoir qu'un refund integral V1.");
     }
 
     private static async Task VerifyCoherentEventIsAcceptedAsync(
@@ -494,6 +537,204 @@ public static class BillingV2FinancialCoreSchemaTests
             "La version ne doit avancer que d'un cran malgre deux ecrivains.");
     }
 
+    /// <summary>
+    /// Scenario MariaDB du coeur refund, sans appel Stripe : la preuve
+    /// provider est couverte par le rail test, tandis que cette epreuve
+    /// verifie les contraintes, l'intention durable et le claim/retry de
+    /// l'outbox sur le vrai moteur InnoDB.
+    /// </summary>
+    private static async Task VerifyRefundPersistenceAndOutboxScenarioAsync(
+        MySqlConnection connection,
+        BillingV2SchemaFixture fixture)
+    {
+        var eventId = await InsertEventAsync(
+            connection,
+            fixture,
+            key: "refund-source",
+            gross: 2_290,
+            discount: 0,
+            net: 2_290,
+            tax: 0,
+            total: 2_290,
+            financialStatus: "finalized",
+            settlementStatus: "settled");
+        Ensure(eventId is not null, "Le source event du refund doit exister.");
+        var settledEventId = eventId!;
+        var attemptId = await InsertAttemptAsync(
+            connection,
+            fixture,
+            settledEventId,
+            requestKey: "refund-source",
+            status: "succeeded",
+            expectedAmount: 2_290,
+            settledAmount: 2_290,
+            settledCurrency: "EUR",
+            providerPaymentId: $"pi_{fixture.Marker.Replace("-", string.Empty)}");
+        Ensure(attemptId is not null, "La PaymentAttempt settled du refund doit exister.");
+        var settledAttemptId = attemptId!;
+
+        var refundId = Guid.NewGuid().ToString("D");
+        var canonical = $"billing-v2-refund|full|{settledEventId}";
+        await InsertRefundRequestAsync(
+            connection,
+            refundId,
+            settledEventId,
+            settledAttemptId,
+            $"pi_{fixture.Marker.Replace("-", string.Empty)}",
+            canonical);
+        Ensure(
+            await ScalarLongAsync(
+                connection,
+                $"SELECT COUNT(*) FROM billing_v2_refunds WHERE id = '{refundId}';") == 1,
+            "L'intention refund doit etre durable avant tout appel provider.");
+
+        await EnsureRejectedAsync(
+            () => InsertRefundRequestAsync(
+                connection,
+                Guid.NewGuid().ToString("D"),
+                settledEventId,
+                settledAttemptId,
+                $"pi_{fixture.Marker.Replace("-", string.Empty)}",
+                $"billing-v2-refund|full|duplicate|{settledEventId}"),
+            "La contrainte V1 interdit deux refunds pour le meme BillingEvent.");
+
+        var outboxId = Guid.NewGuid().ToString("D");
+        await using (var enqueue = connection.CreateCommand())
+        {
+            enqueue.CommandText =
+                """
+                INSERT INTO billing_v2_outbox_events (
+                    id, aggregate_type, aggregate_id, event_type, payload_text,
+                    idempotency_key_hash, status, retry_count, available_at, created_at)
+                VALUES (
+                    @id, 'billing_v2_refund', @refund_id,
+                    'billing_v2.provider_refund.create_requested', '{}',
+                    SHA2(@canonical, 256), 'pending', 0, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6));
+                """;
+            enqueue.Parameters.AddWithValue("@id", outboxId);
+            enqueue.Parameters.AddWithValue("@refund_id", refundId);
+            enqueue.Parameters.AddWithValue("@canonical", canonical);
+            await enqueue.ExecuteNonQueryAsync();
+        }
+
+        await using (var concurrentConnection = new MySqlConnection(
+                         connection.ConnectionString))
+        {
+            await concurrentConnection.OpenAsync();
+            var claims = await Task.WhenAll(
+                ClaimRefundOutboxAsync(connection, outboxId),
+                ClaimRefundOutboxAsync(concurrentConnection, outboxId));
+            Ensure(
+                claims.Sum() == 1,
+                "Deux workers concurrents ne peuvent pas claimer la meme intention refund.");
+        }
+        await using (var expire = connection.CreateCommand())
+        {
+            expire.CommandText =
+                """
+                UPDATE billing_v2_outbox_events
+                SET status='processing',
+                    available_at=DATE_SUB(UTC_TIMESTAMP(6), INTERVAL 1 MINUTE)
+                WHERE id=@id;
+                """;
+            expire.Parameters.AddWithValue("@id", outboxId);
+            await expire.ExecuteNonQueryAsync();
+        }
+        Ensure(
+            await ClaimRefundOutboxAsync(connection, outboxId) == 1,
+            "Un processing expire doit pouvoir etre repris sans creer un second refund.");
+
+        await using (var transaction = await connection.BeginTransactionAsync())
+        {
+            await using (var confirm = connection.CreateCommand())
+            {
+                confirm.Transaction = transaction;
+                confirm.CommandText =
+                    """
+                    UPDATE billing_v2_refunds
+                    SET status='confirmed', provider_refund_id=@provider_refund_id,
+                        provider_confirmed_at=UTC_TIMESTAMP(6)
+                    WHERE id=@id;
+                    """;
+                confirm.Parameters.AddWithValue("@id", refundId);
+                confirm.Parameters.AddWithValue("@provider_refund_id", $"re_{fixture.Marker.Replace("-", string.Empty)}");
+                await confirm.ExecuteNonQueryAsync();
+            }
+            await using (var settle = connection.CreateCommand())
+            {
+                settle.Transaction = transaction;
+                settle.CommandText =
+                    """
+                    UPDATE billing_v2_billing_events
+                    SET settlement_status='refunded', refunded_at=UTC_TIMESTAMP(6),
+                        refund_reason_code='test_refund'
+                    WHERE id=@event_id AND settlement_status='settled';
+                    """;
+                settle.Parameters.AddWithValue("@event_id", settledEventId);
+                Ensure(
+                    await settle.ExecuteNonQueryAsync() == 1,
+                    "La projection settlement refunded doit viser un evenement encore settled.");
+            }
+            await transaction.CommitAsync();
+        }
+        Ensure(
+            await ScalarLongAsync(
+                connection,
+                $"SELECT COUNT(*) FROM billing_v2_refunds WHERE id='{refundId}' AND status='confirmed' AND provider_refund_id IS NOT NULL;") == 1
+            && await ScalarLongAsync(
+                connection,
+                $"SELECT COUNT(*) FROM billing_v2_billing_events WHERE id='{settledEventId}' AND settlement_status='refunded';") == 1,
+            "La confirmation provider persiste avant la projection settlement refunded.");
+    }
+
+    private static async Task<int> ClaimRefundOutboxAsync(
+        MySqlConnection connection,
+        string outboxId)
+    {
+        await using var claim = connection.CreateCommand();
+        claim.CommandText =
+            """
+            UPDATE billing_v2_outbox_events
+            SET status='processing',
+                available_at=DATE_ADD(UTC_TIMESTAMP(6), INTERVAL 5 MINUTE)
+            WHERE id=@id
+              AND event_type='billing_v2.provider_refund.create_requested'
+              AND available_at <= UTC_TIMESTAMP(6)
+              AND status IN ('pending','processing');
+            """;
+        claim.Parameters.AddWithValue("@id", outboxId);
+        return await claim.ExecuteNonQueryAsync();
+    }
+
+    private static async Task<string?> InsertRefundRequestAsync(
+        MySqlConnection connection,
+        string refundId,
+        string billingEventId,
+        string paymentAttemptId,
+        string providerPaymentId,
+        string canonical)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            INSERT INTO billing_v2_refunds (
+                id, billing_event_id, payment_attempt_id, provider, environment,
+                provider_payment_id, amount_cents, currency, reason_code, status,
+                idempotency_key_canonical, idempotency_key_hash, requested_at, updated_at)
+            VALUES (
+                @id, @billing_event_id, @payment_attempt_id, 'stripe', 'test',
+                @provider_payment_id, 2290, 'EUR', 'schema_test', 'requested',
+                @canonical, SHA2(@canonical, 256), UTC_TIMESTAMP(6), UTC_TIMESTAMP(6));
+            """;
+        command.Parameters.AddWithValue("@id", refundId);
+        command.Parameters.AddWithValue("@billing_event_id", billingEventId);
+        command.Parameters.AddWithValue("@payment_attempt_id", paymentAttemptId);
+        command.Parameters.AddWithValue("@provider_payment_id", providerPaymentId);
+        command.Parameters.AddWithValue("@canonical", canonical);
+        await command.ExecuteNonQueryAsync();
+        return refundId;
+    }
+
     private static bool BillingV2FinancialCoreVersionAssert(int affectedRows)
         => affectedRows == 1;
 
@@ -551,7 +792,7 @@ public static class BillingV2FinancialCoreSchemaTests
                 tax_amount_cents, total_amount_cents,
                 pricing_engine_version,
                 idempotency_key_canonical, idempotency_key_hash,
-                created_at
+                created_at, finalized_at, settled_at
             ) VALUES (
                 @id, @customer_id, @subscription_id,
                 'initial_charge', 'debit',
@@ -561,7 +802,11 @@ public static class BillingV2FinancialCoreSchemaTests
                 @gross, @discount, @net, @tax, @total,
                 'pricing-engine-v1',
                 @canonical, SHA2(@canonical, 256),
-                UTC_TIMESTAMP(6)
+                UTC_TIMESTAMP(6),
+                CASE WHEN @financial_status = 'finalized'
+                    THEN UTC_TIMESTAMP(6) ELSE NULL END,
+                CASE WHEN @settlement_status = 'settled'
+                    THEN UTC_TIMESTAMP(6) ELSE NULL END
             );
             """;
         command.Parameters.AddWithValue("@id", id);
@@ -644,7 +889,8 @@ public static class BillingV2FinancialCoreSchemaTests
         string status,
         long expectedAmount = 1000,
         long? settledAmount = null,
-        string? settledCurrency = null)
+        string? settledCurrency = null,
+        string? providerPaymentId = null)
     {
         var id = Guid.NewGuid().ToString("D");
         await using var command = connection.CreateCommand();
@@ -652,13 +898,13 @@ public static class BillingV2FinancialCoreSchemaTests
             """
             INSERT INTO billing_v2_payment_attempts (
                 id, billing_event_id, provider, environment,
-                provider_request_key,
+                provider_request_key, provider_payment_id,
                 expected_amount_cents, expected_currency,
                 settled_amount_cents, settled_currency,
                 status, attempted_at, created_at, updated_at
             ) VALUES (
                 @id, @billing_event_id, 'stripe', 'test',
-                @request_key,
+                @request_key, @provider_payment_id,
                 @expected_amount, 'EUR',
                 @settled_amount, @settled_currency,
                 @status, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6), UTC_TIMESTAMP(6)
@@ -669,6 +915,9 @@ public static class BillingV2FinancialCoreSchemaTests
         command.Parameters.AddWithValue(
             "@request_key",
             $"{fixture.Marker}-{requestKey}");
+        command.Parameters.AddWithValue(
+            "@provider_payment_id",
+            providerPaymentId is null ? DBNull.Value : providerPaymentId);
         command.Parameters.AddWithValue("@expected_amount", expectedAmount);
         command.Parameters.AddWithValue(
             "@settled_amount",
@@ -805,6 +1054,27 @@ public static class BillingV2FinancialCoreSchemaTests
 
         public async Task CleanupAsync(MySqlConnection connection)
         {
+            await ExecuteAsync(
+                connection,
+                """
+                DELETE outbox FROM billing_v2_outbox_events outbox
+                INNER JOIN billing_v2_refunds refund
+                    ON refund.id = outbox.aggregate_id
+                INNER JOIN billing_v2_billing_events event_row
+                    ON event_row.id = refund.billing_event_id
+                WHERE outbox.aggregate_type = 'billing_v2_refund'
+                  AND event_row.subscription_id = @subscription_id;
+                """,
+                ("@subscription_id", SubscriptionId));
+            await ExecuteAsync(
+                connection,
+                """
+                DELETE refund FROM billing_v2_refunds refund
+                INNER JOIN billing_v2_billing_events event_row
+                    ON event_row.id = refund.billing_event_id
+                WHERE event_row.subscription_id = @subscription_id;
+                """,
+                ("@subscription_id", SubscriptionId));
             await ExecuteAsync(
                 connection,
                 """

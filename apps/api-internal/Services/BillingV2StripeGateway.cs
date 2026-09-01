@@ -15,6 +15,33 @@ public sealed record BillingV2StripeCreateResult(
     string? ErrorMessage,
     bool Retryable);
 
+public sealed record BillingV2StripeRefundCreateRequest(
+    string PaymentIntentId,
+    string Currency,
+    long AmountCents,
+    string IdempotencyKey,
+    string BillingV2RefundId);
+
+public sealed record BillingV2StripeRefundLocator(
+    string? ProviderRefundId,
+    string PaymentIntentId,
+    string BillingV2RefundId);
+
+public sealed record BillingV2StripeRefundSnapshot(
+    string RefundId,
+    string Status,
+    long? AmountCents,
+    string? Currency,
+    string? PaymentIntentId,
+    IReadOnlyDictionary<string, string> Metadata);
+
+public sealed record BillingV2StripeRefundCreateResult(
+    bool Succeeded,
+    string ReasonCode,
+    BillingV2StripeRefundSnapshot? Refund,
+    bool Retryable,
+    string? ErrorMessage = null);
+
 /// <summary>
 /// Acces Stripe du rail Billing V2.
 ///
@@ -81,6 +108,30 @@ public interface IBillingV2StripeGateway
     Task<BillingV2StripeInvoiceSnapshot?> GetLatestInvoiceForSubscriptionAsync(
         string providerSubscriptionId,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Cree un remboursement Stripe sur le PaymentIntent PERSISTE par le rail.
+    /// La cle idempotente est celle de BillingV2Refund, jamais une cle recue du
+    /// navigateur. Le montant est l'integralite authoritative du BillingEvent.
+    /// </summary>
+    Task<BillingV2StripeRefundCreateResult> CreateRefundAsync(
+        BillingV2StripeRefundCreateRequest request,
+        CancellationToken cancellationToken)
+        => Task.FromResult(new BillingV2StripeRefundCreateResult(
+            false,
+            "BILLING_V2_STRIPE_REFUND_UNSUPPORTED",
+            null,
+            Retryable: false));
+
+    /// <summary>
+    /// Relecture bornee d'un remboursement. Apres un timeout sans identifiant,
+    /// la recherche reste bornee au PaymentIntent connu et a notre metadata,
+    /// ce qui permet de converger sans creer un second remboursement.
+    /// </summary>
+    Task<BillingV2StripeRefundSnapshot?> FindRefundAsync(
+        BillingV2StripeRefundLocator locator,
+        CancellationToken cancellationToken)
+        => Task.FromResult<BillingV2StripeRefundSnapshot?>(null);
 }
 
 public sealed class DisabledBillingV2StripeGateway : IBillingV2StripeGateway
@@ -136,6 +187,20 @@ public sealed class DisabledBillingV2StripeGateway : IBillingV2StripeGateway
             string providerSubscriptionId,
             CancellationToken cancellationToken)
         => Task.FromResult<BillingV2StripeInvoiceSnapshot?>(null);
+
+    public Task<BillingV2StripeRefundCreateResult> CreateRefundAsync(
+        BillingV2StripeRefundCreateRequest request,
+        CancellationToken cancellationToken)
+        => Task.FromResult(new BillingV2StripeRefundCreateResult(
+            false,
+            "BILLING_V2_STRIPE_GATEWAY_DISABLED",
+            null,
+            Retryable: false));
+
+    public Task<BillingV2StripeRefundSnapshot?> FindRefundAsync(
+        BillingV2StripeRefundLocator locator,
+        CancellationToken cancellationToken)
+        => Task.FromResult<BillingV2StripeRefundSnapshot?>(null);
 }
 
 public sealed class BillingV2StripeGateway : IBillingV2StripeGateway
@@ -144,6 +209,7 @@ public sealed class BillingV2StripeGateway : IBillingV2StripeGateway
     private const string SessionsUrl = "https://api.stripe.com/v1/checkout/sessions";
     private const string SubscriptionsUrl = "https://api.stripe.com/v1/subscriptions";
     private const string InvoicesUrl = "https://api.stripe.com/v1/invoices";
+    private const string RefundsUrl = "https://api.stripe.com/v1/refunds";
 
     private readonly BillingV2RuntimeConfiguration _runtime;
     private readonly StripeRuntimeConfiguration _stripe;
@@ -481,6 +547,147 @@ public sealed class BillingV2StripeGateway : IBillingV2StripeGateway
                 cancellationToken);
     }
 
+    public async Task<BillingV2StripeRefundCreateResult> CreateRefundAsync(
+        BillingV2StripeRefundCreateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!CanExecute
+            || string.IsNullOrWhiteSpace(request.PaymentIntentId)
+            || request.AmountCents <= 0
+            || string.IsNullOrWhiteSpace(request.Currency)
+            || string.IsNullOrWhiteSpace(request.IdempotencyKey)
+            || string.IsNullOrWhiteSpace(request.BillingV2RefundId))
+        {
+            return new BillingV2StripeRefundCreateResult(
+                false,
+                "BILLING_V2_STRIPE_REFUND_REQUEST_INVALID",
+                null,
+                Retryable: false);
+        }
+
+        var values = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["payment_intent"] = request.PaymentIntentId,
+            ["amount"] = request.AmountCents.ToString(
+                System.Globalization.CultureInfo.InvariantCulture),
+            ["metadata[billing_v2_refund_id]"] = request.BillingV2RefundId
+        };
+        using var message = new HttpRequestMessage(HttpMethod.Post, RefundsUrl)
+        {
+            Content = new StringContent(
+                Encode(values),
+                Encoding.UTF8,
+                "application/x-www-form-urlencoded")
+        };
+        message.Headers.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            _stripe.SecretKey);
+        message.Headers.TryAddWithoutValidation(
+            "Idempotency-Key",
+            request.IdempotencyKey);
+
+        try
+        {
+            using var response = await _httpClientFactory
+                .CreateClient(HttpClientName)
+                .SendAsync(message, cancellationToken);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                return new BillingV2StripeRefundCreateResult(
+                    false,
+                    "BILLING_V2_STRIPE_REFUND_REQUEST_FAILED",
+                    null,
+                    Retryable: response.StatusCode == System.Net.HttpStatusCode.TooManyRequests
+                        || (int)response.StatusCode >= 500,
+                    ErrorMessage: body);
+            }
+
+            var refund = ParseRefund(body);
+            return refund is null
+                ? new BillingV2StripeRefundCreateResult(
+                    false,
+                    "BILLING_V2_STRIPE_REFUND_RESPONSE_INVALID",
+                    null,
+                    Retryable: false)
+                : new BillingV2StripeRefundCreateResult(
+                    true,
+                    "BILLING_V2_STRIPE_REFUND_CREATED",
+                    refund,
+                    Retryable: false);
+        }
+        catch (Exception exception)
+            when (exception is HttpRequestException or TaskCanceledException)
+        {
+            // L'appel a pu aboutir. Le dispatcher relit d'abord le refund
+            // cible par metadata avant de reutiliser la meme cle Stripe.
+            _logger.LogWarning(
+                exception,
+                "Billing V2 Stripe refund call did not return; provider state must be re-read before retry.");
+            return new BillingV2StripeRefundCreateResult(
+                false,
+                "BILLING_V2_STRIPE_REFUND_CALL_INDETERMINATE",
+                null,
+                Retryable: true,
+                ErrorMessage: exception.Message);
+        }
+    }
+
+    public async Task<BillingV2StripeRefundSnapshot?> FindRefundAsync(
+        BillingV2StripeRefundLocator locator,
+        CancellationToken cancellationToken)
+    {
+        if (!CanExecute || string.IsNullOrWhiteSpace(locator.PaymentIntentId))
+        {
+            return null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(locator.ProviderRefundId))
+        {
+            var body = await GetAsync(
+                $"{RefundsUrl}/{Uri.EscapeDataString(locator.ProviderRefundId)}",
+                cancellationToken);
+            return body is null ? null : ParseRefund(body);
+        }
+
+        // Seule recherche large autorisee : un PaymentIntent deja persiste,
+        // une page de refunds et notre metadata stable. Aucun balayage compte.
+        var listed = await GetAsync(
+            $"{RefundsUrl}?payment_intent={Uri.EscapeDataString(locator.PaymentIntentId)}&limit=100",
+            cancellationToken);
+        if (listed is null)
+        {
+            return null;
+        }
+
+        using var document = JsonDocument.Parse(listed);
+        if (!document.RootElement.TryGetProperty("data", out var data)
+            || data.ValueKind is not JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        foreach (var item in data.EnumerateArray())
+        {
+            var candidate = ParseRefund(item);
+            if (candidate is not null
+                && string.Equals(
+                    candidate.PaymentIntentId,
+                    locator.PaymentIntentId,
+                    StringComparison.Ordinal)
+                && candidate.Metadata.TryGetValue(
+                    "billing_v2_refund_id",
+                    out var refundId)
+                && string.Equals(refundId, locator.BillingV2RefundId,
+                    StringComparison.Ordinal))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
     private async Task<string?> GetAsync(
         string url,
         CancellationToken cancellationToken)
@@ -519,6 +726,26 @@ public sealed class BillingV2StripeGateway : IBillingV2StripeGateway
             ReadString(root, "billing_reason"),
             ReadMetadata(root),
             ReadInvoicePeriodStart(root));
+    }
+
+    private static BillingV2StripeRefundSnapshot? ParseRefund(string body)
+    {
+        using var document = JsonDocument.Parse(body);
+        return ParseRefund(document.RootElement);
+    }
+
+    private static BillingV2StripeRefundSnapshot? ParseRefund(JsonElement root)
+    {
+        var id = ReadString(root, "id");
+        return string.IsNullOrWhiteSpace(id)
+            ? null
+            : new BillingV2StripeRefundSnapshot(
+                id,
+                ReadString(root, "status") ?? "unknown",
+                ReadLong(root, "amount"),
+                ReadString(root, "currency"),
+                ReadReference(root, "payment_intent"),
+                ReadMetadata(root));
     }
 
     /// <summary>

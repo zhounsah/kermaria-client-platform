@@ -126,6 +126,13 @@ Cette étape ne déclenche aucun appel Stripe/PayPal, ne modifie aucun ancien St
 
 `BillingV2ProviderOutboxWorker` est conditionné à `BILLING_V2_PROVIDER_OUTBOX_ENABLED=true`. Même avec ce flag, `BillingV2ProviderOutboxDispatcher` refuse tout traitement tant que `BILLING_V2_PROVIDER_EXECUTOR_ENABLED=false` ou que la configuration provider requise manque.
 
+La primitive générique de remboursement intégral est portée par
+`billing_v2_refunds` (migration `082`) et son worker distinct, mais réutilise la
+même table outbox durable. `BILLING_V2_REFUNDS_ENABLED=false` par défaut ferme
+tout appel Stripe ; il ne crée aucun endpoint ou droit client. Le worker relit
+Stripe avant la transition `refunded` et bloque les renouvellements. Les
+événements déjà documentés restent exclus tant qu'un avoir BPCE canonique manque.
+
 Quand ces verrous sont ouverts, le dispatcher lit uniquement les événements `billing_v2.provider_checkout.create_requested` disponibles, les traite par lots bornés et applique une politique retry-safe : succès vers `processed`, échec conservé en `pending` avec délai de retry et diagnostic.
 
 Avant tout appel externe, le dispatcher revendique l'événement localement en `processing` avec une expiration courte. Un second worker qui a lu le même événement ne peut donc pas appeler Stripe/PayPal. Si le worker tombe pendant l'appel, le `processing` expiré redevient revendicable pour retry avec la même clé d'idempotence.

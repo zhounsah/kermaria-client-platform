@@ -153,7 +153,17 @@ Seuls les composants de `RequiredForStripeLaunch` bloquent un lancement Stripe.
 **PayPal reste explicitement `NOT_READY` sans bloquer Stripe**, parce qu'il
 n'en fait pas partie.
 
-## 9. Hors périmètre
+## 9. Compensation interne après remboursement intégral
 
-Customer Credit Ledger, upgrades, downgrades, remboursements, chargebacks,
-PayPal V2, résiliation automatisée, TVA non nulle.
+La confirmation d'un `BillingV2Refund` intégral est un workflow interne de
+compensation, distinct de `SelfServiceCancellationEnabled`. Dans la même
+transaction qui rend le settlement `refunded`, il bloque le renouvellement local
+et enfile l'annulation provider idempotente. Tant que le provider converge,
+l'abonnement reste `pending_cancellation` : le moteur de renouvellement ne peut
+pas créer de nouveau cycle, et le système ne prétend pas à tort que le contrat
+provider est déjà annulé.
+
+## 10. Hors périmètre
+
+Customer Credit Ledger, upgrades, downgrades, remboursements partiels,
+chargebacks, avoir BPCE/reprise comptable, PayPal V2, TVA non nulle.

@@ -25,7 +25,10 @@ public sealed record BillingV2RuntimeConfiguration(
     bool SubscriptionChangesEnabled = false,
     bool StripeRecurringMutationEnabled = false,
     bool VpsLocalProvisioningEnabled = false,
-    bool VpsCloudAutomationEnabled = false)
+    bool VpsCloudAutomationEnabled = false,
+    // Capacite interne seulement. Absente/false => aucun worker refund ne peut
+    // appeler Stripe, meme si une demande durable existe en base.
+    bool RefundsEnabled = false)
 {
     public const int DefaultReconciliationIntervalSeconds = 300;
     public const int MinimumReconciliationIntervalSeconds = 30;
@@ -66,7 +69,8 @@ public sealed record BillingV2RuntimeConfiguration(
             SubscriptionChangesEnabled = ReadFlag(configuration, "BILLING_V2_SUBSCRIPTION_CHANGES_ENABLED"),
             StripeRecurringMutationEnabled = ReadFlag(configuration, "BILLING_V2_STRIPE_RECURRING_MUTATION_ENABLED"),
             VpsLocalProvisioningEnabled = ReadFlag(configuration, "BILLING_V2_VPS_LOCAL_PROVISIONING_ENABLED"),
-            VpsCloudAutomationEnabled = ReadFlag(configuration, "BILLING_V2_VPS_CLOUD_AUTOMATION_ENABLED")
+            VpsCloudAutomationEnabled = ReadFlag(configuration, "BILLING_V2_VPS_CLOUD_AUTOMATION_ENABLED"),
+            RefundsEnabled = ReadFlag(configuration, "BILLING_V2_REFUNDS_ENABLED")
         };
 
     private static bool ReadFlag(IConfiguration configuration, string key)

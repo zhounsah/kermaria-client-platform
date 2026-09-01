@@ -177,6 +177,7 @@ chemin de dispatch, avec les codes `BILLING_V2_SCOPE_*`.
 | `BILLING_V2_FIRST_REAL_SUBSCRIPTION_APPROVED` | `false` | `false` | `true` | `false` |
 | `BILLING_V2_PROVIDER_OUTBOX_ENABLED` | `false` | `true` | `true` | `false` |
 | `BILLING_V2_PROVIDER_EXECUTOR_ENABLED` | `false` | `true` | `true` | `false` |
+| `BILLING_V2_REFUNDS_ENABLED` | `false` | `false` | `false` | `false` |
 | `BILLING_V2_RECONCILIATION_WORKER_ENABLED` | `false` | `true` | `true` | `false` |
 | `BILLING_V2_RECONCILIATION_INTERVAL_SECONDS` | — | `300` | `300` | — |
 | `BILLING_V2_PROVISIONING_ENABLED` | `false` | `false` | `true` | `false` |
@@ -190,6 +191,9 @@ chemin de dispatch, avec les codes `BILLING_V2_SCOPE_*`.
 
 `BILLING_V2_FIRST_REAL_SUBSCRIPTION_APPROVED` est le dernier verrou : il ne
 passe à `true` qu'au moment d'accepter le premier vrai client.
+`BILLING_V2_REFUNDS_ENABLED` reste fermé tant que le refund Stripe n'a pas été
+validé sur MariaDB/Stripe et qu'un avoir BPCE canonique n'est pas disponible
+pour les événements déjà documentés. Il n'est jamais un droit client.
 Le tarif de validation du premier abonnement reel est un mecanisme temporaire,
 ferme par defaut, qui ne modifie jamais le catalogue. Il est controle par :
 

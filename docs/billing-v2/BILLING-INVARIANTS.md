@@ -57,3 +57,15 @@ Détail et mécanismes dans `FINANCIAL-CORE.md`.
     jamais sommées comme deux services.
 36. Un paiement arrivant après expiration d'un `SubscriptionChange` ne provisionne
     rien automatiquement et part en réconciliation.
+37. Un remboursement intégral est une intention durable liée à un `BillingEvent`
+    settled et à sa `PaymentAttempt`, jamais une écriture directe de
+    `settlement_status=refunded`.
+38. Le montant et la devise d'un remboursement viennent exclusivement du
+    settlement financial authoritative ; le navigateur et les workflows produit
+    ne portent aucun montant de remboursement autoritaire.
+39. `settlement_status=refunded` exige une relecture provider réussie, du même
+    PaymentIntent, du montant intégral exact et de la même devise. Pending,
+    failed, timeout ou webhook seul ne valent jamais refunded.
+40. Un remboursement confirmé bloque les renouvellements futurs et enfile une
+    annulation provider idempotente ; cette compensation interne est distincte
+    de `SelfServiceCancellationEnabled`.

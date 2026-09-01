@@ -32,6 +32,7 @@ Si aucun client n'a ete redirige vers Stripe/PayPal V2 :
    - `BILLING_V2_NEW_SUBSCRIPTIONS_ENABLED=false`
    - `BILLING_V2_PROVIDER_OUTBOX_ENABLED=false`
    - `BILLING_V2_PROVIDER_EXECUTOR_ENABLED=false`
+   - `BILLING_V2_REFUNDS_ENABLED=false`
    - `BILLING_V2_PROVISIONING_ENABLED=false`
 2. Garder `BILLING_V2_CATALOG_SHADOW_MODE` et
    `BILLING_V2_PROVISIONING_SHADOW_MODE` selon le besoin d'observation, ou les

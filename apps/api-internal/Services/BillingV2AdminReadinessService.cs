@@ -104,6 +104,8 @@ public sealed class BillingV2AdminReadinessService
         {
             var missingTables = await LoadMissingSchemaTablesAsync(
                 cancellationToken);
+            var refundSchemaReady = await IsRefundSchemaReadyAsync(
+                cancellationToken);
             if (missingTables.Count > 0)
             {
                 return CreateSnapshot(
@@ -120,7 +122,8 @@ public sealed class BillingV2AdminReadinessService
                         persistentSqlAvailable,
                         schemaReady: false,
                         stripeMappingsReady: false,
-                        documentReadiness));
+                        documentReadiness,
+                        refundSchemaReady));
             }
 
             var servicePriceIds = await LoadActiveServicePriceIdsAsync(
@@ -171,7 +174,8 @@ public sealed class BillingV2AdminReadinessService
                         "stripe",
                         StringComparison.Ordinal)
                         && provider.PriceMappingsReady),
-                    documentReadiness));
+                    documentReadiness,
+                    refundSchemaReady));
         }
         catch (MySqlException exception)
         {
@@ -204,7 +208,8 @@ public sealed class BillingV2AdminReadinessService
         bool persistentSqlAvailable,
         bool schemaReady,
         bool stripeMappingsReady,
-        BillingV2DocumentReadinessStatus documentReadiness)
+        BillingV2DocumentReadinessStatus documentReadiness,
+        bool refundSchemaReady = false)
         => new(
             persistentSqlAvailable,
             FinancialCoreSchemaReady: schemaReady,
@@ -221,7 +226,46 @@ public sealed class BillingV2AdminReadinessService
             BillingV2DocumentIssuancePolicy
                 .InvoiceLookupByExternalReferenceSupported,
             _runtime.ProvisioningEnabled,
-            _paypal.IsConfigured);
+            _paypal.IsConfigured,
+            RefundSchemaReady: refundSchemaReady);
+
+    /// <summary>
+    /// Le schema financier historique peut etre present alors que la migration
+    /// 082 ne l'est pas. Cette sonde est separee pour ne pas transformer un
+    /// flag refund dormant en capacite validee, ni bloquer artificiellement le
+    /// checkout existant.
+    /// </summary>
+    private async Task<bool> IsRefundSchemaReadyAsync(
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(_sql.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT COUNT(*)
+            FROM (
+                SELECT 'billing_v2_refunds' AS table_name, NULL AS column_name
+                UNION ALL SELECT 'billing_v2_outbox_events', NULL
+                UNION ALL SELECT 'billing_v2_billing_events', 'refunded_at'
+                UNION ALL SELECT 'billing_v2_billing_events', 'refund_reason_code'
+                UNION ALL SELECT 'billing_v2_subscriptions', 'renewal_blocked_at'
+                UNION ALL SELECT 'billing_v2_subscriptions', 'renewal_block_reason_code'
+            ) required
+            WHERE (column_name IS NULL AND NOT EXISTS (
+                       SELECT 1 FROM information_schema.tables present
+                       WHERE present.table_schema = DATABASE()
+                         AND present.table_name = required.table_name))
+               OR (column_name IS NOT NULL AND NOT EXISTS (
+                       SELECT 1 FROM information_schema.columns present
+                       WHERE present.table_schema = DATABASE()
+                         AND present.table_name = required.table_name
+                         AND present.column_name = required.column_name));
+            """;
+        var missing = await command.ExecuteScalarAsync(cancellationToken);
+        return missing is not null and not DBNull
+            && Convert.ToInt32(missing) == 0;
+    }
 
     private async Task<BillingV2AdminProviderReadiness> CheckProviderAsync(
         string provider,

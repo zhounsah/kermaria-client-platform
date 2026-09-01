@@ -112,6 +112,13 @@ public static class BillingV2FeatureFlagRegistry
             "critical",
             ["subscription_changes", "provider_executor"]),
         new(
+            "refunds",
+            "BILLING_V2_REFUNDS_ENABLED",
+            "Remboursements internes",
+            "Autorise uniquement les demandes de remboursement Billing V2 deja persistees et auditees. Ce drapeau ne cree aucun droit client de remboursement.",
+            "critical",
+            ["provider_outbox", "provider_executor"]),
+        new(
             "vps_local_provisioning",
             "BILLING_V2_VPS_LOCAL_PROVISIONING_ENABLED",
             "Provisioning VPS local",
@@ -164,6 +171,7 @@ public static class BillingV2FeatureFlagRegistry
             "service_fulfillment" => configuration.ServiceFulfillmentEnabled,
             "subscription_changes" => configuration.SubscriptionChangesEnabled,
             "stripe_recurring_mutation" => configuration.StripeRecurringMutationEnabled,
+            "refunds" => configuration.RefundsEnabled,
             "vps_local_provisioning" => configuration.VpsLocalProvisioningEnabled,
             "vps_cloud_automation" => configuration.VpsCloudAutomationEnabled,
             _ => false

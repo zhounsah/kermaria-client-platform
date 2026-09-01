@@ -136,6 +136,12 @@ public static class BillingV2ReadinessComponents
     public const string UpgradesDowngrades = "upgrades_downgrades";
     public const string PayPal = "paypal";
     public const string UpfrontPayment = "upfront_payment";
+    // Un seul statut "refunds" ne permettrait pas de distinguer le code
+    // dormant d'une capacite financiere effectivement activable.
+    public const string RefundCoreCode = "refund_core_code";
+    public const string RefundSchema = "refund_schema";
+    public const string RefundStripe = "refund_stripe";
+    public const string RefundDocumentCorrection = "refund_document_correction";
     public const string Refunds = "refunds";
 }
 
@@ -157,7 +163,13 @@ public sealed record BillingV2LifecycleReadinessInputs(
     bool DocumentIssuanceReady,
     bool BpceInvoiceLookupSupported,
     bool ProvisioningEnabled,
-    bool PayPalConfigured);
+    bool PayPalConfigured,
+    // Ces preuves ne sont jamais deduites d'un flag runtime. Elles restent
+    // fermees tant qu'une validation explicite schema/provider/document ne
+    // les a pas apportees.
+    bool RefundSchemaReady = false,
+    bool RefundStripeOperational = false,
+    bool RefundDocumentCorrectionOperational = false);
 
 public static class BillingV2LifecycleReadinessGate
 {
@@ -269,10 +281,38 @@ public static class BillingV2LifecycleReadinessGate
                 BillingV2ReadinessStates.Manual,
                 "BILLING_V2_READINESS_UPFRONT_PAYMENT",
                 "Le comptant 6/12 mois est encaisse en une fois et les droits s'arretent au terme. Le renouvellement est manuel."),
-            NotReady(
+            new BillingV2ReadinessComponent(
+                BillingV2ReadinessComponents.RefundCoreCode,
+                BillingV2ReadinessStates.Ready,
+                "BILLING_V2_READINESS_REFUND_CORE_CODE",
+                "Le coeur refund interne, l'outbox, la relecture Stripe et la compensation d'abonnement sont presents ; aucun endpoint client n'est expose."),
+            Component(
+                BillingV2ReadinessComponents.RefundSchema,
+                inputs.PersistentSqlAvailable && inputs.RefundSchemaReady,
+                "BILLING_V2_READINESS_REFUND_SCHEMA",
+                "Le schema refund 082 et ses dependances transactionnelles sont observes sur MariaDB.",
+                "Le schema refund 082 ou ses dependances transactionnelles ne sont pas verifies sur MariaDB."),
+            Component(
+                BillingV2ReadinessComponents.RefundStripe,
+                inputs.RefundStripeOperational,
+                "BILLING_V2_READINESS_REFUND_STRIPE",
+                "Le flux Stripe test refund, retry idempotent et relecture provider sont prouves.",
+                "Le flux refund Stripe test n'est pas encore prouve sur un compte et un PaymentIntent de test reels."),
+            Component(
+                BillingV2ReadinessComponents.RefundDocumentCorrection,
+                inputs.RefundDocumentCorrectionOperational,
+                "BILLING_V2_READINESS_REFUND_DOCUMENT_CORRECTION",
+                "L'avoir BPCE, sa preuve et sa reprise idempotente sont operationnels.",
+                "Aucune primitive BPCE d'avoir/recherche par reference ne permet encore de prouver une correction documentaire idempotente."),
+            Component(
                 BillingV2ReadinessComponents.Refunds,
+                inputs.PersistentSqlAvailable
+                    && inputs.RefundSchemaReady
+                    && inputs.RefundStripeOperational
+                    && inputs.RefundDocumentCorrectionOperational,
                 "BILLING_V2_READINESS_REFUNDS",
-                "Remboursements et chargebacks sont hors perimetre : aucun avoir ne peut etre produit.")
+                "La chaine refund est prouvee de bout en bout et peut etre activee par une decision explicite ; BILLING_V2_REFUNDS_ENABLED reste un verrou d'execution serveur, jamais un droit client.",
+                "La capacite refund reste desactivee : elle exige simultanement schema 082 observe, preuve Stripe test reelle et correction documentaire BPCE prouvee. BILLING_V2_REFUNDS_ENABLED ne suffit jamais a les remplacer.")
         ];
     }
 

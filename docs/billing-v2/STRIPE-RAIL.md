@@ -185,7 +185,29 @@ rattrape, un second numéro fiscal ne se reprend pas.
 
 L'autorité de numérotation reste BPCE, inchangée.
 
-## 10. Ce qui reste hors périmètre
+## 10. Remboursement intégral Billing V2
 
-PayPal V2, Customer Credit Ledger, downgrades, remboursements, chargebacks,
-réconciliateur périodique, refonte BPCE, résiliation automatisée.
+Le rail Stripe porte aussi le remboursement intégral générique de
+`BillingV2Refund` (migration `082`). Il ne dépend ni du VPS ni d'une route
+publique : l'appelant serveur persiste d'abord l'intention et son événement
+outbox dans la même transaction, puis le worker appelle `POST /v1/refunds` avec
+le `PaymentIntent` déjà enregistré et une clé Stripe stable.
+
+Après un retour indéterminé ou un crash, le worker relit d'abord :
+
+1. `GET /v1/refunds/{provider_refund_id}` si l'identifiant est connu ;
+2. sinon une seule liste filtrée par `payment_intent`, puis la metadata
+   `billing_v2_refund_id` persistée.
+
+Le POST n'est pas une preuve. Seule une relecture `succeeded`, de même montant,
+devise et PaymentIntent que le settlement, autorise la transition locale vers
+`refunded`. Une demande pending ou failed conserve son état distinct.
+
+`BILLING_V2_REFUNDS_ENABLED` est une capacité interne fail-closed ; il n'ouvre
+aucun remboursement self-service. Pour un événement déjà documenté, le service
+refuse le refund tant qu'un avoir BPCE canonique n'existe pas.
+
+## 11. Ce qui reste hors périmètre
+
+PayPal V2, Customer Credit Ledger, downgrades, remboursements partiels,
+chargebacks, avoir BPCE/reprise comptable, refonte BPCE.

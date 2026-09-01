@@ -199,6 +199,63 @@ comme un succès.
 Corollaire : aucun montant facturé ne peut être déterminé par Stripe ou PayPal.
 Le provider constate, il ne décide pas.
 
+## 5.1 Remboursement intégral canonique (V1)
+
+Le remboursement n'est pas un raccourci consistant à écrire
+`settlement_status = refunded`. La migration `082` porte une intention durable
+`billing_v2_refunds`, générique et indépendante de tout produit consommateur.
+Elle est liée à un `BillingEvent` et à la `PaymentAttempt` Stripe réellement
+settled ; un même événement ne peut avoir qu'un remboursement V1.
+
+```text
+BillingEvent settled + PaymentAttempt Stripe vérifiée
+        ↓
+BillingV2Refund requested (montant/devise relus en base, audit, outbox atomique)
+        ↓
+Stripe Refund avec clé idempotente persistée
+        ↓
+relecture ciblée du refund Stripe / reprise après timeout
+        ↓
+preuve : id + status=succeeded + montant intégral + devise + PaymentIntent
+        ↓
+BillingV2Refund confirmed + BillingEvent.settlement_status=refunded
+```
+
+V1 ne couvre que le remboursement **intégral** : le montant et la devise ne
+proviennent jamais du navigateur ni d'un workflow produit. Un timeout HTTP est
+indéterminé : le worker relit d'abord Stripe, par l'identifiant de refund connu
+ou par `(PaymentIntent persistant, metadata billing_v2_refund_id)`, puis
+réutilise exactement la même clé Stripe. Un webhook est un signal répétable ;
+il ne suffit pas à confirmer le refund sans cette relecture.
+
+Le passage à `refunded` exige simultanément : paiement initial `settled`, refund
+provider identifié en `succeeded`, même PaymentIntent, même montant intégral et
+devise identique. `requested`, `pending_provider` et `failed` ne valent jamais
+`refunded`.
+
+Une confirmation bloque localement les renouvellements (`renews_at` est retiré,
+abonnement en `pending_cancellation`) et place une annulation provider durable
+dans l'outbox existante. Cette compensation interne est distincte de
+`SelfServiceCancellationEnabled`, qui ne concerne que le droit client.
+
+L'exécution externe est fermée par défaut : seul
+`BILLING_V2_REFUNDS_ENABLED=true` active le worker serveur, et n'accorde aucun
+droit public de remboursement. Aucun endpoint portal `refund(paymentId)`
+n'existe.
+
+### Limite documentaire non contournée
+
+Si `document_status=issued`, la demande est refusée avec
+`BILLING_V2_REFUND_CREDIT_NOTE_REQUIRED`. Si un document est seulement en cours
+(`pending` ou `failed`), elle est aussi refusée avec
+`BILLING_V2_REFUND_DOCUMENT_IN_PROGRESS` : cela évite une course avec BPCE. Le
+modèle actuel sait émettre des factures mais pas encore un avoir/reprise BPCE
+canonique. Stripe peut rembourser le paiement, mais cela ne permet pas
+d'improviser la correction comptable. Ce cas reste un bloqueur de mise en
+service du refund pour des événements documentés ou en cours de documentation.
+Le modèle de correction durable, les clés d'idempotence et les preuves exigées
+sont détaillés dans [REFUND-CORE-HARDENING.md](REFUND-CORE-HARDENING.md).
+
 ## 6. Webhook = signal, jamais preuve
 
 Un webhook provider est une **notification qu'un objet a changé**. Ce n'est pas
@@ -312,6 +369,12 @@ appelés par tout code qui écrit le cœur financier.
 | APP-13 | un retry réutilise la clé provider existante | `BillingV2PaymentAttemptPolicy` |
 | APP-14 | conflit de version Subscription ⇒ échec explicite | `BillingV2SubscriptionVersionPolicy` |
 | APP-15 | ambiguïté de prix ⇒ résolution versionnée ou fail-closed | `BillingV2ServicePriceResolutionPolicy` |
+| APP-R1 | remboursement V1 seulement après settlement Stripe prouvé | `BillingV2RefundPolicy` |
+| APP-R2 | montant/devise du refund sont ceux du BillingEvent settled | `BillingV2RefundPolicy` |
+| APP-R3 | un BillingEvent produit une seule intention/outbox/refund provider | contraintes `UNIQUE` + `BillingV2RefundOutbox` |
+| APP-R4 | timeout/réponse perdue ⇒ relecture Stripe avant nouvelle création | `BillingV2RefundService` + `IBillingV2StripeGateway` |
+| APP-R5 | seul un refund Stripe relu, intégral et réussi peut écrire `refunded` | `BillingV2RefundConfirmationPolicy` |
+| APP-R6 | refund confirmé bloque tout renouvellement et enfile l'annulation provider | `BillingV2RefundService` + cancellation outbox |
 
 **Le fait qu'un invariant soit applicatif et non DB n'en fait pas une
 recommandation.** C'est une contrainte, simplement portée ailleurs. Tout nouveau
@@ -327,7 +390,7 @@ npm run test:billing-legacy
 ```
 
 Invariants DB — exigent une **MariaDB jetable** portant les migrations 001 à
-057. La suite échoue explicitement si la variable n'est pas définie : elle n'est
+082. La suite échoue explicitement si la variable n'est pas définie : elle n'est
 jamais silencieusement verte par absence de base.
 
 ```bash
@@ -348,7 +411,7 @@ Explicitement **non livrés**, et à ne pas présumer disponibles :
   **moyen de règlement** et ne réduit pas la base fiscale de cette nouvelle
   facture. Rien de tout cela n'existe aujourd'hui ;
 - upgrades / downgrades complets et prorata branché ;
-- remboursements, chargebacks ;
+- remboursements partiels, chargebacks ;
 - worker de réconciliation provider ;
 - refonte du chemin BPCE ;
 - checkout Stripe / PayPal réel sur le nouveau cœur.

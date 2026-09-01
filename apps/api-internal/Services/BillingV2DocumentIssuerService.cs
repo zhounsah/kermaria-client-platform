@@ -171,6 +171,24 @@ public sealed class BillingV2DocumentIssuerService
                         Invoice: null);
                 }
 
+                // Le refund verrouille egalement cette souscription avant de
+                // committer son intention. Cette lecture sous le meme verrou
+                // decide donc atomiquement si la charge peut etre documentee
+                // ou si elle part deja en compensation financiere.
+                if (await HasRefundForSubscriptionAsync(
+                        connection,
+                        transaction,
+                        subscriptionId,
+                        cancellationToken))
+                {
+                    await transaction.CommitAsync(cancellationToken);
+                    return new BillingV2DocumentIssueResult(
+                        false,
+                        "BILLING_V2_DOCUMENT_REFUND_IN_PROGRESS",
+                        CommercialDocumentId: null,
+                        Invoice: null);
+                }
+
                 if (!string.Equals(
                     source.Subscription.Status,
                     "active",
@@ -422,6 +440,23 @@ public sealed class BillingV2DocumentIssuerService
                         Invoice: null);
                 }
 
+                // LoadCycleSource verrouille le BillingEvent, qui est aussi
+                // le verrou de la demande refund. Aucun document de cycle ne
+                // peut donc etre cree apres l'intention de remboursement.
+                if (await HasRefundForBillingEventAsync(
+                        connection,
+                        transaction,
+                        billingEventId,
+                        cancellationToken))
+                {
+                    await transaction.CommitAsync(cancellationToken);
+                    return new BillingV2DocumentIssueResult(
+                        false,
+                        "BILLING_V2_DOCUMENT_REFUND_IN_PROGRESS",
+                        CommercialDocumentId: null,
+                        Invoice: null);
+                }
+
                 try
                 {
                     documentId = await CreateCycleDocumentAsync(
@@ -479,6 +514,80 @@ public sealed class BillingV2DocumentIssuerService
         command.Parameters.AddWithValue("@billing_event_id", billingEventId);
         var scalar = await command.ExecuteScalarAsync(cancellationToken);
         return scalar is null or DBNull ? null : Convert.ToString(scalar);
+    }
+
+    /// <summary>
+    /// Migration 082 peut ne pas encore etre appliquee sur une installation
+    /// qui ne connait donc pas le refund core. Dans ce cas, il n'existe aucune
+    /// intention refund a coordonner et l'emission documentaire historique
+    /// doit rester compatible. Des que la table est presente, toute intention
+    /// (requested, pending ou confirmee) bloque la creation d'un document.
+    /// </summary>
+    private static async Task<bool> HasRefundForSubscriptionAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        string subscriptionId,
+        CancellationToken cancellationToken)
+    {
+        if (!await RefundTableExistsAsync(connection, cancellationToken))
+        {
+            return false;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            SELECT EXISTS(
+                SELECT 1
+                FROM billing_v2_refunds refund
+                INNER JOIN billing_v2_billing_events event_row
+                    ON event_row.id = refund.billing_event_id
+                WHERE event_row.subscription_id = @subscription_id
+            );
+            """;
+        command.Parameters.AddWithValue("@subscription_id", subscriptionId);
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken)) == 1;
+    }
+
+    private static async Task<bool> HasRefundForBillingEventAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        string billingEventId,
+        CancellationToken cancellationToken)
+    {
+        if (!await RefundTableExistsAsync(connection, cancellationToken))
+        {
+            return false;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            SELECT EXISTS(
+                SELECT 1 FROM billing_v2_refunds
+                WHERE billing_event_id = @billing_event_id
+            );
+            """;
+        command.Parameters.AddWithValue("@billing_event_id", billingEventId);
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken)) == 1;
+    }
+
+    private static async Task<bool> RefundTableExistsAsync(
+        MySqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT EXISTS(
+                SELECT 1 FROM information_schema.tables
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'billing_v2_refunds'
+            );
+            """;
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken)) == 1;
     }
 
     private sealed record CycleDocumentLine(
