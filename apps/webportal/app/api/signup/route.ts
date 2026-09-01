@@ -5,8 +5,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { logBffFailure } from "@/lib/bff-observability";
 import { CORRELATION_HEADER, resolveCorrelationId } from "@/lib/correlation";
 import { readBillingV2SelectionPayload } from "@/lib/billing-v2-selection";
+import { ensureCsrfCookie } from "@/lib/csrf-server";
 import { isSignupEnabled } from "@/lib/public-routes";
 import { checkRateLimit, getRequestIdentifier } from "@/lib/rate-limit";
+import {
+  getSessionCookieName,
+  getSessionCookieOptions,
+} from "@/lib/session-config";
 import { callInternalSignup, verifyHCaptcha } from "@/lib/signup-server";
 
 type SignupRequestBody = {
@@ -27,6 +32,8 @@ type SignupRequestBody = {
   phone?: unknown;
   message?: unknown;
   billingV2Selection?: unknown;
+  selfServiceVps?: unknown;
+  password?: unknown;
   hcaptchaToken?: unknown;
   website?: unknown;
   formRenderedAt?: unknown;
@@ -195,11 +202,47 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const selfServiceVps = readSelfServiceVpsIntent(body.selfServiceVps);
+  if (body.selfServiceVps !== undefined && !selfServiceVps) {
+    return NextResponse.json(
+      {
+        code: "INVALID_SELF_SERVICE_VPS_SELECTION",
+        message: "Le VPS sélectionné n'est pas valide.",
+        correlation_id: correlationId,
+      },
+      { status: 400 },
+    );
+  }
+
+  const password = typeof body.password === "string" ? body.password : null;
+  if (selfServiceVps && (!password || password.length < 12 || password.length > 200)) {
+    return NextResponse.json(
+      {
+        code: "INVALID_PASSWORD",
+        message: "Le mot de passe doit comporter entre 12 et 200 caractères.",
+        correlation_id: correlationId,
+      },
+      { status: 400 },
+    );
+  }
+  if (!selfServiceVps && password !== null) {
+    return NextResponse.json(
+      {
+        code: "INVALID_REQUEST",
+        message: "Cette inscription ne peut pas définir de mot de passe immédiatement.",
+        correlation_id: correlationId,
+      },
+      { status: 400 },
+    );
+  }
+
   const result = await callInternalSignup(
     "/internal/signup",
     {
       ...payload,
       billingV2Selection,
+      selfServiceVpsIntent: selfServiceVps,
+      password,
       sourceAddress: identifier === "unknown" ? null : identifier,
       userAgent: request.headers.get("user-agent")?.slice(0, 500) ?? null,
     },
@@ -217,10 +260,56 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  if (selfServiceVps) {
+    if (!result.sessionToken || !result.expiresAt) {
+      return NextResponse.json(
+        {
+          code: "SIGNUP_SESSION_UNAVAILABLE",
+          message: "Le compte a été créé, mais la connexion automatique est indisponible. Connectez-vous pour reprendre votre configuration VPS.",
+          correlation_id: result.correlationId ?? correlationId,
+        },
+        { status: 502 },
+      );
+    }
+
+    const response = NextResponse.json({
+      authenticated: true,
+      code: result.code,
+      message: result.message,
+      correlation_id: result.correlationId ?? correlationId,
+    });
+    response.cookies.set({
+      name: getSessionCookieName(),
+      value: result.sessionToken,
+      ...getSessionCookieOptions(),
+      expires: new Date(result.expiresAt),
+    });
+    ensureCsrfCookie(request, response);
+    return response;
+  }
+
   return NextResponse.json(
     { ...ACCEPTED_BODY, correlation_id: result.correlationId ?? correlationId },
     { status: 200 },
   );
+}
+
+function readSelfServiceVpsIntent(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const candidate = value as { serviceCode?: unknown; tierCode?: unknown };
+  const serviceCode = typeof candidate.serviceCode === "string"
+    ? candidate.serviceCode.trim()
+    : "";
+  const tierCode = typeof candidate.tierCode === "string"
+    ? candidate.tierCode.trim()
+    : "";
+  return /^[A-Z0-9-]{1,80}$/.test(serviceCode)
+    && /^[A-Z0-9-]{1,80}$/.test(tierCode)
+    ? { serviceCode, tierCode }
+    : null;
 }
 
 function validateSignupPayload(body: SignupRequestBody) {

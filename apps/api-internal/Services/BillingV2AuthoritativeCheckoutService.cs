@@ -22,7 +22,8 @@ public sealed record BillingV2AuthoritativeCheckoutRequest(
     string Provider,
     string IdempotencyKey,
     string SuccessUrl,
-    string CancelUrl);
+    string CancelUrl,
+    string? TechnicalRequestId = null);
 
 /// <summary>
 /// Composition facturable resolue. Tout le chemin d'ecriture en aval ne
@@ -97,6 +98,8 @@ public interface IBillingV2AuthoritativeCheckoutService
 public sealed class BillingV2AuthoritativeCheckoutService
     : IBillingV2AuthoritativeCheckoutService
 {
+    private static readonly HashSet<string> VpsServiceCodes =
+        new(StringComparer.Ordinal) { "VPS-LOCAL", "VPS-CLOUD" };
     private readonly SqlRuntimeConfiguration _sql;
     private readonly BillingV2RuntimeConfiguration _runtime;
     private readonly PayPalRuntimeConfiguration _paypal;
@@ -146,14 +149,53 @@ public sealed class BillingV2AuthoritativeCheckoutService
             new MySqlConnection(_sql.ConnectionString);
         await readConnection.OpenAsync(cancellationToken);
 
+        // Un VPS ne peut jamais atteindre le checkout direct des formules :
+        // sa selection est reconstruite depuis la demande technique durable,
+        // rattachee au client courant. Une selection transmise par le
+        // navigateur n'est donc pas une autorite pour ce produit.
+        var technicalRequest = await ReadVpsTechnicalCheckoutContextAsync(
+            readConnection,
+            transaction: null,
+            session,
+            request.TechnicalRequestId,
+            cancellationToken);
+        if (technicalRequest is null && HasVpsComponent(request.Selection))
+        {
+            throw new InvalidOperationException(
+                "BILLING_V2_VPS_TECHNICAL_REQUEST_REQUIRED");
+        }
+
+        var checkoutRequest = technicalRequest is null
+            ? request
+            : request with { Selection = technicalRequest.Selection };
+
         // La composition est resolue AVANT toute recherche d'intention : c'est
         // elle qui porte l'identite metier de la demande. Une selection
         // invalide echoue donc ici, avant la moindre ecriture.
         var composition = await ResolveCompositionAsync(
             readConnection,
-            request,
+            checkoutRequest,
+            isTechnicalVpsCheckout: technicalRequest is not null,
             now,
             cancellationToken);
+        if (technicalRequest is null && HasVpsItem(composition))
+        {
+            throw new InvalidOperationException(
+                "BILLING_V2_VPS_TECHNICAL_REQUEST_REQUIRED");
+        }
+        if (technicalRequest is not null)
+        {
+            EnsureVpsTechnicalSelection(technicalRequest, composition);
+            // Deux demandes VPS du meme client peuvent acheter le meme palier,
+            // mais ne doivent jamais partager une intention financiere :
+            // l'identite inclut donc explicitement la revision technique.
+            composition = composition with
+            {
+                SelectionFingerprint = VpsCheckoutFingerprint(
+                    technicalRequest,
+                    composition.SelectionFingerprint)
+            };
+        }
         var requestFingerprintHash =
             BillingV2AuthoritativeCheckoutIdempotencyPolicy
                 .ComputeRequestFingerprintHash(
@@ -171,6 +213,30 @@ public sealed class BillingV2AuthoritativeCheckoutService
         var intentCanonical =
             BillingV2SubscriptionIntentKey.Canonical(intentRequest);
         var intentHash = BillingV2SubscriptionIntentKey.Hash(intentCanonical);
+
+        if (technicalRequest is not null)
+        {
+            var linkedCheckout = await ReadVpsTechnicalCheckoutAsync(
+                readConnection,
+                transaction: null,
+                technicalRequest.Id,
+                technicalRequest.RevisionNumber,
+                cancellationToken);
+            if (linkedCheckout is not null)
+            {
+                var existingCheckout = await ReadCheckoutRequestByIdAsync(
+                    readConnection,
+                    transaction: null,
+                    linkedCheckout.AuthoritativeCheckoutRequestId,
+                    cancellationToken)
+                    ?? throw new InvalidOperationException(
+                        "BILLING_V2_VPS_TECHNICAL_CHECKOUT_LINK_CORRUPT");
+                return await BuildResultFromRequestAsync(
+                    readConnection,
+                    existingCheckout,
+                    cancellationToken);
+            }
+        }
 
         // L'ancre persistee de la cle recue est la ligne de demande. Elle est
         // relue AVANT toute creation financiere : c'est ce qui rend le refus
@@ -232,7 +298,7 @@ public sealed class BillingV2AuthoritativeCheckoutService
             _runtime,
             session.CustomerId,
             provider,
-            request.Selection,
+            checkoutRequest.Selection,
             composition);
         var mapping = testPricing.Applied
             ? composition with
@@ -493,6 +559,27 @@ public sealed class BillingV2AuthoritativeCheckoutService
                 cancellationToken);
         }
 
+        if (technicalRequest is not null)
+        {
+            var lockedTechnicalRequest = await ReadVpsTechnicalCheckoutContextAsync(
+                connection,
+                transaction,
+                session,
+                technicalRequest.Id,
+                cancellationToken)
+                ?? throw new InvalidOperationException(
+                    "BILLING_V2_VPS_TECHNICAL_REQUEST_NOT_FOUND_OR_FORBIDDEN");
+            EnsureSameVpsTechnicalRevision(technicalRequest, lockedTechnicalRequest);
+            await InsertVpsTechnicalCheckoutLinkAsync(
+                connection,
+                transaction,
+                lockedTechnicalRequest,
+                requestId,
+                billingEventId,
+                subscriptionId,
+                cancellationToken);
+        }
+
         var priceLock = BillingV2AuthoritativeCheckoutPriceLockPolicy.Plan(
             mapping.PaymentMode,
             mapping.CommitmentMonths,
@@ -658,6 +745,256 @@ public sealed class BillingV2AuthoritativeCheckoutService
     private string ResolveEnvironment(string provider)
         => provider == "stripe" ? _stripe.ModeName : _paypal.ModeName;
 
+    private static bool HasVpsComponent(BillingV2PublicSelection? selection)
+        => selection?.Components?.Any(component =>
+            VpsServiceCodes.Contains(component.ServiceCode)) == true;
+
+    private static bool HasVpsItem(BillingV2AuthoritativeCheckoutComposition composition)
+        => composition.Items.Any(item => VpsServiceCodes.Contains(item.ServiceCode));
+
+    private static BillingV2PublicSelection BuildVpsSelection(
+        string serviceCode,
+        string tierCode)
+        => new(
+            PresetCode: null,
+            CommitmentCode: null,
+            PaymentMode: BillingV2PaymentModes.Monthly,
+            StoragePersonalTierCode: string.Empty,
+            BackupPersonal: false,
+            StorageSharedTierCode: null,
+            BackupShared: false,
+            VpnTierCode: null,
+            RemoteDesktop: false,
+            AdditionalUsers: 0,
+            SupportPlus: false,
+            Components: [new BillingV2PublicSelectionComponent(serviceCode, tierCode, 1)]);
+
+    private static string VpsCheckoutFingerprint(
+        BillingV2VpsTechnicalCheckoutContext technicalRequest,
+        string catalogSelectionFingerprint)
+        => BillingV2CheckoutSelectionFingerprint.ForSelection(string.Join(
+            "|",
+            "billing_v2.vps_technical_checkout",
+            technicalRequest.Id,
+            technicalRequest.RevisionNumber,
+            catalogSelectionFingerprint));
+
+    private static void EnsureVpsTechnicalSelection(
+    BillingV2VpsTechnicalCheckoutContext technicalRequest,
+    BillingV2AuthoritativeCheckoutComposition composition)
+    {
+        if (composition.Items.Count == 0
+            || composition.Items.Any(item =>
+                !string.Equals(
+                    item.ServiceCode,
+                    technicalRequest.ServiceCode,
+                    StringComparison.Ordinal)
+                || !string.Equals(
+                    item.TierCode,
+                    technicalRequest.TierCode,
+                    StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException(
+                "BILLING_V2_VPS_TECHNICAL_SELECTION_MISMATCH");
+        }
+    }
+
+    private static void EnsureSameVpsTechnicalRevision(
+        BillingV2VpsTechnicalCheckoutContext expected,
+        BillingV2VpsTechnicalCheckoutContext current)
+    {
+        if (!string.Equals(expected.Id, current.Id, StringComparison.Ordinal)
+            || expected.RevisionNumber != current.RevisionNumber
+            || !string.Equals(
+                expected.ConfigurationFingerprint,
+                current.ConfigurationFingerprint,
+                StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "BILLING_V2_VPS_TECHNICAL_REQUEST_REVISION_CHANGED");
+        }
+    }
+
+    private static async Task<BillingV2VpsTechnicalCheckoutContext?>
+        ReadVpsTechnicalCheckoutContextAsync(
+            MySqlConnection connection,
+            MySqlTransaction? transaction,
+            PortalSessionContext session,
+            string? technicalRequestId,
+            CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(technicalRequestId)) return null;
+        if (!await IsVpsTechnicalCheckoutSchemaReadyAsync(connection, transaction, cancellationToken))
+        {
+            throw new InvalidOperationException(
+                "BILLING_V2_VPS_TECHNICAL_CHECKOUT_SCHEMA_UNAVAILABLE");
+        }
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            $"""
+            SELECT request_row.id,
+                   request_row.service_code,
+                   request_row.tier_code,
+                   request_row.selection_canonical,
+                   request_row.selection_fingerprint,
+                   request_row.technical_status,
+                   request_row.current_revision,
+                   revision.revision_number,
+                   revision.selection_fingerprint AS revision_selection_fingerprint
+            FROM billing_v2_vps_technical_requests request_row
+            INNER JOIN billing_v2_vps_technical_request_revisions revision
+                ON revision.technical_request_id = request_row.id
+               AND revision.revision_number = request_row.current_revision
+            WHERE request_row.id = @technical_request_id
+              AND request_row.customer_id = @customer_id
+            {(transaction is null ? string.Empty : "FOR UPDATE")};
+            """;
+        command.Parameters.AddWithValue("@technical_request_id", technicalRequestId.Trim());
+        command.Parameters.AddWithValue("@customer_id", session.CustomerId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException(
+                "BILLING_V2_VPS_TECHNICAL_REQUEST_NOT_FOUND_OR_FORBIDDEN");
+        }
+
+        var serviceCode = reader.GetString("service_code");
+        var tierCode = reader.GetString("tier_code");
+        var selection = BuildVpsSelection(serviceCode, tierCode);
+        var expectedFingerprint = BillingV2CheckoutSelectionFingerprint.ForSelection(
+            selection.Canonical());
+        if (!VpsServiceCodes.Contains(serviceCode)
+            || !string.Equals(reader.GetString("technical_status"), "draft", StringComparison.Ordinal)
+            || reader.GetInt32("current_revision") != reader.GetInt32("revision_number")
+            || !string.Equals(
+                reader.GetString("selection_canonical"),
+                selection.Canonical(),
+                StringComparison.Ordinal)
+            || !string.Equals(
+                reader.GetString("selection_fingerprint"),
+                expectedFingerprint,
+                StringComparison.Ordinal)
+            || !string.Equals(
+                reader.GetString("revision_selection_fingerprint"),
+                expectedFingerprint,
+                StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "BILLING_V2_VPS_TECHNICAL_REQUEST_NOT_CHECKOUTABLE");
+        }
+
+        return new BillingV2VpsTechnicalCheckoutContext(
+            MariaDbIdentifierReader.ReadRequired(reader, "id"),
+            serviceCode,
+            tierCode,
+            reader.GetInt32("revision_number"),
+            expectedFingerprint,
+            selection);
+    }
+
+    private static async Task<bool> IsVpsTechnicalCheckoutSchemaReadyAsync(
+        MySqlConnection connection,
+        MySqlTransaction? transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            SELECT COUNT(*)
+            FROM information_schema.tables
+            WHERE table_schema = DATABASE()
+              AND table_name IN (
+                  'billing_v2_vps_technical_requests',
+                  'billing_v2_vps_technical_request_revisions',
+                  'billing_v2_vps_technical_request_checkouts');
+            """;
+        var count = await command.ExecuteScalarAsync(cancellationToken);
+        return Convert.ToInt32(count) == 3;
+    }
+
+    private static async Task<BillingV2VpsTechnicalCheckoutLink?>
+        ReadVpsTechnicalCheckoutAsync(
+            MySqlConnection connection,
+            MySqlTransaction? transaction,
+            string technicalRequestId,
+            int revisionNumber,
+            CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            SELECT authoritative_checkout_request_id
+            FROM billing_v2_vps_technical_request_checkouts
+            WHERE technical_request_id = @technical_request_id
+              AND technical_request_revision_number = @revision_number
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("@technical_request_id", technicalRequestId);
+        command.Parameters.AddWithValue("@revision_number", revisionNumber);
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is null
+            ? null
+            : new BillingV2VpsTechnicalCheckoutLink(Convert.ToString(result)!);
+    }
+
+    private static async Task InsertVpsTechnicalCheckoutLinkAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        BillingV2VpsTechnicalCheckoutContext technicalRequest,
+        string authoritativeCheckoutRequestId,
+        string billingEventId,
+        string subscriptionId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            INSERT INTO billing_v2_vps_technical_request_checkouts (
+                id, technical_request_id, technical_request_revision_number,
+                authoritative_checkout_request_id, billing_event_id,
+                subscription_id, created_at)
+            VALUES (
+                @id, @technical_request_id, @revision_number,
+                @checkout_request_id, @billing_event_id,
+                @subscription_id, UTC_TIMESTAMP(6));
+            """;
+        command.Parameters.AddWithValue("@id", Guid.NewGuid().ToString("D"));
+        command.Parameters.AddWithValue("@technical_request_id", technicalRequest.Id);
+        command.Parameters.AddWithValue("@revision_number", technicalRequest.RevisionNumber);
+        command.Parameters.AddWithValue("@checkout_request_id", authoritativeCheckoutRequestId);
+        command.Parameters.AddWithValue("@billing_event_id", billingEventId);
+        command.Parameters.AddWithValue("@subscription_id", subscriptionId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<BillingV2AuthoritativeCheckoutRequestRecord?>
+        ReadCheckoutRequestByIdAsync(
+            MySqlConnection connection,
+            MySqlTransaction? transaction,
+            string checkoutRequestId,
+            CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            $"""
+            SELECT {CheckoutRequestColumns}
+            FROM billing_v2_authoritative_checkout_requests
+            WHERE id = @checkout_request_id
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("@checkout_request_id", checkoutRequestId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken)
+            ? ReadRequestRecord(reader)
+            : null;
+    }
+
     private static string NormalizeProvider(string provider)
     {
         var normalized = provider.Trim().ToLowerInvariant();
@@ -681,6 +1018,7 @@ public sealed class BillingV2AuthoritativeCheckoutService
         ResolveCompositionAsync(
             MySqlConnection connection,
             BillingV2AuthoritativeCheckoutRequest request,
+            bool isTechnicalVpsCheckout,
             DateTime now,
             CancellationToken cancellationToken)
     {
@@ -690,7 +1028,13 @@ public sealed class BillingV2AuthoritativeCheckoutService
                 "BILLING_V2_CHECKOUT_SELECTION_REQUIRED");
         }
 
-        if (selection.Components is { Count: > 0 }
+        // Une selection de composants libre reste derriere son kill-switch.
+        // La seule exception est la selection VPS reconstruite depuis une
+        // demande technique durable, deja verifiee pour le client courant :
+        // elle ne provient pas du navigateur et reste soumise au catalogue et
+        // au moteur de prix authoritative ci-dessous.
+        if (!isTechnicalVpsCheckout
+            && selection.Components is { Count: > 0 }
             && !_runtime.GenericSelectionEnabled)
         {
             throw new InvalidOperationException(
@@ -1545,6 +1889,17 @@ public sealed class BillingV2AuthoritativeCheckoutService
         string? OutboxEventId,
         string? IdempotencyKeyHash,
         string? ReasonCode);
+
+    private sealed record BillingV2VpsTechnicalCheckoutContext(
+        string Id,
+        string ServiceCode,
+        string TierCode,
+        int RevisionNumber,
+        string ConfigurationFingerprint,
+        BillingV2PublicSelection Selection);
+
+    private sealed record BillingV2VpsTechnicalCheckoutLink(
+        string AuthoritativeCheckoutRequestId);
 }
 
 public static class BillingV2AuthoritativeCheckoutIdempotencyPolicy

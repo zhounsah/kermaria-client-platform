@@ -2,6 +2,7 @@
 
 import Script from "next/script";
 import { useEffect, useRef, useState } from "react";
+import type { SelfServiceVpsSignupContinuation } from "@/lib/public-route-config";
 
 import type { BillingV2PublicSelection } from "@kermaria/shared";
 
@@ -13,6 +14,7 @@ import styles from "./SignupForm.module.css";
 type SignupFormProps = {
   hcaptchaSiteKey: string | null;
   initialBillingV2Selection?: BillingV2PublicSelection | null;
+  selfServiceVps?: SelfServiceVpsSignupContinuation | null;
 };
 
 type SignupState =
@@ -40,6 +42,7 @@ const USER_SIZE_OPTIONS = [
 export function SignupForm({
   hcaptchaSiteKey,
   initialBillingV2Selection = null,
+  selfServiceVps = null,
 }: SignupFormProps) {
   const isSubmittingRef = useRef(false);
   const renderedAtRef = useRef<number>(0);
@@ -59,6 +62,8 @@ export function SignupForm({
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [message, setMessage] = useState("");
+  const [password, setPassword] = useState("");
+  const [passwordConfirmation, setPasswordConfirmation] = useState("");
   const [state, setState] = useState<SignupState>({ status: "idle" });
 
   const isIndividual = customerType === "individual";
@@ -88,6 +93,23 @@ export function SignupForm({
       return;
     }
 
+    if (selfServiceVps) {
+      if (password.length < 12 || password.length > 200) {
+        setState({
+          status: "error",
+          message: "Le mot de passe doit comporter entre 12 et 200 caractères.",
+        });
+        return;
+      }
+      if (password !== passwordConfirmation) {
+        setState({
+          status: "error",
+          message: "Les deux mots de passe ne correspondent pas.",
+        });
+        return;
+      }
+    }
+
     isSubmittingRef.current = true;
     setState({ status: "submitting" });
 
@@ -113,6 +135,13 @@ export function SignupForm({
           phone,
           message,
           billingV2Selection: initialBillingV2Selection,
+          selfServiceVps: selfServiceVps
+            ? {
+                serviceCode: selfServiceVps.serviceCode,
+                tierCode: selfServiceVps.tierCode,
+              }
+            : undefined,
+          password: selfServiceVps ? password : undefined,
           hcaptchaToken: hcaptchaToken || null,
           website: honeypot,
           formRenderedAt: renderedAtRef.current,
@@ -122,6 +151,11 @@ export function SignupForm({
       if (!response.ok) {
         resetCaptcha();
         setState({ status: "error", message: response.error.message });
+        return;
+      }
+
+      if (selfServiceVps) {
+        window.location.assign(selfServiceVps.continuationPath);
         return;
       }
 
@@ -315,8 +349,9 @@ export function SignupForm({
               <p className={styles.panelKicker}>Contact principal</p>
               <h2 id="signup-contact-heading">Informations client</h2>
               <p className="field-hint">
-                Ce contact principal recevra les messages d&apos;ouverture et
-                définira le mot de passe initial.
+                {selfServiceVps
+                  ? "Ce contact créera immédiatement son accès client pour reprendre le VPS sélectionné."
+                  : "Ce contact principal recevra les messages d'ouverture et définira le mot de passe initial."}
               </p>
             </div>
 
@@ -409,6 +444,38 @@ export function SignupForm({
                   value={email}
                 />
               </label>
+
+              {selfServiceVps ? (
+                <>
+                  <label>
+                    Mot de passe
+                    <input
+                      autoComplete="new-password"
+                      maxLength={200}
+                      minLength={12}
+                      name="password"
+                      onChange={(event) => setPassword(event.target.value)}
+                      required
+                      type="password"
+                      value={password}
+                    />
+                    <span className="field-hint">12 caractères minimum.</span>
+                  </label>
+                  <label>
+                    Confirmer le mot de passe
+                    <input
+                      autoComplete="new-password"
+                      maxLength={200}
+                      minLength={12}
+                      name="passwordConfirmation"
+                      onChange={(event) => setPasswordConfirmation(event.target.value)}
+                      required
+                      type="password"
+                      value={passwordConfirmation}
+                    />
+                  </label>
+                </>
+              ) : null}
             </div>
           </section>
         </div>
@@ -430,16 +497,18 @@ export function SignupForm({
         ) : null}
 
         <p className="signup-form-note">
-          En envoyant ce formulaire, vous demandez l&apos;ouverture d&apos;un accès
-          client. Vous confirmerez d&apos;abord votre adresse e-mail, puis notre
-          équipe validera la demande avant la définition du mot de passe
-          {initialBillingV2Selection
-            ? " et la reprise de votre formule dans l'espace client."
-            : "."}
+          {selfServiceVps
+            ? "En envoyant ce formulaire, vous créez votre accès client pour reprendre immédiatement votre configuration VPS."
+            : <>En envoyant ce formulaire, vous demandez l&apos;ouverture d&apos;un accès
+              client. Vous confirmerez d&apos;abord votre adresse e-mail, puis notre
+              équipe validera la demande avant la définition du mot de passe
+              {initialBillingV2Selection
+                ? " et la reprise de votre formule dans l'espace client."
+                : "."}</>}
         </p>
 
         <SubmitButton
-          idleLabel="Envoyer ma demande"
+          idleLabel={selfServiceVps ? "Créer mon compte et continuer" : "Envoyer ma demande"}
           isSubmitting={state.status === "submitting"}
           submittingLabel="Envoi en cours..."
         />

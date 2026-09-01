@@ -18,6 +18,7 @@ const adminDiagnosticPage = await read("app/admin/diagnostic/page.tsx");
 const adminDiagnosticForm = await read("components/AdminDiagnosticRecommendationForm.tsx");
 const diagnosticRecommendationConfig = await read("lib/diagnostic-recommendation-config.ts");
 const managedContentService = await read("../../apps/api-internal/Services/ManagedContentService.cs");
+const storefrontContentSeed = await read("../../apps/api-internal/Services/StorefrontContentSeed.cs");
 const adminContentPage = await read("app/admin/content/page.tsx");
 const adminContentDetailPage = await read("app/admin/content/[key]/page.tsx");
 const adminStorefrontContentForm = await read("components/AdminStorefrontContentForm.tsx");
@@ -119,7 +120,17 @@ assert.match(
   "La route VPS doit confier la composition complete au storefront specialise.",
 );
 assert.match(publicVpsServicePage, /getBillingV2FormulesCatalog|BillingV2PublicCatalog/);
-assert.match(publicVpsServicePage, /service\.publicVisible && service\.code\.startsWith\("VPS-"\)/);
+assert.match(
+  publicVpsServicePage,
+  /service\.publicVisible && isPrimaryVpsService\(service\)/,
+  "Le comparatif principal doit se limiter aux deux gammes VPS produit.",
+);
+assert.match(publicVpsServicePage, /VPS_PRIORITY_CODES = \["VPS-LOCAL", "VPS-CLOUD"\]/);
+assert.doesNotMatch(
+  publicVpsServicePage,
+  /service\.code\.startsWith\("VPS-"\)/,
+  "L'infogerance ne doit pas devenir une gamme de comparatif par prefixe de code.",
+);
 assert.match(publicVpsServicePage, /describeTierAttributes\(tier\)/);
 assert.match(publicVpsServicePage, /filter\(\(tier\) => tier\.publicSelectable\)/);
 assert.match(publicVpsServicePage, /tier\.monthlyAmountCents/);
@@ -180,6 +191,16 @@ assert.match(managedContentService, /IBillingV2PublicCatalogService/);
 assert.match(managedContentService, /GetCatalogAsync/);
 assert.match(adminContentDetailPage, /redirect\("\/admin\/diagnostic"\)/);
 assert.doesNotMatch(managedContentService, /allowedPresets/);
+assert.match(
+  storefrontContentSeed,
+  /caractéristiques CPU, RAM et stockage des paliers VPS Cloud sont publiées depuis le catalogue Billing V2\.1/,
+  "Le seed CMS doit renvoyer les specifications VPS Cloud au catalogue administrable.",
+);
+assert.doesNotMatch(
+  storefrontContentSeed,
+  /aucune taille CPU, RAM ou disque n’est promise ici|sans caractéristiques CPU, RAM ou disque promises à l’avance/,
+  "Le seed CMS ne doit plus nier les specifications VPS Cloud publiees.",
+);
 assert.match(
   adminPackCatalogPage,
   /Modifier la fiche technique/,

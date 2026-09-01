@@ -62,8 +62,9 @@ public sealed record SignupApprovalRequest(
     SignupCustomerData Customer,
     SignupUserData PrimaryUser,
     string UserId,
-    string PasswordSetupTokenHash,
-    DateTime PasswordSetupExpiresAtUtc);
+    string? PasswordSetupTokenHash,
+    DateTime? PasswordSetupExpiresAtUtc,
+    string? InitialPasswordHash = null);
 
 public sealed record SignupApprovalResult(
     string SignupId,

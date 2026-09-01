@@ -122,7 +122,11 @@ function shouldAttachCsrfToken(
   path: `/api/${string}`,
   method: string | undefined,
 ) {
-  if (!method || !path.startsWith("/api/admin/")) {
+  if (!method) {
+    return false;
+  }
+
+  if (!path.startsWith("/api/admin/") && !path.startsWith("/api/vps/")) {
     return false;
   }
 
@@ -264,4 +268,3 @@ function appendCorrelationId(message: string, correlationId?: string) {
     ? `${message} (Référence: ${correlationId})`
     : message;
 }
-

@@ -477,6 +477,7 @@ public sealed class MariaDbSignupRepository : ISignupRepository
                     customer_id,
                     identity_provider_subject,
                     email,
+                    password_hash,
                     display_name,
                     status,
                     role,
@@ -496,6 +497,7 @@ public sealed class MariaDbSignupRepository : ISignupRepository
                     @customer_id,
                     @subject,
                     @email,
+                    @password_hash,
                     @display_name,
                     'active',
                     @role,
@@ -516,6 +518,9 @@ public sealed class MariaDbSignupRepository : ISignupRepository
             userCommand.Parameters.AddWithValue("@customer_id", request.CustomerId);
             userCommand.Parameters.AddWithValue("@subject", $"signup-{request.UserId}");
             userCommand.Parameters.AddWithValue("@email", portalEmail);
+            userCommand.Parameters.AddWithValue(
+                "@password_hash",
+                DbValue(request.InitialPasswordHash));
             userCommand.Parameters.AddWithValue("@display_name", portalDisplayName);
             userCommand.Parameters.AddWithValue("@role", PortalRoles.ClientUser);
             userCommand.Parameters.AddWithValue(
@@ -565,10 +570,12 @@ public sealed class MariaDbSignupRepository : ISignupRepository
             signupCommand.Parameters.AddWithValue("@customer_id", request.CustomerId);
             signupCommand.Parameters.AddWithValue(
                 "@password_hash",
-                request.PasswordSetupTokenHash);
+                DbValue(request.PasswordSetupTokenHash));
             signupCommand.Parameters.AddWithValue(
                 "@password_expires_at",
-                request.PasswordSetupExpiresAtUtc);
+                request.PasswordSetupExpiresAtUtc is { } passwordSetupExpiresAtUtc
+                    ? passwordSetupExpiresAtUtc
+                    : DBNull.Value);
             await signupCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 

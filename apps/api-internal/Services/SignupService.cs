@@ -15,11 +15,27 @@ public sealed record SignupOperationResult(
     string Code,
     string Message);
 
+/// <summary>
+/// Resultat d'une inscription immediate reservee au configurateur VPS
+/// self-service. Le jeton de session ne quitte jamais API-INTERNAL autrement
+/// que par le BFF, qui le place dans le cookie HttpOnly existant.
+/// </summary>
+public sealed record SignupSelfServiceVpsOperationResult(
+    bool Succeeded,
+    string Code,
+    string Message,
+    SessionCreationResult? Session = null);
+
 public interface ISignupService
 {
     bool IsPersistent { get; }
 
     Task<SignupOperationResult> SubmitAsync(
+        SignupSubmitPayload payload,
+        string correlationId,
+        CancellationToken cancellationToken);
+
+    Task<SignupSelfServiceVpsOperationResult> CompleteSelfServiceVpsAsync(
         SignupSubmitPayload payload,
         string correlationId,
         CancellationToken cancellationToken);
@@ -93,6 +109,7 @@ public sealed class SignupService : ISignupService
     private readonly ISignupRepository _repository;
     private readonly IEmailDispatchService _emailDispatch;
     private readonly IPortalPasswordService _passwordService;
+    private readonly IAuthenticationService _authenticationService;
     private readonly IActiveDirectoryService _activeDirectoryService;
     private readonly IActiveDirectoryLinkRepository _activeDirectoryLinkRepository;
     private readonly IAdGroupProvisioner _adGroupProvisioner;
@@ -108,6 +125,7 @@ public sealed class SignupService : ISignupService
         ISignupRepository repository,
         IEmailDispatchService emailDispatch,
         IPortalPasswordService passwordService,
+        IAuthenticationService authenticationService,
         IActiveDirectoryService activeDirectoryService,
         IActiveDirectoryLinkRepository activeDirectoryLinkRepository,
         IAdGroupProvisioner adGroupProvisioner,
@@ -122,6 +140,7 @@ public sealed class SignupService : ISignupService
         _repository = repository;
         _emailDispatch = emailDispatch;
         _passwordService = passwordService;
+        _authenticationService = authenticationService;
         _activeDirectoryService = activeDirectoryService;
         _activeDirectoryLinkRepository = activeDirectoryLinkRepository;
         _adGroupProvisioner = adGroupProvisioner;
@@ -243,6 +262,157 @@ public sealed class SignupService : ISignupService
         }
 
         return Accepted();
+    }
+
+    /// <summary>
+    /// Cree immediatement le client et son acces portail pour un VPS dont la
+    /// capacite self-service a deja ete revalidee par le point d'entree.
+    ///
+    /// Le workflow historique (verification e-mail puis approbation humaine)
+    /// reste inchange pour toute autre inscription. Ici, hCaptcha et les
+    /// limites de debit sont deja appliques par le BFF, puis les memes limites
+    /// durables sont reevaluees ci-dessous. L'identite Active Directory ne
+    /// conditionne pas l'achat d'un produit explicitement self-service.
+    /// </summary>
+    public async Task<SignupSelfServiceVpsOperationResult>
+        CompleteSelfServiceVpsAsync(
+            SignupSubmitPayload payload,
+            string correlationId,
+            CancellationToken cancellationToken)
+    {
+        var runtime = await _settings.GetSignupConfigurationAsync(
+            _configuration,
+            cancellationToken);
+        if (!runtime.Enabled)
+        {
+            return new SignupSelfServiceVpsOperationResult(
+                false,
+                "SIGNUP_DISABLED",
+                "Les inscriptions ne sont pas ouvertes.");
+        }
+
+        var normalized = await NormalizeSubmissionAsync(payload, cancellationToken);
+        if (normalized is null || payload.Password is null
+            || payload.Password.Length is < MinPasswordLength or > MaxPasswordLength)
+        {
+            return new SignupSelfServiceVpsOperationResult(
+                false,
+                "INVALID_REQUEST",
+                "Les informations transmises sont invalides.");
+        }
+
+        if (await _repository.HasBlockingSignupOrUserAsync(
+                normalized.Email,
+                cancellationToken))
+        {
+            // Le parcours public ne detaille jamais la cause : un client qui
+            // reconnait son adresse est invite a se connecter, sans exposer
+            // davantage l'etat du compte a un tiers.
+            return new SignupSelfServiceVpsOperationResult(
+                false,
+                "ACCOUNT_ALREADY_EXISTS",
+                "Cet accès ne peut pas être créé. Connectez-vous ou utilisez une autre adresse e-mail.");
+        }
+
+        var now = DateTime.UtcNow;
+        var sourceAddress = NormalizeOptional(payload.SourceAddress, 45);
+        if (!string.IsNullOrEmpty(sourceAddress))
+        {
+            var perAddress = await _repository.CountRecentSignupsBySourceAddressAsync(
+                sourceAddress,
+                now.AddHours(-1),
+                cancellationToken);
+            if (perAddress >= runtime.RateLimitPerIpPerHour)
+            {
+                return new SignupSelfServiceVpsOperationResult(
+                    false,
+                    "RATE_LIMITED",
+                    "Trop de demandes successives. Reessayez plus tard.");
+            }
+        }
+
+        var perEmail = await _repository.CountRecentSignupsByEmailAsync(
+            normalized.Email,
+            now.AddHours(-24),
+            cancellationToken);
+        if (perEmail >= runtime.RateLimitPerEmailPer24h)
+        {
+            return new SignupSelfServiceVpsOperationResult(
+                false,
+                "RATE_LIMITED",
+                "Trop de demandes successives. Reessayez plus tard.");
+        }
+
+        // Le journal signup_pending est conserve pour l'audit et l'historique
+        // existants. La demande passe explicitement par email_verified avant
+        // l'approbation systeme afin de reutiliser la transaction de creation
+        // customer + portal_user, sans intervention commerciale humaine.
+        var signupId = Guid.NewGuid().ToString("D");
+        await _repository.InsertPendingAsync(
+            new SignupInsert(
+                signupId,
+                normalized.CompanyName,
+                normalized.ContactName,
+                normalized.Email,
+                normalized.Phone,
+                normalized.Message,
+                normalized.Customer,
+                normalized.PrimaryUser,
+                HashToken(GenerateToken()),
+                now.AddHours(runtime.VerificationTokenTtlHours),
+                sourceAddress,
+                NormalizeOptional(payload.UserAgent, 500),
+                BillingV2Selection: null),
+            cancellationToken);
+        await _repository.MarkEmailVerifiedAsync(signupId, cancellationToken);
+
+        var customerId = Guid.NewGuid().ToString("D");
+        var userId = Guid.NewGuid().ToString("D");
+        var approval = await _repository.ApproveAsync(
+            new SignupApprovalRequest(
+                signupId,
+                customerId,
+                GenerateCustomerReference(),
+                normalized.Customer,
+                normalized.PrimaryUser,
+                userId,
+                PasswordSetupTokenHash: null,
+                PasswordSetupExpiresAtUtc: null,
+                InitialPasswordHash: _passwordService.HashPassword(userId, payload.Password)),
+            cancellationToken);
+        if (approval is null)
+        {
+            return new SignupSelfServiceVpsOperationResult(
+                false,
+                "SIGNUP_CREATION_FAILED",
+                "Le compte n'a pas pu être créé. Réessayez plus tard.");
+        }
+
+        try
+        {
+            var session = await _authenticationService.CreateSessionAsync(
+                new LoginRequest(normalized.Email, payload.Password),
+                correlationId,
+                sourceAddress,
+                NormalizeOptional(payload.UserAgent, 500),
+                cancellationToken);
+            return new SignupSelfServiceVpsOperationResult(
+                true,
+                "SELF_SERVICE_VPS_ACCOUNT_CREATED",
+                "Compte créé. Reprise de votre configuration VPS.",
+                session);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            _logger.LogError(
+                exception,
+                "Self-service VPS account was created but its initial session could not be opened correlation_id {CorrelationId}",
+                correlationId);
+            return new SignupSelfServiceVpsOperationResult(
+                false,
+                "SIGNUP_SESSION_UNAVAILABLE",
+                "Votre compte a été créé, mais la connexion automatique est indisponible. Connectez-vous pour reprendre votre configuration VPS.");
+        }
     }
 
     public async Task<SignupOperationResult> VerifyEmailAsync(

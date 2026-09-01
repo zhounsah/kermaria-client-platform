@@ -3151,6 +3151,44 @@ fieldset.form-field > .form-hint {
 .vps-tier-specifications { display: grid !important; margin: 0 0 24px !important; padding: 16px 0 !important; border-block: 1px solid var(--border); gap: 9px !important; list-style: none; }
 .vps-tier-specifications li { color: var(--text); font-size: 0.9rem; font-weight: 650; }
 .vps-tier-cta { width: 100%; margin-top: auto; text-align: center; }
+.vps-configurator-page { max-width: 980px; }
+.vps-configurator-hero { margin-bottom: 28px; padding: clamp(26px, 4vw, 42px); border: 1px solid var(--border); border-radius: 18px; background: linear-gradient(115deg, var(--white), var(--primary-light)); box-shadow: var(--shadow-sm); }
+.vps-configurator-hero h1 { margin: 6px 0 12px; font-size: clamp(2rem, 4vw, 3rem); letter-spacing: -0.045em; }
+.vps-configurator-hero > p:last-child { max-width: 720px; margin: 0; color: var(--muted); line-height: 1.65; }
+.vps-configurator-steps { display: grid; margin: 0 0 26px; padding: 0; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; list-style: none; }
+.vps-configurator-steps li { display: flex; min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: 12px; align-items: center; gap: 9px; color: var(--muted); background: var(--white); font-size: 0.85rem; }
+.vps-configurator-steps li > span { display: grid; width: 24px; height: 24px; flex: 0 0 auto; border-radius: 999px; place-items: center; color: var(--muted); background: var(--surface-muted); font-size: 0.73rem; font-weight: 800; }
+.vps-configurator-steps li.is-current { border-color: var(--primary); color: var(--primary-dark); background: var(--primary-light); }
+.vps-configurator-steps li.is-current > span { color: var(--white); background: var(--primary); }
+.vps-configurator-steps li.is-complete { color: var(--text); }
+.vps-configurator-steps li.is-complete > span { color: var(--white); background: var(--success); }
+.vps-configurator-panel { display: grid; gap: 26px; padding: clamp(24px, 4vw, 38px); border: 1px solid var(--border); border-radius: 18px; background: var(--white); box-shadow: var(--shadow-sm); }
+.vps-configurator-panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.vps-configurator-panel-heading h2 { margin: 6px 0 10px; font-size: clamp(1.45rem, 2.5vw, 2rem); letter-spacing: -0.03em; }
+.vps-configurator-panel-heading p:not(.card-kicker) { max-width: 700px; margin: 0; color: var(--muted); line-height: 1.6; }
+.vps-configurator-panel-heading .text-link { flex: 0 0 auto; margin: 2px 0 0; }
+.vps-selection-summary { display: grid; grid-template-columns: minmax(0, 1fr) minmax(270px, .8fr); gap: 24px; padding: 22px; border-radius: 14px; background: var(--surface-muted); }
+.vps-selection-summary-main h3 { margin: 0 0 14px; font-size: 1.08rem; }
+.vps-selection-summary .vps-tier-specifications { margin-bottom: 0 !important; }
+.vps-price-summary { display: grid; margin: 0; gap: 16px; }
+.vps-price-summary > div { display: grid; gap: 5px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--white); }
+.vps-price-summary dt { color: var(--muted); font-size: .76rem; font-weight: 700; }
+.vps-price-summary dd { margin: 0; color: var(--text); font-size: .9rem; }
+.vps-price-summary dd ul { display: grid; margin: 0; padding: 0; gap: 5px; list-style: none; }
+.vps-price-summary dd strong { color: var(--primary-dark); font-size: 1.05rem; }
+.vps-price-detail { margin: 3px 0 0; color: var(--muted); font-size: .78rem; line-height: 1.45; }
+.vps-configuration-form { display: grid; gap: 24px; }
+.vps-configuration-form .form-field > span:first-child { color: var(--text); font-size: .84rem; font-weight: 750; }
+.vps-configuration-form textarea { min-height: 112px; resize: vertical; }
+.vps-form-field-wide { grid-column: 1 / -1; }
+.vps-field-optional { color: var(--muted); font-weight: 500; }
+.vps-configurator-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 12px; }
+.vps-configuration-summary { display: grid; margin: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.vps-configuration-summary > div { min-width: 0; padding: 15px 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-muted); }
+.vps-configuration-summary dt { margin-bottom: 5px; color: var(--muted); font-size: .75rem; font-weight: 700; }
+.vps-configuration-summary dd { margin: 0; overflow-wrap: anywhere; line-height: 1.55; }
+.vps-configuration-summary .vps-summary-wide { grid-column: 1 / -1; }
+.vps-configurator-notice { margin: 0; padding: 14px 16px; border-radius: 12px; color: var(--muted); background: var(--primary-light); line-height: 1.55; }
 .billing-price-projection-amount { margin: 0 0 20px; color: var(--primary); font-size: 1.35rem; font-weight: 800; }
 .storefront-admin-form fieldset { display: grid; gap: 16px; margin: 28px 0 0; padding: 20px; border: 1px solid var(--border); border-radius: 16px; }
 .storefront-admin-form legend { padding-inline: 6px; font-weight: 700; }
@@ -3185,6 +3223,10 @@ fieldset.form-field > .form-hint {
   .service-process, .service-trust, .service-problem-section, .service-category-proof, .service-cta { grid-template-columns: 1fr; gap: 28px; }
 }
 
+@media (min-width: 1101px) {
+  .vps-service .service-offer-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
 @media (max-width: 560px) {
   .services-page { width: min(100% - 24px, 1180px); padding-block: 24px 52px; }
   .service-hero { grid-template-columns: 1fr; padding: 26px 20px; gap: 22px; border-radius: 16px; }
@@ -3195,6 +3237,13 @@ fieldset.form-field > .form-hint {
   .service-main-services, .service-process, .service-trust, .service-problem-section, .service-category-proof, .service-cta { padding: 24px 20px; border-radius: 16px; }
   .service-cta .button-secondary { width: 100%; text-align: center; }
   .storefront-admin-item { grid-template-columns: 1fr; }
+  .vps-configurator-steps, .vps-configuration-summary { grid-template-columns: 1fr; }
+  .vps-configurator-panel-heading { flex-direction: column; }
+  .vps-selection-summary { grid-template-columns: 1fr; }
+  .vps-configurator-panel-heading .text-link { margin-top: 0; }
+  .vps-configurator-actions { align-items: stretch; flex-direction: column-reverse; }
+  .vps-configurator-actions .button { width: 100%; text-align: center; }
+  .vps-configuration-summary .vps-summary-wide { grid-column: auto; }
 }
 
 .process-card {

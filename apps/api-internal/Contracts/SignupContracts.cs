@@ -29,6 +29,15 @@ public sealed record SignupUserData(
     string? Phone,
     bool? IsPrimaryContact);
 
+/// <summary>
+/// Intention non financiere d'une inscription immediate depuis le
+/// configurateur VPS. Les codes restent revalides contre le catalogue public
+/// Billing V2 avant toute creation de compte.
+/// </summary>
+public sealed record SignupSelfServiceVpsIntent(
+    string? ServiceCode,
+    string? TierCode);
+
 // V0.38 : l'inscription reste mono-utilisateur a ce stade, mais le contrat
 // public devient structure pour preparer l'alignement site -> AD.
 public sealed record SignupSubmitPayload(
@@ -41,7 +50,9 @@ public sealed record SignupSubmitPayload(
     SignupUserData? PrimaryUser,
     string? SourceAddress,
     string? UserAgent,
-    Services.BillingV2PublicSelectionInput? BillingV2Selection = null);
+    Services.BillingV2PublicSelectionInput? BillingV2Selection = null,
+    SignupSelfServiceVpsIntent? SelfServiceVpsIntent = null,
+    string? Password = null);
 
 public sealed record SignupVerifyPayload(string? Token);
 

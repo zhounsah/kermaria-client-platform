@@ -10,6 +10,7 @@ import {
 import { formatCurrencyFromCents } from "@/lib/formatters";
 import { resolveCorrelationId } from "@/lib/correlation";
 import { isSignupEnabled } from "@/lib/public-routes";
+import { resolveSelfServiceVpsSignupContinuation } from "@/lib/public-route-config";
 import styles from "./page.module.css";
 
 export const metadata: Metadata = {
@@ -33,6 +34,9 @@ export default async function SignupPage({
   const enabled = isSignupEnabled();
   const hcaptchaSiteKey = process.env.HCAPTCHA_SITE_KEY?.trim() || null;
   const rawSearchParams = await searchParams;
+  const selfServiceVpsContinuation = rawSearchParams.flow === "vps_self_service"
+    ? resolveSelfServiceVpsSignupContinuation(rawSearchParams.next)
+    : null;
   const billingV2Requested = rawSearchParams.v2 === "1";
   const billingV2Selection =
     readBillingV2SelectionSearchParams(rawSearchParams);
@@ -61,12 +65,22 @@ export default async function SignupPage({
         <p className="eyebrow">Inscription</p>
         <h1>Créer un compte client</h1>
         <p className="signup-lead">
-          Renseignez vos informations pour demander l&apos;ouverture de votre accès
-          client. Le parcours reste simple et assumé : confirmation de votre
-          adresse e-mail, validation de votre demande par notre équipe, puis
-          définition du mot de passe avant la finalisation de la formule choisie.
+          {selfServiceVpsContinuation
+            ? "Créez votre accès client pour reprendre immédiatement la configuration et le paiement de votre VPS."
+            : "Renseignez vos informations pour demander l'ouverture de votre accès client. Le parcours reste simple et assumé : confirmation de votre adresse e-mail, validation de votre demande par notre équipe, puis définition du mot de passe avant la finalisation de la formule choisie."}
         </p>
       </header>
+
+      {selfServiceVpsContinuation ? (
+        <section className={styles.stepsCard} aria-label="Reprise de votre VPS">
+          <p className="eyebrow">Votre VPS</p>
+          <h2>Votre configuration sera conservée</h2>
+          <p>
+            Après la création du compte, vous reviendrez à votre configurateur
+            VPS pour relire le devis Billing V2 avant le paiement.
+          </p>
+        </section>
+      ) : null}
 
       {billingV2Selection && billingV2Quote ? (
         <div className={styles.selectionStack}>
@@ -106,19 +120,28 @@ export default async function SignupPage({
 
       <section className={styles.stepsCard} aria-label="Étapes d'ouverture">
         <h2>Ce qui se passe ensuite</h2>
-        <ol>
-          <li>Vous confirmez votre adresse e-mail.</li>
-          <li>Nous validons l&apos;ouverture de votre accès client.</li>
-          <li>Vous définissez votre mot de passe et activez votre accès client.</li>
-          <li>Si l&apos;écriture AD est active, l&apos;identité clients.home.bzh est finalisée à ce moment-là.</li>
-          <li>Vous finalisez ensuite votre formule depuis l&apos;espace client.</li>
-        </ol>
+        {selfServiceVpsContinuation ? (
+          <ol>
+            <li>Vous créez votre accès client et choisissez votre mot de passe.</li>
+            <li>Votre session client est ouverte immédiatement.</li>
+            <li>Vous reprenez votre configurateur VPS puis le devis authoritative.</li>
+          </ol>
+        ) : (
+          <ol>
+            <li>Vous confirmez votre adresse e-mail.</li>
+            <li>Nous validons l&apos;ouverture de votre accès client.</li>
+            <li>Vous définissez votre mot de passe et activez votre accès client.</li>
+            <li>Si l&apos;écriture AD est active, l&apos;identité clients.home.bzh est finalisée à ce moment-là.</li>
+            <li>Vous finalisez ensuite votre formule depuis l&apos;espace client.</li>
+          </ol>
+        )}
       </section>
 
       {enabled && (!billingV2Requested || (billingV2Selection && billingV2Quote)) ? (
         <SignupForm
           hcaptchaSiteKey={hcaptchaSiteKey}
           initialBillingV2Selection={billingV2Selection}
+          selfServiceVps={selfServiceVpsContinuation}
         />
       ) : (
         <section className="signup-closed">
@@ -129,6 +152,17 @@ export default async function SignupPage({
           </p>
         </section>
       )}
+
+      <p className="login-help">
+        Déjà client ?{" "}
+        <Link
+          href={selfServiceVpsContinuation
+            ? `/login?next=${encodeURIComponent(selfServiceVpsContinuation.continuationPath)}`
+            : "/login"}
+        >
+          Se connecter
+        </Link>
+      </p>
     </div>
   );
 }

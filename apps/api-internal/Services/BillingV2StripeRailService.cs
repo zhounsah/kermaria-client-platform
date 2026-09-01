@@ -549,6 +549,15 @@ public sealed class BillingV2StripeRailService : IBillingV2StripeRailService
         if (alreadySettled)
         {
             // Rejeu : le settlement logique est deja acquis, on ne recree rien.
+            // La transition VPS est idempotente et reste dans la transaction :
+            // elle reparent un event historiquement settled qui aurait ete
+            // interrompu entre le settlement et la revue technique.
+            await BillingV2VpsTechnicalReviewSettlement.QueuePendingReviewAsync(
+                connection,
+                transaction,
+                billingEvent.Id,
+                DateTime.UtcNow,
+                cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return new BillingV2StripeSettlementResult(
                 true,
@@ -563,6 +572,16 @@ public sealed class BillingV2StripeRailService : IBillingV2StripeRailService
             billingEvent.Id,
             BillingV2SettlementStatuses.Settled,
             verification.ReasonCode,
+            DateTime.UtcNow,
+            cancellationToken);
+
+        // Un VPS ne passe en revue qu'apres cette preuve Stripe. Cette ecriture
+        // fait partie de la meme transaction que le settlement : un crash ne
+        // peut donc pas laisser un BillingEvent settled avec une demande draft.
+        await BillingV2VpsTechnicalReviewSettlement.QueuePendingReviewAsync(
+            connection,
+            transaction,
+            billingEvent.Id,
             DateTime.UtcNow,
             cancellationToken);
 

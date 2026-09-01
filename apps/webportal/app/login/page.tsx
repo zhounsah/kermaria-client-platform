@@ -1,4 +1,5 @@
 import { headers } from "next/headers";
+import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { LoginForm } from "@/components/LoginForm";
@@ -9,6 +10,7 @@ import {
   resolveClientCheckoutContinuationPath,
   resolvePortalAreaUrl,
   resolvePortalRoleUrl,
+  resolveSelfServiceVpsSignupContinuation,
 } from "@/lib/public-route-config";
 import { getPortalRequestOriginFromHeaders } from "@/lib/public-routes";
 
@@ -34,6 +36,9 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const area = getPortalArea(origin);
   const query = await searchParams;
   const continuationPath = resolveClientCheckoutContinuationPath(query.next);
+  const selfServiceVpsContinuation = resolveSelfServiceVpsSignupContinuation(
+    query.next,
+  );
 
   if (!origin || !area) {
     notFound();
@@ -105,6 +110,16 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           La récupération automatisée du mot de passe n&apos;est pas disponible
           dans cette version.
         </p>
+        {selfServiceVpsContinuation ? (
+          <p className="login-help">
+            Nouveau client ?{" "}
+            <Link
+              href={`/signup?flow=vps_self_service&next=${encodeURIComponent(selfServiceVpsContinuation.continuationPath)}`}
+            >
+              Créer un compte
+            </Link>
+          </p>
+        ) : null}
       </div>
     </section>
   );

@@ -27,6 +27,9 @@ const sharedTypes = await read("../../packages/shared/src/index.ts");
 const catalogSeed = await read(
   "../../apps/api-internal/Services/BillingV2PublicCatalogSeed.cs",
 );
+const vpsCloudAttributesMigration = await read(
+  "../../apps/api-internal/Migrations/MariaDb/081_billing_v2_vps_cloud_tier_attributes.sql",
+);
 const catalogService = await read(
   "../../apps/api-internal/Services/BillingV2PublicCatalogService.cs",
 );
@@ -124,6 +127,32 @@ assert.deepEqual(
   }),
   [],
   "Un attribut inconnu ne casse pas la presentation publique.",
+);
+assert.match(
+  vpsCloudAttributesMigration,
+  /INSERT IGNORE INTO billing_v2_service_tier_attributes/,
+  "Les attributs VPS Cloud doivent etre ajoutables sans ecraser une valeur administree.",
+);
+for (const attribute of [
+  ["S", "vcpu_count", 2, "count"], ["S", "ram_gib", 2, "GiB"], ["S", "disk_gib", 60, "GiB"],
+  ["M", "vcpu_count", 4, "count"], ["M", "ram_gib", 8, "GiB"], ["M", "disk_gib", 160, "GiB"],
+  ["L", "vcpu_count", 8, "count"], ["L", "ram_gib", 16, "GiB"], ["L", "disk_gib", 320, "GiB"],
+  ["XL", "vcpu_count", 16, "count"], ["XL", "ram_gib", 32, "GiB"], ["XL", "disk_gib", 640, "GiB"],
+]) {
+  const [tierCode, attributeCode, value, unit] = attribute;
+  const pattern = new RegExp(
+    `(?:SELECT|UNION ALL SELECT) '${tierCode}'(?: AS tier_code)?, '${attributeCode}'(?: AS attribute_code)?, ${value}(?: AS value_numeric)?, '${unit}'(?: AS unit)?`,
+  );
+  assert.match(
+    vpsCloudAttributesMigration,
+    pattern,
+    `La migration doit reproduire ${tierCode}/${attributeCode}=${value} ${unit}.`,
+  );
+}
+assert.doesNotMatch(
+  vpsCloudAttributesMigration,
+  /billing_v2_service_prices|ON DUPLICATE KEY UPDATE|DELETE FROM|ALTER TABLE/,
+  "La migration d'attributs ne doit modifier ni prix, ni attribut existant, ni schema.",
 );
 assert.match(
   helpers,
@@ -283,7 +312,14 @@ assert.match(
   globalStyles,
   /@media \(max-width: 48rem\)[\s\S]*\.formule-help-popover[\s\S]*position: fixed/,
   "La bulle mobile doit rester dans le viewport.",
-);// --- 2. Les quatre formules publiques ------------------------------------
+);
+assert.match(
+  globalStyles,
+  /@media \(min-width: 1101px\)[\s\S]*\.vps-service \.service-offer-grid[\s\S]*repeat\(4, minmax\(0, 1fr\)\)/,
+  "Le comparatif VPS doit utiliser quatre colonnes quand la largeur desktop le permet.",
+);
+
+// --- 2. Les quatre formules publiques ------------------------------------
 
 for (const presetCode of [
   "pack-dossier-securise",

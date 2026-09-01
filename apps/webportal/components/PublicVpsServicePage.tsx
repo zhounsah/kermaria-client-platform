@@ -68,7 +68,7 @@ export function PublicVpsServicePage({
     selfServiceOrderable,
   );
   const services = catalog.services
-    .filter((service) => service.publicVisible && service.code.startsWith("VPS-"))
+    .filter((service) => service.publicVisible && isPrimaryVpsService(service))
     .sort(compareVpsServices);
 
   return (
@@ -243,6 +243,12 @@ function compareVpsServices(a: BillingV2PublicService, b: BillingV2PublicService
 function vpsRank(service: BillingV2PublicService) {
   const rank = VPS_PRIORITY_CODES.indexOf(service.code as (typeof VPS_PRIORITY_CODES)[number]);
   return rank === -1 ? VPS_PRIORITY_CODES.length : rank;
+}
+
+function isPrimaryVpsService(service: BillingV2PublicService) {
+  return VPS_PRIORITY_CODES.includes(
+    service.code as (typeof VPS_PRIORITY_CODES)[number],
+  );
 }
 
 function isInitialSetupFee(component: BillingV2PublicPriceComponent) {

@@ -184,6 +184,20 @@ export function getPortalArea(
   return hostname === family.admin ? "admin" : null;
 }
 
+/**
+ * Domaine de cookie partageable entre les hotes public/client d'une meme
+ * famille de portails. Les hotes locaux restent host-only.
+ */
+export function getPortalFamilyCookieDomain(hostname: string): string | null {
+  const normalized = normalizeHostname(hostname);
+  if (LOCAL_HOSTNAMES.has(normalized)) {
+    return null;
+  }
+
+  const familyName = getPortalFamily(normalized);
+  return familyName ? `.${familyName}` : null;
+}
+
 export function resolvePortalAreaUrl(
   origin: string | null | undefined,
   area: PortalArea,
@@ -330,7 +344,30 @@ export function isPortalApplicationPath(pathname: string): boolean {
 }
 
 export function isClientCheckoutContinuationPath(pathname: string): boolean {
-  return pathname === "/formules" || /^\/formules\/[a-z0-9-]+$/.test(pathname);
+  if (pathname === "/formules" || /^\/formules\/[a-z0-9-]+$/.test(pathname)) {
+    return true;
+  }
+
+  const continuationUrl = new URL(pathname, "https://continuation.invalid");
+  if (continuationUrl.pathname !== "/services/vps/choisir") {
+    return false;
+  }
+
+  const serviceCode = continuationUrl.searchParams.get("serviceCode");
+  const tierCode = continuationUrl.searchParams.get("tierCode");
+  return (
+    serviceCode !== null
+    && tierCode !== null
+    && /^[A-Z0-9-]{1,80}$/.test(serviceCode)
+    && /^[A-Z0-9-]{1,80}$/.test(tierCode)
+    && continuationUrl.searchParams.size === 2
+  );
+}
+
+function isClientCheckoutPortalPath(pathname: string): boolean {
+  return pathname === "/formules"
+    || /^\/formules\/[a-z0-9-]+$/.test(pathname)
+    || pathname === "/services/vps/choisir";
 }
 
 export function resolveClientCheckoutContinuationPath(
@@ -341,6 +378,53 @@ export function resolveClientCheckoutContinuationPath(
   }
 
   return isClientCheckoutContinuationPath(value) ? value : null;
+}
+
+export type SelfServiceVpsSignupContinuation = {
+  continuationPath: string;
+  serviceCode: string;
+  tierCode: string;
+};
+
+/**
+ * Extrait la seule continuation qui autorise l'inscription immediate du
+ * configurateur VPS. Les valeurs techniques du brouillon ne passent jamais
+ * ici : seules les intentions catalogue sont transportees dans l'URL puis
+ * revalidees par API-INTERNAL.
+ */
+export function resolveSelfServiceVpsSignupContinuation(
+  value: string | string[] | null | undefined,
+): SelfServiceVpsSignupContinuation | null {
+  const continuationPath = resolveClientCheckoutContinuationPath(value);
+  if (!continuationPath) {
+    return null;
+  }
+
+  const continuationUrl = new URL(
+    continuationPath,
+    "https://continuation.invalid",
+  );
+  const serviceCode = continuationUrl.searchParams.get("serviceCode");
+  const tierCode = continuationUrl.searchParams.get("tierCode");
+  if (
+    continuationUrl.pathname !== "/services/vps/choisir"
+    || continuationUrl.hash
+    || continuationUrl.searchParams.size !== 2
+    || serviceCode === null
+    || tierCode === null
+    || !/^[A-Z0-9-]{1,80}$/.test(serviceCode)
+    || !/^[A-Z0-9-]{1,80}$/.test(tierCode)
+  ) {
+    return null;
+  }
+
+  return {
+    continuationPath:
+      `/services/vps/choisir?serviceCode=${encodeURIComponent(serviceCode)}`
+      + `&tierCode=${encodeURIComponent(tierCode)}`,
+    serviceCode,
+    tierCode,
+  };
 }
 
 /**
@@ -388,7 +472,7 @@ export function resolvePortalPublicRedirectUrl(
   // domaine public officiel.
   if (
     hostname === family.client
-    && isClientCheckoutContinuationPath(pathname)
+    && isClientCheckoutPortalPath(pathname)
   ) {
     return null;
   }

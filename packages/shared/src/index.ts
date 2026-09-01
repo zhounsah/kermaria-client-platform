@@ -2473,6 +2473,88 @@ export interface BillingV2PublicQuote {
   checkoutReasonCode: string;
 }
 
+/**
+ * Préparation technique non secrète d'un VPS. Les codes catalogue restent une
+ * intention : API-INTERNAL les revalide avant de conserver la demande et de
+ * demander un devis Billing V2.
+ */
+export interface BillingV2VpsConfigurationPayload {
+  serviceCode: string;
+  tierCode: string;
+  hostname: string;
+  operatingSystem: string;
+  usage: string;
+  managementMode: string;
+  internetExposure: "yes" | "no" | "to_confirm";
+  comment: string;
+  idempotencyKey: string;
+}
+
+export interface BillingV2VpsConfigurationQuoteResponse {
+  configurationId: string;
+  technicalStatus: "draft";
+  createdAt: string;
+  updatedAt: string;
+  quote: BillingV2PublicQuote;
+  correlationId: string;
+}
+
+/** Réponse de checkout VPS. L'URL est produite par le rail Billing V2/Stripe
+ *  après relire de la demande technique : aucun prix ni code catalogue client
+ *  n'est repris ici. */
+export interface BillingV2VpsCheckoutResponse {
+  approveUrl: string;
+  subscriptionId: string;
+  correlationId: string;
+}
+
+export interface BillingV2VpsTechnicalRequestStatus {
+  technicalRequestId: string;
+  settlementStatus: string;
+  technicalStatus: string;
+  provisioningStatus: string;
+  updatedAt: string;
+}
+
+/** Metadonnees operationnelles non secretes saisies par un administrateur
+ *  lors de la mise en service manuelle d'un VPS. */
+export interface BillingV2VpsManualProvisioningPayload {
+  infrastructureTarget: string;
+  instanceReference: string;
+  publicIpAddress: string;
+  operationalNotes: string;
+}
+
+export interface AdminBillingV2VpsTechnicalReview {
+  technicalRequestId: string;
+  customerReference: string;
+  customerName: string;
+  serviceCode: string;
+  tierCode: string;
+  revisionNumber: number;
+  hostname: string;
+  operatingSystem: string;
+  usage: string;
+  managementMode: string;
+  internetExposure: string;
+  comment: string;
+  settlementStatus: string;
+  technicalStatus: string;
+  createdAt: string;
+  settledAt: string | null;
+  technicalReviewPendingAt: string | null;
+  approvalType: string | null;
+  approvedAt: string | null;
+  provisioningStatus: string;
+  infrastructureTarget: string | null;
+  instanceReference: string | null;
+  publicIpAddress: string | null;
+  operationalNotes: string | null;
+  provisioningStartedAt: string | null;
+  activatedAt: string | null;
+  readyToProvision: boolean;
+}
+
 export type ApplicationSettingValue = string | number | boolean;
 
 export interface ApplicationSettingItem {

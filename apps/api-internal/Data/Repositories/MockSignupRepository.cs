@@ -225,7 +225,7 @@ public sealed class MockSignupRepository : ISignupRepository
                 displayName,
                 "active",
                 PortalRoles.ClientUser,
-                null,
+                request.InitialPasswordHash,
                 null,
                 0,
                 null,

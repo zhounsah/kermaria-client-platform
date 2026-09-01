@@ -79,6 +79,7 @@ public sealed class BillingV2ProviderInboundEventService
     private readonly BillingV2RuntimeConfiguration _configuration;
     private readonly IBillingV2DocumentIssuerService _documents;
     private readonly IBillingV2ProvisioningService _provisioning;
+    private readonly IBillingV2VpsTechnicalReviewService _vpsTechnicalReviews;
     private readonly IBillingV2StripeRailService _stripeRail;
     private readonly IBillingV2RenewalService _renewals;
     private readonly ILogger<BillingV2ProviderInboundEventService> _logger;
@@ -88,6 +89,7 @@ public sealed class BillingV2ProviderInboundEventService
         BillingV2RuntimeConfiguration configuration,
         IBillingV2DocumentIssuerService documents,
         IBillingV2ProvisioningService provisioning,
+        IBillingV2VpsTechnicalReviewService vpsTechnicalReviews,
         IBillingV2StripeRailService stripeRail,
         IBillingV2RenewalService renewals,
         ILogger<BillingV2ProviderInboundEventService> logger)
@@ -96,6 +98,7 @@ public sealed class BillingV2ProviderInboundEventService
         _configuration = configuration;
         _documents = documents;
         _provisioning = provisioning;
+        _vpsTechnicalReviews = vpsTechnicalReviews;
         _stripeRail = stripeRail;
         _renewals = renewals;
         _logger = logger;
@@ -917,6 +920,19 @@ public sealed class BillingV2ProviderInboundEventService
     {
         if (string.IsNullOrWhiteSpace(subscriptionId))
         {
+            return;
+        }
+
+        // Les souscriptions VPS reliees a une demande technique ont leur
+        // propre gate post-settlement. Cette phase ne provisionne jamais un
+        // VPS automatiquement, y compris lors d'un replay provider.
+        if (await _vpsTechnicalReviews.IsVpsTechnicalSubscriptionAsync(
+                subscriptionId,
+                cancellationToken))
+        {
+            _logger.LogInformation(
+                "Billing V2 VPS subscription {SubscriptionId} is awaiting an explicit technical workflow; automatic provisioning is skipped.",
+                subscriptionId);
             return;
         }
 

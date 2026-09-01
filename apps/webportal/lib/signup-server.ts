@@ -15,6 +15,8 @@ export type InternalSignupResult = {
   code: string;
   message: string;
   correlationId?: string;
+  sessionToken?: string;
+  expiresAt?: string;
 };
 
 export type HCaptchaOutcome = {
@@ -325,6 +327,12 @@ function toResult(
       typeof payload?.correlation_id === "string"
         ? payload.correlation_id
         : correlationId,
+    sessionToken:
+      typeof payload?.sessionToken === "string"
+        ? payload.sessionToken
+        : undefined,
+    expiresAt:
+      typeof payload?.expiresAt === "string" ? payload.expiresAt : undefined,
   };
 }
 

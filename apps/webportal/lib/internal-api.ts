@@ -88,6 +88,8 @@ import type {
   BillingV2PublicCatalog,
   BillingV2PublicQuote,
   BillingV2PublicSelection,
+  BillingV2VpsTechnicalRequestStatus,
+  AdminBillingV2VpsTechnicalReview,
 } from "@kermaria/shared";
 import {
   createDefaultAdminClientSolutionPortal,
@@ -1843,6 +1845,21 @@ export function getAdminBillingV2Subscriptions() {
   return getAdminData<SubscriptionSummary[]>(
     "/internal/admin/billing-v2/subscriptions",
     [],
+  );
+}
+
+export function getAdminBillingV2VpsTechnicalReviews() {
+  return getAdminData<AdminBillingV2VpsTechnicalReview[]>(
+    "/internal/admin/billing-v2/vps/technical-reviews",
+    [],
+  );
+}
+
+export function getBillingV2VpsTechnicalRequestStatus(technicalRequestId: string) {
+  return getPortalData<BillingV2VpsTechnicalRequestStatus | null>(
+    `/internal/portal/billing-v2/vps/configurations/${encodeURIComponent(technicalRequestId)}`,
+    null,
+    null,
   );
 }
 

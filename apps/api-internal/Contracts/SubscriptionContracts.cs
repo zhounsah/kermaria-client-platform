@@ -27,6 +27,18 @@ public sealed record BillingV2AuthoritativeCheckoutResponse(
     string? ApprovalUrl,
     string CorrelationId);
 
+/// <summary>
+/// Checkout VPS : le navigateur ne transmet que l'identifiant de la demande
+/// technique deja persistée, plus les donnees de transport du checkout. La
+/// selection et les montants sont relus et recalcules cote serveur.
+/// </summary>
+public sealed record BillingV2VpsAuthoritativeCheckoutPayload(
+    string? TechnicalRequestId,
+    string? Provider,
+    string? IdempotencyKey,
+    string? SuccessUrl,
+    string? CancelUrl);
+
 public sealed record BillingV2ProviderReturnPayload(
     string? Provider,
     string? ProviderCheckoutId,

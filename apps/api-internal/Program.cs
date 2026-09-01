@@ -434,6 +434,11 @@ builder.Services.AddSingleton<IBillingV2PricingEngine, BillingV2PricingEngine>()
 builder.Services.AddScoped<
     IBillingV2PublicCatalogService,
     BillingV2PublicCatalogService>();
+// Préparation technique VPS avant checkout : persistance non secrète et devis
+// authoritative uniquement. Ce service ne crée aucun objet de paiement.
+builder.Services.AddScoped<
+    IBillingV2VpsTechnicalConfigurationService,
+    BillingV2VpsTechnicalConfigurationService>();
 // Administration du catalogue V2 : seule autorite commerciale du produit.
 // Ecrit `billing_v2_services`, `_service_tiers`, `_service_prices` (en
 // versionnant, jamais en reecrivant), `_offer_presets`, `_preset_items`,
@@ -497,6 +502,12 @@ builder.Services.AddScoped<IBillingV2StripeGateway>(
 builder.Services.AddScoped<
     IBillingV2StripeRailService,
     BillingV2StripeRailService>();
+// Remboursements Billing V2 : primitive exclusivement server-side. Aucun
+// endpoint portal ne l'expose ; le worker ne s'active que par flag fail-closed.
+builder.Services.AddScoped<IBillingV2RefundService, BillingV2RefundService>();
+builder.Services.AddScoped<
+    IBillingV2RefundOutboxDispatcher,
+    BillingV2RefundOutboxDispatcher>();
 builder.Services.AddSingleton<IBillingV2Clock>(SystemBillingV2Clock.Instance);
 builder.Services.AddScoped<
     IBillingV2StripeReconciliationService,
@@ -541,6 +552,9 @@ builder.Services.AddScoped<
 builder.Services.AddScoped<
     IBillingV2ProviderInboundEventService,
     BillingV2ProviderInboundEventService>();
+builder.Services.AddScoped<
+    IBillingV2VpsTechnicalReviewService,
+    BillingV2VpsTechnicalReviewService>();
 builder.Services.AddScoped<BillingV2FulfillmentDispatcher>();
 builder.Services.AddScoped<BillingV2StripeRecurringMutationDispatcher>();
 if (billingV2RuntimeConfiguration.StripeRecurringMutationEnabled)
@@ -569,6 +583,11 @@ if (billingV2RuntimeConfiguration.ProviderOutboxEnabled)
 {
     builder.Services.AddHostedService<BillingV2ProviderOutboxWorker>();
     builder.Services.AddHostedService<BillingV2CancellationOutboxWorker>();
+}
+if (billingV2RuntimeConfiguration.RefundsEnabled
+    && billingV2RuntimeConfiguration.ProviderOutboxEnabled)
+{
+    builder.Services.AddHostedService<BillingV2RefundOutboxWorker>();
 }
 // Topologie technique : Billing V2 est la seule source. Enregistree en
 // singleton car son instantane est mis en cache pour la duree du processus.
@@ -1751,6 +1770,173 @@ app.MapPost(
         }
     });
 
+// Tunnel VPS, étape « configuration + devis » uniquement. La demande est
+// durable et rattachée au client authentifié, mais aucun checkout n'est créé.
+app.MapPost(
+    "/internal/portal/billing-v2/vps/configurations",
+    async (
+        HttpContext context,
+        IBillingV2VpsTechnicalConfigurationService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            auditService);
+        var payload = await ReadPayload<BillingV2VpsTechnicalConfigurationInput>(context)
+            ?? throw new PortalValidationException();
+
+        BillingV2VpsTechnicalConfigurationResult result;
+        try
+        {
+            result = await service.CreateAndQuoteAsync(
+                session,
+                payload,
+                context.GetCorrelationId(),
+                context.RequestAborted);
+        }
+        catch (InvalidOperationException exception)
+            when (exception.Message.StartsWith("BILLING_V2_VPS_", StringComparison.Ordinal))
+        {
+            var statusCode = exception.Message.EndsWith("SCHEMA_UNAVAILABLE", StringComparison.Ordinal)
+                ? StatusCodes.Status503ServiceUnavailable
+                : exception.Message.EndsWith("IDEMPOTENCY_CONFLICT", StringComparison.Ordinal)
+                    ? StatusCodes.Status409Conflict
+                    : StatusCodes.Status400BadRequest;
+            return Results.Json(
+                new ApiError(
+                    exception.Message,
+                    "La configuration VPS ne peut pas être enregistrée.",
+                    context.GetCorrelationId()),
+                statusCode: statusCode);
+        }
+
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "billing_v2.vps_technical_configuration_created",
+                "success",
+                TargetType: "billing_v2_vps_technical_request",
+                TargetReference: result.ConfigurationId,
+                CustomerId: session.CustomerId,
+                ActorUserId: session.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return Results.Ok(result);
+    });
+
+// Checkout VPS : la demande technique persistée est la seule entrée produit.
+// BillingV2AuthoritativeCheckoutService relit/revalide le catalogue et crée le
+// pipeline financier commun ; aucun rail VPS parallèle n'existe ici.
+app.MapPost(
+    "/internal/portal/billing-v2/vps/configurations/checkout",
+    async (
+        HttpContext context,
+        IBillingV2AuthoritativeCheckoutService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            auditService);
+        var payload = await ReadPayload<BillingV2VpsAuthoritativeCheckoutPayload>(context)
+            ?? throw new PortalValidationException();
+        if (string.IsNullOrWhiteSpace(payload.TechnicalRequestId)
+            || string.IsNullOrWhiteSpace(payload.Provider)
+            || string.IsNullOrWhiteSpace(payload.IdempotencyKey)
+            || string.IsNullOrWhiteSpace(payload.SuccessUrl)
+            || string.IsNullOrWhiteSpace(payload.CancelUrl))
+        {
+            throw new PortalValidationException();
+        }
+
+        BillingV2AuthoritativeCheckoutResult result;
+        try
+        {
+            result = await service.CreateAsync(
+                session,
+                new BillingV2AuthoritativeCheckoutRequest(
+                    Selection: null,
+                    Provider: payload.Provider.Trim(),
+                    IdempotencyKey: payload.IdempotencyKey.Trim(),
+                    SuccessUrl: payload.SuccessUrl.Trim(),
+                    CancelUrl: payload.CancelUrl.Trim(),
+                    TechnicalRequestId: payload.TechnicalRequestId.Trim()),
+                context.GetCorrelationId(),
+                context.RequestAborted);
+        }
+        catch (InvalidOperationException exception)
+            when (exception.Message.StartsWith("BILLING_V2_", StringComparison.Ordinal))
+        {
+            var statusCode = exception.Message.EndsWith("SCHEMA_UNAVAILABLE", StringComparison.Ordinal)
+                ? StatusCodes.Status503ServiceUnavailable
+                : exception.Message.EndsWith("NOT_FOUND_OR_FORBIDDEN", StringComparison.Ordinal)
+                    ? StatusCodes.Status404NotFound
+                    : StatusCodes.Status409Conflict;
+            return Results.Json(
+                new ApiError(
+                    "BILLING_V2_VPS_CHECKOUT_NOT_READY",
+                    exception.Message,
+                    context.GetCorrelationId()),
+                statusCode: statusCode);
+        }
+
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "billing_v2.vps_authoritative_checkout_requested",
+                result.Created ? "success" : "unchanged",
+                TargetType: "billing_v2_vps_technical_request",
+                TargetReference: payload.TechnicalRequestId.Trim(),
+                CustomerId: session.CustomerId,
+                ActorUserId: session.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return Results.Ok(new BillingV2AuthoritativeCheckoutResponse(
+            result.Created,
+            result.SubscriptionId,
+            result.Provider,
+            result.Environment,
+            result.OutboxEventId,
+            result.IdempotencyKeyHash,
+            result.TotalDueNowCents,
+            result.ReasonCode,
+            result.ApprovalUrl,
+            context.GetCorrelationId()));
+    });
+
+// Etat client en lecture seule : l'identifiant URL sert uniquement a retrouver
+// une demande deja rattachee au client de la session. Il ne peut ni avancer le
+// settlement ni modifier l'etat technique.
+app.MapGet(
+    "/internal/portal/billing-v2/vps/configurations/{technicalRequestId}",
+    async (
+        string technicalRequestId,
+        HttpContext context,
+        IBillingV2VpsTechnicalReviewService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            auditService);
+        if (!Guid.TryParse(technicalRequestId, out _))
+        {
+            throw new PortalValidationException();
+        }
+
+        var result = await service.GetClientStatusAsync(
+            session,
+            technicalRequestId,
+            context.RequestAborted);
+        context.Response.Headers["X-Data-Source"] =
+            service.IsPersistent ? "mariadb" : "mock";
+        return result is null ? Results.NotFound() : Results.Ok(result);
+    });
+
 // V0.27 : réception des messages du formulaire /contact (vitrine publique).
 // Anonyme, protégé par `X-Service-Auth`. Rate limit appliqué côté webportal BFF.
 app.MapPost(
@@ -1849,6 +2035,65 @@ app.MapPost(
                         correlationId),
                     statusCode: StatusCodes.Status400BadRequest);
             }
+        }
+
+        if (payload.SelfServiceVpsIntent is not null)
+        {
+            if (payload.BillingV2Selection is not null
+                || !await IsEligibleSelfServiceVpsSignupAsync(
+                    billingV2CatalogService,
+                    payload.SelfServiceVpsIntent,
+                    context.RequestAborted))
+            {
+                return Results.Json(
+                    new ApiError(
+                        "INVALID_SELF_SERVICE_VPS_SELECTION",
+                        "Le VPS sélectionné n'est plus disponible en libre-service.",
+                        correlationId),
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            var selfServiceResult = await signupService.CompleteSelfServiceVpsAsync(
+                payload,
+                correlationId,
+                context.RequestAborted);
+            await auditService.RecordAsync(
+                new AuditEvent(
+                    correlationId,
+                    "signup.self_service_vps",
+                    selfServiceResult.Succeeded ? "success" : "refused",
+                    ReasonCode: selfServiceResult.Code,
+                    TargetType: "signup",
+                    SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+                context.RequestAborted);
+
+            if (!selfServiceResult.Succeeded || selfServiceResult.Session is null)
+            {
+                var statusCode = selfServiceResult.Code switch
+                {
+                    "SIGNUP_DISABLED" => StatusCodes.Status403Forbidden,
+                    "RATE_LIMITED" => StatusCodes.Status429TooManyRequests,
+                    "SIGNUP_SESSION_UNAVAILABLE" => StatusCodes.Status503ServiceUnavailable,
+                    "ACCOUNT_ALREADY_EXISTS" => StatusCodes.Status409Conflict,
+                    _ => StatusCodes.Status400BadRequest,
+                };
+                return Results.Json(
+                    new ApiError(
+                        selfServiceResult.Code,
+                        selfServiceResult.Message,
+                        correlationId),
+                    statusCode: statusCode);
+            }
+
+            return Results.Ok(new
+            {
+                code = selfServiceResult.Code,
+                message = selfServiceResult.Message,
+                sessionToken = selfServiceResult.Session.SessionToken,
+                user = selfServiceResult.Session.User,
+                expiresAt = ToUtcIso(selfServiceResult.Session.ExpiresAtUtc),
+                correlation_id = correlationId
+            });
         }
 
 
@@ -5752,6 +5997,189 @@ app.MapGet(
             context.RequestAborted));
     });
 app.MapGet(
+    "/internal/admin/billing-v2/vps/technical-reviews",
+    async (
+        HttpContext context,
+        IBillingV2VpsTechnicalReviewService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.billing_v2.vps_technical_reviews.read");
+        context.Response.Headers["X-Data-Source"] =
+            service.IsPersistent ? "mariadb" : "mock";
+        return Results.Ok(await service.GetAdminReviewsAsync(
+            context.RequestAborted));
+    });
+app.MapPost(
+    "/internal/admin/billing-v2/vps/technical-reviews/{technicalRequestId}/approve",
+    async (
+        string technicalRequestId,
+        HttpContext context,
+        IBillingV2VpsTechnicalReviewService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.billing_v2.vps_technical_reviews.approve");
+        if (!Guid.TryParse(technicalRequestId, out _))
+        {
+            throw new PortalValidationException();
+        }
+
+        BillingV2VpsTechnicalReviewSummary result;
+        try
+        {
+            result = await service.ApproveAsync(
+                technicalRequestId,
+                actor.UserId,
+                context.RequestAborted);
+        }
+        catch (InvalidOperationException exception)
+            when (exception.Message.StartsWith(
+                "BILLING_V2_VPS_TECHNICAL_APPROVAL_",
+                StringComparison.Ordinal))
+        {
+            return Results.Json(
+                new ApiError(
+                    exception.Message,
+                    "La demande VPS n'est pas dans un état compatible avec l'approbation.",
+                    context.GetCorrelationId()),
+                statusCode: StatusCodes.Status409Conflict);
+        }
+
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "billing_v2.vps_technical_review_approved",
+                "success",
+                TargetType: "billing_v2_vps_technical_request",
+                TargetReference: result.TechnicalRequestId,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        context.Response.Headers["X-Data-Source"] =
+            service.IsPersistent ? "mariadb" : "mock";
+        return Results.Ok(result);
+    });
+app.MapPost(
+    "/internal/admin/billing-v2/vps/technical-reviews/{technicalRequestId}/manual-provisioning",
+    async (
+        string technicalRequestId,
+        HttpContext context,
+        IBillingV2VpsTechnicalReviewService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.billing_v2.vps_provisioning.start");
+        if (!Guid.TryParse(technicalRequestId, out _))
+        {
+            throw new PortalValidationException();
+        }
+        var payload = await ReadPayload<BillingV2VpsManualProvisioningInput>(context)
+            ?? throw new PortalValidationException();
+
+        BillingV2VpsTechnicalReviewSummary result;
+        try
+        {
+            result = await service.StartManualProvisioningAsync(
+                technicalRequestId,
+                payload,
+                actor.UserId,
+                context.RequestAborted);
+        }
+        catch (InvalidOperationException exception)
+            when (exception.Message.StartsWith(
+                "BILLING_V2_VPS_MANUAL_PROVISIONING_",
+                StringComparison.Ordinal))
+        {
+            return Results.Json(
+                new ApiError(
+                    exception.Message,
+                    "La demande VPS n'est pas dans un état compatible avec la mise en service manuelle.",
+                    context.GetCorrelationId()),
+                statusCode: StatusCodes.Status409Conflict);
+        }
+
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "billing_v2.vps_manual_provisioning_started",
+                "success",
+                TargetType: "billing_v2_vps_technical_request",
+                TargetReference: result.TechnicalRequestId,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        context.Response.Headers["X-Data-Source"] =
+            service.IsPersistent ? "mariadb" : "mock";
+        return Results.Ok(result);
+    });
+app.MapPost(
+    "/internal/admin/billing-v2/vps/technical-reviews/{technicalRequestId}/manual-provisioning/activate",
+    async (
+        string technicalRequestId,
+        HttpContext context,
+        IBillingV2VpsTechnicalReviewService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.billing_v2.vps_provisioning.activate");
+        if (!Guid.TryParse(technicalRequestId, out _))
+        {
+            throw new PortalValidationException();
+        }
+
+        BillingV2VpsTechnicalReviewSummary result;
+        try
+        {
+            result = await service.MarkProvisioningActiveAsync(
+                technicalRequestId,
+                actor.UserId,
+                context.RequestAborted);
+        }
+        catch (InvalidOperationException exception)
+            when (exception.Message.StartsWith(
+                "BILLING_V2_VPS_MANUAL_PROVISIONING_",
+                StringComparison.Ordinal))
+        {
+            return Results.Json(
+                new ApiError(
+                    exception.Message,
+                    "La demande VPS n'est pas dans un état compatible avec cette confirmation de mise en service.",
+                    context.GetCorrelationId()),
+                statusCode: StatusCodes.Status409Conflict);
+        }
+
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "billing_v2.vps_manual_provisioning_activated",
+                "success",
+                TargetType: "billing_v2_vps_technical_request",
+                TargetReference: result.TechnicalRequestId,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        context.Response.Headers["X-Data-Source"] =
+            service.IsPersistent ? "mariadb" : "mock";
+        return Results.Ok(result);
+    });
+app.MapGet(
     "/internal/admin/ad/status",
     async (
         HttpContext context,
@@ -8390,6 +8818,35 @@ static int ResolveSignupAdminMutationStatusCode(string code)
             => StatusCodes.Status502BadGateway,
         _ => StatusCodes.Status409Conflict
     };
+
+static async Task<bool> IsEligibleSelfServiceVpsSignupAsync(
+    IBillingV2PublicCatalogService catalogService,
+    SignupSelfServiceVpsIntent intent,
+    CancellationToken cancellationToken)
+{
+    var serviceCode = intent.ServiceCode?.Trim();
+    var tierCode = intent.TierCode?.Trim();
+    if (string.IsNullOrWhiteSpace(serviceCode)
+        || string.IsNullOrWhiteSpace(tierCode))
+    {
+        return false;
+    }
+
+    var catalog = await catalogService.GetCatalogAsync(cancellationToken);
+    var service = catalog.Services.FirstOrDefault(candidate =>
+        string.Equals(candidate.Code, serviceCode, StringComparison.Ordinal));
+    if (service is null
+        || !service.PublicVisible
+        || !service.SelfServiceOrderable
+        || service.Code is not ("VPS-LOCAL" or "VPS-CLOUD"))
+    {
+        return false;
+    }
+
+    return service.Tiers.Any(tier =>
+        string.Equals(tier.Code, tierCode, StringComparison.Ordinal)
+        && tier.PublicSelectable);
+}
 
 static string[] GetDiagnosticSecretValues(IConfiguration configuration)
     => new[]

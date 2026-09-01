@@ -21,6 +21,8 @@ import type {
   PublicPackComparisonValueKind,
   PublicPackCatalogContentPayload,
   CustomerAdLinkPayload,
+  BillingV2VpsConfigurationPayload,
+  BillingV2VpsManualProvisioningPayload,
   ServiceRequestPayload,
   SupportRequestPayload,
 } from "@kermaria/shared";
@@ -99,6 +101,94 @@ export function parseServiceRequestPayload(
     && payload.subject.length <= 160
     && payload.description.length >= 10
     && payload.description.length <= 4000
+    ? payload
+    : null;
+}
+
+export function parseBillingV2VpsConfigurationPayload(
+  value: unknown,
+): BillingV2VpsConfigurationPayload | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Partial<BillingV2VpsConfigurationPayload>;
+  if (
+    typeof candidate.serviceCode !== "string"
+    || typeof candidate.tierCode !== "string"
+    || typeof candidate.hostname !== "string"
+    || typeof candidate.operatingSystem !== "string"
+    || typeof candidate.usage !== "string"
+    || typeof candidate.managementMode !== "string"
+    || typeof candidate.internetExposure !== "string"
+    || typeof candidate.comment !== "string"
+    || typeof candidate.idempotencyKey !== "string"
+  ) {
+    return null;
+  }
+
+  const payload: BillingV2VpsConfigurationPayload = {
+    serviceCode: candidate.serviceCode.trim(),
+    tierCode: candidate.tierCode.trim(),
+    hostname: candidate.hostname.trim(),
+    operatingSystem: candidate.operatingSystem.trim(),
+    usage: candidate.usage.trim(),
+    managementMode: candidate.managementMode.trim(),
+    internetExposure: candidate.internetExposure as BillingV2VpsConfigurationPayload["internetExposure"],
+    comment: candidate.comment.trim(),
+    idempotencyKey: candidate.idempotencyKey.trim(),
+  };
+
+  return payload.serviceCode.length > 0
+    && payload.serviceCode.length <= 64
+    && payload.tierCode.length > 0
+    && payload.tierCode.length <= 64
+    && payload.hostname.length > 0
+    && payload.hostname.length <= 253
+    && payload.operatingSystem.length > 0
+    && payload.operatingSystem.length <= 120
+    && payload.usage.length > 0
+    && payload.usage.length <= 1000
+    && payload.managementMode.length > 0
+    && payload.managementMode.length <= 120
+    && payload.comment.length <= 1000
+    && payload.idempotencyKey.length > 0
+    && payload.idempotencyKey.length <= 128
+    && ["yes", "no", "to_confirm"].includes(payload.internetExposure)
+    ? payload
+    : null;
+}
+
+export function parseBillingV2VpsManualProvisioningPayload(
+  value: unknown,
+): BillingV2VpsManualProvisioningPayload | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Partial<BillingV2VpsManualProvisioningPayload>;
+  if (
+    typeof candidate.infrastructureTarget !== "string"
+    || typeof candidate.instanceReference !== "string"
+    || typeof candidate.publicIpAddress !== "string"
+    || typeof candidate.operationalNotes !== "string"
+  ) {
+    return null;
+  }
+
+  const payload: BillingV2VpsManualProvisioningPayload = {
+    infrastructureTarget: candidate.infrastructureTarget.trim(),
+    instanceReference: candidate.instanceReference.trim(),
+    publicIpAddress: candidate.publicIpAddress.trim(),
+    operationalNotes: candidate.operationalNotes.trim(),
+  };
+
+  return payload.infrastructureTarget.length > 0
+    && payload.infrastructureTarget.length <= 255
+    && payload.instanceReference.length > 0
+    && payload.instanceReference.length <= 255
+    && payload.publicIpAddress.length <= 45
+    && payload.operationalNotes.length <= 2000
     ? payload
     : null;
 }
