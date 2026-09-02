@@ -12,7 +12,10 @@ import { ServiceCard } from "@/components/ServiceCard";
 import { StatusBadge } from "@/components/StatusBadge";
 import { PublicServicesLandingPage } from "@/components/PublicServicesLandingPage";
 import { getCurrentPortalSession, requireClientSession } from "@/lib/auth";
-import { buildPublicMetadata } from "@/lib/public-metadata";
+import {
+  buildPublicMetadata,
+  CONTENT_UNAVAILABLE_ROBOTS,
+} from "@/lib/public-metadata";
 import { getPortalArea } from "@/lib/public-route-config";
 import { getPortalRequestOriginFromHeaders } from "@/lib/public-routes";
 import { resolveServicesPortalMode } from "@/lib/services-portal-mode";
@@ -39,6 +42,9 @@ export async function generateMetadata(): Promise<Metadata> {
     title: page?.seoTitle ?? "Services IT gérés pour indépendants, associations et TPE",
     description: page?.seoDescription ?? "Cloud, hébergement, domaines, messagerie, réseau, sécurité, sauvegarde et support gérés par Zachary IT.",
     path: "/services",
+    // Sans contenu, le corps rend un `ErrorState` : ne pas laisser cet
+    // instantane entrer dans l'index a la place de la page.
+    ...(page ? {} : { robots: CONTENT_UNAVAILABLE_ROBOTS }),
   });
 }
 

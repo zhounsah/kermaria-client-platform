@@ -5,7 +5,10 @@ import { ErrorState } from "@/components/ErrorState";
 import { PublicStorefrontPage } from "@/components/PublicStorefrontPage";
 import { describeTierAttributes } from "@/lib/billing-v2-formules";
 import { getBillingV2FormulesCatalog, getPublicManagedContent } from "@/lib/internal-api";
-import { buildPublicMetadata } from "@/lib/public-metadata";
+import {
+  buildPublicMetadata,
+  CONTENT_UNAVAILABLE_ROBOTS,
+} from "@/lib/public-metadata";
 import {
   parseStorefrontPageContent,
   resolveStorefrontBreadcrumb,
@@ -27,9 +30,12 @@ export async function generateMetadata(): Promise<Metadata> {
   const result = await getPublicManagedContent("storefront:tarifs");
   const content = result.data ? parseStorefrontPageContent(result.data.bodyMarkdown) : null;
   return buildPublicMetadata({
-    title: content?.seoTitle ?? "Tarifs Zachary IT",
+    title: content?.seoTitle ?? "Tarifs",
     description: content?.seoDescription ?? "Unités de facturation et prestations sur devis Zachary IT.",
     path: "/tarifs",
+    // Sans contenu, le corps rend un `ErrorState` : ne pas laisser cet
+    // instantane entrer dans l'index a la place de la page.
+    ...(content ? {} : { robots: CONTENT_UNAVAILABLE_ROBOTS }),
   });
 }
 

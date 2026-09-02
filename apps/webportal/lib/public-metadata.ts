@@ -8,6 +8,25 @@ import { PUBLIC_SITE_URL } from "@/lib/public-route-config";
 export const PUBLIC_BRAND_NAME = BRAND_NAME;
 export const PUBLIC_SITE_NAME = BRAND_NAME;
 
+/**
+ * Directive robots d'une page vitrine dont le contenu administrable n'a pas pu
+ * etre lu.
+ *
+ * La page repond quand meme 200 avec un `ErrorState` — c'est le bon
+ * comportement pour un visiteur, qui voit une explication plutot qu'une page
+ * blanche. Pour un robot, en revanche, une reponse 200 portant une canonical
+ * legitime et un corps « temporairement indisponible » est un soft-404 : la
+ * panne entre dans l'index a la place de la page.
+ *
+ * `follow: true` est deliberé : les liens de navigation restent valables, seul
+ * cet instantane ne doit pas etre indexe. La page redevient indexable au
+ * passage suivant, sans intervention.
+ */
+export const CONTENT_UNAVAILABLE_ROBOTS = {
+  index: false,
+  follow: true,
+} as const;
+
 type PublicMetadataOptions = {
   title: string;
   description?: string;

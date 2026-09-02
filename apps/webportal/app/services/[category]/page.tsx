@@ -6,7 +6,10 @@ import { PublicMessagingCategoryPage } from "@/components/PublicMessagingCategor
 import { PublicPriorityServicePage } from "@/components/PublicPriorityServicePage";
 import { PublicStorefrontPage } from "@/components/PublicStorefrontPage";
 import { PublicVpsServicePage } from "@/components/PublicVpsServicePage";
-import { buildPublicMetadata } from "@/lib/public-metadata";
+import {
+  buildPublicMetadata,
+  CONTENT_UNAVAILABLE_ROBOTS,
+} from "@/lib/public-metadata";
 import { getBillingV2FormulesCatalog, getPublicManagedContent } from "@/lib/internal-api";
 import {
   isStorefrontPriorityServiceSlug,
@@ -33,9 +36,12 @@ export async function generateMetadata({ params }: CategoryPageProps): Promise<M
     ? parseStorefrontPageContent(result.data.bodyMarkdown)
     : null;
   return buildPublicMetadata({
-    title: content?.seoTitle ?? "Services Zachary IT",
+    title: content?.seoTitle ?? "Services",
     description: content?.seoDescription ?? "Services IT g\u00e9r\u00e9s, sur devis ou accompagn\u00e9s par Zachary IT.",
     path: `/services/${slug}`,
+    // Sans contenu, le corps rend un `ErrorState` : ne pas laisser cet
+    // instantane entrer dans l'index a la place de la page.
+    ...(content ? {} : { robots: CONTENT_UNAVAILABLE_ROBOTS }),
   });
 }
 export default async function ServiceCategoryRoute({ params }: CategoryPageProps) {
