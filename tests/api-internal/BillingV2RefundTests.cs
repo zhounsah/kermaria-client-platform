@@ -1,4 +1,5 @@
 using System.Net;
+using System.Reflection;
 using System.Net.Http;
 using System.Text.Json;
 using Kermaria.ApiInternal.Data.Configuration;
@@ -33,6 +34,18 @@ public static class BillingV2RefundTests
         VerifyExecutionRequiresProviderOutbox();
         VerifyRuntimeFlagIsFailClosed();
         VerifyReadinessSeparatesEvidenceFromActivation();
+        VerifyMissingBillingEventIsRefused();
+        VerifyInvalidSourceAmountIsRefused();
+        VerifyUnresolvedProviderPaymentIsRefused();
+        VerifyRecurringWithoutProviderAnchorIsRefusedAtRequest();
+        VerifySecondRefundOnRefundedSourceIsRefused();
+        VerifyUnobservedProviderRefundIsRefused();
+        VerifyRefundOnAnotherPaymentIsRefused();
+        VerifyCanceledProviderRefundIsAFailure();
+        VerifyMissingSubscriptionBlocksCompensation();
+        VerifyExecutionRequiresSqlAndStripeGateway();
+        VerifyOutboxPayloadRoundTripAndRejection();
+        VerifyPartialRefundIsNotSilentlyIntroduced();
         await VerifyStripeRefundRequestIsIdempotentAndAuthoritativeAsync();
         await VerifyAmbiguousProviderTimeoutStaysIndeterminateAsync();
         await VerifyBoundedProviderReconciliationFindsOnlyOurRefundAsync();
@@ -338,6 +351,285 @@ public static class BillingV2RefundTests
             new StripeRuntimeConfiguration(StripeMode.Test, "sk_test_refund_core"),
             new RefundHttpClientFactory(new HttpClient(handler)),
             NullLogger<BillingV2StripeGateway>.Instance);
+
+    // --- Couverture ajoutee : branches de refus jamais exercees ------------
+    //
+    // Chaque test ci-dessous porte sur un `ReasonCode` que les politiques
+    // peuvent produire et qu'aucune assertion ne verifiait. Sans elles, une
+    // regression qui transforme un refus en autorisation passe silencieusement.
+
+    /// <summary>Objet inexistant : aucun BillingEvent derriere la demande.</summary>
+    private static void VerifyMissingBillingEventIsRefused()
+    {
+        var decision = BillingV2RefundPolicy.EvaluateFullRequest(null);
+        Ensure(
+            !decision.IsValid
+            && decision.ReasonCode == "BILLING_V2_REFUND_BILLING_EVENT_NOT_FOUND"
+            && decision.AmountCents == 0
+            && decision.Currency is null,
+            "Une demande sans BillingEvent doit etre refusee sans montant ni devise.");
+    }
+
+    /// <summary>
+    /// Donnees invalides : un montant nul, negatif ou une devise vide ne
+    /// doivent jamais produire un ordre de remboursement.
+    /// </summary>
+    private static void VerifyInvalidSourceAmountIsRefused()
+    {
+        foreach (var broken in new[]
+        {
+            Source() with { TotalAmountCents = 0 },
+            Source() with { TotalAmountCents = -1 },
+            Source() with { Currency = "" },
+            Source() with { Currency = "   " },
+        })
+        {
+            var decision = BillingV2RefundPolicy.EvaluateFullRequest(broken);
+            Ensure(
+                !decision.IsValid
+                && decision.ReasonCode == "BILLING_V2_REFUND_SOURCE_AMOUNT_INVALID",
+                "Un montant ou une devise invalide doit bloquer la demande, "
+                + $"or {broken.TotalAmountCents} / « {broken.Currency} » a produit "
+                + decision.ReasonCode + ".");
+        }
+    }
+
+    /// <summary>
+    /// Le remboursement vise un paiement provider precis. Chacune des quatre
+    /// coordonnees manquantes doit fermer la demande, y compris un provider
+    /// autre que Stripe : rien d'autre n'est executable aujourd'hui.
+    /// </summary>
+    private static void VerifyUnresolvedProviderPaymentIsRefused()
+    {
+        foreach (var broken in new[]
+        {
+            Source() with { PaymentAttemptId = null },
+            Source() with { PaymentAttemptId = "  " },
+            Source() with { Provider = "paypal" },
+            Source() with { Provider = null },
+            Source() with { Environment = null },
+            Source() with { ProviderPaymentId = null },
+        })
+        {
+            var decision = BillingV2RefundPolicy.EvaluateFullRequest(broken);
+            Ensure(
+                !decision.IsValid
+                && decision.ReasonCode
+                    == "BILLING_V2_REFUND_PROVIDER_PAYMENT_UNRESOLVED",
+                "Une coordonnee provider manquante doit fermer la demande, "
+                + $"or le provider « {broken.Provider} » a produit "
+                + decision.ReasonCode + ".");
+        }
+    }
+
+    /// <summary>
+    /// Un abonnement recurrent sans ancre provider est deja refuse a la
+    /// compensation ; il doit l'etre des la demande, avant tout appel sortant.
+    /// </summary>
+    private static void VerifyRecurringWithoutProviderAnchorIsRefusedAtRequest()
+    {
+        var decision = BillingV2RefundPolicy.EvaluateFullRequest(
+            Source() with { ProviderSubscriptionId = null });
+        Ensure(
+            !decision.IsValid
+            && decision.ReasonCode
+                == "BILLING_V2_REFUND_RECURRING_SUBSCRIPTION_UNRESOLVED",
+            "Un abonnement recurrent sans ancre provider doit etre refuse avant dispatch.");
+    }
+
+    /// <summary>
+    /// Double remboursement. Une source deja passee a `refunded` ne doit pas
+    /// pouvoir etre confirmee une seconde fois : c'est la relecture qui
+    /// protege, pas la memoire d'un webhook.
+    /// </summary>
+    private static void VerifySecondRefundOnRefundedSourceIsRefused()
+    {
+        var replay = BillingV2RefundConfirmationPolicy.Evaluate(
+            Source() with { SettlementStatus = BillingV2SettlementStatuses.Refunded },
+            Observation());
+        Ensure(
+            !replay.IsConfirmed && !replay.IsFailed
+            && replay.ReasonCode == "BILLING_V2_REFUND_SOURCE_NO_LONGER_SETTLED",
+            "Une source deja remboursee ne doit pas etre confirmee une seconde fois.");
+
+        // Meme demande, meme cle : un second POST converge sur le refund
+        // existant plutot que d'en creer un deuxieme chez le provider.
+        var replayDecision = BillingV2RefundPolicy.EvaluateFullRequest(
+            Source() with { SettlementStatus = BillingV2SettlementStatuses.Refunded });
+        Ensure(
+            !replayDecision.IsValid
+            && replayDecision.ReasonCode == "BILLING_V2_REFUND_PAYMENT_NOT_SETTLED",
+            "Une seconde demande sur une charge remboursee doit etre refusee.");
+    }
+
+    /// <summary>
+    /// Sans refund identifie chez le provider, rien n'est confirme : ni un
+    /// POST reussi, ni un webhook sans identifiant.
+    /// </summary>
+    private static void VerifyUnobservedProviderRefundIsRefused()
+    {
+        foreach (var observation in new BillingV2RefundProviderObservation?[]
+        {
+            null,
+            new(null, "succeeded", 2_290, "EUR", "pi_123"),
+            new("   ", "succeeded", 2_290, "EUR", "pi_123"),
+        })
+        {
+            var decision = BillingV2RefundConfirmationPolicy.Evaluate(
+                Source(), observation);
+            Ensure(
+                !decision.IsConfirmed && !decision.IsFailed
+                && decision.ReasonCode == "BILLING_V2_REFUND_PROVIDER_NOT_OBSERVED",
+                "Sans identifiant de refund provider, aucune confirmation.");
+        }
+    }
+
+    /// <summary>
+    /// Preuve provider strictement liee au paiement d'origine : un refund
+    /// reussi qui porte sur un AUTRE paiement ne doit jamais solder celui-ci.
+    /// </summary>
+    private static void VerifyRefundOnAnotherPaymentIsRefused()
+    {
+        var decision = BillingV2RefundConfirmationPolicy.Evaluate(
+            Source(),
+            new BillingV2RefundProviderObservation(
+                "re_999", "succeeded", 2_290, "EUR", "pi_someone_else"));
+        Ensure(
+            !decision.IsConfirmed && !decision.IsFailed
+            && decision.ReasonCode == "BILLING_V2_REFUND_PROVIDER_PAYMENT_MISMATCH",
+            "Un refund observe sur un autre paiement ne doit pas confirmer celui-ci.");
+    }
+
+    /// <summary>`canceled` est un echec, au meme titre que `failed`.</summary>
+    private static void VerifyCanceledProviderRefundIsAFailure()
+    {
+        var decision = BillingV2RefundConfirmationPolicy.Evaluate(
+            Source(), Observation(status: "canceled"));
+        Ensure(
+            !decision.IsConfirmed && decision.IsFailed
+            && decision.ReasonCode == "BILLING_V2_REFUND_PROVIDER_FAILED",
+            "Un refund provider annule doit etre traite comme un echec, pas comme un pending.");
+
+        // La casse vient du provider : elle ne doit pas changer la decision.
+        var upperCase = BillingV2RefundConfirmationPolicy.Evaluate(
+            Source(), Observation(status: "SUCCEEDED"));
+        Ensure(
+            upperCase.IsConfirmed,
+            "Le statut provider doit etre compare sans tenir compte de la casse.");
+    }
+
+    /// <summary>Compensation impossible sans abonnement resolu.</summary>
+    private static void VerifyMissingSubscriptionBlocksCompensation()
+    {
+        foreach (var broken in new[]
+        {
+            Source() with { SubscriptionId = "" },
+            Source() with { SubscriptionId = "   " },
+        })
+        {
+            var decision =
+                BillingV2RefundSubscriptionCompensationPolicy.Evaluate(broken);
+            Ensure(
+                !decision.IsValid
+                && !decision.BlockLocalRenewal
+                && !decision.QueueProviderCancellation
+                && decision.ReasonCode == "BILLING_V2_REFUND_SUBSCRIPTION_UNRESOLVED",
+                "Sans abonnement resolu, aucune compensation ne doit etre decidee.");
+        }
+    }
+
+    /// <summary>
+    /// Les deux dernieres barrieres du portillon d'execution, jamais
+    /// exercees : persistance et joignabilite Stripe.
+    /// </summary>
+    private static void VerifyExecutionRequiresSqlAndStripeGateway()
+    {
+        var enabled = new BillingV2RuntimeConfiguration(
+            false, false, false, ProviderOutboxEnabled: true, true, false,
+            RefundsEnabled: true);
+
+        var withoutSql = BillingV2RefundExecutionGate.Evaluate(
+            enabled, persistentSqlAvailable: false, stripeGatewayAvailable: true);
+        Ensure(
+            !withoutSql.IsValid
+            && withoutSql.ReasonCode == "BILLING_V2_REFUND_NO_PERSISTENT_SQL",
+            "Sans persistance reelle, aucun refund ne doit etre execute.");
+
+        var withoutStripe = BillingV2RefundExecutionGate.Evaluate(
+            enabled, persistentSqlAvailable: true, stripeGatewayAvailable: false);
+        Ensure(
+            !withoutStripe.IsValid
+            && withoutStripe.ReasonCode
+                == "BILLING_V2_REFUND_STRIPE_GATEWAY_UNAVAILABLE",
+            "Sans passerelle Stripe joignable, aucun refund ne doit etre execute.");
+
+        var ready = BillingV2RefundExecutionGate.Evaluate(
+            enabled, persistentSqlAvailable: true, stripeGatewayAvailable: true);
+        Ensure(
+            ready.IsValid && ready.ReasonCode == "BILLING_V2_REFUND_READY",
+            "Toutes conditions reunies, le portillon doit autoriser l'execution.");
+    }
+
+    /// <summary>
+    /// La charge utile d'outbox fait l'aller-retour sans perte, et une charge
+    /// illisible echoue explicitement plutot que de produire un ordre vide.
+    /// </summary>
+    private static void VerifyOutboxPayloadRoundTripAndRejection()
+    {
+        var payload = new BillingV2RefundOutboxPayload(
+            "refund-1", "event-123", "stripe", "test", "pi_123");
+        var parsed = BillingV2RefundOutbox.Parse(
+            BillingV2RefundOutbox.Serialize(payload));
+        Ensure(
+            parsed == payload,
+            "La charge utile d'outbox doit survivre a l'aller-retour JSON.");
+
+        var rejected = false;
+        try
+        {
+            BillingV2RefundOutbox.Parse("null");
+        }
+        catch (InvalidOperationException exception)
+        {
+            rejected = exception.Message.Contains(
+                "BILLING_V2_REFUND_OUTBOX_PAYLOAD_INVALID",
+                StringComparison.Ordinal);
+        }
+
+        Ensure(
+            rejected,
+            "Une charge utile d'outbox illisible doit echouer explicitement.");
+    }
+
+    /// <summary>
+    /// Le remboursement partiel n'existe pas en V2.1 : la politique n'expose
+    /// qu'une demande integrale, et la cle d'idempotence porte `full` dans son
+    /// texte canonique.
+    /// </summary>
+    /// <remarks>
+    /// Ce test protege une non-fonctionnalite. Le jour ou un remboursement
+    /// partiel sera introduit, la cle devra distinguer le montant : sans cela
+    /// un partiel et un integral sur le meme BillingEvent partageraient la
+    /// meme cle d'idempotence Stripe, et le second serait silencieusement
+    /// resolu par le premier — donc un client non rembourse de la difference.
+    /// </remarks>
+    private static void VerifyPartialRefundIsNotSilentlyIntroduced()
+    {
+        var entryPoints = typeof(BillingV2RefundPolicy)
+            .GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .Select(method => method.Name)
+            .ToArray();
+        Ensure(
+            entryPoints.Length == 1 && entryPoints[0] == "EvaluateFullRequest",
+            "La politique de remboursement ne doit exposer qu'une demande "
+            + $"integrale (trouve : {string.Join(", ", entryPoints)}).");
+
+        Ensure(
+            BillingV2RefundOutbox.CanonicalIdempotencyKey("event-123")
+                == "billing-v2-refund|full|event-123",
+            "La cle d'idempotence doit porter la portee du remboursement : "
+            + "un partiel introduit plus tard ne doit pas la partager.");
+    }
 
     private static BillingV2RefundSourceSnapshot Source()
         => new(
