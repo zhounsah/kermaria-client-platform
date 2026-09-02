@@ -41,7 +41,7 @@ const exposureLabels = {
 };
 
 export async function generateMetadata(): Promise<Metadata> {
-  return { title: "Mon VPS | Zachary IT" };
+  return { title: "Mon VPS" };
 }
 
 export default async function ClientVpsPage({ params }: Props) {

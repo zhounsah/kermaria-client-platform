@@ -5,7 +5,7 @@ import { requireClientSession } from "@/lib/auth";
 import { getBillingV2VpsTechnicalRequestStatus } from "@/lib/internal-api";
 
 export const metadata: Metadata = {
-  title: "Commande VPS enregistrée | Zachary IT",
+  title: "Commande VPS enregistrée",
   robots: { index: false, follow: false },
 };
 
