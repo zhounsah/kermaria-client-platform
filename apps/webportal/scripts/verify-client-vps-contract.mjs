@@ -25,6 +25,31 @@ assert.doesNotMatch(service, /request_row\.instance_reference/);
 assert.doesNotMatch(service, /request_row\.operational_notes/);
 assert.doesNotMatch(service, /provider_[a-z_]*id/i);
 
+const clientServiceCatalog = await read("../../apps/api-internal/Services/ClientServiceCatalogService.cs");
+const buildServiceSummaryStart = clientServiceCatalog.indexOf(
+  "private static ServiceSummary BuildServiceSummary",
+);
+const buildServiceSummaryEnd = clientServiceCatalog.indexOf(
+  "private static string ResolvePortalStatus",
+  buildServiceSummaryStart,
+);
+assert.notEqual(buildServiceSummaryStart, -1);
+assert.notEqual(buildServiceSummaryEnd, -1);
+const buildServiceSummary = clientServiceCatalog.slice(
+  buildServiceSummaryStart,
+  buildServiceSummaryEnd,
+);
+assert.match(
+  clientServiceCatalog,
+  /private const string ClientSubscriptionScope = "Inclus dans votre souscription";/,
+);
+assert.match(
+  buildServiceSummary,
+  /startedAt,\s*ClientSubscriptionScope,\s*ClientSubscriptionScope,/,
+);
+assert.doesNotMatch(clientServiceCatalog, /Couvert via/);
+assert.doesNotMatch(buildServiceSummary, /SourceLabel|sourceLabels/);
+
 const servicesPage = await read("app/services/page.tsx");
 assert.match(servicesPage, /getClientVps\(\)/);
 assert.match(servicesPage, /Voir mon VPS/);
@@ -34,6 +59,7 @@ assert.doesNotMatch(servicesPage, /mapping technique caché/i);
 const serviceCard = await read("components/ServiceCard.tsx");
 assert.doesNotMatch(serviceCard, /commercialTerms/);
 assert.doesNotMatch(serviceCard, /Billing V2|Subscription Billing V2|Souscription Billing V2|Couvert via/i);
+assert.match(serviceCard, /<span>\{service\.scope\}<\/span>/);
 
 const detailPage = await read("app/services/vps/[id]/page.tsx");
 assert.match(detailPage, /getClientVpsDetail\(id\)/);

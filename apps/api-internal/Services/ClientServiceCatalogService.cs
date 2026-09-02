@@ -41,6 +41,8 @@ public interface IClientServiceCatalogService
 /// </remarks>
 public sealed class ClientServiceCatalogService : IClientServiceCatalogService
 {
+    private const string ClientSubscriptionScope = "Inclus dans votre souscription";
+
     private readonly SqlRuntimeConfiguration _sql;
     private readonly IServiceTopologyService _topologyService;
     private readonly IBillingV2ClientServiceEntitlementProjection _entitlements;
@@ -172,13 +174,6 @@ public sealed class ClientServiceCatalogService : IClientServiceCatalogService
             .Where(value => !string.IsNullOrWhiteSpace(value))
             .OrderBy(value => value, StringComparer.Ordinal)
             .FirstOrDefault();
-        var sourceLabels = sources
-            .Select(source => source.SourceLabel)
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-
         return new ServiceSummary(
             serviceCode,
             serviceCode,
@@ -187,10 +182,8 @@ public sealed class ClientServiceCatalogService : IClientServiceCatalogService
             status,
             definition?.Description ?? $"Service du catalogue : {label}.",
             startedAt,
-            sourceLabels.Length == 0
-                ? "Aucun rattachement commercial détaillé."
-                : $"Couvert via : {string.Join(", ", sourceLabels)}",
-            "Inclus dans vos souscriptions",
+            ClientSubscriptionScope,
+            ClientSubscriptionScope,
             status == "pending"
                 ? sources.Select(source => source.NextStep)
                     .FirstOrDefault(message => !string.IsNullOrWhiteSpace(message))
