@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
@@ -10,10 +11,11 @@ import { SectionHeading } from "@/components/SectionHeading";
 import { ServiceCard } from "@/components/ServiceCard";
 import { StatusBadge } from "@/components/StatusBadge";
 import { PublicServicesLandingPage } from "@/components/PublicServicesLandingPage";
-import { requireClientSession } from "@/lib/auth";
+import { getCurrentPortalSession, requireClientSession } from "@/lib/auth";
 import { buildPublicMetadata } from "@/lib/public-metadata";
 import { getPortalArea } from "@/lib/public-route-config";
 import { getPortalRequestOriginFromHeaders } from "@/lib/public-routes";
+import { resolveServicesPortalMode } from "@/lib/services-portal-mode";
 import {
   getPendingBillingV2Selection,
   getClientVps,
@@ -45,8 +47,15 @@ export default async function ServicesPage() {
   const portalArea = getPortalArea(
     getPortalRequestOriginFromHeaders(requestHeaders),
   );
+  const localSession = portalArea === "local"
+    ? await getCurrentPortalSession()
+    : null;
+  const portalMode = resolveServicesPortalMode(
+    portalArea,
+    localSession?.user.role,
+  );
 
-  if (portalArea === "public" || portalArea === "local") {
+  if (portalMode === "public") {
     const contentResult = await getPublicManagedContent("storefront:services");
     const content = contentResult.data
       ? parseStorefrontServicesLandingContent(contentResult.data.bodyMarkdown, true)
@@ -63,6 +72,10 @@ export default async function ServicesPage() {
         title="Services indisponibles"
       />
     );
+  }
+
+  if (portalMode === "admin") {
+    redirect("/admin");
   }
 
   await requireClientSession();

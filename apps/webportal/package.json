@@ -41,6 +41,7 @@
     "test:public-site-quality": "node scripts/verify-public-site-quality-contract.mjs",
     "test:public-copy": "node scripts/verify-public-copy-contract.mjs",
     "test:client-vps": "node scripts/verify-client-vps-contract.mjs",
+    "test:local-navigation": "node scripts/verify-local-navigation-contract.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

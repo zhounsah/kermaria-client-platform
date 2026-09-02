@@ -1,17 +1,16 @@
 "use client";
 
+import Link from "next/link";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Menu, X } from "lucide-react";
 
 import { BrandLogo } from "@/components/BrandLogo";
 import { SERVICE_CATEGORIES } from "@/lib/public-services";
-import { PUBLIC_SITE_URL } from "@/lib/public-route-config";
 import appPackage from "../../../package.json";
 
-const CLIENT_PORTAL_LOGIN_URL = "https://dashboard.zachary-it.fr/login";
 const APP_VERSION_LABEL = `Version v${appPackage.displayVersion ?? appPackage.version}`;
-const publicHref = (pathname: string) => `${PUBLIC_SITE_URL}${pathname}`;
+const publicHref = (pathname: string) => pathname;
 const primaryLinks = [
   { href: publicHref("/services/support-it#infogerance"), label: "Infogérance" },
   { href: publicHref("/services/cloud-hebergement"), label: "Cloud & Hébergement" },
@@ -20,7 +19,10 @@ const primaryLinks = [
   { href: publicHref("/a-propos"), label: "À propos" },
 ] as const;
 
-type PublicShellProps = { children: ReactNode; signupEnabled: boolean };
+type PublicShellProps = {
+  children: ReactNode;
+  signupEnabled: boolean;
+};
 
 function ServicesMegaMenu({ onNavigate }: { onNavigate?: () => void }) {
   const [open, setOpen] = useState(false);
@@ -90,7 +92,10 @@ function MobileServicesMenu({ onNavigate }: { onNavigate: () => void }) {
   );
 }
 
-export function PublicShell({ children, signupEnabled }: PublicShellProps) {
+export function PublicShell({
+  children,
+  signupEnabled,
+}: PublicShellProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const closeMobileMenu = () => setMenuOpen(false);
 
@@ -110,7 +115,7 @@ export function PublicShell({ children, signupEnabled }: PublicShellProps) {
               {primaryLinks.map((link) => <a href={link.href} key={link.href} onClick={closeMobileMenu}>{link.label}</a>)}
             </div>
             <div className="public-header-actions">
-              <a className="public-header-login" href={CLIENT_PORTAL_LOGIN_URL} onClick={closeMobileMenu}>Espace client</a>
+              <Link className="public-header-login" href="/login" onClick={closeMobileMenu}>Espace client</Link>
               <a className="public-header-primary" href={publicHref("/contact")} onClick={closeMobileMenu}>Demander un audit</a>
             </div>
           </nav>
@@ -124,7 +129,7 @@ export function PublicShell({ children, signupEnabled }: PublicShellProps) {
             <p>Zachary HOUNSA-HOUNKPA EI</p><p>Services informatiques, formules et espace client.</p><p>{APP_VERSION_LABEL}</p>
           </div>
           <nav className="public-footer-nav" aria-label="Liens légaux et navigation">
-            <a href={publicHref("/services")}>Services</a><a href={publicHref("/services/support-it")}>Infogérance</a><a href={publicHref("/tarifs")}>Tarifs</a><a href={publicHref("/formules")}>Formules</a><a href={publicHref("/a-propos")}>À propos</a><a href={publicHref("/infrastructure")}>Infrastructure</a><a href={publicHref("/ressources")}>Ressources</a><a href={publicHref("/wiki")}>Wiki</a><a href={publicHref("/diagnostic")}>Diagnostic</a><a href={publicHref("/contact")}>Contact</a><a href={publicHref("/mentions-legales")}>Mentions légales</a><a href={publicHref("/politique-confidentialite")}>Politique de confidentialité</a><a href={publicHref("/cgv")}>CGV</a><a href={CLIENT_PORTAL_LOGIN_URL}>Espace client</a>
+            <a href={publicHref("/services")}>Services</a><a href={publicHref("/services/support-it")}>Infogérance</a><a href={publicHref("/tarifs")}>Tarifs</a><a href={publicHref("/formules")}>Formules</a><a href={publicHref("/a-propos")}>À propos</a><a href={publicHref("/infrastructure")}>Infrastructure</a><a href={publicHref("/ressources")}>Ressources</a><a href={publicHref("/wiki")}>Wiki</a><a href={publicHref("/diagnostic")}>Diagnostic</a><a href={publicHref("/contact")}>Contact</a><a href={publicHref("/mentions-legales")}>Mentions légales</a><a href={publicHref("/politique-confidentialite")}>Politique de confidentialité</a><a href={publicHref("/cgv")}>CGV</a><Link href="/login">Espace client</Link>
             {signupEnabled ? <a href={publicHref("/signup")}>Inscription</a> : null}
           </nav>
         </div>

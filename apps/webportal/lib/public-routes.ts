@@ -135,17 +135,19 @@ export function getPortalPublicUrlFromHeaders(headers: HeaderLookup): string {
 
 export function getPortalPublicUrl(request?: PortalRequestLike): string {
   const requestOrigin = request ? getRequestOrigin(request) : null;
-  if (requestOrigin && !isLocalAbsoluteUrl(requestOrigin)) {
+  // PUBLIC_PORTAL_URL reste une configuration de production. Une origine
+  // loopback réellement reçue doit toujours gagner, port inclus.
+  if (requestOrigin && isLocalAbsoluteUrl(requestOrigin)) {
+    return requestOrigin;
+  }
+
+  if (requestOrigin) {
     return requestOrigin;
   }
 
   const fromEnv = normalizeAbsoluteUrl(process.env.PUBLIC_PORTAL_URL?.trim() ?? "");
   if (fromEnv) {
     return fromEnv;
-  }
-
-  if (requestOrigin) {
-    return requestOrigin;
   }
 
   return "http://localhost:3000";

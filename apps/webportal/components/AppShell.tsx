@@ -24,6 +24,8 @@ import {
 import appPackage from "../../../package.json";
 
 const APP_VERSION_LABEL = `Version v${appPackage.displayVersion ?? appPackage.version}`;
+const CLIENT_VPS_DETAIL_PATH =
+  /^\/services\/vps\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type AppShellProps = {
   children: ReactNode;
@@ -42,7 +44,17 @@ export function AppShell({
   // `/services` est volontairement servi comme vitrine sur le domaine public
   // et comme espace « Mes services » sur le portail client. Le choix du shell
   // doit donc tenir compte de l'hôte, pas uniquement du chemin.
-  const isClientServicesRoute = pathname === "/services" && portalArea === "client";
+  const isClientVpsDetailRoute = CLIENT_VPS_DETAIL_PATH.test(pathname);
+  const isClientServicesPath = pathname === "/services" || isClientVpsDetailRoute;
+  const isLocalClientServicesRoute = isClientServicesPath && portalArea === "local";
+  const isClientServicesRoute = isClientServicesPath
+    && (
+      portalArea === "client"
+      || (
+        isLocalClientServicesRoute
+        && session?.user.role === "client_user"
+      )
+    );
   const usePublicShell = isPublicRoute(pathname) && !isClientServicesRoute;
   const isWikiRoute = pathname === "/wiki" || pathname.startsWith("/wiki/");
   const isCheckoutContinuation = isClientCheckoutContinuationPath(pathname);
@@ -69,7 +81,12 @@ export function AppShell({
         : "Accès sécurisé";
 
   useEffect(() => {
-    if (usePublicShell && !isWikiRoute && !isCheckoutContinuation) {
+    if (
+      usePublicShell
+      && !isWikiRoute
+      && !isCheckoutContinuation
+      && !isLocalClientServicesRoute
+    ) {
       return;
     }
 
@@ -101,7 +118,12 @@ export function AppShell({
     return () => {
       ignore = true;
     };
-  }, [isCheckoutContinuation, isWikiRoute, usePublicShell]);
+  }, [
+    isCheckoutContinuation,
+    isLocalClientServicesRoute,
+    isWikiRoute,
+    usePublicShell,
+  ]);
 
   if (
     usePublicShell
