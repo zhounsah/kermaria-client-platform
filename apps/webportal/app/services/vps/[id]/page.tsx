@@ -74,10 +74,10 @@ export default async function ClientVpsPage({ params }: Props) {
   ].filter((item): item is [string, string] => item !== null);
 
   return (
-    <>
+    <div className="client-vps-detail-page">
       <PageHeader
         action={
-          <div className="button-row">
+          <div className="button-row client-vps-detail-actions">
             <Link className="button button-secondary" href="/services">
               Mes services
             </Link>
@@ -91,7 +91,7 @@ export default async function ClientVpsPage({ params }: Props) {
         title={vps.hostname}
       />
 
-      <section className="detail-card" aria-labelledby="vps-status-title">
+      <section className="detail-card client-vps-detail-card client-vps-status-card" aria-labelledby="vps-status-title">
         <div className="detail-card-heading">
           <div>
             <p className="card-kicker">Statut</p>
@@ -105,14 +105,14 @@ export default async function ClientVpsPage({ params }: Props) {
         </p>
       </section>
 
-      <section className="detail-card" aria-labelledby="vps-configuration-title">
+      <section className="detail-card client-vps-detail-card" aria-labelledby="vps-configuration-title">
         <div className="detail-card-heading">
           <div>
             <p className="card-kicker">Configuration</p>
             <h2 id="vps-configuration-title">Votre offre et votre configuration</h2>
           </div>
         </div>
-        <dl className="detail-grid">
+        <dl className="detail-grid client-vps-detail-grid client-vps-configuration-grid">
           <div><dt>Offre</dt><dd>{vps.serviceName}</dd></div>
           <div><dt>Palier</dt><dd>{vps.tierLabel}</dd></div>
           <div><dt>Hostname</dt><dd>{vps.hostname}</dd></div>
@@ -126,20 +126,20 @@ export default async function ClientVpsPage({ params }: Props) {
         </dl>
       </section>
 
-      <section className="detail-card" aria-labelledby="vps-access-title">
+      <section className="detail-card client-vps-detail-card" aria-labelledby="vps-access-title">
         <div className="detail-card-heading">
           <div>
             <p className="card-kicker">Références et accès</p>
             <h2 id="vps-access-title">Informations de mise en service</h2>
           </div>
         </div>
-        <dl className="detail-grid">
+        <dl className="detail-grid client-vps-detail-grid client-vps-access-grid">
           <div><dt>Référence VPS</dt><dd>{vps.id}</dd></div>
           <div><dt>Adresse IP publique</dt><dd>{vps.publicIpAddress ?? "En cours d’attribution"}</dd></div>
           <div><dt>Mise en service commencée le</dt><dd>{vps.provisioningStartedAt ? formatDateTime(vps.provisioningStartedAt) : "—"}</dd></div>
           <div><dt>Activé le</dt><dd>{vps.activatedAt ? formatDateTime(vps.activatedAt) : "—"}</dd></div>
         </dl>
       </section>
-    </>
+    </div>
   );
 }

@@ -11150,3 +11150,155 @@ fieldset.form-field > .form-hint {
     flex-direction: column;
   }
 }
+
+/* Fiche VPS client : presentation operationnelle dense, isolee des details
+   generiques afin de ne pas modifier les autres espaces du portail. */
+.client-vps-detail-page {
+  display: grid;
+  width: min(100%, 1120px);
+  margin-inline: auto;
+  gap: 18px;
+}
+
+.client-vps-detail-page .page-header {
+  margin-bottom: 6px;
+}
+
+.client-vps-detail-card {
+  display: grid;
+  gap: 18px;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--white);
+}
+
+.client-vps-detail-card .detail-card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.client-vps-detail-card .card-kicker {
+  margin: 0 0 5px;
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-weight: var(--font-bold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.client-vps-detail-card h2 {
+  margin: 0;
+  font-size: clamp(1.1rem, 1.5vw, 1.3rem);
+  letter-spacing: -0.01em;
+}
+
+.client-vps-status-card {
+  border-color: var(--state-info-border);
+  background: var(--state-info-bg);
+}
+
+.client-vps-status-card > p {
+  max-width: 68ch;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.client-vps-status-card .status-badge {
+  flex: 0 0 auto;
+  text-align: center;
+}
+
+.client-vps-detail-grid {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+
+.client-vps-detail-grid > div {
+  min-width: 0;
+  padding: 13px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.client-vps-detail-grid dt {
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  letter-spacing: 0.055em;
+}
+
+.client-vps-detail-grid dd {
+  color: var(--text);
+  font-size: var(--text-md);
+  font-weight: var(--font-semibold);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.client-vps-detail-actions {
+  justify-content: flex-end;
+}
+
+@media (min-width: 700px) {
+  .client-vps-detail-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .client-vps-configuration-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1280px) {
+  .client-vps-configuration-grid,
+  .client-vps-access-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .client-vps-detail-page {
+    gap: 14px;
+  }
+
+  .client-vps-detail-page .page-header {
+    margin-bottom: 4px;
+  }
+
+  .client-vps-detail-actions {
+    width: 100%;
+  }
+
+  .client-vps-detail-actions .button {
+    flex: 1 1 180px;
+    text-align: center;
+  }
+}
+
+@media (max-width: 560px) {
+  .client-vps-detail-card {
+    gap: 16px;
+    padding: 18px;
+    border-radius: 14px;
+  }
+
+  .client-vps-detail-card .detail-card-heading {
+    flex-direction: column;
+  }
+
+  .client-vps-detail-card .status-badge {
+    align-self: flex-start;
+  }
+
+  .client-vps-detail-actions .button {
+    flex-basis: 100%;
+  }
+}
