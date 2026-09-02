@@ -7,7 +7,7 @@ import {
   diagnosticContextForServiceSlug,
 } from "@/lib/diagnostic-context";
 import { PUBLIC_SITE_URL } from "@/lib/public-route-config";
-import { breadcrumbJsonLd, JsonLd } from "@/lib/seo";
+import { breadcrumbJsonLd, faqPageJsonLd, JsonLd } from "@/lib/seo";
 import {
   resolveStorefrontPublicCta,
   resolveStorefrontPublicRelatedLinks,
@@ -119,6 +119,13 @@ export function PublicPriorityServicePage({
   return (
     <>
       <JsonLd data={breadcrumbJsonLd(PUBLIC_SITE_URL, [...breadcrumbItems])} />
+      <JsonLd
+        data={faqPageJsonLd(
+          PUBLIC_SITE_URL,
+          breadcrumbItems[breadcrumbItems.length - 1]?.path ?? "/",
+          content.faq,
+        )}
+      />
       <div className="services-page storefront-page storefront-priority-page">
         <ServiceBreadcrumb items={breadcrumbItems} />
         <section className="service-hero storefront-priority-hero">

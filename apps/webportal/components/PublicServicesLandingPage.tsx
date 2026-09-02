@@ -10,7 +10,7 @@ import {
   type ServiceCategory,
 } from "@/lib/public-services";
 import { PUBLIC_SITE_URL } from "@/lib/public-route-config";
-import { breadcrumbJsonLd, JsonLd } from "@/lib/seo";
+import { breadcrumbJsonLd, faqPageJsonLd, JsonLd } from "@/lib/seo";
 import {
   resolveStorefrontPublicCta,
   type StorefrontBreadcrumbItem,
@@ -39,6 +39,13 @@ export function PublicServicesLandingPage({
   return (
     <>
       <JsonLd data={breadcrumbJsonLd(PUBLIC_SITE_URL, [...breadcrumbItems])} />
+      <JsonLd
+        data={faqPageJsonLd(
+          PUBLIC_SITE_URL,
+          breadcrumbItems[breadcrumbItems.length - 1]?.path ?? "/",
+          content.faq,
+        )}
+      />
       <div className="services-page storefront-page services-landing-page">
         <ServiceBreadcrumb items={breadcrumbItems} />
 

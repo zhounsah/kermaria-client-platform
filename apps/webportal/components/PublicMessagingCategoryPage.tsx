@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ServiceBreadcrumb } from "@/components/PublicServiceComponents";
 import { PUBLIC_SITE_URL } from "@/lib/public-route-config";
-import { breadcrumbJsonLd, JsonLd } from "@/lib/seo";
+import { breadcrumbJsonLd, faqPageJsonLd, JsonLd } from "@/lib/seo";
 import {
   resolveStorefrontPublicCta,
   type StorefrontBreadcrumbItem,
@@ -46,6 +46,13 @@ export function PublicMessagingCategoryPage({
   return (
     <>
       <JsonLd data={breadcrumbJsonLd(PUBLIC_SITE_URL, [...breadcrumbItems])} />
+      <JsonLd
+        data={faqPageJsonLd(
+          PUBLIC_SITE_URL,
+          breadcrumbItems[breadcrumbItems.length - 1]?.path ?? "/",
+          content.faq,
+        )}
+      />
       <div className="services-page storefront-page messaging-category-page">
         <ServiceBreadcrumb items={breadcrumbItems} />
         <section className="service-hero messaging-category-hero">

@@ -195,6 +195,58 @@ export function breadcrumbJsonLd(
 }
 
 /**
+ * Balisage `FAQPage` des questions frequentes deja affichees sur la page.
+ *
+ * Condition d'emission, non negociable : ne baliser QUE des questions et des
+ * reponses reellement rendues dans le HTML. Les pages vitrine les rendent dans
+ * des `<details>`, dont le contenu est present dans le document et depliable
+ * par le visiteur — ce que Google demande. Une FAQ balisee mais absente de la
+ * page est un motif d'action manuelle.
+ *
+ * Google ne produit plus de resultat enrichi FAQ pour un site commercial
+ * depuis 2023. Le balisage reste utile pour ce qu'il decrit : il donne aux
+ * moteurs de reponse et aux systemes d'IA le couple question/reponse
+ * explicite, la ou le texte libre les oblige a le deviner.
+ *
+ * Retourne `null` quand il n'y a rien a baliser : un `FAQPage` sans
+ * `mainEntity` est un balisage invalide.
+ */
+export function faqPageJsonLd(
+  baseUrl: string,
+  path: string,
+  faq: readonly { question: string; answer: string }[],
+) {
+  const base = normalizeBaseUrl(baseUrl);
+  const entries = faq
+    .map((item) => ({
+      question: item.question.trim(),
+      answer: item.answer.trim(),
+    }))
+    // Le contenu est administrable : une entree incomplete saisie en
+    // administration ne doit pas produire un noeud vide.
+    .filter((item) => item.question.length > 0 && item.answer.length > 0);
+
+  if (entries.length === 0) {
+    return null;
+  }
+
+  return {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "@id": `${base}${path}#faq`,
+    inLanguage: "fr-FR",
+    mainEntity: entries.map((item) => ({
+      "@type": "Question",
+      name: item.question,
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: item.answer,
+      },
+    })),
+  };
+}
+
+/**
  * Rend un bloc JSON-LD.
  *
  * `JSON.stringify` n'echappe PAS `<`. Une donnee contenant la sequence
@@ -204,6 +256,13 @@ export function breadcrumbJsonLd(
  * restera sur.
  */
 export function JsonLd({ data }: { data: unknown }) {
+  // Les constructeurs de balisage conditionnel renvoient `null` quand il n'y
+  // a rien a declarer. Emettre `<script>null</script>` serait un balisage
+  // invalide de plus sur la page.
+  if (data === null || data === undefined) {
+    return null;
+  }
+
   const json = JSON.stringify(data).replace(/</g, "\\u003c");
 
   return (

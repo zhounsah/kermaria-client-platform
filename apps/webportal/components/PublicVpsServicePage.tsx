@@ -15,7 +15,7 @@ import {
 } from "@/lib/diagnostic-context";
 import { formatCurrencyFromCents } from "@/lib/formatters";
 import { PUBLIC_SITE_URL } from "@/lib/public-route-config";
-import { breadcrumbJsonLd, JsonLd } from "@/lib/seo";
+import { breadcrumbJsonLd, faqPageJsonLd, JsonLd } from "@/lib/seo";
 import {
   resolveStorefrontPublicCta,
   resolveStorefrontPublicRelatedLinks,
@@ -74,6 +74,13 @@ export function PublicVpsServicePage({
   return (
     <>
       <JsonLd data={breadcrumbJsonLd(PUBLIC_SITE_URL, [...breadcrumbItems])} />
+      <JsonLd
+        data={faqPageJsonLd(
+          PUBLIC_SITE_URL,
+          breadcrumbItems[breadcrumbItems.length - 1]?.path ?? "/",
+          content.faq,
+        )}
+      />
       <main className="services-page storefront-page vps-storefront-page">
         <ServiceBreadcrumb items={breadcrumbItems} />
 
