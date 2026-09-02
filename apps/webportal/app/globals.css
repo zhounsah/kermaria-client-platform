@@ -1207,6 +1207,8 @@ button:disabled {
   gap: 22px;
 }
 
+.service-card-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+
 .service-card-header,
 .ticket-card-header {
   display: flex;
@@ -3200,7 +3202,11 @@ fieldset.form-field > .form-hint {
 .vps-identity-dialog-actions { display: grid; margin-top: 24px; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .vps-identity-dialog-actions .button { text-align: center; }
 @keyframes vps-identity-backdrop-enter { from { opacity: 0; } to { opacity: 1; } }
-@keyframes vps-identity-dialog-enter { from { opacity: 0; transform: translateY(12px) scale(.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes vps-identity-dialog-enter { from { opacity: 0; transform: translateY(10px) scale(.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes vps-identity-backdrop-exit { from { opacity: 1; } to { opacity: 0; } }
+@keyframes vps-identity-dialog-exit { from { opacity: 1; transform: translateY(0) scale(1); } to { opacity: 0; transform: translateY(10px) scale(.97); } }
+.vps-identity-dialog-backdrop.is-closing { animation: vps-identity-backdrop-exit 200ms ease-in both; }
+.vps-identity-dialog-backdrop.is-closing .vps-identity-dialog { animation: vps-identity-dialog-exit 200ms cubic-bezier(.2, .8, .2, 1) both; }
 .billing-price-projection-amount { margin: 0 0 20px; color: var(--primary); font-size: 1.35rem; font-weight: 800; }
 .storefront-admin-form fieldset { display: grid; gap: 16px; margin: 28px 0 0; padding: 20px; border: 1px solid var(--border); border-radius: 16px; }
 .storefront-admin-form legend { padding-inline: 6px; font-weight: 700; }
@@ -3260,7 +3266,7 @@ fieldset.form-field > .form-hint {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .vps-identity-dialog-backdrop, .vps-identity-dialog { animation: none; }
+  .vps-identity-dialog-backdrop, .vps-identity-dialog, .vps-identity-dialog-backdrop.is-closing, .vps-identity-dialog-backdrop.is-closing .vps-identity-dialog { animation: none; }
 }
 
 .process-card {

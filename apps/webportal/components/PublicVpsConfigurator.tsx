@@ -75,6 +75,8 @@ type VpsConfiguratorDraft = {
   configuration: VpsConfiguration;
 };
 
+type IdentityDialogState = "closed" | "open" | "closing";
+
 export function PublicVpsConfigurator({ selection }: Props) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [quote, setQuote] = useState<BillingV2PublicQuote | null>(null);
@@ -83,7 +85,9 @@ export function PublicVpsConfigurator({ selection }: Props) {
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [startingPayment, setStartingPayment] = useState(false);
-  const [identityRequired, setIdentityRequired] = useState(false);
+  const [identityDialogState, setIdentityDialogState] = useState<IdentityDialogState>(
+    "closed",
+  );
   const [configuration, setConfiguration] = useState<VpsConfiguration>(
     INITIAL_CONFIGURATION,
   );
@@ -92,6 +96,7 @@ export function PublicVpsConfigurator({ selection }: Props) {
   const identityDialogRef = useRef<HTMLDivElement | null>(null);
   const identityCloseButtonRef = useRef<HTMLButtonElement | null>(null);
   const identityReturnFocusRef = useRef<HTMLElement | null>(null);
+  const identityDialogStateRef = useRef<IdentityDialogState>("closed");
   const [useRestoredDraft, setUseRestoredDraft] = useState(true);
   const draftStorageKey = useMemo(
     () => getVpsDraftStorageKey(selection),
@@ -117,23 +122,53 @@ export function PublicVpsConfigurator({ selection }: Props) {
     : null;
   const effectiveConfiguration = restoredDraft?.configuration ?? configuration;
   const effectiveStep = restoredDraft && step === 1 ? 2 : step;
+  const identityDialogPresent = identityDialogState !== "closed";
+  const identityDialogClosing = identityDialogState === "closing";
 
-  const closeIdentityDialog = useCallback(() => {
-    setIdentityRequired(false);
+  const updateIdentityDialogState = useCallback((nextState: IdentityDialogState) => {
+    identityDialogStateRef.current = nextState;
+    setIdentityDialogState(nextState);
+  }, []);
+
+  const finishClosingIdentityDialog = useCallback(() => {
+    updateIdentityDialogState("closed");
     window.requestAnimationFrame(() => {
       identityReturnFocusRef.current?.focus();
     });
-  }, []);
+  }, [updateIdentityDialogState]);
+
+  const closeIdentityDialog = useCallback(() => {
+    if (identityDialogStateRef.current !== "open") {
+      return;
+    }
+
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      finishClosingIdentityDialog();
+      return;
+    }
+
+    updateIdentityDialogState("closing");
+  }, [finishClosingIdentityDialog, updateIdentityDialogState]);
 
   useEffect(() => {
-    if (!identityRequired) {
+    if (!identityDialogPresent) {
       return undefined;
     }
 
     const previousOverflow = document.body.style.overflow;
+    const previousPaddingRight = document.body.style.paddingRight;
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    const currentPaddingRight = Number.parseFloat(
+      window.getComputedStyle(document.body).paddingRight,
+    ) || 0;
     document.body.style.overflow = "hidden";
+    if (scrollbarWidth > 0) {
+      document.body.style.paddingRight = `${currentPaddingRight + scrollbarWidth}px`;
+    }
     const focusFrame = window.requestAnimationFrame(() => {
-      identityCloseButtonRef.current?.focus();
+      if (identityDialogStateRef.current === "open") {
+        identityCloseButtonRef.current?.focus();
+      }
     });
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -166,9 +201,10 @@ export function PublicVpsConfigurator({ selection }: Props) {
     return () => {
       window.cancelAnimationFrame(focusFrame);
       document.body.style.overflow = previousOverflow;
+      document.body.style.paddingRight = previousPaddingRight;
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [closeIdentityDialog, identityRequired]);
+  }, [closeIdentityDialog, identityDialogPresent]);
 
   function updateConfiguration<Key extends keyof VpsConfiguration>(
     key: Key,
@@ -213,7 +249,7 @@ export function PublicVpsConfigurator({ selection }: Props) {
     identityReturnFocusRef.current = document.activeElement instanceof HTMLElement
       ? document.activeElement
       : null;
-    setIdentityRequired(true);
+    updateIdentityDialogState("open");
   }
 
   async function continueToSummary(event: FormEvent<HTMLFormElement>) {
@@ -492,10 +528,12 @@ export function PublicVpsConfigurator({ selection }: Props) {
         </section>
       ) : null}
       </main>
-      {identityRequired ? (
+      {identityDialogPresent ? (
         <IdentityContinuationDialog
           closeButtonRef={identityCloseButtonRef}
           dialogRef={identityDialogRef}
+          isClosing={identityDialogClosing}
+          onExitAnimationEnd={finishClosingIdentityDialog}
           onDismiss={closeIdentityDialog}
           selection={selection}
         />
@@ -507,18 +545,27 @@ export function PublicVpsConfigurator({ selection }: Props) {
 function IdentityContinuationDialog({
   closeButtonRef,
   dialogRef,
+  isClosing,
+  onExitAnimationEnd,
   onDismiss,
   selection,
 }: {
   closeButtonRef: RefObject<HTMLButtonElement | null>;
   dialogRef: RefObject<HTMLDivElement | null>;
+  isClosing: boolean;
+  onExitAnimationEnd: () => void;
   onDismiss: () => void;
   selection: PublicVpsConfiguratorSelection;
 }) {
   const next = `/services/vps/choisir?serviceCode=${encodeURIComponent(selection.serviceCode)}&tierCode=${encodeURIComponent(selection.tierCode)}`;
   return (
     <div
-      className="vps-identity-dialog-backdrop"
+      className={`vps-identity-dialog-backdrop${isClosing ? " is-closing" : ""}`}
+      onAnimationEnd={(event) => {
+        if (isClosing && event.target === event.currentTarget) {
+          onExitAnimationEnd();
+        }
+      }}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {
           onDismiss();

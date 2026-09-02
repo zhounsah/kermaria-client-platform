@@ -47,12 +47,18 @@ assert.match(configurator, /aria-modal="true"/);
 assert.match(configurator, /event\.key === "Escape"/);
 assert.match(configurator, /event\.target === event\.currentTarget/);
 assert.match(configurator, /identityReturnFocusRef\.current\?\.focus\(\)/);
-assert.match(configurator, /saveDraft\(\);[\s\S]*?setIdentityRequired\(true\)/);
+assert.match(configurator, /saveDraft\(\);[\s\S]*?updateIdentityDialogState\("open"\)/);
+assert.match(configurator, /IdentityDialogState = "closed" \| "open" \| "closing"/);
+assert.match(configurator, /onAnimationEnd=\{\(event\) => \{/);
+assert.match(configurator, /window\.innerWidth - document\.documentElement\.clientWidth/);
+assert.match(configurator, /previousPaddingRight[\s\S]*?body\.style\.paddingRight = previousPaddingRight/);
 assert.doesNotMatch(configurator, /<aside className="vps-configurator-notice"/);
 
 const styles = await read("app/globals.css");
 assert.match(styles, /\.vps-identity-dialog-backdrop[\s\S]*?animation: vps-identity-backdrop-enter 200ms/);
 assert.match(styles, /\.vps-identity-dialog[\s\S]*?animation: vps-identity-dialog-enter 200ms/);
+assert.match(styles, /vps-identity-backdrop-exit 200ms/);
+assert.match(styles, /vps-identity-dialog-exit 200ms/);
 assert.match(styles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.vps-identity-dialog/);
 
 console.log("Contrat de copy publique et modale VPS vérifié.");
