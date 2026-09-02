@@ -16,6 +16,7 @@ import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
 
 import { BRAND_NAME, LEGAL_NAME } from "../lib/brand-identity.ts";
+import { STOREFRONT_SERVICE_SLUGS } from "../lib/storefront-content.ts";
 
 async function read(path) {
   return readFile(new URL(`../${path}`, import.meta.url), "utf8");
@@ -248,6 +249,46 @@ assert.match(
   businessBody,
   /\{\s*"@type":\s*"City",\s*name:\s*"Guichen"\s*\}/,
   "Guichen doit rester declaree en zone desservie.",
+);
+
+// La description de l'entreprise est la reponse lisible par machine a « que
+// fait Zachary IT ? ». Elle doit couvrir les univers reellement publies, pas
+// la seule sauvegarde.
+const businessDescription = seo.match(
+  /const BUSINESS_DESCRIPTION =\s*([\s\S]*?);/,
+)?.[1] ?? "";
+assert.ok(
+  businessDescription.length > 0,
+  "`BUSINESS_DESCRIPTION` introuvable dans lib/seo.tsx.",
+);
+for (const universe of ["sauvegarde", "hébergement", "messagerie", "réseau", "support"]) {
+  assert.ok(
+    businessDescription.toLowerCase().includes(universe),
+    `La description de l'entreprise doit citer l'univers « ${universe} » : `
+      + "sinon un moteur de reponse ne peut pas savoir qu'il fait partie de l'offre.",
+  );
+}
+
+// `knowsAbout` est une declaration de competence : chaque sujet doit
+// correspondre a une page de service reellement servie. Le nombre d'entrees
+// suit donc le nombre de slugs publies.
+assert.match(
+  businessBody,
+  /knowsAbout:\s*BUSINESS_TOPICS/,
+  "Le balisage entreprise doit declarer les sujets couverts.",
+);
+const topicsBlock = seo.match(/const BUSINESS_TOPICS = \[([\s\S]*?)\];/)?.[1] ?? "";
+const topics = [...topicsBlock.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+assert.equal(
+  topics.length,
+  STOREFRONT_SERVICE_SLUGS.length,
+  "`knowsAbout` doit couvrir exactement les pages de service publiees "
+    + `(${topics.length} sujets pour ${STOREFRONT_SERVICE_SLUGS.length} pages).`,
+);
+assert.equal(
+  new Set(topics).size,
+  topics.length,
+  "Un sujet repete dans `knowsAbout` est du remplissage, pas une competence.",
 );
 
 // 7. Aucun des deux noms n'est recopie en dur dans le balisage : une seule

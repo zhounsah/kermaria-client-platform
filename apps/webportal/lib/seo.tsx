@@ -10,9 +10,44 @@
 import { BRAND_NAME, LEGAL_NAME } from "@/lib/brand-identity";
 import { PORTFOLIO_URL } from "@/lib/public-route-config";
 
+/**
+ * Ce texte est la reponse lisible par machine a « que fait Zachary IT ? ».
+ *
+ * Il ne decrivait que la sauvegarde, alors que `/services` publie quatre
+ * univers et quinze pages de service : un moteur de reponse qui lisait ce
+ * noeud ne pouvait pas savoir que le reseau, la messagerie ou l'hebergement
+ * font partie de l'offre. La description suit donc la taxonomie reellement
+ * publiee, sans rien y ajouter.
+ */
 const BUSINESS_DESCRIPTION =
-  "Sauvegarde distante, stockage documentaire et continuité d'activité pour "
-  + "les particuliers, associations, indépendants et petites entreprises.";
+  "Services informatiques gérés pour indépendants, associations et petites "
+  + "entreprises : sauvegarde externalisée, hébergement et VPS, domaines et "
+  + "messagerie professionnelle, réseau et sécurité, support et infogérance.";
+
+/**
+ * Sujets sur lesquels l'entreprise publie une page dediee.
+ *
+ * Chaque entree correspond a une page reellement servie sous `/services/…` —
+ * ne rien ajouter ici qui n'ait pas sa page : `knowsAbout` est une
+ * declaration de competence, pas un champ de mots-cles.
+ */
+const BUSINESS_TOPICS = [
+  "Sauvegarde externalisée",
+  "Hébergement web",
+  "VPS et infogérance de serveur",
+  "Maintenance Linux",
+  "Maintenance WordPress",
+  "Supervision informatique",
+  "Supervision NAS",
+  "Messagerie professionnelle",
+  "Gestion DNS et noms de domaine",
+  "VPN d'entreprise",
+  "Bureau Windows à distance",
+  "Réseau UniFi",
+  "Firewall",
+  "Cloudflare WAF",
+  "Support informatique",
+];
 
 /**
  * `resolvePortalAreaUrl(origin, "public")` renvoie une URL terminee par `/`
@@ -89,6 +124,7 @@ export function localBusinessJsonLd(baseUrl: string) {
       { "@type": "Country", name: "France" },
     ],
     knowsLanguage: "fr-FR",
+    knowsAbout: BUSINESS_TOPICS,
     // Seule autre presence web reelle de l'entite. Ne jamais y ajouter un
     // profil qui n'existe pas : un `sameAs` mort est pire que pas de
     // `sameAs`.
