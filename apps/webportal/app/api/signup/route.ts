@@ -195,7 +195,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         code: "INVALID_BILLING_V2_SELECTION",
-        message: "La configuration Billing V2 choisie n est pas valide.",
+        // Message rendu sur l'inscription publique : il nomme ce que le
+        // visiteur a choisi, pas le systeme qui le tarife. Le code, lui,
+        // reste technique — il ne s'affiche pas.
+        message: "L'offre sélectionnée n'est pas valide.",
         correlation_id: correlationId,
       },
       { status: 400 },
