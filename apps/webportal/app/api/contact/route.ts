@@ -2,6 +2,7 @@ import "server-only";
 
 import { NextRequest, NextResponse } from "next/server";
 
+import { logBffFailure } from "@/lib/bff-observability";
 import { CORRELATION_HEADER, resolveCorrelationId } from "@/lib/correlation";
 import {
   checkRateLimit,
@@ -172,32 +173,45 @@ export async function POST(request: NextRequest) {
     const responseBody = await safeReadJson(upstream);
 
     if (!upstream.ok) {
+      // Le message amont decrit la panne a un exploitant : destinataire non
+      // configure, erreur SMTP brute. Il ne doit pas traverser jusqu'au
+      // navigateur d'un visiteur. Le detail part dans le journal serveur,
+      // correle par `correlation_id`, et le visiteur recoit une phrase
+      // stable qui lui dit quoi faire.
+      const upstreamCode =
+        typeof responseBody?.code === "string"
+          ? responseBody.code
+          : "CONTACT_DISPATCH_FAILED";
+      logBffFailure({
+        category: "contact",
+        code: upstreamCode,
+        correlation_id: correlationId,
+        operation: "POST /internal/public/contact-message",
+        status: upstream.status,
+        surface: "public",
+      });
+
       return NextResponse.json(
         {
-          code:
-            typeof responseBody?.code === "string"
-              ? responseBody.code
-              : "CONTACT_DISPATCH_FAILED",
+          code: "CONTACT_DISPATCH_FAILED",
           message:
-            typeof responseBody?.message === "string"
-              ? responseBody.message
-              : "L'envoi du message a échoué.",
+            "Votre message n'a pas pu être transmis. Réessayez dans quelques "
+            + "instants ; si le problème persiste, l'adresse e-mail de contact "
+            + "figure dans nos mentions légales.",
           correlation_id: correlationId,
         },
         { status: upstream.status >= 500 ? 502 : upstream.status },
       );
     }
 
+    // Le message amont de succes nomme la boite de reception interne
+    // (« Message transmis a … ») : elle n'a rien a faire dans une reponse
+    // servie au navigateur d'un visiteur. Le texte affiche vient de toute
+    // facon du snippet administrable `contact_form_confirmation`.
     return NextResponse.json(
       {
-        code:
-          typeof responseBody?.code === "string"
-            ? responseBody.code
-            : "EMAIL_SENT",
-        message:
-          typeof responseBody?.message === "string"
-            ? responseBody.message
-            : "Message envoyé.",
+        code: "EMAIL_SENT",
+        message: "Message envoyé.",
         correlation_id: correlationId,
       },
       { status: 200 },

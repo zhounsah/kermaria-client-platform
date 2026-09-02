@@ -160,9 +160,12 @@ public sealed class EmailDispatchService : IEmailDispatchService
                 cancellationToken);
             _logger.LogWarning(
                 "Contact form email skipped: CONTACT_FORM_RECIPIENT is not configured.");
+            // Le defaut de configuration est decrit dans le journal ci-dessus.
+            // Le visiteur du formulaire public n'a pas a apprendre l'etat de
+            // configuration du serveur.
             return new EmailDispatchResult(
                 false, "NO_RECIPIENT",
-                "L'adresse de destination du formulaire de contact n'est pas configurée.");
+                "Le message de contact n'a pas pu être remis.");
         }
 
         var (subject, body) = await _templates.RenderEmailAsync(
@@ -198,15 +201,25 @@ public sealed class EmailDispatchService : IEmailDispatchService
 
         if (!delivery.Succeeded)
         {
+            // `delivery.ErrorMessage` est la chaine renvoyee par le serveur
+            // SMTP : hote, port, echec d'authentification, adresse refusee.
+            // Cette reponse est relayee par le BFF public du formulaire de
+            // contact ; le detail reste dans le journal d'e-mails ci-dessus,
+            // correle par `correlationId`, et ne part pas sur le fil.
+            _logger.LogError(
+                "Contact form delivery failed status {Status} correlation_id {CorrelationId}: {Error}",
+                delivery.Status,
+                correlationId,
+                delivery.ErrorMessage);
             return new EmailDispatchResult(
                 false,
                 $"EMAIL_{delivery.Status.ToUpperInvariant()}",
-                delivery.ErrorMessage ?? "Email delivery failed.");
+                "Le message de contact n'a pas pu être remis.");
         }
 
-        return new EmailDispatchResult(
-            true, "EMAIL_SENT",
-            $"Message transmis à {recipient}.");
+        // Ne pas nommer la boite de reception : la reponse traverse jusqu'au
+        // navigateur du visiteur.
+        return new EmailDispatchResult(true, "EMAIL_SENT", "Message transmis.");
     }
 
     public async Task<EmailDispatchResult> SendSignupVerificationAsync(

@@ -129,6 +129,7 @@ export function resetContactRouteTestState() {
     upstreamBody: { code: "EMAIL_SENT", message: "Message sent." },
     upstreamContentType: "application/json",
     fetchCalls: [],
+    loggedFailures: [],
   };
 }
 
@@ -146,8 +147,14 @@ export function inspectContactRouteTestState() {
   return {
     calls: [...testState.calls],
     fetchCalls: [...testState.fetchCalls],
+    loggedFailures: [...testState.loggedFailures],
   };
 }
+
+const logBffFailure = (event: any) => {
+  testState.calls.push("log-bff-failure");
+  testState.loggedFailures.push(event);
+};
 
 const resolveCorrelationId = (value: string | null) => {
   testState.calls.push(["correlation", value]);
@@ -221,6 +228,10 @@ const executableContactRoute = contactRoute
   )
   .replace(
     /import \{ getBillingV2FormulesCatalog \} from "@\/lib\/internal-api";/,
+    "",
+  )
+  .replace(
+    /import \{ logBffFailure \} from "@\/lib\/bff-observability";/,
     "",
   );
 
@@ -499,18 +510,96 @@ try {
   }
 }
 
+// Le statut amont est conserve (une 5xx devient 502), mais NI le code NI le
+// message amont ne traversent : ce sont des textes d'exploitation — « adresse
+// de destination non configuree », erreur SMTP brute — et cette reponse est
+// servie au navigateur d'un visiteur de la vitrine.
 for (const [upstreamStatus, expectedStatus] of [
   [422, 422],
   [503, 502],
 ]) {
   const result = await invokeContact(validContactBody, {
     upstreamStatus,
-    upstreamBody: { code: "UPSTREAM_CODE", message: "Upstream message." },
+    upstreamBody: {
+      code: "NO_RECIPIENT",
+      message:
+        "L'adresse de destination du formulaire de contact n'est pas configurée.",
+    },
   });
   assert.equal(result.response.status, expectedStatus);
-  assert.equal(result.body.code, "UPSTREAM_CODE");
-  assert.equal(result.body.message, "Upstream message.");
+  assert.equal(
+    result.body.code,
+    "CONTACT_DISPATCH_FAILED",
+    "Le code amont ne doit pas etre relaye tel quel au visiteur.",
+  );
+  assert.doesNotMatch(
+    result.body.message,
+    /destination|configur|SMTP|relais|recipient/i,
+    "Le message rendu au visiteur ne doit pas decrire la panne serveur.",
+  );
+  assert.match(
+    result.body.message,
+    /Réessayez/,
+    "Le message doit dire au visiteur quoi faire ensuite.",
+  );
   assert.equal(result.body.correlation_id, "contact-correlation");
+
+  // Le detail n'est pas perdu : il part dans le journal serveur, correle.
+  assert.equal(result.state.loggedFailures.length, 1);
+  assert.equal(result.state.loggedFailures[0].code, "NO_RECIPIENT");
+  assert.equal(result.state.loggedFailures[0].status, upstreamStatus);
+  assert.equal(
+    result.state.loggedFailures[0].correlation_id,
+    "contact-correlation",
+  );
+  assert.equal(result.state.loggedFailures[0].surface, "public");
 }
+
+// Le succes non plus ne relaye rien : le message amont nomme la boite de
+// reception interne (« Message transmis a … »).
+const contactSuccess = await invokeContact(validContactBody, {
+  upstreamStatus: 200,
+  upstreamBody: {
+    code: "EMAIL_SENT",
+    message: "Message transmis à boite-interne@exemple.invalid.",
+  },
+});
+assert.equal(contactSuccess.response.status, 200);
+assert.equal(contactSuccess.body.code, "EMAIL_SENT");
+assert.doesNotMatch(
+  contactSuccess.body.message,
+  /@/,
+  "La reponse de succes ne doit contenir aucune adresse e-mail interne.",
+);
+assert.equal(contactSuccess.state.loggedFailures.length, 0);
+
+// Defense en profondeur cote API : le detail d'exploitation ne doit meme pas
+// etre mis sur le fil, pour qu'un futur relais ne puisse pas le rendre public.
+const emailDispatch = await read(
+  "../../apps/api-internal/Services/Email/EmailDispatchService.cs",
+);
+const contactDispatchBody = emailDispatch.slice(
+  emailDispatch.indexOf("public async Task<EmailDispatchResult> SendContactFormAsync("),
+  emailDispatch.indexOf("public async Task<EmailDispatchResult> SendSignupVerificationAsync("),
+);
+assert.ok(
+  contactDispatchBody.length > 0,
+  "`SendContactFormAsync` introuvable dans EmailDispatchService.",
+);
+assert.doesNotMatch(
+  contactDispatchBody,
+  /new EmailDispatchResult\(\s*false,[\s\S]{0,200}?delivery\.ErrorMessage/,
+  "L'erreur SMTP brute ne doit pas devenir le message renvoye au BFF public.",
+);
+assert.doesNotMatch(
+  contactDispatchBody,
+  /\$"Message transmis à \{recipient\}\."/,
+  "La reponse de succes ne doit pas nommer la boite de reception.",
+);
+assert.match(
+  contactDispatchBody,
+  /_logger\.LogError\([\s\S]{0,300}?delivery\.ErrorMessage/,
+  "L'erreur SMTP doit rester journalisee cote serveur.",
+);
 
 console.log("Vérification des formulaires BFF réussie.");
