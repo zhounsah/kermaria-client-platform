@@ -743,6 +743,7 @@ async Task VerifySignupStoresPriceFreeBillingV2SelectionAsync()
         new MockSignupRepository(signupStore, authStore),
         new TestEmailDispatchService(),
         new PortalPasswordService(),
+        NewAuthenticationService(authStore, NewApplicationSettingsService()),
         new MockActiveDirectoryService(disabledAdConfiguration, adMembershipStore),
         new MockActiveDirectoryLinkRepository(),
         new MockAdGroupProvisioner(adMembershipStore),
@@ -4287,6 +4288,9 @@ async Task RunSignupKoxoWebhookTriggerTestsAsync()
         signupRepository,
         new TestEmailDispatchService(),
         new PortalPasswordService(),
+        NewAuthenticationService(
+            CreateMockAuthenticationStore(),
+            NewApplicationSettingsService()),
         new MockActiveDirectoryService(
             adConfiguration,
             adMembershipStore),
@@ -5597,6 +5601,9 @@ static async Task VerifyDirectoryAuthorityEnforcementAsync()
         signupRepository,
         new TestEmailDispatchService(),
         new PortalPasswordService(),
+        NewAuthenticationService(
+            CreateMockAuthenticationStore(),
+            NewApplicationSettingsService()),
         recordingDirectory,
         linkRepository,
         new MockAdGroupProvisioner(membershipStore),
@@ -6291,6 +6298,9 @@ static async Task<SignupHandoffFixture> CreateSignupHandoffFixtureAsync(
         signupRepository,
         new TestEmailDispatchService(),
         new PortalPasswordService(),
+        NewAuthenticationService(
+            CreateMockAuthenticationStore(),
+            NewApplicationSettingsService()),
         directory,
         linkRepository,
         new MockAdGroupProvisioner(adMembershipStore),
@@ -6630,6 +6640,25 @@ static string Iso(DateTime value)
     => DateTime.SpecifyKind(value, DateTimeKind.Utc)
         .ToString("yyyy-MM-ddTHH:mm:ssZ", System.Globalization.CultureInfo.InvariantCulture);
 
+/// <summary>
+/// Service d'authentification reel branche sur le magasin mock partage avec
+/// l'inscription : la session ouverte apres une creation de compte en
+/// libre-service est ainsi reellement verifiee, et non simulee.
+/// </summary>
+static IAuthenticationService NewAuthenticationService(
+    MockAuthenticationStore authStore,
+    IApplicationSettingsService settings)
+    => new AuthenticationService(
+        new MockAuthenticationRepository(authStore),
+        new PortalPasswordService(),
+        new SessionTokenService(),
+        new NoopAuditService(),
+        new AuthRuntimeConfiguration(
+            TimeSpan.FromMinutes(60),
+            5,
+            TimeSpan.FromMinutes(10)),
+        settings);
+
 static SignupService NewSignupService(
     MockSignupStore signupStore,
     MockAuthenticationStore authStore,
@@ -6642,6 +6671,7 @@ static SignupService NewSignupService(
         new MockSignupRepository(signupStore, authStore),
         new TestEmailDispatchService(),
         new PortalPasswordService(),
+        NewAuthenticationService(authStore, settings),
         new MockActiveDirectoryService(adConfiguration, adMembershipStore),
         new MockActiveDirectoryLinkRepository(),
         new MockAdGroupProvisioner(adMembershipStore),
@@ -9764,6 +9794,24 @@ sealed class CapturedRequestHandler : HttpMessageHandler
         {
             Content = JsonContent.Create(new { status = "queued" })
         };
+    }
+}
+
+/// <summary>
+/// Journal d'audit en memoire. Les tests d'inscription verifient un resultat
+/// fonctionnel, pas la persistance de l'audit ; conserver les evenements
+/// permet toutefois d'affirmer qu'une tentative a bien ete tracee.
+/// </summary>
+sealed class NoopAuditService : IAuditService
+{
+    public List<AuditEvent> Events { get; } = [];
+
+    public Task RecordAsync(
+        AuditEvent auditEvent,
+        CancellationToken cancellationToken = default)
+    {
+        Events.Add(auditEvent);
+        return Task.CompletedTask;
     }
 }
 
