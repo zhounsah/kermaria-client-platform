@@ -61,7 +61,7 @@ internal static class StorefrontContentSeed
                     P("Je veux déléguer mon informatique", "Support, maintenance, supervision et coordination : confiez le quotidien IT avec un périmètre clair et adapté à votre structure.", "/services/support-it"),
                 ]),
             ["storefront:tarifs"] = PageOf(
-                "Tarifs des services IT Zachary IT | unités et devis",
+                "Tarifs des services IT : unités et devis",
                 "Comprenez les unités de facturation des services Zachary IT : domaine, utilisateur, site, serveur ou instance. Les prestations étudiées restent sur devis.",
                 "Des tarifs lisibles, sans faire croire qu’un service sur mesure est instantané.",
                 "Les prix affichés correspondent aux services proposés. Les services de mise en place, migration, réseau ou infogérance restent qualifiés avant devis.",

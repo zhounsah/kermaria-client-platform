@@ -10,7 +10,7 @@ import { buildPublicMetadata } from "@/lib/public-metadata";
 export const dynamic = "force-static";
 
 export const metadata: Metadata = buildPublicMetadata({
-  title: "Découvrez l'espace client Zachary IT",
+  title: "Découvrez l'espace client",
   description:
     "Découvrez en démonstration l'espace client Zachary IT : sauvegardes, stockage, utilisateurs, facturation, assistance et sécurité.",
   path: "/decouvrir-espace-client",

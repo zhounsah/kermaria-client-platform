@@ -6,7 +6,8 @@ import { getPublicManagedContent } from "@/lib/internal-api";
 import { buildPublicMetadata } from "@/lib/public-metadata";
 
 export const metadata: Metadata = buildPublicMetadata({
-  title: "À propos de Zachary IT",
+  // Le gabarit du layout ajoute deja « | Zachary IT ».
+  title: "À propos",
   description:
     "Découvrez Zachary IT, entreprise de services informatiques à Guichen : approche, accompagnement, transparence et personne derrière l’entreprise.",
   path: "/a-propos",

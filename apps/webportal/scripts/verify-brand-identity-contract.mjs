@@ -178,7 +178,37 @@ for (const file of appFiles) {
       `${file} suffixe deja la marque dans un \`title\` : le gabarit du `
         + `layout racine l'ajoutera une seconde fois ("${literal}").`,
     );
+    // L'accueil est la seule page dont le titre commence par la marque : il
+    // s'agit d'un choix editorial assume, documente dans `app/page.tsx`.
+    if (file === "app/page.tsx") continue;
+    assert.ok(
+      !literal.includes(BRAND_NAME),
+      `${file} recopie la marque au milieu d'un \`title\` : le gabarit `
+        + `l'ajoutera quand meme, et la deduplication de `
+        + `\`parseStorefrontPageContent\` ne retire qu'un suffixe ("${literal}").`,
+    );
   }
+}
+
+// 4bis. Meme garde-fou sur les titres administrables du seed CMS.
+//
+// `parseStorefrontPageContent` retire un « | Zachary IT » FINAL pour que le
+// gabarit du layout l'ajoute une fois. Une marque placee au milieu du titre
+// echappe a cette deduplication : le titre servi la porte alors deux fois, et
+// depasse la longueur utile en resultat de recherche.
+const storefrontSeed = await read("../api-internal/Services/StorefrontContentSeed.cs");
+for (const [, seoTitle] of storefrontSeed.matchAll(/Seo\(\s*"((?:[^"\\]|\\.)*)"/g)) {
+  const withoutSuffix = seoTitle.replace(/\s*\|\s*Zachary IT$/i, "");
+  assert.ok(
+    !withoutSuffix.includes(BRAND_NAME),
+    "Un titre CMS ne doit porter la marque qu'en suffixe, seule position que "
+      + `la deduplication sait retirer ("${seoTitle}").`,
+  );
+  assert.ok(
+    withoutSuffix.length + ` | ${BRAND_NAME}`.length <= 75,
+    `Titre CMS trop long une fois la marque ajoutee (${withoutSuffix.length + 13} `
+      + `caracteres) : "${seoTitle}".`,
+  );
 }
 
 // 5. Balisage `WebSite` : nom du site = marque, identite juridique en
