@@ -63,6 +63,7 @@ export default async function AdminVpsTechnicalReviewsPage() {
           {result.data.map((item) => {
             const status = technicalStatus(item.technicalStatus);
             const operational = provisioningStatus(item.provisioningStatus);
+            const isActive = item.provisioningStatus === "active";
             return (
               <SectionCard
                 ariaLabel={`VPS ${item.serviceCode} ${item.tierCode}`}
@@ -79,7 +80,9 @@ export default async function AdminVpsTechnicalReviewsPage() {
                   </div>
                   <div className="badge-stack">
                     <StatusBadge label="Paiement reçu" tone="success" />
-                    <StatusBadge label={status.label} tone={status.tone} />
+                    {!isActive ? (
+                      <StatusBadge label={status.label} tone={status.tone} />
+                    ) : null}
                     <StatusBadge label={operational.label} tone={operational.tone} />
                   </div>
                 </div>

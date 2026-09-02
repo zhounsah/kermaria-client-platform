@@ -31,6 +31,10 @@ assert.match(servicesPage, /Voir mon VPS/);
 assert.match(servicesPage, /\/services\/vps\/\$\{encodeURIComponent\(item\.id\)\}/);
 assert.doesNotMatch(servicesPage, /mapping technique caché/i);
 
+const serviceCard = await read("components/ServiceCard.tsx");
+assert.doesNotMatch(serviceCard, /commercialTerms/);
+assert.doesNotMatch(serviceCard, /Billing V2|Subscription Billing V2|Souscription Billing V2|Couvert via/i);
+
 const detailPage = await read("app/services/vps/[id]/page.tsx");
 assert.match(detailPage, /getClientVpsDetail\(id\)/);
 assert.match(detailPage, /Adresse IP publique/);
@@ -38,6 +42,19 @@ assert.match(detailPage, /Votre VPS est en service/);
 assert.doesNotMatch(detailPage, /infrastructureTarget|operationalNotes|provider/i);
 
 const subscriptionsPage = await read("app/profile/subscriptions/page.tsx");
-assert.doesNotMatch(subscriptionsPage, /Souscription Billing V2/i);
+assert.doesNotMatch(subscriptionsPage, /Billing V2|Subscription Billing V2|Souscription Billing V2/i);
 
-console.log("Contrat de projection VPS client vérifié.");
+const adminVpsPage = await read("app/admin/vps/page.tsx");
+assert.match(adminVpsPage, /const isActive = item\.provisioningStatus === "active";/);
+assert.match(
+  adminVpsPage,
+  /\{!isActive \? \(\s*<StatusBadge label=\{status\.label\} tone=\{status\.tone\} \/>\s*\) : null\}/,
+  "Un VPS actif ne doit pas conserver le badge technique préparatoire.",
+);
+assert.match(
+  adminVpsPage,
+  /technicalStatus === "approved"\s*\?\s*\{ label: "Prêt à provisionner"/,
+  "Une demande approuvée non active doit continuer à pouvoir être affichée prête à provisionner.",
+);
+
+console.log("Contrat de copy client et des états VPS vérifié.");

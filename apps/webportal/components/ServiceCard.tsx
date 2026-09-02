@@ -39,10 +39,6 @@ export function ServiceCard({ service, vpsLinks = [] }: ServiceCardProps) {
           <dt>Début</dt>
           <dd>{service.startedAt ? formatDate(service.startedAt) : "À venir"}</dd>
         </div>
-        <div>
-          <dt>Couverture</dt>
-          <dd>{service.commercialTerms}</dd>
-        </div>
       </dl>
       <div className="service-scope">
         <strong>Périmètre</strong>
