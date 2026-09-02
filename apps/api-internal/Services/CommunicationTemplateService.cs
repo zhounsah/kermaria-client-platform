@@ -711,6 +711,27 @@ public sealed class CommunicationTemplateService : ICommunicationTemplateService
         return true;
     }
 
+    /// <summary>
+    /// Aligne un gabarit de code sur la forme reellement stockee.
+    /// </summary>
+    /// <remarks>
+    /// Les literaux C# portent des fins de ligne CRLF (imposees par
+    /// .gitattributes) alors que <see cref="TryNormalize"/> ecrit du LF
+    /// trimme. Sans cette mise au meme format, un modele restaure a
+    /// l'identique ressort « personnalise » et l'ecran d'administration
+    /// affiche un ecart qui n'existe pas.
+    /// </remarks>
+    private static string NormalizeForComparison(string? value)
+        => (value ?? string.Empty)
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Trim();
+
+    private static bool MatchesDefault(string? stored, string defaultValue)
+        => string.Equals(
+            NormalizeForComparison(stored),
+            NormalizeForComparison(defaultValue),
+            StringComparison.Ordinal);
+
     private static EmailTemplateItem ToItem(
         EmailTemplateDefinition definition,
         StoredEmailTemplate? stored)
@@ -725,8 +746,8 @@ public sealed class CommunicationTemplateService : ICommunicationTemplateService
             stored?.Enabled ?? true,
             stored is null ? "code" : "database",
             stored is not null
-                && (!string.Equals(stored.Subject, defaultSubject, StringComparison.Ordinal)
-                    || !string.Equals(stored.Body, defaultBody, StringComparison.Ordinal)),
+                && (!MatchesDefault(stored.Subject, defaultSubject)
+                    || !MatchesDefault(stored.Body, defaultBody)),
             stored?.Version ?? 0,
             stored is null
                 ? null
@@ -749,8 +770,8 @@ public sealed class CommunicationTemplateService : ICommunicationTemplateService
             stored?.Enabled ?? true,
             stored is null ? "code" : "database",
             stored is not null
-                && (!string.Equals(stored.Title, definition.DefaultTitle, StringComparison.Ordinal)
-                    || !string.Equals(stored.Message, definition.DefaultMessage, StringComparison.Ordinal)),
+                && (!MatchesDefault(stored.Title, definition.DefaultTitle)
+                    || !MatchesDefault(stored.Message, definition.DefaultMessage)),
             stored?.Version ?? 0,
             stored is null
                 ? null
@@ -769,7 +790,7 @@ public sealed class CommunicationTemplateService : ICommunicationTemplateService
             stored?.Body ?? definition.DefaultBody,
             stored is null ? "code" : "database",
             stored is not null
-                && !string.Equals(stored.Body, definition.DefaultBody, StringComparison.Ordinal),
+                && !MatchesDefault(stored.Body, definition.DefaultBody),
             stored?.Version ?? 0,
             stored is null
                 ? null
