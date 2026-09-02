@@ -253,7 +253,7 @@ export default async function ProfileSubscriptionsPage({
                   ) : null}
                   {isBillingV2 ? (
                     <p className="field-hint">
-                      Souscription Billing V2 affichée en lecture seule.
+                      Souscription affichée en lecture seule.
                     </p>
                   ) : null}
                   {additionalUserSlots > 0 ? (

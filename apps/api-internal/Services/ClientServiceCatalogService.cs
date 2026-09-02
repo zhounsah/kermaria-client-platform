@@ -225,7 +225,7 @@ public sealed class ClientServiceCatalogService : IClientServiceCatalogService
         {
             "pending_payment" => "Souscription en attente de paiement confirmé.",
             "pending_activation" =>
-                "Souscription payée, en attente d'activation ou de provisionning.",
+                "Souscription payée, en attente de mise en service.",
             "pending_approval" => "Souscription en attente d'approbation.",
             _ => "Souscription en attente de finalisation."
         };

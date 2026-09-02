@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ServiceSummary } from "@kermaria/shared";
 
 import { StatusBadge } from "@/components/StatusBadge";
@@ -6,6 +7,7 @@ import { getServiceSymbol } from "@/lib/service-display";
 
 type ServiceCardProps = {
   service: ServiceSummary;
+  vpsLinks?: Array<{ href: string; label: string }>;
 };
 
 const statusGuidance: Record<ServiceSummary["status"], string> = {
@@ -16,7 +18,7 @@ const statusGuidance: Record<ServiceSummary["status"], string> = {
     "Le service est temporairement indisponible. Contactez le support si besoin.",
 };
 
-export function ServiceCard({ service }: ServiceCardProps) {
+export function ServiceCard({ service, vpsLinks = [] }: ServiceCardProps) {
   const status = serviceStatus[service.status];
 
   return (
@@ -51,6 +53,15 @@ export function ServiceCard({ service }: ServiceCardProps) {
       </p>
       {service.nextStep ? (
         <p className="service-next-step">{service.nextStep}</p>
+      ) : null}
+      {vpsLinks.length > 0 ? (
+        <div className="service-card-actions">
+          {vpsLinks.map((link) => (
+            <Link className="button button-secondary" href={link.href} key={link.href}>
+              {link.label}
+            </Link>
+          ))}
+        </div>
       ) : null}
     </article>
   );

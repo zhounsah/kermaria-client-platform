@@ -439,6 +439,7 @@ builder.Services.AddScoped<
 builder.Services.AddScoped<
     IBillingV2VpsTechnicalConfigurationService,
     BillingV2VpsTechnicalConfigurationService>();
+builder.Services.AddScoped<IClientVpsService, ClientVpsService>();
 // Administration du catalogue V2 : seule autorite commerciale du produit.
 // Ecrit `billing_v2_services`, `_service_tiers`, `_service_prices` (en
 // versionnant, jamais en reecrivant), `_offer_presets`, `_preset_items`,
@@ -1620,6 +1621,51 @@ app.MapGet(
             await service.GetServicesAsync(
                 session,
                 context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/portal/vps",
+    async (
+        HttpContext context,
+        IClientVpsService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            auditService);
+        var result = await service.GetClientVpsAsync(
+            session,
+            context.RequestAborted);
+        context.Response.Headers["X-Data-Source"] =
+            service.IsPersistent ? "mariadb" : "mock";
+        return Results.Ok(result);
+    });
+app.MapGet(
+    "/internal/portal/vps/{id}",
+    async (
+        string id,
+        HttpContext context,
+        IClientVpsService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context,
+            authenticationService,
+            auditService);
+        if (!Guid.TryParse(id, out _))
+        {
+            return Results.NotFound();
+        }
+
+        var result = await service.GetClientVpsAsync(
+            session,
+            id,
+            context.RequestAborted);
+        context.Response.Headers["X-Data-Source"] =
+            service.IsPersistent ? "mariadb" : "mock";
+        return result is null ? Results.NotFound() : Results.Ok(result);
     });
 app.MapGet(
     "/internal/portal/backups",

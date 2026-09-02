@@ -27,6 +27,8 @@ import type {
   AdminClientSolutionPortal,
   ApiError,
   ClientProfile,
+  ClientVpsDetail,
+  ClientVpsSummary,
   ClientSolution,
   CommercialDocumentDetail,
   CommercialDocumentSummary,
@@ -491,6 +493,22 @@ export function getServices() {
     "/internal/portal/services",
     mockServices,
     [],
+  );
+}
+
+export function getClientVps() {
+  return getPortalData<ClientVpsSummary[]>(
+    "/internal/portal/vps",
+    [],
+    [],
+  );
+}
+
+export function getClientVpsDetail(id: string) {
+  return getPortalData<ClientVpsDetail | null>(
+    `/internal/portal/vps/${encodeURIComponent(id)}`,
+    null,
+    null,
   );
 }
 

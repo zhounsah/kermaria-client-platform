@@ -40,6 +40,7 @@
     "test:backups": "node scripts/verify-backups-contract.mjs",
     "test:public-site-quality": "node scripts/verify-public-site-quality-contract.mjs",
     "test:public-copy": "node scripts/verify-public-copy-contract.mjs",
+    "test:client-vps": "node scripts/verify-client-vps-contract.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

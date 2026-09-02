@@ -2516,6 +2516,35 @@ export interface BillingV2VpsTechnicalRequestStatus {
   updatedAt: string;
 }
 
+/** Vue operationnelle client d'un VPS achete, sans donnees d'administration. */
+export interface ClientVpsSpecifications {
+  vcpuCount: number | null;
+  ramGib: number | null;
+  diskGib: number | null;
+}
+
+export interface ClientVpsSummary {
+  id: string;
+  serviceCode: string;
+  serviceName: string;
+  tierCode: string;
+  tierLabel: string;
+  hostname: string;
+  /** preparing | in_progress | active | attention_required */
+  provisioningStatus: string;
+  publicIpAddress: string | null;
+  provisioningStartedAt: string | null;
+  activatedAt: string | null;
+}
+
+export interface ClientVpsDetail extends ClientVpsSummary {
+  operatingSystem: string;
+  usage: string;
+  managementMode: string;
+  internetExposure: "yes" | "no" | "to_confirm";
+  specifications: ClientVpsSpecifications;
+}
+
 /** Metadonnees operationnelles non secretes saisies par un administrateur
  *  lors de la mise en service manuelle d'un VPS. */
 export interface BillingV2VpsManualProvisioningPayload {

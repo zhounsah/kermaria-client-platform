@@ -16,6 +16,7 @@ import { getPortalArea } from "@/lib/public-route-config";
 import { getPortalRequestOriginFromHeaders } from "@/lib/public-routes";
 import {
   getPendingBillingV2Selection,
+  getClientVps,
   getPublicManagedContent,
   getServices,
   resolveDataSource,
@@ -65,15 +66,21 @@ export default async function ServicesPage() {
   }
 
   await requireClientSession();
-  const [servicesResult, pendingSelectionResult] = await Promise.all([
+  const [servicesResult, pendingSelectionResult, vpsResult] = await Promise.all([
     getServices(),
     getPendingBillingV2Selection(),
+    getClientVps(),
   ]);
   const source = resolveDataSource([
     servicesResult.source,
     pendingSelectionResult.source,
+    vpsResult.source,
   ]);
   const pendingSelection = pendingSelectionResult.data;
+  const vpsByServiceCode = Map.groupBy(
+    vpsResult.data,
+    (vps) => vps.serviceCode,
+  );
 
   return (
     <>
@@ -116,9 +123,19 @@ export default async function ServicesPage() {
         />
       ) : (
         <section className="service-grid" aria-label="Services du compte">
-          {servicesResult.data.map((service) => (
-            <ServiceCard key={service.id} service={service} />
-          ))}
+          {servicesResult.data.map((service) => {
+            const vps = vpsByServiceCode.get(service.reference) ?? [];
+            return (
+              <ServiceCard
+                key={service.id}
+                service={service}
+                vpsLinks={vps.map((item) => ({
+                  href: `/services/vps/${encodeURIComponent(item.id)}`,
+                  label: vps.length === 1 ? "Voir mon VPS" : `Voir ${item.hostname}`,
+                }))}
+              />
+            );
+          })}
         </section>
       )}
 
@@ -145,7 +162,7 @@ export default async function ServicesPage() {
       <section className="request-history-section">
         <SectionHeading
           action={<StatusBadge label="Ajouter un service" tone="info" />}
-          description="Souscrivez une formule clé en main ou prenez un service à la carte, sans dépendre d'un mapping technique caché."
+          description="Souscrivez une formule clé en main ou ajoutez un service à la carte selon vos besoins."
           title="Étendre mon périmètre"
         />
         <div className="cta-panel">

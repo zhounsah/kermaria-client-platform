@@ -51,6 +51,46 @@ public sealed record ServiceSummary(
     string CommercialTerms,
     string? NextStep = null);
 
+public sealed record ClientVpsSpecifications(
+    long? VcpuCount,
+    long? RamGib,
+    long? DiskGib);
+
+/// <summary>
+/// Projection operationnelle client d'un VPS achete. Cette forme est
+/// intentionnellement distincte de la revue administrative : aucune cible
+/// d'infrastructure, note operationnelle ou identifiant fournisseur n'est
+/// expose ici.
+/// </summary>
+public sealed record ClientVpsSummary(
+    string Id,
+    string ServiceCode,
+    string ServiceName,
+    string TierCode,
+    string TierLabel,
+    string Hostname,
+    string ProvisioningStatus,
+    string? PublicIpAddress,
+    DateTime? ProvisioningStartedAt,
+    DateTime? ActivatedAt);
+
+public sealed record ClientVpsDetail(
+    string Id,
+    string ServiceCode,
+    string ServiceName,
+    string TierCode,
+    string TierLabel,
+    string Hostname,
+    string OperatingSystem,
+    string Usage,
+    string ManagementMode,
+    string InternetExposure,
+    string ProvisioningStatus,
+    string? PublicIpAddress,
+    DateTime? ProvisioningStartedAt,
+    DateTime? ActivatedAt,
+    ClientVpsSpecifications Specifications);
+
 public sealed record InvoiceSummary(
     string Id,
     string Number,
