@@ -467,15 +467,63 @@ assert.match(
   /currentArea === "client"[\s\S]*\/login\?next=/,
   "Sur l hote client, une session expiree doit encore passer par le login borne.",
 );
-assert.match(
+// Le nom du garde a change (`isClientCheckoutPortalPath`) : on verifie le
+// comportement de redirection lui-meme, qui est l'invariant, plutot que la
+// forme du code qui l'implemente.
+const routeConfigRuntime = await import(transpileToDataUrl(
   publicRouteConfig,
-  /hostname === family\.client[\s\S]*isClientCheckoutContinuationPath\(pathname\)/,
-  "Seul l'hote client doit pouvoir servir localement la continuation /formules.",
+  "public-route-config.ts",
+));
+const {
+  resolvePortalPublicRedirectUrl,
+  resolveClientCheckoutContinuationPath,
+} = routeConfigRuntime;
+
+// L'hote client garde /formules en local : le BFF de souscription a besoin du
+// cookie de session host-only.
+assert.equal(
+  resolvePortalPublicRedirectUrl("dashboard.zachary-it.fr", "/formules"),
+  null,
+  "L'hote client doit pouvoir servir localement l'index /formules.",
 );
-assert.match(
-  publicRouteConfig,
-  /isClientCheckoutContinuationPath[\s\S]*\[a-z0-9-\]\+\$/,
-  "Le chemin de reprise doit etre borne a un unique code de formule.",
+assert.equal(
+  resolvePortalPublicRedirectUrl("dashboard.zachary-it.fr", "/formules/pack-essentiel"),
+  null,
+  "L'hote client doit pouvoir servir localement la continuation /formules/<code>.",
+);
+// L'hote d'administration, lui, n'a aucune raison de servir le configurateur.
+assert.equal(
+  resolvePortalPublicRedirectUrl("administration.zachary-it.fr", "/formules"),
+  "https://zachary-it.fr/formules",
+  "L'hote d'administration ne doit jamais servir le configurateur en local.",
+);
+// Tout autre chemin vitrine bascule vers l'hote public, y compris depuis le
+// tableau de bord : un seul hote doit repondre 200 pour l'indexation.
+assert.equal(
+  resolvePortalPublicRedirectUrl("dashboard.zachary-it.fr", "/tarifs"),
+  "https://zachary-it.fr/tarifs",
+  "Une page vitrine servie depuis l'hote client doit rediriger vers le public.",
+);
+
+// Le chemin de reprise reste borne a un unique code de formule.
+assert.equal(
+  resolveClientCheckoutContinuationPath("/formules/pack-essentiel"),
+  "/formules/pack-essentiel",
+);
+assert.equal(
+  resolveClientCheckoutContinuationPath("/formules/pack/essentiel"),
+  null,
+  "Un code de formule ne doit pas pouvoir porter de segment supplementaire.",
+);
+assert.equal(
+  resolveClientCheckoutContinuationPath("/admin"),
+  null,
+  "Le chemin de reprise ne doit pas pouvoir designer une surface interne.",
+);
+assert.equal(
+  resolveClientCheckoutContinuationPath("//evil.invalid/formules"),
+  null,
+  "Le chemin de reprise ne doit pas pouvoir devenir une redirection externe.",
 );
 assert.match(
   appShell,

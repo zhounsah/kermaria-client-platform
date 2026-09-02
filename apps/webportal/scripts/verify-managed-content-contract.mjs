@@ -191,15 +191,28 @@ assert.match(managedContentService, /IBillingV2PublicCatalogService/);
 assert.match(managedContentService, /GetCatalogAsync/);
 assert.match(adminContentDetailPage, /redirect\("\/admin\/diagnostic"\)/);
 assert.doesNotMatch(managedContentService, /allowedPresets/);
+// Le seed doit renvoyer le visiteur vers les caracteristiques affichees sur
+// l'offre. La formulation a ete rendue customer-friendly par
+// `fix(storefront): polish public VPS UX and copy` : on verifie l'intention,
+// pas la phrase exacte.
 assert.match(
   storefrontContentSeed,
-  /caractéristiques CPU, RAM et stockage des paliers VPS Cloud sont publiées depuis le catalogue Billing V2\.1/,
-  "Le seed CMS doit renvoyer les specifications VPS Cloud au catalogue administrable.",
+  /caractéristiques CPU, RAM et stockage sont celles affichées sur chaque offre/,
+  "Le seed CMS doit renvoyer les specifications VPS Cloud a l'offre publiee.",
 );
 assert.doesNotMatch(
   storefrontContentSeed,
   /aucune taille CPU, RAM ou disque n’est promise ici|sans caractéristiques CPU, RAM ou disque promises à l’avance/,
   "Le seed CMS ne doit plus nier les specifications VPS Cloud publiees.",
+);
+// Corollaire : la copie publique ne doit pas nommer le systeme de facturation
+// interne. Le meme garde-fou existe pour les pages TSX dans
+// `verify-public-copy-contract.mjs` ; le seed CMS est l'autre source de texte
+// public et doit obeir a la meme regle.
+assert.doesNotMatch(
+  storefrontContentSeed,
+  /\bBilling\s+V2(?:\.1)?\b|\bprojection\s+Billing\b|\bcatalogue\s+Billing\b/i,
+  "Le seed CMS public ne doit pas exposer le vocabulaire interne de facturation.",
 );
 assert.match(
   adminPackCatalogPage,

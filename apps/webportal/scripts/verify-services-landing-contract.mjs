@@ -8,6 +8,7 @@ import {
   STOREFRONT_SERVICES_CATEGORY_DESTINATIONS,
   STOREFRONT_SERVICES_PROBLEM_DESTINATIONS,
 } from "../lib/storefront-content.ts";
+import { resolveServicesPortalMode } from "../lib/services-portal-mode.ts";
 
 async function read(path) {
   return readFile(new URL(`../${path}`, import.meta.url), "utf8");
@@ -99,7 +100,25 @@ const apiValidator = await read("../api-internal/Services/ManagedContentService.
 const seed = await read("../api-internal/Services/StorefrontContentSeed.cs");
 const styles = await read("app/globals.css");
 
-assert.match(servicesPage, /portalArea === "public" \|\| portalArea === "local"/);
+// `/services` est servie par deux surfaces : la vitrine sur l'hote public et
+// « Mes services » sur le tableau de bord. Le choix passe par un helper depuis
+// `fix(webportal): keep local navigation on localhost` ; on verifie le
+// comportement, pas la forme du test dans la page.
+assert.match(servicesPage, /resolveServicesPortalMode\(/);
+assert.equal(resolveServicesPortalMode("public", null), "public");
+assert.equal(resolveServicesPortalMode("public", "client_user"), "public");
+assert.equal(resolveServicesPortalMode("admin", null), "admin");
+assert.equal(resolveServicesPortalMode("client", null), "client");
+// En developpement, localhost reunit les trois hotes : seul le role tranche,
+// et l'absence de session doit retomber sur la vitrine, jamais sur des
+// donnees client.
+assert.equal(resolveServicesPortalMode("local", null), "public");
+assert.equal(resolveServicesPortalMode("local", undefined), "public");
+assert.equal(resolveServicesPortalMode("local", "client_user"), "client");
+assert.equal(resolveServicesPortalMode("local", "internal_admin"), "admin");
+// Une origine inconnue ne doit pas ouvrir la vitrine par defaut : elle reste
+// sur le garde de session client.
+assert.equal(resolveServicesPortalMode(null, null), "client");
 assert.match(servicesPage, /requireClientSession\(\)/);
 assert.match(servicesPage, /<PublicServicesLandingPage/);
 assert.match(servicesPage, /parseStorefrontServicesLandingContent\(contentResult\.data\.bodyMarkdown, true\)/);
