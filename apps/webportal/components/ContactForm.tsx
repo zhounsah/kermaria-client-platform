@@ -43,6 +43,10 @@ export function ContactForm({
 }: ContactFormProps) {
   const fieldErrorId = (field: FieldName) => `contact-${field}-error`;
   const isSubmittingRef = useRef(false);
+  // `FormMessage` est annonce par `aria-live`, mais un visiteur au clavier
+  // reste sur le bouton d'envoi et ne voit pas forcement le bloc apparaitre
+  // au-dessus d'un formulaire long. On y amene le focus apres la reponse.
+  const resultRef = useRef<HTMLDivElement | null>(null);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [subject, setSubject] = useState(defaultSubject);
@@ -96,6 +100,9 @@ export function ContactForm({
       setMessage(defaultMessage);
     } finally {
       isSubmittingRef.current = false;
+      // Apres le rendu du bloc de resultat, pas pendant : `requestAnimationFrame`
+      // laisse React committer avant de deplacer le focus.
+      requestAnimationFrame(() => resultRef.current?.focus());
     }
   }
 
@@ -108,13 +115,13 @@ export function ContactForm({
       onSubmit={handleSubmit}
     >
       {state.status === "success" ? (
-        <FormMessage title="Message envoyé" tone="success">
+        <FormMessage ref={resultRef} title="Message envoyé" tone="success">
           <p>{state.message}</p>
         </FormMessage>
       ) : null}
 
       {state.status === "error" ? (
-        <FormMessage title="Envoi impossible" tone="error">
+        <FormMessage ref={resultRef} title="Envoi impossible" tone="error">
           <p>{state.message}</p>
         </FormMessage>
       ) : null}
@@ -160,7 +167,7 @@ export function ContactForm({
       </label>
 
       <label>
-        Sujet
+        Sujet (optionnel)
         <input
           aria-describedby={
             fieldErrors.subject ? fieldErrorId("subject") : undefined

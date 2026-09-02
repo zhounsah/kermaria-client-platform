@@ -9,7 +9,9 @@ import { resolveSystemSnippets } from "@/lib/system-snippets";
 export const metadata: Metadata = buildPublicMetadata({
   title: "Contact",
   description:
-    "Formulaire de contact pour échanger sur la sauvegarde distante, le dossier de secours numérique et les services Zachary IT.",
+    "Contactez Zachary IT à Guichen (35) : sauvegarde, messagerie, réseau, "
+    + "hébergement, postes de travail et assistance pour indépendants, "
+    + "associations et petites entreprises.",
   path: "/contact",
 });
 
@@ -45,8 +47,11 @@ export default async function ContactPage({ searchParams }: ContactPageProps) {
 
   const snippets = await resolveSystemSnippets();
   const defaultSubject = preset ? `Demande de formule — ${preset.name}` : "";
+  // Les liens `?formule=` sont poses par les cartes et le tableau
+  // comparatif de `/offres` : c'est bien la page d'ou vient le visiteur.
+  // L'intitule annoncait « Retour aux formules », qui designe une autre page.
   const backLink = preset
-    ? { href: "/offres", label: "Retour aux formules" }
+    ? { href: "/offres", label: "Retour aux offres" }
     : { href: "/", label: "Retour à l'accueil" };
 
   return (
@@ -57,18 +62,19 @@ export default async function ContactPage({ searchParams }: ContactPageProps) {
 
       <header className="contact-header">
         <p className="eyebrow">Contact</p>
-        <h1>Nous écrire</h1>
+        <h1>Parlons de votre besoin</h1>
         <p className="contact-lead">
-          Utilisez ce formulaire pour toute demande autour de la sauvegarde
-          distante, du stockage documentaire, de la continuité d&apos;activité ou
-          de toute autre question générale. Vous recevrez une réponse par
-          e-mail sous un délai raisonnable.
+          Décrivez votre situation en quelques lignes : ce qui ne fonctionne
+          pas, ce que vous voulez mettre en place, ou simplement la question
+          que vous vous posez. Sauvegarde, messagerie, réseau, hébergement,
+          postes de travail ou assistance au quotidien — si nous ne sommes pas
+          les bons interlocuteurs, nous vous le dirons.
         </p>
       </header>
 
       {preset ? (
         <p className="contact-offer-banner">
-          Demande pré-remplie pour la formule : <strong>{preset.name}</strong>.
+          Demande pré-remplie pour l&apos;offre : <strong>{preset.name}</strong>.
         </p>
       ) : null}
 
@@ -78,6 +84,33 @@ export default async function ContactPage({ searchParams }: ContactPageProps) {
         formuleCode={preset ? preset.code : null}
         privacyNotice={snippets.contact_form_privacy_notice}
       />
+
+      {/* Ce bloc ne decrit que ce que le systeme fait reellement : le message
+          part par e-mail et la reponse revient a l'adresse saisie. Aucun
+          delai n'est annonce — rien dans le produit ne permet de le tenir. */}
+      <section aria-labelledby="contact-next-steps" className="signup-steps-card">
+        <h2 id="contact-next-steps">Ce qui se passe ensuite</h2>
+        <ol>
+          <li>Votre message nous est transmis par e-mail.</li>
+          <li>
+            Nous répondons à l&apos;adresse que vous indiquez, en reprenant les
+            éléments à préciser.
+          </li>
+          <li>
+            S&apos;il faut regarder l&apos;existant avant de chiffrer quoi que
+            ce soit, nous vous proposons un cadrage plutôt qu&apos;un devis
+            approximatif.
+          </li>
+        </ol>
+      </section>
+
+      <p className="contact-form-note">
+        Vous cherchez plutôt à situer votre besoin ?{" "}
+        <Link href="/diagnostic">Le diagnostic en ligne</Link> propose une
+        orientation en quelques questions, et{" "}
+        <Link href="/services">les pages services</Link> détaillent chaque
+        prestation.
+      </p>
     </div>
   );
 }
