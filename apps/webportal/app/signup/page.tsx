@@ -112,7 +112,7 @@ export default async function SignupPage({
       {billingV2Requested && (!billingV2Selection || !billingV2Quote) ? (
         <section className={styles.stepsCard} aria-label="Configuration invalide">
           <h2>Configuration à reprendre</h2>
-          <p>L'offre transmise ne peut pas être revalidée. Revenez au configurateur avant de créer le compte.</p>
+          <p>L&apos;offre transmise ne peut pas être revalidée. Revenez au configurateur avant de créer le compte.</p>
           <Link className="button button-secondary" href="/formules">Reprendre mon offre</Link>
         </section>
       ) : null}

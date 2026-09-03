@@ -188,7 +188,7 @@ export default async function ServicesPage() {
           <p>
             L&apos;espace « Souscrire » regroupe les offres recommandées et
             les services individuels. Chaque service à la carte se prend
-            séparément, sans obligation d'offre.
+            séparément, sans obligation d&apos;offre.
           </p>
           <Link className="button" href="/souscrire">
             Ouvrir l&apos;espace Souscrire
