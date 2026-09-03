@@ -9,7 +9,7 @@ La présente politique de confidentialité décrit les traitements de données p
 **Zachary HOUNSA-HOUNKPA EI**
 Nom commercial : **Zachary IT**
 Adresse professionnelle : **3 Kermaria, 35580 Guichen, France**
-Adresse e-mail : **[zhounsah@home.bzh](mailto:zhounsah@home.bzh)**
+Adresse e-mail : **[contact@zachary-it.fr](mailto:contact@zachary-it.fr)**
 
 ## Données collectées
 
@@ -82,6 +82,6 @@ Conformément au RGPD, vous disposez d'un droit :
 * et, selon les cas, de portabilité.
 
 Pour exercer vos droits, vous pouvez écrire à :
-**[zhounsah@home.bzh](mailto:zhounsah@home.bzh)**
+**[contact@zachary-it.fr](mailto:contact@zachary-it.fr)**
 
 Vous pouvez également introduire une réclamation auprès de la CNIL si vous estimez que vos droits ne sont pas respectés.

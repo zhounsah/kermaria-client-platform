@@ -11,7 +11,7 @@ SIREN : **105 111 520**
 SIRET : **105 111 520 00018**
 Code APE : **6202A - Conseil en systèmes et logiciels informatiques**
 Adresse professionnelle : 3 Kermaria, 35580 Guichen
-Adresse e-mail : **[zhounsah@home.bzh](mailto:zhounsah@home.bzh)**
+Adresse e-mail : **[contact@zachary-it.fr](mailto:contact@zachary-it.fr)**
 Site internet : **zachary-it.fr**
 
 Le Prestataire est soumis au régime de la franchise en base de TVA. Les factures comportent la mention :
@@ -526,7 +526,7 @@ Pour exercer ce droit, le Client peut envoyer une déclaration claire exprimant 
 La demande doit être envoyée à :
 
 **Zachary IT - Zachary HOUNSA-HOUNKPA EI**
-E-mail : **[zhounsah@home.bzh](mailto:zhounsah@home.bzh)**
+E-mail : **[contact@zachary-it.fr](mailto:contact@zachary-it.fr)**
 Adresse : 3 Kermaria, 35580 Guichen
 
 Si le Client demande expressément que la prestation commence avant la fin du délai de rétractation, il reconnaît qu’un montant proportionnel au service déjà fourni pourra être dû.
@@ -672,7 +672,7 @@ Dans ce cas, le Client reste responsable du traitement et le Prestataire s’eng
 
 Le Client autorise le Prestataire à recourir à des sous-traitants techniques lorsque cela est nécessaire à l’exécution du service, sous réserve que ceux-ci présentent des garanties raisonnables de sécurité et de confidentialité.
 
-Le Client peut exercer ses droits relatifs aux données personnelles en contactant le Prestataire à l’adresse suivante : **[zhounsah@home.bzh](mailto:zhounsah@home.bzh)**.
+Le Client peut exercer ses droits relatifs aux données personnelles en contactant le Prestataire à l’adresse suivante : **[contact@zachary-it.fr](mailto:contact@zachary-it.fr)**.
 
 ---
 
@@ -730,7 +730,7 @@ Le Client doit maintenir une adresse e-mail valide et consulter régulièrement 
 Toute réclamation doit être adressée par écrit à :
 
 **Zachary IT - Zachary HOUNSA-HOUNKPA EI**
-E-mail : **[zhounsah@home.bzh](mailto:zhounsah@home.bzh)**
+E-mail : **[contact@zachary-it.fr](mailto:contact@zachary-it.fr)**
 Adresse : 3 Kermaria, 35580 Guichen
 
 La réclamation doit préciser :
@@ -765,7 +765,7 @@ Le présent formulaire peut être utilisé par le Client consommateur souhaitant
 
 **Zachary IT - Zachary HOUNSA-HOUNKPA EI**
 Adresse : 3 Kermaria, 35580 Guichen
-E-mail : **[zhounsah@home.bzh](mailto:zhounsah@home.bzh)**
+E-mail : **[contact@zachary-it.fr](mailto:contact@zachary-it.fr)**
 
 Je vous notifie par la présente ma rétractation du contrat portant sur la prestation suivante :
 

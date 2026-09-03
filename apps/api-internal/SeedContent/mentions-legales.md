@@ -17,7 +17,7 @@ SIREN : **105 111 520**
 SIRET : **105 111 520 00018**
 Code APE : **6202A - Conseil en systèmes et logiciels informatiques**
 Adresse professionnelle : **3 Kermaria, 35580 Guichen, France**
-Adresse e-mail : **[zhounsah@home.bzh](mailto:zhounsah@home.bzh)**
+Adresse e-mail : **[contact@zachary-it.fr](mailto:contact@zachary-it.fr)**
 Site internet : **zachary-it.fr**
 
 Le Prestataire est soumis au régime de la franchise en base de TVA.
@@ -39,7 +39,7 @@ Le site est hébergé sur une infrastructure administrée par :
 
 **Zachary HOUNSA-HOUNKPA EI - Zachary IT**
 Adresse : **3 Kermaria, 35580 Guichen, France**
-E-mail : **[zhounsah@home.bzh](mailto:zhounsah@home.bzh)**
+E-mail : **[contact@zachary-it.fr](mailto:contact@zachary-it.fr)**
 
 Des services techniques tiers peuvent être utilisés pour la gestion DNS, la sécurisation, la protection contre certains abus, le chiffrement, la mise en cache ou la distribution du site.
 
@@ -106,7 +106,7 @@ Ces données sont utilisées uniquement pour répondre aux demandes, établir un
 L’utilisateur peut exercer ses droits d’accès, de rectification, d’opposition, d’effacement, de limitation et, lorsque applicable, de portabilité, en contactant :
 
 **Zachary IT - Zachary HOUNSA-HOUNKPA EI**
-E-mail : **[zhounsah@home.bzh](mailto:zhounsah@home.bzh)**
+E-mail : **[contact@zachary-it.fr](mailto:contact@zachary-it.fr)**
 
 Pour plus d’informations, l’utilisateur est invité à consulter la politique de confidentialité du site.
 

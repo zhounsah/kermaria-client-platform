@@ -105,7 +105,7 @@ export function localBusinessJsonLd(baseUrl: string) {
     legalName: LEGAL_NAME,
     url: `${base}/`,
     description: BUSINESS_DESCRIPTION,
-    email: "zhounsah@home.bzh",
+    email: "contact@zachary-it.fr",
     // E.164, sans espaces ni separateurs : c'est le format attendu par
     // Google pour un `telephone`, et le seul qui reste non ambigu hors de
     // France.

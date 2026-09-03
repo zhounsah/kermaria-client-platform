@@ -431,7 +431,7 @@ function createMockManagedContentDetail(
           "",
           "## Vos droits",
           "",
-          "Conformement au RGPD, vous disposez d'un droit d'acces, de rectification, d'effacement, d'opposition, de limitation et, selon les cas, de portabilite. Pour exercer vos droits, vous pouvez contacter **[zhounsah@home.bzh](mailto:zhounsah@home.bzh)**.",
+          "Conformement au RGPD, vous disposez d'un droit d'acces, de rectification, d'effacement, d'opposition, de limitation et, selon les cas, de portabilite. Pour exercer vos droits, vous pouvez contacter **[contact@zachary-it.fr](mailto:contact@zachary-it.fr)**.",
         ].join("\n"),
         ...baseTimestamps,
       };
@@ -447,7 +447,7 @@ function createMockManagedContentDetail(
           "**Zachary HOUNSA-HOUNKPA EI**",
           "Nom commercial : **Zachary IT**",
           "Adresse professionnelle : **3 Kermaria, 35580 Guichen, France**",
-          "Adresse e-mail : **[zhounsah@home.bzh](mailto:zhounsah@home.bzh)**",
+          "Adresse e-mail : **[contact@zachary-it.fr](mailto:contact@zachary-it.fr)**",
           "",
           "## Hébergement",
           "",
