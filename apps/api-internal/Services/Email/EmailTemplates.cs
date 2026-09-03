@@ -64,7 +64,7 @@ public static class EmailTemplates
                 simplement ce message.
 
                 Cordialement,
-                Kermaria
+                Zachary IT
                 """),
             [AccountApproved] = (
                 "Votre compte a été validé",
@@ -82,7 +82,7 @@ public static class EmailTemplates
                 vous pourrez vous connecter à votre espace client.
 
                 Cordialement,
-                Kermaria
+                Zachary IT
                 """),
             [AccountRejected] = (
                 "Votre demande d'inscription",
@@ -96,7 +96,7 @@ public static class EmailTemplates
                 question, vous pouvez nous contacter directement.
 
                 Cordialement,
-                Kermaria
+                Zachary IT
                 """),
             [ContactForm] = (
                 "[Vitrine] {{subject}}",
@@ -124,7 +124,7 @@ public static class EmailTemplates
                 {{portalUrl}}
 
                 Cordialement,
-                Kermaria
+                Zachary IT
                 """),
             [PaymentReminder] = (
                 "Relance facture {{documentLabel}}",
@@ -139,7 +139,7 @@ public static class EmailTemplates
                 Si le règlement a déjà été effectué, merci d'ignorer ce message.
 
                 Cordialement,
-                Kermaria
+                Zachary IT
                 """),
             [PaymentConfirmed] = (
                 "Confirmation de paiement — facture {{documentLabel}}",
@@ -151,7 +151,7 @@ public static class EmailTemplates
                 Merci pour votre paiement.
 
                 Cordialement,
-                Kermaria
+                Zachary IT
                 """),
         };
 
@@ -202,7 +202,7 @@ public static class EmailTemplates
             ["message"] = message.Trim(),
             ["offerLine"] = string.IsNullOrWhiteSpace(formuleCode)
                 ? string.Empty
-                : $"Formule référencée : {formuleCode}\n",
+                : $"Offre référencée : {formuleCode}\n",
         };
 
     public static IReadOnlyDictionary<string, string?> DocumentVariables(

@@ -4357,6 +4357,20 @@ static async Task VerifyCommunicationTemplatesAsync()
     Ensure(
         collection.EmailTemplates.All(item => !item.Customized && item.Source == "code"),
         "Sans ligne enregistree, chaque modele doit se declarer par defaut.");
+    var customerFacingDefaults = EmailTemplates.Defaults
+        .Where(entry => entry.Key != EmailTemplates.ContactForm)
+        .Select(entry => entry.Value.Body)
+        .ToArray();
+    Ensure(
+        customerFacingDefaults.All(body =>
+            body.Contains("Zachary IT", StringComparison.Ordinal)
+            && !body.Contains("Kermaria", StringComparison.Ordinal)),
+        "Les e-mails envoyes aux clients doivent signer Zachary IT, jamais Kermaria.");
+    var defaultEmailRuntime = EmailConfigurationResolver.Resolve(
+        new ConfigurationBuilder().Build());
+    Ensure(
+        defaultEmailRuntime.FromDisplayName == "Zachary IT",
+        "Le nom expediteur SMTP par defaut doit etre la marque publique Zachary IT.");
     Ensure(
         collection.Snippets.Count > 0 && collection.NotificationTemplates.Count > 0,
         "Notifications et textes systeme doivent aussi etre exposes.");

@@ -86,7 +86,7 @@ public static class EmailConfigurationResolver
         var fromAddress = NullIfWhiteSpace(configuration["SMTP_FROM_ADDRESS"]);
         var fromDisplayName =
             NullIfWhiteSpace(configuration["SMTP_FROM_DISPLAY_NAME"])
-            ?? "Kermaria";
+            ?? "Zachary IT";
         var portalPublicUrl =
             NullIfWhiteSpace(configuration["PUBLIC_PORTAL_URL"])
             ?? string.Empty;
