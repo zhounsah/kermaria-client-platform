@@ -158,9 +158,9 @@ public sealed partial class PublicPackCatalogService : IPublicPackCatalogService
         => new(
             "Catalogue des offres",
             "Des offres simples, lisibles et prêtes à activer",
-            "Comparez les offres, choisissez votre dur├®e d'engagement, puis lancez votre demande ├á partir d'un p├®rim├¿tre clair.",
+            "Comparez les offres, choisissez votre durée d'engagement, puis lancez votre demande à partir d'un périmètre clair.",
             "Fonctionnalités clés",
-            "Les tarifs affichés sont hors taxes et correspondent au catalogue public actuel. La mise en service et le support sont organis├®s selon l'offre retenue.",
+            "Les tarifs affichés sont hors taxes et correspondent au catalogue public actuel. La mise en service et le support sont organisés selon l'offre retenue.",
             "Besoin d'un accompagnement spécifique ? Passez par le formulaire de contact.",
             AllowedPackCodes.Select(code => DefaultPacks[code]).ToArray(),
             [

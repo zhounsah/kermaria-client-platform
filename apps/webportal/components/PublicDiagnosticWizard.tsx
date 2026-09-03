@@ -316,7 +316,7 @@ function DiagnosticHeader({
         </div>
       </div>
       {!compact ? (
-        <div className="diagnostic-benefits" aria-label="B├®n├®fices du diagnostic">
+        <div className="diagnostic-benefits" aria-label="Bénéfices du diagnostic">
           {BENEFITS.map((benefit) => (
             <article key={benefit.title}>
               <span className="diagnostic-benefit-icon" aria-hidden="true"><CheckIcon /></span>
@@ -495,7 +495,7 @@ function DiagnosticResult({
             </div>
             <div className="diagnostic-result-actions">
               <Link className="button" href={formulaHref}>Personnaliser cette offre</Link>
-              <Link className="text-link" href={`/formules/${recommendedPreset.code}`}>Voir l'offre</Link>
+              <Link className="text-link" href={`/formules/${recommendedPreset.code}`}>Voir l&apos;offre</Link>
             </div>
           </div>
         ) : (

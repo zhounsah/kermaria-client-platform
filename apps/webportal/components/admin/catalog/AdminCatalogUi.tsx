@@ -95,10 +95,10 @@ export function CatalogFeedback({ feedback }: { feedback: { tone: "success" | "e
   ) : null;
 }
 
-const UNSAVED_CHANGES_MESSAGE = "Des modifications ne sont pas enregistr├®es. Quitter cette page les abandonnera.";
+const UNSAVED_CHANGES_MESSAGE = "Des modifications ne sont pas enregistrées. Quitter cette page les abandonnera.";
 /**
- * Prot├¿ge ├á la fois les vrais unloads et les navigations internes Next.js.
- * `beforeunload` seul ne voit pas les transitions client d├®clench├®es par <Link>.
+ * Protège à la fois les vrais unloads et les navigations internes Next.js.
+ * `beforeunload` seul ne voit pas les transitions client déclenchées par <Link>.
  */
 export function useUnsavedChangesGuard(dirty: boolean) {
   useEffect(() => {

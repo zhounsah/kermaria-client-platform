@@ -35,7 +35,7 @@ export function ServiceTiersPanel({ service }: { service: BillingV2AdminService 
       const retainedCodes = new Set(draft.attributes.map((item) => item.attributeCode.trim()).filter(Boolean));
       for (const original of selected.attributes) {
         if (!retainedCodes.has(original.attributeCode)) {
-          // UpdateTierAsync interpr├¿te une valeur num├®rique + texte vides comme
+          // UpdateTierAsync interprète une valeur numérique + texte vides comme
           // une suppression. Une omission simple laisserait l'attribut en base.
           attributes.push({ attributeCode: original.attributeCode, valueNumeric: undefined, valueText: undefined, unit: "" });
         }
@@ -75,7 +75,7 @@ export function ServiceTiersPanel({ service }: { service: BillingV2AdminService 
   function updateAttribute(index: number, values: Partial<AttributeDraft>) {
     setDraft({ ...draft, attributes: draft.attributes.map((item, itemIndex) => itemIndex === index ? { ...item, ...values } : item) });
   }
-  function confirmDiscardDraft() { return !dirty || window.confirm("Abandonner les modifications non enregistr├®es de ce palier ?"); }
+  function confirmDiscardDraft() { return !dirty || window.confirm("Abandonner les modifications non enregistrées de ce palier ?"); }
   function beginCreate() { if (!confirmDiscardDraft()) return; setDraft(EMPTY_TIER); setSaved(EMPTY_TIER); setSelectedId("new"); }
   function beginEdit(tier: BillingV2AdminTier) { if (!confirmDiscardDraft()) return; const next = tierDraft(tier); setDraft(next); setSaved(next); setSelectedId(tier.id); }
 }

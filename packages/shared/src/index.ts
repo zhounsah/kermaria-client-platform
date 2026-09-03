@@ -1574,10 +1574,10 @@ export const DEFAULT_PUBLIC_PACK_CATALOG_CONTENT: PublicPackCatalogContentPayloa
   pageEyebrow: "Catalogue des offres",
   pageTitle: "Des offres simples pour sauvegarder, stocker et reprendre plus vite",
   pageDescription:
-    "Comparez les offres destin├®es ├á prot├®ger vos documents importants, vos sauvegardes et la continuit├® d'une petite activit├® ├á partir de rep├¿res clairs.",
+    "Comparez les offres destinées à protéger vos documents importants, vos sauvegardes et la continuité d'une petite activité à partir de repères clairs.",
   comparisonColumnLabel: "Repères utiles",
   footnotePrimary:
-    "Les tarifs affichés sont hors taxes et correspondent au catalogue public actuel. La mise en service et le support sont organis├®s selon l'offre retenue.",
+    "Les tarifs affichés sont hors taxes et correspondent au catalogue public actuel. La mise en service et le support sont organisés selon l'offre retenue.",
   footnoteSecondary:
     "Besoin d'un dossier de secours numérique ou d'un accompagnement spécifique ? Passez par le formulaire de contact.",
   packs: PUBLIC_PACKS.map((pack) => ({

@@ -5,6 +5,8 @@ async function read(path) {
   return readFile(new URL(`../${path}`, import.meta.url), "utf8");
 }
 
+const mojibakePattern = /\u251C(?:\u00AE|\u00AC|\u00E1|\u00BF)|\u253C\u00F4|\uFFFD/u;
+
 const forbiddenPublicTerms = [
   /\bBilling\s+V2(?:\.1)?\b/i,
   /\bauthoritative\b/i,
@@ -70,7 +72,9 @@ assert.ok(
 );
 
 for (const path of scanned) {
-  const source = (await read(path))
+  const rawSource = await read(path);
+  assert.doesNotMatch(rawSource, mojibakePattern, `Mojibake detecte dans ${path}.`);
+  const source = rawSource
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/\/\/.*$/gm, "");
 

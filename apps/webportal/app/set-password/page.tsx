@@ -100,7 +100,7 @@ export default async function SetPasswordPage({
             <p>
               <Link href={flow?.trim() === ADDITIONAL_USER_FLOW ? "/login" : "/login?next=%2Fformules%2Freprendre"}>
                 {flow?.trim() === ADDITIONAL_USER_FLOW
-                  ? "Se connecter ├á votre espace client"
+                  ? "Se connecter à votre espace client"
                   : "Se connecter et finaliser mon offre"}
               </Link>
             </p>

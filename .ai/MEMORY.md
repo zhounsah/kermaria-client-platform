@@ -89,7 +89,7 @@
 
 ### Diagnostic public Billing V2 (2026-08-20)
 
-- /diagnostic produit d├®sormais une BillingV2PublicSelection ou `requires_quote`, demande le devis via /api/formules/devis, puis sort vers /formules/{preset} avec la s├®lection compl├¿te. Aucun SQL/pricing/provisioning ajout├®. R├®f├®rence : [billing-v2-public-diagnostic.md](topics/billing-v2-public-diagnostic.md).
+- /diagnostic produit désormais une BillingV2PublicSelection ou `requires_quote`, demande le devis via /api/formules/devis, puis sort vers /formules/{preset} avec la sélection complète. Aucun SQL/pricing/provisioning ajouté. Référence : [billing-v2-public-diagnostic.md](topics/billing-v2-public-diagnostic.md).
 
 ### Billing V2 (v1.4.0.0)
 

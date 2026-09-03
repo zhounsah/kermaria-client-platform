@@ -15,7 +15,7 @@ Le diagnostic ne dépend plus du catalogue commercial legacy. Le flux cible est 
   -> DiagnosticAnswers
   -> BillingV2PublicSelection | requires_quote
   -> POST /api/formules/devis
-  -> /formules/{preset}?s├®lection V2 compl├¿te
+  -> /formules/{preset}?sélection V2 complète
   -> signup
   -> activation
   -> login

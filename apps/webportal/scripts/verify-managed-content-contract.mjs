@@ -5,6 +5,8 @@ async function read(path) {
   return readFile(new URL(`../${path}`, import.meta.url), "utf8");
 }
 
+const mojibakePattern = /\u251C(?:\u00AE|\u00AC|\u00E1|\u00BF)|\u253C\u00F4|\uFFFD/u;
+
 const sharedTypes = await read("../../packages/shared/src/index.ts");
 const internalApi = await read("lib/internal-api.ts");
 const payloads = await read("lib/bff-payloads.ts");
@@ -19,6 +21,7 @@ const adminDiagnosticForm = await read("components/AdminDiagnosticRecommendation
 const diagnosticRecommendationConfig = await read("lib/diagnostic-recommendation-config.ts");
 const managedContentService = await read("../../apps/api-internal/Services/ManagedContentService.cs");
 const storefrontContentSeed = await read("../../apps/api-internal/Services/StorefrontContentSeed.cs");
+const publicPackCatalogService = await read("../../apps/api-internal/Services/PublicPackCatalogService.cs");
 const adminContentPage = await read("app/admin/content/page.tsx");
 const adminContentDetailPage = await read("app/admin/content/[key]/page.tsx");
 const adminStorefrontContentForm = await read("components/AdminStorefrontContentForm.tsx");
@@ -29,6 +32,8 @@ const servicesPage = await read("app/services/page.tsx");
 const serviceDetailPage = await read("app/services/[category]/page.tsx");
 const tarifsPage = await read("app/tarifs/page.tsx");
 const adminPackCatalogPage = await read("app/admin/public-pack-catalog/page.tsx");
+const adminCatalogUi = await read("components/admin/catalog/AdminCatalogUi.tsx");
+const serviceTiersPanel = await read("components/admin/catalog/ServiceTiersPanel.tsx");
 const cgvPage = await read("app/cgv/page.tsx");
 const privacyPage = await read("app/politique-confidentialite/page.tsx");
 const mentionsPage = await read("app/mentions-legales/page.tsx");
@@ -44,6 +49,16 @@ const {
   resolveStorefrontPublicRelatedLinks,
   storefrontServiceSelfServiceOrderable,
 } = await import(new URL("../lib/storefront-content.ts", import.meta.url));
+
+for (const [label, source] of [
+  ["sharedTypes", sharedTypes],
+  ["storefrontContentSeed", storefrontContentSeed],
+  ["publicPackCatalogService", publicPackCatalogService],
+  ["adminCatalogUi", adminCatalogUi],
+  ["serviceTiersPanel", serviceTiersPanel],
+]) {
+  assert.doesNotMatch(source, mojibakePattern, `Mojibake detecte dans ${label}.`);
+}
 
 assert.match(sharedTypes, /type ManagedContentKey =/);
 assert.match(sharedTypes, /type ManagedContentType =/);
