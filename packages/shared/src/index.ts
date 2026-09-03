@@ -1264,7 +1264,7 @@ export const PUBLIC_PACKS: ReadonlyArray<PublicPackManifest> = [
   {
     key: "pack-dossier-securise",
     slug: "dossier-securise",
-    label: "Pack Dossier Sécurisé",
+    label: "Offre Dossier Sécurisé",
     shortLabel: "Dossier Sécurisé",
     headline: "Une copie distante pour garder vos documents importants à portée de main.",
     audience:
@@ -1299,7 +1299,7 @@ export const PUBLIC_PACKS: ReadonlyArray<PublicPackManifest> = [
   {
     key: "pack-acces-distance",
     slug: "acces-distance",
-    label: "Pack Accès à Distance",
+    label: "Offre Accès à Distance",
     shortLabel: "Accès à Distance",
     headline: "Retrouvez vos fichiers et votre accès privé même loin de vos équipements.",
     audience:
@@ -1307,7 +1307,7 @@ export const PUBLIC_PACKS: ReadonlyArray<PublicPackManifest> = [
     description:
       "La base du dossier de secours numérique, enrichie d'un accès VPN personnel et d'une supervision légère.",
     highlights: [
-      "Tout le pack Dossier Sécurisé",
+      "Tout ce que comprend l'offre Dossier Sécurisé",
       "Accès VPN personnel",
       "Supervision du service",
       "Support niveau 1",
@@ -1340,7 +1340,7 @@ export const PUBLIC_PACKS: ReadonlyArray<PublicPackManifest> = [
   {
     key: "pack-bureau-windows-distance",
     slug: "bureau-windows-distance",
-    label: "Pack Bureau Windows à Distance",
+    label: "Offre Bureau Windows à Distance",
     shortLabel: "Bureau Windows",
     headline: "Un environnement Windows distant pour continuer à travailler plus facilement.",
     audience:
@@ -1382,13 +1382,13 @@ export const PUBLIC_PACKS: ReadonlyArray<PublicPackManifest> = [
   {
     key: "pack-pro-association",
     slug: "pro-association",
-    label: "Pack Pro / Association",
+    label: "Offre Pro / Association",
     shortLabel: "Pro / Association",
     headline: "Une base plus complète pour sécuriser la continuité d'une petite structure.",
     audience:
       "Pour une petite équipe qui veut une offre plus large, avec sauvegarde, accès et cadre documentaire simplifié.",
     description:
-      "Une formule plus complète pour une petite structure ou une association, avec plus de capacité et des repères utiles à la reprise.",
+      "Une offre plus complète pour une petite structure ou une association, avec plus de capacité et des repères utiles à la reprise.",
     highlights: [
       "2 utilisateurs et 64 Go de stockage",
       "Accès VPN personnel",
@@ -1571,10 +1571,10 @@ function createComparisonValue(
 }
 
 export const DEFAULT_PUBLIC_PACK_CATALOG_CONTENT: PublicPackCatalogContentPayload = {
-  pageEyebrow: "Catalogue packs",
-  pageTitle: "Des packs simples pour sauvegarder, stocker et reprendre plus vite",
+  pageEyebrow: "Catalogue des offres",
+  pageTitle: "Des offres simples pour sauvegarder, stocker et reprendre plus vite",
   pageDescription:
-    "Comparez les packs destinés à protéger vos documents importants, vos sauvegardes et la continuité d'une petite activité sans devoir arbitrer des briques techniques internes.",
+    "Comparez les offres destinées à protéger vos documents importants, vos sauvegardes et la continuité d'une petite activité sans devoir arbitrer des briques techniques internes.",
   comparisonColumnLabel: "Repères utiles",
   footnotePrimary:
     "Les tarifs affichés sont hors taxes et correspondent au catalogue public actuel. Le détail technique reste géré en interne pour le provisionnement, le support et l'explication du cadre retenu.",

@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
   if (rail !== "stripe") {
     return fail(
       "BILLING_V2_RAIL_UNSUPPORTED",
-      "Ce moyen de paiement n'est pas disponible pour cette formule.",
+      "Ce moyen de paiement n'est pas disponible pour cette offre.",
       400,
     );
   }

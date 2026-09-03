@@ -22,7 +22,7 @@ export const dynamic = "force-dynamic";
  * Souscription depuis l'espace client.
  *
  * Une seule autorite commerciale : le catalogue Billing V2. La page propose
- * les deux formes de selection que le modele reconnait — une formule, ou une
+ * les deux formes de selection que le modele reconnait — une offre, ou une
  * composition directe de services — et rien d'autre. Aucun montant n'est
  * calcule ici : les tarifs affiches viennent d'API-INTERNAL, et le montant
  * reellement facture est recalcule au checkout par le meme moteur.
@@ -38,7 +38,7 @@ export default async function SubscribePage() {
   return (
     <div className="subscribe-page">
       <PageHeader
-        description="Partez d'une formule recommandée, ou composez votre configuration service par service. Le tarif est calculé par nos serveurs à chaque changement."
+        description="Partez d'une offre recommandée, ou composez votre configuration service par service. Le tarif est calculé par nos serveurs à chaque changement."
         eyebrow="Espace client"
         title="Souscrire"
       />
@@ -51,16 +51,16 @@ export default async function SubscribePage() {
         />
       ) : null}
 
-      <section aria-label="Formules" className="subscribe-presets">
-        <h2>Formules</h2>
+      <section aria-label="Offres" className="subscribe-presets">
+        <h2>Offres</h2>
         <p className="subscribe-section-lead">
-          Chaque formule part d&apos;une configuration recommandée que vous
+          Chaque offre part d&apos;une configuration recommandée que vous
           pouvez ajuster avant de souscrire.
         </p>
 
         {presets.length === 0 ? (
           <p className="subscribe-empty">
-            Aucune formule n&apos;est publiée pour le moment.
+            Aucune offre n&apos;est publiée pour le moment.
           </p>
         ) : (
           <ul className="subscribe-preset-grid">
@@ -99,7 +99,7 @@ export default async function SubscribePage() {
       <section aria-label="Services à la carte" className="subscribe-a-la-carte">
         <h2>Services à la carte</h2>
         <p className="subscribe-section-lead">
-          Ajoutez un service isolé, sans formule ni engagement. Le tarif
+          Ajoutez un service isolé, sans offre ni engagement. Le tarif
           s&apos;actualise à chaque changement.
         </p>
         <BillingV2DirectSubscribe catalog={catalog} />

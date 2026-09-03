@@ -390,7 +390,7 @@ assert.equal(inconsistentPresetActions.mode, "QUOTE");
 
 assert.deepEqual(
   resolveStorefrontTariffAction("VPN-ACCESS", commercialCatalog),
-  { label: "Voir la formule", href: "/formules/pack-acces-distance" },
+  { label: "Voir l'offre", href: "/formules/pack-acces-distance" },
 );
 assert.deepEqual(
   resolveStorefrontTariffAction(

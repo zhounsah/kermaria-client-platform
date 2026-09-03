@@ -1,4 +1,4 @@
-﻿import Link from "next/link";
+import Link from "next/link";
 import { ManagedMarkdown } from "@/components/ManagedMarkdown";
 import { ServiceBreadcrumb } from "@/components/PublicServiceComponents";
 import {
@@ -24,8 +24,8 @@ type PublicPriorityServicePageProps = {
   serviceSlug: StorefrontPriorityServiceSlug;
 };
 const COMMERCIAL_MODE_LABELS: Record<StorefrontCommercialActions["mode"], string> = {
-  FORMULA: "Formule disponible",
-  HYBRID: "Formule + accompagnement",
+  FORMULA: "Offre disponible",
+  HYBRID: "Offre + accompagnement",
   QUOTE: "Sur devis",
 };
 function isTariffSection(heading: string): boolean {
@@ -38,13 +38,13 @@ function commercialGuidance(
   if (serviceSlug === "vpn-entreprise") {
     return {
       title: "Vous savez que le VPN correspond \u00e0 votre besoin ?",
-      body: "Pour un acc\u00e8s distant classique, vous pouvez partir directement de la formule. Si votre r\u00e9seau existe d\u00e9j\u00e0, si plusieurs utilisateurs ou sites sont concern\u00e9s, ou si vous h\u00e9sitez avec un bureau Windows distant, demandez conseil avant de commencer.",
+      body: "Pour un acc\u00e8s distant classique, vous pouvez partir directement de l'offre. Si votre r\u00e9seau existe d\u00e9j\u00e0, si plusieurs utilisateurs ou sites sont concern\u00e9s, ou si vous h\u00e9sitez avec un bureau Windows distant, demandez conseil avant de commencer.",
     };
   }
   if (serviceSlug === "sauvegarde-externalisee") {
     return {
       title: "Fichiers simples ou environnement plus complexe ?",
-      body: "Pour prot\u00e9ger des fichiers dans un cas standard, la formule vous guide. Pour un serveur, un NAS, plusieurs postes ou un besoin de restauration particulier, d\u00e9crivez votre environnement afin de cadrer la bonne strat\u00e9gie.",
+      body: "Pour prot\u00e9ger des fichiers dans un cas standard, l'offre vous guide. Pour un serveur, un NAS, plusieurs postes ou un besoin de restauration particulier, d\u00e9crivez votre environnement afin de cadrer la bonne strat\u00e9gie.",
     };
   }
   if (mode === "QUOTE") {
@@ -211,7 +211,7 @@ export function PublicPriorityServicePage({
             <h2>{hasFormulaPath ? "Choisissez le parcours adapt\u00e9." : "Parlons de votre besoin."}</h2>
             <p>
               {hasFormulaPath
-                ? "Une formule couvre le besoin standard. Pour un environnement existant ou un p\u00e9rim\u00e8tre particulier, demandez-nous conseil avant de continuer."
+                ? "Une offre couvre le besoin standard. Pour un environnement existant ou un p\u00e9rim\u00e8tre particulier, demandez-nous conseil avant de continuer."
                 : "Un devis ou un audit permet de confirmer le p\u00e9rim\u00e8tre, les pr\u00e9requis et les limites avant mise en service."}
             </p>
           </div>

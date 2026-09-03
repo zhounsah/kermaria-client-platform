@@ -264,7 +264,7 @@ for (const [origin, pathname, expected] of [
 // 7c. Le header/footer public utilisent PUBLIC_SITE_URL pour les routes
 //     vitrine et ne codent pas l'ancien domaine comme destination publique.
 for (const pathname of [
-  "/formules",
+  "/offres",
   "/diagnostic",
   "/a-propos",
   "/infrastructure",

@@ -114,7 +114,7 @@ export default async function ServicesPage() {
             </Link>
           </div>
         }
-        description="Retrouvez ici les services réellement déduits de vos packs, options et souscriptions. Pour ajouter un service, ouvrez l'espace « Souscrire »."
+        description="Retrouvez ici les services réellement déduits de vos offres, options et souscriptions. Pour ajouter un service, ouvrez l'espace « Souscrire »."
         eyebrow="Périmètre client"
         title="Mes services"
       />
@@ -134,7 +134,7 @@ export default async function ServicesPage() {
         <EmptyState
           action={
             <Link className="button" href="/souscrire">
-              Découvrir les formules
+              Découvrir les offres
             </Link>
           }
           description="Aucun service n'est actuellement associé à ce compte."
@@ -162,8 +162,8 @@ export default async function ServicesPage() {
         <section className="request-history-section">
           <SectionHeading
             action={<StatusBadge label="À finaliser" tone="warning" />}
-            description="Votre compte a bien été créé. Il ne reste qu'à reprendre la formule choisie lors de votre demande d'inscription, puis à finaliser le paiement."
-            title="Finaliser ma formule"
+            description="Votre compte a bien été créé. Il ne reste qu'à reprendre l'offre choisie lors de votre demande d'inscription, puis à finaliser le paiement."
+            title="Finaliser mon offre"
           />
           <div className="cta-panel">
             <p>
@@ -172,7 +172,7 @@ export default async function ServicesPage() {
               reprise : aucun montant n&apos;a été figé entre-temps.
             </p>
             <Link className="button" href="/formules/reprendre">
-              Reprendre ma formule
+              Reprendre mon offre
             </Link>
           </div>
         </section>
@@ -181,14 +181,14 @@ export default async function ServicesPage() {
       <section className="request-history-section">
         <SectionHeading
           action={<StatusBadge label="Ajouter un service" tone="info" />}
-          description="Souscrivez une formule clé en main ou ajoutez un service à la carte selon vos besoins."
+          description="Souscrivez une offre clé en main ou ajoutez un service à la carte selon vos besoins."
           title="Étendre mon périmètre"
         />
         <div className="cta-panel">
           <p>
-            L&apos;espace « Souscrire » regroupe les formules recommandées et
+            L&apos;espace « Souscrire » regroupe les offres recommandées et
             les services individuels. Chaque service à la carte se prend
-            séparément, sans obligation de formule.
+            séparément, sans obligation d'offre.
           </p>
           <Link className="button" href="/souscrire">
             Ouvrir l&apos;espace Souscrire

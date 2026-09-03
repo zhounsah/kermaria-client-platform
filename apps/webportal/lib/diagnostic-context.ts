@@ -471,7 +471,7 @@ const BUILT_IN_GUIDANCE: Record<DiagnosticContextId, DiagnosticGuidanceRuleConfi
       when: [{ questionId: "backup-targets", operator: "only", values: ["files"] }],
       title: "Votre besoin ressemble à une protection de fichiers standard.",
       body:
-        "Le volume et le nombre de personnes permettent de vérifier si une formule en ligne peut couvrir ce cas simple. Le tarif reste recalculé à partir du catalogue au moment utile.",
+        "Le volume et le nombre de personnes permettent de vérifier si une offre en ligne peut couvrir ce cas simple. Le tarif reste recalculé à partir du catalogue au moment utile.",
       points: [
         "Vérifier qu'une restauration réelle est possible.",
         "Conserver une copie distincte des fichiers principaux.",

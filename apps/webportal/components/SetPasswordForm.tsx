@@ -105,7 +105,7 @@ export function SetPasswordForm({ token, flow }: SetPasswordFormProps) {
         status: "success",
         message: flow === ADDITIONAL_USER_FLOW
           ? "Mot de passe défini. Vous pouvez vous connecter à votre espace : vos accès sont en cours d'activation et seront disponibles sous peu."
-          : "Mot de passe défini. Connectez-vous maintenant à votre espace : votre tableau de bord vous guidera vers la reprise de votre pack ou la suite de votre activation.",
+          : "Mot de passe défini. Connectez-vous maintenant à votre espace : votre tableau de bord vous guidera vers la reprise de votre offre ou la suite de votre activation.",
       });
       setPassword("");
       setConfirmPassword("");
@@ -122,7 +122,7 @@ export function SetPasswordForm({ token, flow }: SetPasswordFormProps) {
           <Link href={flow === ADDITIONAL_USER_FLOW ? "/login" : "/login?next=%2Fformules%2Freprendre"}>
             {flow === ADDITIONAL_USER_FLOW
               ? "Se connecter et ouvrir le tableau de bord"
-              : "Se connecter et finaliser ma formule"}
+              : "Se connecter et finaliser mon offre"}
           </Link>
         </p>
       </FormMessage>

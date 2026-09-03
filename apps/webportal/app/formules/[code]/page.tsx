@@ -25,10 +25,10 @@ export async function generateMetadata({
   const preset = catalog.presets.find((item) => item.code === code);
 
   return buildPublicMetadata({
-    title: preset ? `Configurer la formule ${preset.name}` : "Configurer une formule",
+    title: preset ? `Configurer l'offre ${preset.name}` : "Configurer une offre",
     description:
       preset?.description
-      ?? "Ajustez la capacité, la sauvegarde et les accès de votre formule.",
+      ?? "Ajustez la capacité, la sauvegarde et les accès de votre offre.",
     path: `/formules/${code}`,
   });
 }
@@ -49,21 +49,21 @@ export default async function FormuleConfigurationPage({ params, searchParams }:
   return (
     <div className="formule-page">
       <nav className="formule-breadcrumb" aria-label="Fil d'Ariane">
-        <Link href="/formules">Formules</Link>
+        <Link href="/formules">Offres</Link>
         <span aria-hidden="true"> / </span>
         <span>{preset?.name ?? "Configuration"}</span>
       </nav>
 
       {!preset ? (
         <p className="formules-empty">
-          Le catalogue des formules n&apos;est pas joignable pour le moment.
+          Le catalogue des offres n&apos;est pas joignable pour le moment.
           Les prix sont servis par l&apos;API interne : le site public
           n&apos;en conserve aucun.
         </p>
       ) : (
         <>
           <header className="formule-header">
-            <p className="eyebrow">Formule</p>
+            <p className="eyebrow">Offre</p>
             <h1>{preset.name}</h1>
             <p className="formule-lead">{resolvePresetTagline(preset)}</p>
             <p className="formule-baseline">

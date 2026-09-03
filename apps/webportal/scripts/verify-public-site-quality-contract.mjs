@@ -67,7 +67,7 @@ assert.match(appShell, /displayVersion \?\? appPackage\.version/);
 
 assert.match(homePage, /JsonLd data=\{localBusinessJsonLd/);
 assert.match(homePage, /JsonLd data=\{webSiteJsonLd/);
-assert.match(homePage, /href="\/formules"/);
+assert.match(homePage, /href="\/offres"/);
 assert.match(homePage, /href="\/contact"/);
 
 assert.match(publicShell, /skip-link/);
@@ -75,7 +75,7 @@ assert.match(publicShell, /aria-controls="public-header-nav"/);
 assert.match(publicShell, /aria-expanded=\{menuOpen\}/);
 assert.match(publicShell, /aria-label="Navigation principale"/);
 assert.match(publicShell, /aria-label="Liens l/);
-assert.match(publicShell, /publicHref\("\/formules"\)/);
+assert.match(publicShell, /publicHref\("\/offres"\)/);
 assert.doesNotMatch(publicShell, /Offres existantes/);
 assert.match(publicShell, /publicHref\("\/diagnostic"\)/);
 assert.match(publicShell, /publicHref\("\/ressources"\)/);

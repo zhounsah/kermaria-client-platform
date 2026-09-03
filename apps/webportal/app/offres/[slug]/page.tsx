@@ -96,9 +96,9 @@ export default async function PublicPackSheetPage({ params }: PageProps) {
   if (!pack) {
     return (
       <ErrorState
-        description="Cette formule n'est pas encore publiée au catalogue."
+        description="Cette offre n'est pas encore publiée au catalogue."
         reference={catalogResult.correlationId}
-        title="Formule non publiée"
+        title="Offre non publiée"
       />
     );
   }
@@ -137,7 +137,7 @@ export default async function PublicPackSheetPage({ params }: PageProps) {
       />
 
       <header className="offres-header managed-pack-sheet-header">
-        <p className="eyebrow">Fiche technique pack</p>
+        <p className="eyebrow">Fiche technique offre</p>
         <h1>{pack.label}</h1>
         <p className="offres-lead">{pack.description}</p>
         <div className="managed-content-meta">
@@ -180,7 +180,7 @@ export default async function PublicPackSheetPage({ params }: PageProps) {
             <span className="card-kicker">Catalogue actif</span>
             <h2>Composants techniques liés</h2>
             <p>
-              Ce bloc présente les éléments associés à cette formule.
+              Ce bloc présente les éléments associés à cette offre.
             </p>
           </div>
         </div>
@@ -188,7 +188,7 @@ export default async function PublicPackSheetPage({ params }: PageProps) {
         {componentServices.length === 0 ? (
           <p className="field-hint">
             Aucun composant technique lié n&apos;est actuellement publié pour
-            cette formule.
+            cette offre.
           </p>
         ) : (
           <div className="managed-pack-component-grid">

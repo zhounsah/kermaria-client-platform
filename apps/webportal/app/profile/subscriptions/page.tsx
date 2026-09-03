@@ -150,7 +150,7 @@ export default async function ProfileSubscriptionsPage({
                   <div className="section-heading">
                     <div>
                       <span className="card-kicker">
-                        {item.presetCode ? "Formule" : "Sélection à la carte"}
+                        {item.presetCode ? "Offre" : "Sélection à la carte"}
                       </span>
                       <h2>{item.label}</h2>
                       <p>
@@ -227,7 +227,7 @@ export default async function ProfileSubscriptionsPage({
                       <dd>{String(item.paidCyclesCount)}</dd>
                     </div>
                     <div>
-                      <dt>Formule</dt>
+                      <dt>Offre</dt>
                       <dd>{item.presetCode ?? "À la carte"}</dd>
                     </div>
                     <div>

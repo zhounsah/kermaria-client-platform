@@ -145,7 +145,7 @@ export function DemoClientSpace({ section }: DemoClientSpaceProps) {
 
       <section className="demo-client-cta" aria-label="Contact commercial">
         <div>
-          <span className="card-kicker">Pack Pro / Association</span>
+          <span className="card-kicker">Offre Pro / Association</span>
           <h2>Vous souhaitez disposer de cet espace pour votre organisation ?</h2>
           <p>
             La démo montre un compte fictif. Les offres et conditions réelles se
@@ -183,7 +183,7 @@ function DashboardSection({ onOpen }: { onOpen: (modal: ModalState) => void }) {
 
       <section className="metrics-grid demo-client-metrics" aria-label="Resume">
         <MetricCard
-          detail="Tous les services du pack sont actifs"
+          detail="Tous les services de l'offre sont actifs"
           label="Services actifs"
           tone="green"
           value={String(data.summary.activeServices)}
@@ -211,7 +211,7 @@ function DashboardSection({ onOpen }: { onOpen: (modal: ModalState) => void }) {
         <SectionCard ariaLabel="Services actifs">
           <SectionHeading
             action={<Link href={sectionPath.services}>Tout voir</Link>}
-            description="Les bénéfices du pack sont visibles avant les détails techniques."
+            description="Les bénéfices de l'offre sont visibles avant les détails techniques."
             title="Services disponibles"
           />
           <div className="demo-client-service-list">
@@ -264,7 +264,7 @@ function ServicesSection({ onOpen }: { onOpen: (modal: ModalState) => void }) {
   return (
     <SectionCard ariaLabel="Liste des services">
       <SectionHeading
-        description="Chaque service est actif dans ce compte fictif Pack Pro / Association."
+        description="Chaque service est actif dans ce compte fictif Offre Pro / Association."
         title="Services actifs"
       />
       <div className="demo-client-card-grid">
@@ -356,7 +356,7 @@ function InvoicesSection({ onOpen }: { onOpen: (modal: ModalState) => void }) {
           value="0 EUR"
         />
         <MetricCard
-          detail="Cycle mensuel du pack"
+          detail="Cycle mensuel de l'offre"
           label="Dernière facture"
           tone="amber"
           value="39,90 EUR"
@@ -762,7 +762,7 @@ function ProfileSection({ onOpen }: { onOpen: (modal: ModalState) => void }) {
       <dl className="profile-details">
         <Detail label="Type" value={customer.type} />
         <Detail label="Référence client" value={customer.reference} />
-        <Detail label="Pack" value={customer.pack} />
+        <Detail label="Offre" value={customer.pack} />
         <Detail label="Statut" value={customer.status} />
         <Detail label="Adresse" value={customer.address} />
         <Detail label="Téléphone" value={customer.phone} />

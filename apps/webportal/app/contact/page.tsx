@@ -46,7 +46,7 @@ export default async function ContactPage({ searchParams }: ContactPageProps) {
     ) ?? null;
 
   const snippets = await resolveSystemSnippets();
-  const defaultSubject = preset ? `Demande de formule — ${preset.name}` : "";
+  const defaultSubject = preset ? `Demande d'offre — ${preset.name}` : "";
   // Les liens `?formule=` sont poses par les cartes et le tableau
   // comparatif de `/offres` : c'est bien la page d'ou vient le visiteur.
   // L'intitule annoncait « Retour aux formules », qui designe une autre page.

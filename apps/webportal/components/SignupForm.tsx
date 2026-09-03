@@ -162,7 +162,7 @@ export function SignupForm({
       setState({
         status: "success",
         message: initialBillingV2Selection
-          ? "Demande envoyée. Vérifiez votre boîte mail, activez votre compte puis connectez-vous : votre formule et ses options seront restaurées avant le paiement."
+          ? "Demande envoyée. Vérifiez votre boîte mail, activez votre compte puis connectez-vous : votre offre et ses options seront restaurées avant le paiement."
           : "Demande envoyée. Vérifiez votre boîte mail pour confirmer votre adresse, puis attendez notre validation avant de définir votre mot de passe.",
       });
     } finally {
@@ -503,7 +503,7 @@ export function SignupForm({
               client. Vous confirmerez d&apos;abord votre adresse e-mail, puis notre
               équipe validera la demande avant la définition du mot de passe
               {initialBillingV2Selection
-                ? " et la reprise de votre formule dans l'espace client."
+                ? " et la reprise de votre offre dans l'espace client."
                 : "."}</>}
         </p>
 

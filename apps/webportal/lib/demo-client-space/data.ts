@@ -57,7 +57,7 @@ export const demoClientSpace = {
   customer: {
     organization: "Association Horizon Bretagne",
     type: "Association",
-    pack: "Pack Pro / Association",
+    pack: "Offre Pro / Association",
     status: "Actif",
     since: "14 janvier 2026",
     reference: "DEMO-ASSO-001",
@@ -77,7 +77,7 @@ export const demoClientSpace = {
     dueInvoices: 0,
   },
   subscription: {
-    plan: "Pack Pro / Association",
+    plan: "Offre Pro / Association",
     status: "Actif",
     cycle: "Mensuel",
     subscribedAt: "14/01/2026",
@@ -86,7 +86,7 @@ export const demoClientSpace = {
     users: "6 actifs",
     monthlyPrice: "39,90 EUR",
     setupFee: "0,00 EUR",
-    services: "Tous les services du pack activés",
+    services: "Tous les services de l'offre activés",
     history: [
       "14/01/2026 - Souscription initiale validée",
       "01/03/2026 - Extension de stockage incluse activée",
@@ -160,7 +160,7 @@ export const demoClientSpace = {
     {
       id: "billing",
       name: "Facturation et abonnement",
-      summary: "Factures, échéances et suivi du pack souscrit.",
+      summary: "Factures, échéances et suivi de l'offre souscrite.",
       status: "active",
       included: "Aucune facture à payer",
     },
@@ -169,28 +169,28 @@ export const demoClientSpace = {
     {
       reference: "FAC-DEMO-2026-008",
       date: "01/08/2026",
-      title: "Pack Pro / Association",
+      title: "Offre Pro / Association",
       status: "paid",
       amount: "39,90 EUR",
     },
     {
       reference: "FAC-DEMO-2026-007",
       date: "01/07/2026",
-      title: "Pack Pro / Association",
+      title: "Offre Pro / Association",
       status: "paid",
       amount: "39,90 EUR",
     },
     {
       reference: "FAC-DEMO-2026-006",
       date: "01/06/2026",
-      title: "Pack Pro / Association",
+      title: "Offre Pro / Association",
       status: "paid",
       amount: "39,90 EUR",
     },
     {
       reference: "FAC-DEMO-2026-005",
       date: "01/05/2026",
-      title: "Pack Pro / Association",
+      title: "Offre Pro / Association",
       status: "paid",
       amount: "39,90 EUR",
     },

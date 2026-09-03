@@ -13,7 +13,7 @@ export default function Loading() {
   return (
     <LoadingState
       description="Les tarifs sont chargés depuis notre catalogue."
-      title="Chargement des formules"
+      title="Chargement des offres"
     />
   );
 }

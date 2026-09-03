@@ -34,7 +34,7 @@ export function PublicServicesLandingPage() {
       <section className="service-section service-main-services" aria-labelledby="principaux-title">
         <header className="service-section-heading">
           <h2 id="principaux-title">Les services les plus demandés.</h2>
-          <p>Chaque accompagnement est ajusté à votre contexte. Les formules existantes restent disponibles séparément, avec leurs tarifs et leur parcours propre.</p>
+          <p>Chaque accompagnement est ajusté à votre contexte. Les offres existantes restent disponibles séparément, avec leurs tarifs et leur parcours propre.</p>
         </header>
         <div className="service-overview-grid">
           <article>

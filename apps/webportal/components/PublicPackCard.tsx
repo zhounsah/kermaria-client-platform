@@ -90,14 +90,14 @@ export function PublicPackCard({
             className="button"
             href={`/formules/${encodeURIComponent(pack.presetCode)}`}
           >
-            Configurer cette formule
+            Configurer cette offre
           </Link>
         ) : (
           <Link
             className="button"
             href={`/contact?formule=${encodeURIComponent(pack.presetCode)}`}
           >
-            Demander cette formule
+            Demander cette offre
           </Link>
         )}
         <Link className="text-link" href={`/offres/${pack.slug}`}>

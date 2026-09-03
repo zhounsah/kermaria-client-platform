@@ -20,7 +20,7 @@ export const SYSTEM_SNIPPET_DEFAULTS = {
     "Les tarifs affichés sont recalculés à partir du catalogue au moment de la commande.",
   checkout_not_open_yet:
     "La souscription en ligne n'est pas encore ouverte. Contactez-nous pour "
-    + "mettre en place cette formule.",
+    + "mettre en place cette offre.",
   checkout_temporarily_unavailable:
     "La souscription en ligne est momentanément indisponible.",
 } as const;

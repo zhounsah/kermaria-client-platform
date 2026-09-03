@@ -237,7 +237,7 @@ function invalidFormuleCode(correlationId: string) {
   return NextResponse.json(
     {
       code: "INVALID_FORMULE_CODE",
-      message: "La référence de formule est invalide.",
+      message: "La référence d'offre est invalide.",
       correlation_id: correlationId,
     },
     { status: 400 },

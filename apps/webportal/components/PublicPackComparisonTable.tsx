@@ -69,7 +69,7 @@ export function PublicPackComparisonTable({
       <div className="public-pack-compare-wrap">
         <div
           aria-colcount={orderedPacks.length + 1}
-          aria-label="Comparatif des formules publiques"
+          aria-label="Comparatif des offres publiques"
           aria-rowcount={rows.length + 1}
           className="public-pack-compare-table"
           role="table"
@@ -89,7 +89,7 @@ export function PublicPackComparisonTable({
               ) : null}
               <h2>{content.comparisonColumnLabel}</h2>
               <p>
-                Comparez les différences utiles avant de choisir votre formule.
+                Comparez les différences utiles avant de choisir votre offre.
                 Le tarif définitif dépend de la configuration retenue et de la
                 durée d&apos;engagement : il est calculé à l&apos;étape
                 suivante.
@@ -160,14 +160,14 @@ export function PublicPackComparisonTable({
                     className="button"
                     href={`/formules/${encodeURIComponent(pack.presetCode)}`}
                   >
-                    Configurer cette formule
+                    Configurer cette offre
                   </Link>
                 ) : (
                   <Link
                     className="button"
                     href={`/contact?formule=${encodeURIComponent(pack.presetCode)}`}
                   >
-                    Demander cette formule
+                    Demander cette offre
                   </Link>
                 )}
                 <Link className="text-link" href={`/offres/${pack.slug}`}>

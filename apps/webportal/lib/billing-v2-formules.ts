@@ -421,7 +421,7 @@ const CHECKOUT_SNIPPET_REASONS: Record<string, CheckoutSnippetKey> = {
 
 const CHECKOUT_REASON_MESSAGES: Record<string, string> = {
   BILLING_V2_PUBLIC_CHECKOUT_ROUTE_MISSING:
-    "Cette combinaison formule / engagement n'est pas ouverte à la "
+    "Cette combinaison offre / engagement n'est pas ouverte à la "
     + "souscription en ligne.",
   BILLING_V2_PUBLIC_PAYMENT_MODE_UNAVAILABLE:
     "Ce mode de règlement n'est pas proposé pour cette durée.",
@@ -460,7 +460,7 @@ export function describeCheckoutReason(
 const CHECKOUT_SNIPPET_FALLBACKS: CheckoutSnippets = {
   checkout_not_open_yet:
     "La souscription en ligne n'est pas encore ouverte. Contactez-nous pour "
-    + "mettre en place cette formule.",
+    + "mettre en place cette offre.",
   checkout_temporarily_unavailable:
     "La souscription en ligne est momentanément indisponible.",
 };

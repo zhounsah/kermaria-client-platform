@@ -7,15 +7,13 @@ import { ChevronDown, Menu, X } from "lucide-react";
 
 import { BrandLogo } from "@/components/BrandLogo";
 import { SERVICE_CATEGORIES } from "@/lib/public-services";
-import appPackage from "../../../package.json";
 
-const APP_VERSION_LABEL = `Version v${appPackage.displayVersion ?? appPackage.version}`;
 const publicHref = (pathname: string) => pathname;
 const primaryLinks = [
   { href: publicHref("/services/support-it#infogerance"), label: "Infogérance" },
   { href: publicHref("/services/cloud-hebergement"), label: "Cloud & Hébergement" },
   { href: publicHref("/tarifs"), label: "Tarifs" },
-  { href: publicHref("/formules"), label: "Formules" },
+  { href: publicHref("/offres"), label: "Offres" },
   { href: publicHref("/a-propos"), label: "À propos" },
 ] as const;
 
@@ -126,10 +124,10 @@ export function PublicShell({
         <div className="public-footer-inner">
           <div className="public-footer-brand">
             <BrandLogo className="brand-logo brand-logo-footer" variant="dark" />
-            <p>Zachary HOUNSA-HOUNKPA EI</p><p>Services informatiques, formules et espace client.</p><p>{APP_VERSION_LABEL}</p>
+            <p>Zachary HOUNSA-HOUNKPA EI</p><p>Services informatiques, offres et espace client.</p>
           </div>
           <nav className="public-footer-nav" aria-label="Liens légaux et navigation">
-            <a href={publicHref("/services")}>Services</a><a href={publicHref("/services/support-it")}>Infogérance</a><a href={publicHref("/tarifs")}>Tarifs</a><a href={publicHref("/formules")}>Formules</a><a href={publicHref("/a-propos")}>À propos</a><a href={publicHref("/infrastructure")}>Infrastructure</a><a href={publicHref("/ressources")}>Ressources</a><a href={publicHref("/wiki")}>Wiki</a><a href={publicHref("/diagnostic")}>Diagnostic</a><a href={publicHref("/contact")}>Contact</a><a href={publicHref("/mentions-legales")}>Mentions légales</a><a href={publicHref("/politique-confidentialite")}>Politique de confidentialité</a><a href={publicHref("/cgv")}>CGV</a><Link href="/login">Espace client</Link>
+            <a href={publicHref("/services")}>Services</a><a href={publicHref("/services/support-it")}>Infogérance</a><a href={publicHref("/tarifs")}>Tarifs</a><a href={publicHref("/offres")}>Offres</a><a href={publicHref("/a-propos")}>À propos</a><a href={publicHref("/infrastructure")}>Infrastructure</a><a href={publicHref("/ressources")}>Ressources</a><a href={publicHref("/wiki")}>Wiki</a><a href={publicHref("/diagnostic")}>Diagnostic</a><a href={publicHref("/contact")}>Contact</a><a href={publicHref("/mentions-legales")}>Mentions légales</a><a href={publicHref("/politique-confidentialite")}>Politique de confidentialité</a><a href={publicHref("/cgv")}>CGV</a><Link href="/login">Espace client</Link>
             {signupEnabled ? <a href={publicHref("/signup")}>Inscription</a> : null}
           </nav>
         </div>

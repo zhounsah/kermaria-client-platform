@@ -111,7 +111,7 @@ export function PublicStorefrontPage({
             <h2>{hasFormulaPath ? "Choisissez le parcours adapté." : "Parlons de votre besoin."}</h2>
             <p>
               {hasFormulaPath
-                ? "Une formule couvre le besoin standard. Pour un environnement existant ou un périmètre particulier, passez par le diagnostic ou le devis."
+                ? "Une offre couvre le besoin standard. Pour un environnement existant ou un périmètre particulier, passez par le diagnostic ou le devis."
                 : "Un devis ou un audit permet de confirmer le périmètre, les prérequis et les limites avant mise en service."}
             </p>
           </div>

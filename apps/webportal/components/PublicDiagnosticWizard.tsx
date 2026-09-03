@@ -494,8 +494,8 @@ function DiagnosticResult({
               </span>
             </div>
             <div className="diagnostic-result-actions">
-              <Link className="button" href={formulaHref}>Personnaliser cette formule</Link>
-              <Link className="text-link" href={`/formules/${recommendedPreset.code}`}>Voir la formule</Link>
+              <Link className="button" href={formulaHref}>Personnaliser cette offre</Link>
+              <Link className="text-link" href={`/formules/${recommendedPreset.code}`}>Voir l'offre</Link>
             </div>
           </div>
         ) : (

@@ -128,7 +128,7 @@ public static class CommunicationTemplateRegistry
                 V("visitorEmail", "Adresse e-mail du visiteur."),
                 V("subject", "Sujet saisi, ou « (sans sujet) »."),
                 V("message", "Corps du message du visiteur."),
-                V("offerLine", "Ligne « Formule référencée : … » ; vide sans formule."),
+                V("offerLine", "Ligne « Offre référencée : … » ; vide sans offre."),
             ],
             TestSendSupported: true),
         new(
@@ -207,7 +207,7 @@ public static class CommunicationTemplateRegistry
             "Message affiché quand la souscription en ligne n'est pas encore ouverte. "
             + "C'est le texte qui change le plus souvent pendant la phase de lancement.",
             "La souscription en ligne n'est pas encore ouverte. Contactez-nous pour "
-            + "mettre en place cette formule.",
+            + "mettre en place cette offre.",
             400),
         new(
             "checkout_temporarily_unavailable",

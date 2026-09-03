@@ -109,7 +109,7 @@ export default async function DashboardPage() {
 
       <section aria-label="Indicateurs du compte" className="metrics-grid">
         <MetricCard
-          detail="Calculés à partir de vos packs et options actifs"
+          detail="Calculés à partir de vos offres et options actives"
           label="Services actifs"
           tone="green"
           value={String(summary?.activeServiceCount ?? 0)}
@@ -146,7 +146,7 @@ export default async function DashboardPage() {
         <SectionCard ariaLabel="Aperçu des services">
           <SectionHeading
             action={<Link href="/services">Voir tous les services</Link>}
-            description="Services réellement déduits de vos packs, options et souscriptions."
+            description="Services réellement déduits de vos offres, options et souscriptions."
             title="Vos services"
           />
           {servicesResult.error ? (

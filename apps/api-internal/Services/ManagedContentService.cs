@@ -135,11 +135,11 @@ public sealed partial class ManagedContentService : IManagedContentService
         new(
             "pack-sheet:pack-dossier-securise",
             "pack_sheet",
-            "Fiche technique - Pack Dossier Sécurisé",
+            "Fiche technique - Offre Dossier Sécurisé",
             "/offres/dossier-securise",
             110,
             PackCode: "pack-dossier-securise",
-            PackLabel: "Pack Dossier Sécurisé",
+            PackLabel: "Offre Dossier Sécurisé",
             PackAudience:
                 "Pour une personne qui veut un dossier personnel simple et protégé.",
             PackDescription:
@@ -152,11 +152,11 @@ public sealed partial class ManagedContentService : IManagedContentService
         new(
             "pack-sheet:pack-acces-distance",
             "pack_sheet",
-            "Fiche technique - Pack Accès à Distance",
+            "Fiche technique - Offre Accès à Distance",
             "/offres/acces-distance",
             120,
             PackCode: "pack-acces-distance",
-            PackLabel: "Pack Accès à Distance",
+            PackLabel: "Offre Accès à Distance",
             PackAudience:
                 "Pour une personne qui veut retrouver ses fichiers via un accès plus encadré.",
             PackDescription:
@@ -172,11 +172,11 @@ public sealed partial class ManagedContentService : IManagedContentService
         new(
             "pack-sheet:pack-bureau-windows-distance",
             "pack_sheet",
-            "Fiche technique - Pack Bureau Windows à Distance",
+            "Fiche technique - Offre Bureau Windows à Distance",
             "/offres/bureau-windows-distance",
             130,
             PackCode: "pack-bureau-windows-distance",
-            PackLabel: "Pack Bureau Windows à Distance",
+            PackLabel: "Offre Bureau Windows à Distance",
             PackAudience:
                 "Pour retrouver un bureau Windows complet depuis l'extérieur.",
             PackDescription:
@@ -193,15 +193,15 @@ public sealed partial class ManagedContentService : IManagedContentService
         new(
             "pack-sheet:pack-pro-association",
             "pack_sheet",
-            "Fiche technique - Pack Pro / Association",
+            "Fiche technique - Offre Pro / Association",
             "/offres/pro-association",
             140,
             PackCode: "pack-pro-association",
-            PackLabel: "Pack Pro / Association",
+            PackLabel: "Offre Pro / Association",
             PackAudience:
                 "Pour une petite équipe qui veut une offre plus large et encadrée.",
             PackDescription:
-                "Une formule plus complète pour une petite structure, avec plus de capacité.",
+                "Une offre plus complète pour une petite structure, avec plus de capacité.",
             TechnicalServiceReferences:
             [
                 "USER-ADDITIONAL",
@@ -488,7 +488,7 @@ public sealed partial class ManagedContentService : IManagedContentService
         builder.AppendLine();
         builder.AppendLine(
             definition.PackDescription
-            ?? "Cette fiche technique décrit le périmètre opérationnel du pack.");
+            ?? "Cette fiche technique décrit le périmètre opérationnel de l'offre.");
         builder.AppendLine();
 
         if (!string.IsNullOrWhiteSpace(definition.PackAudience))
@@ -501,8 +501,8 @@ public sealed partial class ManagedContentService : IManagedContentService
         builder.AppendLine();
         builder.AppendLine(
             linkedComponents.Length > 0
-                ? $"La composition technique liée à ce pack est calculée automatiquement à partir du catalogue commercial actif. {linkedComponents.Length} composant(s) sont actuellement rattaché(s) et affiché(s) séparément sur la page publique."
-                : "La composition technique liée à ce pack est calculée automatiquement à partir du catalogue commercial actif et affichée séparément sur la page publique.");
+                ? $"La composition technique liée à cette offre est calculée automatiquement à partir du catalogue commercial actif. {linkedComponents.Length} composant(s) sont actuellement rattaché(s) et affiché(s) séparément sur la page publique."
+                : "La composition technique liée à cette offre est calculée automatiquement à partir du catalogue commercial actif et affichée séparément sur la page publique.");
 
         if (missingComponentCount > 0)
         {
@@ -522,7 +522,7 @@ public sealed partial class ManagedContentService : IManagedContentService
         builder.AppendLine("## Limites");
         builder.AppendLine();
         builder.AppendLine(
-            "- Cette fiche décrit le périmètre standard du pack et ne remplace pas un devis ou des conditions particulières.");
+            "- Cette fiche décrit le périmètre standard de l'offre et ne remplace pas un devis ou des conditions particulières.");
         builder.AppendLine(
             "- Les demandes hors périmètre, urgentes ou spécifiques peuvent nécessiter une prestation complémentaire.");
         builder.AppendLine();

@@ -46,8 +46,8 @@ assert.match(
 assert.match(component, /breadcrumbJsonLd/);
 assert.match(component, /resolveStorefrontPublicCta/);
 assert.match(component, /resolveStorefrontPublicRelatedLinks/);
-assert.match(component, /FORMULA: "Formule disponible"/);
-assert.match(component, /HYBRID: "Formule \+ accompagnement"/);
+assert.match(component, /FORMULA: "Offre disponible"/);
+assert.match(component, /HYBRID: "Offre \+ accompagnement"/);
 assert.match(component, /QUOTE: "Sur devis"/);
 assert.match(component, /VpnComparisonDetails/);
 assert.match(component, /storefront-inline-disclosure/);

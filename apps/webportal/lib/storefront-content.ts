@@ -241,7 +241,7 @@ const STOREFRONT_COMMERCIAL_ROUTES: Readonly<Partial<Record<
   "sauvegarde-externalisee": {
     mode: "HYBRID",
     presetCode: "pack-dossier-securise",
-    formulaLabel: "Prot\u00e9ger mes fichiers avec une formule",
+    formulaLabel: "Prot\u00e9ger mes fichiers avec une offre",
     secondaryLabel: "Sauvegarder un serveur ou un NAS",
     requiredPresetServiceCodes: ["BACKUP-PERSONAL"],
   },
@@ -341,7 +341,7 @@ export function resolveStorefrontTariffAction(
 
   if (preset?.items.some((item) => item.serviceCode === serviceCode)) {
     return {
-      label: "Voir la formule",
+      label: "Voir l'offre",
       href: `/formules/${encodeURIComponent(preset.code)}`,
     };
   }

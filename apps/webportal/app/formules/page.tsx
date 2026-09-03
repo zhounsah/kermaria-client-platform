@@ -12,9 +12,9 @@ import {
 } from "@/lib/billing-v2-formules";
 
 export const metadata: Metadata = buildPublicMetadata({
-  title: "Formules de stockage, sauvegarde et accès distant",
+  title: "Offres de stockage, sauvegarde et accès distant",
   description:
-    "Quatre formules claires — dossier sécurisé, accès sécurisé, bureau Windows et Pro — configurables et facturées au mois, avec remise sur engagement.",
+    "Quatre offres claires — dossier sécurisé, accès sécurisé, bureau Windows et Pro — configurables et facturées au mois, avec remise sur engagement.",
   path: "/formules",
 });
 
@@ -37,10 +37,10 @@ export default async function FormulesPage() {
   return (
     <div className="formules-page">
       <header className="formules-header formules-header-2026">
-        <p className="eyebrow">Formules</p>
-        <h1>Choisissez une formule, ajustez-la, souscrivez.</h1>
+        <p className="eyebrow">Offres</p>
+        <h1>Choisissez une offre, ajustez-la, souscrivez.</h1>
         <p className="formules-lead">
-          Chaque formule part d&apos;une configuration recommandée que vous
+          Chaque offre part d&apos;une configuration recommandée que vous
           pouvez ajuster : capacité de stockage, sauvegarde, accès à distance,
           utilisateurs. Le prix se met à jour à chaque changement.
         </p>
@@ -54,13 +54,13 @@ export default async function FormulesPage() {
 
       {presets.length === 0 ? (
         <p className="formules-empty">
-          Le catalogue des formules n&apos;est pas joignable pour le moment.
+          Le catalogue des offres n&apos;est pas joignable pour le moment.
           Les prix sont servis par l&apos;API interne : aucune valeur
           tarifaire n&apos;est conservée dans le site public.
         </p>
       ) : (
         <>
-          <section className="formules-grid" aria-label="Formules disponibles">
+          <section className="formules-grid" aria-label="Offres disponibles">
             {presets.map((preset) => {
               const monthlyCents = resolvePresetBaselineMonthlyCents(preset);
               const benefits = describePresetBenefits(preset, catalog);
@@ -106,7 +106,7 @@ export default async function FormulesPage() {
               automatiquement avant la souscription.
             </p>
             <p>
-              Chaque formule comprend la mise en service de votre espace, son
+              Chaque offre comprend la mise en service de votre espace, son
               hébergement, sa supervision et le support lié à son
               fonctionnement.
             </p>

@@ -434,5 +434,9 @@ assert.ok(
   footerBrand.includes(LEGAL_NAME),
   "Le pied de page public doit conserver la denomination juridique.",
 );
+assert.ok(
+  !footerBrand.includes("Version v") && !publicShell.includes("APP_VERSION_LABEL"),
+  "Le pied de page public ne doit pas exposer la version interne du deploiement.",
+);
 
 console.log("Vérification du contrat d'identité de marque WEBPORTAL réussie.");

@@ -31,11 +31,11 @@ import { BrandLogo } from "@/components/BrandLogo";
  */
 export const metadata: Metadata = {
   ...buildPublicMetadata({
-    title: "Zachary IT | Sauvegarde informatique à Guichen (35)",
+    title: "Zachary IT | Informatique, réseau et sauvegarde à Guichen",
     description:
-      "Zachary IT, à Guichen : sauvegarde distante, stockage documentaire et "
-      + "continuité d'activité pour les particuliers, associations et petites "
-      + "entreprises. Vos fichiers conservés hors de vos locaux.",
+      "Zachary IT à Guichen accompagne particuliers, associations et petites "
+      + "entreprises pour le réseau et le Wi-Fi, les postes, la sauvegarde, "
+      + "l'hébergement, la messagerie et le support informatique.",
     path: "/",
   }),
 };
@@ -43,56 +43,56 @@ export const metadata: Metadata = {
 const METHOD_STEPS = [
   {
     number: "01",
-    title: "Identifier les données à protéger",
-    body: "Ensemble, nous repérons les fichiers à conserver : documents administratifs, photos, factures, contrats, fichiers clients, configurations ou archives.",
+    title: "Comprendre votre besoin",
+    body: "Nous partons de votre situation réelle : Wi-Fi instable, nouveaux postes, accès à distance, sauvegarde, messagerie, serveur ou besoin d'assistance.",
   },
   {
     number: "02",
-    title: "Mettre en place la copie",
-    body: "Les données retenues sont copiées vers un stockage distinct de votre ordinateur, de votre serveur et de vos locaux.",
+    title: "Définir et mettre en place la solution",
+    body: "Les choix sont expliqués avant installation : matériel, services, accès, sécurité, sauvegarde et coût. La solution est ensuite configurée pour votre usage.",
   },
   {
     number: "03",
-    title: "Récupérer les fichiers",
-    body: "Après un incident, vous récupérez les données sauvegardées selon les conditions et fonctionnalités de l'offre choisie.",
+    title: "Vérifier et accompagner",
+    body: "Le fonctionnement est vérifié avec vous. Selon le besoin, Zachary IT peut ensuite assurer le support, la maintenance, la supervision ou les évolutions futures.",
   },
 ];
 
 const SERVICES = [
   {
-    title: "Dossier de secours numérique",
-    body: "Conserver à distance vos documents importants : factures et garanties, contrats et attestations, photos de vos biens, numéros de série, diplômes et documents administratifs.",
+    title: "Réseau et Wi-Fi",
+    body: "Conception, amélioration et maintenance de réseaux filaires ou Wi-Fi : couverture, équipements, segmentation, accès distant et sécurisation adaptée au contexte.",
   },
   {
-    title: "Sauvegarde de données",
-    body: "Copier les fichiers d'un ordinateur, d'un NAS ou d'un serveur vers un stockage séparé. La fréquence, la conservation et les conditions de restauration dépendent de l'offre choisie.",
+    title: "Postes et accès de travail",
+    body: "Installation et suivi de postes, préparation d'environnements de travail, accès à distance et bureau Windows distant lorsque l'usage le justifie.",
   },
   {
-    title: "Stockage et accès distant",
-    body: "Un espace de stockage distant pour déposer vos fichiers et les retrouver depuis un autre appareil quand votre équipement principal n'est plus disponible.",
+    title: "Sauvegarde et continuité",
+    body: "Sauvegarde de postes, NAS ou serveurs, stockage séparé et préparation de la restauration pour réduire l'impact d'une panne, d'une erreur ou d'un sinistre.",
   },
   {
-    title: "Continuité d'activité",
-    body: "Protéger les devis, factures, dossiers clients, fichiers de travail, configurations et archives nécessaires à une petite activité.",
+    title: "Hébergement et services en ligne",
+    body: "VPS, hébergement, domaines, DNS et messagerie professionnelle avec une configuration suivie et des responsabilités clairement définies.",
   },
   {
-    title: "Assistance et infrastructure",
-    body: "Selon le besoin : maintenance, réseau, VPN privé, supervision, mise en place de postes et de serveurs.",
+    title: "Maintenance et support",
+    body: "Assistance, mises à jour, supervision et accompagnement des utilisateurs pour traiter les incidents et éviter l'accumulation de problèmes techniques.",
   },
 ];
 
 const AUDIENCES = [
   {
     title: "Particuliers",
-    body: "Pour protéger vos photos, documents administratifs, factures, garanties et autres fichiers personnels importants.",
+    body: "Pour améliorer le Wi-Fi, remettre un poste en état, protéger des fichiers importants ou accéder simplement à ses outils à distance.",
   },
   {
     title: "Associations",
-    body: "Pour centraliser vos documents, les partager entre responsables et éviter qu'ils ne restent sur l'ordinateur d'un seul membre.",
+    body: "Pour organiser les postes, les accès, la messagerie, le partage de fichiers et les sauvegardes sans faire reposer toute l'informatique sur une seule personne.",
   },
   {
     title: "Indépendants et petites entreprises",
-    body: "Pour sauvegarder les documents nécessaires à l'activité et faciliter la reprise après une panne ou une perte de matériel.",
+    body: "Pour fiabiliser réseau, postes et outils de travail, protéger les données, maintenir la messagerie et préparer la continuité de l'activité.",
   },
 ];
 
@@ -170,8 +170,8 @@ export default async function HomePage() {
             </p>
             <h1>Une informatique fiable, sans avoir à tout gérer vous-même.</h1>
             <p className="vitrine-hero-lead">
-              Infrastructure, sauvegarde, stockage, accès à distance, bureau
-              Windows à distance et support IT pour les particuliers,
+              Réseau et Wi-Fi, postes, sauvegarde, accès à distance,
+              hébergement, messagerie et support IT pour les particuliers,
               associations, indépendants et petites entreprises.
             </p>
             <p className="vitrine-hero-note">
@@ -179,8 +179,8 @@ export default async function HomePage() {
               j&apos;explique ce qui est installé, protégé et accessible au quotidien.
             </p>
             <div className="vitrine-hero-actions">
-              <Link className="button" href="/formules">
-                Comparer les formules
+              <Link className="button" href="/offres">
+                Comparer les offres
               </Link>
               <Link className="button button-secondary" href="/contact">
                 Expliquer mon besoin
@@ -213,10 +213,10 @@ export default async function HomePage() {
       <section className="vitrine-services" id="services">
         <header className="vitrine-section-header">
           <p className="eyebrow">Services</p>
-          <h2>Infrastructure, sauvegarde, accès à distance et accompagnement.</h2>
+          <h2>Réseau, postes, sauvegarde, services en ligne et accompagnement.</h2>
           <p className="vitrine-section-lead">
             Les prestations se combinent selon votre besoin. Comparez les
-            <Link href="/formules">formules configurables</Link>, consultez les <Link href="/tarifs">tarifs</Link>
+            <Link href="/offres">offres configurables</Link>, consultez les <Link href="/tarifs">tarifs</Link>
             ou voyez des exemples concrets sur le <a href={PORTFOLIO_URL}>portfolio</a>.
           </p>
         </header>
@@ -250,17 +250,17 @@ export default async function HomePage() {
           <h2>Un échange direct, du besoin jusqu&apos;à la mise en service.</h2>
           <p>
             Vous échangez directement avec moi, de l&apos;étude du besoin jusqu&apos;à
-            la mise en service. Avant toute commande, je précise les données
-            concernées, les modalités de stockage, les conditions de sauvegarde
-            et de restauration, ainsi que le prix et les limites du service.
+            la mise en service. Avant toute commande, je précise le périmètre,
+            les choix techniques, les accès, les responsabilités, le prix et
+            les limites du service retenu.
           </p>
         </div>
         <div className="vitrine-hero-actions">
           <Link className="button" href="/contact">
             Expliquer mon besoin
           </Link>
-          <Link className="button button-secondary" href="/formules">
-            Comparer les formules
+          <Link className="button button-secondary" href="/offres">
+            Comparer les offres
           </Link>
         </div>
       </section>

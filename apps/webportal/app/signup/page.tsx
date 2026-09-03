@@ -16,7 +16,7 @@ import styles from "./page.module.css";
 export const metadata: Metadata = {
   title: "Créer un compte",
   description:
-    "Demandez l'ouverture de votre accès client et reprenez, si besoin, la formule déjà configurée sur la vitrine.",
+    "Demandez l'ouverture de votre accès client et reprenez, si besoin, l'offre déjà configurée sur la vitrine.",
   // Seule route non publique qui n'avait ni `X-Robots-Tag` (via
   // NOINDEX_ROUTE_PREFIXES dans `next.config.ts`) ni `Disallow`. Comme
   // `robots.txt` n'empeche pas l'indexation d'une URL decouverte par un
@@ -67,7 +67,7 @@ export default async function SignupPage({
         <p className="signup-lead">
           {selfServiceVpsContinuation
             ? "Créez votre accès client pour reprendre immédiatement la configuration et le paiement de votre VPS."
-            : "Renseignez vos informations pour demander l'ouverture de votre accès client. Le parcours reste simple et assumé : confirmation de votre adresse e-mail, validation de votre demande par notre équipe, puis définition du mot de passe avant la finalisation de la formule choisie."}
+            : "Renseignez vos informations pour demander l'ouverture de votre accès client. Le parcours reste simple et assumé : confirmation de votre adresse e-mail, validation de votre demande par notre équipe, puis définition du mot de passe avant la finalisation de l'offre choisie."}
         </p>
       </header>
 
@@ -84,9 +84,9 @@ export default async function SignupPage({
 
       {billingV2Selection && billingV2Quote ? (
         <div className={styles.selectionStack}>
-          <section className={styles.stepsCard} aria-label="Formule sélectionnée">
-            <p className="eyebrow">Formule sélectionnée</p>
-            <h2>{billingV2PresetName ?? "Votre formule"}</h2>
+          <section className={styles.stepsCard} aria-label="Offre sélectionnée">
+            <p className="eyebrow">Offre sélectionnée</p>
+            <h2>{billingV2PresetName ?? "Votre offre"}</h2>
             <p>
               <strong>{formatCurrencyFromCents(billingV2Quote.monthlyAfterDiscountCents)} / mois</strong>
               {" - "}{billingV2Quote.commitmentMonths} mois,
@@ -112,8 +112,8 @@ export default async function SignupPage({
       {billingV2Requested && (!billingV2Selection || !billingV2Quote) ? (
         <section className={styles.stepsCard} aria-label="Configuration invalide">
           <h2>Configuration à reprendre</h2>
-          <p>La formule transmise ne peut pas être revalidée. Revenez au configurateur avant de créer le compte.</p>
-          <Link className="button button-secondary" href="/formules">Reprendre ma formule</Link>
+          <p>L'offre transmise ne peut pas être revalidée. Revenez au configurateur avant de créer le compte.</p>
+          <Link className="button button-secondary" href="/formules">Reprendre mon offre</Link>
         </section>
       ) : null}
 
@@ -131,7 +131,7 @@ export default async function SignupPage({
             <li>Vous confirmez votre adresse e-mail.</li>
             <li>Nous validons l&apos;ouverture de votre accès client.</li>
             <li>Vous définissez votre mot de passe et activez votre accès client.</li>
-            <li>Vous finalisez ensuite votre formule depuis l&apos;espace client.</li>
+            <li>Vous finalisez ensuite votre offre depuis l&apos;espace client.</li>
           </ol>
         )}
       </section>

@@ -49,7 +49,7 @@ public sealed partial class PublicPackCatalogService : IPublicPackCatalogService
             {
                 ["pack-dossier-securise"] = new(
                     "pack-dossier-securise",
-                    "Pack Dossier Sécurisé",
+                    "Offre Dossier Sécurisé",
                     "Dossier Sécurisé",
                     "Vos fichiers essentiels restent accessibles et sauvegardés.",
                     "Pour une personne qui veut un dossier personnel simple et protégé.",
@@ -70,13 +70,13 @@ public sealed partial class PublicPackCatalogService : IPublicPackCatalogService
                     10),
                 ["pack-acces-distance"] = new(
                     "pack-acces-distance",
-                    "Pack Accès à Distance",
+                    "Offre Accès à Distance",
                     "Accès à Distance",
                     "Travaillez à distance avec un accès privé supervisé.",
                     "Pour une personne qui veut retrouver ses fichiers via un accès plus encadré.",
                     "La base du dossier sécurisé, enrichie d'un accès VPN personnel et d'une supervision légère.",
                     [
-                        "Tout le pack Dossier Sécurisé",
+                        "Tout ce que comprend l'offre Dossier Sécurisé",
                         "Accès VPN personnel",
                         "Supervision du service",
                         "Support niveau 1"
@@ -91,7 +91,7 @@ public sealed partial class PublicPackCatalogService : IPublicPackCatalogService
                     20),
                 ["pack-bureau-windows-distance"] = new(
                     "pack-bureau-windows-distance",
-                    "Pack Bureau Windows à Distance",
+                    "Offre Bureau Windows à Distance",
                     "Bureau Windows",
                     "Un environnement Windows distant prêt à l'emploi.",
                     "Pour retrouver un bureau Windows complet depuis l'extérieur.",
@@ -112,11 +112,11 @@ public sealed partial class PublicPackCatalogService : IPublicPackCatalogService
                     30),
                 ["pack-pro-association"] = new(
                     "pack-pro-association",
-                    "Pack Pro / Association",
+                    "Offre Pro / Association",
                     "Pro / Association",
                     "Une base complète pour une petite structure ou une association.",
                     "Pour une petite équipe qui veut une offre plus large et encadrée.",
-                    "Une formule plus complète pour une petite structure, avec plus de capacité.",
+                    "Une offre plus complète pour une petite structure, avec plus de capacité.",
                     [
                         "2 utilisateurs et 64 Go de stockage",
                         "Accès VPN personnel",
@@ -156,9 +156,9 @@ public sealed partial class PublicPackCatalogService : IPublicPackCatalogService
 
     private static PublicPackCatalogContent CreateDefaultContent()
         => new(
-            "Catalogue packs",
-            "Des packs simples, lisibles et prêts à activer",
-            "Comparez les packs, choisissez votre durée d'engagement, puis lancez votre demande sans avoir à comprendre les briques techniques internes.",
+            "Catalogue des offres",
+            "Des offres simples, lisibles et prêtes à activer",
+            "Comparez les offres, choisissez votre durée d'engagement, puis lancez votre demande sans avoir à comprendre les briques techniques internes.",
             "Fonctionnalités clés",
             "Les tarifs affichés sont hors taxes et correspondent au catalogue public actuel. Le détail technique reste géré en interne pour le provisionnement et le support.",
             "Besoin d'un accompagnement spécifique ? Passez par le formulaire de contact.",

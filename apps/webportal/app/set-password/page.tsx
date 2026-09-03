@@ -101,7 +101,7 @@ export default async function SetPasswordPage({
               <Link href={flow?.trim() === ADDITIONAL_USER_FLOW ? "/login" : "/login?next=%2Fformules%2Freprendre"}>
                 {flow?.trim() === ADDITIONAL_USER_FLOW
                   ? "Se connecter ├á votre espace client"
-                  : "Se connecter et finaliser ma formule"}
+                  : "Se connecter et finaliser mon offre"}
               </Link>
             </p>
           ) : (
@@ -158,7 +158,7 @@ export default async function SetPasswordPage({
               Votre compte a été validé. Choisissez un mot de passe pour activer
               votre accès à l&apos;espace client. Une fois connecté, votre tableau
               de bord vous guidera vers les prochaines étapes, notamment la
-              finalisation de votre pack si vous en aviez choisi un.
+              finalisation de votre offre si vous en aviez choisi un.
             </p>
           )
         ) : null}

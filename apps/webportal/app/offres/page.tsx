@@ -14,7 +14,7 @@ import { isSignupEnabled } from "@/lib/public-routes";
 export const metadata: Metadata = buildPublicMetadata({
   title: "Offres de sauvegarde et stockage à Guichen",
   description:
-    "Quatre packs conçus pour la sauvegarde distante, le stockage documentaire et la continuité d'activité des particuliers et petites structures.",
+    "Quatre offres conçus pour la sauvegarde distante, le stockage documentaire et la continuité d'activité des particuliers et petites structures.",
   path: "/offres",
 });
 
@@ -27,7 +27,7 @@ const OFFER_STORY_POINTS = [
   },
   {
     title: "Continuité d'activité",
-    body: "Les packs aident à préserver les documents clients, devis, factures, configurations et fichiers de travail nécessaires à une reprise plus rapide.",
+    body: "Les offres aident à préserver les documents clients, devis, factures, configurations et fichiers de travail nécessaires à une reprise plus rapide.",
   },
   {
     title: "Accompagnement local",
@@ -60,7 +60,7 @@ export default async function OffresPage() {
             Un incident matériel ne devrait pas devenir une perte définitive.
           </h2>
           <p>
-            Ces packs sont pensés pour conserver une copie distante de vos
+            Ces offres sont pensés pour conserver une copie distante de vos
             documents importants et de vos données utiles, sans réduire le
             sujet à un discours anxiogène ou à des promesses techniques non
             confirmées.
@@ -89,22 +89,22 @@ export default async function OffresPage() {
       <section className="offres-demo-access" aria-labelledby="offres-formules-title">
         <div>
           <p className="eyebrow">Nouveau</p>
-          <h2 id="offres-formules-title">Configurer une formule et souscrire en ligne</h2>
+          <h2 id="offres-formules-title">Configurer une offre et souscrire en ligne</h2>
           <p>
-            Quatre formules ajustables — capacité, sauvegarde, accès à
+            Quatre offres ajustables — capacité, sauvegarde, accès à
             distance, utilisateurs — avec le prix mis à jour à chaque
             changement et la remise d&apos;engagement affichée.
           </p>
         </div>
         <Link className="button button-primary" href="/formules">
-          Voir les formules
+          Voir les offres
         </Link>
       </section>
 
       <section className="offres-demo-access" aria-labelledby="offres-demo-title">
         <div>
           <p className="eyebrow">Espace client</p>
-          <h2 id="offres-demo-title">Voir le portail avant de demander un pack</h2>
+          <h2 id="offres-demo-title">Voir le portail avant de demander une offre</h2>
           <p>
             La démo montre le parcours client avec des données fictives, sans
             accès à un vrai compte ni à des informations de production.
@@ -117,16 +117,16 @@ export default async function OffresPage() {
 
       {packs.length === 0 ? (
         <p className="offres-empty">
-          Les formules ne sont pas encore disponibles en ligne. Contactez-nous
+          Les offres ne sont pas encore disponibles en ligne. Contactez-nous
           pour obtenir une proposition adaptée.
         </p>
       ) : (
         <>
           <section className="offres-overview">
             <div className="offres-section-heading">
-              <h2>Commencez par une vue simple des packs</h2>
+              <h2>Commencez par une vue simple des offres</h2>
               <p>
-                Chaque pack présente son cadre d&apos;usage, sa structure
+                Chaque offre présente son cadre d&apos;usage, sa structure
                 tarifaire et l&apos;action suivante attendue. Le comparatif
                 détaillé reste disponible plus bas pour arbitrer ligne par
                 ligne.

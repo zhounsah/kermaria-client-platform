@@ -335,8 +335,8 @@ function createMockPackSheetBody(packCode: PublicPackCode) {
     "## Composants techniques liés",
     "",
     componentCount > 0
-      ? `La composition technique active de ce pack est calculée automatiquement. ${componentCount} composant(s) sont actuellement rattaché(s) et affiché(s) séparément sur la page publique.`
-      : "La composition technique active de ce pack est calculée automatiquement et affichée séparément sur la page publique.",
+      ? `La composition technique active de cette offre est calculée automatiquement. ${componentCount} composant(s) sont actuellement rattaché(s) et affiché(s) séparément sur la page publique.`
+      : "La composition technique active de cette offre est calculée automatiquement et affichée séparément sur la page publique.",
     "",
     "## Pré-requis",
     "",
@@ -345,7 +345,7 @@ function createMockPackSheetBody(packCode: PublicPackCode) {
     "",
     "## Limites",
     "",
-    "- Cette fiche décrit le périmètre standard du pack et ne remplace pas un devis spécifique.",
+    "- Cette fiche décrit le périmètre standard de l'offre et ne remplace pas un devis spécifique.",
     "- Les demandes hors périmètre peuvent donner lieu à une prestation complémentaire.",
     "",
     "## Support",
