@@ -317,7 +317,8 @@ public static class BillingV2FinancialCoreSchemaTests
                 net: 1000,
                 tax: 0,
                 total: 1000,
-                financialStatus: "finalized"),
+                financialStatus: "finalized",
+                autoPopulateFinalizedAt: false),
             "DB-11 : finalized exige finalized_at.");
 
     private static async Task VerifyIdempotencyKeyIsUniqueAsync(
@@ -775,7 +776,8 @@ public static class BillingV2FinancialCoreSchemaTests
         string financialStatus = "draft",
         string settlementStatus = "none",
         string periodStart = "2026-08-01 00:00:00",
-        string periodEnd = "2026-09-01 00:00:00")
+        string periodEnd = "2026-09-01 00:00:00",
+        bool autoPopulateFinalizedAt = true)
     {
         var id = Guid.NewGuid().ToString("D");
         await using var command = connection.CreateCommand();
@@ -803,7 +805,8 @@ public static class BillingV2FinancialCoreSchemaTests
                 'pricing-engine-v1',
                 @canonical, SHA2(@canonical, 256),
                 UTC_TIMESTAMP(6),
-                CASE WHEN @financial_status = 'finalized'
+                CASE WHEN @auto_populate_finalized_at = 1
+                           AND @financial_status = 'finalized'
                     THEN UTC_TIMESTAMP(6) ELSE NULL END,
                 CASE WHEN @settlement_status = 'settled'
                     THEN UTC_TIMESTAMP(6) ELSE NULL END
@@ -815,6 +818,9 @@ public static class BillingV2FinancialCoreSchemaTests
             "@subscription_id",
             fixture.SubscriptionId);
         command.Parameters.AddWithValue("@financial_status", financialStatus);
+        command.Parameters.AddWithValue(
+            "@auto_populate_finalized_at",
+            autoPopulateFinalizedAt ? 1 : 0);
         command.Parameters.AddWithValue("@settlement_status", settlementStatus);
         command.Parameters.AddWithValue("@currency", currency);
         command.Parameters.AddWithValue("@period_start", periodStart);

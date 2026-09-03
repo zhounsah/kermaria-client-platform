@@ -18,7 +18,7 @@ public sealed record BillingV2DocumentIssueResult(
 /// <c>commercial_documents.payment_method</c> est un ENUM MariaDB borne a
 /// ('paypal','stripe','manual'). Y ecrire une valeur hors liste ne leve pas
 /// une erreur metier lisible : MariaDB repond
-/// « Data truncated for column 'payment_method' », la confirmation echoue et
+/// Â« Data truncated for column 'payment_method' Â», la confirmation echoue et
 /// la facture reste emise mais jamais marquee payee alors que l'argent est
 /// encaisse. Le rail reel du reglement est donc traduit ici, et tout provider
 /// inconnu retombe sur 'manual' - une valeur toujours valide, qui signale un
@@ -529,7 +529,7 @@ public sealed class BillingV2DocumentIssuerService
         string subscriptionId,
         CancellationToken cancellationToken)
     {
-        if (!await RefundTableExistsAsync(connection, cancellationToken))
+        if (!await RefundTableExistsAsync(connection, transaction, cancellationToken))
         {
             return false;
         }
@@ -556,7 +556,7 @@ public sealed class BillingV2DocumentIssuerService
         string billingEventId,
         CancellationToken cancellationToken)
     {
-        if (!await RefundTableExistsAsync(connection, cancellationToken))
+        if (!await RefundTableExistsAsync(connection, transaction, cancellationToken))
         {
             return false;
         }
@@ -576,9 +576,11 @@ public sealed class BillingV2DocumentIssuerService
 
     private static async Task<bool> RefundTableExistsAsync(
         MySqlConnection connection,
+        MySqlTransaction? transaction,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText =
             """
             SELECT EXISTS(
