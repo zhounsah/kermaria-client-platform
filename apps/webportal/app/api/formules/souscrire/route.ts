@@ -58,6 +58,18 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Refuser une requete non authentifiee ou cross-site avant de parser le
+  // payload commercial. La validation metier ne doit pas preceder le garde CSRF.
+  const sessionToken = request.cookies.get(getSessionCookieName())?.value;
+  if (!sessionToken) {
+    return fail("UNAUTHORIZED", "Session requise.", 401);
+  }
+
+  const csrfFailure = rejectInvalidPortalCsrf(request);
+  if (csrfFailure) {
+    return csrfFailure;
+  }
+
   let body: unknown;
   try {
     body = await request.json();
@@ -96,16 +108,6 @@ export async function POST(request: NextRequest) {
       "Une cle d'idempotence est requise pour initialiser un checkout.",
       400,
     );
-  }
-
-  const sessionToken = request.cookies.get(getSessionCookieName())?.value;
-  if (!sessionToken) {
-    return fail("UNAUTHORIZED", "Session requise.", 401);
-  }
-
-  const csrfFailure = rejectInvalidPortalCsrf(request);
-  if (csrfFailure) {
-    return csrfFailure;
   }
 
   try {

@@ -471,6 +471,27 @@ for (const route of [
   );
 }
 
+const billingSubscribeRoute = await read("app/api/formules/souscrire/route.ts");
+const billingSubscribeSessionIndex = billingSubscribeRoute.indexOf(
+  "const sessionToken = request.cookies.get(getSessionCookieName())?.value;",
+);
+const billingSubscribeCsrfIndex = billingSubscribeRoute.indexOf(
+  "rejectInvalidPortalCsrf(request)",
+);
+const billingSubscribeJsonIndex = billingSubscribeRoute.indexOf(
+  "body = await request.json()",
+);
+const billingSubscribeSelectionIndex = billingSubscribeRoute.indexOf(
+  "readBillingV2SelectionPayload(body)",
+);
+assert.ok(
+  billingSubscribeSessionIndex >= 0
+    && billingSubscribeCsrfIndex > billingSubscribeSessionIndex
+    && billingSubscribeJsonIndex > billingSubscribeCsrfIndex
+    && billingSubscribeSelectionIndex > billingSubscribeCsrfIndex,
+  "/api/formules/souscrire doit verifier session et CSRF avant de parser ou valider le payload commercial.",
+);
+
 for (const route of [
   "app/api/admin/subscriptions/[id]/cancel/route.ts",
   "app/api/admin/subscriptions/[id]/provisioning/reconcile/route.ts",
