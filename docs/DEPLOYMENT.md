@@ -1,15 +1,13 @@
 # Deploiement
 
-> Current navigation - 2026-08-28: start with [`CURRENT_STATE.md`](CURRENT_STATE.md), then use [`OPERATIONS.md`](OPERATIONS.md) for validation and rollback. Production release: `v2.0.0.6` (`9f47f2558bb5a2cc4b2b0f880f3ea97456cae1b2`).
-
+> Current navigation - 2026-09-05: start with [`CURRENT_STATE.md`](CURRENT_STATE.md), then use [`OPERATIONS.md`](OPERATIONS.md) for validation and rollback. Current production release: `v2.0.2.7` (`954c2910a9f9f7ac8fd9893da97948791e70502f`).
 Production actuelle : SRV-11 porte edge/TLS, SRV-12 porte WEBPORTAL sous Ubuntu/systemd, SRV-13 porte API-INTERNAL sous Windows et SRV-06 porte MariaDB.
-
-Runtime v2.0.0.6 verifie le 28 aout 2026 :
-
-- WEBPORTAL : `/opt/kermaria/releases/20260828-104050-v2.0.0.6-9f47f25` ;
-- API-INTERNAL : `C:\apps\api-internal`, commit marker `a6eefcd09833bb7e2384f5a7694e47a4e6621cd1` ;
-- aucune migration SQL requise par v2.0.0.6 ;
-- details et hashes : [`releases/V2.0.0.6.md`](releases/V2.0.0.6.md).
+Runtime verifie le 5 septembre 2026 :
+- WEBPORTAL : `/opt/kermaria/releases/20260905-164625-v2.0.2.7-954c291`, artefact SHA-256 `8B41EBEB4415881FA8FC28DBE82ABFAC456DB8792D8E65EA968749A5BB820CB4` ;
+- rollback WEBPORTAL immediat : `/opt/kermaria/releases/20260905-154724-v2.0.2.6-8b44893` ;
+- API-INTERNAL : `C:\apps\api-internal`, application `v2.0.2.6` / commit `8b448933114a1cbe1a1e0404d5ed338b27378595` (non redeployee pour le hotfix WEBPORTAL `v2.0.2.7`) ;
+- MariaDB : schema applique jusqu'a `093_public_contact_identity_sync`, aucune migration SQL ajoutee par `v2.0.2.7` ;
+- details, validations et rollback : [`releases/V2.0.2.7.md`](releases/V2.0.2.7.md).
 
 Le runbook DEPLOYMENT_WINDOWS.md decrit l ancienne topologie SRV-01/SRV-02 et reste utile uniquement comme historique/staging.
 Voir aussi DOMAIN_MIGRATION_2026-08-20.md. Le present document reste la reference des variables, modes et garde-fous generaux.
