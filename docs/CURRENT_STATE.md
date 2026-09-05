@@ -1,7 +1,7 @@
 # Current state - Zachary IT platform
 Last verified: 2026-09-05
-Current production release: `v2.0.2.7`
-Release commit: `954c2910a9f9f7ac8fd9893da97948791e70502f`
+Current production release: `v2.0.2.8`
+Release commit: `f4e0235941e1424ddcf2183e0e09f5ad98fd6104`
 This document is the primary entry point for the current platform state. Older V0.x/V1.x documents remain useful as implementation history, but they must not override this file, the current code, or the current deployment runbooks.
 ## Production topology
 ```text
@@ -80,36 +80,39 @@ Since v2.0.0.7:
 API-INTERNAL active runtime:
 - host: SRV-13
 - service: `KermariaApiInternal`
-- active application commit: `8b448933114a1cbe1a1e0404d5ed338b27378595` (`v2.0.2.6`; unchanged by the WEBPORTAL-only `v2.0.2.7` deployment)
+- active application commit: `8b448933114a1cbe1a1e0404d5ed338b27378595` (`v2.0.2.6`; unchanged by the WEBPORTAL-only `v2.0.2.7` and `v2.0.2.8` deployments)
 - rollback copy: `C:\apps\api-internal-old-20260905-171911`
 - executable SHA-256: `E40174C580FB265C5C22E23AD829E641B53FD0CA6AF6D6F7F444D7855F80F5AC`
 WEBPORTAL active runtime:
 - host: SRV-12
 - service: `kermaria-webportal`
-- active release: `/opt/kermaria/releases/20260905-164625-v2.0.2.7-954c291`
-- release commit: `954c2910a9f9f7ac8fd9893da97948791e70502f`
-- rollback release retained: `/opt/kermaria/releases/20260905-154724-v2.0.2.6-8b44893`
-- artifact SHA-256: `8B41EBEB4415881FA8FC28DBE82ABFAC456DB8792D8E65EA968749A5BB820CB4`
+- active release: `/opt/kermaria/releases/20260905-171417-v2.0.2.8-f4e0235`
+- release commit: `f4e0235941e1424ddcf2183e0e09f5ad98fd6104`
+- rollback release retained: `/opt/kermaria/releases/20260905-164625-v2.0.2.7-954c291`
+- artifact SHA-256: `F08DE5E4AC0E53B095B960A97DB28696EAD33A9C7252B3010952353E8C5DF060`
 - `.next/cache`: `kermaria-web:kermaria-web`, mode `750`
-MariaDB production schema remains at `093_public_contact_identity_sync`; `v2.0.2.7` contains no SQL migration.
+MariaDB production schema remains at `093_public_contact_identity_sync`; `v2.0.2.8` contains no SQL migration.
 ## Production smoke test - 2026-09-05
-Verified after deployment of `v2.0.2.7`:
+Verified after deployment of `v2.0.2.8`:
 - WEBPORTAL service -> active on SRV-12;
 - WEBPORTAL local `/`, `/api/health/live` and `/api/health/ready` -> 200;
 - public `https://zachary-it.fr/`, `/formules`, `/services/vps` and `/diagnostic` -> 200;
 - dashboard login, live and readiness endpoints -> 200;
 - administration login -> 200;
 - deployed artifact hash matches the locally built tagged artifact exactly;
-- deployed manifest identifies `v2.0.2.7` / `954c2910a9f9f7ac8fd9893da97948791e70502f`;
-- a mutation admin without CSRF token returns `403 CSRF_FORBIDDEN`;
+- deployed manifest identifies `v2.0.2.8` / `f4e0235941e1424ddcf2183e0e09f5ad98fd6104`;
+- authenticated checkout with a session cookie but no CSRF token returns `403 CSRF_FORBIDDEN` before payload parsing;
+- the same checkout with a valid CSRF token and invalid `{}` payload returns `400 INVALID_REQUEST`, proving the guard runs first;
 - systemd restart shows the expected old-process exit `143`, followed immediately by a successful start;
 - API-INTERNAL and MariaDB were deliberately not redeployed because this release changes only WEBPORTAL/BFF security behavior.
-Security scope of `v2.0.2.7`:
+Security scope of `v2.0.2.8`:
 - authenticated client mutations now use the same double-submit CSRF model as the protected admin surfaces;
 - direct authenticated mutation routes that bypass the common portal BFF are explicitly guarded;
 - browser mutation helpers attach the CSRF token automatically while public unauthenticated endpoints remain excluded;
+- the `/api/formules/souscrire` session and CSRF guards now run before JSON parsing and Billing V2 payload validation;
+- a regression contract enforces this ordering;
 - the previous WEBPORTAL release is retained for immediate symlink rollback.
-Known follow-up after `v2.0.2.7`: `/api/formules/souscrire` currently parses and validates the checkout payload before its CSRF guard. No internal mutation is reachable before the guard, but the guard should be moved earlier so an authenticated request without a valid CSRF token fails consistently with `403` before business-payload validation.
+
 
 ## Documentation order
 For current work, read in this order:
@@ -119,5 +122,5 @@ For current work, read in this order:
 4. `docs/OPERATIONS.md`
 5. `docs/DEPLOYMENT.md`
 6. `docs/GUIDE_ADMIN.md`
-7. `docs/releases/V2.0.2.7.md`
+7. `docs/releases/V2.0.2.8.md`
 Historical documents under V0.x, V1.x and `docs/v1.4/` document how the platform got here. They are not automatically current operational truth.

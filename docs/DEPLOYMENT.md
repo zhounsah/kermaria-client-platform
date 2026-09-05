@@ -1,13 +1,13 @@
 # Deploiement
 
-> Current navigation - 2026-09-05: start with [`CURRENT_STATE.md`](CURRENT_STATE.md), then use [`OPERATIONS.md`](OPERATIONS.md) for validation and rollback. Current production release: `v2.0.2.7` (`954c2910a9f9f7ac8fd9893da97948791e70502f`).
+> Current navigation - 2026-09-05: start with [`CURRENT_STATE.md`](CURRENT_STATE.md), then use [`OPERATIONS.md`](OPERATIONS.md) for validation and rollback. Current production release: `v2.0.2.8` (`f4e0235941e1424ddcf2183e0e09f5ad98fd6104`).
 Production actuelle : SRV-11 porte edge/TLS, SRV-12 porte WEBPORTAL sous Ubuntu/systemd, SRV-13 porte API-INTERNAL sous Windows et SRV-06 porte MariaDB.
 Runtime verifie le 5 septembre 2026 :
-- WEBPORTAL : `/opt/kermaria/releases/20260905-164625-v2.0.2.7-954c291`, artefact SHA-256 `8B41EBEB4415881FA8FC28DBE82ABFAC456DB8792D8E65EA968749A5BB820CB4` ;
-- rollback WEBPORTAL immediat : `/opt/kermaria/releases/20260905-154724-v2.0.2.6-8b44893` ;
-- API-INTERNAL : `C:\apps\api-internal`, application `v2.0.2.6` / commit `8b448933114a1cbe1a1e0404d5ed338b27378595` (non redeployee pour le hotfix WEBPORTAL `v2.0.2.7`) ;
-- MariaDB : schema applique jusqu'a `093_public_contact_identity_sync`, aucune migration SQL ajoutee par `v2.0.2.7` ;
-- details, validations et rollback : [`releases/V2.0.2.7.md`](releases/V2.0.2.7.md).
+- WEBPORTAL : `/opt/kermaria/releases/20260905-171417-v2.0.2.8-f4e0235`, artefact SHA-256 `F08DE5E4AC0E53B095B960A97DB28696EAD33A9C7252B3010952353E8C5DF060` ;
+- rollback WEBPORTAL immediat : `/opt/kermaria/releases/20260905-164625-v2.0.2.7-954c291` ;
+- API-INTERNAL : `C:\apps\api-internal`, application `v2.0.2.6` / commit `8b448933114a1cbe1a1e0404d5ed338b27378595` (non redeployee pour les hotfixes WEBPORTAL `v2.0.2.7` et `v2.0.2.8`) ;
+- MariaDB : schema applique jusqu'a `093_public_contact_identity_sync`, aucune migration SQL ajoutee par `v2.0.2.8` ;
+- details, validations et rollback : [`releases/V2.0.2.8.md`](releases/V2.0.2.8.md).
 
 Le runbook DEPLOYMENT_WINDOWS.md decrit l ancienne topologie SRV-01/SRV-02 et reste utile uniquement comme historique/staging.
 Voir aussi DOMAIN_MIGRATION_2026-08-20.md. Le present document reste la reference des variables, modes et garde-fous generaux.
