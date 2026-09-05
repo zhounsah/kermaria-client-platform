@@ -228,3 +228,14 @@ portail.
   encaissement ;
 - aucune suppression client destructive ;
 - aucune confusion volontaire staging -> production.
+
+## Current MariaDB migration privilege note - 2026-09-05
+
+A clean `001`-`093` bootstrap was validated on MariaDB 11.8.6. Migration `066_billing_v2_componentized_pricing` creates two triggers and one view. On the current SRV-06 configuration with binary logging enabled:
+
+- the migrator needs `CREATE VIEW` for the target database;
+- trigger creation requires temporary global `SUPER` unless the server setting is changed by an administrator;
+- any temporary global privilege and `GRANT OPTION` must be revoked immediately after the migration window;
+- the runtime `kermaria_api` account does not need these privileges.
+
+Do not solve this by permanently granting `ALL PRIVILEGES ON *.*` to `kermaria_migrator`. The validated release procedure grants only the minimum required for the migration window and then returns the account to database-scoped DDL/DML rights.

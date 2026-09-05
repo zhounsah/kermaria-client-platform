@@ -221,3 +221,18 @@ identifié ne le consomme pas.
 | **Adresse de contact** (F18) | Publier une adresse `@zachary-it.fr` en données structurées et mentions légales | Créer une boîte est une **action d'infrastructure** hors périmètre |
 | `openingHoursSpecification`, `priceRange` | À ajouter si l'éditeur fournit les valeurs réelles | Ne rien inventer |
 | Contenu promotionnel en FAQ | Rappeler aux rédacteurs que les règles Google interdisent prix et promotion dans un `FAQPage` | Le constructeur n'émet ni `Offer` ni prix, mais le texte des réponses reste libre |
+
+---
+
+## Post-audit SEO/GEO closure - v2.0.2.6
+
+The original recommendations table is historical. The following items were subsequently completed:
+
+- homepage positioning was broadened to match the real multi-service catalogue;
+- customer vocabulary was standardized on `offre` without renaming internal Billing routes;
+- persisted `/tarifs` and service CMS content was synchronized, so corrected metadata/copy is not limited to seeds;
+- public/legal and structured brand contact identity now uses `contact@zachary-it.fr`;
+- the public version marker was removed;
+- storefront mojibake was removed in the database and source and is now covered by automated guards.
+
+Technical SEO contracts (robots, sitemap, canonical behavior, structured data, title guards, FAQ markup and public-site quality) pass in the release candidate. External ranking and answer-engine visibility remain separate measurements and are not inferred from repository tests.

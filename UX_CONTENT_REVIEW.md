@@ -281,3 +281,19 @@ seul cas d'un même sélecteur deux fois dans un même bloc `@media`
 **Dette restante.** `app/globals.css` fait 11 304 lignes (F20).
 
 **Qualité finale estimée : 7/10.**
+
+---
+
+## Post-audit UX/content closure - v2.0.2.6
+
+Later work closed the business decisions intentionally left open in the original review:
+
+- the homepage now represents network/Wi-Fi, workstations/access, backup/continuity, hosting/online services and maintenance/support rather than a backup-only landing page;
+- public commercial vocabulary is standardized on **Offre**; internal Billing and `/formules` technical identifiers remain implementation details;
+- `/tarifs`, VPS/service content and the four public offer sheets were synchronized in the persisted CMS, not only fallback seeds;
+- developer wording such as `catalogue Billing`, `projection Billing autoritative`, `provisioning reel` and customer-visible `provider` wording was removed;
+- public/legal contact identity now uses `contact@zachary-it.fr`;
+- the public footer no longer exposes a release version;
+- a full mojibake cleanup covered persisted CMS content and source-level strings, with regression guards added.
+
+The public-content review is therefore no longer blocked by F16/F17/F18/F23/F24. Remaining UX debt is structural and non-blocking.

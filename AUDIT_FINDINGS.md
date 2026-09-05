@@ -60,3 +60,26 @@ aucune action.
 - **F06 / durée de `validate`** : la commande est nettement plus longue
   (≈ 17 exécutions .NET supplémentaires). Le compromis est assumé : la
   facturation non testée au moment de la release est le risque supérieur.
+
+---
+
+## Post-audit closure - authoritative v2.0.2.6 status
+
+The entries below supersede the original open statuses where later work closed them.
+
+- **F16 CLOSED**: homepage copy now represents the broader Zachary IT IT-service scope, not backup only.
+- **F17 CLOSED**: public customer vocabulary is standardized on `offre`; internal `/formules` routes and Billing identifiers are retained intentionally.
+- **F18 CLOSED**: `contact@zachary-it.fr` exists and is now used in public/legal content and persisted CMS values.
+- **F19 CLOSED**: fresh MariaDB 11.8.6 bootstrap `001`-`093` PASS; `test:billing:mariadb` PASS 9/9 with empty stderr.
+- **F23 CLOSED**: public footer version removed and guarded by brand tests.
+- **F24 CLOSED**: customer email fallbacks and default SMTP display name use Zachary IT.
+- **CMS stale copy CLOSED**: migrations `087`-`093` synchronize persisted storefront/legal content, not only code seeds.
+- **Mojibake CLOSED**: database/source/migrations repaired; automated guards reject known mojibake signatures and U+FFFD.
+
+### F29 - P1 - Billing test correctness - CLOSED
+
+The financial-core schema test opened a concurrent connection from `connection.ConnectionString` after the first connection had opened. MySqlConnector redacts the password by default, causing `using password: NO`. The original connection string is now passed explicitly (`e7a0f40`); all 9 MariaDB suites passed afterward.
+
+### F30 - P2 - Migration privileges - DOCUMENTED
+
+Fresh migration `066` creates two triggers and one view. On SRV-06 with binary logging enabled, trigger creation needs temporary `SUPER`; the view needs `CREATE VIEW`. These are migration-window privileges only and must not remain global afterward.

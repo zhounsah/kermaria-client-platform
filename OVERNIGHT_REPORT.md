@@ -478,3 +478,24 @@ Notes sur 10, justifiées et volontairement sévères. « Avant » = état de la
 - **Sécurité 8 et non 9.** L'architecture est solide et vérifiée en réel, mais
   une revue de sécurité complète du périmètre admin et des intégrations
   provider dépasse ce qui a été fait ici.
+
+---
+
+## Post-audit closure - v2.0.2.6
+
+This section supersedes earlier open-state statements where later validation produced stronger evidence.
+
+- Fresh MariaDB 11.8.6 database bootstrap: migrations `001` through `093` PASS.
+- `npm run test:billing:mariadb`: 9/9 MariaDB-backed suites PASS, stderr empty.
+- Real MariaDB validation exposed and fixed a test defect in concurrent connection string handling (`e7a0f40`).
+- Persisted CMS content was synchronized through migrations `087`-`093`; stale internal Billing wording, public pack/formule wording and mojibake were removed.
+- Public contact identity now uses `contact@zachary-it.fr` in public/legal content.
+- Public customer vocabulary is standardized on `offre`; internal Billing routes/model names remain unchanged.
+- The public footer no longer exposes the application version.
+- Homepage positioning now reflects the broader IT service scope.
+
+Final release gates passed: secrets check, both typechecks, full web lint, API build, production WEBPORTAL webpack build (79 pages), API/Billing tests, public content contracts, and all 9 MariaDB-backed Billing suites.
+
+Billing/database-test confidence is now **strong**, not medium: schema migration, InnoDB persistence, locking/concurrency and opt-in integration paths were exercised against MariaDB 11.8.6.
+
+Operational note: migration `066_billing_v2_componentized_pricing` creates triggers and a view. With binary logging enabled, fresh bootstrap requires temporary `SUPER` for trigger creation plus `CREATE VIEW`; these privileges must be removed immediately after the migration window.
