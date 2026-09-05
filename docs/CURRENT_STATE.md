@@ -1,7 +1,7 @@
 # Current state - Zachary IT platform
-Last verified: 2026-08-28
-Current production release: `v2.0.0.7`
-Release commit: `494c8a4ca8f645e15668b72c97d2bd119e01f8ae`
+Last verified: 2026-09-05
+Current production release: `v2.0.2.6`
+Release commit: `8b448933114a1cbe1a1e0404d5ed338b27378595`
 This document is the primary entry point for the current platform state. Older V0.x/V1.x documents remain useful as implementation history, but they must not override this file, the current code, or the current deployment runbooks.
 ## Production topology
 ```text
@@ -72,7 +72,7 @@ Since `v2.0.0.6`:
 - unknown or missing diagnostic contexts fall back to the general orientation flow;
 - service CTAs pass the relevant diagnostic context without changing Billing authority or creating a second pricing source.
 
-Since 2.0.0.7:
+Since v2.0.0.7:
 - /admin/diagnostic configures the five diagnostic-profile -> Billing V2 formula mappings without code changes;
 - diagnostic:recommendations uses the existing managed-content persistence, while its generic raw editor redirects to the structured diagnostic screen;
 - configured formula codes are validated server-side against the current public Billing V2 catalog before persistence; unavailable or unset formulas fail safely to cadrage/devis.
@@ -80,42 +80,33 @@ Since 2.0.0.7:
 API-INTERNAL active runtime:
 - host: SRV-13
 - service: `KermariaApiInternal`
-- active commit marker: `494c8a4ca8f645e15668b72c97d2bd119e01f8ae`
-- pre-release backup: `C:\apps\api-internal-backups\20260827-190441-v2.0.0.4-b66e89d`
+- active commit: `8b448933114a1cbe1a1e0404d5ed338b27378595`
+- rollback copy: `C:\apps\api-internal-old-20260905-171911`
+- executable SHA-256: `E40174C580FB265C5C22E23AD829E641B53FD0CA6AF6D6F7F444D7855F80F5AC`
 WEBPORTAL active runtime:
 - host: SRV-12
 - service: `kermaria-webportal`
-- active release: `/opt/kermaria/releases/20260828-171043-v2.0.0.7-494c8a4`
-- previous release retained: `/opt/kermaria/releases/20260828-104050-v2.0.0.6-9f47f25`
-Release artifacts:
-- API zip SHA-256: `7EEB41EE15915705426B1CBCB82B729C0C9FBB484FC7CF3A0F0BAD15F417812B`
-- WEBPORTAL tar.gz SHA-256: `4C5456155C7330F43F2DA1A33D6D1A33A26AA9CA20BC219A04358D06A58063FD`
-Migration `072_editorial_resource_redirects` remains present in production. No SQL migration or direct SQL write was required by v2.0.0.7; the diagnostic mapping reuses managed-content persistence.
-## Production smoke test - 2026-08-28
-Verified after deployment:
-- API `/health` -> 200
-- API `/health/live` -> 200
-- API `/health/ready` -> 200
-- MariaDB check -> healthy
-- AD check -> `controlled_write`
-- WEBPORTAL readiness from SRV-12 -> 200
-- public dashboard readiness -> 200
-- adaptive diagnostic general route -> 200;
-- all seven bounded diagnostic contexts -> 200;
-- invalid diagnostic context -> safe general fallback, 200;
-- six priority service pages -> 200 with contextual diagnostic links;
-- `/services/domaines-messagerie` -> 200 with customer-oriented renderer;
-- checked service canonicals unchanged and no mojibake detected.
-- `https://zachary-it.fr/` -> 200
-- `/formules` -> 200
-- `/tarifs` -> 200
-- `/services` -> 200
-- administration catalog routes -> HTTP 200 through the production host
-- /admin/diagnostic -> HTTP 200 through the production administration host
-- /admin/backups -> HTTP 200 after the diagnostic/admin integration
-- footer -> `Version v2.0.0`
-- SRV-12 journal -> no warning/error entries for the service after restart
-A direct RDC-07 request to `192.168.100.212:3000` can occasionally time out even while SRV-12-local and public readiness are healthy. Treat this as a network-path observation, not as application readiness truth.
+- active release: `/opt/kermaria/releases/20260905-154724-v2.0.2.6-8b44893`
+- previous release retained: `/opt/kermaria/releases/20260902-110249-v2.0.2.5`
+- artifact SHA-256: `F21C9E85D3626A3CE0A43CC2DABFD3F158A5C572DBB5D2F8ABC20AD555974E7F`
+MariaDB production schema is at `093_public_contact_identity_sync`.
+
+## Production smoke test - 2026-09-05
+Verified after deployment of `v2.0.2.6`:
+- API-INTERNAL `/health/live`, `/health/ready` and `/ready` -> 200;
+- deployed API executable hash matches the release artifact exactly;
+- WEBPORTAL service -> active;
+- WEBPORTAL local home/live/ready -> 200;
+- dashboard readiness -> 200;
+- administration login and `/admin/settings` -> 200;
+- all 49 public sitemap URLs -> 200;
+- public mojibake scan -> 0 affected pages;
+- `/diagnostic` -> 200 and the previous mojibake is gone;
+- `/tarifs` and `/services/vps` contain none of the previously exposed internal Billing/provisioning wording;
+- legal content uses `contact@zachary-it.fr` and no longer exposes `zhounsah@home.bzh` or the old public domain identity;
+- WEBPORTAL `.next/cache` -> `kermaria-web:kermaria-web`, mode 750;
+- systemd restart shows the known old-process exit 143 followed by a successful start; current service remains active.
+
 ## Documentation order
 For current work, read in this order:
 1. `docs/CURRENT_STATE.md` (this file)
@@ -124,5 +115,5 @@ For current work, read in this order:
 4. `docs/OPERATIONS.md`
 5. `docs/DEPLOYMENT.md`
 6. `docs/GUIDE_ADMIN.md`
-7. `docs/releases/V2.0.0.7.md`
+7. `docs/releases/V2.0.2.6.md`
 Historical documents under V0.x, V1.x and `docs/v1.4/` document how the platform got here. They are not automatically current operational truth.
