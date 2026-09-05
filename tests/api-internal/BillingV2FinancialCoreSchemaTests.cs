@@ -55,7 +55,7 @@ public static class BillingV2FinancialCoreSchemaTests
                 connection,
                 fixture);
             await VerifyOptimisticLockingAsync(connection, fixture);
-            await VerifyRefundPersistenceAndOutboxScenarioAsync(connection, fixture);
+            await VerifyRefundPersistenceAndOutboxScenarioAsync(connection, connectionString, fixture);
         }
         finally
         {
@@ -546,6 +546,7 @@ public static class BillingV2FinancialCoreSchemaTests
     /// </summary>
     private static async Task VerifyRefundPersistenceAndOutboxScenarioAsync(
         MySqlConnection connection,
+        string connectionString,
         BillingV2SchemaFixture fixture)
     {
         var eventId = await InsertEventAsync(
@@ -619,7 +620,7 @@ public static class BillingV2FinancialCoreSchemaTests
         }
 
         await using (var concurrentConnection = new MySqlConnection(
-                         connection.ConnectionString))
+                         connectionString))
         {
             await concurrentConnection.OpenAsync();
             var claims = await Task.WhenAll(
