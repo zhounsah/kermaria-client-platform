@@ -4,6 +4,7 @@ import type { SubscriptionSummary } from "@kermaria/shared";
 import { NextRequest, NextResponse } from "next/server";
 
 import { CORRELATION_HEADER, resolveCorrelationId } from "@/lib/correlation";
+import { rejectInvalidPortalCsrf } from "@/lib/portal-bff";
 import {
   getInternalApiError,
   getInternalSession,
@@ -54,6 +55,11 @@ export async function POST(
       },
       { status: 401 },
     );
+  }
+
+  const csrfFailure = rejectInvalidPortalCsrf(request);
+  if (csrfFailure) {
+    return csrfFailure;
   }
 
   try {

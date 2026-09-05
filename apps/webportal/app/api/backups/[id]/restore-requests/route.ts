@@ -5,6 +5,7 @@ import type {
 import { NextRequest, NextResponse } from "next/server";
 
 import { CORRELATION_HEADER, resolveCorrelationId } from "@/lib/correlation";
+import { rejectInvalidPortalCsrf } from "@/lib/portal-bff";
 import {
   createBackupRestoreRequest,
   getInternalApiError,
@@ -23,6 +24,11 @@ export async function POST(
   const sessionToken = request.cookies.get(getSessionCookieName())?.value;
   if (!sessionToken) {
     return jsonError(401, "SESSION_REQUIRED", "Une session valide est requise.", correlationId);
+  }
+
+  const csrfFailure = rejectInvalidPortalCsrf(request);
+  if (csrfFailure) {
+    return csrfFailure;
   }
 
   let candidate: unknown;

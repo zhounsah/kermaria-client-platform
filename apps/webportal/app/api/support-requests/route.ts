@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { parseSupportRequestPayload } from "@/lib/bff-payloads";
 import { CORRELATION_HEADER, resolveCorrelationId } from "@/lib/correlation";
+import { rejectInvalidPortalCsrf } from "@/lib/portal-bff";
 import {
   createSupportRequest,
   getInternalApiError,
@@ -21,6 +22,11 @@ export async function POST(request: NextRequest) {
 
   if (!sessionToken) {
     return sessionRequired(correlationId);
+  }
+
+  const csrfFailure = rejectInvalidPortalCsrf(request);
+  if (csrfFailure) {
+    return csrfFailure;
   }
 
   let candidate: unknown;

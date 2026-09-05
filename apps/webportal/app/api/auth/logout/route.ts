@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { CORRELATION_HEADER, resolveCorrelationId } from "@/lib/correlation";
+import { rejectInvalidPortalCsrf } from "@/lib/portal-bff";
 import { clearCsrfCookie } from "@/lib/csrf-server";
 import { revokeInternalSession } from "@/lib/internal-api";
 import {
@@ -16,6 +17,11 @@ export async function POST(request: NextRequest) {
   const sessionToken = request.cookies.get(cookieName)?.value;
 
   if (sessionToken) {
+    const csrfFailure = rejectInvalidPortalCsrf(request);
+    if (csrfFailure) {
+      return csrfFailure;
+    }
+
     try {
       await revokeInternalSession(sessionToken, correlationId);
     } catch {

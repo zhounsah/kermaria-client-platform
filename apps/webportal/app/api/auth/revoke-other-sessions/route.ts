@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { CORRELATION_HEADER, resolveCorrelationId } from "@/lib/correlation";
+import { rejectInvalidPortalCsrf } from "@/lib/portal-bff";
 import {
   getInternalApiError,
   revokeOtherInternalSessions,
@@ -24,6 +25,11 @@ export async function POST(request: NextRequest) {
     );
     response.headers.set(CORRELATION_HEADER, correlationId);
     return response;
+  }
+
+  const csrfFailure = rejectInvalidPortalCsrf(request);
+  if (csrfFailure) {
+    return csrfFailure;
   }
 
   try {

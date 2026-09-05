@@ -3,7 +3,9 @@ import "server-only";
 import type { SubscriptionSummary } from "@kermaria/shared";
 import { NextRequest, NextResponse } from "next/server";
 
+import { controlledAdminError } from "@/lib/admin-bff";
 import { CORRELATION_HEADER, resolveCorrelationId } from "@/lib/correlation";
+import { hasValidCsrfToken } from "@/lib/csrf-server";
 import {
   getInternalApiError,
   getInternalSession,
@@ -40,6 +42,15 @@ export async function POST(
     return NextResponse.json(
       { code: "UNAUTHORIZED", message: "Session requise." },
       { status: 401 },
+    );
+  }
+
+  if (!hasValidCsrfToken(request)) {
+    return controlledAdminError(
+      403,
+      "CSRF_FORBIDDEN",
+      "La requete d'administration doit etre confirmee par un jeton CSRF valide.",
+      correlationId,
     );
   }
 

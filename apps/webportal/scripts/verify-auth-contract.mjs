@@ -41,6 +41,7 @@ const sessionConfig = await read("lib/session-config.ts");
 const internalApi = await read("lib/internal-api.ts");
 const runtimeConfig = await read("lib/runtime-config.ts");
 const clientApi = await read("lib/client-api.ts");
+const portalBff = await read("lib/portal-bff.ts");
 const authHelper = await read("lib/auth.ts");
 
 const routing = await importPureTypeScript(
@@ -429,6 +430,78 @@ assert.doesNotMatch(
   revokeOthersRoute,
   /URLSearchParams|localStorage|sessionStorage/i,
 );
+
+assert.match(portalBff, /hasValidCsrfToken/);
+assert.match(portalBff, /export function rejectInvalidPortalCsrf/);
+for (const helper of [
+  "handlePortalMutation",
+  "handlePortalPayloadMutation",
+  "handlePortalPayloadMutationTyped",
+]) {
+  const helperIndex = portalBff.indexOf(`export async function ${helper}`);
+  const nextExportIndex = portalBff.indexOf("export ", helperIndex + 1);
+  const helperSource = portalBff.slice(
+    helperIndex,
+    nextExportIndex === -1 ? portalBff.length : nextExportIndex,
+  );
+  assert.notEqual(helperIndex, -1, `${helper} doit exister.`);
+  assert.match(
+    helperSource,
+    /rejectInvalidPortalCsrf\(request\)/,
+    `${helper} doit refuser une mutation sans jeton CSRF valide.`,
+  );
+}
+
+for (const route of [
+  "app/api/auth/logout/route.ts",
+  "app/api/auth/revoke-other-sessions/route.ts",
+  "app/api/backups/[id]/restore-requests/route.ts",
+  "app/api/formules/souscrire/route.ts",
+  "app/api/payment/paypal/create/route.ts",
+  "app/api/payments/stripe/create-intent/route.ts",
+  "app/api/service-requests/route.ts",
+  "app/api/subscriptions/[id]/cancel/route.ts",
+  "app/api/support-requests/route.ts",
+]) {
+  const source = await read(route);
+  assert.match(
+    source,
+    /rejectInvalidPortalCsrf\(request\)/,
+    `${route} doit refuser une mutation sans jeton CSRF valide.`,
+  );
+}
+
+for (const route of [
+  "app/api/admin/subscriptions/[id]/cancel/route.ts",
+  "app/api/admin/subscriptions/[id]/provisioning/reconcile/route.ts",
+]) {
+  const source = await read(route);
+  assert.match(
+    source,
+    /hasValidCsrfToken\(request\)/,
+    `${route} doit refuser une mutation admin sans jeton CSRF valide.`,
+  );
+}
+
+for (const [component, protectedPath] of [
+  ["components/AdminBackupIntegrationForm.tsx", "/api/admin/backups/integrations"],
+  ["components/BackupRestoreRequestForm.tsx", "/api/backups/"],
+  ["components/BillingV2DirectSubscribe.tsx", "/api/formules/souscrire"],
+  ["components/BillingV2FormuleConfigurator.tsx", "/api/formules/souscrire"],
+]) {
+  const source = await read(component);
+  assert.match(source, /requestBffJson/);
+  assert.doesNotMatch(
+    source,
+    new RegExp(`fetch\\([^\\n]*${protectedPath.replaceAll("/", "\\/")}`),
+    `${component} ne doit pas contourner le client BFF CSRF pour ${protectedPath}.`,
+  );
+}
+
+
+assert.match(clientApi, /\["POST", "PATCH", "PUT", "DELETE"\]/);
+assert.match(clientApi, /"\/api\/formules\/devis"/);
+assert.match(clientApi, /ensureCsrfToken\(\)/);
 
 assert.match(csrfHelper, /CSRF_COOKIE_NAME/);
 assert.match(csrfHelper, /CSRF_HEADER_NAME/);

@@ -12,6 +12,7 @@ import {
   mutateInternalPortalPayload,
   mutateInternalPortalPayloadTyped,
 } from "@/lib/internal-api";
+import { hasValidCsrfToken } from "@/lib/csrf-server";
 import { getSessionCookieName } from "@/lib/session-config";
 
 export async function handlePortalGet<T>(
@@ -46,6 +47,11 @@ export async function handlePortalMutation(
     return context;
   }
 
+  const csrfFailure = rejectInvalidPortalCsrf(request);
+  if (csrfFailure) {
+    return csrfFailure;
+  }
+
   try {
     const data = await mutateInternalPortalData(
       internalPath,
@@ -68,6 +74,11 @@ export async function handlePortalPayloadMutation<TPayload>(
   const context = await resolveClientContext(request);
   if (context instanceof NextResponse) {
     return context;
+  }
+
+  const csrfFailure = rejectInvalidPortalCsrf(request);
+  if (csrfFailure) {
+    return csrfFailure;
   }
 
   try {
@@ -95,6 +106,11 @@ export async function handlePortalPayloadMutationTyped<TResponse, TPayload>(
     return context;
   }
 
+  const csrfFailure = rejectInvalidPortalCsrf(request);
+  if (csrfFailure) {
+    return csrfFailure;
+  }
+
   try {
     const data = await mutateInternalPortalPayloadTyped<TResponse, TPayload>(
       internalPath,
@@ -119,6 +135,23 @@ export async function handlePortalPayloadMutationTyped<TResponse, TPayload>(
     return portalFailure(error);
   }
 }
+
+export function rejectInvalidPortalCsrf(request: NextRequest) {
+  if (hasValidCsrfToken(request)) {
+    return null;
+  }
+
+  const correlationId = resolveCorrelationId(
+    request.headers.get(CORRELATION_HEADER),
+  );
+  return controlledPortalError(
+    403,
+    "CSRF_FORBIDDEN",
+    "La session doit confirmer cette action avec un jeton CSRF valide.",
+    correlationId,
+  );
+}
+
 
 export function isValidPortalIdentifier(value: string) {
   return /^[A-Za-z0-9-]{1,100}$/.test(value);

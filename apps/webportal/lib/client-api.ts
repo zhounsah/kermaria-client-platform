@@ -1,4 +1,4 @@
-﻿import type { ApiError } from "@kermaria/shared";
+import type { ApiError } from "@kermaria/shared";
 
 import {
   CSRF_HEADER_NAME,
@@ -126,17 +126,27 @@ function shouldAttachCsrfToken(
     return false;
   }
 
-  if (!path.startsWith("/api/admin/") && !path.startsWith("/api/vps/")) {
+  const normalizedMethod = method.toUpperCase();
+  if (path.startsWith("/api/admin/")) {
+    // Les lectures admin sont elles aussi protegees par admin-bff.
+    return ["GET", "POST", "PATCH", "PUT", "DELETE"].includes(normalizedMethod);
+  }
+
+  if (!["POST", "PATCH", "PUT", "DELETE"].includes(normalizedMethod)) {
     return false;
   }
 
-  // handleAdminGet (côté serveur) exige le jeton CSRF sur tout admin,
-  // y compris les GET. On attache donc le jeton pour toute méthode.
-  return ["GET", "POST", "PATCH", "PUT", "DELETE"].includes(
-    method.toUpperCase(),
-  );
+  // Les routes publiques ne reposent pas sur un cookie de session ambiant.
+  // Toutes les autres mutations BFF initiees par le navigateur doivent
+  // transporter le double-submit token pose au login ou par /api/auth/me.
+  return ![
+    "/api/auth/login",
+    "/api/contact",
+    "/api/formules/devis",
+    "/api/set-password",
+    "/api/signup",
+  ].some((publicPath) => path === publicPath || path.startsWith(`${publicPath}/`));
 }
-
 async function parseJsonSafely(response: Response): Promise<unknown | null> {
   const contentType = response.headers.get("content-type") ?? "";
   if (!contentType.toLowerCase().includes("application/json")) {

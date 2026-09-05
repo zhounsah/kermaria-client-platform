@@ -452,9 +452,9 @@ assert.match(
   "Le checkout doit porter une cle d'idempotence.",
 );
 const publicSignupIndex = configurator.indexOf('if (currentArea === "public")');
-const checkoutFetchIndex = configurator.indexOf('fetch("/api/formules/souscrire"');
+const checkoutRequestIndex = configurator.indexOf('requestBffJson<{');
 assert.ok(
-  publicSignupIndex >= 0 && checkoutFetchIndex > publicSignupIndex,
+  publicSignupIndex >= 0 && checkoutRequestIndex > publicSignupIndex,
   "Sur la vitrine, l inscription doit etre choisie avant tout appel checkout.",
 );
 assert.match(

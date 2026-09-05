@@ -2,6 +2,8 @@
 
 import { FormEvent, useState, useTransition } from "react";
 
+import { requestBffJson } from "@/lib/client-api";
+
 export function AdminBackupIntegrationForm() {
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -13,7 +15,7 @@ export function AdminBackupIntegrationForm() {
 
     startTransition(async () => {
       setMessage(null);
-      const response = await fetch("/api/admin/backups/integrations", {
+      const result = await requestBffJson<unknown>("/api/admin/backups/integrations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -28,8 +30,8 @@ export function AdminBackupIntegrationForm() {
         }),
       });
 
-      if (!response.ok) {
-        setMessage("Mapping refuse ou invalide.");
+      if (!result.ok) {
+        setMessage(result.error.message);
         return;
       }
 

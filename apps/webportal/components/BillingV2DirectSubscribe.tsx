@@ -11,6 +11,7 @@ import type {
   BillingV2PublicService,
 } from "@kermaria/shared";
 
+import { requestBffJson } from "@/lib/client-api";
 import { formatCurrencyFromCents } from "@/lib/formatters";
 import {
   describeTierAttributes,
@@ -197,7 +198,10 @@ export function BillingV2DirectSubscribe({ catalog }: Props) {
     try {
       // On renvoie la SELECTION, jamais le devis affiche : le serveur
       // revalide la configuration et recalcule integralement le montant.
-      const response = await fetch("/api/formules/souscrire", {
+      const result = await requestBffJson<{
+        approveUrl?: string;
+        message?: string;
+      }>("/api/formules/souscrire", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -206,24 +210,24 @@ export function BillingV2DirectSubscribe({ catalog }: Props) {
         body: JSON.stringify({ ...selection, rail: "stripe" }),
       });
 
-      if (response.status === 401 || response.status === 403) {
-        window.location.href = "/login?next=%2Fsouscrire";
+      if (!result.ok) {
+        if (result.status === 401 || result.status === 403) {
+          window.location.href = "/login?next=%2Fsouscrire";
+          return;
+        }
+
+        setSubmitError(result.error.message);
         return;
       }
 
-      const payload = (await response.json()) as {
-        approveUrl?: string;
-        message?: string;
-      };
-
-      if (response.ok && payload.approveUrl) {
-        window.location.href = payload.approveUrl;
+      if (result.data.approveUrl) {
+        window.location.href = result.data.approveUrl;
         return;
       }
 
       setSubmitError(
-        payload.message
-          ?? "La souscription n'a pas pu être initialisée. Réessayez ou contactez-nous.",
+        result.data.message
+          ?? "La souscription n'a pas pu \u00eatre initialis\u00e9e. R\u00e9essayez ou contactez-nous.",
       );
     } catch {
       setSubmitError(

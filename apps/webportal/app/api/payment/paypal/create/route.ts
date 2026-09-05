@@ -4,6 +4,7 @@ import type { CommercialDocumentDetail } from "@kermaria/shared";
 import { NextRequest, NextResponse } from "next/server";
 
 import { CORRELATION_HEADER, resolveCorrelationId } from "@/lib/correlation";
+import { rejectInvalidPortalCsrf } from "@/lib/portal-bff";
 import { getInternalSession } from "@/lib/internal-api";
 import { createPayPalOrder, isPayPalConfigured } from "@/lib/paypal";
 import { getPortalPublicUrl } from "@/lib/public-routes";
@@ -45,6 +46,11 @@ export async function POST(request: NextRequest) {
   const sessionToken = request.cookies.get(getSessionCookieName())?.value;
   if (!sessionToken) {
     return errorJson(401, "UNAUTHORIZED", "Session requise.", correlationId);
+  }
+
+  const csrfFailure = rejectInvalidPortalCsrf(request);
+  if (csrfFailure) {
+    return csrfFailure;
   }
 
   let body: { documentId?: string };

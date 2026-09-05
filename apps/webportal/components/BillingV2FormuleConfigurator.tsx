@@ -25,6 +25,7 @@ import {
   MAX_ADDITIONAL_USERS,
   billingV2SelectionToSearchParams,
 } from "@/lib/billing-v2-selection";
+import { requestBffJson } from "@/lib/client-api";
 import { formatCurrencyFromCents } from "@/lib/formatters";
 import { getPortalArea, resolvePortalAreaUrl } from "@/lib/public-route-config";
 
@@ -196,7 +197,10 @@ export function BillingV2FormuleConfigurator({
       // On renvoie la SELECTION, jamais le devis affiche : le serveur
       // revalide la configuration et recalcule integralement le montant. Un
       // prix altere dans le navigateur n'a donc aucun effet.
-      const response = await fetch("/api/formules/souscrire", {
+      const result = await requestBffJson<{
+        approveUrl?: string;
+        message?: string;
+      }>("/api/formules/souscrire", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -205,7 +209,7 @@ export function BillingV2FormuleConfigurator({
         body: JSON.stringify({ ...selection, rail: "stripe" }),
       });
 
-      if (response.status === 401 || response.status === 403) {
+      if (!result.ok && (result.status === 401 || result.status === 403)) {
         const continuationPath = `/formules/${preset.code}`;
         const signupPath = `/signup?${billingV2SelectionToSearchParams(selection)}`;
         const currentArea = getPortalArea(window.location.origin);
@@ -225,18 +229,18 @@ export function BillingV2FormuleConfigurator({
         return;
       }
 
-      const payload = (await response.json()) as {
-        approveUrl?: string;
-        message?: string;
-      };
+      if (!result.ok) {
+        setSubmitError(result.error.message);
+        return;
+      }
 
-      if (response.ok && payload.approveUrl) {
-        window.location.href = payload.approveUrl;
+      if (result.data.approveUrl) {
+        window.location.href = result.data.approveUrl;
         return;
       }
 
       setSubmitError(
-        payload.message
+        result.data.message
           ?? "La souscription n'a pas pu être initialisée. Réessayez ou contactez-nous.",
       );
     } catch {

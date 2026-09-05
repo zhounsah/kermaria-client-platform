@@ -2,6 +2,8 @@
 
 import { FormEvent, useState, useTransition } from "react";
 
+import { requestBffJson } from "@/lib/client-api";
+
 type BackupRestoreRequestFormProps = {
   backupJobId: string;
 };
@@ -23,7 +25,7 @@ export function BackupRestoreRequestForm({
 
     startTransition(async () => {
       setMessage(null);
-      const response = await fetch(
+      const result = await requestBffJson<{ reference?: string }>(
         `/api/backups/${encodeURIComponent(backupJobId)}/restore-requests`,
         {
           method: "POST",
@@ -37,12 +39,12 @@ export function BackupRestoreRequestForm({
         },
       );
 
-      if (!response.ok) {
-        setMessage("La demande n'a pas pu etre enregistree.");
+      if (!result.ok) {
+        setMessage(result.error.message);
         return;
       }
 
-      const payload = await response.json() as { reference?: string };
+      const payload = result.data;
       form.reset();
       setMessage(
         payload.reference
