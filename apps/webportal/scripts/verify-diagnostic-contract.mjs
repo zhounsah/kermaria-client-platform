@@ -52,16 +52,6 @@ const diagnosticRecommendationConfigStubUrl =
   `data:text/javascript;base64,${Buffer.from(diagnosticRecommendationConfigStub).toString("base64")}`;
 
 
-async function importBillingV2Runtime(source, label) {
-  return importPureTypeScript(
-    source
-      .replaceAll('"@/lib/billing-v2-formules"', JSON.stringify(billingV2FormulesStubUrl))
-      .replaceAll('"@/lib/billing-v2-selection"', JSON.stringify(billingV2SelectionStubUrl))
-      .replaceAll('"@/lib/diagnostic-recommendation-config"', JSON.stringify(diagnosticRecommendationConfigStubUrl)),
-    label,
-  );
-}
-
 const recommendationStub = String.raw`
 export function recommendOffer(answers){
   return {
@@ -97,10 +87,9 @@ const diagnosticEngine = await read("lib/public-diagnostic.ts");
 const billingV2Formules = await read("lib/billing-v2-formules.ts");
 const diagnosticContext = await read("lib/diagnostic-context.ts");
 const adaptiveDiagnostic = await read("lib/adaptive-diagnostic.ts");
+const preDiagnosticCommerce = await read("lib/pre-diagnostic-commerce.ts");
 const diagnosticPage = await read("app/diagnostic/page.tsx");
 const diagnosticWizard = await read("components/PublicDiagnosticWizard.tsx");
-const contactForm = await read("components/ContactForm.tsx");
-const globalsCss = await read("app/globals.css");
 const publicStorefrontPage = await read("components/PublicStorefrontPage.tsx");
 const priorityServicePage = await read("components/PublicPriorityServicePage.tsx");
 const messagingCategoryPage = await read("components/PublicMessagingCategoryPage.tsx");
@@ -111,7 +100,6 @@ const sitemap = await read("app/sitemap.ts");
 const signupPage = await read("app/signup/page.tsx");
 const signupRoute = await read("app/api/signup/route.ts");
 const diagnosticValidation = await read("lib/diagnostic-configuration-validation.ts");
-const diagnosticConfigurationLib = await read("lib/diagnostic-configuration.ts");
 const diagnosticAdminPage = await read("app/admin/settings/diagnostic/page.tsx");
 const diagnosticAdminCenter = await read("components/AdminDiagnosticCenter.tsx");
 const diagnosticAdminEditor = await read("components/AdminDiagnosticEditor.tsx");
@@ -133,10 +121,14 @@ const diagnosticMigration = await read(
 const programCs = await read("../../apps/api-internal/Program.cs");
 const fiscalPolicy = await read("../../apps/api-internal/Services/FiscalPolicy.cs");
 
-const diagnosticRuntime = await importBillingV2Runtime(
-  diagnosticEngine,
+const diagnosticEngineUrl = transpileToDataUrl(
+  diagnosticEngine
+    .replaceAll('"@/lib/billing-v2-formules"', JSON.stringify(billingV2FormulesStubUrl))
+    .replaceAll('"@/lib/billing-v2-selection"', JSON.stringify(billingV2SelectionStubUrl))
+    .replaceAll('"@/lib/diagnostic-recommendation-config"', JSON.stringify(diagnosticRecommendationConfigStubUrl)),
   "public-diagnostic.ts",
 );
+const diagnosticRuntime = await import(diagnosticEngineUrl);
 const billingV2FormulesRuntime = await importPureTypeScript(
   billingV2Formules,
   "billing-v2-formules.ts",
@@ -155,6 +147,13 @@ const adaptiveRuntime = await importPureTypeScript(
     .replaceAll('"@/lib/public-diagnostic"', JSON.stringify(recommendationStubUrl))
     .replaceAll('"@/lib/diagnostic-context"', JSON.stringify(diagnosticContextUrl)),
   "adaptive-diagnostic.ts",
+);
+const preDiagnosticCommerceRuntime = await importPureTypeScript(
+  preDiagnosticCommerce.replaceAll(
+    '"@/lib/public-diagnostic"',
+    JSON.stringify(diagnosticEngineUrl),
+  ),
+  "pre-diagnostic-commerce.ts",
 );
 
 // Seule la constante d'operateurs est importee a l'execution depuis le contrat
@@ -374,6 +373,128 @@ assert.equal(
   diagnosticRuntime.recommendOffer(baseAnswers({ needsRemoteFiles: false }), catalog, missingPresetConfig).status,
   "requires_quote",
   "Un preset configure mais absent du catalogue Billing ne doit jamais etre propose.",
+);
+
+// La fusion du pre-diagnostic de sante et de l'ancien moteur commercial
+// conserve une frontiere stricte : le score n'influence jamais le choix
+// Billing V2, et une formule ne sort que pour un besoin representable.
+function commercialAnswers(overrides = {}) {
+  return {
+    commercialIntent: "backup_simple",
+    commercialScope: "files",
+    commercialStorage: "32",
+    ...overrides,
+  };
+}
+
+const defaultCommercialConfig = {
+  schemaVersion: 1,
+  rules: [
+    { profileId: "simple_backup", presetCode: "pack-dossier-securise" },
+    { profileId: "vpn_access", presetCode: "pack-acces-distance" },
+    { profileId: "windows_desktop", presetCode: "pack-bureau-windows-distance" },
+    { profileId: "team_or_structure", presetCode: "pack-pro-association" },
+    { profileId: "team_windows_desktop", presetCode: "pack-pro-association" },
+  ],
+};
+
+function commercialRecommendation(profile, context, overrides = {}, config = defaultCommercialConfig) {
+  return preDiagnosticCommerceRuntime.recommendPreDiagnosticOffer(
+    commercialAnswers(overrides),
+    profile,
+    context,
+    catalog,
+    config,
+  );
+}
+
+assert.equal(
+  commercialRecommendation("individual", "backup").recommendation?.selection?.presetCode,
+  "pack-dossier-securise",
+  "Une sauvegarde simple de fichiers pour particulier doit mener vers la formule administrement associee.",
+);
+assert.equal(
+  commercialRecommendation("individual", "remote-access", {
+    commercialIntent: "remote_files",
+  }).recommendation?.selection?.presetCode,
+  "pack-acces-distance",
+  "Un acces prive simple aux fichiers doit rester souscriptible sans rappel.",
+);
+assert.equal(
+  commercialRecommendation("individual", "remote-access", {
+    commercialIntent: "windows_desktop",
+    commercialScope: "windows",
+  }).recommendation?.selection?.presetCode,
+  "pack-bureau-windows-distance",
+  "Un bureau Windows distant standard doit conserver son orientation Billing V2.",
+);
+for (const overrides of [
+  { commercialIntent: "backup_complex", commercialScope: "device_or_nas" },
+  { commercialScope: "device_or_nas" },
+  { commercialScope: "server_or_multiple" },
+  { commercialStorage: "unknown" },
+]) {
+  assert.equal(
+    commercialRecommendation("individual", "backup", overrides).kind,
+    "human_review",
+    "NAS, poste complet, serveur ou volume inconnu ne doivent pas produire une formule artificielle.",
+  );
+}
+
+const standardProfessional = commercialRecommendation("professional", "general", {
+  commercialIntent: "team_files",
+  commercialUsers: "2",
+  commercialSites: "one",
+  commercialStorage: "64",
+});
+assert.equal(standardProfessional.kind, "standard");
+assert.equal(
+  standardProfessional.recommendation?.selection?.presetCode,
+  "pack-pro-association",
+  "Une petite structure monosite dans les limites publiques doit pouvoir souscrire seule.",
+);
+assert.equal(
+  commercialRecommendation("professional", "general", {
+    commercialIntent: "team_files",
+    commercialUsers: "2",
+    commercialSites: "several",
+    commercialStorage: "64",
+  }).kind,
+  "human_review",
+  "Plusieurs sites doivent conserver un cadrage humain.",
+);
+assert.equal(
+  commercialRecommendation("association", "general", {
+    commercialIntent: "team_files",
+    commercialUsers: "2",
+    commercialSites: "one",
+    commercialStorage: "64",
+  }).kind,
+  "standard",
+  "Une association petite et monosite peut recevoir une formule automatique.",
+);
+for (const context of ["network", "messaging", "domain-dns", "server", "web-hosting"]) {
+  assert.equal(
+    commercialRecommendation("professional", context, {
+      commercialIntent: "team_files",
+      commercialUsers: "2",
+      commercialSites: "one",
+      commercialStorage: "64",
+    }).kind,
+    "human_review",
+    `${context} doit garder la sortie cadrage meme lorsque les autres reponses semblent standard.`,
+  );
+}
+const adminDisabledCommercialConfig = {
+  schemaVersion: 1,
+  rules: defaultCommercialConfig.rules.map((rule) =>
+    rule.profileId === "simple_backup" ? { ...rule, presetCode: null } : rule,
+  ),
+};
+assert.equal(
+  commercialRecommendation("individual", "backup", {}, adminDisabledCommercialConfig).kind,
+  "human_review",
+  "Un mapping retire depuis /admin/diagnostic doit fermer la recommandation automatique.",
 );
 
 assert.doesNotMatch(
@@ -672,46 +793,10 @@ assert.equal(adaptiveRuntime.canContextProduceFormula("remote-access"), true);
 assert.equal(adaptiveRuntime.canContextProduceFormula("server"), false);
 assert.doesNotMatch(adaptiveDiagnostic, /STORAGE-|VPN-ACCESS|RDS-ACCESS|monthlyAmountCents/);
 
-// Route et UI.
-assert.match(diagnosticPage, /resolveDiagnosticContext\(rawContext\)/);
-assert.match(diagnosticPage, /searchParams:/);
-assert.match(diagnosticPage, /initialContext=\{initialContext\}/);
-assert.match(diagnosticPage, /getBillingV2FormulesCatalog/);
-assert.doesNotMatch(diagnosticPage, /catalog\.presets\.length === 0/);
-assert.match(diagnosticPage, /path:\s*"\/diagnostic"/);
-assert.match(diagnosticPage, /Diagnostic informatique adapt/);
-
-assert.match(diagnosticWizard, /GENERAL_CONTEXT_CHOICES/);
-assert.match(diagnosticWizard, /getVisibleDiagnosticQuestions/);
-assert.match(diagnosticWizard, /pruneHiddenDiagnosticAnswers/);
-assert.match(diagnosticWizard, /buildAdaptiveDiagnosticOutcome/);
-assert.match(diagnosticWizard, /fetch\("\/api\/formules\/devis"/);
-assert.match(diagnosticWizard, /billingV2SelectionToSearchParams/);
-assert.match(diagnosticWizard, /params\.set\("source", "diagnostic"\)/);
-assert.match(diagnosticWizard, /<ContactForm/);
-assert.match(diagnosticWizard, /defaultMessage=\{buildDiagnosticContactMessage/);
-assert.match(diagnosticWizard, /submitLabel="Envoyer mon diagnostic"/);
-assert.doesNotMatch(diagnosticWizard, /\/configurer\?|configurationToQueryString/);
-assert.doesNotMatch(diagnosticWizard, /toIncVat|vatRate|0\.2|20\s*\/\s*100/);
-assert.match(diagnosticWizard, /<fieldset className="diagnostic-step"/);
-assert.match(diagnosticWizard, /<legend ref=\{legendRef\} tabIndex=\{-1\}>/);
-assert.match(diagnosticWizard, /aria-live="polite"/);
-assert.match(diagnosticWizard, /aria-describedby=\{hintId\}/);
-assert.match(globalsCss, /@media \(max-width: 820px\)[\s\S]*\.diagnostic-options[\s\S]*grid-template-columns: 1fr/);
-assert.match(globalsCss, /@media \(max-width: 560px\)[\s\S]*\.diagnostic-actions[\s\S]*flex-direction: column/);
-assert.match(diagnosticWizard, /role="progressbar"/);
-assert.match(diagnosticWizard, /<DiagnosticIcon context=/);
-assert.match(diagnosticWizard, /data-selected=\{checked \? "true" : "false"\}/);
-assert.match(diagnosticWizard, /describeSelectionConfiguration\(selection, catalog\)/);
-assert.match(diagnosticWizard, /formulaConfiguration\.map/);
-assert.match(diagnosticWizard, /Configuration issue de votre diagnostic/);
-assert.match(globalsCss, /diagnostic-options label:has\(input:checked\)/);
-assert.match(globalsCss, /@media \(prefers-reduced-motion:reduce\)/);
-assert.doesNotMatch(globalsCss, /\.diagnostic-result-details\s*\{[^}]*position\s*:\s*sticky/);
-// Garde-fous structurels : fieldset et legend, annonces de progression et repli mobile.
-assert.match(contactForm, /defaultMessage\?: string/);
-assert.match(contactForm, /submitLabel\?: string/);
-assert.match(contactForm, /idleLabel=\{submitLabel\}/);
+// L'ancienne interface adaptative a laissé place au pré-diagnostic de santé,
+// mais son moteur commercial reste le seul chemin de sélection Billing V2.
+// Les assertions ci-dessous protègent les contextes, l'administration et la
+// tarification serveur qui restent nécessaires à la nouvelle sortie autonome.
 
 // Les pages Services transmettent le contexte au niveau du rendu, sans modifier
 // la resolution commerciale ou la page de categorie mixte.
@@ -859,11 +944,9 @@ for (const route of [
 }
 assert.match(programCs, /"settings\.diagnostic\.write"/);
 
-// Le parcours public lit la version publiee, jamais le brouillon.
-assert.match(diagnosticConfigurationLib, /getPublicDiagnosticConfiguration/);
-assert.match(diagnosticConfigurationLib, /DEFAULT_DIAGNOSTIC_CONFIGURATION/);
-assert.match(diagnosticPage, /resolvePublishedDiagnosticConfiguration/);
-assert.match(diagnosticPage, /configuration=\{configuration\}/);
+// Le pré-diagnostic conserve son schéma santé fermé, et réutilise seulement le
+// mapping de recommandations publié dans /admin/diagnostic pour relier une
+// qualification strictement standard au catalogue Billing V2.
 
 // BFF : enveloppe verifiee, autorite laissee a API-INTERNAL.
 assert.match(diagnosticDraftRoute, /handleAdminMutation/);
@@ -874,6 +957,13 @@ assert.match(diagnosticPublishRoute, /expectedPublishedVersion/);
 // Simulateur : il appelle le moteur reel, il ne le reimplemente pas.
 assert.match(diagnosticAdminSimulator, /buildAdaptiveDiagnosticOutcome/);
 assert.match(diagnosticAdminSimulator, /getVisibleDiagnosticQuestions/);
+assert.match(diagnosticPage, /getBillingV2FormulesCatalog/);
+assert.match(diagnosticPage, /DIAGNOSTIC_RECOMMENDATION_CONTENT_KEY/);
+assert.match(diagnosticWizard, /recommendPreDiagnosticOffer/);
+assert.match(diagnosticWizard, /"\/api\/formules\/devis"/);
+assert.match(diagnosticWizard, /billingV2SelectionToSearchParams/);
+assert.match(diagnosticWizard, /Choisir cette formule/);
+assert.match(diagnosticWizard, /Être rappelé/);
 assert.match(diagnosticAdminSimulator, /pruneHiddenDiagnosticAnswers/);
 assert.match(diagnosticAdminSimulator, /outcome\.appliedRuleIds/);
 // Le diagnostic ne calcule jamais de prix, pas meme dans l'administration.

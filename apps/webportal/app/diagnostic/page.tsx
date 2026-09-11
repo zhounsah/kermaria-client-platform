@@ -1,8 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-
 import { PublicDiagnosticWizard } from "@/components/PublicDiagnosticWizard";
-import { resolvePublishedDiagnosticConfiguration } from "@/lib/diagnostic-configuration";
 import { resolveDiagnosticContext } from "@/lib/diagnostic-context";
 import {
   DEFAULT_DIAGNOSTIC_RECOMMENDATION_CONFIG,
@@ -14,15 +11,17 @@ import {
   getPublicManagedContent,
 } from "@/lib/internal-api";
 import { buildPublicMetadata } from "@/lib/public-metadata";
-import { resolveSystemSnippets } from "@/lib/system-snippets";
 
 export const metadata: Metadata = buildPublicMetadata({
-  title: "Diagnostic informatique adapté à votre besoin",
+  title: "Pré-diagnostic informatique",
   description:
-    "Décrivez votre besoin de sauvegarde, accès distant, réseau, messagerie, domaine, serveur ou hébergement et obtenez une orientation ciblée.",
+    "Faites le point sur vos équipements, sauvegardes, réseau et sécurité, puis identifiez les priorités à examiner.",
   path: "/diagnostic",
 });
 
+// La vitrine garde le meme mode de rendu que les autres pages publiques : les
+// en-tetes, canonical et indicateurs de disponibilite restent ainsi evalues
+// a la requete, sans reintroduire de dependance au catalogue commercial.
 export const dynamic = "force-dynamic";
 
 type DiagnosticPageProps = {
@@ -32,32 +31,20 @@ type DiagnosticPageProps = {
 export default async function DiagnosticPage({ searchParams }: DiagnosticPageProps) {
   const params = await searchParams;
   const rawContext = Array.isArray(params.context) ? params.context[0] : params.context;
-  const initialContext = resolveDiagnosticContext(rawContext);
-  const [catalogResult, recommendationContentResult, snippets, configuration] =
-    await Promise.all([
-      getBillingV2FormulesCatalog(),
-      getPublicManagedContent(DIAGNOSTIC_RECOMMENDATION_CONTENT_KEY),
-      resolveSystemSnippets(),
-      resolvePublishedDiagnosticConfiguration(),
-    ]);
+  const context = resolveDiagnosticContext(rawContext);
+  const [catalogResult, recommendationContentResult] = await Promise.all([
+    getBillingV2FormulesCatalog(),
+    getPublicManagedContent(DIAGNOSTIC_RECOMMENDATION_CONTENT_KEY),
+  ]);
   const recommendationConfig =
     parseDiagnosticRecommendationConfig(recommendationContentResult.data?.bodyMarkdown)
     ?? DEFAULT_DIAGNOSTIC_RECOMMENDATION_CONFIG;
 
   return (
-    <>
-      <div className="diagnostic-page diagnostic-page-nav">
-        <Link className="back-link" href="/services">
-          <span aria-hidden="true">{"<-"}</span> Retour aux services
-        </Link>
-      </div>
-      <PublicDiagnosticWizard
-        catalog={catalogResult.data}
-        configuration={configuration}
-        initialContext={initialContext}
-        recommendationConfig={recommendationConfig}
-        snippets={snippets}
-      />
-    </>
+    <PublicDiagnosticWizard
+      catalog={catalogResult.data}
+      context={context}
+      recommendationConfig={recommendationConfig}
+    />
   );
 }

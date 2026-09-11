@@ -580,6 +580,7 @@ async Task<int> RunAsync(string[] arguments)
         VerifyBillingV2FeatureFlagRegistry();
         await VerifyCommunicationTemplatesAsync();
         await VerifyDiagnosticConfigurationAsync();
+        await VerifyPublicPreDiagnosticAsync();
         await RunMockTestsAsync();
         await RunMockActiveDirectoryModeTestsAsync();
         await RunMockBpceIssuingTestsAsync();
@@ -4496,6 +4497,119 @@ static async Task VerifyCommunicationTemplatesAsync()
         "Les textes systeme publics doivent rester exposes meme sans personnalisation.");
 
     CommunicationTemplateService.Invalidate();
+}
+
+async Task VerifyPublicPreDiagnosticAsync()
+{
+    var healthy = new Dictionary<string, string>
+    {
+        ["profile"] = "individual", ["equipmentCount"] = "1-2",
+        ["equipmentAge"] = "under3", ["performance"] = "none",
+        ["updates"] = "automatic", ["backup"] = "automatic_external_tested",
+        ["network"] = "stable", ["wifiCoverage"] = "good", ["mfa"] = "all",
+        ["sharedAccounts"] = "no", ["phishing"] = "aware"
+    };
+    Ensure(
+        PublicPreDiagnosticService.TryEvaluate(healthy, out var healthyResult)
+        && healthyResult!.Score == 100 && healthyResult.Level == "Bon",
+        "Le pré-diagnostic sain doit rester à 100/100.");
+
+    var risky = new Dictionary<string, string>(healthy)
+    {
+        ["profile"] = "professional", ["equipmentAge"] = "over5",
+        ["performance"] = "frequent", ["updates"] = "unknown", ["backup"] = "none",
+        ["network"] = "frequent", ["wifiCoverage"] = "poor", ["guestWifi"] = "same",
+        ["mfa"] = "none", ["sharedAccounts"] = "yes", ["phishing"] = "no",
+        ["continuity"] = "none", ["businessDependence"] = "high"
+    };
+    Ensure(
+        PublicPreDiagnosticService.TryEvaluate(risky, out var riskyResult)
+        && riskyResult!.Score < 45 && riskyResult.Categories.Count == 5
+        && riskyResult.Priorities.Count <= 3,
+        "Le pré-diagnostic professionnel risqué doit faire ressortir ses priorités.");
+    Ensure(
+        !PublicPreDiagnosticService.TryEvaluate(new Dictionary<string, string> { ["profile"] = "individual" }, out _),
+        "Une charge diagnostic incomplète doit être refusée.");
+    Ensure(
+        !PublicPreDiagnosticService.TryEvaluate(
+            new Dictionary<string, string>(healthy) { ["guestWifi"] = "same" }, out _),
+        "Une clé réservée aux organisations doit être refusée pour un particulier.");
+    Ensure(
+        !PublicPreDiagnosticService.TryEvaluate(
+            new Dictionary<string, string>(healthy) { ["unexpected"] = "value" }, out _),
+        "Une clé inconnue ne doit jamais parvenir au récapitulatif e-mail.");
+    Ensure(
+        !PublicPreDiagnosticService.TryEvaluate(
+            new Dictionary<string, string>(healthy) { ["backup"] = "invented" }, out _),
+        "Une valeur de réponse inconnue doit être refusée.");
+    var association = new Dictionary<string, string>(risky)
+    {
+        ["profile"] = "association",
+        ["equipmentAge"] = "under3",
+        ["performance"] = "none",
+        ["updates"] = "automatic",
+        ["backup"] = "automatic_external_tested",
+        ["network"] = "stable",
+        ["wifiCoverage"] = "good",
+        ["guestWifi"] = "separate",
+        ["mfa"] = "all",
+        ["sharedAccounts"] = "no",
+        ["phishing"] = "aware",
+        ["continuity"] = "tested",
+        ["businessDependence"] = "low",
+    };
+    Ensure(
+        PublicPreDiagnosticService.TryEvaluate(association, out var associationResult)
+        && associationResult!.Score == 100,
+        "Le schéma association valide doit être accepté et borné.");
+    Ensure(
+        PublicPreDiagnosticService.NormalizeSingleLine("  Jean\r\n Dupont  ") == "Jean Dupont"
+        && PublicPreDiagnosticService.NormalizeMultiline("  Ligne 1\r\nLigne 2  ") == "Ligne 1\nLigne 2",
+        "Les champs texte du pré-diagnostic doivent être normalisés sans écraser les retours utiles du commentaire.");
+    var callback = new PublicPreDiagnosticCallback(
+        "Jean Dupont", "06 12 34 56 78", "jean@example.test", "Dupont SARL",
+        "Le matin", null, risky);
+    var body = PublicPreDiagnosticService.BuildEmailBody(callback, riskyResult!, "test-correlation");
+    var normalizedBody = body.Replace("\r\n", "\n", StringComparison.Ordinal);
+    Ensure(
+        normalizedBody.StartsWith("NOUVELLE DEMANDE DE RAPPEL — DIAGNOSTIC ZACHARY IT\n\nCONTACT\n", StringComparison.Ordinal)
+        && normalizedBody.Contains("\n\nDIAGNOSTIC\n", StringComparison.Ordinal)
+        && normalizedBody.Contains("Score :", StringComparison.Ordinal)
+        && normalizedBody.Contains("\n\nPRIORITÉS\n", StringComparison.Ordinal)
+        && normalizedBody.Contains("\n\nRÉSULTATS\n", StringComparison.Ordinal)
+        && normalizedBody.Contains("\n\nRÉPONSES UTILES\n", StringComparison.Ordinal)
+        && normalizedBody.Contains("test-correlation", StringComparison.Ordinal),
+        "Le récapitulatif e-mail texte doit être structuré par sections et corrélé.");
+
+    var sent = new CapturingEmailService();
+    var emailLog = new CapturingEmailLogRepository();
+    CommunicationTemplateService.Invalidate();
+    var dispatch = new EmailDispatchService(
+        null!,
+        null!,
+        sent,
+        emailLog,
+        CreateMockEmailConfiguration(),
+        new CommunicationTemplateService(
+            new MockCommunicationTemplateRepository(),
+            LoggerFactory.Create(_ => { }).CreateLogger<CommunicationTemplateService>()),
+        LoggerFactory.Create(_ => { }).CreateLogger<EmailDispatchService>());
+    var contactSubmission = new ContactFormSubmission(
+        "Contact", "contact@example.test", "Contact", "CONTACT_BODY_SENTINEL", null);
+    var diagnosticSubmission = new ContactFormSubmission(
+        "Diagnostic", "diagnostic@example.test", "Diagnostic", "DIAGNOSTIC_BODY_SENTINEL", null);
+    Ensure(
+        (await dispatch.SendContactFormAsync(contactSubmission, "contact-route", CancellationToken.None)).Succeeded
+        && (await dispatch.SendDiagnosticCallbackAsync(diagnosticSubmission, "diagnostic-route", CancellationToken.None)).Succeeded,
+        "Les deux dispatchs publics doivent accepter l'envoi mock.");
+    Ensure(
+        emailLog.Bodies.Count == 2
+        && emailLog.Bodies[0].Contains("CONTACT_BODY_SENTINEL", StringComparison.Ordinal)
+        && !emailLog.Bodies[1].Contains("DIAGNOSTIC_BODY_SENTINEL", StringComparison.Ordinal)
+        && emailLog.Bodies[1].Contains("non conservé", StringComparison.Ordinal)
+        && sent.Messages.Count == 2
+        && sent.Messages[1].Body.Contains("DIAGNOSTIC_BODY_SENTINEL", StringComparison.Ordinal),
+        "Le contact conserve son corps historique ; le pré-diagnostic est envoyé mais son corps détaillé n'est pas persisté.");
 }
 
 static async Task VerifyDiagnosticConfigurationAsync()
@@ -10124,6 +10238,48 @@ sealed class TestEmailDispatchService : IEmailDispatchService
         string correlationId,
         CancellationToken cancellationToken)
         => Task.FromResult(new EmailDispatchResult(true, "noop", string.Empty));
+}
+
+sealed class CapturingEmailService : IEmailService
+{
+    public List<EmailMessage> Messages { get; } = [];
+    public string ModeName => "test";
+    public bool SendsEnabled => true;
+
+    public Task<EmailDeliveryResult> SendAsync(
+        EmailMessage message,
+        CancellationToken cancellationToken)
+    {
+        Messages.Add(message);
+        return Task.FromResult(new EmailDeliveryResult(true, "test_sent", null));
+    }
+}
+
+sealed class CapturingEmailLogRepository : IEmailLogRepository
+{
+    public List<string> Bodies { get; } = [];
+    public bool IsPersistent => false;
+
+    public Task<string> RecordAsync(
+        string template,
+        string recipient,
+        string subject,
+        string body,
+        string status,
+        string? errorMessage,
+        string? relatedDocumentId,
+        string correlationId,
+        bool delivered,
+        CancellationToken cancellationToken)
+    {
+        Bodies.Add(body);
+        return Task.FromResult(Guid.NewGuid().ToString("D"));
+    }
+
+    public Task<IReadOnlyList<EmailLogEntry>> ListRecentAsync(
+        int limit,
+        CancellationToken cancellationToken)
+        => Task.FromResult<IReadOnlyList<EmailLogEntry>>([]);
 }
 
 static class SmokeTestRuntimeHelpers

@@ -38,6 +38,15 @@ public interface IEmailDispatchService
         string correlationId,
         CancellationToken cancellationToken);
 
+    // Le corps d'un pré-diagnostic contient des réponses à caractère
+    // personnel. Il est envoyé, mais ne doit pas devenir un historique de
+    // diagnostic dans le journal MariaDB des e-mails.
+    Task<EmailDispatchResult> SendDiagnosticCallbackAsync(
+        ContactFormSubmission submission,
+        string correlationId,
+        CancellationToken cancellationToken)
+        => SendContactFormAsync(submission, correlationId, cancellationToken);
+
     Task<EmailDispatchResult> SendSignupVerificationAsync(
         string email,
         string contactName,
@@ -139,9 +148,22 @@ public sealed class EmailDispatchService : IEmailDispatchService
                 portalUrl: null),
             cancellationToken);
 
-    public async Task<EmailDispatchResult> SendContactFormAsync(
+    public Task<EmailDispatchResult> SendContactFormAsync(
         ContactFormSubmission submission,
         string correlationId,
+        CancellationToken cancellationToken)
+        => SendPublicContactAsync(submission, correlationId, persistBody: true, cancellationToken);
+
+    public Task<EmailDispatchResult> SendDiagnosticCallbackAsync(
+        ContactFormSubmission submission,
+        string correlationId,
+        CancellationToken cancellationToken)
+        => SendPublicContactAsync(submission, correlationId, persistBody: false, cancellationToken);
+
+    private async Task<EmailDispatchResult> SendPublicContactAsync(
+        ContactFormSubmission submission,
+        string correlationId,
+        bool persistBody,
         CancellationToken cancellationToken)
     {
         var recipient = _configuration.ContactFormRecipient?.Trim();
@@ -191,7 +213,7 @@ public sealed class EmailDispatchService : IEmailDispatchService
             EmailTemplates.ContactForm,
             recipient,
             subject,
-            body,
+            persistBody ? body : "[Corps de pré-diagnostic non conservé dans le journal e-mail.]",
             delivery.Status,
             delivery.ErrorMessage,
             null,

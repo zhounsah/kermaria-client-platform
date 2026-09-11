@@ -579,12 +579,12 @@ const emailDispatch = await read(
   "../../apps/api-internal/Services/Email/EmailDispatchService.cs",
 );
 const contactDispatchBody = emailDispatch.slice(
-  emailDispatch.indexOf("public async Task<EmailDispatchResult> SendContactFormAsync("),
+  emailDispatch.indexOf("private async Task<EmailDispatchResult> SendPublicContactAsync("),
   emailDispatch.indexOf("public async Task<EmailDispatchResult> SendSignupVerificationAsync("),
 );
 assert.ok(
   contactDispatchBody.length > 0,
-  "`SendContactFormAsync` introuvable dans EmailDispatchService.",
+  "Le dispatch commun du formulaire public est introuvable dans EmailDispatchService.",
 );
 assert.doesNotMatch(
   contactDispatchBody,

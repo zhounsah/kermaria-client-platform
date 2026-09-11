@@ -9525,7 +9525,7 @@ fieldset.form-field > .form-hint {
 .diagnostic-result-heading { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:start; gap:16px; margin-bottom:16px; }
 .diagnostic-result-icon { width:46px; height:46px; border-radius:14px; }
 .diagnostic-result-heading .eyebrow { margin-bottom:5px; }
-.diagnostic-result-heading h2 { margin:0; font-size:clamp(1.55rem,3vw,2.25rem); letter-spacing:-.04em; line-height:1.12; }
+.diagnostic-result-heading h1 { margin:0; font-size:clamp(1.55rem,3vw,2.25rem); letter-spacing:-.04em; line-height:1.12; }
 .diagnostic-result-lead { margin:0; color:var(--muted); font-size:1rem; line-height:1.7; }
 .diagnostic-guidance-points { margin:24px 0 0; }
 .diagnostic-formula-card,.diagnostic-cadrage-card { margin-top:28px; padding:24px; border:1px solid var(--diagnostic-border); border-left:4px solid var(--primary); border-radius:16px; background:var(--diagnostic-soft); }
@@ -9546,6 +9546,41 @@ fieldset.form-field > .form-hint {
 .diagnostic-contact-copy h2 { margin:6px 0 12px; font-size:clamp(1.45rem,2.5vw,2rem); letter-spacing:-.04em; line-height:1.15; }
 .diagnostic-contact-copy>p:last-child { margin:0; color:var(--muted); line-height:1.65; }
 .diagnostic-contact-panel .contact-form { margin:0; border-color:#d8e3f0; border-radius:16px; box-shadow:0 12px 32px rgb(30 64 105 / 7%); }
+.diagnostic-score { display:flex; align-items:baseline; gap:8px; margin:22px 0; color:var(--brand-blue-dark); }
+.diagnostic-score strong { font-size:clamp(3.2rem,8vw,5.4rem); letter-spacing:-.07em; line-height:.9; }
+.diagnostic-score span { color:var(--muted); font-size:1rem; font-weight:750; }
+.diagnostic-priorities,.diagnostic-positives { margin-top:28px; padding-top:22px; border-top:1px solid var(--diagnostic-border); }
+.diagnostic-priorities h2,.diagnostic-positives h2 { margin:0 0 14px; font-size:1.12rem; }
+.diagnostic-priorities ol { display:grid; gap:14px; margin:0; padding-left:24px; }
+.diagnostic-priorities li { padding-left:4px; }
+.diagnostic-priorities strong,.diagnostic-priorities span { display:block; }
+.diagnostic-priorities span,.diagnostic-disclaimer { margin-top:5px; color:var(--muted); font-size:.92rem; line-height:1.6; }
+.diagnostic-category-scores { display:grid; margin:0; }
+.diagnostic-category-scores>div { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:13px 0; border-top:1px solid var(--diagnostic-border); }
+.diagnostic-category-scores>div:first-child { padding-top:0; border-top:0; }
+.diagnostic-category-scores dt { color:var(--text); font-size:.92rem; font-weight:700; }
+.diagnostic-category-scores dd { display:flex; align-items:baseline; gap:4px; margin:0; color:var(--muted); }
+.diagnostic-category-scores strong { color:var(--brand-blue-dark); font-size:1.3rem; }
+.diagnostic-disclaimer { margin:22px 0 0; padding-top:18px; border-top:1px solid var(--diagnostic-border); }
+.diagnostic-consent { display:flex !important; align-items:flex-start; gap:10px; color:var(--text); font-size:.88rem !important; font-weight:650 !important; line-height:1.5; }
+.diagnostic-consent input { flex:0 0 auto; width:18px; height:18px; margin-top:2px; accent-color:var(--primary); }
+.diagnostic-honeypot { position:absolute !important; width:1px; height:1px; padding:0 !important; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+.diagnostic-callback-cta { margin-top:26px; }
+.diagnostic-callback-actions { display:flex; align-items:center; gap:18px; }
+.diagnostic-offer,.diagnostic-human-review { margin-top:28px; padding:24px; border:1px solid var(--diagnostic-border); border-left:4px solid var(--primary); border-radius:16px; background:var(--diagnostic-soft); }
+.diagnostic-offer .eyebrow { margin:0 0 7px; }
+.diagnostic-offer h2,.diagnostic-human-review h2 { margin:0 0 8px; font-size:1.25rem; letter-spacing:-.025em; }
+.diagnostic-offer h3 { margin:0 0 10px; font-size:1.12rem; letter-spacing:-.02em; }
+.diagnostic-offer>p,.diagnostic-human-review>p { margin:0; color:var(--muted); line-height:1.6; }
+.diagnostic-offer-description { margin-top:10px !important; }
+.diagnostic-offer-price { display:grid; margin:20px 0; padding:16px 0; border-top:1px solid var(--diagnostic-border); border-bottom:1px solid var(--diagnostic-border); gap:4px; }
+.diagnostic-offer-price span,.diagnostic-offer-price small { color:var(--muted); font-size:.88rem; }
+.diagnostic-offer-price strong { color:var(--brand-blue-dark); font-size:1.35rem; letter-spacing:-.03em; }
+.diagnostic-offer-loading,.diagnostic-offer-error { margin-top:18px !important; }
+.diagnostic-offer-error { color:var(--danger) !important; }
+.diagnostic-offer-cta { margin-top:4px; }
+.diagnostic-human-review .diagnostic-callback-cta { margin-top:18px; }
+.diagnostic-restart { margin-top:18px; }
 
 @keyframes diagnostic-step-enter { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
 @media (max-width:900px) {

@@ -2039,6 +2039,71 @@ app.MapPost(
         });
     });
 
+// Pré-diagnostic public : les coordonnées et les réponses arrivent uniquement
+// du BFF. Le score envoyé par le navigateur n'existe volontairement pas dans
+// ce contrat : l'évaluation est toujours recalculée ici avant l'e-mail.
+app.MapPost(
+    "/internal/public/diagnostic-callback",
+    async (
+        HttpContext context,
+        IEmailDispatchService emailDispatch) =>
+    {
+        var payload = await ReadPayload<DiagnosticCallbackPayload>(context);
+        var correlationId = context.GetCorrelationId();
+        var name = payload?.Name is null ? null : PublicPreDiagnosticService.NormalizeSingleLine(payload.Name);
+        var phone = payload?.Phone is null ? null : PublicPreDiagnosticService.NormalizeSingleLine(payload.Phone);
+        var email = payload?.Email is null ? null : PublicPreDiagnosticService.NormalizeSingleLine(payload.Email);
+        var organisation = payload?.Organisation is null ? null : PublicPreDiagnosticService.NormalizeSingleLine(payload.Organisation);
+        var preferredTime = payload?.PreferredTime is null ? null : PublicPreDiagnosticService.NormalizeSingleLine(payload.PreferredTime);
+        var comment = payload?.Comment is null ? null : PublicPreDiagnosticService.NormalizeMultiline(payload.Comment);
+        if (payload is null
+            || payload.Consent != true
+            || string.IsNullOrWhiteSpace(name)
+            || string.IsNullOrWhiteSpace(phone)
+            || name.Length > 120
+            || phone.Length > 40
+            || (email?.Length ?? 0) > 254
+            || (organisation?.Length ?? 0) > 160
+            || (preferredTime?.Length ?? 0) > 160
+            || (comment?.Length ?? 0) > 1200
+            || !System.Text.RegularExpressions.Regex.IsMatch(
+                phone, "^[0-9+().\\s-]{6,40}$")
+            || (!string.IsNullOrWhiteSpace(email)
+                && !System.Text.RegularExpressions.Regex.IsMatch(
+                    email, "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$"))
+            || !PublicPreDiagnosticService.TryEvaluate(payload.Answers, out var diagnostic))
+        {
+            return Results.Json(
+                new ApiError("INVALID_REQUEST", "La demande de rappel est invalide.", correlationId),
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var callback = new PublicPreDiagnosticCallback(
+            name,
+            phone,
+            string.IsNullOrWhiteSpace(email) ? null : email,
+            string.IsNullOrWhiteSpace(organisation) ? null : organisation,
+            string.IsNullOrWhiteSpace(preferredTime) ? null : preferredTime,
+            string.IsNullOrWhiteSpace(comment) ? null : comment,
+            diagnostic!.Answers);
+        var submission = new ContactFormSubmission(
+            VisitorName: callback.Name,
+            VisitorEmail: callback.Email ?? "(e-mail non renseigné)",
+            SubjectLine: "Nouvelle demande de rappel — Diagnostic Zachary IT",
+            Message: PublicPreDiagnosticService.BuildEmailBody(callback, diagnostic, correlationId),
+            FormuleCode: null);
+        var result = await emailDispatch.SendDiagnosticCallbackAsync(
+            submission, correlationId, context.RequestAborted);
+        if (!result.Succeeded)
+        {
+            var statusCode = result.Code == "NO_RECIPIENT"
+                ? StatusCodes.Status503ServiceUnavailable
+                : StatusCodes.Status502BadGateway;
+            return Results.Json(new ApiError(result.Code, result.Message, correlationId), statusCode: statusCode);
+        }
+        return Results.Ok(new { code = "CALLBACK_SENT", correlation_id = correlationId });
+    });
+
 // V0.26 : inscription self-service (anonyme, protégé par X-Service-Auth).
 // hCaptcha et honeypot restent assurés côté webportal BFF, qui pose aussi un
 // premier limiteur en mémoire. Le kill switch et les limites de débit

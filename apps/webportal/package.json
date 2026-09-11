@@ -19,7 +19,7 @@
     "test:replies": "node scripts/verify-client-replies-contract.mjs",
     "test:activity": "node scripts/verify-admin-activity-contract.mjs",
     "test:commercial": "node scripts/verify-commercial-documents-contract.mjs",
-    "test:diagnostic": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-diagnostic-contract.mjs",
+    "test:diagnostic": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-diagnostic-contract.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-pre-diagnostic-contract.mjs",
     "test:managed-content": "node scripts/verify-managed-content-contract.mjs && node scripts/verify-services-landing-contract.mjs && node scripts/verify-priority-services-contract.mjs",
     "test:editorial": "node scripts/verify-editorial-platform-contract.mjs",
     "test:markdown-anchors": "node scripts/verify-markdown-anchors.mjs",

@@ -11,9 +11,10 @@ type BffSuccess<T> = {
   data: T;
 };
 
-type BffFailure = {
+export type BffFailure<TErrorDetails = unknown> = {
   ok: false;
   status: number;
+  details: TErrorDetails | null;
   error: {
     code: string;
     message: string;
@@ -21,15 +22,15 @@ type BffFailure = {
   };
 };
 
-export type BffResult<T> = BffSuccess<T> | BffFailure;
+export type BffResult<T, TErrorDetails = unknown> = BffSuccess<T> | BffFailure<TErrorDetails>;
 
 const DEFAULT_TIMEOUT_MS = 15000;
 
-export async function requestBffJson<T>(
+export async function requestBffJson<T, TErrorDetails = unknown>(
   path: `/api/${string}`,
   init: RequestInit,
   timeoutMs = DEFAULT_TIMEOUT_MS,
-): Promise<BffResult<T>> {
+): Promise<BffResult<T, TErrorDetails>> {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
 
@@ -55,6 +56,7 @@ export async function requestBffJson<T>(
       return {
         ok: false,
         status: response.status,
+        details: payload as TErrorDetails | null,
         error: {
           code: apiError?.code ?? "BFF_REQUEST_FAILED",
           message: userMessageFor(
@@ -72,6 +74,7 @@ export async function requestBffJson<T>(
       return {
         ok: false,
         status: 502,
+        details: null,
         error: {
           code: "INVALID_BFF_RESPONSE",
           message:
@@ -91,6 +94,7 @@ export async function requestBffJson<T>(
     return {
       ok: false,
       status: 0,
+      details: null,
       error: {
         code: timedOut ? "BFF_TIMEOUT" : "BFF_UNAVAILABLE",
         message: timedOut

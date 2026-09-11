@@ -207,6 +207,18 @@ public sealed record ContactMessagePayload(
     string? Message,
     string? FormuleCode);
 
+/// <summary>Demande anonyme de rappel après le pré-diagnostic public.</summary>
+public sealed record DiagnosticCallbackPayload(
+    string? Name,
+    string? Phone,
+    string? Email,
+    string? Organisation,
+    string? PreferredTime,
+    string? Comment,
+    bool? Consent,
+    Dictionary<string, string>? Answers,
+    string? SourcePath);
+
 public sealed record RequestMutationResponse(
     string Id,
     string Reference,

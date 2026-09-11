@@ -36,11 +36,20 @@ export function checkRateLimit(
 }
 
 export function getRequestIdentifier(request: NextRequest): string {
-  const forwarded = request.headers.get("x-forwarded-for")?.trim();
-  if (forwarded) {
-    return forwarded.split(",")[0]?.trim() || "unknown";
+  // WEBPORTAL n'est pas expose directement : SRV-11 ecrase X-Real-IP avec
+  // l'adresse issue de sa frontiere de confiance (PROXY v2 en production).
+  // X-Forwarded-For reste descriptif, jamais une identite : sa premiere
+  // valeur peut avoir ete fournie par le navigateur avant le proxy.
+  return normalizeTrustedClientIp(request.headers.get("x-real-ip")) ?? "unknown";
+}
+
+export function normalizeTrustedClientIp(value: string | null): string | null {
+  const candidate = value?.trim();
+  if (!candidate || candidate.length > 45 || candidate.includes(",")) {
+    return null;
   }
 
-  const realIp = request.headers.get("x-real-ip")?.trim();
-  return realIp || "unknown";
+  // Le proxy transmet une seule IPv4 ou IPv6. Ne pas laisser une valeur
+  // arbitraire creer un nombre illimite de compartiments de rate limiting.
+  return /^[0-9a-f:.]+$/i.test(candidate) ? candidate.toLowerCase() : null;
 }
