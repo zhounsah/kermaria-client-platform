@@ -64,6 +64,70 @@ public sealed record DiagnosticConfigurationModel(
     int SchemaVersion,
     IReadOnlyList<DiagnosticContextModel>? Contexts);
 
+// Schema v2 du pré-diagnostic. Les identifiants et structures sont fermes;
+// aucun de ces objets ne contient d'expression executable ou de prix.
+public sealed record PreDiagnosticProfileModel(
+    string? Id, string? Label, string? Description, bool Active, int Order);
+public sealed record PreDiagnosticScoreEffectModel(
+    string? Mode, int Value, IReadOnlyList<DiagnosticConditionModel>? When);
+public sealed record PreDiagnosticOptionModel(
+    string? Value, string? Label, bool Active, int Order,
+    IReadOnlyList<PreDiagnosticScoreEffectModel>? Effects);
+public sealed record PreDiagnosticCategoryModel(
+    string? Id, string? Label, bool Active, int Order,
+    IReadOnlyDictionary<string, int>? Weights);
+public sealed record PreDiagnosticQuestionModel(
+    string? Id, string? CategoryId, string? Label, string? Hint,
+    IReadOnlyList<string>? Profiles, bool Required, bool Active, int Order,
+    IReadOnlyList<DiagnosticConditionModel>? When,
+    IReadOnlyList<PreDiagnosticOptionModel>? Options);
+public sealed record PreDiagnosticLevelModel(
+    string? Id, string? Label, int MinimumScore, int Order, string? Description);
+public sealed record PreDiagnosticPriorityModel(
+    string? CategoryId, int Threshold, string? Title, string? Body, int Order);
+public sealed record PreDiagnosticPositiveModel(
+    string? CategoryId, int Threshold, string? Text, int Order);
+public sealed record PreDiagnosticContextModel(
+    string? Id, string? Label, string? Text, bool Active, int Order,
+    bool AllowsSelfService);
+public sealed record PreDiagnosticCommercialProfileModel(
+    string? Id, string? Label, bool Active, IReadOnlyList<string>? Intents,
+    IReadOnlyList<string>? Scopes);
+public sealed record PreDiagnosticCommercialOptionModel(
+    string? Value, string? Label, bool Active, int Order,
+    IReadOnlyList<string>? Profiles, IReadOnlyList<string>? Contexts,
+    // The shared TypeScript contract deliberately reuses the option shape for
+    // health and commercial questions. Commercial options must not carry score
+    // effects, but retaining the (empty) array here lets the v2 document stay
+    // strictly deserializable on both sides.
+    IReadOnlyList<PreDiagnosticScoreEffectModel>? Effects);
+public sealed record PreDiagnosticCommercialQuestionModel(
+    string? Id, string? Label, string? Hint, IReadOnlyList<string>? Profiles,
+    IReadOnlyList<string>? Contexts, bool Active, int Order,
+    string? DynamicOptions,
+    IReadOnlyList<PreDiagnosticCommercialOptionModel>? Options);
+public sealed record PreDiagnosticCatalogBindingModel(
+    string? ProfileId, IReadOnlyList<string>? RequiredServiceCodes,
+    string? StorageServiceCode);
+public sealed record PreDiagnosticCommerceModel(
+    int MinimumStorageGb, int MaximumStorageGb, int MinimumUsers, int MaximumUsers,
+    int MaximumSites, IReadOnlyList<string>? CompatibleScopes,
+    IReadOnlyList<string>? HumanReviewIntents,
+    IReadOnlyList<PreDiagnosticCommercialQuestionModel>? Questions,
+    IReadOnlyList<PreDiagnosticCommercialProfileModel>? Profiles,
+    IReadOnlyList<PreDiagnosticCatalogBindingModel>? CatalogBindings);
+public sealed record PreDiagnosticConfigurationModel(
+    int SchemaVersion,
+    IReadOnlyList<PreDiagnosticProfileModel>? Profiles,
+    IReadOnlyList<PreDiagnosticCategoryModel>? Categories,
+    IReadOnlyList<PreDiagnosticQuestionModel>? Questions,
+    IReadOnlyList<PreDiagnosticLevelModel>? Levels,
+    int MaximumPriorities,
+    IReadOnlyList<PreDiagnosticPriorityModel>? Priorities,
+    IReadOnlyList<PreDiagnosticPositiveModel>? Positives,
+    IReadOnlyList<PreDiagnosticContextModel>? Contexts,
+    PreDiagnosticCommerceModel? Commerce);
+
 /// <summary>
 /// Etat d'une configuration. <c>Source</c> vaut <c>code</c> tant qu'aucune
 /// version n'est enregistree en base, <c>database</c> ensuite.

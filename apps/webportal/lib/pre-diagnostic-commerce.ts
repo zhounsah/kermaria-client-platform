@@ -1,34 +1,109 @@
 import type {
   BillingV2PublicCatalog,
-  DiagnosticAnswers,
-  DiagnosticRecommendation,
-  DiagnosticRecommendationConfig,
+  DiagnosticRecommendationProfileId,
+  BillingV2PublicSelection,
+  PreDiagnosticConfiguration,
 } from "@kermaria/shared";
 
 import type {
   PreDiagnosticProfile,
   PreDiagnosticQuestion,
 } from "@/lib/pre-diagnostic";
-import { recommendOffer } from "@/lib/public-diagnostic";
+import { buildBaselineSelection, findService } from "@/lib/billing-v2-formules";
+import { MAX_ADDITIONAL_USERS } from "@/lib/billing-v2-selection";
 import type { DiagnosticContextId } from "@/lib/diagnostic-context";
 
 export type CommercialRecommendation = {
   kind: "standard" | "human_review";
   title: string;
   reason: string;
-  recommendation: DiagnosticRecommendation | null;
+  /** Besoin metier, jamais une reference de prix ou un preset impose. */
+  need: NormalizedDiagnosticNeed | null;
+  /** Selection Billing V2 derivee du catalogue vivant. */
+  selection: BillingV2PublicSelection | null;
+  offerName: string | null;
+  selectedStorageGb: number | null;
+  commercialProfileId: DiagnosticRecommendationProfileId | null;
 };
 
-const HUMAN_REVIEW_CONTEXTS = new Set<DiagnosticContextId>([
+export type NormalizedDiagnosticNeed = {
+  customerType: "personal" | "organisation";
+  family: "storage" | "remote_access" | "windows_desktop";
+  requiredStorageGb: number;
+  requiredUsers: number;
+  requiredSites: number;
+  scope: "files" | "windows";
+};
+
+export const PRE_DIAGNOSTIC_HUMAN_REVIEW_CONTEXTS = [
   "network",
   "messaging",
   "domain-dns",
   "server",
   "web-hosting",
-]);
+] as const satisfies readonly DiagnosticContextId[];
 
-export function isPreDiagnosticHumanReviewContext(context: DiagnosticContextId) {
+export const PRE_DIAGNOSTIC_COMMERCIAL_LIMITS = {
+  maximumPublicStorageGb: 256,
+  maximumPublicUsers: 11,
+  requireSingleSiteForOrganisations: true,
+} as const;
+
+export type PreDiagnosticContextPresentation = {
+  label: string;
+  selfService: boolean;
+  humanReviewReason: string | null;
+};
+
+const HUMAN_REVIEW_CONTEXTS = new Set<DiagnosticContextId>(
+  PRE_DIAGNOSTIC_HUMAN_REVIEW_CONTEXTS,
+);
+
+export function isPreDiagnosticHumanReviewContext(
+  context: DiagnosticContextId,
+  configuration?: PreDiagnosticConfiguration,
+) {
+  if (configuration) {
+    const configured = configuration.contexts.find((item) => item.id === context && item.active);
+    return configured ? !configured.allowsSelfService : true;
+  }
   return HUMAN_REVIEW_CONTEXTS.has(context);
+}
+
+function contextAllowsSelfService(
+  context: DiagnosticContextId,
+  configuration?: PreDiagnosticConfiguration,
+) {
+  return !isPreDiagnosticHumanReviewContext(context, configuration);
+}
+
+/**
+ * Présentation des contextes réellement interprétés par le pré-diagnostic.
+ * Les questions restent construites par `commercialQuestionsForProfile`, ce
+ * qui évite à l'administration de maintenir une seconde liste.
+ */
+export function getPreDiagnosticContextPresentation(
+  context: DiagnosticContextId,
+): PreDiagnosticContextPresentation {
+  const labels: Record<DiagnosticContextId, string> = {
+    general: "Besoin à préciser",
+    backup: "Sauvegarde et protection des données",
+    "remote-access": "Accès distant",
+    network: "Réseau / Wi-Fi",
+    messaging: "Messagerie",
+    "domain-dns": "Domaine et DNS",
+    server: "Serveur ou VPS",
+    "web-hosting": "Hébergement web",
+  };
+  const humanReview = isPreDiagnosticHumanReviewContext(context);
+
+  return {
+    label: labels[context],
+    selfService: !humanReview,
+    humanReviewReason: humanReview
+      ? "Ce contexte force un cadrage humain avant toute proposition commerciale."
+      : null,
+  };
 }
 
 const STORAGE_OPTIONS = [
@@ -41,21 +116,51 @@ const STORAGE_OPTIONS = [
   { value: "unknown", label: "Je ne sais pas" },
 ] as const;
 
-const USER_OPTIONS = [
-  ...Array.from({ length: 11 }, (_, index) => ({
-    value: String(index + 1),
-    label: String(index + 1),
-  })),
-  { value: "12-plus", label: "12 ou plus" },
-] as const;
+function storageOptions(maximum: number) {
+  const options: { value: string; label: string }[] = STORAGE_OPTIONS.filter((option) => {
+    const value = Number(option.value);
+    return !Number.isFinite(value) || value <= maximum;
+  });
+  if (!options.some((option) => Number(option.value) === maximum)) {
+    options.push({ value: String(maximum), label: `Jusqu'à ${maximum} Go` });
+  }
+  return [...options, { value: "above-public-max", label: `Plus de ${maximum} Go` }, { value: "unknown", label: "Je ne sais pas" }]
+    .filter((option, index, values) => values.findIndex((item) => item.value === option.value) === index);
+}
+
+function userOptions(maximum: number) {
+  return [
+    ...Array.from({ length: maximum }, (_, index) => ({ value: String(index + 1), label: String(index + 1) })),
+    { value: `${maximum + 1}-plus`, label: `${maximum + 1} ou plus` },
+  ];
+}
 
 export function commercialQuestionsForProfile(
   profile: PreDiagnosticProfile | null,
   context: DiagnosticContextId,
+  configuration?: PreDiagnosticConfiguration,
 ): readonly PreDiagnosticQuestion[] {
   if (!profile) return [];
 
-  if (isPreDiagnosticHumanReviewContext(context)) {
+  // Une v2 publiee decrit integralement les textes, options et visibilites de
+  // qualification. Le fallback historique ci-dessous ne sert qu'avant la
+  // premiere publication v2 afin de ne pas changer le parcours valide.
+  if (configuration) {
+    return configuration.commerce.questions
+      .filter((question) => question.active
+        && question.profiles.includes(profile)
+        && question.contexts.includes(context))
+      .sort((left, right) => left.order - right.order)
+      .map((question) => ({
+        id: question.id,
+        category: "Votre besoin",
+        label: question.label,
+        hint: question.hint ?? undefined,
+        options: configuredCommercialOptions(question, profile, context, configuration),
+      }));
+  }
+
+  if (isPreDiagnosticHumanReviewContext(context, configuration)) {
     return [
       {
         id: "commercialContextDetail",
@@ -68,6 +173,8 @@ export function commercialQuestionsForProfile(
   }
 
   const organisation = profile !== "individual";
+  const maximumUsers = PRE_DIAGNOSTIC_COMMERCIAL_LIMITS.maximumPublicUsers;
+  const maximumStorage = PRE_DIAGNOSTIC_COMMERCIAL_LIMITS.maximumPublicStorageGb;
   const intentOptions = context === "backup"
     ? organisation
       ? [
@@ -122,7 +229,7 @@ export function commercialQuestionsForProfile(
       id: "commercialUsers",
       category: "Votre besoin",
       label: "Combien de personnes utiliseront ce service ?",
-      options: USER_OPTIONS,
+      options: userOptions(maximumUsers),
     });
     questions.push({
       id: "commercialSites",
@@ -140,10 +247,40 @@ export function commercialQuestionsForProfile(
     category: "Votre besoin",
     label: "Quel volume de fichiers faut-il prévoir environ ?",
     hint: "Une estimation suffit. Au-delà des paliers publics ou sans estimation, un cadrage est préférable.",
-    options: STORAGE_OPTIONS,
+    options: storageOptions(maximumStorage),
   });
 
   return questions;
+}
+
+function configuredCommercialOptions(
+  question: PreDiagnosticConfiguration["commerce"]["questions"][number],
+  profile: PreDiagnosticProfile,
+  context: DiagnosticContextId,
+  configuration: PreDiagnosticConfiguration,
+) {
+  if (question.dynamicOptions === "users") {
+    return userOptions(configuration.commerce.maximumUsers);
+  }
+  if (question.dynamicOptions === "storage") {
+    const configured = question.options
+      .filter((option) => option.active && option.profiles.includes(profile) && option.contexts.includes(context));
+    const numeric = configured
+      .filter((option) => Number.isFinite(Number(option.value)) && Number(option.value) <= configuration.commerce.maximumStorageGb)
+      .sort((left, right) => Number(left.value) - Number(right.value))
+      .map(({ value, label }) => ({ value, label }));
+    if (!numeric.some((option) => Number(option.value) === configuration.commerce.maximumStorageGb)) {
+      numeric.push({ value: String(configuration.commerce.maximumStorageGb), label: `Jusqu'à ${configuration.commerce.maximumStorageGb} Go` });
+    }
+    const special = configured
+      .filter((option) => !Number.isFinite(Number(option.value)))
+      .map(({ value, label }) => ({ value, label }));
+    return [...numeric, ...special];
+  }
+  return question.options
+    .filter((option) => option.active && option.profiles.includes(profile) && option.contexts.includes(context))
+    .sort((left, right) => left.order - right.order)
+    .map(({ value, label }) => ({ value, label }));
 }
 
 export function recommendPreDiagnosticOffer(
@@ -151,9 +288,9 @@ export function recommendPreDiagnosticOffer(
   profile: PreDiagnosticProfile,
   context: DiagnosticContextId,
   catalog: BillingV2PublicCatalog,
-  recommendationConfig: DiagnosticRecommendationConfig,
+  configuration?: PreDiagnosticConfiguration,
 ): CommercialRecommendation {
-  if (isPreDiagnosticHumanReviewContext(context)) {
+  if (!contextAllowsSelfService(context, configuration)) {
     return humanReview(
       "Ce sujet demande une vérification avant toute proposition commerciale.",
     );
@@ -161,101 +298,168 @@ export function recommendPreDiagnosticOffer(
 
   const intent = answers.commercialIntent;
   const scope = answers.commercialScope;
-  const storage = readStorage(answers.commercialStorage);
+  const commerce = configuration?.commerce;
+  const storage = readStorage(
+    answers.commercialStorage,
+    commerce?.maximumStorageGb,
+    commerce?.minimumStorageGb,
+  );
   const organisation = profile !== "individual";
-  const users = organisation ? readUsers(answers.commercialUsers) : 1;
-  const expectedScope = intent === "windows_desktop" || intent === "team_windows"
-    ? "windows"
-    : "files";
+  const users = organisation
+    ? readUsers(answers.commercialUsers, commerce?.maximumUsers, commerce?.minimumUsers)
+    : 1;
+  const expectedScope = commerce?.profiles.find((item) => item.intents.includes(intent))
+    ?.scopes[0] ?? (intent === "windows_desktop" || intent === "team_windows" ? "windows" : "files");
 
   if (
     !intent
-    || intent === "access_complex"
-    || intent === "backup_complex"
-    || intent === "unknown"
+    || (commerce?.humanReviewIntents ?? ["access_complex", "backup_complex", "unknown"]).includes(intent)
+    || (commerce !== undefined && !commerce.compatibleScopes.includes(scope))
     || scope !== expectedScope
     || storage === null
     || users === null
-    || (organisation && answers.commercialSites !== "one")
+    // Garde-fou technique du contrat de selection Billing V2 : l'admin peut
+    // assouplir sa limite de qualification, pas fabriquer une selection que
+    // le moteur de souscription refuserait ensuite.
+    || users - 1 > MAX_ADDITIONAL_USERS
+    || (
+      organisation
+      && (commerce?.maximumSites ?? 1) <= 1
+      && answers.commercialSites !== "one"
+    )
   ) {
     return humanReview(
       "Vos réponses décrivent un besoin qui mérite un cadrage plutôt qu'une formule automatique.",
     );
   }
 
-  const billingAnswers = toBillingAnswers(intent, profile, users, storage);
-  if (!billingAnswers) {
+  const commercialProfile = commerce?.profiles.find((item) => item.active
+    && item.intents.includes(intent)
+    && item.scopes.includes(scope));
+  if (!commercialProfile) {
     return humanReview(
       "Aucune formule standard ne représente honnêtement le besoin indiqué.",
     );
   }
 
-  const recommendation = recommendOffer(
-    billingAnswers,
-    catalog,
-    recommendationConfig,
+  const need = normalizeNeed(intent, profile, scope, storage, users);
+  const binding = commerce?.catalogBindings.find(
+    (item) => item.profileId === commercialProfile.id,
   );
-  if (recommendation.status !== "standard" || !recommendation.selection) {
+  if (!binding) {
     return humanReview(
-      "La formule associée à ce profil n'est pas disponible ou compatible avec le catalogue public actuel.",
-      recommendation,
+      "Aucune correspondance catalogue n'est configurée pour ce besoin.",
     );
   }
+
+  const storageService = findService(catalog, binding.storageServiceCode);
+  const storageTier = storageService?.tiers
+    .filter((tier) => tier.publicSelectable && tier.numericValue !== null
+      && tier.numericValue >= need.requiredStorageGb)
+    .sort((left, right) => (left.numericValue ?? 0) - (right.numericValue ?? 0))[0] ?? null;
+  if (!storageTier || storageTier.numericValue === null) {
+    return humanReview(
+      "Aucun palier public ne couvre le volume de stockage demandé.",
+    );
+  }
+
+  // Le preset n'est plus un mapping admin : il est recherche dans le
+  // catalogue selon les composants necessaires au besoin. La capacite retenue
+  // est ensuite le plus petit palier suffisant du service de stockage lie.
+  const requiredServices = new Set(binding.requiredServiceCodes);
+  const offer = catalog.presets
+    .filter((preset) => [...requiredServices].every((serviceCode) =>
+      preset.items.some((item) => item.serviceCode === serviceCode)))
+    .sort((left, right) => left.displayOrder - right.displayOrder)[0] ?? null;
+  const commitment = catalog.commitments.find((item) => item.code === "FLEX"
+    && item.paymentOptions.some((option) => option.paymentMode === "monthly"))
+    ?? catalog.commitments.find((item) => item.months <= 1
+      && item.paymentOptions.some((option) => option.paymentMode === "monthly"))
+    ?? null;
+  if (!offer || !commitment) {
+    return humanReview(
+      "Aucune offre publique active ne contient tous les composants nécessaires.",
+    );
+  }
+
+  const baseline = buildBaselineSelection(offer, commitment.code);
+  const selection: BillingV2PublicSelection = {
+    ...baseline,
+    paymentMode: "monthly",
+    // Les deux champs sont imposes par le contrat Billing V2 historique.
+    // La configuration choisit le service cible ; aucun palier n'est code ici.
+    storagePersonalTierCode: binding.storageServiceCode === "STORAGE-PERSONAL"
+      ? storageTier.code
+      : baseline.storagePersonalTierCode,
+    storageSharedTierCode: binding.storageServiceCode === "STORAGE-SHARED"
+      ? storageTier.code
+      : baseline.storageSharedTierCode,
+    additionalUsers: Math.max(0, need.requiredUsers - 1),
+  };
 
   return {
     kind: "standard",
     title: "Une formule correspond à votre besoin",
     reason: commercialReason(intent, organisation),
-    recommendation,
+    need,
+    selection,
+    offerName: offer.name,
+    selectedStorageGb: storageTier.numericValue,
+    commercialProfileId: commercialProfile.id,
   };
 }
 
-function toBillingAnswers(
+export function normalizeNeed(
   intent: string,
   profile: PreDiagnosticProfile,
-  users: number,
+  scope: string,
   storage: number,
-): DiagnosticAnswers | null {
-  const customerType = profile === "individual"
-    ? "individual"
-    : profile === "association" ? "association" : "business";
-  const teamIntent = intent === "team_files" || intent === "team_windows";
-  if (profile === "individual" && teamIntent) return null;
-  if (profile !== "individual" && !teamIntent && intent === "backup_simple") return null;
-
+  users: number,
+): NormalizedDiagnosticNeed {
   return {
-    customerType,
-    users,
-    dataKinds: [profile === "association" ? "association_data" : profile === "individual" ? "personal_documents" : "business_documents"],
-    estimatedStorageGb: storage,
-    needsRemoteFiles: intent === "remote_files",
-    needsVpn: intent === "remote_files",
-    needsWindowsDesktop: intent === "windows_desktop" || intent === "team_windows",
-    recoveryImportance: "normal",
-    backupFrequency: "unknown",
-    restoreTestRecency: "unknown",
-    continuityPlan: "unknown",
+    customerType: profile === "individual" ? "personal" : "organisation",
+    family: intent === "remote_files"
+      ? "remote_access"
+      : intent === "windows_desktop" || intent === "team_windows"
+        ? "windows_desktop"
+        : "storage",
+    requiredStorageGb: storage,
+    requiredUsers: users,
+    requiredSites: 1,
+    scope: scope === "windows" ? "windows" : "files",
   };
 }
 
-function readStorage(value: string | undefined): number | null {
+function readStorage(value: string | undefined, maximum: number = PRE_DIAGNOSTIC_COMMERCIAL_LIMITS.maximumPublicStorageGb, minimum: number = 1): number | null {
   if (!value || value === "unknown" || value === "above-public-max") return null;
   const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0 && parsed <= 256 ? parsed : null;
+  return Number.isInteger(parsed)
+    && parsed >= minimum
+    && parsed <= maximum
+    ? parsed
+    : null;
 }
 
-function readUsers(value: string | undefined): number | null {
-  if (!value || value === "12-plus") return null;
+function readUsers(value: string | undefined, maximum: number = PRE_DIAGNOSTIC_COMMERCIAL_LIMITS.maximumPublicUsers, minimum: number = 1): number | null {
+  if (!value || value.endsWith("-plus")) return null;
   const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 11 ? parsed : null;
+  return Number.isInteger(parsed)
+    && parsed >= minimum
+    && parsed <= maximum
+    ? parsed
+    : null;
 }
 
-function humanReview(reason: string, recommendation: DiagnosticRecommendation | null = null): CommercialRecommendation {
+function humanReview(reason: string): CommercialRecommendation {
   return {
     kind: "human_review",
     title: "Ce besoin mérite un échange avant de choisir une offre",
     reason,
-    recommendation,
+    need: null,
+    selection: null,
+    offerName: null,
+    selectedStorageGb: null,
+    commercialProfileId: null,
   };
 }
 

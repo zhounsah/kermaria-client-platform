@@ -44,6 +44,7 @@ function validAnswers(profile) {
 function validPayload(profile = "individual") {
   return {
     answers: validAnswers(profile),
+    configurationVersion: 0,
     name: "  Jean\n Dupont  ",
     phone: "06 12 34 56 78",
     email: "jean@example.test",
@@ -82,6 +83,10 @@ assert.ok(callback.validateDiagnosticCallbackPayload(unknownValue).payload, "Le 
 const normalized = callback.validateDiagnosticCallbackPayload(validPayload());
 assert.equal(normalized.payload?.name, "Jean Dupont", "Les champs monolignes doivent normaliser les espaces et retours a la ligne.");
 assert.equal(normalized.payload?.comment, "Ligne 1\nLigne 2", "Le commentaire conserve ses retours a la ligne apres normalisation.");
+assert.equal(normalized.payload?.configurationVersion, 0, "Le fallback historique doit être explicitement identifié par la version 0.");
+const unknownRevision = validPayload();
+unknownRevision.configurationVersion = "forged";
+assert.equal(callback.validateDiagnosticCallbackPayload(unknownRevision).payload, null, "Une version de diagnostic non entière ne doit jamais atteindre l'API interne.");
 const callbackAnswers = preDiagnostic.scoringAnswersForProfile({
   ...validAnswers("individual"),
   commercialIntent: "backup_simple",
@@ -89,6 +94,39 @@ const callbackAnswers = preDiagnostic.scoringAnswersForProfile({
 }, "individual");
 assert.equal(callbackAnswers.commercialIntent, undefined, "Les réponses commerciales ne doivent jamais être envoyées dans le rappel de pré-diagnostic.");
 assert.deepEqual(Object.keys(callbackAnswers).sort(), Object.keys(validAnswers("individual")).sort(), "Le rappel conserve exactement le schéma santé fermé du profil.");
+
+// La v2 est data-driven : ces assertions changent une valeur de configuration,
+// jamais le code du moteur, et constatent l'effet dans l'évaluation.
+const configurationA = structuredClone(preDiagnostic.DEFAULT_PRE_DIAGNOSTIC_CONFIGURATION_V2);
+const unhealthyAnswers = { ...validAnswers("individual"), equipmentAge: "over5" };
+const resultA = preDiagnostic.evaluatePreDiagnosticWithConfiguration(configurationA, unhealthyAnswers);
+const configurationB = structuredClone(configurationA);
+configurationB.questions.find((question) => question.id === "equipmentAge")
+  .options.find((option) => option.value === "over5").effects[0].value = 10;
+const resultB = preDiagnostic.evaluatePreDiagnosticWithConfiguration(configurationB, unhealthyAnswers);
+assert.ok(resultB.score > resultA.score, "Une deduction admin -25 vers -10 doit modifier le score sans modifier le moteur.");
+const weightB = structuredClone(configurationA);
+weightB.categories.find((category) => category.id === "equipment").weights.individual = 40;
+weightB.categories.find((category) => category.id === "backup").weights.individual = 20;
+assert.notEqual(preDiagnostic.evaluatePreDiagnosticWithConfiguration(weightB, unhealthyAnswers).score, resultA.score, "Une pondération administrée doit modifier le score global.");
+const levelB = structuredClone(configurationA);
+levelB.levels.find((level) => level.id === "good").minimumScore = 101;
+assert.notEqual(preDiagnostic.evaluatePreDiagnosticWithConfiguration(levelB, validAnswers("individual")).level, "Bon", "Un seuil de niveau administré doit être appliqué.");
+const optionalConditional = structuredClone(configurationA);
+const optionalAge = optionalConditional.questions.find((question) => question.id === "equipmentAge");
+optionalAge.required = false;
+optionalAge.when = [{ questionId: "profile", operator: "equals", values: ["professional"] }];
+const optionalIndividualAnswers = preDiagnostic.scoringAnswersForProfile(
+  { ...validAnswers("individual"), equipmentAge: "" },
+  "individual",
+  optionalConditional,
+);
+assert.equal(optionalIndividualAnswers.equipmentAge, undefined, "Une question facultative et masquée ne doit pas être envoyée au callback.");
+assert.equal(
+  preDiagnostic.evaluatePreDiagnosticWithConfiguration(optionalConditional, optionalIndividualAnswers).score,
+  100,
+  "Le moteur TypeScript ignore une question de score masquée par la configuration publiée.",
+);
 
 const security = await importTypeScript(
   await read("lib/diagnostic-callback-security.ts"),
@@ -115,6 +153,7 @@ assert.equal(rateLimit.checkRateLimit(`diagnostic-proxy-test:${rateLimit.getRequ
 
 const bffRoute = await read("app/api/diagnostic/callback/route.ts");
 assert.match(bffRoute, /validateDiagnosticCallbackRequest\(request\)/, "La route BFF doit appliquer la garde MIME/origine avant le traitement.");
+assert.match(bffRoute, /configurationVersion/, "Le BFF doit relayer l'identifiant de révision rendu au visiteur, pas des règles de configuration.");
 assert.doesNotMatch(bffRoute, /formRenderedAt|MIN_FILL_MS/, "Aucun delai de saisie ne doit produire un faux succes.");
 assert.match(bffRoute, /payload\.website\)\s*\{[\s\S]*CALLBACK_SENT/, "Le honeypot seul peut conserver une reponse neutre.");
 

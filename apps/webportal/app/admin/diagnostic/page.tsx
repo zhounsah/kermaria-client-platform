@@ -1,18 +1,12 @@
 import Link from "next/link";
 
-import { AdminDiagnosticRecommendationForm } from "@/components/AdminDiagnosticRecommendationForm";
+import { AdminPreDiagnosticControlCenter } from "@/components/AdminPreDiagnosticControlCenter";
 import { ErrorState } from "@/components/ErrorState";
 import { MockNotice } from "@/components/MockNotice";
 import { PageHeader } from "@/components/PageHeader";
-import { SectionCard } from "@/components/SectionCard";
 import { requireAdminSession } from "@/lib/auth";
 import {
-  DEFAULT_DIAGNOSTIC_RECOMMENDATION_CONFIG,
-  DIAGNOSTIC_RECOMMENDATION_CONTENT_KEY,
-  parseDiagnosticRecommendationConfig,
-} from "@/lib/diagnostic-recommendation-config";
-import {
-  getAdminManagedContent,
+  getAdminDiagnosticConfiguration,
   getBillingV2FormulesCatalog,
 } from "@/lib/internal-api";
 
@@ -25,56 +19,27 @@ export const dynamic = "force-dynamic";
 export default async function AdminDiagnosticPage() {
   await requireAdminSession();
 
-  const [contentResult, catalogResult] = await Promise.all([
-    getAdminManagedContent(DIAGNOSTIC_RECOMMENDATION_CONTENT_KEY),
+  const [configurationResult, catalogResult] = await Promise.all([
+    getAdminDiagnosticConfiguration(),
     getBillingV2FormulesCatalog(),
   ]);
-
-  const storedConfig = parseDiagnosticRecommendationConfig(
-    contentResult.data?.bodyMarkdown,
-  );
-  const initialConfig = storedConfig ?? DEFAULT_DIAGNOSTIC_RECOMMENDATION_CONFIG;
-
-  const availablePresets = catalogResult.data.presets
-    .slice()
-    .sort((left, right) => left.displayOrder - right.displayOrder)
-    .map((preset) => ({
-      code: preset.code,
-      label: preset.name,
-      available: true,
-    }));
-
-  const knownPresetCodes = new Set(availablePresets.map((preset) => preset.code));
-  const missingConfiguredPresets = initialConfig.rules
-    .map((rule) => rule.presetCode)
-    .filter((presetCode): presetCode is string =>
-      presetCode !== null && !knownPresetCodes.has(presetCode)
-    )
-    .filter((presetCode, index, values) => values.indexOf(presetCode) === index)
-    .map((presetCode) => ({
-      code: presetCode,
-      label: presetCode,
-      available: false,
-    }));
-
-  const presets = [...availablePresets, ...missingConfiguredPresets];
 
   return (
     <>
       <PageHeader
-        description="Associez les profils issus du diagnostic aux formules commerciales sans modifier le code."
+        description="Éditez le brouillon du pré-diagnostic, validez-le puis publiez-le sans modifier le code."
         eyebrow="Administration interne"
-        title="Règles du diagnostic"
+        title="Diagnostic"
       />
 
       <section className="content-panel page-header-split">
         <div>
-          <span className="card-kicker">Moteur de recommandation</span>
-          <h2>Choisir la formule de base de chaque profil</h2>
+          <span className="card-kicker">Centre de pilotage</span>
+          <h2>Questionnaire, scoring et orientation</h2>
           <p>
-            Les questions et leur interprétation restent contrôlées par
-            l&apos;application. Ici, vous décidez uniquement quelle formule
-            commerciale doit être proposée lorsque le diagnostic reconnaît un profil.
+            Les décisions métier sont contenues dans une configuration versionnée.
+            Le navigateur et API-INTERNAL lisent la même version publiée ; Billing
+            V2 reste seul responsable des tarifs.
           </p>
         </div>
         <div className="stack-row">
@@ -96,36 +61,20 @@ export default async function AdminDiagnosticPage() {
         />
       ) : null}
 
-      {contentResult.error || !contentResult.data ? (
+      {configurationResult.error || !configurationResult.data ? (
         <ErrorState
-          description="Impossible de charger la configuration persistante du diagnostic."
-          reference={contentResult.correlationId}
-          title="Règles indisponibles"
+          compact
+          description="Impossible de charger la configuration du diagnostic. Aucun brouillon ne peut être modifié tant que le service interne ne répond pas."
+          reference={configurationResult.correlationId}
+          title="Configuration indisponible"
         />
-      ) : (
-        <SectionCard ariaLabel="Règles de recommandation du diagnostic">
-          <h2>Correspondances profil → formule</h2>
-          <p className="field-hint">
-            « Aucun parcours standard » force un cadrage/devis pour le profil
-            concerné. Une formule absente du catalogue public n&apos;est jamais
-            proposée au client.
-          </p>
-          {!storedConfig ? (
-            <p className="field-hint">
-              La configuration enregistrée est invalide ou absente : les valeurs
-              sûres par défaut sont affichées. Enregistrez pour les persister.
-            </p>
-          ) : null}
-          <AdminDiagnosticRecommendationForm
-            initialConfig={initialConfig}
-            presets={presets}
-          />
-        </SectionCard>
-      )}
+      ) : null}
+
+      {configurationResult.data ? <AdminPreDiagnosticControlCenter catalog={catalogResult.data} initialView={configurationResult.data} /> : null}
 
       <MockNotice
-        correlationId={contentResult.correlationId}
-        source={contentResult.source}
+        correlationId={configurationResult.correlationId}
+        source={configurationResult.source}
       />
     </>
   );

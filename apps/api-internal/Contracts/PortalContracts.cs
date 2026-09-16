@@ -217,7 +217,15 @@ public sealed record DiagnosticCallbackPayload(
     string? Comment,
     bool? Consent,
     Dictionary<string, string>? Answers,
+    int? ConfigurationVersion,
     string? SourcePath);
+
+public sealed record DiagnosticRecommendationPayload(
+    int? ConfigurationVersion,
+    string? Profile,
+    string? Context,
+    Dictionary<string, string>? HealthAnswers,
+    Dictionary<string, string>? CommercialAnswers);
 
 public sealed record RequestMutationResponse(
     string Id,

@@ -13,6 +13,10 @@ public interface IDiagnosticConfigurationService
     Task<PublicDiagnosticConfigurationResponse> GetPublishedAsync(
         CancellationToken cancellationToken);
 
+    Task<JsonElement?> GetPublishedRevisionAsync(
+        int version,
+        CancellationToken cancellationToken);
+
     Task<DiagnosticConfigurationAdminViewResponse> GetAdminViewAsync(
         CancellationToken cancellationToken);
 
@@ -61,11 +65,13 @@ public sealed class DiagnosticConfigurationService : IDiagnosticConfigurationSer
 
     private readonly IDiagnosticConfigurationRepository _repository;
     private readonly ILogger<DiagnosticConfigurationService> _logger;
+    private readonly IBillingV2PublicCatalogService? _billingCatalog;
 
     public DiagnosticConfigurationService(
         IDiagnosticConfigurationRepository repository,
-        ILogger<DiagnosticConfigurationService> logger)
-        => (_repository, _logger) = (repository, logger);
+        ILogger<DiagnosticConfigurationService> logger,
+        IBillingV2PublicCatalogService? billingCatalog = null)
+        => (_repository, _logger, _billingCatalog) = (repository, logger, billingCatalog);
 
     public bool IsPersistent => _repository.IsPersistent;
 
@@ -113,6 +119,25 @@ public sealed class DiagnosticConfigurationService : IDiagnosticConfigurationSer
         }
 
         return ToPublic(stored);
+    }
+
+    public async Task<JsonElement?> GetPublishedRevisionAsync(
+        int version,
+        CancellationToken cancellationToken)
+    {
+        if (version < 1) return null;
+        try
+        {
+            var current = await _repository.GetAsync(PublishedState, cancellationToken);
+            if (current?.Version == version) return ParseOrNull(current.PayloadJson);
+            var revision = await _repository.GetPublishedRevisionAsync(version, cancellationToken);
+            return ParseOrNull(revision?.PayloadJson);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            _logger.LogWarning(exception, "Diagnostic published revision unavailable for callback validation.");
+            return null;
+        }
     }
 
     public async Task<DiagnosticConfigurationAdminViewResponse> GetAdminViewAsync(
@@ -244,6 +269,19 @@ public sealed class DiagnosticConfigurationService : IDiagnosticConfigurationSer
                 correlationId);
         }
 
+        var catalogErrors = await ValidatePublishedCatalogBindingsAsync(
+            validation.CanonicalJson!,
+            cancellationToken);
+        if (catalogErrors.Count > 0)
+        {
+            return new DiagnosticConfigurationMutationResponse(
+                "DIAGNOSTIC_INVALID",
+                "Le brouillon reference des services Billing V2 indisponibles et ne peut pas etre publie.",
+                catalogErrors,
+                await GetAdminViewAsync(cancellationToken),
+                correlationId);
+        }
+
         var expectedPublished = Math.Max(request.ExpectedPublishedVersion, 0);
         var published = new StoredDiagnosticConfiguration(
             PublishedState,
@@ -274,6 +312,49 @@ public sealed class DiagnosticConfigurationService : IDiagnosticConfigurationSer
             [],
             await GetAdminViewAsync(cancellationToken),
             correlationId);
+    }
+
+    private async Task<IReadOnlyList<string>> ValidatePublishedCatalogBindingsAsync(
+        string canonicalJson,
+        CancellationToken cancellationToken)
+    {
+        using var document = JsonDocument.Parse(canonicalJson);
+        var root = document.RootElement;
+        if (!root.TryGetProperty("schemaVersion", out var version)
+            || version.GetInt32() != DiagnosticConfigurationRegistry.PreDiagnosticSchemaVersion)
+        {
+            return [];
+        }
+
+        var bindings = root.GetProperty("commerce").GetProperty("catalogBindings")
+            .EnumerateArray()
+            .ToArray();
+        var codes = bindings
+            .SelectMany(binding => binding.GetProperty("requiredServiceCodes").EnumerateArray())
+            .Select(code => code.GetString())
+            .Where(code => !string.IsNullOrWhiteSpace(code))
+            .Cast<string>()
+            .ToHashSet(StringComparer.Ordinal);
+        var catalog = _billingCatalog is null
+            ? BillingV2PublicCatalogSeed.Snapshot()
+            : await _billingCatalog.GetCatalogAsync(cancellationToken);
+        var available = catalog.Services
+            .Where(service => service.PublicVisible && service.SelfServiceOrderable)
+            .ToDictionary(service => service.Code, StringComparer.Ordinal);
+        var errors = codes.Where(code => !available.ContainsKey(code))
+            .Select(code => $"commerce.catalogBindings : service Billing V2 indisponible ({code}).")
+            .ToList();
+        foreach (var binding in bindings)
+        {
+            var profileId = binding.GetProperty("profileId").GetString() ?? "?";
+            var storageCode = binding.GetProperty("storageServiceCode").GetString();
+            if (storageCode is null || !available.TryGetValue(storageCode, out var storage)
+                || !storage.Tiers.Any(tier => tier.PublicSelectable && tier.NumericValue is > 0))
+            {
+                errors.Add($"commerce.catalogBindings.{profileId}.storageServiceCode : aucun palier public de stockage exploitable.");
+            }
+        }
+        return errors;
     }
 
     public async Task<IReadOnlyList<DiagnosticConfigurationRevisionItemResponse>>

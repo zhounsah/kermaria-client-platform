@@ -88,6 +88,7 @@ const billingV2Formules = await read("lib/billing-v2-formules.ts");
 const diagnosticContext = await read("lib/diagnostic-context.ts");
 const adaptiveDiagnostic = await read("lib/adaptive-diagnostic.ts");
 const preDiagnosticCommerce = await read("lib/pre-diagnostic-commerce.ts");
+const preDiagnostic = await read("lib/pre-diagnostic.ts");
 const diagnosticPage = await read("app/diagnostic/page.tsx");
 const diagnosticWizard = await read("components/PublicDiagnosticWizard.tsx");
 const publicStorefrontPage = await read("components/PublicStorefrontPage.tsx");
@@ -101,6 +102,9 @@ const signupPage = await read("app/signup/page.tsx");
 const signupRoute = await read("app/api/signup/route.ts");
 const diagnosticValidation = await read("lib/diagnostic-configuration-validation.ts");
 const diagnosticAdminPage = await read("app/admin/settings/diagnostic/page.tsx");
+const currentDiagnosticAdminPage = await read("app/admin/diagnostic/page.tsx");
+const diagnosticAdminControlCenter = await read("components/AdminPreDiagnosticControlCenter.tsx");
+const diagnosticRecommendationForm = await read("components/AdminDiagnosticRecommendationForm.tsx");
 const diagnosticAdminCenter = await read("components/AdminDiagnosticCenter.tsx");
 const diagnosticAdminEditor = await read("components/AdminDiagnosticEditor.tsx");
 const diagnosticAdminSimulator = await read("components/AdminDiagnosticSimulator.tsx");
@@ -150,10 +154,14 @@ const adaptiveRuntime = await importPureTypeScript(
 );
 const preDiagnosticCommerceRuntime = await importPureTypeScript(
   preDiagnosticCommerce.replaceAll(
-    '"@/lib/public-diagnostic"',
-    JSON.stringify(diagnosticEngineUrl),
-  ),
+    '"@/lib/billing-v2-formules"',
+    JSON.stringify(billingV2FormulesStubUrl),
+  ).replaceAll('"@/lib/billing-v2-selection"', JSON.stringify(billingV2SelectionStubUrl)),
   "pre-diagnostic-commerce.ts",
+);
+const preDiagnosticRuntime = await importPureTypeScript(
+  preDiagnostic,
+  "pre-diagnostic.ts",
 );
 
 // Seule la constante d'operateurs est importee a l'execution depuis le contrat
@@ -227,6 +235,15 @@ const catalog = {
         publicSelectable: true,
       })),
     },
+    {
+      code: "STORAGE-SHARED",
+      name: "Stockage partagé",
+      category: "Stockage",
+      scopeType: "subscription",
+      flatMonthlyAmountCents: null,
+      discountEligible: true,
+      tiers: [32, 64, 128, 256].map((value) => ({ code: String(value), label: `${value} Go`, description: null, numericValue: value, monthlyAmountCents: 0, publicSelectable: true })),
+    },
   ],
   presets: [
     {
@@ -236,6 +253,7 @@ const catalog = {
       displayOrder: 10,
       baselineMonthlyAmountCents: 0,
       items: [
+        { serviceCode: "BASE-SERVICE", tierCode: null, quantity: 1 },
         { serviceCode: "STORAGE-PERSONAL", tierCode: "32", quantity: 1 },
         { serviceCode: "BACKUP-PERSONAL", tierCode: "32", quantity: 1 },
       ],
@@ -247,6 +265,7 @@ const catalog = {
       displayOrder: 20,
       baselineMonthlyAmountCents: 0,
       items: [
+        { serviceCode: "BASE-SERVICE", tierCode: null, quantity: 1 },
         { serviceCode: "STORAGE-PERSONAL", tierCode: "32", quantity: 1 },
         { serviceCode: "BACKUP-PERSONAL", tierCode: "32", quantity: 1 },
         { serviceCode: "VPN-ACCESS", tierCode: "ESSENTIAL", quantity: 1 },
@@ -259,6 +278,7 @@ const catalog = {
       displayOrder: 30,
       baselineMonthlyAmountCents: 0,
       items: [
+        { serviceCode: "BASE-SERVICE", tierCode: null, quantity: 1 },
         { serviceCode: "STORAGE-PERSONAL", tierCode: "64", quantity: 1 },
         { serviceCode: "BACKUP-PERSONAL", tierCode: "64", quantity: 1 },
         { serviceCode: "VPN-ACCESS", tierCode: "PLUS", quantity: 1 },
@@ -272,6 +292,7 @@ const catalog = {
       displayOrder: 40,
       baselineMonthlyAmountCents: 0,
       items: [
+        { serviceCode: "BASE-SERVICE", tierCode: null, quantity: 1 },
         { serviceCode: "STORAGE-PERSONAL", tierCode: "64", quantity: 1 },
         { serviceCode: "BACKUP-PERSONAL", tierCode: "64", quantity: 1 },
         { serviceCode: "VPN-ACCESS", tierCode: "PLUS", quantity: 1 },
@@ -387,36 +408,56 @@ function commercialAnswers(overrides = {}) {
   };
 }
 
-const defaultCommercialConfig = {
-  schemaVersion: 1,
-  rules: [
-    { profileId: "simple_backup", presetCode: "pack-dossier-securise" },
-    { profileId: "vpn_access", presetCode: "pack-acces-distance" },
-    { profileId: "windows_desktop", presetCode: "pack-bureau-windows-distance" },
-    { profileId: "team_or_structure", presetCode: "pack-pro-association" },
-    { profileId: "team_windows_desktop", presetCode: "pack-pro-association" },
-  ],
-};
-
-function commercialRecommendation(profile, context, overrides = {}, config = defaultCommercialConfig) {
+function commercialRecommendation(profile, context, overrides = {}, preConfiguration = preDiagnosticRuntime.DEFAULT_PRE_DIAGNOSTIC_CONFIGURATION_V2) {
   return preDiagnosticCommerceRuntime.recommendPreDiagnosticOffer(
     commercialAnswers(overrides),
     profile,
     context,
     catalog,
-    config,
+    preConfiguration,
   );
 }
 
 assert.equal(
-  commercialRecommendation("individual", "backup").recommendation?.selection?.presetCode,
+  commercialRecommendation("individual", "backup").selection?.presetCode,
   "pack-dossier-securise",
   "Une sauvegarde simple de fichiers pour particulier doit mener vers la formule administrement associee.",
 );
+
+// Invariant commercial : le diagnostic ne peut jamais sous-dimensionner le
+// stockage. Ce catalogue volontairement limite reproduit les paliers publics
+// utilises dans la recette 32/64/128/256.
+const storageCatalog = structuredClone(catalog);
+storageCatalog.services.find((service) => service.code === "STORAGE-PERSONAL").tiers = storageCatalog.services
+  .find((service) => service.code === "STORAGE-PERSONAL").tiers
+  .filter((tier) => [32, 64, 128, 256].includes(tier.numericValue));
+for (const [required, expected] of [[16, 32], [32, 32], [64, 64], [65, 128], [128, 128], [129, 256], [200, 256], [256, 256]]) {
+  const result = preDiagnosticCommerceRuntime.recommendPreDiagnosticOffer(
+    commercialAnswers({ commercialStorage: String(required) }), "individual", "backup", storageCatalog,
+    preDiagnosticRuntime.DEFAULT_PRE_DIAGNOSTIC_CONFIGURATION_V2,
+  );
+  assert.equal(result.kind, "standard", `${required} Go doit rester representable.`);
+  assert.equal(result.selectedStorageGb, expected, `${required} Go doit selectionner ${expected} Go, jamais un palier inferieur.`);
+  assert.ok(result.selectedStorageGb >= required, "La capacite catalogue selectionnee doit couvrir le besoin normalise.");
+}
+assert.equal(
+  preDiagnosticCommerceRuntime.recommendPreDiagnosticOffer(
+    commercialAnswers({ commercialStorage: "257" }), "individual", "backup", storageCatalog,
+    { ...preDiagnosticRuntime.DEFAULT_PRE_DIAGNOSTIC_CONFIGURATION_V2, commerce: { ...preDiagnosticRuntime.DEFAULT_PRE_DIAGNOSTIC_CONFIGURATION_V2.commerce, maximumStorageGb: 257 } },
+  ).kind,
+  "human_review",
+  "Un besoin au-dela du plus grand palier public doit etre cadre.",
+);
+const without128 = structuredClone(storageCatalog);
+without128.services.find((service) => service.code === "STORAGE-PERSONAL").tiers.find((tier) => tier.numericValue === 128).publicSelectable = false;
+assert.equal(preDiagnosticCommerceRuntime.recommendPreDiagnosticOffer(commercialAnswers({ commercialStorage: "128" }), "individual", "backup", without128, preDiagnosticRuntime.DEFAULT_PRE_DIAGNOSTIC_CONFIGURATION_V2).selectedStorageGb, 256, "Un palier 128 non publie doit retomber vers 256, jamais etre propose.");
+const without128Or256 = structuredClone(without128);
+without128Or256.services.find((service) => service.code === "STORAGE-PERSONAL").tiers.find((tier) => tier.numericValue === 256).publicSelectable = false;
+assert.equal(preDiagnosticCommerceRuntime.recommendPreDiagnosticOffer(commercialAnswers({ commercialStorage: "128" }), "individual", "backup", without128Or256, preDiagnosticRuntime.DEFAULT_PRE_DIAGNOSTIC_CONFIGURATION_V2).kind, "human_review", "Sans palier public suffisant, aucune offre ne doit etre proposee.");
 assert.equal(
   commercialRecommendation("individual", "remote-access", {
     commercialIntent: "remote_files",
-  }).recommendation?.selection?.presetCode,
+  }).selection?.presetCode,
   "pack-acces-distance",
   "Un acces prive simple aux fichiers doit rester souscriptible sans rappel.",
 );
@@ -424,7 +465,7 @@ assert.equal(
   commercialRecommendation("individual", "remote-access", {
     commercialIntent: "windows_desktop",
     commercialScope: "windows",
-  }).recommendation?.selection?.presetCode,
+  }).selection?.presetCode,
   "pack-bureau-windows-distance",
   "Un bureau Windows distant standard doit conserver son orientation Billing V2.",
 );
@@ -449,7 +490,7 @@ const standardProfessional = commercialRecommendation("professional", "general",
 });
 assert.equal(standardProfessional.kind, "standard");
 assert.equal(
-  standardProfessional.recommendation?.selection?.presetCode,
+  standardProfessional.selection?.presetCode,
   "pack-pro-association",
   "Une petite structure monosite dans les limites publiques doit pouvoir souscrire seule.",
 );
@@ -473,6 +514,62 @@ assert.equal(
   "standard",
   "Une association petite et monosite peut recevoir une formule automatique.",
 );
+const commerceConfigA = structuredClone(preDiagnosticRuntime.DEFAULT_PRE_DIAGNOSTIC_CONFIGURATION_V2);
+assert.equal(
+  commercialRecommendation("professional", "general", {
+    commercialIntent: "team_files", commercialUsers: "12", commercialSites: "one", commercialStorage: "64",
+  }, commerceConfigA).kind,
+  "human_review",
+  "La limite publiée de 11 utilisateurs doit s'appliquer au moteur commercial.",
+);
+const commerceConfigB = structuredClone(commerceConfigA);
+commerceConfigB.commerce.maximumUsers = 15;
+assert.equal(
+  commercialRecommendation("professional", "general", {
+    commercialIntent: "team_files", commercialUsers: "12", commercialSites: "one", commercialStorage: "64",
+  }, commerceConfigB).kind,
+  "human_review",
+  "Une limite diagnostic plus haute ne peut pas contourner une limite encore presente dans le catalogue Billing V2.",
+);
+const smallTeamLimit = structuredClone(commerceConfigA);
+smallTeamLimit.commerce.maximumUsers = 1;
+assert.equal(
+  commercialRecommendation("professional", "general", {
+    commercialIntent: "team_files", commercialUsers: "2", commercialSites: "one", commercialStorage: "64",
+  }, smallTeamLimit).kind,
+  "human_review",
+  "Une limite utilisateurs administrée doit fermer le self-service.",
+);
+assert.equal(
+  commercialRecommendation("professional", "general", {
+    commercialIntent: "team_files", commercialUsers: "2", commercialSites: "one", commercialStorage: "64",
+  }, commerceConfigB).kind,
+  "standard",
+  "Augmenter une limite utilisateurs administrée doit ouvrir le self-service lorsque Billing V2 le permet.",
+);
+const humanContextConfig = structuredClone(commerceConfigA);
+humanContextConfig.contexts.find((context) => context.id === "backup").allowsSelfService = false;
+assert.equal(
+  commercialRecommendation("individual", "backup", {}, humanContextConfig).kind,
+  "human_review",
+  "Un contexte administré sans self-service doit imposer un cadrage humain.",
+);
+const filesOnlyConfig = structuredClone(commerceConfigA);
+filesOnlyConfig.commerce.compatibleScopes = ["files"];
+assert.equal(
+  commercialRecommendation("individual", "remote-access", {
+    commercialIntent: "windows_desktop", commercialScope: "windows", commercialStorage: "64",
+  }, filesOnlyConfig).kind,
+  "human_review",
+  "Retirer un scope compatible de la configuration doit fermer ce self-service sans toucher au code.",
+);
+const remappedPreConfiguration = structuredClone(commerceConfigA);
+remappedPreConfiguration.commerce.catalogBindings.find((binding) => binding.profileId === "simple_backup").requiredServiceCodes.push("UNPUBLISHED-SERVICE");
+assert.equal(
+  commercialRecommendation("individual", "backup", {}, remappedPreConfiguration).kind,
+  "human_review",
+  "Un besoin dont les composants requis ne correspondent a aucune offre publique doit basculer vers le cadrage.",
+);
 for (const context of ["network", "messaging", "domain-dns", "server", "web-hosting"]) {
   assert.equal(
     commercialRecommendation("professional", context, {
@@ -485,16 +582,27 @@ for (const context of ["network", "messaging", "domain-dns", "server", "web-host
     `${context} doit garder la sortie cadrage meme lorsque les autres reponses semblent standard.`,
   );
 }
-const adminDisabledCommercialConfig = {
-  schemaVersion: 1,
-  rules: defaultCommercialConfig.rules.map((rule) =>
-    rule.profileId === "simple_backup" ? { ...rule, presetCode: null } : rule,
-  ),
-};
+assert.deepEqual(
+  [...preDiagnosticCommerceRuntime.PRE_DIAGNOSTIC_HUMAN_REVIEW_CONTEXTS],
+  ["network", "messaging", "domain-dns", "server", "web-hosting"],
+  "Les contextes explicitement réservés au cadrage doivent rester visibles et fermés.",
+);
+for (const context of contextRuntime.DIAGNOSTIC_CONTEXT_IDS) {
+  const presentation = preDiagnosticCommerceRuntime.getPreDiagnosticContextPresentation(context);
+  assert.ok(presentation.label.length > 3, `${context} doit avoir un libellé dans le centre d'administration.`);
+  assert.equal(
+    presentation.selfService,
+    !preDiagnosticCommerceRuntime.isPreDiagnosticHumanReviewContext(context),
+    `${context} doit présenter le même statut commercial que le moteur.`,
+  );
+}
+const adminDisabledCommercialConfig = structuredClone(commerceConfigA);
+adminDisabledCommercialConfig.commerce.catalogBindings = adminDisabledCommercialConfig.commerce.catalogBindings
+  .filter((binding) => binding.profileId !== "simple_backup");
 assert.equal(
   commercialRecommendation("individual", "backup", {}, adminDisabledCommercialConfig).kind,
   "human_review",
-  "Un mapping retire depuis /admin/diagnostic doit fermer la recommandation automatique.",
+  "Une correspondance catalogue retiree depuis /admin/diagnostic doit fermer la recommandation automatique.",
 );
 
 assert.doesNotMatch(
@@ -944,9 +1052,9 @@ for (const route of [
 }
 assert.match(programCs, /"settings\.diagnostic\.write"/);
 
-// Le pré-diagnostic conserve son schéma santé fermé, et réutilise seulement le
-// mapping de recommandations publié dans /admin/diagnostic pour relier une
-// qualification strictement standard au catalogue Billing V2.
+// Le pré-diagnostic conserve son schéma santé fermé. Sa qualification produit
+// un besoin normalisé et les correspondances catalogue publiées décrivent les
+// composants requis, sans réintroduire de mapping vers un preset fixe.
 
 // BFF : enveloppe verifiee, autorite laissee a API-INTERNAL.
 assert.match(diagnosticDraftRoute, /handleAdminMutation/);
@@ -958,7 +1066,7 @@ assert.match(diagnosticPublishRoute, /expectedPublishedVersion/);
 assert.match(diagnosticAdminSimulator, /buildAdaptiveDiagnosticOutcome/);
 assert.match(diagnosticAdminSimulator, /getVisibleDiagnosticQuestions/);
 assert.match(diagnosticPage, /getBillingV2FormulesCatalog/);
-assert.match(diagnosticPage, /DIAGNOSTIC_RECOMMENDATION_CONTENT_KEY/);
+assert.doesNotMatch(diagnosticPage, /DIAGNOSTIC_RECOMMENDATION_CONTENT_KEY/);
 assert.match(diagnosticWizard, /recommendPreDiagnosticOffer/);
 assert.match(diagnosticWizard, /"\/api\/formules\/devis"/);
 assert.match(diagnosticWizard, /billingV2SelectionToSearchParams/);
@@ -968,6 +1076,50 @@ assert.match(diagnosticAdminSimulator, /pruneHiddenDiagnosticAnswers/);
 assert.match(diagnosticAdminSimulator, /outcome\.appliedRuleIds/);
 // Le diagnostic ne calcule jamais de prix, pas meme dans l'administration.
 assert.doesNotMatch(diagnosticAdminSimulator, /monthlyAmountCents|toIncVat|vatRate/);
+
+// Le nouveau centre d'administration lit les sources réellement exécutées : il
+// ne réintroduit ni une troisième liste de questions, ni une autorité prix.
+assert.match(currentDiagnosticAdminPage, /AdminPreDiagnosticControlCenter/);
+assert.match(currentDiagnosticAdminPage, /getAdminDiagnosticConfiguration/);
+assert.match(diagnosticAdminControlCenter, /DEFAULT_PRE_DIAGNOSTIC_CONFIGURATION_V2/);
+assert.match(diagnosticAdminControlCenter, /configuredQuestionsForProfile/);
+assert.match(diagnosticAdminControlCenter, /DIAGNOSTIC_CONTEXT_IDS/);
+assert.match(diagnosticAdminControlCenter, /evaluatePreDiagnosticWithConfiguration/);
+assert.match(diagnosticAdminControlCenter, /recommendPreDiagnosticOffer/);
+assert.match(diagnosticAdminControlCenter, /catalogBindings/);
+assert.match(diagnosticAdminControlCenter, /\/api\/admin\/diagnostic\/draft/);
+assert.match(diagnosticAdminControlCenter, /\/api\/admin\/diagnostic\/publish/);
+assert.match(diagnosticAdminControlCenter, /window\.confirm/);
+assert.match(diagnosticAdminControlCenter, /maximumStorageGb/);
+assert.match(diagnosticAdminControlCenter, /maximumUsers/);
+assert.doesNotMatch(
+  diagnosticAdminControlCenter,
+  /monthlyAmountCents|setupFeeAmountCents|formatCurrencyFromCents/,
+  "Le simulateur d'administration ne doit ni hardcoder ni calculer le prix.",
+);
+assert.match(diagnosticAdminControlCenter, /configuration\.profiles/, "Les profils affichés doivent venir du brouillon v2 réellement simulé.");
+for (const context of ["backup", "remote-access", "network", "messaging", "domain-dns", "server", "web-hosting", "general"]) {
+  assert.ok(
+    contextRuntime.DIAGNOSTIC_CONTEXT_IDS.includes(context),
+    `${context} doit rester représentable dans le centre d'administration.`,
+  );
+}
+assert.match(diagnosticRecommendationForm, /DIAGNOSTIC_RECOMMENDATION_PROFILE_IDS/);
+for (const profile of ["simple_backup", "vpn_access", "windows_desktop", "team_or_structure", "team_windows_desktop"]) {
+  assert.ok(
+    sharedTypes.includes(`"${profile}"`),
+    `${profile} doit rester un mapping Billing V2 administrable.`,
+  );
+}
+
+// L'ancienne URL reste sûre pour les favoris, mais ne peut plus faire croire
+// que son éditeur adaptatif pilote /diagnostic. Les APIs et leur éditeur restent
+// volontairement dans le dépôt pour les consommateurs historiques.
+assert.match(diagnosticAdminPage, /requireAdminSession/);
+assert.match(diagnosticAdminPage, /redirect\("\/admin\/diagnostic"\)/);
+assert.doesNotMatch(diagnosticAdminPage, /AdminDiagnosticCenter/);
+assert.match(diagnosticAdminCenter, /\/api\/admin\/diagnostic\/draft/);
+assert.match(diagnosticAdminSimulator, /buildAdaptiveDiagnosticOutcome/);
 
 // Administration : publication explicite et confirmee, jamais implicite.
 assert.match(diagnosticAdminCenter, /\/api\/admin\/diagnostic\/draft/);

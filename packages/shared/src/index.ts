@@ -3268,10 +3268,175 @@ export interface DiagnosticContextConfig {
   billingMapping: DiagnosticBillingMappingConfig | null;
 }
 
-export interface DiagnosticConfiguration {
+/** Ancien diagnostic adaptatif. Il reste lisible pour les revisions v1. */
+export interface LegacyDiagnosticConfiguration {
   schemaVersion: 1;
   contexts: DiagnosticContextConfig[];
 }
+
+// --- Pre-diagnostic administrable v2 --------------------------------------
+// Le schema v2 est volontairement declaratif et ferme. Les effets n'acceptent
+// ni formule, ni code : les moteurs TypeScript et API-INTERNAL appliquent la
+// meme petite grammaire de scores.
+export type PreDiagnosticProfileId = "individual" | "professional" | "association";
+export type PreDiagnosticScoreMode = "absolute" | "deduction";
+
+export interface PreDiagnosticProfileConfig {
+  id: PreDiagnosticProfileId;
+  label: string;
+  description: string;
+  active: boolean;
+  order: number;
+}
+
+export interface PreDiagnosticScoreEffectConfig {
+  mode: PreDiagnosticScoreMode;
+  value: number;
+  /** Toutes les conditions doivent etre satisfaites. */
+  when: DiagnosticConditionConfig[];
+}
+
+export interface PreDiagnosticOptionConfig {
+  value: string;
+  label: string;
+  active: boolean;
+  order: number;
+  effects: PreDiagnosticScoreEffectConfig[];
+}
+
+export interface PreDiagnosticCategoryConfig {
+  id: string;
+  label: string;
+  active: boolean;
+  order: number;
+  /** 0 signifie que la categorie n'est pas applicable a ce profil. */
+  weights: Record<PreDiagnosticProfileId, number>;
+}
+
+export interface PreDiagnosticQuestionConfig {
+  id: string;
+  categoryId: string | null;
+  label: string;
+  hint: string | null;
+  profiles: PreDiagnosticProfileId[];
+  required: boolean;
+  active: boolean;
+  order: number;
+  /** Visibilite declarative bornee, sans expression executable. */
+  when: DiagnosticConditionConfig[];
+  options: PreDiagnosticOptionConfig[];
+}
+
+export interface PreDiagnosticLevelConfig {
+  id: string;
+  label: string;
+  minimumScore: number;
+  order: number;
+  description: string | null;
+}
+
+export interface PreDiagnosticPriorityConfig {
+  categoryId: string;
+  threshold: number;
+  title: string;
+  body: string;
+  order: number;
+}
+
+export interface PreDiagnosticPositiveConfig {
+  categoryId: string;
+  threshold: number;
+  text: string;
+  order: number;
+}
+
+export interface PreDiagnosticContextConfig {
+  id: string;
+  label: string;
+  text: string;
+  active: boolean;
+  order: number;
+  allowsSelfService: boolean;
+}
+
+export interface PreDiagnosticCommercialProfileConfig {
+  id: DiagnosticRecommendationProfileId;
+  label: string;
+  active: boolean;
+  /** Intentions commerciales qui identifient ce profil. */
+  intents: string[];
+  scopes: string[];
+}
+
+/**
+ * Pont minimal entre un besoin du diagnostic et le catalogue Billing V2.
+ *
+ * Il ne contient ni palier, ni capacite, ni prix : ceux-ci sont lus dans le
+ * catalogue vivant. Les codes de services sont des references de catalogue,
+ * selectionnees dans le back-office, et servent seulement a decrire les
+ * composants indispensables a un besoin normalise.
+ */
+export interface PreDiagnosticCatalogBindingConfig {
+  profileId: DiagnosticRecommendationProfileId;
+  /** Services qui doivent tous etre presents dans une offre compatible. */
+  requiredServiceCodes: string[];
+  /** Service dont le palier numerique doit couvrir le volume demande. */
+  storageServiceCode: string;
+}
+
+/**
+ * Question de qualification commerciale. Elle est distincte des questions de
+ * sante : ses options ne participent pas au score, mais determinent si le
+ * besoin peut etre represente par une formule publique.
+ */
+export interface PreDiagnosticCommercialOptionConfig extends PreDiagnosticOptionConfig {
+  profiles: PreDiagnosticProfileId[];
+  contexts: string[];
+}
+
+export interface PreDiagnosticCommercialQuestionConfig {
+  id: string;
+  label: string;
+  hint: string | null;
+  profiles: PreDiagnosticProfileId[];
+  contexts: string[];
+  active: boolean;
+  order: number;
+  /** Paliers derives de limites administrees, sans code executable. */
+  dynamicOptions: "none" | "storage" | "users";
+  options: PreDiagnosticCommercialOptionConfig[];
+}
+
+export interface PreDiagnosticCommerceConfig {
+  minimumStorageGb: number;
+  maximumStorageGb: number;
+  minimumUsers: number;
+  maximumUsers: number;
+  maximumSites: number;
+  compatibleScopes: string[];
+  humanReviewIntents: string[];
+  questions: PreDiagnosticCommercialQuestionConfig[];
+  profiles: PreDiagnosticCommercialProfileConfig[];
+  /** Correspondances besoin normalise -> composants du catalogue, sans prix. */
+  catalogBindings: PreDiagnosticCatalogBindingConfig[];
+}
+
+export interface PreDiagnosticConfiguration {
+  schemaVersion: 2;
+  profiles: PreDiagnosticProfileConfig[];
+  categories: PreDiagnosticCategoryConfig[];
+  questions: PreDiagnosticQuestionConfig[];
+  levels: PreDiagnosticLevelConfig[];
+  maximumPriorities: number;
+  priorities: PreDiagnosticPriorityConfig[];
+  positives: PreDiagnosticPositiveConfig[];
+  contexts: PreDiagnosticContextConfig[];
+  commerce: PreDiagnosticCommerceConfig;
+}
+
+export type DiagnosticConfiguration =
+  | LegacyDiagnosticConfiguration
+  | PreDiagnosticConfiguration;
 
 export type DiagnosticConfigurationState = "draft" | "published";
 

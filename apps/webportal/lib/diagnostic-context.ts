@@ -1,6 +1,6 @@
 import type {
   DiagnosticBillingMappingConfig,
-  DiagnosticConfiguration,
+  LegacyDiagnosticConfiguration,
   DiagnosticContextConfig,
   DiagnosticGuidanceRuleConfig,
   DiagnosticQuestionConfig,
@@ -676,7 +676,7 @@ const BUILT_IN_BILLING_MAPPINGS:
  * Configuration integree au code. Elle sert de repli quand aucune version
  * n'est publiee en base, et de reference lors d'une restauration.
  */
-export const DEFAULT_DIAGNOSTIC_CONFIGURATION: DiagnosticConfiguration = {
+export const DEFAULT_DIAGNOSTIC_CONFIGURATION: LegacyDiagnosticConfiguration = {
   schemaVersion: 1,
   contexts: DIAGNOSTIC_CONTEXT_IDS.map((id) => ({
     ...CONTEXT_SHELLS[id],
@@ -691,7 +691,7 @@ export const DEFAULT_DIAGNOSTIC_CONFIGURATION: DiagnosticConfiguration = {
  */
 export function resolveDiagnosticContextConfig(
   context: DiagnosticContextId,
-  configuration: DiagnosticConfiguration = DEFAULT_DIAGNOSTIC_CONFIGURATION,
+  configuration: LegacyDiagnosticConfiguration = DEFAULT_DIAGNOSTIC_CONFIGURATION,
 ): DiagnosticContextConfig {
   const found = configuration.contexts.find((item) => item.id === context);
   if (found) return found;
@@ -746,7 +746,7 @@ export function resolveDiagnosticContext(value: unknown): DiagnosticContextId {
 
 export function getDiagnosticContextDefinition(
   context: DiagnosticContextId,
-  configuration: DiagnosticConfiguration = DEFAULT_DIAGNOSTIC_CONFIGURATION,
+  configuration: LegacyDiagnosticConfiguration = DEFAULT_DIAGNOSTIC_CONFIGURATION,
 ): DiagnosticContextDefinition {
   return resolveDiagnosticContextConfig(context, configuration);
 }
@@ -770,7 +770,7 @@ export function contextualizeDiagnosticHref(
 export function getVisibleDiagnosticQuestions(
   context: DiagnosticContextId,
   answers: DiagnosticAnswerMap,
-  configuration: DiagnosticConfiguration = DEFAULT_DIAGNOSTIC_CONFIGURATION,
+  configuration: LegacyDiagnosticConfiguration = DEFAULT_DIAGNOSTIC_CONFIGURATION,
 ): readonly DiagnosticQuestion[] {
   return resolveDiagnosticContextConfig(context, configuration).questions.filter((question) => {
     if (!question.when) return true;
@@ -782,7 +782,7 @@ export function getVisibleDiagnosticQuestions(
 export function pruneHiddenDiagnosticAnswers(
   context: DiagnosticContextId,
   answers: DiagnosticAnswerMap,
-  configuration: DiagnosticConfiguration = DEFAULT_DIAGNOSTIC_CONFIGURATION,
+  configuration: LegacyDiagnosticConfiguration = DEFAULT_DIAGNOSTIC_CONFIGURATION,
 ): DiagnosticAnswerMap {
   const visibleIds = new Set(
     getVisibleDiagnosticQuestions(context, answers, configuration)
@@ -804,7 +804,7 @@ export function isDiagnosticQuestionAnswered(
 export function describeDiagnosticAnswers(
   context: DiagnosticContextId,
   answers: DiagnosticAnswerMap,
-  configuration: DiagnosticConfiguration = DEFAULT_DIAGNOSTIC_CONFIGURATION,
+  configuration: LegacyDiagnosticConfiguration = DEFAULT_DIAGNOSTIC_CONFIGURATION,
 ): readonly { label: string; value: string }[] {
   return getVisibleDiagnosticQuestions(context, answers, configuration).flatMap((question) => {
     const raw = answers[question.id];
@@ -820,7 +820,7 @@ export function describeDiagnosticAnswers(
 export function buildDiagnosticContactMessage(
   context: DiagnosticContextId,
   answers: DiagnosticAnswerMap,
-  configuration: DiagnosticConfiguration = DEFAULT_DIAGNOSTIC_CONFIGURATION,
+  configuration: LegacyDiagnosticConfiguration = DEFAULT_DIAGNOSTIC_CONFIGURATION,
 ): string {
   const definition = resolveDiagnosticContextConfig(context, configuration);
   const lines = describeDiagnosticAnswers(context, answers, configuration)

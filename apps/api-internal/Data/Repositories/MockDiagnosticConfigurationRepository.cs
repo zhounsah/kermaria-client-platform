@@ -10,6 +10,7 @@ public sealed class MockDiagnosticConfigurationRepository
     private static readonly Dictionary<string, StoredDiagnosticConfiguration> Entries =
         new(StringComparer.Ordinal);
     private static readonly List<StoredTemplateRevision> Revisions = [];
+    private static readonly Dictionary<int, StoredDiagnosticConfiguration> PublishedRevisions = [];
     private static readonly object Gate = new();
 
     public bool IsPersistent => false;
@@ -23,6 +24,14 @@ public sealed class MockDiagnosticConfigurationRepository
             return Task.FromResult(
                 Entries.TryGetValue(state, out var entry) ? entry : null);
         }
+    }
+
+    public Task<StoredDiagnosticConfiguration?> GetPublishedRevisionAsync(
+        int version,
+        CancellationToken cancellationToken)
+    {
+        lock (Gate)
+            return Task.FromResult(PublishedRevisions.GetValueOrDefault(version));
     }
 
     public Task<bool> TrySaveDraftAsync(
@@ -64,6 +73,7 @@ public sealed class MockDiagnosticConfigurationRepository
             }
 
             Entries[published.State] = published;
+            PublishedRevisions[published.Version] = published;
             AddRevision(published, "published", correlationId);
             return Task.FromResult(true);
         }

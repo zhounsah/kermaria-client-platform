@@ -44,6 +44,31 @@ public sealed class MariaDbDiagnosticConfigurationRepository
             : null;
     }
 
+    public async Task<StoredDiagnosticConfiguration?> GetPublishedRevisionAsync(
+        int version,
+        CancellationToken cancellationToken)
+    {
+        if (version < 1) return null;
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT state, payload_json, version, created_at, actor_user_id
+            FROM diagnostic_configuration_revisions
+            WHERE state = 'published' AND version = @version
+            ORDER BY created_at DESC
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("@version", version);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken)
+            ? new StoredDiagnosticConfiguration(
+                reader.GetString("state"), reader.GetString("payload_json"),
+                reader.GetInt32("version"), reader.GetDateTime("created_at"),
+                MariaDbIdentifierReader.ReadNullable(reader, "actor_user_id"))
+            : null;
+    }
+
     public async Task<bool> TrySaveDraftAsync(
         StoredDiagnosticConfiguration draft,
         int expectedVersion,

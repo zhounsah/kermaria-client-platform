@@ -4,7 +4,8 @@ import Link from "next/link";
 import type {
   BillingV2PublicCatalog,
   BillingV2PublicQuote,
-  DiagnosticRecommendationConfig,
+  BillingV2PublicSelection,
+  PreDiagnosticConfiguration,
 } from "@kermaria/shared";
 import {
   useEffect,
@@ -21,6 +22,8 @@ import { requestBffJson } from "@/lib/client-api";
 import type { DiagnosticCallbackFieldErrors } from "@/lib/diagnostic-callback";
 import {
   evaluatePreDiagnostic,
+  evaluatePreDiagnosticWithConfiguration,
+  configuredQuestionsForProfile,
   questionsForProfile,
   scoringAnswersForProfile,
   type PreDiagnosticAnswers,
@@ -62,13 +65,17 @@ const EMPTY_CALLBACK_FORM: CallbackForm = {
 type PublicDiagnosticWizardProps = {
   catalog: BillingV2PublicCatalog;
   context: DiagnosticContextId;
-  recommendationConfig: DiagnosticRecommendationConfig;
+  /** null tant qu'aucune configuration v2 n'est publiee. */
+  preDiagnosticConfiguration: PreDiagnosticConfiguration | null;
+  /** Snapshot publié effectivement rendu au visiteur. */
+  diagnosticConfigurationVersion: number;
 };
 
 export function PublicDiagnosticWizard({
   catalog,
   context,
-  recommendationConfig,
+  preDiagnosticConfiguration,
+  diagnosticConfigurationVersion,
 }: PublicDiagnosticWizardProps) {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [step, setStep] = useState(0);
@@ -77,22 +84,26 @@ export function PublicDiagnosticWizard({
   const profile = (answers.profile ?? null) as PreDiagnosticProfile | null;
   const questions = useMemo(
     () => {
-      const healthQuestions = questionsForProfile(profile);
-      const commercialQuestions = commercialQuestionsForProfile(profile, context);
+      const healthQuestions = preDiagnosticConfiguration
+        ? configuredQuestionsForProfile(preDiagnosticConfiguration, profile, answers)
+        : questionsForProfile(profile);
+      const commercialQuestions = commercialQuestionsForProfile(profile, context, preDiagnosticConfiguration ?? undefined);
       // Un lien depuis une page Réseau, Hébergement ou Domaine doit être
       // reconnu dès le début, même si son issue reste volontairement humaine.
-      return isPreDiagnosticHumanReviewContext(context)
+      return isPreDiagnosticHumanReviewContext(context, preDiagnosticConfiguration ?? undefined)
         ? [healthQuestions[0], ...commercialQuestions, ...healthQuestions.slice(1)]
         : [...healthQuestions, ...commercialQuestions];
     },
-    [context, profile],
+    [answers, context, preDiagnosticConfiguration, profile],
   );
   const current = questions[step] ?? null;
   const result = completed && profile
-    ? evaluatePreDiagnostic(scoringAnswersForProfile(answers, profile))
+    ? preDiagnosticConfiguration
+      ? evaluatePreDiagnosticWithConfiguration(preDiagnosticConfiguration, scoringAnswersForProfile(answers, profile, preDiagnosticConfiguration))
+      : evaluatePreDiagnostic(scoringAnswersForProfile(answers, profile))
     : null;
   const commercialRecommendation = completed && profile
-    ? recommendPreDiagnosticOffer(answers, profile, context, catalog, recommendationConfig)
+    ? recommendPreDiagnosticOffer(answers, profile, context, catalog, preDiagnosticConfiguration ?? undefined)
     : null;
 
   useEffect(() => {
@@ -113,13 +124,20 @@ export function PublicDiagnosticWizard({
   if (completed && result && profile) {
     return (
       <DiagnosticResult
-        answers={scoringAnswersForProfile(answers, profile)}
+        answers={scoringAnswersForProfile(answers, profile, preDiagnosticConfiguration ?? undefined)}
+        commercialAnswers={answers}
         catalog={catalog}
+        diagnosticConfigurationVersion={diagnosticConfigurationVersion}
+        context={context}
         commercialRecommendation={commercialRecommendation ?? {
           kind: "human_review",
           title: "Ce besoin mérite un échange avant de choisir une offre",
           reason: "Aucune orientation automatique n'a pu être déterminée.",
-          recommendation: null,
+          need: null,
+          selection: null,
+          offerName: null,
+          selectedStorageGb: null,
+          commercialProfileId: null,
         }}
         onRestart={() => {
           setAnswers({});
@@ -199,7 +217,7 @@ export function PublicDiagnosticWizard({
         {!answers[current.id] ? <p className="diagnostic-answer-hint" role="status">Choisissez une réponse pour continuer.</p> : null}
         <div className="diagnostic-actions">
           <button className="button button-secondary" disabled={step === 0} onClick={() => setStep((value) => Math.max(0, value - 1))} type="button">Précédent</button>
-          <button className="button" disabled={!answers[current.id]} onClick={() => {
+          <button className="button" disabled={current.required !== false && !answers[current.id]} onClick={() => {
             if (step === questions.length - 1) {
               setCompleted(true);
               return;
@@ -214,13 +232,19 @@ export function PublicDiagnosticWizard({
 
 function DiagnosticResult({
   answers,
+  commercialAnswers,
   catalog,
+  diagnosticConfigurationVersion,
+  context,
   commercialRecommendation,
   result,
   onRestart,
 }: {
   answers: PreDiagnosticAnswers;
+  commercialAnswers: Record<string, string>;
   catalog: BillingV2PublicCatalog;
+  diagnosticConfigurationVersion: number;
+  context: DiagnosticContextId;
   commercialRecommendation: CommercialRecommendation;
   result: ReturnType<typeof evaluatePreDiagnostic>;
   onRestart: () => void;
@@ -254,7 +278,7 @@ function DiagnosticResult({
     >("/api/diagnostic/callback", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...form, answers }),
+      body: JSON.stringify({ ...form, answers, configurationVersion: diagnosticConfigurationVersion }),
     });
 
     if (!response.ok) {
@@ -280,8 +304,12 @@ function DiagnosticResult({
           <p className="diagnostic-result-lead">Ce résultat met en évidence les sujets à regarder en premier selon vos réponses. Il ne remplace pas une vérification technique sur place.</p>
           {result.priorities.length ? <section className="diagnostic-priorities"><h2>Vos priorités</h2><ol>{result.priorities.map((priority) => <li key={priority.title}><strong>{priority.title}</strong><span>{priority.body}</span></li>)}</ol></section> : null}
           {result.positives.length ? <section className="diagnostic-positives"><h2>Points positifs</h2><ul className="check-list">{result.positives.map((positive) => <li key={positive}>{positive}</li>)}</ul></section> : null}
-          {commercialRecommendation.kind === "standard" && commercialRecommendation.recommendation?.selection ? <DiagnosticOffer
+          {commercialRecommendation.kind === "standard" && commercialRecommendation.selection ? <DiagnosticOffer
             catalog={catalog}
+            commercialAnswers={commercialAnswers}
+            context={context}
+            diagnosticConfigurationVersion={diagnosticConfigurationVersion}
+            profile={answers.profile as PreDiagnosticProfile}
             recommendation={commercialRecommendation}
           /> : null}
           {commercialRecommendation.kind === "human_review" ? <section className="diagnostic-human-review">
@@ -314,46 +342,67 @@ function DiagnosticResult({
 
 function DiagnosticOffer({
   catalog,
+  commercialAnswers,
+  context,
+  diagnosticConfigurationVersion,
+  profile,
   recommendation,
 }: {
   catalog: BillingV2PublicCatalog;
+  commercialAnswers: Record<string, string>;
+  context: DiagnosticContextId;
+  diagnosticConfigurationVersion: number;
+  profile: PreDiagnosticProfile;
   recommendation: CommercialRecommendation;
 }) {
-  const selection = recommendation.recommendation?.selection ?? null;
+  const [selection, setSelection] = useState<BillingV2PublicSelection | null>(null);
   const [quote, setQuote] = useState<BillingV2PublicQuote | null>(null);
   const [quoteError, setQuoteError] = useState(false);
 
   useEffect(() => {
-    if (!selection) return;
     let active = true;
-    void requestBffJson<BillingV2PublicQuote>("/api/formules/devis", {
+    // Les états affichés appartiennent à la précédente requête asynchrone :
+    // ils doivent être vidés avant d'amorcer la recommandation suivante.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSelection(null);
+    setQuote(null);
+    setQuoteError(false);
+    const healthAnswers = Object.fromEntries(Object.entries(commercialAnswers).filter(([key]) => !key.startsWith("commercial")));
+    const commercial = Object.fromEntries(Object.entries(commercialAnswers).filter(([key]) => key.startsWith("commercial")));
+    void requestBffJson<{ kind: string; selection: BillingV2PublicSelection | null }>("/api/diagnostic/recommendation", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(selection),
+      body: JSON.stringify({ configurationVersion: diagnosticConfigurationVersion, profile, context, healthAnswers, commercialAnswers: commercial }),
     }).then((response) => {
       if (!active) return;
-      if (response.ok) {
-        setQuote(response.data);
-        return;
-      }
-      setQuoteError(true);
+      if (!response.ok || response.data.kind !== "standard" || !response.data.selection) { setQuoteError(true); return; }
+      setSelection(response.data.selection);
+    });
+    return () => { active = false; };
+  }, [commercialAnswers, context, diagnosticConfigurationVersion, profile]);
+
+  useEffect(() => {
+    if (!selection) return;
+    let active = true;
+    void requestBffJson<BillingV2PublicQuote>("/api/formules/devis", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(selection) }).then((response) => {
+      if (!active) return;
+      if (response.ok) setQuote(response.data); else setQuoteError(true);
     });
     return () => { active = false; };
   }, [selection]);
 
-  if (!selection) return null;
-  const preset = catalog.presets.find((item) => item.code === selection.presetCode) ?? null;
+  const preset = catalog.presets.find((item) => item.code === selection?.presetCode) ?? null;
   const quoteAvailable = quote?.checkoutAvailable === true;
-  const href = preset
+  const href = preset && selection
     ? `/formules/${encodeURIComponent(preset.code)}?${billingV2SelectionToSearchParams(selection).toString()}&source=diagnostic`
     : null;
 
   return <section className="diagnostic-offer" aria-live="polite">
     <p className="eyebrow">Orientation commerciale</p>
     <h2>{recommendation.title}</h2>
-    <h3>{preset?.name ?? "Formule standard"}</h3>
+    <h3>{recommendation.offerName ?? preset?.name ?? "Formule standard"}</h3>
     <p>{recommendation.reason}</p>
-    {preset?.description ? <p className="diagnostic-offer-description">{preset.description}</p> : null}
+    {selection && recommendation.selectedStorageGb ? <p className="diagnostic-offer-description">Capacité retenue dans le catalogue : {recommendation.selectedStorageGb} Go.</p> : null}
     {quote ? <div className="diagnostic-offer-price">
       <span>Tarif calculé</span>
       <strong>{formatCurrencyFromCents(quote.monthlyAfterDiscountCents)} / mois</strong>

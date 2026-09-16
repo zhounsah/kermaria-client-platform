@@ -2,7 +2,7 @@
 
 import type {
   BillingV2PublicCatalog,
-  DiagnosticConfiguration,
+  LegacyDiagnosticConfiguration,
   DiagnosticConfigurationAdminView,
   DiagnosticConfigurationMutationResponse,
   DiagnosticConfigurationRevisionItem,
@@ -65,10 +65,12 @@ export function AdminDiagnosticCenter({
   // Le brouillon absent en base retombe sur la configuration integree au code :
   // l'administrateur part du parcours reellement en production plutot que d'un
   // formulaire vide.
-  const [draft, setDraft] = useState<DiagnosticConfiguration>(
-    () => initialView.draft.configuration
-      ?? initialView.published.configuration
-      ?? DEFAULT_DIAGNOSTIC_CONFIGURATION,
+  const [draft, setDraft] = useState<LegacyDiagnosticConfiguration>(
+    () => initialView.draft.configuration?.schemaVersion === 1
+      ? initialView.draft.configuration
+      : initialView.published.configuration?.schemaVersion === 1
+        ? initialView.published.configuration
+        : DEFAULT_DIAGNOSTIC_CONFIGURATION,
   );
 
   const localValidation = useMemo(
@@ -102,7 +104,7 @@ export function AdminDiagnosticCenter({
     setServerErrors(result.errors ?? []);
     if (result.view) setView(result.view);
     if (result.code === successCode) {
-      if (result.view?.draft.configuration) setDraft(result.view.draft.configuration);
+      if (result.view?.draft.configuration?.schemaVersion === 1) setDraft(result.view.draft.configuration);
       setBanner({ tone: "success", text: successText });
       return;
     }
@@ -424,7 +426,9 @@ export function AdminDiagnosticCenter({
           <AdminDiagnosticSimulator
             catalog={catalog}
             configuration={
-              localValidation.configuration ?? DEFAULT_DIAGNOSTIC_CONFIGURATION
+              localValidation.configuration?.schemaVersion === 1
+                ? localValidation.configuration
+                : DEFAULT_DIAGNOSTIC_CONFIGURATION
             }
             recommendationConfig={recommendationConfig}
           />
@@ -441,9 +445,9 @@ export function AdminDiagnosticCenter({
 }
 
 function replaceContext(
-  configuration: DiagnosticConfiguration,
+  configuration: LegacyDiagnosticConfiguration,
   next: DiagnosticContextConfig,
-): DiagnosticConfiguration {
+): LegacyDiagnosticConfiguration {
   return {
     ...configuration,
     contexts: configuration.contexts.map((item) => item.id === next.id ? next : item),

@@ -56,7 +56,9 @@ export async function POST(request: NextRequest) {
     const upstream = await fetch(`${internalApiUrl}/internal/public/diagnostic-callback`, {
       method: "POST", cache: "no-store", signal: AbortSignal.timeout(10_000),
       headers: { Accept: "application/json", "Content-Type": "application/json", ...getInternalServiceHeaders(), [CORRELATION_HEADER]: correlationId },
-      body: JSON.stringify({ ...payload, sourcePath: "/diagnostic" }),
+      // Ne relayez que le numéro de snapshot déjà validé par le BFF ; les
+      // règles restent exclusivement côté API-INTERNAL / persistence.
+      body: JSON.stringify({ ...payload, configurationVersion: payload.configurationVersion, sourcePath: "/diagnostic" }),
     });
     if (!upstream.ok) {
       logBffFailure({ category: "diagnostic_callback", code: "CALLBACK_DISPATCH_FAILED", correlation_id: correlationId, operation: "POST /internal/public/diagnostic-callback", status: upstream.status, surface: "public" });

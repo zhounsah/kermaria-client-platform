@@ -105,17 +105,8 @@ export function recommendOffer(
     reasons.add("strong_recovery_need");
   }
 
-  let profileId: DiagnosticRecommendationProfileId;
-  if (needsWindows && teamOrStructure) {
-    profileId = "team_windows_desktop";
-  } else if (needsWindows) {
-    profileId = "windows_desktop";
-  } else if (teamOrStructure) {
-    profileId = "team_or_structure";
-  } else if (needsVpn) {
-    profileId = "vpn_access";
-  } else {
-    profileId = "simple_backup";
+  const profileId = resolveDiagnosticRecommendationProfile(answers);
+  if (profileId === "simple_backup") {
     reasons.add("simple_backup");
   }
 
@@ -163,6 +154,28 @@ export function recommendOffer(
     suggestedOptions: [],
     selection,
   };
+}
+
+/**
+ * Source unique de la classification commerciale utilisée par le moteur Billing
+ * V2 et le simulateur d'administration. Cette fonction ne sélectionne pas de
+ * prix ni de formule ; elle identifie seulement le profil configurable.
+ */
+export function resolveDiagnosticRecommendationProfile(
+  answers: DiagnosticAnswers,
+): DiagnosticRecommendationProfileId {
+  const users = answers.users ?? 1;
+  const teamOrStructure =
+    answers.customerType === "association"
+    || answers.customerType === "business"
+    || users > 1;
+  const needsWindows = answers.needsWindowsDesktop === true;
+
+  if (needsWindows && teamOrStructure) return "team_windows_desktop";
+  if (needsWindows) return "windows_desktop";
+  if (teamOrStructure) return "team_or_structure";
+  if (answers.needsVpn) return "vpn_access";
+  return "simple_backup";
 }
 
 function hasBlockingWarning(

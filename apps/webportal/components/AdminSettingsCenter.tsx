@@ -62,9 +62,9 @@ const quickActions = [
     icon: Mail,
   },
   {
-    href: "/admin/settings/diagnostic",
-    label: "Configurer le diagnostic",
-    description: "Parcours, questions et recommandations",
+    href: "/admin/diagnostic",
+    label: "Piloter le diagnostic",
+    description: "Pré-diagnostic, contextes et recommandations",
     icon: Activity,
   },
   {

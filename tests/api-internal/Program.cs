@@ -4542,6 +4542,57 @@ async Task VerifyPublicPreDiagnosticAsync()
         !PublicPreDiagnosticService.TryEvaluate(
             new Dictionary<string, string>(healthy) { ["backup"] = "invented" }, out _),
         "Une valeur de réponse inconnue doit être refusée.");
+
+    // La recommandation publique ne reçoit jamais une selection ou un prix du
+    // navigateur. Le serveur reconstruit le besoin et choisit le premier
+    // palier catalogue suffisant : un besoin de 128 Go ne peut donc jamais
+    // etre ramené au palier 64 Go.
+    var commerceConfiguration = BuildSmokePreDiagnosticConfigurationV2();
+    var commerceHealth = new Dictionary<string, string>
+    {
+        ["profile"] = "individual", ["equipmentAge"] = "under3",
+    };
+    var commerceCatalog = BuildSmokeDiagnosticCommerceCatalog();
+    var commercial128 = new Dictionary<string, string>
+    {
+        ["commercialIntent"] = "backup_simple", ["commercialScope"] = "files", ["commercialStorage"] = "128",
+    };
+    Ensure(
+        PublicPreDiagnosticCommerceService.TryRecommend(
+            commerceConfiguration, "general", commerceHealth, commercial128, commerceCatalog, out var recommended128)
+        && recommended128.Kind == "standard"
+        && recommended128.SelectedCapacityGb == 128
+        && recommended128.Selection?.StoragePersonalTierCode == "128"
+        && recommended128.Selection.StoragePersonalTierCode != "64",
+        "Un besoin serveur de 128 Go doit retenir le palier catalogue 128 Go, jamais 64 Go.");
+    var commercial200 = new Dictionary<string, string>(commercial128) { ["commercialStorage"] = "200" };
+    Ensure(
+        PublicPreDiagnosticCommerceService.TryRecommend(
+            commerceConfiguration, "general", commerceHealth, commercial200, commerceCatalog, out var recommended200)
+        && recommended200.Kind == "standard"
+        && recommended200.SelectedCapacityGb == 256
+        && recommended200.Selection?.StoragePersonalTierCode == "256",
+        "Un besoin serveur de 200 Go doit retenir le plus petit palier catalogue suffisant, 256 Go.");
+    var commercialTooLarge = new Dictionary<string, string>(commercial128) { ["commercialStorage"] = "257" };
+    Ensure(
+        PublicPreDiagnosticCommerceService.TryRecommend(
+            commerceConfiguration, "general", commerceHealth, commercialTooLarge, commerceCatalog, out var tooLarge)
+        && tooLarge.Kind == "human_review",
+        "Un besoin superieur au plus grand palier catalogue doit etre oriente vers le cadrage humain.");
+    Ensure(
+        !PublicPreDiagnosticService.IsPublishedRevisionUsable(999_999, null),
+        "Une configurationVersion positive inconnue doit etre rejetee sans fallback v0.");
+    Ensure(
+        PublicPreDiagnosticCommerceService.TryRecommend(
+            null, "general", healthy, commercial128, commerceCatalog, out var legacyRecommendation)
+        && legacyRecommendation.Kind == "standard"
+        && legacyRecommendation.SelectedCapacityGb == 128,
+        "configurationVersion=0 doit conserver un chemin serveur historique qui reconstruit le palier catalogue.");
+    Ensure(
+        typeof(DiagnosticRecommendationPayload).GetProperties().All(property =>
+            !string.Equals(property.Name, "Selection", StringComparison.Ordinal)
+            && !string.Equals(property.Name, "BillingV2PublicSelection", StringComparison.Ordinal)),
+        "Le payload de recommandation ne doit jamais accepter de selection Billing V2 autoritaire depuis le navigateur.");
     var association = new Dictionary<string, string>(risky)
     {
         ["profile"] = "association",
@@ -4562,6 +4613,42 @@ async Task VerifyPublicPreDiagnosticAsync()
         PublicPreDiagnosticService.TryEvaluate(association, out var associationResult)
         && associationResult!.Score == 100,
         "Le schéma association valide doit être accepté et borné.");
+    using var configurableDiagnostic = JsonDocument.Parse(
+        """
+        {"schemaVersion":2,"profiles":[{"id":"individual","label":"Particulier","description":"Personnel","active":true,"order":1}],"categories":[{"id":"equipment","label":"Équipements","active":true,"order":1,"weights":{"individual":100,"professional":0,"association":0}}],"questions":[{"id":"profile","categoryId":null,"label":"Profil concerné","hint":null,"profiles":["individual"],"required":true,"active":true,"order":1,"when":[],"options":[{"value":"individual","label":"Particulier","active":true,"order":1,"effects":[]},{"value":"other","label":"Autre","active":true,"order":2,"effects":[]}]},{"id":"equipmentAge","categoryId":"equipment","label":"Âge du matériel","hint":null,"profiles":["individual"],"required":true,"active":true,"order":2,"when":[],"options":[{"value":"under3","label":"Moins de trois ans","active":true,"order":1,"effects":[]},{"value":"over5","label":"Plus de cinq ans","active":true,"order":2,"effects":[{"mode":"deduction","value":25,"when":[]}]}]}],"levels":[{"id":"good","label":"Bon","minimumScore":85,"order":1,"description":null},{"id":"risk","label":"Risque important","minimumScore":0,"order":2,"description":null}],"maximumPriorities":3,"priorities":[{"categoryId":"equipment","threshold":70,"title":"Matériel à prévoir","body":"Prévoir une amélioration.","order":1}],"positives":[],"contexts":[{"id":"general","label":"Général","text":"Général","active":true,"order":1,"allowsSelfService":true}],"commerce":{"minimumStorageGb":1,"maximumStorageGb":256,"minimumUsers":1,"maximumUsers":11,"maximumSites":1,"compatibleScopes":["files"],"humanReviewIntents":[],"profiles":[],"mappings":{"schemaVersion":1,"rules":[]}}}
+        """);
+    var configurableAnswers = new Dictionary<string, string>
+    {
+        ["profile"] = "individual", ["equipmentAge"] = "over5",
+    };
+    Ensure(
+        PublicPreDiagnosticService.TryEvaluate(
+            configurableAnswers,
+            configurableDiagnostic.RootElement,
+            out var configurableResult)
+        && configurableResult!.Score == 75,
+        "Le recalcul API doit appliquer la déduction de la configuration v2 publiée.");
+    using var changedDiagnostic = JsonDocument.Parse(
+        configurableDiagnostic.RootElement.GetRawText().Replace("\"value\":25", "\"value\":10", StringComparison.Ordinal));
+    Ensure(
+        PublicPreDiagnosticService.TryEvaluate(
+            configurableAnswers,
+            changedDiagnostic.RootElement,
+            out var changedResult)
+        && changedResult!.Score == 90 && changedResult.Level == "Bon",
+        "Changer une valeur v2 doit modifier score et niveau sans changement de code.");
+    using var optionalConditionalDiagnostic = JsonDocument.Parse(
+        configurableDiagnostic.RootElement.GetRawText().Replace(
+            "\"required\":true,\"active\":true,\"order\":2,\"when\":[]",
+            "\"required\":false,\"active\":true,\"order\":2,\"when\":[{\"questionId\":\"profile\",\"operator\":\"equals\",\"values\":[\"other\"]}]",
+            StringComparison.Ordinal));
+    Ensure(
+        PublicPreDiagnosticService.TryEvaluate(
+            new Dictionary<string, string> { ["profile"] = "individual" },
+            optionalConditionalDiagnostic.RootElement,
+            out var optionalConditionalResult)
+        && optionalConditionalResult!.Score == 100,
+        "Une question v2 facultative ou masquée ne doit ni être exigée ni modifier le recalcul serveur.");
     Ensure(
         PublicPreDiagnosticService.NormalizeSingleLine("  Jean\r\n Dupont  ") == "Jean Dupont"
         && PublicPreDiagnosticService.NormalizeMultiline("  Ligne 1\r\nLigne 2  ") == "Ligne 1\nLigne 2",
@@ -4610,6 +4697,31 @@ async Task VerifyPublicPreDiagnosticAsync()
         && sent.Messages.Count == 2
         && sent.Messages[1].Body.Contains("DIAGNOSTIC_BODY_SENTINEL", StringComparison.Ordinal),
         "Le contact conserve son corps historique ; le pré-diagnostic est envoyé mais son corps détaillé n'est pas persisté.");
+}
+
+static BillingV2PublicCatalogSnapshot BuildSmokeDiagnosticCommerceCatalog()
+{
+    var tiers = new[]
+    {
+        new BillingV2PublicTier("32", "32 Go", null, 32, 0, true),
+        new BillingV2PublicTier("64", "64 Go", null, 64, 0, true),
+        new BillingV2PublicTier("128", "128 Go", null, 128, 0, true),
+        new BillingV2PublicTier("256", "256 Go", null, 256, 0, true),
+    };
+    var services = new[]
+    {
+        new BillingV2PublicService("STORAGE-PERSONAL", "Stockage personnel", "storage", "personal", null, tiers),
+        new BillingV2PublicService("BASE-SERVICE", "Socle", "base", "personal", 0, []),
+        new BillingV2PublicService("BACKUP-PERSONAL", "Sauvegarde", "backup", "personal", 0, []),
+    };
+    var preset = new BillingV2PublicPreset("SMOKE-STORAGE", "Dossier sécurisé", "Test", 1,
+    [
+        new BillingV2PublicPresetItem("BASE-SERVICE", null, "personal", 1, 0, false),
+        new BillingV2PublicPresetItem("STORAGE-PERSONAL", null, "personal", 1, 0, true),
+        new BillingV2PublicPresetItem("BACKUP-PERSONAL", null, "personal", 1, 0, false),
+    ]);
+    return new BillingV2PublicCatalogSnapshot("smoke", "EUR", [preset], services,
+    [new BillingV2PublicCommitment("FLEX", "Mensuel", 1, [new BillingV2PublicPaymentOption(BillingV2PaymentModes.Monthly, 0)])]);
 }
 
 static async Task VerifyDiagnosticConfigurationAsync()
@@ -4715,6 +4827,95 @@ static async Task VerifyDiagnosticConfigurationAsync()
         && revisions[1].Outcome == "draft_saved",
         "L'historique doit tracer l'enregistrement puis la publication.");
 
+    // La v2 suit exactement le meme workflow : le brouillon ne modifie pas la
+    // reponse publique, puis la publication atomique bascule la version lue.
+    var v2 = BuildSmokePreDiagnosticConfigurationV2();
+    var v2Validation = service.Validate(new DiagnosticConfigurationValidateRequest(v2), correlation);
+    Ensure(
+        v2Validation.Code == "DIAGNOSTIC_VALID",
+        $"La configuration v2 complete doit passer le registre ferme : {string.Join(" | ", v2Validation.Errors)}");
+    var v2Json = JsonSerializer.Serialize(v2);
+    var malformedV2 = new Dictionary<string, string>
+    {
+        ["cle inconnue"] = v2Json.Replace("\"schemaVersion\":2", "\"schemaVersion\":2,\"unexpected\":true", StringComparison.Ordinal),
+        ["profil duplique"] = v2Json.Replace("\"id\":\"professional\"", "\"id\":\"individual\"", StringComparison.Ordinal),
+        ["categorie inconnue"] = v2Json.Replace("\"categoryId\":\"equipment\"", "\"categoryId\":\"unknown_category\"", StringComparison.Ordinal),
+        ["profil inconnu"] = v2Json.Replace("\"profiles\":[\"individual\",\"professional\",\"association\"]", "\"profiles\":[\"individual\",\"unknown_profile\"]", StringComparison.Ordinal),
+        ["option de condition inconnue"] = v2Json.Replace("\"value\":25,\"when\":[]", "\"value\":25,\"when\":[{\"questionId\":\"equipmentAge\",\"operator\":\"equals\",\"values\":[\"unknown_option\"]}]", StringComparison.Ordinal),
+        ["visibilite de question invalide"] = v2Json.Replace("\"order\":2,\"when\":[],\"options\"", "\"order\":2,\"when\":[{\"questionId\":\"missing\",\"operator\":\"equals\",\"values\":[\"x\"]}],\"options\"", StringComparison.Ordinal),
+        ["somme de poids incorrecte"] = v2Json.Replace("\"individual\":100", "\"individual\":99", StringComparison.Ordinal),
+        ["seuils de niveaux dupliques"] = v2Json.Replace("\"minimumScore\":85", "\"minimumScore\":0", StringComparison.Ordinal),
+        ["score absolu hors borne"] = v2Json.Replace("\"value\":25,\"when\":[]", "\"mode\":\"absolute\",\"value\":101,\"when\":[]", StringComparison.Ordinal),
+        ["deduction invalide"] = v2Json.Replace("\"mode\":\"deduction\",\"value\":25", "\"mode\":\"deduction\",\"value\":-1", StringComparison.Ordinal),
+        ["contexte actif inconnu"] = v2Json.Replace("\"id\":\"general\",\"label\":\"Contexte general\"", "\"id\":\"not_a_context\",\"label\":\"Contexte general\"", StringComparison.Ordinal),
+        ["contexte duplique"] = v2Json.Replace("\"id\":\"backup\",\"label\":\"Contexte backup\"", "\"id\":\"general\",\"label\":\"Contexte backup\"", StringComparison.Ordinal),
+        ["contexte actif sans question"] = v2Json.Replace("\"contexts\":[\"general\"]", "\"contexts\":[\"backup\"]", StringComparison.Ordinal),
+        ["limites commerce inversees"] = v2Json.Replace("\"minimumStorageGb\":1,\"maximumStorageGb\":256", "\"minimumStorageGb\":257,\"maximumStorageGb\":256", StringComparison.Ordinal),
+        ["limite utilisateurs systeme"] = v2Json.Replace("\"maximumUsers\":11", "\"maximumUsers\":10001", StringComparison.Ordinal),
+        ["scope commercial invalide"] = v2Json.Replace("\"compatibleScopes\":[\"files\",\"windows\"]", "\"compatibleScopes\":[\"shell\"]", StringComparison.Ordinal),
+        ["dsl commercial invalide"] = v2Json.Replace("\"dynamicOptions\":\"none\"", "\"dynamicOptions\":\"eval\"", StringComparison.Ordinal),
+        ["mapping vers profil inconnu"] = v2Json.Replace("\"profileId\":\"simple_backup\"", "\"profileId\":\"unknown_profile\"", StringComparison.Ordinal),
+    };
+    foreach (var (name, malformed) in malformedV2)
+    {
+        Ensure(
+            service.Validate(new DiagnosticConfigurationValidateRequest(ParseJson(malformed)), correlation).Code == "DIAGNOSTIC_INVALID",
+            $"La validation v2 doit refuser : {name}.");
+    }
+    var v2Draft = await service.SaveDraftAsync(
+        new DiagnosticConfigurationUpdateRequest(v2, 1), actor, correlation, token);
+    Ensure(
+        v2Draft.Code == "DIAGNOSTIC_DRAFT_SAVED"
+        && (await service.GetPublishedAsync(token)).Configuration!.Value
+            .GetProperty("schemaVersion").GetInt32() == 1,
+        "Un brouillon v2 ne doit jamais atteindre le parcours public.");
+    var v2Published = await service.PublishAsync(
+        new DiagnosticConfigurationPublishRequest(2, 1), actor, correlation, token);
+    var v2Public = await service.GetPublishedAsync(token);
+    Ensure(
+        v2Published.Code == "DIAGNOSTIC_PUBLISHED"
+        && v2Public.Configuration!.Value.GetProperty("schemaVersion").GetInt32() == 2,
+        "Apres publication, la meme v2 doit devenir la source publique.");
+    var sessionA = await service.GetPublishedRevisionAsync(1, token);
+    var sessionB = await service.GetPublishedRevisionAsync(2, token);
+    Ensure(
+        sessionA is not null && sessionA.Value.GetProperty("schemaVersion").GetInt32() == 1
+        && sessionB is not null && sessionB.Value.GetProperty("schemaVersion").GetInt32() == 2
+        && await service.GetPublishedRevisionAsync(999_999, token) is null
+        && PublicPreDiagnosticService.IsPublishedRevisionUsable(1, sessionA)
+        && PublicPreDiagnosticService.IsPublishedRevisionUsable(2, sessionB)
+        && !PublicPreDiagnosticService.IsPublishedRevisionUsable(999_999, null),
+        "Une session commencée sur A doit pouvoir recharger A après la publication de B ; une version forgée est refusée.");
+    Ensure(
+        PublicPreDiagnosticService.TryEvaluate(
+            new Dictionary<string, string>
+            {
+                ["profile"] = "individual", ["equipmentCount"] = "1-2",
+                ["equipmentAge"] = "over5", ["performance"] = "none",
+                ["updates"] = "automatic", ["backup"] = "automatic_external_tested",
+                ["network"] = "stable", ["wifiCoverage"] = "good", ["mfa"] = "all",
+                ["sharedAccounts"] = "no", ["phishing"] = "aware",
+            },
+            sessionA,
+            out var evaluatedA)
+        && PublicPreDiagnosticService.TryEvaluate(
+            new Dictionary<string, string>
+            {
+                ["profile"] = "individual", ["equipmentAge"] = "over5",
+            },
+            sessionB,
+            out var evaluatedB)
+        && evaluatedA is not null && evaluatedB is not null && evaluatedA.Score != evaluatedB.Score,
+        "Le recalcul serveur doit utiliser le snapshot demandé par la session, jamais simplement la publication courante.");
+
+    var unknownCatalogServiceConfiguration = ParseJson(v2Json.Replace("\"STORAGE-PERSONAL\"", "\"SERVICE-INEXISTANT\"", StringComparison.Ordinal));
+    var unknownCatalogServiceDraft = await service.SaveDraftAsync(
+        new DiagnosticConfigurationUpdateRequest(unknownCatalogServiceConfiguration, 2), actor, correlation, token);
+    Ensure(
+        unknownCatalogServiceDraft.Code == "DIAGNOSTIC_DRAFT_SAVED"
+        && (await service.PublishAsync(new DiagnosticConfigurationPublishRequest(3, 2), actor, correlation, token)).Code == "DIAGNOSTIC_INVALID",
+        "Un service Billing V2 absent peut etre conserve en brouillon mais ne peut jamais etre publie.");
+
     DiagnosticConfigurationService.Invalidate();
 }
 
@@ -4790,6 +4991,22 @@ static JsonElement BuildSmokeDiagnosticConfiguration()
         .ToArray();
 
     return ParseJson(JsonSerializer.Serialize(new { schemaVersion = 1, contexts }));
+}
+
+static JsonElement BuildSmokePreDiagnosticConfigurationV2()
+{
+    // Le corpus minimal ne definit qu'une qualification exploitable pour
+    // general; les autres contextes restent presents mais inactifs.
+    var contexts = DiagnosticConfigurationRegistry.ContextIds.Select((id, order) => new { id, label = $"Contexte {id}", text = "Texte de contexte", active = id == "general", order, allowsSelfService = id == "general" });
+    var profiles = new[] { new { id = "individual", label = "Particulier", description = "Personnel", active = true, order = 1 }, new { id = "professional", label = "Professionnel", description = "Activité", active = true, order = 2 }, new { id = "association", label = "Association", description = "Structure", active = true, order = 3 } };
+    var allProfiles = new[] { "individual", "professional", "association" };
+    var profileOptions = new[] { new { value = "individual", label = "Particulier", active = true, order = 1, effects = Array.Empty<object>() }, new { value = "professional", label = "Professionnel", active = true, order = 2, effects = Array.Empty<object>() }, new { value = "association", label = "Association", active = true, order = 3, effects = Array.Empty<object>() } };
+    var ageOptions = new[] { new { value = "under3", label = "Moins de trois ans", active = true, order = 1, effects = Array.Empty<object>() }, new { value = "over5", label = "Plus de cinq ans", active = true, order = 2, effects = new object[] { new { mode = "deduction", value = 25, when = Array.Empty<object>() } } } };
+    var commercialOptions = new[] { new { value = "backup_simple", label = "Sauvegarde de fichiers", active = true, order = 1, effects = Array.Empty<object>(), profiles = allProfiles, contexts = new[] { "general" } }, new { value = "unknown", label = "Besoin à préciser", active = true, order = 2, effects = Array.Empty<object>(), profiles = allProfiles, contexts = new[] { "general" } } };
+    var commercialQuestions = new[] { new { id = "commercialIntent", label = "Quel besoin principal souhaitez-vous couvrir ?", hint = (string?)null, profiles = allProfiles, contexts = new[] { "general" }, active = true, order = 1, dynamicOptions = "none", options = commercialOptions } };
+    var profilesCommerce = new[] { new { id = "simple_backup", label = "Sauvegarde", active = true, intents = new[] { "backup_simple" }, scopes = new[] { "files" } }, new { id = "vpn_access", label = "Accès", active = true, intents = new[] { "remote_files" }, scopes = new[] { "files" } }, new { id = "windows_desktop", label = "Windows", active = true, intents = new[] { "windows_desktop" }, scopes = new[] { "windows" } }, new { id = "team_or_structure", label = "Equipe", active = true, intents = new[] { "team_files" }, scopes = new[] { "files" } }, new { id = "team_windows_desktop", label = "Equipe Windows", active = true, intents = new[] { "team_windows" }, scopes = new[] { "windows" } } };
+    var catalogBindings = new[] { new { profileId = "simple_backup", storageServiceCode = "STORAGE-PERSONAL", requiredServiceCodes = new[] { "BASE-SERVICE", "STORAGE-PERSONAL", "BACKUP-PERSONAL" } }, new { profileId = "vpn_access", storageServiceCode = "STORAGE-PERSONAL", requiredServiceCodes = new[] { "BASE-SERVICE", "STORAGE-PERSONAL", "BACKUP-PERSONAL", "VPN-ACCESS" } }, new { profileId = "windows_desktop", storageServiceCode = "STORAGE-PERSONAL", requiredServiceCodes = new[] { "BASE-SERVICE", "STORAGE-PERSONAL", "BACKUP-PERSONAL", "VPN-ACCESS", "RDS-ACCESS" } }, new { profileId = "team_or_structure", storageServiceCode = "STORAGE-SHARED", requiredServiceCodes = new[] { "BASE-SERVICE", "STORAGE-SHARED", "BACKUP-SHARED", "VPN-ACCESS", "USER-ADDITIONAL", "SUPPORT-PLUS" } }, new { profileId = "team_windows_desktop", storageServiceCode = "STORAGE-SHARED", requiredServiceCodes = new[] { "BASE-SERVICE", "STORAGE-SHARED", "BACKUP-SHARED", "VPN-ACCESS", "RDS-ACCESS", "USER-ADDITIONAL", "SUPPORT-PLUS" } } };
+    return ParseJson(JsonSerializer.Serialize(new { schemaVersion = 2, profiles, categories = new[] { new { id = "equipment", label = "Équipements", active = true, order = 1, weights = new { individual = 100, professional = 100, association = 100 } } }, questions = new object[] { new { id = "profile", categoryId = (string?)null, label = "Profil concerné", hint = (string?)null, profiles = allProfiles, required = true, active = true, order = 1, when = Array.Empty<object>(), options = profileOptions }, new { id = "equipmentAge", categoryId = "equipment", label = "Âge du matériel", hint = (string?)null, profiles = allProfiles, required = true, active = true, order = 2, when = Array.Empty<object>(), options = ageOptions } }, levels = new[] { new { id = "good", label = "Bon", minimumScore = 85, order = 1, description = (string?)null }, new { id = "risk", label = "Risque important", minimumScore = 0, order = 2, description = (string?)null } }, maximumPriorities = 3, priorities = new[] { new { categoryId = "equipment", threshold = 70, title = "Matériel à prévoir", body = "Prévoir une amélioration du matériel.", order = 1 } }, positives = new[] { new { categoryId = "equipment", threshold = 85, text = "Matériel adapté à l'usage déclaré.", order = 1 } }, contexts, commerce = new { minimumStorageGb = 1, maximumStorageGb = 256, minimumUsers = 1, maximumUsers = 11, maximumSites = 1, compatibleScopes = new[] { "files", "windows" }, humanReviewIntents = new[] { "unknown" }, questions = commercialQuestions, profiles = profilesCommerce, catalogBindings } }));
 }
 
 static JsonElement ParseJson(string payload)

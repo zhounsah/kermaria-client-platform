@@ -3,7 +3,7 @@ import type {
   DiagnosticAnswers,
   DiagnosticBillingMappingConfig,
   DiagnosticConditionConfig,
-  DiagnosticConfiguration,
+  LegacyDiagnosticConfiguration,
   DiagnosticRecommendation,
   DiagnosticRecommendationConfig,
 } from "@kermaria/shared";
@@ -49,7 +49,7 @@ const FIXED_ANSWER_DEFAULTS = {
 
 export function canContextProduceFormula(
   context: DiagnosticContextId,
-  configuration: DiagnosticConfiguration = DEFAULT_DIAGNOSTIC_CONFIGURATION,
+  configuration: LegacyDiagnosticConfiguration = DEFAULT_DIAGNOSTIC_CONFIGURATION,
 ): boolean {
   const definition = resolveDiagnosticContextConfig(context, configuration);
   return definition.formulaEligible && definition.billingMapping !== null;
@@ -60,7 +60,7 @@ export function buildAdaptiveDiagnosticOutcome(
   answers: DiagnosticAnswerMap,
   catalog: BillingV2PublicCatalog,
   recommendationConfig?: DiagnosticRecommendationConfig,
-  configuration: DiagnosticConfiguration = DEFAULT_DIAGNOSTIC_CONFIGURATION,
+  configuration: LegacyDiagnosticConfiguration = DEFAULT_DIAGNOSTIC_CONFIGURATION,
 ): AdaptiveDiagnosticOutcome {
   const definition = resolveDiagnosticContextConfig(context, configuration);
   const guidanceRule = definition.guidance.find((rule) =>

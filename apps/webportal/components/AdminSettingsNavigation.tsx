@@ -4,7 +4,6 @@ import { usePathname } from "next/navigation";
 const items = [
   { href: "/admin/settings", label: "Vue d'ensemble" },
   { href: "/admin/settings/messages", label: "Messages" },
-  { href: "/admin/settings/diagnostic", label: "Diagnostic" },
   { href: "/admin/settings/billing", label: "Facturation" },
   { href: "/admin/settings/demonstrations", label: "D\u00e9monstrations" },
   { href: "/admin/settings/integrations", label: "Int\u00e9grations" },

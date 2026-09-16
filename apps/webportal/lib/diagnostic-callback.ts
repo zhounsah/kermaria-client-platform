@@ -2,6 +2,8 @@ import type { PreDiagnosticAnswers } from "@/lib/pre-diagnostic";
 
 export type DiagnosticCallbackPayload = {
   answers: PreDiagnosticAnswers;
+  /** Version publiée rendue au visiteur ; 0 = fallback code historique. */
+  configurationVersion: number;
   name: string;
   phone: string;
   email: string | null;
@@ -65,6 +67,8 @@ export function validateDiagnosticCallbackPayload(value: unknown): { payload: Di
   if (body.consent !== true) errors.consent = "Votre accord est nécessaire pour être recontacté.";
 
   const rawAnswers = body.answers;
+  const configurationVersion = typeof body.configurationVersion === "number" && Number.isInteger(body.configurationVersion) && body.configurationVersion >= 0 && body.configurationVersion <= 1_000_000 ? body.configurationVersion : -1;
+  if (configurationVersion < 0) errors.answers = "La version du diagnostic est invalide.";
   if (!rawAnswers || typeof rawAnswers !== "object" || Array.isArray(rawAnswers)) {
     errors.answers = "Les réponses du diagnostic sont invalides.";
   }
@@ -76,13 +80,18 @@ export function validateDiagnosticCallbackPayload(value: unknown): { payload: Di
   const profile = answers.profile;
   const requiredAnswers = ["profile", "equipmentCount", "equipmentAge", "performance", "updates", "backup", "network", "wifiCoverage", "mfa", "sharedAccounts", "phishing"];
   if (profile === "professional" || profile === "association") requiredAnswers.push("guestWifi", "continuity", "businessDependence");
-  if (!(["individual", "professional", "association"] as string[]).includes(profile ?? "") || requiredAnswers.some((key) => !answers[key]) || Object.keys(answers).length !== requiredAnswers.length || Object.keys(answers).some((key) => !requiredAnswers.includes(key))) errors.answers = "Le profil ou les réponses du diagnostic sont invalides.";
+  // Une v2 est contrôlée exactement par API-INTERNAL avec son snapshot publié.
+  // Le BFF ne fait ici qu'une validation de forme, pour ne pas conserver une
+  // seconde liste de questions qui bloquerait les changements administratifs.
+  if (!(["individual", "professional", "association"] as string[]).includes(profile ?? "")
+    || (configurationVersion === 0 && (requiredAnswers.some((key) => !answers[key]) || Object.keys(answers).length !== requiredAnswers.length || Object.keys(answers).some((key) => !requiredAnswers.includes(key))))) errors.answers = "Le profil ou les réponses du diagnostic sont invalides.";
 
   if (Object.keys(errors).length) return { payload: null, errors };
   return {
     errors,
     payload: {
       answers: answers as PreDiagnosticAnswers,
+      configurationVersion,
       name,
       phone,
       email: emailValue || null,

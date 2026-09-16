@@ -20,6 +20,11 @@ public interface IDiagnosticConfigurationRepository
         string state,
         CancellationToken cancellationToken);
 
+    /// <summary>Charge le snapshot d'une version effectivement publiee.</summary>
+    Task<StoredDiagnosticConfiguration?> GetPublishedRevisionAsync(
+        int version,
+        CancellationToken cancellationToken);
+
     Task<bool> TrySaveDraftAsync(
         StoredDiagnosticConfiguration draft,
         int expectedVersion,

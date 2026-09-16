@@ -2,7 +2,7 @@
 
 import type {
   BillingV2PublicCatalog,
-  DiagnosticConfiguration,
+  LegacyDiagnosticConfiguration,
   DiagnosticRecommendationConfig,
 } from "@kermaria/shared";
 import { useMemo, useState } from "react";
@@ -37,7 +37,7 @@ export function AdminDiagnosticSimulator({
   recommendationConfig,
 }: {
   catalog: BillingV2PublicCatalog;
-  configuration: DiagnosticConfiguration;
+  configuration: LegacyDiagnosticConfiguration;
   recommendationConfig: DiagnosticRecommendationConfig;
 }) {
   const [context, setContext] = useState<DiagnosticContextId>("backup");

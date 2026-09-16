@@ -1,8 +1,9 @@
 import "server-only";
 
-import type { DiagnosticConfiguration } from "@kermaria/shared";
+import type { DiagnosticConfiguration, PreDiagnosticConfiguration } from "@kermaria/shared";
 
 import { DEFAULT_DIAGNOSTIC_CONFIGURATION } from "@/lib/diagnostic-context";
+import { DEFAULT_PRE_DIAGNOSTIC_CONFIGURATION_V2 } from "@/lib/pre-diagnostic";
 import { validateDiagnosticConfiguration } from "@/lib/diagnostic-configuration-validation";
 import { getPublicDiagnosticConfiguration } from "@/lib/internal-api";
 
@@ -27,4 +28,28 @@ export async function resolvePublishedDiagnosticConfiguration(): Promise<
 
   const { configuration } = validateDiagnosticConfiguration(payload);
   return configuration ?? DEFAULT_DIAGNOSTIC_CONFIGURATION;
+}
+
+/** La v2 est la seule configuration capable de piloter le nouveau
+ * pré-diagnostic. Une v1 publiée reste lisible pour l'ancien moteur mais ne
+ * change pas le parcours validé du commit 77fc11c. */
+export async function resolvePublishedPreDiagnosticConfiguration(): Promise<{
+  configuration: PreDiagnosticConfiguration | null;
+  version: number;
+}> {
+  const result = await getPublicDiagnosticConfiguration();
+  const payload = result.data?.configuration ?? null;
+  const version = result.data?.source === "database" && Number.isInteger(result.data.version) && result.data.version > 0
+    ? result.data.version
+    : 0;
+  if (payload === null) {
+    return { configuration: DEFAULT_PRE_DIAGNOSTIC_CONFIGURATION_V2, version: 0 };
+  }
+  const { configuration } = validateDiagnosticConfiguration(payload);
+  return {
+    configuration: configuration?.schemaVersion === 2
+      ? configuration
+      : DEFAULT_PRE_DIAGNOSTIC_CONFIGURATION_V2,
+    version,
+  };
 }

@@ -1,4 +1,7 @@
 using System.Text;
+using System.Text.Json;
+using Kermaria.ApiInternal.Contracts;
+using Kermaria.ApiInternal.Data.Configuration;
 
 namespace Kermaria.ApiInternal.Services;
 
@@ -9,6 +12,14 @@ namespace Kermaria.ApiInternal.Services;
 /// </summary>
 public static class PublicPreDiagnosticService
 {
+    /// <summary>
+    /// La version 0 est le seul fallback explicite. Toute version positive doit
+    /// avoir été résolue par le dépôt vers une révision publiée réelle ; sinon
+    /// elle ne peut jamais tomber silencieusement sur les règles historiques.
+    /// </summary>
+    public static bool IsPublishedRevisionUsable(int? version, JsonElement? configuration)
+        => version == 0 || (version is > 0 && configuration is { ValueKind: JsonValueKind.Object });
+
     private static readonly IReadOnlySet<string> IndividualKeys = new HashSet<string>(
         ["profile", "equipmentCount", "equipmentAge", "performance", "updates", "backup",
          "network", "wifiCoverage", "mfa", "sharedAccounts", "phishing"],
@@ -83,6 +94,135 @@ public static class PublicPreDiagnosticService
         return true;
     }
 
+    /// <summary>
+    /// Recalcul avec la configuration publiee. Une v1 ou une configuration
+    /// absente conserve le moteur historique afin qu'une migration non publiee
+    /// ne modifie jamais le parcours public.
+    /// </summary>
+    public static bool TryEvaluate(
+        IReadOnlyDictionary<string, string>? answers,
+        JsonElement? configuration,
+        out PublicPreDiagnosticResult? result)
+    {
+        result = null;
+        if (configuration is not { ValueKind: JsonValueKind.Object } element
+            || !element.TryGetProperty("schemaVersion", out var version)
+            || version.ValueKind != JsonValueKind.Number
+            || !version.TryGetInt32(out var schemaVersion)
+            || schemaVersion != 2)
+        {
+            return TryEvaluate(answers, out result);
+        }
+
+        PreDiagnosticConfigurationModel? model;
+        try { model = element.Deserialize<PreDiagnosticConfigurationModel>(DiagnosticConfigurationRegistry.SerializerOptions); }
+        catch (JsonException) { return false; }
+        return model is not null && TryEvaluateV2(model, answers, out result);
+    }
+
+    private static bool TryEvaluateV2(
+        PreDiagnosticConfigurationModel configuration,
+        IReadOnlyDictionary<string, string>? answers,
+        out PublicPreDiagnosticResult? result)
+    {
+        result = null;
+        if (answers is null || answers.Count is 0 or > 80
+            || !answers.TryGetValue("profile", out var profile)) return false;
+        var activeProfiles = (configuration.Profiles ?? [])
+            .Where(item => item is not null && item.Active && item.Id is not null)
+            .ToDictionary(item => item.Id!, StringComparer.Ordinal);
+        if (!activeProfiles.ContainsKey(profile)) return false;
+        var questions = (configuration.Questions ?? [])
+            .Where(item => item is not null && item.Active && (item.Profiles ?? []).Contains(profile))
+            .OrderBy(item => item.Order)
+            .Where(item => (item.When ?? []).All(condition => Matches(condition, answers)))
+            .ToArray();
+        var required = questions.Where(item => item.Required).Select(item => item.Id!).ToHashSet(StringComparer.Ordinal);
+        var visible = questions.Select(item => item.Id!).ToHashSet(StringComparer.Ordinal);
+        // Une question facultative visible peut etre omise, mais une reponse
+        // fournie doit rester une option active de cette meme revision. Cela
+        // aligne l'autorite serveur avec le wizard sans accepter de cle cachee.
+        if (required.Any(key => !answers.ContainsKey(key)) || answers.Keys.Any(key => !visible.Contains(key))) return false;
+        foreach (var question in questions)
+        {
+            if (!answers.TryGetValue(question.Id!, out var value)) continue;
+            var allowed = (question.Options ?? []).Where(option => option is not null && option.Active).Select(option => option.Value).ToHashSet(StringComparer.Ordinal);
+            if (question.Id is null || !allowed.Contains(value)) return false;
+        }
+
+        var categories = (configuration.Categories ?? [])
+            .Where(category => category is not null && category.Active && category.Id is not null
+                && category.Weights is not null && category.Weights.TryGetValue(profile, out var weight) && weight > 0)
+            .OrderBy(category => category.Order)
+            .Select(category => new
+            {
+                Id = category.Id!,
+                Label = category.Label ?? category.Id!,
+                Weight = category.Weights![profile],
+                Score = EvaluateCategory(configuration, category.Id!, profile, answers),
+            })
+            .ToArray();
+        if (categories.Length == 0) return false;
+        var score = Math.Clamp((int)Math.Round(categories.Sum(category => category.Score * category.Weight / 100m), MidpointRounding.AwayFromZero), 0, 100);
+        var level = (configuration.Levels ?? [])
+            .Where(item => item is not null && score >= item.MinimumScore)
+            .OrderByDescending(item => item.MinimumScore).ThenBy(item => item.Order)
+            .FirstOrDefault()?.Label ?? "Risque important";
+        var priorities = categories
+            .SelectMany(category => (configuration.Priorities ?? [])
+                .Where(rule => rule is not null && rule.CategoryId == category.Id && category.Score < rule.Threshold)
+                .Select(rule => new { category.Score, rule.Order, Title = rule.Title ?? "Priorité" }))
+            .OrderBy(item => item.Score).ThenBy(item => item.Order)
+            .Take(Math.Clamp(configuration.MaximumPriorities, 1, 5))
+            .Select(item => item.Title)
+            .ToArray();
+        var outputCategories = categories.Select(category => new PublicPreDiagnosticCategory(category.Label, category.Score)).ToArray();
+        var labels = questions.ToDictionary(item => item.Id!, item => item.Label ?? item.Id!, StringComparer.Ordinal);
+        // Les labels sont indexes par question/valeur pour ne jamais reutiliser
+        // une valeur brute non controlee dans l'e-mail.
+        var answerLabels = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var question in questions)
+        {
+            if (!answers.TryGetValue(question.Id!, out var answer)) continue;
+            var selected = (question.Options ?? []).FirstOrDefault(option => option?.Value == answer);
+            answerLabels[question.Id!] = selected?.Label ?? answer;
+        }
+        result = new PublicPreDiagnosticResult(score, level, outputCategories, priorities, answers, labels, answerLabels);
+        return true;
+    }
+
+    private static int EvaluateCategory(PreDiagnosticConfigurationModel configuration, string categoryId, string profile, IReadOnlyDictionary<string, string> answers)
+    {
+        var score = 100;
+        foreach (var question in (configuration.Questions ?? []).Where(question => question is not null && question.Active && question.CategoryId == categoryId && (question.Profiles ?? []).Contains(profile) && (question.When ?? []).All(condition => Matches(condition, answers))).OrderBy(question => question.Order))
+        {
+            if (question.Id is null || !answers.TryGetValue(question.Id, out var answer)) continue;
+            var option = (question.Options ?? []).FirstOrDefault(item => item is not null && item.Active && item.Value == answer);
+            foreach (var effect in option?.Effects ?? [])
+            {
+                if (effect is null || !(effect.When ?? []).All(condition => Matches(condition, answers))) continue;
+                score = effect.Mode == "absolute" ? effect.Value : score - effect.Value;
+                score = Math.Clamp(score, 0, 100);
+            }
+        }
+        return score;
+    }
+
+    private static bool Matches(DiagnosticConditionModel? condition, IReadOnlyDictionary<string, string> answers)
+    {
+        if (condition?.QuestionId is null || condition.Operator is null) return false;
+        answers.TryGetValue(condition.QuestionId, out var value);
+        var values = condition.Values ?? [];
+        return condition.Operator switch
+        {
+            "equals" => value == values.FirstOrDefault(),
+            "not_equals" => value != values.FirstOrDefault(),
+            "one_of" => value is not null && values.Contains(value),
+            "answered" => !string.IsNullOrEmpty(value),
+            _ => false,
+        };
+    }
+
     public static string BuildEmailBody(PublicPreDiagnosticCallback callback, PublicPreDiagnosticResult result, string correlationId)
     {
         var builder = new StringBuilder();
@@ -106,7 +246,12 @@ public static class PublicPreDiagnosticService
         builder.AppendLine().AppendLine("RÉSULTATS").AppendLine();
         foreach (var category in result.Categories) builder.AppendLine($"{category.Label} : {category.Score}/100");
         builder.AppendLine().AppendLine("RÉPONSES UTILES").AppendLine();
-        foreach (var key in callback.Answers.Keys.OrderBy(key => key, StringComparer.Ordinal)) builder.AppendLine($"{Labels[key]} : {Describe(key, callback.Answers[key])}");
+        foreach (var key in callback.Answers.Keys.OrderBy(key => key, StringComparer.Ordinal))
+        {
+            var label = result.QuestionLabels?.GetValueOrDefault(key) ?? Labels[key];
+            var value = result.AnswerLabels?.GetValueOrDefault(key) ?? Describe(key, callback.Answers[key]);
+            builder.AppendLine($"{label} : {value}");
+        }
         return builder.ToString().Trim();
     }
 
@@ -144,5 +289,12 @@ public static class PublicPreDiagnosticService
 }
 
 public sealed record PublicPreDiagnosticCategory(string Label, int Score);
-public sealed record PublicPreDiagnosticResult(int Score, string Level, IReadOnlyList<PublicPreDiagnosticCategory> Categories, IReadOnlyList<string> Priorities, IReadOnlyDictionary<string, string> Answers);
+public sealed record PublicPreDiagnosticResult(
+    int Score,
+    string Level,
+    IReadOnlyList<PublicPreDiagnosticCategory> Categories,
+    IReadOnlyList<string> Priorities,
+    IReadOnlyDictionary<string, string> Answers,
+    IReadOnlyDictionary<string, string>? QuestionLabels = null,
+    IReadOnlyDictionary<string, string>? AnswerLabels = null);
 public sealed record PublicPreDiagnosticCallback(string Name, string Phone, string? Email, string? Organisation, string? PreferredTime, string? Comment, IReadOnlyDictionary<string, string> Answers);

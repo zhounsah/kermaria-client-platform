@@ -2046,7 +2046,8 @@ app.MapPost(
     "/internal/public/diagnostic-callback",
     async (
         HttpContext context,
-        IEmailDispatchService emailDispatch) =>
+        IEmailDispatchService emailDispatch,
+        IDiagnosticConfigurationService diagnosticConfigurationService) =>
     {
         var payload = await ReadPayload<DiagnosticCallbackPayload>(context);
         var correlationId = context.GetCorrelationId();
@@ -2056,7 +2057,23 @@ app.MapPost(
         var organisation = payload?.Organisation is null ? null : PublicPreDiagnosticService.NormalizeSingleLine(payload.Organisation);
         var preferredTime = payload?.PreferredTime is null ? null : PublicPreDiagnosticService.NormalizeSingleLine(payload.PreferredTime);
         var comment = payload?.Comment is null ? null : PublicPreDiagnosticService.NormalizeMultiline(payload.Comment);
+        // Le navigateur ne transmet jamais les règles : uniquement la version
+        // publiée avec laquelle son questionnaire a été rendu. Une version 0
+        // désigne explicitement le fallback code (aucune v2 publiée), ce qui
+        // évite qu'une publication intervenue entre-temps soit appliquée à une
+        // session commencée sur le parcours historique.
+        var configuration = payload?.ConfigurationVersion switch
+        {
+            0 => (JsonElement?)null,
+            > 0 => await diagnosticConfigurationService.GetPublishedRevisionAsync(
+                payload.ConfigurationVersion.Value,
+                context.RequestAborted),
+            _ => null,
+        };
         if (payload is null
+            || payload.ConfigurationVersion is null
+            || payload.ConfigurationVersion < 0
+            || !PublicPreDiagnosticService.IsPublishedRevisionUsable(payload.ConfigurationVersion, configuration)
             || payload.Consent != true
             || string.IsNullOrWhiteSpace(name)
             || string.IsNullOrWhiteSpace(phone)
@@ -2071,7 +2088,10 @@ app.MapPost(
             || (!string.IsNullOrWhiteSpace(email)
                 && !System.Text.RegularExpressions.Regex.IsMatch(
                     email, "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$"))
-            || !PublicPreDiagnosticService.TryEvaluate(payload.Answers, out var diagnostic))
+            || !PublicPreDiagnosticService.TryEvaluate(
+                payload.Answers,
+                configuration,
+                out var diagnostic))
         {
             return Results.Json(
                 new ApiError("INVALID_REQUEST", "La demande de rappel est invalide.", correlationId),
@@ -2102,6 +2122,24 @@ app.MapPost(
             return Results.Json(new ApiError(result.Code, result.Message, correlationId), statusCode: statusCode);
         }
         return Results.Ok(new { code = "CALLBACK_SENT", correlation_id = correlationId });
+    });
+
+app.MapPost(
+    "/internal/public/diagnostic/recommendation",
+    async (HttpContext context, IDiagnosticConfigurationService diagnosticConfigurationService, IBillingV2PublicCatalogService catalogService) =>
+    {
+        var payload = await ReadPayload<DiagnosticRecommendationPayload>(context);
+        var correlationId = context.GetCorrelationId();
+        var configuration = payload?.ConfigurationVersion is > 0
+            ? await diagnosticConfigurationService.GetPublishedRevisionAsync(payload.ConfigurationVersion.Value, context.RequestAborted)
+            : null;
+        if (payload is null || payload.ConfigurationVersion is null || payload.ConfigurationVersion < 0
+            || !PublicPreDiagnosticService.IsPublishedRevisionUsable(payload.ConfigurationVersion, configuration)
+            || payload.Profile != payload.HealthAnswers?.GetValueOrDefault("profile")
+            || !PublicPreDiagnosticCommerceService.TryRecommend(configuration, payload.Context, payload.HealthAnswers,
+                payload.CommercialAnswers, await catalogService.GetCatalogAsync(context.RequestAborted), out var recommendation))
+            return Results.Json(new ApiError("INVALID_REQUEST", "La recommandation demandee est invalide.", correlationId), statusCode: 400);
+        return Results.Ok(recommendation);
     });
 
 // V0.26 : inscription self-service (anonyme, protégé par X-Service-Auth).
