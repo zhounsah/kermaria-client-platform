@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { ManagedMarkdown } from "@/components/ManagedMarkdown";
 import { ServiceBreadcrumb } from "@/components/PublicServiceComponents";
 import {
@@ -22,14 +23,26 @@ type PublicStorefrontPageProps = {
   content: StorefrontPageContent;
   serviceSlug?: StorefrontServiceSlug | null;
   selfServiceOrderable?: boolean | null;
+  /** Contenu spécifique à une page, inséré avant les explications CMS. */
+  beforeSections?: ReactNode;
+  /** Variante courte pour une page dont le contenu utile suit immédiatement. */
+  compactHero?: boolean;
+  heroLead?: string;
+  heroTitle?: string;
+  showHeroActions?: boolean;
 };
 
 export function PublicStorefrontPage({
   breadcrumbItems,
   commercialActions = null,
   content,
+  beforeSections = null,
+  compactHero = false,
+  heroLead,
+  heroTitle,
   serviceSlug = null,
   selfServiceOrderable = null,
+  showHeroActions = true,
 }: PublicStorefrontPageProps) {
   const fallbackCta = resolveStorefrontPublicCta(content, selfServiceOrderable);
   const diagnosticContext = serviceSlug
@@ -64,24 +77,28 @@ export function PublicStorefrontPage({
           content.faq,
         )}
       />
-      <div className="services-page storefront-page">
+      <div className={`services-page storefront-page${compactHero ? " storefront-page-compact" : ""}`}>
         <ServiceBreadcrumb items={breadcrumbItems} />
 
-        <section className="service-hero">
+        <section className={`service-hero${compactHero ? " service-hero-compact storefront-compact-hero" : ""}`}>
           <div>
             <span className="card-kicker">Zachary IT</span>
-            <h1>{content.title}</h1>
-            <p>{content.lead}</p>
+            <h1>{heroTitle ?? content.title}</h1>
+            <p>{heroLead ?? content.lead}</p>
           </div>
-          <div className="button-row storefront-action-row">
-            <Link className="button" href={primaryAction.href}>{primaryAction.label}</Link>
-            {secondaryAction ? (
-              <Link className="button button-secondary" href={secondaryAction.href}>
-                {secondaryAction.label}
-              </Link>
-            ) : null}
-          </div>
+          {showHeroActions ? (
+            <div className="button-row storefront-action-row">
+              <Link className="button" href={primaryAction.href}>{primaryAction.label}</Link>
+              {secondaryAction ? (
+                <Link className="button button-secondary" href={secondaryAction.href}>
+                  {secondaryAction.label}
+                </Link>
+              ) : null}
+            </div>
+          ) : null}
         </section>
+
+        {beforeSections}
 
         {content.sections.map((section) => (
           <section className="service-section storefront-section" key={section.heading}>

@@ -2351,6 +2351,14 @@ export interface BillingV2PublicService {
   discountEligible: boolean;
   publicVisible: boolean;
   selfServiceOrderable: boolean;
+  /**
+   * Décision commerciale administrée dans Billing V2. Elle n'a aucune
+   * autorité sur les montants ni sur les lignes tarifaires.
+   *
+   * `null` ne subsiste que pour les catalogues antérieurs à la migration : la
+   * vitrine applique alors son repli de compatibilité fermé.
+   */
+  publicOrderingMode: PublicCommercialOrderingMode | null;
   /** Metadonnee commerciale : sans autorite sur les lignes tarifaires. */
   billingType: string;
   flatPriceComponents: BillingV2PublicPriceComponent[] | null;
@@ -2466,6 +2474,8 @@ export type PublicCommercialService = {
   included: string[];
   notIncluded: string[];
   orderingMode: PublicCommercialOrderingMode;
+  /** Nombre d'offres publiques actives qui composent ce service. */
+  offerCount: number;
   /** Vrai uniquement pour le mode `direct`, jamais par dedution. */
   directlyOrderable: boolean;
   requiresQuote: boolean;

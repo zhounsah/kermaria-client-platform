@@ -31,6 +31,11 @@ const CATALOG_PAYMENT_MODES = new Set(["monthly", "upfront"]);
 const CATALOG_BILLING_TYPES = new Set(["recurring", "one_time", "included"]);
 const CATALOG_DEFAULT_SCOPES = new Set(["subscription", "user"]);
 const CATALOG_PRICING_MODELS = new Set(["fixed", "tiered"]);
+const CATALOG_PUBLIC_ORDERING_MODES = new Set([
+  "quote",
+  "offer_component",
+  "direct",
+]);
 /**
  * Environnements reellement existants chez chaque fournisseur.
  *
@@ -133,6 +138,21 @@ function buildServiceUpdate(source: Record<string, unknown>) {
     return null;
   }
 
+  const publicOrderingMode = optionalEnum(
+    source.publicOrderingMode,
+    CATALOG_PUBLIC_ORDERING_MODES,
+  );
+  // Ce champ porte une decision commerciale explicite. Une valeur fournie
+  // mais inconnue ne doit pas etre retiree silencieusement du PATCH : le BFF
+  // refuse la commande avant que l'API-INTERNAL n'applique sa validation
+  // d'autorite (offre publiee ou parcours direct reel).
+  if (
+    source.publicOrderingMode !== undefined &&
+    publicOrderingMode === undefined
+  ) {
+    return null;
+  }
+
   return {
     path: "/services/" + id,
     method: "PATCH" as const,
@@ -144,6 +164,7 @@ function buildServiceUpdate(source: Record<string, unknown>) {
       displayOrder: optionalInteger(source.displayOrder, 0, 100000),
       publicVisible: optionalBoolean(source.publicVisible),
       selfServiceOrderable: optionalBoolean(source.selfServiceOrderable),
+      publicOrderingMode,
       discountEligible: optionalBoolean(source.discountEligible),
       mandatoryForSubscription: optionalBoolean(
         source.mandatoryForSubscription,

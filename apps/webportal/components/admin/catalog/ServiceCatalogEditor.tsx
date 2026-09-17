@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { PageHeader } from "@/components/PageHeader";
 import type { BillingV2AdminService } from "@/lib/internal-api";
+import type { PublicCommercialOrderingMode } from "@kermaria/shared";
 import { CatalogFeedback, CatalogField, CatalogNavigation, CatalogTabs, CatalogToggle, ImmutableCode, StickyActions, adminCatalogStyles as styles, useUnsavedChangesGuard } from "./AdminCatalogUi";
 import { ServicePricingPanel } from "./ServicePricingPanel";
 import { ServiceTiersPanel } from "./ServiceTiersPanel";
@@ -13,13 +14,14 @@ import { useAdminCatalogCommand } from "./useAdminCatalogCommand";
 type ServiceTab = "essential" | "tiers" | "pricing" | "commercialization";
 type ServiceForm = {
   name: string; description: string; category: string; status: string; displayOrder: number;
-  publicVisible: boolean; selfServiceOrderable: boolean; discountEligible: boolean; mandatoryForSubscription: boolean;
+  publicVisible: boolean; selfServiceOrderable: boolean; publicOrderingMode: PublicCommercialOrderingMode; discountEligible: boolean; mandatoryForSubscription: boolean;
 };
 
 function toForm(service: BillingV2AdminService): ServiceForm {
   return {
     name: service.name, description: service.description ?? "", category: service.category ?? "", status: service.status,
     displayOrder: service.displayOrder, publicVisible: service.publicVisible, selfServiceOrderable: service.selfServiceOrderable,
+    publicOrderingMode: service.publicOrderingMode,
     discountEligible: service.discountEligible, mandatoryForSubscription: service.mandatoryForSubscription,
   };
 }
@@ -69,7 +71,14 @@ export function ServiceCatalogEditor({ asOf, service, tab }: { asOf: string; ser
           </dl><p className={styles.hint}>Ces propriétés structurantes sont immuables après la création du service.</p></div>
         </> : <div className={styles.formGrid}>
           <CatalogToggle checked={form.publicVisible} description="Le service peut apparaître sur les surfaces publiques." label="Visible publiquement" name="publicVisible" onChange={(value) => setForm({ ...form, publicVisible: value })} />
-          <CatalogToggle checked={form.selfServiceOrderable} description="Le client peut commander ce service sans formule." label="Commandable en libre-service" name="selfServiceOrderable" onChange={(value) => setForm({ ...form, selfServiceOrderable: value })} />
+          <CatalogField full htmlFor="service-public-ordering-mode" label="Mode de commercialisation publique" hint="Ce réglage décide du parcours présenté sur la vitrine ; il ne modifie ni le prix ni les règles de facturation.">
+            <select id="service-public-ordering-mode" onChange={(event) => setForm({ ...form, publicOrderingMode: event.currentTarget.value as PublicCommercialOrderingMode })} value={form.publicOrderingMode}>
+              <option value="quote">Sur devis — le tarif peut être affiché, mais le périmètre est confirmé avant la mise en service.</option>
+              <option value="offer_component">Disponible dans une offre — le service est proposé dans une offre publique existante.</option>
+              <option disabled={!service.directOrderingAvailable} value="direct">Commande directe{service.directOrderingAvailable ? " — un configurateur individuel est disponible." : " — indisponible : aucun parcours de commande individuelle n’est configuré."}</option>
+            </select>
+          </CatalogField>
+          <CatalogToggle checked={form.selfServiceOrderable} description="Drapeau technique Billing V2 requis par les parcours libre-service existants. Il ne décide plus seul du mode commercial public." label="Autoriser les parcours libre-service Billing V2" name="selfServiceOrderable" onChange={(value) => setForm({ ...form, selfServiceOrderable: value })} />
           <CatalogToggle checked={form.discountEligible} description="Les remises d’engagement peuvent s’appliquer aux lignes mensuelles." label="Éligible aux remises" name="discountEligible" onChange={(value) => setForm({ ...form, discountEligible: value })} />
           <CatalogToggle checked={form.mandatoryForSubscription} description="Le service fait partie du socle obligatoire de l’abonnement." label="Obligatoire pour l’abonnement" name="mandatoryForSubscription" onChange={(value) => setForm({ ...form, mandatoryForSubscription: value })} />
           <CatalogField htmlFor="service-order" label="Ordre d’affichage"><input id="service-order" min={0} onChange={(e) => setForm({ ...form, displayOrder: Number(e.currentTarget.value) })} type="number" value={form.displayOrder} /></CatalogField>

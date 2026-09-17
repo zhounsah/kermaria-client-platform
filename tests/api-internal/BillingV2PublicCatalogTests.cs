@@ -43,7 +43,39 @@ public static class BillingV2PublicCatalogTests
         VerifyPureOneTimeSelectionNeverBecomesASubscription();
         VerifyDirectRecurringSelectionRenewsWithoutAPreset();
         VerifyDirectRecurringWithSetupStillRenews();
+        VerifyPublicOrderingModeStaysSeparateFromPricing();
         return Task.CompletedTask;
+    }
+
+    private static void VerifyPublicOrderingModeStaysSeparateFromPricing()
+    {
+        var service = new BillingV2PublicService(
+            "VPS-LOCAL",
+            "VPS local",
+            "Cloud",
+            "subscription",
+            FlatMonthlyAmountCents: 590,
+            Tiers: [],
+            PublicOrderingMode: BillingV2PublicOrderingModes.Quote);
+        var offered = service with
+        {
+            PublicOrderingMode = BillingV2PublicOrderingModes.OfferComponent
+        };
+
+        Ensure(
+            offered.FlatMonthlyAmountCents == service.FlatMonthlyAmountCents
+            && offered.FlatComponents.Single().AmountCents
+                == service.FlatComponents.Single().AmountCents,
+            "Le mode de commercialisation ne modifie aucune composante tarifaire.");
+        Ensure(
+            BillingV2PublicOrderingModes.SupportsDirectOrdering("VPS-LOCAL")
+            && !BillingV2PublicOrderingModes.SupportsDirectOrdering("VPN-ACCESS"),
+            "Le direct reste borné aux parcours individuels réellement implémentés.");
+        Ensure(
+            BillingV2PublicOrderingModes.Normalize("DIRECT")
+                == BillingV2PublicOrderingModes.Direct
+            && BillingV2PublicOrderingModes.Normalize("invalid") is null,
+            "Le registre de modes est fermé côté API.");
     }
 
     private static void VerifyTierAttributesStayDisplayOnly()

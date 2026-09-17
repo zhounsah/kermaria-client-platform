@@ -37,11 +37,7 @@ export function PublicCommercialTariffCatalog({
     <section className="service-section commercial-tariffs" aria-labelledby="commercial-tariffs-title">
       <header className="service-section-heading commercial-tariffs-heading">
         <span className="card-kicker">Catalogue des services</span>
-        <h2 id="commercial-tariffs-title">Trouvez le service adapté à votre besoin</h2>
-        <p>
-          Chaque tarif indique son rythme de facturation, les éventuels frais de mise en service
-          et la marche à suivre. Les prestations à étudier restent proposées sur devis.
-        </p>
+        <h2 id="commercial-tariffs-title">Catalogue tarifaire</h2>
       </header>
 
       {categories.length > 1 ? (
@@ -133,7 +129,7 @@ function CommercialTariffCard({
         ) : null}
 
       <div className="commercial-tariff-status">
-        {orderingStatusLabel(service.orderingMode)}
+        {orderingStatusLabel(service)}
       </div>
 
       <div className="commercial-tariff-actions">
@@ -175,9 +171,13 @@ function PriceSummary({
   );
 }
 
-function orderingStatusLabel(service: PublicCommercialService["orderingMode"]) {
-  if (service === "direct") return "Commande en ligne disponible";
-  if (service === "offer_component") return "Disponible dans une offre existante";
+function orderingStatusLabel(service: PublicCommercialService) {
+  if (service.orderingMode === "direct") return "Commande en ligne disponible";
+  if (service.orderingMode === "offer_component") {
+    return service.offerCount > 1
+      ? "Disponible dans plusieurs offres"
+      : "Disponible dans une offre";
+  }
   return "Périmètre confirmé avant mise en service";
 }
 

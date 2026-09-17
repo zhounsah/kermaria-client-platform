@@ -365,6 +365,10 @@ const STOREFRONT_TARIFF_PRESET_BY_SERVICE_CODE: Readonly<Record<string, string>>
   "VPN-ACCESS": "pack-acces-distance",
   "RDS-ACCESS": "pack-bureau-windows-distance",
 };
+const STOREFRONT_DIRECT_TARIFF_SERVICE_CODES = new Set([
+  "VPS-LOCAL",
+  "VPS-CLOUD",
+]);
 const SELF_SERVICE_LABEL_PATTERN = /\b(command(?:er|ez|e|es)?|achet(?:er|ez|e|es)?|achat|configur(?:er|ez|e|es|ation)?)\b/i;
 const GENERIC_AUDIT_LABEL_PATTERN = /\baudit\b/i;
 export function storefrontContentKeyForServiceSlug(
@@ -448,6 +452,37 @@ export function resolveStorefrontTariffAction(
   }
 
   return { label: "Demander un devis", href: "/contact" };
+}
+
+/**
+ * Destination individuelle réellement disponible. Cette liste est un registre
+ * de routes de la vitrine, pas une seconde donnée commerciale : le mode
+ * `direct` reste administré dans Billing V2 et l'API le refuse pour tout
+ * service qui n'a pas ce parcours.
+ */
+export function resolveStorefrontDirectTariffAction(
+  serviceCode: string,
+  selfServiceOrderable: boolean,
+  tiers: readonly { code: string; monthlyAmountCents: number; publicSelectable: boolean }[],
+): StorefrontCta | null {
+  if (
+    !selfServiceOrderable ||
+    !STOREFRONT_DIRECT_TARIFF_SERVICE_CODES.has(serviceCode)
+  ) {
+    return null;
+  }
+
+  const tier = tiers
+    .filter((candidate) => candidate.publicSelectable && candidate.monthlyAmountCents > 0)
+    .sort((left, right) => left.monthlyAmountCents - right.monthlyAmountCents)[0];
+  if (!tier) {
+    return null;
+  }
+
+  return {
+    label: "Configurer",
+    href: `/services/vps/choisir?serviceCode=${encodeURIComponent(serviceCode)}&tierCode=${encodeURIComponent(tier.code)}`,
+  };
 }
 
 

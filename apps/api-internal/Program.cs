@@ -3573,6 +3573,8 @@ app.MapDelete(
             context.RequestAborted);
         return DownloadsOk(context, service, result);
     });
+const long MaxDownloadFileBytes = 256L * 1024 * 1024;
+const long MaxDownloadMultipartOverheadBytes = 1L * 1024 * 1024;
 app.MapPost(
     "/internal/admin/downloads/{id}/file",
     async (
@@ -3609,7 +3611,13 @@ app.MapPost(
                 SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
             context.RequestAborted);
         return DownloadsOk(context, service, result);
-    });
+    })
+    // Kestrel plafonne tout corps a 30 000 000 octets par defaut : un
+    // logiciel de ~29 Mo le depasse deja. Limite propre a cette route,
+    // alignee sur `proxyClientMaxBodySize` du webportal.
+    .WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(
+        MaxDownloadFileBytes + MaxDownloadMultipartOverheadBytes))
+    .WithFormOptions(multipartBodyLengthLimit: MaxDownloadFileBytes);
 app.MapDelete(
     "/internal/admin/downloads/{id}/file",
     async (
@@ -8413,7 +8421,11 @@ static async Task<IResult> CatalogMutationResultAsync(
 {
     var refused = result.Code.EndsWith("_TAKEN", StringComparison.Ordinal)
         || result.Code.EndsWith("_OVERLAP", StringComparison.Ordinal)
-        || result.Code.EndsWith("_NOT_CLOSABLE", StringComparison.Ordinal);
+        || result.Code.EndsWith("_NOT_CLOSABLE", StringComparison.Ordinal)
+        || string.Equals(
+            result.Code,
+            "BILLING_V2_CATALOG_PUBLIC_ORDERING_MODE_INVALID",
+            StringComparison.Ordinal);
 
     await auditService.RecordAsync(
         new AuditEvent(

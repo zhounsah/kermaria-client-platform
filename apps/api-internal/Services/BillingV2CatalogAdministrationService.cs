@@ -202,6 +202,8 @@ public sealed class BillingV2CatalogAdministrationService
     private static readonly string[] AllowedBillingTypes = ["recurring", "one_time", "included"];
     private static readonly string[] AllowedDefaultScopeTypes = ["subscription", "user"];
     private static readonly string[] AllowedPricingModels = ["fixed", "tiered"];
+    private static readonly string[] AllowedPublicOrderingModes =
+        BillingV2PublicOrderingModes.All;
     private static readonly IReadOnlyDictionary<string, string[]>
         ProviderEnvironments = BillingV2ProviderEnvironmentPolicy.Matrix;
 
@@ -358,12 +360,12 @@ public sealed class BillingV2CatalogAdministrationService
                 (id, code, name, description, category, billing_type,
                  default_scope_type, pricing_model, mandatory_for_subscription,
                  discount_eligible, public_selectable, public_visible, self_service_orderable,
-                 status, display_order, updated_by_reference)
+                 public_ordering_mode, status, display_order, updated_by_reference)
             VALUES
                 (@id, @code, @name, @description, @category, @billing_type,
                  @default_scope, @pricing_model, @mandatory,
                  @discount_eligible, @public_selectable, @public_visible, @self_service_orderable,
-                 @status, @display_order, @actor);
+                 @public_ordering_mode, @status, @display_order, @actor);
             """;
         command.Parameters.AddWithValue("@id", id);
         command.Parameters.AddWithValue("@code", code);
@@ -378,6 +380,8 @@ public sealed class BillingV2CatalogAdministrationService
         command.Parameters.AddWithValue("@public_selectable", 0);
         command.Parameters.AddWithValue("@public_visible", 0);
         command.Parameters.AddWithValue("@self_service_orderable", 0);
+        command.Parameters.AddWithValue(
+            "@public_ordering_mode", BillingV2PublicOrderingModes.Quote);
         command.Parameters.AddWithValue("@status", "inactive");
         command.Parameters.AddWithValue("@display_order", payload.DisplayOrder ?? 0);
         command.Parameters.AddWithValue("@actor", Truncate(actorReference, 255));
@@ -404,8 +408,24 @@ public sealed class BillingV2CatalogAdministrationService
     {
         RequirePersistence();
         var id = RequireIdentifier(serviceId);
+        var publicOrderingMode = payload.PublicOrderingMode is null
+            ? null
+            : RequireEnum(payload.PublicOrderingMode, AllowedPublicOrderingModes);
 
         await using var connection = await OpenAsync(cancellationToken);
+        if (publicOrderingMode is not null)
+        {
+            var refusal = await ValidatePublicOrderingModeAsync(
+                connection,
+                id,
+                publicOrderingMode,
+                cancellationToken);
+            if (refusal is not null)
+            {
+                return refusal;
+            }
+        }
+
         await using var command = connection.CreateCommand();
         command.CommandText =
             """
@@ -420,6 +440,8 @@ public sealed class BillingV2CatalogAdministrationService
                 public_visible = COALESCE(@public_visible, public_visible),
                 self_service_orderable =
                     COALESCE(@self_service_orderable, self_service_orderable),
+                public_ordering_mode =
+                    COALESCE(@public_ordering_mode, public_ordering_mode),
                 discount_eligible =
                     COALESCE(@discount_eligible, discount_eligible),
                 mandatory_for_subscription =
@@ -450,6 +472,9 @@ public sealed class BillingV2CatalogAdministrationService
         command.Parameters.AddWithValue(
             "@self_service_orderable",
             (object?)ToFlag(payload.SelfServiceOrderable) ?? DBNull.Value);
+        command.Parameters.AddWithValue(
+            "@public_ordering_mode",
+            (object?)publicOrderingMode ?? DBNull.Value);
         command.Parameters.AddWithValue(
             "@discount_eligible",
             (object?)ToFlag(payload.DiscountEligible) ?? DBNull.Value);
@@ -1752,13 +1777,14 @@ public sealed class BillingV2CatalogAdministrationService
                 StringComparer.Ordinal);
 
         var services = new List<BillingV2AdminService>();
+        var now = DateTime.UtcNow;
         await using var command = connection.CreateCommand();
         command.CommandText =
             """
             SELECT id, code, name, description, category, billing_type,
                    default_scope_type, pricing_model, mandatory_for_subscription,
                    discount_eligible, public_selectable, public_visible, self_service_orderable,
-                   status, display_order, updated_by_reference
+                   public_ordering_mode, status, display_order, updated_by_reference
             FROM billing_v2_services
             ORDER BY display_order, code;
             """;
@@ -1766,9 +1792,14 @@ public sealed class BillingV2CatalogAdministrationService
         while (await reader.ReadAsync(cancellationToken))
         {
             var id = MariaDbIdentifierReader.ReadRequired(reader, "id");
+            var code = reader.GetString("code");
+            var selfServiceOrderable = reader.GetBoolean("self_service_orderable");
+            var serviceTiers = tiers.TryGetValue(id, out var foundServiceTiers)
+                ? (IReadOnlyList<BillingV2AdminTier>)foundServiceTiers
+                : Array.Empty<BillingV2AdminTier>();
             services.Add(new BillingV2AdminService(
                 id,
-                reader.GetString("code"),
+                code,
                 reader.GetString("name"),
                 ReadNullableString(reader, "description"),
                 ReadNullableString(reader, "category"),
@@ -1778,13 +1809,26 @@ public sealed class BillingV2CatalogAdministrationService
                 reader.GetBoolean("mandatory_for_subscription"),
                 reader.GetBoolean("discount_eligible"),
                 reader.GetBoolean("public_visible"),
-                reader.GetBoolean("self_service_orderable"),
+                selfServiceOrderable,
+                BillingV2PublicOrderingModes.Normalize(
+                    ReadNullableString(reader, "public_ordering_mode"))
+                    ?? BillingV2PublicOrderingModes.Quote,
+                BillingV2PublicOrderingModes.SupportsDirectOrdering(
+                    code)
+                    && selfServiceOrderable
+                    && serviceTiers.Any(tier =>
+                        string.Equals(tier.Status, "active", StringComparison.Ordinal)
+                        && tier.PublicSelectable
+                        && tier.Prices.Any(price =>
+                            price.IsCurrent(now)
+                            && string.Equals(
+                                price.ChargeTrigger,
+                                BillingV2ComponentizedPricingPolicy.InitialSubscription,
+                                StringComparison.Ordinal))),
                 reader.GetString("status"),
                 reader.GetInt32("display_order"),
                 ReadNullableString(reader, "updated_by_reference"),
-                tiers.TryGetValue(id, out var serviceTiers)
-                    ? serviceTiers
-                    : Array.Empty<BillingV2AdminTier>(),
+                serviceTiers,
                 flatByService.TryGetValue(id, out var flat)
                     ? flat
                     : Array.Empty<BillingV2AdminPrice>()));
@@ -1949,6 +1993,102 @@ public sealed class BillingV2CatalogAdministrationService
     // ------------------------------------------------------------------
     // Aides SQL
     // ------------------------------------------------------------------
+
+    /// <summary>
+    /// Valide le parcours public avant toute écriture. Le select de
+    /// l'administration améliore l'ergonomie, mais cette vérification côté
+    /// API-INTERNAL reste l'autorité : un navigateur ne peut pas rendre
+    /// commandable un service sans offre publique ou sans vrai tunnel direct.
+    /// </summary>
+    private static async Task<BillingV2AdminCatalogMutationResponse?>
+        ValidatePublicOrderingModeAsync(
+            MySqlConnection connection,
+            string serviceId,
+            string mode,
+            CancellationToken cancellationToken)
+    {
+        if (string.Equals(
+                mode,
+                BillingV2PublicOrderingModes.Quote,
+                StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        if (string.Equals(
+                mode,
+                BillingV2PublicOrderingModes.OfferComponent,
+                StringComparison.Ordinal))
+        {
+            await using var offerCommand = connection.CreateCommand();
+            offerCommand.CommandText =
+                """
+                SELECT EXISTS(
+                    SELECT 1
+                    FROM billing_v2_preset_items item
+                    INNER JOIN billing_v2_offer_presets preset
+                        ON preset.id = item.preset_id
+                    WHERE item.service_id = @service_id
+                      AND preset.status = 'active'
+                      AND preset.is_public = 1
+                );
+                """;
+            offerCommand.Parameters.AddWithValue("@service_id", serviceId);
+            var hasPublicOffer = Convert.ToInt32(await offerCommand.ExecuteScalarAsync(
+                cancellationToken)) == 1;
+            return hasPublicOffer
+                ? null
+                : InvalidPublicOrderingMode(
+                    serviceId,
+                    "Le mode « Disponible dans une offre » exige au moins une offre publique active qui contient ce service.");
+        }
+
+        await using var directCommand = connection.CreateCommand();
+        directCommand.CommandText =
+            """
+            SELECT code, self_service_orderable,
+                   EXISTS(
+                       SELECT 1
+                       FROM billing_v2_service_tiers tier
+                       INNER JOIN billing_v2_service_prices price
+                           ON price.service_id = tier.service_id
+                          AND price.tier_id = tier.id
+                          AND price.status = 'active'
+                          AND price.charge_trigger = 'initial_subscription'
+                          AND price.valid_from <= UTC_TIMESTAMP(6)
+                          AND (price.valid_until IS NULL OR price.valid_until > UTC_TIMESTAMP(6))
+                       WHERE tier.service_id = service.id
+                         AND tier.status = 'active'
+                         AND tier.public_selectable = 1
+                   ) AS has_direct_tier
+            FROM billing_v2_services service
+            WHERE service.id = @service_id;
+            """;
+        directCommand.Parameters.AddWithValue("@service_id", serviceId);
+        await using var reader = await directCommand.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new PortalDataNotFoundException();
+        }
+
+        var code = reader.GetString("code");
+        var hasDirectPath = BillingV2PublicOrderingModes.SupportsDirectOrdering(code)
+            && reader.GetBoolean("self_service_orderable")
+            && reader.GetBoolean("has_direct_tier");
+        return hasDirectPath
+            ? null
+            : InvalidPublicOrderingMode(
+                serviceId,
+                "Commande directe indisponible : aucun parcours individuel compatible n’est configuré pour ce service.");
+    }
+
+    private static BillingV2AdminCatalogMutationResponse InvalidPublicOrderingMode(
+        string serviceId,
+        string message)
+        => new(
+            "BILLING_V2_CATALOG_PUBLIC_ORDERING_MODE_INVALID",
+            message,
+            serviceId);
 
     private static async Task<(string ServiceCode, string? TierCode)> ReadCodesAsync(
         MySqlConnection connection,

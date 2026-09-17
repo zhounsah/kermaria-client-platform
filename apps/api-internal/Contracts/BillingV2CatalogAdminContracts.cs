@@ -45,6 +45,8 @@ public sealed record BillingV2AdminService(
     bool DiscountEligible,
     bool PublicVisible,
     bool SelfServiceOrderable,
+    string PublicOrderingMode,
+    bool DirectOrderingAvailable,
     string Status,
     int DisplayOrder,
     string? UpdatedByReference,
@@ -172,6 +174,7 @@ public sealed record BillingV2AdminServicePayload(
     int? DisplayOrder,
     bool? PublicVisible,
     bool? SelfServiceOrderable,
+    string? PublicOrderingMode,
     bool? DiscountEligible,
     bool? MandatoryForSubscription);
 

@@ -75,6 +75,17 @@ const nextConfig: NextConfig = {
     "192.168.0.*",
     "192.168.100.*",
   ],
+  experimental: {
+    /**
+     * Le proxy (`proxy.ts`) couvre toutes les routes : Next.js met donc le
+     * corps de chaque requete en tampon et le TRONQUE au-dela de cette
+     * limite (10 Mo par defaut). Un envoi multipart tronque fait echouer
+     * `request.formData()` dans le BFF sans que l'API soit appelee.
+     * Doit rester >= a la limite de `/internal/admin/downloads/{id}/file`
+     * dans API-INTERNAL (256 Mo de fichier + enveloppe multipart).
+     */
+    proxyClientMaxBodySize: "257mb",
+  },
   async headers() {
     return [
       {

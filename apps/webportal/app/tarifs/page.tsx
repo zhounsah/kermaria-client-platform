@@ -52,10 +52,16 @@ export default async function TarifsPage() {
     <>
       <PublicStorefrontPage
         breadcrumbItems={resolveStorefrontBreadcrumb("/tarifs")!}
+        beforeSections={(
+          <PublicCommercialTariffCatalog
+            catalog={buildPublicCommercialCatalog(billingCatalogResult.data)}
+          />
+        )}
+        compactHero
         content={content}
-      />
-      <PublicCommercialTariffCatalog
-        catalog={buildPublicCommercialCatalog(billingCatalogResult.data)}
+        heroLead="Consultez les prix des services, leurs options et leur mode de souscription."
+        heroTitle="Tarifs des services Zachary IT"
+        showHeroActions={false}
       />
     </>
   );

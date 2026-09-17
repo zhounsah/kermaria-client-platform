@@ -49,6 +49,7 @@ const service = {
   category: null, billingType: "recurring", defaultScopeType: "subscription",
   pricingModel: "tiered", mandatoryForSubscription: false,
   discountEligible: true, publicVisible: true, selfServiceOrderable: true,
+  publicOrderingMode: "quote", directOrderingAvailable: false,
   status: "active", displayOrder: 0, updatedByReference: null,
   flatPrices: [price({ amountCents: 900, validUntil: "2026-08-01T00:00:00.000Z" })],
   tiers: [{ id: "tier", serviceId: "service", code: "TIER", name: "Tier",
@@ -93,6 +94,9 @@ assert.match(apiProgram, /"\/internal\/admin\/billing-v2\/catalog\/services"[\s\
 assert.match(apiProgram, /"\/internal\/admin\/billing-v2\/catalog\/services\/\{id\}\/tiers"[\s\S]{0,900}CreateTierAsync/);
 assert.match(administrationService, /CreateServiceAsync[\s\S]{0,2600}@public_visible", 0\)[\s\S]{0,300}@status", "inactive"\)/);
 assert.match(administrationService, /CreateTierAsync[\s\S]{0,2800}@public_selectable", 0\)[\s\S]{0,300}@status", "inactive"\)/);
+assert.match(administrationService, /ValidatePublicOrderingModeAsync/);
+assert.match(administrationService, /BILLING_V2_CATALOG_PUBLIC_ORDERING_MODE_INVALID/);
+assert.match(commands, /CATALOG_PUBLIC_ORDERING_MODES/);
 
 for (const page of [
   "app/admin/catalog/services/[id]/page.tsx",
@@ -114,6 +118,10 @@ assert.match(catalogUi, /beforeunload/);
 assert.match(catalogUi, /document\.addEventListener\("click"/);
 assert.match(catalogUi, /window\.confirm\(UNSAVED_CHANGES_MESSAGE\)/);
 assert.match(serviceEditor, /<ImmutableCode value=\{service\.code\}/);
+assert.match(serviceEditor, /Mode de commercialisation publique/);
+assert.match(serviceEditor, /Disponible dans une offre/);
+assert.match(serviceEditor, /Commande directe/);
+assert.match(serviceEditor, /directOrderingAvailable/);
 assert.match(serviceEditor, /Paramètres techniques/);
 const tiersEditor = await read("components/admin/catalog/ServiceTiersPanel.tsx");
 assert.match(tiersEditor, /selected\.attributes/);

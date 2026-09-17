@@ -3227,6 +3227,22 @@ fieldset.form-field > .form-hint {
 .billing-price-projection-amount { margin: 0 0 20px; color: var(--primary); font-size: 1.35rem; font-weight: 800; }
 .commercial-tariffs { display: grid; gap: 24px; }
 .commercial-tariffs-heading { margin-bottom: 0; }
+.storefront-page-compact .storefront-compact-hero {
+  display: block;
+  padding: clamp(12px, 2vw, 24px) 0 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.storefront-page-compact .storefront-compact-hero h1 {
+  max-width: none;
+  margin-bottom: 10px;
+  font-size: clamp(2rem, 3.25vw, 3rem);
+  letter-spacing: -0.045em;
+}
+.storefront-page-compact .storefront-compact-hero p { max-width: 680px; }
+.storefront-page-compact .commercial-tariffs { margin-top: clamp(28px, 3vw, 42px); }
 .commercial-tariffs-filters { display: flex; flex-wrap: wrap; gap: 8px; }
 .commercial-tariffs-filters button { min-height: 40px; padding: 8px 13px; border: 1px solid var(--border); border-radius: 999px; color: var(--text); background: var(--surface); font: inherit; font-size: .9rem; font-weight: 700; cursor: pointer; }
 .commercial-tariffs-filters button:hover, .commercial-tariffs-filters button:focus-visible { border-color: var(--primary); color: var(--primary-dark); }
@@ -6197,6 +6213,15 @@ fieldset.form-field > .form-hint {
 }
 
 @media (max-width: 640px) {
+  .commercial-tariffs { gap: 18px; }
+  .commercial-tariffs-filters {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: thin;
+  }
+  .commercial-tariffs-filters button { flex: 0 0 auto; }
   .public-footer-inner {
     width: min(100% - 40px, 520px);
     padding-block: 36px 18px;

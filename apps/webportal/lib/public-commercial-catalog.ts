@@ -16,15 +16,18 @@ import type {
 
 import { describeTierAttributes, resolveServicePublicLabel } from "@/lib/billing-v2-formules";
 import {
+  resolveStorefrontDirectTariffAction,
   resolveStorefrontTariffAction,
   storefrontServiceUrlForBillingCode,
 } from "@/lib/storefront-content";
+import { resolvePublicCommercialOrdering } from "@/lib/public-commercial-ordering";
 
 /**
  * Projection de vitrine de Billing V2.
  *
  * Sources, par champ :
- * - montants, devise, paliers, frais initiaux, visibilite et self-service :
+ * - montants, devise, paliers, frais initiaux, visibilite et mode de
+ *   commercialisation :
  *   `BillingV2PublicCatalog` fourni par API-INTERNAL ;
  * - URL et CTA : mappings de parcours storefront existants ;
  * - categorie et unite : adaptation de presentation des metadonnees Billing.
@@ -39,10 +42,11 @@ import {
  * TVA. `TAX_NOTICE` est donc la formulation provisoire centralisee de cette
  * projection ; elle devra etre remplacee par une donnee metier fiable.
  *
- * Limite de commande connue : `selfServiceOrderable` est un drapeau Billing
- * V2 historique. Il ne signifie pas qu'un service est achetable seul. La
- * projection ne publie `offer_component` que lorsqu'un parcours `/formules/*`
- * existant est prouve ; elle ne publie jamais `direct` par deduction.
+ * `publicOrderingMode` est l'autorité de présentation quand il est fourni par
+ * Billing V2. `selfServiceOrderable` reste un drapeau technique historique :
+ * il ne signifie pas qu'un service est achetable seul. Les catalogues qui ne
+ * portent pas encore le nouveau champ utilisent temporairement un repli fermé
+ * qui ne peut jamais publier `direct`.
  */
 export function buildPublicCommercialCatalog(
   catalog: BillingV2PublicCatalog,
@@ -162,10 +166,23 @@ function projectService(
     ? money(Math.min(...recurringAmounts), catalog.currency)
     : null;
   const publicUrl = storefrontServiceUrlForBillingCode(service.code);
-  const configuredAction = resolveStorefrontTariffAction(service.code, catalog);
-  const orderingMode = resolveOrderingMode(service, configuredAction);
+  const preferredOfferAction = resolvePreferredOfferAction(service.code, catalog);
+  const offerCount = countPublicOffersForService(service.code, catalog);
+  const directAction = resolveStorefrontDirectTariffAction(
+    service.code,
+    service.selfServiceOrderable,
+    service.tiers,
+  );
+  const ordering = resolvePublicCommercialOrdering({
+    requestedMode: service.publicOrderingMode,
+    legacyMode: resolveLegacyOrderingMode(service, preferredOfferAction),
+    offerCount,
+    preferredOfferCta: preferredOfferAction,
+    directCta: directAction,
+  });
+  const orderingMode = ordering.orderingMode;
   const directlyOrderable = orderingMode === "direct";
-  const requiresQuote = orderingMode === "quote" || startingPrice === null;
+  const requiresQuote = orderingMode === "quote";
   const priceType = resolvePriceType(startingPrice, tierProjections);
   const fallback = CLIENT_PRESENTATION_FALLBACKS[service.code];
   const name = fallback?.name ?? resolveServicePublicLabel(service.code, service.name);
@@ -193,11 +210,12 @@ function projectService(
     directlyOrderable,
     requiresQuote,
     publicUrl,
-    // `resolveStorefrontTariffAction` ne retourne que /contact ou une formule
-    // existante qui contient reellement ce service. Aucun CTA n'est invente
-    // ici a partir d'un prix, d'un statut ou d'une page vitrine.
-    primaryCta: configuredAction,
-    secondaryCta: publicUrl === null || publicUrl === configuredAction.href
+    offerCount: ordering.offerCount,
+    // Les destinations proviennent soit d'un preset réellement publié, soit
+    // du configurateur VPS individuel existant, soit du contact. Aucun CTA
+    // n'est fabriqué à partir d'un prix ou d'une page descriptive.
+    primaryCta: ordering.primaryCta,
+    secondaryCta: publicUrl === null || publicUrl === ordering.primaryCta.href
       ? null
       : { label: "Découvrir le service", href: publicUrl },
     displayOrder: categoryOrder(category, displayOrder),
@@ -230,20 +248,37 @@ function resolvePriceType(
   return tiers.length > 0 ? "from" : "fixed";
 }
 
-function resolveOrderingMode(
+function resolveLegacyOrderingMode(
   service: BillingV2PublicService,
-  configuredAction: PublicCommercialCta,
-): PublicCommercialOrderingMode {
-  if (!service.selfServiceOrderable || configuredAction.href === "/contact") return "quote";
+  preferredOfferAction: PublicCommercialCta | null,
+): Exclude<PublicCommercialOrderingMode, "direct"> {
+  if (!service.selfServiceOrderable || preferredOfferAction === null) return "quote";
 
   // Les seuls parcours self-service actuellement prouves sont les presets
   // existants de /formules. Ils composent une offre : ce ne sont pas des
   // achats individuels du service affiche sur la carte.
-  if (configuredAction.href.startsWith("/formules/")) return "offer_component";
+  if (preferredOfferAction.href.startsWith("/formules/")) return "offer_component";
 
   // Echec ferme : le mode `direct` devra etre alimente par une source metier
   // explicite et une destination individuelle existante, pas par ce drapeau.
   return "quote";
+}
+
+function resolvePreferredOfferAction(
+  serviceCode: string,
+  catalog: BillingV2PublicCatalog,
+): PublicCommercialCta | null {
+  const action = resolveStorefrontTariffAction(serviceCode, catalog);
+  return action.href.startsWith("/formules/") ? action : null;
+}
+
+function countPublicOffersForService(
+  serviceCode: string,
+  catalog: BillingV2PublicCatalog,
+): number {
+  return catalog.presets.filter((preset) => (
+    preset.items.some((item) => item.serviceCode === serviceCode)
+  )).length;
 }
 
 function initialFeesOf(

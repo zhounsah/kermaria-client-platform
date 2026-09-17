@@ -88,6 +88,7 @@ import type {
   DemoContentTemplateSummary,
   DemoProfileSummary,
   BillingV2PublicCatalog,
+  PublicCommercialOrderingMode,
   BillingV2PublicQuote,
   BillingV2PublicSelection,
   BillingV2VpsTechnicalRequestStatus,
@@ -1620,6 +1621,8 @@ export type BillingV2AdminService = {
   discountEligible: boolean;
   publicVisible: boolean;
   selfServiceOrderable: boolean;
+  publicOrderingMode: PublicCommercialOrderingMode;
+  directOrderingAvailable: boolean;
   status: string;
   displayOrder: number;
   updatedByReference: string | null;

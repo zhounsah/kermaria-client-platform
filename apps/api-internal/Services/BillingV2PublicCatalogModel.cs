@@ -129,6 +129,36 @@ public static class BillingV2PublicPriceComponents
             DiscountEligible: false);
 }
 
+/// <summary>
+/// Mode de commercialisation de la vitrine, administré avec le service
+/// Billing V2. Cette métadonnée ne modifie jamais la sélection, le prix, un
+/// abonnement ou le provisioning.
+/// </summary>
+public static class BillingV2PublicOrderingModes
+{
+    public const string Quote = "quote";
+    public const string OfferComponent = "offer_component";
+    public const string Direct = "direct";
+
+    public static readonly string[] All = [Quote, OfferComponent, Direct];
+
+    /// <summary>
+    /// Seuls ces services possèdent aujourd'hui un configurateur individuel
+    /// réel, puis un parcours de commande. Une page descriptive n'est jamais
+    /// considérée comme un tunnel de commande.
+    /// </summary>
+    public static bool SupportsDirectOrdering(string serviceCode)
+        => serviceCode is "VPS-LOCAL" or "VPS-CLOUD";
+
+    public static string? Normalize(string? value)
+    {
+        var normalized = value?.Trim().ToLowerInvariant();
+        return normalized is not null && All.Contains(normalized, StringComparer.Ordinal)
+            ? normalized
+            : null;
+    }
+}
+
 public sealed record BillingV2PublicService(
     string Code,
     string Name,
@@ -139,6 +169,7 @@ public sealed record BillingV2PublicService(
     bool DiscountEligible = true,
     bool PublicVisible = true,
     bool SelfServiceOrderable = true,
+    string? PublicOrderingMode = null,
     string BillingType = BillingV2PublicBillingTypes.Recurring,
     IReadOnlyList<BillingV2PublicPriceComponent>? FlatPriceComponents = null,
     // Presentation seulement : la description commerciale du catalogue, sans

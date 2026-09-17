@@ -153,8 +153,23 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                   'billing_v2_commitment_terms',
                   'billing_v2_commitment_payment_options');
             """;
-        var value = await command.ExecuteScalarAsync(cancellationToken);
-        return Convert.ToInt32(value) == RequiredTables.Length;
+        var tableCount = await command.ExecuteScalarAsync(cancellationToken);
+        if (Convert.ToInt32(tableCount) != RequiredTables.Length)
+        {
+            return false;
+        }
+
+        await using var columnCommand = connection.CreateCommand();
+        columnCommand.CommandText =
+            """
+            SELECT COUNT(*)
+            FROM information_schema.columns
+            WHERE table_schema = DATABASE()
+              AND table_name = 'billing_v2_services'
+              AND column_name = 'public_ordering_mode';
+            """;
+        return Convert.ToInt32(await columnCommand.ExecuteScalarAsync(
+            cancellationToken)) == 1;
     }
 
     private static async Task<IReadOnlyList<BillingV2PublicService>>
@@ -180,6 +195,7 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                     service.discount_eligible,
                     service.public_visible,
                     service.self_service_orderable,
+                    service.public_ordering_mode,
                     service.display_order,
                     tier.id AS tier_id,
                     tier.code AS tier_code,
@@ -244,6 +260,7 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                     service.discount_eligible,
                     service.public_visible,
                     service.self_service_orderable,
+                    service.public_ordering_mode,
                     service.display_order,
                     NULL AS tier_id,
                     NULL AS tier_code,
@@ -420,6 +437,7 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                 first.DiscountEligible,
                 first.PublicVisible,
                 first.SelfServiceOrderable,
+                first.PublicOrderingMode,
                 first.BillingType,
                 flatComponents,
                 first.ServiceDescription));
@@ -687,6 +705,10 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
             ReadFlag(reader, "discount_eligible", whenNull: false),
             ReadFlag(reader, "public_visible", whenNull: false),
             ReadFlag(reader, "self_service_orderable", whenNull: false),
+            BillingV2PublicOrderingModes.Normalize(
+                reader.IsDBNull(reader.GetOrdinal("public_ordering_mode"))
+                    ? null
+                    : reader.GetString("public_ordering_mode")),
             reader.GetInt32("display_order"),
             MariaDbIdentifierReader.ReadNullable(reader, "tier_id"),
             reader.IsDBNull(reader.GetOrdinal("tier_code"))
@@ -722,6 +744,7 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
         bool DiscountEligible,
         bool PublicVisible,
         bool SelfServiceOrderable,
+        string? PublicOrderingMode,
         int DisplayOrder,
         string? TierId,
         string? TierCode,
