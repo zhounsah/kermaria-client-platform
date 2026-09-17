@@ -434,6 +434,10 @@ builder.Services.AddSingleton<IBillingV2PricingEngine, BillingV2PricingEngine>()
 builder.Services.AddScoped<
     IBillingV2PublicCatalogService,
     BillingV2PublicCatalogService>();
+// Panier commercial Phase 1 : persistance d'intention uniquement. Cette
+// dependance ne connait pas le checkout authoritative et ne peut donc creer
+// ni abonnement, ni paiement, ni outbox/provisioning.
+builder.Services.AddScoped<IBillingV2CartService, BillingV2CartService>();
 // Préparation technique VPS avant checkout : persistance non secrète et devis
 // authoritative uniquement. Ce service ne crée aucun objet de paiement.
 builder.Services.AddScoped<
@@ -1814,6 +1818,59 @@ app.MapPost(
                     context.GetCorrelationId()),
                 statusCode: StatusCodes.Status400BadRequest);
         }
+    });
+
+// API generique du panier Phase 1. Les commandes s'arretent deliberement au
+// devis : aucune commande de checkout/subscription/payment n'existe ici.
+app.MapPost(
+    "/internal/portal/billing-v2/carts/commands",
+    async (
+        HttpContext context,
+        IBillingV2CartService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var payload = await ReadPayload<BillingV2CartCommandPayload>(context);
+        if (payload is null || string.IsNullOrWhiteSpace(payload.Command))
+        {
+            throw new PortalValidationException();
+        }
+
+        BillingV2CartOwner owner;
+        var portalToken = GetPortalSessionToken(context);
+        if (!string.IsNullOrWhiteSpace(portalToken))
+        {
+            var session = await ResolveClientSessionAsync(
+                context, authenticationService, auditService);
+            owner = new BillingV2CartOwner(session.CustomerId, null);
+        }
+        else
+        {
+            owner = new BillingV2CartOwner(null, payload.AnonymousToken);
+        }
+
+        var command = payload.Command.Trim().ToLowerInvariant();
+        var expectedVersion = payload.ExpectedVersion ?? -1;
+        var cartId = payload.CartId ?? string.Empty;
+        var result = command switch
+        {
+            "current" => await service.GetOrCreateCurrentAsync(
+                owner, string.IsNullOrWhiteSpace(payload.Currency) ? "EUR" : payload.Currency, context.RequestAborted),
+            "get" => await service.GetAsync(owner, cartId, context.RequestAborted),
+            "add_item" when payload.Item is not null => await service.AddItemAsync(
+                owner, cartId, expectedVersion, ToCartItemCommand(payload.Item), context.RequestAborted),
+            "update_item" when payload.Item is not null => await service.UpdateItemAsync(
+                owner, cartId, payload.ItemId ?? string.Empty, expectedVersion, ToCartItemCommand(payload.Item), context.RequestAborted),
+            "remove_item" => await service.RemoveItemAsync(owner, cartId, payload.ItemId ?? string.Empty, expectedVersion, context.RequestAborted),
+            "set_commitment" => await service.SetCommitmentAsync(owner, cartId, expectedVersion, payload.CommitmentCode, context.RequestAborted),
+            "set_payment_mode" => await service.SetPaymentModeAsync(owner, cartId, expectedVersion, payload.PaymentMode, context.RequestAborted),
+            "quote" => await service.QuoteAsync(owner, cartId, context.RequestAborted),
+            "expire" => await service.ExpireAsync(owner, cartId, expectedVersion, context.RequestAborted),
+            "claim" when owner.IsAuthenticated && !string.IsNullOrWhiteSpace(payload.AnonymousToken)
+                => await service.ClaimAsync(payload.AnonymousToken, owner.CustomerId!, expectedVersion, context.RequestAborted),
+            _ => new BillingV2CartMutationResult("CART_COMMAND_INVALID")
+        };
+        return Results.Json(result, statusCode: CartResultStatusCode(result.Code));
     });
 
 // Tunnel VPS, étape « configuration + devis » uniquement. La demande est
@@ -8724,6 +8781,33 @@ static int ResolveTemplateStatusCode(string code)
 static string? GetPortalSessionToken(HttpContext context)
     => context.Request.Headers[
         AuthenticationHeaders.PortalSession].FirstOrDefault();
+
+static BillingV2CartItemCommand ToCartItemCommand(
+    BillingV2CartItemPayload payload)
+    => new(
+        (payload.ServiceCode ?? string.Empty).Trim(),
+        string.IsNullOrWhiteSpace(payload.TierCode) ? null : payload.TierCode.Trim(),
+        payload.Quantity ?? 0,
+        string.IsNullOrWhiteSpace(payload.ScopeTemplate) ? null : payload.ScopeTemplate.Trim(),
+        string.IsNullOrWhiteSpace(payload.SubjectBinding) ? null : payload.SubjectBinding.Trim(),
+        string.IsNullOrWhiteSpace(payload.SourcePresetId) ? null : payload.SourcePresetId.Trim(),
+        string.IsNullOrWhiteSpace(payload.SourcePresetItemId) ? null : payload.SourcePresetItemId.Trim(),
+        string.IsNullOrWhiteSpace(payload.ConfigurationKind) ? null : payload.ConfigurationKind.Trim(),
+        string.IsNullOrWhiteSpace(payload.ConfigurationReference) ? null : payload.ConfigurationReference.Trim(),
+        (payload.Origin ?? string.Empty).Trim().ToLowerInvariant());
+
+static int CartResultStatusCode(string code)
+    => code switch
+    {
+        "CART_OK" or "CART_QUOTED" or "CART_ITEM_ADDED" or "CART_ITEM_UPDATED"
+            or "CART_ITEM_REMOVED" or "CART_COMMITMENT_UPDATED"
+            or "CART_PAYMENT_MODE_UPDATED" or "CART_EXPIRED" or "CART_CLAIMED"
+            => StatusCodes.Status200OK,
+        "CART_NOT_FOUND" or "CART_ITEM_NOT_FOUND" => StatusCodes.Status404NotFound,
+        "CART_VERSION_CONFLICT" or "CART_CLAIM_CONFLICT" or "CART_IMMUTABLE"
+            => StatusCodes.Status409Conflict,
+        _ => StatusCodes.Status400BadRequest
+    };
 
 static AuthenticatedPortalUser ToPublicUser(PortalSessionContext session)
     => new(

@@ -117,6 +117,40 @@ async Task<int> RunAsync(string[] arguments)
     }
 
     if (arguments.Length == 1
+        && string.Equals(arguments[0], "--billing-v2-cart", StringComparison.Ordinal))
+    {
+        try
+        {
+            await BillingV2CartPolicyTests.RunAsync();
+            Console.WriteLine("Tests noyau panier Billing V2 reussis.");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine("Tests noyau panier Billing V2 en echec.");
+            Console.Error.WriteLine(exception.ToString());
+            return 1;
+        }
+    }
+
+    if (arguments.Length == 1
+        && string.Equals(arguments[0], "--billing-v2-cart-schema", StringComparison.Ordinal))
+    {
+        try
+        {
+            await BillingV2CartSchemaTests.RunAsync();
+            Console.WriteLine("Tests schema Cart Billing V2 reussis.");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine("Tests schema Cart Billing V2 en echec.");
+            Console.Error.WriteLine(exception.ToString());
+            return 1;
+        }
+    }
+
+    if (arguments.Length == 1
         && string.Equals(
             arguments[0],
             "--billing-v2-provisioning-scope",

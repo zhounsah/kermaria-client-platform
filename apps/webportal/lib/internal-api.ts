@@ -91,6 +91,8 @@ import type {
   PublicCommercialOrderingMode,
   BillingV2PublicQuote,
   BillingV2PublicSelection,
+  BillingV2CartCommandRequest,
+  BillingV2CartCommandResponse,
   BillingV2VpsTechnicalRequestStatus,
   AdminBillingV2VpsTechnicalReview,
 } from "@kermaria/shared";
@@ -602,6 +604,50 @@ export async function quoteBillingV2Formule(
   }
 
   return readInternalJson<BillingV2PublicQuote>(response, correlationId);
+}
+
+/**
+ * Transport BFF du panier Phase 1. Le BFF ajoute le token anonyme HttpOnly ;
+ * le navigateur ne transmet jamais un prix ni le condensat de ce token.
+ */
+export async function commandBillingV2Cart(
+  command: BillingV2CartCommandRequest & { anonymousToken?: string },
+  correlationId: CorrelationId,
+  portalSessionToken?: string | null,
+): Promise<BillingV2CartCommandResponse> {
+  const internalApiUrl = getInternalApiUrl();
+  if (!internalApiUrl) {
+    throw new InternalApiError(unavailableError(correlationId), 503);
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(
+      `${internalApiUrl}/internal/portal/billing-v2/carts/commands`,
+      {
+        method: "POST",
+        cache: "no-store",
+        signal: AbortSignal.timeout(INTERNAL_API_TIMEOUT_MS),
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          ...getInternalServiceHeaders(),
+          [CORRELATION_HEADER]: correlationId,
+          ...(portalSessionToken
+            ? { [PORTAL_SESSION_HEADER]: portalSessionToken }
+            : {}),
+        },
+        body: JSON.stringify(command),
+      },
+    );
+  } catch {
+    throw new InternalApiError(unavailableError(correlationId), 503);
+  }
+
+  if (!response.ok) {
+    throw await toInternalApiError(response, correlationId);
+  }
+  return readInternalJson<BillingV2CartCommandResponse>(response, correlationId);
 }
 
 export function getPublicPackCatalogContent() {

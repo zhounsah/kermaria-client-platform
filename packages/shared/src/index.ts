@@ -2562,6 +2562,146 @@ export interface BillingV2PublicQuote {
   checkoutReasonCode: string;
 }
 
+/** Panier commercial modifiable Phase 1 — distinct d'une Subscription. */
+export type BillingV2CartStatus = "open" | "checked_out" | "expired";
+export type BillingV2CartCommercialReadiness = "ready" | "blocked";
+export type BillingV2CartConfigurationReadiness =
+  | "not_required"
+  | "complete"
+  | "deferred"
+  | "blocked";
+
+export type BillingV2CartProvisioningReadiness =
+  | "ready"
+  | "deferred"
+  | "blocked";
+
+export type BillingV2CartQuoteStatus = "current" | "stale" | "expired";
+
+export interface BillingV2CartItem {
+  id: string;
+  cartId: string;
+  serviceId: string;
+  serviceCode: string;
+  tierId: string | null;
+  tierCode: string | null;
+  quantity: number;
+  scopeTemplate: string;
+  subjectBinding: string | null;
+  sourcePresetItemId: string | null;
+  configurationKind: string | null;
+  configurationReference: string | null;
+  displayOrder: number;
+  createdAtUtc: string;
+  updatedAtUtc: string;
+}
+
+export interface BillingV2Cart {
+  id: string;
+  customerId: string | null;
+  status: BillingV2CartStatus;
+  currency: string;
+  commitmentTermId: string | null;
+  commitmentCode: string | null;
+  paymentMode: BillingV2PublicPaymentMode | null;
+  sourcePresetId: string | null;
+  version: number;
+  createdAtUtc: string;
+  updatedAtUtc: string;
+  lastActivityAtUtc: string;
+  expiresAtUtc: string;
+  checkedOutSubscriptionId: string | null;
+  items: BillingV2CartItem[];
+}
+
+export interface BillingV2CartIssue {
+  code: string;
+  severity: "info" | "error";
+  cartItemId: string | null;
+  serviceCode: string | null;
+  message: string;
+  blocking: boolean;
+}
+
+export interface BillingV2CartQuoteLine {
+  cartItemId: string;
+  serviceCode: string;
+  tierCode: string | null;
+  servicePriceId: string;
+  priceCode: string;
+  billingCadence: "monthly" | "one_time";
+  unitAmountCents: number;
+  quantity: number;
+  amountCents: number;
+  discountEligible: boolean;
+  feeDeduplicationKey: string | null;
+}
+
+export interface BillingV2CartQuote {
+  cartId: string;
+  cartVersion: number;
+  quoteVersion: number;
+  compositionFingerprint: string;
+  currency: string;
+  recurringSubtotalCents: number;
+  recurringDiscountCents: number;
+  recurringTotalCents: number;
+  oneTimeDueNowCents: number;
+  totalDueNowCents: number;
+  calculatedAtUtc: string;
+  expiresAtUtc: string;
+  quoteStatus: BillingV2CartQuoteStatus;
+  lines: BillingV2CartQuoteLine[];
+  dependencyIssues: BillingV2CartIssue[];
+  scopeIssues: BillingV2CartIssue[];
+  configurationIssues: BillingV2CartIssue[];
+  commercialReadiness: BillingV2CartCommercialReadiness;
+  configurationReadiness: BillingV2CartConfigurationReadiness;
+  provisioningReadiness: BillingV2CartProvisioningReadiness;
+}
+
+export type BillingV2CartCommand =
+  | "current"
+  | "get"
+  | "add_item"
+  | "update_item"
+  | "remove_item"
+  | "set_commitment"
+  | "set_payment_mode"
+  | "quote"
+  | "expire"
+  | "claim";
+
+export interface BillingV2CartItemInput {
+  serviceCode: string;
+  tierCode?: string | null;
+  quantity: number;
+  scopeTemplate?: string | null;
+  subjectBinding?: string | null;
+  sourcePresetId?: string | null;
+  sourcePresetItemId?: string | null;
+  configurationKind?: string | null;
+  configurationReference?: string | null;
+  origin: "direct" | "preset";
+}
+
+export interface BillingV2CartCommandRequest {
+  command: BillingV2CartCommand;
+  cartId?: string;
+  itemId?: string;
+  currency?: string;
+  expectedVersion?: number;
+  item?: BillingV2CartItemInput;
+  commitmentCode?: string | null;
+  paymentMode?: BillingV2PublicPaymentMode | null;
+}
+
+export interface BillingV2CartCommandResponse {
+  code: string;
+  cart: BillingV2Cart | null;
+  quote: BillingV2CartQuote | null;
+}
+
 /**
  * Préparation technique non secrète d'un VPS. Les codes catalogue restent une
  * intention : API-INTERNAL les revalide avant de conserver la demande et de
