@@ -80,10 +80,10 @@ export const DEFAULT_STOREFRONT_SERVICES_PROBLEM_ENTRIES: readonly StorefrontPro
 ];
 
 export const DEFAULT_STOREFRONT_SERVICES_CATEGORY_LINKS: readonly StorefrontLink[] = [
-  { label: "Cloud & Hébergement", href: "/services/cloud-hebergement" },
-  { label: "Domaines & Messagerie", href: "/services/domaines-messagerie" },
-  { label: "Réseau & Sécurité", href: "/services/reseau-securite" },
-  { label: "Support & IT", href: "/services/support-it" },
+  { label: "Hébergement & services en ligne", href: "/services/cloud-hebergement" },
+  { label: "Domaines & messagerie", href: "/services/domaines-messagerie" },
+  { label: "Réseau & sécurité", href: "/services/reseau-securite" },
+  { label: "Assistance & maintenance", href: "/services/support-it" },
 ];
 export const DEFAULT_STOREFRONT_SERVICES_LEAD =
   "Un problème de messagerie, des données à protéger, un accès distant à organiser, un Wi-Fi instable ou un serveur à maintenir ? Partez de votre besoin : Zachary IT vous oriente vers la solution adaptée.";
@@ -131,6 +131,93 @@ export const STOREFRONT_SERVICE_SLUGS = [
   "messagerie-professionnelle",
 ] as const;
 export type StorefrontServiceSlug = (typeof STOREFRONT_SERVICE_SLUGS)[number];
+
+const LEGACY_WEB_HOSTING_COPY = {
+  lead: "Un site public dépend de son hébergement, de ses mises à jour, de ses accès et de ses sauvegardes. Zachary IT aide à organiser ces éléments sans masquer les limites du CMS existant.",
+  sectionHeading: "CMS, sauvegarde et sécurité",
+  sectionBody: "La maintenance peut couvrir un CMS, ses extensions et les correctifs nécessaires. Une protection web ou une sauvegarde sont des briques séparées, choisies selon le risque et le contenu à protéger.",
+  faqQuestion: "Puis-je garder mon CMS actuel ?",
+  publicLead: "Un site public dépend de son hébergement, de ses mises à jour, de ses accès et de ses sauvegardes. Zachary IT aide à organiser ces éléments et à identifier ce qui doit être amélioré avant intervention.",
+  publicSectionHeading: "Mises à jour, sauvegarde et sécurité",
+  publicSectionBody: "La maintenance peut couvrir le système qui fait fonctionner votre site (CMS), ses extensions et les correctifs nécessaires. Une protection web ou une sauvegarde sont des services distincts, choisis selon le risque et le contenu à protéger.",
+  publicFaqQuestion: "Puis-je garder mon système de gestion de site (CMS) actuel ?",
+} as const;
+
+/**
+ * Présentation de compatibilité pour les anciennes valeurs publiques connues.
+ * La projection ne réécrit jamais des fragments de contenu libre : une valeur
+ * CMS est conservée telle quelle lorsqu'elle ne correspond pas exactement à
+ * une formulation historique recensée.
+ */
+export function presentPublicStorefrontContent(
+  content: StorefrontPageContent,
+  serviceSlug: StorefrontServiceSlug | null,
+): StorefrontPageContent {
+  const normalizedContent: StorefrontPageContent = {
+    ...content,
+    seoTitle: normalizeLegacyPublicText(content.seoTitle),
+    seoDescription: normalizeLegacyPublicText(content.seoDescription),
+    title: normalizeLegacyPublicText(content.title),
+    lead: normalizeLegacyPublicText(content.lead),
+    ctaLabel: normalizeLegacyPublicText(content.ctaLabel),
+    sections: content.sections.map((section) => ({
+      heading: normalizeLegacyPublicText(section.heading),
+      bodyMarkdown: normalizeLegacyPublicText(section.bodyMarkdown),
+    })),
+    faq: content.faq.map((item) => ({
+      question: normalizeLegacyPublicText(item.question),
+      answer: normalizeLegacyPublicText(item.answer),
+    })),
+    relatedLinks: content.relatedLinks.map((link) => ({
+      ...link,
+      label: normalizeLegacyPublicText(link.label),
+    })),
+  };
+
+  if (serviceSlug !== "hebergement-web") return normalizedContent;
+
+  return {
+    ...normalizedContent,
+    lead: content.lead === LEGACY_WEB_HOSTING_COPY.lead
+      ? LEGACY_WEB_HOSTING_COPY.publicLead
+      : normalizedContent.lead,
+    sections: normalizedContent.sections.map((section) => (
+      section.heading === LEGACY_WEB_HOSTING_COPY.sectionHeading
+        && section.bodyMarkdown === LEGACY_WEB_HOSTING_COPY.sectionBody
+        ? {
+            ...section,
+            heading: LEGACY_WEB_HOSTING_COPY.publicSectionHeading,
+            bodyMarkdown: LEGACY_WEB_HOSTING_COPY.publicSectionBody,
+          }
+        : section
+    )),
+    faq: normalizedContent.faq.map((item) => (
+      item.question === LEGACY_WEB_HOSTING_COPY.faqQuestion
+        ? { ...item, question: LEGACY_WEB_HOSTING_COPY.publicFaqQuestion }
+        : item
+    )),
+  };
+}
+
+/**
+ * Compatibilité de rendu pour les contenus CMS créés avant les chantiers V3.
+ * Les données persistées restent inchangées. Ne sont normalisées que des
+ * valeurs complètes identifiées : un véritable audit décrit dans le contenu
+ * libre reste donc un audit.
+ */
+const LEGACY_PUBLIC_TEXT_EQUIVALENTS: Readonly<Record<string, string>> = {
+  "Cloud & Hébergement": "Hébergement & services en ligne",
+  "Domaines & Messagerie": "Domaines & messagerie",
+  "Réseau & Sécurité": "Réseau & sécurité",
+  "Support & IT": "Assistance & maintenance",
+  "lorsquÔÇÖelles sÔÇÖappliquent": "lorsqu’elles s’appliquent",
+  "Demander un diagnostic": "Faire le diagnostic",
+};
+
+function normalizeLegacyPublicText(value: string): string {
+  return LEGACY_PUBLIC_TEXT_EQUIVALENTS[value] ?? value;
+}
+
 export const STOREFRONT_PRIORITY_SERVICE_SLUGS = [
   "messagerie-professionnelle",
   "vpn-entreprise",
@@ -151,27 +238,27 @@ export function isStorefrontPriorityServiceSlug(
 export type StorefrontBreadcrumbItem = { name: string; path: string };
 
 const STOREFRONT_CATEGORY_BREADCRUMB_LABELS = {
-  "cloud-hebergement": "Cloud & H\u00e9bergement",
-  "domaines-messagerie": "Domaines & Messagerie",
+  "cloud-hebergement": "H\u00e9bergement & services en ligne",
+  "domaines-messagerie": "Nom de domaine & messagerie",
   "reseau-securite": "R\u00e9seau & S\u00e9curit\u00e9",
-  "support-it": "Support & IT",
+  "support-it": "Assistance & maintenance",
 } as const;
 
 const STOREFRONT_SERVICE_BREADCRUMB_LABELS: Record<StorefrontServiceSlug, string> = {
   "vps": "VPS",
-  "infogerance-vps": "Infog\u00e9rance VPS",
+  "infogerance-vps": "Gestion de serveur VPS",
   "hebergement-web": "H\u00e9bergement web",
   "maintenance-linux": "Maintenance Linux",
   "maintenance-wordpress": "Maintenance WordPress",
   "sauvegarde-externalisee": "Sauvegarde externalis\u00e9e",
-  "supervision-informatique": "Supervision informatique",
-  "supervision-nas": "Supervision NAS",
+  "supervision-informatique": "Surveillance de vos services",
+  "supervision-nas": "Surveillance de votre NAS",
   "vpn-entreprise": "VPN entreprise",
   "bureau-windows-distance": "Bureau Windows \u00e0 distance",
-  "unifi": "UniFi",
-  "firewall": "Firewall",
-  "cloudflare-waf": "Cloudflare WAF",
-  "gestion-dns-domaines": "Gestion DNS & domaines",
+  "unifi": "R\u00e9seau Wi-Fi UniFi",
+  "firewall": "Protection du r\u00e9seau (firewall)",
+  "cloudflare-waf": "Protection de site web (Cloudflare WAF)",
+  "gestion-dns-domaines": "Nom de domaine et DNS",
   "messagerie-professionnelle": "Messagerie professionnelle",
 };
 
@@ -224,6 +311,19 @@ const STOREFRONT_SERVICE_BILLING_CODES: Record<StorefrontServiceSlug, readonly s
   "messagerie-professionnelle": ["MAIL-MANAGED", "MAIL-DMARC-MANAGED", "M365-MANAGED"],
 };
 
+/**
+ * Retrouve une page de service existante depuis son identifiant Billing.
+ * Le catalogue commercial reutilise ce raccordement deja employe par les
+ * pages services ; il ne maintient donc pas une seconde liste de routes.
+ */
+export function storefrontServiceUrlForBillingCode(serviceCode: string): string | null {
+  const entry = (Object.entries(STOREFRONT_SERVICE_BILLING_CODES) as Array<
+    [StorefrontServiceSlug, readonly string[]]
+  >).find(([, serviceCodes]) => serviceCodes.includes(serviceCode));
+
+  return entry ? `/services/${entry[0]}` : null;
+}
+
 type StorefrontCommercialRouteDefinition = {
   mode: Exclude<StorefrontCommercialMode, "QUOTE">;
   presetCode: string;
@@ -266,6 +366,7 @@ const STOREFRONT_TARIFF_PRESET_BY_SERVICE_CODE: Readonly<Record<string, string>>
   "RDS-ACCESS": "pack-bureau-windows-distance",
 };
 const SELF_SERVICE_LABEL_PATTERN = /\b(command(?:er|ez|e|es)?|achet(?:er|ez|e|es)?|achat|configur(?:er|ez|e|es|ation)?)\b/i;
+const GENERIC_AUDIT_LABEL_PATTERN = /\baudit\b/i;
 export function storefrontContentKeyForServiceSlug(
   slug: StorefrontServiceSlug,
 ): ManagedContentKey {
@@ -356,26 +457,70 @@ export function isStorefrontSelfServiceCta(label: string, href: string): boolean
     || normalizedHref.startsWith("/formules/")
     || SELF_SERVICE_LABEL_PATTERN.test(label.trim());
 }
+
+// Les routes et les codes techniques restent les identifiants stables du
+// catalogue. Cette table ne modifie que le libelle public des liens associes,
+// afin que le visiteur comprenne d'abord le service rendu.
+const PUBLIC_RELATED_SERVICE_LABELS: Readonly<Record<string, string>> = {
+  "/services/infogerance-vps": "Gestion de serveur VPS",
+  "/services/maintenance-linux": "Maintenance de serveur Linux",
+  "/services/supervision-informatique": "Surveillance de vos services",
+  "/services/supervision-nas": "Surveillance de votre NAS",
+  "/services/unifi": "R\u00e9seau Wi-Fi UniFi",
+  "/services/firewall": "Protection du r\u00e9seau (firewall)",
+  "/services/cloudflare-waf": "Protection de site web (Cloudflare WAF)",
+  "/services/gestion-dns-domaines": "Nom de domaine et DNS",
+};
+
 export function resolveStorefrontPublicRelatedLinks(
   links: readonly StorefrontLink[],
   selfServiceOrderable: boolean | null,
 ): StorefrontLink[] {
-  if (selfServiceOrderable !== false) return [...links];
-  return links.filter((link) => !isStorefrontSelfServiceCta(link.label, link.href));
-}export function resolveStorefrontPublicCta(
+  const visibleLinks = selfServiceOrderable !== false
+    ? links
+    : links.filter((link) => !isStorefrontSelfServiceCta(link.label, link.href));
+  return visibleLinks.map((link) => ({
+    ...link,
+    label: link.href === "/diagnostic" && (
+      GENERIC_AUDIT_LABEL_PATTERN.test(link.label)
+      || link.label.trim() === "Demander un diagnostic"
+    )
+      ? "Faire le diagnostic"
+      : PUBLIC_RELATED_SERVICE_LABELS[link.href] ?? link.label,
+  }));
+}
+
+export function resolveStorefrontPublicCta(
   content: Pick<StorefrontPageContent, "ctaLabel" | "ctaHref">,
   selfServiceOrderable: boolean | null,
 ): StorefrontCta {
   const configured = { label: content.ctaLabel, href: content.ctaHref };
   if (selfServiceOrderable !== false || !isStorefrontSelfServiceCta(configured.label, configured.href)) {
-    return configured;
+    return normalizeStorefrontPublicCta(configured);
   }
   // Le rendu public est l'autorité finale. Même un CTA CMS volontairement
   // incohérent est neutralisé pour un service Billing non self-service.
   if (configured.href === "/diagnostic") {
-    return { label: "Demander un audit", href: "/diagnostic" };
+    return { label: "Faire le diagnostic", href: "/diagnostic" };
   }
   return { label: "Demander un devis", href: "/contact" };
+}
+
+/**
+ * Vocabulaire public : le diagnostic est le questionnaire d'orientation,
+ * le devis qualifie une prestation et le contact reste general. Un CTA CMS
+ * peut nommer un vrai audit seulement lorsqu'il conduit vers une prestation
+ * identifiee ; /contact et /diagnostic ne sont jamais des synonymes d'audit.
+ */
+function normalizeStorefrontPublicCta(configured: StorefrontCta): StorefrontCta {
+  if (!GENERIC_AUDIT_LABEL_PATTERN.test(configured.label)) return configured;
+  if (configured.href === "/diagnostic") {
+    return { label: "Faire le diagnostic", href: "/diagnostic" };
+  }
+  if (configured.href === "/contact") {
+    return { label: "Nous contacter", href: "/contact" };
+  }
+  return configured;
 }
 export function parseStorefrontPageContent(
   value: string,

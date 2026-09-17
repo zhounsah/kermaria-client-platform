@@ -23,7 +23,10 @@ import {
   isSignupEnabled,
 } from "@/lib/public-routes";
 import { buildPublicMetadata } from "@/lib/public-metadata";
-import { buildPublicPackViews } from "@/lib/public-packs";
+import {
+  buildPublicPackViews,
+  presentPublicOfferMarkdown,
+} from "@/lib/public-packs";
 import { JsonLd, breadcrumbJsonLd, packServiceJsonLd } from "@/lib/seo";
 
 type PageProps = {
@@ -44,7 +47,7 @@ export async function generateMetadata({
   }
 
   return buildPublicMetadata({
-    title: `Fiche technique - ${pack.label}`,
+    title: `Offre - ${pack.label}`,
     description: pack.description,
     // `pack.slug` et non le `slug` de l'URL : si un alias de slug est un jour
     // accepte, la canonical continue de pointer la forme unique.
@@ -81,9 +84,9 @@ export default async function PublicPackSheetPage({ params }: PageProps) {
   if (managedContentResult.error || !managedContentResult.data) {
     return (
       <ErrorState
-        description="Impossible de charger cette fiche technique pour le moment."
+        description="Impossible de charger cette offre pour le moment."
         reference={managedContentResult.correlationId}
-        title="Fiche technique indisponible"
+        title="Offre indisponible"
       />
     );
   }
@@ -137,13 +140,10 @@ export default async function PublicPackSheetPage({ params }: PageProps) {
       />
 
       <header className="offres-header managed-pack-sheet-header">
-        <p className="eyebrow">Fiche technique offre</p>
+        <p className="eyebrow">Offre</p>
         <h1>{pack.label}</h1>
         <p className="offres-lead">{pack.description}</p>
         <div className="managed-content-meta">
-          {content.versionLabel ? (
-            <p className="managed-content-version">{content.versionLabel}</p>
-          ) : null}
           {content.updatedAt ? (
             <p className="managed-content-updated">
               Mis à jour le {formatDateTime(content.updatedAt)}
@@ -174,20 +174,21 @@ export default async function PublicPackSheetPage({ params }: PageProps) {
         <PublicPackCard pack={pack} signupEnabled={signupEnabled} />
       </section>
 
-      <SectionCard ariaLabel={`Composants techniques liés à ${pack.label}`}>
+      <SectionCard ariaLabel={`Services inclus dans ${pack.label}`}>
         <div className="page-header-split">
           <div>
-            <span className="card-kicker">Catalogue actif</span>
-            <h2>Composants techniques liés</h2>
+            <span className="card-kicker">Ce qui est inclus</span>
+            <h2>Les services associés à cette offre</h2>
             <p>
-              Ce bloc présente les éléments associés à cette offre.
+              Ces services constituent l&apos;offre choisie. Le détail est adapté à
+              votre besoin lors de la mise en service.
             </p>
           </div>
         </div>
 
         {componentServices.length === 0 ? (
           <p className="field-hint">
-            Aucun composant technique lié n&apos;est actuellement publié pour
+            Aucun service associé n&apos;est actuellement publié pour
             cette offre.
           </p>
         ) : (
@@ -199,23 +200,20 @@ export default async function PublicPackSheetPage({ params }: PageProps) {
               >
                 <p className="card-kicker">{service.category}</p>
                 <h3>{service.name}</h3>
-                <p className="field-hint">
-                  Référence : {service.code} · Portée : {service.scopeType}
-                </p>
               </article>
             ))}
           </div>
         )}
       </SectionCard>
 
-      <SectionCard ariaLabel={`Détails opérationnels de ${pack.label}`}>
+      <SectionCard ariaLabel={`Détails de ${pack.label}`}>
         <div className="page-header-split">
           <div>
-            <span className="card-kicker">Détails opérationnels</span>
+            <span className="card-kicker">En savoir plus</span>
           </div>
         </div>
 
-        <ManagedMarkdown markdown={content.bodyMarkdown} />
+        <ManagedMarkdown markdown={presentPublicOfferMarkdown(content.bodyMarkdown)} />
       </SectionCard>
 
       <MockNotice

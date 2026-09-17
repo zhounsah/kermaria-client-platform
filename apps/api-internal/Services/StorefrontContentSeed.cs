@@ -72,38 +72,38 @@ internal static class StorefrontContentSeed
                     S("Offres et services", "Les offres sont des configurations prêtes à l’emploi et configurables. Elles ne remplacent pas l’ensemble des services Zachary IT."),
                 ],
                 [F("Pourquoi certains services n’ont-ils pas de prix affiché ?", "Ils dépendent du périmètre réel, de l’existant et parfois de licences ou fournisseurs séparés."), F("Les prix affichés permettent-ils de commander ?", "Seulement quand le parcours indique explicitement qu’il est disponible. Sinon, le bon CTA est une demande de devis ou d’audit."), F("Une licence Microsoft 365 est-elle incluse ?", "Non par défaut : les licences de fournisseurs sont précisées séparément dans le devis quand elles sont nécessaires.")],
-                [L("Voir les offres", "/formules"), L("Demander un diagnostic", "/diagnostic"), L("Nous contacter", "/contact")]),
+                [L("Voir les offres", "/offres"), L("Demander un diagnostic", "/diagnostic"), L("Nous contacter", "/contact")]),
             ["storefront:cloud-hebergement"] = Category(
-                "Cloud & Hébergement gérés | VPS, web, sauvegarde et supervision",
-                "VPS, hébergement web, maintenance Linux et CMS, sauvegarde externe et supervision : Zachary IT met en place et suit vos services hébergés.",
-                "Cloud & Hébergement : vos services restent suivis, pas simplement déposés chez un fournisseur.",
-                "VPS Zachary IT, VPS Cloud, hébergement web, maintenance, sauvegarde externe et supervision : chaque brique est cadrée selon ce qui doit rester disponible.",
+                "Hébergement et services en ligne | Zachary IT",
+                "Hébergement web, serveurs, sauvegarde et suivi : Zachary IT met en place les services utiles et les accompagne au quotidien.",
+                "Hébergement et services en ligne : vos outils restent suivis, pas simplement déposés chez un fournisseur.",
+                "Site, application, serveur ou sauvegarde : chaque service est préparé selon ce qui doit rester disponible pour vous.",
                 "Voir les services cloud", "/services/vps",
                 "VPS et hébergement", "Un VPS Zachary IT ou un VPS Cloud peut être préparé et géré ; les caractéristiques CPU, RAM et stockage sont celles affichées sur chaque offre. Lorsque le parcours le permet, la commande peut être payée en ligne, puis la mise en service intervient après validation technique.",
                 "Maintenance, sauvegarde et suivi", "Mises à jour Linux ou CMS, copie séparée, tests de restauration et alertes utiles complètent l’hébergement. Une sauvegarde sans suivi ne remplace pas la supervision.",
                 [L("VPS", "/services/vps"), L("Hébergement web", "/services/hebergement-web"), L("Sauvegarde externalisée", "/services/sauvegarde-externalisee"), L("Supervision informatique", "/services/supervision-informatique")]),
             ["storefront:domaines-messagerie"] = Category(
-                "Domaines et messagerie professionnelle | Zachary IT",
-                "Gestion de domaines, DNS, messagerie professionnelle, migration et réglages SPF, DKIM et DMARC pour les petites structures.",
-                "Domaines & Messagerie : votre identité numérique reste administrée et compréhensible.",
-                "Zachary IT gère les domaines, les zones DNS, les boîtes professionnelles et les migrations en clarifiant les accès, les licences et les responsabilités.",
+                "Nom de domaine et messagerie professionnelle | Zachary IT",
+                "Gestion de votre nom de domaine, de votre messagerie et des réglages utiles pour les petites structures.",
+                "Nom de domaine et messagerie : votre identité en ligne reste maîtrisée et compréhensible.",
+                "Zachary IT organise le nom de domaine, les boîtes professionnelles et les migrations en clarifiant les accès, les licences et les responsabilités.",
                 "Parler de ma messagerie", "/contact",
-                "Domaine, DNS et responsabilités", "DOMAIN-MANAGED est un service public traité sur devis. La gestion inclut le suivi des réglages et des accès, sans inventer de cadence annuelle ni de prix fournisseur inclus.",
-                "Messagerie et délivrabilité", "Boîtes mail, Microsoft 365, migration et SPF, DKIM ou DMARC sont préparés selon l’existant. Ces réglages réduisent des risques ; ils ne garantissent jamais la délivrabilité.",
+                "Nom de domaine et responsabilités", "La gestion du nom de domaine est proposée sur devis. Elle inclut le suivi des réglages et des accès ; les frais de fournisseurs éventuels sont précisés avant toute commande.",
+                "Messagerie et bonne réception des e-mails", "Boîtes mail, Microsoft 365 et migration sont préparés selon l’existant. Les réglages techniques de protection sont pris en charge lorsque nécessaire, sans promettre une réception parfaite de chaque message.",
                 [L("Gestion DNS et domaines", "/services/gestion-dns-domaines"), L("Messagerie professionnelle", "/services/messagerie-professionnelle"), L("Demander un audit", "/diagnostic")]),
             ["storefront:reseau-securite"] = Category(
-                "Réseau et sécurité gérés | VPN, UniFi, firewall et WAF",
-                "VPN entreprise, Wi-Fi UniFi, firewall, Cloudflare WAF et supervision : Zachary IT conçoit et suit des accès adaptés à votre activité.",
+                "Réseau et sécurité gérés | Wi-Fi, accès distant et protection",
+                "Wi-Fi, accès distant, protection et suivi : Zachary IT conçoit des accès adaptés à votre activité et les maintient dans le temps.",
                 "Réseau & Sécurité : des accès utiles, protégés et maintenables.",
-                "Accès distant, Wi-Fi, segmentation, firewall, protection web et supervision sont articulés autour de vos usages plutôt que d’une accumulation de produits.",
+                "Accès distant, Wi-Fi, séparation des usages, protection web et suivi sont organisés autour de votre quotidien plutôt que d’une accumulation de produits.",
                 "Demander un audit réseau", "/diagnostic",
-                "Accès et réseau local", "VPN, bureau Windows distant, UniFi, Wi-Fi et segmentation sont distingués pour choisir le bon mode d’accès. Une intervention tient compte du réseau existant et de sa capacité d’évolution.",
-                "Protection et suivi", "Firewall, Cloudflare WAF et supervision limitent l’exposition et rendent les incidents plus visibles. Ils ne constituent ni une sécurité absolue ni une promesse de disponibilité sans interruption.",
+                "Accès et réseau local", "Accès distant, bureau Windows, Wi-Fi et réseau séparé sont comparés pour choisir la solution adaptée. Une intervention tient compte du réseau existant et de son évolution.",
+                "Protection et suivi", "Les règles de protection et le suivi limitent l’exposition et rendent les incidents plus visibles. Ils ne constituent ni une sécurité absolue ni une promesse de disponibilité sans interruption.",
                 [L("VPN entreprise", "/services/vpn-entreprise"), L("UniFi", "/services/unifi"), L("Firewall", "/services/firewall"), L("Cloudflare WAF", "/services/cloudflare-waf")]),
             ["storefront:support-it"] = Category(
-                "Support et infogérance IT | Zachary IT",
+                "Assistance et maintenance informatique | Zachary IT",
                 "Assistance utilisateurs, maintenance des postes, infogérance et migrations : Zachary IT organise et suit votre informatique au quotidien.",
-                "Support & IT : une assistance qui traite le quotidien et prépare la suite.",
+                "Assistance et maintenance : une aide qui traite le quotidien et prépare la suite.",
                 "Zachary IT intervient pour l’assistance, les postes, les évolutions et la coordination technique, avec un périmètre explicite plutôt qu’une promesse de support illimité.",
                 "Demander un diagnostic", "/diagnostic",
                 "Assistance et maintenance", "Les utilisateurs disposent d’un interlocuteur pour les incidents et les usages courants. Les mises à jour, postes et services associés sont traités dans le périmètre retenu.",
@@ -111,7 +111,27 @@ internal static class StorefrontContentSeed
                 [L("Infogérance VPS", "/services/infogerance-vps"), L("Maintenance Linux", "/services/maintenance-linux"), L("Bureau Windows à distance", "/services/bureau-windows-distance"), L("Nous contacter", "/contact")]),
             ["storefront:vps"] = Seo("VPS géré : hébergement et administration | Zachary IT", "Choisissez un VPS Zachary IT, un VPS Cloud ou une infogérance VPS. Zachary IT cadre l’hébergement, la maintenance, la sauvegarde et le suivi.", "VPS géré pour votre activité", "Un serveur virtuel peut héberger un site, une application ou un service métier. Zachary IT distingue le VPS fourni, le VPS Cloud et l’infogérance d’un serveur existant.", "Demander un devis", "/contact", "VPS Zachary IT, VPS Cloud et infogérance", "Le VPS Zachary IT et le VPS Cloud ne recouvrent pas la même mise en œuvre. Les caractéristiques CPU, RAM et stockage sont celles affichées sur chaque offre. Lorsque le parcours le permet, la commande peut être payée en ligne, puis la mise en service intervient après validation technique. L’infogérance peut aussi porter sur un VPS chez un autre fournisseur.", "Ce qui est cadré avant mise en service", "Usages, données, accès, sauvegarde, maintenance, dépendances et responsabilité du fournisseur sont qualifiés avant la mise en service. L’infogérance peut aussi porter sur un VPS chez un autre fournisseur.", [F("Puis-je garder mon hébergeur ?", "Oui, l’infogérance VPS peut être étudiée sur un serveur existant."), F("Le VPS Cloud est-il créé instantanément ?", "Non. Sa mise en service est organisée après validation technique."), F("Une sauvegarde est-elle incluse ?", "Elle dépend du périmètre retenu et doit être explicitement prévue.")], [L("Infogérance VPS", "/services/infogerance-vps"), L("Sauvegarde externalisée", "/services/sauvegarde-externalisee"), L("Maintenance Linux", "/services/maintenance-linux")]),
             ["storefront:infogerance-vps"] = Seo("Infogérance VPS : maintenance de serveur existant | Zachary IT", "Confiez la maintenance et le suivi de votre VPS existant à Zachary IT, y compris chez un fournisseur tiers après cadrage.", "Infogérance VPS : qui gère votre serveur au quotidien ?", "Zachary IT peut reprendre l’administration d’un VPS déjà hébergé chez un fournisseur tiers, après vérification des accès, de l’état du système et des dépendances.", "Demander un audit VPS", "/diagnostic", "Maintenance et suivi du serveur", "Mises à jour, surveillance des erreurs, sauvegarde, accès d’administration et documentation sont organisés selon le périmètre. L’infogérance ne supprime pas les obligations du fournisseur d’hébergement.", "En cas d’incident", "Les alertes et contacts sont définis avant la reprise. Les délais, horaires et opérations exceptionnelles sont précisés au devis ; aucun support continu non contracté n’est implicite.", [F("Puis-je conserver mon fournisseur ?", "Oui, si les accès et conditions permettent une administration responsable."), F("Que comprend la maintenance ?", "Le détail dépend du serveur ; mises à jour, surveillance et sauvegardes sont cadrées avant démarrage."), F("Zachary IT peut-il reprendre un serveur non documenté ?", "Une phase d’audit est nécessaire pour mesurer le risque et proposer une reprise réaliste.")], [L("VPS", "/services/vps"), L("Maintenance Linux", "/services/maintenance-linux"), L("Supervision informatique", "/services/supervision-informatique")]),
-            ["storefront:hebergement-web"] = Seo("Hébergement web géré et maintenance de site | Zachary IT", "Hébergement web, déploiement, mises à jour et suivi de site : Zachary IT prépare un service maintenable selon votre CMS et vos usages.", "Hébergement web géré pour un site qui reste maintenable", "Un site public dépend de son hébergement, de ses mises à jour, de ses accès et de ses sauvegardes. Zachary IT aide à organiser ces éléments sans masquer les limites du CMS existant.", "Demander un devis", "/contact", "Mettre un site en ligne et le suivre", "L’hébergement comprend le cadrage du domaine, du déploiement, des accès et des mises à jour nécessaires. Les performances, extensions et dépendances du site existant sont vérifiées avant toute promesse.", "CMS, sauvegarde et sécurité", "La maintenance peut couvrir un CMS, ses extensions et les correctifs nécessaires. Une protection web ou une sauvegarde sont des briques séparées, choisies selon le risque et le contenu à protéger.", [F("Puis-je garder mon CMS actuel ?", "Oui, après analyse de son état, de ses extensions et de ses accès."), F("Un hébergement garantit-il que le site ne tombera jamais ?", "Non. Le suivi réduit les risques mais ne permet pas de promettre une disponibilité absolue."), F("La maintenance WordPress est-elle incluse ?", "Elle fait l’objet d’un périmètre distinct selon le site.")], [L("Maintenance WordPress", "/services/maintenance-wordpress"), L("Cloudflare WAF", "/services/cloudflare-waf"), L("Gestion DNS et domaines", "/services/gestion-dns-domaines")]),
+            ["storefront:hebergement-web"] = Seo(
+                "Hébergement web géré et maintenance de site | Zachary IT",
+                "Hébergement web, mises à jour et suivi de site : Zachary IT prépare un service maintenable en tenant compte de votre site et de son système de gestion (CMS).",
+                "Hébergement web géré pour un site qui reste maintenable",
+                "Un site public dépend de son hébergement, de ses mises à jour, de ses accès et de ses sauvegardes. Zachary IT aide à organiser ces éléments et à identifier ce qui doit être amélioré avant intervention.",
+                "Demander un devis",
+                "/contact",
+                "Mettre un site en ligne et le suivre",
+                "L’hébergement comprend le cadrage du domaine, du déploiement, des accès et des mises à jour nécessaires. Les performances, extensions et dépendances du site existant sont vérifiées avant toute promesse.",
+                "Mises à jour, sauvegarde et sécurité",
+                "La maintenance peut couvrir le système qui fait fonctionner votre site (CMS), ses extensions et les correctifs nécessaires. Une protection web ou une sauvegarde sont des services distincts, choisis selon le risque et le contenu à protéger.",
+                [
+                    F("Puis-je garder mon système de gestion de site (CMS) actuel ?", "Oui, après analyse de son état, de ses extensions et de ses accès."),
+                    F("Un hébergement garantit-il que le site ne tombera jamais ?", "Non. Le suivi réduit les risques mais ne permet pas de promettre une disponibilité absolue."),
+                    F("La maintenance WordPress est-elle incluse ?", "Elle fait l’objet d’un périmètre distinct selon le site."),
+                ],
+                [
+                    L("Maintenance WordPress", "/services/maintenance-wordpress"),
+                    L("Protection de site web (Cloudflare WAF)", "/services/cloudflare-waf"),
+                    L("Nom de domaine et DNS", "/services/gestion-dns-domaines"),
+                ]),
             ["storefront:maintenance-linux"] = Seo("Maintenance Linux : mises à jour et suivi de serveur | Zachary IT", "Zachary IT assure la maintenance Linux de serveurs existants : mises à jour, suivi des erreurs, sauvegarde et interventions cadrées.", "Maintenance Linux pour ne pas laisser un serveur s’user en silence", "Un serveur Linux a besoin de mises à jour, de contrôle des erreurs, d’accès maîtrisés et d’une stratégie de sauvegarde. Zachary IT intervient sur un périmètre documenté.", "Demander un audit serveur", "/diagnostic", "Ce que couvre une maintenance Linux", "Le périmètre peut inclure les correctifs système, les journaux utiles, l’état des services et les alertes. Les applications métier, versions anciennes ou changements majeurs sont qualifiés séparément.", "Garder son hébergeur et gérer un incident", "Vous pouvez conserver votre fournisseur si les accès permettent une intervention. En cas d’incident, le mode de contact, les sauvegardes et les limites de responsabilité sont établis au préalable.", [F("Qui met à jour mon serveur ?", "Zachary IT peut le faire dans le cadre d’une maintenance définie."), F("Les erreurs sont-elles surveillées ?", "Les signaux retenus dépendent du service et de la supervision prévue."), F("Puis-je conserver mon hébergeur ?", "Oui, sous réserve d’accès et de conditions compatibles avec l’infogérance.")], [L("Infogérance VPS", "/services/infogerance-vps"), L("Supervision informatique", "/services/supervision-informatique"), L("Sauvegarde externalisée", "/services/sauvegarde-externalisee")]),
             ["storefront:maintenance-wordpress"] = Seo("Maintenance WordPress : mises à jour, sauvegarde et sécurité | Zachary IT", "Zachary IT maintient votre site WordPress : mises à jour, extensions, sauvegarde et diagnostic des risques avant intervention.", "Maintenance WordPress : garder votre site à jour sans improviser", "Un site WordPress dépend du cœur, des extensions, du thème, de l’hébergement et des accès. Zachary IT vérifie cet ensemble avant de définir une maintenance.", "Demander un audit WordPress", "/diagnostic", "Mises à jour et compatibilité", "Les mises à jour sont préparées en tenant compte des extensions et du thème. Une extension abandonnée, une personnalisation fragile ou un hébergement ancien peut nécessiter une correction préalable.", "Sauvegarde et protection", "Une copie restaurable est distincte de la synchronisation de fichiers. La protection WAF ou les réglages DNS peuvent compléter la maintenance, mais ne garantissent pas l’absence de vulnérabilité.", [F("Mettez-vous à jour toutes les extensions ?", "Le périmètre est évalué selon leur état, leur compatibilité et leur criticité."), F("Pouvez-vous reprendre un site créé par un autre prestataire ?", "Oui, après audit des accès, du code et de l’hébergement."), F("Une maintenance inclut-elle une refonte ?", "Non, une refonte ou une évolution importante fait l’objet d’un projet distinct.")], [L("Hébergement web", "/services/hebergement-web"), L("Sauvegarde externalisée", "/services/sauvegarde-externalisee"), L("Cloudflare WAF", "/services/cloudflare-waf")]),
             ["storefront:sauvegarde-externalisee"] = Seo("Sauvegarde externalisée : copie séparée et restauration | Zachary IT", "Protégez vos données avec une sauvegarde externalisée, une copie séparée, des restaurations préparées et une supervision adaptée.", "Sauvegarde externalisée : une copie séparée, utile le jour où il faut restaurer", "Une synchronisation propage aussi une suppression ou une erreur. Une sauvegarde conserve une copie distincte et doit être pensée avec la restauration et la supervision.", "Demander un audit sauvegarde", "/diagnostic", "Sauvegarde, synchronisation et restauration", "Zachary IT identifie les données à protéger, la copie séparée, les accès et les conditions de restauration. La durée de conservation et le périmètre sont annoncés dans l’offre adaptée.", "Pourquoi la supervision compte", "Une sauvegarde qui échoue sans alerte ne protège pas l’activité. Les contrôles et notifications utiles font partie du cadrage, sans promettre qu’aucune perte de données ne puisse survenir.", [F("Une synchronisation est-elle une sauvegarde ?", "Non. Elle ne protège pas nécessairement contre les suppressions ou altérations propagées."), F("Pouvez-vous restaurer mes données ?", "La restauration dépend de la copie, des données concernées et du périmètre prévu."), F("La sauvegarde est-elle liée à un serveur précis ?", "Elle peut couvrir différents environnements après qualification.")], [L("Supervision informatique", "/services/supervision-informatique"), L("VPS", "/services/vps"), L("Hébergement web", "/services/hebergement-web")]),
@@ -136,7 +156,48 @@ internal static class StorefrontContentSeed
             [S(firstHeading, firstBody), S(secondHeading, secondBody), S("Tarif et devis", pricingBody ?? "Le service est qualifié avant mise en œuvre. Lorsque le prix ne peut pas être déterminé immédiatement, nous vous proposons un devis adapté à votre besoin.")], faq, links);
 
     private static Page PageOf(string seoTitle, string seoDescription, string title, string lead, string ctaLabel, string ctaHref, IReadOnlyList<Section> sections, IReadOnlyList<Faq> faq, IReadOnlyList<Link> links, IReadOnlyList<ProblemEntry>? problemEntries = null)
-        => new(seoTitle, seoDescription, title, lead, ctaLabel, ctaHref, sections, faq, links, problemEntries);
+        => new(
+            NormalizePublicCopy(seoTitle),
+            NormalizePublicCopy(seoDescription),
+            NormalizePublicCopy(title),
+            NormalizePublicCopy(lead),
+            NormalizeCtaLabel(ctaLabel, ctaHref),
+            ctaHref,
+            sections.Select(section => new Section(
+                NormalizePublicCopy(section.Heading),
+                NormalizePublicCopy(section.BodyMarkdown))).ToArray(),
+            faq.Select(item => new Faq(
+                NormalizePublicCopy(item.Question),
+                NormalizePublicCopy(item.Answer))).ToArray(),
+            links.Select(link => new Link(
+                NormalizePublicCopy(link.Label),
+                link.Href)).ToArray(),
+            problemEntries?.Select(entry => new ProblemEntry(
+                NormalizePublicCopy(entry.Title),
+                NormalizePublicCopy(entry.Description),
+                entry.Href)).ToArray());
+
+    // Cette normalisation ne s'applique qu'au seed de secours : elle ne
+    // reecrit jamais le contenu administrable deja enregistre en base.
+    // Les formulations historiques restent donc modifiables dans le CMS sans
+    // qu'une valeur initiale obsolete soit a nouveau publiee.
+    private static string NormalizePublicCopy(string value)
+        => value
+            .Replace("Cloud & Hébergement", "Hébergement & services en ligne", StringComparison.Ordinal)
+            .Replace("Domaines & Messagerie", "Domaines & messagerie", StringComparison.Ordinal)
+            .Replace("Réseau & Sécurité", "Réseau & sécurité", StringComparison.Ordinal)
+            .Replace("Support & IT", "Assistance & maintenance", StringComparison.Ordinal)
+            .Replace("lorsquÔÇÖelles sÔÇÖappliquent", "lorsqu’elles s’appliquent", StringComparison.Ordinal)
+            .Replace("Demander un audit", "Faire le diagnostic", StringComparison.Ordinal)
+            .Replace("Demander un diagnostic", "Faire le diagnostic", StringComparison.Ordinal)
+            .Replace("demandez un audit", "faites le diagnostic", StringComparison.Ordinal)
+            .Replace("d’audit", "de diagnostic", StringComparison.Ordinal)
+            .Replace("un audit permet", "le diagnostic permet", StringComparison.Ordinal)
+            .Replace("après audit des", "après vérification des", StringComparison.Ordinal)
+            .Replace("Une phase d’audit", "Un état des lieux", StringComparison.Ordinal);
+
+    private static string NormalizeCtaLabel(string label, string href)
+        => href == "/diagnostic" ? "Faire le diagnostic" : NormalizePublicCopy(label);
 
     private static Section S(string heading, string body) => new(heading, body);
     private static Faq F(string question, string answer) => new(question, answer);

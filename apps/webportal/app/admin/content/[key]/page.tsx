@@ -96,7 +96,7 @@ export default async function AdminManagedContentDetailPage({
             ? "Contenu légal"
             : content.contentType === "page"
               ? "Page du site"
-              : "Fiche technique pack"
+              : "Contenu de l’offre"
         }
         title={content.title}
       />

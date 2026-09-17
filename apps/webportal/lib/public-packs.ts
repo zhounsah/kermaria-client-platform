@@ -91,6 +91,42 @@ export function findPublicPackView(
   return views.find((view) => view.key === packKey) ?? null;
 }
 
+/**
+ * Les fiches d'offre publiees avant la passe V3 peuvent encore contenir le
+ * paragraphe genere par l'ancien gabarit. Il explique le lien entre le pack
+ * et Billing V2, ce qui est utile a l'administration mais pas au visiteur.
+ *
+ * Cette compatibilite est volontairement bornee aux formulations generees
+ * connues : elle ne reecrit pas les contenus libres rediges dans le CMS. Les
+ * donnees d'origine restent donc disponibles a l'administration jusqu'a leur
+ * mise a jour editoriale.
+ */
+export function presentPublicOfferMarkdown(markdown: string): string {
+  return markdown
+    .replace(/^## Composants techniques liés$/gim, "## Services associés")
+    .replace(
+      /^La composition technique liée à cette offre est calculée automatiquement à partir du catalogue commercial actif\.(?:[^\n]*)$/gim,
+      "Les services compris dans cette offre sont présentés ci-dessus. Ils sont adaptés à votre besoin lors de la mise en service.",
+    )
+    .replace(
+      /^La composition technique active de cette offre est calculée automatiquement\.(?:[^\n]*)$/gim,
+      "Les services compris dans cette offre sont présentés ci-dessus. Ils sont adaptés à votre besoin lors de la mise en service.",
+    )
+    .replace(
+      /^Certains composants attendus ne sont pas encore retrouvés dans le catalogue actif \([^\n]*\)\.$/gim,
+      "Le contenu exact de l'offre vous est confirmé avant sa mise en service.",
+    )
+    .replace(/^## Pré-requis$/gim, "## Avant de commencer")
+    .replace(
+      /^- Cette fiche décrit le périmètre standard de l'offre et ne remplace pas un devis spécifique\.$/gim,
+      "- Cette offre décrit le périmètre standard et ne remplace pas un devis spécifique.",
+    )
+    .replace(
+      /^- Cette fiche décrit le périmètre standard de l'offre et ne remplace pas un devis ou des conditions particulières\.$/gim,
+      "- Cette offre décrit le périmètre standard et ne remplace pas un devis ou des conditions particulières.",
+    );
+}
+
 function toView(
   manifest: PublicPackManifest,
   preset: BillingV2PublicPreset,

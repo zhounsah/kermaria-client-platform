@@ -306,7 +306,7 @@ function SubscriptionSection({ onOpen }: { onOpen: (modal: ModalState) => void }
           <Detail label="Prochaine échéance" value={subscription.nextBillingAt} />
           <Detail label="Stockage inclus" value={subscription.storageIncluded} />
           <Detail label="Utilisateurs" value={subscription.users} />
-          <Detail label="Mensualite" value={subscription.monthlyPrice} />
+          <Detail label="Mensualité" value={subscription.monthlyPrice} />
           <Detail label="Services" value={subscription.services} />
         </dl>
         <div className="button-row">
@@ -353,13 +353,13 @@ function InvoicesSection({ onOpen }: { onOpen: (modal: ModalState) => void }) {
           detail="Aucune action de paiement réelle"
           label="A payer"
           tone="green"
-          value="0 EUR"
+          value="0,00 €"
         />
         <MetricCard
           detail="Cycle mensuel de l'offre"
           label="Dernière facture"
           tone="amber"
-          value="39,90 EUR"
+          value="39,90 €"
         />
       </section>
       <section className="table-card">

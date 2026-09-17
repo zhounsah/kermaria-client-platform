@@ -1070,7 +1070,7 @@ assert.doesNotMatch(diagnosticPage, /DIAGNOSTIC_RECOMMENDATION_CONTENT_KEY/);
 assert.match(diagnosticWizard, /recommendPreDiagnosticOffer/);
 assert.match(diagnosticWizard, /"\/api\/formules\/devis"/);
 assert.match(diagnosticWizard, /billingV2SelectionToSearchParams/);
-assert.match(diagnosticWizard, /Choisir cette formule/);
+assert.match(diagnosticWizard, /Voir cette offre/);
 assert.match(diagnosticWizard, /Être rappelé/);
 assert.match(diagnosticAdminSimulator, /pruneHiddenDiagnosticAnswers/);
 assert.match(diagnosticAdminSimulator, /outcome\.appliedRuleIds/);

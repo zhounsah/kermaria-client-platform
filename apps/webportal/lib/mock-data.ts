@@ -323,8 +323,6 @@ function createMockPackSheetBody(packCode: PublicPackCode) {
     return "## Présentation\n\nContenu indisponible.";
   }
 
-  const componentCount = pack.technicalServiceReferences.length;
-
   const lines = [
     "## Présentation",
     "",
@@ -332,20 +330,18 @@ function createMockPackSheetBody(packCode: PublicPackCode) {
     "",
     `Public visé : ${pack.audience}`,
     "",
-    "## Composants techniques liés",
+    "## Services associés",
     "",
-    componentCount > 0
-      ? `La composition technique active de cette offre est calculée automatiquement. ${componentCount} composant(s) sont actuellement rattaché(s) et affiché(s) séparément sur la page publique.`
-      : "La composition technique active de cette offre est calculée automatiquement et affichée séparément sur la page publique.",
+    "Les services compris dans cette offre sont présentés ci-dessus. Ils sont adaptés à votre besoin lors de la mise en service.",
     "",
-    "## Pré-requis",
+    "## Avant de commencer",
     "",
     "- Un court cadrage reste recommandé pour valider les usages, accès et contraintes techniques.",
     "- Les accès nominatifs et besoins d'accompagnement sont confirmés avant mise en service.",
     "",
     "## Limites",
     "",
-    "- Cette fiche décrit le périmètre standard de l'offre et ne remplace pas un devis spécifique.",
+    "- Cette offre décrit le périmètre standard et ne remplace pas un devis spécifique.",
     "- Les demandes hors périmètre peuvent donner lieu à une prestation complémentaire.",
     "",
     "## Support",

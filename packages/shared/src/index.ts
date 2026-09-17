@@ -1516,7 +1516,7 @@ export function getManagedContentRegistry(): readonly ManagedContentRegistryEntr
     ...PUBLIC_PACKS.map((pack) => ({
       key: buildPackSheetContentKey(pack.key),
       contentType: "pack_sheet" as const,
-      title: `Fiche technique - ${pack.label}`,
+      title: `Contenu de l’offre — ${pack.label}`,
       publicPath: `/offres/${pack.slug}`,
       sortOrder: 100 + pack.order,
       packCode: pack.key,
@@ -1527,10 +1527,10 @@ export function getManagedContentRegistry(): readonly ManagedContentRegistryEntr
 const STOREFRONT_CONTENT_REGISTRY: readonly ManagedContentRegistryEntry[] = [
   ["storefront:services", "Pages principales", "Catalogue des services", "/services", 40],
   ["storefront:tarifs", "Pages principales", "Tarifs Zachary IT", "/tarifs", 45],
-  ["storefront:cloud-hebergement", "Catégories services", "Cloud & Hébergement", "/services/cloud-hebergement", 50],
-  ["storefront:domaines-messagerie", "Catégories services", "Domaines & Messagerie", "/services/domaines-messagerie", 51],
-  ["storefront:reseau-securite", "Catégories services", "Réseau & Sécurité", "/services/reseau-securite", 52],
-  ["storefront:support-it", "Catégories services", "Support & IT", "/services/support-it", 53],
+  ["storefront:cloud-hebergement", "Catégories services", "Hébergement & services en ligne", "/services/cloud-hebergement", 50],
+  ["storefront:domaines-messagerie", "Catégories services", "Domaines & messagerie", "/services/domaines-messagerie", 51],
+  ["storefront:reseau-securite", "Catégories services", "Réseau & sécurité", "/services/reseau-securite", 52],
+  ["storefront:support-it", "Catégories services", "Assistance & maintenance", "/services/support-it", 53],
   ["storefront:vps", "Pages services SEO", "VPS", "/services/vps", 60],
   ["storefront:infogerance-vps", "Pages services SEO", "Infogérance VPS", "/services/infogerance-vps", 61],
   ["storefront:hebergement-web", "Pages services SEO", "Hébergement web", "/services/hebergement-web", 62],
@@ -2407,6 +2407,85 @@ export interface BillingV2PublicCatalog {
   services: BillingV2PublicService[];
   commitments: BillingV2PublicCommitment[];
 }
+
+/**
+ * Contrat de lecture pour la vitrine commerciale.
+ *
+ * Il ne transporte jamais une intention de souscription ni une regle de
+ * calcul : les montants et les composantes qu'il affiche sont ceux deja
+ * resolus par Billing V2. Cette forme est volontairement distincte du
+ * catalogue de configuration utilise par /formules afin que la vitrine ne
+ * dependa pas de ses codes, scopes ou choix techniques.
+ */
+export type PublicCommercialPriceType = "fixed" | "from" | "quote";
+
+/**
+ * Parcours commercial public, distinct du drapeau technique historique
+ * `selfServiceOrderable` de Billing V2. Ce dernier ne prouve pas qu'un
+ * service soit achetable seul : il peut uniquement faire partie d'une offre.
+ *
+ * `direct` ne pourra etre emis que lorsqu'un parcours individuel explicite
+ * sera fourni par l'autorite commerciale ; il n'est pas deduit d'un prix ou
+ * de `selfServiceOrderable`.
+ */
+export type PublicCommercialOrderingMode = "direct" | "offer_component" | "quote";
+
+export type PublicCommercialMoney = {
+  amountCents: number;
+  currency: string;
+};
+
+export type PublicCommercialTier = {
+  id: string;
+  label: string;
+  description: string | null;
+  recurringPrice: PublicCommercialMoney | null;
+  initialFees: PublicCommercialMoney[];
+  details: string[];
+};
+
+export type PublicCommercialCta = {
+  label: string;
+  href: string;
+};
+
+export type PublicCommercialService = {
+  /** Identifiant stable Billing V2, jamais affiche comme vocabulaire client. */
+  id: string;
+  slug: string;
+  name: string;
+  category: string;
+  description: string | null;
+  priceType: PublicCommercialPriceType;
+  startingPrice: PublicCommercialMoney | null;
+  billingPeriodLabel: string | null;
+  billingUnitLabel: string | null;
+  initialFees: PublicCommercialMoney[];
+  tiers: PublicCommercialTier[];
+  options: string[];
+  included: string[];
+  notIncluded: string[];
+  orderingMode: PublicCommercialOrderingMode;
+  /** Vrai uniquement pour le mode `direct`, jamais par dedution. */
+  directlyOrderable: boolean;
+  requiresQuote: boolean;
+  /** Page publique dediee lorsqu'elle existe reellement. */
+  publicUrl: string | null;
+  primaryCta: PublicCommercialCta;
+  secondaryCta: PublicCommercialCta | null;
+  displayOrder: number;
+  visible: boolean;
+};
+
+export type PublicCommercialCatalog = {
+  source: string;
+  /**
+   * Formulation fiscale centralisee pour la vitrine. Elle est provisoire tant
+   * qu'aucune autorite fiscale fiable ne permet de publier HT ou TTC.
+   */
+  taxNotice: string;
+  services: PublicCommercialService[];
+};
 
 /**
  * Deux formes, aucune n'etant un cas particulier de l'autre :

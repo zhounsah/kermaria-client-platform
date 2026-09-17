@@ -55,8 +55,8 @@ export default async function FormulesPage() {
       {presets.length === 0 ? (
         <p className="formules-empty">
           Le catalogue des offres n&apos;est pas joignable pour le moment.
-          Les prix sont servis par l&apos;API interne : aucune valeur
-          tarifaire n&apos;est conservée dans le site public.
+          Les tarifs sont mis à jour depuis le catalogue Zachary IT : aucune
+          valeur tarifaire n&apos;est conservée dans cette page.
         </p>
       ) : (
         <>

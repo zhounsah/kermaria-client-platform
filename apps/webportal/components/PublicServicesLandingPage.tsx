@@ -139,17 +139,16 @@ export function PublicServicesLandingPage({
 
         <section className="service-cta">
           <div>
-            <h2>Votre besoin touche plusieurs sujets ?</h2>
+            <h2>Vous ne savez pas quel service choisir ?</h2>
             <p>
-              Un audit permet de partir de votre existant, d&apos;identifier les
-              priorités et de cadrer les responsabilités avant de proposer une
-              solution.
+              Le diagnostic vous aide à situer votre besoin et à identifier une
+              première orientation. Pour une demande générale ou un besoin à
+              qualifier, vous pouvez aussi nous contacter directement.
             </p>
           </div>
           <div className="button-row storefront-action-row">
-            <Link className="button button-secondary" href={primaryAction.href}>
-              {primaryAction.label}
-            </Link>
+            <Link className="button" href="/diagnostic">Faire le diagnostic</Link>
+            <Link className="button button-secondary" href="/contact">Nous contacter</Link>
           </div>
         </section>
       </div>

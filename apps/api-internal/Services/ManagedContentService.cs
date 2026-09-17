@@ -113,10 +113,10 @@ public sealed partial class ManagedContentService : IManagedContentService
             37),
         new("storefront:services", "storefront_page", "Pages principales — Catalogue des services", "/services", 40),
         new("storefront:tarifs", "storefront_page", "Pages principales — Tarifs Zachary IT", "/tarifs", 45),
-        new("storefront:cloud-hebergement", "storefront_page", "Catégories services — Cloud & Hébergement", "/services/cloud-hebergement", 50),
-        new("storefront:domaines-messagerie", "storefront_page", "Catégories services — Domaines & Messagerie", "/services/domaines-messagerie", 51),
-        new("storefront:reseau-securite", "storefront_page", "Catégories services — Réseau & Sécurité", "/services/reseau-securite", 52),
-        new("storefront:support-it", "storefront_page", "Catégories services — Support & IT", "/services/support-it", 53),
+        new("storefront:cloud-hebergement", "storefront_page", "Catégories services — Hébergement & services en ligne", "/services/cloud-hebergement", 50),
+        new("storefront:domaines-messagerie", "storefront_page", "Catégories services — Domaines & messagerie", "/services/domaines-messagerie", 51),
+        new("storefront:reseau-securite", "storefront_page", "Catégories services — Réseau & sécurité", "/services/reseau-securite", 52),
+        new("storefront:support-it", "storefront_page", "Catégories services — Assistance & maintenance", "/services/support-it", 53),
         new("storefront:vps", "storefront_page", "Pages services SEO — VPS", "/services/vps", 60),
         new("storefront:infogerance-vps", "storefront_page", "Pages services SEO — Infogérance VPS", "/services/infogerance-vps", 61),
         new("storefront:hebergement-web", "storefront_page", "Pages services SEO — Hébergement web", "/services/hebergement-web", 62),
@@ -479,16 +479,12 @@ public sealed partial class ManagedContentService : IManagedContentService
                     : null)
             .Where(service => service is not null)
             .ToArray();
-        var missingComponentCount =
-            (definition.TechnicalServiceReferences?.Count ?? 0)
-            - linkedComponents.Length;
-
         var builder = new StringBuilder();
         builder.AppendLine("## Présentation");
         builder.AppendLine();
         builder.AppendLine(
             definition.PackDescription
-            ?? "Cette fiche technique décrit le périmètre opérationnel de l'offre.");
+            ?? "Cette offre décrit ce qui est prévu pour répondre au besoin présenté.");
         builder.AppendLine();
 
         if (!string.IsNullOrWhiteSpace(definition.PackAudience))
@@ -497,22 +493,15 @@ public sealed partial class ManagedContentService : IManagedContentService
             builder.AppendLine();
         }
 
-        builder.AppendLine("## Composants techniques liés");
+        builder.AppendLine("## Services associés");
         builder.AppendLine();
         builder.AppendLine(
             linkedComponents.Length > 0
-                ? $"La composition technique liée à cette offre est calculée automatiquement à partir du catalogue commercial actif. {linkedComponents.Length} composant(s) sont actuellement rattaché(s) et affiché(s) séparément sur la page publique."
-                : "La composition technique liée à cette offre est calculée automatiquement à partir du catalogue commercial actif et affichée séparément sur la page publique.");
-
-        if (missingComponentCount > 0)
-        {
-            builder.AppendLine();
-            builder.AppendLine(
-                $"Certains composants attendus ne sont pas encore retrouvés dans le catalogue actif ({missingComponentCount} référence(s) à qualifier).");
-        }
+                ? "Les services compris dans cette offre sont présentés ci-dessus. Ils sont adaptés à votre besoin lors de la mise en service."
+                : "Le contenu exact de cette offre vous est confirmé avant sa mise en service.");
 
         builder.AppendLine();
-        builder.AppendLine("## Pré-requis");
+        builder.AppendLine("## Avant de commencer");
         builder.AppendLine();
         builder.AppendLine(
             "- Un échange de cadrage reste nécessaire pour confirmer les usages, équipements et contraintes d'accès.");
@@ -522,7 +511,7 @@ public sealed partial class ManagedContentService : IManagedContentService
         builder.AppendLine("## Limites");
         builder.AppendLine();
         builder.AppendLine(
-            "- Cette fiche décrit le périmètre standard de l'offre et ne remplace pas un devis ou des conditions particulières.");
+            "- Cette offre décrit le périmètre standard et ne remplace pas un devis ou des conditions particulières.");
         builder.AppendLine(
             "- Les demandes hors périmètre, urgentes ou spécifiques peuvent nécessiter une prestation complémentaire.");
         builder.AppendLine();

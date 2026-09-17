@@ -400,7 +400,7 @@ function DiagnosticOffer({
   return <section className="diagnostic-offer" aria-live="polite">
     <p className="eyebrow">Orientation commerciale</p>
     <h2>{recommendation.title}</h2>
-    <h3>{recommendation.offerName ?? preset?.name ?? "Formule standard"}</h3>
+    <h3>{recommendation.offerName ?? preset?.name ?? "Offre recommandée"}</h3>
     <p>{recommendation.reason}</p>
     {selection && recommendation.selectedStorageGb ? <p className="diagnostic-offer-description">Capacité retenue dans le catalogue : {recommendation.selectedStorageGb} Go.</p> : null}
     {quote ? <div className="diagnostic-offer-price">
@@ -408,8 +408,8 @@ function DiagnosticOffer({
       <strong>{formatCurrencyFromCents(quote.monthlyAfterDiscountCents)} / mois</strong>
       {quote.oneTimeCents > 0 ? <small>{formatCurrencyFromCents(quote.oneTimeCents)} à la mise en service.</small> : null}
     </div> : quoteError ? <p className="diagnostic-offer-error">Le tarif n&apos;a pas pu être calculé pour le moment. Réessayez dans un instant.</p> : <p className="diagnostic-offer-loading">Calcul du tarif à partir du catalogue actuel…</p>}
-    {href && quoteAvailable ? <Link className="button diagnostic-offer-cta" href={href}>Choisir cette formule</Link> : null}
-    {quote && !quoteAvailable ? <p className="diagnostic-offer-error">Cette formule n&apos;est plus disponible à la souscription en ligne. Recommencez le diagnostic ou contactez-nous pour faire le point.</p> : null}
+    {href && quoteAvailable ? <Link className="button diagnostic-offer-cta" href={href}>Voir cette offre</Link> : null}
+    {quote && !quoteAvailable ? <p className="diagnostic-offer-error">Cette offre n&apos;est plus disponible à la souscription en ligne. Recommencez le diagnostic ou contactez-nous pour faire le point.</p> : null}
   </section>;
 }
 

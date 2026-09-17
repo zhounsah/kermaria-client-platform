@@ -45,7 +45,7 @@ const modules: FederatedModule[] = [
   },
   {
     href: "/admin/public-pack-catalog",
-    label: "Vitrine des formules",
+    label: "Présentation des offres",
     authority:
       "Présentation publique des formules et de leur mise en avant.",
     boundary:

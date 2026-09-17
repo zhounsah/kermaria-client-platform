@@ -212,7 +212,7 @@ export function PublicPriorityServicePage({
             <p>
               {hasFormulaPath
                 ? "Une offre couvre le besoin standard. Pour un environnement existant ou un p\u00e9rim\u00e8tre particulier, demandez-nous conseil avant de continuer."
-                : "Un devis ou un audit permet de confirmer le p\u00e9rim\u00e8tre, les pr\u00e9requis et les limites avant mise en service."}
+                : "Un devis ou un échange de cadrage permet de confirmer le p\u00e9rim\u00e8tre, les pr\u00e9requis et les limites avant mise en service."}
             </p>
           </div>
           <div className="button-row storefront-action-row">
@@ -233,5 +233,4 @@ export function PublicPriorityServicePage({
     </>
   );
 }
-
 

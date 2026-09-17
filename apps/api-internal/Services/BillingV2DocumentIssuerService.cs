@@ -18,7 +18,7 @@ public sealed record BillingV2DocumentIssueResult(
 /// <c>commercial_documents.payment_method</c> est un ENUM MariaDB borne a
 /// ('paypal','stripe','manual'). Y ecrire une valeur hors liste ne leve pas
 /// une erreur metier lisible : MariaDB repond
-/// Â« Data truncated for column 'payment_method' Â», la confirmation echoue et
+/// « Data truncated for column 'payment_method' », la confirmation échoue et
 /// la facture reste emise mais jamais marquee payee alors que l'argent est
 /// encaisse. Le rail reel du reglement est donc traduit ici, et tout provider
 /// inconnu retombe sur 'manual' - une valeur toujours valide, qui signale un

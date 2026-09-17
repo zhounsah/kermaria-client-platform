@@ -254,7 +254,7 @@ export function AdminPublicPackCatalogForm({
       }));
       setMessage({
         tone: "success",
-        text: "La vitrine packs a été enregistrée.",
+        text: "La présentation publique des offres a été enregistrée.",
       });
       router.refresh();
     } else {
@@ -270,6 +270,11 @@ export function AdminPublicPackCatalogForm({
 
   return (
     <form className="form-card" onSubmit={handleSubmit}>
+      <p className="form-hint">
+        Ces champs sont destinés à la vitrine : rédigez pour un client non
+        technicien, en commençant par le besoin ou le bénéfice. Les codes de
+        pack restent des identifiants techniques d&apos;administration.
+      </p>
       <div className="form-grid">
         <label>
           Surtitre de la page
@@ -592,7 +597,7 @@ export function AdminPublicPackCatalogForm({
       ) : null}
 
       <SubmitButton
-        idleLabel="Enregistrer la vitrine packs"
+        idleLabel="Enregistrer la présentation des offres"
         isSubmitting={isSubmitting}
         submittingLabel="Enregistrement..."
       />

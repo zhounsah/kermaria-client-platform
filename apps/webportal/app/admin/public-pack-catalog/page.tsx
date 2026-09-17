@@ -16,13 +16,13 @@ import {
 import { buildPublicPackViews } from "@/lib/public-packs";
 
 export const metadata = {
-  title: "Vitrine des formules - Administration",
+  title: "Présentation des offres - Administration",
 };
 
 export const dynamic = "force-dynamic";
 
 /**
- * Vitrine des formules : présentation seulement.
+ * Présentation des offres : contenu public seulement.
  *
  * Cet écran pilote ce que le visiteur lit — libellés, badges, lignes du
  * comparatif. Il ne pilote aucun tarif : services, paliers, versions de prix,
@@ -45,20 +45,20 @@ export default async function AdminPublicPackCatalogPage() {
   return (
     <>
       <PageHeader
-        description="Pilotez la présentation publique des formules sans modifier le code ni toucher au socle de facturation."
+        description="Pilotez la présentation publique des offres sans modifier le code ni toucher au socle de facturation."
         eyebrow="Administration interne"
-        title="Vitrine des formules"
+        title="Présentation publique des offres"
       />
 
       <section className="content-panel page-header-split">
         <div>
           <span className="card-kicker">Pilotage back-office</span>
-          <h2>Tout gérer sans retoucher le code</h2>
+          <h2>Présentation publique et modèle technique séparés</h2>
           <p>
-            Cette page centralise la vitrine publique. Les textes, badges et
-            lignes du comparatif se modifient ici. Les tarifs, les versions de
-            prix et les rattachements provider se règlent dans le catalogue
-            Billing V2.
+            Cette page pilote ce que le client lit : textes, badges et lignes du
+            comparatif. Une offre publique s&apos;appuie sur un preset Billing V2 ;
+            les tarifs, versions de prix, services, paliers et rattachements de
+            provider se règlent exclusivement dans le catalogue Billing V2.
           </p>
         </div>
         <div className="stack-row">
@@ -72,11 +72,11 @@ export default async function AdminPublicPackCatalogPage() {
       </section>
 
       {publicPacks.length > 0 ? (
-        <SectionCard ariaLabel="Formules publiées">
-          <h2>Formules publiées</h2>
+        <SectionCard ariaLabel="Offres publiques">
+          <h2>Offres publiques</h2>
           <p className="field-hint">
-            Une formule n&apos;apparaît ici que si un preset Billing V2 porte
-            son code. Le montant indiqué est le point de départ mensuel calculé
+            Chaque offre publique apparaît ici lorsqu&apos;elle est reliée à un preset
+            Billing V2. Le montant indiqué est le point de départ mensuel calculé
             par le serveur pour la configuration recommandée ; il n&apos;est pas
             modifiable depuis cet écran.
           </p>
@@ -85,10 +85,10 @@ export default async function AdminPublicPackCatalogPage() {
             <table className="public-pack-admin-table">
               <thead>
                 <tr>
-                  <th>Formule</th>
-                  <th>Code preset</th>
+                  <th>Offre publique</th>
+                  <th>Preset Billing V2</th>
                   <th>À partir de</th>
-                  <th>Fiche technique</th>
+                  <th>Contenu de l&apos;offre</th>
                   <th>Tarifs</th>
                 </tr>
               </thead>
@@ -108,7 +108,7 @@ export default async function AdminPublicPackCatalogPage() {
                     </td>
                     <td>
                       <Link
-                        aria-label={`Modifier la fiche technique de ${pack.label}`}
+                        aria-label={`Modifier le contenu de l’offre ${pack.label}`}
                         className="table-action"
                         href={`/admin/content/${encodeURIComponent(buildPackSheetContentKey(pack.key))}`}
                       >
@@ -129,21 +129,21 @@ export default async function AdminPublicPackCatalogPage() {
       ) : (
         <ErrorState
           compact
-          description="Aucune formule publiée : soit le catalogue Billing V2 est injoignable, soit aucun preset ne porte le code d'une formule de la vitrine."
+          description="Aucune offre publique : soit le catalogue Billing V2 est injoignable, soit aucun preset Billing V2 ne correspond à une offre de la vitrine."
           reference={catalogResult.correlationId}
-          title="Aucune formule publiée"
+          title="Aucune offre publique"
         />
       )}
 
       {contentResult.error ? (
         <ErrorState
-          description="Impossible de charger la configuration publique des formules pour le moment."
+          description="Impossible de charger la présentation publique des offres pour le moment."
           reference={contentResult.correlationId}
           title="Vitrine indisponible"
         />
       ) : (
-        <SectionCard ariaLabel="Configuration de la vitrine des formules">
-          <h2>Modifier la vitrine publique</h2>
+        <SectionCard ariaLabel="Configuration de la présentation publique des offres">
+          <h2>Modifier la présentation publique</h2>
           <p className="field-hint">
             Cette zone pilote uniquement la présentation client et le tableau
             comparatif visible sur le site public.

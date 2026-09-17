@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     return controlledAdminError(
       400,
       "INVALID_REQUEST",
-      "La catÃ©gorie fournie est invalide.",
+      "La catégorie fournie est invalide.",
       correlationId,
     );
   }

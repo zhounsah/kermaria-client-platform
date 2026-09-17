@@ -5,6 +5,10 @@ async function read(path) {
   return readFile(new URL(`../${path}`, import.meta.url), "utf8");
 }
 
+async function readApi(path) {
+  return readFile(new URL(`../../api-internal/${path}`, import.meta.url), "utf8");
+}
+
 const mojibakePattern = /\u251C(?:\u00AE|\u00AC|\u00E1|\u00BF)|\u253C\u00F4|\uFFFD/u;
 
 const forbiddenPublicTerms = [
@@ -114,6 +118,45 @@ assert.match(configurator, /window\.innerWidth - document\.documentElement\.clie
 assert.match(configurator, /previousPaddingRight[\s\S]*?body\.style\.paddingRight = previousPaddingRight/);
 assert.doesNotMatch(configurator, /<aside className="vps-configurator-notice"/);
 
+const loginPage = await read("app/login/page.tsx");
+assert.doesNotMatch(loginPage, /cookie HttpOnly|Active Directory|mot de passe AD/);
+assert.match(loginPage, /connexion et votre session sont protégées/);
+
+const appShell = await read("components/AppShell.tsx");
+assert.doesNotMatch(appShell, /\n\s*<p>\{APP_VERSION_LABEL\}<\/p>\s*\n/);
+assert.match(appShell, /effectiveSession\?\.user\.role === "internal_admin" \? <p>\{APP_VERSION_LABEL\}<\/p> : null/);
+
+const offerPage = await read("app/offres/[slug]/page.tsx");
+assert.doesNotMatch(offerPage, /Fiche technique|Référence : \{service\.code\}|Portée : \{service\.scopeType\}/);
+assert.match(offerPage, /Les services associés à cette offre/);
+
+const formulesPage = await read("app/formules/page.tsx");
+assert.doesNotMatch(formulesPage, /API interne|API-INTERNAL|Billing V2/);
+assert.match(formulesPage, /catalogue Zachary IT/);
+
+// Les fiches déjà créées et le mode de démonstration utilisent ce gabarit :
+// il ne doit pas réintroduire un vocabulaire interne après la passe publique.
+const managedContentService = await readApi("Services/ManagedContentService.cs");
+assert.doesNotMatch(managedContentService, /Composants techniques liés|composition technique liée/);
+assert.match(managedContentService, /## Services associés/);
+
+const mockData = await read("lib/mock-data.ts");
+assert.doesNotMatch(mockData, /Composants techniques liés|composition technique active/);
+assert.match(mockData, /## Services associés/);
+
+const publicPacks = await read("lib/public-packs.ts");
+assert.match(publicPacks, /function presentPublicOfferMarkdown/);
+assert.match(publicPacks, /## Composants techniques liés/);
+assert.match(publicPacks, /## Services associés/);
+
+const storefrontContent = await read("lib/storefront-content.ts");
+assert.match(storefrontContent, /Protection de site web \(Cloudflare WAF\)/);
+assert.match(storefrontContent, /Nom de domaine et DNS/);
+
+const storefrontSeed = await readApi("Services/StorefrontContentSeed.cs");
+assert.doesNotMatch(storefrontSeed, /"CMS, sauvegarde et sécurité"/);
+assert.match(storefrontSeed, /"Mises à jour, sauvegarde et sécurité"/);
+
 const styles = await read("app/globals.css");
 assert.match(styles, /\.vps-identity-dialog-backdrop[\s\S]*?animation: vps-identity-backdrop-enter 200ms/);
 assert.match(styles, /\.vps-identity-dialog[\s\S]*?animation: vps-identity-dialog-enter 200ms/);
@@ -121,4 +164,4 @@ assert.match(styles, /vps-identity-backdrop-exit 200ms/);
 assert.match(styles, /vps-identity-dialog-exit 200ms/);
 assert.match(styles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.vps-identity-dialog/);
 
-console.log("Contrat de copy publique et modale VPS vérifié.");
+console.log("Contrat de copy publique, de confidentialité éditoriale et modale VPS vérifié.");

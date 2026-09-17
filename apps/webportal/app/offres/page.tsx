@@ -14,7 +14,7 @@ import { isSignupEnabled } from "@/lib/public-routes";
 export const metadata: Metadata = buildPublicMetadata({
   title: "Offres de sauvegarde et stockage à Guichen",
   description:
-    "Quatre offres conçus pour la sauvegarde distante, le stockage documentaire et la continuité d'activité des particuliers et petites structures.",
+    "Quatre offres conçues pour la sauvegarde distante, le stockage documentaire et la continuité d'activité des particuliers et petites structures.",
   path: "/offres",
 });
 
@@ -60,7 +60,7 @@ export default async function OffresPage() {
             Un incident matériel ne devrait pas devenir une perte définitive.
           </h2>
           <p>
-            Ces offres sont pensés pour conserver une copie distante de vos
+            Ces offres sont pensées pour conserver une copie distante de vos
             documents importants et de vos données utiles, sans réduire le
             sujet à un discours anxiogène ou à des promesses techniques non
             confirmées.
@@ -97,7 +97,7 @@ export default async function OffresPage() {
           </p>
         </div>
         <Link className="button button-primary" href="/formules">
-          Voir les offres
+          Configurer une offre
         </Link>
       </section>
 

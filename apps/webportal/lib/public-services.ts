@@ -34,9 +34,9 @@ export type ServiceCategory = {
 export const SERVICE_CATEGORIES: ServiceCategory[] = [
   {
     slug: "cloud-hebergement",
-    title: "Cloud & Hébergement",
-    shortTitle: "Cloud & Hébergement",
-    menuSummary: "VPS · Web · Applications · Sauvegarde",
+    title: "Hébergement & services en ligne",
+    shortTitle: "Hébergement & services en ligne",
+    menuSummary: "Hébergement web · Serveurs · Sauvegarde",
     description:
       "Des services hébergés, suivis et sauvegardés pour rester disponibles sans transformer votre équipe en administrateurs système.",
     audience: "Indépendants, associations et structures qui ont besoin de services fiables sans les gérer au quotidien.",
@@ -50,9 +50,9 @@ export const SERVICE_CATEGORIES: ServiceCategory[] = [
     ],
     services: [
       {
-        title: "VPS et services hébergés",
-        description: "Un environnement dimensionné pour vos usages, avec une base claire pour évoluer sereinement.",
-        details: ["VPS", "Applications métier", "Services web"],
+        title: "Serveurs et services en ligne",
+        description: "Un serveur privé virtuel (VPS) ou un hébergement adapté pour faire fonctionner vos sites, applications et outils dans de bonnes conditions.",
+        details: ["Serveur VPS si nécessaire", "Applications métier", "Services web"],
         cta: { href: "/contact", label: "Demander un devis" },
       },
       {
@@ -65,7 +65,7 @@ export const SERVICE_CATEGORIES: ServiceCategory[] = [
         title: "Sauvegarde et supervision",
         description: "Des copies séparées et une supervision qui aide à agir avant qu’un incident ne bloque votre activité.",
         details: ["Sauvegarde", "Alertes utiles", "Suivi de fonctionnement"],
-        cta: { href: "/formules", label: "Voir les tarifs" },
+        cta: { href: "/tarifs", label: "Voir les tarifs" },
       },
     ],
     highlights: [
@@ -77,11 +77,11 @@ export const SERVICE_CATEGORIES: ServiceCategory[] = [
   },
   {
     slug: "domaines-messagerie",
-    title: "Domaines & Messagerie",
-    shortTitle: "Domaines & Messagerie",
-    menuSummary: "Domaines · DNS · Microsoft 365 · E-mail",
+    title: "Domaines & messagerie",
+    shortTitle: "Domaines & messagerie",
+    menuSummary: "Domaines · E-mail · Microsoft 365",
     description:
-      "Votre nom de domaine, vos e-mails et vos réglages DNS restent cohérents, sécurisés et compréhensibles.",
+      "Votre nom de domaine et vos e-mails restent cohérents, sécurisés et simples à gérer.",
     audience: "Structures qui veulent une adresse professionnelle fiable, sans se perdre dans les réglages de messagerie.",
     icon: "mail",
     intro:
@@ -93,9 +93,9 @@ export const SERVICE_CATEGORIES: ServiceCategory[] = [
     ],
     services: [
       {
-        title: "Domaines et DNS",
-        description: "Gestion des noms de domaine et des zones DNS avec une organisation claire et maintenable.",
-        details: ["Renouvellement", "DNS", "Transfert de domaine"],
+        title: "Nom de domaine et réglages associés",
+        description: "Gestion de votre nom de domaine, de son renouvellement et des réglages techniques nécessaires à votre site ou votre messagerie.",
+        details: ["Renouvellement", "Réglages DNS", "Transfert de domaine"],
         cta: { href: "/contact", label: "Nous contacter" },
       },
       {
@@ -106,9 +106,9 @@ export const SERVICE_CATEGORIES: ServiceCategory[] = [
       },
       {
         title: "Délivrabilité et migrations",
-        description: "SPF, DKIM, DMARC et migrations traités avec méthode pour conserver une communication fiable.",
-        details: ["SPF/DKIM/DMARC", "Migration", "Cloudflare si pertinent"],
-        cta: { href: "/contact", label: "Demander un audit" },
+        description: "Préparation des migrations et amélioration de la réception de vos e-mails pour préserver une communication fiable.",
+        details: ["Protection des e-mails", "Migration", "Réglages techniques si nécessaire"],
+        cta: { href: "/contact", label: "Demander un devis" },
       },
     ],
     highlights: [
@@ -120,9 +120,9 @@ export const SERVICE_CATEGORIES: ServiceCategory[] = [
   },
   {
     slug: "reseau-securite",
-    title: "Réseau & Sécurité",
-    shortTitle: "Réseau & Sécurité",
-    menuSummary: "VPN · UniFi · Firewall · Cloudflare · Supervision",
+    title: "Réseau & sécurité",
+    shortTitle: "Réseau & sécurité",
+    menuSummary: "Accès distant · Wi-Fi · Protection",
     description:
       "Un réseau lisible, protégé et suivi pour que vos accès et vos outils restent disponibles sans compromis inutile.",
     audience: "TPE/PME, associations et équipes réparties qui ont besoin d’accès fiables, sur site comme à distance.",
@@ -136,21 +136,21 @@ export const SERVICE_CATEGORIES: ServiceCategory[] = [
     ],
     services: [
       {
-        title: "Réseau et Wi-Fi UniFi",
-        description: "Conception, déploiement et maintenance d’un réseau adapté à vos locaux et à vos utilisateurs.",
-        details: ["UniFi", "Wi-Fi", "Segmentation réseau"],
-        cta: { href: "/contact", label: "Demander un audit" },
+        title: "Réseau et Wi-Fi",
+        description: "Conception, installation et maintenance d’un réseau adapté à vos locaux et à vos utilisateurs. UniFi peut être retenu lorsque ce matériel convient au besoin.",
+        details: ["Wi-Fi", "Couverture", "Réseau séparé si nécessaire"],
+        cta: { href: "/contact", label: "Demander un devis" },
       },
       {
-        title: "Accès distant et firewall",
-        description: "VPN et règles de sécurité définis pour protéger les accès sans compliquer les usages quotidiens.",
-        details: ["VPN", "Firewall", "Accès utilisateurs"],
+        title: "Accès distant sécurisé",
+        description: "Un accès à distance pratique et protégé pour travailler sans exposer inutilement vos outils. Un VPN ou un pare-feu peut être utilisé lorsque cela est pertinent.",
+        details: ["Accès distant", "Protection des accès", "Utilisateurs autorisés"],
         cta: { href: "/contact", label: "Parler de votre besoin" },
       },
       {
-        title: "Protection des services exposés",
-        description: "Reverse proxy, WAF et Cloudflare lorsque le contexte le justifie, avec supervision associée.",
-        details: ["Reverse proxy", "WAF", "Supervision"],
+        title: "Protection de vos services en ligne",
+        description: "Protection de votre site ou application contre les accès malveillants, avec suivi des alertes utiles. Les outils techniques sont choisis selon le contexte.",
+        details: ["Protection du site", "Filtrage des accès", "Suivi"],
         cta: { href: "/contact", label: "Nous contacter" },
       },
     ],
@@ -163,9 +163,9 @@ export const SERVICE_CATEGORIES: ServiceCategory[] = [
   },
   {
     slug: "support-it",
-    title: "Support & IT",
-    shortTitle: "Support & IT",
-    menuSummary: "Assistance · Postes · Maintenance · Migrations",
+    title: "Assistance & maintenance",
+    shortTitle: "Assistance & maintenance",
+    menuSummary: "Assistance · Postes · Migrations",
     description:
       "Un accompagnement concret pour les postes, les utilisateurs et les évolutions du quotidien, sans jargon superflu.",
     audience: "Structures qui souhaitent déléguer une partie de leur informatique tout en gardant une relation directe.",
@@ -188,7 +188,7 @@ export const SERVICE_CATEGORIES: ServiceCategory[] = [
         title: "Maintenance des postes",
         description: "Suivi des postes, des mises à jour et des besoins courants pour limiter les interruptions évitables.",
         details: ["Postes", "Mises à jour", "Prévention"],
-        cta: { href: "/contact", label: "Demander un audit" },
+        cta: { href: "/contact", label: "Demander un devis" },
       },
       {
         title: "Infogérance et migrations",

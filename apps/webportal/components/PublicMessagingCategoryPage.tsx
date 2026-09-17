@@ -20,7 +20,7 @@ const PROBLEMS = [
   },
   {
     title: "Mes e-mails arrivent en spam",
-    description: "SPF, DKIM, DMARC, r\u00e9putation et services \u00e9metteurs doivent \u00eatre coh\u00e9rents. Le but est d'identifier ce qui peut r\u00e9ellement \u00eatre corrig\u00e9.",
+    description: "Nous vérifions ce qui peut empêcher vos messages d'arriver correctement. Les réglages de protection et d'authentification de la messagerie sont ensuite corrigés si nécessaire.",
     href: "/services/messagerie-professionnelle",
     action: "Faire v\u00e9rifier ma messagerie",
     learnMoreHref: "/pourquoi-emails-professionnels-arrivent-spam",
@@ -33,9 +33,9 @@ const PROBLEMS = [
   },
   {
     title: "Je veux reprendre la main sur mon domaine",
-    description: "Registrar, acc\u00e8s, contacts, DNS et services reli\u00e9s sont remis au clair pour que votre identit\u00e9 num\u00e9rique ne d\u00e9pende pas d'un ancien prestataire ou d'un compte personnel.",
+    description: "Les accès, contacts et réglages liés à votre nom de domaine sont remis au clair pour que votre activité ne dépende pas d'un ancien prestataire ou d'un compte personnel.",
     href: "/services/gestion-dns-domaines",
-    action: "Voir la gestion domaine et DNS",
+    action: "Gérer mon nom de domaine",
   },
 ] as const;
 export function PublicMessagingCategoryPage({
@@ -71,7 +71,7 @@ export function PublicMessagingCategoryPage({
           <header className="service-section-heading">
             <span className="card-kicker">{"Votre situation"}</span>
             <h2 id="messaging-problems-title">{"Qu'est-ce qui vous am\u00e8ne ici ?"}</h2>
-            <p>{"Pas besoin de conna\u00eetre le vocabulaire DNS ou Microsoft 365 pour commencer. Choisissez simplement le probl\u00e8me le plus proche du v\u00f4tre."}</p>
+            <p>{"Choisissez simplement la situation qui ressemble le plus à la vôtre. Les détails techniques seront expliqués s'ils sont utiles."}</p>
           </header>
           <div className="service-overview-grid messaging-problem-grid">
             {PROBLEMS.map((problem) => (
@@ -92,20 +92,20 @@ export function PublicMessagingCategoryPage({
         </section>
         <section className="service-section messaging-pillars" aria-labelledby="messaging-pillars-title">
           <header className="service-section-heading">
-            <span className="card-kicker">{"Deux briques \u00e0 garder coh\u00e9rentes"}</span>
+            <span className="card-kicker">{"Une identité professionnelle cohérente"}</span>
             <h2 id="messaging-pillars-title">{"Le domaine d'un c\u00f4t\u00e9, la messagerie de l'autre - mais une seule identit\u00e9 professionnelle."}</h2>
           </header>
           <div className="storefront-priority-section-grid messaging-pillar-grid">
             <article className="storefront-priority-card">
-              <h3>{"Domaine & DNS"}</h3>
-              <p>{"Qui poss\u00e8de le domaine ? Qui a acc\u00e8s au registrar ? Quels enregistrements servent le site, la messagerie ou d'autres services ? Ces responsabilit\u00e9s sont clarifi\u00e9es avant de modifier quoi que ce soit."}</p>
+              <h3>{"Nom de domaine"}</h3>
+              <p>{"Nous vérifions qui contrôle le nom de domaine, les accès nécessaires et les services qui y sont reliés. Les réglages DNS sont pris en charge lorsque votre site ou votre messagerie en ont besoin."}</p>
               <Link className="service-inline-link" href="/services/gestion-dns-domaines">
-                {"Voir la gestion domaine et DNS"}
+                {"Voir la gestion du nom de domaine"}
               </Link>
             </article>
             <article className="storefront-priority-card">
               <h3>{"Messagerie & d\u00e9livrabilit\u00e9"}</h3>
-              <p>{"Bo\u00eetes, alias, Microsoft 365, migration et authentification des messages sont organis\u00e9s autour de vos usages. Les licences fournisseur restent distingu\u00e9es de l'accompagnement Zachary IT."}</p>
+              <p>{"Boîtes, alias, Microsoft 365 et migrations sont organisés autour de vos usages. La protection des messages est configurée en arrière-plan ; les licences fournisseur restent distinguées de l'accompagnement Zachary IT."}</p>
               <Link className="service-inline-link" href="/services/messagerie-professionnelle">
                 {"Voir la messagerie professionnelle"}
               </Link>
@@ -140,7 +140,7 @@ export function PublicMessagingCategoryPage({
         </section>
         <section className="service-cta messaging-category-cta">
           <div>
-            <h2>{"Vous ne savez pas si le probl\u00e8me vient du domaine, du DNS ou de la messagerie ?"}</h2>
+            <h2>{"Vous ne savez pas si le problème vient du domaine ou de la messagerie ?"}</h2>
             <p>{"Expliquez ce que vous observez et ce que vous souhaitez obtenir. Nous vous orientons vers la bonne intervention sans vous demander de diagnostiquer la technique vous-m\u00eame."}</p>
           </div>
           <div className="button-row storefront-action-row">

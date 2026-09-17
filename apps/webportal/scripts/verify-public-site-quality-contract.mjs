@@ -74,7 +74,8 @@ assert.match(publicShell, /skip-link/);
 assert.match(publicShell, /aria-controls="public-header-nav"/);
 assert.match(publicShell, /aria-expanded=\{menuOpen\}/);
 assert.match(publicShell, /aria-label="Navigation principale"/);
-assert.match(publicShell, /aria-label="Liens l/);
+assert.match(publicShell, /aria-label="Services Zachary IT"/);
+assert.match(publicShell, /aria-label="Informations légales"/);
 assert.match(publicShell, /publicHref\("\/offres"\)/);
 assert.doesNotMatch(publicShell, /Offres existantes/);
 assert.match(publicShell, /publicHref\("\/diagnostic"\)/);
@@ -86,7 +87,8 @@ assert.match(offresPage, /PublicPackOverviewGrid/);
 assert.match(offresPage, /PublicPackComparisonTable/);
 assert.match(offresPage, /\/decouvrir-espace-client/);
 assert.doesNotMatch(offresPage, /priceAmountCents|setupFeeAmountCents/);
-assert.match(packSheetPage, /Détails opérationnels/);
+assert.match(packSheetPage, /Les services associés à cette offre/);
+assert.doesNotMatch(packSheetPage, /Référence : \{service\.code\}|Portée : \{service\.scopeType\}/);
 assert.doesNotMatch(packSheetPage, /Contenu éditable|back-office|administrable en Markdown/);
 
 assert.match(diagnosticContext, /o\("256", "Jusqu'/);
@@ -97,7 +99,8 @@ assert.match(diagnosticWizard, /aria-live="polite"/);
 
 assert.match(demoPage, /buildPublicMetadata\(/);
 assert.match(demoClientSpace, /Mode DEMO/);
-assert.match(demoClientSpace, /donnees fictives|donnÃ©es fictives|données fictives/);
+assert.match(demoClientSpace, /données fictives/);
+assert.doesNotMatch(demoClientSpace, /donnÃ©es fictives/);
 assert.match(demoClientSpace, /lecture seule/);
 assert.doesNotMatch(demoClientSpace, /requestBffJson|fetch\(/);
 assert.match(demoClientSpace, /role="dialog"/);
@@ -158,8 +161,8 @@ assert.match(sitemap, /path:\s*"\/ressources"/);
 assert.match(sitemap, /path:\s*"\/services"/);
 assert.match(sitemap, /path:\s*"\/infrastructure"/);
 
-assert.match(styles, /@media \(max-width: 720px\)[\s\S]*\.public-header-nav/);
-assert.match(styles, /\.public-header-inner\s*\{[\s\S]*grid-template-columns:\s*minmax\(230px,\s*1fr\) auto minmax\(230px,\s*1fr\)/);
+assert.match(styles, /@media \(max-width: 1100px\)[\s\S]*\.public-header-nav/);
+assert.match(styles, /\.public-header-inner\s*\{[\s\S]*grid-template-columns:\s*minmax\(180px,\s*1fr\) auto minmax\(250px,\s*1fr\)/);
 assert.match(styles, /\.brand-public\s*\{[\s\S]*grid-column:\s*1/);
 assert.match(styles, /\.public-header-nav\s*\{[\s\S]*display:\s*contents/);
 assert.match(styles, /\.public-header-links\s*\{[\s\S]*grid-column:\s*2/);
@@ -167,7 +170,10 @@ assert.match(styles, /\.public-header-links\s*\{[\s\S]*justify-content:\s*center
 assert.match(styles, /\.public-header-actions\s*\{[\s\S]*justify-self:\s*end/);
 assert.match(styles, /\.public-header-nav a\s*\{[\s\S]*white-space:\s*nowrap/);
 assert.match(styles, /\.public-main\s*\{[\s\S]*width:\s*min\(1440px,\s*calc\(100% - 24px\)\)/);
-assert.match(styles, /@media \(max-width: 900px\)[\s\S]*\.public-footer-inner/);
+assert.match(styles, /\.public-footer-grid\s*\{[\s\S]*grid-template-columns:\s*minmax\(260px,\s*1\.5fr\) repeat\(3,\s*minmax\(150px,\s*1fr\)\)/);
+assert.match(styles, /@media \(max-width: 1100px\)[\s\S]*\.public-footer-grid[\s\S]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
+assert.match(styles, /@media \(max-width: 640px\)[\s\S]*\.public-footer-grid[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+assert.doesNotMatch(styles, /\.public-footer-nav/);
 assert.match(styles, /@media \(max-width: 700px\)[\s\S]*\.demo-client-card-grid/);
 assert.match(styles, /prefers-reduced-motion/);
 

@@ -173,10 +173,10 @@ export function AppShell({
         <div>
           <BrandLogo className="brand-logo brand-logo-footer" variant="dark" />
           <strong>Zachary HOUNSA-HOUNKPA EI</strong>
-          <p>Portail client authentifié et administration interne contrôlée.</p>
-          <p>{APP_VERSION_LABEL}</p>
+          <p>Portail client sécurisé pour le suivi de vos services.</p>
+          {effectiveSession?.user.role === "internal_admin" ? <p>{APP_VERSION_LABEL}</p> : null}
         </div>
-        <p>Accès client sécurisé, gestion des documents et suivi des services.</p>
+        <p>Accès sécurisé à vos documents et à vos services.</p>
       </footer>
     </>
   );

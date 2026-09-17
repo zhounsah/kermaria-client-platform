@@ -86,7 +86,7 @@ export function PublicVpsServicePage({
 
         <section className="service-hero vps-storefront-hero" aria-labelledby="vps-page-title">
           <div>
-            <span className="card-kicker">Infrastructure VPS</span>
+            <span className="card-kicker">Serveurs VPS</span>
             <h1 id="vps-page-title">{content.title}</h1>
             <p>{content.lead}</p>
           </div>
@@ -105,8 +105,9 @@ export function PublicVpsServicePage({
             <span className="card-kicker">Offres VPS</span>
             <h2 id="vps-catalog-title">Choisissez la gamme adaptée à votre projet</h2>
             <p>
-              Comparez les caractéristiques et les composantes tarifaires de chaque
-              palier avant de préparer votre configuration.
+              Choisissez les ressources adaptées pour héberger votre site, votre
+              application ou vos outils. Le prix et les éventuels frais de mise en
+              service sont indiqués avant la commande.
             </p>
           </header>
           {services.length ? (
@@ -130,8 +131,8 @@ export function PublicVpsServicePage({
             <h2 id="vps-choice-help-title">Besoin d’aide pour choisir ?</h2>
           </header>
           <p>
-            Comparez les caractéristiques de chaque palier et contactez-nous si vous
-            souhaitez valider votre besoin technique avant de commander.
+            Comparez les options proposées et contactez-nous si vous souhaitez
+            confirmer le serveur adapté à votre besoin avant de commander.
           </p>
           {secondaryAction ? (
             <Link className="service-inline-link" href={secondaryAction.href}>

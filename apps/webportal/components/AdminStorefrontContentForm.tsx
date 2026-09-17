@@ -71,7 +71,7 @@ export function AdminStorefrontContentForm({
     )) {
       setMessage({
         tone: "error",
-        text: "Ce service Billing n’est pas commandable en libre-service. Utilisez un CTA de devis, d’audit ou de contact.",
+        text: "Ce service Billing n’est pas commandable en libre-service. Utilisez un CTA de devis, de diagnostic ou de contact.",
       });
       return;
     }
@@ -88,6 +88,12 @@ export function AdminStorefrontContentForm({
     setIsSubmitting(false);
   }
   return <form className="form-card managed-content-form storefront-admin-form" onSubmit={handleSubmit}>
+    <p className="form-hint">
+      Rédigez pour un client non technicien : commencez par le besoin ou le
+      bénéfice, puis ajoutez les détails techniques seulement s&apos;ils aident à
+      choisir. Les codes, identifiants, scopes et détails Billing V2 restent
+      réservés à l&apos;administration.
+    </p>
     <div className="managed-content-editor-grid">
       <div className="managed-content-editor-column">
         <label>Titre commercial / H1<input maxLength={200} onChange={(event) => change("title", event.target.value)} value={page.title} /></label>

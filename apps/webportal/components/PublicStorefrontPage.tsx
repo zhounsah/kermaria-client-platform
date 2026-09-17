@@ -112,7 +112,7 @@ export function PublicStorefrontPage({
             <p>
               {hasFormulaPath
                 ? "Une offre couvre le besoin standard. Pour un environnement existant ou un périmètre particulier, passez par le diagnostic ou le devis."
-                : "Un devis ou un audit permet de confirmer le périmètre, les prérequis et les limites avant mise en service."}
+                : "Un devis ou un échange de cadrage permet de confirmer le périmètre, les prérequis et les limites avant mise en service."}
             </p>
           </div>
           <div className="button-row storefront-action-row">

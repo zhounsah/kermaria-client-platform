@@ -292,12 +292,12 @@ const CONTEXT_SHELLS: Record<DiagnosticContextId, DiagnosticContextShell> = {
   },
   "domain-dns": {
     id: "domain-dns",
-    label: "Domaine et DNS",
-    eyebrow: "Diagnostic domaine & DNS",
+    label: "Nom de domaine et réglages",
+    eyebrow: "Diagnostic nom de domaine",
     title: "Commençons par ce que vous voulez reprendre ou raccorder.",
     intro:
       "Vous n'avez pas besoin de connaître les réglages techniques du domaine. Ce qui compte d'abord est de savoir qui le contrôle et quels services en dépendent.",
-    contactSubject: "Diagnostic domaine et DNS",
+    contactSubject: "Diagnostic nom de domaine",
     formulaEligible: false,
     questions: [
       q("domain-goal", "Que voulez-vous faire ?", "Objectif", [

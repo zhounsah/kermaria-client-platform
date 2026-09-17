@@ -31,6 +31,8 @@ const storefrontContent = await read("lib/storefront-content.ts");
 const servicesPage = await read("app/services/page.tsx");
 const serviceDetailPage = await read("app/services/[category]/page.tsx");
 const tarifsPage = await read("app/tarifs/page.tsx");
+const publicCommercialCatalog = await read("lib/public-commercial-catalog.ts");
+const publicCommercialTariffCatalog = await read("components/PublicCommercialTariffCatalog.tsx");
 const adminPackCatalogPage = await read("app/admin/public-pack-catalog/page.tsx");
 const adminCatalogUi = await read("components/admin/catalog/AdminCatalogUi.tsx");
 const serviceTiersPanel = await read("components/admin/catalog/ServiceTiersPanel.tsx");
@@ -47,8 +49,12 @@ const {
   resolveStorefrontTariffAction,
   resolveStorefrontPublicCta,
   resolveStorefrontPublicRelatedLinks,
+  presentPublicStorefrontContent,
   storefrontServiceSelfServiceOrderable,
 } = await import(new URL("../lib/storefront-content.ts", import.meta.url));
+const { presentPublicOfferMarkdown } = await import(
+  new URL("../lib/public-packs.ts", import.meta.url),
+);
 
 for (const [label, source] of [
   ["sharedTypes", sharedTypes],
@@ -123,11 +129,27 @@ assert.match(serviceDetailPage, /selfServiceOrderable=/);
 assert.match(serviceDetailPage, /resolveStorefrontCommercialActions/);
 assert.match(serviceDetailPage, /commercialActions=/);
 assert.match(servicesPage, /PublicServicesLandingPage/);
-assert.match(tarifsPage, /resolveStorefrontTariffAction/);
-assert.match(tarifsPage, /serviceCode/);
+assert.match(tarifsPage, /buildPublicCommercialCatalog/);
+assert.match(tarifsPage, /PublicCommercialTariffCatalog/);
 assert.match(tarifsPage, /storefront:tarifs/);
-assert.match(tarifsPage, /Voir les offres VPS[\s\S]*\/services\/vps/);
-assert.match(tarifsPage, /service\.code === "VPS-LOCAL" \|\| service\.code === "VPS-CLOUD"/);
+assert.doesNotMatch(tarifsPage, /BillingPriceProjection/);
+const storefrontTariffsFallback = storefrontContentSeed.match(
+  /\["storefront:tarifs"\][\s\S]*?(?=\["storefront:cloud-hebergement"\])/,
+)?.[0];
+assert.ok(storefrontTariffsFallback, "Le fallback storefront:tarifs doit rester identifiable.");
+assert.match(
+  storefrontTariffsFallback,
+  /L\("Voir les offres", "\/offres"\)/,
+  "Le lien Voir les offres du fallback tarifs doit mener au comparatif des offres.",
+);
+assert.doesNotMatch(
+  storefrontTariffsFallback,
+  /L\("Voir les offres", "\/formules"\)/,
+  "Le configurateur /formules ne doit pas être présenté comme la page des offres.",
+);
+assert.match(publicCommercialCatalog, /resolveStorefrontTariffAction/);
+assert.match(publicCommercialCatalog, /storefrontServiceUrlForBillingCode/);
+assert.match(publicCommercialCatalog, /service\.code/);
 assert.match(serviceDetailPage, /PublicVpsServicePage/);
 assert.match(
   serviceDetailPage,
@@ -166,29 +188,24 @@ assert.doesNotMatch(
 );
 assert.doesNotMatch(publicVpsServicePage, /api\/formules\/(?:devis|souscrire)/);
 assert.match(
-  tarifsPage,
+  publicCommercialCatalog,
   /describeTierAttributes\(tier\)/,
   "Les specifications tarifaires doivent reutiliser le formatter partage des attributs de palier.",
 );
 assert.match(
-  tarifsPage,
-  /tierAttributeDescription:\s*describeTierAttributes\(tier\)/,
-  "La description d'un palier doit provenir de ses attributs projetes.",
+  publicCommercialCatalog,
+  /tier\.monthlyAmountCents/,
+  "Le montant d'un palier doit provenir de la projection Billing existante.",
 );
 assert.match(
-  tarifsPage,
-  /tierAttributeDescription\.length > 0/,
+  publicCommercialTariffCatalog,
+  /tier\.details\.length > 0/,
   "Un palier sans attribut reconnu ne doit pas rendre une ligne de specifications vide.",
 );
 assert.match(
-  tarifsPage,
-  /amountCents:\s*tier\.monthlyAmountCents[\s\S]*formatCents\(row\.amountCents!\)/,
-  "La page tarifs doit continuer a afficher le montant Billing du palier sans le recalculer.",
-);
-assert.match(
-  tarifsPage,
-  /tierCode:\s*null,[\s\S]*label:\s*service\.name,[\s\S]*tierAttributeDescription:\s*null/,
-  "Une ligne tarifaire sans palier ne doit pas recevoir de specifications de palier.",
+  publicCommercialTariffCatalog,
+  /frais de mise en service/,
+  "Les frais initiaux deja projetes par Billing doivent rester visibles.",
 );
 assert.match(adminNavigation, /\/admin\/content/);
 assert.match(sharedTypes, /diagnostic:recommendations/);
@@ -232,8 +249,8 @@ assert.doesNotMatch(
 );
 assert.match(
   adminPackCatalogPage,
-  /Modifier la fiche technique/,
-  "La page admin de vitrine packs doit proposer un lien rapide vers les fiches techniques.",
+  /Modifier le contenu de l’offre/,
+  "La page admin des offres doit proposer un lien rapide vers leur contenu public.",
 );
 
 assert.match(cgvPage, /getPublicManagedContent\("legal:cgv"\)/);
@@ -253,10 +270,10 @@ assert.doesNotMatch(infrastructurePage, /placeholder/i);
 assert.match(packSheetPage, /buildPackSheetContentKey/);
 assert.match(packSheetPage, /getPublicManagedContent/);
 assert.match(packSheetPage, /ManagedMarkdown/);
-assert.match(packSheetPage, /Composants techniques liés/);
+assert.match(packSheetPage, /Les services associés à cette offre/);
 
-assert.match(publicPackCard, /Voir la fiche technique/);
-assert.match(comparisonTable, /Voir la fiche technique/);
+assert.match(publicPackCard, /Voir le détail de l’offre/);
+assert.match(comparisonTable, /Voir le détail de l’offre/);
 
 assert.match(managedMarkdown, /ReactMarkdown/);
 assert.doesNotMatch(managedMarkdown, /dangerouslySetInnerHTML/);
@@ -340,7 +357,7 @@ assert.deepEqual(
 );
 assert.deepEqual(
   resolveStorefrontPublicCta({ ctaLabel: "Configurer", ctaHref: "/diagnostic" }, false),
-  { label: "Demander un audit", href: "/diagnostic" },
+  { label: "Faire le diagnostic", href: "/diagnostic" },
   "Un libellé Configurer doit être neutralisé même avec une destination non self-service.",
 );
 assert.deepEqual(
@@ -358,6 +375,63 @@ assert.deepEqual(
   "Un CTA commercial sûr doit rester intact.",
 );
 
+const freeAuditContent = {
+  seoTitle: "Reprise de serveur",
+  seoDescription: "Une prestation nécessite une qualification.",
+  title: "Reprise de serveur",
+  lead: "Une phase d’audit est nécessaire avant la reprise du serveur.",
+  ctaLabel: "Nous contacter",
+  ctaHref: "/contact",
+  sections: [{
+    heading: "Avant la reprise",
+    bodyMarkdown: "Une phase d’audit est nécessaire avant la reprise du serveur.",
+  }],
+  faq: [{
+    question: "Pourquoi un audit ?",
+    answer: "Une phase d’audit est nécessaire avant la reprise du serveur.",
+  }],
+  relatedLinks: [],
+};
+const presentedFreeAuditContent = presentPublicStorefrontContent(freeAuditContent, null);
+assert.equal(
+  presentedFreeAuditContent.lead,
+  "Une phase d’audit est nécessaire avant la reprise du serveur.",
+  "Une véritable prestation d'audit du CMS doit rester inchangée.",
+);
+assert.equal(
+  presentedFreeAuditContent.sections[0]?.bodyMarkdown,
+  "Une phase d’audit est nécessaire avant la reprise du serveur.",
+  "La compatibilité ne doit pas réécrire un fragment d'audit dans les sections libres.",
+);
+assert.equal(
+  presentedFreeAuditContent.faq[0]?.answer,
+  "Une phase d’audit est nécessaire avant la reprise du serveur.",
+  "La compatibilité ne doit pas réécrire un fragment d'audit dans les FAQ libres.",
+);
+assert.deepEqual(
+  resolveStorefrontPublicCta({ ctaLabel: "Demander un audit", ctaHref: "/diagnostic" }, null),
+  { label: "Faire le diagnostic", href: "/diagnostic" },
+  "Un CTA audit vers le questionnaire reste nommé Diagnostic.",
+);
+assert.deepEqual(
+  resolveStorefrontPublicCta({ ctaLabel: "Demander un audit", ctaHref: "/contact" }, null),
+  { label: "Nous contacter", href: "/contact" },
+  "Un CTA audit vers le contact reste nommé Contact.",
+);
+
+const legacyOfferScopeLine = "- Cette fiche décrit le périmètre standard de l'offre et ne remplace pas un devis spécifique.";
+assert.equal(
+  presentPublicOfferMarkdown(legacyOfferScopeLine),
+  "- Cette offre décrit le périmètre standard et ne remplace pas un devis spécifique.",
+  "L'ancienne ligne de gabarit connue doit recevoir sa formulation V3.",
+);
+const freeOfferScopeLine = `Note libre : ${legacyOfferScopeLine}`;
+assert.equal(
+  presentPublicOfferMarkdown(freeOfferScopeLine),
+  freeOfferScopeLine,
+  "Un contenu libre qui contient seulement la formulation historique ne doit pas être réécrit.",
+);
+
 assert.deepEqual(
   resolveStorefrontTariffAction("VPS-LOCAL", nonSelfServiceTieredCatalog),
   { label: "Demander un devis", href: "/contact" },
@@ -365,26 +439,26 @@ assert.deepEqual(
 );
 
 
-const auditCta = { ctaLabel: "Demander un audit", ctaHref: "/diagnostic" };
-const vpnActions = resolveStorefrontCommercialActions("vpn-entreprise", commercialCatalog, auditCta);
+const diagnosticCta = { ctaLabel: "Demander un audit", ctaHref: "/diagnostic" };
+const vpnActions = resolveStorefrontCommercialActions("vpn-entreprise", commercialCatalog, diagnosticCta);
 assert.equal(vpnActions.mode, "FORMULA");
 assert.equal(vpnActions.primaryAction.href, "/formules/pack-acces-distance");
 assert.equal(vpnActions.secondaryAction?.href, "/diagnostic");
 assert.equal(vpnActions.presetCode, "pack-acces-distance");
 
-const rdsActions = resolveStorefrontCommercialActions("bureau-windows-distance", commercialCatalog, auditCta);
+const rdsActions = resolveStorefrontCommercialActions("bureau-windows-distance", commercialCatalog, diagnosticCta);
 assert.equal(rdsActions.mode, "FORMULA");
 assert.equal(rdsActions.primaryAction.href, "/formules/pack-bureau-windows-distance");
 
-const backupActions = resolveStorefrontCommercialActions("sauvegarde-externalisee", commercialCatalog, auditCta);
+const backupActions = resolveStorefrontCommercialActions("sauvegarde-externalisee", commercialCatalog, diagnosticCta);
 assert.equal(backupActions.mode, "HYBRID");
 assert.equal(backupActions.primaryAction.href, "/formules/pack-dossier-securise");
 assert.equal(backupActions.secondaryAction?.href, "/diagnostic");
 
-const quoteActions = resolveStorefrontCommercialActions("vps", commercialCatalog, auditCta);
+const quoteActions = resolveStorefrontCommercialActions("vps", commercialCatalog, diagnosticCta);
 assert.deepEqual(quoteActions, {
   mode: "QUOTE",
-  primaryAction: { label: "Demander un audit", href: "/diagnostic" },
+  primaryAction: { label: "Faire le diagnostic", href: "/diagnostic" },
   secondaryAction: null,
   presetCode: null,
 });
@@ -392,7 +466,7 @@ assert.deepEqual(quoteActions, {
 const missingPresetActions = resolveStorefrontCommercialActions(
   "vpn-entreprise",
   { ...commercialCatalog, presets: [] },
-  auditCta,
+  diagnosticCta,
 );
 assert.equal(missingPresetActions.mode, "QUOTE");
 assert.equal(missingPresetActions.primaryAction.href, "/diagnostic");
@@ -400,7 +474,7 @@ assert.equal(missingPresetActions.primaryAction.href, "/diagnostic");
 const inconsistentPresetActions = resolveStorefrontCommercialActions(
   "vpn-entreprise",
   { ...commercialCatalog, presets: [{ code: "pack-acces-distance", items: [] }] },
-  auditCta,
+  diagnosticCta,
 );
 assert.equal(inconsistentPresetActions.mode, "QUOTE");
 

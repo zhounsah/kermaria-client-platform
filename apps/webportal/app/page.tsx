@@ -73,7 +73,7 @@ const SERVICES = [
   },
   {
     title: "Hébergement et services en ligne",
-    body: "VPS, hébergement, domaines, DNS et messagerie professionnelle avec une configuration suivie et des responsabilités clairement définies.",
+    body: "Sites, serveurs, nom de domaine et messagerie professionnelle : vos services en ligne sont installés, suivis et expliqués clairement.",
   },
   {
     title: "Maintenance et support",
@@ -179,11 +179,11 @@ export default async function HomePage() {
               j&apos;explique ce qui est installé, protégé et accessible au quotidien.
             </p>
             <div className="vitrine-hero-actions">
-              <Link className="button" href="/offres">
-                Comparer les offres
+              <Link className="button" href="/services">
+                Découvrir les services
               </Link>
-              <Link className="button button-secondary" href="/contact">
-                Expliquer mon besoin
+              <Link className="button button-secondary" href="/diagnostic">
+                Faire le diagnostic
               </Link>
             </div>
           </div>
@@ -257,7 +257,7 @@ export default async function HomePage() {
         </div>
         <div className="vitrine-hero-actions">
           <Link className="button" href="/contact">
-            Expliquer mon besoin
+            Nous contacter
           </Link>
           <Link className="button button-secondary" href="/offres">
             Comparer les offres

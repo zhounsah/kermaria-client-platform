@@ -140,7 +140,7 @@ export default async function AdminCommercialDocumentDetailPage({
             <div><dt>Demande liée</dt><dd>{document.serviceRequestId && document.serviceRequestReference ? <Link href={`/admin/service-requests/${encodeURIComponent(document.serviceRequestId)}`}>{document.serviceRequestReference}</Link> : "Aucune"}</dd></div>
             <div><dt>{isFranchiseBaseDocument ? "Sous-total" : "Sous-total HT"}</dt><dd>{formatCurrencyFromCents(document.subtotalAmountCents)}</dd></div>
             <div>
-              <dt>{isFranchiseBaseDocument ? "FiscalitÃ©" : "Taxes"}</dt>
+              <dt>{isFranchiseBaseDocument ? "Fiscalité" : "Taxes"}</dt>
               <dd>
                 {isFranchiseBaseDocument
                   ? formatFiscalMention("franchise_base", fiscalMention)

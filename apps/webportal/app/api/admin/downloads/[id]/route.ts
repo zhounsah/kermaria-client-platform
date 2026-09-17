@@ -24,7 +24,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     return controlledAdminError(
       400,
       "INVALID_REQUEST",
-      "Le tÃ©lÃ©chargement demandÃ© est invalide.",
+      "Le téléchargement demandé est invalide.",
       correlationId,
     );
   }
@@ -44,7 +44,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     return controlledAdminError(
       400,
       "INVALID_REQUEST",
-      "Le tÃ©lÃ©chargement demandÃ© est invalide.",
+      "Le téléchargement demandé est invalide.",
       correlationId,
     );
   }
@@ -54,7 +54,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     return controlledAdminError(
       400,
       "INVALID_REQUEST",
-      "Le tÃ©lÃ©chargement fourni est invalide.",
+      "Le téléchargement fourni est invalide.",
       correlationId,
     );
   }
@@ -79,7 +79,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     return controlledAdminError(
       400,
       "INVALID_REQUEST",
-      "Le tÃ©lÃ©chargement demandÃ© est invalide.",
+      "Le téléchargement demandé est invalide.",
       correlationId,
     );
   }

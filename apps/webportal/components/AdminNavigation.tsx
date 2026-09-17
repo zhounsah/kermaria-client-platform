@@ -47,7 +47,7 @@ const navigationSections: NavSection[] = [
     label: "Activité commerciale",
     items: [
       { href: "/admin/catalog", label: "Catalogue", icon: Package },
-      { href: "/admin/public-pack-catalog", label: "Vitrine packs", icon: Boxes },
+      { href: "/admin/public-pack-catalog", label: "Offres publiques", icon: Boxes },
       { href: "/admin/diagnostic", label: "Diagnostic", icon: ClipboardList },
       { href: "/admin/solutions", label: "Portail solutions", icon: MonitorSmartphone },
       { href: "/admin/content", label: "Contenus", icon: FileText },

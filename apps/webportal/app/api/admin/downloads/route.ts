@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     return controlledAdminError(
       400,
       "INVALID_REQUEST",
-      "Le tÃ©lÃ©chargement fourni est invalide.",
+      "Le téléchargement fourni est invalide.",
       correlationId,
     );
   }

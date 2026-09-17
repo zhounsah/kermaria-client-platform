@@ -14,6 +14,7 @@ import { getBillingV2FormulesCatalog, getPublicManagedContent } from "@/lib/inte
 import {
   isStorefrontPriorityServiceSlug,
   parseStorefrontPageContent,
+  presentPublicStorefrontContent,
   resolveStorefrontBreadcrumb,
   resolveStorefrontCommercialActions,
   storefrontContentKeyForServiceSlug,
@@ -55,8 +56,11 @@ export default async function ServiceCategoryRoute({ params }: CategoryPageProps
     getPublicManagedContent(key),
     serviceSlug ? getBillingV2FormulesCatalog() : Promise.resolve(null),
   ]);
-  const content = result.data
+  const parsedContent = result.data
     ? parseStorefrontPageContent(result.data.bodyMarkdown)
+    : null;
+  const content = parsedContent
+    ? presentPublicStorefrontContent(parsedContent, serviceSlug)
     : null;
   const catalog = catalogResult?.data
     ?? { source: "unavailable", currency: "EUR", presets: [], services: [], commitments: [] };

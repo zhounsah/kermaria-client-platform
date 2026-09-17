@@ -20,7 +20,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     return controlledAdminError(
       400,
       "INVALID_REQUEST",
-      "La catÃ©gorie demandÃ©e est invalide.",
+      "La catégorie demandée est invalide.",
       correlationId,
     );
   }
@@ -30,7 +30,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     return controlledAdminError(
       400,
       "INVALID_REQUEST",
-      "La catÃ©gorie fournie est invalide.",
+      "La catégorie fournie est invalide.",
       correlationId,
     );
   }
@@ -55,7 +55,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     return controlledAdminError(
       400,
       "INVALID_REQUEST",
-      "La catÃ©gorie demandÃ©e est invalide.",
+      "La catégorie demandée est invalide.",
       correlationId,
     );
   }

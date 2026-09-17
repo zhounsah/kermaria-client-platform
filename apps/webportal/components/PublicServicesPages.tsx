@@ -14,7 +14,7 @@ export function PublicServicesLandingPage() {
   return (
     <div className="services-page">
       <ServiceHero
-        action={{ href: "/contact", label: "Demander un audit" }}
+        action={{ href: "/contact", label: "Nous contacter" }}
         description="Zachary IT accompagne les indépendants, associations, TPE et PME qui veulent une informatique fiable sans avoir à l’administrer eux-mêmes. Nous clarifions le besoin, mettons en place les bons services et restons présents dans la durée."
         title="Une informatique fiable, sans avoir à tout gérer vous-même."
       />
@@ -80,7 +80,7 @@ export function PublicServicesLandingPage() {
       </section>
 
       <ServiceCTA
-        action={{ href: "/contact", label: "Demander un audit" }}
+        action={{ href: "/diagnostic", label: "Faire le diagnostic" }}
         description="Décrivez simplement votre situation. Nous vous aiderons à identifier la prochaine étape la plus utile."
         title="Vous ne savez pas par où commencer ?"
       />

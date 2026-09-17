@@ -91,12 +91,12 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
         <h1>Connexion à votre espace</h1>
         <p className="lead">
           Utilisez les identifiants qui vous ont été communiqués pour accéder à
-          votre espace. Aucun compte Active Directory n&apos;est utilisé.
+          votre espace client.
         </p>
         <ul className="check-list">
-          <li>Session conservée dans un cookie HttpOnly.</li>
-          <li>Données client isolées ou vues internes selon le rôle.</li>
-          <li>Aucun paiement ni changement de mot de passe AD.</li>
+          <li>Votre connexion et votre session sont protégées.</li>
+          <li>Vous accédez uniquement aux informations liées à votre compte.</li>
+          <li>Vous pouvez consulter vos services et vos demandes au même endroit.</li>
         </ul>
       </div>
       <div>

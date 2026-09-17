@@ -171,7 +171,7 @@ export function PublicPackComparisonTable({
                   </Link>
                 )}
                 <Link className="text-link" href={`/offres/${pack.slug}`}>
-                  Voir la fiche technique
+                  Voir le détail de l’offre
                 </Link>
               </article>
             ))}
