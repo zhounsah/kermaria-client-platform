@@ -4,37 +4,50 @@ import type { BillingV2CartCommandRequest } from "@kermaria/shared";
 
 import { rejectInvalidPortalCsrf } from "@/lib/portal-bff";
 import { commandBillingV2Cart } from "@/lib/internal-api";
+import { readBillingV2SelectionPayload } from "@/lib/billing-v2-selection";
 import { readPortalSessionToken } from "@/lib/session-cookie";
 import {
   clearAnonymousCartToken,
-  ensureAnonymousCartToken,
   refreshAnonymousCartToken,
   readAnonymousCartToken,
+  resolveAnonymousCartToken,
 } from "@/lib/cart-cookie";
 import { resolveCorrelationId } from "@/lib/correlation";
 
 // `quote` persiste un snapshot expire dans API-INTERNAL : seul `get` est une
 // lecture. Toutes les autres commandes gardent donc la protection CSRF BFF.
-const readOnlyCommands = new Set(["get"]);
-// Ces resultats ont execute le touch transactionnel du Cart. Le TTL du cookie
-// anonyme doit etre prolonge par la meme reponse.
-const cartActivityRenewalCodes = new Set([
-  "CART_OK",
-  "CART_ITEM_ADDED",
-  "CART_ITEM_UPDATED",
-  "CART_ITEM_REMOVED",
-  "CART_COMMITMENT_UPDATED",
-  "CART_PAYMENT_MODE_UPDATED",
+const readOnlyCommands = new Set(["get", "project_legacy_selection"]);
+// Le BFF ne reclassifie jamais les resultats metier. Cette liste exprime
+// seulement les commandes qui renouvellent l'activite du Cart cote API.
+const cartActivityCommands = new Set([
+  "current",
+  "import_formula_selection",
+  "initialize_preset",
+  "replace_preset",
+  "add_item",
+  "add_preset_item",
+  "update_item",
+  "remove_item",
+  "set_commitment",
+  "set_payment_mode",
 ]);
+// Seules les commandes qui peuvent materialiser un Cart ont le droit de
+// proposer un nouveau token anonyme. Le token reste un candidat jusqu'a une
+// reponse Cart reussie : consulter/configurer une formule ne pose donc aucun
+// cookie Cart.
+const cartCreatingCommands = new Set(["current", "import_formula_selection"]);
 
 function isCartCommand(value: unknown): value is BillingV2CartCommandRequest {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Record<string, unknown>;
   return typeof candidate.command === "string" &&
-    ["current", "get", "add_item", "update_item", "remove_item", "set_commitment", "set_payment_mode", "quote", "expire", "claim"].includes(candidate.command);
+    ["current", "import_formula_selection", "initialize_preset", "replace_preset", "get", "add_item", "add_preset_item", "update_item", "remove_item", "set_commitment", "set_payment_mode", "quote", "project_legacy_selection", "expire", "claim", "claim_current"].includes(candidate.command);
 }
 
 function sanitizeCartCommand(payload: BillingV2CartCommandRequest): BillingV2CartCommandRequest {
+  const formulaSelection = payload.formulaSelection
+    ? readBillingV2SelectionPayload(payload.formulaSelection)
+    : null;
   return {
     command: payload.command,
     ...(typeof payload.cartId === "string" ? { cartId: payload.cartId } : {}),
@@ -47,6 +60,9 @@ function sanitizeCartCommand(payload: BillingV2CartCommandRequest): BillingV2Car
     ...(payload.paymentMode === "monthly" || payload.paymentMode === "upfront" || payload.paymentMode === null
       ? { paymentMode: payload.paymentMode }
       : {}),
+    ...(typeof payload.presetCode === "string" ? { presetCode: payload.presetCode } : {}),
+    ...(typeof payload.presetItemId === "string" ? { presetItemId: payload.presetItemId } : {}),
+    ...(formulaSelection ? { formulaSelection } : {}),
     ...(payload.item ? {
       item: {
         serviceCode: payload.item.serviceCode,
@@ -82,8 +98,8 @@ export async function POST(request: NextRequest) {
   const sessionToken = await readPortalSessionToken();
   const anonymousToken = sessionToken
     ? await readAnonymousCartToken()
-    : payload.command === "current"
-      ? await ensureAnonymousCartToken()
+    : cartCreatingCommands.has(payload.command)
+      ? await resolveAnonymousCartToken()
       : await readAnonymousCartToken();
   try {
     const result = await commandBillingV2Cart(
@@ -94,10 +110,10 @@ export async function POST(request: NextRequest) {
     const response = NextResponse.json(result, {
       headers: { "X-Correlation-Id": correlationId },
     });
-    if (payload.command === "claim" && result.code === "CART_CLAIMED") {
+    if ((payload.command === "claim" || payload.command === "claim_current") && result.code === "CART_CLAIMED") {
       clearAnonymousCartToken(response);
     }
-    if (!sessionToken && anonymousToken && cartActivityRenewalCodes.has(result.code)) {
+    if (!sessionToken && anonymousToken && result.cart && cartActivityCommands.has(payload.command)) {
       refreshAnonymousCartToken(response, anonymousToken);
     }
     return response;

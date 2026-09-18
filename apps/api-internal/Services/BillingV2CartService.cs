@@ -8,6 +8,8 @@ public interface IBillingV2CartService
 {
     Task<BillingV2CartMutationResult> GetOrCreateCurrentAsync(BillingV2CartOwner owner, string currency, CancellationToken cancellationToken);
     Task<BillingV2CartMutationResult> GetAsync(BillingV2CartOwner owner, string cartId, CancellationToken cancellationToken);
+    Task<BillingV2CartMutationResult> ImportFormulaSelectionAsync(BillingV2CartOwner owner,
+        BillingV2PublicSelection selection, string currency, CancellationToken cancellationToken);
     Task<BillingV2CartMutationResult> AddItemAsync(BillingV2CartOwner owner, string cartId, int expectedVersion, BillingV2CartItemCommand command, CancellationToken cancellationToken);
     Task<BillingV2CartMutationResult> UpdateItemAsync(BillingV2CartOwner owner, string cartId, string itemId, int expectedVersion, BillingV2CartItemCommand command, CancellationToken cancellationToken);
     Task<BillingV2CartMutationResult> RemoveItemAsync(BillingV2CartOwner owner, string cartId, string itemId, int expectedVersion, CancellationToken cancellationToken);
@@ -16,6 +18,12 @@ public interface IBillingV2CartService
     Task<BillingV2CartMutationResult> QuoteAsync(BillingV2CartOwner owner, string cartId, CancellationToken cancellationToken);
     Task<BillingV2CartMutationResult> ExpireAsync(BillingV2CartOwner owner, string cartId, int expectedVersion, CancellationToken cancellationToken);
     Task<BillingV2CartMutationResult> ClaimAsync(string anonymousToken, string customerId, int expectedVersion, CancellationToken cancellationToken);
+    Task<BillingV2CartMutationResult> ClaimCurrentAsync(string anonymousToken, string customerId, CancellationToken cancellationToken);
+    Task<BillingV2CartMutationResult> ProjectLegacySelectionAsync(BillingV2CartOwner owner, string cartId, CancellationToken cancellationToken);
+    Task<BillingV2CartMutationResult> InitializeFromPresetAsync(BillingV2CartOwner owner, string presetCode,
+        string currency, int? expectedVersion, bool replace, CancellationToken cancellationToken);
+    Task<BillingV2CartMutationResult> AddPresetItemAsync(BillingV2CartOwner owner, string cartId,
+        int expectedVersion, string presetItemId, CancellationToken cancellationToken);
 }
 
 public sealed record BillingV2CartItemCommand(
@@ -37,6 +45,8 @@ public sealed record BillingV2CartItemCommand(
 /// </summary>
 public sealed class BillingV2CartService : IBillingV2CartService
 {
+    private const int CurrentTransactionMaxAttempts = 3;
+
     private static readonly string[] RequiredTables =
     [
         "billing_v2_carts", "billing_v2_cart_items", "billing_v2_cart_quotes",
@@ -66,41 +76,78 @@ public sealed class BillingV2CartService : IBillingV2CartService
         BillingV2CartOwner owner, string currency, CancellationToken cancellationToken)
     {
         if (!owner.IsValid || !IsCurrency(currency)) return new("CART_OWNER_OR_CURRENCY_INVALID");
+        var normalizedCurrency = currency.ToUpperInvariant();
+        var deadlockRetryCount = 0;
+        for (var attempt = 1; attempt <= CurrentTransactionMaxAttempts; attempt++)
+        {
+            try
+            {
+                var result = await GetOrCreateCurrentOnceAsync(owner, normalizedCurrency, cancellationToken);
+                _logger.LogInformation(
+                    "Billing V2 Cart command completed. command=current owner_type={OwnerType} cart_id={CartId} result={Result} retry_deadlock_count={RetryDeadlockCount}",
+                    owner.IsAuthenticated ? "customer" : "anonymous", result.Cart?.Id, result.Code, deadlockRetryCount);
+                return result;
+            }
+            catch (MySqlException exception) when (IsCurrentTransactionRetryable(exception)
+                && attempt < CurrentTransactionMaxAttempts)
+            {
+                if (IsDeadlock(exception)) deadlockRetryCount++;
+                _logger.LogWarning(exception,
+                    "Billing V2 Cart current transaction will retry. command=current owner_type={OwnerType} currency={Currency} retry_deadlock_count={RetryDeadlockCount}",
+                    owner.IsAuthenticated ? "customer" : "anonymous", normalizedCurrency, deadlockRetryCount);
+            }
+            catch (MySqlException exception) when (IsCurrentTransactionRetryable(exception))
+            {
+                _logger.LogError(exception,
+                    "Billing V2 Cart current transaction exhausted its retries. command=current owner_type={OwnerType} currency={Currency} retry_deadlock_count={RetryDeadlockCount}",
+                    owner.IsAuthenticated ? "customer" : "anonymous", normalizedCurrency, deadlockRetryCount);
+                throw;
+            }
+        }
+
+        throw new InvalidOperationException("CART_CURRENT_RETRY_EXHAUSTED");
+    }
+
+    private async Task<BillingV2CartMutationResult> GetOrCreateCurrentOnceAsync(
+        BillingV2CartOwner owner, string currency, CancellationToken cancellationToken)
+    {
         await using var connection = await OpenReadyAsync(cancellationToken);
         var now = DateTime.UtcNow;
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        await ExpireInactiveAsync(connection, transaction, now, cancellationToken);
-        var cart = await ReadCurrentAsync(connection, transaction, owner, currency, true, cancellationToken);
+        // Le cleanup est borne a l'unique owner/devise vise. Un current ne doit
+        // jamais verrouiller les Carts expires d'autres visiteurs.
+        await ExpireInactiveCurrentAsync(connection, transaction, owner, currency, now, cancellationToken);
+
+        // Une lecture non verrouillante evite de poser un gap lock avant une
+        // creation. La contrainte unique de slots arbitre la course finale.
+        var cart = await ReadCurrentAsync(connection, transaction, owner, currency, false, cancellationToken);
         if (cart is null)
         {
             var id = Guid.NewGuid().ToString("D");
-            await using var command = connection.CreateCommand();
-            command.Transaction = transaction;
-            command.CommandText = """
-                INSERT INTO billing_v2_carts
-                    (id, customer_id, anonymous_session_hash, open_customer_slot,
-                     open_anonymous_slot, status, currency, version,
-                     created_at, updated_at, last_activity_at, expires_at)
-                VALUES (@id, @customer, @anonymous, @customer_slot,
-                        @anonymous_slot, 'open', @currency, 1,
-                        @now, @now, @now, @expires);
-                """;
-            command.Parameters.AddWithValue("@id", id);
-            command.Parameters.AddWithValue("@customer", (object?)owner.CustomerId ?? DBNull.Value);
-            command.Parameters.AddWithValue("@anonymous", (object?)owner.AnonymousTokenHash ?? DBNull.Value);
-            command.Parameters.AddWithValue("@customer_slot", owner.IsAuthenticated ? 1 : DBNull.Value);
-            command.Parameters.AddWithValue("@anonymous_slot", owner.IsAuthenticated ? DBNull.Value : 1);
-            command.Parameters.AddWithValue("@currency", currency.ToUpperInvariant());
-            command.Parameters.AddWithValue("@now", now);
-            command.Parameters.AddWithValue("@expires", now.AddDays(30));
-            await command.ExecuteNonQueryAsync(cancellationToken);
-            cart = await ReadCartAsync(connection, transaction, owner, id, false, cancellationToken);
+            try
+            {
+                await InsertOpenCartAsync(connection, transaction, owner, id, currency, now, cancellationToken);
+                cart = await ReadCartAsync(connection, transaction, owner, id, false, cancellationToken);
+            }
+            catch (MySqlException exception) when (IsDuplicateKey(exception))
+            {
+                // Un concurrent a cree le meme Cart owner/devise. La lecture
+                // verrouillante est un current read InnoDB et voit son gagnant.
+                cart = await ReadCurrentAsync(connection, transaction, owner, currency, true, cancellationToken);
+            }
         }
         else
         {
-            await TouchCartActivityAsync(connection, transaction, cart.Id, now, cancellationToken);
-            cart = await ReadCartAsync(connection, transaction, owner, cart.Id, false, cancellationToken);
+            cart = await ReadCurrentAsync(connection, transaction, owner, currency, true, cancellationToken);
         }
+
+        if (cart is null)
+            throw new InvalidOperationException("CART_CURRENT_CONCURRENT_READ_UNAVAILABLE");
+        // Une creation initialise deja l'activite a now; ce touch est
+        // intentionnellement idempotent et couvre aussi le Cart gagnant relu
+        // apres une collision de cle unique.
+        await TouchCartActivityAsync(connection, transaction, cart.Id, now, cancellationToken);
+        cart = await ReadCartAsync(connection, transaction, owner, cart.Id, false, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return new("CART_OK", cart);
     }
@@ -111,17 +158,260 @@ public sealed class BillingV2CartService : IBillingV2CartService
         if (!owner.IsValid || !Guid.TryParse(cartId, out _)) return new("CART_NOT_FOUND");
         await using var connection = await OpenReadyAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        await ExpireInactiveAsync(connection, transaction, DateTime.UtcNow, cancellationToken);
+        await ExpireInactiveCartAsync(connection, transaction, owner, cartId, DateTime.UtcNow, cancellationToken);
         var cart = await ReadCartAsync(connection, transaction, owner, cartId, false, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return cart is null ? new("CART_NOT_FOUND") : new("CART_OK", cart);
     }
+
+    /// <summary>
+    /// Frontiere explicite entre une formule configuree localement et le
+    /// panier. Cette commande n'est appelee qu'apres le CTA public : ouvrir
+    /// ou modifier <c>/formules/[code]</c> ne peut donc ni creer ni toucher un
+    /// Cart. La selection navigateur ne contient que des codes catalogue ; la
+    /// politique legacy, le preset et les bornes de metadata sont tous relus
+    /// cote serveur avant la moindre ecriture.
+    /// </summary>
+    public async Task<BillingV2CartMutationResult> ImportFormulaSelectionAsync(
+        BillingV2CartOwner owner, BillingV2PublicSelection selection, string currency,
+        CancellationToken cancellationToken)
+    {
+        if (!owner.IsValid || !IsCurrency(currency)
+            || string.IsNullOrWhiteSpace(selection.PresetCode))
+            return new("CART_FORMULA_SELECTION_INVALID");
+
+        var normalizedCurrency = currency.ToUpperInvariant();
+        var catalog = await _catalogService.GetCatalogAsync(cancellationToken);
+        if (!string.Equals(catalog.Currency, normalizedCurrency, StringComparison.Ordinal))
+            return new("CART_FORMULA_SELECTION_INVALID");
+        var resolution = BillingV2PublicSelectionPolicy.Resolve(catalog, selection);
+        if (!resolution.Resolved)
+            return new("CART_FORMULA_SELECTION_INVALID");
+
+        // La creation du Cart est volontairement apres la validation pure de
+        // la formule : une selection invalide ne doit pas laisser un Cart
+        // anonyme inaccessible lorsque le BFF n'a pas encore pose son cookie.
+        var current = await GetOrCreateCurrentAsync(owner, normalizedCurrency, cancellationToken);
+        if (current.Cart is null) return current;
+
+        var imported = await MutateAsync(owner, current.Cart.Id, current.Cart.Version,
+            async (connection, transaction, cart, now, token) =>
+            {
+                var preset = await ReadPresetAsync(connection, transaction,
+                    selection.PresetCode!.Trim(), token);
+                if (preset is null) return "CART_FORMULA_SELECTION_INVALID";
+
+                var configuredItems = ResolveFormulaPresetItems(preset, resolution.Components);
+                if (configuredItems is null) return "CART_FORMULA_SELECTION_INVALID";
+
+                var repairMissingRequiredItems = false;
+                if (cart.Items.Count > 0)
+                {
+                    // Phase 2.5 ne fusionne pas a l'aveugle deux origines. Le
+                    // seul cas automatiquement accepte est le retry strict de
+                    // la meme formule deja importee : aucun item n'est alors
+                    // ajoute une seconde fois.
+                    if (IsSameFormulaImport(cart, preset, configuredItems, selection))
+                        return "CART_FORMULA_SELECTION_IMPORTED";
+
+                    // Correctif cible pour un Cart cree par la version qui
+                    // omettait un required non public (ex. BASE-SERVICE).
+                    // Tous les items existants doivent deja correspondre a la
+                    // meme formule; seules des lignes required peuvent
+                    // manquer. Toute autre difference reste une revue Cart.
+                    if (!IsRepairableFormulaImport(cart, preset, configuredItems, selection))
+                        return "CART_MERGE_REQUIRES_REVIEW";
+                    repairMissingRequiredItems = true;
+                }
+
+                var commitmentId = await ResolveFormulaCommitmentIdAsync(connection, transaction,
+                    selection, token);
+                if (commitmentId is null) return "CART_FORMULA_SELECTION_INVALID";
+
+                var displayOrder = cart.Items.Count == 0 ? 1 : cart.Items.Max(item => item.DisplayOrder) + 1;
+                var itemsToInsert = repairMissingRequiredItems
+                    ? configuredItems.Where(definition => definition.RequiredItem
+                        && !cart.Items.Any(item => string.Equals(item.SourcePresetItemId,
+                            definition.PresetItemId, StringComparison.Ordinal)))
+                    : configuredItems;
+                foreach (var item in itemsToInsert)
+                {
+                    await InsertPresetItemAsync(connection, transaction, cart.Id, item,
+                        displayOrder++, now, token);
+                }
+
+                await using var update = connection.CreateCommand();
+                update.Transaction = transaction;
+                // source_preset_id reste la provenance qui a initialise un
+                // Cart vide. Les items portent toujours leur propre
+                // source_preset_item_id, ce qui laisse le Cart extensible par
+                // de futures origines directes sans le reduire a un preset.
+                update.CommandText = """
+                    UPDATE billing_v2_carts
+                    SET source_preset_id = COALESCE(source_preset_id, @preset_id),
+                        commitment_term_id = @commitment_id,
+                        payment_mode = @payment_mode
+                    WHERE id = @cart_id;
+                    """;
+                update.Parameters.AddWithValue("@preset_id", preset.Id);
+                update.Parameters.AddWithValue("@commitment_id", commitmentId);
+                update.Parameters.AddWithValue("@payment_mode", selection.PaymentMode);
+                update.Parameters.AddWithValue("@cart_id", cart.Id);
+                await update.ExecuteNonQueryAsync(token);
+
+                var importedCart = await ReadCartAsync(connection, transaction, owner, cart.Id,
+                    false, token);
+                if (importedCart is null) return "CART_FORMULA_SELECTION_INVALID";
+
+                var dependencyResult = await ResolveImportDependenciesAsync(connection, transaction,
+                    owner, importedCart, now, token);
+                if (dependencyResult != "CART_ITEM_ADDED") return dependencyResult;
+
+                importedCart = await ReadCartAsync(connection, transaction, owner, cart.Id,
+                    false, token);
+                if (importedCart is null
+                    || !HasAllRequiredPresetItems(preset, importedCart)
+                    || HasDuplicateStructuralItems(importedCart)
+                    || (await ReadDependencyIssuesAsync(connection, transaction, importedCart, token))
+                    .Any(issue => issue.Blocking)
+                    || !await HasValidImportedScopeAndPricingAsync(connection, transaction,
+                        importedCart, token))
+                    return "CART_FORMULA_SELECTION_INVALID";
+                return "CART_FORMULA_SELECTION_IMPORTED";
+            }, cancellationToken);
+
+        if (imported.Code != "CART_FORMULA_SELECTION_IMPORTED" || imported.Cart is null)
+            return imported;
+
+        // Le devis Cart est volontairement recalcule apres l'import. Le devis
+        // formule n'est jamais une reservation ni une autorite de prix.
+        var quoted = await QuoteAsync(owner, imported.Cart.Id, cancellationToken);
+        return quoted.Quote is null
+            ? imported
+            : new BillingV2CartMutationResult("CART_FORMULA_SELECTION_IMPORTED",
+                quoted.Cart, quoted.Quote);
+    }
+
+    /// <summary>
+    /// Initialise transactionnellement un Cart depuis un preset public. Le
+    /// navigateur ne fournit que le code du preset : les services, paliers,
+    /// scopes, quantites et identifiants de lignes sont relus en base.
+    /// Cette methode ne connait ni checkout ni subscription.
+    /// </summary>
+    public async Task<BillingV2CartMutationResult> InitializeFromPresetAsync(
+        BillingV2CartOwner owner, string presetCode, string currency, int? expectedVersion,
+        bool replace, CancellationToken cancellationToken)
+    {
+        if (!owner.IsValid || !IsCurrency(currency) || string.IsNullOrWhiteSpace(presetCode))
+            return new("CART_PRESET_INVALID");
+        await using var connection = await OpenReadyAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var now = DateTime.UtcNow;
+        await ExpireInactiveCurrentAsync(connection, transaction, owner, currency.ToUpperInvariant(), now, cancellationToken);
+        var preset = await ReadPresetAsync(connection, transaction, presetCode.Trim(), cancellationToken);
+        if (preset is null) return new("CART_PRESET_INVALID");
+
+        var cart = await ReadCurrentAsync(connection, transaction, owner, currency.ToUpperInvariant(), true, cancellationToken);
+        if (cart is null)
+        {
+            var id = Guid.NewGuid().ToString("D");
+            await InsertOpenCartAsync(connection, transaction, owner, id, currency.ToUpperInvariant(), now, cancellationToken);
+            cart = await ReadCartAsync(connection, transaction, owner, id, true, cancellationToken);
+        }
+        if (cart is null) return new("CART_NOT_FOUND");
+
+        if (string.Equals(cart.SourcePresetId, preset.Id, StringComparison.Ordinal))
+        {
+            await TouchCartActivityAsync(connection, transaction, cart.Id, now, cancellationToken);
+            var current = await ReadCartAsync(connection, transaction, owner, cart.Id, false, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return new("CART_PRESET_INITIALIZED", current);
+        }
+        if (cart.SourcePresetId is not null || cart.Items.Count > 0)
+        {
+            if (!replace)
+                return new("CART_PRESET_CONFLICT", cart, null, cart.SourcePresetId);
+            if (expectedVersion is null || cart.Version != expectedVersion.Value)
+                return new("CART_VERSION_CONFLICT", cart);
+            await using var clear = connection.CreateCommand();
+            clear.Transaction = transaction;
+            clear.CommandText = "DELETE FROM billing_v2_cart_items WHERE cart_id = @cart_id;";
+            clear.Parameters.AddWithValue("@cart_id", cart.Id);
+            await clear.ExecuteNonQueryAsync(cancellationToken);
+        }
+        else if (expectedVersion is not null && cart.Version != expectedVersion.Value)
+        {
+            return new("CART_VERSION_CONFLICT", cart);
+        }
+
+        await using (var setPreset = connection.CreateCommand())
+        {
+            setPreset.Transaction = transaction;
+            setPreset.CommandText = "UPDATE billing_v2_carts SET source_preset_id = @preset WHERE id = @cart_id;";
+            setPreset.Parameters.AddWithValue("@preset", preset.Id);
+            setPreset.Parameters.AddWithValue("@cart_id", cart.Id);
+            await setPreset.ExecuteNonQueryAsync(cancellationToken);
+        }
+        var displayOrder = 1;
+        foreach (var item in preset.Items.Where(item => item.SelectedByDefault))
+        {
+            await InsertPresetItemAsync(connection, transaction, cart.Id, item, displayOrder++, now, cancellationToken);
+        }
+        await using (var version = connection.CreateCommand())
+        {
+            version.Transaction = transaction;
+            version.CommandText = """
+                UPDATE billing_v2_carts SET version = version + 1, updated_at = @now,
+                    last_activity_at = @now, expires_at = @expires WHERE id = @id;
+                """;
+            version.Parameters.AddWithValue("@now", now);
+            version.Parameters.AddWithValue("@expires", now.AddDays(30));
+            version.Parameters.AddWithValue("@id", cart.Id);
+            await version.ExecuteNonQueryAsync(cancellationToken);
+        }
+        var initialized = await ReadCartAsync(connection, transaction, owner, cart.Id, false, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return new("CART_PRESET_INITIALIZED", initialized);
+    }
+
+    /// <summary>
+    /// Ajoute une option uniquement par son identifiant de définition. Les
+    /// métadonnées de service/tier/scope/quantité ne proviennent jamais du
+    /// navigateur et le preset du Cart est vérifié dans la même transaction.
+    /// </summary>
+    public Task<BillingV2CartMutationResult> AddPresetItemAsync(BillingV2CartOwner owner,
+        string cartId, int expectedVersion, string presetItemId, CancellationToken cancellationToken)
+        => MutateAsync(owner, cartId, expectedVersion, async (connection, transaction, cart, now, token) =>
+        {
+            if (cart.SourcePresetId is null || !Guid.TryParse(presetItemId, out _))
+                return "CART_PRESET_ITEM_INVALID";
+            var definition = await ReadPresetItemAsync(connection, transaction, cart.SourcePresetId,
+                presetItemId, token);
+            if (definition is null || !definition.CustomerEditable)
+                return "CART_PRESET_ITEM_INVALID";
+            if (cart.Items.Any(item => item.SourcePresetItemId == presetItemId))
+                return "CART_PRESET_ITEM_ALREADY_SELECTED";
+            if (cart.Items.Any(item => item.ServiceCode == definition.ServiceCode
+                    && item.ScopeTemplate == definition.ScopeTemplate))
+                return "CART_PRESET_ITEM_CONFLICT";
+            var root = await AlignTierToExistingRequirementAsync(connection, transaction, cart,
+                new DependencyNode(definition.ServiceId, definition.TierId, definition.ScopeTemplate, null, definition.Quantity), token);
+            if (root.Code != "CART_ITEM_OK") return root.Code;
+            await InsertPresetItemAsync(connection, transaction, cart.Id,
+                definition with { TierId = root.Node!.TierId }, cart.Items.Count + 1, now, token);
+            return await AddDeterministicDependenciesAsync(connection, transaction, cart,
+                root.Node!, cart.Items.Count + 2, now, token);
+        }, cancellationToken);
 
     public Task<BillingV2CartMutationResult> AddItemAsync(BillingV2CartOwner owner,
         string cartId, int expectedVersion, BillingV2CartItemCommand command,
         CancellationToken cancellationToken)
         => MutateAsync(owner, cartId, expectedVersion, async (connection, transaction, cart, now, token) =>
         {
+            // Un Cart initialise par formule ne peut pas etre enrichi par une
+            // commande generique forgeable. Les seules entrees supplementaires
+            // passent par AddPresetItemAsync, qui relit la definition autorisee.
+            if (cart.SourcePresetId is not null) return "CART_PRESET_ITEM_REQUIRED";
             var resolved = await ResolveItemAsync(connection, transaction, cart, command, token);
             if (resolved.Code != "CART_ITEM_OK") return resolved.Code;
             await using var insert = connection.CreateCommand();
@@ -162,8 +452,20 @@ public sealed class BillingV2CartService : IBillingV2CartService
         CancellationToken cancellationToken)
         => MutateAsync(owner, cartId, expectedVersion, async (connection, transaction, cart, now, token) =>
         {
-            if (!cart.Items.Any(item => string.Equals(item.Id, itemId, StringComparison.Ordinal)))
+            var existing = cart.Items.FirstOrDefault(item => string.Equals(item.Id, itemId, StringComparison.Ordinal));
+            if (existing is null)
                 return "CART_ITEM_NOT_FOUND";
+            if (!await IsPresetItemMutableAsync(connection, transaction, existing.SourcePresetItemId, false, token))
+                return "CART_PRESET_ITEM_IMMUTABLE";
+            if (cart.SourcePresetId is not null && existing.SourcePresetItemId is not null)
+            {
+                var definition = await ReadPresetItemAsync(connection, transaction, cart.SourcePresetId,
+                    existing.SourcePresetItemId, token);
+                if (definition is null || !string.Equals(command.ServiceCode, definition.ServiceCode, StringComparison.Ordinal)
+                    || !string.Equals(command.ScopeTemplate, definition.ScopeTemplate, StringComparison.Ordinal)
+                    || command.Quantity < definition.MinimumQuantity || command.Quantity > definition.MaximumQuantity)
+                    return "CART_PRESET_ITEM_INVALID";
+            }
             var resolved = await ResolveItemAsync(connection, transaction, cart, command, token);
             if (resolved.Code != "CART_ITEM_OK") return resolved.Code;
             await using var update = connection.CreateCommand();
@@ -187,6 +489,9 @@ public sealed class BillingV2CartService : IBillingV2CartService
             update.Parameters.AddWithValue("@id", itemId);
             update.Parameters.AddWithValue("@cart_id", cart.Id);
             await update.ExecuteNonQueryAsync(token);
+            var synchronized = await SynchronizeSameNumericDependentsAsync(connection, transaction, cart,
+                existing with { TierId = resolved.TierId, TierCode = command.TierCode }, token);
+            if (!synchronized) return "CART_DEPENDENCY_IMPOSSIBLE";
             return "CART_ITEM_UPDATED";
         }, cancellationToken);
 
@@ -194,6 +499,16 @@ public sealed class BillingV2CartService : IBillingV2CartService
         string cartId, string itemId, int expectedVersion, CancellationToken cancellationToken)
         => MutateAsync(owner, cartId, expectedVersion, async (connection, transaction, cart, _, token) =>
         {
+            var existing = cart.Items.FirstOrDefault(item => string.Equals(item.Id, itemId, StringComparison.Ordinal));
+            if (existing is null) return "CART_ITEM_NOT_FOUND";
+            if (!await IsPresetItemMutableAsync(connection, transaction, existing.SourcePresetItemId, true, token))
+                return "CART_PRESET_ITEM_REQUIRED";
+            var before = await ReadDependencyIssuesAsync(connection, transaction, cart, token);
+            var withoutItem = cart with { Items = cart.Items.Where(item => item.Id != existing.Id).ToArray() };
+            var after = await ReadDependencyIssuesAsync(connection, transaction, withoutItem, token);
+            if (after.Any(issue => issue.Blocking && !before.Any(current =>
+                    current.Code == issue.Code && current.CartItemId == issue.CartItemId)))
+                return "CART_DEPENDENCY_REQUIRED";
             await using var command = connection.CreateCommand();
             command.Transaction = transaction;
             command.CommandText = "DELETE FROM billing_v2_cart_items WHERE id = @id AND cart_id = @cart_id;";
@@ -276,6 +591,42 @@ public sealed class BillingV2CartService : IBillingV2CartService
             return "CART_EXPIRED";
         }, cancellationToken, touch: false);
 
+    /// <summary>
+    /// Adaptateur transitoire, volontairement à sens unique : il relit un
+    /// Cart déjà autorisé et produit la sélection historique consommée par le
+    /// checkout legacy. Il ne crée aucun état financier et ne remplace pas le
+    /// futur checkout Cart de Phase 4.
+    /// </summary>
+    public async Task<BillingV2CartMutationResult> ProjectLegacySelectionAsync(
+        BillingV2CartOwner owner, string cartId, CancellationToken cancellationToken)
+    {
+        var result = await GetAsync(owner, cartId, cancellationToken);
+        var cart = result.Cart;
+        if (cart is null) return result;
+        if (cart.SourcePresetId is null) return new("CART_LEGACY_PROJECTION_UNAVAILABLE", cart);
+        var byCode = cart.Items.GroupBy(item => item.ServiceCode, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
+        BillingV2CartItem? One(string code) => byCode.TryGetValue(code, out var items) && items.Length == 1 ? items[0] : null;
+        var personal = One(BillingV2PublicCatalogCodes.StoragePersonal);
+        if (personal?.TierCode is null || string.IsNullOrWhiteSpace(cart.CommitmentCode)
+            || string.IsNullOrWhiteSpace(cart.PaymentMode))
+            return new("CART_LEGACY_PROJECTION_UNAVAILABLE", cart);
+        var selection = new BillingV2PublicSelection(
+            PresetCode: await ReadPresetCodeAsync(cart.SourcePresetId, cancellationToken),
+            CommitmentCode: cart.CommitmentCode,
+            PaymentMode: cart.PaymentMode,
+            StoragePersonalTierCode: personal.TierCode,
+            BackupPersonal: One(BillingV2PublicCatalogCodes.BackupPersonal) is not null,
+            StorageSharedTierCode: One(BillingV2PublicCatalogCodes.StorageShared)?.TierCode,
+            BackupShared: One(BillingV2PublicCatalogCodes.BackupShared) is not null,
+            VpnTierCode: One(BillingV2PublicCatalogCodes.VpnAccess)?.TierCode,
+            RemoteDesktop: One(BillingV2PublicCatalogCodes.RemoteDesktop) is not null,
+            AdditionalUsers: One(BillingV2PublicCatalogCodes.AdditionalUser)?.Quantity ?? 0,
+            SupportPlus: One(BillingV2PublicCatalogCodes.SupportPlus) is not null,
+            Components: null);
+        return new("CART_LEGACY_SELECTION_PROJECTED", cart, null, null, selection);
+    }
+
     public async Task<BillingV2CartMutationResult> ClaimAsync(string anonymousToken,
         string customerId, int expectedVersion, CancellationToken cancellationToken)
     {
@@ -283,11 +634,12 @@ public sealed class BillingV2CartService : IBillingV2CartService
         if (!anonymous.IsValid || !Guid.TryParse(customerId, out _)) return new("CART_CLAIM_INVALID");
         await using var connection = await OpenReadyAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        await ExpireInactiveAsync(connection, transaction, DateTime.UtcNow, cancellationToken);
+        await ExpireInactiveOwnedCartsAsync(connection, transaction, anonymous, DateTime.UtcNow, cancellationToken);
         var cart = await ReadAnyCurrentAsync(connection, transaction, anonymous, true, cancellationToken);
         if (cart is null) return new("CART_NOT_FOUND");
         if (cart.Version != expectedVersion) return new("CART_VERSION_CONFLICT", cart);
         var customerOwner = new BillingV2CartOwner(customerId, null);
+        await ExpireInactiveCurrentAsync(connection, transaction, customerOwner, cart.Currency, DateTime.UtcNow, cancellationToken);
         var existing = await ReadCurrentAsync(connection, transaction, customerOwner, cart.Currency, true, cancellationToken);
         if (existing is not null) return new("CART_CLAIM_CONFLICT", cart);
         await using var update = connection.CreateCommand();
@@ -310,6 +662,41 @@ public sealed class BillingV2CartService : IBillingV2CartService
         return new("CART_CLAIMED", claimed);
     }
 
+    /// <summary>Claim de reprise après login : la version anonyme est lue et verrouillée côté serveur.</summary>
+    public async Task<BillingV2CartMutationResult> ClaimCurrentAsync(string anonymousToken,
+        string customerId, CancellationToken cancellationToken)
+    {
+        var anonymous = new BillingV2CartOwner(null, anonymousToken);
+        if (!anonymous.IsValid || !Guid.TryParse(customerId, out _)) return new("CART_CLAIM_INVALID");
+        await using var connection = await OpenReadyAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var now = DateTime.UtcNow;
+        await ExpireInactiveOwnedCartsAsync(connection, transaction, anonymous, now, cancellationToken);
+        var cart = await ReadAnyCurrentAsync(connection, transaction, anonymous, true, cancellationToken);
+        if (cart is null) return new("CART_NOT_FOUND");
+        var customerOwner = new BillingV2CartOwner(customerId, null);
+        await ExpireInactiveCurrentAsync(connection, transaction, customerOwner, cart.Currency, now, cancellationToken);
+        if (await ReadCurrentAsync(connection, transaction, customerOwner, cart.Currency, true, cancellationToken) is not null)
+            return new("CART_CLAIM_CONFLICT", cart);
+        await using var update = connection.CreateCommand();
+        update.Transaction = transaction;
+        update.CommandText = """
+            UPDATE billing_v2_carts SET customer_id = @customer, anonymous_session_hash = NULL,
+                open_customer_slot = 1, open_anonymous_slot = NULL, version = version + 1,
+                updated_at = @now, last_activity_at = @now, expires_at = @expires
+            WHERE id = @id AND version = @version;
+            """;
+        update.Parameters.AddWithValue("@customer", customerId);
+        update.Parameters.AddWithValue("@now", now);
+        update.Parameters.AddWithValue("@expires", now.AddDays(30));
+        update.Parameters.AddWithValue("@id", cart.Id);
+        update.Parameters.AddWithValue("@version", cart.Version);
+        if (await update.ExecuteNonQueryAsync(cancellationToken) != 1) return new("CART_VERSION_CONFLICT", cart);
+        var claimed = await ReadCartAsync(connection, transaction, customerOwner, cart.Id, false, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return new("CART_CLAIMED", claimed);
+    }
+
     private async Task<BillingV2CartMutationResult> MutateAsync(BillingV2CartOwner owner,
         string cartId, int expectedVersion,
         Func<MySqlConnection, MySqlTransaction, BillingV2Cart, DateTime, CancellationToken, Task<string>> mutation,
@@ -319,14 +706,14 @@ public sealed class BillingV2CartService : IBillingV2CartService
         await using var connection = await OpenReadyAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         var now = DateTime.UtcNow;
-        await ExpireInactiveAsync(connection, transaction, now, cancellationToken);
+        await ExpireInactiveCartAsync(connection, transaction, owner, cartId, now, cancellationToken);
         var cart = await ReadCartAsync(connection, transaction, owner, cartId, true, cancellationToken);
         if (cart is null) return new("CART_NOT_FOUND");
         if (cart.Status != BillingV2CartStatuses.Open) return new("CART_IMMUTABLE", cart);
         if (cart.Version != expectedVersion) return new("CART_VERSION_CONFLICT", cart);
         var code = await mutation(connection, transaction, cart, now, cancellationToken);
-        if (!code.EndsWith("ADDED", StringComparison.Ordinal) && !code.EndsWith("UPDATED", StringComparison.Ordinal)
-            && code is not "CART_ITEM_REMOVED" and not "CART_EXPIRED")
+        if (BillingV2CartMutationResults.Classify(code)
+            != BillingV2CartMutationOutcome.Success)
         {
             await transaction.RollbackAsync(cancellationToken);
             return new(code, cart);
@@ -352,6 +739,136 @@ public sealed class BillingV2CartService : IBillingV2CartService
         var mutated = await ReadCartAsync(connection, transaction, owner, cartId, false, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return new(code, mutated);
+    }
+
+    private static IReadOnlyList<BillingV2CartPresetCompositionItem>? ResolveFormulaPresetItems(
+        PresetDefinition preset,
+        IReadOnlyList<BillingV2PublicSelectionComponent> components)
+    {
+        var composition = BillingV2CartPolicy.ResolvePresetComposition(preset.Items, components);
+        return composition.IsValid ? composition.Items : null;
+    }
+
+    private static bool IsSameFormulaImport(BillingV2Cart cart,
+        PresetDefinition preset, IReadOnlyList<BillingV2CartPresetCompositionItem> configuredItems,
+        BillingV2PublicSelection selection)
+        => string.Equals(cart.SourcePresetId, preset.Id, StringComparison.Ordinal)
+            && string.Equals(cart.CommitmentCode, selection.CommitmentCode,
+                StringComparison.Ordinal)
+            && string.Equals(cart.PaymentMode, selection.PaymentMode,
+                StringComparison.Ordinal)
+            && cart.Items.Count == configuredItems.Count
+            && configuredItems.All(definition => cart.Items.Count(item =>
+                    string.Equals(item.SourcePresetItemId, definition.PresetItemId,
+                        StringComparison.Ordinal)
+                    && string.Equals(item.TierId, definition.TierId,
+                        StringComparison.Ordinal)
+                    && item.Quantity == definition.Quantity
+                    && string.Equals(item.ScopeTemplate, definition.ScopeTemplate,
+                        StringComparison.Ordinal)) == 1);
+
+    private static bool IsRepairableFormulaImport(BillingV2Cart cart,
+        PresetDefinition preset, IReadOnlyList<BillingV2CartPresetCompositionItem> configuredItems,
+        BillingV2PublicSelection selection)
+    {
+        if (!string.Equals(cart.SourcePresetId, preset.Id, StringComparison.Ordinal)
+            || !string.Equals(cart.CommitmentCode, selection.CommitmentCode,
+                StringComparison.Ordinal)
+            || !string.Equals(cart.PaymentMode, selection.PaymentMode,
+                StringComparison.Ordinal))
+            return false;
+
+        var missing = configuredItems.Where(definition => !cart.Items.Any(item =>
+            string.Equals(item.SourcePresetItemId, definition.PresetItemId,
+                StringComparison.Ordinal))).ToArray();
+        return missing.Length > 0
+            && missing.All(definition => definition.RequiredItem)
+            && cart.Items.All(item => configuredItems.Count(definition =>
+                    string.Equals(item.SourcePresetItemId, definition.PresetItemId,
+                        StringComparison.Ordinal)
+                    && string.Equals(item.TierId, definition.TierId,
+                        StringComparison.Ordinal)
+                    && item.Quantity == definition.Quantity
+                    && string.Equals(item.ScopeTemplate, definition.ScopeTemplate,
+                        StringComparison.Ordinal)) == 1);
+    }
+
+    /// <summary>
+    /// L'import ajoute d'abord la composition formule normalisee, puis laisse
+    /// le resolver transactionnel traiter les dependances deterministes. Une
+    /// relecture entre chaque racine donne au resolver la composition deja
+    /// enrichie et empeche l'insertion de dependances convergentes en double.
+    /// </summary>
+    private async Task<string> ResolveImportDependenciesAsync(MySqlConnection connection,
+        MySqlTransaction transaction, BillingV2CartOwner owner, BillingV2Cart cart,
+        DateTime now, CancellationToken cancellationToken)
+    {
+        var roots = cart.Items.OrderBy(item => item.DisplayOrder).ThenBy(item => item.Id,
+            StringComparer.Ordinal).ToArray();
+        var current = cart;
+        foreach (var root in roots)
+        {
+            var result = await AddDeterministicDependenciesAsync(connection, transaction, current,
+                new DependencyNode(root.ServiceId, root.TierId, root.ScopeTemplate,
+                    root.SubjectBinding, root.Quantity),
+                current.Items.Count == 0 ? 1 : current.Items.Max(item => item.DisplayOrder) + 1,
+                now, cancellationToken);
+            if (result != "CART_ITEM_ADDED") return result;
+            current = await ReadCartAsync(connection, transaction, owner, cart.Id, false,
+                cancellationToken) ?? cart;
+        }
+        return "CART_ITEM_ADDED";
+    }
+
+    private static bool HasAllRequiredPresetItems(PresetDefinition preset, BillingV2Cart cart)
+        => preset.Items.Where(item => item.RequiredItem).All(required =>
+            cart.Items.Count(item => string.Equals(item.SourcePresetItemId,
+                required.PresetItemId, StringComparison.Ordinal)) == 1);
+
+    private static bool HasDuplicateStructuralItems(BillingV2Cart cart)
+        => cart.Items.GroupBy(item => string.Join("|", item.ServiceId, item.TierId ?? "-",
+                item.ScopeTemplate, item.SubjectBinding ?? "-"), StringComparer.Ordinal)
+            .Any(group => group.Count() > 1);
+
+    /// <summary>
+    /// La politique de selection a deja valide les choix explicites. Cette
+    /// seconde passe couvre les lignes required injectees et les dependances
+    /// ajoutees dans cette transaction, avant le commit du Cart.
+    /// </summary>
+    private async Task<bool> HasValidImportedScopeAndPricingAsync(MySqlConnection connection,
+        MySqlTransaction transaction, BillingV2Cart cart, CancellationToken cancellationToken)
+    {
+        var preview = await BuildQuoteAsync(connection, transaction, cart, cancellationToken);
+        return !preview.ScopeIssues.Any(issue => issue.Blocking)
+            && !preview.ConfigurationIssues.Any(issue => issue.Blocking
+                && issue.Code is "CART_SERVICE_UNAVAILABLE" or "CART_TIER_UNAVAILABLE"
+                    or "CART_PRICE_UNAVAILABLE");
+    }
+
+    private static async Task<string?> ResolveFormulaCommitmentIdAsync(
+        MySqlConnection connection, MySqlTransaction transaction,
+        BillingV2PublicSelection selection, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(selection.CommitmentCode)
+            || selection.PaymentMode is not BillingV2PaymentModes.Monthly
+                and not BillingV2PaymentModes.Upfront)
+            return null;
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT term.id
+            FROM billing_v2_commitment_terms term
+            JOIN billing_v2_commitment_payment_options payment
+              ON payment.commitment_term_id = term.id
+             AND payment.payment_mode = @payment_mode
+             AND payment.status = 'active'
+            WHERE term.code = @code AND term.status = 'active'
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("@code", selection.CommitmentCode.Trim());
+        command.Parameters.AddWithValue("@payment_mode", selection.PaymentMode);
+        var value = await command.ExecuteScalarAsync(cancellationToken);
+        return value is null ? null : Identifier(value);
     }
 
     private async Task<BillingV2CartQuote> BuildQuoteAsync(MySqlConnection connection,
@@ -528,15 +1045,6 @@ public sealed class BillingV2CartService : IBillingV2CartService
         var visible = reader.GetBoolean(3); var selfService = reader.GetBoolean(4); var mode = reader.GetString(5);
         if (!visible) return new("CART_SERVICE_NOT_PUBLIC");
         if (command.Origin == "direct" && (mode != BillingV2PublicOrderingModes.Direct || !selfService)) return new("CART_DIRECT_NOT_ELIGIBLE");
-        if (command.Origin == "preset")
-        {
-            if (mode != BillingV2PublicOrderingModes.OfferComponent
-                || !await PresetOriginMatchesAsync(connection, transaction,
-                    command, serviceId, cancellationToken))
-            {
-                return new("CART_PRESET_COMPONENT_INVALID");
-            }
-        }
         if (command.Origin is not "direct" and not "preset") return new("CART_ORIGIN_INVALID");
         string? tierId = null;
         if (tiered != !string.IsNullOrWhiteSpace(command.TierCode)) return new("CART_TIER_REQUIRED_OR_FORBIDDEN");
@@ -547,12 +1055,21 @@ public sealed class BillingV2CartService : IBillingV2CartService
                 command.TierCode.Trim(), cancellationToken, serviceId);
             if (tierId is null) return new("CART_TIER_INVALID");
         }
-        return new("CART_ITEM_OK", serviceId, tierId, command.ScopeTemplate ?? scope);
+        var scopeTemplate = command.ScopeTemplate ?? scope;
+        if (command.Origin == "preset"
+            && (mode != BillingV2PublicOrderingModes.OfferComponent
+                || !await PresetOriginMatchesAsync(connection, transaction,
+                    command, serviceId, tierId, scopeTemplate, cancellationToken)))
+        {
+            return new("CART_PRESET_COMPONENT_INVALID");
+        }
+        return new("CART_ITEM_OK", serviceId, tierId, scopeTemplate);
     }
 
     private static async Task<bool> PresetOriginMatchesAsync(MySqlConnection connection,
         MySqlTransaction transaction, BillingV2CartItemCommand command,
-        string serviceId, CancellationToken cancellationToken)
+        string serviceId, string? tierId, string scopeTemplate,
+        CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(command.SourcePresetId, out _)
             || !Guid.TryParse(command.SourcePresetItemId, out _)) return false;
@@ -562,12 +1079,42 @@ public sealed class BillingV2CartService : IBillingV2CartService
             FROM billing_v2_offer_presets preset
             JOIN billing_v2_preset_items item ON item.preset_id = preset.id
             WHERE preset.id = @preset_id AND preset.status = 'active' AND preset.is_public = 1
-              AND item.id = @preset_item_id AND item.service_id = @service_id;
+              -- source_preset_item_id ancre une option commerciale. Un
+              -- changement de palier reste possible seulement lorsqu'une
+              -- ligne soeur du meme preset autorise explicitement ce palier.
+              AND item.id = @preset_item_id
+              AND EXISTS (
+                  SELECT 1
+                  FROM billing_v2_preset_items allowed
+                  WHERE allowed.preset_id = preset.id
+                    AND allowed.service_id = @service_id
+                    AND allowed.scope_template = @scope
+                    AND allowed.tier_id <=> @tier_id
+              );
             """;
         check.Parameters.AddWithValue("@preset_id", command.SourcePresetId!);
         check.Parameters.AddWithValue("@preset_item_id", command.SourcePresetItemId!);
         check.Parameters.AddWithValue("@service_id", serviceId);
+        check.Parameters.AddWithValue("@tier_id", (object?)tierId ?? DBNull.Value);
+        check.Parameters.AddWithValue("@scope", scopeTemplate);
         return Convert.ToInt32(await check.ExecuteScalarAsync(cancellationToken)) == 1;
+    }
+
+    /// <summary>Les contraintes de preset sont réévaluées côté serveur sur toute mutation.</summary>
+    private static async Task<bool> IsPresetItemMutableAsync(MySqlConnection connection,
+        MySqlTransaction transaction, string? presetItemId, bool removing,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(presetItemId)) return true;
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT required_item, customer_editable FROM billing_v2_preset_items WHERE id = @id;";
+        command.Parameters.AddWithValue("@id", presetItemId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return false;
+        var required = reader.GetBoolean(0);
+        var editable = reader.GetBoolean(1);
+        return editable && (!removing || !required);
     }
 
     private static async Task<string> AddDeterministicDependenciesAsync(MySqlConnection connection,
@@ -613,6 +1160,41 @@ public sealed class BillingV2CartService : IBillingV2CartService
             }
         }
         return "CART_ITEM_ADDED";
+    }
+
+    private static async Task<(string Code, DependencyNode? Node)> AlignTierToExistingRequirementAsync(
+        MySqlConnection connection, MySqlTransaction transaction, BillingV2Cart cart,
+        DependencyNode node, CancellationToken token)
+    {
+        foreach (var dependency in await ReadDependenciesAsync(connection, transaction, node.ServiceId, token))
+        {
+            var required = cart.Items.FirstOrDefault(item => item.ServiceId == dependency.ServiceId
+                && SameScope(node, new DependencyNode(item.ServiceId, item.TierId, item.ScopeTemplate, item.SubjectBinding, item.Quantity), dependency.ScopeRelation));
+            if (required is null || dependency.TierRelation != "same_numeric_value") continue;
+            var tier = await ResolveDeterministicTierAsync(connection, transaction, node.ServiceId, required.TierId, "same_numeric_value", token);
+            if (tier.Code != "CART_DEPENDENCY_RESOLVED") return (tier.Code, null);
+            node = node with { TierId = tier.TierId };
+        }
+        return ("CART_ITEM_OK", node);
+    }
+
+    private static async Task<bool> SynchronizeSameNumericDependentsAsync(MySqlConnection connection,
+        MySqlTransaction transaction, BillingV2Cart cart, BillingV2CartItem required, CancellationToken token)
+    {
+        foreach (var dependent in cart.Items.Where(item => item.Id != required.Id))
+        {
+            var rules = await ReadDependenciesAsync(connection, transaction, dependent.ServiceId, token);
+            if (!rules.Any(rule => rule.ServiceId == required.ServiceId && rule.TierRelation == "same_numeric_value"
+                    && SameScope(new DependencyNode(dependent.ServiceId, dependent.TierId, dependent.ScopeTemplate, dependent.SubjectBinding, dependent.Quantity),
+                        new DependencyNode(required.ServiceId, required.TierId, required.ScopeTemplate, required.SubjectBinding, required.Quantity), rule.ScopeRelation))) continue;
+            var tier = await ResolveDeterministicTierAsync(connection, transaction, dependent.ServiceId, required.TierId, "same_numeric_value", token);
+            if (tier.Code != "CART_DEPENDENCY_RESOLVED") return false;
+            await using var update = connection.CreateCommand(); update.Transaction = transaction;
+            update.CommandText = "UPDATE billing_v2_cart_items SET tier_id = @tier, updated_at = UTC_TIMESTAMP(6) WHERE id = @id AND cart_id = @cart;";
+            update.Parameters.AddWithValue("@tier", tier.TierId!); update.Parameters.AddWithValue("@id", dependent.Id); update.Parameters.AddWithValue("@cart", cart.Id);
+            if (await update.ExecuteNonQueryAsync(token) != 1) return false;
+        }
+        return true;
     }
 
     private static async Task<IReadOnlyList<DependencyDefinition>> ReadDependenciesAsync(
@@ -704,6 +1286,123 @@ public sealed class BillingV2CartService : IBillingV2CartService
         return id is null ? null : await ReadCartAsync(connection, transaction, owner, Identifier(id), forUpdate, cancellationToken);
     }
 
+    private static async Task InsertOpenCartAsync(MySqlConnection connection, MySqlTransaction transaction,
+        BillingV2CartOwner owner, string id, string currency, DateTime now, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            INSERT INTO billing_v2_carts
+                (id, customer_id, anonymous_session_hash, open_customer_slot,
+                 open_anonymous_slot, status, currency, version,
+                 created_at, updated_at, last_activity_at, expires_at)
+            VALUES (@id, @customer, @anonymous, @customer_slot,
+                    @anonymous_slot, 'open', @currency, 1,
+                    @now, @now, @now, @expires);
+            """;
+        command.Parameters.AddWithValue("@id", id);
+        command.Parameters.AddWithValue("@customer", (object?)owner.CustomerId ?? DBNull.Value);
+        command.Parameters.AddWithValue("@anonymous", (object?)owner.AnonymousTokenHash ?? DBNull.Value);
+        command.Parameters.AddWithValue("@customer_slot", owner.IsAuthenticated ? 1 : DBNull.Value);
+        command.Parameters.AddWithValue("@anonymous_slot", owner.IsAuthenticated ? DBNull.Value : 1);
+        command.Parameters.AddWithValue("@currency", currency);
+        command.Parameters.AddWithValue("@now", now);
+        command.Parameters.AddWithValue("@expires", now.AddDays(30));
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<PresetDefinition?> ReadPresetAsync(MySqlConnection connection,
+        MySqlTransaction transaction, string code, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT preset.id, item.id, service.id, service.code, tier.id, tier.code, item.scope_template,
+                   item.quantity, item.required_item, item.customer_editable, item.selected_by_default,
+                   item.minimum_quantity, item.maximum_quantity, item.display_order
+            FROM billing_v2_offer_presets preset
+            JOIN billing_v2_preset_items item ON item.preset_id = preset.id
+            JOIN billing_v2_services service ON service.id = item.service_id
+              AND service.status = 'active'
+              -- Un socle requis peut etre volontairement absent de la
+              -- vitrine comme service isole. Il reste toutefois une partie
+              -- obligatoire de la formule et doit etre compose cote serveur.
+              AND (service.public_visible = 1 OR item.required_item = 1)
+            LEFT JOIN billing_v2_service_tiers tier ON tier.id = item.tier_id
+              AND tier.status = 'active'
+            WHERE preset.code = @code AND preset.status = 'active' AND preset.is_public = 1
+            ORDER BY item.display_order, item.id;
+            """;
+        command.Parameters.AddWithValue("@code", code);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        string? presetId = null;
+        var items = new List<BillingV2CartPresetCompositionItem>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            presetId ??= Identifier(reader, 0);
+            items.Add(new(Identifier(reader, 1), Identifier(reader, 2), reader.GetString(3),
+                NullableIdentifier(reader, 4), reader.IsDBNull(5) ? null : reader.GetString(5),
+                reader.GetString(6), reader.GetInt32(7), reader.GetBoolean(8), reader.GetBoolean(9),
+                reader.GetBoolean(10), reader.GetInt32(11), reader.GetInt32(12), reader.GetInt32(13)));
+        }
+        // L'invariant est aussi porte par 091, mais cette relecture reste
+        // indispensable : une base ancienne ou une ecriture hors admin ne
+        // doit jamais initialiser un Cart sans un composant requis.
+        return presetId is null || items.Count == 0 || items.Any(item => item.RequiredItem && !item.SelectedByDefault)
+            ? null
+            : new(presetId, items);
+    }
+
+    private static async Task InsertPresetItemAsync(MySqlConnection connection, MySqlTransaction transaction,
+        string cartId, BillingV2CartPresetCompositionItem item, int displayOrder, DateTime now,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            INSERT INTO billing_v2_cart_items
+                (id, cart_id, service_id, tier_id, quantity, scope_template,
+                 source_preset_item_id, display_order, created_at, updated_at)
+            VALUES (@id, @cart_id, @service_id, @tier_id, @quantity, @scope,
+                    @preset_item_id, @display_order, @now, @now);
+            """;
+        command.Parameters.AddWithValue("@id", Guid.NewGuid().ToString("D"));
+        command.Parameters.AddWithValue("@cart_id", cartId);
+        command.Parameters.AddWithValue("@service_id", item.ServiceId);
+        command.Parameters.AddWithValue("@tier_id", (object?)item.TierId ?? DBNull.Value);
+        command.Parameters.AddWithValue("@quantity", item.Quantity);
+        command.Parameters.AddWithValue("@scope", item.ScopeTemplate);
+        command.Parameters.AddWithValue("@preset_item_id", item.PresetItemId);
+        command.Parameters.AddWithValue("@display_order", displayOrder);
+        command.Parameters.AddWithValue("@now", now);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<BillingV2CartPresetCompositionItem?> ReadPresetItemAsync(MySqlConnection connection,
+        MySqlTransaction transaction, string presetId, string presetItemId, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT item.id, service.id, service.code, tier.id, tier.code, item.scope_template,
+                   item.quantity, item.required_item, item.customer_editable, item.selected_by_default,
+                   item.minimum_quantity, item.maximum_quantity, item.display_order
+            FROM billing_v2_preset_items item
+            JOIN billing_v2_services service ON service.id = item.service_id AND service.status = 'active'
+            LEFT JOIN billing_v2_service_tiers tier ON tier.id = item.tier_id AND tier.status = 'active'
+            WHERE item.id = @item_id AND item.preset_id = @preset_id;
+            """;
+        command.Parameters.AddWithValue("@item_id", presetItemId);
+        command.Parameters.AddWithValue("@preset_id", presetId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
+        var item = new BillingV2CartPresetCompositionItem(Identifier(reader, 0), Identifier(reader, 1), reader.GetString(2), NullableIdentifier(reader, 3),
+                reader.IsDBNull(4) ? null : reader.GetString(4), reader.GetString(5), reader.GetInt32(6),
+                reader.GetBoolean(7), reader.GetBoolean(8), reader.GetBoolean(9), reader.GetInt32(10),
+                reader.GetInt32(11), reader.GetInt32(12));
+        return item.RequiredItem && !item.SelectedByDefault ? null : item;
+    }
+
     private async Task<BillingV2Cart?> ReadAnyCurrentAsync(MySqlConnection connection, MySqlTransaction? transaction,
         BillingV2CartOwner owner, bool forUpdate, CancellationToken cancellationToken)
     {
@@ -741,10 +1440,11 @@ public sealed class BillingV2CartService : IBillingV2CartService
         await using var command = connection.CreateCommand(); command.Transaction = transaction;
         command.CommandText = """
             SELECT cart.id, cart.customer_id, cart.anonymous_session_hash, cart.status, cart.currency,
-                   cart.commitment_term_id, term.code, cart.payment_mode, cart.source_preset_id,
+                   cart.commitment_term_id, term.code, cart.payment_mode, cart.source_preset_id, preset.code,
                    cart.version, cart.created_at, cart.updated_at, cart.last_activity_at, cart.expires_at,
                    cart.checked_out_subscription_id
             FROM billing_v2_carts cart LEFT JOIN billing_v2_commitment_terms term ON term.id = cart.commitment_term_id
+            LEFT JOIN billing_v2_offer_presets preset ON preset.id = cart.source_preset_id
             WHERE cart.id = @id AND ((@customer IS NOT NULL AND cart.customer_id = @customer)
               OR (@anonymous IS NOT NULL AND cart.anonymous_session_hash = @anonymous))
             """ + (forUpdate ? " FOR UPDATE;" : ";");
@@ -754,10 +1454,41 @@ public sealed class BillingV2CartService : IBillingV2CartService
         if (!await reader.ReadAsync(cancellationToken)) return null;
         var cart = new BillingV2Cart(Identifier(reader, 0), NullableIdentifier(reader, 1), reader.IsDBNull(2) ? null : reader.GetString(2),
             reader.GetString(3), reader.GetString(4), NullableIdentifier(reader, 5), reader.IsDBNull(6) ? null : reader.GetString(6),
-            reader.IsDBNull(7) ? null : reader.GetString(7), NullableIdentifier(reader, 8), reader.GetInt32(9), reader.GetDateTime(10),
-            reader.GetDateTime(11), reader.GetDateTime(12), reader.GetDateTime(13), NullableIdentifier(reader, 14), []);
+            reader.IsDBNull(7) ? null : reader.GetString(7), NullableIdentifier(reader, 8),
+            reader.IsDBNull(9) ? null : reader.GetString(9), reader.GetInt32(10), reader.GetDateTime(11),
+            reader.GetDateTime(12), reader.GetDateTime(13), reader.GetDateTime(14), NullableIdentifier(reader, 15), []);
         await reader.DisposeAsync();
-        return cart with { Items = await ReadItemsAsync(connection, transaction, cart.Id, cancellationToken) };
+        var definition = cart.SourcePresetId is null
+            ? null
+            : await ReadPresetDefinitionAsync(connection, transaction, cart.SourcePresetId, cancellationToken);
+        return cart with {
+            Items = await ReadItemsAsync(connection, transaction, cart.Id, cancellationToken),
+            PresetDefinition = definition
+        };
+    }
+
+    private static async Task<IReadOnlyList<BillingV2CartPresetDefinitionItem>> ReadPresetDefinitionAsync(
+        MySqlConnection connection, MySqlTransaction? transaction, string presetId, CancellationToken cancellationToken)
+    {
+        var items = new List<BillingV2CartPresetDefinitionItem>();
+        await using var command = connection.CreateCommand(); command.Transaction = transaction;
+        command.CommandText = """
+            SELECT item.id, service.code, tier.code, item.scope_template, item.quantity,
+                   item.required_item, item.customer_editable, item.selected_by_default,
+                   item.minimum_quantity, item.maximum_quantity, item.display_order
+            FROM billing_v2_preset_items item
+            JOIN billing_v2_services service ON service.id = item.service_id
+            LEFT JOIN billing_v2_service_tiers tier ON tier.id = item.tier_id
+            WHERE item.preset_id = @preset_id
+            ORDER BY item.display_order, item.id;
+            """;
+        command.Parameters.AddWithValue("@preset_id", presetId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken)) items.Add(new(
+            Identifier(reader, 0), reader.GetString(1), reader.IsDBNull(2) ? null : reader.GetString(2),
+            reader.GetString(3), reader.GetInt32(4), reader.GetBoolean(5), reader.GetBoolean(6),
+            reader.GetBoolean(7), reader.GetInt32(8), reader.GetInt32(9), reader.GetInt32(10)));
+        return items;
     }
 
     private static async Task<IReadOnlyList<BillingV2CartItem>> ReadItemsAsync(MySqlConnection connection,
@@ -767,16 +1498,20 @@ public sealed class BillingV2CartService : IBillingV2CartService
         command.CommandText = """
             SELECT item.id, item.cart_id, item.service_id, service.code, item.tier_id, tier.code,
                    item.quantity, item.scope_template, item.subject_binding, item.source_preset_item_id,
+                   preset_item.required_item, preset_item.customer_editable,
                    item.configuration_kind, item.configuration_reference, item.display_order, item.created_at, item.updated_at
             FROM billing_v2_cart_items item JOIN billing_v2_services service ON service.id = item.service_id
             LEFT JOIN billing_v2_service_tiers tier ON tier.id = item.tier_id
+            LEFT JOIN billing_v2_preset_items preset_item ON preset_item.id = item.source_preset_item_id
             WHERE item.cart_id = @cart_id ORDER BY item.display_order, item.id;
             """; command.Parameters.AddWithValue("@cart_id", cartId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken)) result.Add(new(Identifier(reader, 0), Identifier(reader, 1), Identifier(reader, 2), reader.GetString(3),
             NullableIdentifier(reader, 4), reader.IsDBNull(5) ? null : reader.GetString(5), reader.GetInt32(6), reader.GetString(7),
-            reader.IsDBNull(8) ? null : reader.GetString(8), NullableIdentifier(reader, 9), reader.IsDBNull(10) ? null : reader.GetString(10),
-            reader.IsDBNull(11) ? null : reader.GetString(11), reader.GetInt32(12), reader.GetDateTime(13), reader.GetDateTime(14)));
+            reader.IsDBNull(8) ? null : reader.GetString(8), NullableIdentifier(reader, 9),
+            reader.IsDBNull(10) ? null : reader.GetBoolean(10), reader.IsDBNull(11) ? null : reader.GetBoolean(11),
+            reader.IsDBNull(12) ? null : reader.GetString(12), reader.IsDBNull(13) ? null : reader.GetString(13),
+            reader.GetInt32(14), reader.GetDateTime(15), reader.GetDateTime(16)));
         return result;
     }
 
@@ -830,18 +1565,66 @@ public sealed class BillingV2CartService : IBillingV2CartService
         await command.ExecuteNonQueryAsync(token);
     }
 
-    private static async Task ExpireInactiveAsync(MySqlConnection connection, MySqlTransaction transaction, DateTime now, CancellationToken token)
+    private static Task ExpireInactiveCurrentAsync(MySqlConnection connection, MySqlTransaction transaction,
+        BillingV2CartOwner owner, string currency, DateTime now, CancellationToken token)
+        => ExpireInactiveOwnedCartsAsync(connection, transaction, owner, now, token, currency);
+
+    /// <summary>
+    /// Cleanup borne a un proprietaire, et facultativement a une devise. Il ne
+    /// doit jamais balayer les Carts open de tous les visiteurs dans le chemin
+    /// transactionnel d'une commande. Les slots sont liberes dans la meme
+    /// ecriture que l'expiration.
+    /// </summary>
+    private static async Task ExpireInactiveOwnedCartsAsync(MySqlConnection connection, MySqlTransaction transaction,
+        BillingV2CartOwner owner, DateTime now, CancellationToken token, string? currency = null)
     {
         await using var command = connection.CreateCommand(); command.Transaction = transaction;
-        command.CommandText = """
+        var ownerColumn = owner.IsAuthenticated ? "customer_id" : "anonymous_session_hash";
+        var openSlot = owner.IsAuthenticated ? "open_customer_slot" : "open_anonymous_slot";
+        command.CommandText = $"""
             UPDATE billing_v2_carts
             SET status = 'expired', open_customer_slot = NULL,
                 open_anonymous_slot = NULL, updated_at = @now
-            WHERE status = 'open' AND expires_at <= @now;
+            WHERE status = 'open' AND expires_at <= @now
+              AND {ownerColumn} = @owner AND {openSlot} = 1
+              {(currency is null ? string.Empty : "AND currency = @currency")};
             """;
         command.Parameters.AddWithValue("@now", now);
+        command.Parameters.AddWithValue("@owner", owner.IsAuthenticated ? owner.CustomerId! : owner.AnonymousTokenHash!);
+        if (currency is not null) command.Parameters.AddWithValue("@currency", currency);
         await command.ExecuteNonQueryAsync(token);
     }
+
+    private static async Task ExpireInactiveCartAsync(MySqlConnection connection, MySqlTransaction transaction,
+        BillingV2CartOwner owner, string cartId, DateTime now, CancellationToken token)
+    {
+        await using var command = connection.CreateCommand(); command.Transaction = transaction;
+        var ownerColumn = owner.IsAuthenticated ? "customer_id" : "anonymous_session_hash";
+        command.CommandText = $"""
+            UPDATE billing_v2_carts
+            SET status = 'expired', open_customer_slot = NULL,
+                open_anonymous_slot = NULL, updated_at = @now
+            WHERE id = @id AND status = 'open' AND expires_at <= @now
+              AND {ownerColumn} = @owner;
+            """;
+        command.Parameters.AddWithValue("@id", cartId);
+        command.Parameters.AddWithValue("@now", now);
+        command.Parameters.AddWithValue("@owner", owner.IsAuthenticated ? owner.CustomerId! : owner.AnonymousTokenHash!);
+        await command.ExecuteNonQueryAsync(token);
+    }
+
+    private static bool IsDeadlock(MySqlException exception)
+        => exception.Number == 1213
+            || string.Equals(exception.SqlState, "40001", StringComparison.Ordinal);
+
+    private static bool IsDuplicateKey(MySqlException exception)
+        => exception.Number == 1062;
+
+    private static bool IsCurrentTransactionRetryable(MySqlException exception)
+        // Les collisions 1062 du current sont traitees localement par la
+        // relecture du gagnant. Seuls les deadlocks/serialization failures
+        // justifient de rejouer toute la transaction.
+        => IsDeadlock(exception);
 
     private static async Task TouchCartActivityAsync(MySqlConnection connection,
         MySqlTransaction transaction, string cartId, DateTime now, CancellationToken token)
@@ -865,7 +1648,18 @@ public sealed class BillingV2CartService : IBillingV2CartService
         var connection = new MySqlConnection(_sql.ConnectionString); await connection.OpenAsync(token);
         await using var command = connection.CreateCommand(); command.CommandText = "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name IN ('billing_v2_carts','billing_v2_cart_items','billing_v2_cart_quotes','billing_v2_services','billing_v2_service_tiers','billing_v2_service_prices','billing_v2_service_dependencies','billing_v2_commitment_terms','billing_v2_commitment_payment_options','billing_v2_offer_presets','billing_v2_preset_items');";
         if (Convert.ToInt32(await command.ExecuteScalarAsync(token)) != RequiredTables.Length) { await connection.DisposeAsync(); throw new InvalidOperationException("BILLING_V2_CART_SCHEMA_UNAVAILABLE"); }
+        command.CommandText = "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'billing_v2_preset_items' AND column_name IN ('selected_by_default','minimum_quantity','maximum_quantity');";
+        if (Convert.ToInt32(await command.ExecuteScalarAsync(token)) != 3) { await connection.DisposeAsync(); throw new InvalidOperationException("BILLING_V2_CART_SCHEMA_UNAVAILABLE"); }
         return connection;
+    }
+
+    private async Task<string?> ReadPresetCodeAsync(string presetId, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenReadyAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT code FROM billing_v2_offer_presets WHERE id = @id AND status = 'active' AND is_public = 1;";
+        command.Parameters.AddWithValue("@id", presetId);
+        return Convert.ToString(await command.ExecuteScalarAsync(cancellationToken));
     }
 
     private static bool IsCurrency(string value) => value.Length == 3 && value.All(char.IsAsciiLetter);
@@ -875,10 +1669,11 @@ public sealed class BillingV2CartService : IBillingV2CartService
     private sealed record ResolvedItem(string Code, string? ServiceId = null, string? TierId = null, string? ScopeTemplate = null);
     private sealed record ServiceMetadata(string ConfigurationPolicy, bool PriceStableWithoutConfiguration, string DefaultScopeType);
     private sealed record DependencyDefinition(string ServiceId, string DefaultScope, string ScopeRelation, string TierRelation);
+    private sealed record PresetDefinition(string Id, IReadOnlyList<BillingV2CartPresetCompositionItem> Items);
     private sealed record DependencyNode(string ServiceId, string? TierId, string ScopeTemplate, string? SubjectBinding, int Quantity);
 
     private static BillingV2CartItem ToCartItem(DependencyNode node)
         => new(node.ServiceId, "dependency", node.ServiceId, "dependency", node.TierId,
-            null, node.Quantity, node.ScopeTemplate, node.SubjectBinding, null, null,
+            null, node.Quantity, node.ScopeTemplate, node.SubjectBinding, null, null, null, null,
             null, 0, DateTime.UnixEpoch, DateTime.UnixEpoch);
 }

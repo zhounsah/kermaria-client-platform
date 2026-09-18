@@ -1686,6 +1686,9 @@ export type BillingV2AdminPresetItem = {
   quantity: number;
   requiredItem: boolean;
   customerEditable: boolean;
+  selectedByDefault: boolean;
+  minimumQuantity: number;
+  maximumQuantity: number;
   displayOrder: number;
 };
 

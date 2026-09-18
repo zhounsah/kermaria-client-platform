@@ -25,6 +25,10 @@ export type BffFailure<TErrorDetails = unknown> = {
 export type BffResult<T, TErrorDetails = unknown> = BffSuccess<T> | BffFailure<TErrorDetails>;
 
 const DEFAULT_TIMEOUT_MS = 15000;
+// Plusieurs composants peuvent demander leur premier POST protégé dans le
+// même tick. Une seule initialisation évite deux cookies double-submit
+// candidats dont les réponses Set-Cookie pourraient se croiser.
+let csrfInitialization: Promise<string | null> | null = null;
 
 export async function requestBffJson<T, TErrorDetails = unknown>(
   path: `/api/${string}`,
@@ -113,13 +117,24 @@ async function ensureCsrfToken() {
     return existingToken;
   }
 
-  await fetch("/api/auth/me", {
-    cache: "no-store",
-    credentials: "same-origin",
-    method: "GET",
-  });
+  if (!csrfInitialization) {
+    csrfInitialization = (async () => {
+      try {
+        await fetch("/api/auth/me", {
+          cache: "no-store",
+          credentials: "same-origin",
+          method: "GET",
+        });
+      } catch {
+        return null;
+      }
+      return readCsrfTokenFromDocumentCookie();
+    })().finally(() => {
+      csrfInitialization = null;
+    });
+  }
 
-  return readCsrfTokenFromDocumentCookie();
+  return csrfInitialization;
 }
 
 function shouldAttachCsrfToken(

@@ -338,8 +338,13 @@ function buildPresetItem(
     quantity: optionalInteger(source.quantity, 1, 1000),
     requiredItem: optionalBoolean(source.requiredItem),
     customerEditable: optionalBoolean(source.customerEditable),
+    selectedByDefault: optionalBoolean(source.selectedByDefault),
     displayOrder: optionalInteger(source.displayOrder, 0, 100000),
   };
+
+  if (payload.requiredItem === true && payload.selectedByDefault === false) {
+    return null;
+  }
 
   if (mode === "add") {
     if (!serviceId || !scopeTemplate) {

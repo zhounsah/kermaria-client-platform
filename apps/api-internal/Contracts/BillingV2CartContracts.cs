@@ -1,3 +1,5 @@
+using Kermaria.ApiInternal.Services;
+
 namespace Kermaria.ApiInternal.Contracts;
 
 /// <summary>
@@ -37,4 +39,8 @@ public sealed record BillingV2CartCommandPayload(
     string? AnonymousToken,
     BillingV2CartItemPayload? Item,
     string? CommitmentCode,
-    string? PaymentMode);
+    string? PaymentMode,
+    string? PresetCode,
+    bool? ReplacePreset,
+    string? PresetItemId,
+    BillingV2PublicSelectionInput? FormulaSelection);

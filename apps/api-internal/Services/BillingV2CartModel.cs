@@ -76,11 +76,27 @@ public sealed record BillingV2CartItem(
     string ScopeTemplate,
     string? SubjectBinding,
     string? SourcePresetItemId,
+    bool? RequiredItem,
+    bool? CustomerEditable,
     string? ConfigurationKind,
     string? ConfigurationReference,
     int DisplayOrder,
     DateTime CreatedAtUtc,
     DateTime UpdatedAtUtc);
+
+/// <summary>Définition autorisée d'un preset, distincte des items sélectionnés du Cart.</summary>
+public sealed record BillingV2CartPresetDefinitionItem(
+    string PresetItemId,
+    string ServiceCode,
+    string? TierCode,
+    string ScopeTemplate,
+    int DefaultQuantity,
+    bool RequiredItem,
+    bool CustomerEditable,
+    bool SelectedByDefault,
+    int MinimumQuantity,
+    int MaximumQuantity,
+    int DisplayOrder);
 
 public sealed record BillingV2Cart(
     string Id,
@@ -92,13 +108,15 @@ public sealed record BillingV2Cart(
     string? CommitmentCode,
     string? PaymentMode,
     string? SourcePresetId,
+    string? SourcePresetCode,
     int Version,
     DateTime CreatedAtUtc,
     DateTime UpdatedAtUtc,
     DateTime LastActivityAtUtc,
     DateTime ExpiresAtUtc,
     string? CheckedOutSubscriptionId,
-    IReadOnlyList<BillingV2CartItem> Items);
+    IReadOnlyList<BillingV2CartItem> Items,
+    IReadOnlyList<BillingV2CartPresetDefinitionItem>? PresetDefinition = null);
 
 public sealed record BillingV2CartIssue(
     string Code,
@@ -144,7 +162,79 @@ public sealed record BillingV2CartQuote(
     string ConfigurationReadiness,
     string ProvisioningReadiness);
 
+public enum BillingV2CartMutationOutcome
+{
+    Success,
+    Conflict,
+    NotFound,
+    ValidationFailure
+}
+
+/// <summary>
+/// Unique classification transport des resultats metier Cart. Les erreurs de
+/// disponibilite SQL restent des exceptions : le middleware API les transforme
+/// deja en SQL_UNAVAILABLE / 503 avant qu'un resultat Cart n'existe.
+/// </summary>
+public static class BillingV2CartMutationResults
+{
+    private static readonly IReadOnlySet<string> SuccessCodes = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "CART_OK",
+        "CART_FORMULA_SELECTION_IMPORTED",
+        "CART_PRESET_INITIALIZED",
+        "CART_ITEM_ADDED",
+        "CART_ITEM_UPDATED",
+        "CART_ITEM_REMOVED",
+        "CART_COMMITMENT_UPDATED",
+        "CART_PAYMENT_MODE_UPDATED",
+        "CART_QUOTED",
+        "CART_EXPIRED",
+        "CART_CLAIMED",
+        "CART_LEGACY_SELECTION_PROJECTED"
+    };
+
+    private static readonly IReadOnlySet<string> ConflictCodes = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "CART_PRESET_CONFLICT",
+        "CART_MERGE_REQUIRES_REVIEW",
+        "CART_PRESET_ITEM_ALREADY_SELECTED",
+        "CART_PRESET_ITEM_CONFLICT",
+        "CART_VERSION_CONFLICT",
+        "CART_CLAIM_CONFLICT",
+        "CART_IMMUTABLE"
+    };
+
+    private static readonly IReadOnlySet<string> NotFoundCodes = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "CART_NOT_FOUND",
+        "CART_ITEM_NOT_FOUND"
+    };
+
+    public static BillingV2CartMutationOutcome Classify(string code)
+    {
+        if (SuccessCodes.Contains(code)) return BillingV2CartMutationOutcome.Success;
+        if (ConflictCodes.Contains(code)) return BillingV2CartMutationOutcome.Conflict;
+        if (NotFoundCodes.Contains(code)) return BillingV2CartMutationOutcome.NotFound;
+        return BillingV2CartMutationOutcome.ValidationFailure;
+    }
+
+    public static int HttpStatusCode(BillingV2CartMutationResult result)
+        => Classify(result.Code) switch
+        {
+            BillingV2CartMutationOutcome.Success => 200,
+            BillingV2CartMutationOutcome.Conflict => 409,
+            BillingV2CartMutationOutcome.NotFound => 404,
+            _ => 400
+        };
+}
+
 public sealed record BillingV2CartMutationResult(
     string Code,
     BillingV2Cart? Cart = null,
-    BillingV2CartQuote? Quote = null);
+    BillingV2CartQuote? Quote = null,
+    string? ExistingPresetId = null,
+    BillingV2PublicSelection? LegacySelection = null)
+{
+    [JsonIgnore]
+    public BillingV2CartMutationOutcome Outcome => BillingV2CartMutationResults.Classify(Code);
+}

@@ -2589,11 +2589,28 @@ export interface BillingV2CartItem {
   scopeTemplate: string;
   subjectBinding: string | null;
   sourcePresetItemId: string | null;
+  requiredItem: boolean | null;
+  customerEditable: boolean | null;
   configurationKind: string | null;
   configurationReference: string | null;
   displayOrder: number;
   createdAtUtc: string;
   updatedAtUtc: string;
+}
+
+/** Définition autorisée par le preset ; elle ne signifie pas que l'item est dans le Cart. */
+export interface BillingV2CartPresetDefinitionItem {
+  presetItemId: string;
+  serviceCode: string;
+  tierCode: string | null;
+  scopeTemplate: string;
+  defaultQuantity: number;
+  requiredItem: boolean;
+  customerEditable: boolean;
+  selectedByDefault: boolean;
+  minimumQuantity: number;
+  maximumQuantity: number;
+  displayOrder: number;
 }
 
 export interface BillingV2Cart {
@@ -2605,6 +2622,7 @@ export interface BillingV2Cart {
   commitmentCode: string | null;
   paymentMode: BillingV2PublicPaymentMode | null;
   sourcePresetId: string | null;
+  sourcePresetCode: string | null;
   version: number;
   createdAtUtc: string;
   updatedAtUtc: string;
@@ -2612,6 +2630,7 @@ export interface BillingV2Cart {
   expiresAtUtc: string;
   checkedOutSubscriptionId: string | null;
   items: BillingV2CartItem[];
+  presetDefinition: BillingV2CartPresetDefinitionItem[] | null;
 }
 
 export interface BillingV2CartIssue {
@@ -2662,15 +2681,21 @@ export interface BillingV2CartQuote {
 
 export type BillingV2CartCommand =
   | "current"
+  | "import_formula_selection"
+  | "initialize_preset"
+  | "replace_preset"
   | "get"
   | "add_item"
+  | "add_preset_item"
   | "update_item"
   | "remove_item"
   | "set_commitment"
   | "set_payment_mode"
   | "quote"
+  | "project_legacy_selection"
   | "expire"
-  | "claim";
+  | "claim"
+  | "claim_current";
 
 export interface BillingV2CartItemInput {
   serviceCode: string;
@@ -2694,12 +2719,24 @@ export interface BillingV2CartCommandRequest {
   item?: BillingV2CartItemInput;
   commitmentCode?: string | null;
   paymentMode?: BillingV2PublicPaymentMode | null;
+  /** Code du preset public; la composition est relue exclusivement par API-INTERNAL. */
+  presetCode?: string;
+  presetItemId?: string;
+  /**
+   * Intention issue du configurateur commercial historique. Elle ne porte
+   * aucun prix : API-INTERNAL relit le preset et le catalogue avant de
+   * transformer cette selection locale en items de Cart.
+   */
+  formulaSelection?: BillingV2PublicSelection;
 }
 
 export interface BillingV2CartCommandResponse {
   code: string;
   cart: BillingV2Cart | null;
   quote: BillingV2CartQuote | null;
+  /** Identifiant interne du preset déjà attaché lors d'un conflit, jamais une autorisation client. */
+  existingPresetId?: string | null;
+  legacySelection?: BillingV2PublicSelection | null;
 }
 
 /**

@@ -297,6 +297,9 @@ public static class BillingV2NativeSelectionResolver
                 INNER JOIN billing_v2_offer_presets preset
                     ON preset.id = item.preset_id
                    AND preset.status = 'active'
+                -- Les options Cart non selectionnees ne doivent pas devenir
+                -- une source implicite de portee pour le flux legacy/direct.
+                WHERE item.selected_by_default = 1
                 GROUP BY service.code;
                 """;
             await using var reader = await command.ExecuteReaderAsync(

@@ -21,6 +21,9 @@ public static class BillingV2CartPolicyTests
         ExplicitFeeDeduplicationOnly();
         FingerprintIsStableAndSensitive();
         QuoteStatusIsServerDerived();
+        PresetDefinitionRetainsSelectionAndQuantityPolicy();
+        RequiredPresetItemsAreInjectedIntoFormulaComposition();
+        CartMutationResultHttpMappingIsCentralized();
         CartModelNeverContainsFinancialAuthority();
         CartModuleHasNoFinancialOrProviderDependency();
         return Task.CompletedTask;
@@ -174,10 +177,10 @@ public static class BillingV2CartPolicyTests
     {
         var now = DateTime.UnixEpoch;
         var cart = new BillingV2Cart("cart", null, "hash", "open", "EUR", null,
-            null, "monthly", null, 3, now, now, now, now.AddDays(30), null,
+            null, "monthly", null, null, 3, now, now, now, now.AddDays(30), null,
         [
             new("item", "cart", "service", "SERVICE", null, null, 1, "subscription",
-                null, null, null, null, 1, now, now)
+                null, null, null, null, null, null, 1, now, now)
         ]);
         var line = Line("item", "PRICE", null);
         var first = BillingV2CartPolicy.CompositionFingerprint(cart, [line]);
@@ -197,6 +200,80 @@ public static class BillingV2CartPolicyTests
             && BillingV2CartPolicy.ResolveQuoteStatus(2, 2, now, now)
                 == BillingV2CartQuoteStatuses.Expired,
             "Le statut du quote est derive de la version et du TTL serveur.");
+    }
+
+    private static void PresetDefinitionRetainsSelectionAndQuantityPolicy()
+    {
+        var option = new BillingV2CartPresetDefinitionItem(
+            "preset-item", "USER-ADDITIONAL", null, "additional_user", 1,
+            RequiredItem: false, CustomerEditable: true, SelectedByDefault: false,
+            MinimumQuantity: 1, MaximumQuantity: 10, DisplayOrder: 80);
+        Ensure(!option.RequiredItem && !option.SelectedByDefault
+            && option.DefaultQuantity == 1 && option.MinimumQuantity == 1
+            && option.MaximumQuantity == 10,
+            "Une option de quantite preserve son absence initiale et ses bornes autoritaires.");
+    }
+
+    private static void RequiredPresetItemsAreInjectedIntoFormulaComposition()
+    {
+        var definitions = new[]
+        {
+            PresetItem("base", "BASE-SERVICE", null, "subscription", 1,
+                required: true, editable: false, selectedByDefault: true, displayOrder: 10),
+            PresetItem("storage-128", "STORAGE-PERSONAL", "128", "primary_user", 1,
+                required: false, editable: true, selectedByDefault: false, displayOrder: 20),
+            PresetItem("backup-128", "BACKUP-PERSONAL", "128", "primary_user", 1,
+                required: false, editable: true, selectedByDefault: false, displayOrder: 30),
+            PresetItem("vpn-plus", "VPN-ACCESS", "PLUS", "primary_user", 1,
+                required: false, editable: true, selectedByDefault: false, displayOrder: 40),
+            PresetItem("users", "USER-ADDITIONAL", null, "additional_user", 1,
+                required: false, editable: true, selectedByDefault: false, minimum: 1, maximum: 10,
+                displayOrder: 50),
+            PresetItem("support", "SUPPORT-PLUS", null, "subscription", 1,
+                required: false, editable: true, selectedByDefault: false, displayOrder: 60),
+            PresetItem("rds", "RDS-ACCESS", null, "primary_user", 1,
+                required: false, editable: true, selectedByDefault: false, displayOrder: 70)
+        };
+        // BASE-SERVICE n'est volontairement pas une intention navigateur.
+        // C'est exactement le cas formule qui avait produit un Cart incomplet.
+        var selected = new[]
+        {
+            new BillingV2PublicSelectionComponent("STORAGE-PERSONAL", "128", 1),
+            new BillingV2PublicSelectionComponent("BACKUP-PERSONAL", "128", 1),
+            new BillingV2PublicSelectionComponent("VPN-ACCESS", "PLUS", 1),
+            new BillingV2PublicSelectionComponent("USER-ADDITIONAL", null, 2),
+            new BillingV2PublicSelectionComponent("SUPPORT-PLUS", null, 1)
+        };
+
+        var composition = BillingV2CartPolicy.ResolvePresetComposition(definitions, selected);
+        Ensure(composition.IsValid
+            && composition.Items.Count(item => item.ServiceCode == "BASE-SERVICE") == 1
+            && composition.Items.Any(item => item.ServiceCode == "USER-ADDITIONAL" && item.Quantity == 2)
+            && composition.Items.Any(item => item.ServiceCode == "STORAGE-PERSONAL" && item.TierCode == "128")
+            && composition.Items.Any(item => item.ServiceCode == "BACKUP-PERSONAL" && item.TierCode == "128")
+            && !composition.Items.Any(item => item.ServiceCode == "RDS-ACCESS"),
+            "La composition formule injecte exactement le socle required, preserve les choix et laisse les options OFF absentes.");
+
+        var retry = BillingV2CartPolicy.ResolvePresetComposition(definitions, selected);
+        Ensure(retry.IsValid && retry.Items.SequenceEqual(composition.Items)
+            && retry.Items.Count(item => item.ServiceCode == "BASE-SERVICE") == 1,
+            "Le meme import formule produit une composition stable sans second socle.");
+    }
+
+    private static void CartMutationResultHttpMappingIsCentralized()
+    {
+        Ensure(BillingV2CartMutationResults.HttpStatusCode(new("CART_PRESET_INITIALIZED")) == 200
+            && BillingV2CartMutationResults.HttpStatusCode(new("CART_OK")) == 200
+            && BillingV2CartMutationResults.HttpStatusCode(new("CART_QUOTED")) == 200
+            && BillingV2CartMutationResults.HttpStatusCode(new("CART_FORMULA_SELECTION_IMPORTED")) == 200,
+            "Les initialisations, reprises idempotentes et quotes Cart sont des succes HTTP.");
+        Ensure(BillingV2CartMutationResults.HttpStatusCode(new("CART_PRESET_CONFLICT")) == 409
+            && BillingV2CartMutationResults.HttpStatusCode(new("CART_VERSION_CONFLICT")) == 409
+            && BillingV2CartMutationResults.HttpStatusCode(new("CART_MERGE_REQUIRES_REVIEW")) == 409,
+            "Les conflits Cart ont une classification HTTP unique.");
+        Ensure(BillingV2CartMutationResults.HttpStatusCode(new("CART_NOT_FOUND")) == 404
+            && BillingV2CartMutationResults.HttpStatusCode(new("CART_PRESET_INVALID")) == 400,
+            "Les not-found et erreurs de validation restent distingues au niveau endpoint.");
     }
 
     private static void CartModelNeverContainsFinancialAuthority()
@@ -228,6 +305,15 @@ public static class BillingV2CartPolicyTests
     private static BillingV2CartQuoteLine Line(string item, string price, string? key)
         => new(item, "SERVICE", null, price, price, BillingV2BillingCadences.OneTime,
             690, 1, 690, false, key);
+
+    private static BillingV2CartPresetCompositionItem PresetItem(string id,
+        string serviceCode, string? tierCode, string scope, int quantity,
+        bool required, bool editable, bool selectedByDefault, int minimum = 1,
+        int maximum = 1, int displayOrder = 1)
+        => new(id, $"service:{serviceCode}", serviceCode,
+            tierCode is null ? null : $"tier:{serviceCode}:{tierCode}", tierCode,
+            scope, quantity, required, editable, selectedByDefault, minimum, maximum,
+            displayOrder);
 
     private static BillingV2CartDependencyResolution Resolve(string root,
         IReadOnlyCollection<BillingV2CartDependencyRule> rules)

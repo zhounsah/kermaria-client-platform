@@ -5,6 +5,8 @@ import type {
   BillingV2PublicPreset,
   BillingV2PublicQuote,
   BillingV2PublicSelection,
+  BillingV2CartCommandResponse,
+  BillingV2CartQuote,
 } from "@kermaria/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -13,8 +15,6 @@ import { FormuleHelpLabel } from "@/components/FormuleHelpLabel";
 import {
   SERVICE_CODES,
   buildBaselineSelection,
-  describeCheckoutReason,
-  type CheckoutSnippets,
   findService,
   formatCommitmentDurationLabel,
   formatDiscountPercent,
@@ -23,22 +23,14 @@ import {
 } from "@/lib/billing-v2-formules";
 import {
   MAX_ADDITIONAL_USERS,
-  billingV2SelectionToSearchParams,
 } from "@/lib/billing-v2-selection";
 import { requestBffJson } from "@/lib/client-api";
 import { formatCurrencyFromCents } from "@/lib/formatters";
-import { getPortalArea, resolvePortalAreaUrl } from "@/lib/public-route-config";
 
 type Props = {
   preset: BillingV2PublicPreset;
   catalog: BillingV2PublicCatalog;
   initialSelection?: BillingV2PublicSelection | null;
-  /**
-   * Textes administrables des refus de souscription, resolus par la page
-   * serveur. Le composant est client : il ne peut pas les lire lui-meme, et
-   * les laisser absents ferait retomber l'affichage sur le repli de code.
-   */
-  checkoutSnippets?: CheckoutSnippets;
 };
 
 /**
@@ -53,7 +45,6 @@ export function BillingV2FormuleConfigurator({
   preset,
   catalog,
   initialSelection: resumedSelection = null,
-  checkoutSnippets,
 }: Props) {
   const initialSelection = useMemo(
     () => resumedSelection?.presetCode === preset.code
@@ -66,8 +57,10 @@ export function BillingV2FormuleConfigurator({
   const [quote, setQuote] = useState<BillingV2PublicQuote | null>(null);
   const [pending, setPending] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [addingToCart, setAddingToCart] = useState(false);
+  const [cartMessage, setCartMessage] = useState<string | null>(null);
+  const [cartQuote, setCartQuote] = useState<BillingV2CartQuote | null>(null);
+  const [addedToCart, setAddedToCart] = useState(false);
   const requestSequence = useRef(0);
 
   useEffect(() => {
@@ -123,7 +116,9 @@ export function BillingV2FormuleConfigurator({
 
   const update = useCallback(
     (patch: Partial<BillingV2PublicSelection>) => {
-      setSubmitError(null);
+      setCartMessage(null);
+      setAddedToCart(false);
+      setCartQuote(null);
       // Le drapeau est pose ici, dans le gestionnaire d'evenement, et non
       // dans l'effet : un setState synchrone en corps d'effet declenche un
       // rendu en cascade. L'etat initial vaut deja `true` pour le premier
@@ -174,81 +169,41 @@ export function BillingV2FormuleConfigurator({
   const backupPersonal = findService(catalog, SERVICE_CODES.backupPersonal);
   const backupShared = findService(catalog, SERVICE_CODES.backupShared);
 
-  async function submit() {
-    if (!quote?.checkoutAvailable) {
-      return;
-    }
-
-    const currentArea = getPortalArea(window.location.origin);
-    if (currentArea === "public") {
-      const signupPath = `/signup?${billingV2SelectionToSearchParams(selection)}`;
-      window.location.href = resolvePortalAreaUrl(
-        window.location.origin,
-        "public",
-        signupPath,
-      ) ?? signupPath;
-      return;
-    }
-
-    setSubmitting(true);
-    setSubmitError(null);
+  async function addToCart() {
+    if (!quote || pending) return;
+    setAddingToCart(true);
+    setCartMessage(null);
 
     try {
-      // On renvoie la SELECTION, jamais le devis affiche : le serveur
-      // revalide la configuration et recalcule integralement le montant. Un
-      // prix altere dans le navigateur n'a donc aucun effet.
-      const result = await requestBffJson<{
-        approveUrl?: string;
-        message?: string;
-      }>("/api/formules/souscrire", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Idempotency-Key": crypto.randomUUID(),
+      // La formule reste un etat local jusqu'ici. La commande ne transporte
+      // jamais le devis affiche : uniquement les choix catalogue qui seront
+      // relus, valides et re-tarifes par API-INTERNAL.
+      const result = await requestBffJson<BillingV2CartCommandResponse>(
+        "/api/billing-v2/cart",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            command: "import_formula_selection",
+            currency: catalog.currency,
+            formulaSelection: selection,
+          }),
         },
-        body: JSON.stringify({ ...selection, rail: "stripe" }),
-      });
-
-      if (!result.ok && (result.status === 401 || result.status === 403)) {
-        const continuationPath = `/formules/${preset.code}`;
-        const signupPath = `/signup?${billingV2SelectionToSearchParams(selection)}`;
-        const currentArea = getPortalArea(window.location.origin);
-        const target = currentArea === "client"
-          ? resolvePortalAreaUrl(
-              window.location.origin,
-              "client",
-              `/login?next=${encodeURIComponent(continuationPath)}`,
-            )
-          : resolvePortalAreaUrl(
-              window.location.origin,
-              "public",
-              signupPath,
-            );
-
-        window.location.href = target ?? signupPath;
-        return;
-      }
-
+      );
       if (!result.ok) {
-        setSubmitError(result.error.message);
+        setCartMessage(describeCartImportFailure(result.error.code, result.error.message));
         return;
       }
 
-      if (result.data.approveUrl) {
-        window.location.href = result.data.approveUrl;
-        return;
-      }
-
-      setSubmitError(
-        result.data.message
-          ?? "La souscription n'a pas pu être initialisée. Réessayez ou contactez-nous.",
-      );
+      setCartQuote(result.data.quote);
+      setAddedToCart(true);
+      setCartMessage(result.data.quote?.commercialReadiness === "blocked"
+        ? "Cette configuration est enregistrée dans votre panier, mais elle nécessite une précision avant la commande."
+        : "Votre configuration a été ajoutée au panier.");
     } catch {
-      setSubmitError(
-        "La souscription n'a pas pu être initialisée. Réessayez ou contactez-nous.",
-      );
+      setCartMessage("L'ajout au panier est momentanément indisponible. Réessayez dans un instant.");
     } finally {
-      setSubmitting(false);
+      setAddingToCart(false);
     }
   }
 
@@ -718,20 +673,30 @@ export function BillingV2FormuleConfigurator({
             <button
               type="button"
               className="button button-primary formule-summary-action"
-              disabled={!quote.checkoutAvailable || pending || submitting}
-              onClick={submit}
+              disabled={pending || addingToCart}
+              onClick={() => void addToCart()}
             >
-              {submitting ? "Redirection…" : "Souscrire"}
+              {addingToCart
+                ? "Ajout en cours…"
+                : addedToCart
+                  ? "Ajouté au panier"
+                  : "Ajouter au panier"}
             </button>
 
-            {quote.checkoutAvailable ? null : (
-              <p className="formule-summary-blocked">
-                {describeCheckoutReason(quote.checkoutReasonCode, checkoutSnippets)}
+            {cartMessage ? (
+              <p className={addedToCart ? "formule-summary-note" : "formule-summary-error"}>
+                {cartMessage}
               </p>
-            )}
-
-            {submitError ? (
-              <p className="formule-summary-error">{submitError}</p>
+            ) : null}
+            {cartQuote ? (
+              <p className="formule-summary-note formule-summary-note-secondary">
+                Prix confirmé dans le panier : <strong>
+                  {formatCurrencyFromCents(cartQuote.recurringTotalCents)} / mois
+                </strong>
+                {cartQuote.totalDueNowCents > 0 ? <> — dû maintenant : <strong>
+                  {formatCurrencyFromCents(cartQuote.totalDueNowCents)}
+                </strong></> : null}
+              </p>
             ) : null}
           </>
         ) : (
@@ -752,4 +717,17 @@ function clamp(value: number) {
   }
 
   return Math.min(MAX_ADDITIONAL_USERS, Math.max(0, Math.trunc(value)));
+}
+
+function describeCartImportFailure(code: string, fallback: string) {
+  switch (code) {
+    case "CART_MERGE_REQUIRES_REVIEW":
+      return "Votre panier contient déjà certains services. Vous pourrez vérifier la combinaison dans votre panier.";
+    case "CART_VERSION_CONFLICT":
+      return "Votre panier a changé dans un autre onglet. Réessayez l'ajout.";
+    case "CART_FORMULA_SELECTION_INVALID":
+      return "Cette configuration n'est plus disponible. Vérifiez vos choix puis réessayez.";
+    default:
+      return fallback || "L'ajout au panier n'a pas pu être finalisé.";
+  }
 }

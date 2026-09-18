@@ -22,7 +22,10 @@ export async function GET(request: NextRequest) {
   const sessionToken = request.cookies.get(cookieName)?.value;
 
   if (!sessionToken) {
-    return unauthenticated(correlationId);
+    // Le double-submit CSRF protege aussi les commandes accessibles avant
+    // connexion. Cette reponse initialise donc le cookie public sans creer de
+    // session ni consulter API-INTERNAL.
+    return unauthenticated(request, correlationId);
   }
 
   try {
@@ -50,6 +53,7 @@ export async function GET(request: NextRequest) {
     }
 
     const response = unauthenticated(
+      request,
       failure.error.correlation_id,
     );
     response.cookies.set({
@@ -63,8 +67,9 @@ export async function GET(request: NextRequest) {
   }
 }
 
-function unauthenticated(correlationId: string) {
+function unauthenticated(request: NextRequest, correlationId: string) {
   const response = NextResponse.json({ authenticated: false });
+  ensureCsrfCookie(request, response);
   response.headers.set(CORRELATION_HEADER, correlationId);
   return response;
 }

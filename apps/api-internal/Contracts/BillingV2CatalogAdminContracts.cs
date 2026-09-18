@@ -141,6 +141,9 @@ public sealed record BillingV2AdminPresetItem(
     int Quantity,
     bool RequiredItem,
     bool CustomerEditable,
+    bool SelectedByDefault,
+    int MinimumQuantity,
+    int MaximumQuantity,
     int DisplayOrder);
 
 public sealed record BillingV2AdminCommitment(
@@ -257,6 +260,7 @@ public sealed record BillingV2AdminPresetItemPayload(
     int? Quantity,
     bool? RequiredItem,
     bool? CustomerEditable,
+    bool? SelectedByDefault,
     int? DisplayOrder);
 
 public sealed record BillingV2AdminCommitmentPayload(

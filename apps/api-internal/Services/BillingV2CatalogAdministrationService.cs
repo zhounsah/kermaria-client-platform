@@ -1138,6 +1138,10 @@ public sealed class BillingV2CatalogAdministrationService
         {
             throw new PortalValidationException();
         }
+        if (payload.RequiredItem == true && payload.SelectedByDefault == false)
+        {
+            throw new PortalValidationException();
+        }
 
         await using var connection = await OpenAsync(cancellationToken);
         var id = Guid.NewGuid().ToString();
@@ -1146,9 +1150,9 @@ public sealed class BillingV2CatalogAdministrationService
             """
             INSERT INTO billing_v2_preset_items
                 (id, preset_id, service_id, tier_id, scope_template, quantity,
-                 required_item, customer_editable, display_order)
+                 required_item, customer_editable, selected_by_default, display_order)
             VALUES (@id, @preset_id, @service_id, @tier_id, @scope, @quantity,
-                    @required, @editable, @order);
+                    @required, @editable, @selected, @order);
             """;
         command.Parameters.AddWithValue("@id", id);
         command.Parameters.AddWithValue("@preset_id", preset);
@@ -1160,6 +1164,8 @@ public sealed class BillingV2CatalogAdministrationService
             "@required", payload.RequiredItem == true ? 1 : 0);
         command.Parameters.AddWithValue(
             "@editable", payload.CustomerEditable == false ? 0 : 1);
+        command.Parameters.AddWithValue(
+            "@selected", payload.SelectedByDefault == false ? 0 : 1);
         command.Parameters.AddWithValue("@order", payload.DisplayOrder ?? 0);
 
         try
@@ -1196,6 +1202,14 @@ public sealed class BillingV2CatalogAdministrationService
         var item = RequireIdentifier(itemId);
 
         await using var connection = await OpenAsync(cancellationToken);
+        var current = await ReadPresetItemSelectionAsync(connection, preset, item, cancellationToken)
+            ?? throw new PortalDataNotFoundException();
+        var required = payload.RequiredItem ?? current.RequiredItem;
+        var selected = payload.SelectedByDefault ?? current.SelectedByDefault;
+        if (required && !selected)
+        {
+            throw new PortalValidationException();
+        }
         await using var command = connection.CreateCommand();
         command.CommandText =
             """
@@ -1206,6 +1220,7 @@ public sealed class BillingV2CatalogAdministrationService
                 quantity = COALESCE(@quantity, quantity),
                 required_item = COALESCE(@required, required_item),
                 customer_editable = COALESCE(@editable, customer_editable),
+                selected_by_default = COALESCE(@selected, selected_by_default),
                 display_order = COALESCE(@order, display_order)
             WHERE id = @id AND preset_id = @preset_id;
             """;
@@ -1229,6 +1244,8 @@ public sealed class BillingV2CatalogAdministrationService
             "@required", (object?)ToFlag(payload.RequiredItem) ?? DBNull.Value);
         command.Parameters.AddWithValue(
             "@editable", (object?)ToFlag(payload.CustomerEditable) ?? DBNull.Value);
+        command.Parameters.AddWithValue(
+            "@selected", (object?)ToFlag(payload.SelectedByDefault) ?? DBNull.Value);
         command.Parameters.AddWithValue(
             "@order", (object?)payload.DisplayOrder ?? DBNull.Value);
 
@@ -1853,6 +1870,8 @@ public sealed class BillingV2CatalogAdministrationService
                 SELECT item.id, item.preset_id, item.service_id, service.code AS service_code,
                        item.tier_id, tier.code AS tier_code, item.scope_template,
                        item.quantity, item.required_item, item.customer_editable,
+                       item.selected_by_default,
+                       item.minimum_quantity, item.maximum_quantity,
                        item.display_order
                 FROM billing_v2_preset_items item
                 INNER JOIN billing_v2_services service ON service.id = item.service_id
@@ -1881,6 +1900,9 @@ public sealed class BillingV2CatalogAdministrationService
                     reader.GetInt32("quantity"),
                     reader.GetBoolean("required_item"),
                     reader.GetBoolean("customer_editable"),
+                    reader.GetBoolean("selected_by_default"),
+                    reader.GetInt32("minimum_quantity"),
+                    reader.GetInt32("maximum_quantity"),
                     reader.GetInt32("display_order")));
             }
         }
@@ -2237,6 +2259,24 @@ public sealed class BillingV2CatalogAdministrationService
         command.CommandText = $"SELECT 1 FROM {table} WHERE id = @id;";
         command.Parameters.AddWithValue("@id", id);
         return await command.ExecuteScalarAsync(cancellationToken) is not null;
+    }
+
+    private static async Task<(bool RequiredItem, bool SelectedByDefault)?>
+        ReadPresetItemSelectionAsync(
+            MySqlConnection connection,
+            string presetId,
+            string itemId,
+            CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT required_item, selected_by_default FROM billing_v2_preset_items WHERE id = @id AND preset_id = @preset_id;";
+        command.Parameters.AddWithValue("@id", itemId);
+        command.Parameters.AddWithValue("@preset_id", presetId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken)
+            ? (reader.GetBoolean(0), reader.GetBoolean(1))
+            : null;
     }
 
     // ------------------------------------------------------------------

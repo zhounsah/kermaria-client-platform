@@ -434,38 +434,27 @@ assert.match(
   "Un palier non public ne doit jamais etre selectionnable.",
 );
 
-// --- 5. Le checkout rejoint le parcours authoritative existant -----------
+// --- 5. La formule reste locale jusqu'au handoff Cart ---------------------
 
 assert.match(
   configurator,
-  /"\/api\/formules\/souscrire"/,
-  "Le bouton final doit rejoindre le parcours de souscription V2 native.",
+  /"\/api\/billing-v2\/cart"/,
+  "Le CTA formule doit rejoindre le BFF Cart explicite.",
+);
+assert.match(
+  configurator,
+  /command:\s*"import_formula_selection"[\s\S]*formulaSelection:\s*selection/,
+  "La formule ne doit transmettre que sa selection au Cart, jamais son devis.",
+);
+assert.doesNotMatch(
+  configurator,
+  /"\/api\/formules\/souscrire"|approveUrl|currentArea === "public"/,
+  "Le configurateur public ne doit plus lancer ni contourner le checkout legacy.",
 );
 assert.match(
   subscribeRoute,
   /"\/internal\/portal\/billing-v2\/subscriptions\/checkout"/,
-  "La souscription doit passer par le checkout authoritative existant.",
-);
-assert.match(
-  configurator,
-  /"Idempotency-Key": crypto\.randomUUID\(\)/,
-  "Le checkout doit porter une cle d'idempotence.",
-);
-const publicSignupIndex = configurator.indexOf('if (currentArea === "public")');
-const checkoutRequestIndex = configurator.indexOf('requestBffJson<{');
-assert.ok(
-  publicSignupIndex >= 0 && checkoutRequestIndex > publicSignupIndex,
-  "Sur la vitrine, l inscription doit etre choisie avant tout appel checkout.",
-);
-assert.match(
-  configurator,
-  /billingV2SelectionToSearchParams\(selection\)[\s\S]*"public"[\s\S]*signupPath/,
-  "La vitrine doit transporter la selection complete vers l inscription publique.",
-);
-assert.match(
-  configurator,
-  /currentArea === "client"[\s\S]*\/login\?next=/,
-  "Sur l hote client, une session expiree doit encore passer par le login borne.",
+  "Le checkout legacy doit rester techniquement disponible pendant la transition.",
 );
 // Le nom du garde a change (`isClientCheckoutPortalPath`) : on verifie le
 // comportement de redirection lui-meme, qui est l'invariant, plutot que la

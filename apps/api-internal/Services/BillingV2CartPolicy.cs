@@ -288,6 +288,65 @@ public static class BillingV2CartPolicy
         return new(nodes.Values.OrderBy(node => node.Key, StringComparer.Ordinal).ToArray(), issues);
     }
 
+    /// <summary>
+    /// Construit la composition d'une formule depuis la definition de preset
+    /// et les seuls choix effectifs du client. Les lignes requises sont une
+    /// partie structurelle du preset : elles ne doivent jamais dependre d'un
+    /// champ ou d'un composant transmis par le navigateur.
+    ///
+    /// Les options selectionnees par defaut mais facultatives ne sont pas
+    /// injectees ici. Elles doivent etre presentes dans la selection validee,
+    /// ce qui preserve exactement les choix effectues dans le configurateur.
+    /// </summary>
+    public static BillingV2CartPresetCompositionResolution ResolvePresetComposition(
+        IReadOnlyList<BillingV2CartPresetCompositionItem> presetItems,
+        IReadOnlyList<BillingV2PublicSelectionComponent> selectedComponents)
+    {
+        var selected = new Dictionary<string, BillingV2CartPresetCompositionItem>(StringComparer.Ordinal);
+        foreach (var component in selectedComponents)
+        {
+            var candidates = presetItems
+                .Where(item => string.Equals(item.ServiceCode, component.ServiceCode,
+                    StringComparison.Ordinal)
+                    && string.Equals(item.TierCode, component.TierCode,
+                        StringComparison.Ordinal))
+                .ToArray();
+            // Une formule legacy ne porte pas de binding concret. Si le
+            // preset declare deux cibles possibles, un choix arbitraire serait
+            // une escalation de la selection navigateur.
+            if (candidates.Length != 1)
+                return BillingV2CartPresetCompositionResolution.Invalid;
+
+            var item = candidates[0];
+            if (component.Quantity < item.MinimumQuantity
+                || component.Quantity > item.MaximumQuantity
+                || (!item.SelectedByDefault && !item.CustomerEditable)
+                || !selected.TryAdd(item.PresetItemId, item with { Quantity = component.Quantity }))
+                return BillingV2CartPresetCompositionResolution.Invalid;
+        }
+
+        foreach (var required in presetItems.Where(item => item.RequiredItem)
+                     .OrderBy(item => item.DisplayOrder)
+                     .ThenBy(item => item.PresetItemId, StringComparer.Ordinal))
+        {
+            // Une definition required elle-meme invalide ne peut jamais
+            // produire un Cart partiel : le service annulera la transaction.
+            if (required.Quantity < required.MinimumQuantity
+                || required.Quantity > required.MaximumQuantity)
+                return BillingV2CartPresetCompositionResolution.Invalid;
+            selected.TryAdd(required.PresetItemId, required);
+        }
+
+        var composition = selected.Values
+            .OrderBy(item => item.DisplayOrder)
+            .ThenBy(item => item.PresetItemId, StringComparer.Ordinal)
+            .ToArray();
+        return composition.Any(item => item.RequiredItem
+                    && !selected.ContainsKey(item.PresetItemId))
+            ? BillingV2CartPresetCompositionResolution.Invalid
+            : new("CART_PRESET_COMPOSITION_VALID", composition);
+    }
+
     private static BillingV2CartIssue DependencyIssue(string code,
         BillingV2CartDependencyNode node, bool blocking)
         => new(code, "error", node.ServiceCode, node.ServiceCode, code, blocking);
@@ -312,6 +371,37 @@ public sealed record BillingV2CartScopeEvaluation(
     bool CommercialReady,
     string ProvisioningReadiness,
     IReadOnlyList<BillingV2CartIssue> Issues);
+
+/// <summary>
+/// Representation serveur d'une ligne de preset utilisable pour composer un
+/// Cart. Les identifiants service/tier restent internes ; le navigateur ne les
+/// fournit jamais dans une commande formule vers Cart.
+/// </summary>
+public sealed record BillingV2CartPresetCompositionItem(
+    string PresetItemId,
+    string ServiceId,
+    string ServiceCode,
+    string? TierId,
+    string? TierCode,
+    string ScopeTemplate,
+    int Quantity,
+    bool RequiredItem,
+    bool CustomerEditable,
+    bool SelectedByDefault,
+    int MinimumQuantity,
+    int MaximumQuantity,
+    int DisplayOrder);
+
+public sealed record BillingV2CartPresetCompositionResolution(
+    string Code,
+    IReadOnlyList<BillingV2CartPresetCompositionItem> Items)
+{
+    public static readonly BillingV2CartPresetCompositionResolution Invalid = new(
+        "CART_PRESET_COMPOSITION_INVALID", []);
+
+    public bool IsValid => string.Equals(Code, "CART_PRESET_COMPOSITION_VALID",
+        StringComparison.Ordinal);
+}
 
 public enum BillingV2CartDependencyResolutionKind
 {

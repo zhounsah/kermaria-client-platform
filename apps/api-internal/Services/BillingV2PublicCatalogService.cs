@@ -524,6 +524,10 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                     ON tier.id = item.tier_id
                 WHERE preset.status = 'active'
                   AND preset.is_public = 1
+                  -- La projection publique historique est strictement la
+                  -- composition initiale du preset. Les options Cart OFF ne
+                  -- traversent jamais ce contrat legacy.
+                  AND item.selected_by_default = 1
                 ORDER BY preset.display_order,
                          preset.code,
                          item.display_order;

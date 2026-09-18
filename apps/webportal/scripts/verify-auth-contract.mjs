@@ -424,6 +424,15 @@ assert.match(meRoute, /export async function GET\(/);
 assert.match(meRoute, /authenticated:\s*false/);
 assert.match(meRoute, /authenticated:\s*true/);
 assert.match(meRoute, /ensureCsrfCookie/);
+assert.match(meRoute, /return unauthenticated\(request, correlationId\)/);
+assert.match(
+  meRoute,
+  /function unauthenticated\(request: NextRequest, correlationId: string\)[\s\S]*ensureCsrfCookie\(request, response\)/,
+  "Un visiteur sans session doit recevoir le meme cookie CSRF double-submit que les autres clients.",
+);
+assert.match(clientApi, /let csrfInitialization: Promise<string \| null> \| null = null/);
+assert.match(clientApi, /fetch\("\/api\/auth\/me"/);
+assert.match(clientApi, /headers\.set\(CSRF_HEADER_NAME, csrfToken\)/);
 assert.match(revokeOthersRoute, /export async function POST\(/);
 assert.match(revokeOthersRoute, /revokeOtherInternalSessions/);
 assert.doesNotMatch(
@@ -508,7 +517,7 @@ for (const [component, protectedPath] of [
   ["components/AdminBackupIntegrationForm.tsx", "/api/admin/backups/integrations"],
   ["components/BackupRestoreRequestForm.tsx", "/api/backups/"],
   ["components/BillingV2DirectSubscribe.tsx", "/api/formules/souscrire"],
-  ["components/BillingV2FormuleConfigurator.tsx", "/api/formules/souscrire"],
+  ["components/BillingV2FormuleConfigurator.tsx", "/api/billing-v2/cart"],
 ]) {
   const source = await read(component);
   assert.match(source, /requestBffJson/);

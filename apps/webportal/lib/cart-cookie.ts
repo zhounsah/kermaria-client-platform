@@ -22,13 +22,14 @@ export async function readAnonymousCartToken() {
   return token && CART_TOKEN_PATTERN.test(token) ? token : null;
 }
 
-export async function ensureAnonymousCartToken() {
-  const cookieStore = await cookies();
-  const existing = cookieStore.get(CART_COOKIE_NAME)?.value;
-  if (existing && CART_TOKEN_PATTERN.test(existing)) return existing;
-  const token = randomBytes(32).toString("hex");
-  cookieStore.set(CART_COOKIE_NAME, token, cartCookieOptions());
-  return token;
+/**
+ * Produit un candidat de possession anonyme sans l'ecrire dans la reponse.
+ * Le BFF ne persiste le cookie qu'apres une reponse Cart valide : une panne
+ * API ne peut donc pas remplacer un cookie coherent par un token orphelin.
+ */
+export async function resolveAnonymousCartToken() {
+  const existing = await readAnonymousCartToken();
+  return existing ?? randomBytes(32).toString("hex");
 }
 
 /** Prolonge le cookie lorsque l'API a prolonge l'activite du Cart. */

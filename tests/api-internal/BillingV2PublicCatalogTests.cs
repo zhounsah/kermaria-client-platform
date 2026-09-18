@@ -19,7 +19,10 @@ public static class BillingV2PublicCatalogTests
         VerifyCommitmentPaymentOptionsMatchTheCatalog();
         VerifyCommitmentDiscountsAreAppliedByTheEngine();
         VerifyBackupTierFollowsCoveredStorage();
+        VerifyLegacyPersonalTiersAlwaysResolveTheirMatchingBackup();
         VerifySharedBackupRequiresSharedStorage();
+        VerifyLegacySharedTiersAlwaysResolveTheirMatchingBackup();
+        VerifyFormulaHandoffCompositionIsExact();
         VerifyNonPublicTiersAreRefused();
         VerifyAdditionalUsersAreBounded();
         VerifyBaselineSelectionReachesAuthoritativeCheckout();
@@ -44,8 +47,111 @@ public static class BillingV2PublicCatalogTests
         VerifyDirectRecurringSelectionRenewsWithoutAPreset();
         VerifyDirectRecurringWithSetupStillRenews();
         VerifyPublicOrderingModeStaysSeparateFromPricing();
+        VerifyLegacyPresetDefaultsIgnoreCartOnlyOptions();
         return Task.CompletedTask;
     }
+
+    /// <summary>
+    /// 091 ajoute des lignes de definition d'option, pas des lignes de la
+    /// composition historique. Cette fixture post-091 exerce la projection
+    /// des defaults avec le vrai moteur de pricing, sans necessiter MariaDB.
+    /// Les requetes SQL de production qui materialisent cette projection sont
+    /// verrouillees par le contrat web correspondant.
+    /// </summary>
+    private static void VerifyLegacyPresetDefaultsIgnoreCartOnlyOptions()
+    {
+        var catalog = BillingV2PublicCatalogSeed.Snapshot();
+        var engine = new BillingV2PricingEngine();
+        foreach (var preset in catalog.Presets)
+        {
+            var before = preset.Items;
+            var post091Definition = before
+                .Select(item => new PresetDefinitionFixture(item, true))
+                .Append(new PresetDefinitionFixture(
+                    new BillingV2PublicPresetItem(
+                        BillingV2PublicCatalogCodes.VpnAccess,
+                        "PERFORMANCE", "primary_user", 1, 890, true),
+                    false))
+                .Append(new PresetDefinitionFixture(
+                    new BillingV2PublicPresetItem(
+                        BillingV2PublicCatalogCodes.AdditionalUser,
+                        null, "additional_user", 1, 390, true),
+                    false))
+                .ToArray();
+            var after = post091Definition
+                .Where(item => item.SelectedByDefault)
+                .Select(item => item.Item)
+                .ToArray();
+
+            Ensure(before.SequenceEqual(after),
+                $"La projection legacy de {preset.Code} ignore les options Cart OFF.");
+            Ensure(!after.Any(item => item.TierCode == "PERFORMANCE"),
+                $"VPN Performance OFF ne rejoint pas le preset legacy {preset.Code}.");
+            Ensure(Pricing(before, engine) == Pricing(after, engine),
+                $"La tarification legacy reste identique avant/apres 091 pour {preset.Code}.");
+        }
+    }
+
+    /// <summary>
+    /// Le handoff formule vers Cart repart de cette composition pure, pas des
+    /// prix du navigateur. Il couvre la personnalisation commerciale de
+    /// reference et le preset Pro avec stockage/backup partage.
+    /// </summary>
+    private static void VerifyFormulaHandoffCompositionIsExact()
+    {
+        var catalog = BillingV2PublicCatalogSeed.Snapshot();
+        var dossier = BillingV2PublicSelectionPolicy.Resolve(catalog,
+            Baseline("pack-dossier-securise", "TERM-12") with
+            {
+                StoragePersonalTierCode = "128",
+                BackupPersonal = true,
+                VpnTierCode = "PLUS",
+                AdditionalUsers = 2,
+                SupportPlus = true
+            });
+        Ensure(dossier.Resolved
+            && dossier.Components.SequenceEqual(
+            [
+                new BillingV2PublicSelectionComponent("BASE-SERVICE", null, 1),
+                new BillingV2PublicSelectionComponent("STORAGE-PERSONAL", "128", 1),
+                new BillingV2PublicSelectionComponent("BACKUP-PERSONAL", "128", 1),
+                new BillingV2PublicSelectionComponent("VPN-ACCESS", "PLUS", 1),
+                new BillingV2PublicSelectionComponent("USER-ADDITIONAL", null, 2),
+                new BillingV2PublicSelectionComponent("SUPPORT-PLUS", null, 1)
+            ]),
+            "Le handoff Dossier securise conserve exactement tiers, options et quantites selectionnes.");
+
+        var pro = BillingV2PublicSelectionPolicy.Resolve(catalog,
+            Baseline("pack-pro-association", "FLEX"));
+        Ensure(pro.Resolved
+            && pro.Components.Any(item => item.ServiceCode == "STORAGE-SHARED" && item.TierCode == "128")
+            && pro.Components.Any(item => item.ServiceCode == "BACKUP-SHARED" && item.TierCode == "128"),
+            "Le handoff Pro conserve le couple stockage/sauvegarde partage de meme capacite.");
+    }
+
+    private static BillingV2PricingResult Pricing(
+        IReadOnlyList<BillingV2PublicPresetItem> items,
+        BillingV2PricingEngine engine)
+        => engine.Calculate(new BillingV2PricingRequest(
+            items.Select(item => new BillingV2PricingItem(
+                $"{item.ServiceCode}:{item.TierCode ?? "flat"}",
+                item.ServiceCode,
+                item.TierCode,
+                $"fixture:{item.ServiceCode}:{item.TierCode ?? "flat"}",
+                item.AmountCents,
+                item.Quantity,
+                BillingV2BillingCadences.Monthly,
+                DiscountEligible: true)).ToArray(),
+            DiscountBasisPoints: 0,
+            PaymentMode: BillingV2PaymentModes.Monthly,
+            CommitmentMonths: 1,
+            MinimumCommitmentAmountCents: null,
+            PriceLock: null,
+            AsOfUtc: DateTime.UnixEpoch));
+
+    private sealed record PresetDefinitionFixture(
+        BillingV2PublicPresetItem Item,
+        bool SelectedByDefault);
 
     private static void VerifyPublicOrderingModeStaysSeparateFromPricing()
     {
@@ -453,6 +559,60 @@ public static class BillingV2PublicCatalogTests
             resolution.ReasonCode
                 == "BILLING_V2_PUBLIC_SHARED_BACKUP_WITHOUT_STORAGE",
             "Motif explicite de refus.");
+    }
+
+    /// <summary>
+    /// Le configurateur historique expose tous les tiers publics personnels,
+    /// quel que soit le preset. La sauvegarde reste une dependance derivee :
+    /// aucun choix de palier BACKUP-PERSONAL ne vient du navigateur.
+    /// </summary>
+    private static void VerifyLegacyPersonalTiersAlwaysResolveTheirMatchingBackup()
+    {
+        foreach (var preset in new[]
+                 {
+                     "pack-dossier-securise", "pack-acces-distance",
+                     "pack-bureau-windows-distance", "pack-pro-association"
+                 })
+        foreach (var tier in new[] { "16", "32", "64", "128", "256" })
+        {
+            var resolved = BillingV2PublicSelectionPolicy.Resolve(
+                BillingV2PublicCatalogSeed.Snapshot(),
+                Baseline(preset, "FLEX") with
+                {
+                    StoragePersonalTierCode = tier,
+                    BackupPersonal = true
+                });
+            Ensure(resolved.Resolved, $"{preset}: stockage personnel {tier} resolu.");
+            var backup = resolved.Lines.Single(line => line.ServiceCode == BillingV2PublicCatalogCodes.BackupPersonal);
+            Ensure(backup.TierCode == tier, $"{preset}: backup personnel {tier} synchronise.");
+        }
+    }
+
+    /// <summary>
+    /// Meme contrat pour le stockage partage : les quatre tiers publics sont
+    /// selectionnables dans tous les presets, et BACKUP-SHARED suit toujours
+    /// leur valeur numerique de facon authoritative.
+    /// </summary>
+    private static void VerifyLegacySharedTiersAlwaysResolveTheirMatchingBackup()
+    {
+        foreach (var preset in new[]
+                 {
+                     "pack-dossier-securise", "pack-acces-distance",
+                     "pack-bureau-windows-distance", "pack-pro-association"
+                 })
+        foreach (var tier in new[] { "32", "64", "128", "256" })
+        {
+            var resolved = BillingV2PublicSelectionPolicy.Resolve(
+                BillingV2PublicCatalogSeed.Snapshot(),
+                Baseline(preset, "FLEX") with
+                {
+                    StorageSharedTierCode = tier,
+                    BackupShared = true
+                });
+            Ensure(resolved.Resolved, $"{preset}: stockage partage {tier} resolu.");
+            var backup = resolved.Lines.Single(line => line.ServiceCode == BillingV2PublicCatalogCodes.BackupShared);
+            Ensure(backup.TierCode == tier, $"{preset}: backup partage {tier} synchronise.");
+        }
     }
 
     private static void VerifyNonPublicTiersAreRefused()

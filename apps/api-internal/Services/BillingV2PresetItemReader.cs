@@ -119,6 +119,10 @@ public static class BillingV2PresetItemReader
                AND price.valid_from <= @now
                AND (price.valid_until IS NULL OR price.valid_until > @now)
             WHERE preset_item.preset_id = @preset_id
+              -- Le lecteur est employe par le checkout de preset historique :
+              -- les options autorisees par 091 mais non selectionnees ne
+              -- deviennent jamais des items facturables sans selection Cart.
+              AND preset_item.selected_by_default = 1
             ORDER BY preset_item.display_order,
                      preset_item.id,
                      price.price_version DESC,

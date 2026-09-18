@@ -1828,7 +1828,8 @@ app.MapPost(
         HttpContext context,
         IBillingV2CartService service,
         IAuthenticationService authenticationService,
-        IAuditService auditService) =>
+        IAuditService auditService,
+        ILoggerFactory loggerFactory) =>
     {
         var payload = await ReadPayload<BillingV2CartCommandPayload>(context);
         if (payload is null || string.IsNullOrWhiteSpace(payload.Command))
@@ -1856,21 +1857,51 @@ app.MapPost(
         {
             "current" => await service.GetOrCreateCurrentAsync(
                 owner, string.IsNullOrWhiteSpace(payload.Currency) ? "EUR" : payload.Currency, context.RequestAborted),
+            "import_formula_selection" when payload.FormulaSelection is not null
+                => await service.ImportFormulaSelectionAsync(
+                    owner, payload.FormulaSelection.ToSelection(),
+                    string.IsNullOrWhiteSpace(payload.Currency) ? "EUR" : payload.Currency,
+                    context.RequestAborted),
+            "initialize_preset" => await service.InitializeFromPresetAsync(
+                owner, payload.PresetCode ?? string.Empty,
+                string.IsNullOrWhiteSpace(payload.Currency) ? "EUR" : payload.Currency,
+                payload.ExpectedVersion, false, context.RequestAborted),
+            "replace_preset" => await service.InitializeFromPresetAsync(
+                owner, payload.PresetCode ?? string.Empty,
+                string.IsNullOrWhiteSpace(payload.Currency) ? "EUR" : payload.Currency,
+                payload.ExpectedVersion, true, context.RequestAborted),
             "get" => await service.GetAsync(owner, cartId, context.RequestAborted),
             "add_item" when payload.Item is not null => await service.AddItemAsync(
                 owner, cartId, expectedVersion, ToCartItemCommand(payload.Item), context.RequestAborted),
+            "add_preset_item" => await service.AddPresetItemAsync(owner, cartId, expectedVersion,
+                payload.PresetItemId ?? string.Empty, context.RequestAborted),
             "update_item" when payload.Item is not null => await service.UpdateItemAsync(
                 owner, cartId, payload.ItemId ?? string.Empty, expectedVersion, ToCartItemCommand(payload.Item), context.RequestAborted),
             "remove_item" => await service.RemoveItemAsync(owner, cartId, payload.ItemId ?? string.Empty, expectedVersion, context.RequestAborted),
             "set_commitment" => await service.SetCommitmentAsync(owner, cartId, expectedVersion, payload.CommitmentCode, context.RequestAborted),
             "set_payment_mode" => await service.SetPaymentModeAsync(owner, cartId, expectedVersion, payload.PaymentMode, context.RequestAborted),
             "quote" => await service.QuoteAsync(owner, cartId, context.RequestAborted),
+            "project_legacy_selection" => await service.ProjectLegacySelectionAsync(
+                owner, cartId, context.RequestAborted),
             "expire" => await service.ExpireAsync(owner, cartId, expectedVersion, context.RequestAborted),
             "claim" when owner.IsAuthenticated && !string.IsNullOrWhiteSpace(payload.AnonymousToken)
                 => await service.ClaimAsync(payload.AnonymousToken, owner.CustomerId!, expectedVersion, context.RequestAborted),
+            "claim_current" when owner.IsAuthenticated && !string.IsNullOrWhiteSpace(payload.AnonymousToken)
+                => await service.ClaimCurrentAsync(payload.AnonymousToken, owner.CustomerId!, context.RequestAborted),
             _ => new BillingV2CartMutationResult("CART_COMMAND_INVALID")
         };
-        return Results.Json(result, statusCode: CartResultStatusCode(result.Code));
+        // `current` porte son compteur de retry exact dans le service qui
+        // execute la transaction. Les autres commandes n'ont pas de retry
+        // current et sont journalisees ici avec un compteur zero. Aucun token
+        // anonyme ni condensat de possession ne quitte ce log structure.
+        if (!string.Equals(command, "current", StringComparison.Ordinal))
+        {
+            loggerFactory.CreateLogger("BillingV2CartCommands").LogInformation(
+                "Billing V2 Cart command completed. command={Command} owner_type={OwnerType} cart_id={CartId} result={Result} retry_deadlock_count={RetryDeadlockCount}",
+                command, owner.IsAuthenticated ? "customer" : "anonymous",
+                result.Cart?.Id ?? (string.IsNullOrWhiteSpace(cartId) ? null : cartId), result.Code, 0);
+        }
+        return Results.Json(result, statusCode: BillingV2CartMutationResults.HttpStatusCode(result));
     });
 
 // Tunnel VPS, étape « configuration + devis » uniquement. La demande est
@@ -8795,19 +8826,6 @@ static BillingV2CartItemCommand ToCartItemCommand(
         string.IsNullOrWhiteSpace(payload.ConfigurationKind) ? null : payload.ConfigurationKind.Trim(),
         string.IsNullOrWhiteSpace(payload.ConfigurationReference) ? null : payload.ConfigurationReference.Trim(),
         (payload.Origin ?? string.Empty).Trim().ToLowerInvariant());
-
-static int CartResultStatusCode(string code)
-    => code switch
-    {
-        "CART_OK" or "CART_QUOTED" or "CART_ITEM_ADDED" or "CART_ITEM_UPDATED"
-            or "CART_ITEM_REMOVED" or "CART_COMMITMENT_UPDATED"
-            or "CART_PAYMENT_MODE_UPDATED" or "CART_EXPIRED" or "CART_CLAIMED"
-            => StatusCodes.Status200OK,
-        "CART_NOT_FOUND" or "CART_ITEM_NOT_FOUND" => StatusCodes.Status404NotFound,
-        "CART_VERSION_CONFLICT" or "CART_CLAIM_CONFLICT" or "CART_IMMUTABLE"
-            => StatusCodes.Status409Conflict,
-        _ => StatusCodes.Status400BadRequest
-    };
 
 static AuthenticatedPortalUser ToPublicUser(PortalSessionContext session)
     => new(
