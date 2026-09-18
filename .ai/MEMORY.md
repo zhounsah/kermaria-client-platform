@@ -14,7 +14,16 @@
 
 ### Version
 
-- **v1.4.0.1 (2026-08-20)** : diagnostic public migre vers Billing V2 et deploye sur SRV-12 (`20260820-093552-v1.4.0.1-bf535b7`, commit applicatif `bf535b7`). Aucun changement SQL/pricing/provisioning ni redeploiement SRV-13. Voir [billing-v2-public-diagnostic.md](topics/billing-v2-public-diagnostic.md). Version de base Billing V2 : v1.4.0.0.
+- **Production : v2.0.2.8** selon `docs/CURRENT_STATE.md` (vérifié le 2026-09-05) ; `main` porte déjà un commit « V2.0.2.9 » (2026-09-17). Toujours partir de `docs/CURRENT_STATE.md` et de `git describe --tags`, pas de cette ligne.
+- **v2.0.0.0 (2026-08-25)** : bascule Billing V2-only, migrations 070/071. Voir [billing-v2-only-cancellation.md](topics/billing-v2-only-cancellation.md).
+- Historique : v1.4.0.1 (2026-08-20) a migré le diagnostic public vers Billing V2 ([billing-v2-public-diagnostic.md](topics/billing-v2-public-diagnostic.md)) ; v1.4.0.0 a livré le socle Billing V2.
+
+### Billing V2 — fiches récupérées des anciennes conversations (2026-09-17)
+
+- Les transcripts Claude de juillet à août 2026 se trouvaient sur l'ancien système (`E:\Users\zhounsah\.claude\projects`). Le 2026-09-17, ils ont été recopiés sans écrasement vers le profil courant, puis relus. Ce qui manquait dans `.ai/` a été promu après vérification dans le code :
+  - [billing-v2-additional-users.md](topics/billing-v2-additional-users.md) : Phase 4 USER-ADDITIONAL, remise du mot de passe chiffrée et atomique, export fail-closed, absence d'oracle cross-customer.
+  - [billing-v2-only-cancellation.md](topics/billing-v2-only-cancellation.md) : suppression du legacy, `pending_cancellation`, résolveur d'ancre provider, PayPal en deux gestes, conservation des droits payés.
+  - [pieges-sql-et-preuves.md](topics/pieges-sql-et-preuves.md) : défauts SQL invisibles des suites mock (littéral brut, `<=>`, lien AD transféré, `objectGUID`).
 
 ### Centre de configuration administrateur (2026-08-29)
 
@@ -93,6 +102,8 @@
 
 ### Billing V2 (v1.4.0.0)
 
+> Section **historique** au 2026-08-17 : Billing V2 est devenu l'unique autorité commerciale en v2.0.0.0. Revalider les drapeaux de production avant toute conclusion.
+
 - **Livré en v1.4.0.0.** Le code est dormant par défaut (drapeaux absents =
   `false`), mais **la production ne l'est pas** : relevé du 2026-08-17,
   `NEW_SUBSCRIPTIONS`, `AUTHORITATIVE_CHECKOUT`, `PROVIDER_OUTBOX`,
@@ -161,7 +172,11 @@
 ## Tous les topics Claude importés
 
 - [admin-configuration-center.md](topics/admin-configuration-center.md)
+- [billing-v2-additional-users.md](topics/billing-v2-additional-users.md)
 - [billing-v2-koxo-storage-targets.md](topics/billing-v2-koxo-storage-targets.md)
+- [billing-v2-only-cancellation.md](topics/billing-v2-only-cancellation.md)
+- [billing-v2-public-diagnostic.md](topics/billing-v2-public-diagnostic.md)
+- [pieges-sql-et-preuves.md](topics/pieges-sql-et-preuves.md)
 - [bpce-invoicing-api.md](topics/bpce-invoicing-api.md)
 - [custom-demo-accounts.md](topics/custom-demo-accounts.md)
 - [deployment-topology.md](topics/deployment-topology.md)
