@@ -686,7 +686,7 @@ public static class BillingV2StripeApprovalUrlRecoveryPolicy
         string? persistedApprovalUrl,
         string? refetchedApprovalUrl)
     {
-        if (Normalize(persistedApprovalUrl) is { } persisted)
+        if (NormalizeTrustedApprovalUrl(persistedApprovalUrl) is { } persisted)
         {
             return new BillingV2StripeApprovalUrlRecovery(
                 persisted,
@@ -694,7 +694,7 @@ public static class BillingV2StripeApprovalUrlRecoveryPolicy
                 RequiresManualReview: false);
         }
 
-        if (Normalize(refetchedApprovalUrl) is { } refetched)
+        if (NormalizeTrustedApprovalUrl(refetchedApprovalUrl) is { } refetched)
         {
             return new BillingV2StripeApprovalUrlRecovery(
                 refetched,
@@ -708,8 +708,26 @@ public static class BillingV2StripeApprovalUrlRecoveryPolicy
             RequiresManualReview: true);
     }
 
-    private static string? Normalize(string? value)
-        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    /// <summary>
+    /// Seul l'adaptateur du rail Stripe connaît la forme de son URL de
+    /// redirection. Une URL HTTPS stockée en base n'est pas, à elle seule, une
+    /// autorisation de rediriger un client vers un tiers arbitraire.
+    /// </summary>
+    public static string? NormalizeTrustedApprovalUrl(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)
+            || !Uri.TryCreate(value.Trim(), UriKind.Absolute, out var uri)
+            || !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            || !string.IsNullOrEmpty(uri.UserInfo)
+            || !uri.IsDefaultPort
+            || !string.Equals(uri.Host, "checkout.stripe.com", StringComparison.OrdinalIgnoreCase)
+            || !uri.AbsolutePath.StartsWith("/c/pay/", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return uri.ToString();
+    }
 }
 
 public sealed record BillingV2StripeVerificationExpectation(

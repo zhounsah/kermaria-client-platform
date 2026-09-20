@@ -8,6 +8,7 @@ export const PUBLIC_ROUTES = [
   // la page d'index serait reconnue comme publique et la page de
   // configuration basculerait sur l'entete « espace client ».
   "/formules",
+  "/souscription",
   "/diagnostic",
   "/ressources",
   "/solutions",

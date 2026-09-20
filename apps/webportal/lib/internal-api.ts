@@ -93,6 +93,9 @@ import type {
   BillingV2PublicSelection,
   BillingV2CartCommandRequest,
   BillingV2CartCommandResponse,
+  BillingV2CartCheckoutRequest,
+  BillingV2CartCheckoutResponse,
+  BillingV2CartCheckoutStatusResponse,
   BillingV2VpsTechnicalRequestStatus,
   AdminBillingV2VpsTechnicalReview,
 } from "@kermaria/shared";
@@ -648,6 +651,76 @@ export async function commandBillingV2Cart(
     throw await toInternalApiError(response, correlationId);
   }
   return readInternalJson<BillingV2CartCommandResponse>(response, correlationId);
+}
+
+/**
+ * Démarre le checkout d'un Cart déjà relu par le BFF. La requête navigateur ne
+ * contient qu'une référence de quote; les URL de retour sont construites ici,
+ * et ne constituent pas un choix de provider ou de prix du client.
+ */
+export async function checkoutBillingV2Cart(
+  request: BillingV2CartCheckoutRequest & { successUrl: string; cancelUrl: string },
+  correlationId: CorrelationId,
+  portalSessionToken: string,
+): Promise<BillingV2CartCheckoutResponse> {
+  const internalApiUrl = getInternalApiUrl();
+  if (!internalApiUrl) throw new InternalApiError(unavailableError(correlationId), 503);
+  let response: Response;
+  try {
+    response = await fetch(`${internalApiUrl}/internal/portal/billing-v2/carts/checkout`, {
+      method: "POST",
+      cache: "no-store",
+      signal: AbortSignal.timeout(INTERNAL_API_TIMEOUT_MS),
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        ...getInternalServiceHeaders(),
+        [CORRELATION_HEADER]: correlationId,
+        [PORTAL_SESSION_HEADER]: portalSessionToken,
+      },
+      body: JSON.stringify(request),
+    });
+  } catch {
+    throw new InternalApiError(unavailableError(correlationId), 503);
+  }
+  if (!response.ok) throw await toInternalApiError(response, correlationId);
+  return readInternalJson<BillingV2CartCheckoutResponse>(response, correlationId);
+}
+
+/**
+ * Lecture de reprise d'un checkout deja ecrit. Elle reste volontairement une
+ * requete GET BFF→API-INTERNAL : aucun worker/provider n'est relance par un
+ * rechargement de la page de souscription.
+ */
+export async function getBillingV2CartCheckoutStatus(
+  cartId: string | null,
+  correlationId: CorrelationId,
+  portalSessionToken: string,
+): Promise<BillingV2CartCheckoutStatusResponse> {
+  const internalApiUrl = getInternalApiUrl();
+  if (!internalApiUrl) throw new InternalApiError(unavailableError(correlationId), 503);
+  const query = cartId ? `?cartId=${encodeURIComponent(cartId)}` : "";
+  let response: Response;
+  try {
+    response = await fetch(
+      `${internalApiUrl}/internal/portal/billing-v2/carts/checkout-status${query}`,
+      {
+        method: "GET",
+        cache: "no-store",
+        signal: AbortSignal.timeout(INTERNAL_API_TIMEOUT_MS),
+        headers: {
+          Accept: "application/json",
+          ...getInternalServiceHeaders(),
+          [CORRELATION_HEADER]: correlationId,
+          [PORTAL_SESSION_HEADER]: portalSessionToken,
+        },
+      },
+    );
+  } catch {
+    throw new InternalApiError(unavailableError(correlationId), 503);
+  }
+  if (!response.ok) throw await toInternalApiError(response, correlationId);
+  return readInternalJson<BillingV2CartCheckoutStatusResponse>(response, correlationId);
 }
 
 export function getPublicPackCatalogContent() {

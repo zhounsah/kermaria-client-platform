@@ -41,6 +41,7 @@ public static class BillingV2StripeRailTests
         VerifyApprovalUrlReplayReturnsPersistedUrl();
         VerifyApprovalUrlReplayFallsBackToRefetchedUrl();
         VerifyApprovalUrlReplayFailsClosedWhenUnrecoverable();
+        VerifyApprovalUrlReplayRefusesUnexpectedHost();
         VerifyStripeIsReadyWithoutProviderPriceMappings();
         VerifyPayPalStillRequiresProviderPriceMappings();
         VerifyProviderEnvironmentMatrixRefusesImpossibleCouples();
@@ -436,6 +437,22 @@ public static class BillingV2StripeRailTests
             && recovery.ReasonCode
                 == "BILLING_V2_STRIPE_APPROVAL_URL_UNRECOVERABLE",
             "Sans URL recuperable, le replay doit echouer en ferme vers revue manuelle.");
+    }
+
+    private static void VerifyApprovalUrlReplayRefusesUnexpectedHost()
+    {
+        var recovery = BillingV2StripeApprovalUrlRecoveryPolicy.Resolve(
+            "https://evil.example/c/pay/cs_test_untrusted",
+            "https://evil.example/c/pay/cs_test_untrusted");
+        var invalidPath = BillingV2StripeApprovalUrlRecoveryPolicy.Resolve(
+            "https://checkout.stripe.com/other/cs_test_untrusted",
+            null);
+
+        Ensure(!recovery.Recovered
+            && recovery.ApprovalUrl is null
+            && recovery.RequiresManualReview
+            && !invalidPath.Recovered,
+            "Une URL HTTPS arbitraire ou une URL Stripe hors parcours Checkout ne doit jamais etre exposee au client.");
     }
 
     /// <summary>

@@ -28,7 +28,11 @@ public sealed record BillingV2RuntimeConfiguration(
     bool VpsCloudAutomationEnabled = false,
     // Capacite interne seulement. Absente/false => aucun worker refund ne peut
     // appeler Stripe, meme si une demande durable existe en base.
-    bool RefundsEnabled = false)
+    bool RefundsEnabled = false,
+    // La boutique ne choisit jamais ce rail. Phase 4 ouvre explicitement le
+    // seul rail teste; une valeur inconnue est refusee fermement par la policy
+    // Cart au lieu de basculer implicitement vers un autre provider.
+    string CartCheckoutProvider = "stripe")
 {
     public const int DefaultReconciliationIntervalSeconds = 300;
     public const int MinimumReconciliationIntervalSeconds = 30;
@@ -70,7 +74,9 @@ public sealed record BillingV2RuntimeConfiguration(
             StripeRecurringMutationEnabled = ReadFlag(configuration, "BILLING_V2_STRIPE_RECURRING_MUTATION_ENABLED"),
             VpsLocalProvisioningEnabled = ReadFlag(configuration, "BILLING_V2_VPS_LOCAL_PROVISIONING_ENABLED"),
             VpsCloudAutomationEnabled = ReadFlag(configuration, "BILLING_V2_VPS_CLOUD_AUTOMATION_ENABLED"),
-            RefundsEnabled = ReadFlag(configuration, "BILLING_V2_REFUNDS_ENABLED")
+            RefundsEnabled = ReadFlag(configuration, "BILLING_V2_REFUNDS_ENABLED"),
+            CartCheckoutProvider = ResolveCartCheckoutProvider(
+                configuration["BILLING_V2_CART_CHECKOUT_PROVIDER"])
         };
 
     private static bool ReadFlag(IConfiguration configuration, string key)
@@ -91,6 +97,11 @@ public sealed record BillingV2RuntimeConfiguration(
 
     private static long ResolveNonNegativeLong(string? rawValue)
         => long.TryParse(rawValue, out var value) && value >= 0 ? value : 0;
+
+    private static string ResolveCartCheckoutProvider(string? rawValue)
+        => string.IsNullOrWhiteSpace(rawValue)
+            ? "stripe"
+            : rawValue.Trim().ToLowerInvariant();
 
     private static BillingV2RuntimeConfiguration ResolveCore(
         IConfiguration configuration)

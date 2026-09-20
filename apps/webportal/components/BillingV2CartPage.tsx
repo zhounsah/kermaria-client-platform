@@ -314,7 +314,7 @@ export function BillingV2CartPage({ catalog }: Props) {
           </section>
         </div>
 
-        <CartQuoteSummary quote={quote} />
+        <CartQuoteSummary cart={cart} quote={quote} />
       </div>
     </section>
   );
@@ -408,7 +408,7 @@ function CartItemCard({
   );
 }
 
-function CartQuoteSummary({ quote }: { quote: BillingV2CartQuote | null }) {
+function CartQuoteSummary({ cart, quote }: { cart: BillingV2Cart | null; quote: BillingV2CartQuote | null }) {
   const blockers = quote ? [
     ...quote.dependencyIssues,
     ...quote.scopeIssues,
@@ -450,8 +450,12 @@ function CartQuoteSummary({ quote }: { quote: BillingV2CartQuote | null }) {
           <p className="cart-storefront-quote-expiry">Prix de votre panier actualisé. Valable jusqu’au {formatDateTime(quote.expiresAtUtc)}.</p>
         </>
       )}
-      <button className="button" disabled type="button">Passer à la souscription</button>
-      <p className="cart-storefront-next-step">Disponible à l’étape suivante.</p>
+      {quote && cart && quote.commercialReadiness === "ready" && blockers.length === 0 ? (
+        <Link className="button" href="/souscription">Passer à la souscription</Link>
+      ) : (
+        <button className="button" disabled type="button">Passer à la souscription</button>
+      )}
+      <p className="cart-storefront-next-step">Vous vérifierez votre panier avant le paiement.</p>
       <Link className="button button-secondary" href="/tarifs">Continuer mes achats</Link>
     </aside>
   );

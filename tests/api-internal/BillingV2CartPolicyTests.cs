@@ -28,6 +28,7 @@ public static class BillingV2CartPolicyTests
         RequiredPresetItemsAreInjectedIntoFormulaComposition();
         DirectCartMergeIsDeterministic();
         CartMutationResultHttpMappingIsCentralized();
+        CheckoutRecoveryIsReadOnlyAndStateful();
         CartModelNeverContainsFinancialAuthority();
         CartModuleHasNoFinancialOrProviderDependency();
         return Task.CompletedTask;
@@ -362,6 +363,42 @@ public static class BillingV2CartPolicyTests
         Ensure(BillingV2CartMutationResults.HttpStatusCode(new("CART_NOT_FOUND")) == 404
             && BillingV2CartMutationResults.HttpStatusCode(new("CART_PRESET_INVALID")) == 400,
             "Les not-found et erreurs de validation restent distingues au niveau endpoint.");
+    }
+
+    private static void CheckoutRecoveryIsReadOnlyAndStateful()
+    {
+        Ensure(!BillingV2CartCheckoutRecoveryPolicy.RequiresExplicitCartReference(0)
+            && !BillingV2CartCheckoutRecoveryPolicy.RequiresExplicitCartReference(1)
+            && BillingV2CartCheckoutRecoveryPolicy.RequiresExplicitCartReference(2),
+            "Sans cartId, la reprise doit refuser deux checkouts possibles au lieu de choisir le plus recent.");
+
+        var queued = BillingV2CartCheckoutRecoveryPolicy.Resolve(
+            "pending_approval", "pending", null, null, false);
+        Ensure(queued.Status == "pending_provider" && queued.Retryable,
+            "Un checkout commit mais sans session provider est repris comme preparation asynchrone.");
+
+        var approval = BillingV2CartCheckoutRecoveryPolicy.Resolve(
+            "pending_approval", "processed", "pending_approval", null, true);
+        Ensure(approval.Status == "approval_required" && approval.ExposeApprovalUrl,
+            "Une URL d'approbation arrivee apres le commit est reprise sans recreer de session.");
+
+        var pending = BillingV2CartCheckoutRecoveryPolicy.Resolve(
+            "pending_approval", "processed", "approved", "pending", false);
+        Ensure(pending.Status == "payment_pending" && !pending.Retryable,
+            "Le paiement pending conserve la meme souscription pendant les refresh.");
+
+        var confirmed = BillingV2CartCheckoutRecoveryPolicy.Resolve(
+            "active", "processed", "completed", "succeeded", false);
+        Ensure(confirmed.Status == "confirmed" && !confirmed.ExposeApprovalUrl,
+            "La confirmation provider devient un etat de reprise stable.");
+
+        var failed = BillingV2CartCheckoutRecoveryPolicy.Resolve(
+            "pending_approval", "failed", null, null, false);
+        var failedOnRefresh = BillingV2CartCheckoutRecoveryPolicy.Resolve(
+            "pending_approval", "failed", null, null, false);
+        Ensure(failed.Status == "failed" && failed.Retryable
+            && failed == failedOnRefresh,
+            "Un echec provider reste observable et strictement stable au refresh sans creer une seconde souscription.");
     }
 
     private static void DirectCartMergeIsDeterministic()

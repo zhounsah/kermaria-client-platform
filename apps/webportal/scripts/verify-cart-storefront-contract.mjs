@@ -8,6 +8,7 @@ const read = (relative) => readFileSync(resolve(root, relative), "utf8");
 const tariffs = read("components/PublicCommercialTariffCatalog.tsx");
 const directAdd = read("components/BillingV2DirectCartAdd.tsx");
 const cartPage = read("components/BillingV2CartPage.tsx");
+const checkoutReview = read("components/BillingV2CartCheckoutReview.tsx");
 const cartRoute = read("app/api/billing-v2/cart/route.ts");
 const cartClient = read("lib/billing-v2-cart-client.ts");
 const header = read("components/BillingV2CartHeaderLink.tsx");
@@ -102,6 +103,17 @@ assert.match(pricingSummary, /Prix avant remise/);
 assert.match(pricingSummary, /Frais ponctuels/);
 assert.doesNotMatch(cartPage, /checkout|subscription|provider|BillingEvent|PaymentAttempt|provisioning/i,
   "La page panier de Phase 3 ne contient aucun raccordement financier ou provisioning.");
+
+assert.match(checkoutReview, /cart-storefront subscription-review/,
+  "/souscription reprend le conteneur visuel du panier sans en réutiliser les mutations.");
+assert.match(checkoutReview, /BillingV2PricingSummary/,
+  "Le récapitulatif de souscription reste une projection du quote serveur.");
+assert.match(checkoutReview, /resolveServicePublicLabel/,
+  "Le résumé de souscription réutilise la traduction commerciale existante des services.");
+assert.doesNotMatch(checkoutReview, /Socle de service/,
+  "Le libellé technique historique ne doit pas être exposé lors de la vérification.");
+assert.doesNotMatch(checkoutReview, /reduce\([^)]*amountCents|amountCents\s*\+/,
+  "La vérification ne recompose aucun prix côté navigateur.");
 
 assert.match(header, /command: "get_current"/);
 assert.doesNotMatch(header, /command: "current"/,

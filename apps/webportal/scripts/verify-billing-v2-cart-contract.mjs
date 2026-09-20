@@ -21,6 +21,13 @@ const cartMigration = read("../api-internal/Migrations/MariaDb/090_billing_v2_ca
 const presetMetadataMigration = read("../api-internal/Migrations/MariaDb/091_billing_v2_preset_cart_metadata.sql");
 const cartOriginMigration = read("../api-internal/Migrations/MariaDb/093_billing_v2_cart_item_origin.sql");
 const cartConfigurator = read("components/BillingV2CartFormuleConfigurator.tsx");
+const cartCheckoutRoute = read("app/api/billing-v2/cart/checkout/route.ts");
+const cartCheckoutStatusRoute = read("app/api/billing-v2/cart/checkout-status/route.ts");
+const cartCheckoutReview = read("components/BillingV2CartCheckoutReview.tsx");
+const cartCheckoutService = read("../api-internal/Services/BillingV2CartCheckoutService.cs");
+const billingRuntimeConfiguration = read("../api-internal/Services/BillingV2RuntimeConfiguration.cs");
+const authoritativeCheckout = read("../api-internal/Services/BillingV2AuthoritativeCheckoutService.cs");
+const stripeRail = read("../api-internal/Services/BillingV2StripeRail.cs");
 const cartSchemaTests = read("../../tests/api-internal/BillingV2CartSchemaTests.cs");
 
 assert(route.includes("sanitizeCartCommand"), "Le BFF Cart doit filtrer le payload navigateur.");
@@ -129,8 +136,55 @@ assert(cartService.includes("open_customer_slot = NULL")
   && cartService.includes("open_anonymous_slot = NULL")
   && cartService.includes("open_customer_slot = 1"),
   "Les transitions Cart doivent liberer ou transferer les slots dans leur transaction.");
-assert(!route.includes("checkout") && !transport.slice(transport.indexOf("commandBillingV2Cart"), transport.indexOf("commandBillingV2Cart") + 1800).includes("provider"),
-  "Le BFF Cart ne doit pas exposer de checkout ou provider.");
+assert(!route.includes("checkout"),
+  "Le BFF de mutation Cart ne doit pas exposer le checkout, qui dispose de sa route CSRF authentifiee distincte.");
+assert(cartCheckoutRoute.includes("rejectInvalidPortalCsrf")
+  && cartCheckoutRoute.includes("readPortalSessionToken")
+  && cartCheckoutRoute.includes("checkoutBillingV2Cart"),
+  "Le checkout Cart doit rester une route BFF CSRF et authentifiee distincte des mutations Cart.");
+assert(!cartCheckoutRoute.includes("monthlyTotal") && !cartCheckoutRoute.includes("provider:"),
+  "Le navigateur ne doit transmettre ni montant ni provider lors du checkout Cart.");
+assert(cartCheckoutService.includes("ReadAcceptedQuoteAsync")
+  && cartCheckoutService.includes("HasBlockingIssue")
+  && cartCheckoutService.includes("CART_QUOTE_CHANGED")
+  && cartCheckoutService.includes("BillingV2CartCheckoutProviderPolicy.Resolve(_runtime)")
+  && billingRuntimeConfiguration.includes("BILLING_V2_CART_CHECKOUT_PROVIDER")
+  && billingRuntimeConfiguration.includes("CartCheckoutProvider"),
+  "Le checkout Cart doit revalider le quote et la readiness depuis le serveur.");
+assert(cartCheckoutService.includes('"cart-checkout:" + BillingV2CheckoutSelectionFingerprint.ForSelection')
+  && authoritativeCheckout.includes("CartCheckoutLink")
+  && authoritativeCheckout.includes("MarkCartCheckedOutAsync"),
+  "Le Cart doit porter une cle idempotente et devenir checked_out dans la transaction du checkout authoritative.");
+assert(authoritativeCheckout.includes("open_customer_slot = NULL")
+  && authoritativeCheckout.includes("checked_out_subscription_id = @subscription_id"),
+  "Le checkout doit liberer le slot open et lier le Cart a son unique Subscription.");
+assert(apiProgram.includes('"/internal/portal/billing-v2/carts/checkout-status"')
+  && cartCheckoutService.includes("GetStatusAsync")
+  && cartCheckoutService.includes("ReadCheckoutStatusAsync")
+  && cartCheckoutService.includes("billing_v2_provider_checkout_sessions")
+  && cartCheckoutService.includes("billing_v2_outbox_events"),
+  "Le checkout checked_out doit disposer d'une lecture customer-scoped reliant Cart, request, outbox et session provider.");
+assert(cartCheckoutStatusRoute.includes("readPortalSessionToken")
+  && cartCheckoutStatusRoute.includes("getBillingV2CartCheckoutStatus")
+  && !cartCheckoutStatusRoute.includes("rejectInvalidPortalCsrf")
+  && !cartCheckoutStatusRoute.includes("POST"),
+  "La reprise checkout doit etre une lecture authentifiee sans mutation ni exception CSRF.");
+assert(cartCheckoutReview.includes("getBillingV2CartCheckoutStatusClient")
+  && cartCheckoutReview.includes("loadRecovery")
+  && cartCheckoutReview.includes("pending_provider")
+  && cartCheckoutReview.includes("payment_pending")
+  && cartCheckoutReview.includes("setInterval"),
+  "La page souscription doit reprendre le checkout checked_out et relire un provider asynchrone sans creer de Cart open.");
+assert(cartCheckoutService.includes("BillingV2CartCheckoutRecoveryPolicy")
+  && cartCheckoutService.includes("ReadSafeApprovalUrl")
+  && cartCheckoutService.includes("NormalizeTrustedApprovalUrl")
+  && stripeRail.includes('uri.Host, "checkout.stripe.com"')
+  && stripeRail.includes('uri.AbsolutePath.StartsWith("/c/pay/"'),
+  "Une approval URL tardive doit etre projetee seulement lorsqu'elle est validee par l'adaptateur Stripe du checkout du client.");
+assert(cartCheckoutService.includes("RequiresExplicitCartReference")
+  && cartCheckoutService.includes("CART_CHECKOUT_AMBIGUOUS")
+  && cartCheckoutService.includes("LIMIT 2"),
+  "La reprise sans cartId doit refuser plusieurs checkouts possibles au lieu de choisir arbitrairement le plus recent.");
 assert(cartService.includes("InitializeFromPresetAsync")
   && cartService.includes("CART_PRESET_CONFLICT")
   && cartService.includes("InsertPresetItemAsync"),

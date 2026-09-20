@@ -2802,6 +2802,50 @@ export interface BillingV2CartCommandResponse {
 }
 
 /**
+ * Référence d'acceptation d'un devis de panier. Les montants ne traversent
+ * jamais le navigateur : cette référence sert uniquement à demander à
+ * API-INTERNAL de relire le même état, puis de le re-tarifer.
+ */
+export interface BillingV2CartCheckoutRequest {
+  cartId: string;
+  expectedCartVersion: number;
+  acceptedQuoteVersion: number;
+  acceptedCompositionFingerprint: string;
+}
+
+/** Résultat du démarrage idempotent du checkout d'un panier. */
+export interface BillingV2CartCheckoutResponse {
+  code: string;
+  subscriptionId: string | null;
+  provider: string | null;
+  approvalUrl: string | null;
+  cartStatus: BillingV2CartStatus | null;
+  cartVersion: number | null;
+  correlationId?: string;
+}
+
+/**
+ * Etat de reprise customer-scoped d'un checkout deja ancre. Cette projection
+ * n'expose ni identifiant provider, ni erreur technique, ni secret de paiement.
+ */
+export interface BillingV2CartCheckoutStatusResponse {
+  code: string;
+  cartId: string | null;
+  subscriptionId: string | null;
+  subscriptionStatus: string | null;
+  checkoutStatus:
+    | "pending_provider"
+    | "approval_required"
+    | "payment_pending"
+    | "confirmed"
+    | "failed"
+    | null;
+  provider: string | null;
+  approvalUrl: string | null;
+  retryable: boolean;
+}
+
+/**
  * Préparation technique non secrète d'un VPS. Les codes catalogue restent une
  * intention : API-INTERNAL les revalide avant de conserver la demande et de
  * demander un devis Billing V2.

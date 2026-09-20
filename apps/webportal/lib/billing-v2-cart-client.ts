@@ -1,4 +1,7 @@
 import type {
+  BillingV2CartCheckoutRequest,
+  BillingV2CartCheckoutResponse,
+  BillingV2CartCheckoutStatusResponse,
   BillingV2CartCommandRequest,
   BillingV2CartCommandResponse,
 } from "@kermaria/shared";
@@ -16,6 +19,24 @@ export function commandBillingV2CartClient(request: BillingV2CartCommandRequest)
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(request),
   });
+}
+
+/** La confirmation ne contient qu'une référence de quote, jamais un montant. */
+export function checkoutBillingV2CartClient(request: BillingV2CartCheckoutRequest) {
+  return requestBffJson<BillingV2CartCheckoutResponse>("/api/billing-v2/cart/checkout", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+}
+
+/** La reprise ne declenche aucune mutation Cart, provider ou outbox. */
+export function getBillingV2CartCheckoutStatusClient(cartId?: string | null) {
+  const suffix = cartId ? `?cartId=${encodeURIComponent(cartId)}` : "";
+  return requestBffJson<BillingV2CartCheckoutStatusResponse>(
+    `/api/billing-v2/cart/checkout-status${suffix}`,
+    { method: "GET" },
+  );
 }
 
 /**

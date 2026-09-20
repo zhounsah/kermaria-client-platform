@@ -8968,6 +8968,126 @@ fieldset.form-field > .form-hint {
   margin-top: 22px;
 }
 
+/* --- Vérification de souscription -------------------------------------- */
+
+.subscription-review-details {
+  min-width: 0;
+}
+
+.subscription-review-card {
+  gap: 14px;
+}
+
+.subscription-review-card > h2,
+.subscription-review-card h2 {
+  margin: 0;
+}
+
+.subscription-review-service-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.subscription-review-service-list li {
+  min-width: 0;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.subscription-review-service-list li:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.subscription-review-service-list span {
+  display: grid;
+  gap: 3px;
+  font-weight: 650;
+}
+
+.subscription-review-service-list em {
+  color: var(--muted);
+  font-size: .86rem;
+  font-style: normal;
+  font-weight: 400;
+}
+
+.subscription-review-terms {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.subscription-review-terms > div {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.subscription-review-terms dt {
+  color: var(--muted);
+  font-size: .9rem;
+}
+
+.subscription-review-terms dd {
+  margin: 0;
+  font-weight: 650;
+}
+
+.subscription-review-edit {
+  justify-self: start;
+}
+
+.subscription-review-confirmation {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 15px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--primary-light);
+  cursor: pointer;
+}
+
+.subscription-review-confirmation input {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  margin: 1px 0 0;
+}
+
+.subscription-review-confirmation span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  line-height: 1.45;
+}
+
+.subscription-review-confirmation small {
+  color: var(--muted);
+  font-size: .82rem;
+}
+
+.subscription-review-confirmation:has(input:focus-visible) {
+  outline: 3px solid color-mix(in srgb, var(--primary) 45%, transparent);
+  outline-offset: 2px;
+}
+
+.subscription-review-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.subscription-review-actions .button {
+  justify-content: center;
+  width: 100%;
+}
+
 @media (min-width: 880px) {
   .cart-storefront-layout {
     grid-template-columns: minmax(0, 1.6fr) minmax(290px, .85fr);
@@ -9007,6 +9127,15 @@ fieldset.form-field > .form-hint {
   .cart-storefront-quantity button {
     width: 44px;
     height: 44px;
+  }
+
+  .subscription-review-confirmation {
+    padding: 14px;
+  }
+
+  .subscription-review-edit {
+    width: 100%;
+    justify-content: center;
   }
 
   .cart-storefront-choice-list {

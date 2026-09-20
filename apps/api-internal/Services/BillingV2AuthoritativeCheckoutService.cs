@@ -23,7 +23,28 @@ public sealed record BillingV2AuthoritativeCheckoutRequest(
     string IdempotencyKey,
     string SuccessUrl,
     string CancelUrl,
-    string? TechnicalRequestId = null);
+    string? TechnicalRequestId = null,
+    BillingV2AuthoritativeCheckoutComposition? CompositionOverride = null,
+    BillingV2CartCheckoutLink? CartCheckoutLink = null);
+
+/// <summary>
+/// Contexte strictement interne du checkout Cart. Il est construit après la
+/// relecture du Cart et du quote par API-INTERNAL ; il ne peut donc pas être
+/// fourni par le navigateur.
+/// </summary>
+public sealed record BillingV2CartCheckoutLink(
+    string CartId,
+    int ExpectedCartVersion,
+    long ExpectedRecurringTotalCents,
+    long ExpectedTotalDueNowCents);
+
+/// <summary>
+/// Résultat minimal du verrouillage Cart à l'intérieur de la transaction de
+/// checkout. Une souscription déjà liée est un rejeu idempotent, et non une
+/// erreur ni une nouvelle commande.
+/// </summary>
+internal sealed record BillingV2CartCheckoutLock(
+    string? CheckedOutSubscriptionId);
 
 /// <summary>
 /// Composition facturable resolue. Tout le chemin d'ecriture en aval ne
@@ -172,12 +193,13 @@ public sealed class BillingV2AuthoritativeCheckoutService
         // La composition est resolue AVANT toute recherche d'intention : c'est
         // elle qui porte l'identite metier de la demande. Une selection
         // invalide echoue donc ici, avant la moindre ecriture.
-        var composition = await ResolveCompositionAsync(
-            readConnection,
-            checkoutRequest,
-            isTechnicalVpsCheckout: technicalRequest is not null,
-            now,
-            cancellationToken);
+        var composition = checkoutRequest.CompositionOverride
+            ?? await ResolveCompositionAsync(
+                readConnection,
+                checkoutRequest,
+                isTechnicalVpsCheckout: technicalRequest is not null,
+                now,
+                cancellationToken);
         if (technicalRequest is null && HasVpsItem(composition))
         {
             throw new InvalidOperationException(
@@ -307,6 +329,15 @@ public sealed class BillingV2AuthoritativeCheckoutService
             }
             : composition;
         var pricing = CalculatePricing(mapping, presetItems, now);
+        if (checkoutRequest.CartCheckoutLink is { } quoteLink
+            && (pricing.PayableRecurringAmountCents != quoteLink.ExpectedRecurringTotalCents
+                || pricing.TotalDueNowCents != quoteLink.ExpectedTotalDueNowCents))
+        {
+            // Le quote accepté reste une référence, jamais une valeur de prix
+            // navigateur. Si les règles serveur ne le reproduisent plus à cet
+            // instant, l'utilisateur doit examiner un nouveau devis.
+            throw new InvalidOperationException("BILLING_V2_CART_QUOTE_CHANGED");
+        }
         if (testPricing.Applied
             && pricing.TotalDueNowCents != testPricing.ExpectedTotalCents)
         {
@@ -373,6 +404,36 @@ public sealed class BillingV2AuthoritativeCheckoutService
             IsolationLevel.ReadCommitted,
             cancellationToken);
 
+        // Le Cart est verrouillé dans la même transaction que la création du
+        // contrat. Aucun appel provider n'a encore été effectué, et aucune
+        // mutation Cart concurrente ne peut donc créer un abonnement à partir
+        // d'une version qui n'est plus celle acceptée.
+        if (checkoutRequest.CartCheckoutLink is { } cartLink)
+        {
+            var lockedCart = await LockCartForCheckoutAsync(
+                connection,
+                transaction,
+                session.CustomerId,
+                cartLink,
+                cancellationToken);
+            if (lockedCart.CheckedOutSubscriptionId is { Length: > 0 }
+                existingSubscriptionId)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                var existingRequest = await ReadCheckoutRequestBySubscriptionAsync(
+                    readConnection,
+                    transaction: null,
+                    existingSubscriptionId,
+                    cancellationToken)
+                    ?? throw new InvalidOperationException(
+                        "BILLING_V2_CART_CHECKOUT_LINK_CORRUPT");
+                return await BuildResultFromRequestAsync(
+                    readConnection,
+                    existingRequest,
+                    cancellationToken);
+            }
+        }
+
         var itemPlan = BillingV2NewSubscriptionPlanner.Plan(
             session,
             presetItems);
@@ -403,6 +464,7 @@ public sealed class BillingV2AuthoritativeCheckoutService
             subscriptionId,
             session.CustomerId,
             mapping,
+            checkoutPlan.Currency,
             minimumCommitmentAmountCents,
             lifecycle,
             now,
@@ -617,6 +679,17 @@ public sealed class BillingV2AuthoritativeCheckoutService
             providerPlan.IdempotencyKeyHash,
             checkoutReadiness.ReasonCode,
             cancellationToken);
+        if (checkoutRequest.CartCheckoutLink is { } checkoutCartLink)
+        {
+            await MarkCartCheckedOutAsync(
+                connection,
+                transaction,
+                session.CustomerId,
+                checkoutCartLink,
+                subscriptionId,
+                now,
+                cancellationToken);
+        }
         await transaction.CommitAsync(cancellationToken);
 
         return new BillingV2AuthoritativeCheckoutResult(
@@ -708,6 +781,135 @@ public sealed class BillingV2AuthoritativeCheckoutService
         }
 
         return ReadRequestRecord(reader);
+    }
+
+    private static async Task<BillingV2AuthoritativeCheckoutRequestRecord?>
+        ReadCheckoutRequestBySubscriptionAsync(
+            MySqlConnection connection,
+            MySqlTransaction? transaction,
+            string subscriptionId,
+            CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = $"""
+            SELECT {CheckoutRequestColumns}
+            FROM billing_v2_authoritative_checkout_requests
+            WHERE subscription_id = @subscription_id
+            ORDER BY created_at ASC, id ASC
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("@subscription_id", subscriptionId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken)
+            ? ReadRequestRecord(reader)
+            : null;
+    }
+
+    /// <summary>
+    /// Verrouille le Cart appartenant au client courant. Cette vérification est
+    /// volontairement répétée après la préparation du quote : le premier
+    /// contrôle rend un message utile, celui-ci ferme la course entre deux
+    /// onglets ou une mutation et l'écriture de la Subscription.
+    /// </summary>
+    private static async Task<BillingV2CartCheckoutLock>
+        LockCartForCheckoutAsync(
+            MySqlConnection connection,
+            MySqlTransaction transaction,
+            string customerId,
+            BillingV2CartCheckoutLink link,
+            CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT status, version, checked_out_subscription_id, expires_at
+            FROM billing_v2_carts
+            WHERE id = @cart_id AND customer_id = @customer_id
+            FOR UPDATE;
+            """;
+        command.Parameters.AddWithValue("@cart_id", link.CartId);
+        command.Parameters.AddWithValue("@customer_id", customerId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException("BILLING_V2_CART_NOT_FOUND_OR_FORBIDDEN");
+        }
+
+        var status = reader.GetString("status");
+        var version = reader.GetInt32("version");
+        var checkedOutSubscriptionId = reader.IsDBNull(
+            reader.GetOrdinal("checked_out_subscription_id"))
+            ? null
+            : MariaDbIdentifierReader.ReadRequired(
+                reader,
+                "checked_out_subscription_id");
+        var expiresAt = reader.GetDateTime("expires_at");
+        if (!string.Equals(status, BillingV2CartStatuses.Open,
+                StringComparison.Ordinal))
+        {
+            if (string.Equals(status, BillingV2CartStatuses.CheckedOut,
+                    StringComparison.Ordinal)
+                && !string.IsNullOrWhiteSpace(checkedOutSubscriptionId))
+            {
+                return new BillingV2CartCheckoutLock(checkedOutSubscriptionId);
+            }
+
+            throw new InvalidOperationException(
+                string.Equals(status, BillingV2CartStatuses.Expired,
+                    StringComparison.Ordinal)
+                    ? "BILLING_V2_CART_EXPIRED"
+                    : "BILLING_V2_CART_IMMUTABLE");
+        }
+
+        if (expiresAt <= DateTime.UtcNow)
+        {
+            throw new InvalidOperationException("BILLING_V2_CART_EXPIRED");
+        }
+
+        if (version != link.ExpectedCartVersion)
+        {
+            throw new InvalidOperationException("BILLING_V2_CART_VERSION_CONFLICT");
+        }
+
+        return new BillingV2CartCheckoutLock(null);
+    }
+
+    private static async Task MarkCartCheckedOutAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        string customerId,
+        BillingV2CartCheckoutLink link,
+        string subscriptionId,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            UPDATE billing_v2_carts
+            SET status = 'checked_out',
+                checked_out_subscription_id = @subscription_id,
+                open_customer_slot = NULL,
+                open_anonymous_slot = NULL,
+                version = version + 1,
+                updated_at = @now,
+                last_activity_at = @now
+            WHERE id = @cart_id
+              AND customer_id = @customer_id
+              AND status = 'open'
+              AND version = @expected_version
+              AND checked_out_subscription_id IS NULL;
+            """;
+        command.Parameters.AddWithValue("@subscription_id", subscriptionId);
+        command.Parameters.AddWithValue("@cart_id", link.CartId);
+        command.Parameters.AddWithValue("@customer_id", customerId);
+        command.Parameters.AddWithValue("@expected_version", link.ExpectedCartVersion);
+        command.Parameters.AddWithValue("@now", now);
+        if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
+        {
+            throw new InvalidOperationException("BILLING_V2_CART_VERSION_CONFLICT");
+        }
     }
 
     private const string CheckoutRequestColumns =
@@ -1290,6 +1492,7 @@ public sealed class BillingV2AuthoritativeCheckoutService
         string subscriptionId,
         string customerId,
         BillingV2AuthoritativeCheckoutComposition mapping,
+        string currency,
         long? minimumCommitmentAmountCents,
         BillingV2SubscriptionLifecyclePlan lifecycle,
         DateTime now,
@@ -1325,7 +1528,7 @@ public sealed class BillingV2AuthoritativeCheckoutService
                 @commitment_term_id,
                 'pending_approval',
                 @payment_mode,
-                'EUR',
+                @currency,
                 @discount_basis_points,
                 @minimum_commitment_amount_cents,
                 'v2',
@@ -1370,6 +1573,7 @@ public sealed class BillingV2AuthoritativeCheckoutService
                 ? DBNull.Value
                 : mapping.CommitmentTermId);
         command.Parameters.AddWithValue("@payment_mode", mapping.PaymentMode);
+        command.Parameters.AddWithValue("@currency", currency);
         command.Parameters.AddWithValue(
             "@discount_basis_points",
             mapping.DiscountBasisPoints);

@@ -439,6 +439,7 @@ builder.Services.AddScoped<
 // dependance ne connait pas le checkout authoritative et ne peut donc creer
 // ni abonnement, ni paiement, ni outbox/provisioning.
 builder.Services.AddScoped<IBillingV2CartService, BillingV2CartService>();
+builder.Services.AddScoped<IBillingV2CartCheckoutService, BillingV2CartCheckoutService>();
 // Préparation technique VPS avant checkout : persistance non secrète et devis
 // authoritative uniquement. Ce service ne crée aucun objet de paiement.
 builder.Services.AddScoped<
@@ -1905,6 +1906,88 @@ app.MapPost(
                 result.Cart?.Id ?? (string.IsNullOrWhiteSpace(cartId) ? null : cartId), result.Code, 0);
         }
         return Results.Json(result, statusCode: BillingV2CartMutationResults.HttpStatusCode(result));
+    });
+
+// Checkout Cart : la charge ne transporte que la référence du quote accepté.
+// La composition, le provider, les prix et l'intention d'idempotence sont
+// reconstruits côté API-INTERNAL avant la délégation au checkout Billing V2.
+app.MapPost(
+    "/internal/portal/billing-v2/carts/checkout",
+    async (
+        HttpContext context,
+        IBillingV2CartCheckoutService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var payload = await ReadPayload<BillingV2CartCheckoutPayload>(context);
+        if (payload is null
+            || !Uri.TryCreate(payload.SuccessUrl, UriKind.Absolute, out _)
+            || !Uri.TryCreate(payload.CancelUrl, UriKind.Absolute, out _))
+        {
+            throw new PortalValidationException();
+        }
+
+        var session = await ResolveClientSessionAsync(context, authenticationService, auditService);
+        var result = await service.CheckoutAsync(
+            session,
+            new BillingV2CartCheckoutCommand(
+                payload.CartId ?? string.Empty,
+                payload.ExpectedCartVersion ?? -1,
+                payload.AcceptedQuoteVersion ?? -1,
+                payload.AcceptedCompositionFingerprint ?? string.Empty),
+            payload.SuccessUrl!,
+            payload.CancelUrl!,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+
+        var statusCode = result.Code switch
+        {
+            "CART_CHECKOUT_CREATED" or "CART_CHECKOUT_COMPLETED" => StatusCodes.Status200OK,
+            "CART_NOT_FOUND" => StatusCodes.Status404NotFound,
+            "CART_VERSION_CONFLICT" or "CART_QUOTE_CHANGED" or "CART_QUOTE_EXPIRED" or "CART_IMMUTABLE" => StatusCodes.Status409Conflict,
+            "CART_CHECKOUT_STORAGE_UNAVAILABLE" => StatusCodes.Status503ServiceUnavailable,
+            _ => StatusCodes.Status400BadRequest
+        };
+        return Results.Json(new BillingV2CartCheckoutResponse(
+            result.Code, result.SubscriptionId, result.Provider, result.ApprovalUrl,
+            result.CartStatus, result.CartVersion), statusCode: statusCode);
+    });
+
+// Reprise apres commit : cette lecture customer-scoped ne reexecute jamais le
+// checkout, l'outbox ou le provider. Sans cartId, elle ne reprend une
+// opération que si elle est non ambiguë ; plusieurs checkouts imposent une
+// référence explicite pour survivre à une réponse HTTP perdue sans deviner
+// l'intention du client.
+app.MapGet(
+    "/internal/portal/billing-v2/carts/checkout-status",
+    async (
+        string? cartId,
+        HttpContext context,
+        IBillingV2CartCheckoutService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(
+            context, authenticationService, auditService);
+        var result = await service.GetStatusAsync(
+            session, cartId, context.RequestAborted);
+        var statusCode = result.Code switch
+        {
+            "CART_CHECKOUT_STATUS_FOUND" => StatusCodes.Status200OK,
+            "CART_CHECKOUT_NOT_FOUND" or "CART_NOT_FOUND" => StatusCodes.Status404NotFound,
+            "CART_CHECKOUT_AMBIGUOUS" => StatusCodes.Status409Conflict,
+            "CART_CHECKOUT_STORAGE_UNAVAILABLE" => StatusCodes.Status503ServiceUnavailable,
+            _ => StatusCodes.Status400BadRequest
+        };
+        return Results.Json(new BillingV2CartCheckoutStatusResponse(
+            result.Code,
+            result.CartId,
+            result.SubscriptionId,
+            result.SubscriptionStatus,
+            result.CheckoutStatus,
+            result.Provider,
+            result.ApprovalUrl,
+            result.Retryable), statusCode: statusCode);
     });
 
 // Tunnel VPS, étape « configuration + devis » uniquement. La demande est

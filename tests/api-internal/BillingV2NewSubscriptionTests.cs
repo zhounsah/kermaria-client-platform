@@ -1335,30 +1335,32 @@ public static class BillingV2NewSubscriptionTests
 
     private static void VerifyProviderInboundEventIsIdempotentAfterSuccess()
     {
-        var plan = BillingV2ProviderInboundEventPlanner.Plan(
-            ProviderInboundEvent(
-                "checkout.session.completed",
-                providerCheckoutId: "cs_v2_123",
-                providerSubscriptionId: "sub_v2_123"),
-            ProviderLocalState(
-                providerCheckoutId: "cs_v2_123",
-                providerSubscriptionId: "sub_v2_123",
-                checkoutStatus: "completed",
-                agreementStatus: "active",
-                subscriptionStatus: "active"));
+        var inboundEvent = ProviderInboundEvent(
+            "checkout.session.completed",
+            providerCheckoutId: "cs_v2_123",
+            providerSubscriptionId: "sub_v2_123");
+        var localState = ProviderLocalState(
+            providerCheckoutId: "cs_v2_123",
+            providerSubscriptionId: "sub_v2_123",
+            checkoutStatus: "completed",
+            agreementStatus: "active",
+            subscriptionStatus: "active");
+        var plans = Enumerable.Range(0, 3)
+            .Select(_ => BillingV2ProviderInboundEventPlanner.Plan(inboundEvent, localState))
+            .ToArray();
 
         // Phase 2 : `checkout.session.completed` n'active plus directement.
         // Il reste idempotent (rien a reappliquer), mais son code de raison est
         // desormais un signal declencheur de relecture Stripe, pas une
         // activation.
         Ensure(
-            plan.CanApply
-            && plan.AlreadyApplied
-            && plan.ReasonCode
-                == "BILLING_V2_PROVIDER_CHECKOUT_COMPLETED_SIGNAL",
-            "Un webhook provider V2 deja applique doit rester idempotent et ne pas recreer d'accord local.");
+            plans.All(plan => plan.CanApply
+                && plan.AlreadyApplied
+                && plan.ReasonCode
+                    == "BILLING_V2_PROVIDER_CHECKOUT_COMPLETED_SIGNAL"),
+            "Trois livraisons du meme webhook provider V2 deja applique doivent rester idempotentes et ne pas recreer d'accord local.");
         Ensure(
-            plan.SubscriptionStatus is null,
+            plans.All(plan => plan.SubscriptionStatus is null),
             "Phase 2 : ce webhook ne doit plus porter d'activation d'abonnement.");
     }
 
