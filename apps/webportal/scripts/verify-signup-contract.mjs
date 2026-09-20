@@ -71,6 +71,11 @@ const emailTemplates = await read(
   "../../apps/api-internal/Services/Email/EmailTemplates.cs",
 );
 const programCs = await read("../../apps/api-internal/Program.cs");
+const adminCustomerRoute = await read("app/api/admin/customers/route.ts");
+const adminCustomerForm = await read("components/AdminCustomerCreateForm.tsx");
+const adminCustomerCreationContracts = await read(
+  "../../apps/api-internal/Contracts/AdminCustomerCreationContracts.cs",
+);
 
 const checks = [];
 function check(name, fn) {
@@ -858,6 +863,24 @@ check("la materialisation reste hors du parcours navigateur", () => {
   );
   assert.doesNotMatch(additionalUserRoutes, /TryMaterializeAsync/);
   assert.doesNotMatch(additionalUserRoutes, /DisableAsync/);
+});
+
+check("la creation admin reutilise le domaine client sans creer d acces", () => {
+  assert.match(adminCustomerCreationContracts, /AdminCustomerCreatePayload/);
+  assert.match(signupService, /CreateManualCustomerAsync/);
+  assert.match(signupRepoInterface, /CreateManualCustomerAsync/);
+  assert.match(signupRepoMaria, /INSERT INTO customers/);
+  const manualMethod = signupService.slice(
+    signupService.indexOf("public async Task<(SignupOperationResult Result, AdminCustomerCreateResponse? Customer)> CreateManualCustomerAsync"),
+    signupService.indexOf("public async Task<SignupOperationResult> SubmitAsync"),
+  );
+  assert.doesNotMatch(manualMethod, /_emailDispatch|_activeDirectoryService|_koxo|_passwordService|ApproveAsync|portal_users/,
+    "La creation de fiche client ne doit pas emprunter le workflow d acces portail.");
+  assert.match(programCs, /"\/internal\/admin\/customers"[\s\S]{0,1300}?admin\.customers\.create/);
+  assert.match(programCs, /admin\.customer\.created/);
+  assert.match(adminCustomerRoute, /handleAdminMutation/);
+  assert.match(adminCustomerForm, /Aucun accès portail, mot de passe,\s*e-mail, paiement ou provisioning/);
+  assert.doesNotMatch(adminCustomerForm, /password|mot de passe temporaire/i);
 });
 
 let failures = 0;

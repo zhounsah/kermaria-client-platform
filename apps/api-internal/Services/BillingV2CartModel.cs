@@ -54,6 +54,20 @@ public static class BillingV2CartQuoteStatuses
     public const string Expired = "expired";
 }
 
+/// <summary>
+/// Provenance durable, strictement descriptive, d'une ligne Cart. Elle ne
+/// porte ni un prix ni une autorisation : les politiques Cart restent relues
+/// cote serveur a chaque mutation.
+/// </summary>
+public static class BillingV2CartItemOrigins
+{
+    public const string Direct = "direct";
+    public const string Preset = "preset";
+    public const string Dependency = "dependency";
+    public const string Structural = "structural";
+    public const string Legacy = "legacy";
+}
+
 public sealed record BillingV2CartOwner(string? CustomerId, string? AnonymousToken)
 {
     public bool IsAuthenticated => !string.IsNullOrWhiteSpace(CustomerId);
@@ -78,6 +92,17 @@ public sealed record BillingV2CartItem(
     string? SourcePresetItemId,
     bool? RequiredItem,
     bool? CustomerEditable,
+    string Origin,
+    bool IsStructural,
+    bool IsRequiredByPreset,
+    bool IsRequiredByDependency,
+    bool IsExplicitCommercialSelection,
+    bool CanEdit,
+    bool CanRemove,
+    bool CountsAsCommercialSelection,
+    string? DisplayReason,
+    int MinimumQuantity,
+    int MaximumQuantity,
     string? ConfigurationKind,
     string? ConfigurationReference,
     int DisplayOrder,
@@ -124,12 +149,15 @@ public sealed record BillingV2CartIssue(
     string? CartItemId,
     string? ServiceCode,
     string Message,
-    bool Blocking);
+    bool Blocking,
+    string? CustomerMessage = null);
 
 public sealed record BillingV2CartQuoteLine(
     string CartItemId,
     string ServiceCode,
     string? TierCode,
+    string Label,
+    string? Detail,
     string ServicePriceId,
     string PriceCode,
     string BillingCadence,
@@ -183,6 +211,7 @@ public static class BillingV2CartMutationResults
         "CART_FORMULA_SELECTION_IMPORTED",
         "CART_PRESET_INITIALIZED",
         "CART_ITEM_ADDED",
+        "CART_ITEM_ALREADY_PRESENT",
         "CART_ITEM_UPDATED",
         "CART_ITEM_REMOVED",
         "CART_COMMITMENT_UPDATED",
@@ -201,7 +230,12 @@ public static class BillingV2CartMutationResults
         "CART_PRESET_ITEM_CONFLICT",
         "CART_VERSION_CONFLICT",
         "CART_CLAIM_CONFLICT",
-        "CART_IMMUTABLE"
+        "CART_IMMUTABLE",
+        "CART_ITEM_TIER_CONFLICT",
+        "CART_STRUCTURAL_ITEM_REQUIRED",
+        "CART_DEPENDENCY_REQUIRED",
+        "CART_PRESET_ITEM_REQUIRED",
+        "CART_PRESET_ITEM_IMMUTABLE"
     };
 
     private static readonly IReadOnlySet<string> NotFoundCodes = new HashSet<string>(StringComparer.Ordinal)

@@ -413,12 +413,14 @@ public sealed class BillingV2CatalogAdministrationService
             : RequireEnum(payload.PublicOrderingMode, AllowedPublicOrderingModes);
 
         await using var connection = await OpenAsync(cancellationToken);
-        if (publicOrderingMode is not null)
+        if (string.Equals(publicOrderingMode,
+                BillingV2PublicOrderingModes.OfferComponent,
+                StringComparison.Ordinal))
         {
             var refusal = await ValidatePublicOrderingModeAsync(
                 connection,
                 id,
-                publicOrderingMode,
+                BillingV2PublicOrderingModes.OfferComponent,
                 cancellationToken);
             if (refusal is not null)
             {
@@ -433,6 +435,8 @@ public sealed class BillingV2CatalogAdministrationService
             SET name = COALESCE(@name, name),
                 description = CASE WHEN @description_set = 1
                                    THEN @description ELSE description END,
+                tier_selector_label = CASE WHEN @tier_selector_label_set = 1
+                                           THEN @tier_selector_label ELSE tier_selector_label END,
                 category = CASE WHEN @category_set = 1
                                 THEN @category ELSE category END,
                 status = COALESCE(@status, status),
@@ -458,6 +462,11 @@ public sealed class BillingV2CatalogAdministrationService
         command.Parameters.AddWithValue(
             "@description",
             (object?)OptionalText(payload.Description, 4000) ?? DBNull.Value);
+        command.Parameters.AddWithValue(
+            "@tier_selector_label_set", payload.TierSelectorLabelSet == true ? 1 : 0);
+        command.Parameters.AddWithValue(
+            "@tier_selector_label",
+            (object?)OptionalText(payload.TierSelectorLabel, 160) ?? DBNull.Value);
         command.Parameters.AddWithValue(
             "@category_set", payload.Category is null ? 0 : 1);
         command.Parameters.AddWithValue(
@@ -1798,10 +1807,10 @@ public sealed class BillingV2CatalogAdministrationService
         await using var command = connection.CreateCommand();
         command.CommandText =
             """
-            SELECT id, code, name, description, category, billing_type,
+            SELECT id, code, name, description, tier_selector_label, category, billing_type,
                    default_scope_type, pricing_model, mandatory_for_subscription,
                    discount_eligible, public_selectable, public_visible, self_service_orderable,
-                   public_ordering_mode, status, display_order, updated_by_reference
+                   public_ordering_mode, configuration_policy, status, display_order, updated_by_reference
             FROM billing_v2_services
             ORDER BY display_order, code;
             """;
@@ -1811,18 +1820,32 @@ public sealed class BillingV2CatalogAdministrationService
             var id = MariaDbIdentifierReader.ReadRequired(reader, "id");
             var code = reader.GetString("code");
             var selfServiceOrderable = reader.GetBoolean("self_service_orderable");
+            var pricingModel = reader.GetString("pricing_model");
+            var currentFlatPrices = flatByService.TryGetValue(id, out var flat)
+                ? flat
+                : Array.Empty<BillingV2AdminPrice>();
             var serviceTiers = tiers.TryGetValue(id, out var foundServiceTiers)
                 ? (IReadOnlyList<BillingV2AdminTier>)foundServiceTiers
                 : Array.Empty<BillingV2AdminTier>();
+            var directOrderingDiagnostic = BuildDirectOrderingDiagnostic(
+                reader.GetString("status"),
+                reader.GetBoolean("public_visible"),
+                selfServiceOrderable,
+                reader.GetString("configuration_policy"),
+                pricingModel,
+                serviceTiers,
+                currentFlatPrices,
+                now);
             services.Add(new BillingV2AdminService(
                 id,
                 code,
                 reader.GetString("name"),
                 ReadNullableString(reader, "description"),
+                ReadNullableString(reader, "tier_selector_label"),
                 ReadNullableString(reader, "category"),
                 reader.GetString("billing_type"),
                 reader.GetString("default_scope_type"),
-                reader.GetString("pricing_model"),
+                pricingModel,
                 reader.GetBoolean("mandatory_for_subscription"),
                 reader.GetBoolean("discount_eligible"),
                 reader.GetBoolean("public_visible"),
@@ -1830,25 +1853,14 @@ public sealed class BillingV2CatalogAdministrationService
                 BillingV2PublicOrderingModes.Normalize(
                     ReadNullableString(reader, "public_ordering_mode"))
                     ?? BillingV2PublicOrderingModes.Quote,
-                BillingV2PublicOrderingModes.SupportsDirectOrdering(
-                    code)
-                    && selfServiceOrderable
-                    && serviceTiers.Any(tier =>
-                        string.Equals(tier.Status, "active", StringComparison.Ordinal)
-                        && tier.PublicSelectable
-                        && tier.Prices.Any(price =>
-                            price.IsCurrent(now)
-                            && string.Equals(
-                                price.ChargeTrigger,
-                                BillingV2ComponentizedPricingPolicy.InitialSubscription,
-                                StringComparison.Ordinal))),
+                reader.GetString("configuration_policy"),
+                directOrderingDiagnostic.Eligible,
+                directOrderingDiagnostic,
                 reader.GetString("status"),
                 reader.GetInt32("display_order"),
                 ReadNullableString(reader, "updated_by_reference"),
                 serviceTiers,
-                flatByService.TryGetValue(id, out var flat)
-                    ? flat
-                    : Array.Empty<BillingV2AdminPrice>()));
+                currentFlatPrices));
         }
 
         return services;
@@ -2017,10 +2029,10 @@ public sealed class BillingV2CatalogAdministrationService
     // ------------------------------------------------------------------
 
     /// <summary>
-    /// Valide le parcours public avant toute écriture. Le select de
-    /// l'administration améliore l'ergonomie, mais cette vérification côté
-    /// API-INTERNAL reste l'autorité : un navigateur ne peut pas rendre
-    /// commandable un service sans offre publique ou sans vrai tunnel direct.
+    /// Valide uniquement une promesse « dans une offre ». Le mode direct est
+    /// une intention durable que l'administrateur peut enregistrer avant de
+    /// terminer les prerequis ; le diagnostic et la vitrine restent alors
+    /// fail-closed jusqu'a l'eligibilite reelle.
     /// </summary>
     private static async Task<BillingV2AdminCatalogMutationResponse?>
         ValidatePublicOrderingModeAsync(
@@ -2065,44 +2077,101 @@ public sealed class BillingV2CatalogAdministrationService
                     "Le mode « Disponible dans une offre » exige au moins une offre publique active qui contient ce service.");
         }
 
-        await using var directCommand = connection.CreateCommand();
-        directCommand.CommandText =
-            """
-            SELECT code, self_service_orderable,
-                   EXISTS(
-                       SELECT 1
-                       FROM billing_v2_service_tiers tier
-                       INNER JOIN billing_v2_service_prices price
-                           ON price.service_id = tier.service_id
-                          AND price.tier_id = tier.id
-                          AND price.status = 'active'
-                          AND price.charge_trigger = 'initial_subscription'
-                          AND price.valid_from <= UTC_TIMESTAMP(6)
-                          AND (price.valid_until IS NULL OR price.valid_until > UTC_TIMESTAMP(6))
-                       WHERE tier.service_id = service.id
-                         AND tier.status = 'active'
-                         AND tier.public_selectable = 1
-                   ) AS has_direct_tier
-            FROM billing_v2_services service
-            WHERE service.id = @service_id;
-            """;
-        directCommand.Parameters.AddWithValue("@service_id", serviceId);
-        await using var reader = await directCommand.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken))
-        {
-            throw new PortalDataNotFoundException();
-        }
-
-        var code = reader.GetString("code");
-        var hasDirectPath = BillingV2PublicOrderingModes.SupportsDirectOrdering(code)
-            && reader.GetBoolean("self_service_orderable")
-            && reader.GetBoolean("has_direct_tier");
-        return hasDirectPath
-            ? null
-            : InvalidPublicOrderingMode(
-                serviceId,
-                "Commande directe indisponible : aucun parcours individuel compatible n’est configuré pour ce service.");
+        return null;
     }
+
+    private static BillingV2AdminDirectOrderingDiagnostic
+        BuildDirectOrderingDiagnostic(
+        string status,
+        bool publicVisible,
+        bool selfServiceOrderable,
+        string configurationPolicy,
+        string pricingModel,
+        IReadOnlyList<BillingV2AdminTier> tiers,
+        IReadOnlyList<BillingV2AdminPrice> flatPrices,
+        DateTime now)
+    {
+        var tierDiagnostics = tiers.Select(tier => new BillingV2AdminDirectOrderingTier(
+            tier.Id,
+            tier.Code,
+            tier.Name,
+            tier.Unit,
+            string.Equals(tier.Status, "active", StringComparison.Ordinal),
+            tier.PublicSelectable,
+            CurrentInitialPrices(tier.Prices, now))).ToArray();
+        var flatInitialPrices = CurrentInitialPrices(flatPrices, now);
+        var eligibility = BillingV2DirectOrderingEligibilityPolicy.Evaluate(
+            string.Equals(status, "active", StringComparison.Ordinal),
+            publicVisible,
+            selfServiceOrderable,
+            configurationPolicy,
+            pricingModel,
+            tierDiagnostics.Select(tier => new BillingV2DirectOrderingTierState(
+                tier.Active,
+                tier.PublicSelectable,
+                HasCompatibleCurrentInitialPrice(
+                    tiers.Single(source => string.Equals(source.Id, tier.Id,
+                        StringComparison.Ordinal)).Prices,
+                    now))),
+            HasCompatibleCurrentInitialPrice(flatPrices, now));
+        var blockers = eligibility.BlockingReasonCodes.ToHashSet(StringComparer.Ordinal);
+        return new BillingV2AdminDirectOrderingDiagnostic(
+            eligibility.Eligible,
+            DirectOrderingChecks.Select(check => new BillingV2AdminDirectOrderingCheck(
+                check.Code,
+                check.Label,
+                !blockers.Contains(check.Code))).ToArray(),
+            tierDiagnostics,
+            flatInitialPrices);
+    }
+
+    private static IReadOnlyList<BillingV2AdminDirectOrderingPrice>
+        CurrentInitialPrices(IEnumerable<BillingV2AdminPrice> prices, DateTime now)
+        => prices.Where(price => price.IsCurrent(now)
+                && string.Equals(price.Currency, DefaultCurrency,
+                    StringComparison.OrdinalIgnoreCase)
+                && string.Equals(price.ChargeTrigger,
+                    BillingV2ComponentizedPricingPolicy.InitialSubscription,
+                    StringComparison.Ordinal))
+            .OrderBy(price => price.BillingCadence, StringComparer.Ordinal)
+            .ThenBy(price => price.AmountCents)
+            .Select(price => new BillingV2AdminDirectOrderingPrice(
+                price.AmountCents,
+                price.Currency,
+                price.BillingCadence,
+                price.ChargeTrigger))
+            .ToArray();
+
+    private static bool HasCompatibleCurrentInitialPrice(
+        IEnumerable<BillingV2AdminPrice> prices, DateTime now)
+    {
+        var currentInitialPrices = prices.Where(price => price.IsCurrent(now)
+                && string.Equals(price.ChargeTrigger,
+                    BillingV2ComponentizedPricingPolicy.InitialSubscription,
+                    StringComparison.Ordinal))
+            .ToArray();
+        return currentInitialPrices.Length > 0 && currentInitialPrices.All(price =>
+            string.Equals(price.Currency, DefaultCurrency,
+                StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static readonly (string Code, string Label)[] DirectOrderingChecks =
+    [
+        (BillingV2DirectOrderingEligibilityPolicy.ServiceInactive,
+            "Le service est actif."),
+        (BillingV2DirectOrderingEligibilityPolicy.ServiceNotPublic,
+            "Le service est visible publiquement."),
+        (BillingV2DirectOrderingEligibilityPolicy.SelfServiceDisabled,
+            "Le libre-service est autorisé."),
+        (BillingV2DirectOrderingEligibilityPolicy.ConfigurationRequired,
+            "Aucune configuration n’est requise avant commande."),
+        (BillingV2DirectOrderingEligibilityPolicy.PricingModelUnsupported,
+            "Le modèle tarifaire est compatible avec la commande directe."),
+        (BillingV2DirectOrderingEligibilityPolicy.NoPublicActiveTier,
+            "Au moins un palier actif est sélectionnable publiquement."),
+        (BillingV2DirectOrderingEligibilityPolicy.NoCurrentInitialPrice,
+            "Un prix initial actif existe dans la devise du catalogue.")
+    ];
 
     private static BillingV2AdminCatalogMutationResponse InvalidPublicOrderingMode(
         string serviceId,

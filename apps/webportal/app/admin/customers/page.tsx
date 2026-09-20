@@ -4,7 +4,6 @@ import { AdminDataTable } from "@/components/AdminDataTable";
 import { EmptyState } from "@/components/EmptyState";
 import { MockNotice } from "@/components/MockNotice";
 import { PageHeader } from "@/components/PageHeader";
-import { StatusBadge } from "@/components/StatusBadge";
 import { requireAdminSession } from "@/lib/auth";
 import { formatDate } from "@/lib/formatters";
 import { getAdminCustomers } from "@/lib/internal-api";
@@ -19,7 +18,7 @@ export default async function AdminCustomersPage() {
   return (
     <>
       <PageHeader
-        action={<StatusBadge label="Lecture seule" tone="info" />}
+        action={<Link className="button button-primary" href="/admin/customers/new">Nouveau client</Link>}
         description="Liste limitée aux informations utiles au suivi du portail."
         eyebrow="Administration interne"
         title="Clients"

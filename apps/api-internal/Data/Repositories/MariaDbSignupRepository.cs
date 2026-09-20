@@ -45,6 +45,91 @@ public sealed class MariaDbSignupRepository : ISignupRepository
         return count > 0;
     }
 
+    public async Task<bool> HasExistingCustomerEmailAsync(
+        string normalizedEmail,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(
+            _configuration.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT COUNT(*) FROM customers WHERE LOWER(billing_email) = @email;";
+        command.Parameters.AddWithValue("@email", normalizedEmail);
+        return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken)) > 0;
+    }
+
+    public async Task<ManualCustomerCreateResult> CreateManualCustomerAsync(
+        ManualCustomerCreateRequest request,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(
+            _configuration.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        var displayName = request.Customer.DisplayName
+            ?? throw new InvalidOperationException("Customer display name is required.");
+        var billingEmail = request.Customer.BillingEmail
+            ?? throw new InvalidOperationException("Customer billing email is required.");
+
+        await using var duplicateGuard = connection.CreateCommand();
+        duplicateGuard.Transaction = transaction;
+        duplicateGuard.CommandText =
+            """
+            SELECT
+                (SELECT COUNT(*) FROM portal_users WHERE LOWER(email) = @email)
+              + (SELECT COUNT(*) FROM customers WHERE LOWER(billing_email) = @email)
+              + (SELECT COUNT(*) FROM signup_pending
+                 WHERE email = @email
+                   AND status IN ('email_pending', 'email_verified', 'approved'))
+            ;
+            """;
+        duplicateGuard.Parameters.AddWithValue("@email", billingEmail);
+        var existing = Convert.ToInt64(
+            await duplicateGuard.ExecuteScalarAsync(cancellationToken));
+        if (existing > 0)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw new InvalidOperationException("CUSTOMER_EMAIL_ALREADY_USED");
+        }
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            INSERT INTO customers (
+                id, external_reference, display_name, status, customer_type,
+                billing_email, phone, address, address_line_1, address_line_2,
+                postal_code, city, country, created_at, updated_at
+            ) VALUES (
+                @id, @reference, @display_name, 'active', @customer_type,
+                @billing_email, @phone, @address, @address_line_1, @address_line_2,
+                @postal_code, @city, @country, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6)
+            );
+            """;
+        command.Parameters.AddWithValue("@id", request.CustomerId);
+        command.Parameters.AddWithValue("@reference", request.CustomerReference);
+        command.Parameters.AddWithValue("@display_name", displayName);
+        command.Parameters.AddWithValue("@customer_type", DbValue(request.Customer.CustomerType));
+        command.Parameters.AddWithValue("@billing_email", billingEmail);
+        command.Parameters.AddWithValue("@phone", DbValue(request.Customer.Phone));
+        command.Parameters.AddWithValue("@address", DbValue(BuildLegacyAddress(request.Customer)));
+        command.Parameters.AddWithValue("@address_line_1", DbValue(request.Customer.AddressLine1));
+        command.Parameters.AddWithValue("@address_line_2", DbValue(request.Customer.AddressLine2));
+        command.Parameters.AddWithValue("@postal_code", DbValue(request.Customer.PostalCode));
+        command.Parameters.AddWithValue("@city", DbValue(request.Customer.City));
+        command.Parameters.AddWithValue("@country", DbValue(request.Customer.Country));
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        return new ManualCustomerCreateResult(
+            request.CustomerReference,
+            displayName,
+            billingEmail,
+            "active");
+    }
+
     public Task<int> CountRecentSignupsByEmailAsync(
         string normalizedEmail,
         DateTime windowStartUtc,

@@ -3,6 +3,7 @@ export const PUBLIC_ROUTES = [
   "/portfolio",
   "/offres",
   "/tarifs",
+  "/panier",
   // Le configurateur vit sous `/formules/<code>` : sans cette entree, seule
   // la page d'index serait reconnue comme publique et la page de
   // configuration basculerait sur l'entete « espace client ».

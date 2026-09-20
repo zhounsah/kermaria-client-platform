@@ -49,7 +49,8 @@ const service = {
   category: null, billingType: "recurring", defaultScopeType: "subscription",
   pricingModel: "tiered", mandatoryForSubscription: false,
   discountEligible: true, publicVisible: true, selfServiceOrderable: true,
-  publicOrderingMode: "quote", directOrderingAvailable: false,
+  publicOrderingMode: "quote", configurationPolicy: "not_required", directOrderingAvailable: false,
+  directOrderingDiagnostic: { eligible: false, checks: [], tiers: [], flatInitialPrices: [] },
   status: "active", displayOrder: 0, updatedByReference: null,
   flatPrices: [price({ amountCents: 900, validUntil: "2026-08-01T00:00:00.000Z" })],
   tiers: [{ id: "tier", serviceId: "service", code: "TIER", name: "Tier",
@@ -90,6 +91,7 @@ assert.doesNotMatch(tierCreateCommand, /publicSelectable|status:/, "la création
 
 const apiProgram = await read("../../apps/api-internal/Program.cs");
 const administrationService = await read("../../apps/api-internal/Services/BillingV2CatalogAdministrationService.cs");
+const migration094 = await read("../../apps/api-internal/Migrations/MariaDb/094_billing_v2_service_tier_selector_label.sql");
 assert.match(apiProgram, /"\/internal\/admin\/billing-v2\/catalog\/services"[\s\S]{0,900}CreateServiceAsync/);
 assert.match(apiProgram, /"\/internal\/admin\/billing-v2\/catalog\/services\/\{id\}\/tiers"[\s\S]{0,900}CreateTierAsync/);
 assert.match(administrationService, /CreateServiceAsync[\s\S]{0,2600}@public_visible", 0\)[\s\S]{0,300}@status", "inactive"\)/);
@@ -118,11 +120,25 @@ assert.match(catalogUi, /beforeunload/);
 assert.match(catalogUi, /document\.addEventListener\("click"/);
 assert.match(catalogUi, /window\.confirm\(UNSAVED_CHANGES_MESSAGE\)/);
 assert.match(serviceEditor, /<ImmutableCode value=\{service\.code\}/);
-assert.match(serviceEditor, /Mode de commercialisation publique/);
+assert.match(serviceEditor, /Mode de commercialisation/);
+assert.match(serviceEditor, /Libellé du choix/);
+assert.match(commands, /tierSelectorLabel/);
+assert.match(administrationService, /tier_selector_label/);
+assert.match(migration094, /ADD COLUMN IF NOT EXISTS tier_selector_label/);
+assert.match(migration094, /UPDATE billing_v2_services/);
 assert.match(serviceEditor, /Disponible dans une offre/);
 assert.match(serviceEditor, /Commande directe/);
-assert.match(serviceEditor, /directOrderingAvailable/);
+assert.match(serviceEditor, /DirectOrderingDiagnosticPanel/);
+assert.match(serviceEditor, /directOrderingDiagnostic/);
+assert.doesNotMatch(serviceEditor, /disabled=\{!service\.directOrderingAvailable\}/);
 assert.match(serviceEditor, /Paramètres techniques/);
+assert.match(administrationService, /BillingV2AdminDirectOrderingDiagnostic/);
+assert.match(administrationService, /BuildDirectOrderingDiagnostic/);
+assert.match(administrationService, /DirectOrderingChecks/);
+assert.match(administrationService, /public_ordering_mode\s*=\s*\n?\s*COALESCE\(@public_ordering_mode, public_ordering_mode\)/);
+assert.match(commands, /publicOrderingMode,/);
+assert.doesNotMatch(administrationService, /SupportsDirectOrdering\(/,
+  "L'administration ne doit pas maintenir une liste de services commandables en direct.");
 const tiersEditor = await read("components/admin/catalog/ServiceTiersPanel.tsx");
 assert.match(tiersEditor, /selected\.attributes/);
 assert.match(tiersEditor, /valueNumeric: undefined, valueText: undefined/);

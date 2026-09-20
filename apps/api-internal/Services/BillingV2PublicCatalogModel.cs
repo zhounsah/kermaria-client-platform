@@ -142,20 +142,88 @@ public static class BillingV2PublicOrderingModes
 
     public static readonly string[] All = [Quote, OfferComponent, Direct];
 
-    /// <summary>
-    /// Seuls ces services possèdent aujourd'hui un configurateur individuel
-    /// réel, puis un parcours de commande. Une page descriptive n'est jamais
-    /// considérée comme un tunnel de commande.
-    /// </summary>
-    public static bool SupportsDirectOrdering(string serviceCode)
-        => serviceCode is "VPS-LOCAL" or "VPS-CLOUD";
-
     public static string? Normalize(string? value)
     {
         var normalized = value?.Trim().ToLowerInvariant();
         return normalized is not null && All.Contains(normalized, StringComparer.Ordinal)
             ? normalized
             : null;
+    }
+}
+
+/// <summary>
+/// Etat minimal necessaire pour determiner si un service peut etre ajoute
+/// individuellement a un Cart. Cette regle est partagee par la projection
+/// publique et le diagnostic d'administration : le mode <c>direct</c> reste
+/// une intention commerciale et ne fabrique jamais cette eligibilite.
+/// </summary>
+public sealed record BillingV2DirectOrderingTierState(
+    bool IsActive,
+    bool IsPublicSelectable,
+    bool HasCurrentInitialPrice);
+
+public sealed record BillingV2DirectOrderingEligibility(
+    bool Eligible,
+    IReadOnlyList<string> BlockingReasonCodes);
+
+public static class BillingV2DirectOrderingEligibilityPolicy
+{
+    public const string ServiceInactive = "SERVICE_INACTIVE";
+    public const string ServiceNotPublic = "SERVICE_NOT_PUBLIC";
+    public const string SelfServiceDisabled = "SELF_SERVICE_DISABLED";
+    public const string ConfigurationRequired = "CONFIGURATION_REQUIRED";
+    public const string PricingModelUnsupported = "PRICING_MODEL_UNSUPPORTED";
+    public const string NoPublicActiveTier = "NO_PUBLIC_ACTIVE_TIER";
+    public const string NoCurrentInitialPrice = "NO_CURRENT_INITIAL_PRICE";
+
+    /// <summary>
+    /// Evalue uniquement les invariants qui rendent une composition directe
+    /// possible. Le controle de l'origine de la commande et les lectures SQL
+    /// restent revalidees par <c>BillingV2CartService</c> a chaque mutation.
+    /// </summary>
+    public static BillingV2DirectOrderingEligibility Evaluate(
+        bool serviceActive,
+        bool publicVisible,
+        bool selfServiceOrderable,
+        string configurationPolicy,
+        string pricingModel,
+        IEnumerable<BillingV2DirectOrderingTierState> tiers,
+        bool hasCurrentFlatInitialPrice)
+    {
+        var blockers = new List<string>();
+        if (!serviceActive) blockers.Add(ServiceInactive);
+        if (!publicVisible) blockers.Add(ServiceNotPublic);
+        if (!selfServiceOrderable) blockers.Add(SelfServiceDisabled);
+        if (!string.Equals(configurationPolicy,
+                BillingV2CartConfigurationPolicies.NotRequired,
+                StringComparison.Ordinal))
+        {
+            blockers.Add(ConfigurationRequired);
+        }
+
+        if (string.Equals(pricingModel, "tiered", StringComparison.Ordinal))
+        {
+            var publicActiveTiers = tiers.Where(tier =>
+                tier.IsActive && tier.IsPublicSelectable).ToArray();
+            if (publicActiveTiers.Length == 0)
+            {
+                blockers.Add(NoPublicActiveTier);
+            }
+            else if (!publicActiveTiers.Any(tier => tier.HasCurrentInitialPrice))
+            {
+                blockers.Add(NoCurrentInitialPrice);
+            }
+        }
+        else if (string.Equals(pricingModel, "fixed", StringComparison.Ordinal))
+        {
+            if (!hasCurrentFlatInitialPrice) blockers.Add(NoCurrentInitialPrice);
+        }
+        else
+        {
+            blockers.Add(PricingModelUnsupported);
+        }
+
+        return new BillingV2DirectOrderingEligibility(blockers.Count == 0, blockers);
     }
 }
 
@@ -174,7 +242,17 @@ public sealed record BillingV2PublicService(
     IReadOnlyList<BillingV2PublicPriceComponent>? FlatPriceComponents = null,
     // Presentation seulement : la description commerciale du catalogue, sans
     // aucune autorite sur les lignes tarifaires (specification, section 19).
-    string? Description = null)
+    string? Description = null,
+    /// <summary>
+    /// Eligibility calculee par API-INTERNAL pour l'ajout individuel au Cart.
+    /// Elle exige davantage que <see cref="PublicOrderingMode"/> : le service
+    /// doit etre visible, self-service, correctement tarife et ne pas exiger
+    /// une configuration technique absente. Le navigateur ne peut pas la
+    /// fabriquer ni la contourner.
+    /// </summary>
+    bool CartDirectEligible = false,
+    // Libellé du contrôle de sélection ; présentation catalogue uniquement.
+    string? TierSelectorLabel = null)
 {
     /// <summary>
     /// Composantes tarifaires du service sans palier. Vide quand le service

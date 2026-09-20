@@ -1659,6 +1659,7 @@ export type BillingV2AdminService = {
   code: string;
   name: string;
   description: string | null;
+  tierSelectorLabel: string | null;
   category: string | null;
   billingType: string;
   defaultScopeType: string;
@@ -1668,12 +1669,39 @@ export type BillingV2AdminService = {
   publicVisible: boolean;
   selfServiceOrderable: boolean;
   publicOrderingMode: PublicCommercialOrderingMode;
+  configurationPolicy: string;
   directOrderingAvailable: boolean;
+  directOrderingDiagnostic: BillingV2AdminDirectOrderingDiagnostic;
   status: string;
   displayOrder: number;
   updatedByReference: string | null;
   tiers: BillingV2AdminTier[];
   flatPrices: BillingV2AdminPrice[];
+};
+
+export type BillingV2AdminDirectOrderingDiagnostic = {
+  eligible: boolean;
+  checks: Array<{ code: string; label: string; satisfied: boolean }>;
+  tiers: Array<{
+    id: string;
+    code: string;
+    name: string;
+    unit: string | null;
+    active: boolean;
+    publicSelectable: boolean;
+    currentInitialPrices: Array<{
+      amountCents: number;
+      currency: string;
+      billingCadence: string;
+      chargeTrigger: string;
+    }>;
+  }>;
+  flatInitialPrices: Array<{
+    amountCents: number;
+    currency: string;
+    billingCadence: string;
+    chargeTrigger: string;
+  }>;
 };
 
 export type BillingV2AdminPresetItem = {

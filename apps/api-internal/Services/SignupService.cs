@@ -35,6 +35,10 @@ public interface ISignupService
         string correlationId,
         CancellationToken cancellationToken);
 
+    Task<(SignupOperationResult Result, AdminCustomerCreateResponse? Customer)> CreateManualCustomerAsync(
+        AdminCustomerCreatePayload payload,
+        CancellationToken cancellationToken);
+
     Task<SignupSelfServiceVpsOperationResult> CompleteSelfServiceVpsAsync(
         SignupSubmitPayload payload,
         string correlationId,
@@ -154,6 +158,61 @@ public sealed class SignupService : ISignupService
     }
 
     public bool IsPersistent => _repository.IsPersistent;
+
+    public async Task<(SignupOperationResult Result, AdminCustomerCreateResponse? Customer)> CreateManualCustomerAsync(
+        AdminCustomerCreatePayload payload,
+        CancellationToken cancellationToken)
+    {
+        var customer = NormalizeManualCustomer(payload);
+        if (customer is null)
+        {
+            return (new SignupOperationResult(
+                false,
+                "INVALID_CUSTOMER",
+                "Les informations client sont incomplètes ou invalides."), null);
+        }
+
+        var email = customer.BillingEmail!;
+        if (await _repository.HasBlockingSignupOrUserAsync(email, cancellationToken)
+            || await _repository.HasExistingCustomerEmailAsync(email, cancellationToken))
+        {
+            return (new SignupOperationResult(
+                false,
+                "CUSTOMER_EMAIL_ALREADY_USED",
+                "Cette adresse e-mail est déjà utilisée."), null);
+        }
+
+        ManualCustomerCreateResult created;
+        try
+        {
+            created = await _repository.CreateManualCustomerAsync(
+                new ManualCustomerCreateRequest(
+                    Guid.NewGuid().ToString(),
+                    GenerateCustomerReference(),
+                    customer),
+                cancellationToken);
+        }
+        catch (InvalidOperationException exception) when (
+            string.Equals(
+                exception.Message,
+                "CUSTOMER_EMAIL_ALREADY_USED",
+                StringComparison.Ordinal))
+        {
+            return (new SignupOperationResult(
+                false,
+                "CUSTOMER_EMAIL_ALREADY_USED",
+                "Cette adresse e-mail est déjà utilisée."), null);
+        }
+        return (new SignupOperationResult(
+                true,
+                "CUSTOMER_CREATED",
+                "La fiche client a été créée sans accès portail."),
+            new AdminCustomerCreateResponse(
+                created.CustomerReference,
+                created.DisplayName,
+                created.BillingEmail,
+                created.Status));
+    }
 
     public async Task<SignupOperationResult> SubmitAsync(
         SignupSubmitPayload payload,
@@ -1460,6 +1519,42 @@ public sealed class SignupService : ISignupService
             customer,
             primaryUser,
             billingV2Selection);
+    }
+
+    // Cette forme restreinte reutilise les normaliseurs du domaine signup,
+    // sans exiger l'identite personnelle necessaire a la creation d'un acces
+    // portail. Elle reste donc sans effet email, mot de passe, AD ou KoXo.
+    private static SignupCustomerData? NormalizeManualCustomer(
+        AdminCustomerCreatePayload payload)
+    {
+        var customerType = NormalizeCustomerType(payload.CustomerType, null);
+        var displayName = NormalizeOptional(payload.DisplayName, MaxNameLength);
+        var billingEmail = NormalizeEmail(payload.BillingEmail);
+        var phone = NormalizeOptional(payload.Phone, 40);
+        var addressLine1 = NormalizeOptional(payload.AddressLine1, 255);
+        var addressLine2 = NormalizeOptional(payload.AddressLine2, 255);
+        var postalCode = NormalizeOptional(payload.PostalCode, MaxPostalCodeLength);
+        var city = NormalizeOptional(payload.City, 160);
+        var country = NormalizeOptional(payload.Country, MaxCountryLength);
+
+        return customerType is null
+            || displayName is null
+            || billingEmail is null
+            || addressLine1 is null
+            || postalCode is null
+            || city is null
+            || country is null
+            ? null
+            : new SignupCustomerData(
+                customerType,
+                displayName,
+                billingEmail,
+                phone,
+                addressLine1,
+                addressLine2,
+                postalCode,
+                city,
+                country);
     }
 
     private static string? NormalizeCustomerType(

@@ -166,10 +166,10 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
             FROM information_schema.columns
             WHERE table_schema = DATABASE()
               AND table_name = 'billing_v2_services'
-              AND column_name = 'public_ordering_mode';
+              AND column_name IN ('public_ordering_mode', 'configuration_policy', 'tier_selector_label');
             """;
         return Convert.ToInt32(await columnCommand.ExecuteScalarAsync(
-            cancellationToken)) == 1;
+            cancellationToken)) == 3;
     }
 
     private static async Task<IReadOnlyList<BillingV2PublicService>>
@@ -189,6 +189,7 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                     service.code AS service_code,
                     service.name AS service_name,
                     service.description AS service_description,
+                    service.tier_selector_label,
                     service.category,
                     service.billing_type,
                     service.default_scope_type,
@@ -196,6 +197,8 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                     service.public_visible,
                     service.self_service_orderable,
                     service.public_ordering_mode,
+                    service.configuration_policy,
+                    service.pricing_model,
                     service.display_order,
                     tier.id AS tier_id,
                     tier.code AS tier_code,
@@ -254,6 +257,7 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                     service.code AS service_code,
                     service.name AS service_name,
                     service.description AS service_description,
+                    service.tier_selector_label,
                     service.category,
                     service.billing_type,
                     service.default_scope_type,
@@ -261,6 +265,8 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                     service.public_visible,
                     service.self_service_orderable,
                     service.public_ordering_mode,
+                    service.configuration_policy,
+                    service.pricing_model,
                     service.display_order,
                     NULL AS tier_id,
                     NULL AS tier_code,
@@ -440,7 +446,9 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                 first.PublicOrderingMode,
                 first.BillingType,
                 flatComponents,
-                first.ServiceDescription));
+                first.ServiceDescription,
+                IsCartDirectEligible(first, tiers, flatComponents),
+                first.TierSelectorLabel));
         }
 
         return services;
@@ -703,6 +711,9 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
             reader.IsDBNull(reader.GetOrdinal("service_description"))
                 ? null
                 : reader.GetString("service_description"),
+            reader.IsDBNull(reader.GetOrdinal("tier_selector_label"))
+                ? null
+                : reader.GetString("tier_selector_label"),
             reader.GetString("category"),
             reader.GetString("billing_type"),
             reader.GetString("default_scope_type"),
@@ -713,6 +724,8 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
                 reader.IsDBNull(reader.GetOrdinal("public_ordering_mode"))
                     ? null
                     : reader.GetString("public_ordering_mode")),
+            reader.GetString("configuration_policy"),
+            reader.GetString("pricing_model"),
             reader.GetInt32("display_order"),
             MariaDbIdentifierReader.ReadNullable(reader, "tier_id"),
             reader.IsDBNull(reader.GetOrdinal("tier_code"))
@@ -742,6 +755,7 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
         string ServiceCode,
         string ServiceName,
         string? ServiceDescription,
+        string? TierSelectorLabel,
         string Category,
         string BillingType,
         string ScopeType,
@@ -749,6 +763,8 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
         bool PublicVisible,
         bool SelfServiceOrderable,
         string? PublicOrderingMode,
+        string ConfigurationPolicy,
+        string PricingModel,
         int DisplayOrder,
         string? TierId,
         string? TierCode,
@@ -758,6 +774,48 @@ public sealed class BillingV2PublicCatalogService : IBillingV2PublicCatalogServi
         bool PublicSelectable,
         string ChargeTrigger,
         BillingV2ServicePriceCandidate Candidate);
+
+    /// <summary>
+    /// Le mode public <c>direct</c> est une intention commerciale nécessaire
+    /// mais insuffisante. Cette projection ne publie le bouton Cart que si
+    /// l'item peut etre ajoute sans configuration technique prealable et si
+    /// une composante de prix initiale actuelle a ete resolue par le catalogue.
+    /// Le meme predicat est revalide lors de la commande Cart : la projection
+    /// ne constitue donc jamais une autorisation de navigateur.
+    /// </summary>
+    private static bool IsCartDirectEligible(
+        ServiceRow service,
+        IReadOnlyCollection<BillingV2PublicTier> tiers,
+        IReadOnlyCollection<BillingV2PublicPriceComponent> flatComponents)
+    {
+        if (!string.Equals(service.PublicOrderingMode,
+                BillingV2PublicOrderingModes.Direct, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return BillingV2DirectOrderingEligibilityPolicy.Evaluate(
+            serviceActive: true,
+            publicVisible: service.PublicVisible,
+            selfServiceOrderable: service.SelfServiceOrderable,
+            configurationPolicy: service.ConfigurationPolicy,
+            pricingModel: service.PricingModel,
+            tiers: tiers.Select(tier => new BillingV2DirectOrderingTierState(
+                IsActive: true,
+                IsPublicSelectable: tier.PublicSelectable,
+                HasCurrentInitialPrice: HasCurrentInitialPriceInCatalogCurrency(tier.Components))),
+            hasCurrentFlatInitialPrice: HasCurrentInitialPriceInCatalogCurrency(flatComponents)).Eligible;
+    }
+
+    private static bool HasCurrentInitialPriceInCatalogCurrency(
+        IEnumerable<BillingV2PublicPriceComponent> components)
+    {
+        var initialComponents = components.Where(component =>
+            component.AppliesToInitialSubscription).ToArray();
+        return initialComponents.Length > 0 && initialComponents.All(component =>
+            string.Equals(component.Currency, BillingV2PublicCatalogSeed.Currency,
+                StringComparison.OrdinalIgnoreCase));
+    }
 
     private sealed record CommitmentRow(
         string Code,

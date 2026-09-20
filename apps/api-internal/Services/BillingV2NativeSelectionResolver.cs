@@ -335,9 +335,8 @@ public static class BillingV2NativeSelectionResolver
                     continue;
                 }
 
-                var scopeTemplate = MapDefaultScopeType(
-                    reader.GetString("default_scope_type"));
-                if (scopeTemplate is not null)
+                if (BillingV2CatalogScopeTemplatePolicy.TryMapToCartTemplate(
+                        reader.GetString("default_scope_type"), out var scopeTemplate))
                 {
                     templates[serviceCode] = scopeTemplate;
                 }
@@ -346,14 +345,6 @@ public static class BillingV2NativeSelectionResolver
 
         return templates;
     }
-
-    private static string? MapDefaultScopeType(string defaultScopeType)
-        => defaultScopeType switch
-        {
-            "subscription" => "subscription",
-            "user" => "primary_user",
-            _ => null
-        };
 
     private static async Task<IReadOnlyDictionary<string, IReadOnlyList<ServicePriceRow>>>
         ReadServicePricesAsync(

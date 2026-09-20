@@ -1,7 +1,10 @@
-import type { AdminCustomerDetail } from "@kermaria/shared";
+import type {
+  AdminCustomerDeleteResponse,
+  AdminCustomerDetail,
+} from "@kermaria/shared";
 import { NextRequest } from "next/server";
 
-import { controlledAdminError, handleAdminGet } from "@/lib/admin-bff";
+import { controlledAdminError, handleAdminGet, handleAdminMutation } from "@/lib/admin-bff";
 import { CORRELATION_HEADER, resolveCorrelationId } from "@/lib/correlation";
 import { isValidPortalIdentifier } from "@/lib/portal-bff";
 
@@ -21,5 +24,23 @@ export async function GET(request: NextRequest, context: RouteContext) {
   return handleAdminGet<AdminCustomerDetail>(
     request,
     `/internal/admin/customers/${encodeURIComponent(customerReference)}`,
+  );
+}
+
+export async function DELETE(request: NextRequest, context: RouteContext) {
+  const { customerReference } = await context.params;
+  if (!isValidPortalIdentifier(customerReference)) {
+    return controlledAdminError(
+      400,
+      "INVALID_REQUEST",
+      "La référence client est invalide.",
+      resolveCorrelationId(request.headers.get(CORRELATION_HEADER)),
+    );
+  }
+
+  return handleAdminMutation<undefined, AdminCustomerDeleteResponse>(
+    request,
+    `/internal/admin/customers/${encodeURIComponent(customerReference)}`,
+    "DELETE",
   );
 }

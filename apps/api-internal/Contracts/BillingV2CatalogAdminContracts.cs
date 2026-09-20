@@ -37,6 +37,7 @@ public sealed record BillingV2AdminService(
     string Code,
     string Name,
     string? Description,
+    string? TierSelectorLabel,
     string? Category,
     string BillingType,
     string DefaultScopeType,
@@ -46,7 +47,9 @@ public sealed record BillingV2AdminService(
     bool PublicVisible,
     bool SelfServiceOrderable,
     string PublicOrderingMode,
+    string ConfigurationPolicy,
     bool DirectOrderingAvailable,
+    BillingV2AdminDirectOrderingDiagnostic DirectOrderingDiagnostic,
     string Status,
     int DisplayOrder,
     string? UpdatedByReference,
@@ -54,6 +57,37 @@ public sealed record BillingV2AdminService(
     // Prix rattaches au service lui-meme (tier_id NULL). Un service tarife au
     // palier n'en porte aucun.
     IReadOnlyList<BillingV2AdminPrice> FlatPrices);
+
+/// <summary>
+/// Diagnostic serveur de la commande directe. Il n'accorde aucune
+/// autorisation : il explique au backoffice le resultat du meme predicat
+/// fail-closed que la projection publique.
+/// </summary>
+public sealed record BillingV2AdminDirectOrderingDiagnostic(
+    bool Eligible,
+    IReadOnlyList<BillingV2AdminDirectOrderingCheck> Checks,
+    IReadOnlyList<BillingV2AdminDirectOrderingTier> Tiers,
+    IReadOnlyList<BillingV2AdminDirectOrderingPrice> FlatInitialPrices);
+
+public sealed record BillingV2AdminDirectOrderingCheck(
+    string Code,
+    string Label,
+    bool Satisfied);
+
+public sealed record BillingV2AdminDirectOrderingTier(
+    string Id,
+    string Code,
+    string Name,
+    string? Unit,
+    bool Active,
+    bool PublicSelectable,
+    IReadOnlyList<BillingV2AdminDirectOrderingPrice> CurrentInitialPrices);
+
+public sealed record BillingV2AdminDirectOrderingPrice(
+    long AmountCents,
+    string Currency,
+    string BillingCadence,
+    string ChargeTrigger);
 
 public sealed record BillingV2AdminTier(
     string Id,
@@ -172,6 +206,8 @@ public sealed record BillingV2AdminCommitmentPaymentOption(
 public sealed record BillingV2AdminServicePayload(
     string? Name,
     string? Description,
+    string? TierSelectorLabel,
+    bool? TierSelectorLabelSet,
     string? Category,
     string? Status,
     int? DisplayOrder,

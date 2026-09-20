@@ -32,6 +32,7 @@ const billingFormules = await read("lib/billing-v2-formules.ts");
 async function readRepo(path) {
   return readFile(new URL(`../../../${path}`, import.meta.url), "utf8");
 }
+const programCs = await readRepo("apps/api-internal/Program.cs");
 const settingsDirectoryRoute = await read(
   "app/api/admin/settings/directory/route.ts",
 );
@@ -124,8 +125,38 @@ for (const route of [
 const customerDetailRoute = await read(
   "app/api/admin/customers/[customerReference]/route.ts",
 );
+const customerDeleteAction = await read(
+  "components/AdminCustomerDeleteAction.tsx",
+);
+const adminCustomerRepository = await readRepo(
+  "apps/api-internal/Data/Repositories/MariaDbAdminRepository.cs",
+);
 assert.match(customerDetailRoute, /isValidPortalIdentifier/);
 assert.match(customerDetailRoute, /INVALID_REQUEST/);
+assert.match(customerDetailRoute, /handleAdminMutation/,
+  "La suppression client doit traverser le helper admin CSRF commun.");
+assert.match(customerDetailRoute, /"DELETE"/);
+assert.match(customerDeleteAction, /Supprimer définitivement ce client \?/,
+  "La suppression définitive exige une confirmation explicite.");
+assert.match(customerDeleteAction, /requestBffJson/);
+assert.match(adminCustomerRepository, /DeleteCustomerIfEmptyAsync/);
+assert.match(adminCustomerRepository, /CUSTOMER_DELETE_PORTAL_USER/,
+  "Une identité portail bloque la suppression de la fiche.");
+assert.match(adminCustomerRepository, /CUSTOMER_DELETE_SUBSCRIPTION/,
+  "Un abonnement bloque la suppression de la fiche.");
+assert.match(adminCustomerRepository, /CUSTOMER_DELETE_FINANCIAL_HISTORY/,
+  "L'historique financier bloque la suppression de la fiche.");
+assert.match(adminCustomerRepository, /billing_v2_authoritative_checkout_requests/,
+  "Une tentative de souscription historique bloque la suppression de la fiche.");
+assert.match(adminCustomerRepository, /billing_v2_carts/,
+  "Un panier existant est une dépendance explicite, jamais purgée implicitement.");
+assert.match(adminCustomerRepository, /FOR UPDATE/,
+  "La vérification et la suppression sont transactionnelles et verrouillées.");
+assert.doesNotMatch(adminCustomerRepository, /DELETE FROM `(?!customers`)/,
+  "Le flux ne supprime jamais les données enfant ou financières en cascade.");
+assert.match(programCs, /admin\.customers\.delete/,
+  "La suppression est une opération admin distincte et auditée.");
+assert.match(programCs, /"admin\.customer\.deleted"/);
 
 for (const page of [
   "page.tsx",

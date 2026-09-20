@@ -44,6 +44,8 @@ public sealed class MockSignupStore
         new(StringComparer.Ordinal);
 
     public long NextKoxoSequenceSeed = 1;
+    public ConcurrentDictionary<string, ManualCustomerCreateResult> ManualCustomersByEmail { get; } =
+        new(StringComparer.OrdinalIgnoreCase);
 }
 
 public sealed class MockSignupRepository : ISignupRepository
@@ -76,6 +78,32 @@ public sealed class MockSignupRepository : ISignupRepository
             string.Equals(row.Email, normalizedEmail, StringComparison.Ordinal)
             && row.Status is "email_pending" or "email_verified" or "approved");
         return Task.FromResult(exists);
+    }
+
+    public Task<bool> HasExistingCustomerEmailAsync(
+        string normalizedEmail,
+        CancellationToken cancellationToken)
+        => Task.FromResult(_store.ManualCustomersByEmail.ContainsKey(normalizedEmail));
+
+    public Task<ManualCustomerCreateResult> CreateManualCustomerAsync(
+        ManualCustomerCreateRequest request,
+        CancellationToken cancellationToken)
+    {
+        var email = request.Customer.BillingEmail
+            ?? throw new InvalidOperationException("Customer billing email is required.");
+        var displayName = request.Customer.DisplayName
+            ?? throw new InvalidOperationException("Customer display name is required.");
+        var created = new ManualCustomerCreateResult(
+            request.CustomerReference,
+            displayName,
+            email,
+            "active");
+        if (!_store.ManualCustomersByEmail.TryAdd(email, created))
+        {
+            throw new InvalidOperationException("CUSTOMER_EMAIL_ALREADY_USED");
+        }
+
+        return Task.FromResult(created);
     }
 
     public Task<int> CountRecentSignupsByEmailAsync(

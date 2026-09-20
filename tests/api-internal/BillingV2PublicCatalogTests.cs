@@ -47,6 +47,7 @@ public static class BillingV2PublicCatalogTests
         VerifyDirectRecurringSelectionRenewsWithoutAPreset();
         VerifyDirectRecurringWithSetupStillRenews();
         VerifyPublicOrderingModeStaysSeparateFromPricing();
+        VerifyDirectOrderingEligibilityIsFailClosed();
         VerifyLegacyPresetDefaultsIgnoreCartOnlyOptions();
         return Task.CompletedTask;
     }
@@ -173,15 +174,55 @@ public static class BillingV2PublicCatalogTests
             && offered.FlatComponents.Single().AmountCents
                 == service.FlatComponents.Single().AmountCents,
             "Le mode de commercialisation ne modifie aucune composante tarifaire.");
-        Ensure(
-            BillingV2PublicOrderingModes.SupportsDirectOrdering("VPS-LOCAL")
-            && !BillingV2PublicOrderingModes.SupportsDirectOrdering("VPN-ACCESS"),
-            "Le direct reste borné aux parcours individuels réellement implémentés.");
+        var directCart = service with
+        {
+            PublicOrderingMode = BillingV2PublicOrderingModes.Direct,
+            CartDirectEligible = true
+        };
+        Ensure(directCart.CartDirectEligible
+            && directCart.FlatComponents.Single().AmountCents
+                == service.FlatComponents.Single().AmountCents,
+            "L'éligibilité Cart est une décision de catalogue distincte du prix.");
         Ensure(
             BillingV2PublicOrderingModes.Normalize("DIRECT")
                 == BillingV2PublicOrderingModes.Direct
             && BillingV2PublicOrderingModes.Normalize("invalid") is null,
             "Le registre de modes est fermé côté API.");
+    }
+
+    private static void VerifyDirectOrderingEligibilityIsFailClosed()
+    {
+        var eligible = BillingV2DirectOrderingEligibilityPolicy.Evaluate(
+            serviceActive: true,
+            publicVisible: true,
+            selfServiceOrderable: true,
+            configurationPolicy: BillingV2CartConfigurationPolicies.NotRequired,
+            pricingModel: "tiered",
+            tiers: [new(true, true, true)],
+            hasCurrentFlatInitialPrice: false);
+        Ensure(eligible.Eligible && eligible.BlockingReasonCodes.Count == 0,
+            "Un mode direct n'est eligible qu'avec un service actif, public, self-service, sans configuration et correctement tarife.");
+
+        var blocked = BillingV2DirectOrderingEligibilityPolicy.Evaluate(
+            serviceActive: false,
+            publicVisible: false,
+            selfServiceOrderable: false,
+            configurationPolicy: BillingV2CartConfigurationPolicies.RequiredBeforeCheckout,
+            pricingModel: "tiered",
+            tiers: [new(false, false, false)],
+            hasCurrentFlatInitialPrice: false);
+        Ensure(!blocked.Eligible
+            && blocked.BlockingReasonCodes.Contains(
+                BillingV2DirectOrderingEligibilityPolicy.ServiceInactive)
+            && blocked.BlockingReasonCodes.Contains(
+                BillingV2DirectOrderingEligibilityPolicy.ServiceNotPublic)
+            && blocked.BlockingReasonCodes.Contains(
+                BillingV2DirectOrderingEligibilityPolicy.SelfServiceDisabled)
+            && blocked.BlockingReasonCodes.Contains(
+                BillingV2DirectOrderingEligibilityPolicy.ConfigurationRequired)
+            && blocked.BlockingReasonCodes.Contains(
+                BillingV2DirectOrderingEligibilityPolicy.NoPublicActiveTier),
+            "Le diagnostic administratif expose tous les bloqueurs reels sans rendre la commande directe permissive.");
     }
 
     private static void VerifyTierAttributesStayDisplayOnly()

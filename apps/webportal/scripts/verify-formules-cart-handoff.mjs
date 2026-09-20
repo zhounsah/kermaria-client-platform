@@ -68,13 +68,17 @@ assert.match(cartService, /HasDuplicateStructuralItems/,
 assert.match(cartService, /var quoted = await QuoteAsync/,
   "L'import doit produire un CartQuote recalculé par le moteur serveur.");
 assert.match(cartService, /CART_MERGE_REQUIRES_REVIEW/,
-  "Un Cart existant non equivalent doit etre refuse explicitement, jamais remplace.");
-assert.match(cartService, /IsSameFormulaImport/,
-  "Un retry de la meme formule doit etre idempotent et sans doublon.");
-assert.match(cartService, /IsRepairableFormulaImport/,
-  "Un ancien Cart de meme formule incomplet seulement sur required peut etre repare sans fusion generale.");
-assert.match(cartService, /definition\.RequiredItem[\s\S]{0,220}SourcePresetItemId/,
-  "La reparation ciblee ne peut inserer que des items required absents.");
+  "Une fusion qui demanderait un choix client doit etre refusee explicitement, jamais remplacee.");
+assert.match(cartService, /private static FormulaImportPlan PlanFormulaImport/,
+  "Le handoff doit planifier une fusion formule/Cart avant toute ecriture.");
+assert.match(cartService, /existingPresetItems\.Length != 1[\s\S]{0,220}SameFormulaComposition/,
+  "Un retry de la meme ligne de preset doit rester idempotent et refuser toute divergence.");
+assert.match(cartService, /var equivalent = cart\.Items\.FirstOrDefault\(item => SameFormulaComposition\(item, definition\)\)[\s\S]{0,260}links\.Add\(new\(equivalent\.Id, definition\.PresetItemId\)\)[\s\S]{0,100}continue/,
+  "Une intention commerciale exactement identique ne doit pas etre dupliquee et peut être reliée à sa définition de preset sans réécrire origin.");
+assert.match(cartService, /ServiceId, definition\.ServiceId[\s\S]{0,500}FormulaImportPlan\.Review/,
+  "Un item existant dans le meme scope mais avec une autre configuration exige une revue explicite.");
+assert.match(cartService, /HasAllRequiredPresetItems[\s\S]{0,360}SameFormulaComposition/,
+  "La validation finale accepte un required structurel equivalent sans en creer un doublon.");
 assert.match(cartModel, /"CART_FORMULA_SELECTION_IMPORTED"/);
 assert.match(cartModel, /"CART_MERGE_REQUIRES_REVIEW"/);
 const importStart = cartService.indexOf("public async Task<BillingV2CartMutationResult> ImportFormulaSelectionAsync");

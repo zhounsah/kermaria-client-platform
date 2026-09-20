@@ -138,6 +138,11 @@ function buildServiceUpdate(source: Record<string, unknown>) {
     return null;
   }
 
+  const tierSelectorLabel = nullableOptionalString(source.tierSelectorLabel, 160);
+  if (source.tierSelectorLabel !== undefined && tierSelectorLabel === undefined) {
+    return null;
+  }
+
   const publicOrderingMode = optionalEnum(
     source.publicOrderingMode,
     CATALOG_PUBLIC_ORDERING_MODES,
@@ -159,6 +164,8 @@ function buildServiceUpdate(source: Record<string, unknown>) {
     payload: {
       name: optionalString(source.name, 160),
       description: optionalString(source.description, 4000),
+      tierSelectorLabel,
+      tierSelectorLabelSet: source.tierSelectorLabel !== undefined,
       category: optionalString(source.category, 80),
       status: optionalEnum(source.status, CATALOG_STATUSES),
       displayOrder: optionalInteger(source.displayOrder, 0, 100000),
@@ -525,6 +532,15 @@ function optionalString(value: unknown, maxLength: number) {
   }
 
   return trimmed;
+}
+
+function nullableOptionalString(value: unknown, maxLength: number) {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? null : trimmed.length <= maxLength ? trimmed : undefined;
 }
 
 function optionalEnum(value: unknown, allowed: Set<string>) {

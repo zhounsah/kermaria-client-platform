@@ -15,6 +15,9 @@ public interface IAdminService
     Task<AdminCustomerDetail> GetCustomerAsync(
         string customerReference,
         CancellationToken cancellationToken);
+    Task<AdminCustomerDeleteResponse> DeleteCustomerIfEmptyAsync(
+        string customerReference,
+        CancellationToken cancellationToken);
     Task<IReadOnlyList<AdminSupportRequestSummary>> GetSupportRequestsAsync(
         CancellationToken cancellationToken);
     Task<IReadOnlyList<AdminServiceRequestSummary>> GetServiceRequestsAsync(
@@ -74,6 +77,12 @@ public sealed class AdminService : IAdminService
             Services = services
         };
     }
+
+    public Task<AdminCustomerDeleteResponse> DeleteCustomerIfEmptyAsync(
+        string customerReference,
+        CancellationToken cancellationToken)
+        => _repository.DeleteCustomerIfEmptyAsync(
+            ValidateCustomerReference(customerReference), cancellationToken);
 
     public Task<IReadOnlyList<AdminSupportRequestSummary>>
         GetSupportRequestsAsync(CancellationToken cancellationToken)

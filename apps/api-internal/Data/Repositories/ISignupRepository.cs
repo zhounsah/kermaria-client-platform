@@ -80,6 +80,17 @@ public sealed record SignupPasswordTarget(
     string PortalUserId,
     DateTime? PasswordSetupExpiresAtUtc);
 
+public sealed record ManualCustomerCreateRequest(
+    string CustomerId,
+    string CustomerReference,
+    SignupCustomerData Customer);
+
+public sealed record ManualCustomerCreateResult(
+    string CustomerReference,
+    string DisplayName,
+    string BillingEmail,
+    string Status);
+
 public interface ISignupRepository
 {
     bool IsPersistent { get; }
@@ -89,6 +100,23 @@ public interface ISignupRepository
     // ce cas doit rester bloquant quelle que soit la configuration.
     Task<bool> HasBlockingSignupOrUserAsync(
         string normalizedEmail,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Contrôle explicite de doublon pour la création manuelle d'une fiche.
+    /// Il ne modifie pas la sémantique non-révélatrice du signup public.
+    /// </summary>
+    Task<bool> HasExistingCustomerEmailAsync(
+        string normalizedEmail,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Cree uniquement la fiche client. Cette primitive ne cree pas de
+    /// <c>portal_user</c>, ne stocke aucun mot de passe et ne declenche aucune
+    /// integration externe.
+    /// </summary>
+    Task<ManualCustomerCreateResult> CreateManualCustomerAsync(
+        ManualCustomerCreateRequest request,
         CancellationToken cancellationToken);
 
     // Limites de debit appliquees cote API-INTERNAL. Elles sont comptees en

@@ -82,7 +82,8 @@ assert.ok(alter >= 0 && alter < backfill && backfill < seed && seed < check,
 // groupe service+scope et l'API n'accepte un nouveau palier que si une ligne
 // soeur du preset l'autorise. source_preset_item_id reste l'ancre d'option.
 assert.match(cartConfigurator, /reduce<Record<string, NonNullable<typeof cart\.presetDefinition>>>/);
-assert.match(cartConfigurator, /Choisir un palier/);
+assert.match(cartConfigurator, /tierSelectorLabel/);
+assert.match(cartConfigurator, /Choisir une option/);
 assert.match(cartConfigurator, /item\.requiredItem !== true && !quantityEditable/);
 assert.match(cartService, /ligne soeur du meme preset autorise explicitement ce palier/);
 assert.match(cartService, /allowed\.tier_id <=> @tier_id/);

@@ -14,9 +14,12 @@ const authMeRoute = read("app/api/auth/me/route.ts");
 const transport = read("lib/internal-api.ts");
 const cartService = read("../api-internal/Services/BillingV2CartService.cs");
 const cartModel = read("../api-internal/Services/BillingV2CartModel.cs");
+const cartPolicy = read("../api-internal/Services/BillingV2CartPolicy.cs");
+const nativeSelectionResolver = read("../api-internal/Services/BillingV2NativeSelectionResolver.cs");
 const apiProgram = read("../api-internal/Program.cs");
 const cartMigration = read("../api-internal/Migrations/MariaDb/090_billing_v2_cart_model.sql");
 const presetMetadataMigration = read("../api-internal/Migrations/MariaDb/091_billing_v2_preset_cart_metadata.sql");
+const cartOriginMigration = read("../api-internal/Migrations/MariaDb/093_billing_v2_cart_item_origin.sql");
 const cartConfigurator = read("components/BillingV2CartFormuleConfigurator.tsx");
 const cartSchemaTests = read("../../tests/api-internal/BillingV2CartSchemaTests.cs");
 
@@ -28,6 +31,8 @@ assert(route.includes('"import_formula_selection"')
   "Le BFF doit accepter le handoff explicite d'une formule apres filtrage de sa selection.");
 assert(route.includes('"claim_current"'),
   "Le BFF Cart doit pouvoir reclamer le Cart anonyme lors de la reprise apres login.");
+assert(route.includes('"get_current"') && route.includes("readOnlyCommands"),
+  "Le BFF doit offrir une lecture current sans creation de Cart pour le panier et son badge.");
 assert(route.includes("rejectInvalidPortalCsrf"), "Toute mutation Cart doit passer le garde CSRF.");
 assert(route.indexOf("rejectInvalidPortalCsrf") < route.indexOf("commandBillingV2Cart"),
   "Un POST Cart sans CSRF valide doit etre refuse avant tout appel API-INTERNAL.");
@@ -139,5 +144,25 @@ assert(presetMetadataMigration.includes("selected_by_default")
 assert(cartService.includes("ProjectLegacySelectionAsync")
   && !cartService.includes("BillingV2AuthoritativeCheckoutService"),
   "La compatibilite legacy doit rester une projection Cart vers selection, jamais un checkout Cart.");
+assert(cartOriginMigration.includes("ADD COLUMN IF NOT EXISTS origin VARCHAR(24) NULL"),
+  "093 ajoute seulement la provenance d'item necessaire au Cart multi-origines, sans modifier les historiques.");
+assert(cartService.includes("BillingV2CartItemOrigins.Direct")
+  && cartService.includes("BillingV2CartItemOrigins.Dependency")
+  && cartService.includes("BillingV2CartItemOrigins.Structural"),
+  "Les origines direct/preset/dependance/structure sont ecrites par le serveur, jamais choisies par le navigateur.");
+assert(cartPolicy.includes("public static class BillingV2CatalogScopeTemplatePolicy")
+  && cartPolicy.includes('case "user":')
+  && cartPolicy.includes("BillingV2CartScopeTemplates.PrimaryUser"),
+  "La traduction catalogue user vers le scope Cart primary_user doit etre centralisee cote serveur.");
+const resolveItemStart = cartService.indexOf("private async Task<ResolvedItem> ResolveItemAsync");
+const resolveItemEnd = cartService.indexOf("private static async Task<bool> HasCurrentInitialPriceAsync", resolveItemStart);
+const resolveItem = cartService.slice(resolveItemStart, resolveItemEnd);
+assert(resolveItem.includes("BillingV2CatalogScopeTemplatePolicy.TryMapToCartTemplate(scope")
+  && resolveItem.includes('return new("CART_SCOPE_UNSUPPORTED")')
+  && !resolveItem.includes("command.ScopeTemplate ?? scope;\n        if (command.Origin == \"preset\"") ,
+  "Un ajout direct doit etre normalise ou refuse avant INSERT, sans persister le scope catalogue brut.");
+assert(nativeSelectionResolver.includes("BillingV2CatalogScopeTemplatePolicy.TryMapToCartTemplate")
+  && !nativeSelectionResolver.includes("MapDefaultScopeType"),
+  "Les parcours natifs et Cart doivent partager la meme traduction catalogue vers scope.");
 
 console.log("Contrat BFF Cart Billing V2 verifie.");

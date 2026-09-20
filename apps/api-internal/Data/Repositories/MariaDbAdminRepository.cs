@@ -9,6 +9,38 @@ public sealed class MariaDbAdminRepository : IAdminRepository
     private const int DefaultLimit = 100;
     private readonly string _connectionString;
 
+    // Liste autorisée et auditée des racines métier rattachées directement à
+    // un client. Une présence, même sans FK (certaines tables Billing V2
+    // historiques n'en portent pas), interdit la suppression. Il n'existe
+    // aucune suppression en cascade dans ce flux.
+    private static readonly CustomerDeletionDependency[] CustomerDeletionDependencies =
+    [
+        new("portal_users", "customer_id", "CUSTOMER_DELETE_PORTAL_USER", "Un accès portail est encore associé à ce client."),
+        new("billing_v2_subscriptions", "customer_id", "CUSTOMER_DELETE_SUBSCRIPTION", "Ce client possède un abonnement."),
+        new("billing_v2_authoritative_checkout_requests", "customer_id", "CUSTOMER_DELETE_FINANCIAL_HISTORY", "Ce client possède un historique de souscription à conserver."),
+        new("billing_v2_billing_events", "customer_id", "CUSTOMER_DELETE_FINANCIAL_HISTORY", "Ce client possède un historique financier à conserver."),
+        new("invoices", "customer_id", "CUSTOMER_DELETE_FINANCIAL_HISTORY", "Ce client possède des documents de facturation à conserver."),
+        new("bpce_customers", "customer_id", "CUSTOMER_DELETE_FINANCIAL_HISTORY", "Ce client possède un historique de facturation à conserver."),
+        new("commercial_documents", "customer_id", "CUSTOMER_DELETE_COMMERCIAL_DOCUMENT", "Ce client possède des documents commerciaux à conserver."),
+        new("customer_services", "customer_id", "CUSTOMER_DELETE_SERVICE", "Ce client possède des services à conserver."),
+        new("billing_v2_carts", "customer_id", "CUSTOMER_DELETE_CART", "Ce client possède un panier à gérer avant sa suppression."),
+        new("cart_items", "customer_id", "CUSTOMER_DELETE_CART", "Ce client possède un panier à gérer avant sa suppression."),
+        new("recurring_checkout_items", "customer_id", "CUSTOMER_DELETE_CART", "Ce client possède une sélection en cours à gérer avant sa suppression."),
+        new("support_requests", "customer_id", "CUSTOMER_DELETE_SUPPORT_HISTORY", "Ce client possède un historique de support à conserver."),
+        new("service_requests", "customer_id", "CUSTOMER_DELETE_SERVICE_REQUEST", "Ce client possède des demandes de service à conserver."),
+        new("customer_ad_links", "customer_id", "CUSTOMER_DELETE_DIRECTORY_LINK", "Ce client possède encore un lien d’identité à gérer."),
+        new("ad_actions", "customer_id", "CUSTOMER_DELETE_DIRECTORY_HISTORY", "Ce client possède un historique d’administration à conserver."),
+        new("portal_notifications", "customer_id", "CUSTOMER_DELETE_NOTIFICATION_HISTORY", "Ce client possède un historique de notifications à conserver."),
+        new("backup_integrations", "customer_id", "CUSTOMER_DELETE_PROVISIONING_HISTORY", "Ce client possède une configuration technique à conserver."),
+        new("backup_jobs", "customer_id", "CUSTOMER_DELETE_PROVISIONING_HISTORY", "Ce client possède un historique de sauvegarde à conserver."),
+        new("billing_v2_vps_technical_requests", "customer_id", "CUSTOMER_DELETE_PROVISIONING_HISTORY", "Ce client possède une configuration VPS à conserver."),
+        new("billing_v2_user_identity_provisioning", "customer_id", "CUSTOMER_DELETE_PROVISIONING_HISTORY", "Ce client possède un historique d’identité à conserver."),
+        new("billing_v2_provisioning_client_readiness", "customer_id", "CUSTOMER_DELETE_PROVISIONING_HISTORY", "Ce client possède un historique de provisioning à conserver."),
+        new("subscriptions", "customer_id", "CUSTOMER_DELETE_SUBSCRIPTION", "Ce client possède un abonnement à conserver."),
+        new("signup_pending", "approved_customer_id", "CUSTOMER_DELETE_SIGNUP_HISTORY", "Ce client possède un historique d’activation à conserver."),
+        new("audit_logs", "customer_id", "CUSTOMER_DELETE_AUDIT_HISTORY", "Ce client possède un historique d’audit à conserver.")
+    ];
+
     private sealed record CustomerAdminSnapshot(
         string CustomerId,
         ClientProfile Identity,
@@ -22,6 +54,12 @@ public sealed class MariaDbAdminRepository : IAdminRepository
         int OpenSupportRequestCount,
         int ActiveServiceRequestCount,
         int SharedCommercialDocumentCount);
+
+    private sealed record CustomerDeletionDependency(
+        string Table,
+        string Column,
+        string Code,
+        string Message);
 
     public MariaDbAdminRepository(SqlRuntimeConfiguration configuration)
     {
@@ -238,6 +276,42 @@ public sealed class MariaDbAdminRepository : IAdminRepository
             recentAuditLogs);
     }
 
+    public async Task<AdminCustomerDeleteResponse> DeleteCustomerIfEmptyAsync(
+        string customerReference,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var customerId = await ReadCustomerIdForUpdateAsync(connection, transaction,
+            customerReference, cancellationToken);
+        if (customerId is null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return new("CUSTOMER_NOT_FOUND", "Cette fiche client n’existe plus.");
+        }
+
+        var blocker = await FindCustomerDeletionBlockerAsync(connection, transaction,
+            customerId, cancellationToken);
+        if (blocker is not null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return new(blocker.Code, blocker.Message);
+        }
+
+        await using var delete = connection.CreateCommand();
+        delete.Transaction = transaction;
+        delete.CommandText = "DELETE FROM customers WHERE id = @customer_id;";
+        delete.Parameters.AddWithValue("@customer_id", customerId);
+        if (await delete.ExecuteNonQueryAsync(cancellationToken) != 1)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return new("CUSTOMER_NOT_FOUND", "Cette fiche client n’existe plus.");
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return new("CUSTOMER_DELETED", "La fiche client a été supprimée définitivement.");
+    }
+
     public async Task<IReadOnlyList<AdminSupportRequestSummary>>
         GetSupportRequestsAsync(CancellationToken cancellationToken)
     {
@@ -448,6 +522,63 @@ public sealed class MariaDbAdminRepository : IAdminRepository
         var connection = new MySqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         return connection;
+    }
+
+    private static async Task<string?> ReadCustomerIdForUpdateAsync(
+        MySqlConnection connection, MySqlTransaction transaction,
+        string customerReference, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT id
+            FROM customers
+            WHERE external_reference = @customer_reference
+            FOR UPDATE;
+            """;
+        command.Parameters.AddWithValue("@customer_reference", customerReference);
+        var value = await command.ExecuteScalarAsync(cancellationToken);
+        return value is null or DBNull ? null
+            : MariaDbIdentifierReader.ConvertRequiredValue(value, "id");
+    }
+
+    private static async Task<CustomerDeletionDependency?> FindCustomerDeletionBlockerAsync(
+        MySqlConnection connection, MySqlTransaction transaction, string customerId,
+        CancellationToken cancellationToken)
+    {
+        var presentColumns = new HashSet<string>(StringComparer.Ordinal);
+        await using (var schema = connection.CreateCommand())
+        {
+            schema.Transaction = transaction;
+            schema.CommandText = """
+                SELECT table_name, column_name
+                FROM information_schema.columns
+                WHERE table_schema = DATABASE()
+                  AND column_name IN ('customer_id', 'approved_customer_id');
+                """;
+            await using var reader = await schema.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+                presentColumns.Add($"{reader.GetString(0)}.{reader.GetString(1)}");
+        }
+
+        foreach (var dependency in CustomerDeletionDependencies)
+        {
+            if (!presentColumns.Contains($"{dependency.Table}.{dependency.Column}"))
+                continue;
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            // La fiche parent est déjà verrouillée. Verrouiller aussi la ligne
+            // (ou la plage vide) enfant évite qu'une écriture concurrente ne
+            // puisse rattacher une donnée métier entre ce contrôle et le
+            // DELETE final. La table et la colonne viennent exclusivement de
+            // la liste statique ci-dessus, jamais d'une entrée utilisateur.
+            command.CommandText = $"SELECT 1 FROM `{dependency.Table}` WHERE `{dependency.Column}` = @customer_id LIMIT 1 FOR UPDATE;";
+            command.Parameters.AddWithValue("@customer_id", customerId);
+            if (await command.ExecuteScalarAsync(cancellationToken) is not null)
+                return dependency;
+        }
+
+        return null;
     }
 
     private static async Task<CustomerAdminSnapshot?> GetCustomerSnapshotAsync(

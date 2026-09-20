@@ -7,6 +7,7 @@ namespace Kermaria.ApiInternal.Services;
 public interface IBillingV2CartService
 {
     Task<BillingV2CartMutationResult> GetOrCreateCurrentAsync(BillingV2CartOwner owner, string currency, CancellationToken cancellationToken);
+    Task<BillingV2CartMutationResult> GetCurrentAsync(BillingV2CartOwner owner, string currency, CancellationToken cancellationToken);
     Task<BillingV2CartMutationResult> GetAsync(BillingV2CartOwner owner, string cartId, CancellationToken cancellationToken);
     Task<BillingV2CartMutationResult> ImportFormulaSelectionAsync(BillingV2CartOwner owner,
         BillingV2PublicSelection selection, string currency, CancellationToken cancellationToken);
@@ -165,6 +166,26 @@ public sealed class BillingV2CartService : IBillingV2CartService
     }
 
     /// <summary>
+    /// Lecture du Cart courant sans creation, renouvellement d'activite ou
+    /// ecriture d'expiration. Elle alimente notamment le header public et la
+    /// page panier : consulter le site ne materialise jamais un panier vide.
+    /// </summary>
+    public async Task<BillingV2CartMutationResult> GetCurrentAsync(BillingV2CartOwner owner,
+        string currency, CancellationToken cancellationToken)
+    {
+        if (!owner.IsValid || !IsCurrency(currency)) return new("CART_NOT_FOUND");
+        await using var connection = await OpenReadyAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var cart = await ReadCurrentAsync(connection, transaction, owner,
+            currency.ToUpperInvariant(), false, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        if (cart is null) return new("CART_NOT_FOUND");
+        return cart.ExpiresAtUtc <= DateTime.UtcNow
+            ? new("CART_EXPIRED", cart with { Status = BillingV2CartStatuses.Expired })
+            : new("CART_OK", cart);
+    }
+
+    /// <summary>
     /// Frontiere explicite entre une formule configuree localement et le
     /// panier. Cette commande n'est appelee qu'apres le CTA public : ouvrir
     /// ou modifier <c>/formules/[code]</c> ne peut donc ni creer ni toucher un
@@ -204,40 +225,34 @@ public sealed class BillingV2CartService : IBillingV2CartService
                 var configuredItems = ResolveFormulaPresetItems(preset, resolution.Components);
                 if (configuredItems is null) return "CART_FORMULA_SELECTION_INVALID";
 
-                var repairMissingRequiredItems = false;
-                if (cart.Items.Count > 0)
-                {
-                    // Phase 2.5 ne fusionne pas a l'aveugle deux origines. Le
-                    // seul cas automatiquement accepte est le retry strict de
-                    // la meme formule deja importee : aucun item n'est alors
-                    // ajoute une seconde fois.
-                    if (IsSameFormulaImport(cart, preset, configuredItems, selection))
-                        return "CART_FORMULA_SELECTION_IMPORTED";
-
-                    // Correctif cible pour un Cart cree par la version qui
-                    // omettait un required non public (ex. BASE-SERVICE).
-                    // Tous les items existants doivent deja correspondre a la
-                    // meme formule; seules des lignes required peuvent
-                    // manquer. Toute autre difference reste une revue Cart.
-                    if (!IsRepairableFormulaImport(cart, preset, configuredItems, selection))
-                        return "CART_MERGE_REQUIRES_REVIEW";
-                    repairMissingRequiredItems = true;
-                }
+                // Le Cart est multi-origines. Une formule peut donc rejoindre
+                // une composition directe, mais uniquement par union
+                // deterministe : une ligne identique est reutilisee, une
+                // ligne absente est ajoutee, toute concurrence de palier ou
+                // de quantite exige une decision explicite dans /panier.
+                var importPlan = PlanFormulaImport(cart, preset, configuredItems, selection);
+                if (!importPlan.CanImport)
+                    return "CART_MERGE_REQUIRES_REVIEW";
 
                 var commitmentId = await ResolveFormulaCommitmentIdAsync(connection, transaction,
                     selection, token);
                 if (commitmentId is null) return "CART_FORMULA_SELECTION_INVALID";
 
                 var displayOrder = cart.Items.Count == 0 ? 1 : cart.Items.Max(item => item.DisplayOrder) + 1;
-                var itemsToInsert = repairMissingRequiredItems
-                    ? configuredItems.Where(definition => definition.RequiredItem
-                        && !cart.Items.Any(item => string.Equals(item.SourcePresetItemId,
-                            definition.PresetItemId, StringComparison.Ordinal)))
-                    : configuredItems;
-                foreach (var item in itemsToInsert)
+                foreach (var item in importPlan.ItemsToInsert)
                 {
                     await InsertPresetItemAsync(connection, transaction, cart.Id, item,
                         displayOrder++, now, token);
+                }
+                // Une ligne déjà présente peut satisfaire une sélection de
+                // formule sans perdre sa provenance historique (par exemple
+                // origin=direct ou origin=dependency). Le lien de définition
+                // porte l'autorisation courante du preset ; il ne réécrit
+                // jamais origin.
+                foreach (var link in importPlan.ExistingPresetLinks)
+                {
+                    await AttachPresetDefinitionAsync(connection, transaction, cart.Id,
+                        link.CartItemId, link.PresetItemId, token);
                 }
 
                 await using var update = connection.CreateCommand();
@@ -391,14 +406,23 @@ public sealed class BillingV2CartService : IBillingV2CartService
                 return "CART_PRESET_ITEM_INVALID";
             if (cart.Items.Any(item => item.SourcePresetItemId == presetItemId))
                 return "CART_PRESET_ITEM_ALREADY_SELECTED";
-            if (cart.Items.Any(item => item.ServiceCode == definition.ServiceCode
-                    && item.ScopeTemplate == definition.ScopeTemplate))
-                return "CART_PRESET_ITEM_CONFLICT";
             var root = await AlignTierToExistingRequirementAsync(connection, transaction, cart,
                 new DependencyNode(definition.ServiceId, definition.TierId, definition.ScopeTemplate, null, definition.Quantity), token);
             if (root.Code != "CART_ITEM_OK") return root.Code;
+            var resolvedDefinition = definition with { TierId = root.Node!.TierId };
+            var existingEquivalent = cart.Items.FirstOrDefault(item =>
+                SameFormulaComposition(item, resolvedDefinition));
+            if (existingEquivalent is not null)
+            {
+                await AttachPresetDefinitionAsync(connection, transaction, cart.Id,
+                    existingEquivalent.Id, resolvedDefinition.PresetItemId, token);
+                return "CART_PRESET_ITEM_ADDED";
+            }
+            if (cart.Items.Any(item => item.ServiceCode == definition.ServiceCode
+                    && item.ScopeTemplate == definition.ScopeTemplate))
+                return "CART_PRESET_ITEM_CONFLICT";
             await InsertPresetItemAsync(connection, transaction, cart.Id,
-                definition with { TierId = root.Node!.TierId }, cart.Items.Count + 1, now, token);
+                resolvedDefinition, cart.Items.Count + 1, now, token);
             return await AddDeterministicDependenciesAsync(connection, transaction, cart,
                 root.Node!, cart.Items.Count + 2, now, token);
         }, cancellationToken);
@@ -408,43 +432,38 @@ public sealed class BillingV2CartService : IBillingV2CartService
         CancellationToken cancellationToken)
         => MutateAsync(owner, cartId, expectedVersion, async (connection, transaction, cart, now, token) =>
         {
-            // Un Cart initialise par formule ne peut pas etre enrichi par une
-            // commande generique forgeable. Les seules entrees supplementaires
-            // passent par AddPresetItemAsync, qui relit la definition autorisee.
-            if (cart.SourcePresetId is not null) return "CART_PRESET_ITEM_REQUIRED";
+            if (!string.Equals(command.Origin, BillingV2CartItemOrigins.Direct,
+                    StringComparison.Ordinal))
+                return "CART_ORIGIN_INVALID";
             var resolved = await ResolveItemAsync(connection, transaction, cart, command, token);
             if (resolved.Code != "CART_ITEM_OK") return resolved.Code;
-            await using var insert = connection.CreateCommand();
-            insert.Transaction = transaction;
-            insert.CommandText = """
-                INSERT INTO billing_v2_cart_items
-                    (id, cart_id, service_id, tier_id, quantity, scope_template,
-                     subject_binding, source_preset_item_id, configuration_kind,
-                     configuration_reference, display_order, created_at, updated_at)
-                VALUES (@id, @cart_id, @service_id, @tier_id, @quantity, @scope,
-                        @subject, @preset_item, @configuration_kind,
-                        @configuration_reference, @display_order, @now, @now);
-                """;
-            insert.Parameters.AddWithValue("@id", Guid.NewGuid().ToString("D"));
-            insert.Parameters.AddWithValue("@cart_id", cart.Id);
-            insert.Parameters.AddWithValue("@service_id", resolved.ServiceId!);
-            insert.Parameters.AddWithValue("@tier_id", (object?)resolved.TierId ?? DBNull.Value);
-            insert.Parameters.AddWithValue("@quantity", command.Quantity);
-            insert.Parameters.AddWithValue("@scope", resolved.ScopeTemplate!);
-            insert.Parameters.AddWithValue("@subject", (object?)command.SubjectBinding ?? DBNull.Value);
-            insert.Parameters.AddWithValue("@preset_item", (object?)command.SourcePresetItemId ?? DBNull.Value);
-            insert.Parameters.AddWithValue("@configuration_kind", (object?)command.ConfigurationKind ?? DBNull.Value);
-            insert.Parameters.AddWithValue("@configuration_reference", (object?)command.ConfigurationReference ?? DBNull.Value);
-            insert.Parameters.AddWithValue("@display_order", cart.Items.Count + 1);
-            insert.Parameters.AddWithValue("@now", now);
-            await insert.ExecuteNonQueryAsync(token);
+            var merge = BillingV2CartPolicy.ResolveDirectAddition(cart.Items,
+                resolved.ServiceId!, resolved.TierId, resolved.ScopeTemplate!, command.SubjectBinding);
+            if (merge == BillingV2CartDirectAddResolution.AlreadyPresent)
+                return "CART_ITEM_ALREADY_PRESENT";
+            if (merge == BillingV2CartDirectAddResolution.TierConflict)
+                return "CART_ITEM_TIER_CONFLICT";
+
+            var displayOrder = cart.Items.Count == 0
+                ? 1
+                : cart.Items.Max(item => item.DisplayOrder) + 1;
+            await InsertDirectItemAsync(connection, transaction, cart.Id, resolved,
+                command, displayOrder++, now, token);
+
+            // `mandatory_for_subscription` porte le socle global Billing V2.
+            // Le navigateur n'envoie jamais ce composant : il est compose une
+            // unique fois ici, y compris lorsqu'un Cart a ete initialise par
+            // une formule et reçoit ensuite une ligne directe.
+            var structural = await EnsureMandatoryStructuralItemsAsync(connection,
+                transaction, cart, displayOrder, now, token);
+            if (structural.Code != "CART_ITEM_ADDED") return structural.Code;
             // Une dependance ne devient automatique que lorsque le catalogue
             // donne une resolution unique. Sinon elle reste une issue
             // structuree dans le quote, jamais un choix arbitraire du client.
             return await AddDeterministicDependenciesAsync(connection, transaction, cart,
                 new DependencyNode(resolved.ServiceId!, resolved.TierId,
                     resolved.ScopeTemplate!, command.SubjectBinding, command.Quantity),
-                cart.Items.Count + 2, now, token);
+                structural.NextDisplayOrder, now, token);
         }, cancellationToken);
 
     public Task<BillingV2CartMutationResult> UpdateItemAsync(BillingV2CartOwner owner,
@@ -455,7 +474,7 @@ public sealed class BillingV2CartService : IBillingV2CartService
             var existing = cart.Items.FirstOrDefault(item => string.Equals(item.Id, itemId, StringComparison.Ordinal));
             if (existing is null)
                 return "CART_ITEM_NOT_FOUND";
-            if (!await IsPresetItemMutableAsync(connection, transaction, existing.SourcePresetItemId, false, token))
+            if (!existing.CanEdit)
                 return "CART_PRESET_ITEM_IMMUTABLE";
             if (cart.SourcePresetId is not null && existing.SourcePresetItemId is not null)
             {
@@ -465,9 +484,34 @@ public sealed class BillingV2CartService : IBillingV2CartService
                     || !string.Equals(command.ScopeTemplate, definition.ScopeTemplate, StringComparison.Ordinal)
                     || command.Quantity < definition.MinimumQuantity || command.Quantity > definition.MaximumQuantity)
                     return "CART_PRESET_ITEM_INVALID";
+                // Le navigateur ne choisit pas l'origine de la mutation : une
+                // ligne issue d'un preset reste contrainte par toutes les
+                // definitions soeurs autorisees du meme preset.
+                command = command with
+                {
+                    Origin = BillingV2CartItemOrigins.Preset,
+                    SourcePresetId = cart.SourcePresetId,
+                    SourcePresetItemId = existing.SourcePresetItemId
+                };
+            }
+            else
+            {
+                command = command with
+                {
+                    Origin = BillingV2CartItemOrigins.Direct,
+                    SourcePresetId = null,
+                    SourcePresetItemId = null
+                };
             }
             var resolved = await ResolveItemAsync(connection, transaction, cart, command, token);
             if (resolved.Code != "CART_ITEM_OK") return resolved.Code;
+            var merge = BillingV2CartPolicy.ResolveDirectAddition(
+                cart.Items.Where(item => item.Id != existing.Id), resolved.ServiceId!,
+                resolved.TierId, resolved.ScopeTemplate!, command.SubjectBinding);
+            if (merge == BillingV2CartDirectAddResolution.AlreadyPresent)
+                return "CART_ITEM_ALREADY_PRESENT";
+            if (merge == BillingV2CartDirectAddResolution.TierConflict)
+                return "CART_ITEM_TIER_CONFLICT";
             await using var update = connection.CreateCommand();
             update.Transaction = transaction;
             update.CommandText = """
@@ -492,6 +536,10 @@ public sealed class BillingV2CartService : IBillingV2CartService
             var synchronized = await SynchronizeSameNumericDependentsAsync(connection, transaction, cart,
                 existing with { TierId = resolved.TierId, TierCode = command.TierCode }, token);
             if (!synchronized) return "CART_DEPENDENCY_IMPOSSIBLE";
+            var updatedCart = await ReadCartAsync(connection, transaction, owner, cart.Id, false, token);
+            if (updatedCart is null || (await ReadDependencyIssuesAsync(connection, transaction,
+                    updatedCart, token)).Any(issue => issue.Blocking))
+                return "CART_DEPENDENCY_REQUIRED";
             return "CART_ITEM_UPDATED";
         }, cancellationToken);
 
@@ -501,8 +549,10 @@ public sealed class BillingV2CartService : IBillingV2CartService
         {
             var existing = cart.Items.FirstOrDefault(item => string.Equals(item.Id, itemId, StringComparison.Ordinal));
             if (existing is null) return "CART_ITEM_NOT_FOUND";
-            if (!await IsPresetItemMutableAsync(connection, transaction, existing.SourcePresetItemId, true, token))
-                return "CART_PRESET_ITEM_REQUIRED";
+            if (existing.IsStructural) return "CART_STRUCTURAL_ITEM_REQUIRED";
+            if (existing.IsRequiredByPreset) return "CART_PRESET_ITEM_REQUIRED";
+            if (existing.IsRequiredByDependency) return "CART_DEPENDENCY_REQUIRED";
+            if (!existing.CanRemove) return "CART_PRESET_ITEM_REQUIRED";
             var before = await ReadDependencyIssuesAsync(connection, transaction, cart, token);
             var withoutItem = cart with { Items = cart.Items.Where(item => item.Id != existing.Id).ToArray() };
             var after = await ReadDependencyIssuesAsync(connection, transaction, withoutItem, token);
@@ -528,6 +578,25 @@ public sealed class BillingV2CartService : IBillingV2CartService
                     "SELECT id FROM billing_v2_commitment_terms WHERE code = @code AND status = 'active';",
                     commitmentCode.Trim(), token);
                 if (commitmentId is null) return "CART_COMMITMENT_INVALID";
+                // L'engagement et le mode de paiement forment un couple
+                // global. Changer l'un ne peut pas laisser l'autre dans un
+                // état que le pricing ou le futur checkout rejetterait plus
+                // tard. Aucun choix de repli n'est fait silencieusement.
+                if (!string.IsNullOrWhiteSpace(cart.PaymentMode))
+                {
+                    await using var paymentCompatibility = connection.CreateCommand();
+                    paymentCompatibility.Transaction = transaction;
+                    paymentCompatibility.CommandText = """
+                        SELECT COUNT(*)
+                        FROM billing_v2_commitment_payment_options
+                        WHERE commitment_term_id = @id AND payment_mode = @mode
+                          AND status = 'active';
+                        """;
+                    paymentCompatibility.Parameters.AddWithValue("@id", commitmentId);
+                    paymentCompatibility.Parameters.AddWithValue("@mode", cart.PaymentMode);
+                    if (Convert.ToInt32(await paymentCompatibility.ExecuteScalarAsync(token)) != 1)
+                        return "CART_PAYMENT_MODE_INCOMPATIBLE";
+                }
             }
             await UpdateCartFieldAsync(connection, transaction, cart.Id, "commitment_term_id", commitmentId, token);
             return "CART_COMMITMENT_UPDATED";
@@ -749,49 +818,95 @@ public sealed class BillingV2CartService : IBillingV2CartService
         return composition.IsValid ? composition.Items : null;
     }
 
-    private static bool IsSameFormulaImport(BillingV2Cart cart,
-        PresetDefinition preset, IReadOnlyList<BillingV2CartPresetCompositionItem> configuredItems,
-        BillingV2PublicSelection selection)
-        => string.Equals(cart.SourcePresetId, preset.Id, StringComparison.Ordinal)
-            && string.Equals(cart.CommitmentCode, selection.CommitmentCode,
-                StringComparison.Ordinal)
-            && string.Equals(cart.PaymentMode, selection.PaymentMode,
-                StringComparison.Ordinal)
-            && cart.Items.Count == configuredItems.Count
-            && configuredItems.All(definition => cart.Items.Count(item =>
-                    string.Equals(item.SourcePresetItemId, definition.PresetItemId,
-                        StringComparison.Ordinal)
-                    && string.Equals(item.TierId, definition.TierId,
-                        StringComparison.Ordinal)
-                    && item.Quantity == definition.Quantity
-                    && string.Equals(item.ScopeTemplate, definition.ScopeTemplate,
-                        StringComparison.Ordinal)) == 1);
-
-    private static bool IsRepairableFormulaImport(BillingV2Cart cart,
+    private static FormulaImportPlan PlanFormulaImport(BillingV2Cart cart,
         PresetDefinition preset, IReadOnlyList<BillingV2CartPresetCompositionItem> configuredItems,
         BillingV2PublicSelection selection)
     {
-        if (!string.Equals(cart.SourcePresetId, preset.Id, StringComparison.Ordinal)
-            || !string.Equals(cart.CommitmentCode, selection.CommitmentCode,
-                StringComparison.Ordinal)
-            || !string.Equals(cart.PaymentMode, selection.PaymentMode,
+        // `source_preset_id` identifie seulement la premiere formule qui a
+        // initialise le Cart. Un autre preset n'est pas fusionne en silence :
+        // il peut modifier les composants structurels et doit passer par la
+        // revue explicite du panier.
+        if (cart.SourcePresetId is not null
+            && !string.Equals(cart.SourcePresetId, preset.Id, StringComparison.Ordinal))
+        {
+            return FormulaImportPlan.Review;
+        }
+        if (cart.CommitmentCode is not null
+            && !string.Equals(cart.CommitmentCode, selection.CommitmentCode,
                 StringComparison.Ordinal))
-            return false;
+        {
+            return FormulaImportPlan.Review;
+        }
+        if (cart.PaymentMode is not null
+            && !string.Equals(cart.PaymentMode, selection.PaymentMode,
+                StringComparison.Ordinal))
+        {
+            return FormulaImportPlan.Review;
+        }
 
-        var missing = configuredItems.Where(definition => !cart.Items.Any(item =>
-            string.Equals(item.SourcePresetItemId, definition.PresetItemId,
-                StringComparison.Ordinal))).ToArray();
-        return missing.Length > 0
-            && missing.All(definition => definition.RequiredItem)
-            && cart.Items.All(item => configuredItems.Count(definition =>
-                    string.Equals(item.SourcePresetItemId, definition.PresetItemId,
-                        StringComparison.Ordinal)
-                    && string.Equals(item.TierId, definition.TierId,
-                        StringComparison.Ordinal)
-                    && item.Quantity == definition.Quantity
+        var inserts = new List<BillingV2CartPresetCompositionItem>();
+        var links = new List<ExistingPresetLink>();
+        foreach (var definition in configuredItems)
+        {
+            var existingPresetItems = cart.Items.Where(item => string.Equals(
+                item.SourcePresetItemId, definition.PresetItemId,
+                StringComparison.Ordinal)).ToArray();
+            if (existingPresetItems.Length > 0)
+            {
+                // Une meme ligne de preset ne peut jamais etre rejouee avec
+                // une autre valeur via un refresh du configurateur.
+                if (existingPresetItems.Length != 1
+                    || !SameFormulaComposition(existingPresetItems[0], definition))
+                    return FormulaImportPlan.Review;
+                continue;
+            }
+
+            // Base structurelle et service ajoute directement peuvent deja
+            // satisfaire la meme intention commerciale. Cette equivalence est
+            // une identite metier (service/tier/quantite/scope/sans binding),
+            // jamais un rapprochement par libelle ou montant.
+            var equivalent = cart.Items.FirstOrDefault(item => SameFormulaComposition(item, definition));
+            if (equivalent is not null)
+            {
+                if (equivalent.SourcePresetItemId is null)
+                    links.Add(new(equivalent.Id, definition.PresetItemId));
+                continue;
+            }
+
+            // Un service deja present dans le meme scope mais avec une autre
+            // configuration est ambigue : ne jamais ecraser son palier ni sa
+            // quantite au nom de l'import de formule.
+            if (cart.Items.Any(item => string.Equals(item.ServiceId, definition.ServiceId,
+                    StringComparison.Ordinal)
                     && string.Equals(item.ScopeTemplate, definition.ScopeTemplate,
-                        StringComparison.Ordinal)) == 1);
+                        StringComparison.Ordinal)))
+            {
+                return FormulaImportPlan.Review;
+            }
+            inserts.Add(definition);
+        }
+
+        return new(true, inserts, links);
     }
+
+    private static bool SameFormulaComposition(BillingV2CartItem item,
+        BillingV2CartPresetCompositionItem definition)
+        => string.Equals(item.ServiceId, definition.ServiceId, StringComparison.Ordinal)
+            && string.Equals(item.TierId, definition.TierId, StringComparison.Ordinal)
+            && item.Quantity == definition.Quantity
+            && string.Equals(item.ScopeTemplate, definition.ScopeTemplate,
+                StringComparison.Ordinal)
+            && string.IsNullOrWhiteSpace(item.SubjectBinding);
+
+    private sealed record FormulaImportPlan(
+        bool CanImport,
+        IReadOnlyList<BillingV2CartPresetCompositionItem> ItemsToInsert,
+        IReadOnlyList<ExistingPresetLink> ExistingPresetLinks)
+    {
+        public static readonly FormulaImportPlan Review = new(false, [], []);
+    }
+
+    private sealed record ExistingPresetLink(string CartItemId, string PresetItemId);
 
     /// <summary>
     /// L'import ajoute d'abord la composition formule normalisee, puis laisse
@@ -822,8 +937,9 @@ public sealed class BillingV2CartService : IBillingV2CartService
 
     private static bool HasAllRequiredPresetItems(PresetDefinition preset, BillingV2Cart cart)
         => preset.Items.Where(item => item.RequiredItem).All(required =>
-            cart.Items.Count(item => string.Equals(item.SourcePresetItemId,
-                required.PresetItemId, StringComparison.Ordinal)) == 1);
+            cart.Items.Any(item => string.Equals(item.SourcePresetItemId,
+                required.PresetItemId, StringComparison.Ordinal))
+            || cart.Items.Any(item => SameFormulaComposition(item, required)));
 
     private static bool HasDuplicateStructuralItems(BillingV2Cart cart)
         => cart.Items.GroupBy(item => string.Join("|", item.ServiceId, item.TierId ?? "-",
@@ -883,8 +999,12 @@ public sealed class BillingV2CartService : IBillingV2CartService
         {
             var service = catalog.Services.FirstOrDefault(candidate => candidate.Code == item.ServiceCode);
             if (service is null) { issues.Add(Issue("CART_SERVICE_UNAVAILABLE", item, true)); continue; }
-            var components = item.TierCode is null ? service.FlatComponents : service.Tiers
-                .FirstOrDefault(tier => tier.Code == item.TierCode)?.Components;
+            var tier = item.TierCode is null
+                ? null
+                : service.Tiers.FirstOrDefault(candidate => candidate.Code == item.TierCode);
+            var components = tier is null && item.TierCode is null
+                ? service.FlatComponents
+                : tier?.Components;
             if (components is null) { issues.Add(Issue("CART_TIER_UNAVAILABLE", item, true)); continue; }
             var metadata = await ReadServiceMetadataAsync(connection, transaction, item.ServiceId, cancellationToken);
             if (metadata is null) { issues.Add(Issue("CART_SERVICE_UNAVAILABLE", item, true)); continue; }
@@ -892,10 +1012,24 @@ public sealed class BillingV2CartService : IBillingV2CartService
                 item.ConfigurationReference, metadata.PriceStableWithoutConfiguration));
             scopeCandidates.Add(new(item.Id, item.ServiceCode, item.ScopeTemplate,
                 metadata.DefaultScopeType, item.SubjectBinding));
-            foreach (var component in components.Where(component => component.AppliesToInitialSubscription))
+            var initialComponents = components.Where(component =>
+                component.AppliesToInitialSubscription).ToArray();
+            // Une ligne d'un autre prix/devise ne peut pas etre ignorée : elle
+            // ferait perdre un frais ou une récurrence du catalogue. La quote
+            // est donc fail-closed dès que toutes les composantes initiales
+            // ne relèvent pas de la devise unique du Cart.
+            if (initialComponents.Length == 0 || initialComponents.Any(component =>
+                    !string.Equals(component.Currency, cart.Currency,
+                        StringComparison.OrdinalIgnoreCase)))
+            {
+                issues.Add(Issue("CART_PRICE_UNAVAILABLE", item, true));
+                continue;
+            }
+            foreach (var component in initialComponents)
             {
                 if (string.IsNullOrWhiteSpace(component.ServicePriceId)) { issues.Add(Issue("CART_PRICE_UNAVAILABLE", item, true)); continue; }
-                priceLines.Add(new(item.Id, item.ServiceCode, item.TierCode, component.ServicePriceId,
+                priceLines.Add(new(item.Id, item.ServiceCode, item.TierCode,
+                    service.Name, tier?.Label, component.ServicePriceId,
                     component.PriceCode ?? component.ServicePriceId, component.BillingCadence,
                     component.AmountCents, item.Quantity, checked(component.AmountCents * item.Quantity),
                     component.DiscountEligible,
@@ -922,8 +1056,10 @@ public sealed class BillingV2CartService : IBillingV2CartService
             pricing.RecurringSubtotalCents, pricing.RecurringDiscountCents,
             pricing.PayableRecurringAmountCents, pricing.OneTimeSubtotalCents,
             pricing.TotalDueNowCents, now, now.AddMinutes(30), BillingV2CartQuoteStatuses.Current, retained,
-            dependencyIssues, scopeReadiness.Issues,
-            readiness.Issues.Concat(issues.Where(issue => issue.Code.StartsWith("CART_", StringComparison.Ordinal))).ToArray(),
+            dependencyIssues.Select(BillingV2CartPolicy.ProjectCustomerIssue).ToArray(),
+            scopeReadiness.Issues.Select(BillingV2CartPolicy.ProjectCustomerIssue).ToArray(),
+            readiness.Issues.Concat(issues.Where(issue => issue.Code.StartsWith("CART_", StringComparison.Ordinal)))
+                .Select(BillingV2CartPolicy.ProjectCustomerIssue).ToArray(),
             allBlocking ? BillingV2CartCommercialReadiness.Blocked : readiness.Commercial,
             readiness.Configuration,
             scopeReadiness.ProvisioningReadiness == BillingV2CartProvisioningReadiness.Ready
@@ -1032,10 +1168,21 @@ public sealed class BillingV2CartService : IBillingV2CartService
     {
         if (string.IsNullOrWhiteSpace(command.ServiceCode) || command.Quantity is < 1 or > 10000)
             return new("CART_ITEM_INVALID");
+        // Les bornes de quantite existantes sont portees par les lignes de
+        // preset. Le catalogue direct ne possede pas encore de policy de
+        // volume par service : accepter 1..10000 reviendrait a inventer une
+        // regle commerciale. Le direct est donc strictement unitaire tant
+        // qu'une metadata catalogue explicite ne le rend pas quantifiable.
+        if (string.Equals(command.Origin, BillingV2CartItemOrigins.Direct,
+                StringComparison.Ordinal)
+            && command.Quantity != 1)
+        {
+            return new("CART_DIRECT_QUANTITY_NOT_CONFIGURED");
+        }
         await using var lookup = connection.CreateCommand(); lookup.Transaction = transaction;
         lookup.CommandText = """
             SELECT id, default_scope_type, pricing_model, public_visible,
-                   self_service_orderable, public_ordering_mode
+                   self_service_orderable, public_ordering_mode, configuration_policy
             FROM billing_v2_services WHERE code = @code AND status = 'active';
             """;
         lookup.Parameters.AddWithValue("@code", command.ServiceCode.Trim());
@@ -1043,8 +1190,23 @@ public sealed class BillingV2CartService : IBillingV2CartService
         if (!await reader.ReadAsync(cancellationToken)) return new("CART_SERVICE_INVALID");
         var serviceId = Identifier(reader, 0); var scope = reader.GetString(1); var tiered = reader.GetString(2) == "tiered";
         var visible = reader.GetBoolean(3); var selfService = reader.GetBoolean(4); var mode = reader.GetString(5);
+        var configurationPolicy = reader.GetString(6);
+        // Les verifications suivantes lancent d'autres commandes sur la meme
+        // transaction. Fermer explicitement le reader avant tout lookup afin
+        // de rester compatible avec MySqlConnector sans lecteurs multiples.
+        await reader.DisposeAsync();
         if (!visible) return new("CART_SERVICE_NOT_PUBLIC");
-        if (command.Origin == "direct" && (mode != BillingV2PublicOrderingModes.Direct || !selfService)) return new("CART_DIRECT_NOT_ELIGIBLE");
+        if (command.Origin == "direct"
+            && (mode != BillingV2PublicOrderingModes.Direct || !selfService))
+            return new("CART_DIRECT_NOT_ELIGIBLE");
+        // Un tunnel technique existant (notamment lorsqu'une configuration
+        // durable est requise) ne devient jamais une commande Cart generique
+        // par le seul fait d'etre marque `direct`. Cette policy est lue en
+        // base pour chaque commande, jamais deduite par le navigateur.
+        if (command.Origin == "direct" && !string.Equals(configurationPolicy,
+                BillingV2CartConfigurationPolicies.NotRequired,
+                StringComparison.Ordinal))
+            return new("CART_DIRECT_CONFIGURATION_REQUIRED");
         if (command.Origin is not "direct" and not "preset") return new("CART_ORIGIN_INVALID");
         string? tierId = null;
         if (tiered != !string.IsNullOrWhiteSpace(command.TierCode)) return new("CART_TIER_REQUIRED_OR_FORBIDDEN");
@@ -1055,7 +1217,29 @@ public sealed class BillingV2CartService : IBillingV2CartService
                 command.TierCode.Trim(), cancellationToken, serviceId);
             if (tierId is null) return new("CART_TIER_INVALID");
         }
-        var scopeTemplate = command.ScopeTemplate ?? scope;
+        if (command.Origin == BillingV2CartItemOrigins.Direct
+            && !await HasCurrentInitialPriceAsync(connection, transaction,
+                serviceId, tierId, cart.Currency, cancellationToken))
+        {
+            return new("CART_DIRECT_NOT_ELIGIBLE");
+        }
+        // Le catalogue et le Cart n'emploient pas le meme vocabulaire de
+        // portee. Un ajout direct ne peut donc jamais persister la valeur
+        // catalogue brute, ni faire confiance a un scope fourni par le
+        // navigateur : sa portee est derivee exclusivement du catalogue.
+        string scopeTemplate;
+        if (command.Origin == BillingV2CartItemOrigins.Direct)
+        {
+            if (!BillingV2CatalogScopeTemplatePolicy.TryMapToCartTemplate(scope,
+                    out scopeTemplate))
+            {
+                return new("CART_SCOPE_UNSUPPORTED");
+            }
+        }
+        else
+        {
+            scopeTemplate = command.ScopeTemplate ?? scope;
+        }
         if (command.Origin == "preset"
             && (mode != BillingV2PublicOrderingModes.OfferComponent
                 || !await PresetOriginMatchesAsync(connection, transaction,
@@ -1064,6 +1248,36 @@ public sealed class BillingV2CartService : IBillingV2CartService
             return new("CART_PRESET_COMPONENT_INVALID");
         }
         return new("CART_ITEM_OK", serviceId, tierId, scopeTemplate);
+    }
+
+    /// <summary>
+    /// L'ajout direct ne doit pas creer une intention commercialisable dont
+    /// aucun prix actif ne peut etre resolu. Le montant n'est pas lu ici pour
+    /// etre expose : le quote passera ensuite par BillingV2PricingEngine.
+    /// </summary>
+    private static async Task<bool> HasCurrentInitialPriceAsync(
+        MySqlConnection connection, MySqlTransaction transaction, string serviceId,
+        string? tierId, string currency, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT EXISTS(
+                SELECT 1
+                FROM billing_v2_service_prices price
+                WHERE price.service_id = @service_id
+                  AND price.tier_id <=> @tier_id
+                  AND price.currency = @currency
+                  AND price.status = 'active'
+                  AND price.charge_trigger = 'initial_subscription'
+                  AND price.valid_from <= UTC_TIMESTAMP(6)
+                  AND (price.valid_until IS NULL OR price.valid_until > UTC_TIMESTAMP(6))
+            );
+            """;
+        command.Parameters.AddWithValue("@service_id", serviceId);
+        command.Parameters.AddWithValue("@tier_id", (object?)tierId ?? DBNull.Value);
+        command.Parameters.AddWithValue("@currency", currency);
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken)) == 1;
     }
 
     private static async Task<bool> PresetOriginMatchesAsync(MySqlConnection connection,
@@ -1214,19 +1428,109 @@ public sealed class BillingV2CartService : IBillingV2CartService
         return result;
     }
 
+    private static async Task InsertDirectItemAsync(MySqlConnection connection,
+        MySqlTransaction transaction, string cartId, ResolvedItem resolved,
+        BillingV2CartItemCommand command, int displayOrder, DateTime now,
+        CancellationToken cancellationToken)
+    {
+        await using var insert = connection.CreateCommand();
+        insert.Transaction = transaction;
+        insert.CommandText = """
+            INSERT INTO billing_v2_cart_items
+                (id, cart_id, service_id, tier_id, quantity, scope_template,
+                 subject_binding, source_preset_item_id, origin,
+                 configuration_kind, configuration_reference, display_order,
+                 created_at, updated_at)
+            VALUES (@id, @cart_id, @service_id, @tier_id, @quantity, @scope,
+                    @subject, NULL, @origin, @configuration_kind,
+                    @configuration_reference, @display_order, @now, @now);
+            """;
+        insert.Parameters.AddWithValue("@id", Guid.NewGuid().ToString("D"));
+        insert.Parameters.AddWithValue("@cart_id", cartId);
+        insert.Parameters.AddWithValue("@service_id", resolved.ServiceId!);
+        insert.Parameters.AddWithValue("@tier_id", (object?)resolved.TierId ?? DBNull.Value);
+        insert.Parameters.AddWithValue("@quantity", command.Quantity);
+        insert.Parameters.AddWithValue("@scope", resolved.ScopeTemplate!);
+        insert.Parameters.AddWithValue("@subject", (object?)command.SubjectBinding ?? DBNull.Value);
+        insert.Parameters.AddWithValue("@origin", BillingV2CartItemOrigins.Direct);
+        insert.Parameters.AddWithValue("@configuration_kind", (object?)command.ConfigurationKind ?? DBNull.Value);
+        insert.Parameters.AddWithValue("@configuration_reference", (object?)command.ConfigurationReference ?? DBNull.Value);
+        insert.Parameters.AddWithValue("@display_order", displayOrder);
+        insert.Parameters.AddWithValue("@now", now);
+        await insert.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Les services marques <c>mandatory_for_subscription</c> sont une policy
+    /// globale Billing V2, pas une particularite de preset. Un ajout direct
+    /// compose le socle serveur une seule fois par service/scope. Un socle
+    /// tiered ne serait pas deterministe : il bloque plutot qu'etre devine.
+    /// </summary>
+    private static async Task<(string Code, int NextDisplayOrder)> EnsureMandatoryStructuralItemsAsync(
+        MySqlConnection connection, MySqlTransaction transaction, BillingV2Cart cart,
+        int displayOrder, DateTime now, CancellationToken cancellationToken)
+    {
+        var mandatory = new List<(string ServiceId, string ScopeTemplate, string PricingModel)>();
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = """
+                SELECT id, default_scope_type, pricing_model
+                FROM billing_v2_services
+                WHERE mandatory_for_subscription = 1 AND status = 'active'
+                ORDER BY display_order, id;
+                """;
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+                mandatory.Add((Identifier(reader, 0), reader.GetString(1), reader.GetString(2)));
+        }
+
+        foreach (var item in mandatory)
+        {
+            if (cart.Items.Any(existing => string.Equals(existing.ServiceId, item.ServiceId,
+                    StringComparison.Ordinal)
+                    && string.Equals(existing.ScopeTemplate, item.ScopeTemplate,
+                        StringComparison.Ordinal)))
+                continue;
+            if (!string.Equals(item.PricingModel, "fixed", StringComparison.Ordinal))
+                return ("CART_STRUCTURAL_ITEM_INVALID", displayOrder);
+
+            await using var insert = connection.CreateCommand();
+            insert.Transaction = transaction;
+            insert.CommandText = """
+                INSERT INTO billing_v2_cart_items
+                    (id, cart_id, service_id, tier_id, quantity, scope_template,
+                     origin, display_order, created_at, updated_at)
+                VALUES (@id, @cart_id, @service_id, NULL, 1, @scope,
+                        @origin, @display_order, @now, @now);
+                """;
+            insert.Parameters.AddWithValue("@id", Guid.NewGuid().ToString("D"));
+            insert.Parameters.AddWithValue("@cart_id", cart.Id);
+            insert.Parameters.AddWithValue("@service_id", item.ServiceId);
+            insert.Parameters.AddWithValue("@scope", item.ScopeTemplate);
+            insert.Parameters.AddWithValue("@origin", BillingV2CartItemOrigins.Structural);
+            insert.Parameters.AddWithValue("@display_order", displayOrder++);
+            insert.Parameters.AddWithValue("@now", now);
+            await insert.ExecuteNonQueryAsync(cancellationToken);
+        }
+        return ("CART_ITEM_ADDED", displayOrder);
+    }
+
     private static async Task InsertDependencyItemAsync(MySqlConnection connection, MySqlTransaction transaction,
         string cartId, DependencyNode item, int displayOrder, DateTime now, CancellationToken cancellationToken)
     {
         await using var insert = connection.CreateCommand(); insert.Transaction = transaction;
         insert.CommandText = """
             INSERT INTO billing_v2_cart_items (id, cart_id, service_id, tier_id, quantity, scope_template,
-                subject_binding, display_order, created_at, updated_at)
-            VALUES (@id, @cart_id, @service_id, @tier_id, @quantity, @scope, @subject, @display_order, @now, @now);
+                subject_binding, origin, display_order, created_at, updated_at)
+            VALUES (@id, @cart_id, @service_id, @tier_id, @quantity, @scope, @subject, @origin, @display_order, @now, @now);
             """;
         insert.Parameters.AddWithValue("@id", Guid.NewGuid().ToString("D")); insert.Parameters.AddWithValue("@cart_id", cartId);
         insert.Parameters.AddWithValue("@service_id", item.ServiceId); insert.Parameters.AddWithValue("@tier_id", (object?)item.TierId ?? DBNull.Value);
         insert.Parameters.AddWithValue("@quantity", item.Quantity); insert.Parameters.AddWithValue("@scope", item.ScopeTemplate);
-        insert.Parameters.AddWithValue("@subject", (object?)item.SubjectBinding ?? DBNull.Value); insert.Parameters.AddWithValue("@display_order", displayOrder); insert.Parameters.AddWithValue("@now", now);
+        insert.Parameters.AddWithValue("@subject", (object?)item.SubjectBinding ?? DBNull.Value);
+        insert.Parameters.AddWithValue("@origin", BillingV2CartItemOrigins.Dependency);
+        insert.Parameters.AddWithValue("@display_order", displayOrder); insert.Parameters.AddWithValue("@now", now);
         await insert.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -1362,9 +1666,9 @@ public sealed class BillingV2CartService : IBillingV2CartService
         command.CommandText = """
             INSERT INTO billing_v2_cart_items
                 (id, cart_id, service_id, tier_id, quantity, scope_template,
-                 source_preset_item_id, display_order, created_at, updated_at)
+                 source_preset_item_id, origin, display_order, created_at, updated_at)
             VALUES (@id, @cart_id, @service_id, @tier_id, @quantity, @scope,
-                    @preset_item_id, @display_order, @now, @now);
+                    @preset_item_id, @origin, @display_order, @now, @now);
             """;
         command.Parameters.AddWithValue("@id", Guid.NewGuid().ToString("D"));
         command.Parameters.AddWithValue("@cart_id", cartId);
@@ -1373,8 +1677,34 @@ public sealed class BillingV2CartService : IBillingV2CartService
         command.Parameters.AddWithValue("@quantity", item.Quantity);
         command.Parameters.AddWithValue("@scope", item.ScopeTemplate);
         command.Parameters.AddWithValue("@preset_item_id", item.PresetItemId);
+        command.Parameters.AddWithValue("@origin", BillingV2CartItemOrigins.Preset);
         command.Parameters.AddWithValue("@display_order", displayOrder);
         command.Parameters.AddWithValue("@now", now);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Associe une ligne déjà présente à la définition qui l'autorise dans le
+    /// preset courant. Cette association décrit une contribution de formule
+    /// actuelle ; <c>origin</c> reste la provenance historique immuable de la
+    /// ligne, y compris lorsqu'elle avait auparavant été créée comme
+    /// dépendance.
+    /// </summary>
+    private static async Task AttachPresetDefinitionAsync(MySqlConnection connection,
+        MySqlTransaction transaction, string cartId, string cartItemId, string presetItemId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            UPDATE billing_v2_cart_items
+            SET source_preset_item_id = COALESCE(source_preset_item_id, @preset_item_id),
+                updated_at = UTC_TIMESTAMP(6)
+            WHERE id = @item_id AND cart_id = @cart_id;
+            """;
+        command.Parameters.AddWithValue("@preset_item_id", presetItemId);
+        command.Parameters.AddWithValue("@item_id", cartItemId);
+        command.Parameters.AddWithValue("@cart_id", cartId);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -1437,6 +1767,8 @@ public sealed class BillingV2CartService : IBillingV2CartService
     private async Task<BillingV2Cart?> ReadCartAsync(MySqlConnection connection, MySqlTransaction? transaction,
         BillingV2CartOwner owner, string cartId, bool forUpdate, CancellationToken cancellationToken)
     {
+        if (transaction is null)
+            throw new InvalidOperationException("CART_READ_REQUIRES_TRANSACTION");
         await using var command = connection.CreateCommand(); command.Transaction = transaction;
         command.CommandText = """
             SELECT cart.id, cart.customer_id, cart.anonymous_session_hash, cart.status, cart.currency,
@@ -1461,8 +1793,11 @@ public sealed class BillingV2CartService : IBillingV2CartService
         var definition = cart.SourcePresetId is null
             ? null
             : await ReadPresetDefinitionAsync(connection, transaction, cart.SourcePresetId, cancellationToken);
+        var items = await ReadItemsAsync(connection, transaction, cart.Id, cancellationToken);
+        var projected = await ProjectItemRolesAsync(connection, transaction,
+            cart with { Items = items, PresetDefinition = definition }, cancellationToken);
         return cart with {
-            Items = await ReadItemsAsync(connection, transaction, cart.Id, cancellationToken),
+            Items = projected,
             PresetDefinition = definition
         };
     }
@@ -1499,6 +1834,10 @@ public sealed class BillingV2CartService : IBillingV2CartService
             SELECT item.id, item.cart_id, item.service_id, service.code, item.tier_id, tier.code,
                    item.quantity, item.scope_template, item.subject_binding, item.source_preset_item_id,
                    preset_item.required_item, preset_item.customer_editable,
+                   item.origin, service.mandatory_for_subscription, service.public_visible,
+                   service.self_service_orderable, service.public_ordering_mode,
+                   service.configuration_policy,
+                   preset_item.minimum_quantity, preset_item.maximum_quantity,
                    item.configuration_kind, item.configuration_reference, item.display_order, item.created_at, item.updated_at
             FROM billing_v2_cart_items item JOIN billing_v2_services service ON service.id = item.service_id
             LEFT JOIN billing_v2_service_tiers tier ON tier.id = item.tier_id
@@ -1506,14 +1845,120 @@ public sealed class BillingV2CartService : IBillingV2CartService
             WHERE item.cart_id = @cart_id ORDER BY item.display_order, item.id;
             """; command.Parameters.AddWithValue("@cart_id", cartId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken)) result.Add(new(Identifier(reader, 0), Identifier(reader, 1), Identifier(reader, 2), reader.GetString(3),
-            NullableIdentifier(reader, 4), reader.IsDBNull(5) ? null : reader.GetString(5), reader.GetInt32(6), reader.GetString(7),
-            reader.IsDBNull(8) ? null : reader.GetString(8), NullableIdentifier(reader, 9),
-            reader.IsDBNull(10) ? null : reader.GetBoolean(10), reader.IsDBNull(11) ? null : reader.GetBoolean(11),
-            reader.IsDBNull(12) ? null : reader.GetString(12), reader.IsDBNull(13) ? null : reader.GetString(13),
-            reader.GetInt32(14), reader.GetDateTime(15), reader.GetDateTime(16)));
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var sourcePresetItemId = NullableIdentifier(reader, 9);
+            var isStructural = reader.GetBoolean(13);
+            var origin = reader.IsDBNull(12)
+                ? sourcePresetItemId is not null
+                    ? BillingV2CartItemOrigins.Preset
+                    : BillingV2CartItemOrigins.Legacy
+                : reader.GetString(12);
+            var directEditable = reader.GetBoolean(14) && reader.GetBoolean(15)
+                && string.Equals(reader.GetString(16), BillingV2PublicOrderingModes.Direct,
+                    StringComparison.Ordinal)
+                && string.Equals(reader.GetString(17),
+                    BillingV2CartConfigurationPolicies.NotRequired,
+                    StringComparison.Ordinal);
+            bool? editable = sourcePresetItemId is not null
+                ? (reader.IsDBNull(11) ? null : reader.GetBoolean(11))
+                : directEditable;
+            var bounds = sourcePresetItemId is null
+                ? (Minimum: 1, Maximum: 1)
+                : (Minimum: reader.IsDBNull(18) ? 1 : reader.GetInt32(18),
+                    Maximum: reader.IsDBNull(19) ? 10000 : reader.GetInt32(19));
+            result.Add(new(Identifier(reader, 0), Identifier(reader, 1), Identifier(reader, 2), reader.GetString(3),
+                NullableIdentifier(reader, 4), reader.IsDBNull(5) ? null : reader.GetString(5), reader.GetInt32(6), reader.GetString(7),
+                reader.IsDBNull(8) ? null : reader.GetString(8), sourcePresetItemId,
+                reader.IsDBNull(10) ? null : reader.GetBoolean(10), editable, origin,
+                isStructural, false, false, false, false, false, false, null,
+                bounds.Minimum, bounds.Maximum,
+                reader.IsDBNull(20) ? null : reader.GetString(20), reader.IsDBNull(21) ? null : reader.GetString(21),
+                reader.GetInt32(22), reader.GetDateTime(23), reader.GetDateTime(24)));
+        }
         return result;
     }
+
+    /// <summary>
+    /// Projette les rôles courants depuis la composition réelle et les policies
+    /// actives. <c>origin</c> reste immuable : il décrit uniquement la première
+    /// provenance connue d'une ligne et ne décide jamais seul d'un droit de
+    /// retrait, d'édition, de comptage ou d'affichage.
+    /// </summary>
+    private async Task<IReadOnlyList<BillingV2CartItem>> ProjectItemRolesAsync(
+        MySqlConnection connection, MySqlTransaction transaction, BillingV2Cart cart,
+        CancellationToken cancellationToken)
+    {
+        var requiredByPreset = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var definition in cart.PresetDefinition?.Where(item => item.RequiredItem) ?? [])
+        {
+            var candidate = cart.Items.OrderBy(item => item.DisplayOrder)
+                .ThenBy(item => item.Id, StringComparer.Ordinal)
+                .FirstOrDefault(item => string.Equals(item.SourcePresetItemId,
+                        definition.PresetItemId, StringComparison.Ordinal)
+                    || MatchesCurrentPresetDefinition(item, definition));
+            if (candidate is not null) requiredByPreset.Add(candidate.Id);
+        }
+
+        var requiredByDependency = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var dependent in cart.Items)
+        {
+            foreach (var dependency in await ReadDependenciesAsync(connection, transaction,
+                         dependent.ServiceId, cancellationToken))
+            {
+                var candidates = cart.Items.Where(candidate =>
+                        string.Equals(candidate.ServiceId, dependency.ServiceId,
+                            StringComparison.Ordinal)
+                        && SameScope(new DependencyNode(dependent.ServiceId,
+                                dependent.TierId, dependent.ScopeTemplate,
+                                dependent.SubjectBinding, dependent.Quantity),
+                            new DependencyNode(candidate.ServiceId, candidate.TierId,
+                                candidate.ScopeTemplate, candidate.SubjectBinding,
+                                candidate.Quantity), dependency.ScopeRelation))
+                    .OrderBy(candidate => candidate.DisplayOrder)
+                    .ThenBy(candidate => candidate.Id, StringComparer.Ordinal);
+                foreach (var candidate in candidates)
+                {
+                    if (await DependencyTierMatchesAsync(connection, transaction,
+                            dependent, candidate, dependency.TierRelation,
+                            cancellationToken))
+                    {
+                        requiredByDependency.Add(candidate.Id);
+                        break;
+                    }
+                }
+            }
+        }
+
+        return cart.Items.Select(item =>
+        {
+            var structural = item.IsStructural;
+            var presetRequired = requiredByPreset.Contains(item.Id);
+            var dependencyRequired = requiredByDependency.Contains(item.Id);
+            var role = BillingV2CartPolicy.ResolveCurrentItemRole(item.Origin,
+                structural, presetRequired, dependencyRequired,
+                item.SourcePresetItemId is not null, item.CustomerEditable == true);
+            return item with
+            {
+                IsRequiredByPreset = role.IsRequiredByPreset,
+                IsRequiredByDependency = role.IsRequiredByDependency,
+                IsExplicitCommercialSelection = role.IsExplicitCommercialSelection,
+                CanEdit = role.CanEdit,
+                CanRemove = role.CanRemove,
+                CountsAsCommercialSelection = role.CountsAsCommercialSelection,
+                DisplayReason = role.DisplayReason
+            };
+        }).ToArray();
+    }
+
+    private static bool MatchesCurrentPresetDefinition(BillingV2CartItem item,
+        BillingV2CartPresetDefinitionItem definition)
+        => string.Equals(item.ServiceCode, definition.ServiceCode, StringComparison.Ordinal)
+            && string.Equals(item.TierCode, definition.TierCode, StringComparison.Ordinal)
+            && item.Quantity == definition.DefaultQuantity
+            && string.Equals(item.ScopeTemplate, definition.ScopeTemplate,
+                StringComparison.Ordinal)
+            && string.IsNullOrWhiteSpace(item.SubjectBinding);
 
     private async Task<ServiceMetadata?> ReadServiceMetadataAsync(MySqlConnection connection, MySqlTransaction transaction, string serviceId, CancellationToken token)
     {
@@ -1648,8 +2093,8 @@ public sealed class BillingV2CartService : IBillingV2CartService
         var connection = new MySqlConnection(_sql.ConnectionString); await connection.OpenAsync(token);
         await using var command = connection.CreateCommand(); command.CommandText = "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name IN ('billing_v2_carts','billing_v2_cart_items','billing_v2_cart_quotes','billing_v2_services','billing_v2_service_tiers','billing_v2_service_prices','billing_v2_service_dependencies','billing_v2_commitment_terms','billing_v2_commitment_payment_options','billing_v2_offer_presets','billing_v2_preset_items');";
         if (Convert.ToInt32(await command.ExecuteScalarAsync(token)) != RequiredTables.Length) { await connection.DisposeAsync(); throw new InvalidOperationException("BILLING_V2_CART_SCHEMA_UNAVAILABLE"); }
-        command.CommandText = "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'billing_v2_preset_items' AND column_name IN ('selected_by_default','minimum_quantity','maximum_quantity');";
-        if (Convert.ToInt32(await command.ExecuteScalarAsync(token)) != 3) { await connection.DisposeAsync(); throw new InvalidOperationException("BILLING_V2_CART_SCHEMA_UNAVAILABLE"); }
+        command.CommandText = "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND ((table_name = 'billing_v2_preset_items' AND column_name IN ('selected_by_default','minimum_quantity','maximum_quantity')) OR (table_name = 'billing_v2_cart_items' AND column_name = 'origin'));";
+        if (Convert.ToInt32(await command.ExecuteScalarAsync(token)) != 4) { await connection.DisposeAsync(); throw new InvalidOperationException("BILLING_V2_CART_SCHEMA_UNAVAILABLE"); }
         return connection;
     }
 
@@ -1674,6 +2119,8 @@ public sealed class BillingV2CartService : IBillingV2CartService
 
     private static BillingV2CartItem ToCartItem(DependencyNode node)
         => new(node.ServiceId, "dependency", node.ServiceId, "dependency", node.TierId,
-            null, node.Quantity, node.ScopeTemplate, node.SubjectBinding, null, null, null, null,
-            null, 0, DateTime.UnixEpoch, DateTime.UnixEpoch);
+            null, node.Quantity, node.ScopeTemplate, node.SubjectBinding, null, null, false,
+            BillingV2CartItemOrigins.Dependency, false, false, false, false, false, false,
+            false, null, 1, 1, null, null, 0,
+            DateTime.UnixEpoch, DateTime.UnixEpoch);
 }

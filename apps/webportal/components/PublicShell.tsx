@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Menu, X } from "lucide-react";
 
 import { BrandLogo } from "@/components/BrandLogo";
+import { BillingV2CartHeaderLink } from "@/components/BillingV2CartHeaderLink";
 import { SERVICE_CATEGORIES } from "@/lib/public-services";
 
 const publicHref = (pathname: string) => pathname;
@@ -167,6 +168,7 @@ export function PublicShell({
               {primaryLinks.map((link) => <a href={link.href} key={link.href} onClick={closeMobileMenu}>{link.label}</a>)}
             </div>
             <div className="public-header-actions">
+              <BillingV2CartHeaderLink onNavigate={closeMobileMenu} />
               <Link className="public-header-login" href="/login" onClick={closeMobileMenu}>Espace client</Link>
               <a className="public-header-primary" href={publicHref("/contact")} onClick={closeMobileMenu}>Nous contacter</a>
             </div>

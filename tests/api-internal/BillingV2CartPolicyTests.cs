@@ -17,12 +17,16 @@ public static class BillingV2CartPolicyTests
         DependencyCyclesAndAmbiguitiesAreBlocked();
         DependencyConvergenceDoesNotDuplicateItems();
         ScopeAndBindingReadinessIsAuthoritative();
+        CatalogScopeIsNormalizedBeforeCartPersistence();
+        CustomerReadinessProjectionIsActionable();
         ConfigurationReadinessDistinguishesVpsShapes();
         ExplicitFeeDeduplicationOnly();
         FingerprintIsStableAndSensitive();
+        CartItemCurrentRolesAreCompositionDerived();
         QuoteStatusIsServerDerived();
         PresetDefinitionRetainsSelectionAndQuantityPolicy();
         RequiredPresetItemsAreInjectedIntoFormulaComposition();
+        DirectCartMergeIsDeterministic();
         CartMutationResultHttpMappingIsCentralized();
         CartModelNeverContainsFinancialAuthority();
         CartModuleHasNoFinancialOrProviderDependency();
@@ -173,6 +177,76 @@ public static class BillingV2CartPolicyTests
             "Le modele peut rendre un binding commercialement obligatoire.");
     }
 
+    private static void CustomerReadinessProjectionIsActionable()
+    {
+        var commitment = new BillingV2CartIssue(
+            "CART_COMMITMENT_REQUIRED", "error", null, null,
+            "Un engagement explicite est requis pour le récurrent.", true);
+        var personalStorageScope = BillingV2CartPolicy.EvaluateScopes([
+            new("base", "BASE-SERVICE", "subscription", "subscription", null),
+            new("storage", "STORAGE-PERSONAL", "primary_user", "user", null)
+        ]);
+        var deferredBinding = personalStorageScope.Issues.Single(issue =>
+            issue.Code == "CART_SUBJECT_BINDING_DEFERRED"
+            && issue.CartItemId == "storage"
+            && issue.ServiceCode == "STORAGE-PERSONAL");
+        var publicIssuesBeforeCommitment = personalStorageScope.Issues
+            .Append(commitment)
+            .Select(BillingV2CartPolicy.ProjectCustomerIssue)
+            .Where(issue => issue.Blocking && issue.CustomerMessage is not null)
+            .ToArray();
+
+        Ensure(personalStorageScope.CommercialReady,
+            "Un stockage personnel sans binding reste commercialement valide lorsque ce binding est différable.");
+        Ensure(!deferredBinding.Blocking
+            && BillingV2CartPolicy.ProjectCustomerIssue(deferredBinding).CustomerMessage is null,
+            "Un binding différé ne produit pas de faux avertissement dans le panier.");
+        Ensure(publicIssuesBeforeCommitment.Length == 1
+            && publicIssuesBeforeCommitment[0].Code == "CART_COMMITMENT_REQUIRED",
+            "BASE-SERVICE et un stockage personnel 16 Go sans binding ne laissent visible que le choix d'engagement.");
+        var commitmentProjection = BillingV2CartPolicy.ProjectCustomerIssue(commitment);
+        Ensure(commitmentProjection.Blocking
+            && commitmentProjection.CustomerMessage == "Choisissez une durée d’engagement avant de poursuivre.",
+            "Un vrai blocker expose une action client précise sans code interne.");
+        Ensure(personalStorageScope.Issues
+            .Select(BillingV2CartPolicy.ProjectCustomerIssue)
+            .All(issue => !issue.Blocking || issue.CustomerMessage is null),
+            "Après sélection d'un engagement valide, le binding différé ne laisse aucun blocker public.");
+
+        var invalidScope = BillingV2CartPolicy.ProjectCustomerIssue(new BillingV2CartIssue(
+            "CART_SCOPE_INVALID", "error", "storage", "STORAGE-PERSONAL",
+            "Le scope ne correspond pas au service catalogue.", true));
+        Ensure(invalidScope.CustomerMessage == "La portée d’un service ne correspond plus à cette configuration. Retirez-le puis choisissez une configuration compatible.",
+            "Une incohérence réelle de scope reste bloquante mais ne retombe plus sur un message générique.");
+    }
+
+    private static void CatalogScopeIsNormalizedBeforeCartPersistence()
+    {
+        Ensure(BillingV2CatalogScopeTemplatePolicy.TryMapToCartTemplate("subscription",
+                out var subscription)
+            && subscription == BillingV2CartScopeTemplates.Subscription,
+            "Le scope catalogue subscription conserve son scope Cart canonique.");
+        Ensure(BillingV2CatalogScopeTemplatePolicy.TryMapToCartTemplate("user",
+                out var primaryUser)
+            && primaryUser == BillingV2CartScopeTemplates.PrimaryUser,
+            "Le scope catalogue user devient primary_user avant toute ecriture Cart.");
+        Ensure(BillingV2CatalogScopeTemplatePolicy.TryMapToCartTemplate("additional_user",
+                out var additionalUser)
+            && additionalUser == BillingV2CartScopeTemplates.AdditionalUser,
+            "Les scopes catalogue deja canoniques restent traduisibles sans perte.");
+        Ensure(!BillingV2CatalogScopeTemplatePolicy.TryMapToCartTemplate("unknown_scope",
+                out _),
+            "Un scope catalogue non deterministe est refuse avant INSERT Cart.");
+
+        var directPersonalStorage = BillingV2CartPolicy.EvaluateScopes([
+            new("storage", "STORAGE-PERSONAL", primaryUser, "user", null)
+        ]);
+        Ensure(directPersonalStorage.CommercialReady
+            && directPersonalStorage.Issues.Count(issue => issue.Code == "CART_SCOPE_INVALID") == 0
+            && directPersonalStorage.Issues.Single(issue => issue.Code == "CART_SUBJECT_BINDING_DEFERRED").Blocking == false,
+            "Un ajout direct user normalise en primary_user conserve un binding differe non bloquant.");
+    }
+
     private static void FingerprintIsStableAndSensitive()
     {
         var now = DateTime.UnixEpoch;
@@ -180,7 +254,9 @@ public static class BillingV2CartPolicyTests
             null, "monthly", null, null, 3, now, now, now, now.AddDays(30), null,
         [
             new("item", "cart", "service", "SERVICE", null, null, 1, "subscription",
-                null, null, null, null, null, null, 1, now, now)
+                null, null, null, null, BillingV2CartItemOrigins.Direct, false,
+                false, false, true, true, true, true, null, 1, 10000,
+                null, null, 1, now, now)
         ]);
         var line = Line("item", "PRICE", null);
         var first = BillingV2CartPolicy.CompositionFingerprint(cart, [line]);
@@ -188,6 +264,15 @@ public static class BillingV2CartPolicyTests
         var changed = BillingV2CartPolicy.CompositionFingerprint(cart with { Version = 4 }, [line]);
         Ensure(first == second && first != changed,
             "L'empreinte est stable et liee a la version de composition.");
+
+        var sameEconomicCompositionDifferentOrigin = cart with
+        {
+            Items = [CartItem("item", "service", null, "subscription",
+                BillingV2CartItemOrigins.Preset)]
+        };
+        Ensure(first == BillingV2CartPolicy.CompositionFingerprint(
+                sameEconomicCompositionDifferentOrigin, [line]),
+            "La provenance historique ne participe pas au pricing ni a l'empreinte d'etat du meme Cart.");
     }
 
     private static void QuoteStatusIsServerDerived()
@@ -265,15 +350,64 @@ public static class BillingV2CartPolicyTests
         Ensure(BillingV2CartMutationResults.HttpStatusCode(new("CART_PRESET_INITIALIZED")) == 200
             && BillingV2CartMutationResults.HttpStatusCode(new("CART_OK")) == 200
             && BillingV2CartMutationResults.HttpStatusCode(new("CART_QUOTED")) == 200
-            && BillingV2CartMutationResults.HttpStatusCode(new("CART_FORMULA_SELECTION_IMPORTED")) == 200,
+            && BillingV2CartMutationResults.HttpStatusCode(new("CART_FORMULA_SELECTION_IMPORTED")) == 200
+            && BillingV2CartMutationResults.HttpStatusCode(new("CART_ITEM_ALREADY_PRESENT")) == 200,
             "Les initialisations, reprises idempotentes et quotes Cart sont des succes HTTP.");
         Ensure(BillingV2CartMutationResults.HttpStatusCode(new("CART_PRESET_CONFLICT")) == 409
             && BillingV2CartMutationResults.HttpStatusCode(new("CART_VERSION_CONFLICT")) == 409
-            && BillingV2CartMutationResults.HttpStatusCode(new("CART_MERGE_REQUIRES_REVIEW")) == 409,
+            && BillingV2CartMutationResults.HttpStatusCode(new("CART_MERGE_REQUIRES_REVIEW")) == 409
+            && BillingV2CartMutationResults.HttpStatusCode(new("CART_ITEM_TIER_CONFLICT")) == 409
+            && BillingV2CartMutationResults.HttpStatusCode(new("CART_STRUCTURAL_ITEM_REQUIRED")) == 409,
             "Les conflits Cart ont une classification HTTP unique.");
         Ensure(BillingV2CartMutationResults.HttpStatusCode(new("CART_NOT_FOUND")) == 404
             && BillingV2CartMutationResults.HttpStatusCode(new("CART_PRESET_INVALID")) == 400,
             "Les not-found et erreurs de validation restent distingues au niveau endpoint.");
+    }
+
+    private static void DirectCartMergeIsDeterministic()
+    {
+        var storage64 = CartItem("storage-64", "STORAGE", "64", "primary_user");
+        var baseService = CartItem("base", "BASE", null, "subscription",
+            origin: BillingV2CartItemOrigins.Structural, structural: true);
+        var directAdd = BillingV2CartPolicy.ResolveDirectAddition(
+            [storage64, baseService], "VPN", "PLUS", "primary_user", null);
+        var sameConfiguration = BillingV2CartPolicy.ResolveDirectAddition(
+            [storage64], "STORAGE", "64", "primary_user", null);
+        var otherTier = BillingV2CartPolicy.ResolveDirectAddition(
+            [storage64], "STORAGE", "128", "primary_user", null);
+        Ensure(directAdd == BillingV2CartDirectAddResolution.Add
+            && sameConfiguration == BillingV2CartDirectAddResolution.AlreadyPresent
+            && otherTier == BillingV2CartDirectAddResolution.TierConflict,
+            "La fusion directe ajoute seulement une nouvelle configuration, reste idempotente a palier identique et refuse un palier concurrent.");
+    }
+
+    private static void CartItemCurrentRolesAreCompositionDerived()
+    {
+        var releasedDependency = BillingV2CartPolicy.ResolveCurrentItemRole(
+            BillingV2CartItemOrigins.Dependency, false, false, false, false, false);
+        Ensure(releasedDependency.CanRemove && !releasedDependency.CanEdit
+            && !releasedDependency.CountsAsCommercialSelection,
+            "Une ancienne dependance liberee devient retirable sans etre comptee comme selection explicite.");
+
+        var directRequiredByPreset = BillingV2CartPolicy.ResolveCurrentItemRole(
+            BillingV2CartItemOrigins.Direct, false, true, false, true, true);
+        Ensure(directRequiredByPreset.IsRequiredByPreset
+            && !directRequiredByPreset.CanRemove
+            && directRequiredByPreset.IsExplicitCommercialSelection,
+            "Un item direct qui satisfait un required preset garde sa provenance et devient protege par son role courant.");
+
+        var presetSatisfyingDependency = BillingV2CartPolicy.ResolveCurrentItemRole(
+            BillingV2CartItemOrigins.Preset, false, false, true, true, true);
+        Ensure(presetSatisfyingDependency.IsRequiredByDependency
+            && presetSatisfyingDependency.CountsAsCommercialSelection,
+            "Une selection de preset explicite reste commerciale meme lorsqu'elle satisfait une dependance.");
+
+        var structuralHistoricallyDirect = BillingV2CartPolicy.ResolveCurrentItemRole(
+            BillingV2CartItemOrigins.Direct, true, false, false, false, true);
+        Ensure(!structuralHistoricallyDirect.CanRemove
+            && !structuralHistoricallyDirect.CountsAsCommercialSelection
+            && structuralHistoricallyDirect.DisplayReason == "included",
+            "Le socle courant prevaut sur la provenance directe pour les droits et le compteur.");
     }
 
     private static void CartModelNeverContainsFinancialAuthority()
@@ -303,8 +437,16 @@ public static class BillingV2CartPolicyTests
     }
 
     private static BillingV2CartQuoteLine Line(string item, string price, string? key)
-        => new(item, "SERVICE", null, price, price, BillingV2BillingCadences.OneTime,
+        => new(item, "SERVICE", null, "Service", null, price, price, BillingV2BillingCadences.OneTime,
             690, 1, 690, false, key);
+
+    private static BillingV2CartItem CartItem(string id, string serviceId, string? tierId,
+        string scope, string origin = BillingV2CartItemOrigins.Direct, bool structural = false)
+        => new(id, "cart", serviceId, serviceId, tierId, tierId, 1, scope, null,
+            null, null, origin == BillingV2CartItemOrigins.Direct, origin, structural,
+            false, false, origin is BillingV2CartItemOrigins.Direct or BillingV2CartItemOrigins.Preset,
+            !structural, !structural, !structural, null, 1, 10000, null, null, 1,
+            DateTime.UnixEpoch, DateTime.UnixEpoch);
 
     private static BillingV2CartPresetCompositionItem PresetItem(string id,
         string serviceCode, string? tierCode, string scope, int quantity,

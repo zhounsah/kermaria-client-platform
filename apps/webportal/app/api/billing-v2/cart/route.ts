@@ -16,7 +16,7 @@ import { resolveCorrelationId } from "@/lib/correlation";
 
 // `quote` persiste un snapshot expire dans API-INTERNAL : seul `get` est une
 // lecture. Toutes les autres commandes gardent donc la protection CSRF BFF.
-const readOnlyCommands = new Set(["get", "project_legacy_selection"]);
+const readOnlyCommands = new Set(["get", "get_current", "project_legacy_selection"]);
 // Le BFF ne reclassifie jamais les resultats metier. Cette liste exprime
 // seulement les commandes qui renouvellent l'activite du Cart cote API.
 const cartActivityCommands = new Set([
@@ -41,7 +41,7 @@ function isCartCommand(value: unknown): value is BillingV2CartCommandRequest {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Record<string, unknown>;
   return typeof candidate.command === "string" &&
-    ["current", "import_formula_selection", "initialize_preset", "replace_preset", "get", "add_item", "add_preset_item", "update_item", "remove_item", "set_commitment", "set_payment_mode", "quote", "project_legacy_selection", "expire", "claim", "claim_current"].includes(candidate.command);
+    ["current", "get_current", "import_formula_selection", "initialize_preset", "replace_preset", "get", "add_item", "add_preset_item", "update_item", "remove_item", "set_commitment", "set_payment_mode", "quote", "project_legacy_selection", "expire", "claim", "claim_current"].includes(candidate.command);
 }
 
 function sanitizeCartCommand(payload: BillingV2CartCommandRequest): BillingV2CartCommandRequest {
@@ -101,6 +101,13 @@ export async function POST(request: NextRequest) {
     : cartCreatingCommands.has(payload.command)
       ? await resolveAnonymousCartToken()
       : await readAnonymousCartToken();
+  // Une lecture de header sans session ni cookie ne doit ni appeler
+  // API-INTERNAL ni fabriquer un proprietaire anonyme qui n'existe pas.
+  if (payload.command === "get_current" && !sessionToken && !anonymousToken) {
+    return NextResponse.json({ code: "CART_NOT_FOUND", cart: null, quote: null }, {
+      headers: { "X-Correlation-Id": correlationId },
+    });
+  }
   try {
     const result = await commandBillingV2Cart(
       { ...sanitizeCartCommand(payload), anonymousToken: anonymousToken ?? undefined },

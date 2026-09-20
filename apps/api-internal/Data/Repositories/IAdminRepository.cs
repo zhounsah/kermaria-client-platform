@@ -15,6 +15,9 @@ public interface IAdminRepository
     Task<AdminCustomerDetail?> GetCustomerAsync(
         string customerReference,
         CancellationToken cancellationToken);
+    Task<AdminCustomerDeleteResponse> DeleteCustomerIfEmptyAsync(
+        string customerReference,
+        CancellationToken cancellationToken);
     Task<IReadOnlyList<AdminSupportRequestSummary>> GetSupportRequestsAsync(
         CancellationToken cancellationToken);
     Task<IReadOnlyList<AdminServiceRequestSummary>> GetServiceRequestsAsync(

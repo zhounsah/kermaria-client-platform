@@ -137,7 +137,7 @@ export function BillingV2CartFormuleConfigurator({ catalog, preset }: Props) {
           return <article className="formule-option" key={item.id}>
             <h3>{resolveServicePublicLabel(item.serviceCode, service?.name ?? item.serviceCode)}</h3>
             {item.tierCode && tiers.length > 0 ? <label>
-              Palier
+              {service?.tierSelectorLabel?.trim() || "Option"}
               <select disabled={!editable || loading} value={item.tierCode}
                 onChange={(event) => void mutate({ command: "update_item", itemId: item.id, item: {
                   serviceCode: item.serviceCode, tierCode: event.target.value, quantity: item.quantity,
@@ -188,14 +188,15 @@ export function BillingV2CartFormuleConfigurator({ catalog, preset }: Props) {
             const selected = tiered.length === 0
               ? definitions[0]
               : definitions.find((definition) => definition.presetItemId === optionTiers[optionKey]);
+            const selectorLabel = service?.tierSelectorLabel?.trim() || "Option";
             return <article className="formule-option" key={optionKey}>
               <h3>{resolveServicePublicLabel(definitions[0].serviceCode, service?.name ?? definitions[0].serviceCode)}</h3>
-              {tiered.length > 0 ? <label>Palier
+              {tiered.length > 0 ? <label>{selectorLabel}
                 <select value={optionTiers[optionKey] ?? ""} disabled={loading}
                   onChange={(event) => setOptionTiers((current) => ({ ...current, [optionKey]: event.target.value }))}>
-                  <option value="">Choisir un palier</option>
+                  <option value="">Choisir une option</option>
                   {tiered.map((definition) => <option key={definition.presetItemId} value={definition.presetItemId}>
-                    {definition.tierCode}
+                    {service?.tiers.find((tier) => tier.code === definition.tierCode)?.label ?? "Option disponible"}
                   </option>)}
                 </select>
               </label> : null}

@@ -5,10 +5,13 @@ namespace Kermaria.ApiInternal.Data.Repositories;
 public sealed class MockAdminRepository : IAdminRepository
 {
     private readonly MockAuthenticationStore _authenticationStore;
+    private readonly MockSignupStore _signupStore;
 
-    public MockAdminRepository(MockAuthenticationStore authenticationStore)
+    public MockAdminRepository(MockAuthenticationStore authenticationStore,
+        MockSignupStore signupStore)
     {
         _authenticationStore = authenticationStore;
+        _signupStore = signupStore;
     }
 
     public bool IsPersistent => false;
@@ -33,8 +36,7 @@ public sealed class MockAdminRepository : IAdminRepository
 
     public Task<IReadOnlyList<AdminCustomerSummary>> GetCustomersAsync(
         CancellationToken cancellationToken)
-        => Task.FromResult<IReadOnlyList<AdminCustomerSummary>>(
-        [
+        => Task.FromResult<IReadOnlyList<AdminCustomerSummary>>([
             new(
                 MockPortalData.Profile.CustomerReference,
                 MockPortalData.Profile.CompanyName,
@@ -43,8 +45,35 @@ public sealed class MockAdminRepository : IAdminRepository
                 MockPortalData.SupportRequests.Count(
                     request => request.Status != "closed"),
                 "2026-01-01T00:00:00Z",
-                MockPortalData.Summary.LastUpdatedAt)
+                MockPortalData.Summary.LastUpdatedAt),
+            .. _signupStore.ManualCustomersByEmail.Values.Select(customer => new AdminCustomerSummary(
+                customer.CustomerReference,
+                customer.DisplayName,
+                customer.Status,
+                0,
+                0,
+                "2026-01-01T00:00:00Z",
+                "2026-01-01T00:00:00Z"))
         ]);
+
+    public Task<AdminCustomerDeleteResponse> DeleteCustomerIfEmptyAsync(
+        string customerReference,
+        CancellationToken cancellationToken)
+    {
+        var candidate = _signupStore.ManualCustomersByEmail.FirstOrDefault(entry =>
+            string.Equals(entry.Value.CustomerReference, customerReference,
+                StringComparison.Ordinal));
+        if (string.IsNullOrEmpty(candidate.Key))
+        {
+            return Task.FromResult(new AdminCustomerDeleteResponse(
+                "CUSTOMER_DELETE_BLOCKED",
+                "Ce client ne peut pas être supprimé car il possède un historique à conserver."));
+        }
+
+        _signupStore.ManualCustomersByEmail.TryRemove(candidate.Key, out _);
+        return Task.FromResult(new AdminCustomerDeleteResponse(
+            "CUSTOMER_DELETED", "La fiche client a été supprimée définitivement."));
+    }
 
     public Task<AdminCustomerDetail?> GetCustomerAsync(
         string customerReference,

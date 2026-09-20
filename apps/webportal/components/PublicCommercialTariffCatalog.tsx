@@ -8,12 +8,16 @@ import type {
   PublicCommercialService,
 } from "@kermaria/shared";
 
+import { BillingV2DirectCartAdd } from "@/components/BillingV2DirectCartAdd";
+
 type PublicCommercialTariffCatalogProps = {
   catalog: PublicCommercialCatalog;
+  currency: string;
 };
 
 export function PublicCommercialTariffCatalog({
   catalog,
+  currency,
 }: PublicCommercialTariffCatalogProps) {
   const categories = [...new Set(catalog.services.map((service) => service.category))];
   const [selectedCategory, setSelectedCategory] = useState("all");
@@ -72,7 +76,12 @@ export function PublicCommercialTariffCatalog({
             <h3 id={`commercial-category-${slug(category)}`}>{category}</h3>
             <div className="commercial-tariffs-grid">
               {services.map((service) => (
-                <CommercialTariffCard key={service.id} service={service} taxNotice={catalog.taxNotice} />
+                <CommercialTariffCard
+                  currency={currency}
+                  key={service.id}
+                  service={service}
+                  taxNotice={catalog.taxNotice}
+                />
               ))}
             </div>
           </section>
@@ -83,9 +92,11 @@ export function PublicCommercialTariffCatalog({
 }
 
 function CommercialTariffCard({
+  currency,
   service,
   taxNotice,
 }: {
+  currency: string;
   service: PublicCommercialService;
   taxNotice: string;
 }) {
@@ -100,7 +111,7 @@ function CommercialTariffCard({
 
       {service.tiers.length > 0 ? (
         <details className="commercial-tariff-tiers">
-          <summary>Voir les options et paliers</summary>
+          <summary>Voir les options disponibles</summary>
           <ul>
             {service.tiers.map((tier) => (
               <li key={tier.id}>
@@ -133,7 +144,13 @@ function CommercialTariffCard({
       </div>
 
       <div className="commercial-tariff-actions">
-        <Link className="button" href={service.primaryCta.href}>{service.primaryCta.label}</Link>
+        {service.directlyOrderable ? (
+          <div id={`ajouter-${slug(service.id)}`}>
+            <BillingV2DirectCartAdd currency={currency} service={service} />
+          </div>
+        ) : (
+          <Link className="button" href={service.primaryCta.href}>{service.primaryCta.label}</Link>
+        )}
         {service.secondaryCta ? (
           <Link className="service-inline-link" href={service.secondaryCta.href}>
             {service.secondaryCta.label}

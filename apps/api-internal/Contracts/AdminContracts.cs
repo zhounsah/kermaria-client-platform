@@ -105,6 +105,15 @@ public sealed record AdminCustomerDetail(
     IReadOnlyList<AdminActivityItem> RecentActivity,
     IReadOnlyList<AdminAuditLogEntry> RecentAuditLogs);
 
+/// <summary>
+/// Résultat policy-safe de la suppression d'une fiche client. Aucun détail
+/// interne ni secret n'est retourné : le message décrit seulement le premier
+/// historique métier qui doit être conservé.
+/// </summary>
+public sealed record AdminCustomerDeleteResponse(
+    string Code,
+    string Message);
+
 public sealed record AdminSupportRequestSummary(
     string Id,
     string Reference,

@@ -48,7 +48,7 @@ assert.doesNotMatch(tariffsPage, /flatMap\(\(service\)/);
 assert.doesNotMatch(tariffsPage, /formatCents\(/);
 assert.match(tariffsComponent, /aria-pressed/);
 assert.match(tariffsComponent, /Catalogue tarifaire/);
-assert.match(tariffsComponent, /Voir les options et paliers/);
+assert.match(tariffsComponent, /Voir les options disponibles/);
 assert.match(tariffsComponent, /frais de mise en service/);
 assert.match(tariffsComponent, /catalog\.taxNotice/);
 assert.match(tariffsComponent, /taxNotice/);

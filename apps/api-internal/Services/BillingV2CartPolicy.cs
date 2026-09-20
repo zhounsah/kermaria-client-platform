@@ -4,6 +4,51 @@ using System.Text;
 namespace Kermaria.ApiInternal.Services;
 
 /// <summary>
+/// Vocabulaire canonique des portees que le panier sait persister. Il est
+/// volontairement distinct de <c>default_scope_type</c> du catalogue : le
+/// catalogue historique emploie notamment <c>user</c>, qui n'est pas un scope
+/// Cart persistant.
+/// </summary>
+public static class BillingV2CartScopeTemplates
+{
+    public const string Subscription = "subscription";
+    public const string PrimaryUser = "primary_user";
+    public const string AdditionalUser = "additional_user";
+}
+
+/// <summary>
+/// Frontiere serveur unique entre la portee catalogue et le scope persiste du
+/// panier. Une valeur catalogue inconnue n'a pas de repli : elle est refusee
+/// avant qu'un item Cart incoherent soit ecrit.
+/// </summary>
+public static class BillingV2CatalogScopeTemplatePolicy
+{
+    public static bool TryMapToCartTemplate(string? catalogScope,
+        out string cartScopeTemplate)
+    {
+        switch (catalogScope)
+        {
+            case BillingV2CartScopeTemplates.Subscription:
+                cartScopeTemplate = BillingV2CartScopeTemplates.Subscription;
+                return true;
+            // `user` est le vocabulaire historique du catalogue pour le
+            // titulaire du contrat. Les utilisateurs additionnels sont un
+            // choix de composition/preset, jamais le default direct.
+            case "user":
+            case BillingV2CartScopeTemplates.PrimaryUser:
+                cartScopeTemplate = BillingV2CartScopeTemplates.PrimaryUser;
+                return true;
+            case BillingV2CartScopeTemplates.AdditionalUser:
+                cartScopeTemplate = BillingV2CartScopeTemplates.AdditionalUser;
+                return true;
+            default:
+                cartScopeTemplate = string.Empty;
+                return false;
+        }
+    }
+}
+
+/// <summary>
 /// Politique pure du panier. Elle ne sait ni creer une souscription, ni creer
 /// un evenement de billing, ni appeler un provider. Elle est volontairement
 /// testable sans MariaDB afin de verrouiller les cas de configuration differee.
@@ -12,7 +57,9 @@ public static class BillingV2CartPolicy
 {
     private static readonly IReadOnlySet<string> ValidScopes = new HashSet<string>(StringComparer.Ordinal)
     {
-        "subscription", "primary_user", "additional_user"
+        BillingV2CartScopeTemplates.Subscription,
+        BillingV2CartScopeTemplates.PrimaryUser,
+        BillingV2CartScopeTemplates.AdditionalUser
     };
 
     public static bool IsOpenCartLogicallyExpired(string status, DateTime expiresAtUtc,
@@ -157,6 +204,28 @@ public static class BillingV2CartPolicy
             : BillingV2CartQuoteStatuses.Stale;
     }
 
+    // Les règles restent portées par les codes serveur. Cette projection est
+    // l'unique surface publique de readiness : elle indique une action
+    // seulement lorsqu'elle est nécessaire maintenant. Les issues différées,
+    // notamment un sujet à choisir au provisioning, restent sans alarme UI.
+    public static BillingV2CartIssue ProjectCustomerIssue(BillingV2CartIssue issue)
+        => issue with { CustomerMessage = issue.Blocking ? issue.Code switch
+        {
+            "CART_COMMITMENT_REQUIRED" => "Choisissez une durée d’engagement avant de poursuivre.",
+            "CART_SUBJECT_BINDING_REQUIRED" => "Choisissez l’utilisateur concerné avant de poursuivre.",
+            "CART_CONFIGURATION_REQUIRED" => "Terminez la configuration requise avant de poursuivre.",
+            "CART_CONFIGURATION_AFFECTS_PRICE" => "Terminez la configuration qui peut modifier le prix avant de poursuivre.",
+            "CART_SERVICE_UNAVAILABLE" => "Un service de votre panier n’est plus disponible. Retirez-le ou choisissez une autre option.",
+            "CART_TIER_UNAVAILABLE" => "Une option choisie n’est plus disponible. Choisissez une autre option.",
+            "CART_PRICE_UNAVAILABLE" => "Le prix d’un service ne peut pas être confirmé. Modifiez votre sélection ou réessayez plus tard.",
+            "CART_DEPENDENCY_REQUIRED" => "Votre sélection nécessite un service complémentaire. Vérifiez les options associées.",
+            "CART_DEPENDENCY_AMBIGUOUS" => "Votre sélection nécessite un choix complémentaire. Vérifiez les options associées.",
+            "CART_DEPENDENCY_IMPOSSIBLE" or "CART_DEPENDENCY_CYCLE" or "CART_DEPENDENCY_DEPTH_EXCEEDED" => "Cette combinaison de services ne peut pas être proposée. Modifiez votre sélection.",
+            "CART_SCOPE_INVALID" => "La portée d’un service ne correspond plus à cette configuration. Retirez-le puis choisissez une configuration compatible.",
+            "CART_SUBJECT_BINDING_INVALID" => "L’utilisateur associé à un service n’est plus valide. Choisissez-le à nouveau avant de poursuivre.",
+            _ => "Votre panier nécessite une modification avant de poursuivre."
+        } : null };
+
     public static BillingV2CartScopeEvaluation EvaluateScopes(
         IReadOnlyList<BillingV2CartScopeCandidate> items)
     {
@@ -178,7 +247,7 @@ public static class BillingV2CartPolicy
                 provisioning = BillingV2CartProvisioningReadiness.Blocked;
                 continue;
             }
-            if (item.ScopeTemplate == "subscription")
+            if (item.ScopeTemplate == BillingV2CartScopeTemplates.Subscription)
             {
                 if (!string.IsNullOrWhiteSpace(item.SubjectBinding))
                 {
@@ -221,13 +290,13 @@ public static class BillingV2CartPolicy
     private static bool IsScopeCompatible(string catalogScope, string cartScope)
         => catalogScope switch
         {
-            "subscription" => cartScope == "subscription",
+            BillingV2CartScopeTemplates.Subscription => cartScope == BillingV2CartScopeTemplates.Subscription,
             // Le catalogue V2 exprime le portage individuel par `user`; le
             // panier affine ensuite ce portage entre titulaire principal et
             // utilisateur additionnel sans inventer un nouveau service.
-            "user" => cartScope is "primary_user" or "additional_user",
-            "primary_user" => cartScope == "primary_user",
-            "additional_user" => cartScope == "additional_user",
+            "user" => cartScope is BillingV2CartScopeTemplates.PrimaryUser or BillingV2CartScopeTemplates.AdditionalUser,
+            BillingV2CartScopeTemplates.PrimaryUser => cartScope == BillingV2CartScopeTemplates.PrimaryUser,
+            BillingV2CartScopeTemplates.AdditionalUser => cartScope == BillingV2CartScopeTemplates.AdditionalUser,
             _ => false
         };
 
@@ -347,6 +416,63 @@ public static class BillingV2CartPolicy
             : new("CART_PRESET_COMPOSITION_VALID", composition);
     }
 
+    /// <summary>
+    /// Politique de fusion des ajouts directs : le bouton « Ajouter » exprime
+    /// une configuration, il n'additionne jamais implicitement une quantite.
+    /// Une modification de quantite ou de palier reste une commande explicite
+    /// du panier avec version optimiste.
+    /// </summary>
+    public static BillingV2CartDirectAddResolution ResolveDirectAddition(
+        IEnumerable<BillingV2CartItem> existingItems,
+        string serviceId,
+        string? tierId,
+        string scopeTemplate,
+        string? subjectBinding)
+    {
+        var sameServiceAndScope = existingItems.Where(item =>
+            string.Equals(item.ServiceId, serviceId, StringComparison.Ordinal)
+            && string.Equals(item.ScopeTemplate, scopeTemplate, StringComparison.Ordinal)
+            && string.Equals(item.SubjectBinding, subjectBinding, StringComparison.Ordinal));
+        if (sameServiceAndScope.Any(item => string.Equals(item.TierId, tierId,
+                StringComparison.Ordinal)))
+            return BillingV2CartDirectAddResolution.AlreadyPresent;
+        return sameServiceAndScope.Any()
+            ? BillingV2CartDirectAddResolution.TierConflict
+            : BillingV2CartDirectAddResolution.Add;
+    }
+
+    /// <summary>
+    /// Rend les droits et le libellé courant d'une ligne à partir de la
+    /// composition résolue. L'origine historique peut attester qu'une ligne a
+    /// initialement été choisie directement ou par une formule, mais ne peut
+    /// jamais, seule, rendre une ligne supprimable ou non supprimable.
+    /// </summary>
+    public static BillingV2CartItemCurrentRole ResolveCurrentItemRole(
+        string origin,
+        bool isStructural,
+        bool isRequiredByPreset,
+        bool isRequiredByDependency,
+        bool hasCurrentPresetDefinition,
+        bool customerEditable)
+    {
+        var explicitlySelected = !isStructural && (hasCurrentPresetDefinition
+            || origin is BillingV2CartItemOrigins.Direct
+                or BillingV2CartItemOrigins.Preset);
+        var canEdit = customerEditable && explicitlySelected
+            && !isStructural && !isRequiredByPreset;
+        var canRemove = !isStructural && !isRequiredByPreset && !isRequiredByDependency
+            && (!hasCurrentPresetDefinition || customerEditable);
+        var displayReason = isStructural
+            ? "included"
+            : isRequiredByPreset
+                ? "included_with_offer"
+                : isRequiredByDependency && !explicitlySelected
+                    ? "required_for_selection"
+                    : null;
+        return new(isRequiredByPreset, isRequiredByDependency, explicitlySelected,
+            canEdit, canRemove, !isStructural && explicitlySelected, displayReason);
+    }
+
     private static BillingV2CartIssue DependencyIssue(string code,
         BillingV2CartDependencyNode node, bool blocking)
         => new(code, "error", node.ServiceCode, node.ServiceCode, code, blocking);
@@ -371,6 +497,15 @@ public sealed record BillingV2CartScopeEvaluation(
     bool CommercialReady,
     string ProvisioningReadiness,
     IReadOnlyList<BillingV2CartIssue> Issues);
+
+public sealed record BillingV2CartItemCurrentRole(
+    bool IsRequiredByPreset,
+    bool IsRequiredByDependency,
+    bool IsExplicitCommercialSelection,
+    bool CanEdit,
+    bool CanRemove,
+    bool CountsAsCommercialSelection,
+    string? DisplayReason);
 
 /// <summary>
 /// Representation serveur d'une ligne de preset utilisable pour composer un
@@ -401,6 +536,13 @@ public sealed record BillingV2CartPresetCompositionResolution(
 
     public bool IsValid => string.Equals(Code, "CART_PRESET_COMPOSITION_VALID",
         StringComparison.Ordinal);
+}
+
+public enum BillingV2CartDirectAddResolution
+{
+    Add,
+    AlreadyPresent,
+    TierConflict
 }
 
 public enum BillingV2CartDependencyResolutionKind

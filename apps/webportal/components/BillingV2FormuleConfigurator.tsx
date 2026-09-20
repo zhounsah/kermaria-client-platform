@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import type {
   BillingV2PublicCatalog,
   BillingV2PublicPreset,
@@ -21,10 +22,12 @@ import {
   resolveServicePublicLabel,
   selectableTiers,
 } from "@/lib/billing-v2-formules";
+import { BillingV2PricingSummary } from "@/components/BillingV2PricingSummary";
 import {
   MAX_ADDITIONAL_USERS,
 } from "@/lib/billing-v2-selection";
 import { requestBffJson } from "@/lib/client-api";
+import { notifyBillingV2CartChanged } from "@/lib/billing-v2-cart-client";
 import { formatCurrencyFromCents } from "@/lib/formatters";
 
 type Props = {
@@ -61,6 +64,7 @@ export function BillingV2FormuleConfigurator({
   const [cartMessage, setCartMessage] = useState<string | null>(null);
   const [cartQuote, setCartQuote] = useState<BillingV2CartQuote | null>(null);
   const [addedToCart, setAddedToCart] = useState(false);
+  const [cartReviewRequired, setCartReviewRequired] = useState(false);
   const requestSequence = useRef(0);
 
   useEffect(() => {
@@ -173,6 +177,7 @@ export function BillingV2FormuleConfigurator({
     if (!quote || pending) return;
     setAddingToCart(true);
     setCartMessage(null);
+    setCartReviewRequired(false);
 
     try {
       // La formule reste un etat local jusqu'ici. La commande ne transporte
@@ -191,12 +196,15 @@ export function BillingV2FormuleConfigurator({
         },
       );
       if (!result.ok) {
+        setCartReviewRequired(result.error.code === "CART_MERGE_REQUIRES_REVIEW"
+          || result.error.code === "CART_ITEM_TIER_CONFLICT");
         setCartMessage(describeCartImportFailure(result.error.code, result.error.message));
         return;
       }
 
       setCartQuote(result.data.quote);
       setAddedToCart(true);
+      notifyBillingV2CartChanged();
       setCartMessage(result.data.quote?.commercialReadiness === "blocked"
         ? "Cette configuration est enregistrée dans votre panier, mais elle nécessite une précision avant la commande."
         : "Votre configuration a été ajoutée au panier.");
@@ -567,84 +575,32 @@ export function BillingV2FormuleConfigurator({
 
         {quote ? (
           <>
-            <ul className="formule-summary-lines">
-              {quote.lines.map((line) => (
-                <li key={`${line.serviceCode}-${line.tierCode ?? "flat"}`}>
-                  <span className="formule-summary-line-label">
-                    {resolveServicePublicLabel(line.serviceCode, line.label)}
-                    {line.detail ? (
-                      <em> — {line.detail}</em>
-                    ) : null}
-                    {line.quantity > 1 ? <em> × {line.quantity}</em> : null}
-                  </span>
-                  <span className="formule-summary-line-amount">
-                    {formatCurrencyFromCents(line.amountCents)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-
-            <dl className="formule-summary-totals">
-              <div>
-                <dt>Prix avant remise</dt>
-                <dd
-                  className={
-                    quote.monthlyDiscountCents > 0
-                      ? "formule-summary-strike"
-                      : undefined
-                  }
-                >
-                  {formatCurrencyFromCents(quote.monthlyBeforeDiscountCents)}
-                  <span className="formule-summary-period"> / mois</span>
-                </dd>
-              </div>
-              {quote.discountBasisPoints > 0 ? (
-                <div>
-                  <dt>
-                    Remise (−{formatDiscountPercent(quote.discountBasisPoints)}{" "}
-                    %)
-                  </dt>
-                  <dd className="formule-summary-discount">
-                    −{formatCurrencyFromCents(quote.monthlyDiscountCents)}
-                    <span className="formule-summary-period"> / mois</span>
-                  </dd>
-                </div>
-              ) : null}
-              {isUpfront ? (
-                <>
-                  <div className="formule-summary-final">
-                    <dt>À régler aujourd&apos;hui</dt>
-                    <dd>{formatCurrencyFromCents(quote.totalDueNowCents)}</dd>
-                  </div>
-                  <div>
-                    <dt>Soit par mois</dt>
-                    <dd>
-                      {formatCurrencyFromCents(quote.monthlyAfterDiscountCents)}
-                      <span className="formule-summary-period">
-                        {" "}
-                        / mois équivalent
-                      </span>
-                    </dd>
-                  </div>
-                </>
-              ) : (
-                <div className="formule-summary-final">
-                  <dt>Prix final</dt>
-                  <dd>
-                    {formatCurrencyFromCents(quote.monthlyAfterDiscountCents)}
-                    <span className="formule-summary-period"> / mois</span>
-                  </dd>
-                </div>
-              )}
-              {quote.commitmentSavingsCents > 0 ? (
-                <div>
-                  <dt>Économie totale sur {quote.commitmentMonths} mois</dt>
-                  <dd className="formule-summary-discount">
-                    {formatCurrencyFromCents(quote.commitmentSavingsCents)}
-                  </dd>
-                </div>
-              ) : null}
-            </dl>
+            <BillingV2PricingSummary
+              currency={quote.currency}
+              discountLabel={quote.discountBasisPoints > 0 ? `Remise (−${formatDiscountPercent(quote.discountBasisPoints)} %)` : "Remise"}
+              finalLabel={isUpfront ? "À régler aujourd’hui" : "Prix final"}
+              lines={quote.lines.map((line) => ({
+                id: `${line.serviceCode}-${line.tierCode ?? "flat"}`,
+                label: resolveServicePublicLabel(line.serviceCode, line.label),
+                detail: line.detail,
+                quantity: line.quantity,
+                amountCents: line.amountCents,
+              }))}
+              oneTimeDueNowCents={quote.oneTimeCents}
+              recurringDiscountCents={quote.monthlyDiscountCents}
+              recurringSubtotalCents={quote.monthlyBeforeDiscountCents}
+              recurringTotalCents={quote.monthlyAfterDiscountCents}
+              finalAmountCents={isUpfront ? quote.totalDueNowCents : quote.monthlyAfterDiscountCents}
+              finalPeriodLabel={isUpfront ? null : " / mois"}
+              showDueNow={!isUpfront}
+              totalDueNowCents={quote.totalDueNowCents}
+            />
+            {isUpfront ? <p className="formule-summary-note formule-summary-note-secondary">
+              Soit par mois : <strong>{formatCurrencyFromCents(quote.monthlyAfterDiscountCents)} / mois équivalent</strong>
+            </p> : null}
+            {quote.commitmentSavingsCents > 0 ? <p className="formule-summary-note formule-summary-note-secondary">
+              Économie totale sur {quote.commitmentMonths} mois : <strong>{formatCurrencyFromCents(quote.commitmentSavingsCents)}</strong>
+            </p> : null}
 
             {/*
               Vocabulaire du contrat comptant : le client paie une fois, rien
@@ -686,6 +642,7 @@ export function BillingV2FormuleConfigurator({
             {cartMessage ? (
               <p className={addedToCart ? "formule-summary-note" : "formule-summary-error"}>
                 {cartMessage}
+                {cartReviewRequired ? <> <Link href="/panier">Vérifier mon panier</Link></> : null}
               </p>
             ) : null}
             {cartQuote ? (

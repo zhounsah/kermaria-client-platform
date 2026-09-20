@@ -2,6 +2,7 @@
 import { notFound } from "next/navigation";
 
 import { AdminDataTable } from "@/components/AdminDataTable";
+import { AdminCustomerDeleteAction } from "@/components/AdminCustomerDeleteAction";
 import { AuditEventBadge } from "@/components/AuditEventBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
@@ -69,12 +70,17 @@ export default async function AdminCustomerDetailPage({
   return (
     <>
       <PageHeader
-        action={
+        action={<div className="page-header-actions">
           <StatusBadge
             label={identity.accountStatus === "active" ? "Compte actif" : "En attente"}
             tone={identity.accountStatus === "active" ? "success" : "warning"}
           />
-        }
+          <AdminCustomerDeleteAction
+            customerReference={identity.customerReference}
+            displayName={identity.companyName}
+            email={identity.email || null}
+          />
+        </div>}
         description={`${identity.contactName} · ${identity.email || "Adresse e-mail non renseignée"}`}
         eyebrow={identity.customerReference}
         title={identity.companyName}
@@ -560,5 +566,4 @@ function localizeProvisioningStatus(status: string | undefined) {
       return "Indisponible";
   }
 }
-
 

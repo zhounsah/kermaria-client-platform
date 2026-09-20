@@ -55,6 +55,7 @@ export default async function TarifsPage() {
         beforeSections={(
           <PublicCommercialTariffCatalog
             catalog={buildPublicCommercialCatalog(billingCatalogResult.data)}
+            currency={billingCatalogResult.data.currency}
           />
         )}
         compactHero

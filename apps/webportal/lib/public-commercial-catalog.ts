@@ -16,7 +16,6 @@ import type {
 
 import { describeTierAttributes, resolveServicePublicLabel } from "@/lib/billing-v2-formules";
 import {
-  resolveStorefrontDirectTariffAction,
   resolveStorefrontTariffAction,
   storefrontServiceUrlForBillingCode,
 } from "@/lib/storefront-content";
@@ -168,11 +167,13 @@ function projectService(
   const publicUrl = storefrontServiceUrlForBillingCode(service.code);
   const preferredOfferAction = resolvePreferredOfferAction(service.code, catalog);
   const offerCount = countPublicOffersForService(service.code, catalog);
-  const directAction = resolveStorefrontDirectTariffAction(
-    service.code,
-    service.selfServiceOrderable,
-    service.tiers,
-  );
+  // `direct` reste nécessaire, mais le catalogue API doit également déclarer
+  // l'item réellement compatible avec le Cart (prix actif, scope et policy de
+  // configuration). Un code de service ou le prix affiché ne suffisent pas.
+  const cartDirectEligible = service.cartDirectEligible === true;
+  const directAction = cartDirectEligible
+    ? { label: "Ajouter au panier", href: `#ajouter-${slugFromCode(service.code)}` }
+    : null;
   const ordering = resolvePublicCommercialOrdering({
     requestedMode: service.publicOrderingMode,
     legacyMode: resolveLegacyOrderingMode(service, preferredOfferAction),
@@ -181,7 +182,7 @@ function projectService(
     directCta: directAction,
   });
   const orderingMode = ordering.orderingMode;
-  const directlyOrderable = orderingMode === "direct";
+  const directlyOrderable = orderingMode === "direct" && cartDirectEligible;
   const requiresQuote = orderingMode === "quote";
   const priceType = resolvePriceType(startingPrice, tierProjections);
   const fallback = CLIENT_PRESENTATION_FALLBACKS[service.code];
@@ -193,6 +194,7 @@ function projectService(
     id: service.code,
     slug: publicUrl ? publicUrl.slice("/services/".length) : slugFromCode(service.code),
     name,
+    tierSelectorLabel: service.tierSelectorLabel,
     category,
     description,
     priceType,
@@ -234,6 +236,7 @@ function projectTier(
     id: tier.code,
     label: tier.label,
     description: tier.description,
+    selectable: tier.publicSelectable,
     recurringPrice,
     initialFees: initialFeesOf(tier.priceComponents ?? []),
     details: describeTierAttributes(tier),

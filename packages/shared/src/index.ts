@@ -125,6 +125,30 @@ export interface AdminCustomerDetail {
   recentAuditLogs: AdminAuditLogEntry[];
 }
 
+export interface AdminCustomerCreatePayload {
+  customerType: "individual" | "professional" | "association";
+  displayName: string;
+  billingEmail: string;
+  phone?: string | null;
+  addressLine1: string;
+  addressLine2?: string | null;
+  postalCode: string;
+  city: string;
+  country: string;
+}
+
+export interface AdminCustomerCreateResponse {
+  customerReference: string;
+  displayName: string;
+  billingEmail: string;
+  status: string;
+}
+
+export interface AdminCustomerDeleteResponse {
+  code: string;
+  message: string;
+}
+
 export interface AdminSupportRequestSummary {
   id: string;
   reference: string;
@@ -2343,6 +2367,8 @@ export interface BillingV2PublicTier {
 export interface BillingV2PublicService {
   code: string;
   name: string;
+  /** Libellé public du contrôle de sélection de tier, administré par service. */
+  tierSelectorLabel: string | null;
   category: string;
   scopeType: string;
   /** Somme des composantes mensuelles sans palier. Affichage seulement. */
@@ -2368,6 +2394,13 @@ export interface BillingV2PublicService {
    * remplace le libelle code cote portail (specification, section 19).
    */
   description: string | null;
+  /**
+   * Décision calculée par API-INTERNAL : `publicOrderingMode = direct` reste
+   * nécessaire mais ne suffit jamais à exposer l'ajout individuel au Cart.
+   * Optionnel uniquement pour rester lisible par les catalogues antérieurs ;
+   * son absence est interprétée de façon fermée par le portail.
+   */
+  cartDirectEligible?: boolean;
 }
 
 export interface BillingV2PublicPresetItem {
@@ -2447,6 +2480,8 @@ export type PublicCommercialTier = {
   id: string;
   label: string;
   description: string | null;
+  /** Décision de catalogue ; le navigateur ne peut jamais rendre un palier sélectionnable. */
+  selectable: boolean;
   recurringPrice: PublicCommercialMoney | null;
   initialFees: PublicCommercialMoney[];
   details: string[];
@@ -2462,6 +2497,8 @@ export type PublicCommercialService = {
   id: string;
   slug: string;
   name: string;
+  /** Libellé du contrôle de tier, jamais déduit d'un code de service côté UI. */
+  tierSelectorLabel: string | null;
   category: string;
   description: string | null;
   priceType: PublicCommercialPriceType;
@@ -2591,6 +2628,26 @@ export interface BillingV2CartItem {
   sourcePresetItemId: string | null;
   requiredItem: boolean | null;
   customerEditable: boolean | null;
+  /** Provenance descriptive, décidée par API-INTERNAL, jamais par le navigateur. */
+  origin: "direct" | "preset" | "dependency" | "structural" | "legacy";
+  /** Vrai pour une ligne imposée par une policy globale (ex. socle). */
+  isStructural: boolean;
+  /** La composition actuelle satisfait un composant obligatoire du preset. */
+  isRequiredByPreset: boolean;
+  /** La composition actuelle requiert cette ligne via une dépendance active. */
+  isRequiredByDependency: boolean;
+  /** Cette ligne correspond à un choix commercial explicite encore retenu. */
+  isExplicitCommercialSelection: boolean;
+  /** Droit de modification résolu côté serveur pour la composition actuelle. */
+  canEdit: boolean;
+  /** Droit de retrait résolu côté serveur pour la composition actuelle. */
+  canRemove: boolean;
+  /** La ligne participe au compteur commercial du panier. */
+  countsAsCommercialSelection: boolean;
+  /** Raison publique courante, sans exposer les codes internes du catalogue. */
+  displayReason: "included" | "included_with_offer" | "required_for_selection" | null;
+  minimumQuantity: number;
+  maximumQuantity: number;
   configurationKind: string | null;
   configurationReference: string | null;
   displayOrder: number;
@@ -2640,12 +2697,16 @@ export interface BillingV2CartIssue {
   serviceCode: string | null;
   message: string;
   blocking: boolean;
+  customerMessage?: string | null;
 }
 
 export interface BillingV2CartQuoteLine {
   cartItemId: string;
   serviceCode: string;
   tierCode: string | null;
+  /** Projection commerciale résolue par API-INTERNAL, jamais un code UI. */
+  label: string;
+  detail: string | null;
   servicePriceId: string;
   priceCode: string;
   billingCadence: "monthly" | "one_time";
@@ -2681,6 +2742,7 @@ export interface BillingV2CartQuote {
 
 export type BillingV2CartCommand =
   | "current"
+  | "get_current"
   | "import_formula_selection"
   | "initialize_preset"
   | "replace_preset"

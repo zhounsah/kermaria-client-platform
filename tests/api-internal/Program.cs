@@ -8,6 +8,7 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Kermaria.ApiInternal;
 using Kermaria.ApiInternal.Contracts;
 using Kermaria.ApiInternal.Data.Configuration;
 using Kermaria.ApiInternal.Data.Repositories;
@@ -128,6 +129,23 @@ async Task<int> RunAsync(string[] arguments)
         catch (Exception exception)
         {
             Console.Error.WriteLine("Tests noyau panier Billing V2 en echec.");
+            Console.Error.WriteLine(exception.ToString());
+            return 1;
+        }
+    }
+
+    if (arguments.Length == 1
+        && string.Equals(arguments[0], "--admin-customer-creation", StringComparison.Ordinal))
+    {
+        try
+        {
+            await RunAdminCustomerCreationTestsAsync();
+            Console.WriteLine("Tests creation manuelle de client admin reussis.");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine("Tests creation manuelle de client admin en echec.");
             Console.Error.WriteLine(exception.ToString());
             return 1;
         }
@@ -9996,6 +10014,76 @@ static string SnapshotLogs(StringBuilder logs)
     {
         return logs.ToString();
     }
+}
+
+static async Task RunAdminCustomerCreationTestsAsync()
+{
+    var token = CancellationToken.None;
+    var store = new MockSignupStore();
+    var authentication = CreateMockAuthenticationStore();
+    var initialUserCount = authentication.Users.Count;
+    var initialSessionCount = authentication.Sessions.Count;
+    var settings = new ApplicationSettingsService(
+        new TestApplicationSettingsRepository(),
+        NullLogger<ApplicationSettingsService>.Instance);
+    var service = NewSignupService(
+        store,
+        authentication,
+        new SignupRuntimeConfiguration(false, 3, 10, 24, 24, false),
+        settings);
+    var valid = new AdminCustomerCreatePayload(
+        "professional",
+        "Atelier des tests",
+        "CLIENT@EXAMPLE.INVALID",
+        "0102030405",
+        "1 rue du Test",
+        null,
+        "75001",
+        "Paris",
+        "France");
+
+    var created = await service.CreateManualCustomerAsync(valid, token);
+    Ensure(created.Result.Succeeded && created.Result.Code == "CUSTOMER_CREATED",
+        "Une fiche admin valide doit etre creee.");
+    Ensure(created.Customer is not null
+        && created.Customer.BillingEmail == "client@example.invalid"
+        && created.Customer.Status == "active",
+        "L e-mail doit etre normalise et le resultat ne doit contenir qu une fiche active.");
+    Ensure(store.ManualCustomersByEmail.Count == 1 && store.Rows.IsEmpty,
+        "La creation manuelle ne doit creer ni demande signup ni acces portail.");
+    Ensure(authentication.Users.Count == initialUserCount
+        && authentication.Sessions.Count == initialSessionCount,
+        "La creation manuelle ne doit creer ni identite portail ni session.");
+
+    var adminRepository = new MockAdminRepository(authentication, store);
+    var createdCustomer = created.Customer
+        ?? throw new InvalidOperationException("La creation manuelle doit retourner sa fiche.");
+    var deleted = await adminRepository.DeleteCustomerIfEmptyAsync(
+        createdCustomer.CustomerReference, token);
+    Ensure(deleted.Code == "CUSTOMER_DELETED"
+        && !store.ManualCustomersByEmail.ContainsKey("client@example.invalid"),
+        "Une fiche manuelle sans historique doit pouvoir etre supprimee localement.");
+
+    var recreated = await service.CreateManualCustomerAsync(valid, token);
+    Ensure(recreated.Result.Succeeded && recreated.Customer is not null,
+        "Apres suppression, le meme e-mail peut etre reutilise par une nouvelle fiche.");
+
+    var protectedCustomer = await adminRepository.DeleteCustomerIfEmptyAsync(
+        MockPortalData.Profile.CustomerReference, token);
+    Ensure(protectedCustomer.Code == "CUSTOMER_DELETE_BLOCKED",
+        "Une fiche mockee avec historique ne doit jamais etre supprimee en cascade.");
+
+    var duplicate = await service.CreateManualCustomerAsync(valid, token);
+    Ensure(!duplicate.Result.Succeeded
+        && duplicate.Result.Code == "CUSTOMER_EMAIL_ALREADY_USED",
+        "Un e-mail deja utilise doit etre refuse.");
+    Ensure(store.ManualCustomersByEmail.Count == 1,
+        "Un doublon ne doit pas creer de seconde fiche.");
+
+    var invalid = await service.CreateManualCustomerAsync(
+        valid with { BillingEmail = "invalide" }, token);
+    Ensure(!invalid.Result.Succeeded && invalid.Result.Code == "INVALID_CUSTOMER",
+        "L e-mail invalide doit etre refuse par le domaine signup.");
 }
 
 sealed class RunningApi : IDisposable

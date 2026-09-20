@@ -170,7 +170,8 @@ builder.Services.AddScoped<IAdminRepository>(
     serviceProvider => sqlConfiguration.IsPersistent
         ? new MariaDbAdminRepository(sqlConfiguration)
         : new MockAdminRepository(
-            serviceProvider.GetRequiredService<MockAuthenticationStore>()));
+            serviceProvider.GetRequiredService<MockAuthenticationStore>(),
+            serviceProvider.GetRequiredService<MockSignupStore>()));
 builder.Services.AddScoped<IDemoAccountRepository>(
     _ => sqlConfiguration.IsPersistent
         ? new MariaDbDemoAccountRepository(sqlConfiguration)
@@ -1856,6 +1857,8 @@ app.MapPost(
         var result = command switch
         {
             "current" => await service.GetOrCreateCurrentAsync(
+                owner, string.IsNullOrWhiteSpace(payload.Currency) ? "EUR" : payload.Currency, context.RequestAborted),
+            "get_current" => await service.GetCurrentAsync(
                 owner, string.IsNullOrWhiteSpace(payload.Currency) ? "EUR" : payload.Currency, context.RequestAborted),
             "import_formula_selection" when payload.FormulaSelection is not null
                 => await service.ImportFormulaSelectionAsync(
@@ -5266,6 +5269,88 @@ app.MapGet(
             context,
             service,
             await service.GetCustomersAsync(context.RequestAborted));
+    });
+app.MapPost(
+    "/internal/admin/customers",
+    async (
+        HttpContext context,
+        ISignupService signupService,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.customers.create");
+        var payload = await ReadPayload<AdminCustomerCreatePayload>(context)
+            ?? throw new PortalValidationException();
+        var operation = await signupService.CreateManualCustomerAsync(
+            payload,
+            context.RequestAborted);
+        if (!operation.Result.Succeeded || operation.Customer is null)
+        {
+            return Results.Json(
+                new ApiError(
+                    operation.Result.Code,
+                    operation.Result.Message,
+                    context.GetCorrelationId()),
+                statusCode: operation.Result.Code == "CUSTOMER_EMAIL_ALREADY_USED"
+                    ? StatusCodes.Status409Conflict
+                    : StatusCodes.Status400BadRequest);
+        }
+
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "admin.customer.created",
+                "success",
+                TargetType: "customer",
+                TargetReference: operation.Customer.CustomerReference,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return Results.Json(
+            operation.Customer,
+            statusCode: StatusCodes.Status201Created);
+    });
+app.MapDelete(
+    "/internal/admin/customers/{customerReference}",
+    async (
+        string customerReference,
+        HttpContext context,
+        IAdminService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.customers.delete");
+        var result = await service.DeleteCustomerIfEmptyAsync(
+            customerReference,
+            context.RequestAborted);
+        var deleted = result.Code == "CUSTOMER_DELETED";
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "admin.customer.deleted",
+                deleted ? "success" : "refused",
+                result.Code,
+                TargetType: "customer",
+                TargetReference: customerReference,
+                ActorUserId: actor.UserId,
+                SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+        return Results.Json(
+            result,
+            statusCode: result.Code switch
+            {
+                "CUSTOMER_DELETED" => StatusCodes.Status200OK,
+                "CUSTOMER_NOT_FOUND" => StatusCodes.Status404NotFound,
+                _ => StatusCodes.Status409Conflict
+            });
     });
 app.MapGet(
     "/internal/admin/customers/{customerReference}",

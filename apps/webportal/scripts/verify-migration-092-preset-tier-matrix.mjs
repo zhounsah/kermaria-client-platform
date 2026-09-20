@@ -85,7 +85,8 @@ assert.match(selectionPolicy, /BillingV2PublicCatalogCodes\.BackupShared[\s\S]{0
 // same_numeric_value lors du changement de palier. La projection legacy lit
 // uniquement les items effectivement présents (une option OFF reste absente).
 assert.match(cartConfigurator, /const key = `\$\{definition\.serviceCode\}:\$\{definition\.scopeTemplate\}`/);
-assert.match(cartConfigurator, /Choisir un palier/);
+assert.match(cartConfigurator, /tierSelectorLabel/);
+assert.match(cartConfigurator, /Choisir une option/);
 assert.match(cartConfigurator, /sourcePresetItemId: item\.sourcePresetItemId/,
   "Le changement de tier conserve l'ancre de definition du preset.");
 assert.match(cartService, /allowed\.tier_id <=> @tier_id/);
