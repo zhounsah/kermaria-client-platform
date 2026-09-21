@@ -351,6 +351,17 @@ export function isClientCheckoutContinuationPath(pathname: string): boolean {
   }
 
   const continuationUrl = new URL(pathname, "https://continuation.invalid");
+  if (continuationUrl.pathname === "/souscription") {
+    const cartId = continuationUrl.searchParams.get("cart");
+    return (
+      !continuationUrl.hash
+      && ((cartId === null && continuationUrl.searchParams.size === 0)
+        || (cartId !== null
+          && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cartId)
+          && continuationUrl.searchParams.size === 1))
+    );
+  }
+
   if (continuationUrl.pathname !== "/services/vps/choisir") {
     return false;
   }
@@ -369,7 +380,8 @@ export function isClientCheckoutContinuationPath(pathname: string): boolean {
 function isClientCheckoutPortalPath(pathname: string): boolean {
   return pathname === "/formules"
     || /^\/formules\/[a-z0-9-]+$/.test(pathname)
-    || pathname === "/services/vps/choisir";
+    || pathname === "/services/vps/choisir"
+    || pathname === "/souscription";
 }
 
 export function resolveClientCheckoutContinuationPath(
@@ -387,6 +399,45 @@ export type SelfServiceVpsSignupContinuation = {
   serviceCode: string;
   tierCode: string;
 };
+
+export type SelfServiceCartSignupContinuation = {
+  continuationPath: string;
+  cartId: string;
+};
+
+/**
+ * Seule continuation qui autorise l'ouverture immediate d'un compte pour
+ * reprendre un Cart anonyme. Le secret de possession du Cart reste dans son
+ * cookie HttpOnly : l'URL ne porte que son identifiant public opaque.
+ */
+export function resolveSelfServiceCartSignupContinuation(
+  value: string | string[] | null | undefined,
+): SelfServiceCartSignupContinuation | null {
+  const continuationPath = resolveClientCheckoutContinuationPath(value);
+  if (!continuationPath) {
+    return null;
+  }
+
+  const continuationUrl = new URL(
+    continuationPath,
+    "https://continuation.invalid",
+  );
+  const cartId = continuationUrl.searchParams.get("cart");
+  if (
+    continuationUrl.pathname !== "/souscription"
+    || continuationUrl.hash
+    || continuationUrl.searchParams.size !== 1
+    || cartId === null
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cartId)
+  ) {
+    return null;
+  }
+
+  return {
+    continuationPath: `/souscription?cart=${encodeURIComponent(cartId)}`,
+    cartId,
+  };
+}
 
 /**
  * Extrait la seule continuation qui autorise l'inscription immediate du

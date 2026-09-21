@@ -14,6 +14,7 @@ export type InternalSignupResult = {
   status: number;
   code: string;
   message: string;
+  selfServiceFlow?: "cart" | "vps";
   correlationId?: string;
   sessionToken?: string;
   expiresAt?: string;
@@ -323,6 +324,10 @@ function toResult(
         : upstream.ok
           ? "Demande traitée."
           : "La demande n'a pas pu être traitée.",
+    selfServiceFlow:
+      payload?.selfServiceFlow === "cart" || payload?.selfServiceFlow === "vps"
+        ? payload.selfServiceFlow
+        : undefined,
     correlationId:
       typeof payload?.correlation_id === "string"
         ? payload.correlation_id

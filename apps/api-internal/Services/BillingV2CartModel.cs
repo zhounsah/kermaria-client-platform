@@ -219,6 +219,7 @@ public static class BillingV2CartMutationResults
         "CART_QUOTED",
         "CART_EXPIRED",
         "CART_CLAIMED",
+        "CART_NOTHING_TO_CLAIM",
         "CART_LEGACY_SELECTION_PROJECTED"
     };
 

@@ -742,11 +742,20 @@ public sealed class BillingV2CartService : IBillingV2CartService
         var now = DateTime.UtcNow;
         await ExpireInactiveOwnedCartsAsync(connection, transaction, anonymous, now, cancellationToken);
         var cart = await ReadAnyCurrentAsync(connection, transaction, anonymous, true, cancellationToken);
-        if (cart is null) return new("CART_NOT_FOUND");
+        if (cart is null)
+        {
+            // Conserver l'expiration ciblée éventuellement effectuée ci-dessus :
+            // l'absence de Cart à claim est un succès de reprise, pas un rollback implicite.
+            await transaction.CommitAsync(cancellationToken);
+            return new("CART_NOTHING_TO_CLAIM");
+        }
         var customerOwner = new BillingV2CartOwner(customerId, null);
         await ExpireInactiveCurrentAsync(connection, transaction, customerOwner, cart.Currency, now, cancellationToken);
         if (await ReadCurrentAsync(connection, transaction, customerOwner, cart.Currency, true, cancellationToken) is not null)
+        {
+            await transaction.CommitAsync(cancellationToken);
             return new("CART_CLAIM_CONFLICT", cart);
+        }
         await using var update = connection.CreateCommand();
         update.Transaction = transaction;
         update.CommandText = """

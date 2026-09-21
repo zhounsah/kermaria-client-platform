@@ -28,6 +28,7 @@
     "test:payments": "node scripts/verify-payment-channels-contract.mjs",
     "test:cart": "node scripts/verify-billing-v2-cart-contract.mjs",
     "test:cart-checkout": "node scripts/verify-billing-v2-cart-contract.mjs",
+    "test:cart-anonymous-checkout": "node scripts/verify-anonymous-cart-checkout-contract.mjs",
     "test:cart-storefront": "node scripts/verify-cart-storefront-contract.mjs",
     "test:cart-formules-parity": "node scripts/verify-cart-formules-parity.mjs",
     "test:formules-preflight-091": "node scripts/verify-migration-091-legacy-preflight.mjs",

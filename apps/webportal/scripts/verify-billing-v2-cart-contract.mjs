@@ -20,6 +20,7 @@ const apiProgram = read("../api-internal/Program.cs");
 const cartMigration = read("../api-internal/Migrations/MariaDb/090_billing_v2_cart_model.sql");
 const presetMetadataMigration = read("../api-internal/Migrations/MariaDb/091_billing_v2_preset_cart_metadata.sql");
 const cartOriginMigration = read("../api-internal/Migrations/MariaDb/093_billing_v2_cart_item_origin.sql");
+const signupEmailVerificationMigration = read("../api-internal/Migrations/MariaDb/095_signup_self_service_email_verification.sql");
 const cartConfigurator = read("components/BillingV2CartFormuleConfigurator.tsx");
 const cartCheckoutRoute = read("app/api/billing-v2/cart/checkout/route.ts");
 const cartCheckoutStatusRoute = read("app/api/billing-v2/cart/checkout-status/route.ts");
@@ -38,6 +39,18 @@ assert(route.includes('"import_formula_selection"')
   "Le BFF doit accepter le handoff explicite d'une formule apres filtrage de sa selection.");
 assert(route.includes('"claim_current"'),
   "Le BFF Cart doit pouvoir reclamer le Cart anonyme lors de la reprise apres login.");
+assert(apiProgram.includes('"claim_current" when owner.IsAuthenticated\n                => new BillingV2CartMutationResult("CART_NOTHING_TO_CLAIM")')
+  && cartService.includes('return new("CART_NOTHING_TO_CLAIM");')
+  && cartModel.includes('"CART_NOTHING_TO_CLAIM"'),
+  "L'absence de Cart anonyme a claim doit etre un succes explicite, distinct d'une commande invalide.");
+assert(!cartCheckoutReview.includes('CART_COMMAND_INVALID" &&'),
+  "La reprise checkout ne doit jamais masquer CART_COMMAND_INVALID comme un no-op.");
+const getCurrentStart = cartService.indexOf("public async Task<BillingV2CartMutationResult> GetCurrentAsync");
+const getCurrentEnd = cartService.indexOf("public async Task<BillingV2CartMutationResult> ImportFormulaSelectionAsync", getCurrentStart);
+const getCurrentBody = cartService.slice(getCurrentStart, getCurrentEnd);
+assert(getCurrentBody.includes('if (cart is null) return new("CART_NOT_FOUND");')
+  && !getCurrentBody.includes('CART_NOTHING_TO_CLAIM'),
+  "CART_NOTHING_TO_CLAIM est reserve a claim_current ; une lecture current sans Cart reste CART_NOT_FOUND.");
 assert(route.includes('"get_current"') && route.includes("readOnlyCommands"),
   "Le BFF doit offrir une lecture current sans creation de Cart pour le panier et son badge.");
 assert(route.includes("rejectInvalidPortalCsrf"), "Toute mutation Cart doit passer le garde CSRF.");
@@ -154,7 +167,22 @@ assert(cartCheckoutService.includes("ReadAcceptedQuoteAsync")
 assert(cartCheckoutService.includes('"cart-checkout:" + BillingV2CheckoutSelectionFingerprint.ForSelection')
   && authoritativeCheckout.includes("CartCheckoutLink")
   && authoritativeCheckout.includes("MarkCartCheckedOutAsync"),
-  "Le Cart doit porter une cle idempotente et devenir checked_out dans la transaction du checkout authoritative.");
+"Le Cart doit porter une cle idempotente et devenir checked_out dans la transaction du checkout authoritative.");
+assert(signupEmailVerificationMigration.includes("ADD COLUMN IF NOT EXISTS email_verified_at")
+  && signupEmailVerificationMigration.includes("self_service_flow")
+  && signupEmailVerificationMigration.includes("idx_signup_pending_approved_user_self_service")
+  && !signupEmailVerificationMigration.includes("UPDATE portal_users")
+  && !signupEmailVerificationMigration.includes("DROP "),
+  "095 doit etre additive, materialiser la verification sans declarer artificiellement les comptes historiques verifies.");
+assert(cartCheckoutService.includes("GetPortalUserEmailVerificationStateAsync")
+  && cartCheckoutService.includes('"EMAIL_VERIFICATION_REQUIRED"')
+  && cartCheckoutService.indexOf("GetPortalUserEmailVerificationStateAsync") < cartCheckoutService.indexOf("ReadAcceptedQuoteAsync")
+  && cartCheckoutService.indexOf("CartStatuses.CheckedOut") < cartCheckoutService.indexOf("GetPortalUserEmailVerificationStateAsync"),
+  "Le checkout doit refuser l'identite self-service non verifiee avant toute ecriture financiere, sans empecher la reprise checked_out.");
+assert(apiProgram.includes('"/internal/portal/auth/email-verification"')
+  && apiProgram.includes('"/internal/portal/auth/email-verification/resend"')
+  && apiProgram.includes("EMAIL_VERIFICATION_REQUIRED"),
+  "La projection et le renvoi de verification doivent rester customer-session scopes et le VPS doit recevoir le meme gate financier.");
 assert(authoritativeCheckout.includes("open_customer_slot = NULL")
   && authoritativeCheckout.includes("checked_out_subscription_id = @subscription_id"),
   "Le checkout doit liberer le slot open et lier le Cart a son unique Subscription.");

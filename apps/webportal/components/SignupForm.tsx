@@ -2,7 +2,10 @@
 
 import Script from "next/script";
 import { useEffect, useRef, useState } from "react";
-import type { SelfServiceVpsSignupContinuation } from "@/lib/public-route-config";
+import type {
+  SelfServiceCartSignupContinuation,
+  SelfServiceVpsSignupContinuation,
+} from "@/lib/public-route-config";
 
 import type { BillingV2PublicSelection } from "@kermaria/shared";
 
@@ -15,6 +18,7 @@ type SignupFormProps = {
   hcaptchaSiteKey: string | null;
   initialBillingV2Selection?: BillingV2PublicSelection | null;
   selfServiceVps?: SelfServiceVpsSignupContinuation | null;
+  selfServiceCart?: SelfServiceCartSignupContinuation | null;
 };
 
 type SignupState =
@@ -43,6 +47,7 @@ export function SignupForm({
   hcaptchaSiteKey,
   initialBillingV2Selection = null,
   selfServiceVps = null,
+  selfServiceCart = null,
 }: SignupFormProps) {
   const isSubmittingRef = useRef(false);
   const renderedAtRef = useRef<number>(0);
@@ -67,6 +72,7 @@ export function SignupForm({
   const [state, setState] = useState<SignupState>({ status: "idle" });
 
   const isIndividual = customerType === "individual";
+  const selfServiceContinuation = selfServiceVps ?? selfServiceCart;
   const displayCompanyField = !isIndividual;
   const displayUserSizeField = !isIndividual;
 
@@ -93,7 +99,7 @@ export function SignupForm({
       return;
     }
 
-    if (selfServiceVps) {
+    if (selfServiceContinuation) {
       if (password.length < 12 || password.length > 200) {
         setState({
           status: "error",
@@ -141,7 +147,10 @@ export function SignupForm({
                 tierCode: selfServiceVps.tierCode,
               }
             : undefined,
-          password: selfServiceVps ? password : undefined,
+          selfServiceCart: selfServiceCart
+            ? { cartId: selfServiceCart.cartId }
+            : undefined,
+          password: selfServiceContinuation ? password : undefined,
           hcaptchaToken: hcaptchaToken || null,
           website: honeypot,
           formRenderedAt: renderedAtRef.current,
@@ -154,8 +163,8 @@ export function SignupForm({
         return;
       }
 
-      if (selfServiceVps) {
-        window.location.assign(selfServiceVps.continuationPath);
+      if (selfServiceContinuation) {
+        window.location.assign(selfServiceContinuation.continuationPath);
         return;
       }
 
@@ -349,8 +358,10 @@ export function SignupForm({
               <p className={styles.panelKicker}>Contact principal</p>
               <h2 id="signup-contact-heading">Informations client</h2>
               <p className="field-hint">
-                {selfServiceVps
-                  ? "Ce contact créera immédiatement son accès client pour reprendre le VPS sélectionné."
+                {selfServiceContinuation
+                  ? selfServiceCart
+                    ? "Ce contact créera immédiatement son accès client pour reprendre son panier."
+                    : "Ce contact créera immédiatement son accès client pour reprendre le VPS sélectionné."
                   : "Ce contact principal recevra les messages d'ouverture et définira le mot de passe initial."}
               </p>
             </div>
@@ -445,7 +456,7 @@ export function SignupForm({
                 />
               </label>
 
-              {selfServiceVps ? (
+              {selfServiceContinuation ? (
                 <>
                   <label>
                     Mot de passe
@@ -497,8 +508,10 @@ export function SignupForm({
         ) : null}
 
         <p className="signup-form-note">
-          {selfServiceVps
-            ? "En envoyant ce formulaire, vous créez votre accès client pour reprendre immédiatement votre configuration VPS."
+          {selfServiceContinuation
+            ? selfServiceCart
+              ? "En envoyant ce formulaire, vous créez votre accès client pour reprendre immédiatement votre panier."
+              : "En envoyant ce formulaire, vous créez votre accès client pour reprendre immédiatement votre configuration VPS."
             : <>En envoyant ce formulaire, vous demandez l&apos;ouverture d&apos;un accès
               client. Vous confirmerez d&apos;abord votre adresse e-mail, puis notre
               équipe validera la demande avant la définition du mot de passe
@@ -508,7 +521,7 @@ export function SignupForm({
         </p>
 
         <SubmitButton
-          idleLabel={selfServiceVps ? "Créer mon compte et continuer" : "Envoyer ma demande"}
+          idleLabel={selfServiceContinuation ? "Créer mon compte et continuer" : "Envoyer ma demande"}
           isSubmitting={state.status === "submitting"}
           submittingLabel="Envoi en cours..."
         />

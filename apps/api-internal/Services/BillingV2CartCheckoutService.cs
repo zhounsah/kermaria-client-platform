@@ -127,17 +127,20 @@ public sealed class BillingV2CartCheckoutService : IBillingV2CartCheckoutService
     private readonly SqlRuntimeConfiguration _sql;
     private readonly BillingV2RuntimeConfiguration _runtime;
     private readonly IBillingV2AuthoritativeCheckoutService _checkout;
+    private readonly ISignupRepository _signupRepository;
     private readonly ILogger<BillingV2CartCheckoutService> _logger;
 
     public BillingV2CartCheckoutService(
         SqlRuntimeConfiguration sql,
         BillingV2RuntimeConfiguration runtime,
         IBillingV2AuthoritativeCheckoutService checkout,
+        ISignupRepository signupRepository,
         ILogger<BillingV2CartCheckoutService> logger)
     {
         _sql = sql;
         _runtime = runtime;
         _checkout = checkout;
+        _signupRepository = signupRepository;
         _logger = logger;
     }
 
@@ -168,6 +171,11 @@ public sealed class BillingV2CartCheckoutService : IBillingV2CartCheckoutService
         if (cart.Status == BillingV2CartStatuses.Expired || cart.ExpiresAtUtc <= DateTime.UtcNow)
             return new("CART_EXPIRED", CartStatus: BillingV2CartStatuses.Expired, CartVersion: cart.Version);
         if (cart.Status != BillingV2CartStatuses.Open) return new("CART_IMMUTABLE", CartStatus: cart.Status, CartVersion: cart.Version);
+        var emailVerification = await _signupRepository.GetPortalUserEmailVerificationStateAsync(
+            session.UserId,
+            cancellationToken);
+        if (emailVerification.VerificationRequired && !emailVerification.EmailVerified)
+            return new("EMAIL_VERIFICATION_REQUIRED", CartStatus: cart.Status, CartVersion: cart.Version);
         if (cart.Version != command.ExpectedCartVersion)
             return new("CART_VERSION_CONFLICT", CartStatus: cart.Status, CartVersion: cart.Version);
         if (string.IsNullOrWhiteSpace(cart.CommitmentTermId)) return new("CART_COMMITMENT_REQUIRED");

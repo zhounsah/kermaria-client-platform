@@ -19,7 +19,8 @@ public sealed record SignupInsert(
     DateTime VerificationTokenExpiresAtUtc,
     string? SourceAddress,
     string? UserAgent,
-    BillingV2PublicSelection? BillingV2Selection = null);
+    BillingV2PublicSelection? BillingV2Selection = null,
+    string? SelfServiceFlow = null);
 
 public sealed record SignupPendingRecord(
     string Id,
@@ -48,12 +49,30 @@ public sealed record SignupPendingRecord(
     string? RejectedReason,
     DateTime CreatedAtUtc,
     DateTime UpdatedAtUtc,
-    BillingV2PublicSelection? BillingV2Selection = null);
+    BillingV2PublicSelection? BillingV2Selection = null,
+    DateTime? EmailVerifiedAtUtc = null,
+    string? SelfServiceFlow = null);
 
 public sealed record SignupVerificationTarget(
     string Id,
     string Status,
-    DateTime? VerificationTokenExpiresAtUtc);
+    DateTime? VerificationTokenExpiresAtUtc,
+    string? ApprovedUserId,
+    string? SelfServiceFlow = null);
+
+/// <summary>
+/// Projection minimale, liee a l'identite de session et non au customer.
+/// <c>EmailVerified</c> est une preuve durable; <c>VerificationRequired</c>
+/// indique qu'un workflow self-service courant doit encore obtenir cette preuve.
+/// </summary>
+public sealed record PortalEmailVerificationState(
+    bool EmailVerified,
+    bool VerificationRequired);
+
+public sealed record SignupVerificationResendTarget(
+    string Email,
+    string ContactName,
+    string SelfServiceFlow);
 
 public sealed record SignupApprovalRequest(
     string SignupId,
@@ -64,7 +83,9 @@ public sealed record SignupApprovalRequest(
     string UserId,
     string? PasswordSetupTokenHash,
     DateTime? PasswordSetupExpiresAtUtc,
-    string? InitialPasswordHash = null);
+    string? InitialPasswordHash = null,
+    bool EmailVerified = true,
+    string? SelfServiceFlow = null);
 
 public sealed record SignupApprovalResult(
     string SignupId,
@@ -110,6 +131,11 @@ public interface ISignupRepository
         string normalizedEmail,
         CancellationToken cancellationToken);
 
+    /// <summary>La possession d'e-mail est une policy distincte de la session et du customer.</summary>
+    Task<PortalEmailVerificationState> GetPortalUserEmailVerificationStateAsync(
+        string portalUserId,
+        CancellationToken cancellationToken);
+
     /// <summary>
     /// Cree uniquement la fiche client. Cette primitive ne cree pas de
     /// <c>portal_user</c>, ne stocke aucun mot de passe et ne declenche aucune
@@ -142,6 +168,29 @@ public interface ISignupRepository
 
     Task MarkEmailVerifiedAsync(
         string id,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Fait tourner atomiquement le token d'un workflow self-service non
+    /// verifie. La valeur retournee ne contient jamais le token clair.
+    /// </summary>
+    Task<SignupVerificationResendTarget?> RotateSelfServiceVerificationTokenAsync(
+        string portalUserId,
+        string verificationTokenHash,
+        DateTime verificationTokenExpiresAtUtc,
+        DateTime resendAllowedBeforeUtc,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Variante non authentifiee employee uniquement pour permettre a la boite
+    /// e-mail de reprendre un compte self-service deja cree. Elle ne retourne
+    /// aucune information au navigateur sur l'existence de l'identite.
+    /// </summary>
+    Task<SignupVerificationResendTarget?> RotateSelfServiceVerificationTokenByEmailAsync(
+        string normalizedEmail,
+        string verificationTokenHash,
+        DateTime verificationTokenExpiresAtUtc,
+        DateTime resendAllowedBeforeUtc,
         CancellationToken cancellationToken);
 
     Task<IReadOnlyList<SignupPendingRecord>> ListAsync(

@@ -5,7 +5,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { logBffFailure } from "@/lib/bff-observability";
 import { CORRELATION_HEADER, resolveCorrelationId } from "@/lib/correlation";
 import { readBillingV2SelectionPayload } from "@/lib/billing-v2-selection";
+import { readAnonymousCartToken } from "@/lib/cart-cookie";
 import { ensureCsrfCookie } from "@/lib/csrf-server";
+import { commandBillingV2Cart } from "@/lib/internal-api";
 import { isSignupEnabled } from "@/lib/public-routes";
 import { checkRateLimit, getRequestIdentifier } from "@/lib/rate-limit";
 import {
@@ -33,6 +35,7 @@ type SignupRequestBody = {
   message?: unknown;
   billingV2Selection?: unknown;
   selfServiceVps?: unknown;
+  selfServiceCart?: unknown;
   password?: unknown;
   hcaptchaToken?: unknown;
   website?: unknown;
@@ -217,8 +220,31 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const selfServiceCart = readSelfServiceCartIntent(body.selfServiceCart);
+  if (body.selfServiceCart !== undefined && !selfServiceCart) {
+    return NextResponse.json(
+      {
+        code: "INVALID_SELF_SERVICE_CART",
+        message: "Le panier à reprendre n'est pas valide.",
+        correlation_id: correlationId,
+      },
+      { status: 400 },
+    );
+  }
+  if (selfServiceVps && selfServiceCart) {
+    return NextResponse.json(
+      {
+        code: "INVALID_REQUEST",
+        message: "Une seule reprise de commande peut être demandée.",
+        correlation_id: correlationId,
+      },
+      { status: 400 },
+    );
+  }
+
   const password = typeof body.password === "string" ? body.password : null;
-  if (selfServiceVps && (!password || password.length < 12 || password.length > 200)) {
+  const selfServiceSignup = selfServiceVps ?? selfServiceCart;
+  if (selfServiceSignup && (!password || password.length < 12 || password.length > 200)) {
     return NextResponse.json(
       {
         code: "INVALID_PASSWORD",
@@ -228,7 +254,7 @@ export async function POST(request: NextRequest) {
       { status: 400 },
     );
   }
-  if (!selfServiceVps && password !== null) {
+  if (!selfServiceSignup && password !== null) {
     return NextResponse.json(
       {
         code: "INVALID_REQUEST",
@@ -239,12 +265,59 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  if (selfServiceCart) {
+    // L'identifiant public n'est pas une autorisation : seule la possession
+    // du cookie Cart HttpOnly est transmise au BFF puis revalidee par
+    // API-INTERNAL. Cette lecture ne cree ni Cart, ni quote, ni checkout.
+    const anonymousToken = await readAnonymousCartToken();
+    if (!anonymousToken) {
+      return NextResponse.json(
+        {
+          code: "INVALID_SELF_SERVICE_CART",
+          message: "Le panier à reprendre n'est plus disponible.",
+          correlation_id: correlationId,
+        },
+        { status: 400 },
+      );
+    }
+    try {
+      const ownedCart = await commandBillingV2Cart(
+        { command: "get", cartId: selfServiceCart.cartId, anonymousToken },
+        correlationId,
+      );
+      if (
+        ownedCart.code !== "CART_OK"
+        || ownedCart.cart?.id !== selfServiceCart.cartId
+        || ownedCart.cart.status !== "open"
+      ) {
+        return NextResponse.json(
+          {
+            code: "INVALID_SELF_SERVICE_CART",
+            message: "Le panier à reprendre n'est plus disponible.",
+            correlation_id: correlationId,
+          },
+          { status: 400 },
+        );
+      }
+    } catch {
+      return NextResponse.json(
+        {
+          code: "CART_UNAVAILABLE",
+          message: "Le panier est momentanément indisponible. Réessayez dans quelques instants.",
+          correlation_id: correlationId,
+        },
+        { status: 503 },
+      );
+    }
+  }
+
   const result = await callInternalSignup(
     "/internal/signup",
     {
       ...payload,
       billingV2Selection,
       selfServiceVpsIntent: selfServiceVps,
+      selfServiceCartIntent: selfServiceCart,
       password,
       sourceAddress: identifier === "unknown" ? null : identifier,
       userAgent: request.headers.get("user-agent")?.slice(0, 500) ?? null,
@@ -263,12 +336,14 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (selfServiceVps) {
+  if (selfServiceSignup) {
     if (!result.sessionToken || !result.expiresAt) {
       return NextResponse.json(
         {
           code: "SIGNUP_SESSION_UNAVAILABLE",
-          message: "Le compte a été créé, mais la connexion automatique est indisponible. Connectez-vous pour reprendre votre configuration VPS.",
+          message: selfServiceCart
+            ? "Le compte a été créé, mais la connexion automatique est indisponible. Connectez-vous pour reprendre votre panier."
+            : "Le compte a été créé, mais la connexion automatique est indisponible. Connectez-vous pour reprendre votre configuration VPS.",
           correlation_id: result.correlationId ?? correlationId,
         },
         { status: 502 },
@@ -312,6 +387,18 @@ function readSelfServiceVpsIntent(value: unknown) {
   return /^[A-Z0-9-]{1,80}$/.test(serviceCode)
     && /^[A-Z0-9-]{1,80}$/.test(tierCode)
     ? { serviceCode, tierCode }
+    : null;
+}
+
+function readSelfServiceCartIntent(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const cartId = typeof (value as { cartId?: unknown }).cartId === "string"
+    ? (value as { cartId: string }).cartId.trim()
+    : "";
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cartId)
+    ? { cartId }
     : null;
 }
 

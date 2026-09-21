@@ -13,14 +13,15 @@ namespace Kermaria.ApiInternal.Services;
 public sealed record SignupOperationResult(
     bool Succeeded,
     string Code,
-    string Message);
+    string Message,
+    string? SelfServiceFlow = null);
 
 /// <summary>
 /// Resultat d'une inscription immediate reservee au configurateur VPS
 /// self-service. Le jeton de session ne quitte jamais API-INTERNAL autrement
 /// que par le BFF, qui le place dans le cookie HttpOnly existant.
 /// </summary>
-public sealed record SignupSelfServiceVpsOperationResult(
+public sealed record SignupSelfServiceOperationResult(
     bool Succeeded,
     string Code,
     string Message,
@@ -39,13 +40,23 @@ public interface ISignupService
         AdminCustomerCreatePayload payload,
         CancellationToken cancellationToken);
 
-    Task<SignupSelfServiceVpsOperationResult> CompleteSelfServiceVpsAsync(
+    Task<SignupSelfServiceOperationResult> CompleteSelfServiceVpsAsync(
+        SignupSubmitPayload payload,
+        string correlationId,
+        CancellationToken cancellationToken);
+
+    Task<SignupSelfServiceOperationResult> CompleteSelfServiceCartAsync(
         SignupSubmitPayload payload,
         string correlationId,
         CancellationToken cancellationToken);
 
     Task<SignupOperationResult> VerifyEmailAsync(
         string? token,
+        CancellationToken cancellationToken);
+
+    Task<SignupOperationResult> ResendSelfServiceEmailVerificationAsync(
+        PortalSessionContext session,
+        string correlationId,
         CancellationToken cancellationToken);
 
     Task<IReadOnlyList<SignupAdminSummary>> ListAsync(
@@ -103,6 +114,8 @@ public sealed class SignupService : ISignupService
     private const int MaxCountryLength = 100;
     private const int MaxShortNameLength = 120;
     private const int MaxInitialsLength = 16;
+    private static readonly TimeSpan SelfServiceVerificationResendCooldown =
+        TimeSpan.FromMinutes(15);
     private static readonly HashSet<string> AllowedPersonalTitles =
         new(StringComparer.Ordinal)
         {
@@ -333,18 +346,56 @@ public sealed class SignupService : ISignupService
     /// durables sont reevaluees ci-dessous. L'identite Active Directory ne
     /// conditionne pas l'achat d'un produit explicitement self-service.
     /// </summary>
-    public async Task<SignupSelfServiceVpsOperationResult>
+    public Task<SignupSelfServiceOperationResult>
         CompleteSelfServiceVpsAsync(
             SignupSubmitPayload payload,
             string correlationId,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken) =>
+        CompleteSelfServiceAccountAsync(
+            payload,
+            correlationId,
+            "SELF_SERVICE_VPS_ACCOUNT_CREATED",
+            "Compte créé. Reprise de votre configuration VPS.",
+            "Votre compte a été créé, mais la connexion automatique est indisponible. Connectez-vous pour reprendre votre configuration VPS.",
+            "vps",
+            cancellationToken);
+
+    /// <summary>
+    /// Cree immediatement l'acces client pour un Cart dont la possession a
+    /// deja ete prouvee par le BFF. Cette primitive ne claim pas le Cart et
+    /// n'ouvre aucun checkout : la page de reprise utilise ensuite la commande
+    /// Cart existante, sous session, dans son propre flux transactionnel.
+    /// </summary>
+    public Task<SignupSelfServiceOperationResult>
+        CompleteSelfServiceCartAsync(
+            SignupSubmitPayload payload,
+            string correlationId,
+            CancellationToken cancellationToken) =>
+        CompleteSelfServiceAccountAsync(
+            payload,
+            correlationId,
+            "SELF_SERVICE_CART_ACCOUNT_CREATED",
+            "Compte créé. Reprise de votre panier.",
+            "Votre compte a été créé, mais la connexion automatique est indisponible. Connectez-vous pour reprendre votre panier.",
+            "cart",
+            cancellationToken);
+
+    private async Task<SignupSelfServiceOperationResult>
+        CompleteSelfServiceAccountAsync(
+            SignupSubmitPayload payload,
+            string correlationId,
+        string successCode,
+        string successMessage,
+        string sessionUnavailableMessage,
+        string selfServiceFlow,
+        CancellationToken cancellationToken)
     {
         var runtime = await _settings.GetSignupConfigurationAsync(
             _configuration,
             cancellationToken);
         if (!runtime.Enabled)
         {
-            return new SignupSelfServiceVpsOperationResult(
+            return new SignupSelfServiceOperationResult(
                 false,
                 "SIGNUP_DISABLED",
                 "Les inscriptions ne sont pas ouvertes.");
@@ -354,7 +405,7 @@ public sealed class SignupService : ISignupService
         if (normalized is null || payload.Password is null
             || payload.Password.Length is < MinPasswordLength or > MaxPasswordLength)
         {
-            return new SignupSelfServiceVpsOperationResult(
+            return new SignupSelfServiceOperationResult(
                 false,
                 "INVALID_REQUEST",
                 "Les informations transmises sont invalides.");
@@ -364,10 +415,27 @@ public sealed class SignupService : ISignupService
                 normalized.Email,
                 cancellationToken))
         {
-            // Le parcours public ne detaille jamais la cause : un client qui
-            // reconnait son adresse est invite a se connecter, sans exposer
-            // davantage l'etat du compte a un tiers.
-            return new SignupSelfServiceVpsOperationResult(
+            // Une identite self-service non verifiee ne doit pas immobiliser
+            // definitivement l'adresse si son premier lien a expire. La
+            // reponse reste non revelatrice : seul le titulaire de la boite
+            // peut exploiter le lien renouvelé qui lui est envoye.
+            var recoveryToken = GenerateToken();
+            var recovery = await _repository.RotateSelfServiceVerificationTokenByEmailAsync(
+                normalized.Email,
+                HashToken(recoveryToken),
+                DateTime.UtcNow.AddHours(runtime.VerificationTokenTtlHours),
+                DateTime.UtcNow.Subtract(SelfServiceVerificationResendCooldown),
+                cancellationToken);
+            if (recovery is not null)
+            {
+                await SendVerificationEmailSafelyAsync(
+                    recovery,
+                    recoveryToken,
+                    correlationId,
+                    cancellationToken);
+            }
+
+            return new SignupSelfServiceOperationResult(
                 false,
                 "ACCOUNT_ALREADY_EXISTS",
                 "Cet accès ne peut pas être créé. Connectez-vous ou utilisez une autre adresse e-mail.");
@@ -383,7 +451,7 @@ public sealed class SignupService : ISignupService
                 cancellationToken);
             if (perAddress >= runtime.RateLimitPerIpPerHour)
             {
-                return new SignupSelfServiceVpsOperationResult(
+                return new SignupSelfServiceOperationResult(
                     false,
                     "RATE_LIMITED",
                     "Trop de demandes successives. Reessayez plus tard.");
@@ -396,17 +464,16 @@ public sealed class SignupService : ISignupService
             cancellationToken);
         if (perEmail >= runtime.RateLimitPerEmailPer24h)
         {
-            return new SignupSelfServiceVpsOperationResult(
+            return new SignupSelfServiceOperationResult(
                 false,
                 "RATE_LIMITED",
                 "Trop de demandes successives. Reessayez plus tard.");
         }
 
-        // Le journal signup_pending est conserve pour l'audit et l'historique
-        // existants. La demande passe explicitement par email_verified avant
-        // l'approbation systeme afin de reutiliser la transaction de creation
-        // customer + portal_user, sans intervention commerciale humaine.
+        // Le token est conserve jusqu'a la preuve de possession. La creation
+        // immediate du compte ne rend jamais l'adresse e-mail verifiee.
         var signupId = Guid.NewGuid().ToString("D");
+        var verificationToken = GenerateToken();
         await _repository.InsertPendingAsync(
             new SignupInsert(
                 signupId,
@@ -417,13 +484,13 @@ public sealed class SignupService : ISignupService
                 normalized.Message,
                 normalized.Customer,
                 normalized.PrimaryUser,
-                HashToken(GenerateToken()),
+                HashToken(verificationToken),
                 now.AddHours(runtime.VerificationTokenTtlHours),
                 sourceAddress,
                 NormalizeOptional(payload.UserAgent, 500),
-                BillingV2Selection: null),
+                BillingV2Selection: null,
+                SelfServiceFlow: selfServiceFlow),
             cancellationToken);
-        await _repository.MarkEmailVerifiedAsync(signupId, cancellationToken);
 
         var customerId = Guid.NewGuid().ToString("D");
         var userId = Guid.NewGuid().ToString("D");
@@ -437,11 +504,13 @@ public sealed class SignupService : ISignupService
                 userId,
                 PasswordSetupTokenHash: null,
                 PasswordSetupExpiresAtUtc: null,
-                InitialPasswordHash: _passwordService.HashPassword(userId, payload.Password)),
+                InitialPasswordHash: _passwordService.HashPassword(userId, payload.Password),
+                EmailVerified: false,
+                SelfServiceFlow: selfServiceFlow),
             cancellationToken);
         if (approval is null)
         {
-            return new SignupSelfServiceVpsOperationResult(
+            return new SignupSelfServiceOperationResult(
                 false,
                 "SIGNUP_CREATION_FAILED",
                 "Le compte n'a pas pu être créé. Réessayez plus tard.");
@@ -455,10 +524,10 @@ public sealed class SignupService : ISignupService
                 sourceAddress,
                 NormalizeOptional(payload.UserAgent, 500),
                 cancellationToken);
-            return new SignupSelfServiceVpsOperationResult(
+            return new SignupSelfServiceOperationResult(
                 true,
-                "SELF_SERVICE_VPS_ACCOUNT_CREATED",
-                "Compte créé. Reprise de votre configuration VPS.",
+                successCode,
+                successMessage,
                 session);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
@@ -467,10 +536,22 @@ public sealed class SignupService : ISignupService
                 exception,
                 "Self-service VPS account was created but its initial session could not be opened correlation_id {CorrelationId}",
                 correlationId);
-            return new SignupSelfServiceVpsOperationResult(
+            return new SignupSelfServiceOperationResult(
                 false,
                 "SIGNUP_SESSION_UNAVAILABLE",
-                "Votre compte a été créé, mais la connexion automatique est indisponible. Connectez-vous pour reprendre votre configuration VPS.");
+                sessionUnavailableMessage);
+        }
+        finally
+        {
+            await SendVerificationEmailSafelyAsync(
+                new SignupVerificationResendTarget(
+                    normalized.Email,
+                    normalized.ContactName,
+                    selfServiceFlow),
+                verificationToken,
+                correlationId,
+                cancellationToken,
+                BuildSelfServiceContinuationPath(payload, selfServiceFlow));
         }
     }
 
@@ -487,14 +568,22 @@ public sealed class SignupService : ISignupService
         var target = await _repository.FindPendingByVerificationHashAsync(
             HashToken(normalized),
             cancellationToken);
-        if (target is null
-            || !string.Equals(
-                target.Status,
-                "email_pending",
-                StringComparison.Ordinal))
+        if (target is null)
         {
             return TokenInvalid();
         }
+
+        if (string.Equals(target.Status, "approved", StringComparison.Ordinal)
+            || string.Equals(target.Status, "email_verified", StringComparison.Ordinal))
+        {
+            return new SignupOperationResult(
+                true,
+                "EMAIL_ALREADY_VERIFIED",
+                "Adresse e-mail déjà confirmée.",
+                target.SelfServiceFlow);
+        }
+
+        if (!string.Equals(target.Status, "email_pending", StringComparison.Ordinal)) return TokenInvalid();
 
         if (target.VerificationTokenExpiresAtUtc is { } expiry
             && expiry < DateTime.UtcNow)
@@ -509,7 +598,69 @@ public sealed class SignupService : ISignupService
         return new SignupOperationResult(
             true,
             "EMAIL_VERIFIED",
-            "Adresse e-mail confirmee. Votre demande est en attente de validation.");
+            target.ApprovedUserId is null
+                ? "Adresse e-mail confirmee. Votre demande est en attente de validation."
+                : "Adresse e-mail confirmée. Vous pouvez reprendre votre souscription.",
+            target.SelfServiceFlow);
+    }
+
+    public async Task<SignupOperationResult> ResendSelfServiceEmailVerificationAsync(
+        PortalSessionContext session,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
+        var runtime = await _settings.GetSignupConfigurationAsync(_configuration, cancellationToken);
+        var token = GenerateToken();
+        var target = await _repository.RotateSelfServiceVerificationTokenAsync(
+            session.UserId,
+            HashToken(token),
+            DateTime.UtcNow.AddHours(runtime.VerificationTokenTtlHours),
+            DateTime.UtcNow.Subtract(SelfServiceVerificationResendCooldown),
+            cancellationToken);
+        if (target is null)
+        {
+            return new SignupOperationResult(
+                false,
+                "EMAIL_VERIFICATION_RESEND_UNAVAILABLE",
+                "Un lien vient déjà d'être envoyé. Réessayez plus tard si nécessaire.");
+        }
+
+        await SendVerificationEmailSafelyAsync(target, token, correlationId, cancellationToken);
+        return new SignupOperationResult(
+            true,
+            "EMAIL_VERIFICATION_RESENT",
+            "Un nouveau lien de vérification a été envoyé à votre adresse e-mail.");
+    }
+
+    private async Task SendVerificationEmailSafelyAsync(
+        SignupVerificationResendTarget target,
+        string verificationToken,
+        string correlationId,
+        CancellationToken cancellationToken,
+        string? continuationPath = null)
+    {
+        try
+        {
+            // Le seul clair vit dans ce lien de livraison. Les doubles de test
+            // remplacent ce dispatch ; aucun test ne contacte SMTP.
+            var delivery = await _emailDispatch.SendSignupVerificationAsync(
+                target.Email,
+                target.ContactName,
+                BuildUrl("/signup/verify", verificationToken, continuationPath),
+                correlationId,
+                cancellationToken);
+            if (!delivery.Succeeded)
+            {
+                _logger.LogWarning("Self-service email verification delivery failed ({Code}) correlation_id {CorrelationId}", delivery.Code, correlationId);
+            }
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // La creation de compte est deja durable. Une indisponibilite SMTP
+            // ne doit ni annuler la session locale, ni faire croire au client
+            // que le compte n'existe pas.
+            _logger.LogError(exception, "Self-service email verification dispatch failed correlation_id {CorrelationId}", correlationId);
+        }
     }
 
     public async Task<IReadOnlyList<SignupAdminSummary>> ListAsync(
@@ -1370,14 +1521,47 @@ public sealed class SignupService : ISignupService
             "TOKEN_INVALID",
             "Ce lien est invalide ou a deja ete utilise.");
 
-    private string BuildUrl(string path, string token)
+    private string BuildUrl(string path, string token, string? continuationPath = null)
     {
         var baseUrl = _emailConfiguration.PortalPublicUrl;
         var prefix = string.IsNullOrWhiteSpace(baseUrl)
             ? string.Empty
             : baseUrl.TrimEnd('/');
-        return $"{prefix}{path}?token={Uri.EscapeDataString(token)}";
+        var url = $"{prefix}{path}?token={Uri.EscapeDataString(token)}";
+        return string.IsNullOrWhiteSpace(continuationPath)
+            ? url
+            : $"{url}&next={Uri.EscapeDataString(continuationPath)}";
     }
+
+    // Le lien e-mail ne porte jamais le secret anonyme du Cart. Il contient
+    // seulement une continuation relative déjà bornée par le BFF au moment de
+    // l'inscription ; la page de vérification applique sa propre allowlist
+    // avant d'en faire un lien visible.
+    private static string? BuildSelfServiceContinuationPath(
+        SignupSubmitPayload payload,
+        string selfServiceFlow)
+    {
+        if (selfServiceFlow == "cart"
+            && Guid.TryParseExact(payload.SelfServiceCartIntent?.CartId, "D", out var cartId))
+        {
+            return $"/souscription?cart={cartId:D}";
+        }
+
+        if (selfServiceFlow == "vps"
+            && IsCatalogCode(payload.SelfServiceVpsIntent?.ServiceCode)
+            && IsCatalogCode(payload.SelfServiceVpsIntent?.TierCode))
+        {
+            return "/services/vps/choisir?serviceCode="
+                + Uri.EscapeDataString(payload.SelfServiceVpsIntent!.ServiceCode!)
+                + "&tierCode="
+                + Uri.EscapeDataString(payload.SelfServiceVpsIntent.TierCode!);
+        }
+
+        return null;
+    }
+
+    private static bool IsCatalogCode(string? value) => value is { Length: > 0 and <= 80 }
+        && value.All(character => char.IsAsciiLetterOrDigit(character) || character == '-');
 
     // Delegue a PortalSetupToken : le cycle de vie des utilisateurs
     // additionnels Billing V2 emet le meme type de lien, et deux generateurs

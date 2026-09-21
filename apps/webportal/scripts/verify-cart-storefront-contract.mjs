@@ -114,6 +114,16 @@ assert.doesNotMatch(checkoutReview, /Socle de service/,
   "Le libellé technique historique ne doit pas être exposé lors de la vérification.");
 assert.doesNotMatch(checkoutReview, /reduce\([^)]*amountCents|amountCents\s*\+/,
   "La vérification ne recompose aucun prix côté navigateur.");
+assert.doesNotMatch(checkoutReview, /Le montant sera vérifié une dernière fois avant le paiement\./,
+  "La revue ne doit pas afficher une explication technique de prix au client.");
+assert.match(checkoutReview, /Préparation du paiement[\s\S]*Votre souscription est enregistrée\. Nous préparons votre paiement\./,
+  "L'etat provider pending doit conserver son message commercial coherent.");
+assert.match(checkoutReview, /subscription-status-page[\s\S]*subscription-status-card/,
+  "L'etat provider pending doit etre presente dans une carte commerciale coherente.");
+assert.match(checkoutReview, /Votre paiement est prêt[\s\S]*Poursuivre le paiement/,
+  "Une approval URL deja autorisee doit garder un CTA public clair sans URL brute.");
+assert.match(checkoutReview, /notifyBillingV2CartChanged\(\)[\s\S]*if \(result\.data\.approvalUrl\)/,
+  "Le checkout confirme invalide le badge avant toute redirection provider ou reprise d'etat.");
 
 assert.match(header, /command: "get_current"/);
 assert.doesNotMatch(header, /command: "current"/,
@@ -122,6 +132,10 @@ assert.match(header, /item\.countsAsCommercialSelection/,
   "Le badge doit utiliser la contribution commerciale dynamique du serveur.");
 assert.doesNotMatch(header, /item\.origin !== "dependency"/,
   "Le badge ne doit pas déduire un rôle courant de la provenance historique.");
+assert.match(header, /billing-v2-cart-changed[\s\S]*refresh/,
+  "Le badge doit relire son compteur apres un checkout confirme.");
+assert.match(cartService, /ReadCurrentAsync[\s\S]*status = 'open'/,
+  "La lecture badge ne peut pas projeter un Cart checked_out comme Cart commercial courant.");
 assert.match(shell, /BillingV2CartHeaderLink/);
 assert.match(routes, /"\/panier"/);
 assert.match(cartRoute, /"get_current"/);

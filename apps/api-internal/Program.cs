@@ -1146,6 +1146,54 @@ app.MapPost(
     "/internal/auth/sessions/revoke-others",
     RevokeOtherPortalSessions);
 
+// Projection minimale de la verification : le navigateur ne voit ni token,
+// ni statut signup, ni horodatage. Elle est liee a l'identite de la session,
+// jamais au customer qui peut porter plusieurs utilisateurs portail.
+app.MapGet(
+    "/internal/portal/auth/email-verification",
+    async (
+        HttpContext context,
+        IAuthenticationService authenticationService,
+        IAuditService auditService,
+        ISignupRepository signupRepository) =>
+    {
+        var session = await ResolveClientSessionAsync(context, authenticationService, auditService);
+        var state = await signupRepository.GetPortalUserEmailVerificationStateAsync(
+            session.UserId,
+            context.RequestAborted);
+        return Results.Ok(new
+        {
+            // Une identite historique inconnue n'est pas declaree verifiee;
+            // seule l'obligation explicite du workflow self-service pilote le
+            // blocage commercial, pour ne pas retrograder silencieusement le parc.
+            emailVerified = state.EmailVerified,
+            emailVerificationRequired = state.VerificationRequired && !state.EmailVerified
+        });
+    });
+
+app.MapPost(
+    "/internal/portal/auth/email-verification/resend",
+    async (
+        HttpContext context,
+        IAuthenticationService authenticationService,
+        IAuditService auditService,
+        ISignupService signupService) =>
+    {
+        var session = await ResolveClientSessionAsync(context, authenticationService, auditService);
+        var result = await signupService.ResendSelfServiceEmailVerificationAsync(
+            session,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        if (!result.Succeeded)
+        {
+            return Results.Json(
+                new ApiError(result.Code, result.Message, context.GetCorrelationId()),
+                statusCode: StatusCodes.Status429TooManyRequests);
+        }
+
+        return Results.Ok(new { code = result.Code, message = result.Message });
+    });
+
 app.MapPost(
     "/internal/profile/password",
     async (
@@ -1892,6 +1940,8 @@ app.MapPost(
                 => await service.ClaimAsync(payload.AnonymousToken, owner.CustomerId!, expectedVersion, context.RequestAborted),
             "claim_current" when owner.IsAuthenticated && !string.IsNullOrWhiteSpace(payload.AnonymousToken)
                 => await service.ClaimCurrentAsync(payload.AnonymousToken, owner.CustomerId!, context.RequestAborted),
+            "claim_current" when owner.IsAuthenticated
+                => new BillingV2CartMutationResult("CART_NOTHING_TO_CLAIM"),
             _ => new BillingV2CartMutationResult("CART_COMMAND_INVALID")
         };
         // `current` porte son compteur de retry exact dans le service qui
@@ -2055,7 +2105,8 @@ app.MapPost(
         HttpContext context,
         IBillingV2AuthoritativeCheckoutService service,
         IAuthenticationService authenticationService,
-        IAuditService auditService) =>
+        IAuditService auditService,
+        ISignupRepository signupRepository) =>
     {
         var session = await ResolveClientSessionAsync(
             context,
@@ -2063,6 +2114,18 @@ app.MapPost(
             auditService);
         var payload = await ReadPayload<BillingV2VpsAuthoritativeCheckoutPayload>(context)
             ?? throw new PortalValidationException();
+        var emailVerification = await signupRepository.GetPortalUserEmailVerificationStateAsync(
+            session.UserId,
+            context.RequestAborted);
+        if (emailVerification.VerificationRequired && !emailVerification.EmailVerified)
+        {
+            return Results.Json(
+                new ApiError(
+                    "EMAIL_VERIFICATION_REQUIRED",
+                    "Vérifiez votre adresse e-mail avant de poursuivre vers le paiement.",
+                    context.GetCorrelationId()),
+                statusCode: StatusCodes.Status409Conflict);
+        }
         if (string.IsNullOrWhiteSpace(payload.TechnicalRequestId)
             || string.IsNullOrWhiteSpace(payload.Provider)
             || string.IsNullOrWhiteSpace(payload.IdempotencyKey)
@@ -2362,7 +2425,8 @@ app.MapPost(
 
         if (payload.SelfServiceVpsIntent is not null)
         {
-            if (payload.BillingV2Selection is not null
+            if (payload.SelfServiceCartIntent is not null
+                || payload.BillingV2Selection is not null
                 || !await IsEligibleSelfServiceVpsSignupAsync(
                     billingV2CatalogService,
                     payload.SelfServiceVpsIntent,
@@ -2384,6 +2448,65 @@ app.MapPost(
                 new AuditEvent(
                     correlationId,
                     "signup.self_service_vps",
+                    selfServiceResult.Succeeded ? "success" : "refused",
+                    ReasonCode: selfServiceResult.Code,
+                    TargetType: "signup",
+                    SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+                context.RequestAborted);
+
+            if (!selfServiceResult.Succeeded || selfServiceResult.Session is null)
+            {
+                var statusCode = selfServiceResult.Code switch
+                {
+                    "SIGNUP_DISABLED" => StatusCodes.Status403Forbidden,
+                    "RATE_LIMITED" => StatusCodes.Status429TooManyRequests,
+                    "SIGNUP_SESSION_UNAVAILABLE" => StatusCodes.Status503ServiceUnavailable,
+                    "ACCOUNT_ALREADY_EXISTS" => StatusCodes.Status409Conflict,
+                    _ => StatusCodes.Status400BadRequest,
+                };
+                return Results.Json(
+                    new ApiError(
+                        selfServiceResult.Code,
+                        selfServiceResult.Message,
+                        correlationId),
+                    statusCode: statusCode);
+            }
+
+            return Results.Ok(new
+            {
+                code = selfServiceResult.Code,
+                message = selfServiceResult.Message,
+                sessionToken = selfServiceResult.Session.SessionToken,
+                user = selfServiceResult.Session.User,
+                expiresAt = ToUtcIso(selfServiceResult.Session.ExpiresAtUtc),
+                correlation_id = correlationId
+            });
+        }
+
+        if (payload.SelfServiceCartIntent is not null)
+        {
+            // Le BFF a deja prouve la possession du Cart au moyen de son
+            // cookie HttpOnly. API-INTERNAL ne recoit ici qu'une intention
+            // syntaxiquement bornee : ni token Cart, ni prix, ni checkout.
+            if (payload.BillingV2Selection is not null
+                || !Guid.TryParse(payload.SelfServiceCartIntent.CartId, out _))
+            {
+                return Results.Json(
+                    new ApiError(
+                        "INVALID_SELF_SERVICE_CART",
+                        "Le panier à reprendre n'est pas valide.",
+                        correlationId),
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            var selfServiceResult = await signupService.CompleteSelfServiceCartAsync(
+                payload,
+                correlationId,
+                context.RequestAborted);
+            await auditService.RecordAsync(
+                new AuditEvent(
+                    correlationId,
+                    "signup.self_service_cart",
                     selfServiceResult.Succeeded ? "success" : "refused",
                     ReasonCode: selfServiceResult.Code,
                     TargetType: "signup",
@@ -2492,6 +2615,9 @@ app.MapPost(
         {
             code = result.Code,
             message = result.Message,
+            selfServiceFlow = result.SelfServiceFlow is "cart" or "vps"
+                ? result.SelfServiceFlow
+                : null,
             correlation_id = correlationId
         });
     });

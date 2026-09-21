@@ -118,10 +118,10 @@ export async function POST(request: NextRequest) {
       headers: { "X-Correlation-Id": correlationId },
     });
     if ((payload.command === "claim" || payload.command === "claim_current") && result.code === "CART_CLAIMED") {
-      clearAnonymousCartToken(response);
+      await clearAnonymousCartToken(response);
     }
     if (!sessionToken && anonymousToken && result.cart && cartActivityCommands.has(payload.command)) {
-      refreshAnonymousCartToken(response, anonymousToken);
+      await refreshAnonymousCartToken(response, anonymousToken);
     }
     return response;
   } catch (error) {

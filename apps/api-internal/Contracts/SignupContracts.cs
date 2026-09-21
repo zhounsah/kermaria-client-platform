@@ -38,6 +38,13 @@ public sealed record SignupSelfServiceVpsIntent(
     string? ServiceCode,
     string? TierCode);
 
+/// <summary>
+/// Intention non financiere d'une creation de compte immediate pour reprendre
+/// un Cart anonyme. La possession du Cart est revalidee par le BFF via son
+/// cookie HttpOnly ; l'identifiant seul ne confere aucune autorisation.
+/// </summary>
+public sealed record SignupSelfServiceCartIntent(string? CartId);
+
 // V0.38 : l'inscription reste mono-utilisateur a ce stade, mais le contrat
 // public devient structure pour preparer l'alignement site -> AD.
 public sealed record SignupSubmitPayload(
@@ -52,6 +59,7 @@ public sealed record SignupSubmitPayload(
     string? UserAgent,
     Services.BillingV2PublicSelectionInput? BillingV2Selection = null,
     SignupSelfServiceVpsIntent? SelfServiceVpsIntent = null,
+    SignupSelfServiceCartIntent? SelfServiceCartIntent = null,
     string? Password = null);
 
 public sealed record SignupVerifyPayload(string? Token);

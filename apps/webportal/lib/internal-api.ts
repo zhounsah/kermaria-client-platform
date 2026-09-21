@@ -1000,6 +1000,34 @@ export async function getInternalSession(
   );
 }
 
+export type InternalEmailVerificationState = {
+  emailVerified: boolean;
+  emailVerificationRequired: boolean;
+};
+
+export function getInternalEmailVerificationState(
+  sessionToken: string,
+  correlationId = resolveCorrelationId(null),
+) {
+  return getInternalPortalData<InternalEmailVerificationState>(
+    "/internal/portal/auth/email-verification",
+    sessionToken,
+    correlationId,
+  );
+}
+
+export function resendInternalEmailVerification(
+  sessionToken: string,
+  correlationId = resolveCorrelationId(null),
+) {
+  return mutateInternalPortalPayloadTyped<{ code: string; message: string }, undefined>(
+    "/internal/portal/auth/email-verification/resend",
+    undefined,
+    sessionToken,
+    correlationId,
+  );
+}
+
 export async function revokeInternalSession(
   sessionToken: string,
   correlationId: CorrelationId,

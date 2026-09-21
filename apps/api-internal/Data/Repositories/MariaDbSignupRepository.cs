@@ -59,6 +59,41 @@ public sealed class MariaDbSignupRepository : ISignupRepository
         return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken)) > 0;
     }
 
+    public async Task<PortalEmailVerificationState> GetPortalUserEmailVerificationStateAsync(
+        string portalUserId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(_configuration.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT
+                u.email_verified_at,
+                EXISTS(
+                    SELECT 1
+                    FROM signup_pending s
+                    WHERE s.approved_user_id = u.id
+                      AND s.self_service_flow IN ('cart', 'vps')
+                ) AS verification_required
+            FROM portal_users u
+            WHERE u.id = @portal_user_id
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("@portal_user_id", portalUserId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            // Une session ne devrait jamais referencer une identite absente.
+            // La policy reste fail-closed si cette invariant est brise.
+            return new PortalEmailVerificationState(false, true);
+        }
+
+        return new PortalEmailVerificationState(
+            !reader.IsDBNull(reader.GetOrdinal("email_verified_at")),
+            reader.GetBoolean(reader.GetOrdinal("verification_required")));
+    }
+
     public async Task<ManualCustomerCreateResult> CreateManualCustomerAsync(
         ManualCustomerCreateRequest request,
         CancellationToken cancellationToken)
@@ -212,6 +247,7 @@ public sealed class MariaDbSignupRepository : ISignupRepository
                 verification_token_expires_at,
                 source_address,
                 user_agent,
+                self_service_flow,
                 created_at,
                 updated_at
             ) VALUES (
@@ -239,6 +275,7 @@ public sealed class MariaDbSignupRepository : ISignupRepository
                 @verification_token_expires_at,
                 @source_address,
                 @user_agent,
+                @self_service_flow,
                 UTC_TIMESTAMP(6),
                 UTC_TIMESTAMP(6)
             );
@@ -300,6 +337,7 @@ public sealed class MariaDbSignupRepository : ISignupRepository
         command.Parameters.AddWithValue(
             "@user_agent",
             DbValue(insert.UserAgent));
+        command.Parameters.AddWithValue("@self_service_flow", DbValue(insert.SelfServiceFlow));
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -314,7 +352,7 @@ public sealed class MariaDbSignupRepository : ISignupRepository
         await using var command = connection.CreateCommand();
         command.CommandText =
             """
-            SELECT id, status, verification_token_expires_at
+            SELECT id, status, verification_token_expires_at, approved_user_id, self_service_flow
             FROM signup_pending
             WHERE verification_token_hash = @hash
             LIMIT 1;
@@ -329,7 +367,9 @@ public sealed class MariaDbSignupRepository : ISignupRepository
         return new SignupVerificationTarget(
             MariaDbIdentifierReader.ReadRequired(reader, "id"),
             reader.GetString("status"),
-            ReadNullableUtc(reader, "verification_token_expires_at"));
+            ReadNullableUtc(reader, "verification_token_expires_at"),
+            ReadNullableIdentifier(reader, "approved_user_id"),
+            ReadNullableString(reader, "self_service_flow"));
     }
 
     public async Task MarkEmailVerifiedAsync(
@@ -340,19 +380,137 @@ public sealed class MariaDbSignupRepository : ISignupRepository
             _configuration.ConnectionString);
         await connection.OpenAsync(cancellationToken);
 
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText =
             """
             UPDATE signup_pending
-            SET status = 'email_verified',
-                verification_token_hash = NULL,
-                verification_token_expires_at = NULL,
-                updated_at = UTC_TIMESTAMP(6)
-            WHERE id = @id
-              AND status = 'email_pending';
+            SET status = CASE WHEN approved_user_id IS NULL THEN 'email_verified' ELSE 'approved' END,
+                email_verified_at = UTC_TIMESTAMP(6), updated_at = UTC_TIMESTAMP(6)
+            WHERE id = @id AND status = 'email_pending';
             """;
         command.Parameters.AddWithValue("@id", id);
         await command.ExecuteNonQueryAsync(cancellationToken);
+        await using var userCommand = connection.CreateCommand();
+        userCommand.Transaction = transaction;
+        userCommand.CommandText =
+            """
+            UPDATE portal_users u JOIN signup_pending s ON s.approved_user_id = u.id
+            SET u.email_verified_at = s.email_verified_at, u.updated_at = UTC_TIMESTAMP(6)
+            WHERE s.id = @id AND s.email_verified_at IS NOT NULL;
+            """;
+        userCommand.Parameters.AddWithValue("@id", id);
+        await userCommand.ExecuteNonQueryAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    public async Task<SignupVerificationResendTarget?> RotateSelfServiceVerificationTokenAsync(
+        string portalUserId,
+        string verificationTokenHash,
+        DateTime verificationTokenExpiresAtUtc,
+        DateTime resendAllowedBeforeUtc,
+        CancellationToken cancellationToken)
+        => await RotateSelfServiceVerificationTokenCoreAsync(
+            "approved_user_id = @identity",
+            portalUserId,
+            verificationTokenHash,
+            verificationTokenExpiresAtUtc,
+            resendAllowedBeforeUtc,
+            cancellationToken);
+
+    public async Task<SignupVerificationResendTarget?> RotateSelfServiceVerificationTokenByEmailAsync(
+        string normalizedEmail,
+        string verificationTokenHash,
+        DateTime verificationTokenExpiresAtUtc,
+        DateTime resendAllowedBeforeUtc,
+        CancellationToken cancellationToken)
+        => await RotateSelfServiceVerificationTokenCoreAsync(
+            "LOWER(email) = @identity",
+            normalizedEmail,
+            verificationTokenHash,
+            verificationTokenExpiresAtUtc,
+            resendAllowedBeforeUtc,
+            cancellationToken);
+
+    private async Task<SignupVerificationResendTarget?> RotateSelfServiceVerificationTokenCoreAsync(
+        string identityPredicate,
+        string identity,
+        string verificationTokenHash,
+        DateTime verificationTokenExpiresAtUtc,
+        DateTime resendAllowedBeforeUtc,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(_configuration.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        string? signupId = null;
+        string? email = null;
+        string? contactName = null;
+        string? flow = null;
+        DateTime? expiresAtUtc = null;
+        DateTime? updatedAtUtc = null;
+        await using (var read = connection.CreateCommand())
+        {
+            read.Transaction = transaction;
+            read.CommandText =
+                $"""
+                SELECT id, email, contact_name, self_service_flow,
+                       verification_token_expires_at, updated_at
+                FROM signup_pending
+                WHERE {identityPredicate}
+                  AND status = 'email_pending'
+                  AND self_service_flow IN ('cart', 'vps')
+                  AND email_verified_at IS NULL
+                ORDER BY updated_at DESC, id DESC
+                LIMIT 1
+                FOR UPDATE;
+                """;
+            read.Parameters.AddWithValue("@identity", identity);
+            await using var reader = await read.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                signupId = MariaDbIdentifierReader.ReadRequired(reader, "id");
+                email = reader.GetString("email");
+                contactName = reader.GetString("contact_name");
+                flow = reader.GetString("self_service_flow");
+                expiresAtUtc = ReadNullableUtc(reader, "verification_token_expires_at");
+                updatedAtUtc = ReadNullableUtc(reader, "updated_at");
+            }
+        }
+
+        if (signupId is null || email is null || contactName is null || flow is null
+            || (expiresAtUtc is { } expiry && expiry > DateTime.UtcNow)
+            && updatedAtUtc is { } updated && updated > resendAllowedBeforeUtc)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return null;
+        }
+
+        await using var update = connection.CreateCommand();
+        update.Transaction = transaction;
+        update.CommandText =
+            """
+            UPDATE signup_pending
+            SET verification_token_hash = @hash,
+                verification_token_expires_at = @expires_at,
+                updated_at = UTC_TIMESTAMP(6)
+            WHERE id = @id
+              AND status = 'email_pending'
+              AND email_verified_at IS NULL;
+            """;
+        update.Parameters.AddWithValue("@hash", verificationTokenHash);
+        update.Parameters.AddWithValue("@expires_at", verificationTokenExpiresAtUtc);
+        update.Parameters.AddWithValue("@id", signupId);
+        if (await update.ExecuteNonQueryAsync(cancellationToken) != 1)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return null;
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return new SignupVerificationResendTarget(email, contactName, flow);
     }
 
     public async Task<IReadOnlyList<SignupPendingRecord>> ListAsync(
@@ -458,14 +616,26 @@ public sealed class MariaDbSignupRepository : ISignupRepository
             guard.Transaction = transaction;
             guard.CommandText =
                 """
-                SELECT status
+                SELECT status, self_service_flow
                 FROM signup_pending
                 WHERE id = @id
                 FOR UPDATE;
                 """;
             guard.Parameters.AddWithValue("@id", request.SignupId);
-            var status = await guard.ExecuteScalarAsync(cancellationToken) as string;
-            if (!string.Equals(status, "email_verified", StringComparison.Ordinal))
+            await using var reader = await guard.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return null;
+            }
+            var status = reader.GetString("status");
+            var flow = ReadNullableString(reader, "self_service_flow");
+            var allowed = request.EmailVerified
+                ? string.Equals(status, "email_verified", StringComparison.Ordinal)
+                : string.Equals(status, "email_pending", StringComparison.Ordinal)
+                  && string.Equals(flow, request.SelfServiceFlow, StringComparison.Ordinal)
+                  && flow is "cart" or "vps";
+            if (!allowed)
             {
                 await transaction.RollbackAsync(cancellationToken);
                 return null;
@@ -561,7 +731,7 @@ public sealed class MariaDbSignupRepository : ISignupRepository
                     id,
                     customer_id,
                     identity_provider_subject,
-                    email,
+                    email, email_verified_at,
                     password_hash,
                     display_name,
                     status,
@@ -581,7 +751,7 @@ public sealed class MariaDbSignupRepository : ISignupRepository
                     @id,
                     @customer_id,
                     @subject,
-                    @email,
+                    @email, @email_verified_at,
                     @password_hash,
                     @display_name,
                     'active',
@@ -603,6 +773,7 @@ public sealed class MariaDbSignupRepository : ISignupRepository
             userCommand.Parameters.AddWithValue("@customer_id", request.CustomerId);
             userCommand.Parameters.AddWithValue("@subject", $"signup-{request.UserId}");
             userCommand.Parameters.AddWithValue("@email", portalEmail);
+            userCommand.Parameters.AddWithValue("@email_verified_at", request.EmailVerified ? DateTime.UtcNow : DBNull.Value);
             userCommand.Parameters.AddWithValue(
                 "@password_hash",
                 DbValue(request.InitialPasswordHash));
@@ -641,7 +812,7 @@ public sealed class MariaDbSignupRepository : ISignupRepository
             signupCommand.CommandText =
                 """
                 UPDATE signup_pending
-                SET status = 'approved',
+                SET status = CASE WHEN @email_verified THEN 'approved' ELSE 'email_pending' END,
                     approved_user_id = @user_id,
                     approved_customer_id = @customer_id,
                     approved_at = UTC_TIMESTAMP(6),
@@ -651,6 +822,7 @@ public sealed class MariaDbSignupRepository : ISignupRepository
                 WHERE id = @id;
                 """;
             signupCommand.Parameters.AddWithValue("@id", request.SignupId);
+            signupCommand.Parameters.AddWithValue("@email_verified", request.EmailVerified);
             signupCommand.Parameters.AddWithValue("@user_id", request.UserId);
             signupCommand.Parameters.AddWithValue("@customer_id", request.CustomerId);
             signupCommand.Parameters.AddWithValue(
@@ -936,7 +1108,9 @@ public sealed class MariaDbSignupRepository : ISignupRepository
             reader.GetDateTime("updated_at"),
             BillingV2Selection: DeserializeBillingV2Selection(
                 reader,
-                "catalog_configuration_snapshot_json"));
+                "catalog_configuration_snapshot_json"),
+            EmailVerifiedAtUtc: ReadNullableUtc(reader, "email_verified_at"),
+            SelfServiceFlow: ReadNullableString(reader, "self_service_flow"));
 
     private static string BuildRecordSelectSql(
         string? whereClause = null,
@@ -966,6 +1140,8 @@ public sealed class MariaDbSignupRepository : ISignupRepository
                 signup_pending.catalog_configuration_snapshot_json AS catalog_configuration_snapshot_json,
                 signup_pending.source_address AS source_address,
                 signup_pending.verification_token_expires_at AS verification_token_expires_at,
+                signup_pending.email_verified_at AS email_verified_at,
+                signup_pending.self_service_flow AS self_service_flow,
                 signup_pending.approved_user_id AS approved_user_id,
                 signup_pending.approved_customer_id AS approved_customer_id,
                 approved_customer.external_reference AS approved_customer_reference,

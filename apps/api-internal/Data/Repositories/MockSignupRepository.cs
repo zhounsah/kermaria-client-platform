@@ -18,6 +18,8 @@ public sealed class MockSignupRow
     public BillingV2PublicSelection? BillingV2Selection { get; set; }
     public string? VerificationTokenHash { get; set; }
     public DateTime? VerificationTokenExpiresAtUtc { get; set; }
+    public DateTime? EmailVerifiedAtUtc { get; set; }
+    public string? SelfServiceFlow { get; set; }
     public string? PasswordSetupTokenHash { get; set; }
     public DateTime? PasswordSetupExpiresAtUtc { get; set; }
     public string? SourceAddress { get; set; }
@@ -85,6 +87,17 @@ public sealed class MockSignupRepository : ISignupRepository
         CancellationToken cancellationToken)
         => Task.FromResult(_store.ManualCustomersByEmail.ContainsKey(normalizedEmail));
 
+    public Task<PortalEmailVerificationState> GetPortalUserEmailVerificationStateAsync(
+        string portalUserId,
+        CancellationToken cancellationToken)
+    {
+        var row = _rows.Values.FirstOrDefault(candidate => candidate.ApprovedUserId == portalUserId);
+        var verificationRequired = row?.SelfServiceFlow is "cart" or "vps";
+        return Task.FromResult(new PortalEmailVerificationState(
+            row?.EmailVerifiedAtUtc is not null,
+            verificationRequired));
+    }
+
     public Task<ManualCustomerCreateResult> CreateManualCustomerAsync(
         ManualCustomerCreateRequest request,
         CancellationToken cancellationToken)
@@ -141,6 +154,7 @@ public sealed class MockSignupRepository : ISignupRepository
             BillingV2Selection = insert.BillingV2Selection,
             VerificationTokenHash = insert.VerificationTokenHash,
             VerificationTokenExpiresAtUtc = insert.VerificationTokenExpiresAtUtc,
+            SelfServiceFlow = insert.SelfServiceFlow,
             SourceAddress = insert.SourceAddress,
             UserAgent = insert.UserAgent,
             CreatedAtUtc = now,
@@ -163,7 +177,9 @@ public sealed class MockSignupRepository : ISignupRepository
             : new SignupVerificationTarget(
                 row.Id,
                 row.Status,
-                row.VerificationTokenExpiresAtUtc));
+                row.VerificationTokenExpiresAtUtc,
+                row.ApprovedUserId,
+                row.SelfServiceFlow));
     }
 
     public Task MarkEmailVerifiedAsync(
@@ -173,13 +189,64 @@ public sealed class MockSignupRepository : ISignupRepository
         if (_rows.TryGetValue(id, out var row)
             && row.Status == "email_pending")
         {
-            row.Status = "email_verified";
-            row.VerificationTokenHash = null;
-            row.VerificationTokenExpiresAtUtc = null;
+            row.Status = row.ApprovedUserId is null ? "email_verified" : "approved";
+            row.EmailVerifiedAtUtc = DateTime.UtcNow;
             row.UpdatedAtUtc = DateTime.UtcNow;
         }
 
         return Task.CompletedTask;
+    }
+
+    public Task<SignupVerificationResendTarget?> RotateSelfServiceVerificationTokenAsync(
+        string portalUserId,
+        string verificationTokenHash,
+        DateTime verificationTokenExpiresAtUtc,
+        DateTime resendAllowedBeforeUtc,
+        CancellationToken cancellationToken)
+    {
+        var row = FindResendableRow(candidate => candidate.ApprovedUserId == portalUserId, resendAllowedBeforeUtc);
+        return Task.FromResult(Rotate(row, verificationTokenHash, verificationTokenExpiresAtUtc));
+    }
+
+    public Task<SignupVerificationResendTarget?> RotateSelfServiceVerificationTokenByEmailAsync(
+        string normalizedEmail,
+        string verificationTokenHash,
+        DateTime verificationTokenExpiresAtUtc,
+        DateTime resendAllowedBeforeUtc,
+        CancellationToken cancellationToken)
+    {
+        var row = FindResendableRow(candidate => string.Equals(candidate.Email, normalizedEmail, StringComparison.Ordinal), resendAllowedBeforeUtc);
+        return Task.FromResult(Rotate(row, verificationTokenHash, verificationTokenExpiresAtUtc));
+    }
+
+    private MockSignupRow? FindResendableRow(Func<MockSignupRow, bool> matches, DateTime resendAllowedBeforeUtc)
+    {
+        var now = DateTime.UtcNow;
+        return _rows.Values
+            .Where(candidate => matches(candidate)
+                && candidate.Status == "email_pending"
+                && candidate.EmailVerifiedAtUtc is null
+                && candidate.SelfServiceFlow is "cart" or "vps")
+            .Where(candidate => candidate.VerificationTokenExpiresAtUtc is not { } expiry
+                || expiry <= now
+                || candidate.UpdatedAtUtc <= resendAllowedBeforeUtc)
+            .OrderByDescending(candidate => candidate.UpdatedAtUtc)
+            .FirstOrDefault();
+    }
+
+    private static SignupVerificationResendTarget? Rotate(
+        MockSignupRow? row,
+        string verificationTokenHash,
+        DateTime verificationTokenExpiresAtUtc)
+    {
+        var now = DateTime.UtcNow;
+        if (row is null
+            ) return null;
+
+        row.VerificationTokenHash = verificationTokenHash;
+        row.VerificationTokenExpiresAtUtc = verificationTokenExpiresAtUtc;
+        row.UpdatedAtUtc = now;
+        return new SignupVerificationResendTarget(row.Email, row.ContactName, row.SelfServiceFlow!);
     }
 
     public Task<IReadOnlyList<SignupPendingRecord>> ListAsync(
@@ -230,7 +297,10 @@ public sealed class MockSignupRepository : ISignupRepository
         CancellationToken cancellationToken)
     {
         if (!_rows.TryGetValue(request.SignupId, out var row)
-            || row.Status != "email_verified")
+            || (request.EmailVerified
+                ? row.Status != "email_verified"
+                : row.Status != "email_pending"
+                  || !string.Equals(row.SelfServiceFlow, request.SelfServiceFlow, StringComparison.Ordinal)))
         {
             return Task.FromResult<SignupApprovalResult?>(null);
         }
@@ -259,7 +329,7 @@ public sealed class MockSignupRepository : ISignupRepository
                 null,
                 null);
 
-        row.Status = "approved";
+        row.Status = request.EmailVerified ? "approved" : "email_pending";
         row.ApprovedUserId = request.UserId;
         row.ApprovedCustomerId = request.CustomerId;
         row.ApprovedCustomerReference = request.CustomerReference;
@@ -470,7 +540,9 @@ public sealed class MockSignupRepository : ISignupRepository
             row.RejectedReason,
             row.CreatedAtUtc,
             row.UpdatedAtUtc,
-            BillingV2Selection: row.BillingV2Selection);
+            BillingV2Selection: row.BillingV2Selection,
+            EmailVerifiedAtUtc: row.EmailVerifiedAtUtc,
+            SelfServiceFlow: row.SelfServiceFlow);
 
     private static bool HasDefinedPassword(MockSignupRow row)
         => row.ApprovedUserId is not null
