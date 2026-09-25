@@ -31,6 +31,7 @@
     "test:cart-anonymous-checkout": "node scripts/verify-anonymous-cart-checkout-contract.mjs",
     "test:cart-storefront": "node scripts/verify-cart-storefront-contract.mjs",
     "test:cart-formules-parity": "node scripts/verify-cart-formules-parity.mjs",
+    "test:provisioning-readiness-preview": "node scripts/verify-provisioning-readiness-preview-contract.mjs",
     "test:formules-preflight-091": "node scripts/verify-migration-091-legacy-preflight.mjs",
     "test:formules-preflight-092": "node scripts/verify-migration-092-preset-tier-matrix.mjs",
     "test:subscriptions": "node scripts/verify-subscriptions-contract.mjs",

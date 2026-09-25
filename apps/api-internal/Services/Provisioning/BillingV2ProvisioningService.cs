@@ -463,6 +463,10 @@ public interface IBillingV2ProvisioningService
         string customerId,
         string reviewedByReference,
         CancellationToken cancellationToken);
+
+    Task<BillingV2ProvisioningClientReadinessEvaluation> EvaluateClientReadinessAsync(
+        string customerId,
+        CancellationToken cancellationToken);
 }
 
 public sealed class NoOpBillingV2ProvisioningService
@@ -484,6 +488,11 @@ public sealed class NoOpBillingV2ProvisioningService
         string reviewedByReference,
         CancellationToken cancellationToken)
         => Task.FromResult(BillingV2ProvisioningReadinessReviewResult.PersistenceUnavailable);
+
+    public Task<BillingV2ProvisioningClientReadinessEvaluation> EvaluateClientReadinessAsync(
+        string customerId,
+        CancellationToken cancellationToken)
+        => Task.FromResult(BillingV2ProvisioningClientReadinessEvaluation.PersistenceUnavailable);
 }
 
 public sealed partial class BillingV2ProvisioningService : IBillingV2ProvisioningService

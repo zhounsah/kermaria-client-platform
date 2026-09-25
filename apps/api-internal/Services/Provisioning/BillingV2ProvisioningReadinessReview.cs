@@ -26,6 +26,78 @@ public sealed record BillingV2ProvisioningReadinessReviewDecision(
             ?? BillingV2ProvisioningReadinessReviewReasons.ReviewFailed;
 }
 
+/// <summary>
+/// Etat de résolution d'une cible nécessaire au provisioning, construit sans
+/// appeler le provider et sans écrire dans la persistance.
+/// </summary>
+public sealed record BillingV2ProvisioningReadinessTargetStatus(
+    bool Required,
+    bool Evaluated,
+    bool Resolved,
+    string? ReasonCode);
+
+public sealed record BillingV2ProvisioningReadinessGroupStatus(
+    string GroupSamAccountName,
+    bool Resolved);
+
+/// <summary>
+/// Verdict non persistant de la readiness customer. Les valeurs qui servent à
+/// la review persistante sont calculées une seule fois ici ; une preview et une
+/// review ne peuvent donc pas diverger par une policy différente.
+/// </summary>
+public sealed record BillingV2ProvisioningClientReadinessEvaluation(
+    BillingV2ProvisioningReadinessReviewDecision Decision,
+    bool PersistentSqlAvailable,
+    bool CustomerExists,
+    bool CustomerIsDemo,
+    int ActiveV2SubscriptionCount,
+    IReadOnlyList<string> UnresolvedRuleReferences,
+    IReadOnlyList<BillingV2ProvisioningReadinessGroupStatus> DesiredAdGroups,
+    int StorageTargetCount,
+    BillingV2KoxoStorageReadiness StorageProviderReadiness,
+    BillingV2ProvisioningReadinessTargetStatus StorageTargets,
+    BillingV2ProvisioningReadinessTargetStatus AdTargets)
+{
+    public bool Ready => Decision.Ready;
+    public bool AddOnlyMode => Decision.AddOnlyMode;
+    public string ReviewStatus => Decision.ReviewStatus;
+    public int UnresolvedMismatchCount => Decision.UnresolvedMismatchCount;
+    public IReadOnlyList<string> ReasonCodes => Decision.ReasonCodes;
+    public int DesiredAdGroupCount => DesiredAdGroups.Count;
+    public BillingV2ProvisioningReadinessReviewResult ToReviewResult(bool persisted)
+        => new(
+            Ready,
+            AddOnlyMode,
+            ReviewStatus,
+            UnresolvedMismatchCount,
+            ReasonCodes,
+            ActiveV2SubscriptionCount,
+            DesiredAdGroupCount,
+            StorageTargetCount,
+            persisted);
+
+    public static BillingV2ProvisioningClientReadinessEvaluation PersistenceUnavailable { get; }
+        = new(
+            new(
+                Ready: false,
+                AddOnlyMode: true,
+                ReviewStatus: "failed",
+                UnresolvedMismatchCount: 1,
+                [BillingV2ProvisioningReadinessReviewReasons.PersistentSqlUnavailable]),
+            PersistentSqlAvailable: false,
+            CustomerExists: false,
+            CustomerIsDemo: false,
+            ActiveV2SubscriptionCount: 0,
+            [],
+            [],
+            StorageTargetCount: 0,
+            new(false, BillingV2KoxoStorageApplyReasons.ProviderNotConfigured),
+            new(Required: false, Evaluated: false, Resolved: false,
+                ReasonCode: BillingV2ProvisioningReadinessReviewReasons.PersistentSqlUnavailable),
+            new(Required: false, Evaluated: false, Resolved: false,
+                ReasonCode: BillingV2ProvisioningReadinessReviewReasons.PersistentSqlUnavailable));
+}
+
 public sealed record BillingV2ProvisioningReadinessReviewResult(
     bool Ready,
     bool AddOnlyMode,
@@ -112,24 +184,21 @@ public static class BillingV2ProvisioningReadinessReviewPolicy
 
 public sealed partial class BillingV2ProvisioningService
 {
-    public async Task<BillingV2ProvisioningReadinessReviewResult>
-        ReviewClientReadinessAsync(
+    /// <summary>
+    /// Evalue toutes les preconditions customer-scoped sans persister de
+    /// readiness et sans appeler AD, KoXo ou le provisioning. Les resolveurs
+    /// de cibles restent des lectures/probes pures.
+    /// </summary>
+    public async Task<BillingV2ProvisioningClientReadinessEvaluation>
+        EvaluateClientReadinessAsync(
             string customerId,
-            string reviewedByReference,
             CancellationToken cancellationToken)
     {
         var persistentSqlAvailable =
             _sql.IsPersistent && !string.IsNullOrWhiteSpace(_sql.ConnectionString);
         if (!persistentSqlAvailable)
         {
-            return BillingV2ProvisioningReadinessReviewResult.PersistenceUnavailable;
-        }
-
-        if (string.IsNullOrWhiteSpace(customerId)
-            || string.IsNullOrWhiteSpace(reviewedByReference))
-        {
-            throw new ArgumentException(
-                "Customer and reviewer references are required for Billing V2 provisioning readiness review.");
+            return BillingV2ProvisioningClientReadinessEvaluation.PersistenceUnavailable;
         }
 
         var subject = await LoadReadinessReviewSubjectAsync(
@@ -147,45 +216,30 @@ public sealed partial class BillingV2ProvisioningService
                 cancellationToken)
             : BillingV2ProvisioningPlan.Empty;
 
-        var targetGroupsResolved = plan.AllDesiredAdGroups.All(group =>
-            _provisioningConfiguration.GroupDistinguishedNamesBySamAccountName
-                .TryGetValue(group, out var distinguishedName)
-            && !string.IsNullOrWhiteSpace(distinguishedName));
-        var storageProviderReady = _koxoStorageProvider
-            .CheckReadiness(plan.StorageQuotaPlans)
-            .CanApplyQuotas;
+        var desiredAdGroups = plan.AllDesiredAdGroups
+            .Select(group => new BillingV2ProvisioningReadinessGroupStatus(
+                group,
+                _provisioningConfiguration.GroupDistinguishedNamesBySamAccountName
+                    .TryGetValue(group, out var distinguishedName)
+                && !string.IsNullOrWhiteSpace(distinguishedName)))
+            .ToArray();
+        var targetGroupsResolved = desiredAdGroups.All(group => group.Resolved);
+        var storageProviderReadiness = _koxoStorageProvider
+            .CheckReadiness(plan.StorageQuotaPlans);
 
-        var storageTargetsResolved = plan.StorageQuotaPlans.Count == 0;
-        if (subject.Exists
-            && activeV2SubscriptionIds.Count > 0
-            && plan.UnresolvedRuleReferences.Count == 0
-            && storageProviderReady
-            && plan.StorageQuotaPlans.Count > 0)
-        {
-            var storageResolution = await _koxoStorageTargets.ResolveAsync(
-                customerId,
-                plan.StorageQuotaPlans,
-                cancellationToken);
-            storageTargetsResolved = storageResolution.Resolved;
-        }
-
-        var adTargetsResolved = plan.UsersRequiringAdIdentity.Count == 0;
-        if (subject.Exists
-            && activeV2SubscriptionIds.Count > 0
-            && plan.UnresolvedRuleReferences.Count == 0
-            && plan.UsersRequiringAdIdentity.Count > 0)
-        {
-            var customerUserLinks =
-                await _activeDirectoryLinks.GetCustomerUserLinksAsync(
-                    customerId,
-                    cancellationToken);
-            var adResolution = await ResolveTargetsAsync(
-                customerId,
-                plan.UsersRequiringAdIdentity,
-                customerUserLinks,
-                cancellationToken);
-            adTargetsResolved = adResolution.Resolved;
-        }
+        var storageTargets = await EvaluateStorageTargetsAsync(
+            customerId,
+            subject.Exists,
+            activeV2SubscriptionIds.Count,
+            plan,
+            storageProviderReadiness,
+            cancellationToken);
+        var adTargets = await EvaluateAdTargetsAsync(
+            customerId,
+            subject.Exists,
+            activeV2SubscriptionIds.Count,
+            plan,
+            cancellationToken);
 
         var decision = BillingV2ProvisioningReadinessReviewPolicy.Evaluate(
             new BillingV2ProvisioningReadinessReviewInputs(
@@ -195,31 +249,108 @@ public sealed partial class BillingV2ProvisioningService
                 ActiveV2SubscriptionCount: activeV2SubscriptionIds.Count,
                 UnresolvedRuleCount: plan.UnresolvedRuleReferences.Count,
                 targetGroupsResolved,
-                storageProviderReady,
-                storageTargetsResolved,
-                adTargetsResolved));
+                storageProviderReadiness.CanApplyQuotas,
+                storageTargets.Resolved,
+                adTargets.Resolved));
 
+        return new BillingV2ProvisioningClientReadinessEvaluation(
+            decision,
+            PersistentSqlAvailable: true,
+            CustomerExists: subject.Exists,
+            CustomerIsDemo: subject.IsDemo,
+            ActiveV2SubscriptionCount: activeV2SubscriptionIds.Count,
+            plan.UnresolvedRuleReferences,
+            desiredAdGroups,
+            plan.StorageQuotaPlans.Count,
+            storageProviderReadiness,
+            storageTargets,
+            adTargets);
+    }
+
+    public async Task<BillingV2ProvisioningReadinessReviewResult>
+        ReviewClientReadinessAsync(
+            string customerId,
+            string reviewedByReference,
+            CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(reviewedByReference))
+        {
+            throw new ArgumentException("Reviewer reference is required for Billing V2 provisioning readiness review.");
+        }
+        var evaluation = await EvaluateClientReadinessAsync(customerId, cancellationToken);
         var persisted = false;
-        if (subject.Exists)
+        if (evaluation.PersistentSqlAvailable && evaluation.CustomerExists)
         {
             await PersistReadinessReviewAsync(
                 customerId,
                 reviewedByReference,
-                decision,
+                evaluation,
                 cancellationToken);
             persisted = true;
         }
+        return evaluation.ToReviewResult(persisted);
+    }
 
-        return new BillingV2ProvisioningReadinessReviewResult(
-            decision.Ready,
-            decision.AddOnlyMode,
-            decision.ReviewStatus,
-            decision.UnresolvedMismatchCount,
-            decision.ReasonCodes,
-            activeV2SubscriptionIds.Count,
-            plan.AllDesiredAdGroups.Count,
-            plan.StorageQuotaPlans.Count,
-            persisted);
+    private async Task<BillingV2ProvisioningReadinessTargetStatus>
+        EvaluateStorageTargetsAsync(
+            string customerId,
+            bool customerExists,
+            int activeV2SubscriptionCount,
+            BillingV2ProvisioningPlan plan,
+            BillingV2KoxoStorageReadiness storageProviderReadiness,
+            CancellationToken cancellationToken)
+    {
+        if (plan.StorageQuotaPlans.Count == 0)
+        {
+            return new(Required: false, Evaluated: true, Resolved: true,
+                ReasonCode: BillingV2KoxoStorageApplyReasons.Noop);
+        }
+        if (!customerExists || activeV2SubscriptionCount <= 0
+            || plan.UnresolvedRuleReferences.Count > 0
+            || !storageProviderReadiness.CanApplyQuotas)
+        {
+            return new(Required: true, Evaluated: false, Resolved: false,
+                ReasonCode: storageProviderReadiness.CanApplyQuotas
+                    ? null
+                    : storageProviderReadiness.ReasonCode);
+        }
+        var resolution = await _koxoStorageTargets.ResolveAsync(
+            customerId,
+            plan.StorageQuotaPlans,
+            cancellationToken);
+        return new(Required: true, Evaluated: true, resolution.Resolved,
+            resolution.ReasonCode);
+    }
+
+    private async Task<BillingV2ProvisioningReadinessTargetStatus>
+        EvaluateAdTargetsAsync(
+            string customerId,
+            bool customerExists,
+            int activeV2SubscriptionCount,
+            BillingV2ProvisioningPlan plan,
+            CancellationToken cancellationToken)
+    {
+        if (plan.UsersRequiringAdIdentity.Count == 0)
+        {
+            return new(Required: false, Evaluated: true, Resolved: true,
+                ReasonCode: "not_required");
+        }
+        if (!customerExists || activeV2SubscriptionCount <= 0
+            || plan.UnresolvedRuleReferences.Count > 0)
+        {
+            return new(Required: true, Evaluated: false, Resolved: false,
+                ReasonCode: null);
+        }
+        var customerUserLinks = await _activeDirectoryLinks.GetCustomerUserLinksAsync(
+            customerId,
+            cancellationToken);
+        var resolution = await ResolveTargetsAsync(
+            customerId,
+            plan.UsersRequiringAdIdentity,
+            customerUserLinks,
+            cancellationToken);
+        return new(Required: true, Evaluated: true, resolution.Resolved,
+            resolution.ReasonCode);
     }
 
     private async Task<BillingV2ProvisioningReadinessReviewSubject>
@@ -249,7 +380,7 @@ public sealed partial class BillingV2ProvisioningService
     private async Task PersistReadinessReviewAsync(
         string customerId,
         string reviewedByReference,
-        BillingV2ProvisioningReadinessReviewDecision decision,
+        BillingV2ProvisioningClientReadinessEvaluation evaluation,
         CancellationToken cancellationToken)
     {
         await using var connection = new MySqlConnection(_sql.ConnectionString);
@@ -290,20 +421,20 @@ public sealed partial class BillingV2ProvisioningService
                 updated_at = UTC_TIMESTAMP(6);
             """;
         command.Parameters.AddWithValue("@customer_id", customerId);
-        command.Parameters.AddWithValue("@ready", decision.Ready ? 1 : 0);
-        command.Parameters.AddWithValue("@review_status", decision.ReviewStatus);
+        command.Parameters.AddWithValue("@ready", evaluation.Ready ? 1 : 0);
+        command.Parameters.AddWithValue("@review_status", evaluation.ReviewStatus);
         command.Parameters.AddWithValue(
             "@unresolved_mismatch_count",
-            decision.UnresolvedMismatchCount);
+            evaluation.UnresolvedMismatchCount);
         command.Parameters.AddWithValue(
             "@reviewed_by_reference",
             reviewedByReference.Trim());
         command.Parameters.AddWithValue(
             "@notes",
             "review_reason_codes="
-                + (decision.ReasonCodes.Count == 0
+                + (evaluation.ReasonCodes.Count == 0
                     ? "none"
-                    : string.Join(",", decision.ReasonCodes)));
+                    : string.Join(",", evaluation.ReasonCodes)));
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 

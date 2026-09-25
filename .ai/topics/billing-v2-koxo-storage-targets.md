@@ -53,6 +53,14 @@ Sur l'API DEV, le retrigger ciblé du 2026-09-24 ne produit plus
 `BILLING_V2_PROVISIONING_INCOMPLETE_MATERIALIZATION` ; la gate suivante refuse
 `BILLING_V2_PROVISIONING_REVIEW_NOT_PASSED` avant toute action externe.
 
+### Preview de readiness non persistante (2026-09-25)
+
+`EvaluateClientReadinessAsync` relit le plan customer-scoped, les groupes AD,
+le provider et les cibles KoXo sans écrire. La route interne admin `GET
+/internal/admin/billing-v2/provisioning-readiness/{customerId}/preview` ne crée
+ni readiness, ni audit, ni opération AD/KoXo. La review `POST` réutilise le
+même verdict puis demeure l'unique chemin qui fait l'UPSERT de readiness.
+
 - Unité : le plan reste en **GiB** (catalogue), la cible KoXo est en **MiB**,
   conversion `checked(valeur * 1024)` faite à un seul endroit. Débordement ou
   quota ≤ 0 = refus, jamais de rebouclage silencieux.

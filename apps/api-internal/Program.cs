@@ -6664,6 +6664,29 @@ app.MapPost(
             service.IsPersistent ? "mariadb" : "mock";
         return Results.Ok(result);
     });
+app.MapGet(
+    "/internal/admin/billing-v2/provisioning-readiness/{customerId}/preview",
+    async (
+        string customerId,
+        HttpContext context,
+        IBillingV2ProvisioningService provisioningService,
+        IAuthenticationService authenticationService) =>
+    {
+        // Une preview doit rester strictement sans ecriture : pas d'audit,
+        // pas d'UPSERT readiness et aucune operation de provisioning.
+        var session = await ResolvePortalSessionAsync(context, authenticationService);
+        if (session.UserRole != PortalRoles.InternalAdmin)
+        {
+            throw new PortalAccessDeniedException();
+        }
+        if (!Guid.TryParse(customerId, out _))
+        {
+            throw new PortalValidationException();
+        }
+        return Results.Ok(await provisioningService.EvaluateClientReadinessAsync(
+            customerId,
+            context.RequestAborted));
+    });
 app.MapPost(
     "/internal/admin/billing-v2/vps/technical-reviews/{technicalRequestId}/manual-provisioning/activate",
     async (
