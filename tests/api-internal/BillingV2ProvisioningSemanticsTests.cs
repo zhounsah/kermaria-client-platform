@@ -55,6 +55,10 @@ public static class BillingV2ProvisioningSemanticsTests
         VerifyResourceAttachedToUnassignedSlotStaysBlocked();
         VerifyUserSlotIsNeverASecondIdentityCreationPath();
         VerifyDownstreamAccessRequiresPersonalStorage();
+        VerifyCrossSubscriptionAccessUsesTheSameIdentityStorage();
+        VerifyCrossSubscriptionAccessRejectsAnotherIdentity();
+        VerifyCrossSubscriptionPersonalQuotaConflict();
+        VerifyVpnWithoutStorageAnywhereIsRefused();
         VerifyPersonalStorageAloneIsAValidEnvironment();
         VerifyPersonalStorageNeedsNoResolvedAdIdentity();
         VerifyVpnStillDemandsAResolvedAdIdentity();
@@ -648,6 +652,105 @@ public static class BillingV2ProvisioningSemanticsTests
                 reference.EndsWith("item-vpn-b", StringComparison.Ordinal)
                 || reference.EndsWith("item-rds-b", StringComparison.Ordinal)),
             "Seuls les acces de l'utilisateur sans socle doivent etre bloques.");
+    }
+
+    private static void VerifyCrossSubscriptionAccessUsesTheSameIdentityStorage()
+    {
+        const string existingSubscription = "d8ded05e-a599-447e-9e76-4ace7c29b3fb";
+        const string newSubscription = "cce216e6-b98d-4c5f-a4e2-0215c161b387";
+        const string existingUser = "80fb257c-273b-4880-a4c9-2b8ab3aa9804";
+        const string newUser = "09829148-f48a-42b5-b5aa-96b13e3ce7e0";
+        const string identity = "11000000-0000-0000-0000-000000000001";
+        const string newVpnItem = "4494fd49-7021-477b-8221-af5ba0d6e74e";
+
+        var plan = BillingV2ProvisioningPlanner.Plan(
+        [
+            UserStorageRule("existing-storage", 64, existingUser, identity)
+                with { SubscriptionId = existingSubscription },
+            BackupRule("existing-backup", "BACKUP-PERSONAL", "64", 64,
+                    "user", existingUser, identity)
+                with { SubscriptionId = existingSubscription },
+            AdGroupRule("existing-vpn", "VPN-ACCESS", "GG_VPN", existingUser, identity)
+                with { SubscriptionId = existingSubscription, TierCode = "PLUS" },
+            AdGroupRule("existing-rds", "RDS-ACCESS", "GG_RDS", existingUser, identity)
+                with { SubscriptionId = existingSubscription },
+            SubscriptionRule("existing-base", "BASE-SERVICE", "platform_entitlement",
+                    "platform", "ZACHARY-IT-BASE")
+                with { SubscriptionId = existingSubscription },
+            AdGroupRule(newVpnItem, "VPN-ACCESS", "GG_VPN", newUser, identity)
+                with { SubscriptionId = newSubscription, TierCode = "ESSENTIAL" }
+        ]);
+
+        Ensure(plan.UnresolvedRuleReferences.Count == 0
+            && plan.Users.Count == 1
+            && plan.Users.Single().IdentityReference == identity
+            && plan.Users.Single().SubscriptionUserIds.SequenceEqual(
+                [newUser, existingUser], StringComparer.Ordinal)
+            && plan.Users.Single().PersonalStorage?.SubscriptionUserId == existingUser
+            && plan.Users.Single().UserInheritedCoverages.Single().SubscriptionUserId == existingUser
+            && plan.Users.Single().DesiredAdGroups.SequenceEqual(
+                ["GG_RDS", "GG_VPN"], StringComparer.OrdinalIgnoreCase),
+            "Deux subscriptions actives ciblant la meme identity_reference doivent partager un seul environnement technique sans perdre leurs attributions commerciales.");
+
+        var requests = BillingV2ProvisioningExecutionPlanner.BuildPerUserRequests(
+            BillingV2ProvisioningGateDecision.Allow(addOnlyMode: true),
+            [new BillingV2ResolvedProvisioningTarget(plan.Users.Single(), AdLink(identity))],
+            new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["GG_VPN"] = "CN=GG_VPN,OU=Groupes_TEST,DC=clients,DC=home,DC=bzh",
+                ["GG_RDS"] = "CN=GG_RDS,OU=Groupes_TEST,DC=clients,DC=home,DC=bzh"
+            });
+        Ensure(requests.Count == 1
+            && requests[0].DesiredGroupSamAccountNames.SequenceEqual(
+                ["GG_RDS", "GG_VPN"], StringComparer.OrdinalIgnoreCase),
+            "Une seule requete technique doit viser la meme identite malgre deux places commerciales.");
+    }
+
+    private static void VerifyCrossSubscriptionAccessRejectsAnotherIdentity()
+    {
+        var plan = BillingV2ProvisioningPlanner.Plan(
+        [
+            UserStorageRule("storage-a", 64, "user-a", "identity-a")
+                with { SubscriptionId = "subscription-a" },
+            AdGroupRule("vpn-b", "VPN-ACCESS", "GG_VPN", "user-b", "identity-b")
+                with { SubscriptionId = "subscription-b", TierCode = "ESSENTIAL" }
+        ]);
+
+        Ensure(plan.Users.Count == 2
+            && plan.Blockers.Count == 1
+            && plan.Blockers[0].ReasonCode == BillingV2ProvisioningBlockerReasons.PersonalStorageRequired
+            && plan.UnresolvedRuleReferences.SequenceEqual(["VPN-ACCESS:ESSENTIAL:vpn-b"]),
+            "Le stockage d'une autre identity_reference du meme customer ne satisfait jamais le VPN.");
+    }
+
+    private static void VerifyCrossSubscriptionPersonalQuotaConflict()
+    {
+        var plan = BillingV2ProvisioningPlanner.Plan(
+        [
+            UserStorageRule("storage-64", 64, "user-a", "identity-a")
+                with { SubscriptionId = "subscription-a" },
+            UserStorageRule("storage-128", 128, "user-b", "identity-a")
+                with { SubscriptionId = "subscription-b" }
+        ]);
+
+        Ensure(plan.Users.Count == 1
+            && plan.Blockers.Count == 1
+            && plan.Blockers[0].ReasonCode == BillingV2ProvisioningBlockerReasons.PersonalStorageConflict
+            && plan.UnresolvedRuleReferences.SequenceEqual(["STORAGE-PERSONAL:128:storage-128"]),
+            "Deux quotas personnels contradictoires pour la meme identite doivent rester fail-closed.");
+    }
+
+    private static void VerifyVpnWithoutStorageAnywhereIsRefused()
+    {
+        var plan = BillingV2ProvisioningPlanner.Plan(
+        [
+            AdGroupRule("vpn-only", "VPN-ACCESS", "GG_VPN", "user-a", "identity-a")
+        ]);
+
+        Ensure(plan.Blockers.Count == 1
+            && plan.Blockers[0].ReasonCode == BillingV2ProvisioningBlockerReasons.PersonalStorageRequired
+            && plan.UnresolvedRuleReferences.SequenceEqual(["VPN-ACCESS:no-tier:vpn-only"]),
+            "Un acces VPN sans stockage personnel pour cette identite reste bloque.");
     }
 
     private static void VerifyPersonalStorageAloneIsAValidEnvironment()

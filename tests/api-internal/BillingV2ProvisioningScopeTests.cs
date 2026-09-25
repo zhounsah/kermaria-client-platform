@@ -48,6 +48,7 @@ public static class BillingV2ProvisioningScopeTests
         VerifyIdentityWithoutAdLinkFailsClosed();
         VerifyAmbiguousAdLinkFailsClosed();
         VerifyAdLinkOfAnotherCustomerFailsClosed();
+        VerifyTwoSubscriptionUsersWithOneIdentityResolveOnce();
         VerifyTwoSubscriptionUsersSharingOneIdentityFailClosed();
         VerifyPersonalQuotaWithoutIdentityFailsClosed();
         VerifyPersonalQuotaKeepsUserScopeAndStaysBlocked();
@@ -295,6 +296,33 @@ public static class BillingV2ProvisioningScopeTests
             && resolution.ReasonCode
                 == "BILLING_V2_PROVISIONING_IDENTITY_AMBIGUOUS",
             "Deux utilisateurs d'abonnement resolus vers le meme compte Active Directory cumuleraient leurs droits : cela doit bloquer.");
+    }
+
+    private static void VerifyTwoSubscriptionUsersWithOneIdentityResolveOnce()
+    {
+        var plan = BillingV2ProvisioningPlanner.Plan(
+        [
+            StorageRule("storage-a", "user-a", "identity-a")
+                with { SubscriptionId = "subscription-a" },
+            UserRule("vpn-b", "user-b", "identity-a", "VPN-ACCESS", "GG_VPN")
+                with { SubscriptionId = "subscription-b" }
+        ]);
+        var resolution = BillingV2ProvisioningIdentityResolver.Resolve(
+            CustomerId,
+            plan.UsersRequiringAdIdentity,
+            new Dictionary<string, IReadOnlyList<PortalUserAdLinkRecord>>(StringComparer.Ordinal)
+            {
+                ["identity-a"] = [PortalLink("identity-a", CustomerId, "svc.identity-a")]
+            },
+            [AdLink("identity-a")]);
+
+        Ensure(plan.UnresolvedRuleReferences.Count == 0
+            && plan.Users.Count == 1
+            && plan.Users.Single().SubscriptionUserIds.SequenceEqual(["user-a", "user-b"])
+            && resolution.Resolved
+            && resolution.Targets.Count == 1
+            && resolution.Targets[0].DesiredState.IdentityReference == "identity-a",
+            "Deux places commerciales de la meme identite doivent donner une seule cible AD resolue.");
     }
 
     // ------------------------------------------------------------------

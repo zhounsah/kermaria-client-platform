@@ -197,15 +197,14 @@ public static class BillingV2ProvisioningBlockerReasons
 }
 
 /// <summary>
-/// Etat desire d'un seul <c>billing_v2_subscription_user</c>.
+/// Etat desire d'une seule <c>identity_reference</c> technique.
 /// </summary>
 /// <remarks>
 /// <para>
 /// Le plan V2 n'expose plus aucun ensemble de groupes AD au niveau client :
-/// un groupe n'existe que porte par l'utilisateur qui l'a achete. C'est cette
-/// structure, et non un controle a l'execution, qui rend impossible d'appliquer
-/// le droit de A a B. La meme regle vaut pour le stockage personnel : un quota
-/// n'existe que dans l'etat desire de son titulaire.
+/// un groupe n'existe que porte par l'identite exacte qui l'a achete. C'est
+/// cette structure qui empeche de transmettre le droit de A a une autre
+/// identite du customer. La meme regle vaut pour le stockage personnel.
 /// </para>
 /// <para>
 /// Les membres ne sont pas paralleles : <see cref="PersonalStorage"/> est le
@@ -223,6 +222,12 @@ public sealed record BillingV2UserDesiredState(
     IReadOnlyList<BillingV2AcknowledgedEntitlement> UserInheritedCoverages,
     IReadOnlyList<BillingV2AcknowledgedEntitlement> UserEntitlements)
 {
+    /// <summary>
+    /// Places commerciales qui contribuent au même environnement technique.
+    /// Chaque quota et entitlement conserve aussi son propre subscription_user_id.
+    /// </summary>
+    public IReadOnlyList<string> SubscriptionUserIds { get; init; } = [SubscriptionUserId];
+
     /// <summary>
     /// Plans de stockage personnels de cet utilisateur, au plus un.
     /// </summary>
@@ -1663,7 +1668,8 @@ public static class BillingV2ProvisioningPlanner
 
     /// <summary>
     /// Transforme les lignes de projection en etats desires, un par
-    /// utilisateur d'abonnement.
+    /// identity_reference technique exacte. Les subscription_user_id restent
+    /// portes par leurs lignes d'origine pour la tracabilite commerciale.
     /// </summary>
     /// <remarks>
     /// Aucune ligne n'est ignoree en silence : tout ce qui n'est pas
@@ -1683,15 +1689,19 @@ public static class BillingV2ProvisioningPlanner
 
         EnforcePersonalStoragePrerequisite(state);
 
-        var users = state.UserOrder
-            .Select(subscriptionUserId => new BillingV2UserDesiredState(
-                subscriptionUserId,
-                state.IdentityByUserId[subscriptionUserId],
-                state.GroupsByUserId[subscriptionUserId].ToArray(),
-                state.PersonalStorageByUserId.GetValueOrDefault(
-                    subscriptionUserId),
-                state.CoveragesByUserId[subscriptionUserId],
-                state.EntitlementsByUserId[subscriptionUserId]))
+        var users = state.IdentityOrder
+            .Select(identityReference => new BillingV2UserDesiredState(
+                state.SubscriptionUserIdsByIdentity[identityReference]
+                    .OrderBy(id => id, StringComparer.Ordinal).First(),
+                identityReference,
+                state.GroupsByIdentity[identityReference].ToArray(),
+                state.PersonalStorageByIdentity.GetValueOrDefault(identityReference),
+                state.CoveragesByIdentity[identityReference],
+                state.EntitlementsByIdentity[identityReference])
+            {
+                SubscriptionUserIds = state.SubscriptionUserIdsByIdentity[identityReference]
+                    .OrderBy(id => id, StringComparer.Ordinal).ToArray()
+            })
             .ToArray();
 
         return new BillingV2ProvisioningPlan(
@@ -1732,16 +1742,16 @@ public static class BillingV2ProvisioningPlanner
     /// </remarks>
     private static void EnforcePersonalStoragePrerequisite(PlanningState state)
     {
-        foreach (var subscriptionUserId in state.UserOrder)
+        foreach (var identityReference in state.IdentityOrder)
         {
-            if (state.GroupsByUserId[subscriptionUserId].Count == 0
-                || state.PersonalStorageByUserId.ContainsKey(subscriptionUserId))
+            if (state.GroupsByIdentity[identityReference].Count == 0
+                || state.PersonalStorageByIdentity.ContainsKey(identityReference))
             {
                 continue;
             }
 
             foreach (var reference in state
-                .AdAccessReferencesByUserId[subscriptionUserId])
+                .AdAccessReferencesByIdentity[identityReference])
             {
                 state.Blockers.Add(new BillingV2ProvisioningBlocker(
                     reference,
@@ -1961,9 +1971,9 @@ public static class BillingV2ProvisioningPlanner
                     return;
                 }
 
-                state.GroupsByUserId[subscriptionUserId]
+                state.GroupsByIdentity[identityReference]
                     .Add(rule.TargetReference.Trim());
-                state.AdAccessReferencesByUserId[subscriptionUserId]
+                state.AdAccessReferencesByIdentity[identityReference]
                     .Add(CreateRuleReference(rule));
                 return;
 
@@ -1981,7 +1991,7 @@ public static class BillingV2ProvisioningPlanner
 
                 // Un environnement utilisateur est unique : deux quotas
                 // personnels contradictoires ne se departagent pas.
-                if (state.PersonalStorageByUserId.ContainsKey(subscriptionUserId))
+                if (state.PersonalStorageByIdentity.ContainsKey(identityReference))
                 {
                     state.Block(
                         rule,
@@ -1990,18 +2000,18 @@ public static class BillingV2ProvisioningPlanner
                     return;
                 }
 
-                state.PersonalStorageByUserId[subscriptionUserId] = userQuota;
+                state.PersonalStorageByIdentity[identityReference] = userQuota;
                 return;
 
             case BillingV2ProvisioningRuleKind.AcknowledgedEntitlement:
                 var entitlement = CreateEntitlement(rule, UserScope);
                 if (IsInheritedCoverage(rule))
                 {
-                    state.CoveragesByUserId[subscriptionUserId].Add(entitlement);
+                    state.CoveragesByIdentity[identityReference].Add(entitlement);
                     return;
                 }
 
-                state.EntitlementsByUserId[subscriptionUserId].Add(entitlement);
+                state.EntitlementsByIdentity[identityReference].Add(entitlement);
                 return;
 
             default:
@@ -2082,34 +2092,38 @@ public static class BillingV2ProvisioningPlanner
     /// </summary>
     private sealed class PlanningState
     {
-        public List<string> UserOrder { get; } = [];
+        public List<string> IdentityOrder { get; } = [];
 
+        // Un même subscription_user_id ne peut jamais changer de titulaire.
         public Dictionary<string, string> IdentityByUserId { get; }
             = new(StringComparer.Ordinal);
 
-        public Dictionary<string, SortedSet<string>> GroupsByUserId { get; }
+        public Dictionary<string, List<string>> SubscriptionUserIdsByIdentity { get; }
+            = new(StringComparer.Ordinal);
+
+        public Dictionary<string, SortedSet<string>> GroupsByIdentity { get; }
             = new(StringComparer.Ordinal);
 
         /// <summary>
-        /// Socle technique de chaque utilisateur, au plus un par utilisateur.
+        /// Socle technique de chaque identite, au plus un par identite.
         /// </summary>
         public Dictionary<string, BillingV2StorageQuotaPlan>
-            PersonalStorageByUserId
+            PersonalStorageByIdentity
         { get; } = new(StringComparer.Ordinal);
 
         /// <summary>
         /// References des lignes d'acces AD, pour pouvoir les bloquer
         /// nominativement si le socle manque.
         /// </summary>
-        public Dictionary<string, List<string>> AdAccessReferencesByUserId
+        public Dictionary<string, List<string>> AdAccessReferencesByIdentity
         { get; } = new(StringComparer.Ordinal);
 
         public Dictionary<string, List<BillingV2AcknowledgedEntitlement>>
-            CoveragesByUserId
+            CoveragesByIdentity
         { get; } = new(StringComparer.Ordinal);
 
         public Dictionary<string, List<BillingV2AcknowledgedEntitlement>>
-            EntitlementsByUserId
+            EntitlementsByIdentity
         { get; } = new(StringComparer.Ordinal);
 
         public List<BillingV2StorageQuotaPlan> SharedQuotas { get; } = [];
@@ -2148,12 +2162,18 @@ public static class BillingV2ProvisioningPlanner
             }
 
             IdentityByUserId[subscriptionUserId] = identityReference;
-            GroupsByUserId[subscriptionUserId] =
-                new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
-            AdAccessReferencesByUserId[subscriptionUserId] = [];
-            CoveragesByUserId[subscriptionUserId] = [];
-            EntitlementsByUserId[subscriptionUserId] = [];
-            UserOrder.Add(subscriptionUserId);
+            if (!SubscriptionUserIdsByIdentity.TryGetValue(identityReference, out var userIds))
+            {
+                userIds = [];
+                SubscriptionUserIdsByIdentity[identityReference] = userIds;
+                GroupsByIdentity[identityReference] =
+                    new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+                AdAccessReferencesByIdentity[identityReference] = [];
+                CoveragesByIdentity[identityReference] = [];
+                EntitlementsByIdentity[identityReference] = [];
+                IdentityOrder.Add(identityReference);
+            }
+            userIds.Add(subscriptionUserId);
             return true;
         }
     }

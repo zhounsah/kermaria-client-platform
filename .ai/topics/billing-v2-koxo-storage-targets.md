@@ -37,6 +37,22 @@ dépendance technique de création d'identité.
 
 ## Invariants du resolver
 
+### Agrégation cross-subscription du desired state (2026-09-24)
+
+Le planner lit toutes les subscriptions actives du customer et regroupe les
+ressources user-scoped par `identity_reference` exacte (`StringComparer.Ordinal`).
+Deux `subscription_user_id` de subscriptions distinctes peuvent donc contribuer
+au même environnement technique : un STORAGE-PERSONAL actif satisfait le
+prérequis VPN/RDS de cette identité, et les groupes AD sont réunis une seule
+fois. Les IDs des places commerciales restent conservés sur les contributions
+et dans le desired state. Aucun repli vers une autre identité du customer.
+Deux quotas personnels pour la même identité restent bloquants ; une identité
+absente, une règle ou un scope invalide continuent aussi à bloquer. Les tests
+de régression sont dans `BillingV2ProvisioningSemanticsTests`.
+Sur l'API DEV, le retrigger ciblé du 2026-09-24 ne produit plus
+`BILLING_V2_PROVISIONING_INCOMPLETE_MATERIALIZATION` ; la gate suivante refuse
+`BILLING_V2_PROVISIONING_REVIEW_NOT_PASSED` avant toute action externe.
+
 - Unité : le plan reste en **GiB** (catalogue), la cible KoXo est en **MiB**,
   conversion `checked(valeur * 1024)` faite à un seul endroit. Débordement ou
   quota ≤ 0 = refus, jamais de rebouclage silencieux.
