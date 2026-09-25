@@ -81,6 +81,7 @@
 
 ### KoXo / AD
 
+- **Invariant (2026-09-25) : tout compte client principal a une identité AD, VPS compris.** Le Cart/VPS contournait l'AD (bug B) et, en `controlled_write`, l'export KoXo ignorait tout principal sans lien (bug C, boucle fermée même pour le signup standard). Correctif **local, non déployé** : amorçage explicite `portal_user_identity_bootstrap` (migration 096 non appliquée en PROD/DEV, validée le 2026-09-25 sur base jetable SRV-06 puis détruite), 3e branche d'export, reprise admin des comptes existants. Détail : [primary-identity-bootstrap.md](topics/primary-identity-bootstrap.md).
 - Les topics Claude du 2026-08-05/06 restent les références détaillées pour les comportements mesurés de KoXo : accents, groupes primaires, orphelins, fiche utilisateur, maîtrise du mot de passe et adoption AD.
 - Références : [koxo-accents-majuscules.md](topics/koxo-accents-majuscules.md), [koxo-groupes-primaires-separes.md](topics/koxo-groupes-primaires-separes.md), [koxo-orphelins-supprimes.md](topics/koxo-orphelins-supprimes.md), [koxo-fiche-utilisateur-maitre.md](topics/koxo-fiche-utilisateur-maitre.md), [koxo-ad-password-mastery.md](topics/koxo-ad-password-mastery.md), [koxo-api-ne-cree-plus.md](topics/koxo-api-ne-cree-plus.md).
 - **Deux routes sur le récepteur SRV-21, portées incomparables** :
@@ -171,6 +172,7 @@
 
 ## Tous les topics Claude importés
 
+- [primary-identity-bootstrap.md](topics/primary-identity-bootstrap.md) : amorçage de l'identité AD du compte principal (standard, Cart, VPS), export KoXo, reprise des comptes sans lien.
 - [admin-configuration-center.md](topics/admin-configuration-center.md)
 - [billing-v2-additional-users.md](topics/billing-v2-additional-users.md)
 - [billing-v2-koxo-storage-targets.md](topics/billing-v2-koxo-storage-targets.md)

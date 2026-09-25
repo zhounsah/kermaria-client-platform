@@ -228,6 +228,19 @@ public sealed class KoxoPendingPasswordStore
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Vrai si un secret non expire attend pour ce compte, sans le relire.
+    /// </summary>
+    /// <remarks>
+    /// Equivalent en memoire du <c>EXISTS</c> de la requete d'export sur
+    /// <c>koxo_pending_directory_passwords</c> : la regle d'amorcage a besoin
+    /// de savoir qu'un secret existe, jamais de le connaitre.
+    /// </remarks>
+    public bool HasPending(string portalUserId)
+        => !string.IsNullOrWhiteSpace(portalUserId)
+            && _entries.TryGetValue(portalUserId, out var entry)
+            && entry.ExpiresAtUtc > DateTime.UtcNow;
+
     public Task<IReadOnlyList<string>> DrainExpiredAsync(
         CancellationToken cancellationToken)
     {

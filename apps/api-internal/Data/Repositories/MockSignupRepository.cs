@@ -40,6 +40,33 @@ public sealed class MockSignupRow
     public DateTime UpdatedAtUtc { get; set; }
 }
 
+/// <summary>Ligne simulee de <c>portal_user_identity_bootstrap</c>.</summary>
+public sealed class MockPrimaryIdentityBootstrapRow
+{
+    public required string Id { get; init; }
+    public required string PortalUserId { get; init; }
+    public required string CustomerId { get; init; }
+    public required string SignupId { get; init; }
+    public required string KoxoUniqueIdentifier { get; init; }
+    public required string Origin { get; init; }
+    public required bool EmailVerificationRequired { get; init; }
+    public required string Status { get; set; }
+    public string? FailureCode { get; set; }
+    public string? FailureDetail { get; set; }
+    public string? DirectoryObjectGuid { get; set; }
+    public DateTime? PasswordSetAtUtc { get; set; }
+    public DateTime? KoxoTriggeredAtUtc { get; set; }
+    public DateTime? DirectoryResolvedAtUtc { get; set; }
+    public DateTime? DirectoryLinkedAtUtc { get; set; }
+    public DateTime? RecoveryRequestedAtUtc { get; set; }
+    public DateTime? LastAttemptAtUtc { get; set; }
+    public int AttemptCount { get; set; }
+    public DateTime CreatedAtUtc { get; init; } = DateTime.UtcNow;
+
+    public MockPrimaryIdentityBootstrapRow Clone()
+        => (MockPrimaryIdentityBootstrapRow)MemberwiseClone();
+}
+
 public sealed class MockSignupStore
 {
     public ConcurrentDictionary<string, MockSignupRow> Rows { get; } =
@@ -48,6 +75,13 @@ public sealed class MockSignupStore
     public long NextKoxoSequenceSeed = 1;
     public ConcurrentDictionary<string, ManualCustomerCreateResult> ManualCustomersByEmail { get; } =
         new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Amorcages, par utilisateur portail (unicite de la migration 096).</summary>
+    public ConcurrentDictionary<string, MockPrimaryIdentityBootstrapRow> PrimaryIdentityBootstraps { get; } =
+        new(StringComparer.Ordinal);
+
+    /// <summary>Tient lieu de verrou de ligne pour les transitions d'amorcage.</summary>
+    public object PrimaryIdentitySync { get; } = new();
 }
 
 public sealed class MockSignupRepository : ISignupRepository
@@ -305,14 +339,24 @@ public sealed class MockSignupRepository : ISignupRepository
             return Task.FromResult<SignupApprovalResult?>(null);
         }
 
+        if (request.InitialKoxoSecret is not null && SealSink is null)
+        {
+            throw new InvalidOperationException(
+                "Aucun point d'attache pour le secret KoXo.");
+        }
+
+        if (_store.PrimaryIdentityBootstraps.ContainsKey(request.UserId))
+        {
+            // Unicite de la migration 096 : un compte n'a qu'un amorcage.
+            return Task.FromResult<SignupApprovalResult?>(null);
+        }
+
         var email = request.PrimaryUser.Email
             ?? request.Customer.BillingEmail
             ?? row.Email;
         var displayName = request.PrimaryUser.DisplayName
             ?? row.ContactName;
-        var nextKoxoSequenceValue = Interlocked.Increment(
-            ref _store.NextKoxoSequenceSeed);
-        var koxoUniqueIdentifier = $"CLI-{nextKoxoSequenceValue - 1:D6}";
+        var koxoUniqueIdentifier = AllocateKoxoUniqueIdentifier();
 
         _authenticationStore.Users[email] =
             new PortalUserCredential(
@@ -340,6 +384,29 @@ public sealed class MockSignupRepository : ISignupRepository
         row.Customer = request.Customer;
         row.PrimaryUser = request.PrimaryUser;
         row.UpdatedAtUtc = DateTime.UtcNow;
+
+        // Meme unite de travail que le compte, comme en base reelle.
+        var origin = PrimaryIdentityBootstrapOrigins.FromSelfServiceFlow(
+            request.SelfServiceFlow);
+        _store.PrimaryIdentityBootstraps[request.UserId] = new MockPrimaryIdentityBootstrapRow
+        {
+            Id = Guid.NewGuid().ToString("D"),
+            PortalUserId = request.UserId,
+            CustomerId = request.CustomerId,
+            SignupId = request.SignupId,
+            KoxoUniqueIdentifier = koxoUniqueIdentifier,
+            Origin = origin,
+            EmailVerificationRequired =
+                PrimaryIdentityBootstrapOrigins.RequiresEmailVerification(origin),
+            Status = request.InitialKoxoSecret is null
+                ? PrimaryIdentityBootstrapStatuses.AwaitingPassword
+                : PrimaryIdentityBootstrapStatuses.KoxoPending,
+            PasswordSetAtUtc = request.InitialKoxoSecret is null ? null : DateTime.UtcNow
+        };
+        if (request.InitialKoxoSecret is not null)
+        {
+            SealSink!.AttachSealed(request.UserId, request.InitialKoxoSecret);
+        }
 
         return Task.FromResult<SignupApprovalResult?>(new SignupApprovalResult(
             request.SignupId,
@@ -511,6 +578,444 @@ public sealed class MockSignupRepository : ISignupRepository
         => Task.FromResult(_rows.Values
             .FirstOrDefault(row => row.ApprovedUserId == portalUserId)
             ?.ApprovedUserKoxoUniqueIdentifier);
+
+    // ------------------------------------------------------------------
+    // Amorcage de l'identite AD du compte principal
+    // ------------------------------------------------------------------
+
+    /// <summary>
+    /// Liens annuaire, pour les memes gardes que la base reelle (aucun
+    /// amorcage ne se conclut, ni ne recoit de secret, a cote d'un lien).
+    /// Renseigne apres construction, comme <see cref="SealSink"/>.
+    /// </summary>
+    public IActiveDirectoryLinkRepository? LinkRepository { get; set; }
+
+    public Task<PrimaryIdentityBootstrapRecord?> GetPrimaryIdentityBootstrapAsync(
+        string portalUserId,
+        CancellationToken cancellationToken)
+    {
+        lock (_store.PrimaryIdentitySync)
+        {
+            return Task.FromResult(
+                _store.PrimaryIdentityBootstraps.TryGetValue(portalUserId, out var row)
+                    ? ToBootstrapRecord(row)
+                    : null);
+        }
+    }
+
+    public Task<IReadOnlyList<PrimaryIdentityBootstrapRecord>>
+        ListPrimaryIdentityBootstrapCandidatesAsync(
+            int limit,
+            CancellationToken cancellationToken)
+    {
+        lock (_store.PrimaryIdentitySync)
+        {
+            var records = _store.PrimaryIdentityBootstraps.Values
+                .Where(row => PrimaryIdentityBootstrapStatuses.IsBootstrapping(row.Status))
+                .Select(row => (row, record: ToBootstrapRecord(row)))
+                .Where(entry => entry.record is not null
+                    && (!entry.row.EmailVerificationRequired || entry.record.EmailVerified))
+                .OrderBy(entry => entry.row.LastAttemptAtUtc ?? entry.row.CreatedAtUtc)
+                .ThenBy(entry => entry.row.Id, StringComparer.Ordinal)
+                .Take(Math.Clamp(limit, 1, 200))
+                .Select(entry => entry.record!)
+                .ToArray();
+            return Task.FromResult<IReadOnlyList<PrimaryIdentityBootstrapRecord>>(records);
+        }
+    }
+
+    /// <remarks>
+    /// Tout ou rien, comme la transaction reelle : le scelle est attache
+    /// d'abord et defait si la suite echoue.
+    /// </remarks>
+    public Task SetPasswordForPrimaryIdentityBootstrapAsync(
+        string signupId,
+        string portalUserId,
+        string passwordHash,
+        PortalPasswordSecret? koxoSecret,
+        DateTime atUtc,
+        CancellationToken cancellationToken)
+    {
+        lock (_store.PrimaryIdentitySync)
+        {
+            if (HasUserLink(portalUserId))
+            {
+                throw new InvalidOperationException("PRIMARY_IDENTITY_ALREADY_LINKED");
+            }
+
+            if (!_rows.TryGetValue(signupId, out var row)
+                || !string.Equals(row.ApprovedUserId, portalUserId, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("SIGNUP_USER_MISMATCH");
+            }
+
+            var credential = _authenticationStore.Users.Values.FirstOrDefault(
+                user => user.Id == portalUserId)
+                ?? throw new InvalidOperationException("PORTAL_USER_NOT_FOUND");
+
+            row.ApprovedUserKoxoUniqueIdentifier ??= AllocateKoxoUniqueIdentifier();
+            _store.PrimaryIdentityBootstraps.TryGetValue(portalUserId, out var existing);
+            if (existing is not null
+                && !string.Equals(
+                    existing.KoxoUniqueIdentifier,
+                    row.ApprovedUserKoxoUniqueIdentifier,
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("PRIMARY_IDENTITY_KOXO_ID_MISMATCH");
+            }
+
+            if (existing?.Status == PrimaryIdentityBootstrapStatuses.Completed)
+            {
+                throw new InvalidOperationException("PRIMARY_IDENTITY_COMPLETED_WITHOUT_LINK");
+            }
+
+            var writeSecret = koxoSecret is not null
+                && existing?.Status != PrimaryIdentityBootstrapStatuses.Failed;
+            if (writeSecret)
+            {
+                if (SealSink is null)
+                {
+                    throw new InvalidOperationException(
+                        "Aucun point d'attache pour le secret KoXo.");
+                }
+
+                SealSink.AttachSealed(portalUserId, koxoSecret!);
+            }
+
+            var previousTokenHash = row.PasswordSetupTokenHash;
+            var previousTokenExpiry = row.PasswordSetupExpiresAtUtc;
+            var previousBootstrap = existing?.Clone();
+            try
+            {
+                MockPortalPasswordFailureSwitch.ThrowIfArmed();
+
+                _authenticationStore.Users[credential.Email] =
+                    credential with { PasswordHash = passwordHash };
+                row.PasswordSetupTokenHash = null;
+                row.PasswordSetupExpiresAtUtc = null;
+                row.UpdatedAtUtc = DateTime.UtcNow;
+
+                if (existing is null)
+                {
+                    var origin = PrimaryIdentityBootstrapOrigins.FromSelfServiceFlow(
+                        row.SelfServiceFlow);
+                    _store.PrimaryIdentityBootstraps[portalUserId] = new MockPrimaryIdentityBootstrapRow
+                    {
+                        Id = Guid.NewGuid().ToString("D"),
+                        PortalUserId = portalUserId,
+                        CustomerId = row.ApprovedCustomerId ?? credential.CustomerId,
+                        SignupId = signupId,
+                        KoxoUniqueIdentifier = row.ApprovedUserKoxoUniqueIdentifier,
+                        Origin = origin,
+                        EmailVerificationRequired =
+                            PrimaryIdentityBootstrapOrigins.RequiresEmailVerification(origin),
+                        Status = writeSecret
+                            ? PrimaryIdentityBootstrapStatuses.KoxoPending
+                            : PrimaryIdentityBootstrapStatuses.AwaitingPassword,
+                        PasswordSetAtUtc = writeSecret ? atUtc : null
+                    };
+                }
+                else if (writeSecret)
+                {
+                    if (existing.Status != PrimaryIdentityBootstrapStatuses.DirectoryReady)
+                    {
+                        existing.Status = PrimaryIdentityBootstrapStatuses.KoxoPending;
+                    }
+
+                    existing.PasswordSetAtUtc = atUtc;
+                    existing.FailureCode = null;
+                    existing.FailureDetail = null;
+                }
+            }
+            catch
+            {
+                _authenticationStore.Users[credential.Email] = credential;
+                row.PasswordSetupTokenHash = previousTokenHash;
+                row.PasswordSetupExpiresAtUtc = previousTokenExpiry;
+                if (previousBootstrap is null)
+                {
+                    _store.PrimaryIdentityBootstraps.TryRemove(portalUserId, out _);
+                }
+                else
+                {
+                    _store.PrimaryIdentityBootstraps[portalUserId] = previousBootstrap;
+                }
+
+                if (writeSecret)
+                {
+                    SealSink!.DiscardSealed(portalUserId, koxoSecret!);
+                }
+
+                throw;
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task<bool> MarkPrimaryIdentityDirectoryResolvedAsync(
+        string id,
+        string directoryObjectGuid,
+        DateTime resolvedAtUtc,
+        CancellationToken cancellationToken)
+        => MutateBootstrap(id, row =>
+        {
+            if (!PrimaryIdentityBootstrapStatuses.IsBootstrapping(row.Status)
+                || (row.DirectoryObjectGuid is not null
+                    && !string.Equals(
+                        row.DirectoryObjectGuid,
+                        directoryObjectGuid,
+                        StringComparison.OrdinalIgnoreCase)))
+            {
+                return false;
+            }
+
+            row.Status = PrimaryIdentityBootstrapStatuses.DirectoryReady;
+            row.DirectoryObjectGuid = directoryObjectGuid;
+            row.DirectoryResolvedAtUtc ??= resolvedAtUtc;
+            row.FailureCode = null;
+            row.FailureDetail = null;
+            return true;
+        });
+
+    public Task<bool> MarkPrimaryIdentityCompletedAsync(
+        string id,
+        DateTime linkedAtUtc,
+        CancellationToken cancellationToken)
+        => MutateBootstrap(id, row =>
+        {
+            if (row.Status is not (PrimaryIdentityBootstrapStatuses.DirectoryReady
+                    or PrimaryIdentityBootstrapStatuses.Completed)
+                || row.DirectoryObjectGuid is null)
+            {
+                return false;
+            }
+
+            // Meme preuve que la clause SQL : le lien de CE compte, sur CET
+            // objectGUID.
+            var link = LinkRepository?
+                .FindUserLinkByPortalUserIdAsync(row.PortalUserId, CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+            if (link is null
+                || !string.Equals(
+                    link.ObjectGuid,
+                    row.DirectoryObjectGuid,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            row.Status = PrimaryIdentityBootstrapStatuses.Completed;
+            row.DirectoryLinkedAtUtc ??= linkedAtUtc;
+            row.FailureCode = null;
+            row.FailureDetail = null;
+            return true;
+        });
+
+    public Task<bool> MarkPrimaryIdentityFailedAsync(
+        string id,
+        string failureCode,
+        string? failureDetail,
+        CancellationToken cancellationToken)
+        => MutateBootstrap(id, row =>
+        {
+            if (row.Status == PrimaryIdentityBootstrapStatuses.Completed)
+            {
+                return false;
+            }
+
+            row.Status = PrimaryIdentityBootstrapStatuses.Failed;
+            row.FailureCode = failureCode;
+            row.FailureDetail = failureDetail;
+            return true;
+        });
+
+    public Task<bool> MarkPrimaryIdentityAwaitingPasswordAsync(
+        string id,
+        string reasonCode,
+        CancellationToken cancellationToken)
+        => MutateBootstrap(id, row =>
+        {
+            if (row.Status != PrimaryIdentityBootstrapStatuses.KoxoPending)
+            {
+                return false;
+            }
+
+            row.Status = PrimaryIdentityBootstrapStatuses.AwaitingPassword;
+            row.FailureCode = reasonCode;
+            return true;
+        });
+
+    public Task TouchPrimaryIdentityAttemptAsync(
+        string id,
+        bool koxoTriggered,
+        DateTime atUtc,
+        CancellationToken cancellationToken)
+        => MutateBootstrap(id, row =>
+        {
+            row.LastAttemptAtUtc = atUtc;
+            row.AttemptCount++;
+            if (koxoTriggered)
+            {
+                row.KoxoTriggeredAtUtc = atUtc;
+            }
+
+            return true;
+        });
+
+    public Task<PrimaryIdentityRecoveryTarget> RequestPrimaryIdentityRecoveryAsync(
+        string signupId,
+        string passwordSetupTokenHash,
+        DateTime passwordSetupExpiresAtUtc,
+        DateTime atUtc,
+        CancellationToken cancellationToken)
+    {
+        lock (_store.PrimaryIdentitySync)
+        {
+            if (!_rows.TryGetValue(signupId, out var row))
+            {
+                return Task.FromResult(
+                    new PrimaryIdentityRecoveryTarget(PrimaryIdentityRecoveryCodes.SignupNotFound));
+            }
+
+            var rejection = PrimaryIdentityRecoveryRules.ClassifySignup(
+                row.Status,
+                row.ApprovedUserId);
+            if (rejection is not null)
+            {
+                return Task.FromResult(new PrimaryIdentityRecoveryTarget(rejection));
+            }
+
+            var portalUserId = row.ApprovedUserId!;
+            if (HasUserLink(portalUserId))
+            {
+                return Task.FromResult(
+                    new PrimaryIdentityRecoveryTarget(PrimaryIdentityRecoveryCodes.AlreadyLinked));
+            }
+
+            _store.PrimaryIdentityBootstraps.TryGetValue(portalUserId, out var existing);
+            var bootstrapRejection = PrimaryIdentityRecoveryRules.ClassifyBootstrap(
+                existing?.Status,
+                HasSecret(portalUserId));
+            if (bootstrapRejection is not null)
+            {
+                return Task.FromResult(new PrimaryIdentityRecoveryTarget(bootstrapRejection));
+            }
+
+            row.ApprovedUserKoxoUniqueIdentifier ??= AllocateKoxoUniqueIdentifier();
+            if (existing is null)
+            {
+                var credential = _authenticationStore.Users.Values.FirstOrDefault(
+                    user => user.Id == portalUserId);
+                var origin = PrimaryIdentityBootstrapOrigins.FromSelfServiceFlow(
+                    row.SelfServiceFlow);
+                existing = new MockPrimaryIdentityBootstrapRow
+                {
+                    Id = Guid.NewGuid().ToString("D"),
+                    PortalUserId = portalUserId,
+                    CustomerId = row.ApprovedCustomerId ?? credential?.CustomerId ?? string.Empty,
+                    SignupId = signupId,
+                    KoxoUniqueIdentifier = row.ApprovedUserKoxoUniqueIdentifier,
+                    Origin = origin,
+                    EmailVerificationRequired =
+                        PrimaryIdentityBootstrapOrigins.RequiresEmailVerification(origin),
+                    Status = PrimaryIdentityBootstrapStatuses.AwaitingPassword
+                };
+                _store.PrimaryIdentityBootstraps[portalUserId] = existing;
+            }
+
+            existing.Status = PrimaryIdentityBootstrapStatuses.AwaitingPassword;
+            existing.RecoveryRequestedAtUtc = atUtc;
+            existing.FailureCode = null;
+            existing.FailureDetail = null;
+
+            row.PasswordSetupTokenHash = passwordSetupTokenHash;
+            row.PasswordSetupExpiresAtUtc = passwordSetupExpiresAtUtc;
+            row.UpdatedAtUtc = DateTime.UtcNow;
+
+            return Task.FromResult(new PrimaryIdentityRecoveryTarget(
+                PrimaryIdentityRecoveryCodes.Issued,
+                portalUserId,
+                row.Email,
+                row.ContactName));
+        }
+    }
+
+    private Task<bool> MutateBootstrap(
+        string id,
+        Func<MockPrimaryIdentityBootstrapRow, bool> mutate)
+    {
+        lock (_store.PrimaryIdentitySync)
+        {
+            var row = _store.PrimaryIdentityBootstraps.Values.FirstOrDefault(
+                candidate => candidate.Id == id);
+            return Task.FromResult(row is not null && mutate(row));
+        }
+    }
+
+    private PrimaryIdentityBootstrapRecord? ToBootstrapRecord(
+        MockPrimaryIdentityBootstrapRow row)
+    {
+        if (!_rows.TryGetValue(row.SignupId, out var signup))
+        {
+            return null;
+        }
+
+        var credential = _authenticationStore.Users.Values.FirstOrDefault(
+            user => user.Id == row.PortalUserId);
+        if (credential is null
+            || !string.Equals(credential.CustomerId, row.CustomerId, StringComparison.Ordinal))
+        {
+            // Meme regle que la jointure SQL : un amorcage qui ne designe pas
+            // le client de son compte est invisible, donc inerte.
+            return null;
+        }
+
+        var user = signup.PrimaryUser;
+        return new PrimaryIdentityBootstrapRecord(
+            row.Id,
+            row.PortalUserId,
+            row.CustomerId,
+            credential.CustomerReference,
+            KoxoGroupReference: null,
+            row.SignupId,
+            row.KoxoUniqueIdentifier,
+            signup.ApprovedUserKoxoUniqueIdentifier,
+            row.Origin,
+            row.EmailVerificationRequired,
+            signup.EmailVerifiedAtUtc is not null,
+            row.Status,
+            row.FailureCode,
+            row.DirectoryObjectGuid,
+            row.KoxoTriggeredAtUtc,
+            PortalUserActive: string.Equals(credential.Status, "active", StringComparison.Ordinal),
+            CustomerActive: true,
+            IsDemo: false,
+            DemoKind: null,
+            IdentityComplete: user.PersonalTitle is not null
+                && user.GivenName is not null
+                && user.Surname is not null
+                && user.BirthDate is not null,
+            HasUserLink: HasUserLink(row.PortalUserId),
+            SecretAvailable: HasSecret(row.PortalUserId),
+            HasAdditionalUserLifecycle: false);
+    }
+
+    private bool HasUserLink(string portalUserId)
+        => LinkRepository?
+            .FindUserLinkByPortalUserIdAsync(portalUserId, CancellationToken.None)
+            .GetAwaiter()
+            .GetResult() is not null;
+
+    private bool HasSecret(string portalUserId)
+        => SealSink is KoxoPendingPasswordStore store && store.HasPending(portalUserId);
+
+    private string AllocateKoxoUniqueIdentifier()
+    {
+        var next = Interlocked.Increment(ref _store.NextKoxoSequenceSeed);
+        return $"CLI-{next - 1:D6}";
+    }
 
     private static SignupPendingRecord ToRecord(MockSignupRow row)
         => new(

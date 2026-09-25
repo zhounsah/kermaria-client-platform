@@ -339,6 +339,50 @@ async Task<int> RunAsync(string[] arguments)
         }
     }
 
+    // Amorcage de l'identite AD du compte principal (signup standard, Cart,
+    // VPS), en persistance mock.
+    if (arguments.Length == 1
+        && string.Equals(
+            arguments[0],
+            "--primary-identity-bootstrap",
+            StringComparison.Ordinal))
+    {
+        try
+        {
+            await PrimaryIdentityBootstrapTests.RunAsync();
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine(
+                "Tests amorcage identite AD du compte principal en echec.");
+            Console.Error.WriteLine(exception.ToString());
+            return 1;
+        }
+    }
+
+    // Exige une MariaDB JETABLE portant les migrations 001 a 096 : la regle
+    // d'export reelle et les contraintes de la migration 096.
+    if (arguments.Length == 1
+        && string.Equals(
+            arguments[0],
+            "--primary-identity-bootstrap-schema",
+            StringComparison.Ordinal))
+    {
+        try
+        {
+            await PrimaryIdentityBootstrapSchemaTests.RunAsync();
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine(
+                "Tests schema amorcage identite AD du compte principal en echec.");
+            Console.Error.WriteLine(exception.ToString());
+            return 1;
+        }
+    }
+
     if (arguments.Length == 1
         && string.Equals(
             arguments[0],
@@ -4271,7 +4315,16 @@ async Task RunSignupKoxoWebhookTriggerTestsAsync()
         configuration,
         new PortalPasswordService());
     var signupStore = new MockSignupStore();
-    var signupRepository = new MockSignupRepository(signupStore, authStore);
+    // Meme cablage que l'injection de dependances en mock : l'amorcage de
+    // l'identite depose son secret par le magasin en memoire, et ses gardes
+    // consultent les liens AD.
+    var pendingPasswords = NewPendingPasswordStore();
+    var linkRepository = new MockActiveDirectoryLinkRepository();
+    var signupRepository = new MockSignupRepository(signupStore, authStore)
+    {
+        SealSink = pendingPasswords,
+        LinkRepository = linkRepository
+    };
     var trigger = new RecordingKoxoSyncWebhookTriggerService();
     const string signupId = "signup-v041-koxo-trigger";
     const string userId = "portal-user-v041-koxo-trigger";
@@ -4367,9 +4420,9 @@ async Task RunSignupKoxoWebhookTriggerTestsAsync()
         new MockActiveDirectoryService(
             adConfiguration,
             adMembershipStore),
-        new MockActiveDirectoryLinkRepository(),
+        linkRepository,
         new MockAdGroupProvisioner(adMembershipStore),
-        NewPendingPasswordStore(),
+        pendingPasswords,
         trigger,
         new SignupRuntimeConfiguration(true, 3, 1, 24, 24, false),
         NewApplicationSettingsService(),

@@ -318,6 +318,24 @@ translitteration et le `sAMAccountName` est derive par KoXo, donc aucun des deux
 n'est predictible cote application. `DemoProvisioningService` s'en sert pour
 ecrire le lien `customer_ad_links` manquant.
 
+### Qui part dans le CSV sans lien AD
+
+La regle reste fail-closed (`KoxoExportCandidateQuery`) : un compte reel sans
+`customer_ad_links(user)` n'est exporte que s'il est **designe explicitement**
+par un cycle de vie. Trois cas, pas un de plus :
+
+1. l'essai de demonstration (`demo_kind = 'trial'`) ;
+2. l'utilisateur additionnel Billing V2 (`billing_v2_user_identity_provisioning`
+   en `koxo_pending` / `directory_ready`) ;
+3. le **compte client principal** (`portal_user_identity_bootstrap`,
+   migration 096) en `koxo_pending` / `directory_ready`, e-mail verifie quand le
+   parcours l'exige (Cart, VPS) et secret KoXo non expire.
+
+Avant le 3e cas, la boucle etait fermee pour tout compte principal en
+`controlled_write` : pas de lien, donc pas d'export, donc pas d'identite, donc
+pas de lien. Detail du cycle et procedure de reprise des comptes existants :
+[PRIMARY_IDENTITY_BOOTSTRAP.md](PRIMARY_IDENTITY_BOOTSTRAP.md).
+
 ### Le CSV fait autorite, mais ne porte pas les permissions
 
 Une synchronisation reconcilie l'annuaire sur le CSV. **Retirer une ligne est

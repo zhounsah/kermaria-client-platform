@@ -13,9 +13,9 @@ namespace Kermaria.ApiInternal.Data.Repositories;
 /// </para>
 /// <para>
 /// La regle de base reste <b>fail-closed</b> : un client payant ordinaire doit
-/// deja porter un <c>customer_ad_links</c>. Deux exceptions seulement, toutes
-/// deux motivees par la meme circularite — KoXo doit creer l'objet annuaire
-/// avant que le lien puisse exister :
+/// deja porter un <c>customer_ad_links</c>. Trois exceptions seulement, toutes
+/// motivees par la meme circularite — KoXo doit creer l'objet annuaire avant
+/// que le lien puisse exister :
 /// </para>
 /// <list type="number">
 /// <item>
@@ -30,6 +30,16 @@ namespace Kermaria.ApiInternal.Data.Repositories;
 /// fenetre de crash : le cycle passe par <c>directory_ready</c> avant
 /// l'ecriture du lien, et une interruption a cet instant sortait l'identite du
 /// CSV, donc la <b>desactivait</b>, sans retour possible.
+/// </item>
+/// <item>
+/// le compte client <b>principal</b> designe explicitement par une ligne de
+/// <c>portal_user_identity_bootstrap</c> (migration 096) dans ces deux memes
+/// etats. Sans elle, la boucle etait fermee : pas de lien, donc pas d'export,
+/// donc pas d'identite, donc pas de lien — et le set-password standard
+/// repondait <c>AD_IDENTITY_NOT_READY</c> pour toujours. La branche exige en
+/// plus l'e-mail verifie quand le parcours l'impose (self-service) et un
+/// secret KoXo non expire : sans lui la ligne serait invalide, et un seul
+/// invalide bloque l'export global.
 /// </item>
 /// </list>
 /// <para>
@@ -50,7 +60,9 @@ namespace Kermaria.ApiInternal.Data.Repositories;
 /// Ce qui n'est <b>jamais</b> suffisant, seul ou combine : etre un client
 /// payant, ne pas avoir de lien AD, avoir <c>password_hash IS NULL</c>, ou
 /// porter un <c>identity_reference</c> non nul. Aucune de ces conditions ne
-/// designe une identite que KoXo doit creer maintenant.
+/// designe une identite que KoXo doit creer maintenant. En particulier, aucune
+/// branche ne rend exportable « tout portal_user sans lien AD » : chaque
+/// exception passe par une ligne de cycle de vie qui designe CE compte.
 /// </para>
 /// <para>
 /// Une vitrine (<c>demo_kind = 'showcase'</c>) reste exclue en toutes
@@ -176,6 +188,52 @@ public static class KoxoExportCandidateQuery
                       -- Etat contractuel de l'abonnement, aligne sur celui
                       -- qu'exige la projection de provisioning.
                       AND sub.status = 'active'
+                )
+             )
+             -- Compte client PRINCIPAL, designe par son amorcage explicite
+             -- (migration 096). Transcrit par PrimaryIdentityBootstrapPolicy,
+             -- que le service reapplique avant toute action annuaire.
+             OR (
+                    customer.is_demo = FALSE
+                AND ad_link.portal_user_id IS NULL
+                AND portal_user.personal_title IS NOT NULL
+                AND portal_user.given_name IS NOT NULL
+                AND portal_user.surname IS NOT NULL
+                AND portal_user.birth_date IS NOT NULL
+                AND portal_user.koxo_unique_identifier IS NOT NULL
+                AND EXISTS (
+                    SELECT 1
+                    FROM portal_user_identity_bootstrap bootstrap
+                    WHERE bootstrap.portal_user_id = portal_user.id
+                      AND bootstrap.customer_id = portal_user.customer_id
+                      AND bootstrap.koxo_unique_identifier =
+                          portal_user.koxo_unique_identifier
+                      -- Les deux etats sans lien AD, pour la meme raison que
+                      -- l'utilisateur additionnel : sortir du CSV entre la
+                      -- resolution et le lien desactiverait l'objet.
+                      AND bootstrap.status IN (
+                          'koxo_pending', 'directory_ready')
+                      -- Parcours self-service : le compte existe avant la
+                      -- preuve de possession de l'adresse, KoXo ne doit rien
+                      -- creer avant elle.
+                      AND (bootstrap.email_verification_required = FALSE
+                           OR portal_user.email_verified_at IS NOT NULL)
+                )
+                -- Le secret de la colonne 14 doit exister : KoXo va CREER
+                -- l'objet, et une ligne sans mot de passe serait invalide,
+                -- donc bloquerait l'export de tous les autres comptes.
+                AND EXISTS (
+                    SELECT 1
+                    FROM koxo_pending_directory_passwords pending_secret
+                    WHERE pending_secret.portal_user_id = portal_user.id
+                      AND pending_secret.expires_at > UTC_TIMESTAMP(6)
+                )
+                -- Un utilisateur additionnel a son propre cycle : jamais
+                -- les deux a la fois.
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM billing_v2_user_identity_provisioning other_lifecycle
+                    WHERE other_lifecycle.portal_user_id = portal_user.id
                 )
              )
           )

@@ -622,19 +622,24 @@ public sealed class MariaDbSignupRepository : ISignupRepository
                 FOR UPDATE;
                 """;
             guard.Parameters.AddWithValue("@id", request.SignupId);
-            await using var reader = await guard.ExecuteReaderAsync(cancellationToken);
-            if (!await reader.ReadAsync(cancellationToken))
+            // Le lecteur est ferme avant le RollbackAsync : MySqlConnector
+            // refuse toute commande tant qu'un lecteur est ouvert, et le
+            // perdant d'une double validation levait au lieu de rendre null.
+            var allowed = false;
+            await using (var reader = await guard.ExecuteReaderAsync(cancellationToken))
             {
-                await transaction.RollbackAsync(cancellationToken);
-                return null;
+                if (await reader.ReadAsync(cancellationToken))
+                {
+                    var status = reader.GetString("status");
+                    var flow = ReadNullableString(reader, "self_service_flow");
+                    allowed = request.EmailVerified
+                        ? string.Equals(status, "email_verified", StringComparison.Ordinal)
+                        : string.Equals(status, "email_pending", StringComparison.Ordinal)
+                          && string.Equals(flow, request.SelfServiceFlow, StringComparison.Ordinal)
+                          && flow is "cart" or "vps";
+                }
             }
-            var status = reader.GetString("status");
-            var flow = ReadNullableString(reader, "self_service_flow");
-            var allowed = request.EmailVerified
-                ? string.Equals(status, "email_verified", StringComparison.Ordinal)
-                : string.Equals(status, "email_pending", StringComparison.Ordinal)
-                  && string.Equals(flow, request.SelfServiceFlow, StringComparison.Ordinal)
-                  && flow is "cart" or "vps";
+
             if (!allowed)
             {
                 await transaction.RollbackAsync(cancellationToken);
@@ -804,6 +809,36 @@ public sealed class MariaDbSignupRepository : ISignupRepository
                 "@is_primary_contact",
                 request.PrimaryUser.IsPrimaryContact ?? true);
             await userCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        // L'amorcage de l'identite AD nait avec le compte, dans la meme
+        // transaction : un compte principal sans cycle explicite serait
+        // exactement celui que l'export KoXo ignore pour toujours. Le secret
+        // self-service, deja scelle, est depose ici et nulle part ailleurs :
+        // un echec ne laisse ni compte sans cycle, ni secret sans compte.
+        var origin = PrimaryIdentityBootstrapOrigins.FromSelfServiceFlow(
+            request.SelfServiceFlow);
+        await InsertPrimaryIdentityBootstrapAsync(
+            connection,
+            transaction,
+            request.UserId,
+            request.CustomerId,
+            request.SignupId,
+            koxoUniqueIdentifier,
+            origin,
+            request.InitialKoxoSecret is null
+                ? PrimaryIdentityBootstrapStatuses.AwaitingPassword
+                : PrimaryIdentityBootstrapStatuses.KoxoPending,
+            request.InitialKoxoSecret is null ? null : DateTime.UtcNow,
+            cancellationToken);
+        if (request.InitialKoxoSecret is not null)
+        {
+            await WritePendingKoxoSecretAsync(
+                connection,
+                transaction,
+                request.UserId,
+                request.InitialKoxoSecret,
+                cancellationToken);
         }
 
         await using (var signupCommand = connection.CreateCommand())
@@ -1057,6 +1092,879 @@ public sealed class MariaDbSignupRepository : ISignupRepository
         return value is null || value == DBNull.Value
             ? null
             : Convert.ToString(value, CultureInfo.InvariantCulture);
+    }
+
+    // ------------------------------------------------------------------
+    // Amorcage de l'identite AD du compte principal (migration 096)
+    // ------------------------------------------------------------------
+
+    // Tout ce que la regle d'export exige, relu en une fois. Le client est
+    // celui du compte portail, et la ligne d'amorcage doit le designer aussi :
+    // une divergence rend la ligne invisible, donc inerte.
+    private const string PrimaryIdentityBootstrapSelectSql =
+        """
+        SELECT
+            bootstrap.id AS id,
+            bootstrap.portal_user_id AS portal_user_id,
+            bootstrap.customer_id AS customer_id,
+            customer.external_reference AS customer_reference,
+            customer.koxo_group_reference AS koxo_group_reference,
+            bootstrap.signup_id AS signup_id,
+            bootstrap.koxo_unique_identifier AS koxo_unique_identifier,
+            portal_user.koxo_unique_identifier AS portal_user_koxo_unique_identifier,
+            bootstrap.origin AS origin,
+            bootstrap.email_verification_required AS email_verification_required,
+            (portal_user.email_verified_at IS NOT NULL) AS email_verified,
+            bootstrap.status AS status,
+            bootstrap.failure_code AS failure_code,
+            bootstrap.directory_object_guid AS directory_object_guid,
+            bootstrap.koxo_triggered_at AS koxo_triggered_at,
+            (portal_user.status = 'active') AS portal_user_active,
+            (customer.status = 'active') AS customer_active,
+            customer.is_demo AS is_demo,
+            customer.demo_kind AS demo_kind,
+            (portal_user.personal_title IS NOT NULL
+                AND portal_user.given_name IS NOT NULL
+                AND portal_user.surname IS NOT NULL
+                AND portal_user.birth_date IS NOT NULL) AS identity_complete,
+            EXISTS (
+                SELECT 1 FROM customer_ad_links ad_link
+                WHERE ad_link.portal_user_id = portal_user.id
+                  AND ad_link.object_type = 'user'
+            ) AS has_user_link,
+            EXISTS (
+                SELECT 1 FROM koxo_pending_directory_passwords secret
+                WHERE secret.portal_user_id = portal_user.id
+                  AND secret.expires_at > UTC_TIMESTAMP(6)
+            ) AS secret_available,
+            EXISTS (
+                SELECT 1 FROM billing_v2_user_identity_provisioning lifecycle
+                WHERE lifecycle.portal_user_id = portal_user.id
+            ) AS has_additional_user_lifecycle
+        FROM portal_user_identity_bootstrap bootstrap
+        INNER JOIN portal_users portal_user
+            ON portal_user.id = bootstrap.portal_user_id
+           AND portal_user.customer_id = bootstrap.customer_id
+        INNER JOIN customers customer
+            ON customer.id = bootstrap.customer_id
+        """;
+
+    public async Task<PrimaryIdentityBootstrapRecord?> GetPrimaryIdentityBootstrapAsync(
+        string portalUserId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(
+            _configuration.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            PrimaryIdentityBootstrapSelectSql
+            + "\nWHERE bootstrap.portal_user_id = @portal_user_id\nLIMIT 1;";
+        command.Parameters.AddWithValue("@portal_user_id", portalUserId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken)
+            ? ReadPrimaryIdentityBootstrap(reader)
+            : null;
+    }
+
+    public async Task<IReadOnlyList<PrimaryIdentityBootstrapRecord>>
+        ListPrimaryIdentityBootstrapCandidatesAsync(
+            int limit,
+            CancellationToken cancellationToken)
+    {
+        var capped = Math.Clamp(limit, 1, 200);
+        await using var connection = new MySqlConnection(
+            _configuration.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            PrimaryIdentityBootstrapSelectSql
+            + $"""
+
+            WHERE bootstrap.status IN ('koxo_pending', 'directory_ready')
+              AND (bootstrap.email_verification_required = FALSE
+                   OR portal_user.email_verified_at IS NOT NULL)
+            ORDER BY COALESCE(bootstrap.last_attempt_at, bootstrap.created_at) ASC,
+                     bootstrap.id ASC
+            LIMIT {capped};
+            """;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var records = new List<PrimaryIdentityBootstrapRecord>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            records.Add(ReadPrimaryIdentityBootstrap(reader));
+        }
+
+        return records;
+    }
+
+    public async Task SetPasswordForPrimaryIdentityBootstrapAsync(
+        string signupId,
+        string portalUserId,
+        string passwordHash,
+        PortalPasswordSecret? koxoSecret,
+        DateTime atUtc,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(
+            _configuration.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction =
+            await connection.BeginTransactionAsync(cancellationToken);
+
+        // Le compte, verrouille : sa reference client et son identifiant KoXo
+        // sont relus sous le meme verrou que l'ecriture.
+        string customerId;
+        string? koxoUniqueIdentifier;
+        await using (var userCommand = connection.CreateCommand())
+        {
+            userCommand.Transaction = transaction;
+            userCommand.CommandText =
+                """
+                SELECT customer_id, koxo_unique_identifier
+                FROM portal_users
+                WHERE id = @portal_user_id
+                FOR UPDATE;
+                """;
+            userCommand.Parameters.AddWithValue("@portal_user_id", portalUserId);
+            await using var reader = await userCommand.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                throw new InvalidOperationException("PORTAL_USER_NOT_FOUND");
+            }
+
+            customerId = MariaDbIdentifierReader.ReadRequired(reader, "customer_id");
+            koxoUniqueIdentifier = ReadNullableString(reader, "koxo_unique_identifier");
+        }
+
+        // Un lien apparu entre-temps change la nature de l'operation : c'est
+        // alors un changement de mot de passe d'un compte lie, qui a sa propre
+        // unite de travail. Rien n'est ecrit ici.
+        await using (var linkCommand = connection.CreateCommand())
+        {
+            linkCommand.Transaction = transaction;
+            linkCommand.CommandText =
+                """
+                SELECT COUNT(*) FROM customer_ad_links
+                WHERE portal_user_id = @portal_user_id
+                  AND object_type = 'user'
+                FOR UPDATE;
+                """;
+            linkCommand.Parameters.AddWithValue("@portal_user_id", portalUserId);
+            if (Convert.ToInt64(await linkCommand.ExecuteScalarAsync(cancellationToken)) != 0)
+            {
+                throw new InvalidOperationException("PRIMARY_IDENTITY_ALREADY_LINKED");
+            }
+        }
+
+        string? selfServiceFlow;
+        await using (var signupCommand = connection.CreateCommand())
+        {
+            signupCommand.Transaction = transaction;
+            signupCommand.CommandText =
+                """
+                SELECT approved_user_id, self_service_flow
+                FROM signup_pending
+                WHERE id = @signup_id
+                FOR UPDATE;
+                """;
+            signupCommand.Parameters.AddWithValue("@signup_id", signupId);
+            await using var reader = await signupCommand.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken)
+                || !string.Equals(
+                    ReadNullableIdentifier(reader, "approved_user_id"),
+                    portalUserId,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("SIGNUP_USER_MISMATCH");
+            }
+
+            selfServiceFlow = ReadNullableString(reader, "self_service_flow");
+        }
+
+        koxoUniqueIdentifier = await EnsurePortalUserKoxoIdentifierAsync(
+            connection,
+            transaction,
+            portalUserId,
+            koxoUniqueIdentifier,
+            cancellationToken);
+
+        await using (var passwordCommand = connection.CreateCommand())
+        {
+            passwordCommand.Transaction = transaction;
+            passwordCommand.CommandText =
+                """
+                UPDATE portal_users
+                SET password_hash = @password_hash,
+                    updated_at = UTC_TIMESTAMP(6)
+                WHERE id = @portal_user_id;
+                """;
+            passwordCommand.Parameters.AddWithValue("@password_hash", passwordHash);
+            passwordCommand.Parameters.AddWithValue("@portal_user_id", portalUserId);
+            if (await passwordCommand.ExecuteNonQueryAsync(cancellationToken) != 1)
+            {
+                throw new InvalidOperationException("PORTAL_USER_NOT_FOUND");
+            }
+        }
+
+        await using (var tokenCommand = connection.CreateCommand())
+        {
+            tokenCommand.Transaction = transaction;
+            tokenCommand.CommandText =
+                """
+                UPDATE signup_pending
+                SET password_setup_token_hash = NULL,
+                    password_setup_expires_at = NULL,
+                    updated_at = UTC_TIMESTAMP(6)
+                WHERE id = @signup_id;
+                """;
+            tokenCommand.Parameters.AddWithValue("@signup_id", signupId);
+            await tokenCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        var bootstrap = await ReadBootstrapForUpdateAsync(
+            connection,
+            transaction,
+            portalUserId,
+            cancellationToken);
+        var writeSecret = koxoSecret is not null;
+        if (bootstrap is null)
+        {
+            // Compte anterieur a la migration 096 : il entre dans le cycle au
+            // moment ou son titulaire fournit un mot de passe, jamais avant.
+            await InsertPrimaryIdentityBootstrapAsync(
+                connection,
+                transaction,
+                portalUserId,
+                customerId,
+                signupId,
+                koxoUniqueIdentifier,
+                PrimaryIdentityBootstrapOrigins.FromSelfServiceFlow(selfServiceFlow),
+                writeSecret
+                    ? PrimaryIdentityBootstrapStatuses.KoxoPending
+                    : PrimaryIdentityBootstrapStatuses.AwaitingPassword,
+                writeSecret ? atUtc : null,
+                cancellationToken);
+        }
+        else
+        {
+            if (!string.Equals(
+                    bootstrap.Value.KoxoUniqueIdentifier,
+                    koxoUniqueIdentifier,
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("PRIMARY_IDENTITY_KOXO_ID_MISMATCH");
+            }
+
+            switch (bootstrap.Value.Status)
+            {
+                case PrimaryIdentityBootstrapStatuses.Completed:
+                    // Termine sans lien : incoherent. On n'ecrit rien plutot
+                    // que de rouvrir un cycle sur une base douteuse.
+                    throw new InvalidOperationException("PRIMARY_IDENTITY_COMPLETED_WITHOUT_LINK");
+
+                case PrimaryIdentityBootstrapStatuses.Failed:
+                    // Conflit d'identite : l'arbitrage est humain. Le mot de
+                    // passe portail est pose, mais aucun secret ne part.
+                    writeSecret = false;
+                    break;
+
+                default:
+                    if (writeSecret)
+                    {
+                        await using var transition = connection.CreateCommand();
+                        transition.Transaction = transaction;
+                        transition.CommandText =
+                            """
+                            UPDATE portal_user_identity_bootstrap
+                            SET status = CASE
+                                    WHEN status = 'directory_ready' THEN 'directory_ready'
+                                    ELSE 'koxo_pending'
+                                END,
+                                password_set_at = @at,
+                                failure_code = NULL,
+                                failure_detail = NULL,
+                                updated_at = UTC_TIMESTAMP(6)
+                            WHERE id = @id
+                              AND status IN ('awaiting_password', 'koxo_pending', 'directory_ready');
+                            """;
+                        transition.Parameters.AddWithValue("@at", atUtc);
+                        transition.Parameters.AddWithValue("@id", bootstrap.Value.Id);
+                        if (await transition.ExecuteNonQueryAsync(cancellationToken) != 1)
+                        {
+                            throw new InvalidOperationException("PRIMARY_IDENTITY_TRANSITION_REFUSED");
+                        }
+                    }
+
+                    break;
+            }
+        }
+
+        if (writeSecret)
+        {
+            await WritePendingKoxoSecretAsync(
+                connection,
+                transaction,
+                portalUserId,
+                koxoSecret!,
+                cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    public async Task<bool> MarkPrimaryIdentityDirectoryResolvedAsync(
+        string id,
+        string directoryObjectGuid,
+        DateTime resolvedAtUtc,
+        CancellationToken cancellationToken)
+        => await ExecuteBootstrapUpdateAsync(
+            """
+            UPDATE portal_user_identity_bootstrap
+            SET status = 'directory_ready',
+                directory_object_guid = @guid,
+                directory_resolved_at = COALESCE(directory_resolved_at, @at),
+                failure_code = NULL,
+                failure_detail = NULL,
+                updated_at = UTC_TIMESTAMP(6)
+            WHERE id = @id
+              AND status IN ('koxo_pending', 'directory_ready')
+              AND (directory_object_guid IS NULL
+                   OR LOWER(directory_object_guid) = LOWER(@guid));
+            """,
+            command =>
+            {
+                command.Parameters.AddWithValue("@id", id);
+                command.Parameters.AddWithValue("@guid", directoryObjectGuid);
+                command.Parameters.AddWithValue("@at", resolvedAtUtc);
+            },
+            cancellationToken) == 1;
+
+    public async Task<bool> MarkPrimaryIdentityCompletedAsync(
+        string id,
+        DateTime linkedAtUtc,
+        CancellationToken cancellationToken)
+        => await ExecuteBootstrapUpdateAsync(
+            // La preuve est dans la clause : sans lien utilisateur de ce
+            // compte, de ce client et de cet objectGUID, aucune ligne n'est
+            // touchee et l'amorcage ne se conclut pas.
+            """
+            UPDATE portal_user_identity_bootstrap bootstrap
+            SET bootstrap.status = 'completed',
+                bootstrap.directory_linked_at = COALESCE(bootstrap.directory_linked_at, @at),
+                bootstrap.failure_code = NULL,
+                bootstrap.failure_detail = NULL,
+                bootstrap.updated_at = UTC_TIMESTAMP(6)
+            WHERE bootstrap.id = @id
+              AND bootstrap.status IN ('directory_ready', 'completed')
+              AND bootstrap.directory_object_guid IS NOT NULL
+              AND EXISTS (
+                  SELECT 1 FROM customer_ad_links ad_link
+                  WHERE ad_link.portal_user_id = bootstrap.portal_user_id
+                    AND ad_link.customer_id = bootstrap.customer_id
+                    AND ad_link.object_type = 'user'
+                    AND LOWER(ad_link.object_guid) = LOWER(bootstrap.directory_object_guid)
+              );
+            """,
+            command =>
+            {
+                command.Parameters.AddWithValue("@id", id);
+                command.Parameters.AddWithValue("@at", linkedAtUtc);
+            },
+            cancellationToken) == 1;
+
+    public async Task<bool> MarkPrimaryIdentityFailedAsync(
+        string id,
+        string failureCode,
+        string? failureDetail,
+        CancellationToken cancellationToken)
+        => await ExecuteBootstrapUpdateAsync(
+            """
+            UPDATE portal_user_identity_bootstrap
+            SET status = 'failed',
+                failure_code = @code,
+                failure_detail = @detail,
+                updated_at = UTC_TIMESTAMP(6)
+            WHERE id = @id
+              AND status <> 'completed';
+            """,
+            command =>
+            {
+                command.Parameters.AddWithValue("@id", id);
+                command.Parameters.AddWithValue("@code", failureCode);
+                command.Parameters.AddWithValue("@detail", DbValue(failureDetail));
+            },
+            cancellationToken) == 1;
+
+    public async Task<bool> MarkPrimaryIdentityAwaitingPasswordAsync(
+        string id,
+        string reasonCode,
+        CancellationToken cancellationToken)
+        => await ExecuteBootstrapUpdateAsync(
+            """
+            UPDATE portal_user_identity_bootstrap
+            SET status = 'awaiting_password',
+                failure_code = @code,
+                updated_at = UTC_TIMESTAMP(6)
+            WHERE id = @id
+              AND status = 'koxo_pending';
+            """,
+            command =>
+            {
+                command.Parameters.AddWithValue("@id", id);
+                command.Parameters.AddWithValue("@code", reasonCode);
+            },
+            cancellationToken) == 1;
+
+    public async Task TouchPrimaryIdentityAttemptAsync(
+        string id,
+        bool koxoTriggered,
+        DateTime atUtc,
+        CancellationToken cancellationToken)
+        => await ExecuteBootstrapUpdateAsync(
+            """
+            UPDATE portal_user_identity_bootstrap
+            SET last_attempt_at = @at,
+                attempt_count = attempt_count + 1,
+                koxo_triggered_at = CASE WHEN @triggered THEN @at ELSE koxo_triggered_at END,
+                updated_at = UTC_TIMESTAMP(6)
+            WHERE id = @id;
+            """,
+            command =>
+            {
+                command.Parameters.AddWithValue("@id", id);
+                command.Parameters.AddWithValue("@at", atUtc);
+                command.Parameters.AddWithValue("@triggered", koxoTriggered);
+            },
+            cancellationToken);
+
+    public async Task<PrimaryIdentityRecoveryTarget> RequestPrimaryIdentityRecoveryAsync(
+        string signupId,
+        string passwordSetupTokenHash,
+        DateTime passwordSetupExpiresAtUtc,
+        DateTime atUtc,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(
+            _configuration.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction =
+            await connection.BeginTransactionAsync(cancellationToken);
+
+        // Les lecteurs sont fermes avant tout RollbackAsync : MySqlConnector
+        // refuse une commande (le ROLLBACK compris) tant qu'un lecteur est
+        // ouvert sur la connexion, meme epuise.
+        var signupFound = false;
+        string status = string.Empty;
+        string? portalUserId = null;
+        string? selfServiceFlow = null;
+        string email = string.Empty;
+        string contactName = string.Empty;
+        await using (var signupCommand = connection.CreateCommand())
+        {
+            signupCommand.Transaction = transaction;
+            signupCommand.CommandText =
+                """
+                SELECT status, approved_user_id, self_service_flow, email, contact_name
+                FROM signup_pending
+                WHERE id = @signup_id
+                FOR UPDATE;
+                """;
+            signupCommand.Parameters.AddWithValue("@signup_id", signupId);
+            await using var reader = await signupCommand.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                signupFound = true;
+                status = reader.GetString("status");
+                portalUserId = ReadNullableIdentifier(reader, "approved_user_id");
+                selfServiceFlow = ReadNullableString(reader, "self_service_flow");
+                email = reader.GetString("email");
+                contactName = reader.GetString("contact_name");
+            }
+        }
+
+        if (!signupFound)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return new(PrimaryIdentityRecoveryCodes.SignupNotFound);
+        }
+
+        var rejection = PrimaryIdentityRecoveryRules.ClassifySignup(status, portalUserId);
+        if (rejection is not null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return new(rejection);
+        }
+
+        string? customerId = null;
+        string? koxoUniqueIdentifier = null;
+        await using (var userCommand = connection.CreateCommand())
+        {
+            userCommand.Transaction = transaction;
+            userCommand.CommandText =
+                """
+                SELECT customer_id, koxo_unique_identifier
+                FROM portal_users
+                WHERE id = @portal_user_id
+                FOR UPDATE;
+                """;
+            userCommand.Parameters.AddWithValue("@portal_user_id", portalUserId!);
+            await using var reader = await userCommand.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                customerId = MariaDbIdentifierReader.ReadRequired(reader, "customer_id");
+                koxoUniqueIdentifier = ReadNullableString(reader, "koxo_unique_identifier");
+            }
+        }
+
+        if (customerId is null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return new(PrimaryIdentityRecoveryCodes.InvalidState);
+        }
+
+        await using (var linkCommand = connection.CreateCommand())
+        {
+            linkCommand.Transaction = transaction;
+            linkCommand.CommandText =
+                """
+                SELECT COUNT(*) FROM customer_ad_links
+                WHERE portal_user_id = @portal_user_id
+                  AND object_type = 'user';
+                """;
+            linkCommand.Parameters.AddWithValue("@portal_user_id", portalUserId!);
+            if (Convert.ToInt64(await linkCommand.ExecuteScalarAsync(cancellationToken)) != 0)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return new(PrimaryIdentityRecoveryCodes.AlreadyLinked);
+            }
+        }
+
+        var bootstrap = await ReadBootstrapForUpdateAsync(
+            connection,
+            transaction,
+            portalUserId!,
+            cancellationToken);
+        bool secretAvailable;
+        await using (var secretCommand = connection.CreateCommand())
+        {
+            secretCommand.Transaction = transaction;
+            secretCommand.CommandText =
+                """
+                SELECT COUNT(*) FROM koxo_pending_directory_passwords
+                WHERE portal_user_id = @portal_user_id
+                  AND expires_at > UTC_TIMESTAMP(6);
+                """;
+            secretCommand.Parameters.AddWithValue("@portal_user_id", portalUserId!);
+            secretAvailable =
+                Convert.ToInt64(await secretCommand.ExecuteScalarAsync(cancellationToken)) != 0;
+        }
+
+        var bootstrapRejection = PrimaryIdentityRecoveryRules.ClassifyBootstrap(
+            bootstrap?.Status,
+            secretAvailable);
+        if (bootstrapRejection is not null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return new(bootstrapRejection);
+        }
+
+        koxoUniqueIdentifier = await EnsurePortalUserKoxoIdentifierAsync(
+            connection,
+            transaction,
+            portalUserId!,
+            koxoUniqueIdentifier,
+            cancellationToken);
+
+        if (bootstrap is null)
+        {
+            await InsertPrimaryIdentityBootstrapAsync(
+                connection,
+                transaction,
+                portalUserId!,
+                customerId,
+                signupId,
+                koxoUniqueIdentifier,
+                PrimaryIdentityBootstrapOrigins.FromSelfServiceFlow(selfServiceFlow),
+                PrimaryIdentityBootstrapStatuses.AwaitingPassword,
+                passwordSetAtUtc: null,
+                cancellationToken);
+        }
+
+        await using (var bootstrapCommand = connection.CreateCommand())
+        {
+            bootstrapCommand.Transaction = transaction;
+            bootstrapCommand.CommandText =
+                """
+                UPDATE portal_user_identity_bootstrap
+                SET status = 'awaiting_password',
+                    recovery_requested_at = @at,
+                    failure_code = NULL,
+                    failure_detail = NULL,
+                    updated_at = UTC_TIMESTAMP(6)
+                WHERE portal_user_id = @portal_user_id
+                  AND status IN ('awaiting_password', 'koxo_pending');
+                """;
+            bootstrapCommand.Parameters.AddWithValue("@at", atUtc);
+            bootstrapCommand.Parameters.AddWithValue("@portal_user_id", portalUserId!);
+            if (await bootstrapCommand.ExecuteNonQueryAsync(cancellationToken) != 1)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return new(PrimaryIdentityRecoveryCodes.InvalidState);
+            }
+        }
+
+        // Le jeton existant du parcours d'inscription : le lien renouvele rend
+        // le precedent inutilisable, puisque seul son condensat est conserve.
+        await using (var tokenCommand = connection.CreateCommand())
+        {
+            tokenCommand.Transaction = transaction;
+            tokenCommand.CommandText =
+                """
+                UPDATE signup_pending
+                SET password_setup_token_hash = @hash,
+                    password_setup_expires_at = @expires_at,
+                    updated_at = UTC_TIMESTAMP(6)
+                WHERE id = @signup_id
+                  AND status = 'approved';
+                """;
+            tokenCommand.Parameters.AddWithValue("@hash", passwordSetupTokenHash);
+            tokenCommand.Parameters.AddWithValue("@expires_at", passwordSetupExpiresAtUtc);
+            tokenCommand.Parameters.AddWithValue("@signup_id", signupId);
+            if (await tokenCommand.ExecuteNonQueryAsync(cancellationToken) != 1)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return new(PrimaryIdentityRecoveryCodes.InvalidState);
+            }
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return new(
+            PrimaryIdentityRecoveryCodes.Issued,
+            portalUserId,
+            email,
+            contactName);
+    }
+
+    private readonly record struct BootstrapLock(
+        string Id,
+        string Status,
+        string KoxoUniqueIdentifier);
+
+    private static async Task<BootstrapLock?> ReadBootstrapForUpdateAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        string portalUserId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            SELECT id, status, koxo_unique_identifier
+            FROM portal_user_identity_bootstrap
+            WHERE portal_user_id = @portal_user_id
+            FOR UPDATE;
+            """;
+        command.Parameters.AddWithValue("@portal_user_id", portalUserId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new BootstrapLock(
+            MariaDbIdentifierReader.ReadRequired(reader, "id"),
+            reader.GetString("status"),
+            reader.GetString("koxo_unique_identifier"));
+    }
+
+    private static async Task InsertPrimaryIdentityBootstrapAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        string portalUserId,
+        string customerId,
+        string signupId,
+        string koxoUniqueIdentifier,
+        string origin,
+        string status,
+        DateTime? passwordSetAtUtc,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            INSERT INTO portal_user_identity_bootstrap (
+                id,
+                portal_user_id,
+                customer_id,
+                signup_id,
+                koxo_unique_identifier,
+                origin,
+                email_verification_required,
+                status,
+                password_set_at,
+                created_at,
+                updated_at
+            ) VALUES (
+                @id,
+                @portal_user_id,
+                @customer_id,
+                @signup_id,
+                @koxo_unique_identifier,
+                @origin,
+                @email_verification_required,
+                @status,
+                @password_set_at,
+                UTC_TIMESTAMP(6),
+                UTC_TIMESTAMP(6)
+            );
+            """;
+        command.Parameters.AddWithValue("@id", Guid.NewGuid().ToString("D"));
+        command.Parameters.AddWithValue("@portal_user_id", portalUserId);
+        command.Parameters.AddWithValue("@customer_id", customerId);
+        command.Parameters.AddWithValue("@signup_id", signupId);
+        command.Parameters.AddWithValue("@koxo_unique_identifier", koxoUniqueIdentifier);
+        command.Parameters.AddWithValue("@origin", origin);
+        command.Parameters.AddWithValue(
+            "@email_verification_required",
+            PrimaryIdentityBootstrapOrigins.RequiresEmailVerification(origin));
+        command.Parameters.AddWithValue("@status", status);
+        command.Parameters.AddWithValue(
+            "@password_set_at",
+            passwordSetAtUtc is { } at ? at : DBNull.Value);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Depose le secret scelle dans la transaction appelante. Le compteur de
+    /// relectures repart de zero : c'est un nouveau secret.
+    /// </summary>
+    private static async Task WritePendingKoxoSecretAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        string portalUserId,
+        PortalPasswordSecret secret,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            INSERT INTO koxo_pending_directory_passwords (
+                portal_user_id, ciphertext, key_id, expires_at,
+                published_count, created_at, updated_at
+            ) VALUES (
+                @portal_user_id, @ciphertext, @key_id, @expires_at,
+                0, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6)
+            )
+            ON DUPLICATE KEY UPDATE
+                ciphertext = VALUES(ciphertext),
+                key_id = VALUES(key_id),
+                expires_at = VALUES(expires_at),
+                published_count = 0,
+                last_published_at = NULL,
+                updated_at = UTC_TIMESTAMP(6);
+            """;
+        command.Parameters.AddWithValue("@portal_user_id", portalUserId);
+        command.Parameters.AddWithValue("@ciphertext", secret.Ciphertext);
+        command.Parameters.AddWithValue("@key_id", secret.KeyId);
+        command.Parameters.AddWithValue("@expires_at", secret.ExpiresAtUtc);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Garantit un <c>CLI-NNNNNN</c> durable. Les comptes crees depuis la
+    /// migration 035 en ont deja un ; un compte plus ancien qui en serait
+    /// depourvu recoit le sien sous le verrou du compte.
+    /// </summary>
+    private static async Task<string> EnsurePortalUserKoxoIdentifierAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        string portalUserId,
+        string? current,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(current))
+        {
+            return current;
+        }
+
+        var allocated = await AllocateKoxoUniqueIdentifierAsync(
+            connection,
+            transaction,
+            cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            UPDATE portal_users
+            SET koxo_unique_identifier = @koxo_unique_identifier,
+                updated_at = UTC_TIMESTAMP(6)
+            WHERE id = @portal_user_id
+              AND koxo_unique_identifier IS NULL;
+            """;
+        command.Parameters.AddWithValue("@koxo_unique_identifier", allocated);
+        command.Parameters.AddWithValue("@portal_user_id", portalUserId);
+        if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
+        {
+            throw new InvalidOperationException("PRIMARY_IDENTITY_KOXO_ID_RACE");
+        }
+
+        return allocated;
+    }
+
+    private async Task<int> ExecuteBootstrapUpdateAsync(
+        string sql,
+        Action<MySqlCommand> bind,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(
+            _configuration.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        bind(command);
+        return await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static PrimaryIdentityBootstrapRecord ReadPrimaryIdentityBootstrap(
+        MySqlDataReader reader)
+        => new(
+            MariaDbIdentifierReader.ReadRequired(reader, "id"),
+            MariaDbIdentifierReader.ReadRequired(reader, "portal_user_id"),
+            MariaDbIdentifierReader.ReadRequired(reader, "customer_id"),
+            reader.GetString("customer_reference"),
+            ReadNullableString(reader, "koxo_group_reference"),
+            MariaDbIdentifierReader.ReadRequired(reader, "signup_id"),
+            reader.GetString("koxo_unique_identifier"),
+            ReadNullableString(reader, "portal_user_koxo_unique_identifier"),
+            reader.GetString("origin"),
+            ReadFlag(reader, "email_verification_required"),
+            ReadFlag(reader, "email_verified"),
+            reader.GetString("status"),
+            ReadNullableString(reader, "failure_code"),
+            ReadNullableString(reader, "directory_object_guid"),
+            ReadNullableUtc(reader, "koxo_triggered_at") is { } triggeredAt
+                ? DateTime.SpecifyKind(triggeredAt, DateTimeKind.Utc)
+                : null,
+            ReadFlag(reader, "portal_user_active"),
+            ReadFlag(reader, "customer_active"),
+            ReadFlag(reader, "is_demo"),
+            ReadNullableString(reader, "demo_kind"),
+            ReadFlag(reader, "identity_complete"),
+            ReadFlag(reader, "has_user_link"),
+            ReadFlag(reader, "secret_available"),
+            ReadFlag(reader, "has_additional_user_lifecycle"));
+
+    // Les expressions booleennes MariaDB reviennent en entier, les colonnes
+    // BOOLEAN en bool : les deux se lisent ici sans supposition de type.
+    private static bool ReadFlag(MySqlDataReader reader, string columnName)
+    {
+        var ordinal = reader.GetOrdinal(columnName);
+        return !reader.IsDBNull(ordinal)
+            && Convert.ToInt64(reader.GetValue(ordinal), CultureInfo.InvariantCulture) != 0;
     }
 
     private static SignupPendingRecord ReadRecord(MySqlDataReader reader)

@@ -883,6 +883,51 @@ check("la creation admin reutilise le domaine client sans creer d acces", () => 
   assert.doesNotMatch(adminCustomerForm, /password|mot de passe temporaire/i);
 });
 
+// Invariant : tout compte client principal possede une identite AD. Les trois
+// parcours (standard, Cart, VPS) entrent dans le meme amorcage explicite.
+const migration096 = await read(
+  "../../apps/api-internal/Migrations/MariaDb/096_primary_identity_bootstrap.sql",
+);
+const koxoCandidateQuery = await read(
+  "../../apps/api-internal/Data/Repositories/KoxoExportCandidateQuery.cs",
+);
+const identityRecoveryRoute = await read(
+  "app/api/admin/signups/[id]/identity-recovery/route.ts",
+);
+check("tout compte principal entre dans l'amorcage de son identite AD", () => {
+  assert.match(migration096, /CREATE TABLE IF NOT EXISTS portal_user_identity_bootstrap/);
+  assert.match(migration096, /status <> 'completed'\s*OR \(directory_object_guid IS NOT NULL/,
+    "La base refuse completed sans preuve d'adoption.");
+  const migration096Statements = migration096
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("--"))
+    .join("\n");
+  assert.doesNotMatch(migration096Statements, /\bALTER\s+TABLE\b|\bDROP\s+\w+|^\s*UPDATE\s+\w+|\bDELETE\s+FROM\b|\bINSERT\s+INTO\b/im,
+    "La migration 096 reste additive, sans remplissage retroactif.");
+  const selfService = signupService.slice(
+    signupService.indexOf("CompleteSelfServiceAccountAsync("),
+    signupService.indexOf("public async Task<SignupOperationResult> VerifyEmailAsync"),
+  );
+  assert.match(selfService, /InitialKoxoSecret: SealInitialPrimaryIdentitySecret\(userId, payload\.Password\)/,
+    "Cart et VPS deposent le secret KoXo avec le compte, dans la meme transaction.");
+  assert.doesNotMatch(signupService, /ne\s+conditionne pas l'achat/,
+    "L'exemption AD historique du VPS a disparu.");
+  assert.match(signupService, /AdvancePrimaryIdentityAfterEmailVerificationAsync\(/,
+    "La verification e-mail rend l'amorcage eligible.");
+  assert.match(signupService, /SetPasswordForPrimaryIdentityBootstrapAsync\(/,
+    "Le set-password sans lien depose le secret sans exiger de lien.");
+  assert.match(signupRepoMaria, /InsertPrimaryIdentityBootstrapAsync\([\s\S]{0,400}?request\.InitialKoxoSecret is null/,
+    "L'approbation cree l'amorcage dans la transaction du compte.");
+  assert.match(koxoCandidateQuery, /FROM portal_user_identity_bootstrap bootstrap/,
+    "L'export ne retient un principal sans lien que par son amorcage explicite.");
+  assert.match(koxoCandidateQuery, /bootstrap\.email_verification_required = FALSE\s*OR portal_user\.email_verified_at IS NOT NULL/);
+  assert.match(programCs, /"\/internal\/admin\/signups\/\{id\}\/identity-recovery"[\s\S]{0,1600}?signup\.primary_identity_recovery/,
+    "La reprise des comptes existants est une route admin auditee.");
+  assert.match(programCs, /AddHostedService<PrimaryIdentityBootstrapConvergenceWorker>/);
+  assert.match(identityRecoveryRoute, /handleAdminMutation/,
+    "La reprise passe par le BFF admin et sa protection CSRF.");
+});
+
 let failures = 0;
 for (const [name, fn] of checks) {
   try {

@@ -74,6 +74,12 @@ public sealed record SignupVerificationResendTarget(
     string ContactName,
     string SelfServiceFlow);
 
+/// <param name="InitialKoxoSecret">
+/// Secret deja scelle destine a KoXo, pose dans la <b>meme</b> transaction que
+/// le compte portail. Fourni par les parcours self-service, qui connaissent le
+/// mot de passe des l'inscription ; nul pour l'inscription standard, dont le
+/// mot de passe n'existe qu'au set-password.
+/// </param>
 public sealed record SignupApprovalRequest(
     string SignupId,
     string CustomerId,
@@ -85,7 +91,161 @@ public sealed record SignupApprovalRequest(
     DateTime? PasswordSetupExpiresAtUtc,
     string? InitialPasswordHash = null,
     bool EmailVerified = true,
-    string? SelfServiceFlow = null);
+    string? SelfServiceFlow = null,
+    PortalPasswordSecret? InitialKoxoSecret = null);
+
+/// <summary>
+/// Etats de l'amorcage de l'identite AD du compte principal.
+/// </summary>
+/// <remarks>
+/// Valeurs de la contrainte CHECK de la migration 096 : toute divergence
+/// serait rejetee par la base.
+/// </remarks>
+public static class PrimaryIdentityBootstrapStatuses
+{
+    public const string AwaitingPassword = "awaiting_password";
+    public const string KoxoPending = "koxo_pending";
+    public const string DirectoryReady = "directory_ready";
+    public const string Completed = "completed";
+    public const string Failed = "failed";
+
+    public static readonly IReadOnlyList<string> All =
+    [
+        AwaitingPassword,
+        KoxoPending,
+        DirectoryReady,
+        Completed,
+        Failed
+    ];
+
+    /// <summary>Etats ou l'objet AD n'est pas encore lie au compte.</summary>
+    public static bool IsBootstrapping(string? status)
+        => status is KoxoPending or DirectoryReady;
+}
+
+public static class PrimaryIdentityBootstrapOrigins
+{
+    public const string Signup = "signup";
+    public const string SelfServiceCart = "self_service_cart";
+    public const string SelfServiceVps = "self_service_vps";
+
+    public static string FromSelfServiceFlow(string? selfServiceFlow)
+        => selfServiceFlow switch
+        {
+            "cart" => SelfServiceCart,
+            "vps" => SelfServiceVps,
+            _ => Signup
+        };
+
+    /// <summary>
+    /// Les parcours self-service creent le compte avant la preuve de
+    /// possession de l'adresse ; l'inscription standard ne l'approuve
+    /// qu'apres.
+    /// </summary>
+    public static bool RequiresEmailVerification(string origin)
+        => !string.Equals(origin, Signup, StringComparison.Ordinal);
+}
+
+/// <summary>
+/// Etat complet d'un amorcage, relu avec tout ce que la regle d'export exige.
+/// </summary>
+/// <remarks>
+/// Ne porte jamais de secret : <see cref="SecretAvailable"/> dit seulement
+/// qu'un chiffre non expire existe pour ce compte.
+/// </remarks>
+public sealed record PrimaryIdentityBootstrapRecord(
+    string Id,
+    string PortalUserId,
+    string CustomerId,
+    string CustomerReference,
+    string? KoxoGroupReference,
+    string SignupId,
+    string KoxoUniqueIdentifier,
+    string? PortalUserKoxoUniqueIdentifier,
+    string Origin,
+    bool EmailVerificationRequired,
+    bool EmailVerified,
+    string Status,
+    string? FailureCode,
+    string? DirectoryObjectGuid,
+    DateTime? KoxoTriggeredAtUtc,
+    bool PortalUserActive,
+    bool CustomerActive,
+    bool IsDemo,
+    string? DemoKind,
+    bool IdentityComplete,
+    bool HasUserLink,
+    bool SecretAvailable,
+    bool HasAdditionalUserLifecycle);
+
+public static class PrimaryIdentityRecoveryCodes
+{
+    public const string Issued = "PRIMARY_IDENTITY_RECOVERY_ISSUED";
+    public const string SignupNotFound = "SIGNUP_NOT_FOUND";
+    public const string InvalidState = "INVALID_STATE";
+    public const string EmailVerificationRequired = "EMAIL_VERIFICATION_REQUIRED";
+    public const string AlreadyLinked = "PRIMARY_IDENTITY_ALREADY_LINKED";
+    public const string InProgress = "PRIMARY_IDENTITY_IN_PROGRESS";
+    public const string Conflict = "PRIMARY_IDENTITY_CONFLICT";
+}
+
+/// <summary>
+/// Regles de reprise, appliquees a l'etat lu sous verrou. Une seule
+/// implementation : MariaDB et le mock executent litteralement la meme.
+/// </summary>
+public static class PrimaryIdentityRecoveryRules
+{
+    public static string? ClassifySignup(string status, string? portalUserId)
+    {
+        if (portalUserId is null)
+        {
+            return PrimaryIdentityRecoveryCodes.InvalidState;
+        }
+
+        // Un compte self-service dont l'adresse n'est pas prouvee reprend par
+        // la verification e-mail : c'est elle qui relance l'amorcage.
+        return status switch
+        {
+            "approved" => null,
+            "email_pending" => PrimaryIdentityRecoveryCodes.EmailVerificationRequired,
+            _ => PrimaryIdentityRecoveryCodes.InvalidState
+        };
+    }
+
+    public static string? ClassifyBootstrap(string? status, bool secretAvailable)
+        => status switch
+        {
+            null => null,
+            PrimaryIdentityBootstrapStatuses.AwaitingPassword => null,
+            // Un secret vivant suffit a KoXo : redemander un mot de passe ne
+            // ferait que remplacer un secret valable.
+            PrimaryIdentityBootstrapStatuses.KoxoPending => secretAvailable
+                ? PrimaryIdentityRecoveryCodes.InProgress
+                : null,
+            // L'objet AD existe deja : il ne manque que le lien, qui ne
+            // demande aucun mot de passe.
+            PrimaryIdentityBootstrapStatuses.DirectoryReady =>
+                PrimaryIdentityRecoveryCodes.InProgress,
+            PrimaryIdentityBootstrapStatuses.Completed =>
+                PrimaryIdentityRecoveryCodes.AlreadyLinked,
+            _ => PrimaryIdentityRecoveryCodes.Conflict
+        };
+}
+
+/// <summary>
+/// Resultat d'une demande de reprise. Ne contient jamais le jeton clair.
+/// </summary>
+public sealed record PrimaryIdentityRecoveryTarget(
+    string Code,
+    string? PortalUserId = null,
+    string? Email = null,
+    string? ContactName = null)
+{
+    public bool Succeeded => string.Equals(
+        Code,
+        PrimaryIdentityRecoveryCodes.Issued,
+        StringComparison.Ordinal);
+}
 
 public sealed record SignupApprovalResult(
     string SignupId,
@@ -266,5 +426,108 @@ public interface ISignupRepository
     /// </remarks>
     Task<string?> GetKoxoUniqueIdentifierAsync(
         string portalUserId,
+        CancellationToken cancellationToken);
+
+    // ------------------------------------------------------------------
+    // Amorcage de l'identite AD du compte principal (migration 096)
+    // ------------------------------------------------------------------
+
+    Task<PrimaryIdentityBootstrapRecord?> GetPrimaryIdentityBootstrapAsync(
+        string portalUserId,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Amorcages qui n'attendent plus que KoXo / l'annuaire : etat
+    /// <c>koxo_pending</c> ou <c>directory_ready</c>, e-mail verifie quand le
+    /// parcours l'exige. Les plus anciennement tentes d'abord.
+    /// </summary>
+    Task<IReadOnlyList<PrimaryIdentityBootstrapRecord>>
+        ListPrimaryIdentityBootstrapCandidatesAsync(
+            int limit,
+            CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Pose le mot de passe d'un compte principal <b>sans lien AD</b> et, si
+    /// <paramref name="koxoSecret"/> est fourni, depose le secret destine a
+    /// KoXo et fait passer l'amorcage en <c>koxo_pending</c> — le tout dans une
+    /// seule transaction.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// C'est ce qui rompt la seconde boucle : <see cref="SetPasswordAsync"/>
+    /// exige un lien pour y poser l'etat de synchronisation, or la premiere
+    /// creation KoXo a justement lieu avant tout lien. Ici l'etat de
+    /// synchronisation vit dans la ligne d'amorcage.
+    /// </para>
+    /// <para>
+    /// Refuse (exception, rien n'est ecrit) si un lien AD utilisateur est
+    /// apparu entre-temps : le changement de mot de passe d'un compte lie
+    /// passe par <see cref="SetPasswordAsync"/>.
+    /// </para>
+    /// </remarks>
+    Task SetPasswordForPrimaryIdentityBootstrapAsync(
+        string signupId,
+        string portalUserId,
+        string passwordHash,
+        PortalPasswordSecret? koxoSecret,
+        DateTime atUtc,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// <c>koxo_pending</c> -&gt; <c>directory_ready</c> en figeant l'objectGUID.
+    /// Idempotent pour le meme objectGUID, refuse tout autre.
+    /// </summary>
+    Task<bool> MarkPrimaryIdentityDirectoryResolvedAsync(
+        string id,
+        string directoryObjectGuid,
+        DateTime resolvedAtUtc,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// <c>directory_ready</c> -&gt; <c>completed</c>, <b>seulement</b> si le lien
+    /// <c>customer_ad_links(user)</c> de ce compte existe avec l'objectGUID
+    /// adopte. La condition est dans l'ecriture elle-meme, pas supposee.
+    /// </summary>
+    Task<bool> MarkPrimaryIdentityCompletedAsync(
+        string id,
+        DateTime linkedAtUtc,
+        CancellationToken cancellationToken);
+
+    Task<bool> MarkPrimaryIdentityFailedAsync(
+        string id,
+        string failureCode,
+        string? failureDetail,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// <c>koxo_pending</c> -&gt; <c>awaiting_password</c> quand le secret a
+    /// disparu (expiration) avant que KoXo ne cree l'objet.
+    /// </summary>
+    Task<bool> MarkPrimaryIdentityAwaitingPasswordAsync(
+        string id,
+        string reasonCode,
+        CancellationToken cancellationToken);
+
+    Task TouchPrimaryIdentityAttemptAsync(
+        string id,
+        bool koxoTriggered,
+        DateTime atUtc,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Reprise d'un compte principal sans identite AD dont le mot de passe
+    /// clair est perdu : place l'amorcage en <c>awaiting_password</c> (le cree
+    /// au besoin) et emet un jeton de definition de mot de passe, en une seule
+    /// transaction.
+    /// </summary>
+    /// <remarks>
+    /// N'essaie jamais de retrouver l'ancien mot de passe : seul le nouveau,
+    /// saisi par le titulaire de la boite, alimentera KoXo.
+    /// </remarks>
+    Task<PrimaryIdentityRecoveryTarget> RequestPrimaryIdentityRecoveryAsync(
+        string signupId,
+        string passwordSetupTokenHash,
+        DateTime passwordSetupExpiresAtUtc,
+        DateTime atUtc,
         CancellationToken cancellationToken);
 }

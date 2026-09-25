@@ -320,7 +320,10 @@ builder.Services.AddScoped<ISignupRepository>(
             // aboutit. En persistance SQL, le depot MariaDB l'ecrit lui-meme
             // dans sa transaction et ce point d'attache reste nul.
             SealSink = serviceProvider.GetRequiredService<IKoxoPendingPasswordStore>()
-                as IKoxoPendingPasswordSealSink
+                as IKoxoPendingPasswordSealSink,
+            // Memes gardes que la base reelle : l'amorcage de l'identite ne se
+            // conclut, ni ne recoit de secret, qu'au regard des liens AD.
+            LinkRepository = serviceProvider.GetRequiredService<IActiveDirectoryLinkRepository>()
         });
 builder.Services.AddScoped<IKoxoRepository>(
     _ => sqlConfiguration.IsPersistent
@@ -663,6 +666,12 @@ builder.Services.AddScoped<
     CustomerActiveDirectoryAdministrationService>();
 builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddHostedService<DemoAccountExpirationWorker>();
+// Invariant : tout compte client principal possede une identite AD. Sans
+// ecriture annuaire, le worker n'a rien a faire et ne tourne pas.
+if (adConfiguration.WritesEnabled)
+{
+    builder.Services.AddHostedService<PrimaryIdentityBootstrapConvergenceWorker>();
+}
 builder.Services.AddTransient<MariaDbMigrationRunner>();
 builder.Services.AddTransient<MariaDbAdminSeeder>();
 builder.Services.AddSingleton<OperationalReadinessService>();
@@ -6105,6 +6114,58 @@ app.MapPost(
             correlation_id = context.GetCorrelationId()
         });
     });
+// Reprise d'un compte principal sans identite AD (anterieur a l'amorcage, ou
+// dont le secret a expire). Le mot de passe clair est perdu et ne se devine
+// pas : le titulaire en choisit un nouveau par le lien envoye, et c'est lui
+// qui fait entrer le compte dans l'amorcage. Rejouable et audite.
+app.MapPost(
+    "/internal/admin/signups/{id}/identity-recovery",
+    async (
+        string id,
+        HttpContext context,
+        ISignupService signupService,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.signups.identity_recovery.request");
+        var result = await signupService.RequestPrimaryIdentityRecoveryAsync(
+            id,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "signup.primary_identity_recovery",
+                result.Succeeded ? "success" : "refused",
+                ReasonCode: result.Code,
+                TargetType: "signup",
+                TargetReference: id,
+                ActorUserId: actor.UserId,
+                SourceAddress:
+                    context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+
+        if (!result.Succeeded)
+        {
+            return Results.Json(
+                new ApiError(
+                    result.Code,
+                    result.Message,
+                    context.GetCorrelationId()),
+                statusCode: ResolveSignupAdminMutationStatusCode(result.Code));
+        }
+
+        return Results.Ok(new
+        {
+            code = result.Code,
+            message = result.Message,
+            correlation_id = context.GetCorrelationId()
+        });
+    });
 // ---------------------------------------------------------------------------
 // Administration du catalogue Billing V2/V2.1
 //
@@ -9394,6 +9455,8 @@ static int ResolveSignupAdminMutationStatusCode(string code)
     {
         "SIGNUP_NOT_FOUND" => StatusCodes.Status404NotFound,
         "INVALID_PASSWORD" or "INVALID_REQUEST" => StatusCodes.Status400BadRequest,
+        // Etat du compte, pas une panne du relais e-mail.
+        "EMAIL_VERIFICATION_REQUIRED" => StatusCodes.Status409Conflict,
         _ when code.StartsWith("EMAIL_", StringComparison.Ordinal)
             => StatusCodes.Status502BadGateway,
         _ => StatusCodes.Status409Conflict

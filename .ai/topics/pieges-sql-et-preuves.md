@@ -61,3 +61,15 @@ droits. `objectSid` **peut changer légitimement** lors d'un déplacement
 entre domaines de la même forêt (l'ancien part dans `sIDHistory`). Seul
 `objectGUID` est stable. `..._IDENTITY_SID_MISMATCH` signale donc deux
 lectures incohérentes, avec un refus **temporaire**, pas une usurpation.
+
+## MySqlConnector : jamais de RollbackAsync lecteur ouvert
+
+Un `RollbackAsync` (ou toute commande) emis alors qu'un `MySqlDataReader` est
+encore ouvert sur la connexion leve `This MySqlConnection is already in use`,
+**meme si `ReadAsync()` vient de rendre `false`**. Le motif
+`await using var reader ...; if (!ok) { await transaction.RollbackAsync(); return null; }`
+transforme donc un refus propre en exception. Mesure en base reelle le
+2026-09-25 : le perdant d'une double validation de `ApproveAsync` (code
+anterieur, present dans `HEAD`) et une reprise d'amorcage sur demande inconnue
+levaient au lieu de rendre `null` / `SIGNUP_NOT_FOUND`. Corrige : lire dans des
+variables, fermer le lecteur, puis decider. Invisible en persistance mock.

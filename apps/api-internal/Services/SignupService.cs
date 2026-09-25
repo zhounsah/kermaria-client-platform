@@ -27,6 +27,15 @@ public sealed record SignupSelfServiceOperationResult(
     string Message,
     SessionCreationResult? Session = null);
 
+/// <summary>
+/// Resultat d'un pas de convergence de l'identite AD du compte principal.
+/// Aucune donnee annuaire ni aucun secret : seulement l'etape atteinte.
+/// </summary>
+public sealed record PrimaryIdentityBootstrapResult(
+    bool Succeeded,
+    string Code,
+    string? Status);
+
 public interface ISignupService
 {
     bool IsPersistent { get; }
@@ -99,6 +108,29 @@ public interface ISignupService
 
     Task<SignupOperationResult> ValidateSetPasswordTokenAsync(
         string? token,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Fait avancer l'amorcage de l'identite AD d'un compte principal.
+    /// Idempotent.
+    /// </summary>
+    Task<PrimaryIdentityBootstrapResult> ConvergePrimaryIdentityAsync(
+        string portalUserId,
+        CancellationToken cancellationToken);
+
+    /// <summary>Passage du worker : les amorcages qui n'attendent que l'annuaire.</summary>
+    Task<int> ConvergePendingPrimaryIdentitiesAsync(
+        int batchSize,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Reprise administrateur d'un compte principal sans identite AD : envoie
+    /// un lien de definition de mot de passe qui fera entrer le compte dans
+    /// l'amorcage.
+    /// </summary>
+    Task<SignupOperationResult> RequestPrimaryIdentityRecoveryAsync(
+        string signupId,
+        string correlationId,
         CancellationToken cancellationToken);
 }
 
@@ -343,8 +375,10 @@ public sealed class SignupService : ISignupService
     /// Le workflow historique (verification e-mail puis approbation humaine)
     /// reste inchange pour toute autre inscription. Ici, hCaptcha et les
     /// limites de debit sont deja appliques par le BFF, puis les memes limites
-    /// durables sont reevaluees ci-dessous. L'identite Active Directory ne
-    /// conditionne pas l'achat d'un produit explicitement self-service.
+    /// durables sont reevaluees ci-dessous. Comme tout compte client
+    /// principal, le compte VPS possede une identite AD : il entre dans le
+    /// meme amorcage que le Cart, meme si le VPS lui-meme n'ajoute aucun
+    /// groupe de securite.
     /// </summary>
     public Task<SignupSelfServiceOperationResult>
         CompleteSelfServiceVpsAsync(
@@ -494,6 +528,12 @@ public sealed class SignupService : ISignupService
 
         var customerId = Guid.NewGuid().ToString("D");
         var userId = Guid.NewGuid().ToString("D");
+        // Le mot de passe clair n'existe qu'ici : il est scelle pour KoXo et
+        // depose avec le compte, dans la meme transaction. L'amorcage de
+        // l'identite AD nait donc en `koxo_pending`, mais aucun export ni
+        // aucune creation annuaire n'a lieu avant la preuve de possession de
+        // l'adresse. Pas de seconde implementation AD ici : tout passe par le
+        // meme cycle que l'inscription standard.
         var approval = await _repository.ApproveAsync(
             new SignupApprovalRequest(
                 signupId,
@@ -506,7 +546,8 @@ public sealed class SignupService : ISignupService
                 PasswordSetupExpiresAtUtc: null,
                 InitialPasswordHash: _passwordService.HashPassword(userId, payload.Password),
                 EmailVerified: false,
-                SelfServiceFlow: selfServiceFlow),
+                SelfServiceFlow: selfServiceFlow,
+                InitialKoxoSecret: SealInitialPrimaryIdentitySecret(userId, payload.Password)),
             cancellationToken);
         if (approval is null)
         {
@@ -534,7 +575,8 @@ public sealed class SignupService : ISignupService
         {
             _logger.LogError(
                 exception,
-                "Self-service VPS account was created but its initial session could not be opened correlation_id {CorrelationId}",
+                "Self-service {Flow} account was created but its initial session could not be opened correlation_id {CorrelationId}",
+                selfServiceFlow,
                 correlationId);
             return new SignupSelfServiceOperationResult(
                 false,
@@ -553,6 +595,38 @@ public sealed class SignupService : ISignupService
                 cancellationToken,
                 BuildSelfServiceContinuationPath(payload, selfServiceFlow));
         }
+    }
+
+    /// <summary>
+    /// Secret initial de l'amorcage self-service, ou <c>null</c> quand il ne
+    /// peut pas etre retenu.
+    /// </summary>
+    /// <remarks>
+    /// <c>null</c> ne bloque pas la creation du compte : l'amorcage nait alors
+    /// en <c>awaiting_password</c>, visiblement, et la verification de
+    /// l'adresse enverra un lien de definition du mot de passe. Refuser un
+    /// achat parce que le relais KoXo est mal configure ne protegerait rien.
+    /// </remarks>
+    private PortalPasswordSecret? SealInitialPrimaryIdentitySecret(
+        string portalUserId,
+        string password)
+    {
+        if (!_adConfiguration.WritesEnabled)
+        {
+            return null;
+        }
+
+        var secret = _pendingPasswords.IsOperational
+            ? _pendingPasswords.Seal(portalUserId, password)
+            : null;
+        if (secret is null)
+        {
+            _logger.LogError(
+                "KoXo password handoff is not operational: primary identity bootstrap of portal_user_id {PortalUserId} starts awaiting a password.",
+                portalUserId);
+        }
+
+        return secret;
     }
 
     public async Task<SignupOperationResult> VerifyEmailAsync(
@@ -595,6 +669,16 @@ public sealed class SignupService : ISignupService
         }
 
         await _repository.MarkEmailVerifiedAsync(target.Id, cancellationToken);
+        if (target.ApprovedUserId is not null)
+        {
+            // Compte self-service deja cree : la preuve de possession rend son
+            // amorcage AD eligible a l'export KoXo.
+            await AdvancePrimaryIdentityAfterEmailVerificationAsync(
+                target.Id,
+                target.ApprovedUserId,
+                cancellationToken);
+        }
+
         return new SignupOperationResult(
             true,
             "EMAIL_VERIFIED",
@@ -1034,17 +1118,136 @@ public sealed class SignupService : ISignupService
                 "Le compte approuve est incomplet.");
         }
 
-        var (adError, koxoSecret) = await ProvisionActiveDirectoryAsync(
+        if (!_adConfiguration.WritesEnabled)
+        {
+            // Annuaire desactive : seul le portail recoit le mot de passe.
+            // L'amorcage, cree avec le compte, reste en attente et sera repris
+            // par un nouveau mot de passe une fois l'annuaire ouvert.
+            return await StorePortalPasswordAsync(record, password, null, cancellationToken);
+        }
+
+        if (!_adConfiguration.ConfigurationValid)
+        {
+            return new SignupOperationResult(
+                false,
+                "AD_CONFIGURATION_INVALID",
+                "La configuration Active Directory est incomplete.");
+        }
+
+        var existingLink =
+            await _activeDirectoryLinkRepository.FindUserLinkByPortalUserIdAsync(
+                record.ApprovedUserId,
+                cancellationToken);
+        if (existingLink is not null)
+        {
+            // Identite deja liee : c'est un changement de mot de passe, pas un
+            // amorcage. Le secret suit le lien existant.
+            var (adError, koxoSecret) = await ProvisionActiveDirectoryAsync(
+                record,
+                existingLink,
+                password,
+                cancellationToken);
+            if (adError is not null)
+            {
+                return adError;
+            }
+
+            return await StorePortalPasswordAsync(
+                record,
+                password,
+                koxoSecret,
+                cancellationToken);
+        }
+
+        return await BootstrapPrimaryIdentityPasswordAsync(
             record,
             password,
             cancellationToken);
-        if (adError is not null)
+    }
+
+    /// <summary>
+    /// Mot de passe d'un compte principal <b>sans</b> identite AD liee.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Rompt les deux boucles historiques. Avant, sous autorite KoXo, on
+    /// cherchait l'identite AVANT de rien ecrire : absente — elle l'etait
+    /// toujours, puisqu'un compte sans lien n'etait jamais exporte — le
+    /// set-password repondait <c>AD_IDENTITY_NOT_READY</c> indefiniment. Et le
+    /// depot refusait de deposer le secret sans lien a mettre a jour.
+    /// </para>
+    /// <para>
+    /// Desormais le secret scelle, le condensat du portail et l'amorcage
+    /// <c>koxo_pending</c> sont ecrits dans UNE transaction ; l'amorcage rend
+    /// le compte exportable, KoXo cree l'identite, l'adoption par
+    /// <c>employeeNumber</c> pose le lien. Le compte portail est utilisable des
+    /// le COMMIT, meme si l'annuaire converge plus tard.
+    /// </para>
+    /// </remarks>
+    private async Task<SignupOperationResult?> BootstrapPrimaryIdentityPasswordAsync(
+        SignupPendingRecord record,
+        string password,
+        CancellationToken cancellationToken)
+    {
+        // Fail-closed avant tout point de non-retour : sans magasin
+        // exploitable, le jeton serait consomme pour un secret qui
+        // n'atteindrait jamais l'annuaire.
+        var koxoSecret = _pendingPasswords.IsOperational
+            ? _pendingPasswords.Seal(record.ApprovedUserId!, password)
+            : null;
+        if (koxoSecret is null)
         {
-            return adError;
+            return new SignupOperationResult(
+                false,
+                "KOXO_PASSWORD_HANDOFF_UNAVAILABLE",
+                "Le mot de passe ne peut pas etre transmis a KoXo pour le moment.");
         }
 
         var passwordHash = _passwordService.HashPassword(
-            record.ApprovedUserId,
+            record.ApprovedUserId!,
+            password);
+        try
+        {
+            await _repository.SetPasswordForPrimaryIdentityBootstrapAsync(
+                record.Id,
+                record.ApprovedUserId!,
+                passwordHash,
+                koxoSecret,
+                DateTime.UtcNow,
+                cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            _logger.LogError(
+                exception,
+                "Primary identity bootstrap password could not be stored for portal_user_id {PortalUserId}",
+                record.ApprovedUserId);
+            return new SignupOperationResult(
+                false,
+                "PASSWORD_CHANGE_STORAGE_UNAVAILABLE",
+                "Le mot de passe n'a pas pu etre enregistre : rien n'a ete modifie. Reessayez plus tard.");
+        }
+
+        // Apres le COMMIT seulement. Le declenchement et la premiere tentative
+        // de convergence sont des rattrapages : l'amorcage durable est deja la,
+        // et le worker le reprendra.
+        await TriggerKoxoSyncWebhookAsync(record, cancellationToken);
+        await TryConvergePrimaryIdentityAsync(
+            record.ApprovedUserId!,
+            password,
+            allowKoxoTrigger: false,
+            cancellationToken);
+        return null;
+    }
+
+    private async Task<SignupOperationResult?> StorePortalPasswordAsync(
+        SignupPendingRecord record,
+        string password,
+        PortalPasswordSecret? koxoSecret,
+        CancellationToken cancellationToken)
+    {
+        var passwordHash = _passwordService.HashPassword(
+            record.ApprovedUserId!,
             password);
 
         // Une seule unite de travail : condensat portail, retrait du jeton et
@@ -1054,7 +1257,7 @@ public sealed class SignupService : ISignupService
         {
             await _repository.SetPasswordAsync(
                 record.Id,
-                record.ApprovedUserId,
+                record.ApprovedUserId!,
                 passwordHash,
                 koxoSecret,
                 DateTime.UtcNow,
@@ -1147,6 +1350,10 @@ public sealed class SignupService : ISignupService
         }
     }
 
+    /// <summary>
+    /// Changement de mot de passe d'un compte dont l'identite AD est deja
+    /// liee.
+    /// </summary>
     /// <remarks>
     /// Rend le secret <b>scelle</b> destine a KoXo, sans l'ecrire : son depot a
     /// lieu dans la transaction qui pose le condensat du portail. Publie ici,
@@ -1156,265 +1363,632 @@ public sealed class SignupService : ISignupService
     private async Task<(SignupOperationResult? error, PortalPasswordSecret? secret)>
         ProvisionActiveDirectoryAsync(
         SignupPendingRecord record,
+        PortalUserAdLinkRecord existingLink,
         string password,
         CancellationToken cancellationToken)
     {
-        if (!_adConfiguration.WritesEnabled)
-        {
-            return (null, null);
-        }
-
-        if (!_adConfiguration.ConfigurationValid)
-        {
-            return (new SignupOperationResult(
-                false,
-                "AD_CONFIGURATION_INVALID",
-                "La configuration Active Directory est incomplete."), null);
-        }
-
-        if (record.ApprovedUserId is null
-            || string.IsNullOrWhiteSpace(record.ApprovedCustomerReference))
-        {
-            return (new SignupOperationResult(
-                false,
-                "INVALID_STATE",
-                "Le compte approuve ne peut pas etre relie a Active Directory."), null);
-        }
-
-        var now = DateTime.UtcNow;
-        var existingLink =
-            await _activeDirectoryLinkRepository.FindUserLinkByPortalUserIdAsync(
-                record.ApprovedUserId,
-                cancellationToken);
-
-        if (existingLink is not null)
-        {
-            if (_adConfiguration.KoxoOwnsDirectory)
-            {
-                // Fail-closed avant tout point de non-retour : sans magasin
-                // exploitable, le secret n'atteindrait jamais l'annuaire.
-                var sealed_ = _pendingPasswords.IsOperational
-                    ? _pendingPasswords.Seal(record.ApprovedUserId, password)
-                    : null;
-                if (sealed_ is null)
-                {
-                    return (new SignupOperationResult(
-                        false,
-                        "KOXO_PASSWORD_HANDOFF_UNAVAILABLE",
-                        "Le mot de passe ne peut pas etre transmis a KoXo pour le moment."), null);
-                }
-
-                // L'etat de synchronisation est pose par la meme transaction que
-                // le secret : l'annoncer ici le rendrait vrai avant que le
-                // secret n'existe.
-                return (null, sealed_);
-            }
-
-            var syncResult = await _activeDirectoryService.SetUserPasswordAsync(
-                existingLink.CustomerReference,
-                existingLink.SamAccountName,
-                password,
-                cancellationToken);
-            if (syncResult.StatusCode >= 400 || syncResult.Value is null)
-            {
-                return (MapAdProvisioningFailure(
-                    syncResult,
-                    "Le compte Active Directory n'a pas pu etre synchronise."), null);
-            }
-
-            await _activeDirectoryLinkRepository.UpsertPortalUserLinkAsync(
-                existingLink.CustomerReference,
-                record.ApprovedUserId,
-                actorUserId: null,
-                syncResult.Value,
-                _adConfiguration.Domain,
-                "succeeded",
-                existingLink.AdProvisionedAtUtc ?? now,
-                "succeeded",
-                now,
-                existingLink.KoxoExportStatus ?? "koxo_pending",
-                cancellationToken);
-            return (null, null);
-        }
-
-        // Quand KoXo est reellement en place, c'est LUI qui cree l'identite :
-        // l'application se contente de l'adopter via son employeeNumber.
-        // Creer nous-memes produirait un DOUBLON, le sAMAccountName derive ici
-        // (initiale + 6 lettres du nom) differant de celui derive par KoXo
-        // (prenom.nom) — le mot de passe du client atterrirait alors sur le
-        // compte dont les services ne se servent pas.
-        //
-        // En mode Mock il n'y a pas de KoXo derriere, donc on continue de creer :
-        // sans cela plus personne ne creerait l'identite et le parcours de
-        // definition du mot de passe resterait bloque.
-        AdDirectoryObjectSummary? adUserObject;
         if (_adConfiguration.KoxoOwnsDirectory)
         {
-            var adoption = await AdoptKoxoIdentityAsync(record, cancellationToken);
-            if (adoption.error is not null)
-            {
-                return (adoption.error, null);
-            }
-
-            adUserObject = adoption.directoryObject;
-        }
-        else
-        {
-            var adUser = await EnsurePortalAdUserAsync(
-                record,
-                cancellationToken);
-            if (adUser.error is not null)
-            {
-                return (adUser.error, null);
-            }
-
-            adUserObject = adUser.directoryObject;
-        }
-
-        PortalPasswordSecret? koxoSecret = null;
-        if (_adConfiguration.KoxoOwnsDirectory)
-        {
-            // On n'ecrit PAS le mot de passe par LDAP. Avec ForcePasswords=1,
-            // KoXo reecrit le mot de passe de l'annuaire a chaque
-            // synchronisation depuis la colonne 14 du CSV : une ecriture LDAP
-            // serait ecrasee au passage suivant et le client perdrait
-            // NextCloud, RDS et le VPN sans aucune erreur visible. On scelle
-            // donc le mot de passe pour l'export ; son depot a lieu dans la
-            // transaction qui pose le condensat du portail, et le declenchement
-            // qui suit dans ApplyPasswordAsync le fait appliquer par KoXo.
-            koxoSecret = _pendingPasswords.IsOperational
-                ? _pendingPasswords.Seal(record.ApprovedUserId, password)
+            // Fail-closed avant tout point de non-retour : sans magasin
+            // exploitable, le secret n'atteindrait jamais l'annuaire.
+            var sealed_ = _pendingPasswords.IsOperational
+                ? _pendingPasswords.Seal(record.ApprovedUserId!, password)
                 : null;
-            if (koxoSecret is null)
+            if (sealed_ is null)
             {
                 return (new SignupOperationResult(
                     false,
                     "KOXO_PASSWORD_HANDOFF_UNAVAILABLE",
                     "Le mot de passe ne peut pas etre transmis a KoXo pour le moment."), null);
             }
-        }
-        else
-        {
-            // Mode Mock : aucun KoXo derriere, c'est bien a l'application
-            // d'appliquer le mot de passe, sans quoi le compte simule resterait
-            // desactive et sans mot de passe.
-            var passwordResult = await _activeDirectoryService.SetUserPasswordAsync(
-                record.ApprovedCustomerReference,
-                adUserObject!.SamAccountName,
-                password,
-                cancellationToken);
-            if (passwordResult.StatusCode >= 400 || passwordResult.Value is null)
-            {
-                return (MapAdProvisioningFailure(
-                    passwordResult,
-                    "Le mot de passe Active Directory n'a pas pu etre applique."), null);
-            }
 
-            adUserObject = passwordResult.Value;
+            // L'etat de synchronisation est pose par la meme transaction que
+            // le secret : l'annoncer ici le rendrait vrai avant que le
+            // secret n'existe.
+            return (null, sealed_);
+        }
+
+        // Mode Mock : aucun KoXo derriere, c'est bien a l'application
+        // d'appliquer le mot de passe a l'objet deja lie.
+        var now = DateTime.UtcNow;
+        var syncResult = await _activeDirectoryService.SetUserPasswordAsync(
+            existingLink.CustomerReference,
+            existingLink.SamAccountName,
+            password,
+            cancellationToken);
+        if (syncResult.StatusCode >= 400 || syncResult.Value is null)
+        {
+            return (MapAdProvisioningFailure(
+                syncResult,
+                "Le compte Active Directory n'a pas pu etre synchronise."), null);
         }
 
         await _activeDirectoryLinkRepository.UpsertPortalUserLinkAsync(
-            record.ApprovedCustomerReference,
-            record.ApprovedUserId,
+            existingLink.CustomerReference,
+            record.ApprovedUserId!,
             actorUserId: null,
-            adUserObject!,
+            syncResult.Value,
             _adConfiguration.Domain,
             "succeeded",
-            now,
+            existingLink.AdProvisionedAtUtc ?? now,
             "succeeded",
             now,
-            "koxo_pending",
+            existingLink.KoxoExportStatus ?? "koxo_pending",
             cancellationToken);
+        return (null, null);
+    }
 
-        return (null, koxoSecret);
+    // ------------------------------------------------------------------
+    // Amorcage de l'identite AD du compte principal
+    // ------------------------------------------------------------------
+
+    private static readonly TimeSpan PrimaryIdentityKoxoTriggerInterval =
+        TimeSpan.FromMinutes(10);
+
+    public async Task<PrimaryIdentityBootstrapResult> ConvergePrimaryIdentityAsync(
+        string portalUserId,
+        CancellationToken cancellationToken)
+    {
+        var record = await _repository.GetPrimaryIdentityBootstrapAsync(
+            portalUserId,
+            cancellationToken);
+        if (record is null)
+        {
+            return new PrimaryIdentityBootstrapResult(
+                false,
+                PrimaryIdentityBootstrapCodes.LifecycleMissing,
+                null);
+        }
+
+        return (await ConvergePrimaryIdentityCoreAsync(
+            record,
+            plaintextPassword: null,
+            allowKoxoTrigger: true,
+            cancellationToken)).Result;
+    }
+
+    public async Task<int> ConvergePendingPrimaryIdentitiesAsync(
+        int batchSize,
+        CancellationToken cancellationToken)
+    {
+        if (!_adConfiguration.WritesEnabled || batchSize <= 0)
+        {
+            return 0;
+        }
+
+        var candidates = await _repository.ListPrimaryIdentityBootstrapCandidatesAsync(
+            batchSize,
+            cancellationToken);
+        var completed = 0;
+        foreach (var candidate in candidates)
+        {
+            var triggered = false;
+            try
+            {
+                var outcome = await ConvergePrimaryIdentityCoreAsync(
+                    candidate,
+                    plaintextPassword: null,
+                    allowKoxoTrigger: true,
+                    cancellationToken);
+                triggered = outcome.KoxoTriggered;
+                if (string.Equals(
+                        outcome.Result.Code,
+                        PrimaryIdentityBootstrapCodes.Completed,
+                        StringComparison.Ordinal))
+                {
+                    completed++;
+                    continue;
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                _logger.LogError(
+                    exception,
+                    "Primary identity convergence failed for portal_user_id {PortalUserId}; a later pass will retry it.",
+                    candidate.PortalUserId);
+            }
+
+            // Rotation des candidats : un compte qui n'avance pas laisse passer
+            // les suivants au lieu de monopoliser chaque passage.
+            if (!triggered)
+            {
+                try
+                {
+                    await _repository.TouchPrimaryIdentityAttemptAsync(
+                        candidate.Id,
+                        koxoTriggered: false,
+                        DateTime.UtcNow,
+                        cancellationToken);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    _logger.LogWarning(
+                        exception,
+                        "Could not rotate primary identity candidate {BootstrapId}.",
+                        candidate.Id);
+                }
+            }
+        }
+
+        return completed;
+    }
+
+    private async Task TryConvergePrimaryIdentityAsync(
+        string portalUserId,
+        string? plaintextPassword,
+        bool allowKoxoTrigger,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var record = await _repository.GetPrimaryIdentityBootstrapAsync(
+                portalUserId,
+                cancellationToken);
+            if (record is not null)
+            {
+                await ConvergePrimaryIdentityCoreAsync(
+                    record,
+                    plaintextPassword,
+                    allowKoxoTrigger,
+                    cancellationToken);
+            }
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // Rattrapage seulement : l'amorcage est durable et le worker le
+            // reprendra. L'operation appelante a deja abouti.
+            _logger.LogWarning(
+                exception,
+                "Primary identity convergence deferred for portal_user_id {PortalUserId}.",
+                portalUserId);
+        }
+    }
+
+    private readonly record struct PrimaryIdentityConvergence(
+        PrimaryIdentityBootstrapResult Result,
+        bool KoxoTriggered);
+
+    /// <summary>
+    /// Fait avancer l'amorcage d'un cran, ou constate qu'il n'avance pas.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Strictement idempotente : chaque etape est conditionnee a l'etat courant
+    /// et reverifiee. Rejouee sur un amorcage deja conclu, elle ne cree ni
+    /// second objet, ni second lien ; rejouee apres la creation KoXo mais
+    /// avant le lien, elle retrouve le meme objet par son employeeNumber.
+    /// </para>
+    /// <para>
+    /// <paramref name="plaintextPassword"/> ne sert qu'en mode mock, ou aucun
+    /// KoXo n'applique le mot de passe. A defaut, le secret en attente est
+    /// relu : c'est sa raison d'etre.
+    /// </para>
+    /// </remarks>
+    private async Task<PrimaryIdentityConvergence> ConvergePrimaryIdentityCoreAsync(
+        PrimaryIdentityBootstrapRecord record,
+        string? plaintextPassword,
+        bool allowKoxoTrigger,
+        CancellationToken cancellationToken)
+    {
+        switch (record.Status)
+        {
+            case PrimaryIdentityBootstrapStatuses.Completed:
+                // Un amorcage conclu ne conserve aucun secret ; un acquittement
+                // interrompu se rattrape ici.
+                await _pendingPasswords.AcknowledgeAsync(
+                    record.PortalUserId,
+                    cancellationToken);
+                return Converged(true, PrimaryIdentityBootstrapCodes.Completed, record);
+
+            case PrimaryIdentityBootstrapStatuses.Failed:
+                return Converged(false, PrimaryIdentityBootstrapCodes.Failed, record);
+
+            case PrimaryIdentityBootstrapStatuses.AwaitingPassword:
+                return Converged(false, PrimaryIdentityBootstrapCodes.AwaitingPassword, record);
+        }
+
+        if (!_adConfiguration.WritesEnabled)
+        {
+            return Converged(false, PrimaryIdentityBootstrapCodes.DirectoryDisabled, record);
+        }
+
+        if (!_adConfiguration.ConfigurationValid)
+        {
+            return Converged(false, PrimaryIdentityBootstrapCodes.ConfigurationInvalid, record);
+        }
+
+        // Adresse non prouvee, compte inactif, identifiant KoXo incoherent :
+        // aucune action annuaire, ni creation, ni adoption.
+        var blocker = PrimaryIdentityBootstrapPolicy.GetIdentityBlocker(record);
+        if (blocker is not null)
+        {
+            return Converged(false, blocker, record);
+        }
+
+        // Un lien deja present prime sur toute resolution : c'est le retry
+        // apres adoption reussie, et resoudre de nouveau risquerait d'adopter
+        // un objet different.
+        var existingLink = await _activeDirectoryLinkRepository
+            .FindUserLinkByPortalUserIdAsync(record.PortalUserId, cancellationToken);
+        if (existingLink is not null)
+        {
+            return Converged(await FinishPrimaryIdentityFromLinkAsync(
+                record,
+                existingLink.ObjectGuid,
+                cancellationToken));
+        }
+
+        AdDirectoryObjectSummary? directoryObject;
+        if (_adConfiguration.KoxoOwnsDirectory)
+        {
+            // KoXo cree l'identite ; on ne fait que l'adopter, par son seul
+            // employeeNumber, sans aucun rapprochement approchant.
+            directoryObject = await _adGroupProvisioner.ResolveUserByEmployeeNumberAsync(
+                record.KoxoUniqueIdentifier,
+                cancellationToken);
+            if (directoryObject is null)
+            {
+                if (record.Status == PrimaryIdentityBootstrapStatuses.KoxoPending
+                    && !record.SecretAvailable)
+                {
+                    // Ni objet ni secret : KoXo ne pourra plus rien creer. Seul
+                    // un nouveau mot de passe, fourni par le titulaire, relance
+                    // le cycle — jamais une reconstitution de l'ancien.
+                    await _repository.MarkPrimaryIdentityAwaitingPasswordAsync(
+                        record.Id,
+                        PrimaryIdentityBootstrapCodes.SecretMissing,
+                        cancellationToken);
+                    return Converged(
+                        false,
+                        PrimaryIdentityBootstrapCodes.SecretMissing,
+                        record with { Status = PrimaryIdentityBootstrapStatuses.AwaitingPassword });
+                }
+
+                var triggered = false;
+                if (allowKoxoTrigger
+                    && (record.KoxoTriggeredAtUtc is not { } lastTrigger
+                        || DateTime.UtcNow - lastTrigger >= PrimaryIdentityKoxoTriggerInterval))
+                {
+                    // Chaque synchronisation KoXo est globale : on la redemande
+                    // au plus toutes les dix minutes par compte, pas a chaque
+                    // passage du worker.
+                    await SendKoxoSyncTriggerAsync(
+                        record.SignupId,
+                        record.PortalUserId,
+                        record.CustomerReference,
+                        "primary_identity_missing",
+                        cancellationToken);
+                    await _repository.TouchPrimaryIdentityAttemptAsync(
+                        record.Id,
+                        koxoTriggered: true,
+                        DateTime.UtcNow,
+                        cancellationToken);
+                    triggered = true;
+                }
+
+                return new PrimaryIdentityConvergence(
+                    new PrimaryIdentityBootstrapResult(
+                        false,
+                        PrimaryIdentityBootstrapCodes.DirectoryNotReady,
+                        record.Status),
+                    triggered);
+            }
+        }
+        else
+        {
+            var signup = await _repository.GetByIdAsync(record.SignupId, cancellationToken);
+            if (signup is null)
+            {
+                return Converged(false, PrimaryIdentityBootstrapCodes.LifecycleMissing, record);
+            }
+
+            var password = plaintextPassword
+                ?? await _pendingPasswords.PeekAsync(record.PortalUserId, cancellationToken);
+            var creation = await EnsurePortalAdUserAsync(
+                signup,
+                record,
+                password,
+                cancellationToken);
+            if (creation.error is not null)
+            {
+                return Converged(false, PrimaryIdentityBootstrapCodes.DirectoryCreationFailed, record);
+            }
+
+            directoryObject = creation.directoryObject!;
+        }
+
+        var invalid = PrimaryIdentityBootstrapPolicy.ValidateDirectoryObject(
+            directoryObject,
+            record);
+        if (invalid is not null)
+        {
+            // Un objet porte le bon employeeNumber mais ne satisfait pas la
+            // verification : l'adopter donnerait des droits reels au mauvais
+            // perimetre. Arbitrage humain, aucune nouvelle tentative seule.
+            await _repository.MarkPrimaryIdentityFailedAsync(
+                record.Id,
+                invalid,
+                $"object_guid={directoryObject.ObjectGuid};dn={directoryObject.DistinguishedName}",
+                cancellationToken);
+            return Converged(
+                false,
+                invalid,
+                record with { Status = PrimaryIdentityBootstrapStatuses.Failed });
+        }
+
+        if (_adConfiguration.KoxoOwnsDirectory && directoryObject.IsDisabled)
+        {
+            // KoXo reactive un compte present dans son CSV : on attend plutot
+            // que de lier une identite inutilisable.
+            return Converged(false, PrimaryIdentityBootstrapCodes.DirectoryNotReady, record);
+        }
+
+        var objectGuid = Guid.Parse(directoryObject.ObjectGuid).ToString("D");
+        if (record.DirectoryObjectGuid is not null
+            && !string.Equals(record.DirectoryObjectGuid, objectGuid, StringComparison.OrdinalIgnoreCase))
+        {
+            // L'amorcage designait deja un autre objet : basculer transfererait
+            // une identite, avec ses droits reels.
+            await _repository.MarkPrimaryIdentityFailedAsync(
+                record.Id,
+                PrimaryIdentityBootstrapCodes.Conflict,
+                $"expected={record.DirectoryObjectGuid};resolved={objectGuid}",
+                cancellationToken);
+            return Converged(
+                false,
+                PrimaryIdentityBootstrapCodes.Conflict,
+                record with { Status = PrimaryIdentityBootstrapStatuses.Failed });
+        }
+
+        if (!await _repository.MarkPrimaryIdentityDirectoryResolvedAsync(
+                record.Id,
+                objectGuid,
+                DateTime.UtcNow,
+                cancellationToken))
+        {
+            return Converged(await ReadConcurrentOutcomeAsync(record, cancellationToken));
+        }
+
+        try
+        {
+            await _activeDirectoryLinkRepository.UpsertPortalUserLinkAsync(
+                record.CustomerReference,
+                record.PortalUserId,
+                actorUserId: null,
+                directoryObject,
+                _adConfiguration.Domain,
+                "succeeded",
+                DateTime.UtcNow,
+                "succeeded",
+                DateTime.UtcNow,
+                "koxo_pending",
+                cancellationToken);
+        }
+        catch (AmbiguousAdLinkException exception)
+        {
+            // Le depot refuse tout transfert d'identite d'un utilisateur portail
+            // a un autre. Reessayer produirait le meme refus.
+            await _repository.MarkPrimaryIdentityFailedAsync(
+                record.Id,
+                PrimaryIdentityBootstrapCodes.Conflict,
+                exception.Message,
+                cancellationToken);
+            return Converged(
+                false,
+                PrimaryIdentityBootstrapCodes.Conflict,
+                record with { Status = PrimaryIdentityBootstrapStatuses.Failed });
+        }
+        catch (PortalAccessDeniedException)
+        {
+            // L'objet est deja lie a un autre client.
+            await _repository.MarkPrimaryIdentityFailedAsync(
+                record.Id,
+                PrimaryIdentityBootstrapCodes.CustomerMismatch,
+                $"object_guid={objectGuid}",
+                cancellationToken);
+            return Converged(
+                false,
+                PrimaryIdentityBootstrapCodes.CustomerMismatch,
+                record with { Status = PrimaryIdentityBootstrapStatuses.Failed });
+        }
+
+        return Converged(await FinishPrimaryIdentityFromLinkAsync(
+            record with
+            {
+                Status = PrimaryIdentityBootstrapStatuses.DirectoryReady,
+                DirectoryObjectGuid = objectGuid
+            },
+            objectGuid,
+            cancellationToken));
     }
 
     /// <summary>
-    /// Retrouve l'identite creee par KoXo au lieu d'en creer une.
+    /// Confirme le lien par relecture, acquitte le secret, puis conclut.
     /// </summary>
     /// <remarks>
-    /// L'absence n'est pas une erreur mais un etat d'attente : la
-    /// synchronisation KoXo est asynchrone. On la relance et on invite a
-    /// reessayer, plutot que de creer un doublon sous un sAMAccountName que
-    /// KoXo n'utiliserait pas.
+    /// La conclusion est refusee par le depot tant que le lien de ce compte,
+    /// sur cet objectGUID, n'est pas persiste : « completed » ne peut pas
+    /// preceder le lien.
     /// </remarks>
-    private async Task<(AdDirectoryObjectSummary? directoryObject, SignupOperationResult? error)>
-        AdoptKoxoIdentityAsync(
-            SignupPendingRecord record,
-            CancellationToken cancellationToken)
+    private async Task<PrimaryIdentityBootstrapResult> FinishPrimaryIdentityFromLinkAsync(
+        PrimaryIdentityBootstrapRecord record,
+        string linkObjectGuid,
+        CancellationToken cancellationToken)
     {
-        var koxoIdentifier = await _repository.GetKoxoUniqueIdentifierAsync(
-            record.ApprovedUserId!,
-            cancellationToken);
-        if (string.IsNullOrWhiteSpace(koxoIdentifier))
+        var objectGuid = Guid.TryParse(linkObjectGuid, out var parsed)
+            ? parsed.ToString("D")
+            : linkObjectGuid;
+        if (record.DirectoryObjectGuid is null)
         {
-            return (
-                null,
-                new SignupOperationResult(
-                    false,
-                    "INVALID_STATE",
-                    "Le compte approuve n'a pas d'identifiant de synchronisation."));
+            if (!await _repository.MarkPrimaryIdentityDirectoryResolvedAsync(
+                    record.Id,
+                    objectGuid,
+                    DateTime.UtcNow,
+                    cancellationToken))
+            {
+                return await ReadConcurrentOutcomeAsync(record, cancellationToken);
+            }
         }
-
-        var directoryObject = await _adGroupProvisioner
-            .ResolveUserByEmployeeNumberAsync(koxoIdentifier, cancellationToken);
-        if (directoryObject is not null)
+        else if (!string.Equals(record.DirectoryObjectGuid, objectGuid, StringComparison.OrdinalIgnoreCase))
         {
-            return (directoryObject, null);
-        }
-
-        await SendKoxoSyncTriggerAsync(record, "identity_missing", cancellationToken);
-        return (
-            null,
-            new SignupOperationResult(
+            await _repository.MarkPrimaryIdentityFailedAsync(
+                record.Id,
+                PrimaryIdentityBootstrapCodes.Conflict,
+                $"expected={record.DirectoryObjectGuid};linked={objectGuid}",
+                cancellationToken);
+            return new PrimaryIdentityBootstrapResult(
                 false,
-                "AD_IDENTITY_NOT_READY",
-                "Votre espace est en cours de creation. Merci de reessayer dans une minute."));
+                PrimaryIdentityBootstrapCodes.Conflict,
+                PrimaryIdentityBootstrapStatuses.Failed);
+        }
+
+        var confirmed = await _activeDirectoryLinkRepository
+            .FindUserLinkByPortalUserIdAsync(record.PortalUserId, cancellationToken);
+        if (confirmed is null
+            || !string.Equals(confirmed.ObjectGuid, objectGuid, StringComparison.OrdinalIgnoreCase))
+        {
+            return new PrimaryIdentityBootstrapResult(
+                false,
+                PrimaryIdentityBootstrapCodes.LinkNotConfirmed,
+                PrimaryIdentityBootstrapStatuses.DirectoryReady);
+        }
+
+        // Le lien vient d'etre relu : KoXo a cree l'identite et repris le mot
+        // de passe. Seulement maintenant le secret peut disparaitre — avant la
+        // conclusion, pour qu'un arret entre les deux laisse un amorcage que
+        // le rejeu acquitte puis conclut.
+        await _pendingPasswords.AcknowledgeAsync(record.PortalUserId, cancellationToken);
+        if (!await _repository.MarkPrimaryIdentityCompletedAsync(
+                record.Id,
+                DateTime.UtcNow,
+                cancellationToken))
+        {
+            return await ReadConcurrentOutcomeAsync(record, cancellationToken);
+        }
+
+        return new PrimaryIdentityBootstrapResult(
+            true,
+            PrimaryIdentityBootstrapCodes.Completed,
+            PrimaryIdentityBootstrapStatuses.Completed);
     }
 
+    /// <summary>
+    /// Une transition refusee peut signifier qu'un appel concurrent a deja
+    /// conclu : on relit plutot que de supposer un conflit.
+    /// </summary>
+    private async Task<PrimaryIdentityBootstrapResult> ReadConcurrentOutcomeAsync(
+        PrimaryIdentityBootstrapRecord record,
+        CancellationToken cancellationToken)
+    {
+        var current = await _repository.GetPrimaryIdentityBootstrapAsync(
+            record.PortalUserId,
+            cancellationToken);
+        return current?.Status == PrimaryIdentityBootstrapStatuses.Completed
+            ? new PrimaryIdentityBootstrapResult(
+                true,
+                PrimaryIdentityBootstrapCodes.Completed,
+                PrimaryIdentityBootstrapStatuses.Completed)
+            : new PrimaryIdentityBootstrapResult(
+                false,
+                current?.Status == PrimaryIdentityBootstrapStatuses.Failed
+                    ? PrimaryIdentityBootstrapCodes.Failed
+                    : PrimaryIdentityBootstrapCodes.Conflict,
+                current?.Status);
+    }
+
+    private static PrimaryIdentityConvergence Converged(
+        bool succeeded,
+        string code,
+        PrimaryIdentityBootstrapRecord record)
+        => new(new PrimaryIdentityBootstrapResult(succeeded, code, record.Status), false);
+
+    private static PrimaryIdentityConvergence Converged(PrimaryIdentityBootstrapResult result)
+        => new(result, false);
+
+    /// <summary>
+    /// Cree l'objet annuaire simule, en mode mock uniquement.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Jamais atteint quand KoXo est maitre de l'annuaire. Le nom de compte est
+    /// derive du nom <b>et</b> de l'identifiant KoXo : il est donc stable pour
+    /// un compte donne, et un rejeu apres une creation reussie retrouve le meme
+    /// objet au lieu d'en creer un second sous un suffixe.
+    /// </para>
+    /// </remarks>
     private async Task<(AdDirectoryObjectSummary? directoryObject, SignupOperationResult? error)>
         EnsurePortalAdUserAsync(
-            SignupPendingRecord record,
+            SignupPendingRecord signup,
+            PrimaryIdentityBootstrapRecord bootstrap,
+            string? password,
             CancellationToken cancellationToken)
     {
-        var samResolution = await ResolveAvailableSamAccountNameAsync(
-            record,
-            cancellationToken);
-        if (samResolution.error is not null)
-        {
-            return (null, samResolution.error);
-        }
-
+        var samAccountName = BuildPrimarySamAccountName(
+            signup.PrimaryUser.GivenName,
+            signup.PrimaryUser.Surname,
+            signup.PrimaryUser.Email ?? signup.Email,
+            bootstrap.KoxoUniqueIdentifier);
         var userPrincipalName = _adConfiguration.Domain is null
             ? null
-            : $"{samResolution.samAccountName}@{_adConfiguration.Domain}";
+            : $"{samAccountName}@{_adConfiguration.Domain}";
         var createRequest = new CreateAdUserRequest(
-            samResolution.samAccountName,
-            record.PrimaryUser.DisplayName ?? record.ContactName,
-            record.PrimaryUser.GivenName,
-            record.PrimaryUser.Surname,
+            samAccountName,
+            signup.PrimaryUser.DisplayName ?? signup.ContactName,
+            signup.PrimaryUser.GivenName,
+            signup.PrimaryUser.Surname,
             userPrincipalName,
-            $"{record.CompanyName} ({record.ApprovedCustomerReference})",
-            record.PrimaryUser.PersonalTitle,
-            record.PrimaryUser.Initials,
-            record.PrimaryUser.Email ?? record.Email,
-            record.PrimaryUser.Phone ?? record.Phone ?? record.Customer.Phone,
-            record.Customer.DisplayName ?? record.CompanyName,
-            record.ApprovedCustomerReference);
+            $"{signup.CompanyName} ({bootstrap.CustomerReference})",
+            signup.PrimaryUser.PersonalTitle,
+            signup.PrimaryUser.Initials,
+            signup.PrimaryUser.Email ?? signup.Email,
+            signup.PrimaryUser.Phone ?? signup.Phone ?? signup.Customer.Phone,
+            signup.Customer.DisplayName ?? signup.CompanyName,
+            bootstrap.KoxoUniqueIdentifier);
         var createResult = await _activeDirectoryService.CreateUserAsync(
-            record.ApprovedCustomerReference!,
+            bootstrap.CustomerReference,
             createRequest,
             cancellationToken);
 
+        AdDirectoryObjectSummary directoryObject;
         if (createResult.StatusCode < 400 && createResult.Value is not null)
         {
-            return (createResult.Value, null);
+            directoryObject = createResult.Value;
         }
+        else if (string.Equals(
+                     createResult.Code,
+                     "AD_OBJECT_ALREADY_EXISTS",
+                     StringComparison.Ordinal))
+        {
+            // Rejeu : le nom est deterministe, l'objet est donc celui-ci ou
+            // aucun. On le relit dans le perimetre de ce client uniquement.
+            var searchResult = await _activeDirectoryService.SearchUsersAsync(
+                samAccountName,
+                bootstrap.CustomerReference,
+                cancellationToken);
+            var existingUser = searchResult.StatusCode >= 400
+                ? null
+                : searchResult.Value?.FirstOrDefault(candidate =>
+                    string.Equals(
+                        candidate.SamAccountName,
+                        samAccountName,
+                        StringComparison.OrdinalIgnoreCase));
+            if (existingUser is null)
+            {
+                return (
+                    null,
+                    new SignupOperationResult(
+                        false,
+                        "AD_OBJECT_ALREADY_EXISTS",
+                        "Un compte Active Directory existe deja avec cette identite technique."));
+            }
 
-        if (!string.Equals(
-                createResult.Code,
-                "AD_OBJECT_ALREADY_EXISTS",
-                StringComparison.Ordinal))
+            directoryObject = existingUser;
+        }
+        else
         {
             return (
                 null,
@@ -1423,81 +1997,182 @@ public sealed class SignupService : ISignupService
                     "Le compte Active Directory n'a pas pu etre cree."));
         }
 
-        var searchResult = await _activeDirectoryService.SearchUsersAsync(
-            samResolution.samAccountName,
-            record.ApprovedCustomerReference,
+        if (password is null)
+        {
+            return (directoryObject, null);
+        }
+
+        // Mode Mock : aucun KoXo derriere, c'est bien a l'application
+        // d'appliquer le mot de passe, sans quoi le compte simule resterait
+        // desactive et sans mot de passe.
+        var passwordResult = await _activeDirectoryService.SetUserPasswordAsync(
+            bootstrap.CustomerReference,
+            directoryObject.SamAccountName,
+            password,
             cancellationToken);
-        if (searchResult.StatusCode >= 400)
-        {
-            return (
-                null,
-                MapAdProvisioningFailure(
-                    searchResult,
-                    "Le compte Active Directory existe deja mais n'a pas pu etre retrouve."));
-        }
-
-        var existingUser = searchResult.Value?.FirstOrDefault(candidate =>
-            string.Equals(
-                candidate.SamAccountName,
-                samResolution.samAccountName,
-                StringComparison.OrdinalIgnoreCase));
-        if (existingUser is null)
-        {
-            return (
-                null,
-                new SignupOperationResult(
-                    false,
-                    "AD_OBJECT_ALREADY_EXISTS",
-                    "Un compte Active Directory existe deja avec cette identite technique."));
-        }
-
-        return (existingUser, null);
+        return passwordResult.StatusCode >= 400 || passwordResult.Value is null
+            ? (directoryObject, null)
+            : (passwordResult.Value, null);
     }
 
-    private async Task<(string? samAccountName, SignupOperationResult? error)>
-        ResolveAvailableSamAccountNameAsync(
-            SignupPendingRecord record,
-            CancellationToken cancellationToken)
+    // ------------------------------------------------------------------
+    // Verification e-mail et reprise
+    // ------------------------------------------------------------------
+
+    /// <summary>
+    /// L'adresse d'un compte self-service vient d'etre prouvee : l'amorcage
+    /// devient eligible a l'export, et la synchronisation est relancee.
+    /// </summary>
+    /// <remarks>
+    /// Idempotent : la verification ne passe qu'une fois par
+    /// <c>email_pending</c>. Sans secret disponible (expire, jamais scelle),
+    /// la seule reprise legitime est un nouveau mot de passe choisi par le
+    /// titulaire : un lien de definition lui est envoye.
+    /// </remarks>
+    private async Task AdvancePrimaryIdentityAfterEmailVerificationAsync(
+        string signupId,
+        string portalUserId,
+        CancellationToken cancellationToken)
     {
-        var baseSam = BuildSamAccountNameBase(
-            record.PrimaryUser.GivenName,
-            record.PrimaryUser.Surname,
-            record.PrimaryUser.Email ?? record.Email);
-
-        for (var suffix = 0; suffix < 100; suffix++)
+        if (!_adConfiguration.WritesEnabled)
         {
-            var candidate = BuildSamCandidate(baseSam, suffix);
-            var searchResult = await _activeDirectoryService.SearchUsersAsync(
-                candidate,
-                customerReference: null,
-                cancellationToken);
-            if (searchResult.StatusCode >= 400)
-            {
-                return (
-                    null,
-                    MapAdProvisioningFailure(
-                        searchResult,
-                        "La disponibilite de l'identite Active Directory n'a pas pu etre verifiee."));
-            }
-
-            var exists = searchResult.Value?.Any(user =>
-                string.Equals(
-                    user.SamAccountName,
-                    candidate,
-                    StringComparison.OrdinalIgnoreCase)) == true;
-            if (!exists)
-            {
-                return (candidate, null);
-            }
+            return;
         }
 
-        return (
-            null,
-            new SignupOperationResult(
-                false,
-                "AD_SAM_EXHAUSTED",
-                "Aucun identifiant Active Directory libre n'a pu etre calcule."));
+        try
+        {
+            var bootstrap = await _repository.GetPrimaryIdentityBootstrapAsync(
+                portalUserId,
+                cancellationToken);
+            if (bootstrap is not null
+                && PrimaryIdentityBootstrapStatuses.IsBootstrapping(bootstrap.Status)
+                && bootstrap.SecretAvailable)
+            {
+                await SendKoxoSyncTriggerAsync(
+                    signupId,
+                    portalUserId,
+                    bootstrap.CustomerReference,
+                    "primary_identity_email_verified",
+                    cancellationToken);
+                await _repository.TouchPrimaryIdentityAttemptAsync(
+                    bootstrap.Id,
+                    koxoTriggered: true,
+                    DateTime.UtcNow,
+                    cancellationToken);
+                await TryConvergePrimaryIdentityAsync(
+                    portalUserId,
+                    plaintextPassword: null,
+                    allowKoxoTrigger: false,
+                    cancellationToken);
+                return;
+            }
+
+            if (bootstrap is null
+                || bootstrap.Status == PrimaryIdentityBootstrapStatuses.AwaitingPassword
+                || bootstrap.Status == PrimaryIdentityBootstrapStatuses.KoxoPending)
+            {
+                var recovery = await RequestPrimaryIdentityRecoveryAsync(
+                    signupId,
+                    Guid.NewGuid().ToString("D"),
+                    cancellationToken);
+                _logger.LogInformation(
+                    "Primary identity recovery after email verification for portal_user_id {PortalUserId}: {Code}",
+                    portalUserId,
+                    recovery.Code);
+            }
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // La verification est acquise ; l'amorcage sera repris par le
+            // worker ou par une reprise explicite.
+            _logger.LogWarning(
+                exception,
+                "Primary identity advance after email verification failed for portal_user_id {PortalUserId}.",
+                portalUserId);
+        }
     }
+
+    /// <summary>
+    /// Reprise d'un compte principal sans identite AD dont le mot de passe
+    /// clair est perdu (comptes crees avant l'amorcage, secret expire).
+    /// </summary>
+    /// <remarks>
+    /// Aucune tentative de retrouver l'ancien mot de passe : un lien de
+    /// definition est envoye a l'adresse du compte, et le nouveau mot de passe
+    /// entre dans l'amorcage par le set-password existant. Rejouable : chaque
+    /// demande rend le lien precedent inutilisable, et une identite deja liee
+    /// ou en cours de liaison est refusee.
+    /// </remarks>
+    public async Task<SignupOperationResult> RequestPrimaryIdentityRecoveryAsync(
+        string signupId,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
+        if (!_adConfiguration.WritesEnabled)
+        {
+            return new SignupOperationResult(
+                false,
+                PrimaryIdentityBootstrapCodes.DirectoryDisabled,
+                "Les ecritures Active Directory sont desactivees : la reprise est sans objet.");
+        }
+
+        var token = GenerateToken();
+        var runtime = await _settings.GetSignupConfigurationAsync(
+            _configuration,
+            cancellationToken);
+        var now = DateTime.UtcNow;
+        var target = await _repository.RequestPrimaryIdentityRecoveryAsync(
+            signupId,
+            HashToken(token),
+            now.AddHours(runtime.PasswordSetupTokenTtlHours),
+            now,
+            cancellationToken);
+        if (!target.Succeeded)
+        {
+            return new SignupOperationResult(
+                false,
+                target.Code,
+                DescribePrimaryIdentityRecoveryRefusal(target.Code));
+        }
+
+        var delivery = await _emailDispatch.SendAccountApprovedAsync(
+            target.Email!,
+            target.ContactName!,
+            BuildUrl("/set-password", token),
+            correlationId,
+            cancellationToken);
+        if (!delivery.Succeeded)
+        {
+            _logger.LogWarning(
+                "Primary identity recovery email not delivered ({Code}) correlation_id {CorrelationId}",
+                delivery.Code,
+                correlationId);
+            return new SignupOperationResult(
+                false,
+                delivery.Code,
+                "Le lien de reprise a bien ete genere, mais l'e-mail n'a pas pu etre envoye.");
+        }
+
+        return new SignupOperationResult(
+            true,
+            PrimaryIdentityRecoveryCodes.Issued,
+            "Un lien de definition du mot de passe a ete envoye pour finaliser l'identite du compte.");
+    }
+
+    private static string DescribePrimaryIdentityRecoveryRefusal(string code)
+        => code switch
+        {
+            PrimaryIdentityRecoveryCodes.SignupNotFound => "Demande introuvable.",
+            PrimaryIdentityRecoveryCodes.EmailVerificationRequired =>
+                "L'adresse e-mail n'est pas encore verifiee : la verification relancera l'amorcage.",
+            PrimaryIdentityRecoveryCodes.AlreadyLinked =>
+                "Ce compte possede deja son identite Active Directory.",
+            PrimaryIdentityRecoveryCodes.InProgress =>
+                "L'identite de ce compte est deja en cours de creation.",
+            PrimaryIdentityRecoveryCodes.Conflict =>
+                "L'identite de ce compte est en conflit : un arbitrage est necessaire.",
+            _ => "Ce compte ne peut pas etre repris dans son etat actuel."
+        };
 
     private static SignupOperationResult MapAdProvisioningFailure<T>(
         AdServiceResult<T> result,
@@ -1880,21 +2555,22 @@ public sealed class SignupService : ISignupService
         return "portaluser";
     }
 
-    private static string BuildSamCandidate(
-        string baseSam,
-        int suffix)
+    /// <summary>
+    /// Nom de compte du mode mock : base lisible derivee du nom, suffixee des
+    /// chiffres de l'identifiant KoXo. Unique et stable pour un compte donne,
+    /// et borne a 20 caracteres comme un sAMAccountName reel.
+    /// </summary>
+    private static string BuildPrimarySamAccountName(
+        string? givenName,
+        string? surname,
+        string fallbackEmail,
+        string koxoUniqueIdentifier)
     {
-        if (suffix == 0)
-        {
-            return baseSam;
-        }
-
-        var suffixText = suffix.ToString(CultureInfo.InvariantCulture);
-        var maxBaseLength = Math.Max(1, 64 - suffixText.Length);
-        var trimmedBase = baseSam.Length <= maxBaseLength
-            ? baseSam
-            : baseSam[..maxBaseLength];
-        return $"{trimmedBase}{suffixText}";
+        var digits = new string(koxoUniqueIdentifier.Where(char.IsAsciiDigit).ToArray());
+        var baseSam = BuildSamAccountNameBase(givenName, surname, fallbackEmail);
+        var maxBaseLength = Math.Max(1, 20 - digits.Length);
+        return (baseSam.Length <= maxBaseLength ? baseSam : baseSam[..maxBaseLength])
+            + digits;
     }
 
     private static string NormalizeSamSegment(string? value)
