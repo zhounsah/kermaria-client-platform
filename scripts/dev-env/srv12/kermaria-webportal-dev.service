@@ -1,0 +1,30 @@
+# WebPortal DEV Zachary IT (SRV-12). Independant de kermaria-webportal.service :
+# utilisateur, releases, configuration, journaux et port distincts.
+[Unit]
+Description=Kermaria Webportal DEV (APP_ENV=Development, port 3100)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kermaria-web-dev
+Group=kermaria-web-dev
+WorkingDirectory=/opt/kermaria/webportal-dev/apps/webportal
+EnvironmentFile=/etc/kermaria/webportal-dev.env
+Environment=NEXT_TELEMETRY_DISABLED=1
+ExecStart=/opt/kermaria/node/bin/node /opt/kermaria/webportal-dev/apps/webportal/server.js
+Restart=always
+RestartSec=5
+TimeoutStartSec=30
+TimeoutStopSec=20
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/var/log/kermaria-dev /opt/kermaria/webportal-dev/apps/webportal/.next/cache
+StandardOutput=append:/var/log/kermaria-dev/webportal.stdout.log
+StandardError=append:/var/log/kermaria-dev/webportal.stderr.log
+
+[Install]
+WantedBy=multi-user.target

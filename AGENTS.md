@@ -109,7 +109,14 @@ Faits verifies en production, valables pour **tout** agent. Detail complet dans
 - Joignable en **WinRM/Kerberos depuis RDC-07 sans mot de passe**. Double saut : une requete LDAP **depuis** une session WinRM echoue — lancer l'ADSI en local sur RDC-07.
 - Le csproj porte `<UseAppHost>false</UseAppHost>` : publier avec **`-p:UseAppHost=true`**, sinon `Kermaria.ApiInternal.exe` manque et le service n'a plus d'executable.
 - Configuration : JSON **plat** `C:\ProgramData\Kermaria\api-internal.config.json`, UTF-8 **sans BOM**, valeurs en chaines. Genere depuis `<repo-parent>/kermaria-client-platform.local.env.ps1` par `scripts/build-api-config.ps1` : corriger un reglage **aux deux endroits**, sinon la regeneration l'annule.
+- SRV-13 porte en **variables Machine** des reglages PROD (`SQL_*`, `AD_*` dont le mot de passe, `KOXO_SYNC_WEBHOOK_*`) qui priment sur le JSON : toute seconde instance doit utiliser `KERMARIA_CONFIG_AUTHORITATIVE=true`. Le pare-feu Windows y est **desactive par GPO** (regles locales sans effet).
 - Journaux JSON dans `C:\apps\api-internal\logs\` : **ne pas filtrer sur `Error|Exception`** (chaque ligne contient `"Exception":null`), filtrer sur `"LogLevel":"(Error|Warning|Critical)"`. La « Reference » affichee dans l'interface est le `correlation_id`.
+
+### Environnement DEV
+
+- Stack DEV isolee depuis le 2026-09-21 : WebPortal `192.168.100.212:3100` (`kermaria-webportal-dev.service`), API `192.168.100.213:5100` (`KermariaApiInternalDev`), base `kermaria_dev`. Runbook : `docs/DEV_ENVIRONMENT.md`, scripts : `scripts/dev-env/`.
+- `APP_ENV=Development` active des garde-fous bloquants (code de sortie 78) : cles Stripe live, base/compte hors `*_dev`, provisioning sans `PROVISIONING_ENABLED` + `ALLOW_DEV_PROVISIONING`. Ne jamais les contourner ; corriger la configuration.
+- Secrets DEV : `<parent du depot>\kermaria-client-platform.dev.env.ps1`, jamais melanges au `.local.env.ps1` LIVE.
 
 ### Migrations en base reelle
 

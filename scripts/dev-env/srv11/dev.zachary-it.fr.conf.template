@@ -1,0 +1,66 @@
+# Modele NON DEPLOYE — vhost nginx de l'environnement DEV (SRV-11).
+#
+# A n'activer qu'apres validation de l'isolation (docs/DEV_ENVIRONMENT.md) :
+#   1. copier vers /etc/nginx/sites-available/dev.zachary-it.fr ;
+#   2. creer /etc/nginx/kermaria-dev.htpasswd (htpasswd -B) ;
+#   3. ln -s ../sites-available/dev.zachary-it.fr /etc/nginx/sites-enabled/ ;
+#   4. nginx -t && systemctl reload nginx  (reload, jamais restart) ;
+#   5. Cloudflare Zero Trust : Public Hostname dev.zachary-it.fr -> meme origine
+#      que la production, et application Cloudflare Access sur dev.zachary-it.fr
+#      avec une politique Bypass limitee au chemin /api/webhooks/stripe.
+#
+# Le certificat wildcard existant couvre deja *.zachary-it.fr.
+
+upstream kermaria_webportal_dev {
+    server 192.168.100.212:3100;
+    keepalive 8;
+}
+
+server {
+    listen 127.0.0.1:8443 ssl proxy_protocol;
+    set_real_ip_from 127.0.0.1;
+    real_ip_header proxy_protocol;
+    http2 on;
+    server_name dev.zachary-it.fr;
+
+    ssl_certificate /etc/ssl/kermaria/home-bzh-clean-fullchain.pem;
+    ssl_certificate_key /etc/ssl/kermaria/home-bzh-privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    server_tokens off;
+
+    access_log /var/log/nginx/kermaria-dev-access.log;
+    error_log /var/log/nginx/kermaria-dev-error.log warn;
+    client_max_body_size 25m;
+
+    # Jamais indexable, meme si Access est mal regle.
+    add_header X-Robots-Tag "noindex, nofollow" always;
+
+    # Webhooks Stripe TEST : proteges par la signature (secret whsec DEV) et
+    # par le refus livemode=true de l'API DEV ; pas d'authentification HTTP.
+    location = /api/webhooks/stripe {
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_pass http://kermaria_webportal_dev;
+    }
+
+    location / {
+        auth_basic "Zachary IT - environnement DEV";
+        auth_basic_user_file /etc/nginx/kermaria-dev.htpasswd;
+
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_read_timeout 60s;
+        proxy_connect_timeout 10s;
+        proxy_pass http://kermaria_webportal_dev;
+    }
+}

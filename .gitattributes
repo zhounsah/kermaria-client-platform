@@ -26,3 +26,9 @@
 *.sql text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
+
+# Fichiers DEV copies tels quels sur les serveurs Linux (SRV-11, SRV-12) :
+# un CRLF casse le shebang bash et les unites systemd.
+scripts/dev-env/**/*.sh text eol=lf
+scripts/dev-env/**/*.service text eol=lf
+scripts/dev-env/srv11/dev.zachary-it.fr.conf.template text eol=lf

@@ -42,7 +42,29 @@ var externalConfigSource =
         ReloadOnChange = false,
     };
 externalConfigSource.ResolveFileProvider();
-if (envSourceIndex >= 0)
+// Une seconde instance sur le meme hote (DEV) ne peut rien heriter des
+// variables d'environnement Machine de la production (SQL_*, AD_*, KOXO_*) :
+// avec KERMARIA_CONFIG_AUTHORITATIVE=true, les variables non prefixees ne
+// sont plus une source de configuration et le fichier fait seul autorite.
+// Absent, le comportement historique est inchange.
+var configFileIsAuthoritative = string.Equals(
+    Environment.GetEnvironmentVariable("KERMARIA_CONFIG_AUTHORITATIVE"),
+    "true",
+    StringComparison.OrdinalIgnoreCase);
+if (configFileIsAuthoritative)
+{
+    foreach (var inheritedEnvironmentSource in builder.Configuration.Sources
+        .OfType<Microsoft.Extensions.Configuration.EnvironmentVariables
+            .EnvironmentVariablesConfigurationSource>()
+        .Where(source => string.IsNullOrEmpty(source.Prefix))
+        .ToList())
+    {
+        builder.Configuration.Sources.Remove(inheritedEnvironmentSource);
+    }
+
+    builder.Configuration.Sources.Add(externalConfigSource);
+}
+else if (envSourceIndex >= 0)
 {
     builder.Configuration.Sources.Insert(envSourceIndex, externalConfigSource);
 }
@@ -68,6 +90,7 @@ if (Enum.TryParse<LogLevel>(
 }
 
 var logDirectory = builder.Configuration["LOG_FILE_DIRECTORY"]?.Trim();
+FileLoggerOptions? fileLoggerOptions = null;
 if (!string.IsNullOrWhiteSpace(logDirectory))
 {
     if (!Enum.TryParse<LogLevel>(
@@ -88,12 +111,26 @@ if (!string.IsNullOrWhiteSpace(logDirectory))
         retentionDays = 30;
     }
 
-    builder.Logging.AddProvider(new FileLoggerProvider(new FileLoggerOptions
+    fileLoggerOptions = new FileLoggerOptions
     {
         Directory = logDirectory,
         RetentionDays = retentionDays,
         MinimumLevel = fileLogLevel
-    }));
+    };
+    builder.Logging.AddProvider(new FileLoggerProvider(fileLoggerOptions));
+}
+
+// Separation DEV/PROD : evaluee avant toute autre validation pour qu'une
+// instance mal configuree s'arrete sur un message explicite, sans jamais
+// ouvrir de connexion ni demarrer de worker.
+var deploymentEnvironmentReport = DeploymentEnvironmentGuard.Evaluate(
+    builder.Configuration,
+    builder.Environment);
+if (deploymentEnvironmentReport.Violations.Count > 0)
+{
+    StopOnDeploymentEnvironmentViolation(
+        deploymentEnvironmentReport.Violations,
+        fileLoggerOptions);
 }
 
 var isBpceCli = args.Contains(
@@ -800,6 +837,38 @@ app.Logger.LogInformation(
     bpceConfiguration.ModeName,
     emailConfiguration.ModeName);
 
+app.Logger.LogInformation(
+    "Deployment environment | Environment: {AppEnvironment} | Host environment: {HostEnvironment} | Database: {Database} | Stripe mode: {StripeMode} | Stripe key family: {StripeKeyFamily} | Outbox executor: {OutboxExecutor} | Provisioning: {Provisioning}",
+    deploymentEnvironmentReport.EnvironmentName,
+    deploymentEnvironmentReport.HostEnvironmentName,
+    deploymentEnvironmentReport.DatabaseName,
+    deploymentEnvironmentReport.StripeMode,
+    deploymentEnvironmentReport.StripeKeyFamily,
+    deploymentEnvironmentReport.OutboxExecutor,
+    deploymentEnvironmentReport.ProvisioningEnabled ? "enabled" : "disabled");
+
+// En DEV, les droits reels du compte SQL priment sur les noms configures :
+// un compte capable d'atteindre une autre base que la base DEV est refuse
+// avant le demarrage des workers et avant toute migration.
+if (deploymentEnvironmentReport.Environment is DeploymentEnvironment.Development
+    && sqlConfiguration.IsPersistent)
+{
+    var isolationViolations =
+        await DeploymentEnvironmentGuard.VerifyDatabaseIsolationAsync(
+            sqlConfiguration,
+            CancellationToken.None);
+    if (isolationViolations.Count > 0)
+    {
+        StopOnDeploymentEnvironmentViolation(
+            isolationViolations,
+            fileLoggerOptions);
+    }
+
+    app.Logger.LogInformation(
+        "Deployment environment | SQL account isolation verified on {Database}",
+        deploymentEnvironmentReport.DatabaseName);
+}
+
 if (args.Contains("--seed-demo-data", StringComparer.OrdinalIgnoreCase)
     && !args.Contains("--apply-migrations", StringComparer.OrdinalIgnoreCase))
 {
@@ -936,6 +1005,15 @@ if (args.Contains("--verify-bpce-sender", StringComparer.OrdinalIgnoreCase))
 
     return;
 }
+
+// Le BFF DEV refuse de demarrer face a une API qui ne s'annonce pas
+// Development : cet en-tete non secret porte l'identite de l'instance.
+app.Use((context, next) =>
+{
+    context.Response.Headers[DeploymentEnvironmentGuard.ResponseHeaderName] =
+        deploymentEnvironmentReport.EnvironmentName;
+    return next(context);
+});
 
 app.UseMiddleware<CorrelationIdMiddleware>();
 
@@ -4626,6 +4704,28 @@ app.MapPost(
     {
         var payload = await ReadPayload<StripeWebhookEventPayload>(context)
             ?? throw new PortalValidationException();
+        // Un environnement ne traite jamais un evenement destine a l'autre :
+        // livemode=true exige STRIPE_MODE=live, livemode=false l'interdit.
+        if (!DeploymentEnvironmentGuard.TryValidateStripeLivemode(
+                payload.RawPayload,
+                stripeConfiguration,
+                out var livemodeRefusal))
+        {
+            app.Logger.LogWarning(
+                "Stripe webhook {EventId} refused: {ReasonCode} (Stripe mode {StripeMode})",
+                payload.EventId,
+                livemodeRefusal,
+                stripeConfiguration.ModeName);
+            return Results.Json(
+                new
+                {
+                    code = livemodeRefusal,
+                    message = "Evenement Stripe destine a un autre environnement.",
+                    correlation_id = context.GetCorrelationId()
+                },
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
         var billingV2Request =
             BillingV2ProviderInboundEventExtractor.TryCreateStripeWebhook(
                 payload,
@@ -8420,6 +8520,36 @@ app.MapFallback((HttpContext context) =>
         statusCode: StatusCodes.Status404NotFound));
 
 app.Run();
+
+// Refus de demarrage : log Critical (console JSON + fichier si configure),
+// puis sortie non nulle. Les messages ne contiennent aucune valeur secrete.
+static void StopOnDeploymentEnvironmentViolation(
+    IReadOnlyList<string> violations,
+    FileLoggerOptions? fileLoggerOptions)
+{
+    using (var loggerFactory = LoggerFactory.Create(logging =>
+    {
+        logging.AddJsonConsole();
+        if (fileLoggerOptions is not null)
+        {
+            logging.AddProvider(new FileLoggerProvider(fileLoggerOptions));
+        }
+    }))
+    {
+        var logger = loggerFactory.CreateLogger("DeploymentEnvironmentGuard");
+        foreach (var violation in violations)
+        {
+            logger.LogCritical("FATAL {Violation}", violation);
+        }
+
+        logger.LogCritical(
+            "FATAL API-INTERNAL refuses to start: DEV/PROD separation violated ({Count} issue(s)). Exit code {ExitCode}.",
+            violations.Count,
+            DeploymentEnvironmentGuard.ConfigurationExitCode);
+    }
+
+    Environment.Exit(DeploymentEnvironmentGuard.ConfigurationExitCode);
+}
 
 static IResult PortalOk<T>(
     HttpContext context,

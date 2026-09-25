@@ -704,6 +704,7 @@ async Task<int> RunAsync(string[] arguments)
         await RunUnavailableReadinessTestAsync();
         await RunProductionConfigurationValidationTestsAsync();
         await RunServiceAuthenticationGuardTestsAsync();
+        await RunDeploymentEnvironmentGuardTestsAsync();
         await RunKoxoExportHttpTestsAsync();
         await RunKoxoExportServiceTestsAsync();
         await RunKoxoPendingPasswordTestsAsync();
@@ -2379,6 +2380,342 @@ async Task RunProductionConfigurationValidationTestsAsync()
         "Development");
 
     await Task.CompletedTask;
+}
+
+async Task RunDeploymentEnvironmentGuardTestsAsync()
+{
+    DeploymentEnvironmentReport Evaluate(
+        string hostEnvironment,
+        Dictionary<string, string?> values)
+        => DeploymentEnvironmentGuard.Evaluate(
+            new ConfigurationBuilder().AddInMemoryCollection(values).Build(),
+            new TestHostEnvironment(hostEnvironment));
+
+    Dictionary<string, string?> DevConfiguration() => new()
+    {
+        ["APP_ENV"] = "Development",
+        ["SQL_DATABASE"] = "kermaria_dev",
+        ["SQL_USERNAME"] = "kermaria_dev",
+        ["STRIPE_MODE"] = "test",
+        ["STRIPE_SECRET_KEY"] = "sk_test_NOT_A_REAL_DEV_GUARD_VALUE",
+        ["STRIPE_PUBLISHABLE_KEY"] = "pk_test_NOT_A_REAL_DEV_GUARD_VALUE",
+        ["BILLING_V2_PROVIDER_OUTBOX_ENABLED"] = "true",
+        ["BILLING_V2_PROVIDER_EXECUTOR_ENABLED"] = "true",
+        ["EMAIL_INTEGRATION_MODE"] = "mock"
+    };
+
+    var validDev = Evaluate("Staging", DevConfiguration());
+    Ensure(
+        validDev.Violations.Count == 0
+        && validDev.Environment == DeploymentEnvironment.Development
+        && validDev.StripeKeyFamily == "sk_test"
+        && validDev.OutboxExecutor == "enabled"
+        && !validDev.ProvisioningEnabled,
+        "Une configuration DEV saine doit etre acceptee : "
+        + string.Join(" | ", validDev.Violations));
+
+    void EnsureDevRefused(
+        string expectedFragment,
+        Action<Dictionary<string, string?>> configure,
+        string hostEnvironment = "Staging")
+    {
+        var values = DevConfiguration();
+        configure(values);
+        var report = Evaluate(hostEnvironment, values);
+        Ensure(
+            report.Violations.Any(violation =>
+                violation.Contains(expectedFragment, StringComparison.Ordinal)),
+            $"La DEV doit refuser : {expectedFragment}.");
+        Ensure(
+            report.Violations.All(violation =>
+                !violation.Contains("NOT_A_REAL", StringComparison.Ordinal)),
+            "Un refus ne doit jamais afficher une cle.");
+    }
+
+    EnsureDevRefused("sk_live", values =>
+    {
+        values["STRIPE_SECRET_KEY"] = "sk_live_NOT_A_REAL_DEV_GUARD_VALUE";
+    });
+    EnsureDevRefused("rk_live", values =>
+    {
+        values["STRIPE_SECRET_KEY"] = "rk_live_NOT_A_REAL_DEV_GUARD_VALUE";
+    });
+    EnsureDevRefused("STRIPE_MODE=live", values => values["STRIPE_MODE"] = "live");
+    EnsureDevRefused("STRIPE_PUBLISHABLE_KEY", values =>
+    {
+        values["STRIPE_PUBLISHABLE_KEY"] = "pk_live_NOT_A_REAL_DEV_GUARD_VALUE";
+    });
+    EnsureDevRefused("SQL_DATABASE=kermaria", values => values["SQL_DATABASE"] = "kermaria");
+    EnsureDevRefused("compte SQL DEV", values => values["SQL_USERNAME"] = "kermaria_api");
+    EnsureDevRefused("PAYPAL_MODE=live", values => values["PAYPAL_MODE"] = "live");
+    EnsureDevRefused("BPCE_INTEGRATION_MODE=live", values => values["BPCE_INTEGRATION_MODE"] = "live");
+    EnsureDevRefused("allowlist explicite", values =>
+    {
+        values["EMAIL_INTEGRATION_MODE"] = "live";
+        values["EMAIL_LIVE_ALLOWLIST_ONLY"] = "false";
+    });
+    EnsureDevRefused("allowlist explicite", values =>
+    {
+        values["EMAIL_INTEGRATION_MODE"] = "live";
+        values["EMAIL_LIVE_ALLOWLIST"] = "*";
+    });
+    EnsureDevRefused("ASPNETCORE_ENVIRONMENT=Production", _ => { }, "Production");
+
+    // Provisioning : double verrou PROVISIONING_ENABLED + ALLOW_DEV_PROVISIONING.
+    EnsureDevRefused("BILLING_V2_PROVISIONING_ENABLED", values =>
+    {
+        values["BILLING_V2_PROVISIONING_ENABLED"] = "true";
+    });
+    EnsureDevRefused("AD_INTEGRATION_MODE=controlled_write", values =>
+    {
+        values["AD_INTEGRATION_MODE"] = "controlled_write";
+        values["PROVISIONING_ENABLED"] = "true";
+    });
+    EnsureDevRefused("KOXO_SYNC_WEBHOOK_URL", values =>
+    {
+        values["KOXO_SYNC_WEBHOOK_URL"] = "http://192.0.2.1/";
+        values["ALLOW_DEV_PROVISIONING"] = "true";
+    });
+    var devWithProvisioning = DevConfiguration();
+    devWithProvisioning["BILLING_V2_PROVISIONING_ENABLED"] = "true";
+    devWithProvisioning["PROVISIONING_ENABLED"] = "true";
+    devWithProvisioning["ALLOW_DEV_PROVISIONING"] = "true";
+    var allowedProvisioning = Evaluate("Staging", devWithProvisioning);
+    Ensure(
+        allowedProvisioning.Violations.Count == 0
+        && allowedProvisioning.ProvisioningEnabled,
+        "Les deux verrous poses explicitement doivent autoriser le provisioning DEV.");
+
+    // Production : explicite ou deduite de ASPNETCORE_ENVIRONMENT=Production.
+    Dictionary<string, string?> ProdConfiguration() => new()
+    {
+        ["SQL_DATABASE"] = "kermaria",
+        ["SQL_USERNAME"] = "kermaria_api",
+        ["STRIPE_MODE"] = "live",
+        ["STRIPE_SECRET_KEY"] = "sk_live_NOT_A_REAL_PROD_GUARD_VALUE",
+        ["STRIPE_PUBLISHABLE_KEY"] = "pk_live_NOT_A_REAL_PROD_GUARD_VALUE",
+        ["BILLING_V2_PROVISIONING_ENABLED"] = "true",
+        ["AD_INTEGRATION_MODE"] = "controlled_write"
+    };
+    var inferredProd = Evaluate("Production", ProdConfiguration());
+    Ensure(
+        inferredProd.Violations.Count == 0
+        && inferredProd.Environment == DeploymentEnvironment.Production
+        && inferredProd.ProvisioningEnabled,
+        "La configuration PROD actuelle (sans APP_ENV) doit rester acceptee : "
+        + string.Join(" | ", inferredProd.Violations));
+
+    void EnsureProdRefused(string expectedFragment, Action<Dictionary<string, string?>> configure)
+    {
+        var values = ProdConfiguration();
+        configure(values);
+        var report = Evaluate("Production", values);
+        Ensure(
+            report.Violations.Any(violation =>
+                violation.Contains(expectedFragment, StringComparison.Ordinal)),
+            $"La PROD doit refuser : {expectedFragment}.");
+    }
+
+    EnsureProdRefused("sk_test", values =>
+    {
+        values["STRIPE_SECRET_KEY"] = "sk_test_NOT_A_REAL_PROD_GUARD_VALUE";
+    });
+    EnsureProdRefused("STRIPE_MODE=test", values => values["STRIPE_MODE"] = "test");
+    EnsureProdRefused("SQL_DATABASE=kermaria_dev", values => values["SQL_DATABASE"] = "kermaria_dev");
+    EnsureProdRefused("APP_ENV=Production", values =>
+    {
+        values["APP_ENV"] = "Production";
+        values["SQL_DATABASE"] = "kermaria_dev";
+    });
+    Ensure(
+        Evaluate("Staging", new() { ["APP_ENV"] = "qa" }).Violations.Count == 1,
+        "Une valeur APP_ENV inconnue doit etre refusee.");
+    Ensure(
+        Evaluate("Development", new() { ["SQL_DATABASE"] = "kermaria" })
+            .Violations.Count == 0,
+        "Sans APP_ENV, le poste de developpement historique reste inchange.");
+
+    // Droits SQL reels : seul USAGE sur *.* et la base DEV sont admis.
+    Ensure(
+        DeploymentEnvironmentGuard.FindGrantViolations(
+            "kermaria_dev",
+            [
+                "GRANT USAGE ON *.* TO `kermaria_dev`@`192.168.100.213` IDENTIFIED BY PASSWORD '*00'",
+                "GRANT SELECT, INSERT, UPDATE, DELETE ON `kermaria\\_dev`.* TO `kermaria_dev`@`192.168.100.213`"
+            ]).Count == 0,
+        "Les droits DEV attendus doivent etre acceptes.");
+    Ensure(
+        DeploymentEnvironmentGuard.FindGrantViolations(
+            "kermaria_dev",
+            ["GRANT ALL PRIVILEGES ON *.* TO `kermaria_dev`@`%` WITH GRANT OPTION"]).Count == 1,
+        "Des privileges globaux doivent etre refuses.");
+    Ensure(
+        DeploymentEnvironmentGuard.FindGrantViolations(
+            "kermaria_dev",
+            ["GRANT SELECT ON `kermaria`.* TO `kermaria_dev`@`%`"]).Count == 1,
+        "Un droit sur la base PROD doit etre refuse.");
+    Ensure(
+        DeploymentEnvironmentGuard.FindGrantViolations(
+            "kermaria_dev",
+            ["GRANT `app_role` TO `kermaria_dev`@`%`"]).Count == 1,
+        "Un role SQL doit etre refuse.");
+
+    // Webhook Stripe : un environnement ne traite pas l'evenement de l'autre.
+    var liveStripe = new StripeRuntimeConfiguration(StripeMode.Live);
+    var testStripe = new StripeRuntimeConfiguration(StripeMode.Test);
+    Ensure(
+        DeploymentEnvironmentGuard.TryValidateStripeLivemode(
+            "{\"id\":\"evt_1\",\"livemode\":true}", liveStripe, out _)
+        && DeploymentEnvironmentGuard.TryValidateStripeLivemode(
+            "{\"id\":\"evt_1\",\"livemode\":false}", testStripe, out _),
+        "Un evenement du bon mode doit etre accepte.");
+    Ensure(
+        !DeploymentEnvironmentGuard.TryValidateStripeLivemode(
+            "{\"id\":\"evt_1\",\"livemode\":true}", testStripe, out var devRefusal)
+        && devRefusal == "STRIPE_LIVEMODE_MISMATCH",
+        "La DEV doit refuser un evenement livemode=true.");
+    Ensure(
+        !DeploymentEnvironmentGuard.TryValidateStripeLivemode(
+            "{\"id\":\"evt_1\",\"livemode\":false}", liveStripe, out var prodRefusal)
+        && prodRefusal == "STRIPE_LIVEMODE_MISMATCH",
+        "La PROD doit refuser un evenement livemode=false.");
+    Ensure(
+        !DeploymentEnvironmentGuard.TryValidateStripeLivemode(
+            "{\"id\":\"evt_1\"}", liveStripe, out var missingRefusal)
+        && missingRefusal == "STRIPE_LIVEMODE_MISSING",
+        "Un evenement sans livemode doit etre refuse.");
+
+    // Processus reel : l'API DEV refuse de demarrer, code de sortie 78.
+    async Task<string> EnsureApiRefusesToStart(
+        string expectedFragment,
+        Action<ProcessStartInfo> configure)
+    {
+        using var api = StartApi(
+            SmokeTestRuntimeHelpers.CreateLoopbackBaseUrl(),
+            startInfo =>
+            {
+                startInfo.Environment["ASPNETCORE_ENVIRONMENT"] = "Staging";
+                startInfo.Environment["DOTNET_ENVIRONMENT"] = "Staging";
+                startInfo.Environment["APP_ENV"] = "Development";
+                startInfo.Environment["SQL_PROVIDER"] = "mariadb";
+                startInfo.Environment["SQL_HOST"] = "127.0.0.1";
+                startInfo.Environment["SQL_PORT"] = "3306";
+                startInfo.Environment["SQL_DATABASE"] = "kermaria_dev";
+                startInfo.Environment["SQL_USERNAME"] = "kermaria_dev";
+                startInfo.Environment["SQL_PASSWORD"] =
+                    "NOT_A_REAL_DEV_GUARD_SQL_VALUE";
+                startInfo.Environment["SERVICE_AUTH_TOKEN"] =
+                    "NOT_A_REAL_DEV_GUARD_SERVICE_VALUE";
+                startInfo.Environment["STRIPE_MODE"] = "test";
+                startInfo.Environment["STRIPE_SECRET_KEY"] =
+                    "sk_test_NOT_A_REAL_DEV_GUARD_VALUE";
+                startInfo.Environment["STRIPE_PUBLISHABLE_KEY"] =
+                    "pk_test_NOT_A_REAL_DEV_GUARD_VALUE";
+                startInfo.Environment["AD_INTEGRATION_MODE"] = "disabled";
+                foreach (var variable in new[]
+                {
+                    "DEMO_PORTAL_EMAIL",
+                    "DEMO_PORTAL_PASSWORD",
+                    "DEMO_PORTAL_STATUS",
+                    "DEMO_INTERNAL_ADMIN_EMAIL",
+                    "DEMO_INTERNAL_ADMIN_PASSWORD",
+                    "KERMARIA_CONFIG_AUTHORITATIVE"
+                })
+                {
+                    startInfo.Environment.Remove(variable);
+                }
+
+                startInfo.Environment["KERMARIA_CONFIG_PATH"] = Path.Combine(
+                    Path.GetTempPath(),
+                    "kermaria-deployment-guard-absent.json");
+                configure(startInfo);
+            });
+
+        var exited = api.Process.WaitForExit(TimeSpan.FromSeconds(60));
+        if (!exited)
+        {
+            await api.StopAsync();
+        }
+
+        api.Process.WaitForExit();
+        var logs = api.Logs.ToString();
+        Ensure(
+            exited && api.Process.ExitCode == DeploymentEnvironmentGuard.ConfigurationExitCode,
+            $"L'API DEV devait refuser de demarrer (code 78) : {expectedFragment}. Journal : {logs}");
+        Ensure(
+            logs.Contains("FATAL", StringComparison.Ordinal)
+            && logs.Contains(expectedFragment, StringComparison.Ordinal),
+            $"Le refus doit etre journalise en FATAL : {expectedFragment}.");
+        Ensure(
+            !logs.Contains("NOT_A_REAL_DEV_GUARD", StringComparison.Ordinal),
+            "Le journal de refus ne doit contenir aucune valeur secrete.");
+        return logs;
+    }
+
+    await EnsureApiRefusesToStart(
+        "sk_live",
+        startInfo => startInfo.Environment["STRIPE_SECRET_KEY"] =
+            "sk_live_NOT_A_REAL_DEV_GUARD_VALUE");
+    await EnsureApiRefusesToStart(
+        "SQL_DATABASE=kermaria",
+        startInfo => startInfo.Environment["SQL_DATABASE"] = "kermaria");
+
+    // Mode autoritaire : les variables d'environnement heritees (ici des
+    // reglages de production) sont ignorees, seul le fichier DEV compte.
+    var authoritativeConfigPath = Path.Combine(
+        Path.GetTempPath(),
+        $"kermaria-deployment-guard-{Guid.NewGuid():N}.json");
+    var downloadRoot = Path.Combine(
+        Path.GetTempPath(),
+        $"kermaria-deployment-guard-downloads-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(downloadRoot);
+    File.WriteAllText(
+        authoritativeConfigPath,
+        JsonSerializer.Serialize(new Dictionary<string, string>
+        {
+            ["APP_ENV"] = "Development",
+            ["SQL_PROVIDER"] = "mariadb",
+            ["SQL_HOST"] = "127.0.0.1",
+            ["SQL_PORT"] = "9",
+            ["SQL_DATABASE"] = "kermaria_dev",
+            ["SQL_USERNAME"] = "kermaria_dev",
+            ["SQL_PASSWORD"] = "NOT_A_REAL_DEV_GUARD_SQL_VALUE",
+            ["SERVICE_AUTH_TOKEN"] = "NOT_A_REAL_DEV_GUARD_SERVICE_VALUE",
+            ["DOWNLOAD_STORAGE_ROOT"] = downloadRoot,
+            ["AD_INTEGRATION_MODE"] = "disabled",
+            ["STRIPE_MODE"] = "disabled"
+        }));
+    try
+    {
+        var authoritativeLogs = await EnsureApiRefusesToStart(
+            "non verifiable",
+            startInfo =>
+            {
+                startInfo.Environment["KERMARIA_CONFIG_AUTHORITATIVE"] = "true";
+                startInfo.Environment["KERMARIA_CONFIG_PATH"] =
+                    authoritativeConfigPath;
+                startInfo.Environment["APP_ENV"] = "Production";
+                startInfo.Environment["SQL_DATABASE"] = "kermaria";
+                startInfo.Environment["SQL_USERNAME"] = "kermaria_api";
+                startInfo.Environment["STRIPE_MODE"] = "live";
+                startInfo.Environment["STRIPE_SECRET_KEY"] =
+                    "sk_live_NOT_A_REAL_DEV_GUARD_VALUE";
+                startInfo.Environment["KOXO_SYNC_WEBHOOK_URL"] =
+                    "http://192.0.2.1/internal/koxo/sync/";
+                startInfo.Environment["AD_INTEGRATION_MODE"] =
+                    "controlled_write";
+            });
+        Ensure(
+            authoritativeLogs.Contains("Database: kermaria_dev", StringComparison.Ordinal)
+            && authoritativeLogs.Contains("Environment: Development", StringComparison.Ordinal)
+            && !authoritativeLogs.Contains("KOXO_SYNC_WEBHOOK_URL", StringComparison.Ordinal)
+            && !authoritativeLogs.Contains("sk_live", StringComparison.Ordinal),
+            "En mode autoritaire, aucune variable d'environnement heritee ne doit etre lue.");
+    }
+    finally
+    {
+        File.Delete(authoritativeConfigPath);
+    }
 }
 
 async Task RunServiceAuthenticationGuardTestsAsync()

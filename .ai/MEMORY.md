@@ -25,6 +25,10 @@
   - [billing-v2-only-cancellation.md](topics/billing-v2-only-cancellation.md) : suppression du legacy, `pending_cancellation`, résolveur d'ancre provider, PayPal en deux gestes, conservation des droits payés.
   - [pieges-sql-et-preuves.md](topics/pieges-sql-et-preuves.md) : défauts SQL invisibles des suites mock (littéral brut, `<=>`, lien AD transféré, `objectGUID`).
 
+### Environnement DEV isolé (2026-09-21)
+
+- Stack DEV parallèle sur SRV-12 (:3100), SRV-13 (:5100) et SRV-06 (`kermaria_dev`), garde-fous `APP_ENV` bloquants (code 78). Stripe TEST et publication de `dev.zachary-it.fr` restent à faire. Pièges découverts : variables Machine PROD sur SRV-13, triggers + binlog, pare-feu SRV-13 désactivé par GPO. Détail : [dev-environment.md](topics/dev-environment.md), runbook `docs/DEV_ENVIRONMENT.md`.
+
 ### Centre de configuration administrateur (2026-08-29)
 
 - Chantier **local, non poussé, non déployé**. Une revue finale indépendante
@@ -182,6 +186,7 @@
 - [bpce-invoicing-api.md](topics/bpce-invoicing-api.md)
 - [custom-demo-accounts.md](topics/custom-demo-accounts.md)
 - [deployment-topology.md](topics/deployment-topology.md)
+- [dev-environment.md](topics/dev-environment.md)
 - [diagnostic-panne-donnees.md](topics/diagnostic-panne-donnees.md)
 - [hcaptcha-signup-state.md](topics/hcaptcha-signup-state.md)
 - [infra-r740xd-blocker.md](topics/infra-r740xd-blocker.md)
