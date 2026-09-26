@@ -6,6 +6,12 @@ V0.40 ajoute une chaine privee `webportal -> api-internal -> PowerShell -> CSV -
 sans SMB cote site, sans secret reel dans le depot, sans execution KoXo cote site,
 et sans creation automatique de la vraie tache planifiee.
 
+> **Instances KoXo (2026-09-26).** Le lanceur accepte desormais une instance
+> ISOLEE (DEV) decrite par un fichier JSON, et tout lancement de `KoXoAdm.exe`
+> passe par le verrou systeme `Global\Kermaria-KoXoAdm`. Le comportement de
+> l'instance de production est inchange. L'infrastructure DEV n'est **pas**
+> deployee : voir [KOXO_DEV_ISOLATION.md](KOXO_DEV_ISOLATION.md).
+
 > **La regle mot de passe de la V0.40.1 est REVOQUEE depuis le 2026-08-06.**
 > Elle disait « aucun mot de passe n'est exporte vers KoXo » et confiait
 > l'alignement a un flux portail -> AD direct. Mesures a l'appui, cette voie ne

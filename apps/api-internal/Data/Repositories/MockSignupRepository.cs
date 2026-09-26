@@ -1014,7 +1014,7 @@ public sealed class MockSignupRepository : ISignupRepository
     private string AllocateKoxoUniqueIdentifier()
     {
         var next = Interlocked.Increment(ref _store.NextKoxoSequenceSeed);
-        return $"CLI-{next - 1:D6}";
+        return KoxoNamespace.Current.FormatIdentifier(next - 1);
     }
 
     private static SignupPendingRecord ToRecord(MockSignupRow row)

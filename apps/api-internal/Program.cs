@@ -133,6 +133,12 @@ if (deploymentEnvironmentReport.Violations.Count > 0)
         fileLoggerOptions);
 }
 
+// Namespace KoXo (identifiants uniques, references client, profils) : fixe
+// avant toute allocation. Sans configuration, espace historique de la
+// production, au bit pres.
+var koxoNamespace = KoxoNamespaceResolver.Resolve(builder.Configuration);
+KoxoNamespace.Initialize(koxoNamespace);
+
 var isBpceCli = args.Contains(
     "--verify-bpce-sender",
     StringComparer.OrdinalIgnoreCase);
@@ -846,6 +852,14 @@ app.Logger.LogInformation(
     deploymentEnvironmentReport.StripeKeyFamily,
     deploymentEnvironmentReport.OutboxExecutor,
     deploymentEnvironmentReport.ProvisioningEnabled ? "enabled" : "disabled");
+
+app.Logger.LogInformation(
+    "KoXo namespace | Production: {IsProduction} | Identifier prefix: {IdentifierPrefix} | Customer reference prefix: {CustomerReferencePrefix} | Primary groups: {PrimaryGroupClients} / {PrimaryGroupDemo}",
+    koxoNamespace.IsProduction,
+    koxoNamespace.IdentifierPrefix,
+    koxoNamespace.CustomerReferencePrefix,
+    koxoNamespace.PrimaryGroupClients,
+    koxoNamespace.PrimaryGroupDemo);
 
 // En DEV, les droits reels du compte SQL priment sur les noms configures :
 // un compte capable d'atteindre une autre base que la base DEV est refuse

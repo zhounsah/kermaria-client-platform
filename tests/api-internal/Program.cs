@@ -118,6 +118,24 @@ async Task<int> RunAsync(string[] arguments)
     }
 
     if (arguments.Length == 1
+        && string.Equals(arguments[0], "--koxo-namespace", StringComparison.Ordinal))
+    {
+        try
+        {
+            KoxoNamespaceTests.Run();
+            await RunKoxoNamespaceExportTestsAsync();
+            Console.WriteLine("Tests namespace KoXo reussis.");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine("Tests namespace KoXo en echec.");
+            Console.Error.WriteLine(exception.ToString());
+            return 1;
+        }
+    }
+
+    if (arguments.Length == 1
         && string.Equals(arguments[0], "--billing-v2-cart", StringComparison.Ordinal))
     {
         try
@@ -707,6 +725,8 @@ async Task<int> RunAsync(string[] arguments)
         await RunDeploymentEnvironmentGuardTestsAsync();
         await RunKoxoExportHttpTestsAsync();
         await RunKoxoExportServiceTestsAsync();
+        KoxoNamespaceTests.Run();
+        await RunKoxoNamespaceExportTestsAsync();
         await RunKoxoPendingPasswordTestsAsync();
         await RunKoxoSyncWebhookTriggerServiceTestsAsync();
         await RunSignupKoxoWebhookTriggerTestsAsync();
@@ -2535,6 +2555,51 @@ async Task RunDeploymentEnvironmentGuardTestsAsync()
             .Violations.Count == 0,
         "Sans APP_ENV, le poste de developpement historique reste inchange.");
 
+    // Namespace KoXo : DEV et PROD partagent l'annuaire et KoXoAdm.
+    void UseDevKoxoNamespace(Dictionary<string, string?> values)
+    {
+        values[KoxoNamespace.IdentifierPrefixVariable] = "CLI-D";
+        values[KoxoNamespace.CustomerReferencePrefixVariable] = "DEV-CLI-";
+        values[KoxoNamespace.PrimaryGroupClientsVariable] = "CLIENTS DEV";
+        values[KoxoNamespace.PrimaryGroupDemoVariable] = "CLIENTS DEV DEMO";
+    }
+
+    EnsureDevRefused("namespace KoXo de production", values =>
+    {
+        values["AD_INTEGRATION_MODE"] = "controlled_write";
+        values["PROVISIONING_ENABLED"] = "true";
+        values["ALLOW_DEV_PROVISIONING"] = "true";
+    });
+    EnsureDevRefused("namespace KoXo de production", values =>
+    {
+        values["KOXO_SYNC_WEBHOOK_URL"] = "http://192.0.2.1/";
+        values["PROVISIONING_ENABLED"] = "true";
+        values["ALLOW_DEV_PROVISIONING"] = "true";
+    });
+    EnsureDevRefused("Namespace KoXo invalide", values =>
+    {
+        values[KoxoNamespace.IdentifierPrefixVariable] = "CLI-D";
+    });
+    var devWithDirectory = DevConfiguration();
+    devWithDirectory["AD_INTEGRATION_MODE"] = "controlled_write";
+    devWithDirectory["KOXO_SYNC_WEBHOOK_URL"] = "http://192.0.2.1/";
+    devWithDirectory["PROVISIONING_ENABLED"] = "true";
+    devWithDirectory["ALLOW_DEV_PROVISIONING"] = "true";
+    UseDevKoxoNamespace(devWithDirectory);
+    var allowedDirectory = Evaluate("Staging", devWithDirectory);
+    Ensure(
+        allowedDirectory.Violations.Count == 0,
+        "Une DEV annuaire + KoXo avec son propre namespace doit etre acceptee : "
+        + string.Join(" | ", allowedDirectory.Violations));
+    Ensure(
+        validDev.Violations.Count == 0,
+        "Une DEV sans effet annuaire garde le namespace par defaut.");
+    EnsureProdRefused("namespace KoXo hors production", UseDevKoxoNamespace);
+    EnsureProdRefused("Namespace KoXo invalide", values =>
+    {
+        values[KoxoNamespace.PrimaryGroupClientsVariable] = "CLIENTS DEV";
+    });
+
     // Droits SQL reels : seul USAGE sur *.* et la base DEV sont admis.
     Ensure(
         DeploymentEnvironmentGuard.FindGrantViolations(
@@ -4284,6 +4349,93 @@ async Task RunKoxoExportHttpTestsAsync()
     finally
     {
         await api.StopAsync();
+    }
+}
+
+// Export GET /internal/koxo/users d'une instance DEV, sur fixtures : aucune
+// base ni aucun mot de passe en attente reels (un export reel les consomme).
+async Task RunKoxoNamespaceExportTestsAsync()
+{
+    var dev = KoxoNamespaceTests.DevNamespace();
+    using var scope = KoxoNamespace.BeginTestScope(dev);
+
+    var devRepository = new InMemoryKoxoRepository(
+    [
+        new KoxoExportCandidate(
+            "portal-user-dev-1",
+            "DEV-CLI-ABCDEF",
+            "CLI-D000001",
+            "madame",
+            "Zoe",
+            "Hounsa",
+            "1994-03-22",
+            "zoe.hounsa@example.invalid"),
+        new KoxoExportCandidate(
+            "portal-user-dev-2",
+            "DEV-CLI-GHJKMN",
+            "CLI-D000002",
+            "monsieur",
+            "Yann",
+            "Kervella",
+            "1980-06-01",
+            "yann.kervella@example.invalid",
+            IsDemo: true,
+            KoxoGroupReference: "DEV-CLI-PQRSTU")
+    ]);
+    var devPayload = await new KoxoExportService(devRepository, NewPendingPasswordStore())
+        .ExportAsync("api", "koxo-namespace-dev", "192.168.100.221", CancellationToken.None);
+    var devClient = devPayload.Users.Single(user => user.IdentifiantUnique == "CLI-D000001");
+    var devTrial = devPayload.Users.Single(user => user.IdentifiantUnique == "CLI-D000002");
+    Ensure(
+        devPayload.UserCount == 2
+        && devClient.GroupePrimaire == "CLIENTS DEV"
+        && devClient.GroupeSecondaire == "DEV-CLI-ABCDEF"
+        && devTrial.GroupePrimaire == "CLIENTS DEV DEMO"
+        && devTrial.GroupeSecondaire == "DEMO-DEV-CLI-PQRSTU",
+        "L'export DEV doit publier ses identifiants, ses OU et ses profils, jamais ceux de la production.");
+    Ensure(
+        devPayload.Users.All(user =>
+            user.IdentifiantUnique.StartsWith("CLI-D", StringComparison.Ordinal)
+            && user.GroupePrimaire is not "CLIENTS" and not "CLIENTS DÉMO"),
+        "Aucune ligne de l'export DEV ne doit viser un profil KoXo de production.");
+
+    // Un identifiant de production dans une instance DEV est refuse, et tout
+    // l'export avec lui : fail-closed, comme toute ligne invalide.
+    var mixedRepository = new InMemoryKoxoRepository(
+    [
+        new KoxoExportCandidate(
+            "portal-user-dev-1",
+            "DEV-CLI-ABCDEF",
+            "CLI-D000001",
+            "madame",
+            "Zoe",
+            "Hounsa",
+            "1994-03-22",
+            "zoe.hounsa@example.invalid"),
+        new KoxoExportCandidate(
+            "portal-user-prod-shaped",
+            "DEV-CLI-VWXYZ2",
+            "CLI-000001",
+            "monsieur",
+            "Alain",
+            "Prod",
+            "1970-01-01",
+            "alain.prod@example.invalid")
+    ]);
+    try
+    {
+        await new KoxoExportService(mixedRepository, NewPendingPasswordStore())
+            .ExportAsync("api", "koxo-namespace-mixed", "192.168.100.221", CancellationToken.None);
+        throw new InvalidOperationException(
+            "Un identifiant de production ne doit jamais sortir d'un export DEV.");
+    }
+    catch (KoxoValidationException exception)
+    {
+        Ensure(
+            exception.InvalidUsers.Any(user =>
+                user.PortalUserId == "portal-user-prod-shaped"
+                && user.Fields.Contains("identifiantUnique")),
+            "Le refus doit designer l'identifiant hors namespace.");
     }
 }
 

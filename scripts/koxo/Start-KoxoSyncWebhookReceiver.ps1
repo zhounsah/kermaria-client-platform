@@ -15,13 +15,41 @@ param(
     # jamais la semantique : elle ne declenche aucune synchronisation CSV.
     [string]$StoragePath = '/internal/koxo/storage/reconcile/',
     [string]$StorageToken = '',
-    [string]$KoxoDataRoot = 'C:\Program Files\KoXo Dev\KoXoAdm\Data'
+    [string]$KoxoDataRoot = 'C:\Program Files\KoXo Dev\KoXoAdm\Data',
+    # Instance ISOLEE (DEV) : chemin absolu de son fichier de definition JSON.
+    # Il fixe le prefixe d'ecoute, le jeton (lu dans un fichier, jamais sur la
+    # ligne de commande), les journaux, et il est transmis au lanceur de
+    # synchronisation. La route de stockage y est fermee sauf mention
+    # contraire. Absent, le recepteur reste celui de la production, inchange.
+    [string]$InstanceConfigPath = ''
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 Import-Module (Join-Path $PSScriptRoot 'KoxoStorage.Common.psm1') -Force -DisableNameChecking
+
+$storageRouteEnabled = $true
+$instanceArguments = ''
+if (-not [string]::IsNullOrWhiteSpace($InstanceConfigPath)) {
+    Import-Module (Join-Path $PSScriptRoot 'KoxoSync.Common.psm1') -Force -DisableNameChecking
+    $instance = Get-KoxoInstanceDefinition -InstanceConfigPath $InstanceConfigPath
+    if ($null -eq $instance.Receiver) {
+        throw ("KoXo instance {0} declares no receiver section." -f $instance.InstanceName)
+    }
+
+    if (-not $instance.Receiver.TokenPath -or -not (Test-Path -LiteralPath $instance.Receiver.TokenPath -PathType Leaf)) {
+        throw ("KoXo instance {0}: receiver token file not found." -f $instance.InstanceName)
+    }
+
+    $Prefix = $instance.Receiver.Prefix
+    $Token = [System.IO.File]::ReadAllText($instance.Receiver.TokenPath).Trim()
+    $LogDirectory = $instance.Receiver.LogDirectory
+    $storageRouteEnabled = $instance.Receiver.StorageRouteEnabled
+    # Une instance isolee n'a jamais de jeton de stockage herite du processus.
+    $StorageToken = $Token
+    $instanceArguments = ' -InstanceConfigPath "{0}"' -f [System.IO.Path]::GetFullPath($InstanceConfigPath)
+}
 
 if (-not (Test-Path -LiteralPath $LogDirectory)) {
     New-Item -ItemType Directory -Path $LogDirectory -Force | Out-Null
@@ -57,9 +85,12 @@ $storagePrefix = ($Prefix -replace '(?<=://[^/]+)/.*$', '') + $normalizedStorage
 # Meme repertoire de travail que la synchronisation globale, volontairement :
 # c'est ce qui fait tomber les deux chemins sur le MEME verrou, et KoXoAdm.exe
 # ne supporte pas deux instances concurrentes.
-$storageConfiguration = Get-KoxoStorageConfiguration `
-    -DataRoot $KoxoDataRoot `
-    -WorkingDirectory $WorkingDirectory
+$storageConfiguration = $null
+if ($storageRouteEnabled) {
+    $storageConfiguration = Get-KoxoStorageConfiguration `
+        -DataRoot $KoxoDataRoot `
+        -WorkingDirectory $WorkingDirectory
+}
 
 $resolvedSyncScriptPath = [System.IO.Path]::GetFullPath($SyncScriptPath)
 $resolvedWebhookSyncLauncherPath = [System.IO.Path]::GetFullPath($WebhookSyncLauncherPath)
@@ -69,7 +100,9 @@ $resolvedKoxoExecutablePath = [System.IO.Path]::GetFullPath($KoxoExecutablePath)
 $resolvedKoxoWorkingDirectory = [System.IO.Path]::GetFullPath($KoxoWorkingDirectory)
 $listener = [System.Net.HttpListener]::new()
 $listener.Prefixes.Add($Prefix)
-$listener.Prefixes.Add($storagePrefix)
+if ($storageRouteEnabled) {
+    $listener.Prefixes.Add($storagePrefix)
+}
 $listener.Start()
 
 function Write-WebhookLog {
@@ -160,6 +193,8 @@ function Write-JsonResponse {
 Write-WebhookLog -Level 'info' -Message 'KoXo webhook receiver started.' -Data @{
     prefix = $Prefix
     sync_script_path = $resolvedSyncScriptPath
+    instance_config_path = $InstanceConfigPath
+    storage_route_enabled = $storageRouteEnabled
 }
 
 try {
@@ -181,7 +216,7 @@ try {
             # tomber dans la branche de synchronisation globale, dont un
             # passage errone desactive des comptes.
             $requestPath = $request.Url.AbsolutePath.TrimEnd('/')
-            $isStorageRequest = [string]::Equals(
+            $isStorageRequest = $storageRouteEnabled -and [string]::Equals(
                 $requestPath,
                 $normalizedStoragePath,
                 [System.StringComparison]::OrdinalIgnoreCase)
@@ -299,7 +334,7 @@ try {
                 '-NoProfile -NonInteractive -ExecutionPolicy Bypass ' +
                 '-File "{0}" -SyncScriptPath "{1}" -CsvTargetPath "{2}" ' +
                 '-WorkingDirectory "{3}" -KoxoExecutablePath "{4}" ' +
-                '-KoxoWorkingDirectory "{5}" -KoxoSyncArgument "{6}"'
+                '-KoxoWorkingDirectory "{5}" -KoxoSyncArgument "{6}"{7}'
             ) -f (
                 $resolvedWebhookSyncLauncherPath,
                 $resolvedSyncScriptPath,
@@ -307,7 +342,8 @@ try {
                 $resolvedWorkingDirectory,
                 $resolvedKoxoExecutablePath,
                 $resolvedKoxoWorkingDirectory,
-                $KoxoSyncArgument
+                $KoxoSyncArgument,
+                $instanceArguments
             )
 
             $process = Start-Process -FilePath 'powershell.exe' `

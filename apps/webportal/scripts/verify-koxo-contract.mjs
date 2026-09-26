@@ -32,6 +32,11 @@ const koxoCandidateQuery = await read(
 const koxoTopology = await read(
   "../../apps/api-internal/Services/KoxoDirectoryTopology.cs",
 );
+// Depuis le 2026-09-26, la forme exacte (prefixe du namespace de l'instance
+// puis six chiffres) est portee par le namespace KoXo, que la topologie consulte.
+const koxoNamespace = await read(
+  "../../apps/api-internal/Services/KoxoNamespace.cs",
+);
 
 const checks = [];
 function check(name, fn) {
@@ -94,7 +99,10 @@ check("service KoXo impose un schema ferme et une validation bloquante", () => {
   assert.match(koxoContracts, /string GroupePrimaire/);
   assert.match(koxoContracts, /string Email/);
   assert.match(koxoService, /SchemaVersion = 2/);
-  assert.match(koxoTopology, /UniqueIdentifierPattern/);
+  assert.match(koxoTopology, /KoxoNamespace\.Current\.IsValidUniqueIdentifier/);
+  assert.match(koxoNamespace, /public bool IsValidUniqueIdentifier/);
+  assert.match(koxoNamespace, /IdentifierPrefix\.Length \+ IdentifierDigits/);
+  assert.match(koxoNamespace, /new\(\s*"CLI-",\s*"CLI-",/);
   assert.match(koxoService, /KoxoValidationException/);
   assert.match(koxoService, /validation_failed/);
 });

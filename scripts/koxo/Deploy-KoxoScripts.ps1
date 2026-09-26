@@ -70,7 +70,10 @@ $DeployableFiles = @(
     'Install-KoxoSyncWebhookReceiverTask.ps1',
     'Install-KoXoScheduledTask.ps1',
     'Test-KoxoAccentHandling.ps1',
-    'Start-KoxoSyncWebhookReceiver-8042.cmd'
+    'Start-KoxoSyncWebhookReceiver-8042.cmd',
+    # Lanceur d'une instance ISOLEE (DEV). Inerte tant qu'aucune tache ne
+    # l'appelle : aucune n'existe a ce jour.
+    'Start-KoxoSyncWebhookReceiver-Instance.cmd'
 )
 
 # Jamais ecrasables : propriete du serveur ou de KoXo.
@@ -80,6 +83,11 @@ $ProtectedNames = @(
     'clients.csv',
     'clients-demo.csv',
     'koxo-webhook-token.txt',
+    # Instance DEV cible : ses fichiers ne viennent jamais du depot non plus.
+    'CLIENTS-DEV.xml',
+    'CLIENTS-DEV-DEMO.xml',
+    'clients-dev.csv',
+    'clients-dev-demo.csv',
     'backups',
     'Logs',
     'work'

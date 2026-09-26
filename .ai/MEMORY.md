@@ -86,6 +86,7 @@
 ### KoXo / AD
 
 - **Invariant (2026-09-25) : tout compte client principal a une identité AD, VPS compris.** Le Cart/VPS contournait l'AD (bug B) et, en `controlled_write`, l'export KoXo ignorait tout principal sans lien (bug C, boucle fermée même pour le signup standard). Correctif **local, non déployé** : amorçage explicite `portal_user_identity_bootstrap` (migration 096 non appliquée en PROD/DEV, validée le 2026-09-25 sur base jetable SRV-06 puis détruite), 3e branche d'export, reprise admin des comptes existants. Détail : [primary-identity-bootstrap.md](topics/primary-identity-bootstrap.md).
+- **KoXo DEV n'est pas isolé de la PROD (2026-09-26)** : même domaine, même KoXoAdm, compteur DEV repartant à `CLI-000001` (déjà en PROD). Fondations logicielles posées localement (namespace KoXo API `CLI-D`/`DEV-CLI-`/`CLIENTS DEV`, lanceur SRV-21 à instance isolée, mutex `Global\Kermaria-KoXoAdm`). Infrastructure DEV **non déployée** ; `controlled_write` DEV interdit d'ici là. Détail : [koxo-dev-isolation.md](topics/koxo-dev-isolation.md), `docs/KOXO_DEV_ISOLATION.md`.
 - Les topics Claude du 2026-08-05/06 restent les références détaillées pour les comportements mesurés de KoXo : accents, groupes primaires, orphelins, fiche utilisateur, maîtrise du mot de passe et adoption AD.
 - Références : [koxo-accents-majuscules.md](topics/koxo-accents-majuscules.md), [koxo-groupes-primaires-separes.md](topics/koxo-groupes-primaires-separes.md), [koxo-orphelins-supprimes.md](topics/koxo-orphelins-supprimes.md), [koxo-fiche-utilisateur-maitre.md](topics/koxo-fiche-utilisateur-maitre.md), [koxo-ad-password-mastery.md](topics/koxo-ad-password-mastery.md), [koxo-api-ne-cree-plus.md](topics/koxo-api-ne-cree-plus.md).
 - **Deux routes sur le récepteur SRV-21, portées incomparables** :
@@ -197,6 +198,7 @@
 - [koxo-accents-majuscules.md](topics/koxo-accents-majuscules.md)
 - [koxo-ad-password-mastery.md](topics/koxo-ad-password-mastery.md)
 - [koxo-api-ne-cree-plus.md](topics/koxo-api-ne-cree-plus.md)
+- [koxo-dev-isolation.md](topics/koxo-dev-isolation.md)
 - [koxo-fiche-utilisateur-maitre.md](topics/koxo-fiche-utilisateur-maitre.md)
 - [koxo-groupes-primaires-separes.md](topics/koxo-groupes-primaires-separes.md)
 - [koxo-orphelins-supprimes.md](topics/koxo-orphelins-supprimes.md)

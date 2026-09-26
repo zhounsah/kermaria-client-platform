@@ -1,5 +1,3 @@
-using System.Text.RegularExpressions;
-
 namespace Kermaria.ApiInternal.Services;
 
 /// <summary>
@@ -16,7 +14,9 @@ namespace Kermaria.ApiInternal.Services;
 /// </para>
 /// <para>
 /// Cette classe est volontairement pure : aucune entree/sortie, aucun acces
-/// annuaire, aucune dependance de configuration. Elle ne decrit que le nommage.
+/// annuaire. Les constantes ci-dessous sont les noms de la PRODUCTION ; ce qui
+/// depend de l'instance (forme de l'identifiant, groupe primaire) passe par
+/// <see cref="KoxoNamespace.Current"/>, fixe une fois au demarrage.
 /// </para>
 /// </remarks>
 public static class KoxoDirectoryTopology
@@ -38,7 +38,7 @@ public static class KoxoDirectoryTopology
     /// </summary>
     public const string DemoGroupPrefix = "DEMO-";
 
-    /// <summary>Groupe primaire KoXo des clients payants.</summary>
+    /// <summary>Groupe primaire KoXo des clients payants, en production.</summary>
     public const string PrimaryGroupClients = "CLIENTS";
 
     /// <summary>
@@ -52,21 +52,20 @@ public static class KoxoDirectoryTopology
     public const string PrimaryGroupDemo = "CLIENTS D\u00C9MO";
 
     /// <summary>
-    /// Forme imposee de <c>portal_users.koxo_unique_identifier</c>.
+    /// Forme imposee de <c>portal_users.koxo_unique_identifier</c> dans le
+    /// namespace de l'instance : <c>CLI-</c> puis six chiffres en production.
     /// </summary>
     /// <remarks>
     /// C'est cette valeur que KoXo reporte dans l'attribut AD
     /// <c>employeeNumber</c>, donc la seule cle de rattachement fiable entre un
     /// compte cree par KoXo et l'utilisateur portail : le nom est translittere
     /// et le <c>sAMAccountName</c> est derive par KoXo, donc ni l'un ni l'autre
-    /// n'est predictible cote application.
+    /// n'est predictible cote application. Un identifiant de l'AUTRE namespace
+    /// est refuse : une instance n'exporte ni n'adopte jamais une identite qui
+    /// ne lui appartient pas.
     /// </remarks>
-    private static readonly Regex UniqueIdentifierPattern =
-        new("^CLI-\\d{6}$", RegexOptions.Compiled);
-
     public static bool IsValidUniqueIdentifier(string? value)
-        => !string.IsNullOrWhiteSpace(value)
-            && UniqueIdentifierPattern.IsMatch(value);
+        => KoxoNamespace.Current.IsValidUniqueIdentifier(value);
 
     /// <summary>
     /// Determine le profil KoXo qui prend l'identite en charge. Le decoupage
@@ -79,7 +78,7 @@ public static class KoxoDirectoryTopology
     /// demo desactivait de vrais clients payants.
     /// </remarks>
     public static string ResolvePrimaryGroup(bool isDemo)
-        => isDemo ? PrimaryGroupDemo : PrimaryGroupClients;
+        => KoxoNamespace.Current.ResolvePrimaryGroup(isDemo);
 
     /// <summary>
     /// Determine l'OU cible cote KoXo, qui la cree si elle n'existe pas.

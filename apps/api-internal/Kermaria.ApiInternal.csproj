@@ -17,6 +17,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Seul le projet de tests voit les primitives internal (ex. portee de
+         test du namespace KoXo) ; elles restent hors de l'API publique. -->
+    <InternalsVisibleTo Include="Kermaria.ApiInternal.SmokeTests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Content
       Include="Migrations\MariaDb\*.sql"
       CopyToOutputDirectory="PreserveNewest"

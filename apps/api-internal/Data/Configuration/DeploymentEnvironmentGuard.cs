@@ -161,6 +161,8 @@ public static class DeploymentEnvironmentGuard
                 break;
         }
 
+        ValidateKoxoNamespace(configuration, environment, violations);
+
         return new DeploymentEnvironmentReport(
             environment,
             hostEnvironment.EnvironmentName,
@@ -498,6 +500,56 @@ public static class DeploymentEnvironmentGuard
         {
             violations.Add(
                 "APP_ENV=Production refuse un compte SQL DEV (SQL_USERNAME en *_dev).");
+        }
+    }
+
+    /// <summary>
+    /// DEV et PROD partagent le domaine <c>clients.home.bzh</c> et le meme
+    /// KoXoAdm : seul le namespace KoXo separe leurs identites. Une DEV qui agit
+    /// sur l'annuaire ou declenche KoXo doit donc en avoir un propre, et la
+    /// production ne peut jamais en porter un autre que le sien.
+    /// </summary>
+    private static void ValidateKoxoNamespace(
+        IConfiguration configuration,
+        DeploymentEnvironment environment,
+        List<string> violations)
+    {
+        var candidate = Services.KoxoNamespaceResolver.ReadCandidate(configuration);
+        var errors = Services.KoxoNamespaceResolver.Validate(candidate);
+        if (errors.Count > 0)
+        {
+            violations.Add("Namespace KoXo invalide : " + string.Join(" ; ", errors) + ".");
+            return;
+        }
+
+        switch (environment)
+        {
+            case DeploymentEnvironment.Development:
+                var directoryEffects = string.Equals(
+                        configuration["AD_INTEGRATION_MODE"]?.Trim(),
+                        "controlled_write",
+                        StringComparison.OrdinalIgnoreCase)
+                    || !string.IsNullOrWhiteSpace(configuration["KOXO_SYNC_WEBHOOK_URL"]);
+                if (directoryEffects && candidate.IsProduction)
+                {
+                    violations.Add(
+                        "APP_ENV=Development refuse le namespace KoXo de production quand l'annuaire ou KoXo sont actifs (AD_INTEGRATION_MODE=controlled_write ou KOXO_SYNC_WEBHOOK_URL) : definir "
+                        + Services.KoxoNamespace.IdentifierPrefixVariable + ", "
+                        + Services.KoxoNamespace.CustomerReferencePrefixVariable + ", "
+                        + Services.KoxoNamespace.PrimaryGroupClientsVariable + " et "
+                        + Services.KoxoNamespace.PrimaryGroupDemoVariable + ".");
+                }
+
+                break;
+            case DeploymentEnvironment.Production:
+                if (!candidate.IsProduction)
+                {
+                    violations.Add(
+                        "APP_ENV=Production refuse un namespace KoXo hors production (prefixe d'identifiant "
+                        + candidate.IdentifierPrefix + ").");
+                }
+
+                break;
         }
     }
 

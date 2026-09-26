@@ -1,5 +1,45 @@
 ﻿Set-StrictMode -Version Latest
 
+# --- Instance de PRODUCTION --------------------------------------------------
+# Valeurs historiques de l'instance PROD de SRV-21. Une instance ISOLEE (DEV) ne
+# peut en reprendre aucune : chaque synchronisation KoXo fait autorite sur son
+# profil, et un CSV qui reprendrait un profil, un fichier ou un repertoire de
+# production y vaudrait ordre de desactivation des comptes absents.
+# Le E accent aigu s'ecrit par code de caractere, comme ailleurs dans les
+# scripts KoXo : la graphie doit correspondre au bit pres a celle de l'IHM KoXo.
+$script:KoxoProductionIdentifierPrefix = 'CLI-'
+$script:KoxoProductionPrimaryGroups = @('CLIENTS', ('CLIENTS D' + [char]0x00C9 + 'MO'))
+$script:KoxoProductionCsvFileNames = @('clients.csv', 'clients-demo.csv')
+$script:KoxoProductionSyncArguments = @('/Synchro=CLIENTS.xml', '/Synchro=CLIENTS-DEMO.xml')
+$script:KoxoProductionDataDirectory = 'C:\Program Files\KoXo Dev\KoXoAdm\Data\CSVSynchro'
+$script:KoxoProductionReceiverPort = 8042
+
+# Variables Machine rechargees par le lanceur de l'instance PROD. Une instance
+# isolee ne les lit jamais comme valeurs : elle les retire de son processus.
+$script:KoxoMachineSettingNames = @(
+    'KOXO_API_URL',
+    'KOXO_API_TOKEN',
+    'KOXO_ALLOW_INSECURE_HTTP',
+    'KOXO_CSV_ENCODING',
+    'KOXO_MIN_USER_COUNT',
+    'KOXO_MAX_USER_DROP_PERCENT',
+    'KOXO_ALLOW_USER_DROP',
+    'KOXO_ALLOW_EMPTY_CSV',
+    'KOXO_SYNC_TIMEOUT_SECONDS',
+    'KOXO_LOG_DIRECTORY',
+    'KOXO_KOXO_LOG_GLOB',
+    'KOXO_BACKUP_RETENTION_COUNT'
+)
+
+# --- Verrou systeme KoXoAdm --------------------------------------------------
+# KoXoAdm.exe ne supporte pas deux executions concurrentes, et DEV comme PROD
+# utilisent le MEME executable. Le verrou fichier historique est rattache au
+# repertoire de journaux d'une instance : deux instances ne le partagent donc
+# pas. Ce mutex nomme est commun a toute la machine, et volontairement non
+# configurable par une instance — un nom propre a la DEV annulerait le verrou.
+$script:KoxoAdmLockName = 'Global\Kermaria-KoXoAdm'
+$script:KoxoAdmDefaultLockTimeoutSeconds = 600
+
 function Get-KoxoSyncConfiguration {
     [CmdletBinding()]
     param(
@@ -82,6 +122,12 @@ function Get-KoxoSyncConfiguration {
         # KoXoAdm.exe ne supporte pas deux instances concurrentes.
         LockPath = Join-Path $logDirectory 'koxo-sync.lock'
         LogPath = Join-Path $logDirectory ("koxo-sync-{0}.log" -f (Get-Date -Format 'yyyyMMdd'))
+        # Nom de l'instance, pour les journaux et le diagnostic du verrou.
+        InstanceName = Get-KoxoSetting -Name 'KOXO_INSTANCE_NAME' -DefaultValue 'prod' -Overrides $Overrides
+        # Namespace des identifiants uniques publies par l'API de CETTE instance.
+        # Un identifiant de l'autre namespace est refuse avant toute ecriture.
+        IdentifierPrefix = Get-KoxoSetting -Name 'KOXO_IDENTIFIER_PREFIX' -DefaultValue $script:KoxoProductionIdentifierPrefix -Overrides $Overrides
+        AdmLockTimeoutSeconds = [int](Get-KoxoSetting -Name 'KOXO_ADM_LOCK_TIMEOUT_SECONDS' -DefaultValue ([string]$script:KoxoAdmDefaultLockTimeoutSeconds) -Overrides $Overrides)
     }
 
     if (-not (Test-Path -LiteralPath $configuration.BackupDirectory)) {
@@ -103,6 +149,12 @@ function Get-KoxoSyncConfiguration {
     if ($configuration.BackupRetentionCount -lt 1) {
         throw 'KOXO_BACKUP_RETENTION_COUNT must be >= 1.'
     }
+
+    if ($configuration.AdmLockTimeoutSeconds -lt 1) {
+        throw 'KOXO_ADM_LOCK_TIMEOUT_SECONDS must be >= 1.'
+    }
+
+    Test-KoxoIdentifierPrefix -IdentifierPrefix $configuration.IdentifierPrefix
 
     Test-KoxoApiUrl -ApiUrl $configuration.ApiUrl -AllowInsecureHttp:$configuration.AllowInsecureHttp
     [pscustomobject]$configuration
@@ -157,7 +209,7 @@ function Invoke-KoxoSync {
             $payload = $PayloadObject
         }
 
-        $validation = Test-KoxoExportPayload -Payload $payload
+        $validation = Test-KoxoExportPayload -Payload $payload -IdentifierPrefix $configuration.IdentifierPrefix
         if (-not $validation.IsValid) {
             Write-KoxoSyncLog -Configuration $configuration -Level 'error' -Message 'KoXo payload validation failed.' -Data @{
                 code = 'KOXO_EXPORT_VALIDATION_FAILED'
@@ -372,7 +424,7 @@ function Invoke-KoxoSyncProfiles {
         $payload = $PayloadObject
     }
 
-    $validation = Test-KoxoExportPayload -Payload $payload
+    $validation = Test-KoxoExportPayload -Payload $payload -IdentifierPrefix $configurationAmorce.IdentifierPrefix
     if (-not $validation.IsValid) {
         Write-KoxoSyncLog -Configuration $configurationAmorce -Level 'error' -Message 'KoXo payload validation failed.' -Data @{
             code = 'KOXO_EXPORT_VALIDATION_FAILED'
@@ -461,8 +513,15 @@ function Test-KoxoExportPayload {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
-        $Payload
+        $Payload,
+
+        # Namespace de l'instance. Le defaut est celui de la production, donc
+        # un appel sans ce parametre valide exactement comme avant.
+        [string]$IdentifierPrefix = $script:KoxoProductionIdentifierPrefix
     )
+
+    Test-KoxoIdentifierPrefix -IdentifierPrefix $IdentifierPrefix
+    $identifierPattern = '^' + [regex]::Escape($IdentifierPrefix) + '\d{6}$'
 
     $errors = @()
     $expectedRootFields = @('schemaVersion', 'generatedAt', 'userCount', 'users')
@@ -550,8 +609,12 @@ function Test-KoxoExportPayload {
         }
 
         $identifier = [string](Get-KoxoPropertyValue -InputObject $user -Name 'identifiantUnique')
-        if ($identifier -and $identifier -notmatch '^CLI-\d{6}$') {
-            $errors += [pscustomobject]@{ Scope = 'user'; Index = $index; Field = 'identifiantUnique'; Message = 'identifiantUnique must match CLI-000000.' }
+        # Un identifiant de l'autre namespace (PROD dans une instance DEV, ou
+        # l'inverse) est refuse ici, avant tout CSV. -notmatch reste insensible
+        # a la casse comme avant : la separation tient au caractere qui suit le
+        # prefixe (lettre contre chiffre), pas a la casse.
+        if ($identifier -and $identifier -notmatch $identifierPattern) {
+            $errors += [pscustomobject]@{ Scope = 'user'; Index = $index; Field = 'identifiantUnique'; Message = ('identifiantUnique must match {0}000000.' -f $IdentifierPrefix) }
         }
 
         $email = [string](Get-KoxoPropertyValue -InputObject $user -Name 'email')
@@ -1039,7 +1102,136 @@ function Test-KoxoIdentifierOwnership {
     }
 }
 
+function Enter-KoxoAdmLock {
+    [CmdletBinding()]
+    param(
+        [int]$TimeoutSeconds = $script:KoxoAdmDefaultLockTimeoutSeconds,
+
+        # Instance demandeuse, pour le diagnostic seulement.
+        [string]$Holder = ''
+    )
+
+    if ($TimeoutSeconds -lt 1) {
+        throw 'KOXO_ADM_LOCK_TIMEOUT_SECONDS must be >= 1.'
+    }
+
+    $name = $script:KoxoAdmLockName
+    $mutex = New-Object System.Threading.Mutex($false, $name)
+    $acquired = $false
+    $abandoned = $false
+    try {
+        $acquired = $mutex.WaitOne([TimeSpan]::FromSeconds($TimeoutSeconds))
+    }
+    catch {
+        # Un detenteur mort sans liberer (processus tue) rend le mutex
+        # « abandonne » : il est alors acquis par nous, et c'est la bonne issue
+        # — le verrou ne doit pas survivre au processus qui le tenait.
+        $cause = $_.Exception
+        while ($cause -and -not ($cause -is [System.Threading.AbandonedMutexException])) {
+            $cause = $cause.InnerException
+        }
+
+        if ($null -eq $cause) {
+            $mutex.Dispose()
+            throw
+        }
+
+        $acquired = $true
+        $abandoned = $true
+    }
+
+    if (-not $acquired) {
+        $mutex.Dispose()
+        throw (
+            "KOXO_ADM_LOCK_TIMEOUT: another KoXoAdm run still holds the system lock '{0}' after {1} s (requesting instance: {2}). KoXoAdm.exe was not started." -f
+            $name,
+            $TimeoutSeconds,
+            $(if ($Holder) { $Holder } else { 'unknown' })
+        )
+    }
+
+    [pscustomobject]@{
+        Name = $name
+        Mutex = $mutex
+        Abandoned = $abandoned
+        Holder = $Holder
+    }
+}
+
+function Exit-KoxoAdmLock {
+    [CmdletBinding()]
+    param(
+        $LockHandle
+    )
+
+    if ($null -eq $LockHandle -or $null -eq $LockHandle.Mutex) {
+        return
+    }
+
+    try {
+        $LockHandle.Mutex.ReleaseMutex()
+    }
+    finally {
+        $LockHandle.Mutex.Dispose()
+        $LockHandle.Mutex = $null
+    }
+}
+
 function Invoke-KoxoProcess {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        $Configuration,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ExecutablePath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$WorkingDirectory,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Arguments,
+
+        [int]$ExpectedUserCount = 0
+    )
+
+    # Seul point de lancement de KoXoAdm.exe, pour la synchronisation comme pour
+    # la reconciliation de stockage : le verrou systeme est donc pose ici, et
+    # nulle part ailleurs. Il est tenu pendant toute l'execution, y compris la
+    # lecture du journal KoXo, pour que ce journal soit bien celui de ce passage.
+    $timeoutSeconds = Get-KoxoPropertyValue -InputObject $Configuration -Name 'AdmLockTimeoutSeconds'
+    if ($null -eq $timeoutSeconds) {
+        $timeoutSeconds = $script:KoxoAdmDefaultLockTimeoutSeconds
+    }
+
+    $holder = [string](Get-KoxoPropertyValue -InputObject $Configuration -Name 'InstanceName')
+    try {
+        $admLock = Enter-KoxoAdmLock -TimeoutSeconds ([int]$timeoutSeconds) -Holder $holder
+    }
+    catch {
+        Write-KoxoSyncLog -Configuration $Configuration -Level 'error' -Message 'KoXoAdm system lock not acquired.' -Data @{
+            code = 'KOXO_ADM_LOCK_TIMEOUT'
+            lock_name = $script:KoxoAdmLockName
+            timeout_seconds = [int]$timeoutSeconds
+            exception = $_.Exception.Message
+        }
+        throw
+    }
+
+    try {
+        Write-KoxoSyncLog -Configuration $Configuration -Level $(if ($admLock.Abandoned) { 'warning' } else { 'info' }) -Message 'KoXoAdm system lock acquired.' -Data @{
+            lock_name = $admLock.Name
+            abandoned_by_previous_holder = $admLock.Abandoned
+        }
+
+        Invoke-KoxoProcessCore @PSBoundParameters
+    }
+    finally {
+        Exit-KoxoAdmLock -LockHandle $admLock
+    }
+}
+
+function Invoke-KoxoProcessCore {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
@@ -1194,6 +1386,357 @@ function Invoke-KoxoProcess {
         LogAcceptedMarker = $logOutcome.AcceptedMarker
         LogCompletionMarker = $logOutcome.CompletionMarker
         LogBlockingError = $logOutcome.BlockingError
+    }
+}
+
+function Test-KoxoIdentifierPrefix {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$IdentifierPrefix
+    )
+
+    # Meme regle que l'API (KoxoNamespaceResolver) : lettres, un tiret, puis au
+    # plus trois lettres. Aucun chiffre, pour qu'un prefixe suivi de six
+    # chiffres ne puisse jamais reproduire un identifiant d'un autre prefixe.
+    if ($IdentifierPrefix -cnotmatch '^[A-Z]{2,8}-[A-Z]{0,3}$') {
+        throw ("KOXO_IDENTIFIER_PREFIX is invalid: {0}. Expected LETTERS-[LETTERS], e.g. CLI- or CLI-D." -f $IdentifierPrefix)
+    }
+}
+
+function Test-KoxoPathInside {
+    param(
+        [string]$Path,
+        [string]$Directory
+    )
+
+    $fullPath = [System.IO.Path]::GetFullPath($Path).TrimEnd('\')
+    $fullDirectory = [System.IO.Path]::GetFullPath($Directory).TrimEnd('\')
+    [string]::Equals($fullPath, $fullDirectory, [System.StringComparison]::OrdinalIgnoreCase) -or
+        $fullPath.StartsWith($fullDirectory + '\', [System.StringComparison]::OrdinalIgnoreCase)
+}
+
+function Get-KoxoInstanceDefinition {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$InstanceConfigPath,
+
+        # Lecteur des variables Machine. Il ne sert qu'a COMPARER : une instance
+        # isolee refuse de viser l'URL ou le jeton de l'instance de production.
+        # Il n'alimente jamais un parametre.
+        [scriptblock]$MachineSettingReader = { param($Name) [Environment]::GetEnvironmentVariable($Name, 'Machine') }
+    )
+
+    if (-not [System.IO.Path]::IsPathRooted($InstanceConfigPath) -or -not (Test-Path -LiteralPath $InstanceConfigPath -PathType Leaf)) {
+        throw ("KoXo instance definition not found (absolute path required): {0}." -f $InstanceConfigPath)
+    }
+
+    $raw = [System.IO.File]::ReadAllText($InstanceConfigPath, [System.Text.Encoding]::UTF8)
+    $json = $raw | ConvertFrom-Json
+    $errors = New-Object System.Collections.Generic.List[string]
+
+    function Read-InstanceValue($Object, [string]$Name, $Default = $null) {
+        $value = Get-KoxoPropertyValue -InputObject $Object -Name $Name
+        if ($null -eq $value -or ($value -is [string] -and [string]::IsNullOrWhiteSpace($value))) {
+            return $Default
+        }
+
+        $value
+    }
+
+    function Read-AbsolutePath($Object, [string]$Name) {
+        $value = [string](Read-InstanceValue $Object $Name)
+        if ([string]::IsNullOrWhiteSpace($value) -or -not [System.IO.Path]::IsPathRooted($value)) {
+            $errors.Add(("{0} must be an absolute path." -f $Name))
+            return $null
+        }
+
+        [System.IO.Path]::GetFullPath($value)
+    }
+
+    $instanceName = [string](Read-InstanceValue $json 'instanceName')
+    if ($instanceName -cnotmatch '^[a-z][a-z0-9-]{1,30}$' -or $instanceName -eq 'prod') {
+        $errors.Add('instanceName must be a lowercase name other than prod.')
+    }
+
+    $apiUrl = [string](Read-InstanceValue $json 'apiUrl')
+    if ([string]::IsNullOrWhiteSpace($apiUrl) -or -not [System.Uri]::IsWellFormedUriString($apiUrl, [System.UriKind]::Absolute)) {
+        $errors.Add('apiUrl must be an absolute URL.')
+    }
+
+    $identifierPrefix = [string](Read-InstanceValue $json 'identifierPrefix')
+    try {
+        Test-KoxoIdentifierPrefix -IdentifierPrefix $identifierPrefix
+        if ($identifierPrefix -eq $script:KoxoProductionIdentifierPrefix) {
+            $errors.Add('identifierPrefix must differ from the production prefix CLI-.')
+        }
+    }
+    catch {
+        $errors.Add($_.Exception.Message)
+    }
+
+    $apiTokenPath = Read-AbsolutePath $json 'apiTokenPath'
+    $workingDirectory = Read-AbsolutePath $json 'workingDirectory'
+    $logDirectory = Read-AbsolutePath $json 'logDirectory'
+    $koxoExecutablePath = [string](Read-InstanceValue $json 'koxoExecutablePath' 'C:\Program Files\KoXo Dev\KoXoAdm\KoXoAdm.exe')
+    $koxoWorkingDirectory = [string](Read-InstanceValue $json 'koxoWorkingDirectory' 'C:\Program Files\KoXo Dev\KoXoAdm')
+
+    # Repertoires de travail et de journaux : les partager avec la production
+    # partagerait l'etat de volumetrie et le verrou fichier de ses profils.
+    foreach ($directory in @($workingDirectory, $logDirectory)) {
+        if ($directory -and (
+                (Test-KoxoPathInside -Path $directory -Directory (Join-Path $script:KoxoProductionDataDirectory 'work')) -or
+                (Test-KoxoPathInside -Path $directory -Directory (Join-Path $script:KoxoProductionDataDirectory 'Logs')))) {
+            $errors.Add(("{0} belongs to the production instance." -f $directory))
+        }
+    }
+
+    $profiles = New-Object System.Collections.Generic.List[hashtable]
+    foreach ($entry in @(Read-InstanceValue $json 'profiles' @())) {
+        $primaryGroup = [string](Read-InstanceValue $entry 'primaryGroup')
+        $csvTargetPath = Read-AbsolutePath $entry 'csvTargetPath'
+        $syncArgument = [string](Read-InstanceValue $entry 'koxoSyncArgument')
+
+        if ([string]::IsNullOrWhiteSpace($primaryGroup)) {
+            $errors.Add('Each profile must declare primaryGroup.')
+        }
+        elseif (@($script:KoxoProductionPrimaryGroups | Where-Object { [string]::Equals($_, $primaryGroup.Trim(), [System.StringComparison]::OrdinalIgnoreCase) }).Count -gt 0) {
+            $errors.Add(("Primary group {0} belongs to the production instance." -f $primaryGroup))
+        }
+
+        if ($csvTargetPath -and ($script:KoxoProductionCsvFileNames -contains [System.IO.Path]::GetFileName($csvTargetPath).ToLowerInvariant())) {
+            $errors.Add(("CSV {0} belongs to the production instance." -f $csvTargetPath))
+        }
+
+        if ([string]::IsNullOrWhiteSpace($syncArgument)) {
+            $errors.Add('Each profile must declare koxoSyncArgument.')
+        }
+        elseif (@($script:KoxoProductionSyncArguments | Where-Object { [string]::Equals($_, $syncArgument.Trim(), [System.StringComparison]::OrdinalIgnoreCase) }).Count -gt 0) {
+            $errors.Add(("KoXo profile file {0} belongs to the production instance." -f $syncArgument))
+        }
+
+        $profiles.Add(@{
+            PrimaryGroup = $primaryGroup
+            CsvTargetPath = $csvTargetPath
+            KoxoSyncArgument = $syncArgument
+        })
+    }
+
+    if ($profiles.Count -eq 0) {
+        $errors.Add('At least one profile must be declared.')
+    }
+
+    $receiver = Read-InstanceValue $json 'receiver'
+    $receiverSettings = $null
+    if ($null -ne $receiver) {
+        $prefix = [string](Read-InstanceValue $receiver 'prefix')
+        $receiverUri = $null
+        if ([string]::IsNullOrWhiteSpace($prefix) -or -not [System.Uri]::TryCreate(($prefix -replace '://\+', '://localhost'), [System.UriKind]::Absolute, [ref]$receiverUri)) {
+            $errors.Add('receiver.prefix must be an HttpListener prefix such as http://+:8043/internal/koxo/sync/.')
+        }
+        elseif ($receiverUri.Port -eq $script:KoxoProductionReceiverPort) {
+            $errors.Add(("receiver.prefix uses the production port {0}." -f $script:KoxoProductionReceiverPort))
+        }
+
+        $receiverSettings = [pscustomobject]@{
+            Prefix = $prefix
+            TokenPath = Read-AbsolutePath $receiver 'tokenPath'
+            LogDirectory = Read-AbsolutePath $receiver 'logDirectory'
+            StorageRouteEnabled = [bool](Read-InstanceValue $receiver 'storageRouteEnabled' $false)
+        }
+
+        if ($receiverSettings.LogDirectory -and (Test-KoxoPathInside -Path $receiverSettings.LogDirectory -Directory (Join-Path $script:KoxoProductionDataDirectory 'Logs'))) {
+            $errors.Add(("{0} belongs to the production instance." -f $receiverSettings.LogDirectory))
+        }
+    }
+
+    $apiToken = $null
+    if ($apiTokenPath) {
+        if (-not (Test-Path -LiteralPath $apiTokenPath -PathType Leaf)) {
+            $errors.Add('apiTokenPath does not exist.')
+        }
+        else {
+            $apiToken = [System.IO.File]::ReadAllText($apiTokenPath).Trim()
+            if ([string]::IsNullOrWhiteSpace($apiToken)) {
+                $errors.Add('apiTokenPath is empty.')
+            }
+        }
+    }
+
+    # Comparaison seulement : l'URL et le jeton de production ne doivent
+    # jamais etre ceux d'une instance isolee, sans quoi elle lirait la PROD.
+    $productionUrl = & $MachineSettingReader 'KOXO_API_URL'
+    if ($apiUrl -and $productionUrl -and [string]::Equals($apiUrl.Trim().TrimEnd('/'), ([string]$productionUrl).Trim().TrimEnd('/'), [System.StringComparison]::OrdinalIgnoreCase)) {
+        $errors.Add('apiUrl is the production KOXO_API_URL.')
+    }
+
+    $productionToken = & $MachineSettingReader 'KOXO_API_TOKEN'
+    if ($apiToken -and $productionToken -and [string]::Equals($apiToken, ([string]$productionToken).Trim(), [System.StringComparison]::Ordinal)) {
+        $errors.Add('apiTokenPath holds the production KOXO_API_TOKEN.')
+    }
+
+    if ($errors.Count -gt 0) {
+        throw ("KoXo instance definition {0} is invalid: {1}" -f $InstanceConfigPath, ($errors -join ' | '))
+    }
+
+    [pscustomobject]@{
+        InstanceName = $instanceName
+        ApiUrl = $apiUrl.Trim()
+        ApiToken = $apiToken
+        AllowInsecureHttp = [bool](Read-InstanceValue $json 'allowInsecureHttp' $false)
+        IdentifierPrefix = $identifierPrefix
+        CsvEncoding = [string](Read-InstanceValue $json 'csvEncoding' 'utf8bom')
+        MinUserCount = [int](Read-InstanceValue $json 'minUserCount' 0)
+        MaxUserDropPercent = [int](Read-InstanceValue $json 'maxUserDropPercent' 20)
+        SyncTimeoutSeconds = [int](Read-InstanceValue $json 'syncTimeoutSeconds' 90)
+        BackupRetentionCount = [int](Read-InstanceValue $json 'backupRetentionCount' 10)
+        KoxoLogGlob = [string](Read-InstanceValue $json 'koxoLogGlob' '')
+        AdmLockTimeoutSeconds = [int](Read-InstanceValue $json 'admLockTimeoutSeconds' $script:KoxoAdmDefaultLockTimeoutSeconds)
+        WorkingDirectory = $workingDirectory
+        LogDirectory = $logDirectory
+        KoxoExecutablePath = $koxoExecutablePath
+        KoxoWorkingDirectory = $koxoWorkingDirectory
+        Profiles = $profiles.ToArray()
+        Receiver = $receiverSettings
+    }
+}
+
+function Resolve-KoxoSyncLaunchPlan {
+    [CmdletBinding()]
+    param(
+        # Vide : instance de PRODUCTION, comportement historique au bit pres.
+        # Renseigne : instance isolee decrite par ce fichier.
+        [string]$InstanceConfigPath = '',
+
+        [string]$CsvTargetPath = 'C:\Program Files\KoXo Dev\KoXoAdm\Data\CSVSynchro\clients.csv',
+        [string]$DemoCsvTargetPath = 'C:\Program Files\KoXo Dev\KoXoAdm\Data\CSVSynchro\clients-demo.csv',
+        [string]$WorkingDirectory = 'C:\Program Files\KoXo Dev\KoXoAdm\Data\CSVSynchro\work',
+        [string]$KoxoExecutablePath = 'C:\Program Files\KoXo Dev\KoXoAdm\KoXoAdm.exe',
+        [string]$KoxoWorkingDirectory = 'C:\Program Files\KoXo Dev\KoXoAdm',
+        [string]$KoxoSyncArgument = '/Synchro=CLIENTS.xml',
+        [string]$DemoKoxoSyncArgument = '/Synchro=CLIENTS-DEMO.xml',
+
+        [scriptblock]$MachineSettingReader = { param($Name) [Environment]::GetEnvironmentVariable($Name, 'Machine') }
+    )
+
+    if ([string]::IsNullOrWhiteSpace($InstanceConfigPath)) {
+        # Production : les variables Machine KOXO_* sont rechargees dans le
+        # processus (un enfant du recepteur peut heriter d'un environnement
+        # perime), exactement comme le lanceur le faisait.
+        $processEnvironment = [ordered]@{}
+        foreach ($name in $script:KoxoMachineSettingNames) {
+            $value = & $MachineSettingReader $name
+            if (-not [string]::IsNullOrWhiteSpace([string]$value)) {
+                $processEnvironment[$name] = [string]$value
+            }
+        }
+
+        # Neutralisee a dessein, voir Invoke-KoxoSyncProfiles.
+        $processEnvironment['KOXO_OTHER_CSV_PATHS'] = ''
+
+        return [pscustomobject]@{
+            Mode = 'production'
+            InstanceName = 'prod'
+            ProcessEnvironment = $processEnvironment
+            Overrides = @{}
+            Profiles = @(
+                @{
+                    PrimaryGroup = $script:KoxoProductionPrimaryGroups[0]
+                    CsvTargetPath = [System.IO.Path]::GetFullPath($CsvTargetPath)
+                    KoxoSyncArgument = $KoxoSyncArgument
+                },
+                @{
+                    PrimaryGroup = $script:KoxoProductionPrimaryGroups[1]
+                    CsvTargetPath = [System.IO.Path]::GetFullPath($DemoCsvTargetPath)
+                    KoxoSyncArgument = $DemoKoxoSyncArgument
+                }
+            )
+            WorkingDirectory = [System.IO.Path]::GetFullPath($WorkingDirectory)
+            KoxoExecutablePath = [System.IO.Path]::GetFullPath($KoxoExecutablePath)
+            KoxoWorkingDirectory = [System.IO.Path]::GetFullPath($KoxoWorkingDirectory)
+        }
+    }
+
+    $definition = Get-KoxoInstanceDefinition -InstanceConfigPath $InstanceConfigPath -MachineSettingReader $MachineSettingReader
+
+    # Instance isolee : aucune variable KOXO_* ne survit dans le processus, et
+    # chaque reglage est fixe par surcharge explicite. Get-KoxoSetting lit la
+    # surcharge avant l'environnement : meme une variable Machine reinjectee
+    # plus tard ne pourrait donc plus remplacer un parametre de l'instance.
+    $processEnvironment = [ordered]@{}
+    $names = @($script:KoxoMachineSettingNames) + @(
+        'KOXO_OTHER_CSV_PATHS',
+        'KOXO_IDENTIFIER_PREFIX',
+        'KOXO_INSTANCE_NAME',
+        'KOXO_ADM_LOCK_TIMEOUT_SECONDS'
+    ) + @(Get-ChildItem Env: | Where-Object { $_.Name -like 'KOXO_*' } | ForEach-Object { $_.Name })
+    foreach ($name in ($names | Sort-Object -Unique)) {
+        $processEnvironment[$name] = $null
+    }
+
+    $overrides = @{
+        KOXO_INSTANCE_NAME = $definition.InstanceName
+        KOXO_API_URL = $definition.ApiUrl
+        KOXO_API_TOKEN = $definition.ApiToken
+        KOXO_ALLOW_INSECURE_HTTP = $(if ($definition.AllowInsecureHttp) { 'true' } else { 'false' })
+        KOXO_CSV_ENCODING = $definition.CsvEncoding
+        KOXO_MIN_USER_COUNT = [string]$definition.MinUserCount
+        KOXO_MAX_USER_DROP_PERCENT = [string]$definition.MaxUserDropPercent
+        KOXO_ALLOW_USER_DROP = 'false'
+        KOXO_ALLOW_EMPTY_CSV = 'false'
+        KOXO_SYNC_TIMEOUT_SECONDS = [string]$definition.SyncTimeoutSeconds
+        KOXO_LOG_DIRECTORY = $definition.LogDirectory
+        KOXO_KOXO_LOG_GLOB = $definition.KoxoLogGlob
+        KOXO_BACKUP_RETENTION_COUNT = [string]$definition.BackupRetentionCount
+        KOXO_OTHER_CSV_PATHS = ''
+        KOXO_IDENTIFIER_PREFIX = $definition.IdentifierPrefix
+        KOXO_ADM_LOCK_TIMEOUT_SECONDS = [string]$definition.AdmLockTimeoutSeconds
+    }
+
+    [pscustomobject]@{
+        Mode = 'instance'
+        InstanceName = $definition.InstanceName
+        ProcessEnvironment = $processEnvironment
+        Overrides = $overrides
+        Profiles = @($definition.Profiles)
+        WorkingDirectory = $definition.WorkingDirectory
+        KoxoExecutablePath = [System.IO.Path]::GetFullPath($definition.KoxoExecutablePath)
+        KoxoWorkingDirectory = [System.IO.Path]::GetFullPath($definition.KoxoWorkingDirectory)
+    }
+}
+
+function ConvertTo-KoxoSafeLaunchPlan {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        $Plan
+    )
+
+    # Vue relisible par un exploitant ou un test : les valeurs EFFECTIVES que la
+    # synchronisation utiliserait (surcharge, sinon environnement du processus,
+    # sinon defaut), sans jamais le jeton.
+    $token = Get-KoxoSetting -Name 'KOXO_API_TOKEN' -DefaultValue '' -Overrides $Plan.Overrides
+    [pscustomobject]@{
+        Mode = $Plan.Mode
+        InstanceName = $Plan.InstanceName
+        ApiUrl = Get-KoxoSetting -Name 'KOXO_API_URL' -DefaultValue '' -Overrides $Plan.Overrides
+        ApiTokenPresent = -not [string]::IsNullOrWhiteSpace($token)
+        IdentifierPrefix = Get-KoxoSetting -Name 'KOXO_IDENTIFIER_PREFIX' -DefaultValue $script:KoxoProductionIdentifierPrefix -Overrides $Plan.Overrides
+        LogDirectory = Get-KoxoSetting -Name 'KOXO_LOG_DIRECTORY' -DefaultValue (Join-Path $Plan.WorkingDirectory 'logs') -Overrides $Plan.Overrides
+        OtherCsvPaths = Get-KoxoSetting -Name 'KOXO_OTHER_CSV_PATHS' -DefaultValue '' -Overrides $Plan.Overrides
+        WorkingDirectory = $Plan.WorkingDirectory
+        KoxoExecutablePath = $Plan.KoxoExecutablePath
+        KoxoWorkingDirectory = $Plan.KoxoWorkingDirectory
+        Profiles = @($Plan.Profiles | ForEach-Object {
+            [pscustomobject]@{
+                PrimaryGroup = $_.PrimaryGroup
+                CsvTargetPath = $_.CsvTargetPath
+                KoxoSyncArgument = $_.KoxoSyncArgument
+            }
+        })
+        AdmLockName = $script:KoxoAdmLockName
     }
 }
 
@@ -1554,6 +2097,12 @@ function Get-KoxoPropertyValue {
 Export-ModuleMember -Function `
     Acquire-KoxoFileLock, `
     ConvertTo-KoxoCsvContent, `
+    ConvertTo-KoxoSafeLaunchPlan, `
+    Enter-KoxoAdmLock, `
+    Exit-KoxoAdmLock, `
+    Get-KoxoInstanceDefinition, `
+    Resolve-KoxoSyncLaunchPlan, `
+    Test-KoxoIdentifierPrefix, `
     Escape-KoxoCsvField, `
     Get-KoxoEncoding, `
     Get-KoxoLostCharacters, `

@@ -1,0 +1,31 @@
+{
+  "instanceName": "dev",
+  "apiUrl": "https://dev.zachary-it.fr/api/internal/koxo/users",
+  "apiTokenPath": "C:\\ProgramData\\Kermaria\\koxo-dev\\koxo-dev-export-token.txt",
+  "allowInsecureHttp": false,
+  "identifierPrefix": "CLI-D",
+  "csvEncoding": "utf8bom",
+  "minUserCount": 0,
+  "maxUserDropPercent": 20,
+  "syncTimeoutSeconds": 90,
+  "backupRetentionCount": 10,
+  "koxoLogGlob": "C:\\Program Files\\KoXo Dev\\KoXoAdm\\Data\\Logs\\*.log",
+  "admLockTimeoutSeconds": 600,
+  "workingDirectory": "C:\\Program Files\\KoXo Dev\\KoXoAdm\\Data\\CSVSynchro-DEV\\work",
+  "logDirectory": "C:\\Program Files\\KoXo Dev\\KoXoAdm\\Data\\CSVSynchro-DEV\\Logs",
+  "koxoExecutablePath": "C:\\Program Files\\KoXo Dev\\KoXoAdm\\KoXoAdm.exe",
+  "koxoWorkingDirectory": "C:\\Program Files\\KoXo Dev\\KoXoAdm",
+  "profiles": [
+    {
+      "primaryGroup": "CLIENTS DEV",
+      "csvTargetPath": "C:\\Program Files\\KoXo Dev\\KoXoAdm\\Data\\CSVSynchro-DEV\\clients-dev.csv",
+      "koxoSyncArgument": "/Synchro=CLIENTS-DEV.xml"
+    }
+  ],
+  "receiver": {
+    "prefix": "http://+:8043/internal/koxo/sync/",
+    "tokenPath": "C:\\ProgramData\\Kermaria\\koxo-dev\\koxo-dev-webhook-token.txt",
+    "logDirectory": "C:\\Program Files\\KoXo Dev\\KoXoAdm\\Data\\CSVSynchro-DEV\\Logs\\webhook",
+    "storageRouteEnabled": false
+  }
+}

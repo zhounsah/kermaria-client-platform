@@ -1,5 +1,5 @@
 using System.Collections.Concurrent;
-using System.Globalization;
+using Kermaria.ApiInternal.Services;
 
 namespace Kermaria.ApiInternal.Data.Repositories;
 
@@ -179,7 +179,7 @@ public sealed class MockBillingV2AdditionalUserIdentityRepository
             }
 
             var koxoUniqueIdentifier =
-                $"CLI-{_nextKoxoSequence.ToString("D6", CultureInfo.InvariantCulture)}";
+                KoxoNamespace.Current.FormatIdentifier(_nextKoxoSequence);
 
             if (!_portalUsers.TryAdd(new MockPortalUserStore.Entry(
                     command.PortalUserId,

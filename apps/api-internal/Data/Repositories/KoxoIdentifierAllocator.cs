@@ -4,8 +4,9 @@ using MySqlConnector;
 namespace Kermaria.ApiInternal.Data.Repositories;
 
 /// <summary>
-/// Alloue les identifiants uniques KoXo <c>CLI-NNNNNN</c> depuis le compteur
-/// partage <c>koxo_identifier_counters</c>.
+/// Alloue les identifiants uniques KoXo (<c>CLI-NNNNNN</c> en production) depuis
+/// le compteur partage <c>koxo_identifier_counters</c>, dans le namespace de
+/// l'instance (<see cref="Services.KoxoNamespace.Current"/>).
 /// </summary>
 /// <remarks>
 /// Deux chemins consomment ce compteur — l'inscription et la creation d'un
@@ -57,6 +58,6 @@ internal static class KoxoIdentifierAllocator
         upsertCommand.Parameters.AddWithValue("@next_value", currentValue + 1);
         await upsertCommand.ExecuteNonQueryAsync(cancellationToken);
 
-        return $"CLI-{currentValue.ToString("D6", CultureInfo.InvariantCulture)}";
+        return Services.KoxoNamespace.Current.FormatIdentifier(currentValue);
     }
 }
