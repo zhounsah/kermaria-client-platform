@@ -214,11 +214,13 @@ public static class BillingV2CartMutationResults
         "CART_ITEM_ALREADY_PRESENT",
         "CART_ITEM_UPDATED",
         "CART_ITEM_REMOVED",
+        "CART_CLEARED",
         "CART_COMMITMENT_UPDATED",
         "CART_PAYMENT_MODE_UPDATED",
         "CART_QUOTED",
         "CART_EXPIRED",
         "CART_CLAIMED",
+        "CART_CLAIM_RESUMED",
         "CART_NOTHING_TO_CLAIM",
         "CART_LEGACY_SELECTION_PROJECTED"
     };
@@ -230,7 +232,6 @@ public static class BillingV2CartMutationResults
         "CART_PRESET_ITEM_ALREADY_SELECTED",
         "CART_PRESET_ITEM_CONFLICT",
         "CART_VERSION_CONFLICT",
-        "CART_CLAIM_CONFLICT",
         "CART_IMMUTABLE",
         "CART_ITEM_TIER_CONFLICT",
         "CART_STRUCTURAL_ITEM_REQUIRED",

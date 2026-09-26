@@ -352,7 +352,10 @@ public static class BillingV2CartPolicyTests
             && BillingV2CartMutationResults.HttpStatusCode(new("CART_OK")) == 200
             && BillingV2CartMutationResults.HttpStatusCode(new("CART_QUOTED")) == 200
             && BillingV2CartMutationResults.HttpStatusCode(new("CART_FORMULA_SELECTION_IMPORTED")) == 200
-            && BillingV2CartMutationResults.HttpStatusCode(new("CART_ITEM_ALREADY_PRESENT")) == 200,
+            && BillingV2CartMutationResults.HttpStatusCode(new("CART_ITEM_ALREADY_PRESENT")) == 200
+            && BillingV2CartMutationResults.HttpStatusCode(new("CART_CLAIM_RESUMED")) == 200
+            && BillingV2CartMutationResults.HttpStatusCode(new("CART_NOTHING_TO_CLAIM")) == 200
+            && BillingV2CartMutationResults.HttpStatusCode(new("CART_CLEARED")) == 200,
             "Les initialisations, reprises idempotentes et quotes Cart sont des succes HTTP.");
         Ensure(BillingV2CartMutationResults.HttpStatusCode(new("CART_PRESET_CONFLICT")) == 409
             && BillingV2CartMutationResults.HttpStatusCode(new("CART_VERSION_CONFLICT")) == 409

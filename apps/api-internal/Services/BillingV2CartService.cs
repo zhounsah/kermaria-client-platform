@@ -14,6 +14,7 @@ public interface IBillingV2CartService
     Task<BillingV2CartMutationResult> AddItemAsync(BillingV2CartOwner owner, string cartId, int expectedVersion, BillingV2CartItemCommand command, CancellationToken cancellationToken);
     Task<BillingV2CartMutationResult> UpdateItemAsync(BillingV2CartOwner owner, string cartId, string itemId, int expectedVersion, BillingV2CartItemCommand command, CancellationToken cancellationToken);
     Task<BillingV2CartMutationResult> RemoveItemAsync(BillingV2CartOwner owner, string cartId, string itemId, int expectedVersion, CancellationToken cancellationToken);
+    Task<BillingV2CartMutationResult> ClearAsync(BillingV2CartOwner owner, string cartId, int expectedVersion, CancellationToken cancellationToken);
     Task<BillingV2CartMutationResult> SetCommitmentAsync(BillingV2CartOwner owner, string cartId, int expectedVersion, string? commitmentCode, CancellationToken cancellationToken);
     Task<BillingV2CartMutationResult> SetPaymentModeAsync(BillingV2CartOwner owner, string cartId, int expectedVersion, string? paymentMode, CancellationToken cancellationToken);
     Task<BillingV2CartMutationResult> QuoteAsync(BillingV2CartOwner owner, string cartId, CancellationToken cancellationToken);
@@ -567,6 +568,30 @@ public sealed class BillingV2CartService : IBillingV2CartService
             return await command.ExecuteNonQueryAsync(token) == 1 ? "CART_ITEM_REMOVED" : "CART_ITEM_NOT_FOUND";
         }, cancellationToken);
 
+    public Task<BillingV2CartMutationResult> ClearAsync(BillingV2CartOwner owner,
+        string cartId, int expectedVersion, CancellationToken cancellationToken)
+        => MutateAsync(owner, cartId, expectedVersion, async (connection, transaction, cart, _, token) =>
+        {
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = "DELETE FROM billing_v2_cart_items WHERE cart_id = @cart_id;";
+            command.Parameters.AddWithValue("@cart_id", cart.Id);
+            await command.ExecuteNonQueryAsync(token);
+            await using var reset = connection.CreateCommand();
+            reset.Transaction = transaction;
+            reset.CommandText = """
+                UPDATE billing_v2_carts
+                SET source_preset_id = NULL, commitment_term_id = NULL, payment_mode = NULL
+                WHERE id = @cart_id;
+                """;
+            reset.Parameters.AddWithValue("@cart_id", cart.Id);
+            await reset.ExecuteNonQueryAsync(token);
+            // Le Cart garde son identifiant et son statut open ; MutateAsync
+            // incrémente sa version. Tous les quotes antérieurs portent donc
+            // l'ancienne cart_version et ne peuvent plus être acceptés.
+            return "CART_CLEARED";
+        }, cancellationToken);
+
     public Task<BillingV2CartMutationResult> SetCommitmentAsync(BillingV2CartOwner owner,
         string cartId, int expectedVersion, string? commitmentCode, CancellationToken cancellationToken)
         => MutateAsync(owner, cartId, expectedVersion, async (connection, transaction, cart, _, token) =>
@@ -699,6 +724,25 @@ public sealed class BillingV2CartService : IBillingV2CartService
     public async Task<BillingV2CartMutationResult> ClaimAsync(string anonymousToken,
         string customerId, int expectedVersion, CancellationToken cancellationToken)
     {
+        for (var attempt = 1; attempt <= CurrentTransactionMaxAttempts; attempt++)
+        {
+            try
+            {
+                return await ClaimOnceAsync(anonymousToken, customerId, expectedVersion, cancellationToken);
+            }
+            catch (MySqlException exception) when ((IsDeadlock(exception) || IsDuplicateKey(exception))
+                && attempt < CurrentTransactionMaxAttempts)
+            {
+                _logger.LogWarning(exception,
+                    "Billing V2 Cart claim transaction will retry. command=claim retry_count={RetryCount}", attempt);
+            }
+        }
+        throw new InvalidOperationException("CART_CLAIM_RETRY_EXHAUSTED");
+    }
+
+    private async Task<BillingV2CartMutationResult> ClaimOnceAsync(string anonymousToken,
+        string customerId, int expectedVersion, CancellationToken cancellationToken)
+    {
         var anonymous = new BillingV2CartOwner(null, anonymousToken);
         if (!anonymous.IsValid || !Guid.TryParse(customerId, out _)) return new("CART_CLAIM_INVALID");
         await using var connection = await OpenReadyAsync(cancellationToken);
@@ -710,7 +754,12 @@ public sealed class BillingV2CartService : IBillingV2CartService
         var customerOwner = new BillingV2CartOwner(customerId, null);
         await ExpireInactiveCurrentAsync(connection, transaction, customerOwner, cart.Currency, DateTime.UtcNow, cancellationToken);
         var existing = await ReadCurrentAsync(connection, transaction, customerOwner, cart.Currency, true, cancellationToken);
-        if (existing is not null) return new("CART_CLAIM_CONFLICT", cart);
+        if (existing is not null)
+        {
+            await ExpireSupersededAnonymousCartAsync(connection, transaction, cart, now: DateTime.UtcNow, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return new("CART_CLAIM_RESUMED", existing);
+        }
         await using var update = connection.CreateCommand();
         update.Transaction = transaction;
         update.CommandText = """
@@ -735,6 +784,25 @@ public sealed class BillingV2CartService : IBillingV2CartService
     public async Task<BillingV2CartMutationResult> ClaimCurrentAsync(string anonymousToken,
         string customerId, CancellationToken cancellationToken)
     {
+        for (var attempt = 1; attempt <= CurrentTransactionMaxAttempts; attempt++)
+        {
+            try
+            {
+                return await ClaimCurrentOnceAsync(anonymousToken, customerId, cancellationToken);
+            }
+            catch (MySqlException exception) when ((IsDeadlock(exception) || IsDuplicateKey(exception))
+                && attempt < CurrentTransactionMaxAttempts)
+            {
+                _logger.LogWarning(exception,
+                    "Billing V2 Cart claim transaction will retry. command=claim_current retry_count={RetryCount}", attempt);
+            }
+        }
+        throw new InvalidOperationException("CART_CLAIM_RETRY_EXHAUSTED");
+    }
+
+    private async Task<BillingV2CartMutationResult> ClaimCurrentOnceAsync(string anonymousToken,
+        string customerId, CancellationToken cancellationToken)
+    {
         var anonymous = new BillingV2CartOwner(null, anonymousToken);
         if (!anonymous.IsValid || !Guid.TryParse(customerId, out _)) return new("CART_CLAIM_INVALID");
         await using var connection = await OpenReadyAsync(cancellationToken);
@@ -751,10 +819,12 @@ public sealed class BillingV2CartService : IBillingV2CartService
         }
         var customerOwner = new BillingV2CartOwner(customerId, null);
         await ExpireInactiveCurrentAsync(connection, transaction, customerOwner, cart.Currency, now, cancellationToken);
-        if (await ReadCurrentAsync(connection, transaction, customerOwner, cart.Currency, true, cancellationToken) is not null)
+        var existing = await ReadCurrentAsync(connection, transaction, customerOwner, cart.Currency, true, cancellationToken);
+        if (existing is not null)
         {
+            await ExpireSupersededAnonymousCartAsync(connection, transaction, cart, now, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-            return new("CART_CLAIM_CONFLICT", cart);
+            return new("CART_CLAIM_RESUMED", existing);
         }
         await using var update = connection.CreateCommand();
         update.Transaction = transaction;
@@ -773,6 +843,26 @@ public sealed class BillingV2CartService : IBillingV2CartService
         var claimed = await ReadCartAsync(connection, transaction, customerOwner, cart.Id, false, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return new("CART_CLAIMED", claimed);
+    }
+
+    private static async Task ExpireSupersededAnonymousCartAsync(MySqlConnection connection,
+        MySqlTransaction transaction, BillingV2Cart cart, DateTime now, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            UPDATE billing_v2_carts
+            SET status = 'expired', open_customer_slot = NULL, open_anonymous_slot = NULL,
+                version = version + 1, updated_at = @now
+            WHERE id = @id AND anonymous_session_hash = @anonymous_hash
+              AND status = 'open' AND version = @version;
+            """;
+        command.Parameters.AddWithValue("@now", now);
+        command.Parameters.AddWithValue("@id", cart.Id);
+        command.Parameters.AddWithValue("@anonymous_hash", cart.AnonymousSessionHash!);
+        command.Parameters.AddWithValue("@version", cart.Version);
+        if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
+            throw new InvalidOperationException("CART_CLAIM_CONCURRENT_CHANGE");
     }
 
     private async Task<BillingV2CartMutationResult> MutateAsync(BillingV2CartOwner owner,

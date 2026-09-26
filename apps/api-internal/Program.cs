@@ -2017,6 +2017,7 @@ app.MapPost(
             "update_item" when payload.Item is not null => await service.UpdateItemAsync(
                 owner, cartId, payload.ItemId ?? string.Empty, expectedVersion, ToCartItemCommand(payload.Item), context.RequestAborted),
             "remove_item" => await service.RemoveItemAsync(owner, cartId, payload.ItemId ?? string.Empty, expectedVersion, context.RequestAborted),
+            "clear" => await service.ClearAsync(owner, cartId, expectedVersion, context.RequestAborted),
             "set_commitment" => await service.SetCommitmentAsync(owner, cartId, expectedVersion, payload.CommitmentCode, context.RequestAborted),
             "set_payment_mode" => await service.SetPaymentModeAsync(owner, cartId, expectedVersion, payload.PaymentMode, context.RequestAborted),
             "quote" => await service.QuoteAsync(owner, cartId, context.RequestAborted),

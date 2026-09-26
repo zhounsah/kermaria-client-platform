@@ -2751,6 +2751,7 @@ export type BillingV2CartCommand =
   | "add_preset_item"
   | "update_item"
   | "remove_item"
+  | "clear"
   | "set_commitment"
   | "set_payment_mode"
   | "quote"

@@ -176,7 +176,11 @@
 
 ## Tous les topics Claude importés
 
+### Cart Billing V2 — claim et vidage (2026-09-23)
+
+- [billing-v2-cart-claim.md](topics/billing-v2-cart-claim.md) : panier client open prioritaire, expiration du panier anonyme perdant, cookie supprimé, vidage versionné et test de concurrence opt-in.
 - [primary-identity-bootstrap.md](topics/primary-identity-bootstrap.md) : amorçage de l'identité AD du compte principal (standard, Cart, VPS), export KoXo, reprise des comptes sans lien.
+
 - [admin-configuration-center.md](topics/admin-configuration-center.md)
 - [billing-v2-additional-users.md](topics/billing-v2-additional-users.md)
 - [billing-v2-koxo-storage-targets.md](topics/billing-v2-koxo-storage-targets.md)
