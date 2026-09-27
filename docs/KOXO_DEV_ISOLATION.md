@@ -1,17 +1,119 @@
-# Isolation KoXo DEV / PROD — fondations logicielles
+# Isolation KoXo DEV / PROD
 
-> **État au 2026-09-26 : seules les fondations LOGICIELLES existent.**
-> L'infrastructure DEV décrite ici (receveur 8043, profil `CLIENTS DEV`, OU,
-> compte de service, jetons) **n'est PAS déployée**. `controlled_write` reste
-> interdit en DEV tant qu'elle ne l'est pas et que les validations runtime de
-> la fin de ce document n'ont pas été faites.
->
-> Lanceur d'instance : le `Start-KoxoSyncWebhookReceiver-Instance.cmd` de
-> `f15e314` utilisait `-File`, sous lequel Windows PowerShell 5.1 n'évalue pas
-> `$PSScriptRoot` dans les valeurs par défaut du receveur, qui échouait dès son
-> démarrage. Il lance désormais
-> `powershell.exe -Command "& '…\Start-KoxoSyncWebhookReceiver.ps1' -InstanceConfigPath '…'"`,
-> la forme déjà utilisée par le lanceur PROD 8042, qui reste inchangé.
+> **État au 2026-09-27 : isolation KoXo DEV validée (Run 1 et Run 2 PASS).**
+> Aucun `controlled_write` n'est activé : l'API DEV tourne toujours en
+> `AD_INTEGRATION_MODE=test` (lu `disabled`) sur `828347d`, sans namespace DEV
+> ni webhook. La matérialisation **headless** du stockage n'est **pas** validée.
+
+## État déployé et validé (2026-09-27)
+
+| Élément | État |
+|---|---|
+| Scripts SRV-21 | `f15e314` déployés le 2026-09-26 (sauvegarde `CSVSynchro\backups\pre-f15e314-20260926-234926`) ; plan PROD inchangé. Le correctif `8336cc1` du lanceur d'instance n'est pas redéployé : la tâche 8043 n'en dépend pas |
+| Groupe primaire `CLIENTS DEV` | `OU=CLIENTS DEV,OU=Utilisateurs,OU=KoXoAdm,DC=clients,DC=home,DC=bzh`, groupe AD `CLIENTS DEV` (membre de `Utilisateurs de KoXo Administrator CLIENTS`, comme `CLIENTS` et `CLIENTS DÉMO`), fiche `Data\Users\CLIENTS DEV.xml` : `AllowRDS=0`, `AllowDialin=0`, quotas désactivés |
+| Lieux de stockage | `Espaces mutuels "Clients DEV"` et `Espaces personnels "Clients DEV"` : `KERMARIA-FS-01.HOME.BZH`, `F:\KoXoDATA\CLIENTS DEV`, point de montage `Sans partage`, quota désactivé. La fiche `CLIENTS DEV` les utilise (`GroupStorage` et `GroupsPreferredStorage` = mutuels, `UsersPreferredStorage` = personnels). Aucun partage, aucun quota FSRM |
+| Modèle `Config\Models\PrimaryGroups\CLIENTS DEV.xml` | voir ci-dessous |
+| Profil `Data\CSVSynchro\CLIENTS-DEV.xml` | CSV `Data\CSVSynchro-DEV\clients-dev.csv`, `GenerateLabels=0`, `SyncDoNotDeleteUsers=1`, `DisableOrphanedAccounts=1`, `UseUniqueIDFirst=1` |
+| Définition d'instance et jetons | `C:\ProgramData\Kermaria\koxo-dev\` (SYSTEM et Administrateurs seulement) ; jeton du receveur 8043 distinct de la PROD |
+| Receveur 8043 | tâche `Kermaria-KoXoWebhookReceiver-DEV-8043`, préfixe `http://+:8043/internal/koxo/sync/`, route stockage fermée |
+| SRV-12 `:3100` | réservé à SRV-11 (`ufw`) |
+| SRV-11, vhost DEV | `X-Forwarded-For` et `X-Real-IP` = `$remote_addr` : SRV-12 reçoit `192.168.100.221` pour SRV-21, une valeur usurpée est écrasée |
+
+### Modèle `CLIENTS DEV`
+
+Copie de « Archivage Utilisateur », à laquelle ont été ajoutées **uniquement**
+les primitives de dossier de `CLIENTS`, recopiées à l'identique (mêmes ACE) :
+
+- `Group/Root` : dossier `%SECONDARY_GROUP%` (`Root=1`, `PropagateACL=1`) ;
+- `User/Root` : racine `%SECONDARY_GROUP%`, puis un seul dossier `%USER_ID%`
+  (`Root=1`, `PropagateACL=1`).
+
+Pas de `Share`, `CONFIG`, `Web.zip`, `Bienvenue.htm`, Documents/Desktop/…,
+`HomePath`, profil (RDS compris), script d'ouverture de session ni quota. Règle
+de nommage inchangée : `%FIRST_NAME[10]%.%NAME[9]%`. Arborescence produite :
+
+```
+F:\KoXoDATA\CLIENTS DEV\<DEV-CLI-XXXXXX>\<prenom.nom>\
+```
+
+Patch du 2026-09-27 : SHA-256 avant
+`2BDF89EEEE3167C92EE7720DAF9BBF692064FFC107B3D641D433105F008E1A2C`, après
+`13B1DD3B960B3F0C56E5C065B89DC75780DEB34F35B3D0C848292E44EE6D3CF6`. Sauvegarde :
+`Data\CSVSynchro-DEV\backups\model-clients-dev-20260927-105211\`.
+
+## Tests d'isolation (2026-09-27) : PASS
+
+Chaque passage lance KoXoAdm **en SYSTEM** par une tâche planifiée à usage
+unique (même identité que le receveur), via `Invoke-KoxoProcess`, donc sous le
+mutex `Global\Kermaria-KoXoAdm`, délai 1800 s. Instantanés AD (`OU=KoXoAdm`,
+`GG_*`, `CLIENTS*`) et empreintes des fichiers KoXo avant et après.
+
+**Run 1** : `/Synchro=CLIENTS-DEV.xml`, une ligne `CLI-D999901` /
+`DEV-CLI-TST001` (identité fictive). PASS :
+- OU et groupe `DEV-CLI-TST001` créés sous `CLIENTS DEV`, groupe membre de
+  `CLIENTS DEV` ;
+- utilisateur `devkoxo.testisola`, `employeeNumber=CLI-D999901`, membre de
+  `DEV-CLI-TST001` seulement, sans `homeDirectory`, profil ni script, ouverture
+  de session RDS refusée ;
+- aucun changement hors `CLIENTS DEV` (`CLIENTS`, `CLIENTS DÉMO`, `GG_*`,
+  fichiers KoXo PROD, `F:\KoXoDATA\CLIENTS`).
+
+**Run 2** : même profil, la ligne `CLI-D999901` remplacée par `CLI-D999902`
+(`devkoxo2.testisola`). PASS :
+- `devkoxo.testisola` conservé, non supprimé, toujours membre de
+  `DEV-CLI-TST001`, **désactivé** (`userAccountControl` 66048 → 66050) ;
+- `devkoxo2.testisola` créé, actif, `employeeNumber=CLI-D999902`, membre de
+  `DEV-CLI-TST001` ;
+- aucun changement hors `CLIENTS DEV`, aucune écriture de stockage provoquée
+  par `/Synchro`.
+
+Les objets de test (`DEV-CLI-TST001`, les deux comptes, le dossier) sont
+conservés.
+
+### `/Synchro` et stockage : deux opérations distinctes
+
+- **`/Synchro`** fait l'identité AD : création, `employeeNumber`, appartenance,
+  cycle de vie, orphelins. Il ne crée **aucun** dossier.
+- **La réparation de stockage** matérialise l'arborescence
+  (`/RepairSecondaryGroup … Type="Storage"`, `/RepairUser … Type="Storage"`,
+  utilisés par la route stockage du receveur).
+
+Après Run 1, une **réparation complète interactive** de `CLIENTS DEV` depuis
+l'IHM KoXo a créé `F:\KoXoDATA\CLIENTS DEV\DEV-CLI-TST001\devkoxo.testisola\` :
+le modèle DEV produit bien l'arborescence attendue.
+
+**HEADLESS STORAGE REPAIR : NOT YET VALIDATED.** En SYSTEM,
+`/RepairSecondaryGroup Group="DEV-CLI-TST001" PrimaryGroup="CLIENTS DEV" Type="Storage"`
+s'est bloqué juste après « Réparation de type "Stockage" » : 0 % CPU, threads
+en attente `UserRequest` (vraisemblablement une boîte de dialogue invisible),
+aucune écriture sur FS-01. Arrêté par le délai de 1800 s, `RepairUser` non
+lancé, mutex tenu pendant tout ce temps. Ne pas présenter la matérialisation
+headless comme opérationnelle.
+
+## Incident FS-01 du 2026-09-27 (création des lieux de stockage)
+
+Pendant la création des lieux de stockage dans l'IHM, un lieu a été créé à
+10:30:42 sur `F:\KoXoDATA\` lui-même, puis supprimé à 10:31:10. KoXo a alors
+**tenté de supprimer tout `F:\KoXoDATA\`** ; l'opération a échoué
+(`[ERROR] Suppression du répertoire`). Aucune donnée perdue (arborescence et
+dates vérifiées). Effets restants, **non corrigés** à ce jour :
+
+- `F:\KoXoDATA` : l'ACE `HOME\Administrateurs de KoXo Administrator` a été
+  remplacée par `CLIENTS\CLIENTS-KOXO-ADM` ;
+- `F:\KoXoDATA\CLIENTS` a perdu sa protection d'héritage (mêmes ACE, désormais
+  héritées) ; `F:\KoXoDATA\CLIENTS DEV` hérite aussi ;
+- les autres arbres (`CLASSES`, `CULTUREVAP`, `ELEVES`, …) sont protégés et
+  inchangés.
+
+Correctif proposé, non appliqué : rendre explicites et protégées les ACL de
+`CLIENTS` et de `CLIENTS DEV`, **puis** rétablir l'ACE HOME sur `F:\KoXoDATA`.
+Leçon : ne jamais créer un lieu de stockage sur la racine `KoXoDATA`, sa
+suppression tente d'effacer le dossier.
+
+Hors périmètre KoXo : `Utilisateurs DHCP` et `Administrateurs DHCP` sont apparus
+dans `CN=Users,DC=clients,DC=home,DC=bzh` le 2026-09-27 à 07:37:19 UTC (SRV-21
+est contrôleur de domaine et serveur DHCP). Hors `OU=KoXoAdm`, vides, non
+attribués ; ne pas y toucher.
 
 ## Pourquoi
 
@@ -30,9 +132,9 @@ dans l'espace de la PROD réécrirait des comptes PROD ou les désactiverait.
 
 ## Les deux instances
 
-| | PROD (en service) | DEV (cible, **non déployée**) |
+| | PROD (en service) | DEV (en place, isolation validée) |
 |---|---|---|
-| Receveur SRV-21 | `http://+:8042/internal/koxo/sync/`, tâche `Kermaria-KoXoWebhookReceiver-8042` | `http://+:8043/internal/koxo/sync/`, aucune tâche |
+| Receveur SRV-21 | `http://+:8042/internal/koxo/sync/`, tâche `Kermaria-KoXoWebhookReceiver-8042` | `http://+:8043/internal/koxo/sync/`, tâche `Kermaria-KoXoWebhookReceiver-DEV-8043` |
 | Lanceur | `Start-KoxoSyncWebhookReceiver-8042.cmd` (inchangé) | `Start-KoxoSyncWebhookReceiver-Instance.cmd <définition.json>` |
 | Configuration | variables Machine `KOXO_*` | fichier de définition JSON (`scripts/koxo/instances/koxo-instance.dev.example.json`) |
 | Source de l'export | `https://dashboard.zacharyhounsa.ovh/api/internal/koxo/users` → API PROD `:5000` → `kermaria` | `https://dev.zachary-it.fr/api/internal/koxo/users` → API DEV `:5100` → `kermaria_dev` |
@@ -155,25 +257,31 @@ Primitive commune : `Resolve-KoxoSyncLaunchPlan` (module `KoxoSync.Common.psm1`)
   - le verrou en processus réels : délai, reprise après abandon, libération sur
     erreur, et deux instances concurrentes sérialisées.
 
-## À valider en runtime AVANT toute activation (non vérifié)
+## Validations runtime (état au 2026-09-27)
 
-1. **Isolation par profil dans KoXoAdm.** Une synchronisation `CLIENTS DEV`
-   ne doit désactiver ni modifier aucun compte des profils `CLIENTS` et
-   `CLIENTS DÉMO`. La séparation actuelle `CLIENTS` / `CLIENTS DÉMO` le suggère
-   sans le prouver pour un nouveau profil. À vérifier sur un CSV DEV factice,
-   comptes PROD relevés avant et après.
-2. **Longueur et forme acceptées par KoXo.** Vérifier que KoXo accepte
-   `CLI-D000001` comme `identifiantUnique` (reporté dans `employeeNumber`) et
-   `DEV-CLI-XXXXXX` / `DEMO-DEV-CLI-XXXXXX` comme `GroupeSecondaire`, et que
-   les OU sont bien créées sous l'OU du profil `CLIENTS DEV`.
-3. **Emplacement du CSV DEV** lu par le profil `CLIENTS-DEV.xml`, à aligner
-   sur `csvTargetPath`.
-4. **Adresse source vue par le WebPortal DEV.** La route
-   `/api/internal/koxo/users` prend la première entrée de `X-Forwarded-For`,
-   puis `X-Real-IP`. Il faut vérifier que SRV-11 transmet bien l'adresse de
-   SRV-21 avant de poser `KOXO_EXPORT_ALLOWED_IPS`. Cet en-tête n'est fiable
-   que si le proxy l'écrase.
-5. **Profil de démonstration DEV.** Tant que `CLIENTS DEV DEMO` n'existe pas
-   dans KoXo et n'est pas déclaré dans la définition, un essai DEV bloque toute
-   la synchronisation DEV (aucun profil ne le réclame). C'est un refus sûr,
-   mais il faut le savoir.
+1. **Isolation par profil dans KoXoAdm** : *validée* (Run 1 et Run 2). Une
+   synchronisation `CLIENTS DEV` ne touche ni `CLIENTS` ni `CLIENTS DÉMO`, et
+   son traitement des orphelins reste borné à `CLIENTS DEV`.
+2. **Formes acceptées par KoXo** : *validées* pour `CLI-D999901` et
+   `CLI-D999902` (`employeeNumber`) et pour `DEV-CLI-TST001` (OU et groupe sous
+   `CLIENTS DEV`). `DEMO-DEV-CLI-XXXXXX` n'est pas testé (point 5).
+3. **Emplacement du CSV DEV** : *fait le 2026-09-26*. Le profil
+   `CLIENTS-DEV.xml` lit `Data\CSVSynchro-DEV\clients-dev.csv`, le chemin de la
+   définition d'instance.
+4. **Adresse source vue par le WebPortal DEV** : *vérifiée le 2026-09-27*. La
+   route `/api/internal/koxo/users` prend la première entrée de
+   `X-Forwarded-For`, puis `X-Real-IP`. Le vhost DEV de SRV-11 écrase les deux
+   avec `$remote_addr` : SRV-12 `:3100` reçoit `192.168.100.221` pour SRV-21,
+   y compris quand le client envoie une valeur usurpée.
+   `KOXO_EXPORT_ALLOWED_IPS` peut donc s'appuyer sur `192.168.100.221` (non
+   posé).
+5. **Profil de démonstration DEV** : *non fait*. Tant que `CLIENTS DEV DEMO`
+   n'existe pas dans KoXo et n'est pas déclaré dans la définition, un essai DEV
+   bloque toute la synchronisation DEV (aucun profil ne le réclame). C'est un
+   refus sûr, mais il faut le savoir.
+6. **Stockage** : *résolu*. Lieux de stockage DEV dédiés sur FS-01, aucune
+   référence au stockage PROD. La matérialisation headless reste **non
+   validée** (voir plus haut).
+7. **IHM KoXo fermée pendant un test** : règle. L'IHM ne prend pas le mutex
+   `Global\Kermaria-KoXoAdm` et peut écrire dans `Data\Users` : la fermer avant
+   de lancer KoXoAdm en ligne de commande.

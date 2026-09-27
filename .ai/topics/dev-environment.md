@@ -64,4 +64,20 @@ Mise en place le 2026-09-21, sans toucher à la production. Runbook :
   arrêté sur `BILLING_V2_PROVISIONING_REVIEW_NOT_PASSED`, sans action externe.
   Ne pas contourner ce garde-fou.
 
+## Mise à jour du 2026-09-26
+
+- API DEV = `main` **828347d** (Cart claim/clear), publiée depuis un worktree
+  propre, bascule binaire seule (dossier précédent :
+  `api-internal-dev-old-20260926-090237`), configuration DEV inchangée.
+- `kermaria_dev` porte la migration **096** (`portal_user_identity_bootstrap`,
+  0 ligne) ; sauvegarde préalable
+  `%USERPROFILE%\Backups\Kermaria\kermaria_dev_pre096_20260926_090133.sql`.
+  `kermaria` reste à 095.
+- Avec `AD_INTEGRATION_MODE=test` (lu `disabled`), le worker
+  `PrimaryIdentityBootstrapConvergenceWorker` n'est pas enregistré : aucune
+  convergence AD/KoXo. Le worker USER-ADDITIONAL démarre, comme avant.
+- Le WebPortal DEV déployé (`webportal-dev-20260924-145513`) contient déjà la
+  gestion de `CART_CLAIM_RESUMED` (code non commité). Ce n'est pas le cas du
+  WebPortal de `main`.
+
 Voir aussi [[pieges-sql-et-preuves]], [[deployment-topology]], [[srv13-config-volatile]].

@@ -1,6 +1,6 @@
 ---
 name: koxo-dev-isolation
-description: "Isolation KoXo DEV/PROD (2026-09-26) : namespace KoXo de l'API (CLI-D, DEV-CLI-, CLIENTS DEV), lanceur SRV-21 à instance isolée, mutex Global\\Kermaria-KoXoAdm. Fondations logicielles seulement, infrastructure DEV non déployée."
+description: "Isolation KoXo DEV/PROD : namespace API (CLI-D, DEV-CLI-, CLIENTS DEV), instance SRV-21 isolée (receveur 8043), mutex Global\\Kermaria-KoXoAdm, stockage DEV FS-01. Tests Run 1/Run 2 PASS le 2026-09-27 ; stockage headless non validé ; controlled_write DEV pas encore activé."
 metadata:
   type: project
 ---
@@ -10,7 +10,7 @@ La PROD porte déjà `employeeNumber` CLI-000001 à CLI-000003, et le compteur d
 `kermaria_dev` repartait de 1. Le lanceur SRV-21 rechargeait sans condition les
 variables Machine `KOXO_*`, qui pointent sur l'export PROD.
 
-Fondations posées (code local, non commité au moment de l'écriture) :
+Fondations logicielles (commit `f15e314`) :
 
 - **API** : `KoxoNamespace` (`KOXO_IDENTIFIER_PREFIX`, `CUSTOMER_REFERENCE_PREFIX`,
   `KOXO_PRIMARY_GROUP_CLIENTS`, `KOXO_PRIMARY_GROUP_DEMO`).
@@ -27,18 +27,78 @@ Fondations posées (code local, non commité au moment de l'écriture) :
   Nom non configurable, délai explicite (600 s), libération en `finally`,
   reprise d'un mutex abandonné.
 
-Pièges mesurés sur le lanceur d'instance :
+Infrastructure DEV en place au 2026-09-27 (état détaillé en tête de
+`docs/KOXO_DEV_ISOLATION.md`) :
+- scripts `f15e314` sur SRV-21 ; lanceur d'instance corrigé dans `8336cc1`
+  (non redéployé, la tâche 8043 n'en dépend pas) ;
+- groupe primaire, modèle et profil `CLIENTS DEV` ; fiche `AllowRDS=0`,
+  `AllowDialin=0`, quotas désactivés ;
+- lieux de stockage `Espaces mutuels "Clients DEV"` et `Espaces personnels
+  "Clients DEV"` sur `KERMARIA-FS-01 F:\KoXoDATA\CLIENTS DEV`, « Sans
+  partage », sans quota ;
+- modèle `CLIENTS DEV` : seules les primitives `Group/Root` et `User/Root`
+  (dossier `%USER_ID%`) de `CLIENTS`, à l'identique, sans partage, contenu,
+  profil ni quota ;
+- définition et jetons dans `C:\ProgramData\Kermaria\koxo-dev\` ; receveur
+  `:8043` en tâche planifiée ;
+- réseau : `:3100` réservé à SRV-11, `X-Forwarded-For $remote_addr` sur le
+  vhost DEV (SRV-12 voit `192.168.100.221` pour SRV-21).
+
+**Tests du 2026-09-27 : PASS.** KoXoAdm lancé en SYSTEM (tâche planifiée à
+usage unique) via `Invoke-KoxoProcess`, sous le mutex :
+- Run 1 : `/Synchro=CLIENTS-DEV.xml` crée OU et groupe `DEV-CLI-TST001` et
+  `devkoxo.testisola` (`CLI-D999901`), sans rien toucher hors `CLIENTS DEV` ;
+- Run 2 : la ligne remplacée par `CLI-D999902` ; l'ancien compte est
+  **désactivé** (non supprimé, appartenance conservée), le nouveau créé actif.
+
+Mesuré :
+- **`/Synchro` ne crée aucun dossier.** L'arborescence vient d'une réparation
+  de stockage. Une réparation complète interactive (IHM) l'a produite
+  correctement. En SYSTEM, `/RepairSecondaryGroup … Type="Storage"` s'est
+  bloqué sans écrire (0 % CPU, threads `UserRequest`, probable boîte de dialogue
+  invisible) jusqu'au délai de 1800 s, en tenant le mutex : **stockage headless
+  non validé**.
+- À la création d'un groupe primaire, l'IHM ajoute le groupe AD à
+  `Utilisateurs de KoXo Administrator CLIENTS` (`CLIENTS-KOXO-USERS`) ; ce
+  groupe ne donne aucun droit de stockage.
+- **La fiche, pas le modèle, porte les droits effectifs** : l'IHM avait posé
+  `AllowRDS=1` malgré `AllowRDS=0` dans le modèle (même écart en PROD).
+- **Ne jamais créer un lieu de stockage sur la racine `KoXoDATA`.** Le
+  2026-09-27, sa suppression a fait tenter à KoXo d'effacer tout
+  `F:\KoXoDATA\` (échec, aucune perte). Il reste à corriger : l'ACE HOME
+  remplacée par `CLIENTS-KOXO-ADM` sur `F:\KoXoDATA`, et `CLIENTS` qui n'est
+  plus protégé.
+- Lancer KoXoAdm depuis une session WinRM échoue sur FS-01 (double saut) :
+  passer par une tâche SYSTEM, comme le receveur.
+
+Pièges mesurés :
 - Sous Windows PowerShell 5.1, `-File` n'évalue pas `$PSScriptRoot` dans les
   valeurs par défaut des paramètres. Lancer les scripts avec
-  `-Command "& '…'"` (corrigé dans `Start-KoxoSyncWebhookReceiver-Instance.cmd`,
-  avec un test de régression qui exécute réellement le `.cmd`).
+  `-Command "& '…'"`.
 - Une tâche planifiée qui lance un `.cmd` dont le chemin contient un espace ne
   doit pas recevoir d'argument entre guillemets : `cmd /c` les retire.
+- `RandomNumberGenerator.GetBytes(int)` n'existe pas sous .NET Framework
+  (SRV-21) ; utiliser `RNGCryptoServiceProvider`.
+- `sudo` sur SRV-11 est interactif.
+- SRV-21 est aussi contrôleur de domaine de `clients.home.bzh` et porte le rôle
+  DHCP. Le 2026-09-27, `Utilisateurs DHCP` et `Administrateurs DHCP` y ont été
+  créés dans `CN=Users` 31 s avant le groupe `CLIENTS DEV`. Ils sont hors
+  `OU=KoXoAdm`, vides et sans droit. Origine non établie ; ne pas y toucher.
+- Un lieu de stockage KoXo, c'est :
+  - un fichier `Data\Storages\<nom>.xml` : `Name`, `Server` (pris dans la liste
+    `Servers` de `Config.xml`, aujourd'hui SRV-21 et FS-01), `Drive`, `Path`,
+    `MountingPointModel`, quota ;
+  - le modèle de point de montage « Sans partage », qui crée le dossier avec
+    des ACE Administrateurs, SYSTEM et `CLIENTS-KOXO-ADM`, sans partage.
 
-Ne pas activer `controlled_write` en DEV avant les validations runtime listées
-dans `docs/KOXO_DEV_ISOLATION.md` : isolation par profil dans KoXoAdm, formes
-acceptées par KoXo, emplacement du CSV DEV, `X-Forwarded-For` via SRV-11, profil
-démo DEV.
+  FSRM n'est installé que sur FS-01.
+- Pour prouver ce que SRV-12 reçoit de SRV-11, `tcpdump` sur `:3100`
+  (`kermaria_ai_admin`, sudo sans mot de passe), filtré sur un marqueur de
+  requête. N'afficher que les en-têtes voulus, jamais les cookies.
+
+Prochaine étape : premier E2E API DEV → KoXo → AD. Il exige le déploiement de
+`f15e314` et `8336cc1` sur l'API DEV, le namespace DEV, le webhook 8043 et un
+compte AD DEV délégué, avant tout `controlled_write`.
 
 Piège de test mesuré : un mutex nommé disparaît avec sa dernière poignée. Pour
 prouver la reprise d'un mutex abandonné, un autre processus doit garder une
