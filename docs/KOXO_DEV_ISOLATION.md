@@ -5,6 +5,13 @@
 > compte de service, jetons) **n'est PAS déployée**. `controlled_write` reste
 > interdit en DEV tant qu'elle ne l'est pas et que les validations runtime de
 > la fin de ce document n'ont pas été faites.
+>
+> Lanceur d'instance : le `Start-KoxoSyncWebhookReceiver-Instance.cmd` de
+> `f15e314` utilisait `-File`, sous lequel Windows PowerShell 5.1 n'évalue pas
+> `$PSScriptRoot` dans les valeurs par défaut du receveur, qui échouait dès son
+> démarrage. Il lance désormais
+> `powershell.exe -Command "& '…\Start-KoxoSyncWebhookReceiver.ps1' -InstanceConfigPath '…'"`,
+> la forme déjà utilisée par le lanceur PROD 8042, qui reste inchangé.
 
 ## Pourquoi
 

@@ -27,6 +27,14 @@ Fondations posées (code local, non commité au moment de l'écriture) :
   Nom non configurable, délai explicite (600 s), libération en `finally`,
   reprise d'un mutex abandonné.
 
+Pièges mesurés sur le lanceur d'instance :
+- Sous Windows PowerShell 5.1, `-File` n'évalue pas `$PSScriptRoot` dans les
+  valeurs par défaut des paramètres. Lancer les scripts avec
+  `-Command "& '…'"` (corrigé dans `Start-KoxoSyncWebhookReceiver-Instance.cmd`,
+  avec un test de régression qui exécute réellement le `.cmd`).
+- Une tâche planifiée qui lance un `.cmd` dont le chemin contient un espace ne
+  doit pas recevoir d'argument entre guillemets : `cmd /c` les retire.
+
 Ne pas activer `controlled_write` en DEV avant les validations runtime listées
 dans `docs/KOXO_DEV_ISOLATION.md` : isolation par profil dans KoXoAdm, formes
 acceptées par KoXo, emplacement du CSV DEV, `X-Forwarded-For` via SRV-11, profil

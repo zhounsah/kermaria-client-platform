@@ -320,9 +320,21 @@ Describe 'Recepteur : instance isolee' {
 
     It 'starts an instance from its definition without any token on the command line' {
         $source = Get-Content -LiteralPath $instanceCmd -Raw
-        $source | Should Match '-InstanceConfigPath "%~1"'
+        $source | Should Match "-InstanceConfigPath '%~1'"
         $source | Should Not Match '-Token'
         $source | Should Not Match 'koxo-webhook-token\.txt'
+    }
+
+    It 'really reaches the definition when started through its launcher' {
+        # Execution reelle du .cmd, pas une lecture de sa source : sous -File,
+        # Windows PowerShell 5.1 n'evaluait pas $PSScriptRoot dans les valeurs
+        # par defaut du receveur, qui echouait sur Join-Path avant meme de lire
+        # sa definition (constate sur SRV-21 le 2026-09-26). Une definition
+        # absente doit donc etre la PREMIERE erreur rencontree.
+        $missing = Join-Path $env:TEMP ('koxo-absente-' + [guid]::NewGuid().ToString('N') + '.json')
+        $output = (& cmd.exe /c $instanceCmd $missing 2>&1 | ForEach-Object { "$_" }) -join ' '
+        $output | Should Match 'KoXo instance definition not found'
+        $output | Should Not Match 'Join-Path'
     }
 
     It 'closes the storage route unless the definition opens it' {
