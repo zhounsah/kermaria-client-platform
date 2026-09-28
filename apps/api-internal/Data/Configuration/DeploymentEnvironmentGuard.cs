@@ -66,6 +66,12 @@ public static class DeploymentEnvironmentGuard
         "^[a-z0-9_]+_dev(_[a-z0-9_]+)?$",
         RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
+    private static readonly Regex DevelopmentClientsOu = new(
+        "(?:^|,)OU=CLIENTS DEV(?:,|$)",
+        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
+    private const int DevelopmentKoxoWebhookPort = 8043;
+
     private static readonly Regex GrantLine = new(
         @"^GRANT\s+(?<privileges>.+?)\s+ON\s+(?<target>.+?)\s+TO\s",
         RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
@@ -162,6 +168,7 @@ public static class DeploymentEnvironmentGuard
         }
 
         ValidateKoxoNamespace(configuration, environment, violations);
+        ValidateDirectoryTargetIsolation(configuration, environment, violations);
 
         return new DeploymentEnvironmentReport(
             environment,
@@ -552,6 +559,66 @@ public static class DeploymentEnvironmentGuard
                 break;
         }
     }
+
+    /// <summary>
+    /// Le namespace protege les identifiants, mais ne suffit pas si une
+    /// configuration DEV pointe directement vers les cibles AD ou KoXo PROD.
+    /// Ces bornes sont aussi appliquees a la PROD dans l'autre sens.
+    /// </summary>
+    private static void ValidateDirectoryTargetIsolation(
+        IConfiguration configuration,
+        DeploymentEnvironment environment,
+        List<string> violations)
+    {
+        var adMode = configuration["AD_INTEGRATION_MODE"]?.Trim();
+        var clientsOu = configuration["AD_CLIENTS_OU_DN"]?.Trim();
+        var webhook = configuration["KOXO_SYNC_WEBHOOK_URL"]?.Trim();
+        var directoryWrites = string.Equals(
+            adMode,
+            "controlled_write",
+            StringComparison.OrdinalIgnoreCase);
+        var hasWebhook = !string.IsNullOrWhiteSpace(webhook);
+
+        switch (environment)
+        {
+            case DeploymentEnvironment.Development:
+                if (directoryWrites && !IsDevelopmentClientsOu(clientsOu))
+                {
+                    violations.Add(
+                        "APP_ENV=Development exige AD_CLIENTS_OU_DN sous OU=CLIENTS DEV pour AD_INTEGRATION_MODE=controlled_write.");
+                }
+
+                if (hasWebhook && !IsDevelopmentWebhook(webhook))
+                {
+                    violations.Add(
+                        "APP_ENV=Development exige KOXO_SYNC_WEBHOOK_URL vers le recepteur DEV :8043.");
+                }
+
+                break;
+            case DeploymentEnvironment.Production:
+                if (IsDevelopmentClientsOu(clientsOu))
+                {
+                    violations.Add(
+                        "APP_ENV=Production refuse AD_CLIENTS_OU_DN sous OU=CLIENTS DEV.");
+                }
+
+                if (hasWebhook && IsDevelopmentWebhook(webhook))
+                {
+                    violations.Add(
+                        "APP_ENV=Production refuse KOXO_SYNC_WEBHOOK_URL vers le recepteur DEV :8043.");
+                }
+
+                break;
+        }
+    }
+
+    private static bool IsDevelopmentClientsOu(string? distinguishedName)
+        => !string.IsNullOrWhiteSpace(distinguishedName)
+            && DevelopmentClientsOu.IsMatch(distinguishedName.Trim());
+
+    private static bool IsDevelopmentWebhook(string? rawUrl)
+        => Uri.TryCreate(rawUrl, UriKind.Absolute, out var uri)
+            && uri.Port == DevelopmentKoxoWebhookPort;
 
     private static bool IsDevelopmentProvisioningAllowed(IConfiguration configuration)
         => IsTrue(configuration["PROVISIONING_ENABLED"])

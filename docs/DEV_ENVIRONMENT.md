@@ -132,6 +132,9 @@ Toutes les commandes se lancent depuis la racine du dépôt, sur RDC-07.
 > `kermaria_dev`, Stripe Live, le port KoXo `8042`, un namespace non DEV, une
 > OU AD hors `CLIENTS DEV`, le compte AD PROD connu, ou une allowlist e-mail
 > avec joker. Les garde-fous sont rejoués juste avant la bascule.
+> Au démarrage, l'API impose également ces deux cibles réelles lorsque les
+> écritures AD/KoXo sont activées ; la PROD refuse symétriquement une OU ou un
+> récepteur DEV.
 
 ```powershell
 # Base et comptes (une fois) : scripts/dev-env/create-dev-database.sql,

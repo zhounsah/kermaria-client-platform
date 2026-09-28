@@ -89,10 +89,11 @@ Mise en place le 2026-09-21, sans toucher à la production. Runbook :
   d'un secret exige simultanément `-RefreshConfiguration` et un fichier hors
   Git contenant seulement des affectations littérales `DEV_API_*` autorisées,
   lu par AST sans exécution. Les secrets non fournis restent inchangés.
-- Le validateur refuse avant toute modification : base autre que
+- Le validateur d'installation et le garde de démarrage API refusent : base autre que
   `kermaria_dev`, Stripe Live, namespace KoXo hors `CLI-D`/`DEV-CLI-`, groupe
   ou OU hors `CLIENTS DEV`, receveur autre que `:8043`, compte AD PROD connu et
-  allowlist e-mail avec joker. Il est retesté juste avant la bascule.
+  allowlist e-mail avec joker. L'API refuse symétriquement les cibles DEV en
+  PROD. Le contrôle d'installation est retesté juste avant la bascule.
 - Le fichier historique `kermaria-client-platform.dev.env.ps1` reste hors du
   workflow : il contient des variables génériques et est refusé par le nouveau
   contrat. Le template versionné non secret est

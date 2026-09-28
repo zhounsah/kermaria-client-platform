@@ -2582,7 +2582,9 @@ async Task RunDeploymentEnvironmentGuardTestsAsync()
     });
     var devWithDirectory = DevConfiguration();
     devWithDirectory["AD_INTEGRATION_MODE"] = "controlled_write";
-    devWithDirectory["KOXO_SYNC_WEBHOOK_URL"] = "http://192.0.2.1/";
+    devWithDirectory["AD_CLIENTS_OU_DN"] =
+        "OU=CLIENTS DEV,DC=clients,DC=home,DC=bzh";
+    devWithDirectory["KOXO_SYNC_WEBHOOK_URL"] = "http://192.0.2.1:8043/";
     devWithDirectory["PROVISIONING_ENABLED"] = "true";
     devWithDirectory["ALLOW_DEV_PROVISIONING"] = "true";
     UseDevKoxoNamespace(devWithDirectory);
@@ -2591,6 +2593,24 @@ async Task RunDeploymentEnvironmentGuardTestsAsync()
         allowedDirectory.Violations.Count == 0,
         "Une DEV annuaire + KoXo avec son propre namespace doit etre acceptee : "
         + string.Join(" | ", allowedDirectory.Violations));
+    EnsureDevRefused("AD_CLIENTS_OU_DN", values =>
+    {
+        values["AD_INTEGRATION_MODE"] = "controlled_write";
+        values["AD_CLIENTS_OU_DN"] = "OU=CLIENTS,DC=clients,DC=home,DC=bzh";
+        values["KOXO_SYNC_WEBHOOK_URL"] = "http://192.0.2.1:8043/";
+        values["PROVISIONING_ENABLED"] = "true";
+        values["ALLOW_DEV_PROVISIONING"] = "true";
+        UseDevKoxoNamespace(values);
+    });
+    EnsureDevRefused("recepteur DEV :8043", values =>
+    {
+        values["AD_INTEGRATION_MODE"] = "controlled_write";
+        values["AD_CLIENTS_OU_DN"] = "OU=CLIENTS DEV,DC=clients,DC=home,DC=bzh";
+        values["KOXO_SYNC_WEBHOOK_URL"] = "http://192.0.2.1:8042/";
+        values["PROVISIONING_ENABLED"] = "true";
+        values["ALLOW_DEV_PROVISIONING"] = "true";
+        UseDevKoxoNamespace(values);
+    });
     Ensure(
         validDev.Violations.Count == 0,
         "Une DEV sans effet annuaire garde le namespace par defaut.");
@@ -2598,6 +2618,15 @@ async Task RunDeploymentEnvironmentGuardTestsAsync()
     EnsureProdRefused("Namespace KoXo invalide", values =>
     {
         values[KoxoNamespace.PrimaryGroupClientsVariable] = "CLIENTS DEV";
+    });
+    EnsureProdRefused("OU=CLIENTS DEV", values =>
+    {
+        values["AD_CLIENTS_OU_DN"] =
+            "OU=CLIENTS DEV,DC=clients,DC=home,DC=bzh";
+    });
+    EnsureProdRefused("recepteur DEV :8043", values =>
+    {
+        values["KOXO_SYNC_WEBHOOK_URL"] = "http://192.0.2.1:8043/";
     });
 
     // Droits SQL reels : seul USAGE sur *.* et la base DEV sont admis.
