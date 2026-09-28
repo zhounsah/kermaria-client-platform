@@ -80,17 +80,22 @@ Mise en place le 2026-09-21, sans toucher à la production. Runbook :
   gestion de `CART_CLAIM_RESUMED` (code non commité). Ce n'est pas le cas du
   WebPortal de `main`.
 
-## Avertissement de déploiement DEV (2026-09-28)
+## Déploiement DEV fail-closed (2026-09-28)
 
-- **Ne pas utiliser `scripts/dev-env/Install-ApiInternalDev.ps1` en l'état.**
-  Il régénère `api-internal.dev.config.json` depuis le fichier de source DEV.
-  Ce fichier contient encore des valeurs LIVE/PROD : l'utiliser peut les
-  réinjecter dans l'instance DEV.
-- Pour une mise à jour binaire DEV autorisée, préserver le fichier de
-  configuration DEV existant et utiliser un basculement de répertoire staging
-  vers ancien puis nouveau dossier, avant de redémarrer uniquement
-  `KermariaApiInternalDev`.
-- La dette de séparation des valeurs DEV/LIVE doit être levée avant toute
-  réutilisation de l'installateur. Aucun secret ne doit être déplacé vers Git.
+- Le correctif `2ba96ed` fait de `Install-ApiInternalDev.ps1` un déploiement
+  binaire conservateur : par défaut, il valide puis préserve le JSON runtime
+  DEV existant, sans le reconstruire depuis une source `.env`.
+- Le contrôle non modifiant est `-ValidateOnly`. Le rafraîchissement éventuel
+  d'un secret exige simultanément `-RefreshConfiguration` et un fichier hors
+  Git contenant seulement des affectations littérales `DEV_API_*` autorisées,
+  lu par AST sans exécution. Les secrets non fournis restent inchangés.
+- Le validateur refuse avant toute modification : base autre que
+  `kermaria_dev`, Stripe Live, namespace KoXo hors `CLI-D`/`DEV-CLI-`, groupe
+  ou OU hors `CLIENTS DEV`, receveur autre que `:8043`, compte AD PROD connu et
+  allowlist e-mail avec joker. Il est retesté juste avant la bascule.
+- Le fichier historique `kermaria-client-platform.dev.env.ps1` reste hors du
+  workflow : il contient des variables génériques et est refusé par le nouveau
+  contrat. Le template versionné non secret est
+  `scripts/dev-env/api-internal.dev.template.json`.
 
 Voir aussi [[pieges-sql-et-preuves]], [[deployment-topology]], [[srv13-config-volatile]].

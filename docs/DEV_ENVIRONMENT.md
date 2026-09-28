@@ -101,11 +101,22 @@ routée, une requête DEV est refusée (401) par l'API PROD.
 
 ## 3. Secrets
 
-Fichier **hors Git** `<parent du dépôt>\kermaria-client-platform.dev.env.ps1`
-(ACL : utilisateur courant et SYSTEM). Il est distinct de
-`kermaria-client-platform.local.env.ps1`, qui porte les clés LIVE : les clés
-Stripe TEST et LIVE ne cohabitent jamais dans un même fichier. Les scripts
-refusent toute valeur `sk_live_` / `pk_live_` / `rk_live_`.
+La configuration runtime déjà validée sur SRV-13 est l'autorité pour les
+déploiements binaires : elle n'est jamais régénérée par défaut.
+
+Pour un rafraîchissement exceptionnel de secret DEV, créer hors Git un fichier
+au nom explicite, par exemple
+`<parent du dépôt>\kermaria-client-platform.api-dev.secrets.ps1`, à partir de
+[`scripts/dev-env/api-internal.dev.secrets.example.ps1`](../scripts/dev-env/api-internal.dev.secrets.example.ps1).
+Il ne peut contenir que des affectations littérales `DEV_API_*` autorisées ; il
+est analysé sans être exécuté. Une variable générique (`SQL_*`, `AD_*`,
+`KOXO_*`, etc.), une commande PowerShell ou une clé non prévue est refusée.
+
+[`scripts/dev-env/api-internal.dev.template.json`](../scripts/dev-env/api-internal.dev.template.json)
+est le référentiel non secret des invariants DEV. Il sert à la revue initiale,
+jamais de fallback automatique. Le fichier historique
+`kermaria-client-platform.dev.env.ps1` ne doit plus être passé à
+`Install-ApiInternalDev.ps1` : il ne respecte pas ce contrat et sera refusé.
 
 Sur les serveurs : `api-internal.dev.config.json` (lisible par les
 administrateurs et le seul compte virtuel DEV) et `/etc/kermaria/webportal-dev.env`
@@ -115,22 +126,21 @@ administrateurs et le seul compte virtuel DEV) et `/etc/kermaria/webportal-dev.e
 
 Toutes les commandes se lancent depuis la racine du dépôt, sur RDC-07.
 
-> **Avertissement opérationnel — 2026-09-28.** Ne pas exécuter
-> `scripts/dev-env/Install-ApiInternalDev.ps1` en l'état. Il régénère la
-> configuration API DEV depuis une source qui contient encore des valeurs
-> LIVE/PROD et pourrait les réinjecter dans DEV. Pour une mise à jour binaire
-> autorisée, conserver la configuration DEV existante et effectuer un swap
-> staging → ancien dossier → nouveau dossier, puis redémarrer uniquement
-> `KermariaApiInternalDev`. Assainir la source DEV/LIVE avant de réutiliser
-> l'installateur.
+> **Workflow sûr — 2026-09-28.** `Install-ApiInternalDev.ps1` valide d'abord
+> le JSON DEV existant, puis le préserve à l'identique lors d'une mise à jour
+> binaire. Il refuse avant toute modification une base autre que
+> `kermaria_dev`, Stripe Live, le port KoXo `8042`, un namespace non DEV, une
+> OU AD hors `CLIENTS DEV`, le compte AD PROD connu, ou une allowlist e-mail
+> avec joker. Les garde-fous sont rejoués juste avant la bascule.
 
 ```powershell
 # Base et comptes (une fois) : scripts/dev-env/create-dev-database.sql,
 # execute sur SRV-06 avec un compte d'administration (mots de passe injectes
 # depuis le fichier de secrets DEV, jamais versionnes).
 
-# API DEV — historique : ne pas executer l'installateur ci-dessous tant que
-# l'avertissement ci-dessus n'est pas leve.
+# API DEV — contrôle distant non modifiant, puis mise à jour binaire qui
+# conserve strictement le JSON runtime existant.
+.\scripts\dev-env\Install-ApiInternalDev.ps1 -ValidateOnly
 dotnet publish apps/api-internal/Kermaria.ApiInternal.csproj -c Release -p:UseAppHost=true -o $env:TEMP\api-internal-dev
 .\scripts\dev-env\Install-ApiInternalDev.ps1 -PublishDirectory $env:TEMP\api-internal-dev -NoStart
 .\scripts\dev-env\Invoke-ApiDevMigrations.ps1            # -SeedDemoData au premier passage
@@ -165,9 +175,20 @@ répliqués sur SRV-07/SRV-08.
    `DEV_STRIPE_PUBLISHABLE_KEY`).
 3. Après publication de `dev.zachary-it.fr` : créer en mode Test un endpoint
    `https://dev.zachary-it.fr/api/webhooks/stripe`, distinct de l'endpoint
-   live, et reporter son `whsec_…` dans `DEV_STRIPE_WEBHOOK_SECRET`.
-4. Relancer `Install-ApiInternalDev.ps1` (API) et `Install-WebportalDev.ps1`
-   (WebPortal) : `STRIPE_MODE` passe alors automatiquement à `test`.
+   live, et reporter son `whsec_…` dans `DEV_API_STRIPE_WEBHOOK_SECRET` du
+   fichier de secrets DEV dédié.
+4. Ne pas utiliser le fichier historique `dev.env.ps1`. Si un secret DEV doit
+   réellement changer, renseigner uniquement la clé `DEV_API_*` correspondante
+   dans le fichier hors Git dédié, puis lancer explicitement :
+
+   ```powershell
+   .\scripts\dev-env\Install-ApiInternalDev.ps1 `
+     -PublishDirectory $env:TEMP\api-internal-dev `
+     -RefreshConfiguration `
+     -DevSecretsFile C:\secure\kermaria-client-platform.api-dev.secrets.ps1
+   ```
+
+   Une clé absente du fichier source conserve la valeur runtime existante.
 
 ## 6. Publication `dev.zachary-it.fr` (à faire après validation)
 

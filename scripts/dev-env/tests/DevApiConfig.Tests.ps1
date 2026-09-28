@@ -34,6 +34,14 @@ Describe 'Configuration API DEV fail-closed' {
         @($plan.Violations).Count | Should Be 0
     }
 
+    It 'ships a non-secret DEV safety template accepted by the validator' {
+        $templatePath = Join-Path $scriptRoot 'api-internal.dev.template.json'
+        $template = Get-Content -LiteralPath $templatePath -Raw | ConvertFrom-Json
+        $plan = New-DevApiConfigurationPlan -ExistingConfiguration $template
+        $plan.IsValid | Should Be $true
+        (Get-Content -LiteralPath $templatePath -Raw) | Should Not Match '(?i)(password|token|secret)\s*[:=]\s*["'']?[A-Za-z0-9+/=._-]{8,}'
+    }
+
     $refusals = @(
         @{ Name = 'production database'; Key = 'SQL_DATABASE'; Value = 'kermaria'; Expected = 'SQL_DATABASE' },
         @{ Name = 'live Stripe'; Key = 'STRIPE_MODE'; Value = 'live'; Expected = 'STRIPE_MODE' },

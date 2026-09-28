@@ -81,15 +81,13 @@ KoXo, synchronisation et convergence du bootstrap.
 
 ### Dettes connues après l'E2E
 
-1. `scripts/dev-env/Install-ApiInternalDev.ps1` régénère la configuration DEV
-   depuis une source qui contient encore des valeurs LIVE/PROD : ne pas
-   l'utiliser avant assainissement.
-2. Le fichier `dev.env.ps1` / la source DEV associée ne doit pas devenir une
-   source globale tant que les valeurs LIVE/PROD n'en sont pas retirées.
-3. `RepairSecondaryGroup Type=Storage` en headless n'est pas validé.
-4. `CLIENTS DEV DEMO` n'existe pas encore ; le profil démonstration DEV reste
+1. Le correctif `2ba96ed` conserve le JSON DEV lors d'un déploiement binaire et
+   refuse les valeurs PROD ; le fichier historique `dev.env.ps1` reste toutefois
+   exclu du workflow et ne doit jamais redevenir une source globale.
+2. `RepairSecondaryGroup Type=Storage` en headless n'est pas validé.
+3. `CLIENTS DEV DEMO` n'existe pas encore ; le profil démonstration DEV reste
    refusé de façon sûre.
-5. Les objets des Run 1/2 (`DEV-CLI-TST001`, `CLI-D999901`, `CLI-D999902`)
+4. Les objets des Run 1/2 (`DEV-CLI-TST001`, `CLI-D999901`, `CLI-D999902`)
    sont volontairement toujours présents.
 
 Mesuré :

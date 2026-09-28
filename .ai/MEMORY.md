@@ -27,7 +27,7 @@
 
 ### Environnement DEV isolé (2026-09-21)
 
-- Stack DEV parallèle sur SRV-12 (:3100), SRV-13 (:5100) et SRV-06 (`kermaria_dev`), garde-fous `APP_ENV` bloquants (code 78). Stripe TEST et publication de `dev.zachary-it.fr` restent à faire. Pièges découverts : variables Machine PROD sur SRV-13, triggers + binlog, pare-feu SRV-13 désactivé par GPO. Détail : [dev-environment.md](topics/dev-environment.md), runbook `docs/DEV_ENVIRONMENT.md`.
+- Stack DEV parallèle sur SRV-12 (:3100), SRV-13 (:5100) et SRV-06 (`kermaria_dev`), garde-fous `APP_ENV` bloquants (code 78). L'installateur API DEV est fail-closed depuis `2ba96ed` : il valide et préserve le JSON runtime existant, et n'accepte un rafraîchissement de secret que par opt-in `DEV_API_*` non exécuté. Pièges restants : variables Machine PROD sur SRV-13, triggers + binlog, pare-feu SRV-13 désactivé par GPO. Détail : [dev-environment.md](topics/dev-environment.md), runbook `docs/DEV_ENVIRONMENT.md`.
 
 ### Centre de configuration administrateur (2026-08-29)
 

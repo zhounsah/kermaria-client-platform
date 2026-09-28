@@ -1,0 +1,16 @@
+{
+  "APP_ENV": "Development",
+  "SQL_PROVIDER": "mariadb",
+  "SQL_DATABASE": "kermaria_dev",
+  "STRIPE_MODE": "test",
+  "AD_INTEGRATION_MODE": "controlled_write",
+  "PROVISIONING_ENABLED": "true",
+  "ALLOW_DEV_PROVISIONING": "true",
+  "KOXO_IDENTIFIER_PREFIX": "CLI-D",
+  "CUSTOMER_REFERENCE_PREFIX": "DEV-CLI-",
+  "KOXO_PRIMARY_GROUP_CLIENTS": "CLIENTS DEV",
+  "KOXO_PRIMARY_GROUP_DEMO": "CLIENTS DEV DEMO",
+  "KOXO_SYNC_WEBHOOK_URL": "http://kermaria-srv-21.home.bzh:8043/internal/koxo/sync/",
+  "AD_CLIENTS_OU_DN": "OU=CLIENTS DEV,DC=clients,DC=home,DC=bzh",
+  "EMAIL_INTEGRATION_MODE": "mock"
+}
