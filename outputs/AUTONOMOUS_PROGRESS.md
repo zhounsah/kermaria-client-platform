@@ -49,3 +49,44 @@
   groupe parent-domain, ou validation KoXo stockage préalable.
 - Blocker : décision de modèle et autorisation d'infrastructure de Zachary.
 - Commit : `48e6c3e` — `docs(dev): préparer le prochain E2E de provisioning`.
+
+## 2026-09-29 — Nuit : provisioning direct, latence checkout, intention orpheline
+
+- Bug 1, cause : `BillingV2ProvisioningPlanner.EnforcePersonalStoragePrerequisite`
+  exigeait un stockage personnel pour **toute** règle `ad_group_membership`.
+  `SERVICE-E2E-DEV` (service direct, sans tier, scope user) produisait donc un
+  bloqueur `PersonalStorageRequired`, remonté par la gate en
+  `BILLING_V2_PROVISIONING_INCOMPLETE_MATERIALIZATION`. Les lignes de
+  matérialisation DEV (`items`, `users`, `item_provisioning`, règle) sont
+  complètes : vérifié en lecture sur `kermaria_dev`.
+- Correction : `7da7309` limite ce prérequis aux services `VPN-ACCESS` et
+  `RDS-ACCESS` (codes vérifiés dans le catalogue DEV) ; test de régression dans
+  `--billing-v2-provisioning-semantics`. `identity_reference = portal_users.id`
+  inchangé.
+- Bug 2 : `f1e7ce3` — dispatch immédiat de l'événement d'outbox après COMMIT
+  (même gate, même claim atomique que le worker, borne 20 s détachée de la
+  requête) ; l'URL d'approbation est renvoyée directement. `PollInterval`
+  inchangé, le worker reste le filet.
+- Bug 3 : `724d1e8` — `BillingV2IntentReusePolicy` ; une intention dont
+  l'abonnement est annulé/expiré ou la tentative échouée/abandonnée n'est plus
+  reprise et est fermée (`cancelled`, `cancelled_at`,
+  `BILLING_V2_INTENT_PROVIDER_TERMINAL`) sans DELETE. `amount_mismatch` seul
+  conserve l'intention (pas de second paiement avant réconciliation).
+- Tests : 21 suites Billing V2 non-DB PASS (dont les nouveaux tests), smoke API
+  PASS, build/publish Release PASS. Suites MariaDB opt-in non rejouées (aucune
+  base jetable fournie).
+- DEV : API redéployée depuis un `git archive` de `f1e7ce3` (JSON runtime
+  préservé), santé 200, `kermaria_dev`, Stripe test.
+- **STOP — action humaine requise** : aucun chemin automatique ne rejoue le
+  provisioning V2 d'un abonnement déjà actif. Les événements Stripe enregistrés
+  pour `43bee433` ne portent pas `SUBSCRIPTION_ACTIVATED` (un renvoi ne
+  déclencherait rien), et le bouton admin « réconcilier » passe par
+  `BillingV2SubscriptionProvisioningManager`, pas par le planner/gate V2 : il
+  ne validerait pas la correction. La route V2
+  `/internal/admin/billing-v2/subscriptions/{id}/provisioning/reconcile` n'a
+  pas d'interface. Preuve attendue : un nouvel achat Stripe TEST de
+  `SERVICE-E2E-DEV` par Melis sur la DEV, qui valide aussi la latence et la
+  fermeture d'intention.
+- PROD : non touchée. Migrations appliquées en PROD jusqu'à `095` ; manquent
+  `096` et `097`, toutes deux purement additives (`CREATE TABLE IF NOT EXISTS`).
+- Push, tag `v2.0.2.9` et déploiement PROD : non faits (DEV non validée).
