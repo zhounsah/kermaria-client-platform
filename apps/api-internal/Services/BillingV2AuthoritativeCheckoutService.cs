@@ -128,6 +128,15 @@ public sealed class BillingV2AuthoritativeCheckoutService
     private readonly IBillingV2CheckoutReadinessService _readiness;
     private readonly IBillingV2PricingEngine _pricing;
     private readonly IBillingV2PublicCatalogService _catalog;
+    private readonly IBillingV2ProviderOutboxDispatcher? _outboxDispatcher;
+    private readonly ILogger<BillingV2AuthoritativeCheckoutService>? _logger;
+
+    // Borne du dispatch immediat. Elle est volontairement detachee de la
+    // requete HTTP : un client qui se deconnecte ne doit pas interrompre un
+    // appel provider deja reclame, sinon l'evenement attendrait l'expiration
+    // de son claim avant que le worker ne le reprenne.
+    private static readonly TimeSpan ImmediateDispatchTimeout =
+        TimeSpan.FromSeconds(20);
 
     public BillingV2AuthoritativeCheckoutService(
         SqlRuntimeConfiguration sql,
@@ -136,7 +145,9 @@ public sealed class BillingV2AuthoritativeCheckoutService
         StripeRuntimeConfiguration stripe,
         IBillingV2CheckoutReadinessService readiness,
         IBillingV2PricingEngine pricing,
-        IBillingV2PublicCatalogService catalog)
+        IBillingV2PublicCatalogService catalog,
+        IBillingV2ProviderOutboxDispatcher? outboxDispatcher = null,
+        ILogger<BillingV2AuthoritativeCheckoutService>? logger = null)
     {
         _sql = sql;
         _runtime = runtime;
@@ -145,6 +156,8 @@ public sealed class BillingV2AuthoritativeCheckoutService
         _readiness = readiness;
         _pricing = pricing;
         _catalog = catalog;
+        _outboxDispatcher = outboxDispatcher;
+        _logger = logger;
     }
 
     public async Task<BillingV2AuthoritativeCheckoutResult> CreateAsync(
@@ -707,6 +720,12 @@ public sealed class BillingV2AuthoritativeCheckoutService
         }
         await transaction.CommitAsync(cancellationToken);
 
+        var approvalUrl = await TryDispatchImmediatelyAsync(
+            outboxEventId,
+            subscriptionId,
+            provider,
+            providerPlan.IdempotencyKeyHash);
+
         return new BillingV2AuthoritativeCheckoutResult(
             Created: true,
             subscriptionId,
@@ -716,7 +735,70 @@ public sealed class BillingV2AuthoritativeCheckoutService
             providerPlan.IdempotencyKeyHash,
             eventBuild.Draft.TotalAmountCents,
             checkoutReadiness.ReasonCode,
-            ApprovalUrl: null);
+            ApprovalUrl: approvalUrl);
+    }
+
+    /// <summary>
+    /// Tente l'appel provider juste apres le COMMIT, pour que le client soit
+    /// redirige en ~1 s au lieu d'attendre le prochain tour du worker.
+    /// </summary>
+    /// <remarks>
+    /// L'evenement est deja durable : tout echec ici (gate fermee, claim perdu,
+    /// provider en erreur, exception) laisse l'outbox dans l'etat que le worker
+    /// sait reprendre, et le checkout reste un succes. Aucune URL n'est donc
+    /// inventee : seule celle enregistree par le dispatcher est relue.
+    /// </remarks>
+    private async Task<string?> TryDispatchImmediatelyAsync(
+        string outboxEventId,
+        string subscriptionId,
+        string provider,
+        string providerIdempotencyKeyHash)
+    {
+        if (_outboxDispatcher is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            using var timeout = new CancellationTokenSource(
+                ImmediateDispatchTimeout);
+            var dispatch = await _outboxDispatcher.DispatchEventAsync(
+                outboxEventId,
+                timeout.Token);
+            if (dispatch.DispatchedCount == 0)
+            {
+                _logger?.LogInformation(
+                    "Billing V2 immediate checkout dispatch skipped for outbox event {OutboxEventId}: {ReasonCode}. The periodic worker remains responsible.",
+                    outboxEventId,
+                    dispatch.ReasonCode);
+                return null;
+            }
+
+            await using var connection = new MySqlConnection(
+                _sql.ConnectionString);
+            await connection.OpenAsync(timeout.Token);
+            var approvalUrl = await ReadApprovalUrlAsync(
+                connection,
+                transaction: null,
+                subscriptionId,
+                providerIdempotencyKeyHash,
+                timeout.Token);
+            // Meme garde que la relecture de statut : une URL Stripe n'est
+            // exposee au navigateur que si elle vise l'hote de paiement attendu.
+            return string.Equals(provider, "stripe", StringComparison.Ordinal)
+                ? BillingV2StripeApprovalUrlRecoveryPolicy
+                    .NormalizeTrustedApprovalUrl(approvalUrl)
+                : approvalUrl;
+        }
+        catch (Exception exception)
+        {
+            _logger?.LogWarning(
+                exception,
+                "Billing V2 immediate checkout dispatch failed for outbox event {OutboxEventId}. The periodic worker remains responsible.",
+                outboxEventId);
+            return null;
+        }
     }
 
     private const long IntentInitialSubscriptionVersion = 1;

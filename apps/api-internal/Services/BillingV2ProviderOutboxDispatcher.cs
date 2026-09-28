@@ -40,6 +40,16 @@ public interface IBillingV2ProviderOutboxDispatcher
 {
     Task<BillingV2ProviderOutboxDispatchResult> DispatchPendingAsync(
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Tente de dispatcher un seul evenement, juste apres le COMMIT qui l'a
+    /// cree. Meme gate, meme claim atomique et meme ecriture de resultat que
+    /// le worker : si l'evenement est deja reclame ou pas encore du, rien
+    /// n'est fait et le worker periodique reste le filet de securite.
+    /// </summary>
+    Task<BillingV2ProviderOutboxDispatchResult> DispatchEventAsync(
+        string outboxEventId,
+        CancellationToken cancellationToken);
 }
 
 public sealed class BillingV2ProviderOutboxDispatcher
@@ -68,6 +78,79 @@ public sealed class BillingV2ProviderOutboxDispatcher
     public async Task<BillingV2ProviderOutboxDispatchResult> DispatchPendingAsync(
         CancellationToken cancellationToken)
     {
+        var readiness = EvaluateReadiness();
+        if (!readiness.CanDispatch)
+        {
+            return new BillingV2ProviderOutboxDispatchResult(
+                0,
+                readiness.ReasonCode);
+        }
+
+        await using var connection = new MySqlConnection(_sql.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        var events = await ReadPendingEventsAsync(
+            connection,
+            outboxEventId: null,
+            cancellationToken);
+        var dispatched = 0;
+        foreach (var outboxEvent in events)
+        {
+            if (await TryClaimAndDispatchAsync(
+                    connection,
+                    outboxEvent,
+                    cancellationToken))
+            {
+                dispatched++;
+            }
+        }
+
+        return new BillingV2ProviderOutboxDispatchResult(
+            dispatched,
+            dispatched == 0
+                ? "BILLING_V2_PROVIDER_OUTBOX_NO_PENDING_EVENTS"
+                : "BILLING_V2_PROVIDER_OUTBOX_DISPATCHED");
+    }
+
+    public async Task<BillingV2ProviderOutboxDispatchResult> DispatchEventAsync(
+        string outboxEventId,
+        CancellationToken cancellationToken)
+    {
+        var readiness = EvaluateReadiness();
+        if (!readiness.CanDispatch)
+        {
+            return new BillingV2ProviderOutboxDispatchResult(
+                0,
+                readiness.ReasonCode);
+        }
+
+        await using var connection = new MySqlConnection(_sql.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        var outboxEvent = (await ReadPendingEventsAsync(
+                connection,
+                outboxEventId,
+                cancellationToken))
+            .SingleOrDefault();
+        if (outboxEvent is null)
+        {
+            return new BillingV2ProviderOutboxDispatchResult(
+                0,
+                "BILLING_V2_PROVIDER_OUTBOX_EVENT_NOT_DUE");
+        }
+
+        return await TryClaimAndDispatchAsync(
+                connection,
+                outboxEvent,
+                cancellationToken)
+            ? new BillingV2ProviderOutboxDispatchResult(
+                1,
+                "BILLING_V2_PROVIDER_OUTBOX_DISPATCHED")
+            : new BillingV2ProviderOutboxDispatchResult(
+                0,
+                "BILLING_V2_PROVIDER_OUTBOX_EVENT_ALREADY_CLAIMED");
+    }
+
+    private BillingV2ProviderOutboxReadiness EvaluateReadiness()
+    {
         var readiness = BillingV2ProviderOutboxGate.Evaluate(
             _configuration,
             _sql.IsPersistent && !string.IsNullOrWhiteSpace(_sql.ConnectionString),
@@ -77,85 +160,82 @@ public sealed class BillingV2ProviderOutboxDispatcher
             _logger.LogWarning(
                 "Billing V2 provider outbox dispatch blocked: {ReasonCode}. No Stripe/PayPal action was executed.",
                 readiness.ReasonCode);
-            return new BillingV2ProviderOutboxDispatchResult(
-                0,
-                readiness.ReasonCode);
         }
 
-        await using var connection = new MySqlConnection(_sql.ConnectionString);
-        await connection.OpenAsync(cancellationToken);
-        var events = await ReadPendingEventsAsync(connection, cancellationToken);
-        var dispatched = 0;
-        foreach (var outboxEvent in events)
+        return readiness;
+    }
+
+    /// <summary>
+    /// Reclame puis traite un evenement. Le claim est un UPDATE conditionnel :
+    /// entre le chemin immediat du checkout et le worker, un seul gagne, et
+    /// le perdant n'appelle jamais le provider.
+    /// </summary>
+    private async Task<bool> TryClaimAndDispatchAsync(
+        MySqlConnection connection,
+        BillingV2ProviderOutboxEvent outboxEvent,
+        CancellationToken cancellationToken)
+    {
+        var claimed = await TryClaimOutboxEventAsync(
+            connection,
+            outboxEvent.Id,
+            cancellationToken);
+        if (!claimed)
         {
-            var claimed = await TryClaimOutboxEventAsync(
-                connection,
-                outboxEvent.Id,
-                cancellationToken);
-            if (!claimed)
-            {
-                _logger.LogInformation(
-                    "Billing V2 provider outbox event {OutboxEventId} was already claimed by another dispatcher. No provider action was executed by this worker.",
-                    outboxEvent.Id);
-                continue;
-            }
+            _logger.LogInformation(
+                "Billing V2 provider outbox event {OutboxEventId} was already claimed by another dispatcher. No provider action was executed by this worker.",
+                outboxEvent.Id);
+            return false;
+        }
 
-            // Phase 2 : le rail Stripe passe par le coeur financier. Le montant
-            // vient du BillingEvent finalise et une PaymentAttempt est
-            // persistee avant l'appel. Le chemin generique reste en place pour
-            // PayPal, non branche dans cette phase.
-            var payloadForRouting = BillingV2ProviderCheckoutPayload.Parse(
+        // Phase 2 : le rail Stripe passe par le coeur financier. Le montant
+        // vient du BillingEvent finalise et une PaymentAttempt est
+        // persistee avant l'appel. Le chemin generique reste en place pour
+        // PayPal, non branche dans cette phase.
+        var payloadForRouting = BillingV2ProviderCheckoutPayload.Parse(
+            outboxEvent.PayloadText);
+        var result = string.Equals(
+                payloadForRouting.Provider,
+                "stripe",
+                StringComparison.Ordinal)
+            ? await ExecuteStripeRailAsync(
+                payloadForRouting,
+                cancellationToken)
+            : await _executor.ExecuteAsync(
+                new BillingV2ProviderCheckoutExecutionRequest(
+                    outboxEvent.Id,
+                    outboxEvent.IdempotencyKeyHash,
+                    outboxEvent.PayloadText),
+                cancellationToken);
+        var update = BillingV2ProviderOutboxDispatchPolicy.Resolve(
+            result,
+            outboxEvent.RetryCount);
+        await using var transaction = await connection.BeginTransactionAsync(
+            cancellationToken);
+        if (result.Succeeded)
+        {
+            var payload = BillingV2ProviderCheckoutPayload.Parse(
                 outboxEvent.PayloadText);
-            var result = string.Equals(
-                    payloadForRouting.Provider,
-                    "stripe",
-                    StringComparison.Ordinal)
-                ? await ExecuteStripeRailAsync(
-                    payloadForRouting,
-                    cancellationToken)
-                : await _executor.ExecuteAsync(
-                    new BillingV2ProviderCheckoutExecutionRequest(
-                        outboxEvent.Id,
-                        outboxEvent.IdempotencyKeyHash,
-                        outboxEvent.PayloadText),
-                    cancellationToken);
-            var update = BillingV2ProviderOutboxDispatchPolicy.Resolve(
-                result,
-                outboxEvent.RetryCount);
-            await using var transaction = await connection.BeginTransactionAsync(
-                cancellationToken);
-            if (result.Succeeded)
-            {
-                var payload = BillingV2ProviderCheckoutPayload.Parse(
-                    outboxEvent.PayloadText);
-                var conflictUpdate = await RecordProviderCheckoutResultAsync(
-                    connection,
-                    transaction,
-                    outboxEvent,
-                    payload,
-                    result,
-                    cancellationToken);
-                if (conflictUpdate is not null)
-                {
-                    update = conflictUpdate;
-                }
-            }
-
-            await UpdateOutboxEventAsync(
+            var conflictUpdate = await RecordProviderCheckoutResultAsync(
                 connection,
                 transaction,
-                outboxEvent.Id,
-                update,
+                outboxEvent,
+                payload,
+                result,
                 cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-            dispatched++;
+            if (conflictUpdate is not null)
+            {
+                update = conflictUpdate;
+            }
         }
 
-        return new BillingV2ProviderOutboxDispatchResult(
-            dispatched,
-            dispatched == 0
-                ? "BILLING_V2_PROVIDER_OUTBOX_NO_PENDING_EVENTS"
-                : "BILLING_V2_PROVIDER_OUTBOX_DISPATCHED");
+        await UpdateOutboxEventAsync(
+            connection,
+            transaction,
+            outboxEvent.Id,
+            update,
+            cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return true;
     }
 
     private async Task<BillingV2ProviderCheckoutExecutionResult>
@@ -386,6 +466,7 @@ public sealed class BillingV2ProviderOutboxDispatcher
     private static async Task<IReadOnlyList<BillingV2ProviderOutboxEvent>>
         ReadPendingEventsAsync(
             MySqlConnection connection,
+            string? outboxEventId,
             CancellationToken cancellationToken)
     {
         var events = new List<BillingV2ProviderOutboxEvent>();
@@ -397,9 +478,13 @@ public sealed class BillingV2ProviderOutboxDispatcher
             WHERE event_type = 'billing_v2.provider_checkout.create_requested'
               AND available_at <= UTC_TIMESTAMP(6)
               AND status IN ('pending', 'processing')
+              AND (@id IS NULL OR id = @id)
             ORDER BY available_at, created_at
             LIMIT 10;
             """;
+        command.Parameters.AddWithValue(
+            "@id",
+            outboxEventId is null ? DBNull.Value : outboxEventId);
         await using var reader = await command.ExecuteReaderAsync(
             cancellationToken);
         while (await reader.ReadAsync(cancellationToken))

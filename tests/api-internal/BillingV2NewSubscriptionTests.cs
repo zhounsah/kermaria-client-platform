@@ -45,6 +45,8 @@ public static class BillingV2NewSubscriptionTests
         VerifyPayPalSubscriptionRequestBuilderRejectsMultiplePlans();
         VerifyProviderOutboxWorkerRequiresDedicatedFlag();
         VerifyProviderOutboxWorkerRequiresExecutor();
+        VerifyImmediateCheckoutDispatchHonoursOutboxFlag();
+        VerifyImmediateCheckoutDispatchHonoursExecutorGate();
         VerifyProviderOutboxClaimPolicyClaimsPendingAndExpiredProcessing();
         VerifyProviderOutboxClaimPolicyBlocksActiveProcessing();
         VerifyProviderOutboxDispatchPolicyMarksSuccessProcessed();
@@ -955,6 +957,64 @@ public static class BillingV2NewSubscriptionTests
                 == "BILLING_V2_PROVIDER_OUTBOX_EXECUTOR_NOT_CONFIGURED",
             "Le worker outbox provider V2 ne doit rien executer sans executor Stripe/PayPal explicite.");
     }
+
+    // Le dispatch immediat du checkout ne doit pas etre un second chemin
+    // plus permissif que le worker : meme gate, evaluee avant toute lecture
+    // SQL et tout appel provider. Le rail Stripe est volontairement absent :
+    // s'il etait atteint, le test echouerait.
+    private static void VerifyImmediateCheckoutDispatchHonoursOutboxFlag()
+    {
+        var dispatcher = ImmediateDispatcher(V2Runtime(
+            authoritativeCheckoutEnabled: true,
+            firstRealSubscriptionApproved: true,
+            providerOutboxEnabled: false,
+            providerExecutorEnabled: true));
+
+        var result = dispatcher
+            .DispatchEventAsync("outbox-event-1", CancellationToken.None)
+            .GetAwaiter()
+            .GetResult();
+
+        Ensure(
+            result.DispatchedCount == 0
+            && result.ReasonCode == "BILLING_V2_PROVIDER_OUTBOX_FLAG_OFF",
+            "Le dispatch immediat du checkout doit respecter le drapeau outbox.");
+    }
+
+    private static void VerifyImmediateCheckoutDispatchHonoursExecutorGate()
+    {
+        var dispatcher = ImmediateDispatcher(V2Runtime(
+            authoritativeCheckoutEnabled: true,
+            firstRealSubscriptionApproved: true,
+            providerOutboxEnabled: true,
+            providerExecutorEnabled: false));
+
+        var result = dispatcher
+            .DispatchEventAsync("outbox-event-1", CancellationToken.None)
+            .GetAwaiter()
+            .GetResult();
+
+        Ensure(
+            result.DispatchedCount == 0
+            && result.ReasonCode
+                == "BILLING_V2_PROVIDER_OUTBOX_EXECUTOR_NOT_CONFIGURED",
+            "Le dispatch immediat du checkout ne doit rien executer sans executor provider.");
+    }
+
+    private static BillingV2ProviderOutboxDispatcher ImmediateDispatcher(
+        BillingV2RuntimeConfiguration runtime)
+        => new(
+            new SqlRuntimeConfiguration(
+                PortalPersistenceMode.MariaDb,
+                "mariadb",
+                "Server=unreachable.invalid;Database=never_opened",
+                "test",
+                true),
+            runtime,
+            DisabledBillingV2ProviderCheckoutExecutor.Instance,
+            stripeRail: null!,
+            Microsoft.Extensions.Logging.Abstractions
+                .NullLogger<BillingV2ProviderOutboxDispatcher>.Instance);
 
     private static void VerifyProviderOutboxClaimPolicyClaimsPendingAndExpiredProcessing()
     {
