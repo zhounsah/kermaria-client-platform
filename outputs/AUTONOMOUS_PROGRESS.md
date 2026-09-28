@@ -24,8 +24,7 @@
 - Tests : Pester (18/18) ; build et exécution du target smoke API Release sans
   échec. Les avertissements CA1416 préexistants restent liés aux API AD Windows.
 - Commit documentation : `65c5a19` — `docs(dev): documenter le workflow de configuration sûr`.
-- Commit garde runtime : ce commit, limité à `DeploymentEnvironmentGuard` et à
-  ses cas smoke.
+- Commit garde runtime : `4df041b` — `test(dev): bloquer les cibles AD et KoXo croisées`.
 - Prochain sujet : analyse code-only du stockage headless, sans lancement KoXo.
 
 ## 2026-09-28 — Priorité 4 : stockage headless KoXo (code-only)
@@ -38,6 +37,7 @@
   doit refuser cette réparation headless jusqu'à un test fournisseur autorisé.
 - Prochain sujet : préparation code-only du scénario E2E abonnement DEV.
 - Blocker : preuve finale dépendante d'un test KoXo réel explicitement autorisé.
+- Commit : `0045409` — `docs(koxo): cadrer le blocage stockage headless`.
 
 ## 2026-09-28 — Priorité 5 : prochain E2E abonnement (code-only)
 
@@ -48,3 +48,4 @@
 - Décision attendue : groupe de service DEV dédié, autorisation bornée d'un
   groupe parent-domain, ou validation KoXo stockage préalable.
 - Blocker : décision de modèle et autorisation d'infrastructure de Zachary.
+- Commit : `48e6c3e` — `docs(dev): préparer le prochain E2E de provisioning`.
