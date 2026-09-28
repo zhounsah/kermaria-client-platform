@@ -76,6 +76,12 @@ public static class BillingV2FinancialCoreStore
     /// different (autre offre, autre rail) ne matche pas et cree bien une
     /// nouvelle intention.
     /// </summary>
+    /// <remarks>
+    /// Une intention dont le parcours provider est terminal (abonnement annule,
+    /// tentative echouee ou abandonnee) n'est jamais reprise, meme avant son
+    /// expiration : la reprendre renverrait le client vers une session morte
+    /// pendant toute la duree de vie de l'intention.
+    /// </remarks>
     public static async Task<BillingV2IntentRecord?> FindOpenIntentForSelectionAsync(
         MySqlConnection connection,
         MySqlTransaction? transaction,
@@ -86,19 +92,121 @@ public static class BillingV2FinancialCoreStore
         DateTime nowUtc,
         CancellationToken cancellationToken)
     {
+        var candidates = await ReadOpenIntentCandidatesAsync(
+            connection,
+            transaction,
+            customerId,
+            selectionFingerprint,
+            provider,
+            environment,
+            nowUtc,
+            forUpdate: false,
+            cancellationToken);
+        return candidates
+            .FirstOrDefault(candidate => BillingV2IntentReusePolicy.IsReusable(
+                candidate.SubscriptionStatus,
+                candidate.AttemptStatuses))
+            ?.Intent;
+    }
+
+    /// <summary>
+    /// Ferme logiquement les intentions encore <c>pending</c> de la meme
+    /// selection dont le parcours provider est terminal.
+    /// </summary>
+    /// <remarks>
+    /// Aucune ligne n'est supprimee : l'intention garde son historique, son
+    /// BillingEvent et sa tentative, et porte le motif de sa fermeture. Le
+    /// verrou <c>FOR UPDATE</c> et la condition <c>status = 'pending'</c>
+    /// rendent la fermeture sure face a un settlement concurrent.
+    /// </remarks>
+    public static async Task<int> CloseProviderTerminalIntentsForSelectionAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        string customerId,
+        string selectionFingerprint,
+        string provider,
+        string environment,
+        DateTime nowUtc,
+        CancellationToken cancellationToken)
+    {
+        var candidates = await ReadOpenIntentCandidatesAsync(
+            connection,
+            transaction,
+            customerId,
+            selectionFingerprint,
+            provider,
+            environment,
+            nowUtc,
+            forUpdate: true,
+            cancellationToken);
+        var closed = 0;
+        foreach (var candidate in candidates.Where(candidate =>
+                     !BillingV2IntentReusePolicy.IsReusable(
+                         candidate.SubscriptionStatus,
+                         candidate.AttemptStatuses)))
+        {
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText =
+                """
+                UPDATE billing_v2_subscription_changes
+                SET status = @closed_status,
+                    cancelled_at = COALESCE(cancelled_at, @now),
+                    failure_reason_code = COALESCE(failure_reason_code, @reason)
+                WHERE id = @id
+                  AND status = 'pending';
+                """;
+            command.Parameters.AddWithValue("@id", candidate.Intent.Id);
+            command.Parameters.AddWithValue(
+                "@closed_status",
+                BillingV2IntentReusePolicy.ClosedStatus);
+            command.Parameters.AddWithValue("@now", nowUtc);
+            command.Parameters.AddWithValue(
+                "@reason",
+                BillingV2IntentReusePolicy.ProviderTerminalReasonCode);
+            closed += await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        return closed;
+    }
+
+    private sealed record OpenIntentCandidate(
+        BillingV2IntentRecord Intent,
+        string SubscriptionStatus,
+        IReadOnlyList<string> AttemptStatuses);
+
+    private static async Task<IReadOnlyList<OpenIntentCandidate>>
+        ReadOpenIntentCandidatesAsync(
+            MySqlConnection connection,
+            MySqlTransaction? transaction,
+            string customerId,
+            string selectionFingerprint,
+            string provider,
+            string environment,
+            DateTime nowUtc,
+            bool forUpdate,
+            CancellationToken cancellationToken)
+    {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText =
-            """
+            $"""
             SELECT
                 change_row.id,
                 change_row.subscription_id,
                 change_row.status,
                 change_row.base_subscription_version,
-                request_row.billing_event_id
+                request_row.billing_event_id,
+                subscription_row.status AS subscription_status,
+                (SELECT GROUP_CONCAT(DISTINCT attempt_row.status)
+                   FROM billing_v2_payment_attempts attempt_row
+                  WHERE attempt_row.billing_event_id = request_row.billing_event_id)
+                    AS attempt_statuses
             FROM billing_v2_authoritative_checkout_requests request_row
             INNER JOIN billing_v2_subscription_changes change_row
                 ON change_row.id = request_row.subscription_change_id
+            INNER JOIN billing_v2_subscriptions subscription_row
+                ON subscription_row.id = change_row.subscription_id
             WHERE request_row.customer_id = @customer_id
               AND request_row.selection_fingerprint = @selection_fingerprint
               AND request_row.provider = @provider
@@ -107,7 +215,7 @@ public static class BillingV2FinancialCoreStore
               AND (change_row.expires_at IS NULL
                    OR change_row.expires_at > @now)
             ORDER BY change_row.requested_at ASC, change_row.id ASC
-            LIMIT 1;
+            {(forUpdate ? "FOR UPDATE" : string.Empty)};
             """;
         command.Parameters.AddWithValue("@customer_id", customerId);
         command.Parameters.AddWithValue(
@@ -116,7 +224,30 @@ public static class BillingV2FinancialCoreStore
         command.Parameters.AddWithValue("@provider", provider);
         command.Parameters.AddWithValue("@environment", environment);
         command.Parameters.AddWithValue("@now", nowUtc);
-        return await ReadIntentAsync(command, cancellationToken);
+
+        var candidates = new List<OpenIntentCandidate>();
+        await using var reader = await command.ExecuteReaderAsync(
+            cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var attemptStatusesOrdinal = reader.GetOrdinal("attempt_statuses");
+            candidates.Add(new OpenIntentCandidate(
+                new BillingV2IntentRecord(
+                    MariaDbIdentifierReader.ReadRequired(reader, "id"),
+                    MariaDbIdentifierReader.ReadRequired(reader, "subscription_id"),
+                    reader.GetString("status"),
+                    MariaDbIdentifierReader.ReadNullable(reader, "billing_event_id"),
+                    reader.IsDBNull(reader.GetOrdinal("base_subscription_version"))
+                        ? null
+                        : reader.GetInt64("base_subscription_version")),
+                reader.GetString("subscription_status"),
+                reader.IsDBNull(attemptStatusesOrdinal)
+                    ? Array.Empty<string>()
+                    : reader.GetString(attemptStatusesOrdinal)
+                        .Split(',', StringSplitOptions.RemoveEmptyEntries)));
+        }
+
+        return candidates;
     }
 
     private static async Task<BillingV2IntentRecord?> ReadIntentAsync(

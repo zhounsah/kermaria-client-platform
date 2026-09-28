@@ -67,7 +67,75 @@ public static class BillingV2FinancialCoreTests
         VerifyGenuineActivationStillActivates();
         VerifyInertSignalDoesNotReplayProvisioning();
 
+        // Intention orpheline : un parcours provider terminal ferme l'intention.
+        VerifyCancelledSubscriptionIntentIsNotReusable();
+        VerifyDeadAttemptIntentIsNotReusable();
+        VerifyOpenCheckoutIntentStaysReusable();
+        VerifyAmountMismatchAloneKeepsIntent();
+
         return Task.CompletedTask;
+    }
+
+    // ------------------------------------------------------------------
+    // Intention orpheline
+    // ------------------------------------------------------------------
+
+    private static void VerifyCancelledSubscriptionIntentIsNotReusable()
+    {
+        // Cas DEV du 2026-09-28 : abonnement annule, tentative en
+        // amount_mismatch, intention restee pending une heure.
+        Ensure(
+            !BillingV2IntentReusePolicy.IsReusable(
+                "cancelled",
+                [BillingV2PaymentAttemptStatuses.AmountMismatch]),
+            "Une intention dont l'abonnement est annule ne doit plus etre reprise.");
+        Ensure(
+            !BillingV2IntentReusePolicy.IsReusable("expired", []),
+            "Une intention dont l'abonnement est expire ne doit plus etre reprise.");
+    }
+
+    private static void VerifyDeadAttemptIntentIsNotReusable()
+    {
+        foreach (var status in new[]
+                 {
+                     BillingV2PaymentAttemptStatuses.Failed,
+                     BillingV2PaymentAttemptStatuses.Abandoned
+                 })
+        {
+            Ensure(
+                !BillingV2IntentReusePolicy.IsReusable(
+                    "pending_approval",
+                    [status]),
+                $"Une tentative {status} doit fermer l'intention immediatement.");
+        }
+    }
+
+    private static void VerifyOpenCheckoutIntentStaysReusable()
+    {
+        // Double clic et rafraichissement : l'intention vivante reste reprise,
+        // sinon un second abonnement serait ouvert pour la meme selection.
+        foreach (var attempts in new[]
+                 {
+                     Array.Empty<string>(),
+                     [BillingV2PaymentAttemptStatuses.Created],
+                     [BillingV2PaymentAttemptStatuses.InFlight]
+                 })
+        {
+            Ensure(
+                BillingV2IntentReusePolicy.IsReusable(
+                    "pending_approval",
+                    attempts),
+                "Une intention dont la session provider est ouverte doit rester reprise.");
+        }
+    }
+
+    private static void VerifyAmountMismatchAloneKeepsIntent()
+    {
+        Ensure(
+            BillingV2IntentReusePolicy.IsReusable(
+                "pending_approval",
+                [BillingV2PaymentAttemptStatuses.AmountMismatch]),
+            "Un amount_mismatch seul ne doit pas inviter un second paiement.");
     }
 
     // ------------------------------------------------------------------

@@ -100,6 +100,52 @@ public static class BillingV2PaymentAttemptStatuses
         };
 }
 
+/// <summary>
+/// Decide si une intention <c>pending</c> peut encore etre reprise par un
+/// nouvel achat de la meme selection.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Une intention est morte des que son parcours provider l'est : abonnement
+/// annule/expire, ou tentative echouee/abandonnee. La reprendre renverrait le
+/// client vers une session provider close jusqu'a l'expiration de l'intention.
+/// </para>
+/// <para>
+/// <c>amount_mismatch</c> seul ne ferme volontairement pas l'intention : de
+/// l'argent a pu etre recu, et une nouvelle intention inviterait un second
+/// paiement avant la reconciliation. Seule l'annulation de l'abonnement la
+/// ferme alors.
+/// </para>
+/// </remarks>
+public static class BillingV2IntentReusePolicy
+{
+    public const string ClosedStatus = "cancelled";
+    public const string ProviderTerminalReasonCode =
+        "BILLING_V2_INTENT_PROVIDER_TERMINAL";
+
+    private static readonly IReadOnlySet<string> TerminalSubscriptionStatuses =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "cancelled",
+            "expired",
+            "failed"
+        };
+
+    private static readonly IReadOnlySet<string> DeadAttemptStatuses =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            BillingV2PaymentAttemptStatuses.Failed,
+            BillingV2PaymentAttemptStatuses.Abandoned
+        };
+
+    public static bool IsReusable(
+        string? subscriptionStatus,
+        IEnumerable<string> attemptStatuses)
+        => !TerminalSubscriptionStatuses.Contains(subscriptionStatus?.Trim() ?? string.Empty)
+           && !attemptStatuses.Any(status =>
+               DeadAttemptStatuses.Contains(status.Trim()));
+}
+
 public sealed record BillingV2FinancialDecision(
     bool IsValid,
     string ReasonCode,

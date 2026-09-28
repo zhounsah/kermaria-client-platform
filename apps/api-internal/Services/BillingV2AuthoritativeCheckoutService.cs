@@ -434,6 +434,21 @@ public sealed class BillingV2AuthoritativeCheckoutService
             }
         }
 
+        // Une intention de la meme selection dont le parcours provider est
+        // terminal n'a pas ete reprise plus haut ; elle est fermee ici, dans
+        // la transaction qui ouvre la nouvelle, pour ne pas rester `pending`
+        // jusqu'a son expiration.
+        await BillingV2FinancialCoreStore
+            .CloseProviderTerminalIntentsForSelectionAsync(
+                connection,
+                transaction,
+                session.CustomerId,
+                composition.SelectionFingerprint,
+                provider,
+                environment,
+                now,
+                cancellationToken);
+
         var itemPlan = BillingV2NewSubscriptionPlanner.Plan(
             session,
             presetItems);
