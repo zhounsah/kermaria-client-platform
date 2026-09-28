@@ -94,7 +94,7 @@ function readComponents(value: unknown): BillingV2PublicSelectionComponent[] | n
     const serviceCode = readString(source.serviceCode);
     const tierCode = source.tierCode === null ? null : readString(source.tierCode);
     const quantity = source.quantity;
-    if (!serviceCode || (source.tierCode !== undefined && !tierCode)
+    if (!serviceCode || (source.tierCode !== undefined && source.tierCode !== null && !tierCode)
       || typeof quantity !== "number" || !Number.isInteger(quantity)
       || quantity <= 0 || quantity > 1000) {
       return null;
