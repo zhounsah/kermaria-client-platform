@@ -85,6 +85,41 @@ public static class DeploymentEnvironmentGuard
             && DevelopmentAccountName.IsMatch(accountName.Trim());
 
     /// <summary>
+    /// Isole les groupes AD de service administres par le catalogue. Le nom
+    /// SAM est la seule reference portee par <c>billing_v2_provisioning_rules</c>
+    /// : le DN arrive plus tard de la configuration annuaire. Garder cette
+    /// validation ici la fait suivre exactement le meme APP_ENV que les OU,
+    /// namespace KoXo et endpoints de provisioning.
+    /// </summary>
+    public static bool TryValidateAdGroupTarget(
+        DeploymentEnvironment environment,
+        string? targetReference,
+        out string reasonCode)
+    {
+        var normalized = targetReference?.Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            reasonCode = "AD_GROUP_TARGET_MISSING";
+            return false;
+        }
+
+        var isDevelopmentTarget = normalized.EndsWith(
+            "_DEV", StringComparison.OrdinalIgnoreCase);
+        switch (environment)
+        {
+            case DeploymentEnvironment.Development when !isDevelopmentTarget:
+                reasonCode = "AD_GROUP_TARGET_OUTSIDE_DEVELOPMENT";
+                return false;
+            case DeploymentEnvironment.Production when isDevelopmentTarget:
+                reasonCode = "AD_GROUP_TARGET_DEVELOPMENT_FORBIDDEN";
+                return false;
+            default:
+                reasonCode = string.Empty;
+                return true;
+        }
+    }
+
+    /// <summary>
     /// Famille de cle Stripe (prefixe seul). Ne renvoie jamais la cle.
     /// </summary>
     public static string DescribeStripeKeyFamily(string? key)

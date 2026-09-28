@@ -56,7 +56,24 @@ public sealed record BillingV2AdminService(
     IReadOnlyList<BillingV2AdminTier> Tiers,
     // Prix rattaches au service lui-meme (tier_id NULL). Un service tarife au
     // palier n'en porte aucun.
-    IReadOnlyList<BillingV2AdminPrice> FlatPrices);
+    IReadOnlyList<BillingV2AdminPrice> FlatPrices,
+    IReadOnlyList<BillingV2AdminProvisioningRule> ProvisioningRules);
+
+/// <summary>
+/// Regle technique attachee au catalogue. La portee est exposee explicitement
+/// car elle est une contrainte de la semantique de provisioning, pas un choix
+/// laisse au navigateur.
+/// </summary>
+public sealed record BillingV2AdminProvisioningRule(
+    string Id,
+    string ServiceId,
+    string? TierId,
+    string RuleType,
+    string TargetType,
+    string TargetReference,
+    string Scope,
+    string Status,
+    int DisplayOrder);
 
 /// <summary>
 /// Diagnostic serveur de la commande directe. Il n'accorde aucune
@@ -322,6 +339,26 @@ public sealed record BillingV2AdminProviderMappingPayload(
     string? ExternalPriceId,
     string? ExternalPlanId,
     string? Status);
+
+public sealed record BillingV2AdminProvisioningRuleCreatePayload(
+    string? ServiceId,
+    string? TierId,
+    string? RuleType,
+    string? TargetType,
+    string? TargetReference,
+    string? Scope,
+    string? Status,
+    int? DisplayOrder);
+
+public sealed record BillingV2AdminProvisioningRuleUpdatePayload(
+    string? TierId,
+    bool? TierIdSet,
+    string? RuleType,
+    string? TargetType,
+    string? TargetReference,
+    string? Scope,
+    string? Status,
+    int? DisplayOrder);
 
 public sealed record BillingV2AdminCatalogMutationResponse(
     string Code,

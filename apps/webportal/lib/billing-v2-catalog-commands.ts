@@ -36,6 +36,8 @@ const CATALOG_PUBLIC_ORDERING_MODES = new Set([
   "offer_component",
   "direct",
 ]);
+const PROVISIONING_RULE_TYPES = new Set(["ad_group_membership"]);
+const PROVISIONING_TARGET_TYPES = new Set(["ad_group"]);
 /**
  * Environnements reellement existants chez chaque fournisseur.
  *
@@ -100,6 +102,12 @@ export function parseBillingV2CatalogAdminCommand(
       return buildPaymentOption(source);
     case "provider.mapping":
       return buildProviderMapping(source);
+    case "provisioning_rule.create":
+      return buildProvisioningRuleCreate(source);
+    case "provisioning_rule.update":
+      return buildProvisioningRuleUpdate(source);
+    case "provisioning_rule.disable":
+      return buildProvisioningRuleDisable(source);
     default:
       return null;
   }
@@ -491,6 +499,39 @@ function buildProviderMapping(source: Record<string, unknown>) {
       status: optionalEnum(source.status, CATALOG_STATUSES) ?? "active",
     },
   };
+}
+
+function buildProvisioningRuleCreate(source: Record<string, unknown>) {
+  const serviceId = readUuid(source.serviceId);
+  const tierId = readOptionalUuid(source.tierId);
+  const ruleType = optionalEnum(source.ruleType, PROVISIONING_RULE_TYPES);
+  const targetType = optionalEnum(source.targetType, PROVISIONING_TARGET_TYPES);
+  const targetReference = optionalString(source.targetReference, 255);
+  if (!serviceId || tierId === false || !ruleType || !targetType || !targetReference || source.scope !== "user") return null;
+  return { path: "/provisioning-rules", method: "POST" as const, payload: {
+    serviceId, tierId, ruleType, targetType, targetReference, scope: "user",
+    status: optionalEnum(source.status, CATALOG_STATUSES) ?? "active",
+    displayOrder: optionalInteger(source.displayOrder, 0, 100000) ?? 0,
+  } };
+}
+
+function buildProvisioningRuleUpdate(source: Record<string, unknown>) {
+  const id = readUuid(source.id);
+  const tierId = readOptionalUuid(source.tierId);
+  const ruleType = optionalEnum(source.ruleType, PROVISIONING_RULE_TYPES);
+  const targetType = optionalEnum(source.targetType, PROVISIONING_TARGET_TYPES);
+  const targetReference = optionalString(source.targetReference, 255);
+  if (!id || tierId === false || !ruleType || !targetType || !targetReference || source.scope !== "user") return null;
+  return { path: "/provisioning-rules/" + id, method: "PATCH" as const, payload: {
+    tierId, tierIdSet: true, ruleType, targetType, targetReference, scope: "user",
+    status: optionalEnum(source.status, CATALOG_STATUSES) ?? "active",
+    displayOrder: optionalInteger(source.displayOrder, 0, 100000) ?? 0,
+  } };
+}
+
+function buildProvisioningRuleDisable(source: Record<string, unknown>) {
+  const id = readUuid(source.id);
+  return id ? { path: "/provisioning-rules/" + id, method: "DELETE" as const, payload: undefined } : null;
 }
 
 function readUuid(value: unknown): string | null {

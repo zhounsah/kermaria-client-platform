@@ -6,6 +6,7 @@ import { useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import type {
   BillingV2AdminDirectOrderingDiagnostic,
+  BillingV2AdminProvisioningRule,
   BillingV2AdminService,
 } from "@/lib/internal-api";
 import type { PublicCommercialOrderingMode } from "@kermaria/shared";
@@ -14,7 +15,7 @@ import { ServicePricingPanel } from "./ServicePricingPanel";
 import { ServiceTiersPanel } from "./ServiceTiersPanel";
 import { useAdminCatalogCommand } from "./useAdminCatalogCommand";
 
-type ServiceTab = "essential" | "tiers" | "pricing" | "commercialization";
+type ServiceTab = "essential" | "tiers" | "pricing" | "commercialization" | "provisioning";
 type ServiceForm = {
   name: string; description: string; tierSelectorLabel: string; category: string; status: string; displayOrder: number;
   publicVisible: boolean; selfServiceOrderable: boolean; publicOrderingMode: PublicCommercialOrderingMode; discountEligible: boolean; mandatoryForSubscription: boolean;
@@ -41,6 +42,7 @@ export function ServiceCatalogEditor({ asOf, service, tab }: { asOf: string; ser
     { key: "tiers", label: "Paliers", href: `${base}?tab=tiers` },
     { key: "pricing", label: "Tarification", href: `${base}?tab=pricing` },
     { key: "commercialization", label: "Commercialisation", href: `${base}?tab=commercialization` },
+    { key: "provisioning", label: "Provisioning", href: `${base}?tab=provisioning` },
   ];
 
   useUnsavedChangesGuard(dirty);
@@ -58,6 +60,7 @@ export function ServiceCatalogEditor({ asOf, service, tab }: { asOf: string; ser
     <CatalogFeedback feedback={command.feedback} />
     {tab === "tiers" ? <ServiceTiersPanel service={service} /> : null}
     {tab === "pricing" ? <ServicePricingPanel asOf={asOf} service={service} /> : null}
+    {tab === "provisioning" ? <ProvisioningRulesPanel service={service} /> : null}
     {tab === "essential" || tab === "commercialization" ? <form onSubmit={save}>
       <section className={styles.panel}>
         <div className={styles.sectionHeading}><div><h2>{tab === "essential" ? "Informations essentielles" : "Commercialisation"}</h2><p>{tab === "essential" ? "Le code identifie durablement le service dans Billing V2." : "Sépare la visibilité, la vente directe et les règles commerciales."}</p></div></div>
@@ -92,6 +95,55 @@ export function ServiceCatalogEditor({ asOf, service, tab }: { asOf: string; ser
       <StickyActions busy={command.busy} dirty={dirty} onCancel={() => setForm(saved)} />
     </form> : null}
   </div>;
+}
+
+type ProvisioningRuleDraft = {
+  tierId: string;
+  targetReference: string;
+  status: "active" | "inactive";
+  displayOrder: number;
+};
+
+function toProvisioningRuleDraft(rule?: BillingV2AdminProvisioningRule): ProvisioningRuleDraft {
+  return {
+    tierId: rule?.tierId ?? "",
+    targetReference: rule?.targetReference ?? "",
+    status: rule?.status === "inactive" ? "inactive" : "active",
+    displayOrder: rule?.displayOrder ?? 0,
+  };
+}
+
+function ProvisioningRulesPanel({ service }: { service: BillingV2AdminService }) {
+  const command = useAdminCatalogCommand();
+  const [draft, setDraft] = useState<ProvisioningRuleDraft>(toProvisioningRuleDraft());
+  const adRules = service.provisioningRules.filter((rule) => rule.ruleType === "ad_group_membership" && rule.targetType === "ad_group");
+  const canUseUserScope = service.defaultScopeType === "user";
+
+  async function createRule() {
+    await command.send({ kind: "provisioning_rule.create", serviceId: service.id, tierId: draft.tierId || null, ruleType: "ad_group_membership", targetType: "ad_group", targetReference: draft.targetReference, scope: "user", status: draft.status, displayOrder: draft.displayOrder });
+  }
+
+  return <section className={styles.panel}>
+    <div className={styles.sectionHeading}><div><h2>Règles de provisioning</h2><p>Autorité technique : <code>billing_v2_provisioning_rules</code>. Les groupes Active Directory sont toujours portés par un utilisateur.</p></div></div>
+    <CatalogFeedback feedback={command.feedback} />
+    {!canUseUserScope ? <p className={styles.hint}>Ce service est de portée {service.defaultScopeType}. Une règle <code>ad_group_membership</code> exige une portée utilisateur et ne peut pas être ajoutée ici.</p> : <>
+      {adRules.length === 0 ? <p className={styles.hint}>Aucune règle de groupe Active Directory.</p> : <div className={styles.tableWrap}><table className={styles.table}><caption className="sr-only">Règles de provisioning</caption><thead><tr><th>Palier</th><th>Groupe AD</th><th>Statut</th><th>Ordre</th><th>Actions</th></tr></thead><tbody>{adRules.map((rule) => <ProvisioningRuleRow key={rule.id} rule={rule} service={service} command={command} />)}</tbody></table></div>}
+      <div className={styles.advanced}><h3>Ajouter une règle</h3><div className={styles.formGrid}>
+        <CatalogField htmlFor="provisioning-tier" label="Palier"><select id="provisioning-tier" value={draft.tierId} onChange={(event) => setDraft({ ...draft, tierId: event.currentTarget.value })}><option value="">Service entier</option>{service.tiers.map((tier) => <option key={tier.id} value={tier.id}>{tier.name} ({tier.code})</option>)}</select></CatalogField>
+        <CatalogField htmlFor="provisioning-target" label="Groupe AD"><input id="provisioning-target" maxLength={255} required value={draft.targetReference} onChange={(event) => setDraft({ ...draft, targetReference: event.currentTarget.value })} placeholder="GG_VPN" /></CatalogField>
+        <CatalogField htmlFor="provisioning-status" label="Statut"><select id="provisioning-status" value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.currentTarget.value as ProvisioningRuleDraft["status"] })}><option value="active">Actif</option><option value="inactive">Inactif</option></select></CatalogField>
+        <CatalogField htmlFor="provisioning-order" label="Ordre"><input id="provisioning-order" min={0} type="number" value={draft.displayOrder} onChange={(event) => setDraft({ ...draft, displayOrder: Number(event.currentTarget.value) })} /></CatalogField>
+      </div><button className="button button-secondary" disabled={command.busy || draft.targetReference.trim().length === 0} onClick={createRule} type="button">Ajouter la règle</button></div>
+    </>}
+  </section>;
+}
+
+function ProvisioningRuleRow({ rule, service, command }: { rule: BillingV2AdminProvisioningRule; service: BillingV2AdminService; command: ReturnType<typeof useAdminCatalogCommand> }) {
+  const [draft, setDraft] = useState(toProvisioningRuleDraft(rule));
+  const changed = JSON.stringify(draft) !== JSON.stringify(toProvisioningRuleDraft(rule));
+  async function saveRule() { await command.send({ kind: "provisioning_rule.update", id: rule.id, tierId: draft.tierId || null, ruleType: "ad_group_membership", targetType: "ad_group", targetReference: draft.targetReference, scope: "user", status: draft.status, displayOrder: draft.displayOrder }); }
+  async function disableRule() { await command.send({ kind: "provisioning_rule.disable", id: rule.id }); }
+  return <tr><td><select aria-label="Palier" value={draft.tierId} onChange={(event) => setDraft({ ...draft, tierId: event.currentTarget.value })}><option value="">Service entier</option>{service.tiers.map((tier) => <option key={tier.id} value={tier.id}>{tier.code}</option>)}</select></td><td><input aria-label="Groupe AD" maxLength={255} value={draft.targetReference} onChange={(event) => setDraft({ ...draft, targetReference: event.currentTarget.value })} /></td><td><select aria-label="Statut" value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.currentTarget.value as ProvisioningRuleDraft["status"] })}><option value="active">Actif</option><option value="inactive">Inactif</option></select></td><td><input aria-label="Ordre" min={0} type="number" value={draft.displayOrder} onChange={(event) => setDraft({ ...draft, displayOrder: Number(event.currentTarget.value) })} /></td><td><button className="button button-secondary" disabled={command.busy || !changed || draft.targetReference.trim().length === 0} onClick={saveRule} type="button">Modifier</button>{rule.status === "active" ? <button className="button button-secondary" disabled={command.busy} onClick={disableRule} type="button">Désactiver</button> : null}</td></tr>;
 }
 
 function DirectOrderingDiagnosticPanel({

@@ -52,7 +52,7 @@ const service = {
   publicOrderingMode: "quote", configurationPolicy: "not_required", directOrderingAvailable: false,
   directOrderingDiagnostic: { eligible: false, checks: [], tiers: [], flatInitialPrices: [] },
   status: "active", displayOrder: 0, updatedByReference: null,
-  flatPrices: [price({ amountCents: 900, validUntil: "2026-08-01T00:00:00.000Z" })],
+  flatPrices: [price({ amountCents: 900, validUntil: "2026-08-01T00:00:00.000Z" })], provisioningRules: [],
   tiers: [{ id: "tier", serviceId: "service", code: "TIER", name: "Tier",
     publicLabel: null, description: null, numericValue: null, unit: null,
     publicSelectable: true, status: "active", displayOrder: 0, attributes: [],
@@ -115,6 +115,32 @@ const serviceEditor = await read("components/admin/catalog/ServiceCatalogEditor.
 for (const tab of ["essential", "tiers", "pricing", "commercialization"]) {
   assert.match(serviceEditor, new RegExp(`tab=${tab}`), tab);
 }
+assert.match(serviceEditor, /Règles de provisioning/);
+assert.match(serviceEditor, /provisioning_rule\.create/);
+assert.match(serviceEditor, /provisioning_rule\.update/);
+assert.match(serviceEditor, /provisioning_rule\.disable/);
+assert.match(serviceEditor, /billing_v2_provisioning_rules/);
+assert.match(commands, /case "provisioning_rule\.create"/);
+assert.match(commands, /case "provisioning_rule\.update"/);
+assert.match(commands, /case "provisioning_rule\.disable"/);
+assert.match(commands, /PROVISIONING_RULE_TYPES/);
+assert.match(commands, /scope !== "user"/);
+assert.match(apiProgram, /catalog\/provisioning-rules[\s\S]{0,900}CreateProvisioningRuleAsync/);
+assert.match(apiProgram, /catalog\/provisioning-rules\/\{id\}[\s\S]{0,900}UpdateProvisioningRuleAsync/);
+assert.match(apiProgram, /MapDelete\([\s\S]{0,100}catalog\/provisioning-rules\/\{id\}[\s\S]{0,900}DisableProvisioningRuleAsync/);
+assert.match(administrationService, /ReadProvisioningRulesAsync/);
+assert.match(administrationService, /ValidateProvisioningRuleLocationAsync/);
+assert.match(administrationService, /HasProvisioningRuleDuplicateAsync/);
+assert.match(administrationService, /RequireProvisioningRuleType/);
+assert.match(administrationService, /RequireProvisioningTargetType/);
+assert.match(administrationService, /RequireProvisioningScope/);
+assert.match(administrationService, /SET status = 'inactive'/);
+assert.match(administrationService, /CreateProvisioningRuleAsync[\s\S]{0,900}RequireAdGroupTargetEnvironment/);
+assert.match(administrationService, /UpdateProvisioningRuleAsync[\s\S]{0,2200}RequireAdGroupTargetEnvironment/);
+const deploymentEnvironmentGuard = await read("../../apps/api-internal/Data/Configuration/DeploymentEnvironmentGuard.cs");
+assert.match(deploymentEnvironmentGuard, /TryValidateAdGroupTarget/);
+assert.match(deploymentEnvironmentGuard, /AD_GROUP_TARGET_OUTSIDE_DEVELOPMENT/);
+assert.match(deploymentEnvironmentGuard, /AD_GROUP_TARGET_DEVELOPMENT_FORBIDDEN/);
 const catalogUi = await read("components/admin/catalog/AdminCatalogUi.tsx");
 assert.match(catalogUi, /beforeunload/);
 assert.match(catalogUi, /document\.addEventListener\("click"/);

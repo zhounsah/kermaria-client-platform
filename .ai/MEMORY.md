@@ -24,6 +24,7 @@
   - [billing-v2-additional-users.md](topics/billing-v2-additional-users.md) : Phase 4 USER-ADDITIONAL, remise du mot de passe chiffrée et atomique, export fail-closed, absence d'oracle cross-customer.
   - [billing-v2-only-cancellation.md](topics/billing-v2-only-cancellation.md) : suppression du legacy, `pending_cancellation`, résolveur d'ancre provider, PayPal en deux gestes, conservation des droits payés.
   - [pieges-sql-et-preuves.md](topics/pieges-sql-et-preuves.md) : défauts SQL invisibles des suites mock (littéral brut, `<=>`, lien AD transféré, `objectGUID`).
+  - [billing-v2-provisioning-rule-administration.md](topics/billing-v2-provisioning-rule-administration.md) : administration des règles de provisioning Billing V2, bornée au modèle groupe AD/user et à la table d'autorité unique.
 
 ### Environnement DEV isolé (2026-09-21)
 

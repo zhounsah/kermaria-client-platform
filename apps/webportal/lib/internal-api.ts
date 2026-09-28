@@ -1755,6 +1755,18 @@ export type BillingV2AdminTier = {
   prices: BillingV2AdminPrice[];
 };
 
+export type BillingV2AdminProvisioningRule = {
+  id: string;
+  serviceId: string;
+  tierId: string | null;
+  ruleType: string;
+  targetType: string;
+  targetReference: string;
+  scope: string;
+  status: string;
+  displayOrder: number;
+};
+
 export type BillingV2AdminService = {
   id: string;
   code: string;
@@ -1778,6 +1790,7 @@ export type BillingV2AdminService = {
   updatedByReference: string | null;
   tiers: BillingV2AdminTier[];
   flatPrices: BillingV2AdminPrice[];
+  provisioningRules: BillingV2AdminProvisioningRule[];
 };
 
 export type BillingV2AdminDirectOrderingDiagnostic = {

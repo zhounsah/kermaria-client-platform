@@ -132,6 +132,7 @@ if (deploymentEnvironmentReport.Violations.Count > 0)
         deploymentEnvironmentReport.Violations,
         fileLoggerOptions);
 }
+builder.Services.AddSingleton(deploymentEnvironmentReport);
 
 // Namespace KoXo (identifiants uniques, references client, profils) : fixe
 // avant toute allocation. Sans configuration, espace historique de la
@@ -6601,6 +6602,76 @@ app.MapPost(
             context, auditService, actor,
             "billing_v2.catalog.provider_mapping.upsert",
             "billing_v2_service_price", id, result);
+    });
+app.MapGet(
+    "/internal/admin/billing-v2/catalog/services/{id}/provisioning-rules",
+    async (
+        string id,
+        HttpContext context,
+        IBillingV2CatalogAdministrationService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        _ = await ResolveAdminSessionAsync(
+            context, authenticationService, auditService,
+            "admin.billing_v2.catalog.provisioning_rule.read");
+        return Results.Ok(await service.GetProvisioningRulesAsync(
+            id, context.RequestAborted));
+    });
+app.MapPost(
+    "/internal/admin/billing-v2/catalog/provisioning-rules",
+    async (
+        BillingV2AdminProvisioningRuleCreatePayload payload,
+        HttpContext context,
+        IBillingV2CatalogAdministrationService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context, authenticationService, auditService,
+            "admin.billing_v2.catalog.provisioning_rule.create");
+        var result = await service.CreateProvisioningRuleAsync(
+            payload, actor.UserId, context.RequestAborted);
+        return await CatalogMutationResultAsync(
+            context, auditService, actor, "billing_v2.catalog.provisioning_rule.create",
+            "billing_v2_provisioning_rule", result.Id ?? payload.ServiceId ?? "unknown", result);
+    });
+app.MapPatch(
+    "/internal/admin/billing-v2/catalog/provisioning-rules/{id}",
+    async (
+        string id,
+        BillingV2AdminProvisioningRuleUpdatePayload payload,
+        HttpContext context,
+        IBillingV2CatalogAdministrationService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context, authenticationService, auditService,
+            "admin.billing_v2.catalog.provisioning_rule.update");
+        var result = await service.UpdateProvisioningRuleAsync(
+            id, payload, actor.UserId, context.RequestAborted);
+        return await CatalogMutationResultAsync(
+            context, auditService, actor, "billing_v2.catalog.provisioning_rule.update",
+            "billing_v2_provisioning_rule", id, result);
+    });
+app.MapDelete(
+    "/internal/admin/billing-v2/catalog/provisioning-rules/{id}",
+    async (
+        string id,
+        HttpContext context,
+        IBillingV2CatalogAdministrationService service,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context, authenticationService, auditService,
+            "admin.billing_v2.catalog.provisioning_rule.disable");
+        var result = await service.DisableProvisioningRuleAsync(
+            id, actor.UserId, context.RequestAborted);
+        return await CatalogMutationResultAsync(
+            context, auditService, actor, "billing_v2.catalog.provisioning_rule.disable",
+            "billing_v2_provisioning_rule", id, result);
     });
 app.MapGet(
     "/internal/admin/billing-v2/readiness",

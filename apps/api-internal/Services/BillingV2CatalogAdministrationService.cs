@@ -3,6 +3,7 @@ using System.Text;
 using Kermaria.ApiInternal.Contracts;
 using Kermaria.ApiInternal.Data.Configuration;
 using Kermaria.ApiInternal.Data.Repositories;
+using Kermaria.ApiInternal.Services.Provisioning;
 using MySqlConnector;
 
 namespace Kermaria.ApiInternal.Services;
@@ -155,6 +156,26 @@ public interface IBillingV2CatalogAdministrationService
         BillingV2AdminProviderMappingPayload payload,
         string actorReference,
         CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<BillingV2AdminProvisioningRule>> GetProvisioningRulesAsync(
+        string serviceId,
+        CancellationToken cancellationToken);
+
+    Task<BillingV2AdminCatalogMutationResponse> CreateProvisioningRuleAsync(
+        BillingV2AdminProvisioningRuleCreatePayload payload,
+        string actorReference,
+        CancellationToken cancellationToken);
+
+    Task<BillingV2AdminCatalogMutationResponse> UpdateProvisioningRuleAsync(
+        string ruleId,
+        BillingV2AdminProvisioningRuleUpdatePayload payload,
+        string actorReference,
+        CancellationToken cancellationToken);
+
+    Task<BillingV2AdminCatalogMutationResponse> DisableProvisioningRuleAsync(
+        string ruleId,
+        string actorReference,
+        CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -221,13 +242,16 @@ public sealed class BillingV2CatalogAdministrationService
         };
 
     private readonly SqlRuntimeConfiguration _sql;
+    private readonly DeploymentEnvironmentReport _deploymentEnvironment;
     private readonly ILogger<BillingV2CatalogAdministrationService> _logger;
 
     public BillingV2CatalogAdministrationService(
         SqlRuntimeConfiguration sql,
+        DeploymentEnvironmentReport deploymentEnvironment,
         ILogger<BillingV2CatalogAdministrationService> logger)
     {
         _sql = sql;
+        _deploymentEnvironment = deploymentEnvironment;
         _logger = logger;
     }
 
@@ -257,10 +281,11 @@ public sealed class BillingV2CatalogAdministrationService
         var mappings = await ReadProviderMappingsAsync(connection, cancellationToken);
         var prices = await ReadPricesAsync(connection, mappings, cancellationToken);
         var attributes = await ReadTierAttributesAsync(connection, cancellationToken);
+        var provisioningRules = await ReadProvisioningRulesAsync(connection, null, cancellationToken);
         var tiers = await ReadTiersAsync(
             connection, prices, attributes, cancellationToken);
         var services = await ReadServicesAsync(
-            connection, tiers, prices, cancellationToken);
+            connection, tiers, prices, provisioningRules, cancellationToken);
         var presets = await ReadPresetsAsync(connection, cancellationToken);
         var commitments = await ReadCommitmentsAsync(connection, cancellationToken);
 
@@ -333,6 +358,143 @@ public sealed class BillingV2CatalogAdministrationService
         }
 
         return readiness;
+    }
+
+    public async Task<IReadOnlyList<BillingV2AdminProvisioningRule>>
+        GetProvisioningRulesAsync(string serviceId, CancellationToken cancellationToken)
+    {
+        RequirePersistence();
+        var id = RequireIdentifier(serviceId);
+        await using var connection = await OpenAsync(cancellationToken);
+        if (!await ExistsAsync(connection, "billing_v2_services", id, cancellationToken))
+        {
+            throw new PortalDataNotFoundException();
+        }
+
+        return await ReadProvisioningRulesAsync(connection, id, cancellationToken);
+    }
+
+    public async Task<BillingV2AdminCatalogMutationResponse> CreateProvisioningRuleAsync(
+        BillingV2AdminProvisioningRuleCreatePayload payload,
+        string actorReference,
+        CancellationToken cancellationToken)
+    {
+        RequirePersistence();
+        var serviceId = RequireIdentifier(payload.ServiceId);
+        var tierId = OptionalIdentifier(payload.TierId);
+        var ruleType = RequireProvisioningRuleType(payload.RuleType);
+        var targetType = RequireProvisioningTargetType(ruleType, payload.TargetType);
+        var targetReference = RequireText(payload.TargetReference, 255);
+        var scope = RequireProvisioningScope(ruleType, targetType, payload.Scope);
+        RequireAdGroupTargetEnvironment(ruleType, targetType, targetReference);
+        var status = payload.Status is null ? "active" : RequireEnum(payload.Status, AllowedStatuses);
+
+        await using var connection = await OpenAsync(cancellationToken);
+        await ValidateProvisioningRuleLocationAsync(connection, serviceId, tierId, cancellationToken);
+        if (await HasProvisioningRuleDuplicateAsync(connection, null, serviceId, tierId, ruleType, targetType, targetReference, cancellationToken))
+        {
+            return new BillingV2AdminCatalogMutationResponse(
+                "BILLING_V2_CATALOG_PROVISIONING_RULE_TAKEN",
+                "Une regle active identique existe deja pour ce service et ce palier.");
+        }
+
+        var id = Guid.NewGuid().ToString();
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            INSERT INTO billing_v2_provisioning_rules
+                (id, service_id, tier_id, rule_type, target_type, target_reference,
+                 value_source, static_value, enable_action, disable_action, status,
+                 display_order, created_at, updated_at)
+            VALUES
+                (@id, @service_id, @tier_id, @rule_type, @target_type, @target_reference,
+                 'none', NULL, NULL, NULL, @status, @display_order,
+                 UTC_TIMESTAMP(6), UTC_TIMESTAMP(6));
+            """;
+        command.Parameters.AddWithValue("@id", id);
+        command.Parameters.AddWithValue("@service_id", serviceId);
+        command.Parameters.AddWithValue("@tier_id", (object?)tierId ?? DBNull.Value);
+        command.Parameters.AddWithValue("@rule_type", ruleType);
+        command.Parameters.AddWithValue("@target_type", targetType);
+        command.Parameters.AddWithValue("@target_reference", targetReference);
+        command.Parameters.AddWithValue("@status", status);
+        command.Parameters.AddWithValue("@display_order", payload.DisplayOrder ?? 0);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        return new BillingV2AdminCatalogMutationResponse(
+            "BILLING_V2_CATALOG_PROVISIONING_RULE_CREATED",
+            "Regle de provisioning creee.", id);
+    }
+
+    public async Task<BillingV2AdminCatalogMutationResponse> UpdateProvisioningRuleAsync(
+        string ruleId,
+        BillingV2AdminProvisioningRuleUpdatePayload payload,
+        string actorReference,
+        CancellationToken cancellationToken)
+    {
+        RequirePersistence();
+        var id = RequireIdentifier(ruleId);
+        await using var connection = await OpenAsync(cancellationToken);
+        var existing = await ReadProvisioningRuleAsync(connection, id, cancellationToken);
+        if (existing is null) throw new PortalDataNotFoundException();
+
+        var tierId = payload.TierIdSet == true ? OptionalIdentifier(payload.TierId) : existing.TierId;
+        var ruleType = payload.RuleType is null ? existing.RuleType : RequireProvisioningRuleType(payload.RuleType);
+        var targetType = payload.TargetType is null
+            ? RequireProvisioningTargetType(ruleType, existing.TargetType)
+            : RequireProvisioningTargetType(ruleType, payload.TargetType);
+        var targetReference = payload.TargetReference is null
+            ? existing.TargetReference
+            : RequireText(payload.TargetReference, 255);
+        var scope = RequireProvisioningScope(ruleType, targetType, payload.Scope ?? existing.Scope);
+        RequireAdGroupTargetEnvironment(ruleType, targetType, targetReference);
+        var status = payload.Status is null ? existing.Status : RequireEnum(payload.Status, AllowedStatuses);
+        await ValidateProvisioningRuleLocationAsync(connection, existing.ServiceId, tierId, cancellationToken);
+        if (string.Equals(status, "active", StringComparison.Ordinal)
+            && await HasProvisioningRuleDuplicateAsync(connection, id, existing.ServiceId, tierId, ruleType, targetType, targetReference, cancellationToken))
+        {
+            return new BillingV2AdminCatalogMutationResponse(
+                "BILLING_V2_CATALOG_PROVISIONING_RULE_TAKEN",
+                "Une regle active identique existe deja pour ce service et ce palier.", id);
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            UPDATE billing_v2_provisioning_rules
+            SET tier_id = @tier_id, rule_type = @rule_type, target_type = @target_type,
+                target_reference = @target_reference, status = @status,
+                display_order = @display_order, updated_at = UTC_TIMESTAMP(6)
+            WHERE id = @id;
+            """;
+        command.Parameters.AddWithValue("@id", id);
+        command.Parameters.AddWithValue("@tier_id", (object?)tierId ?? DBNull.Value);
+        command.Parameters.AddWithValue("@rule_type", ruleType);
+        command.Parameters.AddWithValue("@target_type", targetType);
+        command.Parameters.AddWithValue("@target_reference", targetReference);
+        command.Parameters.AddWithValue("@status", status);
+        command.Parameters.AddWithValue("@display_order", payload.DisplayOrder ?? existing.DisplayOrder);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        return new BillingV2AdminCatalogMutationResponse(
+            "BILLING_V2_CATALOG_PROVISIONING_RULE_UPDATED",
+            "Regle de provisioning mise a jour.", id);
+    }
+
+    public async Task<BillingV2AdminCatalogMutationResponse> DisableProvisioningRuleAsync(
+        string ruleId, string actorReference, CancellationToken cancellationToken)
+    {
+        RequirePersistence();
+        var id = RequireIdentifier(ruleId);
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            "UPDATE billing_v2_provisioning_rules SET status = 'inactive', updated_at = UTC_TIMESTAMP(6) WHERE id = @id;";
+        command.Parameters.AddWithValue("@id", id);
+        var affected = await command.ExecuteNonQueryAsync(cancellationToken);
+        if (affected == 0 && !await ExistsAsync(connection, "billing_v2_provisioning_rules", id, cancellationToken))
+            throw new PortalDataNotFoundException();
+        return new BillingV2AdminCatalogMutationResponse(
+            "BILLING_V2_CATALOG_PROVISIONING_RULE_DISABLED",
+            "Regle de provisioning desactivee.", id);
     }
 
     // ------------------------------------------------------------------
@@ -1792,6 +1954,7 @@ public sealed class BillingV2CatalogAdministrationService
         MySqlConnection connection,
         Dictionary<string, List<BillingV2AdminTier>> tiers,
         List<BillingV2AdminPrice> prices,
+        IReadOnlyList<BillingV2AdminProvisioningRule> provisioningRules,
         CancellationToken cancellationToken)
     {
         var flatByService = prices
@@ -1860,10 +2023,60 @@ public sealed class BillingV2CatalogAdministrationService
                 reader.GetInt32("display_order"),
                 ReadNullableString(reader, "updated_by_reference"),
                 serviceTiers,
-                currentFlatPrices));
+                currentFlatPrices,
+                provisioningRules.Where(rule => string.Equals(
+                    rule.ServiceId, id, StringComparison.Ordinal)).ToList()));
         }
 
         return services;
+    }
+
+    private static async Task<IReadOnlyList<BillingV2AdminProvisioningRule>>
+        ReadProvisioningRulesAsync(
+            MySqlConnection connection,
+            string? serviceId,
+            CancellationToken cancellationToken)
+    {
+        var rules = new List<BillingV2AdminProvisioningRule>();
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT id, service_id, tier_id, rule_type, target_type,
+                   target_reference, status, display_order
+            FROM billing_v2_provisioning_rules
+            WHERE @service_id IS NULL OR service_id = @service_id
+            ORDER BY service_id, display_order, target_type, target_reference, id;
+            """;
+        command.Parameters.AddWithValue("@service_id", (object?)serviceId ?? DBNull.Value);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var ruleType = reader.GetString("rule_type");
+            var targetType = reader.GetString("target_type");
+            var scope = BillingV2ProvisioningRuleSemantics.TryClassify(
+                ruleType, targetType, out _, out var requiredScope)
+                ? ProvisioningScopeValue(requiredScope)
+                : "unknown";
+            rules.Add(new BillingV2AdminProvisioningRule(
+                MariaDbIdentifierReader.ReadRequired(reader, "id"),
+                MariaDbIdentifierReader.ReadRequired(reader, "service_id"),
+                MariaDbIdentifierReader.ReadNullable(reader, "tier_id"),
+                ruleType,
+                targetType,
+                ReadNullableString(reader, "target_reference") ?? string.Empty,
+                scope,
+                reader.GetString("status"),
+                reader.GetInt32("display_order")));
+        }
+
+        return rules;
+    }
+
+    private static async Task<BillingV2AdminProvisioningRule?> ReadProvisioningRuleAsync(
+        MySqlConnection connection, string id, CancellationToken cancellationToken)
+    {
+        var rules = await ReadProvisioningRulesAsync(connection, null, cancellationToken);
+        return rules.SingleOrDefault(rule => string.Equals(rule.Id, id, StringComparison.Ordinal));
     }
 
     private static async Task<IReadOnlyList<BillingV2AdminPreset>> ReadPresetsAsync(
@@ -2427,6 +2640,130 @@ public sealed class BillingV2CatalogAdministrationService
         }
 
         return normalized;
+    }
+
+    private static string RequireProvisioningRuleType(string? value)
+    {
+        var normalized = RequireText(value, 64).ToLowerInvariant();
+        if (!BillingV2ProvisioningRuleSemantics.IsKnownRuleType(normalized))
+        {
+            throw new PortalValidationException();
+        }
+
+        return normalized;
+    }
+
+    private static string RequireProvisioningTargetType(string ruleType, string? value)
+    {
+        var normalized = RequireText(value, 64).ToLowerInvariant();
+        if (!BillingV2ProvisioningRuleSemantics.TryClassify(
+                ruleType, normalized, out _, out _))
+        {
+            throw new PortalValidationException();
+        }
+
+        return normalized;
+    }
+
+    private static string RequireProvisioningScope(
+        string ruleType, string targetType, string? value)
+    {
+        var normalized = RequireEnum(value, ["user", "subscription"]);
+        if (!BillingV2ProvisioningRuleSemantics.TryClassify(
+                ruleType, targetType, out _, out var requiredScope)
+            || !string.Equals(normalized, ProvisioningScopeValue(requiredScope), StringComparison.Ordinal))
+        {
+            throw new PortalValidationException();
+        }
+
+        return normalized;
+    }
+
+    private void RequireAdGroupTargetEnvironment(
+        string ruleType,
+        string targetType,
+        string targetReference)
+    {
+        if (!string.Equals(ruleType,
+                BillingV2ProvisioningRuleSemantics.AdGroupMembershipRule,
+                StringComparison.Ordinal)
+            || !string.Equals(targetType,
+                BillingV2ProvisioningRuleSemantics.AdGroupTarget,
+                StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (!DeploymentEnvironmentGuard.TryValidateAdGroupTarget(
+                _deploymentEnvironment.Environment,
+                targetReference,
+                out _))
+        {
+            throw new PortalValidationException();
+        }
+    }
+
+    private static string ProvisioningScopeValue(BillingV2ProvisioningRuleScope scope)
+        => scope switch
+        {
+            BillingV2ProvisioningRuleScope.User => "user",
+            BillingV2ProvisioningRuleScope.Subscription => "subscription",
+            _ => "any"
+        };
+
+    private static async Task ValidateProvisioningRuleLocationAsync(
+        MySqlConnection connection,
+        string serviceId,
+        string? tierId,
+        CancellationToken cancellationToken)
+    {
+        if (!await ExistsAsync(connection, "billing_v2_services", serviceId, cancellationToken))
+        {
+            throw new PortalDataNotFoundException();
+        }
+
+        if (tierId is null) return;
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT COUNT(*) FROM billing_v2_service_tiers WHERE id = @tier_id AND service_id = @service_id;";
+        command.Parameters.AddWithValue("@tier_id", tierId);
+        command.Parameters.AddWithValue("@service_id", serviceId);
+        if (Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken)) != 1)
+        {
+            throw new PortalValidationException();
+        }
+    }
+
+    private static async Task<bool> HasProvisioningRuleDuplicateAsync(
+        MySqlConnection connection,
+        string? excludedId,
+        string serviceId,
+        string? tierId,
+        string ruleType,
+        string targetType,
+        string targetReference,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT COUNT(*)
+            FROM billing_v2_provisioning_rules
+            WHERE service_id = @service_id
+              AND tier_id <=> @tier_id
+              AND rule_type = @rule_type
+              AND target_type = @target_type
+              AND target_reference = @target_reference
+              AND status = 'active'
+              AND (@excluded_id IS NULL OR id <> @excluded_id);
+            """;
+        command.Parameters.AddWithValue("@service_id", serviceId);
+        command.Parameters.AddWithValue("@tier_id", (object?)tierId ?? DBNull.Value);
+        command.Parameters.AddWithValue("@rule_type", ruleType);
+        command.Parameters.AddWithValue("@target_type", targetType);
+        command.Parameters.AddWithValue("@target_reference", targetReference);
+        command.Parameters.AddWithValue("@excluded_id", (object?)excludedId ?? DBNull.Value);
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken)) > 0;
     }
 
     /// <summary>
