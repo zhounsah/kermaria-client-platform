@@ -130,6 +130,35 @@ aucune écriture sur FS-01. Arrêté par le délai de 1800 s, `RepairUser` non
 lancé, mutex tenu pendant tout ce temps. Ne pas présenter la matérialisation
 headless comme opérationnelle.
 
+### Analyse code-only du blocage headless — 2026-09-28
+
+Preuves convergentes, sans nouvelle exécution KoXo :
+
+- **Confirmé par le code.** `Get-KoxoStorageRepairArguments` construit
+  exactement `/RepairSecondaryGroup … Type="Storage"` ou
+  `/RepairUser … Type="Storage"`. `Invoke-KoxoStorageReconcile` transmet cet
+  argument sans drapeau de non-interactivité à `Invoke-KoxoProcess`.
+- **Confirmé par les tests.** `KoxoStorage.Tests.ps1` injecte un
+  `RepairInvoker` de remplacement ; il valide les arguments, le rollback et la
+  relecture XML, mais ne lance jamais `KoXoAdm.exe`. Il ne peut donc pas
+  prouver le comportement SYSTEM.
+- **Fait d'exploitation déjà mesuré.** L'appel réel SYSTEM a attendu
+  `UserRequest`, sans CPU ni écriture, jusqu'au délai de 1800 secondes, alors
+  que la réparation complète interactive créait l'arborescence attendue.
+- **Hypothèse la plus probable (non prouvée par le code).** KoXoAdm attend une
+  interaction native pour `Type="Storage"`; sous SYSTEM, cette interaction est
+  invisible. Aucun commutateur headless ou mécanisme de réponse à un dialogue
+  n'apparaît dans le wrapper versionné.
+
+Décision sûre tant qu'un test KoXo réel autorisé n'a pas levé ce doute : ne pas
+déclencher `RepairSecondaryGroup` ou `RepairUser` avec `Type="Storage"` depuis
+un worker headless. Conserver la synchronisation `/Synchro=CLIENTS-DEV.xml`
+distincte et ne pas la détourner pour créer les dossiers. Les options à valider
+avec Zachary et KoXo sont, dans cet ordre : un commutateur fournisseur documenté
+et réellement non interactif, puis un worker explicitement interactif et isolé
+avec journal/timeout ; aucune réparation ne doit être simulée par une écriture
+directe sur FS-01 ou AD.
+
 ## Incident FS-01 du 2026-09-27 (création des lieux de stockage)
 
 Pendant la création des lieux de stockage dans l'IHM, un lieu a été créé à

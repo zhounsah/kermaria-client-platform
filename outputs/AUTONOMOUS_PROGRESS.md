@@ -27,3 +27,14 @@
 - Commit garde runtime : ce commit, limité à `DeploymentEnvironmentGuard` et à
   ses cas smoke.
 - Prochain sujet : analyse code-only du stockage headless, sans lancement KoXo.
+
+## 2026-09-28 — Priorité 4 : stockage headless KoXo (code-only)
+
+- Résultat : cause certaine limitée au wrapper (aucun mode headless ni gestion
+  de dialogue) ; cause native la plus probable classée comme inférence : UI
+  KoXo invisible sous SYSTEM. Les tests injectent le processus et ne constituent
+  pas une preuve runtime.
+- Décision : aucune correction automatique, aucun lancement KoXo. Le workflow
+  doit refuser cette réparation headless jusqu'à un test fournisseur autorisé.
+- Prochain sujet : préparation code-only du scénario E2E abonnement DEV.
+- Blocker : preuve finale dépendante d'un test KoXo réel explicitement autorisé.

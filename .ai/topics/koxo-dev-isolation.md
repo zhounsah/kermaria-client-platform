@@ -110,6 +110,21 @@ Mesuré :
 - Lancer KoXoAdm depuis une session WinRM échoue sur FS-01 (double saut) :
   passer par une tâche SYSTEM, comme le receveur.
 
+### Analyse code-only du 2026-09-28
+
+- `KoxoStorage.Common.psm1` construit uniquement
+  `/RepairSecondaryGroup … Type="Storage"` ou `/RepairUser … Type="Storage"`
+  et transmet ces arguments à `Invoke-KoxoProcess`, sans option headless ni
+  gestion de dialogue. Les tests Pester injectent un `RepairInvoker` : ils ne
+  lancent pas KoXoAdm et ne peuvent pas établir le comportement SYSTEM.
+- La meilleure hypothèse, fondée sur l'attente `UserRequest`, 0 % CPU et le
+  succès interactif observés, est une demande UI native invisible sous SYSTEM.
+  C'est une **inférence**, pas une preuve source ou fournisseur.
+- Décision sûre : ne pas lancer ces réparations de stockage depuis un worker
+  headless avant validation fournisseur/réelle. Ne jamais les remplacer par des
+  écritures directes FS-01/AD, ni détourner `/Synchro` qui porte une sémantique
+  globale de désactivation.
+
 Pièges mesurés :
 - Sous Windows PowerShell 5.1, `-File` n'évalue pas `$PSScriptRoot` dans les
   valeurs par défaut des paramètres. Lancer les scripts avec
