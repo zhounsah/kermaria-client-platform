@@ -1,134 +1,108 @@
 <#
 .SYNOPSIS
-  Installe ou met a jour l'API-INTERNAL DEV sur SRV-13, a cote de la production.
+  Installe ou met a jour les binaires API-INTERNAL DEV, sans regenerer sa
+  configuration a partir d'une source globale.
 
 .DESCRIPTION
-  Purement additif. Ne lit, n'arrete, ne modifie ni ne redemarre jamais le
-  service de production `KermariaApiInternal`, son dossier
-  `C:\apps\api-internal` ni `C:\ProgramData\Kermaria\api-internal.config.json`.
+  Cette operation reste strictement additive vis-a-vis de KermariaApiInternal
+  (PROD). Par defaut, elle valide puis preserve a l'octet pres la configuration
+  DEV existante. Une mise a jour de secrets est exceptionnelle et explicite :
+  -RefreshConfiguration -DevSecretsFile <fichier DEV_API_* parse sans execution>.
 
-  Instance DEV :
-    - service      KermariaApiInternalDev ("ZacharyIT API Internal DEV")
-    - compte       NT SERVICE\KermariaApiInternalDev (compte virtuel : aucun
-                   acces aux fichiers de configuration de production)
-    - binaires     C:\apps\api-internal-dev
-    - config       C:\ProgramData\Kermaria-dev\api-internal.dev.config.json
-                   (KERMARIA_CONFIG_AUTHORITATIVE=true : le fichier l'emporte
-                   sur les variables Machine SQL_* de la production)
-    - journaux     D:\Kermaria-dev\Logs\ApiInternal
-    - ecoute       http://192.168.100.213:5100, pare-feu : SRV-12 et SRV-13 seuls
-
-  Les secrets proviennent de `<parent du depot>\kermaria-client-platform.dev.env.ps1`
-  (hors Git), jamais du fichier `.local.env.ps1` qui porte les secrets LIVE.
+  Le fichier historique kermaria-client-platform.dev.env.ps1 n'est jamais une
+  valeur par defaut et sera refuse s'il est passe : il contient des variables
+  generiques et ne respecte pas le contrat DEV_API_*.
 
 .EXAMPLE
-  dotnet publish apps/api-internal/Kermaria.ApiInternal.csproj -c Release -p:UseAppHost=true -o $env:TEMP\api-internal-dev
+  # Controle non modifiant de la configuration distante.
+  .\scripts\dev-env\Install-ApiInternalDev.ps1 -ValidateOnly
+
+.EXAMPLE
+  # Mise a jour binaire : aucun JSON DEV n'est regenere ni ecrit.
   .\scripts\dev-env\Install-ApiInternalDev.ps1 -PublishDirectory $env:TEMP\api-internal-dev
+
+.EXAMPLE
+  # Rafraichissement explicite de secrets DEV, apres validation fail-closed.
+  .\scripts\dev-env\Install-ApiInternalDev.ps1 -PublishDirectory $env:TEMP\api-internal-dev `
+    -RefreshConfiguration -DevSecretsFile C:\secure\kermaria-client-platform.api-dev.secrets.ps1
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)]
     [string] $PublishDirectory,
     [string] $ComputerName = 'KERMARIA-SRV-13.home.bzh',
-    [string] $DevSecretsFile = (Join-Path (Split-Path $PSScriptRoot -Parent | Split-Path -Parent | Split-Path -Parent) 'kermaria-client-platform.dev.env.ps1'),
-    [string] $PublicPortalUrl = 'https://dev.zachary-it.fr',
+    [string] $DevSecretsFile,
+    [switch] $RefreshConfiguration,
+    [switch] $ValidateOnly,
     [switch] $NoStart
 )
 
 $ErrorActionPreference = 'Stop'
 
-if (-not (Test-Path (Join-Path $PublishDirectory 'Kermaria.ApiInternal.exe'))) {
-    throw "Kermaria.ApiInternal.exe absent de $PublishDirectory : publier avec -p:UseAppHost=true."
+if ($ValidateOnly -and $PublishDirectory) {
+    throw '-ValidateOnly ne peut pas etre combine avec -PublishDirectory.'
 }
-if (-not (Test-Path $DevSecretsFile)) {
-    throw "Fichier de secrets DEV introuvable : $DevSecretsFile"
-}
-. $DevSecretsFile
-
-foreach ($key in 'DEV_STRIPE_SECRET_KEY', 'DEV_STRIPE_PUBLISHABLE_KEY') {
-    $value = [Environment]::GetEnvironmentVariable($key)
-    if ($value -and ($value -like 'sk_live_*' -or $value -like 'rk_live_*' -or $value -like 'pk_live_*')) {
-        throw "$key contient une cle LIVE : refus d'installation."
+if (-not $ValidateOnly) {
+    if ([string]::IsNullOrWhiteSpace($PublishDirectory)) {
+        throw '-PublishDirectory est obligatoire hors -ValidateOnly.'
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $PublishDirectory 'Kermaria.ApiInternal.exe') -PathType Leaf)) {
+        throw "Kermaria.ApiInternal.exe absent de $PublishDirectory : publier avec -p:UseAppHost=true."
     }
 }
-
-$stripeConfigured = [bool]$env:DEV_STRIPE_SECRET_KEY -and [bool]$env:DEV_STRIPE_PUBLISHABLE_KEY
-
-$config = [ordered]@{
-    APP_ENV                                     = 'Development'
-
-    SQL_PROVIDER                                = 'mariadb'
-    SQL_HOST                                    = $env:DEV_SQL_HOST
-    SQL_PORT                                    = $env:DEV_SQL_PORT
-    SQL_DATABASE                                = $env:DEV_SQL_DATABASE
-    SQL_USERNAME                                = $env:DEV_SQL_USERNAME
-    SQL_PASSWORD                                = ${env:DEV_SQL_PASSWORD}
-
-    SERVICE_AUTH_TOKEN                          = ${env:DEV_SERVICE_AUTH_TOKEN}
-
-    SESSION_COOKIE_SECURE                       = 'true'
-    LOG_FILE_DIRECTORY                          = 'D:\Kermaria-dev\Logs\ApiInternal'
-    LOG_FILE_LEVEL                              = 'Information'
-    LOG_FILE_RETENTION_DAYS                     = '14'
-    DOWNLOAD_STORAGE_ROOT                       = 'D:\Kermaria-dev\Downloads'
-
-    PUBLIC_PORTAL_URL                           = $PublicPortalUrl
-    WEBPORTAL_BASE_URL                          = $PublicPortalUrl
-    PUBLIC_VITRINE_ENABLED                      = 'true'
-    SIGNUP_ENABLED                              = 'true'
-
-    HCAPTCHA_SITE_KEY                           = '10000000-ffff-ffff-ffff-000000000001'
-    HCAPTCHA_SECRET_KEY                         = '0x0000000000000000000000000000000000000000'
-
-    # Même pipeline que PROD, mais sans effets réels.
-    AD_INTEGRATION_MODE                         = 'test'
-    BPCE_INTEGRATION_MODE 			= 'live'
-    ALLOW_DEV_BPCE_LIVE   			= 'true'
-    BPCE_BASE_URL                               = $env:DEV_BPCE_BASE_URL
-    BPCE_SENDER_ID                              = $env:DEV_BPCE_SENDER_ID
-    BPCE_REFRESH_TOKEN                          = ${env:DEV_BPCE_REFRESH_TOKEN}
-    PAYPAL_MODE                                 = 'sandbox'
-    EMAIL_INTEGRATION_MODE                      = 'mock'
-    EMAIL_LIVE_ALLOWLIST_ONLY                   = 'true'
-    STRIPE_MODE                                 = 'test'
-
-    # Billing V2 : même orchestration que PROD.
-    BILLING_V2_NEW_SUBSCRIPTIONS_ENABLED        = 'true'
-    BILLING_V2_AUTHORITATIVE_CHECKOUT_ENABLED   = 'true'
-    BILLING_V2_FIRST_REAL_SUBSCRIPTION_APPROVED = 'true'
-    BILLING_V2_PROVIDER_OUTBOX_ENABLED          = 'true'
-    BILLING_V2_PROVIDER_EXECUTOR_ENABLED        = 'true'
-    BILLING_V2_RECONCILIATION_WORKER_ENABLED    = 'true'
-
-    # Effets d'infrastructure toujours neutralisés.
-    BILLING_V2_PROVISIONING_ENABLED             = 'true'
-    BILLING_V2_ADDITIONAL_USER_PROVISIONING_ENABLED = 'true'
-    BILLING_V2_SERVICE_FULFILLMENT_ENABLED      = 'true'
-    BILLING_V2_VPS_LOCAL_PROVISIONING_ENABLED   = 'true'
-    BILLING_V2_VPS_CLOUD_AUTOMATION_ENABLED     = 'true'
-
-    BILLING_V2_STRIPE_RECURRING_MUTATION_ENABLED = 'true'
-    BILLING_V2_SUBSCRIPTION_CHANGES_ENABLED     = 'true'
-    BILLING_V2_GENERIC_SELECTION_ENABLED        = 'true'
-
-    PROVISIONING_ENABLED                        = 'true'
-    ALLOW_DEV_PROVISIONING                      = 'true'
+if ($DevSecretsFile -and -not $RefreshConfiguration) {
+    throw '-DevSecretsFile exige -RefreshConfiguration : aucune source ne doit etre lue par defaut.'
 }
-if ($stripeConfigured) {
-    $config.STRIPE_SECRET_KEY = $env:DEV_STRIPE_SECRET_KEY
-    $config.STRIPE_PUBLISHABLE_KEY = $env:DEV_STRIPE_PUBLISHABLE_KEY
-    if ($env:DEV_STRIPE_WEBHOOK_SECRET) {
-        $config.STRIPE_WEBHOOK_SECRET = $env:DEV_STRIPE_WEBHOOK_SECRET
-    }
+
+$configLibraryPath = Join-Path $PSScriptRoot 'DevApiConfig.ps1'
+if (-not (Test-Path -LiteralPath $configLibraryPath -PathType Leaf)) {
+    throw 'Bibliotheque DevApiConfig.ps1 introuvable.'
 }
-$missing = $config.GetEnumerator() | Where-Object { [string]::IsNullOrWhiteSpace($_.Value) } | ForEach-Object Key
-if ($missing) {
-    throw "Valeurs DEV manquantes : $($missing -join ', ')"
+. $configLibraryPath
+
+$secretOverrides = @{}
+if ($RefreshConfiguration -and $DevSecretsFile) {
+    $secretOverrides = Read-DevApiSecretOverrides -Path $DevSecretsFile
 }
-$configJson = $config | ConvertTo-Json -Depth 2
+$configLibrarySource = Get-Content -LiteralPath $configLibraryPath -Raw
 
 $session = New-PSSession -ComputerName $ComputerName
 try {
+    $configPath = 'C:\ProgramData\Kermaria-dev\api-internal.dev.config.json'
+    $validation = Invoke-Command -Session $session -ArgumentList $configPath, $configLibrarySource, $secretOverrides -ScriptBlock {
+        param($configPath, $configLibrarySource, $secretOverrides)
+        . ([scriptblock]::Create($configLibrarySource))
+
+        if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
+            throw 'Configuration API DEV existante introuvable : aucun fallback de source n est autorise.'
+        }
+        try {
+            $existing = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+        }
+        catch {
+            throw 'Configuration API DEV existante illisible : aucune modification n est autorisee.'
+        }
+
+        $plan = New-DevApiConfigurationPlan -ExistingConfiguration $existing -SecretOverrides $secretOverrides
+        if (-not $plan.IsValid) {
+            throw ('Configuration API DEV refusee avant toute modification : ' + ($plan.Violations -join ' | '))
+        }
+
+        [pscustomobject]@{
+            ChangedKeyCount = @($plan.ChangedKeys).Count
+            ConfigurationWillChange = @($plan.ChangedKeys).Count -gt 0
+        }
+    }
+
+    Write-Host 'Configuration API DEV validee sans afficher de valeur sensible.'
+    if ($validation.ConfigurationWillChange) {
+        Write-Host "Rafraichissement explicite prepare : $($validation.ChangedKeyCount) secret(s)."
+    } else {
+        Write-Host 'Configuration API DEV preservee : aucune nouvelle valeur de secret recue.'
+    }
+    if ($ValidateOnly) {
+        return
+    }
+
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
     $staging = "C:\apps\api-internal-dev-staging-$stamp"
     Invoke-Command -Session $session -ScriptBlock {
@@ -137,9 +111,10 @@ try {
     } -ArgumentList $staging
     Copy-Item -Path (Join-Path $PublishDirectory '*') -Destination $staging -Recurse -ToSession $session
 
-    Invoke-Command -Session $session -ArgumentList $staging, $stamp, $configJson, $NoStart.IsPresent -ScriptBlock {
-        param($staging, $stamp, $configJson, $noStart)
+    Invoke-Command -Session $session -ArgumentList $staging, $stamp, $configLibrarySource, $secretOverrides, $RefreshConfiguration.IsPresent, $NoStart.IsPresent -ScriptBlock {
+        param($staging, $stamp, $configLibrarySource, $secretOverrides, $refreshConfiguration, $noStart)
         $ErrorActionPreference = 'Stop'
+        . ([scriptblock]::Create($configLibrarySource))
 
         $serviceName = 'KermariaApiInternalDev'
         $account = "NT SERVICE\$serviceName"
@@ -151,40 +126,55 @@ try {
         if ($serviceName -eq 'KermariaApiInternal' -or $appDir -eq 'C:\apps\api-internal') {
             throw 'Garde-fou : cible de production detectee.'
         }
+        if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
+            throw 'Configuration API DEV existante introuvable : aucune modification n est autorisee.'
+        }
+        try {
+            $existing = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+        }
+        catch {
+            throw 'Configuration API DEV existante illisible : aucune modification n est autorisee.'
+        }
 
-        $existing = Get-Service $serviceName -ErrorAction SilentlyContinue
-        if ($existing -and $existing.Status -ne 'Stopped') {
+        # Revalidation au plus pres de l'ecriture : un echec laisse service,
+        # binaires et fichier de configuration intacts.
+        $plan = New-DevApiConfigurationPlan -ExistingConfiguration $existing -SecretOverrides $secretOverrides
+        if (-not $plan.IsValid) {
+            throw ('Configuration API DEV refusee avant toute modification : ' + ($plan.Violations -join ' | '))
+        }
+
+        $existingService = Get-Service $serviceName -ErrorAction SilentlyContinue
+        if ($existingService -and $existingService.Status -ne 'Stopped') {
             Stop-Service $serviceName -Force
-            $existing.WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30))
+            $existingService.WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30))
         }
 
-        # Bascule des binaires : l'ancienne version DEV est conservee.
-        if (Test-Path $appDir) {
-            Rename-Item $appDir "api-internal-dev-old-$stamp"
+        if (Test-Path -LiteralPath $appDir) {
+            Rename-Item -LiteralPath $appDir -NewName "api-internal-dev-old-$stamp"
         }
-        Rename-Item $staging (Split-Path $appDir -Leaf)
+        Rename-Item -LiteralPath $staging -NewName (Split-Path $appDir -Leaf)
 
-        foreach ($dir in $configDir, "$dataRoot\Logs\ApiInternal", "$dataRoot\Downloads") {
-            New-Item -ItemType Directory -Force -Path $dir | Out-Null
+        foreach ($directory in $configDir, "$dataRoot\Logs\ApiInternal", "$dataRoot\Downloads") {
+            New-Item -ItemType Directory -Force -Path $directory | Out-Null
         }
 
-        # Configuration : UTF-8 sans BOM, sauvegarde de la precedente.
-        if (Test-Path $configPath) {
-            Copy-Item $configPath "$configPath.bak-$stamp"
+        # Le JSON est ecrit seulement avec un rafraichissement explicitement
+        # demande. Sans cela, il n'est ni regenere, ni reecrit, ni sauvegarde.
+        if ($refreshConfiguration -and @($plan.ChangedKeys).Count -gt 0) {
+            Copy-Item -LiteralPath $configPath -Destination "$configPath.bak-$stamp"
+            Write-DevApiConfiguration -Plan $plan -Path $configPath | Out-Null
         }
-        [IO.File]::WriteAllText($configPath, $configJson, [Text.UTF8Encoding]::new($false))
 
-        if (-not $existing) {
+        if (-not $existingService) {
             New-Service -Name $serviceName `
                 -DisplayName 'ZacharyIT API Internal DEV' `
-                -Description 'API-INTERNAL environnement DEV (kermaria_dev, Stripe TEST, provisioning ferme). Independant de KermariaApiInternal.' `
+                -Description 'API-INTERNAL environnement DEV isole (kermaria_dev, Stripe test, namespace KoXo DEV).' `
                 -BinaryPathName "`"$appDir\Kermaria.ApiInternal.exe`" --environment Staging --urls http://192.168.100.213:5100" `
                 -StartupType Manual | Out-Null
             & sc.exe config $serviceName obj= $account start= delayed-auto | Out-Null
             & sc.exe failure $serviceName reset= 86400 actions= restart/10000/restart/30000/restart/60000 | Out-Null
         }
 
-        # Variables propres au service (n'affectent aucun autre processus).
         Set-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\$serviceName" -Name Environment -Type MultiString -Value @(
             "KERMARIA_CONFIG_PATH=$configPath",
             'KERMARIA_CONFIG_AUTHORITATIVE=true',
@@ -192,13 +182,10 @@ try {
             'DOTNET_ENVIRONMENT=Staging'
         )
 
-        # ACL : le compte virtuel DEV lit ses binaires et sa config, ecrit ses
-        # journaux ; la config n'est lisible que par lui et les administrateurs.
         & icacls $configPath /inheritance:r /grant:r '*S-1-5-32-544:(F)' 'SYSTEM:(F)' "${account}:(R)" | Out-Null
         & icacls $appDir /grant "${account}:(OI)(CI)RX" | Out-Null
         & icacls $dataRoot /grant "${account}:(OI)(CI)M" | Out-Null
 
-        # Pare-feu : 5100 refuse a toute adresse sauf SRV-12 et SRV-13.
         $ruleName = 'Kermaria API DEV 5100 - bloquer hors SRV-12'
         if (-not (Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue)) {
             New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -Protocol TCP -LocalPort 5100 `
@@ -213,5 +200,7 @@ try {
     }
 }
 finally {
-    Remove-PSSession $session
+    if ($session) {
+        Remove-PSSession $session
+    }
 }
