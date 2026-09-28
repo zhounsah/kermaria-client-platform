@@ -38,3 +38,13 @@
   doit refuser cette réparation headless jusqu'à un test fournisseur autorisé.
 - Prochain sujet : préparation code-only du scénario E2E abonnement DEV.
 - Blocker : preuve finale dépendante d'un test KoXo réel explicitement autorisé.
+
+## 2026-09-28 — Priorité 5 : prochain E2E abonnement (code-only)
+
+- Résultat : plan automatisable préparé, mais STOP avant runtime. Aucun service
+  actuellement mappé à une appartenance AD ne reste dans le seul périmètre
+  `CLIENTS DEV` ; stockage, VPN et RDS portent des dépendances interdites ou
+  non validées.
+- Décision attendue : groupe de service DEV dédié, autorisation bornée d'un
+  groupe parent-domain, ou validation KoXo stockage préalable.
+- Blocker : décision de modèle et autorisation d'infrastructure de Zachary.
