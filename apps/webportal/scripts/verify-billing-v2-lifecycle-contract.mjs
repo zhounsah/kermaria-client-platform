@@ -103,6 +103,26 @@ check("le retour fournisseur est revalide par l API interne", () => {
     /BILLING_V2_PROVIDER_EVENT_ALREADY_PROCESSED/,
     "Un retour rejoue doit rester un succes : le parcours est idempotent.",
   );
+  assert.match(
+    returnRoute,
+    /subscription=processing/,
+    "Un settlement encore en cours doit revenir vers un etat d'attente, pas vers une erreur.",
+  );
+  const pendingReturnBlock = between(
+    returnRoute,
+    "const PENDING_RETURN_REASON_CODES",
+    "function isPendingReturn",
+  );
+  assert.match(
+    pendingReturnBlock,
+    /BILLING_V2_RENEWAL_INVOICE_NOT_PAID/,
+    "Une invoice pas encore payee doit rester un etat d'attente.",
+  );
+  assert.doesNotMatch(
+    pendingReturnBlock,
+    /AMOUNT_MISMATCH/,
+    "Un ecart de montant est une vraie erreur financiere et ne doit jamais etre masque en attente.",
+  );
 });
 
 check("les parcours de retour heritees ont disparu", () => {

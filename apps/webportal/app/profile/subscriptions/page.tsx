@@ -35,6 +35,12 @@ const FLASH_MESSAGES: Record<
     text:
       "Votre souscription est en cours d'activation. Le provisionnement démarrera automatiquement après validation.",
   },
+  processing: {
+    tone: "warning",
+    label: "Paiement en cours de confirmation",
+    text:
+      "Votre paiement a bien été transmis. Nous attendons sa confirmation avant d'activer vos services.",
+  },
   cancelled: {
     tone: "warning",
     label: "Parcours interrompu",
@@ -54,9 +60,9 @@ const FLASH_MESSAGES: Record<
   },
   error: {
     tone: "danger",
-    label: "Souscription en erreur",
+    label: "Paiement non validé",
     text:
-      "Un problème est survenu lors du retour de paiement. Vérifiez la liste ou réessayez.",
+      "Le paiement n'a pas pu être validé. Aucun service n'a été activé. Réessayez ou contactez le support si le problème persiste.",
   },
 };
 

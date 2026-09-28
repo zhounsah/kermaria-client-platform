@@ -79,6 +79,7 @@ export function BillingV2DirectSubscribe({ catalog }: Props) {
   const [outcome, setOutcome] = useState<QuoteOutcome | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitStatus, setSubmitStatus] = useState<string | null>(null);
 
   const components = useMemo(() => toComponents(draft), [draft]);
   const selectionKey = useMemo(
@@ -143,6 +144,8 @@ export function BillingV2DirectSubscribe({ catalog }: Props) {
   }, [selection, selectionKey]);
 
   function toggle(service: BillingV2PublicService, checked: boolean) {
+    if (submitting) return;
+    setSubmitStatus(null);
     setSubmitError(null);
     setDraft((previous) => {
       const next = new Map(previous);
@@ -161,6 +164,8 @@ export function BillingV2DirectSubscribe({ catalog }: Props) {
   }
 
   function setTier(serviceCode: string, tierCode: string) {
+    if (submitting) return;
+    setSubmitStatus(null);
     setSubmitError(null);
     setDraft((previous) => {
       const next = new Map(previous);
@@ -173,6 +178,8 @@ export function BillingV2DirectSubscribe({ catalog }: Props) {
   }
 
   function setQuantity(serviceCode: string, quantity: number) {
+    if (submitting) return;
+    setSubmitStatus(null);
     setSubmitError(null);
     setDraft((previous) => {
       const next = new Map(previous);
@@ -194,40 +201,69 @@ export function BillingV2DirectSubscribe({ catalog }: Props) {
 
     setSubmitting(true);
     setSubmitError(null);
+    setSubmitStatus(null);
+
+    const idempotencyKey = crypto.randomUUID();
+    const body = JSON.stringify({ ...selection, rail: "stripe" });
 
     try {
-      // On renvoie la SELECTION, jamais le devis affiche : le serveur
-      // revalide la configuration et recalcule integralement le montant.
-      const result = await requestBffJson<{
-        approveUrl?: string;
-        message?: string;
-      }>("/api/formules/souscrire", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Idempotency-Key": crypto.randomUUID(),
-        },
-        body: JSON.stringify({ ...selection, rail: "stripe" }),
-      });
+      // La creation de la session provider est asynchrone. Tant que l'outbox
+      // travaille, on rejoue exactement la meme intention et la meme cle
+      // d'idempotence au lieu de presenter cet etat normal comme une erreur.
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        const result = await requestBffJson<{
+          approveUrl?: string;
+          message?: string;
+          subscriptionId?: string;
+        }, {
+          code?: string;
+          message?: string;
+          subscriptionId?: string;
+        }>("/api/formules/souscrire", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": idempotencyKey,
+          },
+          body,
+        });
 
-      if (!result.ok) {
-        if (result.status === 401 || result.status === 403) {
-          window.location.href = "/login?next=%2Fsouscrire";
+        if (!result.ok) {
+          if (result.status === 401 || result.status === 403) {
+            window.location.href = "/login?next=%2Fsouscrire";
+            return;
+          }
+
+          if (
+            result.error.code === "BILLING_V2_CHECKOUT_PENDING_PROVIDER_SESSION"
+          ) {
+            setSubmitStatus(
+              "Votre souscription est bien enregistrée. Nous préparons votre page de paiement sécurisé ; vous serez redirigé automatiquement dès qu’elle sera prête.",
+            );
+            await delay(2000);
+            continue;
+          }
+
+          setSubmitError(result.error.message);
           return;
         }
 
-        setSubmitError(result.error.message);
-        return;
+        if (result.data.approveUrl) {
+          setSubmitStatus(
+            "Votre paiement est prêt. Redirection sécurisée en cours…",
+          );
+          window.location.href = result.data.approveUrl;
+          return;
+        }
+
+        setSubmitStatus(
+          "Votre souscription est bien enregistrée. Nous préparons votre page de paiement sécurisé ; vous serez redirigé automatiquement dès qu’elle sera prête.",
+        );
+        await delay(2000);
       }
 
-      if (result.data.approveUrl) {
-        window.location.href = result.data.approveUrl;
-        return;
-      }
-
-      setSubmitError(
-        result.data.message
-          ?? "La souscription n'a pas pu \u00eatre initialis\u00e9e. R\u00e9essayez ou contactez-nous.",
+      setSubmitStatus(
+        "Votre souscription est enregistrée. La préparation du paiement prend plus de temps que prévu ; laissez cette page ouverte ou revenez dans quelques instants.",
       );
     } catch {
       setSubmitError(
@@ -374,6 +410,9 @@ export function BillingV2DirectSubscribe({ catalog }: Props) {
           </>
         )}
 
+        {submitStatus ? (
+          <p className="subscribe-direct-note" role="status">{submitStatus}</p>
+        ) : null}
         {submitError ? (
           <p className="subscribe-direct-error">{submitError}</p>
         ) : null}
@@ -384,7 +423,7 @@ export function BillingV2DirectSubscribe({ catalog }: Props) {
           onClick={() => void submit()}
           type="button"
         >
-          {submitting ? "Redirection…" : "Souscrire"}
+          {submitting ? "Préparation du paiement…" : "Souscrire"}
         </button>
         <p className="subscribe-direct-note">
           Sans engagement. Le montant est recalculé par nos serveurs au moment
@@ -402,6 +441,10 @@ export function BillingV2DirectSubscribe({ catalog }: Props) {
  * visible publiquement sans etre commandable seul — parce qu'il n'a de sens
  * qu'au sein d'une formule, ou parce que son provisioning demande un arbitrage.
  */
+function delay(milliseconds: number) {
+  return new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
+}
+
 function orderServices(catalog: BillingV2PublicCatalog) {
   return catalog.services
     .filter((service) => service.publicVisible && service.selfServiceOrderable)

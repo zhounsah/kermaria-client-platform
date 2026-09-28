@@ -651,6 +651,21 @@ assert.match(
   /BillingV2ServicePriceResolutionPolicy\.Resolve/,
   "Les prix natifs doivent passer par la resolution d'ambiguite partagee.",
 );
+assert.match(
+  directSubscribe,
+  /BILLING_V2_CHECKOUT_PENDING_PROVIDER_SESSION/,
+  "La preparation asynchrone du provider doit etre traitee comme un etat d'attente.",
+);
+assert.match(
+  directSubscribe,
+  /"Idempotency-Key": idempotencyKey/,
+  "Les polls de preparation doivent reutiliser la meme cle d'idempotence.",
+);
+assert.match(
+  directSubscribe,
+  /for \(let attempt = 0; attempt < 30; attempt \+= 1\)/,
+  "Le portail doit attendre automatiquement la session provider au lieu de demander au client de recliquer.",
+);
 for (const forbiddenWrite of [
   "INSERT INTO",
   "UPDATE ",

@@ -24,6 +24,7 @@ export async function GET(request: NextRequest) {
   );
   const portalUrl = getPortalPublicUrl(request);
   const errorUrl = `${portalUrl}/profile/subscriptions?subscription=error`;
+  const pendingUrl = `${portalUrl}/profile/subscriptions?subscription=processing`;
   const successUrl = `${portalUrl}/profile/subscriptions?subscription=approved`;
 
   const { searchParams } = request.nextUrl;
@@ -80,11 +81,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(errorUrl);
   }
 
-  if (!isSuccessfulReturn(result)) {
-    return NextResponse.redirect(errorUrl);
+  if (isSuccessfulReturn(result)) {
+    return NextResponse.redirect(successUrl);
+  }
+  if (isPendingReturn(result)) {
+    return NextResponse.redirect(pendingUrl);
   }
 
-  return NextResponse.redirect(successUrl);
+  return NextResponse.redirect(errorUrl);
 }
 
 function resolveProvider(searchParams: URLSearchParams): "stripe" | "paypal" | null {
@@ -114,4 +118,16 @@ function isSuccessfulReturn(result: BillingV2ProviderReturnResponse): boolean {
       || result.reason_code === "BILLING_V2_PROVIDER_EVENT_ALREADY_PROCESSED"
       || result.reason_code === "BILLING_V2_PROVIDER_EVENT_IDEMPOTENT_NOOP"
     );
+}
+
+const PENDING_RETURN_REASON_CODES = new Set([
+  "BILLING_V2_SETTLEMENT_NOT_OBSERVED",
+  "BILLING_V2_RENEWAL_INVOICE_NOT_FOUND",
+  "BILLING_V2_RENEWAL_INVOICE_NOT_PAID",
+  "BILLING_V2_RENEWAL_AMOUNT_NOT_OBSERVED",
+  "BILLING_V2_RENEWAL_SUBSCRIPTION_NOT_CONFIRMED",
+]);
+
+function isPendingReturn(result: BillingV2ProviderReturnResponse): boolean {
+  return PENDING_RETURN_REASON_CODES.has(result.reason_code);
 }
