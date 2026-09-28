@@ -1,6 +1,6 @@
 ---
 name: koxo-dev-isolation
-description: "Isolation KoXo DEV/PROD : namespace API (CLI-D, DEV-CLI-, CLIENTS DEV), instance SRV-21 isolée (receveur 8043), mutex Global\\Kermaria-KoXoAdm, stockage DEV FS-01. Tests Run 1/Run 2 PASS le 2026-09-27 ; stockage headless non validé ; controlled_write DEV pas encore activé."
+description: "Isolation KoXo DEV/PROD : namespace API (CLI-D, DEV-CLI-, CLIENTS DEV), instance SRV-21 isolée (receveur 8043), mutex Global\\Kermaria-KoXoAdm, stockage DEV FS-01. Run 1/2 et E2E identité standard PASS les 2026-09-27/28 ; stockage headless non validé."
 metadata:
   type: project
 ---
@@ -51,6 +51,47 @@ usage unique) via `Invoke-KoxoProcess`, sous le mutex :
 - Run 2 : la ligne remplacée par `CLI-D999902` ; l'ancien compte est
   **désactivé** (non supprimé, appartenance conservée), le nouveau créé actif.
 
+## E2E identité standard DEV — PASS le 2026-09-28
+
+L'E2E manuel a exercé le parcours normal sans toucher à PROD : signup,
+vérification e-mail, approbation, définition du mot de passe, publication
+KoXo, synchronisation et convergence du bootstrap.
+
+- L'approbation a créé le client `DEV-CLI-PDXVX6`, l'utilisateur portail et
+  `CLI-D000001`, avec un PIB `awaiting_password`.
+- Le webhook `signup_approved` a répondu `202`, mais l'export ne publiait
+  encore aucune identité avant la définition du mot de passe : le profil
+  `CLIENTS DEV` a été ignoré sans CSV ni lancement KoXoAdm.
+- Après le password setup normal, le PIB est passé par `koxo_pending`, le
+  webhook `password_set` a répondu `202`, et `clients-dev.csv` a contenu une
+  seule identité DEV. Aucun secret, hash ou colonne mot de passe n'est
+  documenté ici.
+- `/Synchro=CLIENTS-DEV.xml` a pris le mutex
+  `Global\Kermaria-KoXoAdm`, lancé KoXoAdm et terminé avec le marqueur de
+  succès et le code de sortie `0` ; aucune opération de réparation n'a été
+  demandée.
+- KoXo a créé `DEV-CLI-PDXVX6` sous `CLIENTS DEV`, puis Melis Rochedune active
+  avec `employeeNumber=CLI-D000001`. L'utilisateur n'a reçu ni `GG_VPN` ni
+  `GG_RDS`.
+- La convergence a adopté l'objet strictement par `employeeNumber`, créé
+  `customer_ad_links`, acquitté le secret KoXo et terminé le PIB à `completed`
+  (`PRIMARY_IDENTITY_COMPLETED`).
+- Le stockage est hors périmètre de cette preuve et la matérialisation
+  headless reste non validée.
+
+### Dettes connues après l'E2E
+
+1. `scripts/dev-env/Install-ApiInternalDev.ps1` régénère la configuration DEV
+   depuis une source qui contient encore des valeurs LIVE/PROD : ne pas
+   l'utiliser avant assainissement.
+2. Le fichier `dev.env.ps1` / la source DEV associée ne doit pas devenir une
+   source globale tant que les valeurs LIVE/PROD n'en sont pas retirées.
+3. `RepairSecondaryGroup Type=Storage` en headless n'est pas validé.
+4. `CLIENTS DEV DEMO` n'existe pas encore ; le profil démonstration DEV reste
+   refusé de façon sûre.
+5. Les objets des Run 1/2 (`DEV-CLI-TST001`, `CLI-D999901`, `CLI-D999902`)
+   sont volontairement toujours présents.
+
 Mesuré :
 - **`/Synchro` ne crée aucun dossier.** L'arborescence vient d'une réparation
   de stockage. Une réparation complète interactive (IHM) l'a produite
@@ -96,9 +137,9 @@ Pièges mesurés :
   (`kermaria_ai_admin`, sudo sans mot de passe), filtré sur un marqueur de
   requête. N'afficher que les en-têtes voulus, jamais les cookies.
 
-Prochaine étape : premier E2E API DEV → KoXo → AD. Il exige le déploiement de
-`f15e314` et `8336cc1` sur l'API DEV, le namespace DEV, le webhook 8043 et un
-compte AD DEV délégué, avant tout `controlled_write`.
+La prochaine étape n'est pas couverte par cette note : l'E2E identité standard
+est terminé et validé. Toute extension doit repartir des dettes ci-dessus et
+d'une autorisation explicite.
 
 Piège de test mesuré : un mutex nommé disparaît avec sa dernière poignée. Pour
 prouver la reprise d'un mutex abandonné, un autre processus doit garder une

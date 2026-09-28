@@ -80,4 +80,17 @@ Mise en place le 2026-09-21, sans toucher à la production. Runbook :
   gestion de `CART_CLAIM_RESUMED` (code non commité). Ce n'est pas le cas du
   WebPortal de `main`.
 
+## Avertissement de déploiement DEV (2026-09-28)
+
+- **Ne pas utiliser `scripts/dev-env/Install-ApiInternalDev.ps1` en l'état.**
+  Il régénère `api-internal.dev.config.json` depuis le fichier de source DEV.
+  Ce fichier contient encore des valeurs LIVE/PROD : l'utiliser peut les
+  réinjecter dans l'instance DEV.
+- Pour une mise à jour binaire DEV autorisée, préserver le fichier de
+  configuration DEV existant et utiliser un basculement de répertoire staging
+  vers ancien puis nouveau dossier, avant de redémarrer uniquement
+  `KermariaApiInternalDev`.
+- La dette de séparation des valeurs DEV/LIVE doit être levée avant toute
+  réutilisation de l'installateur. Aucun secret ne doit être déplacé vers Git.
+
 Voir aussi [[pieges-sql-et-preuves]], [[deployment-topology]], [[srv13-config-volatile]].

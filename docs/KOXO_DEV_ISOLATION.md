@@ -1,9 +1,10 @@
 # Isolation KoXo DEV / PROD
 
-> **État au 2026-09-27 : isolation KoXo DEV validée (Run 1 et Run 2 PASS).**
-> Aucun `controlled_write` n'est activé : l'API DEV tourne toujours en
-> `AD_INTEGRATION_MODE=test` (lu `disabled`) sur `828347d`, sans namespace DEV
-> ni webhook. La matérialisation **headless** du stockage n'est **pas** validée.
+> **État au 2026-09-28 : isolation KoXo DEV et E2E identité standard validés.**
+> Après les Run 1/2, l'API DEV en `controlled_write` a exécuté le parcours
+> complet signup → vérification → approbation → password setup → KoXo → AD →
+> convergence PIB dans le seul namespace DEV. La matérialisation **headless**
+> du stockage n'est toujours **pas** validée.
 
 ## État déployé et validé (2026-09-27)
 
@@ -69,6 +70,45 @@ mutex `Global\Kermaria-KoXoAdm`, délai 1800 s. Instantanés AD (`OU=KoXoAdm`,
 
 Les objets de test (`DEV-CLI-TST001`, les deux comptes, le dossier) sont
 conservés.
+
+## E2E identité standard DEV — 2026-09-28 — PASS
+
+Le parcours manuel complet a confirmé, sans action sur PROD :
+
+1. Signup et vérification e-mail : PASS.
+2. Approbation : création atomique du client `DEV-CLI-PDXVX6`, de
+   `CLI-D000001` et du PIB `awaiting_password`.
+3. `signup_approved` : webhook DEV reçu avec `202`; avant password setup,
+   l'export ne publiait aucune identité et le profil `CLIENTS DEV` a été
+   ignoré sans CSV ni KoXoAdm.
+4. Password setup : PIB `awaiting_password → koxo_pending`; webhook
+   `password_set` reçu avec `202`.
+5. Export : `clients-dev.csv` a porté exactement une identité DEV,
+   `DEV-CLI-PDXVX6` / `CLI-D000001` / `CLIENTS DEV`. Les valeurs sensibles de
+   la colonne mot de passe ne sont ni relues ni documentées.
+6. `/Synchro=CLIENTS-DEV.xml` : mutex pris puis libéré, KoXoAdm terminé avec
+   exit `0` et marqueur `synchronized_and_launched`; aucun
+   `RepairSecondaryGroup`, `RepairUser` ni repair storage.
+7. AD : OU/groupe `DEV-CLI-PDXVX6` créé sous `CLIENTS DEV`; Melis Rochedune
+   active, `employeeNumber=CLI-D000001`, membre du seul groupe secondaire.
+   Aucun `GG_VPN` ni `GG_RDS`; les groupes `CLIENTS` et `CLIENTS DÉMO` sont
+   restés inchangés.
+8. Convergence : objet adopté strictement par `employeeNumber`,
+   `customer_ad_links` créé, secret KoXo acquitté, PIB `completed` et
+   `PRIMARY_IDENTITY_COMPLETED` observé.
+
+Le stockage n'a pas fait partie de l'E2E et reste non validé en headless.
+
+### Dettes explicitement conservées
+
+- `scripts/dev-env/Install-ApiInternalDev.ps1` ne doit pas être utilisé : il
+  régénère la configuration DEV depuis une source contenant encore des valeurs
+  LIVE/PROD.
+- `dev.env.ps1` / la source DEV associée doit être assainie avant toute
+  réutilisation globale ; aucun secret ne doit être ajouté au dépôt.
+- `RepairSecondaryGroup Type=Storage` headless n'est pas validé.
+- `CLIENTS DEV DEMO` n'existe pas encore.
+- Les objets de test Run 1/2 sont conservés.
 
 ### `/Synchro` et stockage : deux opérations distinctes
 

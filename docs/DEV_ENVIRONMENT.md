@@ -20,8 +20,8 @@ serveurs, sans modification, redémarrage ni migration de la production.
 | Base (SRV-06) | `kermaria` / `kermaria_api` | `kermaria_dev` / `kermaria_dev` (DML) + `kermaria_dev_migrator` (DDL) |
 | Stripe | live | test (désactivé tant que les clés TEST ne sont pas fournies) |
 | Outbox / exécuteur | ON | ON |
-| Provisioning (AD, KoXo, stockage) | ON | OFF, double verrou |
-| Email | SMTP OVH réel | `EMAIL_INTEGRATION_MODE=mock` (journalisé, jamais envoyé) |
+| Provisioning (AD, KoXo, stockage) | ON | `controlled_write` DEV validé pour l'E2E identité ; stockage headless hors périmètre |
+| Email | SMTP OVH réel | SMTP OVH réel, borné par allowlist explicite |
 | PayPal / BPCE | live | disabled |
 | URL | `zachary-it.fr`, `dashboard.`, `administration.` | `dev.zachary-it.fr` (préparée, **non publiée**) |
 
@@ -115,12 +115,22 @@ administrateurs et le seul compte virtuel DEV) et `/etc/kermaria/webportal-dev.e
 
 Toutes les commandes se lancent depuis la racine du dépôt, sur RDC-07.
 
+> **Avertissement opérationnel — 2026-09-28.** Ne pas exécuter
+> `scripts/dev-env/Install-ApiInternalDev.ps1` en l'état. Il régénère la
+> configuration API DEV depuis une source qui contient encore des valeurs
+> LIVE/PROD et pourrait les réinjecter dans DEV. Pour une mise à jour binaire
+> autorisée, conserver la configuration DEV existante et effectuer un swap
+> staging → ancien dossier → nouveau dossier, puis redémarrer uniquement
+> `KermariaApiInternalDev`. Assainir la source DEV/LIVE avant de réutiliser
+> l'installateur.
+
 ```powershell
 # Base et comptes (une fois) : scripts/dev-env/create-dev-database.sql,
 # execute sur SRV-06 avec un compte d'administration (mots de passe injectes
 # depuis le fichier de secrets DEV, jamais versionnes).
 
-# API DEV
+# API DEV — historique : ne pas executer l'installateur ci-dessous tant que
+# l'avertissement ci-dessus n'est pas leve.
 dotnet publish apps/api-internal/Kermaria.ApiInternal.csproj -c Release -p:UseAppHost=true -o $env:TEMP\api-internal-dev
 .\scripts\dev-env\Install-ApiInternalDev.ps1 -PublishDirectory $env:TEMP\api-internal-dev -NoStart
 .\scripts\dev-env\Invoke-ApiDevMigrations.ps1            # -SeedDemoData au premier passage

@@ -1,7 +1,11 @@
 # Amorcage de l'identite AD du compte principal (2026-09-25)
 
-> Local, non commite, non deploye. Migration 096 non appliquee en PROD ni en DEV.
-> Preuve base reelle le 2026-09-25 : base jetable SRV-06 (11.8.6), migrations
+> État initial au 2026-09-25 : local, non commité, non déployé. Migration 096
+> non appliquée en PROD à cette date. **Mise à jour du 2026-09-28 : le flux et
+> la migration 096 sont déployés en DEV et validés par l'E2E identité standard
+> complet ; PROD n'a pas été touchée.**
+>
+> Preuve base réelle initiale : base jetable SRV-06 (11.8.6), migrations
 > 001-096 par le runner normal, `--primary-identity-bootstrap-schema` vert
 > (rollback + concurrence compris), rejeu des migrations sans effet, base et
 > compte detruits. Revele au passage : `ApproveAsync` levait sur double validation
@@ -54,3 +58,12 @@ Tout compte client principal possede une identite AD dans CLIENTS.HOME.BZH,
   converge, par construction. Voir [dev-environment.md](dev-environment.md).
 
 Doc : `docs/PRIMARY_IDENTITY_BOOTSTRAP.md`.
+
+## E2E DEV du 2026-09-28
+
+Le signup standard Melis Rochedune a confirmé le cycle réel
+`awaiting_password → koxo_pending → completed` : password setup normal,
+webhook DEV `password_set` en `202`, export `CLIENTS DEV`, synchronisation
+KoXo, adoption stricte par `employeeNumber`, création de `customer_ad_links`
+et `PRIMARY_IDENTITY_COMPLETED`. Aucun secret, hash ou jeton n'est mémorisé.
+Le stockage headless reste hors périmètre et non validé.
