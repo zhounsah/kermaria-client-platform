@@ -31,6 +31,12 @@ acceptables (par exemple `GG_SERVICE_E2E_DEV`) ; en production, toute
 reference `_DEV` est refusee. CREATE et UPDATE appellent ce garde avant toute
 ecriture SQL.
 
+Les memberships effectivement ajoutes par Billing V2 sont traces dans
+`billing_v2_provisioning_managed_memberships`. Cette trace operationnelle, et
+non une liste de configuration, est la seule autorite de retrait : une regle
+inactive reste donc deprovisionnable, tandis qu'un groupe manuel jamais ajoute
+par Billing V2 ne peut pas etre retire par le moteur.
+
 Le planner demeure le consommateur de la table : son test de regles confirme
 qu'un groupe AD est porte par l'identite utilisateur exacte, sans configuration
 parallele ni appel annuaire pendant les tests locaux.

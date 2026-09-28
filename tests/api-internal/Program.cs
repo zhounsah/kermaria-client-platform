@@ -249,6 +249,13 @@ async Task<int> RunAsync(string[] arguments)
     }
 
     if (arguments.Length == 1
+        && string.Equals(arguments[0], "--billing-v2-managed-memberships", StringComparison.Ordinal))
+    {
+        try { await BillingV2ManagedMembershipReconciliationTests.RunAsync(); return 0; }
+        catch (Exception exception) { Console.Error.WriteLine(exception); return 1; }
+    }
+
+    if (arguments.Length == 1
         && string.Equals(
             arguments[0],
             "--billing-v2-provisioning-readiness-review",

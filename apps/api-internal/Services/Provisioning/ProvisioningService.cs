@@ -8,7 +8,8 @@ public sealed record ProvisioningOperationResult(
     string UserSamAccountName,
     string Operation,
     string Code,
-    bool Changed);
+    bool Changed,
+    string? IdentityReference = null);
 
 public sealed record ProvisioningExecutionResult(
     bool Succeeded,
@@ -20,7 +21,8 @@ public sealed record ProvisioningExecutionRequest(
     IReadOnlyList<CustomerAdLinkSummary> TargetUsers,
     IReadOnlyList<string> DesiredGroupSamAccountNames,
     IReadOnlyList<string> ManagedGroupSamAccountNames,
-    IReadOnlyDictionary<string, string?> GroupDistinguishedNamesBySamAccountName);
+    IReadOnlyDictionary<string, string?> GroupDistinguishedNamesBySamAccountName,
+    string? IdentityReference = null);
 
 public interface IProvisioningService
 {
@@ -107,7 +109,8 @@ public sealed class ProvisioningService : IProvisioningService
                     user.SamAccountName,
                     operation,
                     result.Code,
-                    result.Changed));
+                    result.Changed,
+                    request.IdentityReference));
                 changed |= result.Changed;
 
                 if (result.StatusCode >= 400)

@@ -630,7 +630,7 @@ public sealed partial class BillingV2ProvisioningService : IBillingV2Provisionin
             return null;
         }
 
-        var customerId = await LoadActiveSubscriptionCustomerIdAsync(
+        var customerId = await LoadSubscriptionCustomerIdAsync(
             subscriptionId,
             cancellationToken);
         if (customerId is null)
@@ -654,6 +654,9 @@ public sealed partial class BillingV2ProvisioningService : IBillingV2Provisionin
             customerId,
             activeV2SubscriptionIds.ToArray(),
             cancellationToken);
+        var ownedMemberships = await LoadOwnedMembershipsAsync(
+            customerId,
+            cancellationToken);
         // Le referentiel de liens est charge ici, mais son eventuelle vacuite ne
         // peut pas conclure avant la porte de stockage : celle-ci refuse plus
         // tot et plus explicitement. Un lien absent n'est d'ailleurs pas
@@ -664,7 +667,31 @@ public sealed partial class BillingV2ProvisioningService : IBillingV2Provisionin
             customerId,
             cancellationToken);
 
-        var targetGroupsResolved = plan.AllDesiredAdGroups.All(group =>
+        var managedGroupsByIdentity = ownedMemberships
+            .GroupBy(entry => entry.IdentityReference, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyList<string>)group
+                    .Select(entry => entry.GroupSamAccountName)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray(),
+                StringComparer.Ordinal);
+        var usersForMembershipReconciliation = plan.UsersRequiringAdIdentity
+            .Concat(managedGroupsByIdentity.Keys
+                .Where(identity => !plan.UsersRequiringAdIdentity.Any(user =>
+                    string.Equals(user.IdentityReference, identity, StringComparison.Ordinal)))
+                .Select(identity => new BillingV2UserDesiredState(
+                    "historical:" + identity,
+                    identity,
+                    Array.Empty<string>(),
+                    PersonalStorage: null,
+                    Array.Empty<BillingV2AcknowledgedEntitlement>(),
+                    Array.Empty<BillingV2AcknowledgedEntitlement>())))
+            .ToArray();
+        var groupsRequiringConfiguration = plan.AllDesiredAdGroups
+            .Concat(ownedMemberships.Select(entry => entry.GroupSamAccountName))
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+        var targetGroupsResolved = groupsRequiringConfiguration.All(group =>
             _provisioningConfiguration.GroupDistinguishedNamesBySamAccountName
                 .TryGetValue(group, out var distinguishedName)
             && !string.IsNullOrWhiteSpace(distinguishedName));
@@ -673,9 +700,11 @@ public sealed partial class BillingV2ProvisioningService : IBillingV2Provisionin
                 GlobalFlagEnabled: _billingV2.ProvisioningEnabled,
                 ClientReady: readiness.ClientReady,
                 AddOnlyMode: readiness.AddOnlyMode,
-                CompleteMaterialization: activeV2SubscriptionIds.Count > 0
-                    && plan.UnresolvedRuleReferences.Count == 0,
-                RequiredRulesResolved: plan.UnresolvedRuleReferences.Count == 0,
+                CompleteMaterialization: (activeV2SubscriptionIds.Count > 0
+                    && plan.UnresolvedRuleReferences.Count == 0)
+                    || ownedMemberships.Count > 0,
+                RequiredRulesResolved: plan.UnresolvedRuleReferences.Count == 0
+                    || ownedMemberships.Count > 0,
                 ReviewSucceeded: readiness.ReviewSucceeded,
                 HasUnresolvedMismatch: readiness.HasUnresolvedMismatch,
                 TargetGroupsResolved: targetGroupsResolved));
@@ -707,7 +736,7 @@ public sealed partial class BillingV2ProvisioningService : IBillingV2Provisionin
             return null;
         }
 
-        if (plan.Users.Count == 0)
+        if (usersForMembershipReconciliation.Length == 0)
         {
             _logger.LogWarning(
                 "Billing V2 provisioning skipped for subscription {SubscriptionId}: no user-scoped desired state is available. No external action was executed.",
@@ -717,7 +746,7 @@ public sealed partial class BillingV2ProvisioningService : IBillingV2Provisionin
 
         // Rien a executer sur l'annuaire : le declarer traite ici masquerait le
         // fait que le socle KoXo, lui, reste non applique.
-        if (plan.UsersRequiringAdIdentity.Count == 0)
+        if (usersForMembershipReconciliation.Length == 0)
         {
             _logger.LogWarning(
                 "Billing V2 provisioning skipped for subscription {SubscriptionId}: no user requires an Active Directory access. No external action was executed.",
@@ -735,7 +764,7 @@ public sealed partial class BillingV2ProvisioningService : IBillingV2Provisionin
 
         var resolution = await ResolveTargetsAsync(
             customerId,
-            plan.UsersRequiringAdIdentity,
+            usersForMembershipReconciliation,
             targetUsers,
             cancellationToken);
         if (!resolution.Resolved)
@@ -761,9 +790,11 @@ public sealed partial class BillingV2ProvisioningService : IBillingV2Provisionin
             BillingV2ProvisioningExecutionPlanner.BuildPerUserRequests(
                 decision,
                 resolution.Targets,
-                groupDistinguishedNames),
+                groupDistinguishedNames,
+                managedGroupsByIdentity),
             cancellationToken);
         await PersistAdStatusesAsync(customerId, execution, cancellationToken);
+        await PersistOwnedMembershipsAsync(customerId, execution, cancellationToken);
         return execution;
     }
 
@@ -834,7 +865,7 @@ public sealed partial class BillingV2ProvisioningService : IBillingV2Provisionin
         return BillingV2ProvisioningResultAggregator.Combine(results);
     }
 
-    private async Task<string?> LoadActiveSubscriptionCustomerIdAsync(
+    private async Task<string?> LoadSubscriptionCustomerIdAsync(
         string subscriptionId,
         CancellationToken cancellationToken)
     {
@@ -846,7 +877,6 @@ public sealed partial class BillingV2ProvisioningService : IBillingV2Provisionin
             SELECT customer_id
             FROM billing_v2_subscriptions
             WHERE id = @subscription_id
-              AND status = 'active'
             LIMIT 1;
             """;
         command.Parameters.AddWithValue("@subscription_id", subscriptionId);
@@ -857,6 +887,69 @@ public sealed partial class BillingV2ProvisioningService : IBillingV2Provisionin
         }
 
         return MariaDbIdentifierReader.ReadRequired(reader, "customer_id");
+    }
+
+    private async Task<IReadOnlyList<OwnedMembership>> LoadOwnedMembershipsAsync(
+        string customerId,
+        CancellationToken cancellationToken)
+    {
+        var result = new List<OwnedMembership>();
+        await using var connection = new MySqlConnection(_sql.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT identity_reference, group_sam_account_name
+            FROM billing_v2_provisioning_managed_memberships
+            WHERE customer_id = @customer_id AND status = 'active';
+            """;
+        command.Parameters.AddWithValue("@customer_id", customerId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            result.Add(new OwnedMembership(
+                reader.GetString("identity_reference"),
+                reader.GetString("group_sam_account_name")));
+        }
+        return result;
+    }
+
+    private async Task PersistOwnedMembershipsAsync(
+        string customerId,
+        ProvisioningExecutionResult execution,
+        CancellationToken cancellationToken)
+    {
+        var relevant = execution.Operations.Where(operation =>
+            !string.IsNullOrWhiteSpace(operation.IdentityReference)
+            && operation.Code is "AD_GROUP_MEMBER_ADDED"
+                or "AD_GROUP_MEMBER_REMOVED"
+                or "AD_GROUP_MEMBER_ALREADY_ABSENT").ToArray();
+        if (relevant.Length == 0) return;
+        await using var connection = new MySqlConnection(_sql.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        foreach (var operation in relevant)
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = operation.Code == "AD_GROUP_MEMBER_ADDED"
+                ? """
+                  INSERT INTO billing_v2_provisioning_managed_memberships
+                    (customer_id, identity_reference, group_sam_account_name, status, created_at, updated_at)
+                  VALUES (@customer_id, @identity_reference, @group, 'active', UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))
+                  ON DUPLICATE KEY UPDATE status = 'active', updated_at = UTC_TIMESTAMP(6);
+                  """
+                : """
+                  UPDATE billing_v2_provisioning_managed_memberships
+                  SET status = 'inactive', updated_at = UTC_TIMESTAMP(6)
+                  WHERE customer_id = @customer_id
+                    AND identity_reference = @identity_reference
+                    AND group_sam_account_name = @group
+                    AND status = 'active';
+                  """;
+            command.Parameters.AddWithValue("@customer_id", customerId);
+            command.Parameters.AddWithValue("@identity_reference", operation.IdentityReference!);
+            command.Parameters.AddWithValue("@group", operation.GroupSamAccountName);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
     }
 
     private async Task<BillingV2ProvisioningDbReadiness> LoadReadinessAsync(
@@ -1097,6 +1190,10 @@ public sealed partial class BillingV2ProvisioningService : IBillingV2Provisionin
                 ReviewSucceeded: false,
                 HasUnresolvedMismatch: false);
     }
+
+    private sealed record OwnedMembership(
+        string IdentityReference,
+        string GroupSamAccountName);
 }
 
 public static class BillingV2ProvisioningReadinessGate
@@ -1156,15 +1253,14 @@ public static class BillingV2ProvisioningExecutionPolicy
         BillingV2ProvisioningGateDecision decision,
         IReadOnlyList<string> desiredGroups,
         IReadOnlyList<string> managedGroups)
-        => decision.AddOnlyMode
-            ? desiredGroups
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .OrderBy(group => group, StringComparer.OrdinalIgnoreCase)
-                .ToArray()
-            : managedGroups
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .OrderBy(group => group, StringComparer.OrdinalIgnoreCase)
-                .ToArray();
+        // `managedGroups` ne contient que les droits desires ou les
+        // memberships dont Billing V2 a trace lui-meme l'ajout. Le mode
+        // add-only reste donc sans pouvoir sur les groupes manuels, tout en
+        // autorisant le retrait symetrique d'un droit historiquement possede.
+        => managedGroups
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(group => group, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 }
 
 public static class BillingV2ProvisioningIdentityResolver
@@ -1378,15 +1474,17 @@ public static class BillingV2ProvisioningExecutionPlanner
     /// </summary>
     /// <remarks>
     /// Chaque requete ne porte qu'un <c>TargetUsers</c> et que les groupes de
-    /// cet utilisateur. Les groupes geres sont bornes aux groupes desires du
-    /// meme utilisateur : le moteur AD ne peut donc emettre que des ajouts, et
-    /// jamais un retrait ni un ajout croise.
+    /// cet utilisateur. Les groupes geres sont bornes aux groupes desires et
+    /// aux memberships dont Billing V2 a trace l'ajout pour cette meme
+    /// identite : aucun groupe manuel ou d'un autre client ne peut entrer dans
+    /// le perimetre, mais un droit devenu absent peut etre retire.
     /// </remarks>
     public static IReadOnlyList<ProvisioningExecutionRequest> BuildPerUserRequests(
         BillingV2ProvisioningGateDecision decision,
         IReadOnlyList<BillingV2ResolvedProvisioningTarget> targets,
         IReadOnlyDictionary<string, string?>
-            groupDistinguishedNamesBySamAccountName)
+            groupDistinguishedNamesBySamAccountName,
+        IReadOnlyDictionary<string, IReadOnlyList<string>>? ownedGroupsByIdentity = null)
     {
         var requests = new List<ProvisioningExecutionRequest>();
         foreach (var target in targets
@@ -1404,7 +1502,17 @@ public static class BillingV2ProvisioningExecutionPlanner
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .OrderBy(group => group, StringComparer.OrdinalIgnoreCase)
                 .ToArray();
-            if (desiredGroups.Length == 0)
+            var ownedGroups = ownedGroupsByIdentity is not null
+                && ownedGroupsByIdentity.TryGetValue(
+                    target.DesiredState.IdentityReference,
+                    out var owned)
+                ? owned
+                : Array.Empty<string>();
+            var managedGroups = desiredGroups.Concat(ownedGroups)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(group => group, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            if (managedGroups.Length == 0)
             {
                 // Cet utilisateur n'a achete aucun droit AD : pas de requete,
                 // donc aucune operation ne le nommera.
@@ -1418,8 +1526,9 @@ public static class BillingV2ProvisioningExecutionPlanner
                     .ResolveManagedGroupsForExecution(
                         decision,
                         desiredGroups,
-                        desiredGroups),
-                groupDistinguishedNamesBySamAccountName));
+                        managedGroups),
+                groupDistinguishedNamesBySamAccountName,
+                target.DesiredState.IdentityReference));
         }
 
         return requests;
