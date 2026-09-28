@@ -59,6 +59,7 @@ public static class BillingV2ProvisioningSemanticsTests
         VerifyCrossSubscriptionAccessRejectsAnotherIdentity();
         VerifyCrossSubscriptionPersonalQuotaConflict();
         VerifyVpnWithoutStorageAnywhereIsRefused();
+        VerifyDirectAdServiceWithoutTierDoesNotRequirePersonalStorage();
         VerifyPersonalStorageAloneIsAValidEnvironment();
         VerifyPersonalStorageNeedsNoResolvedAdIdentity();
         VerifyVpnStillDemandsAResolvedAdIdentity();
@@ -751,6 +752,27 @@ public static class BillingV2ProvisioningSemanticsTests
             && plan.Blockers[0].ReasonCode == BillingV2ProvisioningBlockerReasons.PersonalStorageRequired
             && plan.UnresolvedRuleReferences.SequenceEqual(["VPN-ACCESS:no-tier:vpn-only"]),
             "Un acces VPN sans stockage personnel pour cette identite reste bloque.");
+    }
+
+    private static void VerifyDirectAdServiceWithoutTierDoesNotRequirePersonalStorage()
+    {
+        var plan = BillingV2ProvisioningPlanner.Plan(
+        [
+            AdGroupRule(
+                "service-e2e-dev",
+                "SERVICE-E2E-DEV",
+                "GG_SERVICE_E2E_DEV",
+                "user-melis",
+                "portal-user-melis")
+        ]);
+
+        Ensure(
+            plan.UnresolvedRuleReferences.Count == 0
+            && plan.Users.Count == 1
+            && plan.Users.Single().IdentityReference == "portal-user-melis"
+            && plan.Users.Single().DesiredAdGroups.SequenceEqual(
+                ["GG_SERVICE_E2E_DEV"], StringComparer.OrdinalIgnoreCase),
+            "Un service direct sans tier qui porte son seul groupe AD doit rester materialisable sans stockage personnel.");
     }
 
     private static void VerifyPersonalStorageAloneIsAValidEnvironment()

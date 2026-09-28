@@ -1784,6 +1784,16 @@ public static class BillingV2ProvisioningPlanner
     private const string UserScope = "user";
     private const string SubscriptionScope = "subscription";
 
+    // Seuls les acces qui ouvrent une session de travail ont besoin du socle
+    // KoXo personnel. Une regle de groupe de service autonome (par exemple un
+    // droit applicatif) reste materialisable sans quota de stockage.
+    private static readonly HashSet<string> PersonalStoragePrerequisiteServices = new(
+        StringComparer.OrdinalIgnoreCase)
+    {
+        "VPN-ACCESS",
+        "RDS-ACCESS"
+    };
+
     /// <summary>
     /// Transforme les lignes de projection en etats desires, un par
     /// identity_reference technique exacte. Les subscription_user_id restent
@@ -1862,14 +1872,16 @@ public static class BillingV2ProvisioningPlanner
     {
         foreach (var identityReference in state.IdentityOrder)
         {
-            if (state.GroupsByIdentity[identityReference].Count == 0
+            if (!state.AdAccessReferencesByIdentity[identityReference]
+                    .Any(RequiresPersonalStorage)
                 || state.PersonalStorageByIdentity.ContainsKey(identityReference))
             {
                 continue;
             }
 
             foreach (var reference in state
-                .AdAccessReferencesByIdentity[identityReference])
+                .AdAccessReferencesByIdentity[identityReference]
+                .Where(RequiresPersonalStorage))
             {
                 state.Blockers.Add(new BillingV2ProvisioningBlocker(
                     reference,
@@ -1877,6 +1889,12 @@ public static class BillingV2ProvisioningPlanner
             }
         }
     }
+
+    private static bool RequiresPersonalStorage(string ruleReference)
+        => PersonalStoragePrerequisiteServices.Any(serviceCode =>
+            ruleReference.StartsWith(
+                serviceCode + ":",
+                StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
     /// Classe une ligne de projection, ou l'inscrit comme bloquante.
