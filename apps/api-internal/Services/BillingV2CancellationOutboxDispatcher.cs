@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Kermaria.ApiInternal.Data.Configuration;
 using Kermaria.ApiInternal.Data.Repositories;
+using Kermaria.ApiInternal.Services.Provisioning;
 using MySqlConnector;
 
 namespace Kermaria.ApiInternal.Services;
@@ -41,17 +42,20 @@ public sealed class BillingV2CancellationOutboxDispatcher
     private readonly SqlRuntimeConfiguration _sql;
     private readonly BillingV2RuntimeConfiguration _configuration;
     private readonly IBillingV2ProviderCancellationExecutor _executor;
+    private readonly IBillingV2ProvisioningService _provisioning;
     private readonly ILogger<BillingV2CancellationOutboxDispatcher> _logger;
 
     public BillingV2CancellationOutboxDispatcher(
         SqlRuntimeConfiguration sql,
         BillingV2RuntimeConfiguration configuration,
         IBillingV2ProviderCancellationExecutor executor,
+        IBillingV2ProvisioningService provisioning,
         ILogger<BillingV2CancellationOutboxDispatcher> logger)
     {
         _sql = sql;
         _configuration = configuration;
         _executor = executor;
+        _provisioning = provisioning;
         _logger = logger;
     }
 
@@ -163,6 +167,33 @@ public sealed class BillingV2CancellationOutboxDispatcher
                 update,
                 cancellationToken);
             await transaction.CommitAsync(cancellationToken);
+
+            if (result.Succeeded
+                && BillingV2CancellationOperations.ClosesLocalSubscription(
+                    payload.Operation))
+            {
+                try
+                {
+                    var provisioning = await _provisioning
+                        .TryReconcileDeactivatedSubscriptionAsync(
+                            payload.SubscriptionId,
+                            cancellationToken);
+                    if (provisioning is not null)
+                    {
+                        _logger.LogInformation(
+                            "Billing V2 deprovisioning reconciled after provider cancellation for subscription {SubscriptionId}: {ResultCode}.",
+                            payload.SubscriptionId,
+                            provisioning.ResultCode);
+                    }
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    _logger.LogWarning(
+                        exception,
+                        "Billing V2 deprovisioning failed after provider cancellation for subscription {SubscriptionId}. The provider cancellation remains committed and reconciliation can be retried idempotently.",
+                        payload.SubscriptionId);
+                }
+            }
 
             if (!result.Succeeded)
             {

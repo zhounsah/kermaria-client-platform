@@ -459,6 +459,10 @@ public interface IBillingV2ProvisioningService
         string subscriptionId,
         CancellationToken cancellationToken);
 
+    Task<ProvisioningExecutionResult?> TryReconcileDeactivatedSubscriptionAsync(
+        string subscriptionId,
+        CancellationToken cancellationToken);
+
     Task<BillingV2ProvisioningReadinessReviewResult> ReviewClientReadinessAsync(
         string customerId,
         string reviewedByReference,
@@ -479,6 +483,11 @@ public sealed class NoOpBillingV2ProvisioningService
     }
 
     public Task<ProvisioningExecutionResult?> TryReconcileActivatedSubscriptionAsync(
+        string subscriptionId,
+        CancellationToken cancellationToken)
+        => Task.FromResult<ProvisioningExecutionResult?>(null);
+
+    public Task<ProvisioningExecutionResult?> TryReconcileDeactivatedSubscriptionAsync(
         string subscriptionId,
         CancellationToken cancellationToken)
         => Task.FromResult<ProvisioningExecutionResult?>(null);
@@ -619,8 +628,25 @@ public sealed partial class BillingV2ProvisioningService : IBillingV2Provisionin
         return true;
     }
 
-    public async Task<ProvisioningExecutionResult?> TryReconcileActivatedSubscriptionAsync(
+    public Task<ProvisioningExecutionResult?> TryReconcileActivatedSubscriptionAsync(
         string subscriptionId,
+        CancellationToken cancellationToken)
+        => TryReconcileSubscriptionLifecycleAsync(
+            subscriptionId,
+            requireActiveTrigger: true,
+            cancellationToken);
+
+    public Task<ProvisioningExecutionResult?> TryReconcileDeactivatedSubscriptionAsync(
+        string subscriptionId,
+        CancellationToken cancellationToken)
+        => TryReconcileSubscriptionLifecycleAsync(
+            subscriptionId,
+            requireActiveTrigger: false,
+            cancellationToken);
+
+    private async Task<ProvisioningExecutionResult?> TryReconcileSubscriptionLifecycleAsync(
+        string subscriptionId,
+        bool requireActiveTrigger,
         CancellationToken cancellationToken)
     {
         if (!_billingV2.ProvisioningEnabled
@@ -642,7 +668,13 @@ public sealed partial class BillingV2ProvisioningService : IBillingV2Provisionin
             await LoadMaterializedActiveSubscriptionIdsAsync(
                 customerId,
                 cancellationToken);
-        if (!activeV2SubscriptionIds.Contains(subscriptionId))
+        var ownedMemberships = await LoadOwnedMembershipsAsync(
+            customerId,
+            cancellationToken);
+        if (!BillingV2ProvisioningLifecyclePolicy.CanReconcile(
+                requireActiveTrigger,
+                activeV2SubscriptionIds.Contains(subscriptionId),
+                ownedMemberships.Count))
         {
             return null;
         }
@@ -653,9 +685,6 @@ public sealed partial class BillingV2ProvisioningService : IBillingV2Provisionin
         var plan = await LoadProvisioningPlanAsync(
             customerId,
             activeV2SubscriptionIds.ToArray(),
-            cancellationToken);
-        var ownedMemberships = await LoadOwnedMembershipsAsync(
-            customerId,
             cancellationToken);
         // Le referentiel de liens est charge ici, mais son eventuelle vacuite ne
         // peut pas conclure avant la porte de stockage : celle-ci refuse plus
@@ -1245,6 +1274,17 @@ public static class BillingV2ProvisioningReadinessGate
 
         return BillingV2ProvisioningGateDecision.Allow(state.AddOnlyMode);
     }
+}
+
+public static class BillingV2ProvisioningLifecyclePolicy
+{
+    public static bool CanReconcile(
+        bool requireActiveTrigger,
+        bool triggeringSubscriptionActive,
+        int ownedMembershipCount)
+        => requireActiveTrigger
+            ? triggeringSubscriptionActive
+            : !triggeringSubscriptionActive && ownedMembershipCount > 0;
 }
 
 public static class BillingV2ProvisioningExecutionPolicy

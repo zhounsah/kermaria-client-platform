@@ -65,6 +65,7 @@ public static class BillingV2FinancialCoreTests
         VerifySubscriptionCreatedDoesNotActivate();
         VerifySubscriptionUpdatedDoesNotActivate();
         VerifyGenuineActivationStillActivates();
+        VerifyCancellationTriggersDeprovisioning();
         VerifyInertSignalDoesNotReplayProvisioning();
 
         // Intention orpheline : un parcours provider terminal ferme l'intention.
@@ -757,6 +758,24 @@ public static class BillingV2FinancialCoreTests
                 plan,
                 ProviderState()),
             "Une activation explicite reste eligible au provisioning.");
+    }
+
+    private static void VerifyCancellationTriggersDeprovisioning()
+    {
+        var plan = BillingV2ProviderInboundEventPlanner.Plan(
+            ProviderEvent("customer.subscription.deleted"),
+            ProviderState());
+
+        Ensure(
+            plan.CanApply && plan.SubscriptionStatus == "cancelled",
+            "Une annulation provider terminale doit fermer la souscription locale.");
+        Ensure(
+            BillingV2ProviderInboundProvisioningPolicy.ShouldReconcileTerminal(plan),
+            "Une annulation provider terminale doit declencher la reconciliation de deprovisioning.");
+        Ensure(
+            BillingV2ProviderInboundProvisioningPolicy
+                .ShouldAttemptProcessedReplay(plan.ReasonCode),
+            "Un replay d annulation provider doit pouvoir retenter le deprovisioning idempotent.");
     }
 
     private static void VerifyInertSignalDoesNotReplayProvisioning()

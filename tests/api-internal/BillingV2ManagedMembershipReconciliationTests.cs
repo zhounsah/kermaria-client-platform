@@ -11,6 +11,7 @@ public static class BillingV2ManagedMembershipReconciliationTests
         await VerifyAddNoopAndRemoveAsync();
         await VerifyManualAndSharedMembershipsAsync();
         await VerifyRuleChangeAndInactiveHistoryAsync();
+        VerifyLifecyclePolicy();
         VerifyCustomerAndEnvironmentIsolation();
         Console.WriteLine("Tests reconciliation des memberships Billing V2 reussis.");
     }
@@ -45,6 +46,40 @@ public static class BillingV2ManagedMembershipReconciliationTests
 
         var inactive = await ExecuteAsync([], ["GROUP_OLD_DEV"], ["GROUP_OLD_DEV"]);
         Ensure(inactive.Removed.SequenceEqual(["GROUP_OLD_DEV"]), "Une regle inactive conserve l'autorite historique de retrait.");
+    }
+
+    private static void VerifyLifecyclePolicy()
+    {
+        Ensure(
+            BillingV2ProvisioningLifecyclePolicy.CanReconcile(
+                requireActiveTrigger: true,
+                triggeringSubscriptionActive: true,
+                ownedMembershipCount: 0),
+            "Une activation active reste eligible a la convergence.");
+        Ensure(
+            !BillingV2ProvisioningLifecyclePolicy.CanReconcile(
+                requireActiveTrigger: true,
+                triggeringSubscriptionActive: false,
+                ownedMembershipCount: 1),
+            "Une activation deja terminale ne doit pas rejouer le chemin d ajout.");
+        Ensure(
+            BillingV2ProvisioningLifecyclePolicy.CanReconcile(
+                requireActiveTrigger: false,
+                triggeringSubscriptionActive: false,
+                ownedMembershipCount: 1),
+            "Une desactivation terminale avec ownership doit converger vers le retrait.");
+        Ensure(
+            !BillingV2ProvisioningLifecyclePolicy.CanReconcile(
+                requireActiveTrigger: false,
+                triggeringSubscriptionActive: true,
+                ownedMembershipCount: 1),
+            "Le deprovisioning ne doit pas partir avant la fermeture locale de la souscription.");
+        Ensure(
+            !BillingV2ProvisioningLifecyclePolicy.CanReconcile(
+                requireActiveTrigger: false,
+                triggeringSubscriptionActive: false,
+                ownedMembershipCount: 0),
+            "Sans membership possede par Billing V2, une desactivation ne doit toucher aucun groupe.");
     }
 
     private static void VerifyCustomerAndEnvironmentIsolation()

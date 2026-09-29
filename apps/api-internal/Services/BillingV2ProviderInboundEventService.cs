@@ -147,14 +147,24 @@ public sealed class BillingV2ProviderInboundEventService
             if (BillingV2ProviderInboundProvisioningPolicy
                 .ShouldAttemptProcessedReplay(existingEvent.ReasonCode))
             {
-                await TryIssueDocumentAsync(
-                    result.SubscriptionId,
-                    cancellationToken);
-                await TryTriggerProvisioningAsync(
-                    result.SubscriptionId,
-                    existingEvent.ReasonCode
-                        ?? result.ReasonCode,
-                    cancellationToken);
+                if (BillingV2ProviderInboundProvisioningPolicy
+                    .IsTerminalCancellationReason(existingEvent.ReasonCode))
+                {
+                    await TryTriggerDeprovisioningAsync(
+                        result.SubscriptionId,
+                        existingEvent.ReasonCode ?? result.ReasonCode,
+                        cancellationToken);
+                }
+                else
+                {
+                    await TryIssueDocumentAsync(
+                        result.SubscriptionId,
+                        cancellationToken);
+                    await TryTriggerProvisioningAsync(
+                        result.SubscriptionId,
+                        existingEvent.ReasonCode ?? result.ReasonCode,
+                        cancellationToken);
+                }
             }
 
             return result;
@@ -256,6 +266,14 @@ public sealed class BillingV2ProviderInboundEventService
                     : plan.ReasonCode,
                 localState.SubscriptionId,
                 localState.CheckoutSessionId);
+            if (BillingV2ProviderInboundProvisioningPolicy.ShouldReconcileTerminal(plan))
+            {
+                await TryTriggerDeprovisioningAsync(
+                    localState.SubscriptionId,
+                    plan.ReasonCode,
+                    cancellationToken);
+            }
+
             // Phase 2. Le signal ne fait que declencher une RELECTURE Stripe.
             // Document et provisioning ne suivent que si cette relecture a
             // confirme l'encaissement du montant attendu, dans la bonne devise.
@@ -961,6 +979,42 @@ public sealed class BillingV2ProviderInboundEventService
         }
     }
 
+    private async Task TryTriggerDeprovisioningAsync(
+        string? subscriptionId,
+        string reasonCode,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(subscriptionId))
+        {
+            return;
+        }
+
+        try
+        {
+            var result = await _provisioning
+                .TryReconcileDeactivatedSubscriptionAsync(
+                    subscriptionId,
+                    cancellationToken);
+            if (result is not null)
+            {
+                _logger.LogInformation(
+                    "Billing V2 deprovisioning attempted after terminal provider event for subscription {SubscriptionId}: {ResultCode}.",
+                    subscriptionId,
+                    result.ResultCode);
+            }
+        }
+        catch (Exception exception) when (
+            BillingV2ProviderInboundProvisioningFailurePolicy
+                .ShouldKeepProviderEventProcessed(exception))
+        {
+            _logger.LogWarning(
+                exception,
+                "Billing V2 deprovisioning trigger failed after terminal provider event for subscription {SubscriptionId} ({ReasonCode}). Provider event remains processed and reconciliation can be retried idempotently.",
+                subscriptionId,
+                reasonCode);
+        }
+    }
+
     private async Task TryIssueRenewalDocumentAsync(
         string subscriptionId,
         string billingEventId,
@@ -1077,6 +1131,8 @@ public static class BillingV2ProviderInboundProvisioningPolicy
 {
     private const string SubscriptionActivatedReasonCode =
         "BILLING_V2_PROVIDER_SUBSCRIPTION_ACTIVATED";
+    private const string SubscriptionCancelledReasonCode =
+        "BILLING_V2_PROVIDER_SUBSCRIPTION_CANCELLED";
 
     public static bool ShouldAttempt(
         BillingV2ProviderInboundEventPlan plan,
@@ -1089,8 +1145,23 @@ public static class BillingV2ProviderInboundProvisioningPolicy
 
     public static bool ShouldAttemptProcessedReplay(string? reasonCode)
         => string.Equals(
+               reasonCode,
+               SubscriptionActivatedReasonCode,
+               StringComparison.Ordinal)
+           || IsTerminalCancellationReason(reasonCode);
+
+    public static bool ShouldReconcileTerminal(
+        BillingV2ProviderInboundEventPlan plan)
+        => plan.CanApply
+           && string.Equals(
+               plan.SubscriptionStatus,
+               "cancelled",
+               StringComparison.Ordinal);
+
+    public static bool IsTerminalCancellationReason(string? reasonCode)
+        => string.Equals(
             reasonCode,
-            SubscriptionActivatedReasonCode,
+            SubscriptionCancelledReasonCode,
             StringComparison.Ordinal);
 
     public const string CheckoutCompletedSignalReasonCode =
