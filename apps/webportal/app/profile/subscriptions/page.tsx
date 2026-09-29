@@ -142,8 +142,7 @@ export default async function ProfileSubscriptionsPage({
               const assignedAdditionalUsers =
                 item.assignedAdditionalUsersCount ?? 0;
               const cancellable =
-                !isBillingV2
-                && item.status !== "cancelled"
+                item.status !== "cancelled"
                 && item.status !== "expired"
                 && item.status !== "pending_cancellation";
 
@@ -255,11 +254,6 @@ export default async function ProfileSubscriptionsPage({
                         : "date indisponible"}
                       {" · "}le service restera actif jusqu&apos;à la fin du terme
                       en cours.
-                    </p>
-                  ) : null}
-                  {isBillingV2 ? (
-                    <p className="field-hint">
-                      Souscription affichée en lecture seule.
                     </p>
                   ) : null}
                   {additionalUserSlots > 0 ? (
