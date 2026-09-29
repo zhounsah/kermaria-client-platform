@@ -67,8 +67,7 @@ export default async function AdminSubscriptionDetailPage({
   const provisioningState = subscriptionProvisioningStatus[provisioning.status];
   const cancellable =
     subscription.status !== "cancelled"
-    && subscription.status !== "expired"
-    && subscription.status !== "pending_cancellation";
+    && subscription.status !== "expired";
   const customerAdHref =
     `/admin/customers/${encodeURIComponent(subscription.customerReference)}/active-directory?subscriptionId=${encodeURIComponent(subscription.id)}`;
 

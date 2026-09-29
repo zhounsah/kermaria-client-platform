@@ -25,7 +25,7 @@ export function AdminCancelSubscriptionButton({
     if (
       typeof window !== "undefined"
       && !window.confirm(
-        "Demander la résiliation de cette souscription ? Si un terme est en cours, elle prendra effet à son échéance.",
+        "R\u00e9silier imm\u00e9diatement cette souscription ? Cette action interrompt le service en cours, annule la facturation fournisseur et d\u00e9clenche la convergence de provisioning.",
       )
     ) {
       return;
@@ -51,12 +51,12 @@ export function AdminCancelSubscriptionButton({
   return (
     <div>
       <button
-        className="button"
+        className="button button-danger"
         disabled={isSubmitting || disabled}
         onClick={handleClick}
         type="button"
       >
-        {isSubmitting ? "Résiliation..." : "Demander la résiliation"}
+        {isSubmitting ? "R\u00e9siliation imm\u00e9diate..." : "R\u00e9silier imm\u00e9diatement"}
       </button>
       {error ? (
         <p
