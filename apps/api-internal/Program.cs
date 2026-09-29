@@ -6739,6 +6739,11 @@ app.MapPost(
             "admin.billing_v2.provisioning.reconcile");
         var result = await provisioningService.TryReconcileActivatedSubscriptionAsync(
             id, context.RequestAborted);
+        if (result is null)
+        {
+            result = await provisioningService.TryReconcileDeactivatedSubscriptionAsync(
+                id, context.RequestAborted);
+        }
         var resultCode = result?.ResultCode
             ?? "BILLING_V2_PROVISIONING_NOT_EXECUTED";
         await auditService.RecordAsync(
