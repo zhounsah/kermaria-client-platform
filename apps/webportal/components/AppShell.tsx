@@ -29,18 +29,20 @@ const CLIENT_VPS_DETAIL_PATH =
 
 type AppShellProps = {
   children: ReactNode;
+  localPortalOrigin: string | null;
   signupEnabled: boolean;
 };
 
 export function AppShell({
   children,
+  localPortalOrigin,
   signupEnabled,
 }: AppShellProps) {
   const pathname = usePathname();
   const [session, setSession] = useState<InternalSession | null>(null);
   const portalArea: PortalArea | null = typeof window === "undefined"
     ? null
-    : getPortalArea(window.location.origin);
+    : getPortalArea(window.location.origin, localPortalOrigin);
   // `/services` est volontairement servi comme vitrine sur le domaine public
   // et comme espace « Mes services » sur le portail client. Le choix du shell
   // doit donc tenir compte de l'hôte, pas uniquement du chemin.
@@ -60,7 +62,7 @@ export function AppShell({
   const isCheckoutContinuation = isClientCheckoutContinuationPath(pathname);
   const keepAuthenticatedCheckoutShell =
     isCheckoutContinuation
-    && portalArea === "client"
+    && (portalArea === "client" || portalArea === "local")
     && session?.user.role === "client_user";
   const effectiveSession =
     usePublicShell && !isWikiRoute && !keepAuthenticatedCheckoutShell

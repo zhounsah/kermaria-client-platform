@@ -71,9 +71,11 @@ const publicRoutesRuntime = await importPureTypeScript(
 );
 const {
   getPortalArea,
+  getPortalFamilyCookieDomain,
   isPortalRoleAllowed,
   resolveClientCheckoutContinuationPath,
   resolvePortalAreaUrl,
+  resolvePortalPublicRedirectUrl,
   resolvePortalRoleUrl,
 } = routing;
 
@@ -221,6 +223,102 @@ assert.equal(
   "http://[::1]:3000/offres#packs",
 );
 
+// Le monohost Development est une origine exacte fournie par la couche
+// serveur. Sans ce contexte, un hostname inconnu ne devient jamais local.
+const developmentPortalOrigin = "https://dev.zachary-it.fr";
+assert.equal(getPortalArea(developmentPortalOrigin), null);
+assert.equal(
+  getPortalArea(developmentPortalOrigin, developmentPortalOrigin),
+  "local",
+);
+for (const area of ["public", "client", "admin", "local"]) {
+  assert.equal(
+    resolvePortalAreaUrl(
+      developmentPortalOrigin,
+      area,
+      "/souscription?cart=9dc0b994-71b3-4e49-95a5-0a509c90d916",
+      developmentPortalOrigin,
+    ),
+    "https://dev.zachary-it.fr/souscription?cart=9dc0b994-71b3-4e49-95a5-0a509c90d916",
+    `Le monohost Development doit garder ${area} sur son origine.`,
+  );
+}
+assert.equal(
+  resolvePortalRoleUrl(
+    developmentPortalOrigin,
+    "client_user",
+    "/dashboard",
+    developmentPortalOrigin,
+  ),
+  "https://dev.zachary-it.fr/dashboard",
+);
+assert.equal(
+  resolvePortalRoleUrl(
+    developmentPortalOrigin,
+    "internal_admin",
+    "/admin",
+    developmentPortalOrigin,
+  ),
+  "https://dev.zachary-it.fr/admin",
+);
+assert.equal(
+  getPortalArea("https://dev.zachary-it.fr:8443", developmentPortalOrigin),
+  null,
+  "Un port different ne doit pas heriter du statut local.",
+);
+assert.equal(
+  resolvePortalAreaUrl(
+    "https://dev.zachary-it.fr:8443",
+    "client",
+    "/dashboard",
+    developmentPortalOrigin,
+  ),
+  null,
+);
+assert.equal(
+  getPortalFamilyCookieDomain("dev.zachary-it.fr", developmentPortalOrigin),
+  null,
+  "Le cookie Cart Development doit rester host-only.",
+);
+assert.equal(
+  getPortalFamilyCookieDomain(
+    "dashboard.zachary-it.fr",
+    developmentPortalOrigin,
+  ),
+  ".zachary-it.fr",
+  "La configuration Development ne doit pas changer les familles production.",
+);
+assert.equal(resolvePortalPublicRedirectUrl("dev.zachary-it.fr", "/offres"), null);
+
+const previousAppEnv = process.env.APP_ENV;
+const previousPortalUrl = process.env.PUBLIC_PORTAL_URL;
+try {
+  process.env.APP_ENV = "Development";
+  process.env.PUBLIC_PORTAL_URL = developmentPortalOrigin;
+  assert.equal(
+    publicRoutesRuntime.getDevelopmentLocalPortalOrigin(),
+    developmentPortalOrigin,
+  );
+
+  process.env.PUBLIC_PORTAL_URL = `${developmentPortalOrigin}/unexpected`;
+  assert.equal(publicRoutesRuntime.getDevelopmentLocalPortalOrigin(), null);
+
+  process.env.PUBLIC_PORTAL_URL = developmentPortalOrigin;
+  process.env.APP_ENV = "Production";
+  assert.equal(publicRoutesRuntime.getDevelopmentLocalPortalOrigin(), null);
+} finally {
+  if (previousAppEnv === undefined) {
+    delete process.env.APP_ENV;
+  } else {
+    process.env.APP_ENV = previousAppEnv;
+  }
+  if (previousPortalUrl === undefined) {
+    delete process.env.PUBLIC_PORTAL_URL;
+  } else {
+    process.env.PUBLIC_PORTAL_URL = previousPortalUrl;
+  }
+}
+
 for (const hostilePath of [
   "",
   "login",
@@ -305,10 +403,13 @@ for (const unsafeContinuation of [
 
 assert.doesNotMatch(publicRouteConfig, /process\.env|server-only/);
 assert.match(publicRoutes, /export function getPortalRequestOriginFromHeaders/);
+assert.match(publicRoutes, /export function getDevelopmentLocalPortalOrigin/);
+assert.match(publicRoutes, /process\.env\.APP_ENV/);
+assert.match(publicRoutes, /process\.env\.PUBLIC_PORTAL_URL/);
 assert.match(publicRoutes, /hostname\.startsWith\("\["\)/);
-assert.match(homePage, /getPortalArea\(origin\)/);
+assert.match(homePage, /getPortalAreaForRequest\(origin\)/);
 assert.match(homePage, /notFound\(\)/);
-assert.match(homePage, /resolvePortalRoleUrl/);
+assert.match(homePage, /resolvePortalRoleUrlForRequest/);
 assert.match(homePage, /isPortalRoleAllowed/);
 assert.doesNotMatch(homePage, /redirect\("\/(?:login|dashboard|admin)"\)/);
 for (const presentationCode of [
@@ -324,6 +425,7 @@ assert.doesNotMatch(loginPage, /query\.email|initialEmail/);
 assert.match(loginPage, /resolveClientCheckoutContinuationPath\(query\.next\)/);
 assert.match(loginPage, /continuationPath=\{continuationPath\}/);
 assert.match(loginPage, /initialError=\{initialError\}/);
+assert.match(loginPage, /localPortalOrigin=\{localPortalOrigin\}/);
 assert.match(loginPage, /portalArea=\{area\}/);
 assert.match(loginPage, /notFound\(\)/);
 
@@ -334,12 +436,19 @@ assert.match(loginForm, /method:\s*"POST"/);
 assert.match(loginForm, /"Content-Type":\s*"application\/json"/);
 assert.match(loginForm, /JSON\.stringify\(validation\.payload\)/);
 assert.match(loginForm, /isSubmittingRef\.current/);
+assert.match(loginForm, /localPortalOrigin/);
 assert.match(loginForm, /aria-invalid/);
 assert.match(loginForm, /acceptCharset="UTF-8"/);
 assert.match(loginForm, /encType="application\/x-www-form-urlencoded"/);
 assert.match(loginForm, /continuationPath/);
-assert.match(loginForm, /resolvePortalAreaUrl\(origin, "client", continuationPath\)/);
-assert.match(loginForm, /resolvePortalRoleUrl\(origin, result\.user\.role\)/);
+assert.match(
+  loginForm,
+  /resolvePortalAreaUrl\([\s\S]*?origin,[\s\S]*?"client",[\s\S]*?continuationPath,[\s\S]*?localPortalOrigin/,
+);
+assert.match(
+  loginForm,
+  /resolvePortalRoleUrl\([\s\S]*?origin,[\s\S]*?result\.user\.role,[\s\S]*?localPortalOrigin/,
+);
 assert.match(loginForm, /"\/login\?error=PORTAL_ROLE_MISMATCH"/);
 assert.match(loginForm, /window\.location\.assign\(target\)/);
 assert.doesNotMatch(
@@ -376,7 +485,7 @@ assert.doesNotMatch(
   /searchParams\.set\(|[?&](?:email|password|token|correlation_id)=/i,
 );
 
-const classifyIndex = loginRoute.indexOf("const area = getPortalArea(origin)");
+const classifyIndex = loginRoute.indexOf("const area = getPortalAreaForRequest(origin)");
 const portalGuardIndex = loginRoute.indexOf(
   'if (!origin || !area || area === "public")',
 );

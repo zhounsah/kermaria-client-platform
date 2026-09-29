@@ -5,15 +5,18 @@ import { notFound, redirect } from "next/navigation";
 import { LoginForm } from "@/components/LoginForm";
 import { getCurrentPortalSession } from "@/lib/auth";
 import {
-  getPortalArea,
   isPortalRoleAllowed,
   resolveClientCheckoutContinuationPath,
-  resolvePortalAreaUrl,
-  resolvePortalRoleUrl,
   resolveSelfServiceCartSignupContinuation,
   resolveSelfServiceVpsSignupContinuation,
 } from "@/lib/public-route-config";
-import { getPortalRequestOriginFromHeaders } from "@/lib/public-routes";
+import {
+  getDevelopmentLocalPortalOrigin,
+  getPortalAreaForRequest,
+  getPortalRequestOriginFromHeaders,
+  resolvePortalAreaUrlForRequest,
+  resolvePortalRoleUrlForRequest,
+} from "@/lib/public-routes";
 
 export const metadata = {
   title: "Connexion",
@@ -34,7 +37,8 @@ const LOGIN_ERROR_MESSAGES = {
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   const origin = getPortalRequestOriginFromHeaders(await headers());
-  const area = getPortalArea(origin);
+  const localPortalOrigin = getDevelopmentLocalPortalOrigin();
+  const area = getPortalAreaForRequest(origin);
   const query = await searchParams;
   const continuationPath = resolveClientCheckoutContinuationPath(query.next);
   const selfServiceVpsContinuation = resolveSelfServiceVpsSignupContinuation(
@@ -53,14 +57,18 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
     const loginPath = continuationPath
       ? `/login?next=${encodeURIComponent(continuationPath)}`
       : "/login";
-    const clientLoginUrl = resolvePortalAreaUrl(origin, "client", loginPath);
+    const clientLoginUrl = resolvePortalAreaUrlForRequest(
+      origin,
+      "client",
+      loginPath,
+    );
     if (!clientLoginUrl) {
       notFound();
     }
     redirect(clientLoginUrl);
   }
 
-  const canonicalLoginUrl = resolvePortalAreaUrl(origin, area, "/login");
+  const canonicalLoginUrl = resolvePortalAreaUrlForRequest(origin, area, "/login");
   if (!canonicalLoginUrl) {
     notFound();
   }
@@ -76,8 +84,8 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   ) {
     const landingUrl =
       session.user.role === "client_user" && continuationPath
-        ? resolvePortalAreaUrl(origin, "client", continuationPath)
-        : resolvePortalRoleUrl(origin, session.user.role);
+        ? resolvePortalAreaUrlForRequest(origin, "client", continuationPath)
+        : resolvePortalRoleUrlForRequest(origin, session.user.role);
     if (!landingUrl) {
       notFound();
     }
@@ -108,6 +116,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
         <LoginForm
           continuationPath={continuationPath}
           initialError={initialError}
+          localPortalOrigin={localPortalOrigin}
           origin={origin}
           portalArea={area}
         />

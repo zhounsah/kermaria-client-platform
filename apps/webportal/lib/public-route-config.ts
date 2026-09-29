@@ -126,6 +126,29 @@ function normalizeHostname(hostname: string): string {
     : normalized;
 }
 
+/**
+ * Le monohost de developpement est fourni par une couche serveur : ce module
+ * reste pur et peut donc etre execute dans le navigateur sans y exposer la
+ * configuration d'environnement. La comparaison d'origine (et non de suffixe
+ * DNS) evite de reconnaitre un hote voisin ou un port inattendu comme local.
+ */
+function isLocalPortalOrigin(url: URL, localPortalOrigin?: string | null): boolean {
+  const hostname = normalizeHostname(url.hostname);
+  if (LOCAL_HOSTNAMES.has(hostname)) {
+    return true;
+  }
+
+  const configured = parsePortalUrl(localPortalOrigin);
+  return configured?.origin === url.origin;
+}
+
+function getConfiguredLocalPortalHostname(
+  localPortalOrigin?: string | null,
+): string | null {
+  const configured = parsePortalUrl(localPortalOrigin);
+  return configured ? normalizeHostname(configured.hostname) : null;
+}
+
 function getPortalFamily(hostname: string): PortalFamilyName | null {
   for (const familyName of Object.keys(PORTAL_FAMILIES) as PortalFamilyName[]) {
     const family = PORTAL_FAMILIES[familyName];
@@ -160,6 +183,7 @@ function resolvePublicSiteUrl(pathname: string, search = ""): string {
 
 export function getPortalArea(
   origin: string | null | undefined,
+  localPortalOrigin?: string | null,
 ): PortalArea | null {
   const url = parsePortalUrl(origin);
   if (!url) {
@@ -167,7 +191,7 @@ export function getPortalArea(
   }
 
   const hostname = normalizeHostname(url.hostname);
-  if (LOCAL_HOSTNAMES.has(hostname)) {
+  if (isLocalPortalOrigin(url, localPortalOrigin)) {
     return "local";
   }
 
@@ -190,9 +214,15 @@ export function getPortalArea(
  * Domaine de cookie partageable entre les hotes public/client d'une meme
  * famille de portails. Les hotes locaux restent host-only.
  */
-export function getPortalFamilyCookieDomain(hostname: string): string | null {
+export function getPortalFamilyCookieDomain(
+  hostname: string,
+  localPortalOrigin?: string | null,
+): string | null {
   const normalized = normalizeHostname(hostname);
-  if (LOCAL_HOSTNAMES.has(normalized)) {
+  if (
+    LOCAL_HOSTNAMES.has(normalized)
+    || getConfiguredLocalPortalHostname(localPortalOrigin) === normalized
+  ) {
     return null;
   }
 
@@ -204,6 +234,7 @@ export function resolvePortalAreaUrl(
   origin: string | null | undefined,
   area: PortalArea,
   pathname = "/",
+  localPortalOrigin?: string | null,
 ): string | null {
   const url = parsePortalUrl(origin);
   if (!url || !isSafePortalPath(pathname)) {
@@ -211,7 +242,7 @@ export function resolvePortalAreaUrl(
   }
 
   const hostname = normalizeHostname(url.hostname);
-  if (LOCAL_HOSTNAMES.has(hostname)) {
+  if (isLocalPortalOrigin(url, localPortalOrigin)) {
     return `${url.origin}${pathname}`;
   }
 
@@ -537,12 +568,23 @@ export function resolvePortalRoleUrl(
   origin: string | null | undefined,
   role: string | null | undefined,
   pathname?: string,
+  localPortalOrigin?: string | null,
 ): string | null {
   if (role === "client_user") {
-    return resolvePortalAreaUrl(origin, "client", pathname ?? "/dashboard");
+    return resolvePortalAreaUrl(
+      origin,
+      "client",
+      pathname ?? "/dashboard",
+      localPortalOrigin,
+    );
   }
   if (role === "internal_admin") {
-    return resolvePortalAreaUrl(origin, "admin", pathname ?? "/admin");
+    return resolvePortalAreaUrl(
+      origin,
+      "admin",
+      pathname ?? "/admin",
+      localPortalOrigin,
+    );
   }
   return null;
 }

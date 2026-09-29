@@ -3,7 +3,11 @@ import type { ReactNode } from "react";
 import { Inter, JetBrains_Mono } from "next/font/google";
 
 import { AppShell } from "@/components/AppShell";
-import { isSignupEnabled } from "@/lib/public-routes";
+import { DeploymentEnvironmentBanner } from "@/components/DeploymentEnvironmentBanner";
+import {
+  getDevelopmentLocalPortalOrigin,
+  isSignupEnabled,
+} from "@/lib/public-routes";
 import { PUBLIC_BRAND_NAME, PUBLIC_SITE_NAME } from "@/lib/public-metadata";
 import { PUBLIC_SITE_URL } from "@/lib/public-route-config";
 import "./globals.css";
@@ -79,11 +83,16 @@ export default async function RootLayout({
   children,
 }: Readonly<{ children: ReactNode }>) {
   const signupEnabled = isSignupEnabled();
+  const localPortalOrigin = getDevelopmentLocalPortalOrigin();
 
   return (
     <html lang="fr">
       <body className={`${inter.variable} ${jetbrainsMono.variable}`}>
-        <AppShell signupEnabled={signupEnabled}>
+        <DeploymentEnvironmentBanner />
+        <AppShell
+          localPortalOrigin={localPortalOrigin}
+          signupEnabled={signupEnabled}
+        >
           {children}
         </AppShell>
       </body>

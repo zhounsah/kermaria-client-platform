@@ -338,6 +338,7 @@ for (const host of [
   "localhost:3000",
   "127.0.0.1:3000",
   "[::1]:3000",
+  "dev.zachary-it.fr",
   "unknown.example",
   "zacharyhounsa.ovh.evil.example",
   "zacharyhounsa.ovh/evil.example",
@@ -422,6 +423,7 @@ assert.equal(isClientOrAdminPortalHost("dashboard.zacharyhounsa.ovh"), true);
 assert.equal(isClientOrAdminPortalHost("administration.zacharyhounsa.ovh"), true);
 assert.equal(isClientOrAdminPortalHost("zachary-it.fr"), false);
 assert.equal(isClientOrAdminPortalHost("www.zacharyhounsa.ovh"), false);
+assert.equal(isClientOrAdminPortalHost("dev.zachary-it.fr"), false);
 assert.equal(isPortalApplicationPath("/login"), true);
 assert.equal(isPortalApplicationPath("/api/contact"), true);
 assert.equal(isPortalApplicationPath("/sauvegarde-3-2-1"), false);

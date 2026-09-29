@@ -3,8 +3,10 @@ import "server-only";
 import { randomBytes } from "node:crypto";
 import { cookies, headers } from "next/headers";
 import type { NextResponse } from "next/server";
-import { getPortalFamilyCookieDomain } from "@/lib/public-route-config";
-import { getPortalRequestOriginFromHeaders } from "@/lib/public-routes";
+import {
+  getPortalFamilyCookieDomainForRequest,
+  getPortalRequestOriginFromHeaders,
+} from "@/lib/public-routes";
 import { getSessionCookieOptions } from "@/lib/session-config";
 
 export const CART_COOKIE_NAME = "kermaria_billing_v2_cart";
@@ -15,7 +17,7 @@ async function cartCookieOptions() {
   const requestHeaders = await headers();
   const origin = getPortalRequestOriginFromHeaders(requestHeaders);
   const domain = origin
-    ? getPortalFamilyCookieDomain(new URL(origin).hostname)
+    ? getPortalFamilyCookieDomainForRequest(new URL(origin).hostname)
     : null;
   return {
     ...getSessionCookieOptions(),

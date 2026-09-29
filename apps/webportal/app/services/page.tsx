@@ -16,8 +16,10 @@ import {
   buildPublicMetadata,
   CONTENT_UNAVAILABLE_ROBOTS,
 } from "@/lib/public-metadata";
-import { getPortalArea } from "@/lib/public-route-config";
-import { getPortalRequestOriginFromHeaders } from "@/lib/public-routes";
+import {
+  getPortalAreaForRequest,
+  getPortalRequestOriginFromHeaders,
+} from "@/lib/public-routes";
 import { resolveServicesPortalMode } from "@/lib/services-portal-mode";
 import {
   getPendingBillingV2Selection,
@@ -50,7 +52,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function ServicesPage() {
   const requestHeaders = await headers();
-  const portalArea = getPortalArea(
+  const portalArea = getPortalAreaForRequest(
     getPortalRequestOriginFromHeaders(requestHeaders),
   );
   const localSession = portalArea === "local"

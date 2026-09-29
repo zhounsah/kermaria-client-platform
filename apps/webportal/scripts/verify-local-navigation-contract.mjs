@@ -126,6 +126,12 @@ assert.match(appShell, /<PublicShell signupEnabled=\{signupEnabled\}/);
 assert.match(publicShell, /const publicHref = \(pathname: string\) => pathname/);
 assert.doesNotMatch(publicShell, /PUBLIC_SITE_URL/);
 assert.match(publicShell, /href="\/login"/);
-assert.match(layout, /<AppShell signupEnabled=\{signupEnabled\}>/);
+assert.match(layout, /getDevelopmentLocalPortalOrigin/);
+assert.match(layout, /localPortalOrigin=\{localPortalOrigin\}/);
+assert.match(appShell, /getPortalArea\(window\.location\.origin, localPortalOrigin\)/);
+assert.match(
+  appShell,
+  /portalArea === "client" \|\| portalArea === "local"/,
+);
 
 console.log("Contrat de navigation locale vérifié.");

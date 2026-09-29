@@ -3,12 +3,12 @@ import { headers } from "next/headers";
 import { connection } from "next/server";
 
 import {
-  getPortalArea,
   getWikiHostKind,
   resolveCanonicalPublicUrl,
   WIKI_PUBLIC_HOST,
 } from "@/lib/public-route-config";
 import {
+  getPortalAreaForRequest,
   getPortalRequestOriginFromHeaders,
   getPortalPublicUrlFromHeaders,
   isVitrinePublicEnabled,
@@ -40,7 +40,9 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
     };
   }
 
-  const portalArea = getPortalArea(getPortalRequestOriginFromHeaders(headerList));
+  const portalArea = getPortalAreaForRequest(
+    getPortalRequestOriginFromHeaders(headerList),
+  );
   if (portalArea === "client" || portalArea === "admin") {
     return {
       rules: {

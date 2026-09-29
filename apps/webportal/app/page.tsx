@@ -7,14 +7,14 @@ import { getCurrentPortalSession } from "@/lib/auth";
 import { buildPublicMetadata } from "@/lib/public-metadata";
 import {
   PORTFOLIO_URL,
+  getPortalAreaForRequest,
   getPortalRequestOriginFromHeaders,
   isVitrinePublicEnabled,
+  resolvePortalAreaUrlForRequest,
+  resolvePortalRoleUrlForRequest,
 } from "@/lib/public-routes";
 import {
-  getPortalArea,
   isPortalRoleAllowed,
-  resolvePortalAreaUrl,
-  resolvePortalRoleUrl,
 } from "@/lib/public-route-config";
 import { JsonLd, localBusinessJsonLd, webSiteJsonLd } from "@/lib/seo";
 import { BrandLogo } from "@/components/BrandLogo";
@@ -98,7 +98,7 @@ const AUDIENCES = [
 
 export default async function HomePage() {
   const origin = getPortalRequestOriginFromHeaders(await headers());
-  const area = getPortalArea(origin);
+  const area = getPortalAreaForRequest(origin);
 
   if (!origin || !area) {
     notFound();
@@ -107,7 +107,11 @@ export default async function HomePage() {
   const session = await getCurrentPortalSession();
   if (area === "public") {
     if (session) {
-      const loginUrl = resolvePortalRoleUrl(origin, session.user.role, "/login");
+      const loginUrl = resolvePortalRoleUrlForRequest(
+        origin,
+        session.user.role,
+        "/login",
+      );
       if (!loginUrl) {
         notFound();
       }
@@ -115,7 +119,7 @@ export default async function HomePage() {
     }
 
     if (!isVitrinePublicEnabled()) {
-      const loginUrl = resolvePortalAreaUrl(origin, "client", "/login");
+      const loginUrl = resolvePortalAreaUrlForRequest(origin, "client", "/login");
       if (!loginUrl) {
         notFound();
       }
@@ -123,7 +127,7 @@ export default async function HomePage() {
     }
   } else if (area === "local") {
     if (session) {
-      const landingUrl = resolvePortalRoleUrl(origin, session.user.role);
+      const landingUrl = resolvePortalRoleUrlForRequest(origin, session.user.role);
       if (!landingUrl) {
         notFound();
       }
@@ -131,27 +135,27 @@ export default async function HomePage() {
     }
 
     if (!isVitrinePublicEnabled()) {
-      const loginUrl = resolvePortalAreaUrl(origin, "local", "/login");
+      const loginUrl = resolvePortalAreaUrlForRequest(origin, "local", "/login");
       if (!loginUrl) {
         notFound();
       }
       redirect(loginUrl);
     }
   } else if (session && isPortalRoleAllowed(area, session.user.role)) {
-    const landingUrl = resolvePortalRoleUrl(origin, session.user.role);
+    const landingUrl = resolvePortalRoleUrlForRequest(origin, session.user.role);
     if (!landingUrl) {
       notFound();
     }
     redirect(landingUrl);
   } else {
-    const loginUrl = resolvePortalAreaUrl(origin, area, "/login");
+    const loginUrl = resolvePortalAreaUrlForRequest(origin, area, "/login");
     if (!loginUrl) {
       notFound();
     }
     redirect(loginUrl);
   }
 
-  const baseUrl = resolvePortalAreaUrl(origin, "public");
+  const baseUrl = resolvePortalAreaUrlForRequest(origin, "public");
   if (!baseUrl) {
     notFound();
   }

@@ -3,8 +3,10 @@ import "server-only";
 import { NextRequest, NextResponse } from "next/server";
 
 import { CORRELATION_HEADER, resolveCorrelationId } from "@/lib/correlation";
-import { getPortalArea } from "@/lib/public-route-config";
-import { getPortalRequestOriginFromHeaders } from "@/lib/public-routes";
+import {
+  getPortalAreaForRequest,
+  getPortalRequestOriginFromHeaders,
+} from "@/lib/public-routes";
 import {
   checkRateLimit,
   getRequestIdentifier,
@@ -277,7 +279,7 @@ function getSetPasswordRequestFormat(
 
 function isAllowedFormPost(request: NextRequest): boolean {
   const origin = getPortalRequestOriginFromHeaders(request.headers);
-  const area = getPortalArea(origin);
+  const area = getPortalAreaForRequest(origin);
   if (
     !origin
     || (area !== "public" && area !== "client" && area !== "local")

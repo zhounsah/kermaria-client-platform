@@ -3,11 +3,15 @@ import "server-only";
 import type { NextRequest } from "next/server";
 
 import {
+  type PortalArea,
   getPortalArea,
+  getPortalFamilyCookieDomain,
   isPublicRoute,
   PORTFOLIO_URL,
   PUBLIC_SITE_URL,
   PUBLIC_ROUTES,
+  resolvePortalAreaUrl,
+  resolvePortalRoleUrl,
 } from "./public-route-config";
 
 const LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1"]);
@@ -29,6 +33,80 @@ export function isVitrinePublicEnabled(): boolean {
 
 export function isSignupEnabled(): boolean {
   return process.env.SIGNUP_ENABLED?.trim().toLowerCase() === "true";
+}
+
+/**
+ * Une seule URL explicitement configuree est traitee comme le monohost local
+ * du portail. Cette exception n'existe que dans l'environnement applicatif
+ * Development et ne possede aucun repli vers une URL de production.
+ */
+export function getDevelopmentLocalPortalOrigin(): string | null {
+  if (process.env.APP_ENV?.trim().toLowerCase() !== "development") {
+    return null;
+  }
+
+  const value = process.env.PUBLIC_PORTAL_URL?.trim();
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const url = new URL(value);
+    if (
+      (url.protocol !== "http:" && url.protocol !== "https:")
+      || url.username
+      || url.password
+      || url.pathname !== "/"
+      || url.search
+      || url.hash
+    ) {
+      return null;
+    }
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+export function getPortalAreaForRequest(
+  origin: string | null | undefined,
+): PortalArea | null {
+  return getPortalArea(origin, getDevelopmentLocalPortalOrigin());
+}
+
+export function resolvePortalAreaUrlForRequest(
+  origin: string | null | undefined,
+  area: PortalArea,
+  pathname = "/",
+): string | null {
+  return resolvePortalAreaUrl(
+    origin,
+    area,
+    pathname,
+    getDevelopmentLocalPortalOrigin(),
+  );
+}
+
+export function resolvePortalRoleUrlForRequest(
+  origin: string | null | undefined,
+  role: string | null | undefined,
+  pathname?: string,
+): string | null {
+  return resolvePortalRoleUrl(
+    origin,
+    role,
+    pathname,
+    getDevelopmentLocalPortalOrigin(),
+  );
+}
+
+export function getPortalFamilyCookieDomainForRequest(
+  hostname: string,
+): string | null {
+  return getPortalFamilyCookieDomain(
+    hostname,
+    getDevelopmentLocalPortalOrigin(),
+  );
 }
 
 function normalizeAbsoluteUrl(value: string): string | null {

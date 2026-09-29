@@ -27,6 +27,7 @@ type LoginState =
 type LoginFormProps = {
   continuationPath: string | null;
   initialError: string | null;
+  localPortalOrigin: string | null;
   origin: string;
   portalArea: Exclude<PortalArea, "public">;
 };
@@ -34,6 +35,7 @@ type LoginFormProps = {
 export function LoginForm({
   continuationPath,
   initialError,
+  localPortalOrigin,
   origin,
   portalArea,
 }: LoginFormProps) {
@@ -105,6 +107,7 @@ export function LoginForm({
               origin,
               oppositeArea,
               "/login?error=PORTAL_ROLE_MISMATCH",
+              localPortalOrigin,
             )
           : null;
 
@@ -122,8 +125,18 @@ export function LoginForm({
 
       const target =
         result.user.role === "client_user" && continuationPath
-          ? resolvePortalAreaUrl(origin, "client", continuationPath)
-          : resolvePortalRoleUrl(origin, result.user.role);
+          ? resolvePortalAreaUrl(
+              origin,
+              "client",
+              continuationPath,
+              localPortalOrigin,
+            )
+          : resolvePortalRoleUrl(
+              origin,
+              result.user.role,
+              undefined,
+              localPortalOrigin,
+            );
       if (!target) {
         setState({
           status: "error",

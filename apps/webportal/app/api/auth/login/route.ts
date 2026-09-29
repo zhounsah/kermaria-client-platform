@@ -10,12 +10,14 @@ import {
 } from "@/lib/internal-api";
 import {
   type PortalArea,
-  getPortalArea,
   isPortalRoleAllowed,
-  resolvePortalAreaUrl,
-  resolvePortalRoleUrl,
 } from "@/lib/public-route-config";
-import { getPortalRequestOriginFromHeaders } from "@/lib/public-routes";
+import {
+  getPortalAreaForRequest,
+  getPortalRequestOriginFromHeaders,
+  resolvePortalAreaUrlForRequest,
+  resolvePortalRoleUrlForRequest,
+} from "@/lib/public-routes";
 import {
   getSessionCookieName,
   getSessionCookieOptions,
@@ -39,7 +41,7 @@ class LoginBodyError extends Error {
 
 export async function POST(request: NextRequest) {
   const origin = getPortalRequestOriginFromHeaders(request.headers);
-  const area = getPortalArea(origin);
+  const area = getPortalAreaForRequest(origin);
   const correlationId = resolveCorrelationId(
     request.headers.get(CORRELATION_HEADER),
   );
@@ -91,7 +93,7 @@ export async function POST(request: NextRequest) {
       await revokeInternalSession(session.sessionToken, correlationId);
 
       if (format === "form") {
-        const target = resolvePortalRoleUrl(
+        const target = resolvePortalRoleUrlForRequest(
           origin,
           session.user.role,
           "/login?error=PORTAL_ROLE_MISMATCH",
@@ -110,7 +112,7 @@ export async function POST(request: NextRequest) {
 
     const response = format === "form"
       ? redirectToTarget(
-          resolvePortalRoleUrl(origin, session.user.role)!,
+          resolvePortalRoleUrlForRequest(origin, session.user.role)!,
           correlationId,
         )
       : NextResponse.json({
@@ -295,7 +297,7 @@ function redirectToLogin(
   code: LoginPresentationCode,
   correlationId: ApiError["correlation_id"],
 ) {
-  const target = resolvePortalAreaUrl(
+  const target = resolvePortalAreaUrlForRequest(
     origin,
     area,
     `/login?error=${code}`,

@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { isDevelopmentDeployment } from "@/lib/deployment-environment";
 import {
   PUBLIC_ROUTES,
   getWikiHostKind,
@@ -192,6 +193,11 @@ export async function proxy(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-pathname", request.nextUrl.pathname);
   const response = NextResponse.next({ request: { headers: requestHeaders } });
+
+  // L'instance DEV ne doit jamais devenir indexable, quel que soit l'hote.
+  if (isDevelopmentDeployment()) {
+    response.headers.set("X-Robots-Tag", "noindex, nofollow");
+  }
 
   // `/formules` reste indexable sur l'hote public, mais la copie servie sur
   // le portail client n'existe que pour conserver le cookie host-only lors

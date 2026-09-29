@@ -360,7 +360,7 @@ check("BFF set-password conserve JSON et accepte le formulaire natif borne", () 
 });
 check("BFF set-password protege le POST natif et ses redirections", () => {
   assert.match(setPasswordRoute, /getPortalRequestOriginFromHeaders/);
-  assert.match(setPasswordRoute, /getPortalArea\(origin\)/);
+  assert.match(setPasswordRoute, /getPortalAreaForRequest\(origin\)/);
   assert.match(
     setPasswordRoute,
     /area !== "public"\s*&&\s*area !== "client"\s*&&\s*area !== "local"/,
