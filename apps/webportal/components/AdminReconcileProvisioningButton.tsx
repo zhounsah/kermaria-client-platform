@@ -8,6 +8,7 @@ import { requestBffJson } from "@/lib/client-api";
 
 type AdminReconcileProvisioningButtonProps = {
   subscriptionId: string;
+  authoritativeBillingV2?: boolean;
   disabled?: boolean;
   idleLabel?: string;
   submittingLabel?: string;
@@ -16,6 +17,7 @@ type AdminReconcileProvisioningButtonProps = {
 
 export function AdminReconcileProvisioningButton({
   subscriptionId,
+  authoritativeBillingV2,
   disabled,
   idleLabel = "Relancer le provisioning",
   submittingLabel = "Relance...",
@@ -36,11 +38,16 @@ export function AdminReconcileProvisioningButton({
     setError(null);
     try {
       const payload: SubscriptionProvisioningReconcilePayload | undefined =
-        targetUserSamAccountNames && targetUserSamAccountNames.length > 0
+        !authoritativeBillingV2
+          && targetUserSamAccountNames
+          && targetUserSamAccountNames.length > 0
           ? { targetUserSamAccountNames }
           : undefined;
+      const reconcileEndpoint: `/api/${string}` = authoritativeBillingV2
+        ? `/api/admin/billing-v2/subscriptions/${encodeURIComponent(subscriptionId)}/provisioning/reconcile`
+        : `/api/admin/subscriptions/${encodeURIComponent(subscriptionId)}/provisioning/reconcile`;
       const result = await requestBffJson(
-        `/api/admin/subscriptions/${encodeURIComponent(subscriptionId)}/provisioning/reconcile`,
+        reconcileEndpoint,
         payload
           ? {
               method: "POST",

@@ -274,6 +274,7 @@ export default async function AdminSubscriptionDetailPage({
         </dl>
         <div className="ad-button-row" style={{ marginTop: 18 }}>
           <AdminReconcileProvisioningButton
+            authoritativeBillingV2
             idleLabel="Réconcilier la souscription"
             subscriptionId={subscription.id}
             submittingLabel="Réconciliation..."
