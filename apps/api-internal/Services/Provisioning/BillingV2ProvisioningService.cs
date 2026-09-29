@@ -937,7 +937,7 @@ public sealed partial class BillingV2ProvisioningService : IBillingV2Provisionin
         while (await reader.ReadAsync(cancellationToken))
         {
             result.Add(new OwnedMembership(
-                reader.GetString("identity_reference"),
+                MariaDbIdentifierReader.ReadRequired(reader, "identity_reference"),
                 reader.GetString("group_sam_account_name")));
         }
         return result;
