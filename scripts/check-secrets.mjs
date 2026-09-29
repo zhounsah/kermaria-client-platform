@@ -23,6 +23,8 @@ const excludedFiles = new Set([
   path.normalize("scripts/validate-staging.mjs"),
   path.normalize("apps/api-internal/Data/Configuration/RuntimeConfigurationValidator.cs"),
   path.normalize("apps/webportal/lib/runtime-config.ts"),
+  // Synthetic fixtures that explicitly exercise DEV secret parsing/rotation.
+  path.normalize("scripts/dev-env/tests/DevApiConfig.Tests.ps1"),
 ]);
 const sensitiveAssignment =
   /\b(SQL_PASSWORD|SERVICE_AUTH_TOKEN|DEMO_PORTAL_PASSWORD|DEMO_INTERNAL_ADMIN_PASSWORD)\s*=\s*(.+)$/gim;
