@@ -101,7 +101,7 @@ Faits verifies en production, valables pour **tout** agent. Detail complet dans
 - Ecoute sur `192.168.100.212:3000`, **pas** sur `localhost`.
 - **Livrer en `.tar.gz`, jamais en `.zip`** : un zip fabrique sous Windows porte des separateurs `\` qui deviennent des noms de fichiers litteraux a l'extraction, d'ou une arborescence a plat, `status=226/NAMESPACE` et un **502 nginx** trompeur.
 - `.next/cache` n'est pas dans l'archive : le creer au deploiement, proprietaire `kermaria-web`, sinon meme panne.
-- `sudo` exige un mot de passe : les etapes privilegiees reviennent a l'exploitant.
+- `sudo` : `kermaria_ai_admin` est `NOPASSWD: ALL` (constate le 2026-09-21 ; l'ancienne mention « sudo exige un mot de passe » est perimee). Rester additif : jamais toucher `kermaria-webportal.service` sans ordre.
 
 ### SRV-13 (api-internal) — Windows
 
