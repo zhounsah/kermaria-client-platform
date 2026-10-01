@@ -33,8 +33,10 @@ assert.match(checkoutReview, /Vous avez déjà un compte \?<\/?Link|Vous avez d�
   "La connexion doit rester l'action secondaire.");
 assert.match(checkoutReview, /if \(authenticated\)[\s\S]*command: "claim_current"/,
   "claim_current ne doit etre appele qu'apres authentification.");
-assert.match(checkoutReview, /CART_CLAIM_CONFLICT[\s\S]*claim_conflict/,
-  "Un conflit de claim doit rester explicite et ne jamais fusionner silencieusement.");
+assert.match(checkoutReview, /CART_CLAIM_RESUMED[\s\S]*requestedCartId = claimed\.data\.cart\.id/,
+  "Si le compte possede deja un Cart, la continuation doit viser ce Cart gagnant.");
+assert.doesNotMatch(checkoutReview, /Vos paniers doivent être vérifiés|claim_conflict/,
+  "Le panier anonyme perdant ne doit plus bloquer la souscription.");
 assert.match(checkoutReview, /CART_NOTHING_TO_CLAIM/,
   "Seul le resultat metier explicite d'absence de Cart anonyme peut etre un no-op UI.");
 assert.doesNotMatch(checkoutReview, /CART_COMMAND_INVALID" &&/,
@@ -79,8 +81,18 @@ assert.match(program, /signup\.self_service_cart/,
   "La creation immediate Cart doit etre auditee distinctement.");
 assert.match(checkoutRoute, /readPortalSessionToken[\s\S]*AUTH_REQUIRED/,
   "Le POST checkout direct reste refuse sans session authentifiee.");
-assert.match(cartRoute, /result\.code === "CART_CLAIMED"[\s\S]*clearAnonymousCartToken/,
-  "Le claim reussi doit supprimer le cookie anonyme precedent.");
+assert.match(cartRoute, /"CART_CLAIMED", "CART_CLAIM_RESUMED", "CART_NOTHING_TO_CLAIM"[\s\S]*clearAnonymousCartToken/,
+  "Tout claim termine doit supprimer le cookie anonyme precedent.");
+assert.match(cartService, /CART_CLAIM_RESUMED[\s\S]*ExpireSupersededAnonymousCartAsync|ExpireSupersededAnonymousCartAsync[\s\S]*CART_CLAIM_RESUMED/,
+  "Le Cart anonyme perdant doit etre expire dans la transaction du claim.");
+const claimCurrent = cartService.slice(
+  cartService.indexOf("private async Task<BillingV2CartMutationResult> ClaimCurrentOnceAsync"),
+  cartService.indexOf("private static async Task ExpireSupersededAnonymousCartAsync"),
+);
+assert.match(claimCurrent, /var existing = await ReadCurrentAsync[\s\S]*if \(existing is not null\)[\s\S]*ExpireSupersededAnonymousCartAsync[\s\S]*CommitAsync[\s\S]*CART_CLAIM_RESUMED/,
+  "Le Cart client est relu puis conserve avant de retourner le succes de reprise.");
+assert.doesNotMatch(claimCurrent, /INSERT INTO billing_v2_cart_items|DELETE FROM billing_v2_cart_items/,
+  "Le claim ne doit jamais fusionner ni supprimer les lignes commerciales des deux paniers.");
 assert.match(program, /"claim_current" when owner\.IsAuthenticated\s*=> new BillingV2CartMutationResult\("CART_NOTHING_TO_CLAIM"\)/,
   "Une session sans cookie Cart anonyme doit obtenir un resultat specifique plutot qu'une commande invalide.");
 assert.match(cartService, /ClaimCurrentAsync[\s\S]*if \(cart is null\)[\s\S]*return new\("CART_NOTHING_TO_CLAIM"\)/,

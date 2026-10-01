@@ -39,7 +39,7 @@ assert(route.includes('"import_formula_selection"')
   "Le BFF doit accepter le handoff explicite d'une formule apres filtrage de sa selection.");
 assert(route.includes('"claim_current"'),
   "Le BFF Cart doit pouvoir reclamer le Cart anonyme lors de la reprise apres login.");
-assert(apiProgram.includes('"claim_current" when owner.IsAuthenticated\n                => new BillingV2CartMutationResult("CART_NOTHING_TO_CLAIM")')
+assert(/"claim_current" when owner\.IsAuthenticated\s*=> new BillingV2CartMutationResult\("CART_NOTHING_TO_CLAIM"\)/.test(apiProgram)
   && cartService.includes('return new("CART_NOTHING_TO_CLAIM");')
   && cartModel.includes('"CART_NOTHING_TO_CLAIM"'),
   "L'absence de Cart anonyme a claim doit etre un succes explicite, distinct d'une commande invalide.");
@@ -69,6 +69,12 @@ assert(authMeRoute.includes("return unauthenticated(request, correlationId)")
 assert(!cookie.includes("CSRF") && !route.includes("CSRF_COOKIE_NAME"),
   "Le token opaque Cart ne doit jamais etre reutilise comme token CSRF.");
 assert(route.includes("clearAnonymousCartToken"), "Un claim reussi doit retirer le token anonyme.");
+assert(route.includes('"clear"') && apiProgram.includes('"clear" => await service.ClearAsync')
+  && cartService.includes('DELETE FROM billing_v2_cart_items WHERE cart_id = @cart_id;')
+  && cartModel.includes('"CART_CLEARED"'),
+  "Vider le panier doit rester une mutation Cart versionnee sans supprimer son identite.");
+assert(cartService.includes('source_preset_id = NULL, commitment_term_id = NULL, payment_mode = NULL'),
+  "Vider le Cart doit retirer ses choix globaux et son origine de preset devenue obsolete.");
 assert(cookie.includes("randomBytes(32)"), "Le token Cart doit disposer de 256 bits d'entropie.");
 assert(cookie.includes("CART_TOKEN_PATTERN"), "Le cookie Cart doit rejeter les tokens malformes.");
 assert(cookie.includes("getSessionCookieOptions"), "Le cookie Cart doit reutiliser les options HttpOnly de session.");

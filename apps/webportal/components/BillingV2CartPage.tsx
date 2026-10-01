@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
+  AuthMeResponse,
   BillingV2Cart,
   BillingV2CartCommandRequest,
   BillingV2CartItem,
@@ -23,6 +24,7 @@ import {
   resolveServicePublicLabel,
 } from "@/lib/billing-v2-formules";
 import { BillingV2PricingSummary } from "@/components/BillingV2PricingSummary";
+import { requestBffJson } from "@/lib/client-api";
 
 type Props = {
   catalog: BillingV2PublicCatalog;
@@ -43,6 +45,7 @@ export function BillingV2CartPage({ catalog }: Props) {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [confirmClear, setConfirmClear] = useState(false);
   const cartRef = useRef<BillingV2Cart | null>(null);
 
   useEffect(() => {
@@ -67,6 +70,18 @@ export function BillingV2CartPage({ catalog }: Props) {
   const loadCurrent = useCallback(async () => {
     setPageState("loading");
     setError(null);
+    const authentication = await requestBffJson<AuthMeResponse>("/api/auth/me", { method: "GET" });
+    if (authentication.ok && authentication.data.authenticated) {
+      const claimed = await commandBillingV2CartClient({ command: "claim_current" });
+      if (!claimed.ok && claimed.error.code !== "CART_NOTHING_TO_CLAIM") {
+        setPageState("unavailable");
+        setError(describeCartCommandFailure(claimed.error.code, "Le panier est momentanément indisponible."));
+        return;
+      }
+      if (claimed.ok && (claimed.data.code === "CART_CLAIMED" || claimed.data.code === "CART_CLAIM_RESUMED")) {
+        notifyBillingV2CartChanged();
+      }
+    }
     const result = await commandBillingV2CartClient({
       command: "get_current",
       currency: catalog.currency,
@@ -153,7 +168,11 @@ export function BillingV2CartPage({ catalog }: Props) {
       setPageState(result.data.cart.items.length === 0 ? "empty" : "ready");
       notifyBillingV2CartChanged();
       setNotice(successMessage ?? "Votre panier a été mis à jour.");
-      await refreshQuote(result.data.cart.id);
+      if (result.data.cart.items.length === 0) {
+        setQuote(null);
+      } else {
+        await refreshQuote(result.data.cart.id);
+      }
     } finally {
       setPendingAction(null);
     }
@@ -197,7 +216,9 @@ export function BillingV2CartPage({ catalog }: Props) {
     return (
       <section className="cart-storefront cart-storefront-empty" aria-labelledby="cart-title">
         <h1 id="cart-title">Votre panier est vide</h1>
+        {notice ? <p className="cart-storefront-notice" aria-live="polite">{notice}</p> : null}
         <p>Ajoutez un service à la carte ou personnalisez une offre pour retrouver votre sélection ici.</p>
+        <p>Total : {new Intl.NumberFormat("fr-FR", { style: "currency", currency: catalog.currency }).format(0)}</p>
         <CartDiscoveryActions />
       </section>
     );
@@ -257,6 +278,25 @@ export function BillingV2CartPage({ catalog }: Props) {
               </ul>
             </details>
           ) : null}
+
+          <div className="cart-storefront-clear">
+            {confirmClear ? (
+              <div className="cart-storefront-clear-confirm" role="group" aria-label="Confirmation de vidage du panier">
+                <p>Vider tous les services de ce panier ? Cette action conserve votre panier, mais retire sa sélection actuelle.</p>
+                <div className="cart-storefront-clear-actions">
+                  <button className="button button-secondary" disabled={pendingAction !== null} onClick={() => {
+                    setConfirmClear(false);
+                    void mutate("clear", (current) => ({
+                      command: "clear", cartId: current.id, expectedVersion: current.version,
+                    }), "Votre panier a été vidé.");
+                  }} type="button">Confirmer le vidage</button>
+                  <button className="button button-secondary" disabled={pendingAction !== null} onClick={() => setConfirmClear(false)} type="button">Annuler</button>
+                </div>
+              </div>
+            ) : (
+              <button className="cart-storefront-remove" disabled={pendingAction !== null} onClick={() => setConfirmClear(true)} type="button">Vider le panier</button>
+            )}
+          </div>
 
           <section className="cart-storefront-settings" aria-labelledby="cart-commitment-title">
             <fieldset>

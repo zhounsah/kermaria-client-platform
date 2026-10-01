@@ -28,6 +28,7 @@ const cartActivityCommands = new Set([
   "add_preset_item",
   "update_item",
   "remove_item",
+  "clear",
   "set_commitment",
   "set_payment_mode",
 ]);
@@ -41,7 +42,7 @@ function isCartCommand(value: unknown): value is BillingV2CartCommandRequest {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Record<string, unknown>;
   return typeof candidate.command === "string" &&
-    ["current", "get_current", "import_formula_selection", "initialize_preset", "replace_preset", "get", "add_item", "add_preset_item", "update_item", "remove_item", "set_commitment", "set_payment_mode", "quote", "project_legacy_selection", "expire", "claim", "claim_current"].includes(candidate.command);
+    ["current", "get_current", "import_formula_selection", "initialize_preset", "replace_preset", "get", "add_item", "add_preset_item", "update_item", "remove_item", "clear", "set_commitment", "set_payment_mode", "quote", "project_legacy_selection", "expire", "claim", "claim_current"].includes(candidate.command);
 }
 
 function sanitizeCartCommand(payload: BillingV2CartCommandRequest): BillingV2CartCommandRequest {
@@ -117,7 +118,8 @@ export async function POST(request: NextRequest) {
     const response = NextResponse.json(result, {
       headers: { "X-Correlation-Id": correlationId },
     });
-    if ((payload.command === "claim" || payload.command === "claim_current") && result.code === "CART_CLAIMED") {
+    if (anonymousToken && (payload.command === "claim" || payload.command === "claim_current")
+      && ["CART_CLAIMED", "CART_CLAIM_RESUMED", "CART_NOTHING_TO_CLAIM"].includes(result.code)) {
       await clearAnonymousCartToken(response);
     }
     if (!sessionToken && anonymousToken && result.cart && cartActivityCommands.has(payload.command)) {

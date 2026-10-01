@@ -8850,6 +8850,30 @@ fieldset.form-field > .form-hint {
   cursor: pointer;
 }
 
+.cart-storefront-clear {
+  display: grid;
+  justify-items: start;
+  padding: 4px 2px;
+}
+
+.cart-storefront-clear-confirm {
+  width: 100%;
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+}
+
+.cart-storefront-clear-confirm p {
+  margin: 0 0 14px;
+}
+
+.cart-storefront-clear-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .cart-storefront-included {
   padding: 15px 20px;
   color: var(--muted);

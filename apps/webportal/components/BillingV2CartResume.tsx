@@ -12,7 +12,7 @@ export function BillingV2CartResume() {
   useEffect(() => {
     void (async () => {
       // Idempotent : sans cookie anonyme (ou après claim), API-INTERNAL
-      // répond CART_NOT_FOUND et la reprise continue vers le Cart client.
+      // répond CART_NOTHING_TO_CLAIM et la reprise continue vers le Cart client.
       await requestBffJson<BillingV2CartCommandResponse>("/api/billing-v2/cart", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ command: "claim_current" }),

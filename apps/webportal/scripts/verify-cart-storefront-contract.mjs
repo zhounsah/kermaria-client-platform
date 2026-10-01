@@ -74,6 +74,9 @@ assert.match(cartPage, /expectedVersion: current\.version/,
   "Les mutations de /panier restent protégées par version optimiste.");
 assert.match(cartPage, /command: "update_item"/);
 assert.match(cartPage, /command: "remove_item"/);
+assert.match(cartPage, /Vider le panier/);
+assert.match(cartPage, /command: "clear"[\s\S]*expectedVersion: current\.version/);
+assert.match(cartPage, /Confirmer le vidage/);
 assert.match(cartPage, /command: "set_commitment"/);
 assert.match(cartPage, /command: "set_payment_mode"/);
 assert.match(cartPage, /command: "quote"/);

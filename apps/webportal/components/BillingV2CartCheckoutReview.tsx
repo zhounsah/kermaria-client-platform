@@ -21,7 +21,7 @@ import {
 import { requestBffJson } from "@/lib/client-api";
 import { resolveServicePublicLabel } from "@/lib/billing-v2-formules";
 
-type State = "loading" | "anonymous" | "claiming" | "claim_conflict" | "empty" | "ready" | "complete" | "error";
+type State = "loading" | "anonymous" | "claiming" | "empty" | "ready" | "complete" | "error";
 /**
  * Revue courte avant que le serveur n'ouvre l'intention financière. Tous les
  * montants restent ceux du quote Cart retourné par API-INTERNAL.
@@ -57,7 +57,7 @@ export function BillingV2CartCheckoutReview() {
   const load = useCallback(async () => {
     setAccepted(false);
     setMessage(null);
-    const requestedCartId = readRequestedCartId();
+    let requestedCartId = readRequestedCartId();
     const authentication = await requestBffJson<AuthMeResponse>("/api/auth/me", { method: "GET" });
     const authenticated = authentication.ok && authentication.data.authenticated;
 
@@ -81,13 +81,9 @@ export function BillingV2CartCheckoutReview() {
 
     if (authenticated) {
       // Le BFF transmet encore le cookie Cart HttpOnly. Après login/signup,
-      // cette primitive garde le même id et ne reconstruit jamais les items.
+      // le compte reprend B, ou conserve son Cart A déjà open sans fusion.
       setState("claiming");
       const claimed = await commandBillingV2CartClient({ command: "claim_current" });
-      if (!claimed.ok && claimed.error.code === "CART_CLAIM_CONFLICT") {
-        setState("claim_conflict");
-        return;
-      }
       // Sans ancien Cart anonyme, API-INTERNAL renvoie le succès explicite
       // CART_NOTHING_TO_CLAIM. Ce n'est pas une erreur de la session customer.
       if (!claimed.ok && claimed.error.code !== "CART_NOTHING_TO_CLAIM") {
@@ -95,11 +91,26 @@ export function BillingV2CartCheckoutReview() {
         setState("error");
         return;
       }
+      if (claimed.ok && claimed.data.code === "CART_CLAIM_RESUMED" && claimed.data.cart) {
+        requestedCartId = claimed.data.cart.id;
+        window.history.replaceState({}, "", `/souscription?cart=${encodeURIComponent(requestedCartId)}`);
+        notifyBillingV2CartChanged();
+      }
     }
 
-    const current = requestedCartId
+    let current = requestedCartId
       ? await commandBillingV2CartClient({ command: "get", cartId: requestedCartId })
       : await commandBillingV2CartClient({ command: "get_current", currency: "EUR" });
+    // Une ancienne continuation peut encore désigner le Cart anonyme B que
+    // le claim vient de retirer. Le Cart customer courant A reste prioritaire.
+    if (authenticated && requestedCartId && !current.ok && current.error.code === "CART_NOT_FOUND") {
+      const accountCart = await commandBillingV2CartClient({ command: "get_current", currency: "EUR" });
+      if (accountCart.ok && accountCart.data.cart?.status === "open") {
+        current = accountCart;
+        requestedCartId = accountCart.data.cart.id;
+        window.history.replaceState({}, "", `/souscription?cart=${encodeURIComponent(requestedCartId)}`);
+      }
+    }
     if (!current.ok || !current.data.cart || current.data.cart.status !== "open") {
       if (!authenticated) {
         setState("empty");
@@ -113,6 +124,12 @@ export function BillingV2CartCheckoutReview() {
     }
     setCheckoutStatus(null);
     const currentCart = current.data.cart;
+    if (currentCart.items.length === 0) {
+      setCart(currentCart);
+      setQuote(null);
+      setState("empty");
+      return;
+    }
     const quoted = await commandBillingV2CartClient({ command: "quote", cartId: currentCart.id });
     if (!quoted.ok || !quoted.data.quote) {
       setMessage("Le prix de votre panier doit être actualisé avant de poursuivre.");
@@ -203,7 +220,6 @@ export function BillingV2CartCheckoutReview() {
 
   if (state === "loading" || state === "claiming") return <main className="content-section"><p>{state === "claiming" ? "Nous récupérons votre panier…" : "Préparation de votre souscription…"}</p></main>;
   if (state === "empty") return <main className="content-section"><h1>Votre panier est vide</h1><p>Ajoutez un service ou une offre avant de poursuivre.</p><Link className="button" href="/panier">Voir mon panier</Link></main>;
-  if (state === "claim_conflict") return <main className="content-section"><h1>Vos paniers doivent être vérifiés</h1><p>Un autre panier est déjà associé à votre compte. Votre sélection actuelle n’a pas été modifiée.</p><Link className="button button-secondary" href="/panier">Voir mon panier</Link></main>;
   if (state === "complete" && checkoutStatus) {
     return <CheckoutRecoveryStatus status={checkoutStatus} />;
   }
