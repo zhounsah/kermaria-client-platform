@@ -100,3 +100,16 @@ Mise en place le 2026-09-21, sans toucher à la production. Runbook :
   `scripts/dev-env/api-internal.dev.template.json`.
 
 Voir aussi [[pieges-sql-et-preuves]], [[deployment-topology]], [[srv13-config-volatile]].
+
+## Mise à jour v2.0.3.1 — 2026-10-01
+
+- API DEV déployée depuis le tag `v2.0.3.1`, avec un publish Windows apphost
+  SHA-256 `B341AD152499E6DD6EAB50E958F56A843C9C47442C121407A0D38F2658D77A44`.
+  `KermariaApiInternalDev` est active et `/health/ready` répond 200 avec
+  l'environnement `Development` ; le hash de sa configuration externe est
+  resté inchangé.
+- WebPortal DEV active :
+  `/opt/kermaria/releases-dev/webportal-dev-v2.0.3.1-d366d46-20261001-2340`.
+  La bascule a préservé `/etc/kermaria/webportal-dev.env` et l'ancien release ;
+  cache `kermaria-web-dev:kermaria-web-dev`, mode `750`. Les routes DEV `/`,
+  `/login` et readiness publique ont répondu 200.

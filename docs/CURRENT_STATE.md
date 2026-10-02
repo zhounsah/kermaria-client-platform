@@ -1,7 +1,7 @@
 # Current state - Zachary IT platform
-Last verified: 2026-09-05
-Current production release: `v2.0.2.8`
-Release commit: `f4e0235941e1424ddcf2183e0e09f5ad98fd6104`
+Last verified: 2026-10-02
+Current production release: `v2.0.3.1`
+Release commit: `d366d462635acdb5d951f2ddf10d91420f069982`
 This document is the primary entry point for the current platform state. Older V0.x/V1.x documents remain useful as implementation history, but they must not override this file, the current code, or the current deployment runbooks.
 ## Production topology
 ```text
@@ -80,18 +80,21 @@ Since v2.0.0.7:
 API-INTERNAL active runtime:
 - host: SRV-13
 - service: `KermariaApiInternal`
-- active application commit: `8b448933114a1cbe1a1e0404d5ed338b27378595` (`v2.0.2.6`; unchanged by the WEBPORTAL-only `v2.0.2.7` and `v2.0.2.8` deployments)
-- rollback copy: `C:\apps\api-internal-old-20260905-171911`
-- executable SHA-256: `E40174C580FB265C5C22E23AD829E641B53FD0CA6AF6D6F7F444D7855F80F5AC`
+- active application release: `v2.0.3.1` / `d366d462635acdb5d951f2ddf10d91420f069982`
+- rollback copy: `C:\apps\api-internal-old-20261002-0916`
+- executable SHA-256: `B341AD152499E6DD6EAB50E958F56A843C9C47442C121407A0D38F2658D77A44`
 WEBPORTAL active runtime:
 - host: SRV-12
 - service: `kermaria-webportal`
-- active release: `/opt/kermaria/releases/20260905-171417-v2.0.2.8-f4e0235`
-- release commit: `f4e0235941e1424ddcf2183e0e09f5ad98fd6104`
-- rollback release retained: `/opt/kermaria/releases/20260905-164625-v2.0.2.7-954c291`
-- artifact SHA-256: `F08DE5E4AC0E53B095B960A97DB28696EAD33A9C7252B3010952353E8C5DF060`
+- active release: `/opt/kermaria/releases/20261002-0920-v2.0.3.1-d366d46`
+- release commit: `d366d462635acdb5d951f2ddf10d91420f069982`
+- rollback release retained: `/opt/kermaria/releases/20260929-1750-v2.0.3-5edf3f2`
+- artifact SHA-256: `C9B77E8602898FCD8236E670BF280F5A954E58D18BD4AED9C2DE404BA512539F`
 - `.next/cache`: `kermaria-web:kermaria-web`, mode `750`
-MariaDB production schema remains at `093_public_contact_identity_sync`; `v2.0.2.8` contains no SQL migration.
+MariaDB production schema includes `096_primary_identity_bootstrap` and
+`097_billing_v2_provisioning_managed_memberships`, both already recorded on
+2026-09-29. The release backup retained the documented exclusion of the invalid
+view `billing_v2_legacy_offer_mapping_report`.
 ## Production smoke test - 2026-09-05
 Verified after deployment of `v2.0.2.8`:
 - WEBPORTAL service -> active on SRV-12;
