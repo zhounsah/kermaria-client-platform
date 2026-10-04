@@ -101,6 +101,9 @@ public interface ISignupService
         string correlationId,
         CancellationToken cancellationToken);
 
+    Task<SignupOperationResult> ResendVerificationEmailAsync(
+        string id, string correlationId, CancellationToken cancellationToken);
+
     Task<SignupOperationResult> SetPasswordAsync(
         string? token,
         string? password,
@@ -148,6 +151,7 @@ public sealed class SignupService : ISignupService
     private const int MaxInitialsLength = 16;
     private static readonly TimeSpan SelfServiceVerificationResendCooldown =
         TimeSpan.FromMinutes(15);
+    private static readonly TimeSpan AdminVerificationResendCooldown = TimeSpan.FromMinutes(1);
     private static readonly HashSet<string> AllowedPersonalTitles =
         new(StringComparer.Ordinal)
         {
@@ -668,7 +672,8 @@ public sealed class SignupService : ISignupService
                 "Ce lien de verification a expire. Renouvelez votre demande.");
         }
 
-        await _repository.MarkEmailVerifiedAsync(target.Id, cancellationToken);
+        if (!await _repository.MarkEmailVerifiedAsync(target.Id, cancellationToken, HashToken(normalized)))
+            return TokenInvalid();
         if (target.ApprovedUserId is not null)
         {
             // Compte self-service deja cree : la preuve de possession rend son
@@ -956,6 +961,31 @@ public sealed class SignupService : ISignupService
             true,
             "PASSWORD_INITIALIZED",
             "Mot de passe initialise. Le client peut maintenant se connecter avec son adresse e-mail.");
+    }
+
+    public async Task<SignupOperationResult> ResendVerificationEmailAsync(
+        string id, string correlationId, CancellationToken cancellationToken)
+    {
+        var record = await _repository.GetByIdAsync(id, cancellationToken);
+        if (record is null)
+            return new(false, "SIGNUP_NOT_FOUND", "Demande introuvable.");
+        if (record.Status != "email_pending")
+            return new(false, "INVALID_STATE", "Cette demande n'est plus en attente de confirmation e-mail.");
+
+        var runtime = await _settings.GetSignupConfigurationAsync(_configuration, cancellationToken);
+        var token = GenerateToken();
+        var now = DateTime.UtcNow;
+        if (!await _repository.RotatePendingVerificationTokenAsync(
+            id, HashToken(token), now.AddHours(runtime.VerificationTokenTtlHours),
+            now.Subtract(AdminVerificationResendCooldown), cancellationToken))
+            return new(false, "VERIFICATION_RESEND_NOT_READY", "La demande a changé ou un lien vient d'être envoyé. Attendez une minute puis actualisez la fiche.");
+
+        var delivery = await _emailDispatch.SendSignupVerificationAsync(
+            record.Email, record.ContactName, BuildUrl("/signup/verify", token),
+            correlationId, cancellationToken);
+        if (!delivery.Succeeded)
+            return new(false, "EMAIL_VERIFICATION_DELIVERY_FAILED", "Le nouveau lien a été généré, mais son envoi a échoué. Réessayez après une minute.");
+        return new(true, "VERIFICATION_EMAIL_SENT", "Un nouveau lien de confirmation a été envoyé. L'ancien lien n'est plus valide.");
     }
 
     public async Task<SignupOperationResult> ResendPasswordSetupEmailAsync(

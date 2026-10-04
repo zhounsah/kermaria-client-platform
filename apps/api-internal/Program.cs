@@ -6183,6 +6183,54 @@ app.MapPost(
         });
     });
 app.MapPost(
+    "/internal/admin/signups/{id}/resend-verification-email",
+    async (
+        string id,
+        HttpContext context,
+        ISignupService signupService,
+        IAuthenticationService authenticationService,
+        IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(
+            context,
+            authenticationService,
+            auditService,
+            "admin.signups.verification_email_resend.request");
+        var result = await signupService.ResendVerificationEmailAsync(
+            id,
+            context.GetCorrelationId(),
+            context.RequestAborted);
+        await auditService.RecordAsync(
+            new AuditEvent(
+                context.GetCorrelationId(),
+                "signup.verification_email_resent",
+                result.Succeeded ? "success" : "refused",
+                ReasonCode: result.Code,
+                TargetType: "signup",
+                TargetReference: id,
+                ActorUserId: actor.UserId,
+                SourceAddress:
+                    context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted);
+
+        if (!result.Succeeded)
+        {
+            return Results.Json(
+                new ApiError(
+                    result.Code,
+                    result.Message,
+                    context.GetCorrelationId()),
+                statusCode: ResolveSignupAdminMutationStatusCode(result.Code));
+        }
+
+        return Results.Ok(new
+        {
+            code = result.Code,
+            message = result.Message,
+            correlation_id = context.GetCorrelationId()
+        });
+    });
+app.MapPost(
     "/internal/admin/signups/{id}/resend-password-email",
     async (
         string id,

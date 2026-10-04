@@ -372,9 +372,10 @@ public sealed class MariaDbSignupRepository : ISignupRepository
             ReadNullableString(reader, "self_service_flow"));
     }
 
-    public async Task MarkEmailVerifiedAsync(
+    public async Task<bool> MarkEmailVerifiedAsync(
         string id,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? expectedVerificationHash = null)
     {
         await using var connection = new MySqlConnection(
             _configuration.ConnectionString);
@@ -388,10 +389,17 @@ public sealed class MariaDbSignupRepository : ISignupRepository
             UPDATE signup_pending
             SET status = CASE WHEN approved_user_id IS NULL THEN 'email_verified' ELSE 'approved' END,
                 email_verified_at = UTC_TIMESTAMP(6), updated_at = UTC_TIMESTAMP(6)
-            WHERE id = @id AND status = 'email_pending';
+            WHERE id = @id AND status = 'email_pending'
+              AND (@expected_hash IS NULL OR
+                (verification_token_hash = @expected_hash AND verification_token_expires_at > UTC_TIMESTAMP(6)));
             """;
         command.Parameters.AddWithValue("@id", id);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        command.Parameters.AddWithValue("@expected_hash", DbValue(expectedVerificationHash));
+        if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return false;
+        }
         await using var userCommand = connection.CreateCommand();
         userCommand.Transaction = transaction;
         userCommand.CommandText =
@@ -403,6 +411,28 @@ public sealed class MariaDbSignupRepository : ISignupRepository
         userCommand.Parameters.AddWithValue("@id", id);
         await userCommand.ExecuteNonQueryAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        return true;
+    }
+
+    public async Task<bool> RotatePendingVerificationTokenAsync(
+        string id, string tokenHash, DateTime expiresAtUtc,
+        DateTime resendAllowedBeforeUtc, CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(_configuration.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE signup_pending
+            SET verification_token_hash = @hash, verification_token_expires_at = @expires,
+                updated_at = UTC_TIMESTAMP(6)
+            WHERE id = @id AND status = 'email_pending' AND email_verified_at IS NULL
+              AND updated_at <= @resend_before;
+            """;
+        command.Parameters.AddWithValue("@id", id);
+        command.Parameters.AddWithValue("@hash", tokenHash);
+        command.Parameters.AddWithValue("@expires", expiresAtUtc);
+        command.Parameters.AddWithValue("@resend_before", resendAllowedBeforeUtc);
+        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
     }
 
     public async Task<SignupVerificationResendTarget?> RotateSelfServiceVerificationTokenAsync(

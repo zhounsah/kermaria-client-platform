@@ -326,8 +326,16 @@ public interface ISignupRepository
         string verificationTokenHash,
         CancellationToken cancellationToken);
 
-    Task MarkEmailVerifiedAsync(
+    Task<bool> MarkEmailVerifiedAsync(
         string id,
+        CancellationToken cancellationToken,
+        string? expectedVerificationHash = null);
+
+    Task<bool> RotatePendingVerificationTokenAsync(
+        string id,
+        string tokenHash,
+        DateTime expiresAtUtc,
+        DateTime resendAllowedBeforeUtc,
         CancellationToken cancellationToken);
 
     /// <summary>

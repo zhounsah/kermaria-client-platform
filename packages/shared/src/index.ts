@@ -3871,6 +3871,13 @@ export interface DiagnosticConfigurationMutationResponse {
   correlationId: string;
 }
 
+/** Resultat non sensible d'une action admin sur une demande d'inscription. */
+export interface SignupAdminActionResponse {
+  code: string;
+  message: string;
+  correlation_id?: string;
+}
+
 export interface DiagnosticConfigurationRevisionsResponse {
   revisions: DiagnosticConfigurationRevisionItem[];
 }

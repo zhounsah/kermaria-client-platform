@@ -1,6 +1,7 @@
 "use client";
 
 import type { FormEvent } from "react";
+import type { SignupAdminActionResponse } from "@kermaria/shared";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
@@ -19,11 +20,7 @@ type ActionState =
   | { status: "success"; message: string }
   | { status: "error"; message: string };
 
-type ActionResponse = {
-  code: string;
-  message: string;
-  correlation_id?: string;
-};
+type ActionResponse = SignupAdminActionResponse;
 
 const MIN_PASSWORD_LENGTH = 12;
 
@@ -173,6 +170,21 @@ export function AdminSignupActions({
           L&apos;approbation sera possible une fois l&apos;adresse e-mail
           confirmée par le demandeur.
         </p>
+      ) : null}
+
+      {status === "email_pending" ? (
+        <button
+          className="button button-secondary"
+          disabled={isWorking}
+          onClick={() => run(
+            `/api/admin/signups/${encodeURIComponent(signupId)}/resend-verification-email`,
+            undefined,
+            "Envoyer un nouveau lien de confirmation à l'adresse de cette demande ? L'ancien lien sera invalidé.",
+          )}
+          type="button"
+        >
+          Renvoyer l&apos;e-mail de confirmation
+        </button>
       ) : null}
 
       {canReject ? (

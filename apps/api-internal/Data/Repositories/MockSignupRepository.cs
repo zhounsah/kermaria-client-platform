@@ -216,19 +216,41 @@ public sealed class MockSignupRepository : ISignupRepository
                 row.SelfServiceFlow));
     }
 
-    public Task MarkEmailVerifiedAsync(
+    public Task<bool> MarkEmailVerifiedAsync(
         string id,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? expectedVerificationHash = null)
     {
-        if (_rows.TryGetValue(id, out var row)
-            && row.Status == "email_pending")
+        if (!_rows.TryGetValue(id, out var row)) return Task.FromResult(false);
+        lock (row)
         {
+            if (row.Status != "email_pending"
+                || (expectedVerificationHash is not null
+                    && (row.VerificationTokenHash != expectedVerificationHash
+                        || row.VerificationTokenExpiresAtUtc is null
+                        || row.VerificationTokenExpiresAtUtc <= DateTime.UtcNow)))
+                return Task.FromResult(false);
             row.Status = row.ApprovedUserId is null ? "email_verified" : "approved";
             row.EmailVerifiedAtUtc = DateTime.UtcNow;
             row.UpdatedAtUtc = DateTime.UtcNow;
+            return Task.FromResult(true);
         }
+    }
 
-        return Task.CompletedTask;
+    public Task<bool> RotatePendingVerificationTokenAsync(
+        string id, string tokenHash, DateTime expiresAtUtc,
+        DateTime resendAllowedBeforeUtc, CancellationToken cancellationToken)
+    {
+        if (!_rows.TryGetValue(id, out var row)) return Task.FromResult(false);
+        lock (row)
+        {
+            if (row.Status != "email_pending" || row.EmailVerifiedAtUtc is not null
+                || row.UpdatedAtUtc > resendAllowedBeforeUtc) return Task.FromResult(false);
+            row.VerificationTokenHash = tokenHash;
+            row.VerificationTokenExpiresAtUtc = expiresAtUtc;
+            row.UpdatedAtUtc = DateTime.UtcNow;
+            return Task.FromResult(true);
+        }
     }
 
     public Task<SignupVerificationResendTarget?> RotateSelfServiceVerificationTokenAsync(

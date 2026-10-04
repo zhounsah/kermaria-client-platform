@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Data.Common;
 using System.Net;
 using System.Net.Http.Headers;
@@ -41,6 +41,11 @@ return await RunAsync(args);
 
 async Task<int> RunAsync(string[] arguments)
 {
+    if (arguments.SequenceEqual(new[] { "--signup-verification-resend" }))
+    {
+        await VerifySignupVerificationResendAsync();
+        return 0;
+    }
     if (arguments.Length == 1
         && string.Equals(arguments[0], "--billing-v2-change-integration", StringComparison.Ordinal))
     {
@@ -727,6 +732,7 @@ async Task<int> RunAsync(string[] arguments)
         VerifyChildProcessEnvironmentGuardrails();
         await VerifySignupStoresPriceFreeBillingV2SelectionAsync();
         await VerifySignupGuardrailsAsync();
+        await VerifySignupVerificationResendAsync();
         await VerifyFiscalPolicyAsync();
         await VerifyDemoContentTemplatesAsync();
         await VerifyIntegrationsOverviewAsync();
@@ -817,6 +823,63 @@ void VerifyActiveDirectoryPathScope()
             "CLI-DEMO-0060",
             StringComparison.Ordinal),
         "Le scope AD doit extraire la reference client reelle directement sous OU=Clients.");
+}
+
+async Task VerifySignupVerificationResendAsync()
+{
+    var authStore = CreateMockAuthenticationStore();
+    var signupStore = new MockSignupStore();
+    var disabledAdConfiguration = CreateDisabledAdConfiguration();
+    var adMembershipStore = new MockAdGroupMembershipStore();
+    var emails = new TestEmailDispatchService();
+    var repository = new MockSignupRepository(signupStore, authStore);
+    var signupService = new SignupService(
+        repository,
+        emails,
+        new PortalPasswordService(),
+        NewAuthenticationService(authStore, NewApplicationSettingsService()),
+        new MockActiveDirectoryService(disabledAdConfiguration, adMembershipStore),
+        new MockActiveDirectoryLinkRepository(),
+        new MockAdGroupProvisioner(adMembershipStore),
+        NewPendingPasswordStore(),
+        new RecordingKoxoSyncWebhookTriggerService(),
+        new SignupRuntimeConfiguration(true, 3, 10, 24, 24, false),
+        NewApplicationSettingsService(),
+        CreateMockEmailConfiguration(),
+        disabledAdConfiguration,
+        LoggerFactory.Create(_ => { }).CreateLogger<SignupService>());
+
+
+    const string id = "verification-resend-test";
+    const string oldToken = "fictional-old-verification-token";
+    string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
+    var row = new MockSignupRow
+    {
+        Id = id, Status = "email_pending", CompanyName = "Test", ContactName = "Test User",
+        Email = "resend@example.invalid",
+        Customer = new SignupCustomerData("individual", "Test", "resend@example.invalid", null, "1 rue Test", null, "35580", "Guichen", "FR"),
+        PrimaryUser = new SignupUserData("monsieur", "Test", "User", "1990-01-15", null, "Test User", "resend@example.invalid", null, true),
+        VerificationTokenHash = Hash(oldToken), VerificationTokenExpiresAtUtc = DateTime.UtcNow.AddHours(1),
+        CreatedAtUtc = DateTime.UtcNow.AddMinutes(-5), UpdatedAtUtc = DateTime.UtcNow.AddMinutes(-5)
+    };
+    signupStore.Rows[id] = row;
+    Ensure(!(await signupService.ResendVerificationEmailAsync("missing", "test", CancellationToken.None)).Succeeded, "Missing signup must refuse resend.");
+    var result = await signupService.ResendVerificationEmailAsync(id, "test", CancellationToken.None);
+    Ensure(result.Succeeded && emails.VerificationUrls.Count == 1, "Pending signup must send one replacement link.");
+    Ensure(row.Status == "email_pending" && row.ApprovedUserId is null, "Resend must not approve or create an identity.");
+    Ensure(!(await signupService.ResendVerificationEmailAsync(id, "test", CancellationToken.None)).Succeeded && emails.VerificationUrls.Count == 1, "Immediate retry must not rotate or send.");
+    Ensure(!(await signupService.VerifyEmailAsync(oldToken, CancellationToken.None)).Succeeded, "Previous link must be invalid.");
+    Ensure(!await repository.MarkEmailVerifiedAsync(id, CancellationToken.None, Hash(oldToken)), "A stale pre-rotation verification read must not confirm the signup.");
+    var newToken = Uri.UnescapeDataString(new Uri(emails.VerificationUrls[0]).Query.Split("token=", 2)[1].Split('&')[0]);
+    Ensure((await signupService.VerifyEmailAsync(newToken, CancellationToken.None)).Succeeded, "Replacement link must confirm the pending signup.");
+    Ensure(!(await signupService.ResendVerificationEmailAsync(id, "test", CancellationToken.None)).Succeeded, "Verified signup must refuse resend.");
+    row.Status = "email_pending"; row.EmailVerifiedAtUtc = null; row.UpdatedAtUtc = DateTime.UtcNow.AddMinutes(-5);
+    emails.VerificationDeliverySucceeds = false;
+    Ensure(!(await signupService.ResendVerificationEmailAsync(id, "test", CancellationToken.None)).Succeeded && row.Status == "email_pending", "Delivery failure must not report success or verify the signup.");
+    row.UpdatedAtUtc = DateTime.UtcNow.AddMinutes(-5); emails.VerificationDeliverySucceeds = true;
+    var concurrent = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => Task.Run(() => signupService.ResendVerificationEmailAsync(id, "test", CancellationToken.None))));
+    Ensure(concurrent.Count(r => r.Succeeded) == 1, "Concurrent resends must elect one sender.");
+    Console.WriteLine("Signup verification resend tests passed.");
 }
 
 void VerifyBackupProtectionService()
@@ -11148,6 +11211,8 @@ sealed class TestApplicationSettingsRepository : IApplicationSettingsRepository
 
 sealed class TestEmailDispatchService : IEmailDispatchService
 {
+    public List<string> VerificationUrls { get; } = [];
+    public bool VerificationDeliverySucceeds { get; set; } = true;
     public Task<EmailDispatchResult> SendInvoiceIssuedAsync(
         string documentId,
         string correlationId,
@@ -11178,7 +11243,10 @@ sealed class TestEmailDispatchService : IEmailDispatchService
         string verificationUrl,
         string correlationId,
         CancellationToken cancellationToken)
-        => Task.FromResult(new EmailDispatchResult(true, "noop", string.Empty));
+    {
+        VerificationUrls.Add(verificationUrl);
+        return Task.FromResult(new EmailDispatchResult(VerificationDeliverySucceeds, VerificationDeliverySucceeds ? "sent" : "EMAIL_TEST_FAILURE", string.Empty));
+    }
 
     public Task<EmailDispatchResult> SendAccountApprovedAsync(
         string email,

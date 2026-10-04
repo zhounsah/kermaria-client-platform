@@ -24,6 +24,9 @@ const adminSignupInitializePasswordRoute = await read(
 const adminSignupResendPasswordEmailRoute = await read(
   "app/api/admin/signups/[id]/resend-password-email/route.ts",
 );
+const adminSignupResendVerificationEmailRoute = await read(
+  "app/api/admin/signups/[id]/resend-verification-email/route.ts",
+);
 const signupForm = await read("components/SignupForm.tsx");
 const setPasswordForm = await read("components/SetPasswordForm.tsx");
 const adminSignupActions = await read("components/AdminSignupActions.tsx");
@@ -926,6 +929,20 @@ check("tout compte principal entre dans l'amorcage de son identite AD", () => {
   assert.match(programCs, /AddHostedService<PrimaryIdentityBootstrapConvergenceWorker>/);
   assert.match(identityRecoveryRoute, /handleAdminMutation/,
     "La reprise passe par le BFF admin et sa protection CSRF.");
+});
+
+check("pending signup verification resend stays admin-only and rotates without approving", () => {
+  assert.match(adminSignupResendVerificationEmailRoute, /handleAdminMutation/);
+  assert.match(adminSignupResendVerificationEmailRoute, /encodeURIComponent\(id\)/);
+  const route = programCs.split('"/internal/admin/signups/{id}/resend-verification-email"')[1].split('app.MapPost(')[0];
+  assert.match(route, /ResolveAdminSessionAsync/);
+  assert.match(route, /signup\.verification_email_resent/);
+  assert.match(route, /TargetReference: id/);
+  assert.match(adminSignupActions, /status === "email_pending"/);
+  assert.match(adminSignupActions, /resend-verification-email/);
+  assert.match(signupRepoMaria, /verification_token_hash = @expected_hash/);
+  assert.match(signupRepoMaria, /updated_at <= @resend_before/);
+  assert.match(signupService, /AdminVerificationResendCooldown/);
 });
 
 let failures = 0;
