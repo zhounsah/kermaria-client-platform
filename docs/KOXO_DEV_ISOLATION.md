@@ -1,5 +1,31 @@
 # Isolation KoXo DEV / PROD
 
+> **Dernier état : service de stockage autonome validé.** Le sMSA
+> `CLIENTS\svc-koxo-dev$`, via le groupe dédié approuvé sur l'hyperviseur
+> SRV-01/FS-01, exécute KoXo en session 0. Le blocage observé provenait de son
+> accès à `Data\AutoBackup`. Route stockage distincte de la synchro, quota
+> technique de 201 MiB vérifié, réduction refusée. Raccordement API encore
+> non appliqué (approbation automatique), E2E client non réalisé.
+> Voir [le bilan courant](KOXO_DEV_SERVICE_ACCOUNT.md) ; les états ci-dessous
+> décrivent les étapes antérieures.
+
+> **Dernière continuation du 2026-10-03 :** quota personnel de 200 MiB créé
+> par KoXo sur `devkoxo2.testisola`, puis rejeu `noop / fully_verified` avec
+> lecture CIM réelle de FS-01. Lecture refusée sous SYSTEM/session 0 : le mode
+> de service reste à cadrer. Aucun groupe VPN/RDS ni route stockage DEV ouvert.
+> [Preuves et limites](DEV_STORAGE_ACCESS_VALIDATION.md).
+
+> **Complément du 2026-10-03 à 18:38 :** réparation personnelle ciblée réussie
+> par commande depuis une session utilisateur, puis rejeu réussi après un
+> timeout intermédiaire. Aucune manipulation graphique par l'agent. Le mode
+> SYSTEM, le quota et les accès VPN/RDS restent non prouvés. Voir le
+> [bilan des essais interactifs](DEV_STORAGE_ACCESS_VALIDATION.md).
+
+> **Mise à jour du 2026-10-03 :** dette ACL FS-01 traitée, avec incident de
+> propagation détecté puis restauration ciblée des témoins ; stockage headless
+> toujours bloqué. Préflight DEV et vérification FSRM des rejeux corrigés en
+> local, non déployés. Voir [le bilan et ses limites](DEV_STORAGE_ACCESS_VALIDATION.md).
+
 > **État au 2026-09-28 : isolation KoXo DEV et E2E identité standard validés.**
 > Après les Run 1/2, l'API DEV en `controlled_write` a exécuté le parcours
 > complet signup → vérification → approbation → password setup → KoXo → AD →
@@ -165,7 +191,8 @@ Pendant la création des lieux de stockage dans l'IHM, un lieu a été créé à
 10:30:42 sur `F:\KoXoDATA\` lui-même, puis supprimé à 10:31:10. KoXo a alors
 **tenté de supprimer tout `F:\KoXoDATA\`** ; l'opération a échoué
 (`[ERROR] Suppression du répertoire`). Aucune donnée perdue (arborescence et
-dates vérifiées). Effets restants, **non corrigés** à ce jour :
+dates vérifiées). Effets documentés au 2026-09-27, **corrigés le 2026-10-03**
+selon le [bilan ACL](DEV_STORAGE_ACCESS_VALIDATION.md) :
 
 - `F:\KoXoDATA` : l'ACE `HOME\Administrateurs de KoXo Administrator` a été
   remplacée par `CLIENTS\CLIENTS-KOXO-ADM` ;
@@ -174,7 +201,7 @@ dates vérifiées). Effets restants, **non corrigés** à ce jour :
 - les autres arbres (`CLASSES`, `CULTUREVAP`, `ELEVES`, …) sont protégés et
   inchangés.
 
-Correctif proposé, non appliqué : rendre explicites et protégées les ACL de
+Correctif appliqué le 2026-10-03 : rendre explicites et protégées les ACL de
 `CLIENTS` et de `CLIENTS DEV`, **puis** rétablir l'ACE HOME sur `F:\KoXoDATA`.
 Leçon : ne jamais créer un lieu de stockage sur la racine `KoXoDATA`, sa
 suppression tente d'effacer le dossier.

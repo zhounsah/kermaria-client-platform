@@ -89,6 +89,32 @@
 
 ### KoXo / AD
 
+- **Cloture Noe et preparation v2.0.3.2 (2026-10-04)** : Stripe TEST resilie,
+  import de qualites avec remplacement effectue manuellement par le titulaire,
+  groupes VPN/RDS retires. VPN refuse (NPS6273/65), RDS authentifie puis refuse
+  (RdpCore226/0x80070005), donnees/quota conserves. Fiche XML persistante de Noe
+  realignee ponctuellement sous mutex sur l'import manuel : voir le rapport.
+  Pour les changements de qualites, CSV prepare automatiquement mais aucun
+  lancement de KoXo ; l'import avec remplacement reste manuel et son
+  automatisation est differee. Les paragraphes de recette plus anciens
+  ci-dessous sont historiques. Release en preparation, PROD pas encore livree.
+
+- **Actualisation du 2026-10-04, WIP non commité** : Noé Valbrume,
+  `DEV-CLI-723NSN` / `CLI-D000002`, paiement Stripe TEST confirmé et abonnement
+  actif. KoXo en session 0 : quota dur personnel 64 Go, partage personnel DEV,
+  écriture/relecture client vérifiée ; groupes VPN/RDS DEV présents, rejeu
+  inchangé. VPN reconnecté à 16:38 avec NPS 6272 après correction du titulaire.
+  Session RDS réelle prouvée le 04/10 à 03:13 ; montage P: à la reconnexion
+  confirmé ensuite par le titulaire. Qualités CSV/XML KoXo/AD acquittées par
+  le worker DEV (révision 1 appliquée à 14:30 UTC), migration 098 active.
+  La résiliation et la conservation après retrait restent à prouver : Chrome
+  bloqué sur confirmation, DNS Stripe indisponible depuis SRV-13. Le
+  déclenchement manquant après réconciliation Stripe est corrigé/testé et
+  livré uniquement en DEV, avec limites de reprise documentées. Voir
+  [le point de reprise](topics/dev-vpn-rds-access.md).
+  Les mentions antérieures « stockage headless non validé » ci-dessous sont
+  historiques et ne décrivent plus ce prérequis technique.
+
 - **Invariant (2026-09-25) : tout compte client principal a une identité AD, VPS compris.** Le Cart/VPS contournait l'AD (bug B) et, en `controlled_write`, l'export KoXo ignorait tout principal sans lien (bug C, boucle fermée même pour le signup standard). Le correctif d'amorçage explicite `portal_user_identity_bootstrap` (migration 096, 3e branche d'export et reprise admin) est **déployé et validé en DEV** par l'E2E du 2026-09-28 ; la production n'a pas été touchée ni réévaluée dans cette passe. Détail : [primary-identity-bootstrap.md](topics/primary-identity-bootstrap.md).
 - **KoXo DEV partage le domaine et KoXoAdm avec la PROD (2026-09-26)** : compteur DEV repartant à `CLI-000001` (déjà en PROD). Fondations logicielles `f15e314` (namespace API `CLI-D`/`DEV-CLI-`/`CLIENTS DEV`, lanceur SRV-21 à instance isolée, mutex `Global\Kermaria-KoXoAdm`). Après les Run 1/Run 2, l'**E2E identité standard DEV est PASS le 2026-09-28** : signup, vérification e-mail, approbation, `DEV-CLI-PDXVX6` / `CLI-D000001`, PIB `awaiting_password → koxo_pending → completed`, webhook `signup_approved` 202 sans identité avant mot de passe, puis `password_set` 202 et synchronisation `CLIENTS-DEV.xml` réussie. L'objet AD Melis Rochedune est actif sous `CLIENTS DEV`, sans `GG_VPN`/`GG_RDS`, et `customer_ad_links` est créé. PROD est restée hors périmètre. Le stockage headless reste non validé. Détail : [koxo-dev-isolation.md](topics/koxo-dev-isolation.md), `docs/KOXO_DEV_ISOLATION.md`.
 - **E2E abonnement DEV (2026-09-29)** : souscription SERVICE-E2E-DEV payée (Stripe TEST) mais provisioning refusé ; cause planner corrigée (`7da7309`), revalidation par nouvel achat requise — le bouton admin de réconciliation ne passe pas par le chemin V2. Voir [next-dev-e2e-provisioning.md](topics/next-dev-e2e-provisioning.md).

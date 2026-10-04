@@ -2,6 +2,355 @@
 
 ## Objet
 
+### Evolution du 04/10/2026 : qualites supplementaires (activees en DEV)
+
+Retrait réel testé ensuite : une cellule vide n'a pas retiré les qualités
+existantes dans KoXo. Option livrée en DEV :
+`BILLING_V2_KOXO_EMPTY_QUALITY_GROUP`, groupe DEV neutre explicitement configuré
+et mappé dans AD_ALLOWED_ROOTS. Il représente une liste d'accès vide dans le
+transport CSV ; il ne doit recevoir aucun accès ni imbrication. La preuve
+exige toujours l'absence des anciens groupes, pas seulement sa présence.
+Un import non vide reste incrémentiel. Le titulaire réalise l'import dédié
+avec « Ne conserver que les qualités supplémentaires importées ». Les preuves
+restent nécessaires, notamment la persistance XML après import (une correction
+ponctuelle a été nécessaire pour Noé ; voir son rapport).
+
+Le trigger DEV `qualities_changed` prépare désormais le CSV avec
+`-PublishCsvOnly`, sans lancer KoXoAdm. Quand le CSV est conforme, le worker
+attend les preuves XML/AD sans répéter la publication. Les autres événements
+d'identité gardent leur circuit existant. L'import avec remplacement reste
+manuel ; son automatisation a été différée explicitement par le titulaire.
+
+En DEV, le contrat JSON passe en version 3 avec `qualitesSupplementaires`,
+chaine obligatoire pouvant etre vide. PROD conserve le contrat v2 sans ce
+champ pour son recepteur existant. Le recepteur DEV produit 15 colonnes :
+`QualitésSupplémentaires` est ajoutee apres `MotDePasse`, qui reste en colonne 14.
+Le format est celui du CSV DEV fourni sur SRV-21 : noms de groupes separes
+par des virgules, exemple `GG_RDS_E2E_DEV,GG_VPN_E2E_DEV`.
+
+L'API publie le plan valide par identite dans `koxo_quality_intents` apres les
+garde-fous et la resolution des identites. L'export lit cette revision durable.
+Avant la premiere revision seulement, il conserve les appartenances actives
+deja appliquees et suivies dans `billing_v2_provisioning_managed_memberships`.
+Elle ne lit pas memberOf et ne distribue jamais l'union des groupes du client
+a chacun de ses utilisateurs. Un droit retire du plan ou du suivi ne sort plus ;
+une cellule vide est explicite. Une source indisponible
+fait echouer l'export, plutot que publier une fausse revocation. Les noms sont
+valides avant assemblage pour interdire l'injection de qualites/separateurs.
+
+Le flag DEV `BILLING_V2_KOXO_QUALITIES_ENABLED` remplace les ecritures AD directes
+par une demande persistante, puis une preuve CSV + XML KoXo + AD avant acquittement.
+Les groupes ajoutes
+manuellement hors du suivi Billing V2 ne sont pas automatiquement adoptes.
+La colonne constitue une liste complete : ne pas y melanger des qualites
+manuelles dont la preservation n'est pas representee dans l'application.
+
+Livraison coordonnee requise : API et scripts de synchronisation, puis profils
+KoXo avec champ 15 et separateur interne virgule. Les versions 2 et 3 se
+refusent mutuellement avant remplacement du CSV. Suspendre les declencheurs
+pendant cette livraison et conserver le CSV/profil de retour arriere hors Git.
+Le CSV DEV est regenere par le lanceur de publication autorise. Une cellule
+vide n'efface pas les qualites de KoXo : seule la preuve finale CSV/XML/AD
+valide le retrait, apres import manuel et controle de la fiche persistante.
+
+Etat verifie le 04/10 a 17:15 : migration098 active, worker DEV actif,
+Noe revision1 appliquee a 14:30:14 UTC. Console fermee normalement, deux
+metadonnees SAM de qualites corrigees sous mutex puis conservees par reimport.
+La recherche LDAP utilise maintenant l'OU client KoXo directement, sans
+sous-OU Users inexistante. Preuves, empreintes et rollback dans
+`docs/DEV_E2E_NOE_VALBRUME.md` ; les sections historiques ci-dessous decrivent
+les etapes successives, pas toutes l'etat actuel.
+
+Limite d'observabilite : apres un nouvel ajout asynchrone, l'intent devient
+applique mais le statut historique d'item peut rester pending jusqu'au prochain
+rejeu. Aucune surface ou gate ne lit actuellement ce statut. Ne pas inventer
+un statut deprovisioned ni acquitter tous les items actifs d'un client depuis
+une ancienne revision : une future convergence par item doit persister le lien
+revision → items. Apres resiliation, conserver provisioned comme historique
+n'autorise aucun acces ; seuls les abonnements actifs alimentent le plan.
+
+Garde de livraison : `Deploy-KoxoScripts.ps1` refuse maintenant le module
+v3 si la tache cible est le recepteur PROD 8042 **ou** si le chemin normalise
+est le repertoire partage `Data\CSVSynchro`. Refus avant WinRM, meme en
+DryRun ; ListOnly reste une lecture locale du manifeste. Les exemples generiques
+plus bas decrivent l'ancienne livraison v2 et ne sont pas une procedure pour
+livrer ces scripts v3 en PROD. La livraison DEV exige toujours le repertoire
+isole et sa definition d'instance ; ne pas utiliser les variables Machine
+partagees pour la configurer.
+
+Validations locales du lot : build API, export/projection cibles, suite smoke
+API effectivement executee et typecheck shared/web PASS. Contrat CSV autonome
+`scripts/koxo/tests/Test-KoxoQualitiesContract.ps1` PASS sous PowerShell 5.1 et 7.
+La suite complete est desormais PASS sous Windows PowerShell 5.1 avec une
+copie isolee de Pester 4.10.1 obtenue depuis le depot officiel : 193 tests,
+aucun echec ni test ignore. Pester 3.4 installe globalement reste inchange.
+Un vrai defaut du controle inter-CSV a ete corrige : le decoupage negatif
+ignorait les identifiants. TextFieldParser lit maintenant les champs CSV
+avec guillemets/retours a la ligne et refuse les entetes ou largeurs incoherentes.
+Les nouvelles regressions prouvent la detection des doublons dans ces cas.
+Preuves hors Git : `Backups\Kermaria\koxo-qualities-20261004` dans le profil local.
+
+Profil DEV relu sur SRV-21 : `Data\CSVSynchro\CLIENTS-DEV.xml` contient bien
+`OtherGroups=Field 15` et `SeparatorInsideField=,`, comme le modele CSV fourni
+par le titulaire. Le profil n'est pas dans CSVSynchro-DEV, contrairement au CSV.
+Cette lecture ne prouve pas encore la suppression effective des qualites vides.
+
+### Registre des demandes KoXo — implementation partielle, inactif
+
+La migration `098_koxo_quality_intents.sql` (non appliquee) separe l'etat
+demande de l'historique des memberships reellement observes. Un document par
+client contient la liste complete des qualites par identite, une revision
+monotone et la derniere revision appliquee. Aucune donnee de mot de passe.
+`MariaDbKoxoQualityIntentRepository` refuse une migration absente sans DDL,
+verrouille le client avant publication, verifie l'appartenance de chaque
+identite au client et compare la revision attendue. Un accuse ancien ne peut
+pas valider une revision plus recente. Ces garanties SQL restent a exercer
+sur une base MariaDB de test autorisee ; les tests actuels valident la policy.
+
+Le moteur accepte un depot optionnel de demandes. Quand il est fourni, il
+lit la revision avant de calculer le plan, conserve les gates de preparation,
+reconcilie le stockage, resout les identites, puis publie la demande a la place
+de l'ecriture AD directe. Il retourne KOXO_QUALITIES_PENDING (jamais un succes
+sur simple publication). L'export lit alors ce document autorise, sans exiger
+que les groupes aient deja ete ajoutes dans AD. Une demande anterieure entre
+dans le perimetre de retrait meme si son application n'a pas encore ete accusee.
+
+**Non active :** le depot n'est pas enregistre dans l'injection de dependances.
+Il reste a raccorder le traitement/reessai des demandes, declencher la synchro,
+verifier la revision CSV + qualites KoXo + memberships AD, accuser uniquement
+cette revision, puis verifier la convergence et le comportement apres crash.
+Ne pas activer cette branche avant ces etapes et le test MariaDB. Aucun
+schema ni runtime DEV/PROD n'a ete modifie par ce chantier local.
+
+### Traitement des demandes et premiere preuve reelle — encore inactif
+
+Le dispatcher et worker locaux prennent une reservation de 120 secondes,
+bornent l'execution a 60 secondes et accusent uniquement une preuve concordante
+sur client, revision, SHA-256 du document, CSV, XML KoXo et AD. Publication
+nouvelle = invalidation de l'ancienne reservation. Echec = code non sensible
+et reessai exponentiel borne a cinq minutes. Un crash laisse expirer la
+reservation ; un accuse tardif ou une revision remplacee ne peut pas terminer
+la nouvelle demande. Tests de politique/dispatcher PASS ; SQL concurrent
+et expiration reelle restent a tester sur MariaDB. Aucun worker enregistre en DI.
+
+Le module en lecture seule `KoxoQualities.Common.psm1` compare, pour une
+identite CLI-D dans CLIENTS DEV, le CSV et les AdditionalQuality/SAMAccountName
+de l'unique fiche XML portant son UniqueID. Aucune donnee de mot de passe
+ne sort de cette lecture. Copie diagnostique hors runtime deposee sur SRV-21,
+dans ProgramData\Kermaria\noe-profile-20261004, puis executee en lecture seule.
+
+**Constat reel nouveau :** CSV de Noe conforme et memberships AD presents,
+mais SAMAccountName des deux AdditionalQuality vaut actuellement
+` membership managed by Billing V2` au lieu des noms GG_RDS_E2E_DEV et
+GG_VPN_E2E_DEV. XML modifie a 11:11:47 le 04/10. Les champs Group et FQDN
+restent corrects. La description AD contient exactement cette chaine apres
+un point-virgule : anomalie de decoupage a l'import suspectee, non demontree.
+Le verifier retourne CsvVerified=true, KoxoVerified=false. Ne pas accepter
+Group comme substitut silencieux au SAMAccountName pour contourner ce constat.
+Regression de cette anomalie ajoutee ; cinq tests de preuve PASS sous PS5.1.
+Console KoXo toujours ouverte lors du dernier controle. Aucune qualite,
+description AD ni configuration active n'a ete modifiee pendant ce diagnostic.
+
+Restent : implementation de l'executant HTTP/relecture AD, raccordement de
+la preuve au recepteur sous verrou KoXo, diagnostic de cette corruption,
+tests MariaDB de la migration 098 (toujours non appliquee), activation DEV,
+ajout/retrait/rejeu reels puis resiliation et conservation des donnees.
+
+### Executant HTTP et corrections de revue — non active
+
+`HttpKoxoQualityIntentExecutor` est implemente : candidats exportables DEV,
+lien unique de la bonne identite/client, relecture AD par employeeNumber et
+objectGUID, POST authentifie sur `/internal/koxo/qualities/proof/`, puis
+comparaison des groupes AD (nom ET DN configure). Le recepteur expose cette
+route uniquement pour une instance DEV contenant le profil CLIENTS DEV,
+hors StorageOnly. Lecture CSV/XML sous mutex commun, refus si KoXo est ouvert,
+reponse 409 sans declenchement automatique. Une route inconnue/202 ne vaut
+jamais preuve ; le chemin de preuve ne tombe jamais dans la synchro globale.
+Le corps de preuve est borne a 128 Ki caracteres et 128 identites.
+
+Preuve discordante mais lisible : declenchement du webhook de synchronisation
+existant, puis maintien pending jusqu'a une verification ulterieure. Le nouveau
+module fait partie du manifeste Deploy-KoxoScripts. Tests HTTP sans reseau reel
+PASS : trois preuves, refus 202/404, occupation 409, revision incorrecte,
+absence de droits AD et declenchement uniquement apres preuve lisible non conforme.
+
+Revue independante autorisee : deux findings VALIDE corriges. La publication
+refuse plus de 128 identites ou un document canonique UTF-8 de plus de 64 KiB,
+avant toute persistance, pour ne pas creer une demande structurellement
+inexecutable. L'export n'interroge plus le plan catalogue : intent autorise
+s'il existe, sinon dernier etat actif effectivement applique/suivi par l'API.
+Une anomalie de catalogue ne bloque donc plus la synchronisation des autres
+clients. La decision nouvelle reste dans le provisioning et ses gates.
+Cette regle remplace l'intersection opportuniste plan/memberships de la premiere
+version locale de ce lot, decrite historiquement plus haut.
+
+Activation DI et tests transactionnels toujours en attente. Aucune connexion
+MariaDB de test configuree ; autorisation demandee pour une base distincte
+`kermaria_koxo_quality_test_dev` sur KERMARIA-SRV-06.home.bzh, sans toucher
+kermaria_dev/PROD. Pas de connexion SQL ni de migration tant que cette cible
+n'est pas approuvee. Console KoXo toujours ouverte au dernier controle.
+
+### Tests MariaDB prepares ; cible approuvee, acces DDL manquant
+
+L'accord « Tu peux continuer » a ete pris comme autorisation pour la base
+dediee explicitement proposee `kermaria_koxo_quality_test_dev` sur SRV-06.
+Lecture autorisee de l'instance via SSH : KERMARIA-SRV-06, MariaDB 11.8.6,
+base de test absente. Le compte enregistre `/root/.mariadb-backup.cnf` se
+connecte comme mariadb_backup@localhost mais n'a pas CREATE DATABASE. Root
+sans mot de passe et la configuration Debian ne permettent pas la connexion.
+Aucun contournement d'authentification, aucune creation de base executee.
+
+Script administrateur prepare : scripts/dev-env/create-koxo-quality-test-database.sql.
+Il cree cette seule base et accorde SELECT/INSERT/UPDATE/CREATE/REFERENCES
+au compte existant kermaria_dev_migrator@192.168.100.213. Aucun secret ni
+modification de compte ; NO_AUTO_CREATE_USER interdit une creation implicite.
+Creation demandee au titulaire via son acces SQL administrateur.
+
+Runner `--koxo-quality-mariadb` : exige BILLING_V2_TEST_MARIADB_CONNECTION
+avec hote SRV-06 exact, base dediee exacte, port 3306, et
+RUN_KOXO_QUALITY_SQL_TESTS=true. Execution prevue depuis SRV-13 pour respecter
+la source du compte. La migration 098 est incorporee au binaire de tests.
+Le runner refuse une base non vide, ne cree que les deux tables parentes
+minimales et la table de demandes, et conserve les fixtures pour inspection.
+Il ne contient aucun DROP/DELETE. Cas : schema absent sans DDL implicite,
+publication concurrente, identite d'un autre client, rejeu, lease exclusif,
+retrait contre accuse ancien, backoff, expiration/reprise et isolation client.
+Compilation et tests du garde de cible PASS ; invocation sans opt-in refusee
+avant connexion. Les transactions reelles ne sont PAS encore validees.
+
+### Validation transactionnelle obtenue en instance locale isolee
+
+Apres instruction explicite d'autonomie complete a 13:45, tentative du script
+sur SRV-06 : erreur 1044 au CREATE DATABASE, arret sans creation ni GRANT.
+Alternative utilisee : binaire MariaDB 11.8.9 deja installe localement,
+nouveau datadir protege sous Backups\Kermaria\koxo-sql-isolated-20261004,
+liaison 127.0.0.1:33398 exclusivement, aucun service Windows cree. Secret
+ephemere de cette instance conserve seulement dans ce dossier protege.
+
+Le runner accepte aussi cette cible locale precise, toujours avec opt-in et
+base exacte, et exige KOXO_QUALITY_TEST_EXPECTED_DATADIR. Il compare @@datadir
+avant les DDL pour refuser une autre instance. Tests transactionnels reels
+PASS sur MariaDB 11.8.9 : concurrence publication/lease, rejet interclient,
+rejeu, retrait contre ancien accuse, backoff, expiration/reprise, isolation.
+Etat final du cas de retrait : revision 2, applied_revision 2, trois tentatives,
+KOXO_QUALITIES_APPLIED. Tables fictives conservees pour inspection. Serveur
+temporaire arrete proprement par mariadb-admin ; PID 53436 termine et port
+33398 ferme. Aucune base operationnelle touchee. La demande de creation
+manuelle sur SRV-06 n'est plus necessaire pour ces tests ; l'application de
+la migration 098 a kermaria_dev reste une etape distincte non realisee.
+
+### Activation explicite preparee
+
+BILLING_V2_KOXO_QUALITIES_ENABLED=false par defaut. A true, le resolver exige
+APP_ENV=Development, MariaDB kermaria_dev, provisioning active et recepteur
+KoXo sur 8043/internal/koxo/sync avec jeton configure. Refus en production.
+L'injection enregistre ensemble depot, executant, dispatcher, garde de schema
+au demarrage et worker. Aucun reglage runtime n'a encore ete active. Les tests
+de configuration et les tests cibles de l'export passent. La version 2.0.3.2
+reste conditionnee a la recette complete, notamment retrait KoXo et donnees.
+
+### Preparation du test de separateur KoXo
+
+Sauvegarde privee des fichiers DEV avant fermeture sous
+ProgramData\Kermaria\koxo-dev-before-close-20261004-1400 sur SRV-21.
+Demande de fermeture normale du PID 5876 refusee par Windows (force requise).
+Arret force non realise ; ne pas perdre un eventuel etat UI non enregistre.
+
+Descriptions de GG_RDS_E2E_DEV et GG_VPN_E2E_DEV sauvegardees dans
+ProgramData\Kermaria\noe-profile-20261004\group-descriptions-before-separator-test.json,
+SHA-256 92BD3FC22B6735753051598EF30F1B994C6237116B78284A48D3F2E74C516BFA.
+Les deux points-virgules de chaque description ont ete remplaces par des
+tirets, sans toucher noms/SID/memberships. Hypothese de decoupage a verifier
+au prochain import ; cette modification seule ne prouve PAS la correction
+des SAMAccountName deja enregistres dans les fiches KoXo.
+
+### Migration 098 appliquee en DEV, fonctionnalite toujours inactive
+
+Preflight depuis SRV-13 avec kermaria_dev_migrator : serveur SRV-06,
+base kermaria_dev, migrations jusqu'a 097, table 098 absente. Le compte de
+sauvegarde du serveur ne peut pas lire les metadonnees DEV : un resultat
+information_schema vide sous ce compte ne prouve pas une absence de table.
+
+Le dump logique a echoue sur SHOW VIEW manquant ; il n'est pas une sauvegarde
+validee. Sauvegarde physique filtree realisee avec mariadb-backup 11.8.6 et
+le compte de sauvegarde existant : --backup --databases=kermaria_dev puis
+--prepare --export. Deux sorties 0 et marqueurs completed OK. Repertoire
+protege /var/backups/kermaria-dev-before098-20261004-1410 sur SRV-06,
+seul sous-repertoire de base kermaria_dev, 345 fichiers, 273828234 octets.
+Manifest SHA-256 :
+7f393c04839d45ebf1f42ea479daaf44966b57ad406d532eaf04c6cd4220fcf2.
+Il s'agit d'une sauvegarde physique partielle preparee pour restauration
+par tables ; aucune restauration n'a ete simulee sur la base operationnelle.
+
+Seule migration 098 executee, par le migrator DEV depuis SRV-13, apres
+controle de l'empreinte du fichier et des preconditions. SHA-256 migration :
+C735025477E4398B8C21BC9E0920E3C67CFA79D3E1E1724A9BC8122BC0F0B79C.
+Ligne schema_migrations presente ; table vide a 11 colonnes, cle primaire,
+cle etrangere customer et deux CHECK verifies. API DEV Running, readiness 200.
+Ni binaire API ni recepteur remplace dans cette passe ; flag toujours inactif.
+Retour arriere applicatif : conserver la table additive, pas de DROP automatique.
+Preuve locale : Backups\Kermaria\koxo-qualities-20261004\dev-migration-098-proof.json.
+
+### Livraison DEV coordonnee, flag inactif et export reel valide
+
+API DEV livree, SHA-256 DLL
+4207D95A3499B7D4FE802310CE328114DA32E49082AC7710851EEEEA01BCD2FF.
+Archive 603D247B1F68305F9B7D6FC371D6F05EAEFBAC1DB66CC703569732BB2D8CB5C2.
+Rollback SRV-13 : C:\apps\api-internal-dev-old-qualities-20261004.
+Configuration externe conservee octet pour octet, authoritative=true,
+service Running et readiness 200. Binaire PROD inchange, empreinte
+4B07BB0A764F01BC6E0F9F9B8DB2BC6F22497C9566A4B99504F8FED94FEB254F.
+Flag qualites absent du JSON DEV et des variables Machine, donc false.
+
+Le recepteur DEV partageait ses fichiers avec PROD. Nouveau code isole sous
+C:\ProgramData\Kermaria\koxo-dev\app-qualities-20261004 sur SRV-21.
+Seule l'action de Kermaria-KoXoWebhookReceiver-DEV-8043 a ete redirigee vers
+ces six fichiers verifies par hash, puis relancee. Taches PROD 8042 et stockage
+sMSA DEV restees Running. XML de retour arriere de la tache sous
+ProgramData\Kermaria\noe-profile-20261004\receiver-task-before-qualities.xml.
+Le recepteur DEV refuse aussi un lancement de synchro si une console KoXo
+interactive est ouverte : pas de reecriture concurrente d'un etat GUI ancien.
+
+Route de preuve reelle : 401 sans bearer, 409 avec bearer valide pendant
+l'ouverture de KoXo (aucune execution). Export API via BFF de l'instance :
+schema v3, deux utilisateurs, CLI-D000002 avec GG_RDS_E2E_DEV,GG_VPN_E2E_DEV,
+CLI-D000001 avec cellule vide. Deux DryRun donnent le meme hash CSV
+006ab14fbed93bd8c13571fff1110f4070b6a4ab995acc67ea1ef6eaaa701018,
+LaunchRequested=false, not_requested, CSV actif inchange. Preuves privees
+sous ProgramData\Kermaria\noe-profile-20261004\dryrun-api-v3 sur SRV-21.
+
+Rejeu d'un intent deja accuse : resultat KOXO_QUALITIES_ALREADY_VERIFIED,
+sans nouvelle ecriture groupe ; le code ne pretend pas avoir relu AD a cet
+instant, il reconnait la preuve persistante de la meme revision. Les statuts
+items peuvent etre remis en conformite lors de ce rejeu. Message UI pending
+prepare localement, mais WebPortal non relivre dans cette passe.
+Restent l'import reel, preuve de retrait, activation du worker et resiliation.
+
+### WebPortal DEV livre et controle navigateur
+
+Release /opt/kermaria/releases-dev/webportal-dev-koxo-qualities-20261004 sur
+SRV-12, service actif et readiness privee OK. Archive SHA-256
+2BFDAE7887562052D19B7F5D24ACBC55CF6159D3CC1FEFDC78D378303907C9E5.
+Rollback : /opt/kermaria/releases-dev/webportal-dev-readiness-20261004.
+Fichiers /etc/kermaria/webportal-dev.env et webportal.env conserves par hash,
+symlink PROD inchange. Ne pas reutiliser Install-WebportalDev.ps1 tel quel
+pour cette mise a jour : ses valeurs hCaptcha de demonstration remplaceraient
+la configuration active. Aucun secret ni unite systemd n'a ete reecrit ici.
+
+Build Windows : telechargement des polices via tunnel CONNECT local limite
+aux deux domaines Google Fonts, resolution ponctuelle et TLS de bout en bout
+conserve ; DNS systeme inchanges, auxiliaire arrete et port 38843 ferme ensuite.
+Ajout au paquet des deux dependances Linux de Sharp verrouillees par
+package-lock.json, SHA-512 controles. Test de rendu PNG sous kermaria-web-dev
+sur SRV-12 reussi avant bascule. Le paquet precedent ne portait que Sharp
+Windows ; pour les prochaines livraisons Linux, conserver cet ajout explicite.
+
+Session admin DEV retablie via formulaire normal avec autorisation existante,
+fiche Noe rechargee avec succes : abonnement actif, deux groupes DEV, bouton
+de resiliation immediate present. Aucune resiliation executee. La notice de
+demande KoXo en cours est livree, mais ne sera exercee qu'a l'activation du flag.
+Manifeste local : Backups\Kermaria\koxo-qualities-20261004\webportal-delivery-proof.json.
+
 V0.40 ajoute une chaine privee `webportal -> api-internal -> PowerShell -> CSV -> KoXo`
 sans SMB cote site, sans secret reel dans le depot, sans execution KoXo cote site,
 et sans creation automatique de la vraie tache planifiee.
@@ -135,6 +484,16 @@ Le niveau de preuve est explicite dans la reponse :
 FSRM n'est verifie que si `KOXO_STORAGE_FSRM_ENABLED=true` et qu'un gabarit de
 chemin est fourni ; la verification demandee mais non concluante **ferme** le
 resultat. Par defaut, la reponse s'arrete honnetement a `xml_verified`.
+
+La verification FSRM est aussi executee sur un rejeu dont la fiche XML est
+deja conforme. Le quota doit etre actif, contraignant (`SoftLimit=false`) et
+de taille exacte. Si les outils `Get-FsrmQuota` sont absents du receveur,
+`KOXO_STORAGE_FSRM_SERVER` permet une lecture CIM distante de
+`Root/Microsoft/Windows/FSRM:MSFT_FSRMQuota`, bornee au chemin attendu et a une
+reponse unique. Aucun role local n'est installe. Une erreur d'authentification
+ou de lecture ferme le resultat ; le compte d'execution doit disposer des
+droits distants requis. Un succes sous un administrateur connecte ne prouve
+pas ceux de SYSTEM. Voir le [bilan DEV](DEV_STORAGE_ACCESS_VALIDATION.md).
 
 ## Donnees exportees
 
@@ -816,4 +1175,3 @@ Avant une vraie activation :
 - valider la retention des backups et des logs
 - faire une premiere execution `DryRun`
 - faire une premiere execution manuelle hors heures sensibles
-

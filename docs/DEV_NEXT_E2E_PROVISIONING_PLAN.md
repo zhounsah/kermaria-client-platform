@@ -1,6 +1,17 @@
 # Prochain E2E DEV — abonnement et droit AD
 
-Statut : **STOP — aucune option sûre n'est actuellement exécutable.**
+Statut du plan initial : **historique, dépassé par la validation v2.0.3**.
+Le scénario Stripe TEST → groupe dédié DEV → retrait des memberships a été
+validé : voir [V2.0.3](releases/V2.0.3.md).
+
+Le lot suivant vise stockage personnel et connexions VPN/RDS réelles via des
+groupes DEV dédiés. Son [bilan du 2026-10-03](DEV_STORAGE_ACCESS_VALIDATION.md)
+consigne les ACL corrigées et les correctifs locaux testés. Le blocage KoXo
+non interactif a depuis été levé avec l'identité de service dédiée ; voir
+[le service KoXo DEV](KOXO_DEV_SERVICE_ACCOUNT.md) et
+[le raccordement VPN/RDS](DEV_VPN_RDS_ACCESS_VALIDATION.md). L'E2E complet
+avec une nouvelle identité reste à réaliser. Les décisions ci-dessous sont historiques et
+ne doivent plus être présentées comme le blocage du simple service AD DEV.
 
 Ce document prépare le prochain scénario sans créer de souscription, modifier
 la base, appeler un provider, lancer KoXo ou écrire dans Active Directory.
