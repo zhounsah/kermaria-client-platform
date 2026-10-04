@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { AdminCancelSubscriptionButton } from "@/components/AdminCancelSubscriptionButton";
 import { AdminReconcileProvisioningButton } from "@/components/AdminReconcileProvisioningButton";
+import { AdminProvisioningReadinessReview } from "@/components/AdminProvisioningReadinessReview";
 import { ErrorState } from "@/components/ErrorState";
 import { MockNotice } from "@/components/MockNotice";
 import { PageHeader } from "@/components/PageHeader";
@@ -273,6 +274,7 @@ export default async function AdminSubscriptionDetailPage({
           </div>
         </dl>
         <div className="ad-button-row" style={{ marginTop: 18 }}>
+          <AdminProvisioningReadinessReview customerId={subscription.customerId} />
           <AdminReconcileProvisioningButton
             authoritativeBillingV2
             idleLabel="Réconcilier la souscription"

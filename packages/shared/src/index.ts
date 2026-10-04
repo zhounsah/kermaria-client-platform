@@ -3878,6 +3878,19 @@ export interface SignupAdminActionResponse {
   correlation_id?: string;
 }
 
+export interface BillingV2ProvisioningReadinessReviewResult {
+  ready: boolean;
+  addOnlyMode: boolean;
+  reviewStatus: string;
+  unresolvedMismatchCount: number;
+  reasonCodes: string[];
+  reasonCode: string;
+  activeV2SubscriptionCount: number;
+  desiredAdGroupCount: number;
+  storageTargetCount: number;
+  persisted: boolean;
+}
+
 export interface DiagnosticConfigurationRevisionsResponse {
   revisions: DiagnosticConfigurationRevisionItem[];
 }

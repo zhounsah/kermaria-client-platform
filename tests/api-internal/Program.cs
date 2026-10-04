@@ -41,6 +41,11 @@ return await RunAsync(args);
 
 async Task<int> RunAsync(string[] arguments)
 {
+    if (arguments.SequenceEqual(new[] { "--verified-settlement-provisioning" }))
+    {
+        await BillingV2VerifiedSettlementProvisioningTests.RunAsync();
+        return 0;
+    }
     if (arguments.SequenceEqual(new[] { "--signup-verification-resend" }))
     {
         await VerifySignupVerificationResendAsync();
@@ -734,6 +739,7 @@ async Task<int> RunAsync(string[] arguments)
         await VerifySignupGuardrailsAsync();
         await VerifySignupVerificationResendAsync();
         await VerifyFiscalPolicyAsync();
+        await BillingV2VerifiedSettlementProvisioningTests.RunAsync();
         await VerifyDemoContentTemplatesAsync();
         await VerifyIntegrationsOverviewAsync();
         await VerifyRuntimeOverviewAsync();

@@ -1,5 +1,6 @@
 using Kermaria.ApiInternal.Data.Configuration;
 using Kermaria.ApiInternal.Data.Repositories;
+using Kermaria.ApiInternal.Services.Provisioning;
 using MySqlConnector;
 
 namespace Kermaria.ApiInternal.Services;
@@ -74,6 +75,8 @@ public sealed class BillingV2StripeReconciliationService
     private readonly BillingV2RuntimeConfiguration _runtime;
     private readonly IBillingV2StripeRailService _rail;
     private readonly IBillingV2DocumentIssuerService _documents;
+    private readonly IBillingV2ProvisioningService _provisioning;
+    private readonly IBillingV2VpsTechnicalReviewService _vpsTechnicalReviews;
     private readonly IBillingV2Clock _clock;
     private readonly ILogger<BillingV2StripeReconciliationService> _logger;
 
@@ -83,6 +86,8 @@ public sealed class BillingV2StripeReconciliationService
         BillingV2RuntimeConfiguration runtime,
         IBillingV2StripeRailService rail,
         IBillingV2DocumentIssuerService documents,
+        IBillingV2ProvisioningService provisioning,
+        IBillingV2VpsTechnicalReviewService vpsTechnicalReviews,
         IBillingV2Clock clock,
         ILogger<BillingV2StripeReconciliationService> logger)
     {
@@ -91,6 +96,8 @@ public sealed class BillingV2StripeReconciliationService
         _runtime = runtime;
         _rail = rail;
         _documents = documents;
+        _provisioning = provisioning;
+        _vpsTechnicalReviews = vpsTechnicalReviews;
         _clock = clock;
         _logger = logger;
     }
@@ -459,6 +466,20 @@ public sealed class BillingV2StripeReconciliationService
                 subscriptionId,
                 candidate.BillingEventId,
                 cancellationToken);
+            // Une relecture Stripe reglee est la meme preuve financiere que
+            // celle du webhook. Conserver les gates de preparation et le
+            // workflow technique VPS en utilisant le moteur existant.
+            var provisioning = await BillingV2VerifiedSettlementProvisioning.TryExecuteAsync(
+                outcome.Settled,
+                subscriptionId,
+                _vpsTechnicalReviews.IsVpsTechnicalSubscriptionAsync,
+                _provisioning.TryReconcileActivatedSubscriptionAsync,
+                _logger,
+                cancellationToken);
+            _logger.LogInformation(
+                "Billing V2 provisioning after verified Stripe reconciliation for subscription {SubscriptionId}: {ResultCode}.",
+                subscriptionId,
+                provisioning.ResultCode);
             return new AttemptOutcome(1, 1, 0);
         }
 

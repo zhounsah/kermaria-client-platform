@@ -27,6 +27,7 @@ export function AdminReconcileProvisioningButton({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRefreshing, startRefresh] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const isBusy = isSubmitting || isRefreshing;
 
   async function handleClick() {
@@ -36,6 +37,7 @@ export function AdminReconcileProvisioningButton({
 
     setIsSubmitting(true);
     setError(null);
+    setNotice(null);
     try {
       const payload: SubscriptionProvisioningReconcilePayload | undefined =
         !authoritativeBillingV2
@@ -46,7 +48,7 @@ export function AdminReconcileProvisioningButton({
       const reconcileEndpoint: `/api/${string}` = authoritativeBillingV2
         ? `/api/admin/billing-v2/subscriptions/${encodeURIComponent(subscriptionId)}/provisioning/reconcile`
         : `/api/admin/subscriptions/${encodeURIComponent(subscriptionId)}/provisioning/reconcile`;
-      const result = await requestBffJson(
+      const result = await requestBffJson<{ succeeded?: boolean; resultCode?: string }>(
         reconcileEndpoint,
         payload
           ? {
@@ -58,6 +60,15 @@ export function AdminReconcileProvisioningButton({
       );
 
       if (result.ok) {
+        if (authoritativeBillingV2 && result.data.resultCode === "KOXO_QUALITIES_PENDING") {
+          setNotice("Demande enregistrée. Importez les qualités dans KoXo en ne conservant que celles du CSV. Les accès seront ensuite vérifiés automatiquement.");
+          startRefresh(() => router.refresh());
+          return;
+        }
+        if (authoritativeBillingV2 && result.data.succeeded !== true) {
+          setError(`La réconciliation n'a pas abouti : ${result.data.resultCode ?? "résultat indisponible"}. Vérifiez la préparation du client.`);
+          return;
+        }
         startRefresh(() => {
           router.refresh();
         });
@@ -89,6 +100,7 @@ export function AdminReconcileProvisioningButton({
           {error}
         </p>
       ) : null}
+      {notice ? <p className="field-hint" role="status" style={{ marginTop: 6 }}>{notice}</p> : null}
     </div>
   );
 }

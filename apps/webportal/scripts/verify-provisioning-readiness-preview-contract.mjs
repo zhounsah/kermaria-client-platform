@@ -53,4 +53,27 @@ assert(tests.includes("PreviewSuccessAndPersistedReviewShareDecision")
   && tests.includes("PersistenceUnavailableRemainsFailClosed"),
   "Les contrats purs doivent couvrir les verdicts success, failed et SQL indisponible.");
 
+const reviewBff = read("app/api/admin/billing-v2/provisioning-readiness/[customerId]/review/route.ts");
+const reviewUi = read("components/AdminProvisioningReadinessReview.tsx");
+const subscriptionPage = read("app/admin/subscriptions/[id]/page.tsx");
+const reconcileUi = read("components/AdminReconcileProvisioningButton.tsx");
+assert(reviewBff.includes("handleAdminMutation") && reviewBff.includes("encodeURIComponent(customerId)"),
+  "La review UI doit traverser la protection admin/CSRF existante et encoder la cible.");
+assert(reviewBff.includes('"POST"') && !reviewBff.includes("request.json"),
+  "Le navigateur ne fournit ni verdict ni etat de preparation a persister.");
+assert(subscriptionPage.includes("customerId={subscription.customerId}"),
+  "La cible de review doit provenir de l'abonnement charge cote serveur.");
+assert(reviewUi.includes("result.ready && result.persisted") && reviewUi.includes("result.reasonCodes"),
+  "Le succes affiche exige un verdict positif persiste, et le refus expose les raisons.");
+assert(reconcileUi.includes("authoritativeBillingV2 && result.data.succeeded !== true"),
+  "Un HTTP 200 de reprise V2 refusee ne doit pas etre presente comme un succes.");
+
 console.log("Contrat preview/review de readiness Billing V2 vérifié.");
+
+const reconciliation = read("../api-internal/Services/BillingV2StripeReconciliationService.cs");
+const settlementBranch = reconciliation.split("if (outcome.Settled)")[1]?.split("if (outcome.ReconciliationRequired)")[0];
+assert(settlementBranch?.includes("BillingV2VerifiedSettlementProvisioning.TryExecuteAsync")
+  && settlementBranch.includes("_provisioning.TryReconcileActivatedSubscriptionAsync")
+  && settlementBranch.includes("_vpsTechnicalReviews.IsVpsTechnicalSubscriptionAsync"),
+  "La reconciliation financiere doit declencher le moteur existant apres preuve Stripe, avec le garde VPS.");
+console.log("Contrat de declenchement apres reconciliation Stripe vérifié.");
