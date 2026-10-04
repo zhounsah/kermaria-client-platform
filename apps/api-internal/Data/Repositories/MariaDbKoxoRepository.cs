@@ -41,7 +41,8 @@ public sealed class MariaDbKoxoRepository : IKoxoRepository
                 reader.GetString("email"),
                 reader.GetBoolean("is_demo"),
                 ReadNullableString(reader, "koxo_group_reference"),
-                reader.GetBoolean("requires_pending_password")));
+                reader.GetBoolean("requires_pending_password"),
+                MariaDbIdentifierReader.ReadRequired(reader, "customer_id")));
         }
 
         return items;

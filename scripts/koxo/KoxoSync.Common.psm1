@@ -542,7 +542,7 @@ function Test-KoxoExportPayload {
     # elle ne peut donc pas le publier a chaque export. Publie, il alimente la
     # colonne 14 que KoXo applique a l'annuaire quand ForcePasswords vaut 1 ;
     # absent, KoXo conserve le mot de passe qu'il connait deja.
-    $optionalUserFields = @('motDePasse')
+    $optionalUserFields = @('motDePasse', 'qualitesSupplementaires')
 
     $rootNames = @(Get-KoxoPropertyNames -InputObject $Payload)
     foreach ($name in $rootNames) {
@@ -561,8 +561,8 @@ function Test-KoxoExportPayload {
     # volontairement symetrique — un export de version 1 n'aiguille personne, et
     # ce script ne saurait pas dans quel CSV ranger les identites. Mieux vaut
     # echouer fermé qu'ecrire un fichier au petit bonheur.
-    if ((Get-KoxoPropertyValue -InputObject $Payload -Name 'schemaVersion') -ne 2) {
-        $errors += [pscustomobject]@{ Scope = 'payload'; Field = 'schemaVersion'; Message = 'schemaVersion must be 2.' }
+    if ((Get-KoxoPropertyValue -InputObject $Payload -Name 'schemaVersion') -ne 3) {
+        $errors += [pscustomobject]@{ Scope = 'payload'; Field = 'schemaVersion'; Message = 'schemaVersion must be 3.' }
     }
 
     $generatedAt = Get-KoxoPropertyValue -InputObject $Payload -Name 'generatedAt'
@@ -580,6 +580,11 @@ function Test-KoxoExportPayload {
     for ($index = 0; $index -lt $users.Count; $index++) {
         $user = $users[$index]
         $names = @(Get-KoxoPropertyNames -InputObject $user)
+        $qualities = Get-KoxoPropertyValue -InputObject $user -Name 'qualitesSupplementaires'
+        if ('qualitesSupplementaires' -notin $names -or $qualities -isnot [string] -or
+            ($qualities -ne '' -and $qualities -notmatch '\A[\p{L}\p{N}_. -]{1,256}(,[\p{L}\p{N}_. -]{1,256})*\z')) {
+            $errors += [pscustomobject]@{ Scope = 'user'; Index = $index; Field = 'qualitesSupplementaires'; Message = 'An explicit empty string or a comma-separated list of group names is required.' }
+        }
         foreach ($name in $names) {
             if ($name -notin $expectedUserFields -and $name -notin $optionalUserFields) {
                 $errors += [pscustomobject]@{ Scope = 'user'; Index = $index; Field = $name; Message = 'Unexpected user field.' }
@@ -727,7 +732,8 @@ function ConvertTo-KoxoCsvContent {
         [object[]]$Users
     )
 
-    # 14 colonnes et non 13 : le profil KoXo lit le mot de passe dans
+    # 15 colonnes : qualites supplementaires en derniere position.
+    # Le profil KoXo lit toujours le mot de passe dans
     # « Field 14 » (<Password>Field 14</Password>). Un fichier a 13 colonnes
     # ferait lire un mot de passe vide, et un fichier a nombre de colonnes
     # VARIABLE decale les champs — c'est ce qui a fait appliquer l'identite et
@@ -735,7 +741,7 @@ function ConvertTo-KoxoCsvContent {
     # KoXo rapprochant les lignes par l'IdentifiantUnique de la colonne 5.
     # La largeur doit donc etre constante, ligne d'en-tete comprise.
     $lines = New-Object System.Collections.Generic.List[string]
-    $lines.Add('Civilite;Nom;Prenom;DateNaissance;IdentifiantUnique;GroupeSecondaire;Email;Telephone;TelephoneMobile;Fax;PageWeb;ChampLibre;Fonction;MotDePasse')
+    $lines.Add('Civilite;Nom;Prenom;DateNaissance;IdentifiantUnique;GroupeSecondaire;Email;Telephone;TelephoneMobile;Fax;PageWeb;ChampLibre;Fonction;MotDePasse;QualitésSupplémentaires')
     foreach ($user in $Users) {
         $fields = @(
             [string](Get-KoxoPropertyValue -InputObject $user -Name 'civilite'),
@@ -751,7 +757,8 @@ function ConvertTo-KoxoCsvContent {
             '',
             '',
             '',
-            [string](Get-KoxoPropertyValue -InputObject $user -Name 'motDePasse')
+            [string](Get-KoxoPropertyValue -InputObject $user -Name 'motDePasse'),
+            [string](Get-KoxoPropertyValue -InputObject $user -Name 'qualitesSupplementaires')
         )
 
         $escaped = foreach ($field in $fields) {
@@ -778,13 +785,13 @@ function Test-KoxoCsvFile {
     $parser.SetDelimiters(';')
     $parser.HasFieldsEnclosedInQuotes = $true
 
-    # Toute ligne doit avoir exactement 14 champs, en-tete comprise. Une largeur
+    # Toute ligne doit avoir exactement 15 champs, en-tete comprise. Une largeur
     # variable n'est pas un detail cosmetique : KoXo rapproche les lignes par
     # l'IdentifiantUnique de la colonne 5, donc un champ manquant decale cette
     # colonne et fait ecrire l'identite ET le mot de passe d'un client sur le
     # compte d'un autre. C'est arrive le 2026-08-06 sur un CSV assemble a la
     # main. Ce controle est la derniere barriere avant l'annuaire.
-    $expectedColumnCount = 14
+    $expectedColumnCount = 15
     $lineNumber = 0
     try {
         while (-not $parser.EndOfData) {
@@ -1080,15 +1087,28 @@ function Test-KoxoIdentifierOwnership {
             continue
         }
 
+        Add-Type -AssemblyName Microsoft.VisualBasic | Out-Null
         $encoding = Get-KoxoEncoding -Name $EncodingName
-        $lignes = [System.IO.File]::ReadAllLines($path, $encoding)
-        for ($i = 1; $i -lt $lignes.Length; $i++) {
-            $champs = $lignes[$i] -split ';', -1
-            if ($champs.Count -lt 5) { continue }
-            $autre = $champs[4].Trim()
-            if ($autre -and $publies.Contains($autre)) {
-                $conflicts.Add(("{0} (aussi dans {1})" -f $autre, (Split-Path -Leaf $path)))
+        $parser = New-Object Microsoft.VisualBasic.FileIO.TextFieldParser($path, $encoding)
+        $parser.SetDelimiters(';')
+        $parser.HasFieldsEnclosedInQuotes = $true
+        try {
+            $header = $parser.ReadFields()
+            if ($null -eq $header -or $header.Count -lt 5 -or $header[4] -ne 'IdentifiantUnique') {
+                throw 'Other KoXo CSV has no valid identity column.'
             }
+            while (-not $parser.EndOfData) {
+                $champs = $parser.ReadFields()
+                if ($champs.Count -ne $header.Count) {
+                    throw 'Other KoXo CSV has inconsistent columns.'
+                }
+                $autre = $champs[4].Trim()
+                if ($autre -and $publies.Contains($autre)) {
+                    $conflicts.Add(("{0} (aussi dans {1})" -f $autre, (Split-Path -Leaf $path)))
+                }
+            }
+        } finally {
+            $parser.Close()
         }
     }
 
@@ -1423,6 +1443,9 @@ function Get-KoxoInstanceDefinition {
         [Parameter(Mandatory = $true)]
         [string]$InstanceConfigPath,
 
+        # Un receveur de stockage ne lit pas le secret d'export CSV.
+        [switch]$StorageOnly,
+
         # Lecteur des variables Machine. Il ne sert qu'a COMPARER : une instance
         # isolee refuse de viser l'URL ou le jeton de l'instance de production.
         # Il n'alimente jamais un parametre.
@@ -1545,6 +1568,18 @@ function Get-KoxoInstanceDefinition {
             TokenPath = Read-AbsolutePath $receiver 'tokenPath'
             LogDirectory = Read-AbsolutePath $receiver 'logDirectory'
             StorageRouteEnabled = [bool](Read-InstanceValue $receiver 'storageRouteEnabled' $false)
+            Storage = $null
+        }
+
+        $storage = Read-InstanceValue $receiver 'storage'
+        if ($null -ne $storage) {
+            $receiverSettings.Storage = [pscustomobject]@{
+                DataRoot = Read-AbsolutePath $storage 'dataRoot'
+                FsrmServer = [string](Read-InstanceValue $storage 'fsrmServer' '')
+                FsrmUserPathTemplate = [string](Read-InstanceValue $storage 'fsrmUserPathTemplate' '')
+                FsrmGroupPathTemplate = [string](Read-InstanceValue $storage 'fsrmGroupPathTemplate' '')
+                FsrmEnabled = (Read-InstanceValue $storage 'fsrmEnabled' $false)
+            }
         }
 
         if ($receiverSettings.LogDirectory -and (Test-KoxoPathInside -Path $receiverSettings.LogDirectory -Directory (Join-Path $script:KoxoProductionDataDirectory 'Logs'))) {
@@ -1553,7 +1588,7 @@ function Get-KoxoInstanceDefinition {
     }
 
     $apiToken = $null
-    if ($apiTokenPath) {
+    if ($apiTokenPath -and -not $StorageOnly) {
         if (-not (Test-Path -LiteralPath $apiTokenPath -PathType Leaf)) {
             $errors.Add('apiTokenPath does not exist.')
         }
@@ -1565,6 +1600,19 @@ function Get-KoxoInstanceDefinition {
         }
     }
 
+    if ($StorageOnly) {
+        if ($null -eq $receiverSettings -or -not $receiverSettings.StorageRouteEnabled -or
+            $null -eq $receiverSettings.Storage) {
+            $errors.Add('StorageOnly requires an enabled receiver.storage configuration.')
+        }
+        elseif ($receiverSettings.Storage.FsrmEnabled -isnot [bool] -or
+            -not $receiverSettings.Storage.FsrmEnabled -or
+            [string]::IsNullOrWhiteSpace($receiverSettings.Storage.FsrmServer) -or
+            [string]::IsNullOrWhiteSpace($receiverSettings.Storage.FsrmUserPathTemplate)) {
+            $errors.Add('StorageOnly requires explicit effective FSRM verification.')
+        }
+    }
+
     # Comparaison seulement : l'URL et le jeton de production ne doivent
     # jamais etre ceux d'une instance isolee, sans quoi elle lirait la PROD.
     $productionUrl = & $MachineSettingReader 'KOXO_API_URL'
@@ -1572,7 +1620,7 @@ function Get-KoxoInstanceDefinition {
         $errors.Add('apiUrl is the production KOXO_API_URL.')
     }
 
-    $productionToken = & $MachineSettingReader 'KOXO_API_TOKEN'
+    $productionToken = if ($apiToken) { & $MachineSettingReader 'KOXO_API_TOKEN' } else { $null }
     if ($apiToken -and $productionToken -and [string]::Equals($apiToken, ([string]$productionToken).Trim(), [System.StringComparison]::Ordinal)) {
         $errors.Add('apiTokenPath holds the production KOXO_API_TOKEN.')
     }

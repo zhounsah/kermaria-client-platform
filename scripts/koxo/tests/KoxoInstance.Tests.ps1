@@ -1,4 +1,4 @@
-$koxoRoot = Split-Path -Parent $PSScriptRoot
+﻿$koxoRoot = Split-Path -Parent $PSScriptRoot
 $modulePath = Join-Path $koxoRoot 'KoxoSync.Common.psm1'
 Import-Module $modulePath -Force -DisableNameChecking
 
@@ -120,7 +120,7 @@ function Invoke-KoxoLauncherPlan {
 Describe 'Test-KoxoExportPayload : namespace des identifiants' {
     function New-Payload([string]$Identifier) {
         [pscustomobject]@{
-            schemaVersion = 2
+            schemaVersion = 3
             generatedAt = '2026-09-26T08:00:00.0000000Z'
             userCount = 1
             users = @(
@@ -132,6 +132,7 @@ Describe 'Test-KoxoExportPayload : namespace des identifiants' {
                     identifiantUnique = $Identifier
                     groupeSecondaire = 'DEV-CLI-ABCDEF'
                     email = 'zoe.hounsa@example.invalid'
+                    qualitesSupplementaires = ''
                     groupePrimaire = 'CLIENTS DEV'
                 }
             )
@@ -352,6 +353,69 @@ Describe 'Recepteur : instance isolee' {
         $json.receiver.storageRouteEnabled | Should Be $false
         @($json.PSObject.Properties.Name) -contains 'apiToken' | Should Be $false
         $json.apiTokenPath | Should Match '\.txt$'
+    }
+}
+
+Describe 'Instance storage-only isolation' {
+    function New-StorageOnlyFixture {
+        $fixture = New-KoxoInstanceFixture
+        $fixture.Definition.apiTokenPath = Join-Path $fixture.Root 'unavailable-export-token.txt'
+        $fixture.Definition.receiver.storageRouteEnabled = $true
+        $fixture.Definition.receiver.storage = @{
+            dataRoot = (Join-Path $fixture.Root 'Data')
+            fsrmEnabled = $true
+            fsrmServer = 'fsrm.test.invalid'
+            fsrmUserPathTemplate = 'F:\KoXoDATA\{primaryGroup}\{secondaryGroup}\{userId}'
+        }
+        [IO.File]::WriteAllText($fixture.Path, ($fixture.Definition | ConvertTo-Json -Depth 8), (New-Object Text.UTF8Encoding($false)))
+        $fixture
+    }
+    It 'starts storage configuration without reading the CSV export secret' {
+        $fixture = New-StorageOnlyFixture
+        $definition = Get-KoxoInstanceDefinition -InstanceConfigPath $fixture.Path -StorageOnly -MachineSettingReader {
+            param($Name)
+            if ($Name -eq 'KOXO_API_TOKEN') { throw 'Storage must not read the production export secret' }
+            $null
+        }
+        $definition.ApiToken | Should BeNullOrEmpty
+        $definition.Receiver.Storage.FsrmEnabled | Should Be $true
+        $definition.Receiver.Storage.FsrmServer | Should Be 'fsrm.test.invalid'
+        $definition.Profiles[0].PrimaryGroup | Should Be 'CLIENTS DEV'
+    }
+    It 'still requires the export secret for the normal sync mode' {
+        $fixture = New-StorageOnlyFixture
+        { Get-KoxoInstanceDefinition -InstanceConfigPath $fixture.Path -MachineSettingReader {param($Name) $null} } | Should Throw 'apiTokenPath does not exist'
+    }
+    It 'refuses a disabled storage route' {
+        $fixture = New-StorageOnlyFixture
+        $fixture.Definition.receiver.storageRouteEnabled = $false
+        [IO.File]::WriteAllText($fixture.Path, ($fixture.Definition | ConvertTo-Json -Depth 8), (New-Object Text.UTF8Encoding($false)))
+        { Get-KoxoInstanceDefinition -InstanceConfigPath $fixture.Path -StorageOnly -MachineSettingReader {param($Name) $null} } | Should Throw 'enabled receiver.storage'
+    }
+    It 'refuses XML-only verification and string boolean ambiguity' {
+        foreach ($flag in @($false, 'false')) {
+            $fixture = New-StorageOnlyFixture
+            $fixture.Definition.receiver.storage.fsrmEnabled = $flag
+            [IO.File]::WriteAllText($fixture.Path, ($fixture.Definition | ConvertTo-Json -Depth 8), (New-Object Text.UTF8Encoding($false)))
+            { Get-KoxoInstanceDefinition -InstanceConfigPath $fixture.Path -StorageOnly -MachineSettingReader {param($Name) $null} } | Should Throw 'effective FSRM'
+        }
+    }
+    It 'refuses missing server and path instead of inheriting machine settings' {
+        foreach ($key in @('fsrmServer', 'fsrmUserPathTemplate')) {
+            $fixture = New-StorageOnlyFixture
+            $fixture.Definition.receiver.storage[$key] = ''
+            [IO.File]::WriteAllText($fixture.Path, ($fixture.Definition | ConvertTo-Json -Depth 8), (New-Object Text.UTF8Encoding($false)))
+            { Get-KoxoInstanceDefinition -InstanceConfigPath $fixture.Path -StorageOnly -MachineSettingReader {param($Name) 'must-not-be-used'} } | Should Throw 'effective FSRM'
+        }
+    }
+    It 'refuses storage-only startup without an isolated definition' {
+        $receiver = Join-Path $koxoRoot 'Start-KoxoSyncWebhookReceiver.ps1'
+        try {
+            { & $receiver -StorageOnly } | Should Throw 'isolated instance definition'
+        }
+        finally {
+            Import-Module $modulePath -Force -DisableNameChecking
+        }
     }
 }
 

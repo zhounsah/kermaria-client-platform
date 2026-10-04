@@ -98,7 +98,12 @@ check("service KoXo impose un schema ferme et une validation bloquante", () => {
   // fichier unique melangerait payants et demonstrations sous un seul modele.
   assert.match(koxoContracts, /string GroupePrimaire/);
   assert.match(koxoContracts, /string Email/);
-  assert.match(koxoService, /SchemaVersion = 2/);
+  // DEV transporte les qualites v3 ; le recepteur PROD reste en v2.
+  // Les tests API executent les deux exports et verifient le JSON produit.
+  assert.match(koxoService, /SupportsAdditionalQualities => !KoxoNamespace\.Current\.IsProduction/);
+  assert.match(koxoService, /SchemaVersion => SupportsAdditionalQualities \? 3 : 2/);
+  assert.match(koxoContracts, /string\? QualitesSupplementaires = null/);
+  assert.match(koxoService, /KOXO_QUALITIES_SOURCE_UNAVAILABLE/);
   assert.match(koxoTopology, /KoxoNamespace\.Current\.IsValidUniqueIdentifier/);
   assert.match(koxoNamespace, /public bool IsValidUniqueIdentifier/);
   assert.match(koxoNamespace, /IdentifierPrefix\.Length \+ IdentifierDigits/);

@@ -463,6 +463,11 @@ builder.Services.AddSingleton<IKoxoPendingPasswordStore>(serviceProvider =>
             serviceProvider.GetRequiredService<
                 ILogger<KoxoPendingPasswordStore>>()));
 builder.Services.AddScoped<IKoxoExportService, KoxoExportService>();
+if (!koxoNamespace.IsProduction)
+{
+    builder.Services.AddScoped<IKoxoAdditionalQualitiesProvider>(provider =>
+        (IKoxoAdditionalQualitiesProvider)provider.GetRequiredService<IBillingV2ProvisioningService>());
+}
 builder.Services.AddScoped<IRequestWorkflowService, RequestWorkflowService>();
 builder.Services.AddScoped<
     IPortalNotificationService,
@@ -680,6 +685,19 @@ else
 builder.Services.AddScoped<
     IBillingV2ProvisioningService,
     BillingV2ProvisioningService>();
+var koxoQualityConfiguration = KoxoQualityRuntimeConfiguration.Resolve(
+    builder.Configuration, sqlConfiguration, koxoSyncWebhookConfiguration,
+    billingV2RuntimeConfiguration.ProvisioningEnabled,
+    adConfiguration.Mode == AdIntegrationMode.ControlledWrite && adConfiguration.ConfigurationValid);
+builder.Services.AddSingleton(koxoQualityConfiguration);
+if (koxoQualityConfiguration.Enabled)
+{
+    builder.Services.AddScoped<IKoxoQualityIntentRepository, MariaDbKoxoQualityIntentRepository>();
+    builder.Services.AddScoped<IKoxoQualityIntentExecutor, HttpKoxoQualityIntentExecutor>();
+    builder.Services.AddScoped<KoxoQualityDispatcher>();
+    builder.Services.AddHostedService<KoxoQualitySchemaGate>();
+    builder.Services.AddHostedService<KoxoQualityWorker>();
+}
 builder.Services.AddScoped<
     IClientServiceCatalogService,
     ClientServiceCatalogService>();

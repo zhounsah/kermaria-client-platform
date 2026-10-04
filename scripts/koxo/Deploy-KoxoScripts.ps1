@@ -61,6 +61,7 @@ $ErrorActionPreference = 'Stop'
 # Liste explicite : ajouter un script au depot ne le deploie pas tout seul.
 $DeployableFiles = @(
     'KoxoSync.Common.psm1',
+    'KoxoQualities.Common.psm1',
     # Le recepteur importe ce module au demarrage : l'oublier au deploiement
     # empeche le service de demarrer, pas seulement la route de stockage.
     'KoxoStorage.Common.psm1',
@@ -175,6 +176,21 @@ function Write-KoxoDeployLine {
     Write-Host $Message
 }
 
+function Assert-KoxoDeploymentContract {
+    param([string]$Destination, [string]$ReceiverTask, [string[]]$Names)
+    # Le module de cette branche lit le contrat DEV v3. Le recepteur PROD
+    # conserve le contrat v2 : bloquer la copie avant toute connexion distante.
+    $payloadContractByFile = @{ 'KoxoSync.Common.psm1' = 3 }
+    $normalized = [IO.Path]::GetFullPath($Destination).TrimEnd('\', '/')
+    $productionPath = 'C:\Program Files\KoXo Dev\KoXoAdm\Data\CSVSynchro'
+    $production = $ReceiverTask -eq 'Kermaria-KoXoWebhookReceiver-8042' -or
+        $normalized -eq $productionPath
+    if ($production -and $Names -contains 'KoxoSync.Common.psm1' -and
+        $payloadContractByFile['KoxoSync.Common.psm1'] -ne 2) {
+        throw 'KOXO_PROD_CONTRACT_MISMATCH: le recepteur PROD 8042 exige v2. Le module v3 doit rester dans la livraison DEV isolee.'
+    }
+}
+
 $selectedFiles = $DeployableFiles
 if ($PSBoundParameters.ContainsKey('Include')) {
     $selectedFiles = $Include
@@ -186,6 +202,8 @@ $DeployableFiles = $selectedFiles
 if ($ListOnly) {
     return $manifest
 }
+
+Assert-KoxoDeploymentContract -Destination $DestinationPath -ReceiverTask $ReceiverTaskName -Names $selectedFiles
 
 Write-KoxoDeployLine ("Cible      : {0}" -f $ComputerName)
 Write-KoxoDeployLine ("Destination: {0}" -f $DestinationPath)

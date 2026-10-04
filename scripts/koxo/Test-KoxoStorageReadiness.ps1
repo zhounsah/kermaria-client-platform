@@ -10,7 +10,7 @@
     pas prouver :
 
         portal_users.id
-          -> portal_users.koxo_unique_identifier (CLI-NNNNNN)
+          -> portal_users.koxo_unique_identifier (CLI-DNNNNNN en DEV)
           -> attribut AD employeeNumber
           -> objet d'annuaire unique (objectGUID / objectSID / sAMAccountName)
           -> customer_ad_links (exactement un lien)
@@ -36,20 +36,29 @@
     emise depuis une session WinRM echoue par double saut : l'identite n'est pas
     deleguee au controleur de domaine.
 
-    Le compte MariaDB utilise doit etre en LECTURE SEULE. Le compte applicatif
-    kermaria_api suffit largement ; ne pas fournir kermaria_migrator.
+    Le compte MariaDB utilise doit etre en LECTURE SEULE sur la cible approuvee.
+    Ne pas fournir kermaria_migrator. Environment ne remplace pas la validation
+    explicite de la cible avant execution.
+
+.PARAMETER Environment
+    Obligatoire : Development attend une base *_dev, un identifiant CLI-D et
+    le groupe CLIENTS DEV. Production refuse ces namespaces DEV.
 
 .EXAMPLE
-    .\Test-KoxoStorageReadiness.ps1 -PortalUserId '0f1e...' -SqlUsername kermaria_api
+    .\Test-KoxoStorageReadiness.ps1 -Environment Development -PortalUserId '0f1e...' -SqlDatabase kermaria_dev
 
 .EXAMPLE
-    .\Test-KoxoStorageReadiness.ps1 -PortalUserId '0f1e...' `
+    .\Test-KoxoStorageReadiness.ps1 -Environment Production -PortalUserId '0f1e...' `
         -AdServer 'clients.home.bzh' -AdSearchBase 'OU=KoXoAdm,DC=clients,DC=home,DC=bzh'
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
     [string]$PortalUserId,
+
+    [Parameter(Mandatory = $true)]
+    [ValidateSet('Development', 'Production')]
+    [string]$Environment,
 
     [string]$SqlHost = $env:SQL_HOST,
     [int]$SqlPort = $(if ($env:SQL_PORT) { [int]$env:SQL_PORT } else { 3306 }),
@@ -78,6 +87,48 @@ $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'KoxoStorage.Common.psm1') -Force -DisableNameChecking
 
 $script:Findings = New-Object System.Collections.Generic.List[object]
+
+function Resolve-ReadinessNamespace {
+    param(
+        [ValidateSet('Development', 'Production')][string]$Environment,
+        [string]$EmployeeNumber,
+        [bool]$IsDemo,
+        [string]$CustomerReference,
+        [string]$KoxoGroupReference
+    )
+    if ($Environment -eq 'Development') {
+        if ($EmployeeNumber -cnotmatch '^CLI-D\d{6}$' -or $IsDemo) {
+            throw 'DEV requires CLI-DNNNNNN and a standard CLIENTS DEV identity.'
+        }
+        $secondary = if ($KoxoGroupReference) { $KoxoGroupReference } else { $CustomerReference }
+        if ($secondary -cnotmatch '^DEV-CLI-[A-Z0-9]+$') {
+            throw 'DEV requires an explicit DEV-CLI-* secondary group.'
+        }
+        return [pscustomobject]@{ PrimaryGroup = 'CLIENTS DEV'; SecondaryGroup = $secondary }
+    }
+    if ($Environment -ne 'Production' -or $EmployeeNumber -cnotmatch '^CLI-\d{6}$' -or
+        $CustomerReference -like 'DEV-*' -or $KoxoGroupReference -like 'DEV-*') {
+        throw 'Production requires CLI-NNNNNN and rejects DEV references.'
+    }
+    $primary = if ($IsDemo) { 'CLIENTS D' + [char]0x00C9 + 'MO' } else { 'CLIENTS' }
+    $secondary = if ($IsDemo) {
+        'DEMO-' + $(if ($KoxoGroupReference) { $KoxoGroupReference } else { 'CLI-DEMO' })
+    } else {
+        if ($KoxoGroupReference) { $KoxoGroupReference } else { $CustomerReference }
+    }
+    [pscustomobject]@{ PrimaryGroup = $primary; SecondaryGroup = $secondary }
+}
+
+# Aucun acces SQL avant le controle de coherence de la cible declaree.
+if ([string]::IsNullOrWhiteSpace($SqlDatabase) -or
+    (($Environment -eq 'Development') -ne $SqlDatabase.EndsWith('_dev', [StringComparison]::OrdinalIgnoreCase))) {
+    throw 'SQL_DATABASE must agree with the explicit Environment (*_dev only in Development).'
+}
+if ($Environment -eq 'Development') {
+    $devBase = 'OU=CLIENTS DEV,OU=Utilisateurs,OU=KoXoAdm,DC=clients,DC=home,DC=bzh'
+    if (-not $PSBoundParameters.ContainsKey('AdSearchBase')) { $AdSearchBase = $devBase }
+    if ($AdSearchBase -ne $devBase) { throw 'DEV LDAP search must remain under CLIENTS DEV.' }
+}
 
 function Add-Finding {
     param([string]$Step, [string]$Status, [string]$Detail)
@@ -168,8 +219,12 @@ $koxoGroupReference = if ($userFields[5] -eq 'NULL') { $null } else { $userField
 
 Add-Finding -Step '1. portal_users' -Status 'OK' -Detail ("client {0}, reference {1}, demo={2}" -f $customerId, $customerReference, $isDemo)
 
-if (-not ($employeeNumber -match '^CLI-\d{6}$')) {
-    Add-Finding -Step '2. koxo_unique_identifier' -Status 'BLOQUANT' -Detail ("Forme inattendue : '{0}'. Attendu CLI-NNNNNN." -f $employeeNumber)
+try {
+    $namespace = Resolve-ReadinessNamespace -Environment $Environment -EmployeeNumber $employeeNumber `
+        -IsDemo $isDemo -CustomerReference $customerReference -KoxoGroupReference $koxoGroupReference
+}
+catch {
+    Add-Finding -Step '2. koxo_unique_identifier' -Status 'BLOQUANT' -Detail $_.Exception.Message
     $script:Findings | Format-Table -AutoSize
     exit 1
 }
@@ -296,12 +351,8 @@ elseif (-not $ldapFailed) {
 # ---------------------------------------------------------------------------
 # 4. Emplacement de la fiche KoXo et quota actuel.
 # ---------------------------------------------------------------------------
-$primaryGroup = if ($isDemo) { 'CLIENTS D' + [char]0x00C9 + 'MO' } else { 'CLIENTS' }
-$secondaryGroup = if ($isDemo) {
-    'DEMO-' + $(if ($koxoGroupReference) { $koxoGroupReference } else { 'CLI-DEMO' })
-} else {
-    if ($koxoGroupReference) { $koxoGroupReference } else { $customerReference }
-}
+$primaryGroup = $namespace.PrimaryGroup
+$secondaryGroup = $namespace.SecondaryGroup
 
 Add-Finding -Step '5. topologie' -Status 'OK' -Detail ("primaire '{0}', secondaire '{1}'" -f $primaryGroup, $secondaryGroup)
 

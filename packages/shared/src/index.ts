@@ -3878,6 +3878,19 @@ export interface SignupAdminActionResponse {
   correlation_id?: string;
 }
 
+/** Apercu non sensible de l'export KoXo v3 ; aucun mot de passe dans ce contrat public. */
+export interface KoxoExportUser {
+  civilite: string;
+  nom: string;
+  prenom: string;
+  dateNaissance: string;
+  identifiantUnique: string;
+  groupeSecondaire: string;
+  email: string;
+  groupePrimaire: string;
+  qualitesSupplementaires?: string;
+}
+
 export interface BillingV2ProvisioningReadinessReviewResult {
   ready: boolean;
   addOnlyMode: boolean;

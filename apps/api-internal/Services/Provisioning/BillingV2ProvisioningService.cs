@@ -516,6 +516,9 @@ public sealed partial class BillingV2ProvisioningService : IBillingV2Provisionin
     private readonly SubscriptionProvisioningRuntimeConfiguration
         _provisioningConfiguration;
     private readonly ILogger<BillingV2ProvisioningService> _logger;
+    private readonly IKoxoQualityIntentRepository? _qualityIntents;
+    private readonly AdRuntimeConfiguration? _qualityAdScope;
+    private readonly KoxoQualityRuntimeConfiguration? _qualityConfiguration;
 
     public BillingV2ProvisioningService(
         SqlRuntimeConfiguration sql,
@@ -525,7 +528,10 @@ public sealed partial class BillingV2ProvisioningService : IBillingV2Provisionin
         IBillingV2KoxoStorageProvider koxoStorageProvider,
         IBillingV2KoxoStorageTargetResolutionService koxoStorageTargets,
         SubscriptionProvisioningRuntimeConfiguration provisioningConfiguration,
-        ILogger<BillingV2ProvisioningService> logger)
+        ILogger<BillingV2ProvisioningService> logger,
+        IKoxoQualityIntentRepository? qualityIntents = null,
+        AdRuntimeConfiguration? qualityAdScope = null,
+        KoxoQualityRuntimeConfiguration? qualityConfiguration = null)
     {
         _sql = sql;
         _billingV2 = billingV2;
@@ -535,6 +541,9 @@ public sealed partial class BillingV2ProvisioningService : IBillingV2Provisionin
         _koxoStorageTargets = koxoStorageTargets;
         _provisioningConfiguration = provisioningConfiguration;
         _logger = logger;
+        _qualityIntents = qualityIntents;
+        _qualityAdScope = qualityAdScope;
+        _qualityConfiguration = qualityConfiguration;
     }
 
     /// <summary>
@@ -664,6 +673,10 @@ public sealed partial class BillingV2ProvisioningService : IBillingV2Provisionin
             return null;
         }
 
+        // Revision lue AVANT le plan : un calcul plus ancien ne doit pas
+        // ecraser les droits publies par une reconciliation concurrente.
+        var qualityIntent = _qualityIntents is null ? null
+            : await _qualityIntents.ReadAsync(customerId, cancellationToken);
         var activeV2SubscriptionIds =
             await LoadMaterializedActiveSubscriptionIdsAsync(
                 customerId,
@@ -671,6 +684,16 @@ public sealed partial class BillingV2ProvisioningService : IBillingV2Provisionin
         var ownedMemberships = await LoadOwnedMembershipsAsync(
             customerId,
             cancellationToken);
+        if (qualityIntent is not null)
+        {
+            // Perimetre de retrait aussi pour une premiere demande KoXo : elle
+            // peut etre appliquee avant son accuse. Ce perimetre n'est jamais
+            // persiste comme appartenance AD deja observee.
+            ownedMemberships = ownedMemberships.Concat(
+                KoxoQualityIntentPolicy.Deserialize(qualityIntent.DesiredJson)
+                    .SelectMany(entry => entry.Value.Select(group => new OwnedMembership(entry.Key, group))))
+                .Distinct().ToArray();
+        }
         if (!BillingV2ProvisioningLifecyclePolicy.CanReconcile(
                 requireActiveTrigger,
                 activeV2SubscriptionIds.Contains(subscriptionId),
@@ -724,6 +747,9 @@ public sealed partial class BillingV2ProvisioningService : IBillingV2Provisionin
             _provisioningConfiguration.GroupDistinguishedNamesBySamAccountName
                 .TryGetValue(group, out var distinguishedName)
             && !string.IsNullOrWhiteSpace(distinguishedName));
+        if (_qualityIntents is not null)
+            targetGroupsResolved &= KoxoQualityGroupScope.Allows(_qualityAdScope,
+                _provisioningConfiguration, groupsRequiringConfiguration);
         var decision = BillingV2ProvisioningReadinessGate.Evaluate(
             new BillingV2ProvisioningReadinessState(
                 GlobalFlagEnabled: _billingV2.ProvisioningEnabled,
@@ -814,6 +840,26 @@ public sealed partial class BillingV2ProvisioningService : IBillingV2Provisionin
                 entry => entry.Key,
                 entry => (string?)entry.Value,
                 StringComparer.OrdinalIgnoreCase);
+
+        if (_qualityIntents is not null)
+        {
+            var desired = resolution.Targets.GroupBy(target => target.DesiredState.IdentityReference, StringComparer.Ordinal)
+                .ToDictionary(group => group.Key, group => (IReadOnlyList<string>)group
+                    .SelectMany(target => target.DesiredState.DesiredAdGroups)
+                    .Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToArray(), StringComparer.Ordinal);
+            desired = desired.ToDictionary(entry => entry.Key,
+                entry => KoxoQualityIntentPolicy.TransportGroups(entry.Value, _qualityConfiguration?.EmptyGroup), StringComparer.Ordinal);
+            if (!KoxoQualityGroupScope.Allows(_qualityAdScope, _provisioningConfiguration, desired.Values.SelectMany(groups => groups)))
+                throw new InvalidOperationException("KOXO_QUALITY_GROUP_OUTSIDE_ALLOWED_ROOTS");
+            var publication = await _qualityIntents.PublishAsync(
+                customerId, qualityIntent?.Revision ?? 0, desired, cancellationToken);
+            // Aucun appel a ExecutePerUserAsync : KoXo devient l'applicateur.
+            // Ne pas confondre publication durable et preuve d'application.
+            var result = KoxoQualityIntentPolicy.ToExecutionResult(publication);
+            if (result.Succeeded)
+                await PersistAdStatusesAsync(customerId, result, cancellationToken);
+            return result;
+        }
 
         var execution = await ExecutePerUserAsync(
             BillingV2ProvisioningExecutionPlanner.BuildPerUserRequests(

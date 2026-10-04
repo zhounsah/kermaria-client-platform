@@ -21,7 +21,9 @@ param(
     # ligne de commande), les journaux, et il est transmis au lanceur de
     # synchronisation. La route de stockage y est fermee sauf mention
     # contraire. Absent, le recepteur reste celui de la production, inchange.
-    [string]$InstanceConfigPath = ''
+    [string]$InstanceConfigPath = '',
+    # Receveur distinct : meme port, uniquement le prefixe de stockage.
+    [switch]$StorageOnly
 )
 
 Set-StrictMode -Version Latest
@@ -31,9 +33,13 @@ Import-Module (Join-Path $PSScriptRoot 'KoxoStorage.Common.psm1') -Force -Disabl
 
 $storageRouteEnabled = $true
 $instanceArguments = ''
+$instance = $null
+if ($StorageOnly -and [string]::IsNullOrWhiteSpace($InstanceConfigPath)) {
+    throw 'StorageOnly requires an isolated instance definition.'
+}
 if (-not [string]::IsNullOrWhiteSpace($InstanceConfigPath)) {
     Import-Module (Join-Path $PSScriptRoot 'KoxoSync.Common.psm1') -Force -DisableNameChecking
-    $instance = Get-KoxoInstanceDefinition -InstanceConfigPath $InstanceConfigPath
+    $instance = Get-KoxoInstanceDefinition -InstanceConfigPath $InstanceConfigPath -StorageOnly:$StorageOnly
     if ($null -eq $instance.Receiver) {
         throw ("KoXo instance {0} declares no receiver section." -f $instance.InstanceName)
     }
@@ -87,9 +93,31 @@ $storagePrefix = ($Prefix -replace '(?<=://[^/]+)/.*$', '') + $normalizedStorage
 # ne supporte pas deux instances concurrentes.
 $storageConfiguration = $null
 if ($storageRouteEnabled) {
+    $storageOverrides = @{}
+    if ($null -ne $instance) {
+        $WorkingDirectory = $instance.WorkingDirectory
+        $storageOverrides = @{
+            KOXO_EXECUTABLE_PATH = $instance.KoxoExecutablePath
+            KOXO_WORKING_DIRECTORY = $instance.KoxoWorkingDirectory
+            KOXO_KOXO_LOG_GLOB = $instance.KoxoLogGlob
+            KOXO_SYNC_TIMEOUT_SECONDS = [string]$instance.SyncTimeoutSeconds
+            KOXO_LOG_DIRECTORY = $instance.LogDirectory
+        }
+        if ($null -ne $instance.Receiver.Storage) {
+            $settings = $instance.Receiver.Storage
+            $storageOverrides.KOXO_STORAGE_DATA_ROOT = $settings.DataRoot
+            $storageOverrides.KOXO_STORAGE_FSRM_ENABLED = ([string]$settings.FsrmEnabled).ToLowerInvariant()
+            $storageOverrides.KOXO_STORAGE_FSRM_SERVER = $settings.FsrmServer
+            $storageOverrides.KOXO_STORAGE_FSRM_USER_PATH_TEMPLATE = $settings.FsrmUserPathTemplate
+            $storageOverrides.KOXO_STORAGE_FSRM_GROUP_PATH_TEMPLATE = $settings.FsrmGroupPathTemplate
+        }
+    }
     $storageConfiguration = Get-KoxoStorageConfiguration `
         -DataRoot $KoxoDataRoot `
-        -WorkingDirectory $WorkingDirectory
+        -WorkingDirectory $WorkingDirectory -Overrides $storageOverrides
+    if ($null -ne $instance) {
+        $storageConfiguration | Add-Member -NotePropertyName AdmLockTimeoutSeconds -NotePropertyValue $instance.AdmLockTimeoutSeconds -Force
+    }
 }
 
 $resolvedSyncScriptPath = [System.IO.Path]::GetFullPath($SyncScriptPath)
@@ -99,7 +127,16 @@ $resolvedWorkingDirectory = [System.IO.Path]::GetFullPath($WorkingDirectory)
 $resolvedKoxoExecutablePath = [System.IO.Path]::GetFullPath($KoxoExecutablePath)
 $resolvedKoxoWorkingDirectory = [System.IO.Path]::GetFullPath($KoxoWorkingDirectory)
 $listener = [System.Net.HttpListener]::new()
-$listener.Prefixes.Add($Prefix)
+$qualityProofPath = '/internal/koxo/qualities/proof'
+$qualityProofEnabled = -not $StorageOnly -and $null -ne $instance -and
+    @($instance.Profiles | Where-Object {$_.PrimaryGroup -eq 'CLIENTS DEV'}).Count -eq 1
+if ($qualityProofEnabled) {
+    Import-Module (Join-Path $PSScriptRoot 'KoxoQualities.Common.psm1') -Force -DisableNameChecking
+    $listener.Prefixes.Add(($Prefix -replace '(?<=://[^/]+)/.*$', '') + $qualityProofPath + '/')
+}
+if (-not $StorageOnly) {
+    $listener.Prefixes.Add($Prefix)
+}
 if ($storageRouteEnabled) {
     $listener.Prefixes.Add($storagePrefix)
 }
@@ -182,7 +219,7 @@ function Write-JsonResponse {
         [hashtable]$Body
     )
 
-    $buffer = [System.Text.Encoding]::UTF8.GetBytes(($Body | ConvertTo-Json -Compress))
+    $buffer = [System.Text.Encoding]::UTF8.GetBytes(($Body | ConvertTo-Json -Compress -Depth 6))
     $Response.StatusCode = $StatusCode
     $Response.ContentType = 'application/json; charset=utf-8'
     $Response.ContentLength64 = $buffer.Length
@@ -191,10 +228,11 @@ function Write-JsonResponse {
 }
 
 Write-WebhookLog -Level 'info' -Message 'KoXo webhook receiver started.' -Data @{
-    prefix = $Prefix
+    prefix = $(if ($StorageOnly) { $storagePrefix } else { $Prefix })
     sync_script_path = $resolvedSyncScriptPath
     instance_config_path = $InstanceConfigPath
     storage_route_enabled = $storageRouteEnabled
+    storage_only = [bool]$StorageOnly
 }
 
 try {
@@ -220,12 +258,14 @@ try {
                 $requestPath,
                 $normalizedStoragePath,
                 [System.StringComparison]::OrdinalIgnoreCase)
-            $isSyncRequest = [string]::Equals(
+            $isSyncRequest = -not $StorageOnly -and [string]::Equals(
                 $requestPath,
                 $syncPath,
                 [System.StringComparison]::OrdinalIgnoreCase)
 
-            if (-not $isStorageRequest -and -not $isSyncRequest) {
+            $isQualityProofRequest = $qualityProofEnabled -and [string]::Equals(
+                $requestPath, $qualityProofPath, [System.StringComparison]::OrdinalIgnoreCase)
+            if (-not $isStorageRequest -and -not $isSyncRequest -and -not $isQualityProofRequest) {
                 Write-JsonResponse -Response $response -StatusCode 404 -Body @{
                     code = 'NOT_FOUND'
                     message = 'Unknown operation.'
@@ -247,15 +287,58 @@ try {
             }
 
             $reader = [System.IO.StreamReader]::new($request.InputStream, $request.ContentEncoding)
-            $body = $reader.ReadToEnd()
-            $reader.Dispose()
-
+            try {
+                if ($isQualityProofRequest) {
+                    $characters = New-Object char[] 131073
+                    $count = $reader.ReadBlock($characters, 0, $characters.Length)
+                    if ($count -gt 131072) {
+                        Write-JsonResponse -Response $response -StatusCode 413 -Body @{code='PROOF_TOO_LARGE'}
+                        continue
+                    }
+                    $body = [string]::new($characters, 0, $count)
+                } else { $body = $reader.ReadToEnd() }
+            } finally { $reader.Dispose() }
+            if ($isQualityProofRequest) {
+                # Route distincte : un ancien recepteur repond 404, jamais une
+                # synchronisation accidentelle pour une demande de preuve.
+                $proofLock = $null
+                try {
+                    $proofRequest = $body | ConvertFrom-Json
+                    if ($proofRequest.customerId -notmatch '^[0-9a-fA-F-]{36}$' -or
+                        [long]$proofRequest.revision -le 0 -or $proofRequest.desiredSha256 -notmatch '^[A-F0-9]{64}$' -or
+                        @($proofRequest.targets).Count -lt 1 -or @($proofRequest.targets).Count -gt 128) { throw 'Invalid proof contract' }
+                    $proofLock = Enter-KoxoAdmLock -TimeoutSeconds 2 -Holder 'qualities-proof'
+                    if (Get-Process KoXoAdm -ErrorAction SilentlyContinue) { throw 'KoXo is active' }
+                    $profile = @($instance.Profiles | Where-Object {$_.PrimaryGroup -eq 'CLIENTS DEV'})[0]
+                    Test-KoxoCsvFile -Path $profile.CsvTargetPath -EncodingName utf8bom | Out-Null
+                    $proofs = @($proofRequest.targets | ForEach-Object {
+                        $proof = Get-KoxoDevQualityProof -DataRoot (Join-Path $instance.KoxoWorkingDirectory 'Data') `
+                            -CsvPath $profile.CsvTargetPath -SecondaryGroup $_.secondaryGroup `
+                            -UniqueId $_.uniqueId -ExpectedGroups @($_.groups)
+                        @{portalUserId=$_.portalUserId;uniqueId=$proof.UniqueId;userId=$proof.UserId;
+                            csvVerified=$proof.CsvVerified;koxoVerified=$proof.KoxoVerified}
+                    })
+                    Write-JsonResponse -Response $response -StatusCode 200 -Body @{
+                        protocolVersion=1;customerId=$proofRequest.customerId;revision=$proofRequest.revision;
+                        desiredSha256=$proofRequest.desiredSha256;targets=$proofs
+                    }
+                } catch {
+                    Write-JsonResponse -Response $response -StatusCode 409 -Body @{code='KOXO_QUALITY_PROOF_UNAVAILABLE'}
+                } finally {
+                    if ($null -ne $proofLock) { Exit-KoxoAdmLock -LockHandle $proofLock }
+                }
+                continue
+            }
             if ($isStorageRequest) {
                 # Traitement SYNCHRONE : l'appelant a besoin du constat, pas
                 # d'un accuse de prise en compte. Le verrou partage serialise
                 # de toute facon les invocations de KoXoAdm.exe.
                 try {
                     $storageRequest = Read-KoxoStorageRequest -Body $body
+                    if ($null -ne $instance -and
+                        $storageRequest.PrimaryGroup -notin @($instance.Profiles | ForEach-Object { $_.PrimaryGroup })) {
+                        throw 'The storage target is outside the configured instance profiles.'
+                    }
                 }
                 catch {
                     Write-WebhookLog -Level 'warning' -Message 'KoXo storage request rejected.' -Data @{
@@ -323,6 +406,13 @@ try {
             }
 
             $trigger = Get-WebhookPayloadValue -Payload $payload -Name 'trigger'
+            $publishCsvOnly = $qualityProofEnabled -and $trigger -eq 'qualities_changed'
+            # L'actualisation du CSV ne lance pas KoXo. Les autres synchronisations
+            # restent interdites lorsqu'une console interactive est ouverte.
+            if ($qualityProofEnabled -and -not $publishCsvOnly -and @(Get-Process KoXoAdm -ErrorAction SilentlyContinue | Where-Object {$_.SessionId -ne 0}).Count -gt 0) {
+                Write-JsonResponse -Response $response -StatusCode 409 -Body @{code='KOXO_INTERACTIVE_CONSOLE_ACTIVE'}
+                continue
+            }
             $portalUserId = Get-WebhookPayloadValue -Payload $payload -Name 'portalUserId'
             $customerReference = Get-WebhookPayloadValue -Payload $payload -Name 'customerReference'
 
@@ -346,6 +436,7 @@ try {
                 $instanceArguments
             )
 
+            if ($publishCsvOnly) { $syncArguments += ' -PublishCsvOnly' }
             $process = Start-Process -FilePath 'powershell.exe' `
                 -ArgumentList $syncArguments `
                 -RedirectStandardOutput $stdoutPath `

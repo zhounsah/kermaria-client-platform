@@ -41,6 +41,14 @@ return await RunAsync(args);
 
 async Task<int> RunAsync(string[] arguments)
 {
+    if (arguments.SequenceEqual(new[] { "--koxo-quality-mariadb" }))
+        return await KoxoQualityMariaDbTests.RunAsync();
+    if (arguments.SequenceEqual(new[] { "--koxo-export" }))
+    {
+        await RunKoxoExportServiceTestsAsync();
+        Console.WriteLine("KoXo export tests PASS");
+        return 0;
+    }
     if (arguments.SequenceEqual(new[] { "--verified-settlement-provisioning" }))
     {
         await BillingV2VerifiedSettlementProvisioningTests.RunAsync();
@@ -51,6 +59,7 @@ async Task<int> RunAsync(string[] arguments)
         await VerifySignupVerificationResendAsync();
         return 0;
     }
+
     if (arguments.Length == 1
         && string.Equals(arguments[0], "--billing-v2-change-integration", StringComparison.Ordinal))
     {
@@ -831,63 +840,6 @@ void VerifyActiveDirectoryPathScope()
         "Le scope AD doit extraire la reference client reelle directement sous OU=Clients.");
 }
 
-async Task VerifySignupVerificationResendAsync()
-{
-    var authStore = CreateMockAuthenticationStore();
-    var signupStore = new MockSignupStore();
-    var disabledAdConfiguration = CreateDisabledAdConfiguration();
-    var adMembershipStore = new MockAdGroupMembershipStore();
-    var emails = new TestEmailDispatchService();
-    var repository = new MockSignupRepository(signupStore, authStore);
-    var signupService = new SignupService(
-        repository,
-        emails,
-        new PortalPasswordService(),
-        NewAuthenticationService(authStore, NewApplicationSettingsService()),
-        new MockActiveDirectoryService(disabledAdConfiguration, adMembershipStore),
-        new MockActiveDirectoryLinkRepository(),
-        new MockAdGroupProvisioner(adMembershipStore),
-        NewPendingPasswordStore(),
-        new RecordingKoxoSyncWebhookTriggerService(),
-        new SignupRuntimeConfiguration(true, 3, 10, 24, 24, false),
-        NewApplicationSettingsService(),
-        CreateMockEmailConfiguration(),
-        disabledAdConfiguration,
-        LoggerFactory.Create(_ => { }).CreateLogger<SignupService>());
-
-
-    const string id = "verification-resend-test";
-    const string oldToken = "fictional-old-verification-token";
-    string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
-    var row = new MockSignupRow
-    {
-        Id = id, Status = "email_pending", CompanyName = "Test", ContactName = "Test User",
-        Email = "resend@example.invalid",
-        Customer = new SignupCustomerData("individual", "Test", "resend@example.invalid", null, "1 rue Test", null, "35580", "Guichen", "FR"),
-        PrimaryUser = new SignupUserData("monsieur", "Test", "User", "1990-01-15", null, "Test User", "resend@example.invalid", null, true),
-        VerificationTokenHash = Hash(oldToken), VerificationTokenExpiresAtUtc = DateTime.UtcNow.AddHours(1),
-        CreatedAtUtc = DateTime.UtcNow.AddMinutes(-5), UpdatedAtUtc = DateTime.UtcNow.AddMinutes(-5)
-    };
-    signupStore.Rows[id] = row;
-    Ensure(!(await signupService.ResendVerificationEmailAsync("missing", "test", CancellationToken.None)).Succeeded, "Missing signup must refuse resend.");
-    var result = await signupService.ResendVerificationEmailAsync(id, "test", CancellationToken.None);
-    Ensure(result.Succeeded && emails.VerificationUrls.Count == 1, "Pending signup must send one replacement link.");
-    Ensure(row.Status == "email_pending" && row.ApprovedUserId is null, "Resend must not approve or create an identity.");
-    Ensure(!(await signupService.ResendVerificationEmailAsync(id, "test", CancellationToken.None)).Succeeded && emails.VerificationUrls.Count == 1, "Immediate retry must not rotate or send.");
-    Ensure(!(await signupService.VerifyEmailAsync(oldToken, CancellationToken.None)).Succeeded, "Previous link must be invalid.");
-    Ensure(!await repository.MarkEmailVerifiedAsync(id, CancellationToken.None, Hash(oldToken)), "A stale pre-rotation verification read must not confirm the signup.");
-    var newToken = Uri.UnescapeDataString(new Uri(emails.VerificationUrls[0]).Query.Split("token=", 2)[1].Split('&')[0]);
-    Ensure((await signupService.VerifyEmailAsync(newToken, CancellationToken.None)).Succeeded, "Replacement link must confirm the pending signup.");
-    Ensure(!(await signupService.ResendVerificationEmailAsync(id, "test", CancellationToken.None)).Succeeded, "Verified signup must refuse resend.");
-    row.Status = "email_pending"; row.EmailVerifiedAtUtc = null; row.UpdatedAtUtc = DateTime.UtcNow.AddMinutes(-5);
-    emails.VerificationDeliverySucceeds = false;
-    Ensure(!(await signupService.ResendVerificationEmailAsync(id, "test", CancellationToken.None)).Succeeded && row.Status == "email_pending", "Delivery failure must not report success or verify the signup.");
-    row.UpdatedAtUtc = DateTime.UtcNow.AddMinutes(-5); emails.VerificationDeliverySucceeds = true;
-    var concurrent = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => Task.Run(() => signupService.ResendVerificationEmailAsync(id, "test", CancellationToken.None))));
-    Ensure(concurrent.Count(r => r.Succeeded) == 1, "Concurrent resends must elect one sender.");
-    Console.WriteLine("Signup verification resend tests passed.");
-}
-
 void VerifyBackupProtectionService()
 {
     var service = new BackupProtectionService();
@@ -948,6 +900,63 @@ void VerifyBackupProtectionService()
             @"\\192.168.100.201\KoXoDATA$ repository01")
         .Contains("avertissement technique", StringComparison.Ordinal),
         "Les messages publics doivent masquer les details techniques Veeam.");
+}
+
+async Task VerifySignupVerificationResendAsync()
+{
+    var authStore = CreateMockAuthenticationStore();
+    var signupStore = new MockSignupStore();
+    var disabledAdConfiguration = CreateDisabledAdConfiguration();
+    var adMembershipStore = new MockAdGroupMembershipStore();
+    var emails = new TestEmailDispatchService();
+    var repository = new MockSignupRepository(signupStore, authStore);
+    var signupService = new SignupService(
+        repository,
+        emails,
+        new PortalPasswordService(),
+        NewAuthenticationService(authStore, NewApplicationSettingsService()),
+        new MockActiveDirectoryService(disabledAdConfiguration, adMembershipStore),
+        new MockActiveDirectoryLinkRepository(),
+        new MockAdGroupProvisioner(adMembershipStore),
+        NewPendingPasswordStore(),
+        new RecordingKoxoSyncWebhookTriggerService(),
+        new SignupRuntimeConfiguration(true, 3, 10, 24, 24, false),
+        NewApplicationSettingsService(),
+        CreateMockEmailConfiguration(),
+        disabledAdConfiguration,
+        LoggerFactory.Create(_ => { }).CreateLogger<SignupService>());
+
+
+    const string id = "verification-resend-test";
+    const string oldToken = "fictional-old-verification-token";
+    string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
+    var row = new MockSignupRow
+    {
+        Id = id, Status = "email_pending", CompanyName = "Test", ContactName = "Test User",
+        Email = "resend@example.invalid",
+        Customer = new SignupCustomerData("individual", "Test", "resend@example.invalid", null, "1 rue Test", null, "35580", "Guichen", "FR"),
+        PrimaryUser = new SignupUserData("monsieur", "Test", "User", "1990-01-15", null, "Test User", "resend@example.invalid", null, true),
+        VerificationTokenHash = Hash(oldToken), VerificationTokenExpiresAtUtc = DateTime.UtcNow.AddHours(1),
+        CreatedAtUtc = DateTime.UtcNow.AddMinutes(-5), UpdatedAtUtc = DateTime.UtcNow.AddMinutes(-5)
+    };
+    signupStore.Rows[id] = row;
+    Ensure(!(await signupService.ResendVerificationEmailAsync("missing", "test", CancellationToken.None)).Succeeded, "Missing signup must refuse resend.");
+    var result = await signupService.ResendVerificationEmailAsync(id, "test", CancellationToken.None);
+    Ensure(result.Succeeded && emails.VerificationUrls.Count == 1, "Pending signup must send one replacement link.");
+    Ensure(row.Status == "email_pending" && row.ApprovedUserId is null, "Resend must not approve or create an identity.");
+    Ensure(!(await signupService.ResendVerificationEmailAsync(id, "test", CancellationToken.None)).Succeeded && emails.VerificationUrls.Count == 1, "Immediate retry must not rotate or send.");
+    Ensure(!(await signupService.VerifyEmailAsync(oldToken, CancellationToken.None)).Succeeded, "Previous link must be invalid.");
+    Ensure(!await repository.MarkEmailVerifiedAsync(id, CancellationToken.None, Hash(oldToken)), "A stale pre-rotation verification read must not confirm the signup.");
+    var newToken = Uri.UnescapeDataString(new Uri(emails.VerificationUrls[0]).Query.Split("token=", 2)[1].Split('&')[0]);
+    Ensure((await signupService.VerifyEmailAsync(newToken, CancellationToken.None)).Succeeded, "Replacement link must confirm the pending signup.");
+    Ensure(!(await signupService.ResendVerificationEmailAsync(id, "test", CancellationToken.None)).Succeeded, "Verified signup must refuse resend.");
+    row.Status = "email_pending"; row.EmailVerifiedAtUtc = null; row.UpdatedAtUtc = DateTime.UtcNow.AddMinutes(-5);
+    emails.VerificationDeliverySucceeds = false;
+    Ensure(!(await signupService.ResendVerificationEmailAsync(id, "test", CancellationToken.None)).Succeeded && row.Status == "email_pending", "Delivery failure must not report success or verify the signup.");
+    row.UpdatedAtUtc = DateTime.UtcNow.AddMinutes(-5); emails.VerificationDeliverySucceeds = true;
+    var concurrent = await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => Task.Run(() => signupService.ResendVerificationEmailAsync(id, "test", CancellationToken.None))));
+    Ensure(concurrent.Count(r => r.Succeeded) == 1, "Concurrent resends must elect one sender.");
+    Console.WriteLine("Signup verification resend tests passed.");
 }
 
 async Task VerifySignupStoresPriceFreeBillingV2SelectionAsync()
@@ -4566,6 +4575,38 @@ async Task RunKoxoNamespaceExportTestsAsync()
 
 async Task RunKoxoExportServiceTestsAsync()
 {
+    KoxoAdditionalQualitiesTests.Run();
+    KoxoQualityMariaDbTests.VerifyTargetGuard();
+    KoxoQualityConfigurationTests.Run();
+    await KoxoQualityDispatcherTests.RunAsync();
+    await HttpKoxoQualityExecutorTests.RunAsync();
+    using (KoxoNamespace.BeginTestScope(KoxoNamespaceTests.DevNamespace()))
+    {
+    var qualityProvider = new TestKoxoQualitiesProvider();
+    var qualityRepository = new InMemoryKoxoRepository([
+        new KoxoExportCandidate("portal-quality", "DEV-CLI-QUALITY", "CLI-D000051", "monsieur",
+            "Noe", "Test", "1990-01-01", "noe@example.invalid", CustomerId: "customer-quality"),
+        new KoxoExportCandidate("portal-other", "DEV-CLI-QUALITY", "CLI-D000052", "monsieur",
+            "Autre", "Test", "1990-01-01", "autre@example.invalid", CustomerId: "customer-quality")]);
+    var qualityService = new KoxoExportService(qualityRepository, NewPendingPasswordStore(), qualityProvider);
+    var qualityPayload = await qualityService.ExportAsync("test", "qualities", null, CancellationToken.None);
+    Ensure(qualityPayload.SchemaVersion == 3 && qualityProvider.Calls == 1
+        && qualityPayload.Users.Single(user => user.IdentifiantUnique == "CLI-D000051").QualitesSupplementaires == "GG_RDS,GG_VPN"
+        && qualityPayload.Users.Single(user => user.IdentifiantUnique == "CLI-D000052").QualitesSupplementaires == "",
+        "Les qualites sont triees, dedupliquees et bornees a leur identite.");
+    qualityProvider.Groups = [];
+    qualityPayload = await qualityService.ExportAsync("test", "qualities-revoked", null, CancellationToken.None);
+    Ensure(qualityPayload.Users.All(user => user.QualitesSupplementaires == ""), "Un retrait produit une cellule vide explicite.");
+    Ensure(JsonSerializer.Serialize(qualityPayload, new JsonSerializerOptions(JsonSerializerDefaults.Web)).Contains("\"qualitesSupplementaires\":\"\"", StringComparison.Ordinal),
+        "La v3 doit serialiser explicitement la cellule vide de retrait.");
+    qualityProvider.Groups = ["GG_VPN,GG_ADMIN"];
+    try {
+        await qualityService.ExportAsync("test", "qualities-injection", null, CancellationToken.None);
+        throw new InvalidOperationException("Un nom ne doit pas injecter une seconde qualite.");
+    } catch (KoxoValidationException ex) {
+        Ensure(ex.InvalidUsers.Any(user => user.Fields.Contains("qualitesSupplementaires")), "Nom de qualite invalide refuse.");
+    }
+    }
     var sortableRepository = new InMemoryKoxoRepository(
     [
         new KoxoExportCandidate(
@@ -4596,12 +4637,16 @@ async Task RunKoxoExportServiceTestsAsync()
             "1992-10-02",
             "zoe.aardvark@example.invalid")
     ]);
-    var sortableService = new KoxoExportService(sortableRepository, NewPendingPasswordStore());
+    var prodQualityProvider = new TestKoxoQualitiesProvider { ThrowOnCall = true };
+    var sortableService = new KoxoExportService(sortableRepository, NewPendingPasswordStore(), prodQualityProvider);
     var sortablePayload = await sortableService.ExportAsync(
         "api",
         "v0.40-koxo-sort",
         "127.0.0.1",
         CancellationToken.None);
+    Ensure(prodQualityProvider.Calls == 0
+        && !JsonSerializer.Serialize(sortablePayload).Contains("qualitesSupplementaires", StringComparison.OrdinalIgnoreCase),
+        "La production doit conserver exactement le contrat v2 sans appeler le provider de qualites.");
 
     Ensure(
         sortablePayload.SchemaVersion == 2

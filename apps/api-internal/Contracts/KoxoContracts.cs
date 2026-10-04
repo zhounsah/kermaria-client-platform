@@ -21,7 +21,9 @@ public sealed record KoxoExportUser(
     // JSON quand il n'y a rien a publier : KoXo conserve alors le mot de passe
     // qu'il connait deja, au lieu de le remplacer par une valeur vide.
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? MotDePasse = null);
+    string? MotDePasse = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? QualitesSupplementaires = null);
 
 public sealed record KoxoInvalidUser(
     string? IdentifiantUnique,

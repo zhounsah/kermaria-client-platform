@@ -1557,16 +1557,7 @@ public sealed class LdapActiveDirectoryService : IActiveDirectoryService
     private string BuildSearchRootDistinguishedName(
         string objectType,
         string? customerReference)
-    {
-        if (string.IsNullOrWhiteSpace(customerReference))
-        {
-            return _scope.ClientsOuDn;
-        }
-
-        return objectType == "user"
-            ? _scope.BuildUsersOuDn(customerReference)
-            : _scope.BuildGroupsOuDn(customerReference);
-    }
+        => _scope.BuildSearchRootDn(objectType, customerReference, _configuration.KoxoOwnsDirectory);
 
     private static bool IsDirectoryFailure(Exception exception)
         => exception is DirectoryServicesCOMException

@@ -27,6 +27,13 @@ public sealed class ActiveDirectoryPathScope
     public string BuildDisabledOuDn(string customerReference)
         => $"OU=Disabled,{BuildCustomerOuDn(customerReference)}";
 
+    public string BuildSearchRootDn(string objectType, string? customerReference, bool koxoOwnsDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(customerReference)) return ClientsOuDn;
+        if (koxoOwnsDirectory) return BuildCustomerOuDn(customerReference);
+        return objectType == "user" ? BuildUsersOuDn(customerReference) : BuildGroupsOuDn(customerReference);
+    }
+
     public string? NormalizeDistinguishedName(string? distinguishedName)
     {
         if (string.IsNullOrWhiteSpace(distinguishedName))

@@ -76,6 +76,7 @@ public static class KoxoExportCandidateQuery
         """
         SELECT
             portal_user.id AS portal_user_id,
+            customer.id AS customer_id,
             customer.external_reference AS customer_reference,
             portal_user.koxo_unique_identifier AS koxo_unique_identifier,
             portal_user.personal_title AS personal_title,

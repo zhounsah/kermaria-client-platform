@@ -107,6 +107,47 @@ $script:ReadOnlyQueryAst = $script:ReadinessAst.FindAll({
         $node.Name -eq 'Invoke-ReadOnlyQuery'
 }, $true)
 . ([scriptblock]::Create($script:ReadOnlyQueryAst[0].Extent.Text))
+$namespaceAst = $script:ReadinessAst.FindAll({
+    param($node)
+    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+        $node.Name -eq 'Resolve-ReadinessNamespace'
+}, $true)
+. ([scriptblock]::Create($namespaceAst[0].Extent.Text))
+
+Describe 'Storage preflight environment isolation' {
+    It 'blocks mismatched database environments before invoking the SQL client' {
+        { & $script:ReadinessScriptPath -PortalUserId 'test' -Environment Development -SqlDatabase kermaria -MysqlClientPath 'must-not-run.exe' } | Should Throw 'SQL_DATABASE'
+        { & $script:ReadinessScriptPath -PortalUserId 'test' -Environment Production -SqlDatabase kermaria_dev -MysqlClientPath 'must-not-run.exe' } | Should Throw 'SQL_DATABASE'
+    }
+    It 'blocks a production LDAP root in DEV before invoking the SQL client' {
+        { & $script:ReadinessScriptPath -PortalUserId 'test' -Environment Development -SqlDatabase kermaria_dev -AdSearchBase 'DC=clients,DC=home,DC=bzh' -MysqlClientPath 'must-not-run.exe' } | Should Throw 'DEV LDAP'
+    }
+    It 'resolves a DEV identity to CLIENTS DEV, never CLIENTS' {
+        $ns = Resolve-ReadinessNamespace -Environment Development -EmployeeNumber CLI-D000001 `
+            -IsDemo $false -CustomerReference DEV-CLI-PDXVX6 -KoxoGroupReference DEV-CLI-PDXVX6
+        $ns.PrimaryGroup | Should Be 'CLIENTS DEV'
+        $ns.SecondaryGroup | Should Be 'DEV-CLI-PDXVX6'
+    }
+    It 'rejects a production identity or secondary group in DEV' {
+        { Resolve-ReadinessNamespace -Environment Development -EmployeeNumber CLI-000001 -CustomerReference DEV-CLI-TEST01 } | Should Throw
+        { Resolve-ReadinessNamespace -Environment Development -EmployeeNumber CLI-D000001 -CustomerReference CLI-000001 } | Should Throw
+        { Resolve-ReadinessNamespace -Environment Development -EmployeeNumber CLI-D000001 -CustomerReference DEV-CLI-TEST01 -KoxoGroupReference CLI-000001 } | Should Throw
+    }
+    It 'rejects unsupported DEV demo identities and path traversal' {
+        { Resolve-ReadinessNamespace -Environment Development -EmployeeNumber CLI-D000001 -CustomerReference DEV-CLI-TEST01 -IsDemo $true } | Should Throw
+        { Resolve-ReadinessNamespace -Environment Development -EmployeeNumber CLI-D000001 -CustomerReference 'DEV-CLI-..\CLIENTS' } | Should Throw
+    }
+    It 'rejects DEV identities and references in production' {
+        { Resolve-ReadinessNamespace -Environment Production -EmployeeNumber CLI-D000001 -CustomerReference CLI-000001 } | Should Throw
+        { Resolve-ReadinessNamespace -Environment Production -EmployeeNumber CLI-000001 -CustomerReference DEV-CLI-TEST01 } | Should Throw
+        { Resolve-ReadinessNamespace -Environment Production -EmployeeNumber CLI-000001 -CustomerReference CLI-000001 -KoxoGroupReference DEV-CLI-TEST01 } | Should Throw
+    }
+    It 'preserves the production topology for standard identities' {
+        $ns = Resolve-ReadinessNamespace -Environment Production -EmployeeNumber CLI-000001 -CustomerReference CLI-000001
+        $ns.PrimaryGroup | Should Be 'CLIENTS'
+        $ns.SecondaryGroup | Should Be 'CLI-000001'
+    }
+}
 
 # Le client MariaDB reel emet un avertissement a chaque appel : le substitut le
 # reproduit pour que le filtrage reste couvert par le comptage des lignes.
@@ -450,7 +491,46 @@ Describe 'Get-KoxoStorageRepairArguments' {
     }
 }
 
+Describe 'Storage reconciliation refuses a busy system mutex' {
+    It 'does not alter XML when the system-wide KoXo mutex cannot be acquired' {
+        $sandbox = New-KoxoStorageSandbox
+        try {
+            $path = Join-Path $sandbox.DataRoot 'Users\CLIENTS\CLI-000042\zachary.hounsahou.xml'
+            Write-KoxoSheet -Path $path -Content (New-KoxoSheetContent -Enabled 0 -Quota 5120)
+            $hash = (Get-FileHash -LiteralPath $path).Hash
+            Mock Enter-KoxoAdmLock { throw 'KoXo busy' } -ModuleName KoxoStorage.Common
+            { Invoke-KoxoStorageTestReconcile -Sandbox $sandbox } | Should Throw 'KoXo busy'
+            (Get-FileHash -LiteralPath $path).Hash | Should Be $hash
+            @(Get-ChildItem -LiteralPath $sandbox.Configuration.BackupDirectory -Filter '*.bak').Count | Should Be 0
+        }
+        finally {
+            $full = [IO.Path]::GetFullPath($sandbox.Root)
+            if (-not $full.StartsWith(([IO.Path]::GetTempPath().TrimEnd('\') + '\koxo-storage-'), [StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe cleanup path' }
+            Remove-Item -LiteralPath $full -Recurse -Force
+        }
+    }
+}
+
 Describe 'Invoke-KoxoStorageReconcile (fiche personnelle)' {
+    It 'permits the nested native launcher to acquire the same mutex on its thread' {
+        $sandbox = New-KoxoStorageSandbox
+        try {
+            $path = Join-Path $sandbox.DataRoot 'Users\CLIENTS\CLI-000042\zachary.hounsahou.xml'
+            Write-KoxoSheet -Path $path -Content (New-KoxoSheetContent -Enabled 0 -Quota 5120)
+            $result = Invoke-KoxoStorageTestReconcile -Sandbox $sandbox -RepairInvoker {
+                & (Get-Module KoxoStorage.Common) {
+                    $nested = Enter-KoxoAdmLock -TimeoutSeconds 1 -Holder 'test-nested'
+                    Exit-KoxoAdmLock -LockHandle $nested
+                }
+            }
+            $result.status | Should Be 'applied'
+        }
+        finally {
+            $full = [IO.Path]::GetFullPath($sandbox.Root)
+            if (-not $full.StartsWith(([IO.Path]::GetTempPath().TrimEnd('\') + '\koxo-storage-'), [StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe cleanup path' }
+            Remove-Item -LiteralPath $full -Recurse -Force
+        }
+    }
     It 'applies an increase, proves it and repairs only the storage' {
         $sandbox = New-KoxoStorageSandbox
         try {
@@ -632,6 +712,130 @@ Describe 'Invoke-KoxoStorageReconcile (groupe secondaire)' {
         finally {
             Remove-Item -LiteralPath $sandbox.Root -Recurse -Force -ErrorAction SilentlyContinue
         }
+    }
+}
+
+Describe 'FSRM verification on initial application and replay' {
+    BeforeEach {
+        $script:FsrmSandbox = New-KoxoStorageSandbox
+        $script:FsrmSandbox.Configuration.FsrmEnabled = $true
+        $script:FsrmSandbox.Configuration.FsrmUserPathTemplate = 'F:\KoXoDATA\{primaryGroup}\{secondaryGroup}\{userId}'
+        $script:FsrmSheet = Join-Path $script:FsrmSandbox.DataRoot 'Users\CLIENTS\CLI-000042\zachary.hounsahou.xml'
+        Write-KoxoSheet -Path $script:FsrmSheet -Content (New-KoxoSheetContent -Enabled 1 -Quota 32768)
+        $script:FsrmSheetHash = (Get-FileHash -LiteralPath $script:FsrmSheet).Hash
+        $script:CapturedArguments = $null
+        & (Get-Module KoxoStorage.Common) {
+            $script:FsrmTestCalls = 0
+            $script:FsrmTestThrows = $false
+            $script:FsrmTestQuota = [pscustomobject]@{Size = 32768L * 1048576L; Disabled = $false; SoftLimit = $false}
+            function script:Get-FsrmQuota {
+                param($Path, $CimSession, $ErrorAction)
+                $script:FsrmTestCalls++
+                if ($script:FsrmTestThrows) { throw 'FSRM test unavailable' }
+                $script:FsrmTestQuota
+            }
+        }
+    }
+    AfterEach {
+        & (Get-Module KoxoStorage.Common) { Remove-Item Function:\Get-FsrmQuota -ErrorAction SilentlyContinue }
+        $root = [IO.Path]::GetFullPath($script:FsrmSandbox.Root)
+        $tempPrefix = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') + '\koxo-storage-'
+        if (-not $root.StartsWith($tempPrefix, [StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe test cleanup path' }
+        Remove-Item -LiteralPath $root -Recurse -Force
+    }
+    It 'verifies a replay against the effective hard quota without repairing or rewriting XML' {
+        $result = Invoke-KoxoStorageTestReconcile -Sandbox $script:FsrmSandbox
+        $result.status | Should Be 'noop'
+        $result.verification | Should Be 'fully_verified'
+        (& (Get-Module KoxoStorage.Common) { $script:FsrmTestCalls }) | Should Be 1
+        $script:CapturedArguments | Should BeNullOrEmpty
+        (Get-FileHash -LiteralPath $script:FsrmSheet).Hash | Should Be $script:FsrmSheetHash
+    }
+    It 'refuses a replay when the server quota disappeared or cannot be read' {
+        & (Get-Module KoxoStorage.Common) { $script:FsrmTestThrows = $true }
+        $result = Invoke-KoxoStorageTestReconcile -Sandbox $script:FsrmSandbox
+        $result.status | Should Be 'failed'
+        $result.reasonCode | Should Be 'BILLING_V2_KOXO_STORAGE_FSRM_VERIFICATION_FAILED'
+        $script:CapturedArguments | Should BeNullOrEmpty
+        (Get-FileHash -LiteralPath $script:FsrmSheet).Hash | Should Be $script:FsrmSheetHash
+    }
+    It 'refuses a divergent quota even though the XML is correct' {
+        & (Get-Module KoxoStorage.Common) { $script:FsrmTestQuota.Size = 1024L * 1048576L }
+        (Invoke-KoxoStorageTestReconcile -Sandbox $script:FsrmSandbox).status | Should Be 'failed'
+    }
+    It 'refuses a disabled quota' {
+        & (Get-Module KoxoStorage.Common) { $script:FsrmTestQuota.Disabled = $true }
+        (Invoke-KoxoStorageTestReconcile -Sandbox $script:FsrmSandbox).status | Should Be 'failed'
+    }
+    It 'refuses a soft quota' {
+        & (Get-Module KoxoStorage.Common) { $script:FsrmTestQuota.SoftLimit = $true }
+        (Invoke-KoxoStorageTestReconcile -Sandbox $script:FsrmSandbox).status | Should Be 'failed'
+    }
+    It 'refuses an empty FSRM response' {
+        & (Get-Module KoxoStorage.Common) { $script:FsrmTestQuota = $null }
+        (Invoke-KoxoStorageTestReconcile -Sandbox $script:FsrmSandbox).status | Should Be 'failed'
+    }
+    It 'refuses a response missing enforcement metadata' {
+        & (Get-Module KoxoStorage.Common) { $script:FsrmTestQuota = [pscustomobject]@{Size = 32768L * 1048576L} }
+        (Invoke-KoxoStorageTestReconcile -Sandbox $script:FsrmSandbox).status | Should Be 'failed'
+    }
+    It 'fails closed when the configured FSRM path is missing' {
+        $script:FsrmSandbox.Configuration.FsrmUserPathTemplate = ''
+        (Invoke-KoxoStorageTestReconcile -Sandbox $script:FsrmSandbox).status | Should Be 'failed'
+    }
+    It 'verifies the initial application and its replay' {
+        Write-KoxoSheet -Path $script:FsrmSheet -Content (New-KoxoSheetContent -Enabled 0 -Quota 5120)
+        $first = Invoke-KoxoStorageTestReconcile -Sandbox $script:FsrmSandbox
+        $first.status | Should Be 'applied'
+        $first.verification | Should Be 'fully_verified'
+        $script:CapturedArguments = $null
+        $again = Invoke-KoxoStorageTestReconcile -Sandbox $script:FsrmSandbox
+        $again.status | Should Be 'noop'
+        $again.verification | Should Be 'fully_verified'
+        $script:CapturedArguments | Should BeNullOrEmpty
+        (& (Get-Module KoxoStorage.Common) { $script:FsrmTestCalls }) | Should Be 2
+    }
+    It 'restores the XML on an unverified initial application' {
+        Write-KoxoSheet -Path $script:FsrmSheet -Content (New-KoxoSheetContent -Enabled 0 -Quota 5120)
+        $initialHash = (Get-FileHash -LiteralPath $script:FsrmSheet).Hash
+        & (Get-Module KoxoStorage.Common) { $script:FsrmTestQuota.Disabled = $true }
+        (Invoke-KoxoStorageTestReconcile -Sandbox $script:FsrmSandbox).status | Should Be 'failed'
+        (Get-FileHash -LiteralPath $script:FsrmSheet).Hash | Should Be $initialHash
+    }
+    It 'reads the exact remote quota through CIM when RSAT is absent' {
+        $script:FsrmSandbox.Configuration.FsrmServer = 'fsrm.test.invalid'
+        Mock Get-Command { $null } -ModuleName KoxoStorage.Common -ParameterFilter { $Name -eq 'Get-FsrmQuota' }
+        Mock Get-CimInstance {
+            [pscustomobject]@{Path='F:\KoXoDATA\CLIENTS\CLI-000042\zachary.hounsahou'; Size=32768L*1048576L; Disabled=$false; SoftLimit=$false}
+        } -ModuleName KoxoStorage.Common
+        $result = Invoke-KoxoStorageTestReconcile -Sandbox $script:FsrmSandbox
+        $result.verification | Should Be 'fully_verified'
+        Assert-MockCalled Get-CimInstance -ModuleName KoxoStorage.Common -Scope It -Times 1 -Exactly -ParameterFilter {
+            $ComputerName -eq 'fsrm.test.invalid' -and
+            $Namespace -eq 'Root/Microsoft/Windows/FSRM' -and
+            $ClassName -eq 'MSFT_FSRMQuota' -and $OperationTimeoutSec -eq 15 -and
+            $Filter -eq "Path = 'F:\\KoXoDATA\\CLIENTS\\CLI-000042\\zachary.hounsahou'"
+        }
+    }
+    It 'does not guess a CIM server when RSAT and server configuration are absent' {
+        Mock Get-Command { $null } -ModuleName KoxoStorage.Common -ParameterFilter { $Name -eq 'Get-FsrmQuota' }
+        Mock Get-CimInstance { throw 'Must not call CIM' } -ModuleName KoxoStorage.Common
+        (Invoke-KoxoStorageTestReconcile -Sandbox $script:FsrmSandbox).status | Should Be 'failed'
+        Assert-MockCalled Get-CimInstance -ModuleName KoxoStorage.Common -Scope It -Times 0 -Exactly
+    }
+    It 'rejects an unavailable remote CIM provider' {
+        $script:FsrmSandbox.Configuration.FsrmServer = 'fsrm.test.invalid'
+        Mock Get-Command { $null } -ModuleName KoxoStorage.Common -ParameterFilter { $Name -eq 'Get-FsrmQuota' }
+        Mock Get-CimInstance { throw 'Access denied' } -ModuleName KoxoStorage.Common
+        (Invoke-KoxoStorageTestReconcile -Sandbox $script:FsrmSandbox).status | Should Be 'failed'
+    }
+    It 'rejects a CIM response for another directory' {
+        $script:FsrmSandbox.Configuration.FsrmServer = 'fsrm.test.invalid'
+        Mock Get-Command { $null } -ModuleName KoxoStorage.Common -ParameterFilter { $Name -eq 'Get-FsrmQuota' }
+        Mock Get-CimInstance {
+            [pscustomobject]@{Path='F:\another-customer'; Size=32768L*1048576L; Disabled=$false; SoftLimit=$false}
+        } -ModuleName KoxoStorage.Common
+        (Invoke-KoxoStorageTestReconcile -Sandbox $script:FsrmSandbox).status | Should Be 'failed'
     }
 }
 

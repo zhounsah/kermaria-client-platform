@@ -1,4 +1,4 @@
-$modulePath = Join-Path (Split-Path -Parent $PSScriptRoot) 'KoxoSync.Common.psm1'
+﻿$modulePath = Join-Path (Split-Path -Parent $PSScriptRoot) 'KoxoSync.Common.psm1'
 Import-Module $modulePath -Force
 
 # Ce fichier n'a pas de marque d'ordre d'octets et PowerShell 5.1 le relirait
@@ -14,7 +14,7 @@ function New-KoxoTestPayload {
     )
 
     [pscustomobject]@{
-        schemaVersion = 2
+        schemaVersion = 3
         generatedAt = '2026-07-30T08:00:00.0000000Z'
         userCount = 1
         users = @(
@@ -26,6 +26,7 @@ function New-KoxoTestPayload {
                 identifiantUnique = $Identifier
                 groupeSecondaire = 'CLI-DEMO-0042'
                 email = 'zoe.hounsa@example.invalid'
+                qualitesSupplementaires = ''
                 groupePrimaire = $PrimaryGroup
             }
         )
@@ -34,7 +35,7 @@ function New-KoxoTestPayload {
 
 function New-KoxoSplitTestPayload {
     [pscustomobject]@{
-        schemaVersion = 2
+        schemaVersion = 3
         generatedAt = '2026-08-06T08:00:00.0000000Z'
         userCount = 2
         users = @(
@@ -46,6 +47,7 @@ function New-KoxoSplitTestPayload {
                 identifiantUnique = 'CLI-000001'
                 groupeSecondaire = 'CLI-000001'
                 email = 'paul.payant@example.invalid'
+                qualitesSupplementaires = ''
                 groupePrimaire = $script:PrimaryGroupClients
             },
             [pscustomobject]@{
@@ -56,6 +58,7 @@ function New-KoxoSplitTestPayload {
                 identifiantUnique = 'CLI-000002'
                 groupeSecondaire = 'DEMO-CLI-000042'
                 email = 'emma.essai@example.invalid'
+                qualitesSupplementaires = ''
                 groupePrimaire = $script:PrimaryGroupDemo
             }
         )
@@ -63,6 +66,31 @@ function New-KoxoSplitTestPayload {
 }
 
 Describe 'Test-KoxoExportPayload' {
+    It 'rejects schema 2 instead of silently dropping qualities' {
+        $p = New-KoxoTestPayload
+        $p.schemaVersion = 2
+        (Test-KoxoExportPayload -Payload $p).IsValid | Should Be $false
+    }
+
+    It 'requires an explicit qualities value and refuses injected records' {
+        $p = New-KoxoTestPayload
+        $p.users[0].PSObject.Properties.Remove('qualitesSupplementaires')
+        (Test-KoxoExportPayload -Payload $p).IsValid | Should Be $false
+        $p = New-KoxoTestPayload
+        $p.users[0].qualitesSupplementaires = "GG_VPN;GG_ADMIN`r`n"
+        (Test-KoxoExportPayload -Payload $p).IsValid | Should Be $false
+    }
+
+    It 'exports the verified DEV sample qualities in column 15 and clears them on removal' {
+        $p = New-KoxoTestPayload
+        $p.users[0].qualitesSupplementaires = 'GG_RDS_E2E_DEV,GG_VPN_E2E_DEV'
+        (Test-KoxoExportPayload -Payload $p).IsValid | Should Be $true
+        $csv = ConvertTo-KoxoCsvContent -Users $p.users
+        (($csv -split "`r`n")[1] -split ';')[14] | Should Be 'GG_RDS_E2E_DEV,GG_VPN_E2E_DEV'
+        $p.users[0].qualitesSupplementaires = ''
+        $csv = ConvertTo-KoxoCsvContent -Users $p.users
+        (($csv -split "`r`n")[1] -split ';')[14] | Should Be ''
+    }
     It 'validates the expected JSON contract' {
         $result = Test-KoxoExportPayload -Payload (New-KoxoTestPayload)
         $result.IsValid | Should Be $true
@@ -83,9 +111,9 @@ Describe 'Test-KoxoExportPayload' {
 }
 
 Describe 'ConvertTo-KoxoCsvContent' {
-    It 'generates 14 semicolon-separated columns' {
+    It 'generates 15 semicolon-separated columns' {
         $content = ConvertTo-KoxoCsvContent -Users (New-KoxoTestPayload).users
-        ($content -split "`r`n")[0] | Should Be 'Civilite;Nom;Prenom;DateNaissance;IdentifiantUnique;GroupeSecondaire;Email;Telephone;TelephoneMobile;Fax;PageWeb;ChampLibre;Fonction;MotDePasse'
+        ($content -split "`r`n")[0] | Should Be 'Civilite;Nom;Prenom;DateNaissance;IdentifiantUnique;GroupeSecondaire;Email;Telephone;TelephoneMobile;Fax;PageWeb;ChampLibre;Fonction;MotDePasse;QualitésSupplémentaires'
         $root = Join-Path $env:TEMP ('koxo-csv-' + [guid]::NewGuid().ToString('N'))
         New-Item -ItemType Directory -Path $root -Force | Out-Null
         $path = Join-Path $root 'users.csv'
@@ -100,33 +128,33 @@ Describe 'ConvertTo-KoxoCsvContent' {
         $payload = New-KoxoTestPayload
         $payload.users[0] | Add-Member -NotePropertyName 'motDePasse' -NotePropertyValue 'Secret-2026!aB' -Force
         $content = ConvertTo-KoxoCsvContent -Users $payload.users
-        $largeurs = ($content -split "`r`n" | Where-Object { $_ }) | ForEach-Object { ($_ -split ';', -1).Count }
+        $largeurs = ($content -split "`r`n" | Where-Object { $_ }) | ForEach-Object { ($_ -split ';').Count }
         @($largeurs | Sort-Object -Unique).Count | Should Be 1
-        @($largeurs | Sort-Object -Unique)[0] | Should Be 14
+        @($largeurs | Sort-Object -Unique)[0] | Should Be 15
     }
 
     It 'publishes the password in column 14' {
         $payload = New-KoxoTestPayload
         $payload.users[0] | Add-Member -NotePropertyName 'motDePasse' -NotePropertyValue 'Secret-2026!aB' -Force
         $content = ConvertTo-KoxoCsvContent -Users $payload.users
-        (($content -split "`r`n")[1] -split ';', -1)[13] | Should Be 'Secret-2026!aB'
+        (($content -split "`r`n")[1] -split ';')[13] | Should Be 'Secret-2026!aB'
     }
 
     It 'leaves column 14 empty when no password is published' {
         # Retrocompatible : un payload sans motDePasse reste valide et laisse
         # KoXo conserver le mot de passe qu'il connait deja.
         $content = ConvertTo-KoxoCsvContent -Users (New-KoxoTestPayload).users
-        (($content -split "`r`n")[1] -split ';', -1)[13] | Should Be ''
+        (($content -split "`r`n")[1] -split ';')[13] | Should Be ''
     }
 
     It 'refuses a row whose width does not match' {
         $root = Join-Path $env:TEMP ('koxo-csv-' + [guid]::NewGuid().ToString('N'))
         New-Item -ItemType Directory -Path $root -Force | Out-Null
         $path = Join-Path $root 'users.csv'
-        $entete = 'Civilite;Nom;Prenom;DateNaissance;IdentifiantUnique;GroupeSecondaire;Email;Telephone;TelephoneMobile;Fax;PageWeb;ChampLibre;Fonction;MotDePasse'
+        $entete = 'Civilite;Nom;Prenom;DateNaissance;IdentifiantUnique;GroupeSecondaire;Email;Telephone;TelephoneMobile;Fax;PageWeb;ChampLibre;Fonction;MotDePasse;QualitésSupplémentaires'
         $ligne13 = 'Mme;HOUNSA;Zoe;1994-03-22;CLI-000001;CLI-DEMO;zoe@example.invalid;;;;;;'
         Write-KoxoTextFile -Path $path -Content ($entete + "`r`n" + $ligne13 + "`r`n") -EncodingName 'utf8'
-        { Test-KoxoCsvFile -Path $path -EncodingName 'utf8' } | Should Throw 'must contain exactly 14 columns'
+        { Test-KoxoCsvFile -Path $path -EncodingName 'utf8' } | Should Throw 'must contain exactly 15 columns'
     }
 
     It 'preserves accents, quotes, and separators through escaping' {
@@ -732,9 +760,9 @@ Describe 'Test-KoxoIdentifierOwnership' {
         $root = Join-Path $env:TEMP ('koxo-own-' + [guid]::NewGuid().ToString('N'))
         New-Item -ItemType Directory -Path $root -Force | Out-Null
         $path = Join-Path $root 'autre.csv'
-        $lignes = @('Civilite;Nom;Prenom;DateNaissance;IdentifiantUnique;GroupeSecondaire;Email;Telephone;TelephoneMobile;Fax;PageWeb;ChampLibre;Fonction;MotDePasse')
+        $lignes = @('Civilite;Nom;Prenom;DateNaissance;IdentifiantUnique;GroupeSecondaire;Email;Telephone;TelephoneMobile;Fax;PageWeb;ChampLibre;Fonction;MotDePasse;QualitésSupplémentaires')
         foreach ($id in $Identifiers) {
-            $lignes += ('M.;NOM;Prenom;1990-01-01;' + $id + ';GRP;a@b.invalid;;;;;;;')
+            $lignes += ('M.;NOM;Prenom;1990-01-01;' + $id + ';GRP;a@b.invalid;;;;;;;;')
         }
         Write-KoxoTextFile -Path $path -Content (($lignes -join "`r`n") + "`r`n") -EncodingName 'utf8bom'
         $path
@@ -755,6 +783,24 @@ Describe 'Test-KoxoIdentifierOwnership' {
         {
             Test-KoxoIdentifierOwnership -Identifiers @('CLI-000003') -OtherCsvPaths @($autre)
         } | Should Throw 'autre.csv'
+    }
+
+    It 'detects conflicts despite quoted separators and multiline fields' {
+        $autre = New-KoxoOtherCsv -Identifiers @('CLI-000003')
+        $content = [IO.File]::ReadAllText($autre).Replace('M.;NOM;', "M.;`"NOM;SUR`r`nDEUX LIGNES`";")
+        Write-KoxoTextFile -Path $autre -Content $content -EncodingName utf8bom
+        { Test-KoxoIdentifierOwnership -Identifiers @('CLI-000003') -OtherCsvPaths @($autre) } | Should Throw 'CLI-000003'
+    }
+
+    It 'fails closed on an unreadable identity column or a malformed row' {
+        $autre = New-KoxoOtherCsv -Identifiers @('CLI-000003')
+        $content = [IO.File]::ReadAllText($autre).Replace('IdentifiantUnique', 'Unknown')
+        Write-KoxoTextFile -Path $autre -Content $content -EncodingName utf8bom
+        { Test-KoxoIdentifierOwnership -Identifiers @('CLI-000003') -OtherCsvPaths @($autre) } | Should Throw 'identity column'
+        $autre = New-KoxoOtherCsv -Identifiers @('CLI-000003')
+        $content = [IO.File]::ReadAllText($autre).Replace('M.;NOM;', 'M.;')
+        Write-KoxoTextFile -Path $autre -Content $content -EncodingName utf8bom
+        { Test-KoxoIdentifierOwnership -Identifiers @('CLI-000003') -OtherCsvPaths @($autre) } | Should Throw 'inconsistent columns'
     }
 
     It 'accepts disjoint CSV files' {
@@ -862,7 +908,7 @@ Describe 'Separation des groupes primaires' {
         $filtre = Select-KoxoPayloadByPrimaryGroup -Payload (New-KoxoSplitTestPayload) -PrimaryGroup $script:PrimaryGroupClients
         $filtre.userCount | Should Be 1
         $filtre.users[0].identifiantUnique | Should Be 'CLI-000001'
-        $filtre.schemaVersion | Should Be 2
+        $filtre.schemaVersion | Should Be 3
     }
 
     It 'produit deux sous-ensembles DISJOINTS et COMPLETS' {

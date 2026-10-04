@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Kermaria.ApiInternal.Contracts;
 using Kermaria.ApiInternal.Data.Repositories;
+using Kermaria.ApiInternal.Services.Provisioning;
 
 namespace Kermaria.ApiInternal.Services;
 
@@ -38,11 +39,12 @@ public interface IKoxoExportService
 
 public sealed class KoxoExportService : IKoxoExportService
 {
-    // 2 et non 1 : chaque utilisateur porte desormais groupePrimaire. Le script
-    // de synchronisation refuse l'autre version, dans les deux sens — un export
-    // sans aiguillage ne doit jamais atteindre un script qui croit aiguiller,
-    // et reciproquement.
-    private const int SchemaVersion = 2;
+    // DEV v3 : qualitesSupplementaires est explicite, y compris quand vide.
+    // PROD reste en v2, compatible avec son recepteur actuellement deploye.
+    // API et recepteur doivent etre livres ensemble ; un ancien contrat
+    // ne doit jamais effacer silencieusement les qualites d'un utilisateur.
+    private static bool SupportsAdditionalQualities => !KoxoNamespace.Current.IsProduction;
+    private static int SchemaVersion => SupportsAdditionalQualities ? 3 : 2;
     private const int PreviewLimit = 5;
 
     // Le nommage KoXo lui-meme vit desormais dans KoxoDirectoryTopology : il est
@@ -69,13 +71,16 @@ public sealed class KoxoExportService : IKoxoExportService
 
     private readonly IKoxoRepository _repository;
     private readonly IKoxoPendingPasswordStore _pendingPasswords;
+    private readonly IKoxoAdditionalQualitiesProvider? _qualities;
 
     public KoxoExportService(
         IKoxoRepository repository,
-        IKoxoPendingPasswordStore pendingPasswords)
+        IKoxoPendingPasswordStore pendingPasswords,
+        IKoxoAdditionalQualitiesProvider? qualities = null)
     {
         _repository = repository;
         _pendingPasswords = pendingPasswords;
+        _qualities = qualities;
     }
 
     public bool IsPersistent => _repository.IsPersistent;
@@ -164,10 +169,23 @@ public sealed class KoxoExportService : IKoxoExportService
 
         var invalidUsers = new List<KoxoInvalidUser>();
         var validUsers = new List<KoxoExportUser>();
+        var qualitiesByCustomer = new Dictionary<string, IReadOnlyDictionary<string, IReadOnlyList<string>>>(StringComparer.Ordinal);
+        if (SupportsAdditionalQualities && _repository.IsPersistent && (_qualities is null || candidates.Any(candidate => candidate.CustomerId is null)))
+            throw new InvalidOperationException("KOXO_QUALITIES_SOURCE_UNAVAILABLE");
+        if (SupportsAdditionalQualities && _qualities is not null)
+            foreach (var customerId in candidates.Select(candidate => candidate.CustomerId).OfType<string>().Distinct(StringComparer.Ordinal))
+                qualitiesByCustomer[customerId] = await _qualities.GetByIdentityAsync(customerId, cancellationToken);
 
         foreach (var candidate in candidates)
         {
             var fields = new List<string>();
+            IReadOnlyList<string> qualities = Array.Empty<string>();
+            if (candidate.CustomerId is not null
+                && qualitiesByCustomer.TryGetValue(candidate.CustomerId, out var byIdentity)
+                && byIdentity.TryGetValue(candidate.PortalUserId, out var identityQualities))
+                qualities = identityQualities;
+            if (qualities.Any(group => !Regex.IsMatch(group, @"\A[\p{L}\p{N}_. -]{1,256}\z") || group != group.Trim()))
+                fields.Add("qualitesSupplementaires");
             var mappedTitle = MapCivilite(candidate.PersonalTitle);
             if (mappedTitle is null)
             {
@@ -246,7 +264,10 @@ public sealed class KoxoExportService : IKoxoExportService
                 groupeSecondaire!,
                 email!,
                 ResolveGroupePrimaire(candidate),
-                pendingPassword));
+                pendingPassword,
+                SupportsAdditionalQualities
+                    ? string.Join(",", qualities.Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(group => group, StringComparer.OrdinalIgnoreCase))
+                    : null));
         }
 
         foreach (var duplicate in candidates

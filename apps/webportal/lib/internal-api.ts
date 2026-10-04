@@ -1578,15 +1578,7 @@ export type SignupAdminAccountAccess = {
   userPrincipalName: string | null;
 };
 
-export type KoxoExportUser = {
-  civilite: string;
-  nom: string;
-  prenom: string;
-  dateNaissance: string;
-  identifiantUnique: string;
-  groupeSecondaire: string;
-  email: string;
-};
+export type KoxoExportUser = import("@kermaria/shared").KoxoExportUser;
 
 export type KoxoInvalidUser = {
   identifiantUnique: string | null;

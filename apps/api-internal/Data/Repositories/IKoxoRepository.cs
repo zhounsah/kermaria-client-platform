@@ -33,7 +33,8 @@ public sealed record KoxoExportCandidate(
     /// ne connaitrait le secret, et une synchronisation ulterieure ne le
     /// rattraperait pas : le compte existerait deja.
     /// </remarks>
-    bool RequiresPendingPassword = false);
+    bool RequiresPendingPassword = false,
+    string? CustomerId = null);
 
 public sealed record KoxoRunInsert(
     string Id,

@@ -474,27 +474,54 @@ function Test-KoxoStorageFsrmQuota {
         Replace('{secondaryGroup}', $SecondaryGroup).
         Replace('{userId}', $UserId)
 
-    if (-not (Get-Command -Name 'Get-FsrmQuota' -ErrorAction SilentlyContinue)) {
+    $hasFsrmCommand = $null -ne (Get-Command -Name 'Get-FsrmQuota' -ErrorAction SilentlyContinue)
+    if (-not $hasFsrmCommand -and [string]::IsNullOrWhiteSpace($Configuration.FsrmServer)) {
         return [pscustomobject]@{
             Attempted = $true
             Verified = $false
-            Reason = 'Get-FsrmQuota is not available on this host.'
+            Reason = 'Get-FsrmQuota is unavailable and no explicit FSRM server is configured.'
         }
     }
 
     try {
-        $parameters = @{ Path = $path; ErrorAction = 'Stop' }
-        if (-not [string]::IsNullOrWhiteSpace($Configuration.FsrmServer)) {
-            $parameters['CimSession'] = $Configuration.FsrmServer
+        if ($hasFsrmCommand) {
+            $parameters = @{ Path = $path; ErrorAction = 'Stop' }
+            if (-not [string]::IsNullOrWhiteSpace($Configuration.FsrmServer)) {
+                $parameters['CimSession'] = $Configuration.FsrmServer
+            }
+            $quota = Get-FsrmQuota @parameters
         }
-
-        $quota = Get-FsrmQuota @parameters
+        else {
+            # SRV-21 ne porte pas RSAT-FSRM. Interroger la meme classe CIM sur
+            # le serveur explicitement configure, sans installer de role local.
+            $escapedPath = $path.Replace('\', '\\').Replace("'", "\'")
+            $quotas = @(Get-CimInstance -ComputerName $Configuration.FsrmServer `
+                -Namespace 'Root/Microsoft/Windows/FSRM' -ClassName 'MSFT_FSRMQuota' `
+                -Filter ("Path = '{0}'" -f $escapedPath) -OperationTimeoutSec 15 -ErrorAction Stop)
+            if ($quotas.Count -ne 1 -or
+                -not [string]::Equals([string]$quotas[0].Path, $path, [StringComparison]::OrdinalIgnoreCase)) {
+                throw 'FSRM must return exactly the requested quota path.'
+            }
+            $quota = $quotas[0]
+        }
     }
     catch {
         return [pscustomobject]@{
             Attempted = $true
             Verified = $false
             Reason = ('FSRM quota could not be read: {0}' -f $_.Exception.Message)
+        }
+    }
+
+    # Une limite informative ou desactivee ne prouve pas le quota contractuel.
+    if ($null -eq $quota -or
+        $null -eq $quota.PSObject.Properties['Disabled'] -or
+        $null -eq $quota.PSObject.Properties['SoftLimit'] -or
+        $quota.Disabled -ne $false -or $quota.SoftLimit -ne $false) {
+        return [pscustomobject]@{
+            Attempted = $true
+            Verified = $false
+            Reason = 'FSRM quota must be enabled and enforce a hard limit.'
         }
     }
 
@@ -572,7 +599,15 @@ function Invoke-KoxoStorageReconcile {
     # verrouiller laisserait une seconde reconciliation modifier la fiche entre
     # les deux, et la decision porterait sur un etat perime.
     $lock = Acquire-KoxoFileLock -LockPath $Configuration.LockPath
+    $admLock = $null
     try {
+        # Les receveurs d'identite et de stockage peuvent avoir des comptes et
+        # repertoires de travail distincts. Le mutex systeme protege aussi le
+        # read-modify-write XML, pas seulement le processus natif. Sa prise
+        # imbriquee par Invoke-KoxoProcess est reentrante sur ce meme thread.
+        $admTimeout = Get-KoxoPropertyValue -InputObject $Configuration -Name 'AdmLockTimeoutSeconds'
+        if ($null -eq $admTimeout) { $admTimeout = 90 }
+        $admLock = Enter-KoxoAdmLock -TimeoutSeconds ([int]$admTimeout) -Holder 'targeted-storage'
         $state = Read-KoxoStorageQuotaState -Path $path
         $decision = Get-KoxoStorageDecision -State $state -DesiredQuotaMib $DesiredQuotaMib
 
@@ -587,7 +622,20 @@ function Invoke-KoxoStorageReconcile {
 
         switch ($decision.Decision) {
             'NOOP' {
-                return New-KoxoStorageResult -Status 'noop' -ReasonCode 'BILLING_V2_KOXO_STORAGE_NOOP' -Verification 'xml_verified' -TargetKey $TargetKey -CorrelationId $CorrelationId
+                # La fiche conforme ne prouve pas que le quota existe encore
+                # sur le serveur. Verifier aussi les rejeux, sans reparation.
+                $fsrm = Test-KoxoStorageFsrmQuota -Configuration $Configuration `
+                    -TargetKind $TargetKind -PrimaryGroup $PrimaryGroup `
+                    -SecondaryGroup $SecondaryGroup -UserId $UserId `
+                    -DesiredQuotaMib $DesiredQuotaMib
+                if ($fsrm.Attempted -and -not $fsrm.Verified) {
+                    Write-KoxoSyncLog -Configuration $Configuration -Level 'error' -Message 'KoXo storage replay failed the FSRM verification.' -Data (
+                        $auditData + @{ fsrm_reason = $fsrm.Reason }
+                    )
+                    return New-KoxoStorageResult -Status 'failed' -ReasonCode 'BILLING_V2_KOXO_STORAGE_FSRM_VERIFICATION_FAILED' -Verification 'xml_verified' -TargetKey $TargetKey -CorrelationId $CorrelationId
+                }
+                $verification = if ($fsrm.Verified) { 'fully_verified' } else { 'xml_verified' }
+                return New-KoxoStorageResult -Status 'noop' -ReasonCode 'BILLING_V2_KOXO_STORAGE_NOOP' -Verification $verification -TargetKey $TargetKey -CorrelationId $CorrelationId
             }
             'NOT_MATERIALIZED' {
                 return New-KoxoStorageResult -Status 'not_materialized' -ReasonCode 'BILLING_V2_KOXO_STORAGE_TARGET_NOT_MATERIALIZED' -Verification 'none' -TargetKey $TargetKey -CorrelationId $CorrelationId
@@ -684,6 +732,7 @@ function Invoke-KoxoStorageReconcile {
         New-KoxoStorageResult -Status 'applied' -ReasonCode 'BILLING_V2_KOXO_STORAGE_APPLIED' -Verification $verification -TargetKey $TargetKey -CorrelationId $CorrelationId
     }
     finally {
+        Exit-KoxoAdmLock -LockHandle $admLock
         Release-KoxoFileLock -LockHandle $lock
     }
 }

@@ -18,11 +18,16 @@ param(
 
     # Rend le plan effectif (sans jeton) et s'arrete : aucun appel a l'API,
     # aucun CSV ecrit, aucun KoXoAdm lance.
-    [switch]$PlanOnly
+    [switch]$PlanOnly,
+    # Qualites : publier le CSV, laisser l'import avec remplacement a l'operateur.
+    [switch]$PublishCsvOnly
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+if ($PublishCsvOnly -and [string]::IsNullOrWhiteSpace($InstanceConfigPath)) {
+    throw 'PublishCsvOnly requires an isolated instance definition.'
+}
 
 $modulePath = Join-Path $PSScriptRoot 'KoxoSync.Common.psm1'
 Import-Module $modulePath -Force
@@ -62,6 +67,6 @@ Invoke-KoxoSyncProfiles `
     -Profiles $plan.Profiles `
     -WorkingDirectory $plan.WorkingDirectory `
     -Overrides $plan.Overrides `
-    -LaunchKoxo `
+    -LaunchKoxo:(-not $PublishCsvOnly) `
     -KoxoExecutablePath $plan.KoxoExecutablePath `
     -KoxoWorkingDirectory $plan.KoxoWorkingDirectory
