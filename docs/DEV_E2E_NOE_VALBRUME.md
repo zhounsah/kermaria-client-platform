@@ -24,6 +24,13 @@ SHA avant DABC0F4637D4AAE0A8A8667B522E5A93E48A79857B21171CD2C557EE77D8030F,
 apres D4ED1166EDC0C513822974BDEC75564288A3F96FDA120DC87EB1A16E15E2C633.
 Cette reparation n'est PAS le remplacement automatise reporte par l'utilisateur.
 
+Acquittement final constate : revision3=applied_revision3,
+KOXO_QUALITIES_APPLIED le04/10 a20:49:54 UTC. Le worker a donc verifie ensemble
+CSV, fiche persistante KoXo et groupes AD apres la correction ponctuelle.
+v2.0.3.2/62edcb7 ensuite livree en DEV puis PROD ; preuves de deploiement dans
+`docs/releases/V2.0.3.2.md`. La recette est close avec import manuel accepte,
+sans revendiquer un remplacement de qualites entierement automatise.
+
 **État au 04/10 à 17:35 : recette incomplète, ajout de qualités opérationnel
 en DEV.** Paiement TEST confirmé, stockage personnel 64 Gio et écriture client
 validés, session RDS réelle et connexion VPN/NPS réussies. P: est monté

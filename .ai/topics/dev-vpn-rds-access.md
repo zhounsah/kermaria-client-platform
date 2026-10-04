@@ -2,6 +2,12 @@
 
 État opérationnel consigné, WIP non commité. Revalider avant toute reprise.
 
+**Etat final : code et preuves commites, tagv2.0.3.2/62edcb7 pousse ; API et
+Web DEV/PROD livres/healthy.** Noe revision3=applied_revision3,
+KOXO_QUALITIES_APPLIED a20:49:54 UTC. Import avec remplacement reste manuel,
+automation differee. Voir docs/releases/V2.0.3.2.md pour hashes/rollback.
+Les paragraphes WIP/pending ci-dessous sont des points de passage historiques.
+
 Cloture recette Noe : VPN negatif NPS6273/65, RDS NLA4624/type3 puis
 RdpCore226/0x80070005, aucune nouvelle session. Ancienne session5 logoff bornee,
 admin2 preservee. Quota et temoinSHA conserves. KoXo importmanuel dansIHM/AD

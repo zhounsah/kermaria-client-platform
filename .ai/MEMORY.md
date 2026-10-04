@@ -14,10 +14,10 @@
 
 ### Version
 
-- **Production : v2.0.3.1** déployée le 2026-10-02 depuis le tag
-  `v2.0.3.1` / commit `d366d46`. API SRV-13 et WebPortal SRV-12 sont sur cette
+- **Production : v2.0.3.2** déployée le 2026-10-04 depuis le tag
+  `v2.0.3.2` / commit `62edcb7`. API SRV-13 et WebPortal SRV-12 sont sur cette
   release ; les anciens runtimes sont conservés pour rollback. Preuve détaillée
-  : `docs/releases/V2.0.3.1.md` et `docs/CURRENT_STATE.md`.
+  : `docs/releases/V2.0.3.2.md` et `docs/CURRENT_STATE.md`.
 - **v2.0.0.0 (2026-08-25)** : bascule Billing V2-only, migrations 070/071. Voir [billing-v2-only-cancellation.md](topics/billing-v2-only-cancellation.md).
 - Historique : v1.4.0.1 (2026-08-20) a migré le diagnostic public vers Billing V2 ([billing-v2-public-diagnostic.md](topics/billing-v2-public-diagnostic.md)) ; v1.4.0.0 a livré le socle Billing V2.
 
@@ -97,7 +97,9 @@
   Pour les changements de qualites, CSV prepare automatiquement mais aucun
   lancement de KoXo ; l'import avec remplacement reste manuel et son
   automatisation est differee. Les paragraphes de recette plus anciens
-  ci-dessous sont historiques. Release en preparation, PROD pas encore livree.
+  ci-dessous sont historiques. Release2032 livree DEV puis PROD, services et
+  routes canoniques healthy depuis le LAN ; WAN externe toujours non validee.
+  Noe revision3 acquittee CSV/XML/AD le04/10 a20:49:54 UTC.
 
 - **Actualisation du 2026-10-04, WIP non commité** : Noé Valbrume,
   `DEV-CLI-723NSN` / `CLI-D000002`, paiement Stripe TEST confirmé et abonnement

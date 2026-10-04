@@ -1,7 +1,7 @@
 # Current state - Zachary IT platform
-Last verified: 2026-10-02
-Current production release: `v2.0.3.1`
-Release commit: `d366d462635acdb5d951f2ddf10d91420f069982`
+Last verified: 2026-10-04
+Current production release: `v2.0.3.2`
+Release commit: `62edcb7dc272cb3e42effc34ec8f3001fe437b2f`
 This document is the primary entry point for the current platform state. Older V0.x/V1.x documents remain useful as implementation history, but they must not override this file, the current code, or the current deployment runbooks.
 ## Production topology
 ```text
@@ -80,21 +80,32 @@ Since v2.0.0.7:
 API-INTERNAL active runtime:
 - host: SRV-13
 - service: `KermariaApiInternal`
-- active application release: `v2.0.3.1` / `d366d462635acdb5d951f2ddf10d91420f069982`
-- rollback copy: `C:\apps\api-internal-old-20261002-0916`
-- executable SHA-256: `B341AD152499E6DD6EAB50E958F56A843C9C47442C121407A0D38F2658D77A44`
+- active application release: `v2.0.3.2` / `62edcb7dc272cb3e42effc34ec8f3001fe437b2f`
+- rollback copy: `C:\apps\api-internal-old-v2.0.3.2`
+- application DLL SHA-256: `2C59A29F94281FB578655AE67A05369A777638CC04E340B3C0E4EDD89854D088`
 WEBPORTAL active runtime:
 - host: SRV-12
 - service: `kermaria-webportal`
-- active release: `/opt/kermaria/releases/20261002-0920-v2.0.3.1-d366d46`
-- release commit: `d366d462635acdb5d951f2ddf10d91420f069982`
-- rollback release retained: `/opt/kermaria/releases/20260929-1750-v2.0.3-5edf3f2`
-- artifact SHA-256: `C9B77E8602898FCD8236E670BF280F5A954E58D18BD4AED9C2DE404BA512539F`
-- `.next/cache`: `kermaria-web:kermaria-web`, mode `750`
+- active release: `/opt/kermaria/releases/v2.0.3.2-62edcb7-prod`
+- release commit: `62edcb7dc272cb3e42effc34ec8f3001fe437b2f`
+- rollback release retained: `/opt/kermaria/releases/20261002-0920-v2.0.3.1-d366d46`
+- artifact SHA-256: `E1EA6CF0A9B08B0D491D0C5DD1C30F38A1E9D678FD97C5B1BDD85A52267721CC`
+- `.next/cache`: owned by `kermaria-web:kermaria-web`, created during deployment
 MariaDB production schema includes `096_primary_identity_bootstrap` and
 `097_billing_v2_provisioning_managed_memberships`, both already recorded on
-2026-09-29. The release backup retained the documented exclusion of the invalid
-view `billing_v2_legacy_offer_mapping_report`.
+2026-09-29. No production migration was executed for v2.0.3.2. Migration098
+was applied only to kermaria_dev earlier in the DEV recipe. Runtime config
+hashes were preserved for both environments; see docs/releases/V2.0.3.2.md.
+
+## Verification v2.0.3.2 - 2026-10-04
+
+DEV then PROD API and WebPortal are healthy. Canonical home, dashboard login,
+administration login and readiness return HTTP200 from the operator network.
+This is not evidence that the failed main WAN is reachable from the Internet.
+KoXo quality replacement remains manual by explicit decision; DEV quality
+changes refresh CSV without launching KoXo. Native identity creation retains
+its existing workflow. Noe's cancellation, denied VPN/RDS access and preserved
+personal data are recorded in docs/DEV_E2E_NOE_VALBRUME.md.
 ## Production smoke test - 2026-09-05
 Verified after deployment of `v2.0.2.8`:
 - WEBPORTAL service -> active on SRV-12;
