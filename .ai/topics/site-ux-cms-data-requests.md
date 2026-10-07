@@ -8,6 +8,10 @@ description: "Refonte de l'accueil, constructeur de pages, demandes de données 
 **État courant : `v2.1.0` déployée en PROD le 2026-10-07 depuis le tag
 `09737e2`.** La note `docs/releases/V2.1.0.md` contient les empreintes,
 la sauvegarde, les migrations 098–101, les contrôles et le retour arrière.
+Le correctif Web `v2.1.0-hotfix.1` (`0f7d652`) remplace ensuite les trois
+libellés génériques des capacités VPS par `vCPU`, `Go de RAM` et `Go SSD` sans
+changer les valeurs ni la version affichée ; voir
+`docs/releases/V2.1.0_HOTFIX_1.md`.
 Les paragraphes ci-dessous retracent la préparation et la recette DEV avant
 cette livraison ; leurs constats « PROD inchangée » sont historiques.
 

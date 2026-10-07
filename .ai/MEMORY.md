@@ -15,12 +15,14 @@
 ### Version
 
 - **Production : v2.1.0** déployée le 2026-10-07 depuis le tag immuable
-  `v2.1.0` / commit `09737e2`. API SRV-13 et WebPortal SRV-12 utilisent les
-  paquets du tag ; les anciens runtimes sont conservés pour rollback.
+  `v2.1.0` / commit `09737e2`. L'API SRV-13 garde ce paquet. Le WebPortal SRV-12
+  porte en plus le correctif de libellés `v2.1.0-hotfix.1` / `0f7d652`, sans
+  changer la version affichée ; les anciens runtimes sont conservés.
   Migrations 098–101 appliquées à `kermaria` après sauvegarde vérifiée.
   L'approbation automatique des inscriptions reste désactivée par défaut.
   La revue métier et juridique par le propriétaire reste à terminer.
-  Preuves : `docs/releases/V2.1.0.md` et `docs/CURRENT_STATE.md`.
+  Preuves : `docs/releases/V2.1.0.md`,
+  `docs/releases/V2.1.0_HOTFIX_1.md` et `docs/CURRENT_STATE.md`.
 - **v2.0.0.0 (2026-08-25)** : bascule Billing V2-only, migrations 070/071. Voir [billing-v2-only-cancellation.md](topics/billing-v2-only-cancellation.md).
 - Historique : v1.4.0.1 (2026-08-20) a migré le diagnostic public vers Billing V2 ([billing-v2-public-diagnostic.md](topics/billing-v2-public-diagnostic.md)) ; v1.4.0.0 a livré le socle Billing V2.
 

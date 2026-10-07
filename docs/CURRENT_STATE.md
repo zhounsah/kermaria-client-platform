@@ -86,12 +86,15 @@ Configuration externe inchangée, SHA-256
 
 WEBPORTAL sur SRV-12 : service `kermaria-webportal.service` actif, lien
 `/opt/kermaria/webportal` vers
-`/opt/kermaria/releases/v2.1.0-09737e2-prod-linux-fixed`. L'ancienne cible
-`/opt/kermaria/releases/v2.0.3.2-62edcb7-prod` est conservée. Archive Linux
-déployée SHA-256 `8013B61CDFA6930962CA1063413A921184C5EAF5C6128A0437FE87563C3582AC` ;
+`/opt/kermaria/releases/v2.1.0-hotfix.1-0f7d652-prod`. La cible précédente
+`/opt/kermaria/releases/v2.1.0-09737e2-prod-linux-fixed` et celle de
+v2.0.3.2 sont conservées. L'archive du correctif Web a le SHA-256
+`9A873DBE0BC982D7665ACC11C55DAB18B18F8E77017073DC4079B11076AD44B2` ;
 cache `.next/cache` détenu par `kermaria-web:kermaria-web`. Configuration Web
 inchangée, SHA-256
 `422a8fca52dddb9c9657b972eacb689edf826e5d5af59bd83770c60522ba507f`.
+La version affichée reste v2.1.0. Voir
+`docs/releases/V2.1.0_HOTFIX_1.md` pour le changement de libellés VPS.
 
 MariaDB `kermaria` sur `BASE-SQL-01.home.bzh` (alias DNS de
 `KERMARIA-SRV-06.home.bzh`) porte les migrations 098–101 depuis cette release.
