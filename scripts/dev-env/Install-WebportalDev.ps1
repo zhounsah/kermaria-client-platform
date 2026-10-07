@@ -14,12 +14,22 @@ param(
     [Parameter(Mandatory)]
     [string] $Archive,
     [string] $SshHost = 'kermaria-srv-12',
-    [string] $DevSecretsFile = (Join-Path (Split-Path $PSScriptRoot -Parent | Split-Path -Parent | Split-Path -Parent) 'kermaria-client-platform.dev.env.ps1'),
+    [string] $DevSecretsFile = '',
     [string] $PublicPortalUrl = 'https://dev.zachary-it.fr',
     [string] $InternalApiUrl = 'http://192.168.100.213:5100'
 )
 
 $ErrorActionPreference = 'Stop'
+if ([string]::IsNullOrWhiteSpace($DevSecretsFile)) {
+    $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+    $DevSecretsFile = Join-Path (Split-Path $repoRoot -Parent) 'kermaria-client-platform.dev.env.ps1'
+}
+if (-not (Test-Path -LiteralPath $DevSecretsFile -PathType Leaf)) {
+    throw "Fichier de configuration DEV introuvable : $DevSecretsFile"
+}
+if (-not (Test-Path -LiteralPath $Archive -PathType Leaf) -or $Archive -notmatch '\.tar\.gz$') {
+    throw "Archive WebPortal DEV .tar.gz introuvable : $Archive"
+}
 . $DevSecretsFile
 
 $releaseName = [IO.Path]::GetFileName($Archive) -replace '\.tar\.gz$', ''
@@ -63,6 +73,10 @@ $envText = ($envLines.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)"
 
 $remoteDir = "/tmp/kermaria-webportal-dev-$releaseName"
 ssh -o BatchMode=yes $SshHost "mkdir -p $remoteDir"
+if ($LASTEXITCODE -ne 0) { throw 'Préparation SSH DEV impossible.' }
 scp -q -o BatchMode=yes $Archive "${SshHost}:$remoteDir/release.tar.gz"
+if ($LASTEXITCODE -ne 0) { throw "Copie de l'archive WebPortal DEV impossible." }
 scp -q -o BatchMode=yes (Join-Path $PSScriptRoot 'srv12\install-webportal-dev.sh') (Join-Path $PSScriptRoot 'srv12\kermaria-webportal-dev.service') "${SshHost}:$remoteDir/"
+if ($LASTEXITCODE -ne 0) { throw 'Copie des scripts WebPortal DEV impossible.' }
 $envText | ssh -o BatchMode=yes $SshHost "sed -i 's/\r$//' $remoteDir/install-webportal-dev.sh && sudo -n bash $remoteDir/install-webportal-dev.sh $remoteDir/release.tar.gz $releaseName && rm -rf $remoteDir"
+if ($LASTEXITCODE -ne 0) { throw 'Installation WebPortal DEV impossible.' }

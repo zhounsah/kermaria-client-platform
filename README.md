@@ -36,9 +36,12 @@ Ordre de lecture recommande :
 4. [`docs/OPERATIONS.md`](docs/OPERATIONS.md)
 5. [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)
 6. [`docs/GUIDE_ADMIN.md`](docs/GUIDE_ADMIN.md)
-7. [`docs/releases/V2.0.0.2.md`](docs/releases/V2.0.0.2.md)
+7. [`docs/releases/V2.0.3.2.md`](docs/releases/V2.0.3.2.md)
 
-Production courante : `v2.0.0.2`, commit `e227f8e98640dfac939534bd7c9b3d05d78efb57`.
+Production courante : `v2.0.3.2`, commit `62edcb7dc272cb3e42effc34ec8f3001fe437b2f`.
+La refonte de la vitrine, le constructeur de pages et les demandes de données
+sont en DEV ; [`v2.1.0`](docs/releases/V2.1.0.md) est la version candidate,
+encore non taguée et non livrée en production.
 Billing V2 / V2.1 est l'autorite commerciale unique. Les documents V0.x/V1.x restent des archives d'implementation.
 
 Navigation par besoin :
@@ -46,7 +49,8 @@ Navigation par besoin :
 - etat production et architecture actuelle : [`docs/CURRENT_STATE.md`](docs/CURRENT_STATE.md)
 - implementation actuelle : [`docs/IMPLEMENTATION_MAP_CURRENT.md`](docs/IMPLEMENTATION_MAP_CURRENT.md)
 - autorite commerciale Billing V2 : [`docs/BILLING_V2_ONLY.md`](docs/BILLING_V2_ONLY.md)
-- release v2.0.0.2 : [`docs/releases/V2.0.0.2.md`](docs/releases/V2.0.0.2.md)
+- release de production v2.0.3.2 : [`docs/releases/V2.0.3.2.md`](docs/releases/V2.0.3.2.md)
+- version candidate v2.1.0 : [`docs/releases/V2.1.0.md`](docs/releases/V2.1.0.md)
 - exploitation et rollback : [`docs/OPERATIONS.md`](docs/OPERATIONS.md)
 - deploiement : [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)
 - securite : [`docs/SECURITY.md`](docs/SECURITY.md)
@@ -70,9 +74,10 @@ Navigation par besoin :
 >   exactement le montant calcule localement ;
 > - le mode Stripe (`payment` ou `subscription`) suit les lignes reellement
 >   construites, pas le mode de reglement contractuel ;
-> - le panier, `/panier` et les abonnements PayPal recurrents ont disparu ; la
->   souscription passe par `/formules` (formule) ou `/souscrire` (selection
->   directe), toutes deux servies par le meme moteur tarifaire ;
+> - le panier Billing V2 permet de revoir les services choisis sur `/panier`,
+>   puis de vérifier le devis sur `/souscription` avant paiement. Les offres
+>   configurables et les services achetables séparément gardent leurs règles
+>   d'éligibilité et leurs prix dans l'API ;
 > - l'administration du catalogue est `/admin/catalog`, sur les tables
 >   `billing_v2_*`.
 >

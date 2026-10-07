@@ -794,3 +794,24 @@ projection de lecture calculée à partir de `support_requests`,
 `service_requests`, `request_public_messages` et `portal_users`. Le dernier
 auteur public détermine l'indicateur `hasRecentClientReply`; aucune note
 interne et aucun contenu de message n'est dupliqué.
+
+## Refonte UX et CMS (migrations 099 à 101)
+
+- `099_data_subject_requests.sql` crée `data_subject_requests` et
+  `data_subject_request_messages`. Chaque demande porte `user_id` et
+  `customer_id`; les vues client sont filtrées par `user_id`. Une réponse
+  documentaire facultative reste liée à la demande et n'est livrée qu'à son
+  auteur. `deadline_extended_at` borne à une seule prolongation de l'échéance.
+  La migration
+  ajoute `portal_notifications.user_id` nullable : `NULL` conserve la portée
+  client historique, une valeur limite une notification à son destinataire.
+- `100_page_builder.sql` crée `site_page_layouts` (document courant),
+  `site_page_layout_revisions` (instantanés, y compris la version initiale 0)
+  et `site_media_assets` (images publiques). Une publication compare la
+  version et écrit document et révision dans une seule transaction.
+- `101_signup_auto_approval_state.sql` ajoute
+  `signup_pending.auto_approval_requested`, mémorisé à la vérification de
+  l'adresse e-mail ; un ancien dossier manuel ne devient pas automatique après
+  un changement de réglage. `approval_email_pending` et
+  `approval_email_retry_after` suivent le renvoi borné du lien de mot de passe
+  lorsqu'une approbation automatique est durable mais que son e-mail échoue.

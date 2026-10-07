@@ -18,11 +18,15 @@
 [CmdletBinding()]
 param(
     [string] $ComputerName = 'KERMARIA-SRV-13.home.bzh',
-    [string] $DevSecretsFile = (Join-Path (Split-Path $PSScriptRoot -Parent | Split-Path -Parent | Split-Path -Parent) 'kermaria-client-platform.dev.env.ps1'),
+    [string] $DevSecretsFile,
     [switch] $SeedDemoData
 )
 
 $ErrorActionPreference = 'Stop'
+if ([string]::IsNullOrWhiteSpace($DevSecretsFile)) {
+    $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+    $DevSecretsFile = Join-Path (Split-Path -Parent $repoRoot) 'kermaria-client-platform.dev.env.ps1'
+}
 . $DevSecretsFile
 
 $variables = @{
@@ -36,7 +40,6 @@ $variables = @{
     SQL_DATABASE           = $env:DEV_SQL_DATABASE
     SQL_USERNAME           = $env:DEV_SQL_MIGRATOR_USERNAME
     SQL_PASSWORD           = ${env:DEV_SQL_MIGRATOR_PASSWORD}
-    AD_INTEGRATION_MODE    = 'disabled'
 }
 if ($SeedDemoData) {
     # Comptes fictifs du seed : valeurs lues dans le fichier de secrets DEV.
@@ -59,6 +62,12 @@ Invoke-Command -ComputerName $ComputerName -ArgumentList $variables, $SeedDemoDa
     foreach ($entry in $variables.GetEnumerator()) {
         [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value, 'Process')
     }
+    # Ne pas forcer AD_INTEGRATION_MODE=disabled ici : la configuration DEV
+    # peut activer le registre des qualites KoXo, dont la validation exige le
+    # mode controlled_write au moment de construire le conteneur. La commande
+    # --apply-migrations quitte avant app.Run ; aucun worker AD/KoXo ne demarre.
+    # Les variables Machine AD_* de PROD ont ete effacees ci-dessus ; seul le
+    # JSON DEV existant apporte ce mode et ses bornes.
     # La config DEV n'est pas autoritaire ici : les SQL_* du migrateur priment.
     [Environment]::SetEnvironmentVariable('KERMARIA_CONFIG_AUTHORITATIVE', $null, 'Process')
 
@@ -72,4 +81,7 @@ Invoke-Command -ComputerName $ComputerName -ArgumentList $variables, $SeedDemoDa
         Where-Object { $_ -match 'Deployment environment|FATAL|migration|Migration|seed|Seed|"LogLevel":"(Error|Critical|Warning)"' } |
         ForEach-Object { if ($_.Length -gt 400) { $_.Substring(0, 400) + '...' } else { $_ } }
     "exit=$code"
+    if ($code -ne 0) {
+        throw "API DEV migration runner failed (exit=$code)."
+    }
 }

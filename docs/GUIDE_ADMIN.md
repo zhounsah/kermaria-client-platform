@@ -687,3 +687,84 @@ telechargement :
    paye** a bien ete faite sur le bon document.
 6. Pour un telechargement, verifier aussi la fiche ressource et la regle de
    visibilite attendue.
+
+## 9. Mise en page et demandes de données
+
+Dans **Mise en page** (`/admin/page-builder`), choisir l'espace et la page,
+modifier les blocs, puis cliquer sur **Enregistrer et publier**. L'accès à
+l'éditeur, à son historique et à la liste de la médiathèque exige le droit
+`content.publish` ; ce contrôle est effectué par l'API interne. Un formulaire
+peut recevoir des champs complémentaires et choisir l'action de contact ou de
+demande de données ; il ne peut pas appeler une URL libre. La publication
+est immédiate après validation. L'**Aperçu du brouillon** reprend dans la
+largeur du panneau le rendu des textes, images, cartes et liens avant
+publication. Les fonctions métier sont représentées par leur emplacement ;
+aucun lien ni formulaire de cet aperçu ne peut être activé. **Voir la page
+actuelle** ouvre séparément la version déjà publiée. Le bloc « Contenu et
+actions actuels » est obligatoire sur les pages fonctionnelles non encore
+converties. Sur « Mes données », l'en-tête, le formulaire et la liste sont des
+modules séparés :
+vous pouvez les réordonner, mais leur suppression bloque la publication.
+La liste administrateur des demandes de données possède elle aussi deux
+modules séparés et obligatoires. Les deux fiches de détail utilisent des
+modules distincts pour le résumé, les échanges, la réponse et la remise ou le
+téléchargement d'un document ; l'éditeur permet de les déplacer mais protège
+leurs actions indispensables.
+L'accueil et le pied de page ont leurs propres blocs éditables.
+Les pages `/services`, `/offres`, `/tarifs`, `/diagnostic`, `/contact`,
+`/signup`, `/souscrire`, `/dashboard` et `/admin` possèdent également des
+modules déplaçables. Les formulaires, les tarifs et les actions nécessaires
+restent protégés par la validation serveur. L'introduction du diagnostic, le
+récit des offres et les explications du contact peuvent être rédigés dans
+le constructeur.
+La page **Fiche d'une offre configurable** correspond aux quatre offres du
+catalogue. Le fil de retour, la présentation et le configurateur restent
+obligatoires ; les conseils et le lien de contact sont modifiables et
+déplaçables. Le lien vers le catalogue permet de modifier le nom et la
+description de l'offre dans leur éditeur d'origine. Ne pas recopier de montant
+dans un bloc libre.
+La **fiche d'une offre** sépare présentation, retour au comparatif, résumé
+avec le choix de l'offre, services inclus et détails. Le contenu des offres
+garde ses éditeurs de catalogue et de contenu existants. Le **panier** permet
+de déplacer sa présentation, les choix et le récapitulatif ; le prix et la
+suite de la commande restent ensemble dans un module obligatoire. La page
+**Vérifier la souscription** sépare la présentation, les services choisis et
+le récapitulatif avec la confirmation avant paiement. Ses états de reprise
+du paiement restent fixes pour que leur sens ne dépende pas d'un texte libre.
+Dans l'espace client, **Mon profil** sépare coordonnées et sécurité du compte.
+Dans l'administration, **Catalogue commercial** sépare présentation, accès à
+la vitrine des offres et éditeur du catalogue ; les changements de tarifs
+continuent à passer par cet éditeur métier.
+Sur la page publique **Demander mes données**, le titre, les étapes et les
+explications sont modifiables. Le module d'accès à la demande et au contact
+reste obligatoire pour que personne ne perde le chemin vers la démarche.
+L'historique permet de restaurer une version,
+ce qui crée une nouvelle publication. Pour les services, offres et tarifs, les
+contenus et prix déjà administrés restent à modifier dans leurs modules
+respectifs : la mise en page ne les recopie pas.
+Lorsque la page possède déjà un éditeur de contenu, le bloc « Contenu et
+actions actuels » propose un lien vers cet éditeur.
+
+La médiathèque accepte uniquement des images publiques PNG, JPEG ou WebP de
+5 Mo maximum. Indiquer une description utile avant l'envoi, rechercher l'image
+dans la galerie et utiliser **Placer sur cette page** pour l'ajouter au
+brouillon. L'image n'apparaît sur le site qu'après **Enregistrer et publier**.
+Ne jamais y
+mettre de document personnel ou de fichier réservé à un client.
+
+Les **Demandes de données** (`/admin/data-requests`) affichent les demandes
+créées depuis l'espace client. Ouvrir la fiche, choisir l'étape de traitement
+et rédiger le message visible par le demandeur. Une notification lui signale
+la réponse. Pour remettre une copie des données, déposer un PDF, CSV, JSON ou
+ZIP sur la fiche ; le fichier est limité à 10 Mo et le client le télécharge
+après connexion. La demande concerne la personne qui l'a créée, même lorsque
+plusieurs utilisateurs partagent le même compte client.
+Si la demande est complexe, cocher la prolongation avant l'échéance initiale
+et expliquer sa raison dans le message. Cette action n'est possible qu'une fois
+et met à jour la date affichée au client.
+
+Le réglage **Approbation automatique après vérification e-mail** se trouve
+dans **Configuration → Inscriptions**. Il est désactivé par défaut et son
+activation exige confirmation. Il ne remplace ni la preuve d'accès à l'e-mail
+ni les limites de soumission ; les demandes vérifiées en mode manuel restent
+manuelles si le réglage est activé plus tard.

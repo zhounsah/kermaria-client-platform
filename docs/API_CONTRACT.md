@@ -321,8 +321,15 @@ API-INTERNAL, pas seulement par le portail :
   les 24 heures. Son depassement, comme un compte deja existant ou une demande
   encore active, repond **comme un succes** : rien n'est enregistre, et l'API ne
   revele pas qu'une adresse est connue ;
-- `signup_auto_approve` n'existe qu'en lecture : la valeur appliquee est
-  toujours `false`, quelle que soit la ligne en base.
+- `signup_auto_approve` est modifiable par un administrateur autorisé,
+  désactivé par défaut et appliqué après la vérification e-mail des demandes
+  standard. Le mode manuel reste disponible. Voir `SITE_UX_CMS_DATA_REQUESTS.md`.
+- `GET /internal/signup/mode` (authentification de service, sans session client)
+  renvoie uniquement `enabled` et `autoApprove` effectifs, avec `no-store`.
+  La page d'inscription est rendue côté WebPortal selon ces deux valeurs et son
+  propre interrupteur `SIGNUP_ENABLED`. Si l'API est indisponible, elle ferme
+  le formulaire ; la décision pour une demande donnée reste prise au moment de
+  la vérification de son adresse e-mail.
 
 ## Fiscalite administrable
 

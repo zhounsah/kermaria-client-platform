@@ -35,6 +35,19 @@ install -d -m 0750 -o kermaria-web-dev -g kermaria-web-dev /var/log/kermaria-dev
 if [ -f "$env_file" ]; then cp -p "$env_file" "$env_file.bak-$stamp"; fi
 umask 077
 cat > "$env_file.new"
+# Cette liste est définie directement sur le serveur DEV et n'est pas portée
+# par le fichier de secrets de livraison. Une mise à jour du WebPortal doit la
+# conserver pour ne pas élargir les accès à l'export KoXo par omission.
+if [ -f "$env_file" ] && grep -q '^KOXO_EXPORT_ALLOWED_IPS=' "$env_file" \
+  && ! grep -q '^KOXO_EXPORT_ALLOWED_IPS=' "$env_file.new"; then
+  grep -m1 '^KOXO_EXPORT_ALLOWED_IPS=' "$env_file" >> "$env_file.new"
+fi
+if grep -q '^KOXO_EXPORT_API_TOKEN=' "$env_file.new" \
+  && ! grep -Eq '^KOXO_EXPORT_ALLOWED_IPS=.+$' "$env_file.new"; then
+  rm -f "$env_file.new"
+  echo "Liste IP KoXo DEV requise pour activer l'export" >&2
+  exit 1
+fi
 if grep -Eq '^(STRIPE_SECRET_KEY|STRIPE_PUBLISHABLE_KEY)=.*(sk|rk|pk)_live_' "$env_file.new"; then
   rm -f "$env_file.new"; echo "Environnement DEV refuse : cle Stripe live" >&2; exit 1
 fi

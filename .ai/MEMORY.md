@@ -18,6 +18,13 @@
   `v2.0.3.2` / commit `62edcb7`. API SRV-13 et WebPortal SRV-12 sont sur cette
   release ; les anciens runtimes sont conservés pour rollback. Preuve détaillée
   : `docs/releases/V2.0.3.2.md` et `docs/CURRENT_STATE.md`.
+- **Candidate v2.1.0 (2026-10-07)** : numéro proposé par le propriétaire pour
+  la refonte UX/CMS/demandes de données. `package.json` et le lockfile portent
+  cette version de préparation ; aucun commit/tag `v2.1.0` ni déploiement PROD
+  n'a encore été fait. La recette DEV des deux modes d'inscription et de
+  l'isolation entre clients est faite ; la revue métier et les paquets
+  construits depuis le tag exact restent à réaliser. Voir
+  `docs/releases/V2.1.0.md`.
 - **v2.0.0.0 (2026-08-25)** : bascule Billing V2-only, migrations 070/071. Voir [billing-v2-only-cancellation.md](topics/billing-v2-only-cancellation.md).
 - Historique : v1.4.0.1 (2026-08-20) a migré le diagnostic public vers Billing V2 ([billing-v2-public-diagnostic.md](topics/billing-v2-public-diagnostic.md)) ; v1.4.0.0 a livré le socle Billing V2.
 
@@ -69,6 +76,69 @@
   38.4 de `docs/ADMIN_CONFIGURATION_CENTER_IMPLEMENTATION.md`.
 
 ### Vitrine, SEO et éditorial
+
+- **Refonte UX et CMS (2026-10-05, DEV déployée, PROD inchangée)** : accueil,
+  parcours publics et footer réorganisés via un constructeur versionné,
+  demandes de données personnelles par utilisateur, médiathèque, et option
+  d'approbation automatique après vérification e-mail. Migrations `099` à
+  `101` appliquées à `kermaria_dev` après sauvegarde physique ; API DEV SRV-13
+  et WebPortal DEV SRV-12 livrés sous Next.js 16.3.8 et prêts. La release Web
+  DEV du 2026-10-06 simplifie aussi les descriptions Billing V2 de `/tarifs`
+  et `/formules`, sans toucher aux prix. Le fichier d'environnement DEV a été
+  restauré à son empreinte antérieure après qu'un installateur a omis la liste
+  IP KoXo ; le script est corrigé et refuse désormais son absence. Le parcours
+  de demande, la remise privée du fichier et la restauration CMS sont vérifiés
+  sur MariaDB DEV. Une cinquième livraison API/Web lit le mode d'inscription
+  effectif et affiche l'étape manuelle sur la vitrine DEV ; la lecture API
+  `enabled=true/autoApprove=false` est vérifiée, et la configuration Web DEV
+  reste inchangée. Une sixième livraison rend la page publique des demandes de
+  données éditable, avec accès obligatoires, sauvegarde/restauration vérifiées
+  sur MariaDB DEV. Une septième livraison Web DEV fait réutiliser à l'aperçu
+  du constructeur le rendu des blocs publiés, tout en gardant ses liens et
+  formulaires inertes ; l'inspection visuelle administrateur reste à faire.
+  Une huitième livraison Web DEV traduit les paliers et résumés du parcours
+  offre/panier sans changer les prix ni les codes : le choix Performance a
+  donné 20,80 € contre 15,80 € pour Essentiel via le devis serveur. Une
+  neuvième livraison API/Web DEV place les quatre fiches de formule dans un
+  modèle commun du constructeur, avec le configurateur obligatoire et les
+  prix toujours issus de Billing V2 ; les quatre rendus mobiles sont vérifiés.
+  Une dixième livraison API/Web DEV sépare fiche d'offre, panier, revue avant
+  paiement, profil client et catalogue admin en modules métier protégés. Une
+  archive Web intermédiaire avait placé les assets au mauvais niveau (404),
+  puis le lien DEV a été remis sur la version précédente avant livraison du
+  paquet corrigé ; scripts, logos et parcours public répondent maintenant.
+  Une recette complémentaire le 2026-10-07 a vérifié via BFF les rôles admin/
+  client, la publication/restauration du catalogue admin sur MariaDB DEV et
+  les refus 401/403 sur les demandes et fichiers privés. Le mode d'inscription
+  DEV est manuel ; le parcours e-mail et l'isolation entre deux clients
+  n'étaient pas encore éprouvés à cette étape.
+  Le propriétaire a ensuite autorisé Gmail/Outlook. Le modèle d'e-mail de
+  vérification, qui annonçait à tort une revue manuelle en mode automatique,
+  a été corrigé et livré dans l'API DEV. L'allowlist DEV élargie uniquement
+  pour l'essai a été restaurée à l'identique après expiration du premier
+  hCaptcha ; aucun e-mail ni compte n'avait alors été créé. La suite de la
+  recette a créé un compte fictif Outlook en mode manuel et un alias Gmail
+  fictif en mode automatique : e-mails reçus, vérification, approbation,
+  définition des mots de passe par le titulaire et connexions DEV constatées.
+  Le lien de vérification automatique répété n'a créé ni seconde approbation
+  ni second e-mail. Le mode manuel et l'allowlist initiale sont restaurés.
+  Les demandes de données Outlook et du premier client DEV sont isolées dans
+  les deux sens ; l'alias Gmail voit une liste vide et un 404 sur la demande
+  Outlook. L'aperçu de l'accueil a été inspecté dans la session admin ; le
+  contraste sur la photo a été corrigé et livré en DEV, avec mise à jour du
+  brouillon vérifiée puis annulée. Le test smoke couvre l'échec du courriel
+  d'approbation automatique et son rejeu ; aucune panne SMTP réelle n'a été
+  provoquée. AD/KoXo et les paiements ne sont pas éprouvés en réel. Source
+  encore non commise. Voir
+  [site-ux-cms-data-requests.md](topics/site-ux-cms-data-requests.md)
+  et [DEV_UX_CMS_2026-10-05.md](../docs/releases/DEV_UX_CMS_2026-10-05.md).
+  La validation globale `npm run validate` a été relancée et passe sur ce
+  worktree sans `APP_ENV` hérité. Le script de livraison Web DEV résout
+  maintenant son fichier de configuration par défaut dans le corps du script
+  (PowerShell 5.1). L'API DEV applique aussi `content.publish` aux lectures de
+  l'historique du constructeur et de la médiathèque, conformément à l'éditeur ;
+  la session admin autorisée fonctionne après livraison. Aucun commit/tag ni
+  déploiement PROD n'a suivi.
 
 - **Référence la plus récente importée : v1.3.3.4, vérifiée en production le 2026-08-11.** Routage canonique `www` / `dashboard` / `administration`, métadonnées, robots/sitemap, favicon et vraie 404 ont été validés.
 - `/ressources` est le hub public des pages SEO publiées ; `/solutions` est volontairement `noindex`.

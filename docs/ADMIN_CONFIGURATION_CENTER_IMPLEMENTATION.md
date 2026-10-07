@@ -670,7 +670,12 @@ signup_verification_token_ttl_hours
 signup_password_setup_token_ttl_hours
 ```
 
-`signup_auto_approve` doit rester désactivé tant que le comportement métier n'a pas été explicitement validé pour la production.
+`signup_auto_approve` est modifiable avec la permission `settings.write` et une
+confirmation forte dans l'interface. Sa valeur par défaut reste désactivée.
+L'activation ne concerne que les demandes standard dont l'e-mail est confirmé
+après le changement : le mode retenu à la vérification est mémorisé dans
+`signup_pending.auto_approval_requested` (migration 101). La recette DEV doit
+prouver ce parcours avant toute activation en production.
 
 Si exposé dans l'UI, le présenter comme **fonction expérimentale / critique** avec confirmation forte et conserver les garde-fous serveur.
 
