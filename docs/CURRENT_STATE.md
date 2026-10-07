@@ -106,7 +106,9 @@ API privée et BFF répondent 200. Accueil, services, offres, tarifs,
 diagnostic, contact, inscription et demande de données répondent 200 sur le
 domaine public ; l'image optimisée répond 200. L'inscription affiche le mode
 manuel effectif. Les pages publiques inspectées restent indexables et les
-pages client/admin portent `X-Robots-Tag: noindex, nofollow`.
+pages client/admin portent `X-Robots-Tag: noindex, nofollow`. Ces preuves
+proviennent du réseau de l'opérateur ; l'accessibilité depuis Internet n'a
+pas été confirmée par une sonde externe.
 
 ## Verification v2.0.3.2 - 2026-10-04 (historique)
 
