@@ -14,17 +14,13 @@
 
 ### Version
 
-- **Production : v2.0.3.2** déployée le 2026-10-04 depuis le tag
-  `v2.0.3.2` / commit `62edcb7`. API SRV-13 et WebPortal SRV-12 sont sur cette
-  release ; les anciens runtimes sont conservés pour rollback. Preuve détaillée
-  : `docs/releases/V2.0.3.2.md` et `docs/CURRENT_STATE.md`.
-- **Candidate v2.1.0 (2026-10-07)** : numéro proposé par le propriétaire pour
-  la refonte UX/CMS/demandes de données. `package.json` et le lockfile portent
-  cette version de préparation ; aucun commit/tag `v2.1.0` ni déploiement PROD
-  n'a encore été fait. La recette DEV des deux modes d'inscription et de
-  l'isolation entre clients est faite ; la revue métier et les paquets
-  construits depuis le tag exact restent à réaliser. Voir
-  `docs/releases/V2.1.0.md`.
+- **Production : v2.1.0** déployée le 2026-10-07 depuis le tag immuable
+  `v2.1.0` / commit `09737e2`. API SRV-13 et WebPortal SRV-12 utilisent les
+  paquets du tag ; les anciens runtimes sont conservés pour rollback.
+  Migrations 098–101 appliquées à `kermaria` après sauvegarde vérifiée.
+  L'approbation automatique des inscriptions reste désactivée par défaut.
+  La revue métier et juridique par le propriétaire reste à terminer.
+  Preuves : `docs/releases/V2.1.0.md` et `docs/CURRENT_STATE.md`.
 - **v2.0.0.0 (2026-08-25)** : bascule Billing V2-only, migrations 070/071. Voir [billing-v2-only-cancellation.md](topics/billing-v2-only-cancellation.md).
 - Historique : v1.4.0.1 (2026-08-20) a migré le diagnostic public vers Billing V2 ([billing-v2-public-diagnostic.md](topics/billing-v2-public-diagnostic.md)) ; v1.4.0.0 a livré le socle Billing V2.
 
@@ -77,7 +73,7 @@
 
 ### Vitrine, SEO et éditorial
 
-- **Refonte UX et CMS (2026-10-05, DEV déployée, PROD inchangée)** : accueil,
+- **Refonte UX et CMS (DEV 2026-10-05, PROD 2026-10-07)** : accueil,
   parcours publics et footer réorganisés via un constructeur versionné,
   demandes de données personnelles par utilisateur, médiathèque, et option
   d'approbation automatique après vérification e-mail. Migrations `099` à
@@ -128,8 +124,8 @@
   contraste sur la photo a été corrigé et livré en DEV, avec mise à jour du
   brouillon vérifiée puis annulée. Le test smoke couvre l'échec du courriel
   d'approbation automatique et son rejeu ; aucune panne SMTP réelle n'a été
-  provoquée. AD/KoXo et les paiements ne sont pas éprouvés en réel. Source
-  encore non commise. Voir
+  provoquée. AD/KoXo et les paiements ne sont pas éprouvés en réel dans cette
+  recette. Voir
   [site-ux-cms-data-requests.md](topics/site-ux-cms-data-requests.md)
   et [DEV_UX_CMS_2026-10-05.md](../docs/releases/DEV_UX_CMS_2026-10-05.md).
   La validation globale `npm run validate` a été relancée et passe sur ce
@@ -137,8 +133,12 @@
   maintenant son fichier de configuration par défaut dans le corps du script
   (PowerShell 5.1). L'API DEV applique aussi `content.publish` aux lectures de
   l'historique du constructeur et de la médiathèque, conformément à l'éditeur ;
-  la session admin autorisée fonctionne après livraison. Aucun commit/tag ni
-  déploiement PROD n'a suivi.
+  la session admin autorisée fonctionne après livraison. La suite a figé le
+  tag `v2.1.0` (`09737e2`), validé les paquets exacts en DEV, puis sauvegardé
+  `kermaria` et appliqué 098–101 avant livraison PROD. Les configurations
+  externes API/Web sont inchangées. L'archive Web initiale sans dépendances
+  Linux Sharp a été rejetée avant bascule ; l'archive corrigée charge Sharp
+  et sert le site. Voir `docs/releases/V2.1.0.md`.
 
 - **Référence la plus récente importée : v1.3.3.4, vérifiée en production le 2026-08-11.** Routage canonique `www` / `dashboard` / `administration`, métadonnées, robots/sitemap, favicon et vraie 404 ont été validés.
 - `/ressources` est le hub public des pages SEO publiées ; `/solutions` est volontairement `noindex`.

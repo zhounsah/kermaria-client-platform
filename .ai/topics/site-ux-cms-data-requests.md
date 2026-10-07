@@ -5,10 +5,11 @@ description: "Refonte de l'accueil, constructeur de pages, demandes de données 
 
 # Vitrine, constructeur et demandes de données (2026-10-05)
 
-La version candidate de cette livraison est `v2.1.0` depuis le 2026-10-07.
-Les métadonnées source et la note `docs/releases/V2.1.0.md` sont préparées ;
-la PROD reste sur `v2.0.3.2` et les paquets DEV précédents ne sont pas les
-paquets immuables de la release candidate.
+**État courant : `v2.1.0` déployée en PROD le 2026-10-07 depuis le tag
+`09737e2`.** La note `docs/releases/V2.1.0.md` contient les empreintes,
+la sauvegarde, les migrations 098–101, les contrôles et le retour arrière.
+Les paragraphes ci-dessous retracent la préparation et la recette DEV avant
+cette livraison ; leurs constats « PROD inchangée » sont historiques.
 
 Recette DEV complémentaire du 2026-10-07 : les comptes fictifs admin et client
 se connectent via le BFF. L'admin a publié puis restauré la mise en page

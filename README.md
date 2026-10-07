@@ -36,12 +36,12 @@ Ordre de lecture recommande :
 4. [`docs/OPERATIONS.md`](docs/OPERATIONS.md)
 5. [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)
 6. [`docs/GUIDE_ADMIN.md`](docs/GUIDE_ADMIN.md)
-7. [`docs/releases/V2.0.3.2.md`](docs/releases/V2.0.3.2.md)
+7. [`docs/releases/V2.1.0.md`](docs/releases/V2.1.0.md)
 
-Production courante : `v2.0.3.2`, commit `62edcb7dc272cb3e42effc34ec8f3001fe437b2f`.
+Production courante : `v2.1.0`, commit `09737e2bd644c44faa80a723fc7b1ea42496b332`.
 La refonte de la vitrine, le constructeur de pages et les demandes de données
-sont en DEV ; [`v2.1.0`](docs/releases/V2.1.0.md) est la version candidate,
-encore non taguée et non livrée en production.
+sont livrés sur SRV-12/SRV-13. Voir les preuves et le retour arrière dans
+[`docs/releases/V2.1.0.md`](docs/releases/V2.1.0.md).
 Billing V2 / V2.1 est l'autorite commerciale unique. Les documents V0.x/V1.x restent des archives d'implementation.
 
 Navigation par besoin :
@@ -49,8 +49,8 @@ Navigation par besoin :
 - etat production et architecture actuelle : [`docs/CURRENT_STATE.md`](docs/CURRENT_STATE.md)
 - implementation actuelle : [`docs/IMPLEMENTATION_MAP_CURRENT.md`](docs/IMPLEMENTATION_MAP_CURRENT.md)
 - autorite commerciale Billing V2 : [`docs/BILLING_V2_ONLY.md`](docs/BILLING_V2_ONLY.md)
-- release de production v2.0.3.2 : [`docs/releases/V2.0.3.2.md`](docs/releases/V2.0.3.2.md)
-- version candidate v2.1.0 : [`docs/releases/V2.1.0.md`](docs/releases/V2.1.0.md)
+- release de production v2.1.0 : [`docs/releases/V2.1.0.md`](docs/releases/V2.1.0.md)
+- release précédente v2.0.3.2 : [`docs/releases/V2.0.3.2.md`](docs/releases/V2.0.3.2.md)
 - exploitation et rollback : [`docs/OPERATIONS.md`](docs/OPERATIONS.md)
 - deploiement : [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)
 - securite : [`docs/SECURITY.md`](docs/SECURITY.md)

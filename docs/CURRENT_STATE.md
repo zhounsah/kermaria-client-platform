@@ -1,7 +1,7 @@
 # Current state - Zachary IT platform
-Last verified: 2026-10-04
-Current production release: `v2.0.3.2`
-Release commit: `62edcb7dc272cb3e42effc34ec8f3001fe437b2f`
+Last verified: 2026-10-07
+Current production release: `v2.1.0`
+Release commit: `09737e2bd644c44faa80a723fc7b1ea42496b332`
 This document is the primary entry point for the current platform state. Older V0.x/V1.x documents remain useful as implementation history, but they must not override this file, the current code, or the current deployment runbooks.
 ## Production topology
 ```text
@@ -77,27 +77,38 @@ Since v2.0.0.7:
 - diagnostic:recommendations uses the existing managed-content persistence, while its generic raw editor redirects to the structured diagnostic screen;
 - configured formula codes are validated server-side against the current public Billing V2 catalog before persistence; unavailable or unset formulas fail safely to cadrage/devis.
 ## Current production deployment
-API-INTERNAL active runtime:
-- host: SRV-13
-- service: `KermariaApiInternal`
-- active application release: `v2.0.3.2` / `62edcb7dc272cb3e42effc34ec8f3001fe437b2f`
-- rollback copy: `C:\apps\api-internal-old-v2.0.3.2`
-- application DLL SHA-256: `2C59A29F94281FB578655AE67A05369A777638CC04E340B3C0E4EDD89854D088`
-WEBPORTAL active runtime:
-- host: SRV-12
-- service: `kermaria-webportal`
-- active release: `/opt/kermaria/releases/v2.0.3.2-62edcb7-prod`
-- release commit: `62edcb7dc272cb3e42effc34ec8f3001fe437b2f`
-- rollback release retained: `/opt/kermaria/releases/20261002-0920-v2.0.3.1-d366d46`
-- artifact SHA-256: `E1EA6CF0A9B08B0D491D0C5DD1C30F38A1E9D678FD97C5B1BDD85A52267721CC`
-- `.next/cache`: owned by `kermaria-web:kermaria-web`, created during deployment
-MariaDB production schema includes `096_primary_identity_bootstrap` and
-`097_billing_v2_provisioning_managed_memberships`, both already recorded on
-2026-09-29. No production migration was executed for v2.0.3.2. Migration098
-was applied only to kermaria_dev earlier in the DEV recipe. Runtime config
-hashes were preserved for both environments; see docs/releases/V2.0.3.2.md.
 
-## Verification v2.0.3.2 - 2026-10-04
+API-INTERNAL sur SRV-13 : service `KermariaApiInternal` actif, DLL SHA-256
+`5EFE1DCBEC34A0BC821AA427D03CC291C48998D621513C4258421291A5B391CE`.
+Ancien binaire conservé dans `C:\apps\api-internal-old-v2.1.0-09737e2`.
+Configuration externe inchangée, SHA-256
+`4B508512533650BE494649977B459388D435A3B7267CC61174E42A145AE620FA`.
+
+WEBPORTAL sur SRV-12 : service `kermaria-webportal.service` actif, lien
+`/opt/kermaria/webportal` vers
+`/opt/kermaria/releases/v2.1.0-09737e2-prod-linux-fixed`. L'ancienne cible
+`/opt/kermaria/releases/v2.0.3.2-62edcb7-prod` est conservée. Archive Linux
+déployée SHA-256 `8013B61CDFA6930962CA1063413A921184C5EAF5C6128A0437FE87563C3582AC` ;
+cache `.next/cache` détenu par `kermaria-web:kermaria-web`. Configuration Web
+inchangée, SHA-256
+`422a8fca52dddb9c9657b972eacb689edf826e5d5af59bd83770c60522ba507f`.
+
+MariaDB `kermaria` sur `BASE-SQL-01.home.bzh` (alias DNS de
+`KERMARIA-SRV-06.home.bzh`) porte les migrations 098–101 depuis cette release.
+Sauvegarde vérifiée avant migration : voir `docs/releases/V2.1.0.md`. La vue
+invalide préexistante `billing_v2_legacy_offer_mapping_report` a été la seule
+exclusion du dump. Les détails et le retour arrière figurent dans la note de
+release.
+
+## Vérification v2.1.0 — 2026-10-07
+
+API privée et BFF répondent 200. Accueil, services, offres, tarifs,
+diagnostic, contact, inscription et demande de données répondent 200 sur le
+domaine public ; l'image optimisée répond 200. L'inscription affiche le mode
+manuel effectif. Les pages publiques inspectées restent indexables et les
+pages client/admin portent `X-Robots-Tag: noindex, nofollow`.
+
+## Verification v2.0.3.2 - 2026-10-04 (historique)
 
 DEV then PROD API and WebPortal are healthy. Canonical home, dashboard login,
 administration login and readiness return HTTP200 from the operator network.

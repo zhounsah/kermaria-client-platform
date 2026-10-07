@@ -2,10 +2,11 @@
 
 > POINT DE REPÈRE ACTUEL - 2026-10-07
 >
-> Production : `v2.0.3.2` sur SRV-12/SRV-13. La refonte UX, le constructeur
-> de pages, les demandes de données et l'option d'approbation après vérification
-> e-mail sont livrés en DEV. `v2.1.0` est la version candidate ; la recette
-> conjointe et la décision de production restent à faire. Voir
+> Production : `v2.1.0` sur SRV-12/SRV-13 depuis le 2026-10-07. La refonte UX,
+> le constructeur de pages, les demandes de données et l'option d'approbation
+> après vérification e-mail sont livrés. L'approbation automatique reste
+> désactivée par défaut. La revue des contenus et textes juridiques par le
+> propriétaire demeure à faire. Voir
 > [`releases/V2.1.0.md`](releases/V2.1.0.md) et [`CURRENT_STATE.md`](CURRENT_STATE.md).
 >
 > Les points de repère plus anciens ci-dessous sont conservés pour l'historique.
