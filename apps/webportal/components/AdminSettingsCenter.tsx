@@ -417,6 +417,8 @@ function SettingMeta({ setting }: { setting: ApplicationSettingItem }) {
       <span>
         {setting.source === "database"
           ? "Valeur enregistrée"
+          : setting.source === "env" || setting.source === "json"
+            ? "Valeur de configuration"
           : "Valeur par défaut"}
       </span>
       <span>

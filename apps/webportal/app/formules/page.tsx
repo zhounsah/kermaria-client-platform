@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { SitePageFrame } from "@/components/SitePageFrame";
 
 import { formatCurrencyFromCents } from "@/lib/formatters";
-import { getBillingV2FormulesCatalog } from "@/lib/internal-api";
+import { getBillingV2FormulesCatalog, getPublicSitePageLayout } from "@/lib/internal-api";
 import { buildPublicMetadata } from "@/lib/public-metadata";
 import {
   describePresetBenefits,
@@ -21,7 +22,10 @@ export const metadata: Metadata = buildPublicMetadata({
 export const dynamic = "force-dynamic";
 
 export default async function FormulesPage() {
-  const { data: catalog } = await getBillingV2FormulesCatalog();
+  const [catalogResult, layoutResult] = await Promise.all([
+    getBillingV2FormulesCatalog(), getPublicSitePageLayout("/formules"),
+  ]);
+  const catalog = catalogResult.data;
   const presets = [...catalog.presets].sort(
     (left, right) => left.displayOrder - right.displayOrder,
   );
@@ -34,9 +38,8 @@ export default async function FormulesPage() {
     0,
   );
 
-  return (
-    <div className="formules-page">
-      <header className="formules-header formules-header-2026">
+  const slots = {
+    formules_intro: <header className="formules-header formules-header-2026">
         <p className="eyebrow">Offres</p>
         <h1>Choisissez une offre, ajustez-la, souscrivez.</h1>
         <p className="formules-lead">
@@ -50,17 +53,11 @@ export default async function FormulesPage() {
             s&apos;engageant — au mois ou en une fois.
           </p>
         ) : null}
-      </header>
-
-      {presets.length === 0 ? (
-        <p className="formules-empty">
-          Le catalogue des offres n&apos;est pas joignable pour le moment.
-          Les tarifs sont mis à jour depuis le catalogue Zachary IT : aucune
-          valeur tarifaire n&apos;est conservée dans cette page.
-        </p>
-      ) : (
-        <>
-          <section className="formules-grid" aria-label="Offres disponibles">
+      </header>,
+    formules_catalog: presets.length === 0 ? <p className="formules-empty">
+          Les offres et leurs prix ne peuvent pas être affichés pour le moment.
+          Réessayez dans quelques instants ou contactez-nous pour être conseillé.
+        </p> : <section className="formules-grid" aria-label="Offres disponibles">
             {presets.map((preset) => {
               const monthlyCents = resolvePresetBaselineMonthlyCents(preset);
               const benefits = describePresetBenefits(preset, catalog);
@@ -96,9 +93,8 @@ export default async function FormulesPage() {
                 </article>
               );
             })}
-          </section>
-
-          <section className="formules-note">
+          </section>,
+    formules_note: presets.length === 0 ? null : <section className="formules-note">
             <h2>Un tarif adapté à vos besoins</h2>
             <p>
               Choisissez uniquement les services et capacités dont vous avez
@@ -107,15 +103,20 @@ export default async function FormulesPage() {
             </p>
             <p>
               Chaque offre comprend la mise en service de votre espace, son
-              hébergement, sa supervision et le support lié à son
+              hébergement, son suivi et l&apos;aide liée à son
               fonctionnement.
             </p>
             <p className="formules-note-secondary">
               Les montants affichés sont hors taxes applicables.
             </p>
-          </section>
-        </>
-      )}
-    </div>
-  );
+          </section>,
+    formules_help: <section className="formules-note">
+      <h2>Besoin d’aide pour choisir ?</h2>
+      <p>Décrivez votre situation en quelques lignes : nous vous aiderons à trouver l’offre adaptée.</p>
+      <Link href="/contact">Parler de mon besoin</Link>
+    </section>,
+  };
+  return <div className="formules-page">
+    <SitePageFrame area="public" pageKey="/formules" initialLayout={layoutResult.data} slots={slots}>{null}</SitePageFrame>
+  </div>;
 }

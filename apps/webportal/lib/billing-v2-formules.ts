@@ -36,14 +36,35 @@ export const SERVICE_CODES = {
  * pas dans le catalogue : la base reste l'autorité sur ce qui est facturé,
  * cette table ne change que ce qui est lu à l'écran.
  */
-const SERVICE_PUBLIC_LABELS: Record<string, string> = {
-  [SERVICE_CODES.base]: "Mise en service et suivi de votre espace",
-  [SERVICE_CODES.remoteDesktop]: "Bureau Windows à distance",
-  [SERVICE_CODES.vpn]: "Accès sécurisé à distance",
+const SERVICE_PUBLIC_LABELS: Record<string, { legacy: string; public: string }> = {
+  [SERVICE_CODES.base]: { legacy: "Socle de service", public: "Mise en service et suivi de votre espace" },
+  [SERVICE_CODES.storagePersonal]: { legacy: "Stockage personnel", public: "Espace personnel de fichiers" },
+  [SERVICE_CODES.storageShared]: { legacy: "Stockage partagé", public: "Espace de fichiers partagé" },
+  [SERVICE_CODES.backupPersonal]: { legacy: "Sauvegarde du stockage personnel", public: "Copie de sécurité de vos fichiers" },
+  [SERVICE_CODES.backupShared]: { legacy: "Sauvegarde du stockage partagé", public: "Copie de sécurité de l'espace partagé" },
+  [SERVICE_CODES.remoteDesktop]: { legacy: "Accès bureau distant RDS", public: "Bureau Windows à distance" },
+  [SERVICE_CODES.vpn]: { legacy: "Accès VPN", public: "Accès sécurisé à distance" },
+  [SERVICE_CODES.additionalUser]: { legacy: "Utilisateur supplémentaire", public: "Accès pour une personne supplémentaire" },
+  [SERVICE_CODES.supportPlus]: { legacy: "Support Plus", public: "Assistance renforcée" },
 };
 
 export function resolveServicePublicLabel(serviceCode: string, fallback: string) {
-  return SERVICE_PUBLIC_LABELS[serviceCode] ?? fallback;
+  const mapping = SERVICE_PUBLIC_LABELS[serviceCode];
+  return mapping && fallback === mapping.legacy ? mapping.public : fallback;
+}
+
+export function resolveServicePublicDetail(
+  serviceCode: string,
+  detail: string | null | undefined,
+): string | null {
+  if (!detail) return null;
+  return presentLegacyTierLabel(serviceCode, detail);
+}
+
+function presentLegacyTierLabel(serviceCode: string, label: string): string {
+  return serviceCode === SERVICE_CODES.vpn
+    && /^VPN (Essentiel|Plus|Performance|Pro)$/.test(label)
+    ? label.slice(4) : label;
 }
 
 /**
@@ -61,9 +82,28 @@ export function resolveServiceBenefit(
 ): string | undefined {
   const described = service?.description?.trim();
   return described && described.length > 0
-    ? described
+    ? LEGACY_SERVICE_BENEFITS[described] ?? described
     : SERVICE_BENEFITS[serviceCode];
 }
+
+const LEGACY_SERVICE_BENEFITS: Readonly<Record<string, string>> = {
+  "Quota de stockage personnel attribué à un utilisateur.":
+    "Un espace pour conserver et retrouver vos fichiers.",
+  "Quota de stockage partagé attribué à l'abonnement ou à l'organisation.":
+    "Un espace commun pour les fichiers de votre équipe.",
+  "Sauvegarde du stockage personnel d'un utilisateur. Le tier doit suivre la capacité de stockage personnel couverte.":
+    "Une copie de votre espace personnel, adaptée à sa capacité.",
+  "Sauvegarde du stockage partagé. Le tier doit suivre la capacité de stockage partagé couverte.":
+    "Une copie de l'espace commun, adaptée à sa capacité.",
+  "Accès VPN sécurisé avec niveau de performance commercial.":
+    "Retrouvez vos outils et vos fichiers depuis l'extérieur, par une connexion sécurisée.",
+  "Accès utilisateur à l'environnement Windows distant.":
+    "Retrouvez votre bureau de travail Windows depuis un autre lieu.",
+  "Compte utilisateur supplémentaire rattaché à l'abonnement.":
+    "Ajoutez un accès personnel à l'offre de votre équipe.",
+  "Option d'assistance renforcée pour les services souscrits.":
+    "Une aide supplémentaire pour les services de votre offre.",
+};
 
 /**
  * Ce que le client obtient réellement, en une phrase. Une carte de formule
@@ -115,6 +155,27 @@ const PRESET_TAGLINES: Record<string, string> = {
     "Travailler à plusieurs sur un espace partagé, avec un support renforcé.",
 };
 
+// Formulations historiques exactes du catalogue. Les valeurs métier et les
+// prix restent ceux de Billing ; une description modifiée par l'admin prévaut.
+const LEGACY_PRESET_DESCRIPTIONS: Readonly<Record<string, string>> = {
+  "Configuration recommandée : socle, 32 Go de stockage personnel et sauvegarde quotidienne.":
+    "Un espace pour vos documents importants, avec une copie quotidienne.",
+  "Configuration recommandée : socle, 32 Go de stockage personnel, sauvegarde et VPN Essentiel.":
+    "Retrouvez vos fichiers à distance en sécurité, avec une copie quotidienne.",
+  "Configuration recommandée : socle, 64 Go de stockage personnel, sauvegarde, VPN Plus et accès RDS.":
+    "Retrouvez un bureau Windows complet à distance, avec vos fichiers protégés.",
+  "Configuration recommandée : socle, stockage personnel 64 Go, espace partagé 128 Go, sauvegardes, VPN Plus, un utilisateur supplémentaire et Support Plus.":
+    "Partagez vos fichiers en équipe, avec des copies de sécurité et une aide renforcée.",
+  "Configuration recommandée : mise en service, 32 Go de stockage personnel et sauvegarde quotidienne.":
+    "Un espace pour vos documents importants, avec une copie quotidienne.",
+  "Configuration recommandée : mise en service, 32 Go de stockage personnel, sauvegarde et VPN Essentiel.":
+    "Retrouvez vos fichiers à distance en sécurité, avec une copie quotidienne.",
+  "Configuration recommandée : mise en service, 64 Go de stockage personnel, sauvegarde, VPN Plus et accès au bureau Windows.":
+    "Retrouvez un bureau Windows complet à distance, avec vos fichiers protégés.",
+  "Configuration recommandée : mise en service, stockage personnel 64 Go, espace partagé 128 Go, sauvegardes, VPN Plus, un utilisateur supplémentaire et Support Plus.":
+    "Partagez vos fichiers en équipe, avec des copies de sécurité et une aide renforcée.",
+};
+
 /**
  * Accroche d'une formule : la description du catalogue si elle est renseignée,
  * l'accroche du code sinon, puis une phrase générique.
@@ -129,7 +190,7 @@ export function resolvePresetTagline(
 ) {
   const described = preset.description?.trim();
   if (described && described.length > 0) {
-    return described;
+    return LEGACY_PRESET_DESCRIPTIONS[described] ?? described;
   }
 
   return (
@@ -229,9 +290,8 @@ export function resolveTierLabel(
     return null;
   }
 
-  return (
-    service.tiers.find((tier) => tier.code === tierCode)?.label ?? tierCode
-  );
+  const label = service.tiers.find((tier) => tier.code === tierCode)?.label ?? tierCode;
+  return presentLegacyTierLabel(service.code, label);
 }
 
 export function selectableTiers(
@@ -257,9 +317,9 @@ const TIER_ATTRIBUTE_PRESENTERS: ReadonlyArray<{
   code: string;
   present: (value: string) => string;
 }> = [
-  { code: "vcpu_count", present: (value) => `${value} vCPU` },
-  { code: "ram_gib", present: (value) => `${value} Go RAM` },
-  { code: "disk_gib", present: (value) => `${value} Go stockage` },
+  { code: "vcpu_count", present: (value) => `${value} unités de calcul` },
+  { code: "ram_gib", present: (value) => `${value} Go de mémoire` },
+  { code: "disk_gib", present: (value) => `${value} Go d'espace de stockage` },
 ];
 
 export function describeTierAttributes(
@@ -343,10 +403,10 @@ export function describeSelectionConfiguration(
     : null;
 
   return [
-    { key: "storage-personal", label: "Stockage personnel", value: personalStorage, enabled: true },
+    { key: "storage-personal", label: "Espace personnel de fichiers", value: personalStorage, enabled: true },
     {
       key: "backup-personal",
-      label: "Sauvegarde personnelle",
+      label: "Copie de sécurité de vos fichiers",
       value: selection.backupPersonal ? "Incluse" : "Non",
       enabled: selection.backupPersonal,
     },
@@ -358,7 +418,7 @@ export function describeSelectionConfiguration(
     },
     {
       key: "backup-shared",
-      label: "Sauvegarde partagée",
+      label: "Copie de sécurité de l'espace partagé",
       value: selection.backupShared ? "Incluse" : "Non",
       enabled: selection.backupShared,
     },
@@ -376,7 +436,7 @@ export function describeSelectionConfiguration(
     },
     {
       key: "users",
-      label: "Utilisateurs",
+      label: "Personnes",
       value: String(selection.additionalUsers + 1),
       enabled: true,
     },

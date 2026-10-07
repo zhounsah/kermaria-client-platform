@@ -85,6 +85,41 @@ const helpersRuntime = await import(transpileToDataUrl(
   "billing-v2-formules.ts",
 ));
 
+assert.equal(helpersRuntime.resolveServicePublicLabel("VPN-ACCESS", "Accès VPN"),
+  "Accès sécurisé à distance");
+assert.equal(helpersRuntime.resolveServicePublicLabel("VPN-ACCESS", "Accès privé de l'équipe"),
+  "Accès privé de l'équipe", "Un nom modifié dans le catalogue garde la priorité.");
+assert.equal(helpersRuntime.resolveTierLabel({ code: "VPN-ACCESS",
+  tiers: [{ code: "ESSENTIAL", label: "VPN Essentiel" }] }, "ESSENTIAL"), "Essentiel");
+assert.equal(helpersRuntime.resolveServicePublicDetail("VPN-ACCESS", "VPN Essentiel"),
+  "Essentiel", "Le récapitulatif ne reprend pas le sigle technique du palier historique.");
+assert.equal(helpersRuntime.resolveServicePublicDetail("VPN-ACCESS", "Accès prioritaire sur mesure"),
+  "Accès prioritaire sur mesure", "Un détail personnalisé par le catalogue reste intact.");
+assert.equal(helpersRuntime.resolveServicePublicDetail("STORAGE-PERSONAL", "32 Go"),
+  "32 Go", "La capacité chiffrée reste issue du catalogue.");
+assert.equal(helpersRuntime.resolveServiceBenefit("BACKUP-PERSONAL", {
+  description: "Sauvegarde du stockage personnel d'un utilisateur. Le tier doit suivre la capacité de stockage personnel couverte.",
+}), "Une copie de votre espace personnel, adaptée à sa capacité.");
+assert.equal(helpersRuntime.resolveServiceBenefit("BACKUP-PERSONAL", {
+  description: "Copie vérifiée chaque semaine.",
+}), "Copie vérifiée chaque semaine.", "Un texte modifié dans le catalogue garde la priorité.");
+assert.equal(helpersRuntime.resolvePresetTagline({ code: "pack-bureau-windows-distance",
+  description: "Configuration recommandée : socle, 64 Go de stockage personnel, sauvegarde, VPN Plus et accès RDS.",
+}), "Retrouvez un bureau Windows complet à distance, avec vos fichiers protégés.");
+
+assert.equal(
+  helpersRuntime.resolvePresetTagline({ code: "pack-acces-distance",
+    description: "Configuration recommandée : mise en service, 32 Go de stockage personnel, sauvegarde et VPN Essentiel." }),
+  "Retrouvez vos fichiers à distance en sécurité, avec une copie quotidienne.",
+);
+assert.equal(
+  helpersRuntime.resolvePresetTagline({ code: "pack-acces-distance", description: "Texte choisi dans le catalogue." }),
+  "Texte choisi dans le catalogue.",
+  "Une description modifiée dans le catalogue garde la priorité.",
+);
+assert.doesNotMatch(helpContent, /VPN|Support Plus|infrastructure/,
+  "L'aide publique du configurateur emploie un langage courant.");
+
 // Les valeurs des caractéristiques restent dans le catalogue. Le portail ne
 // connait que l'ordre et le format de trois codes publicement presentables.
 const tierAttributesInDifferentOrder = {
@@ -97,7 +132,7 @@ const tierAttributesInDifferentOrder = {
 };
 assert.equal(
   helpersRuntime.describeTierAttributes(tierAttributesInDifferentOrder).join(" · "),
-  "4 vCPU · 8 Go RAM · 80 Go stockage",
+  "4 unités de calcul · 8 Go de mémoire · 80 Go d'espace de stockage",
   "Les attributs du catalogue sont ordonnes et formates sans valeur de palier codee en dur.",
 );
 assert.equal(
@@ -108,7 +143,7 @@ assert.equal(
         : attribute
     )),
   }).join(" · "),
-  "4 vCPU · 12 Go RAM · 80 Go stockage",
+  "4 unités de calcul · 12 Go de mémoire · 80 Go d'espace de stockage",
   "Une mise a jour administrative de ram_gib se reflete sans modifier le prix ni le code frontend.",
 );
 assert.deepEqual(
@@ -241,7 +276,7 @@ assert.doesNotMatch(
 
 assert.match(
   configurator,
-  /ne duplique pas automatiquement le stockage personnel/,
+  /L&apos;espace de[\s\S]*copie de sécurité[\s\S]*accès à distance[\s\S]*ne sont pas ajoutés automatiquement pour elle/,
   "USER-ADDITIONAL doit etre presente comme une place nominative, sans duplication automatique des services user-scoped.",
 );
 assert.doesNotMatch(

@@ -22,6 +22,7 @@ export const PUBLIC_ROUTES = [
   "/decouvrir-espace-client",
   "/mentions-legales",
   "/politique-confidentialite",
+  "/demander-mes-donnees",
   "/cgv",
   "/signup",
   "/set-password",

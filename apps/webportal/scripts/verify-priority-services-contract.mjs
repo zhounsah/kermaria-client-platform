@@ -7,6 +7,25 @@ const component = fs.readFileSync(new URL("../components/PublicPriorityServicePa
 const messagingComponent = fs.readFileSync(new URL("../components/PublicMessagingCategoryPage.tsx", import.meta.url), "utf8");
 const genericComponent = fs.readFileSync(new URL("../components/PublicStorefrontPage.tsx", import.meta.url), "utf8");
 const css = fs.readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+const { presentPublicStorefrontContent } = await import(new URL("../lib/storefront-content.ts", import.meta.url));
+
+const legacyVpnCopy = {
+  seoTitle: "VPN entreprise : accès distant sécurisé",
+  seoDescription: "Description historique",
+  title: "Accès VPN sécurisé pour votre entreprise",
+  lead: "Introduction historique",
+  ctaLabel: "Demander un devis",
+  ctaHref: "/contact",
+  sections: [], faq: [], relatedLinks: [],
+};
+assert.equal(
+  presentPublicStorefrontContent(legacyVpnCopy, "vpn-entreprise").seoTitle,
+  "Accès sécurisé à distance pour votre équipe",
+);
+assert.equal(
+  presentPublicStorefrontContent({ ...legacyVpnCopy, seoTitle: "Titre choisi dans le CMS" }, "vpn-entreprise").seoTitle,
+  "Titre choisi dans le CMS",
+);
 
 const prioritySlugs = [
   "messagerie-professionnelle",

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import localFont from "next/font/local";
 
 import { AppShell } from "@/components/AppShell";
 import { DeploymentEnvironmentBanner } from "@/components/DeploymentEnvironmentBanner";
@@ -12,15 +12,17 @@ import { PUBLIC_BRAND_NAME, PUBLIC_SITE_NAME } from "@/lib/public-metadata";
 import { PUBLIC_SITE_URL } from "@/lib/public-route-config";
 import "./globals.css";
 
-const inter = Inter({
+const inter = localFont({
+  src: "../assets/fonts/inter-latin-variable.woff2",
   display: "swap",
-  subsets: ["latin"],
+  weight: "100 900",
   variable: "--font-inter",
 });
 
-const jetbrainsMono = JetBrains_Mono({
+const jetbrainsMono = localFont({
+  src: "../assets/fonts/jetbrains-mono-latin-variable.woff2",
   display: "swap",
-  subsets: ["latin"],
+  weight: "100 800",
   variable: "--font-jetbrains-mono",
 });
 

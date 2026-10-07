@@ -52,6 +52,9 @@ const migration035 = await read(
 const signupConfig = await read(
   "../../apps/api-internal/Data/Configuration/SignupRuntimeConfiguration.cs",
 );
+const applicationSettings = await read(
+  "../../apps/api-internal/Services/ApplicationSettingsService.cs",
+);
 const signupService = await read(
   "../../apps/api-internal/Services/SignupService.cs",
 );
@@ -138,10 +141,19 @@ check("SIGNUP_ENABLED defaut false", () => {
   );
 });
 check("SIGNUP_AUTO_APPROVE defaut false", () => {
-  assert.match(
-    signupConfig,
-    /ParseBool\(configuration\["SIGNUP_AUTO_APPROVE"\], false\)/,
-  );
+  assert.match(signupConfig, /AutoApprove: false/);
+  assert.match(applicationSettings, /AutoApprove = Bool\(values, "signup_auto_approve", false\)/);
+});
+check("textes d'inscription alignes sur le mode applique", () => {
+  assert.match(programCs, /"\/internal\/signup\/mode"/);
+  assert.match(internalApi, /getPublicSignupMode\(\)/);
+  assert.match(signupPage, /getPublicSignupMode\(\)/);
+  assert.match(signupPage, /webSignupEnabled && modeResult\.data\.enabled/);
+  assert.match(signupPage, /autoApprove\s*\?/);
+  assert.match(signupForm, /autoApprove\s*\?/);
+  assert.doesNotMatch(signupPage, /automatiquement ou après vérification/);
+  assert.match(verifyPage, /SIGNUP_AUTO_APPROVED_EMAIL_PENDING/);
+  assert.match(verifyPage, /SIGNUP_AUTO_APPROVED/);
 });
 check("rate limits + TTL configurables", () => {
   assert.match(signupConfig, /SIGNUP_RATE_LIMIT_PER_IP_PER_HOUR/);
@@ -599,7 +611,7 @@ check(".env.example documente les variables signup + hCaptcha", () => {
   assert.match(envExample, /SIGNUP_ENABLED=false/);
   assert.match(envExample, /SIGNUP_RATE_LIMIT_PER_IP_PER_HOUR=3/);
   assert.match(envExample, /SIGNUP_RATE_LIMIT_PER_EMAIL_PER_24H=1/);
-  assert.match(envExample, /SIGNUP_AUTO_APPROVE=false/);
+  assert.match(envExample, /approbation automatique après vérification e-mail/);
   assert.match(envExample, /HCAPTCHA_SITE_KEY=/);
   assert.match(envExample, /HCAPTCHA_SECRET_KEY=/);
 });

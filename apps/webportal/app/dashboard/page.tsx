@@ -9,6 +9,7 @@ import { RequestStatusBadge } from "@/components/RequestStatusBadge";
 import { SectionCard } from "@/components/SectionCard";
 import { SectionHeading } from "@/components/SectionHeading";
 import { StatusBadge } from "@/components/StatusBadge";
+import { SitePageFrame } from "@/components/SitePageFrame";
 import { requireClientSession } from "@/lib/auth";
 import {
   commercialDocumentStatus,
@@ -20,6 +21,7 @@ import {
 } from "@/lib/formatters";
 import {
   getClientProfile,
+  getClientHomePageLayout,
   getCommercialDocuments,
   getNotifications,
   getPortalSummary,
@@ -28,7 +30,7 @@ import {
   getSupportRequests,
   resolveDataSource,
 } from "@/lib/internal-api";
-import { getServiceSymbol } from "@/lib/service-display";
+import { getClientServiceName, getServiceSymbol } from "@/lib/service-display";
 
 export const metadata = {
   title: "Tableau de bord",
@@ -46,6 +48,7 @@ export default async function DashboardPage() {
     supportResult,
     serviceRequestsResult,
     notificationsResult,
+    layoutResult,
   ] = await Promise.all([
     getPortalSummary(),
     getClientProfile(),
@@ -54,6 +57,7 @@ export default async function DashboardPage() {
     getSupportRequests(),
     getServiceRequests(),
     getNotifications(),
+    getClientHomePageLayout(),
   ]);
 
   const summary = summaryResult.data;
@@ -85,29 +89,24 @@ export default async function DashboardPage() {
     notificationsResult,
   ].find((result) => result.error);
 
-  return (
-    <>
-      <PageHeader
-        action={<StatusBadge label="Espace authentifié" tone="success" />}
-        description={
-          summary
-            ? `Référence ${summary.customerReference} - informations disponibles sur vos services, demandes et documents commerciaux.`
-            : "Votre espace client regroupe les informations disponibles sur vos services Kermaria."
-        }
+  const slots = {
+    client_home_intro: <PageHeader
+        action={<StatusBadge label="Espace personnel" tone="success" />}
+        description="Suivez vos services, vos demandes et vos documents au même endroit."
         eyebrow="Vue d'ensemble"
         title={`Bonjour ${profile?.contactName?.split(" ")[0] ?? "Client"}`}
-      />
+      />,
 
-      {partialError ? (
+    client_home_status: partialError ? (
         <ErrorState
           compact
           description="Une partie du tableau de bord n'a pas pu être chargée. Les autres informations restent affichées."
           reference={partialError.correlationId}
           title="Chargement partiel"
         />
-      ) : null}
+      ) : null,
 
-      <section aria-label="Indicateurs du compte" className="metrics-grid">
+    client_home_metrics: <section aria-label="Indicateurs du compte" className="metrics-grid">
         <MetricCard
           detail="Calculés à partir de vos offres et options actives"
           label="Services actifs"
@@ -126,7 +125,7 @@ export default async function DashboardPage() {
         />
         <MetricCard
           detail={`${summary?.activeServiceRequestCount ?? 0} demande(s) de service en suivi`}
-          label="Support ouvert"
+          label="Demandes d'aide ouvertes"
           tone="blue"
           value={String(summary?.openSupportRequestCount ?? 0)}
         />
@@ -140,9 +139,9 @@ export default async function DashboardPage() {
           tone="slate"
           value={summary ? "À jour" : "Indisponible"}
         />
-      </section>
+      </section>,
 
-      <div className="dashboard-layout">
+    client_home_services: <div className="dashboard-layout">
         <SectionCard ariaLabel="Aperçu des services">
           <SectionHeading
             action={<Link href="/services">Voir tous les services</Link>}
@@ -172,10 +171,8 @@ export default async function DashboardPage() {
                       {getServiceSymbol(service)}
                     </div>
                     <div className="stack-row-main">
-                      <strong>{service.name}</strong>
-                      <span>
-                        {service.commercialTerms} - {service.reference}
-                      </span>
+                      <strong>{getClientServiceName(service)}</strong>
+                      <span>{service.commercialTerms}</span>
                     </div>
                     <StatusBadge label={status.label} tone={status.tone} />
                   </article>
@@ -191,8 +188,8 @@ export default async function DashboardPage() {
             title="Actions rapides"
           />
           <Link className="quick-action" href="/support">
-            <span>Créer une demande support</span>
-            <small>Décrire un besoin lié à un service</small>
+            <span>Demander de l’aide</span>
+            <small>Décrire un problème ou poser une question</small>
           </Link>
           <Link className="quick-action" href="/request-service">
             <span>Demander un service</span>
@@ -211,9 +208,9 @@ export default async function DashboardPage() {
             </small>
           </Link>
         </aside>
-      </div>
+      </div>,
 
-      <div className="dashboard-layout">
+    client_home_recent: <div className="dashboard-layout">
         <SectionCard ariaLabel="Aperçu des documents commerciaux">
           <SectionHeading
             action={<Link href="/invoices">Tous les documents</Link>}
@@ -314,9 +311,9 @@ export default async function DashboardPage() {
             </div>
           )}
         </SectionCard>
-      </div>
+      </div>,
 
-      <SectionCard ariaLabel="Activité récente du compte">
+    client_home_activity: <SectionCard ariaLabel="Activité récente du compte">
         <SectionHeading
           action={<Link href="/notifications">Toutes les notifications</Link>}
           description="Changements de statut et messages récemment publiés sur vos demandes."
@@ -358,16 +355,17 @@ export default async function DashboardPage() {
             ))}
           </div>
         )}
-      </SectionCard>
+      </SectionCard>,
 
-      {source !== "unavailable" ? (
+    client_home_source: source !== "unavailable" ? (
         <MockNotice
           correlationId={summaryResult.correlationId}
           source={source}
         />
-      ) : null}
-    </>
-  );
+      ) : null,
+  };
+  return <SitePageFrame area="client" pageKey="/dashboard"
+    initialLayout={layoutResult.data} slots={slots}>{null}</SitePageFrame>;
 }
 
 function safeNotificationLink(value: string | null) {

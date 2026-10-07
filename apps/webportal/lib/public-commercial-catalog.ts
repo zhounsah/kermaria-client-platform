@@ -14,7 +14,7 @@ import type {
   PublicCommercialTier,
 } from "@kermaria/shared";
 
-import { describeTierAttributes, resolveServicePublicLabel } from "@/lib/billing-v2-formules";
+import { describeTierAttributes, resolveServicePublicDetail } from "@/lib/billing-v2-formules";
 import {
   resolveStorefrontTariffAction,
   storefrontServiceUrlForBillingCode,
@@ -83,6 +83,7 @@ const CATEGORY_PRESENTATION: Readonly<Record<string, string>> = {
   "Stockage": "Sauvegarde et stockage",
   "Supervision": "Assistance et maintenance",
   "Support": "Assistance et maintenance",
+  "Tests DEV": "Démonstration",
   "Utilisateurs": "Postes et accès à distance",
   "Web": "Hébergement et services en ligne",
 };
@@ -105,49 +106,155 @@ const CATEGORY_ORDER: Readonly<Record<string, number>> = {
  * administrable. Ils n'existent pas encore ; ce repli isole evite de diffuser
  * le jargon sur /tarifs sans creer de seconde autorite commerciale.
  */
-const CLIENT_PRESENTATION_FALLBACKS: Readonly<Record<string, {
-  name?: string;
-  description?: string;
-}>> = {
+type LegacyServicePresentation = {
+  legacyName: string;
+  name: string;
+  description: string;
+  legacyDescription?: string;
+};
+
+// La projection n'agit que sur les libellés historiques exacts. Dès qu'un
+// administrateur remplace un nom ou une description dans Billing V2, son texte
+// prend le dessus. Les codes, prix, paliers et actions restent inchangés.
+const LEGACY_SERVICE_PRESENTATION: Readonly<Record<string, LegacyServicePresentation>> = {
+  "SERVICE-E2E-DEV": {
+    legacyName: "Service E2E DEV", name: "Parcours de démonstration",
+    legacyDescription: "Service de validation E2E DEV : appartenance au groupe AD de service dédié.",
+    description: "Permet de vérifier une commande dans cet environnement de test.",
+  },
+  "STORAGE-PERSONAL": {
+    legacyName: "Stockage personnel", name: "Espace personnel de fichiers",
+    legacyDescription: "Quota de stockage personnel attribué à un utilisateur.",
+    description: "Un espace pour conserver et retrouver vos fichiers.",
+  },
+  "STORAGE-SHARED": {
+    legacyName: "Stockage partagé", name: "Espace de fichiers partagé",
+    legacyDescription: "Quota de stockage partagé attribué à l'abonnement ou à l'organisation.",
+    description: "Un espace commun pour les fichiers de votre équipe.",
+  },
+  "BACKUP-PERSONAL": {
+    legacyName: "Sauvegarde du stockage personnel", name: "Copie de sécurité de vos fichiers",
+    legacyDescription: "Sauvegarde du stockage personnel d'un utilisateur. Le tier doit suivre la capacité de stockage personnel couverte.",
+    description: "Une copie de votre espace personnel, adaptée à sa capacité.",
+  },
+  "BACKUP-SHARED": {
+    legacyName: "Sauvegarde du stockage partagé", name: "Copie de sécurité de l'espace partagé",
+    legacyDescription: "Sauvegarde du stockage partagé. Le tier doit suivre la capacité de stockage partagé couverte.",
+    description: "Une copie de l'espace commun, adaptée à sa capacité.",
+  },
+  "VPN-ACCESS": {
+    legacyName: "Accès VPN", name: "Accès sécurisé à distance",
+    legacyDescription: "Accès VPN sécurisé avec niveau de performance commercial.",
+    description: "Retrouvez vos outils et vos fichiers depuis l'extérieur, par une connexion sécurisée.",
+  },
+  "RDS-ACCESS": {
+    legacyName: "Accès bureau distant RDS", name: "Bureau Windows à distance",
+    legacyDescription: "Accès utilisateur à l'environnement Windows distant.",
+    description: "Retrouvez votre bureau de travail Windows depuis un autre lieu.",
+  },
+  "USER-ADDITIONAL": {
+    legacyName: "Utilisateur supplémentaire", name: "Accès pour une personne supplémentaire",
+    legacyDescription: "Compte utilisateur supplémentaire rattaché à l'abonnement.",
+    description: "Ajoutez un accès personnel à l'offre de votre équipe.",
+  },
+  "SUPPORT-PLUS": {
+    legacyName: "Support Plus", name: "Assistance renforcée",
+    legacyDescription: "Option d'assistance renforcée pour les services souscrits.",
+    description: "Une aide supplémentaire pour les services de votre offre.",
+  },
   "CLOUDFLARE-MANAGED": {
+    legacyName: "Cloudflare managé",
     name: "Protection de vos services en ligne",
     description: "Renforcez la sécurité et la disponibilité de votre présence en ligne.",
   },
   "DNS-MANAGED": {
-    name: "Adresse Internet et DNS",
+    legacyName: "DNS managé",
+    name: "Réglages de votre nom de domaine",
     description: "Reliez votre nom de domaine à vos sites, e-mails et services en ligne.",
   },
   "FIREWALL-MANAGED": {
+    legacyName: "Firewall managé",
     name: "Protection de votre réseau",
     description: "Faites suivre et maintenir le dispositif qui protège votre réseau professionnel.",
   },
   "IDENTITY-MANAGED": {
+    legacyName: "Gestion des identités",
     name: "Comptes et accès de votre équipe",
     description: "Organisez les comptes et les droits d’accès de vos collaborateurs.",
   },
   "MAIL-DMARC-MANAGED": {
+    legacyName: "DMARC managé",
     name: "Protection de votre nom d’expéditeur",
     description: "Aidez les destinataires à reconnaître les e-mails réellement envoyés en votre nom.",
   },
   "SSL-MANAGED": {
+    legacyName: "SSL managé",
     name: "Sécurité des échanges en ligne",
     description: "Protégez les échanges entre vos visiteurs, vos outils et vos services en ligne.",
   },
   "UNIFI-MANAGED": {
-    name: "Réseau Wi-Fi supervisé",
+    legacyName: "UniFi managé",
+    name: "Suivi de votre réseau Wi-Fi",
     description: "Suivez et maintenez votre réseau Wi-Fi professionnel.",
   },
   "VPS-CLOUD": {
-    name: "Serveur virtuel dans le cloud",
+    legacyName: "VPS cloud",
+    name: "Serveur hébergé à distance",
     description: "Choisissez les ressources adaptées à votre site, application ou service en ligne.",
   },
   "VPS-LOCAL": {
-    name: "Serveur virtuel hébergé localement",
+    legacyName: "VPS local",
+    name: "Serveur hébergé localement",
     description: "Choisissez les ressources adaptées à votre site, application ou service en ligne.",
   },
   "WAF-REVERSE-PROXY": {
+    legacyName: "WAF et reverse proxy",
     name: "Protection avancée de votre site",
     description: "Filtrez les requêtes malveillantes avant qu’elles n’atteignent vos services en ligne.",
+  },
+  "MAIL-MANAGED": {
+    legacyName: "Messagerie managée", name: "Suivi de vos adresses e-mail",
+    description: "Mise en place et suivi des adresses e-mail de votre équipe.",
+  },
+  "M365-MANAGED": {
+    legacyName: "Microsoft 365 managé", name: "Suivi de vos outils Microsoft 365",
+    description: "Aide à la mise en place et au suivi de vos outils Microsoft 365.",
+  },
+  "WEB-EXTERNAL-MANAGED": {
+    legacyName: "Hébergement Web géré", name: "Hébergement de votre site",
+    description: "Mise en ligne et suivi de votre site web.",
+  },
+  "CMS-MAINT": {
+    legacyName: "Maintenance CMS", name: "Entretien de votre site web",
+    description: "Mises à jour et suivi de votre site web.",
+  },
+  "MONITORING-EXTERNAL": {
+    legacyName: "Supervision externe", name: "Suivi de vos services hébergés ailleurs",
+    description: "Contrôles du fonctionnement de services confiés à un autre fournisseur.",
+  },
+  "NAS-MONITORING": {
+    legacyName: "Supervision NAS", name: "Suivi de votre espace de stockage",
+    description: "Contrôles du fonctionnement de votre équipement de stockage.",
+  },
+  "BACKUP-EXTERNAL-MANAGED": {
+    legacyName: "Sauvegarde externe managée", name: "Copie de sécurité hors site",
+    description: "Une copie de sécurité conservée dans un autre lieu.",
+  },
+  "LINUX-PATCH-MANAGED": {
+    legacyName: "Maintenance Linux", name: "Mises à jour de votre serveur",
+    description: "Suivi des mises à jour du serveur qui héberge vos outils.",
+  },
+  "NEXTCLOUD-EXTERNAL-MAINT": {
+    legacyName: "Maintenance Nextcloud externe", name: "Entretien de votre espace de partage",
+    description: "Mises à jour et suivi de votre espace de fichiers partagé.",
+  },
+  "VPS-EXTERNAL-MANAGED": {
+    legacyName: "Infogérance VPS externe", name: "Suivi d'un serveur hébergé ailleurs",
+    description: "Entretien d'un serveur confié à un autre hébergeur.",
+  },
+  "VPS-MANAGED-ADDON": {
+    legacyName: "Infogérance VPS Zachary IT", name: "Suivi de votre serveur Zachary IT",
+    description: "Entretien de votre serveur hébergé par Zachary IT.",
   },
 };
 
@@ -156,7 +263,7 @@ function projectService(
   catalog: BillingV2PublicCatalog,
   displayOrder: number,
 ): PublicCommercialService {
-  const tierProjections = service.tiers.map((tier) => projectTier(tier, catalog.currency));
+  const tierProjections = service.tiers.map((tier) => projectTier(service.code, tier, catalog.currency));
   const recurringAmounts = [
     service.flatMonthlyAmountCents,
     ...tierProjections.map((tier) => tier.recurringPrice?.amountCents ?? null),
@@ -185,9 +292,11 @@ function projectService(
   const directlyOrderable = orderingMode === "direct" && cartDirectEligible;
   const requiresQuote = orderingMode === "quote";
   const priceType = resolvePriceType(startingPrice, tierProjections);
-  const fallback = CLIENT_PRESENTATION_FALLBACKS[service.code];
-  const name = fallback?.name ?? resolveServicePublicLabel(service.code, service.name);
-  const description = service.description?.trim() || fallback?.description || null;
+  const fallback = LEGACY_SERVICE_PRESENTATION[service.code];
+  const name = fallback?.legacyName === service.name ? fallback.name : service.name;
+  const originalDescription = service.description?.trim() ?? "";
+  const description = originalDescription && originalDescription !== fallback?.legacyDescription
+    ? originalDescription : (fallback?.description ?? originalDescription) || null;
   const category = presentCategory(service.category);
 
   return {
@@ -226,6 +335,7 @@ function projectService(
 }
 
 function projectTier(
+  serviceCode: string,
   tier: BillingV2PublicTier,
   fallbackCurrency: string,
 ): PublicCommercialTier {
@@ -234,7 +344,7 @@ function projectTier(
     : null;
   return {
     id: tier.code,
-    label: tier.label,
+    label: resolveServicePublicDetail(serviceCode, tier.label) ?? tier.label,
     description: tier.description,
     selectable: tier.publicSelectable,
     recurringPrice,

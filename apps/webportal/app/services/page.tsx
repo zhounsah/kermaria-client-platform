@@ -25,11 +25,13 @@ import {
   getPendingBillingV2Selection,
   getClientVps,
   getPublicManagedContent,
+  getPublicSitePageLayout,
   getServices,
   resolveDataSource,
 } from "@/lib/internal-api";
 import {
   parseStorefrontServicesLandingContent,
+  presentPublicServicesLandingContent,
   resolveStorefrontBreadcrumb,
 } from "@/lib/storefront-content";
 
@@ -37,12 +39,13 @@ export const dynamic = "force-dynamic";
 
 export async function generateMetadata(): Promise<Metadata> {
   const content = await getPublicManagedContent("storefront:services");
-  const page = content.data
+  const parsedPage = content.data
     ? parseStorefrontServicesLandingContent(content.data.bodyMarkdown, true)
     : null;
+  const page = parsedPage ? presentPublicServicesLandingContent(parsedPage) : null;
   return buildPublicMetadata({
-    title: page?.seoTitle ?? "Services IT gérés pour indépendants, associations et TPE",
-    description: page?.seoDescription ?? "Cloud, hébergement, domaines, messagerie, réseau, sécurité, sauvegarde et support gérés par Zachary IT.",
+    title: page?.seoTitle ?? "Services informatiques pour particuliers et petites structures",
+    description: page?.seoDescription ?? "Sauvegarde, messagerie, réseau, site web et assistance pour avancer selon votre besoin avec Zachary IT.",
     path: "/services",
     // Sans contenu, le corps rend un `ErrorState` : ne pas laisser cet
     // instantane entrer dans l'index a la place de la page.
@@ -64,14 +67,19 @@ export default async function ServicesPage() {
   );
 
   if (portalMode === "public") {
-    const contentResult = await getPublicManagedContent("storefront:services");
-    const content = contentResult.data
+    const [contentResult, layoutResult] = await Promise.all([
+      getPublicManagedContent("storefront:services"),
+      getPublicSitePageLayout("/services"),
+    ]);
+    const parsedContent = contentResult.data
       ? parseStorefrontServicesLandingContent(contentResult.data.bodyMarkdown, true)
       : null;
+    const content = parsedContent ? presentPublicServicesLandingContent(parsedContent) : null;
     return content ? (
       <PublicServicesLandingPage
         breadcrumbItems={resolveStorefrontBreadcrumb("/services")!}
         content={content}
+        pageLayout={layoutResult.data}
       />
     ) : (
       <ErrorState
@@ -116,8 +124,8 @@ export default async function ServicesPage() {
             </Link>
           </div>
         }
-        description="Retrouvez ici les services réellement déduits de vos offres, options et souscriptions. Pour ajouter un service, ouvrez l'espace « Souscrire »."
-        eyebrow="Périmètre client"
+        description="Retrouvez les services inclus dans vos offres et suivez leur disponibilité."
+        eyebrow="Espace client"
         title="Mes services"
       />
 
@@ -152,7 +160,7 @@ export default async function ServicesPage() {
                 service={service}
                 vpsLinks={vps.map((item) => ({
                   href: `/services/vps/${encodeURIComponent(item.id)}`,
-                  label: vps.length === 1 ? "Voir mon VPS" : `Voir ${item.hostname}`,
+                  label: vps.length === 1 ? "Voir mon serveur" : `Voir le serveur ${item.hostname}`,
                 }))}
               />
             );
@@ -169,9 +177,9 @@ export default async function ServicesPage() {
           />
           <div className="cta-panel">
             <p>
-              La configuration retenue à l&apos;inscription est conservée telle
-              quelle. Elle est retarifée par nos serveurs au moment de la
-              reprise : aucun montant n&apos;a été figé entre-temps.
+              Votre choix effectué à l&apos;inscription est conservé. Le prix
+              sera recalculé lorsque vous reprendrez votre offre, avant le
+              paiement.
             </p>
             <Link className="button" href="/formules/reprendre">
               Reprendre mon offre
@@ -183,17 +191,16 @@ export default async function ServicesPage() {
       <section className="request-history-section">
         <SectionHeading
           action={<StatusBadge label="Ajouter un service" tone="info" />}
-          description="Souscrivez une offre clé en main ou ajoutez un service à la carte selon vos besoins."
-          title="Étendre mon périmètre"
+          description="Choisissez une offre complète ou demandez un service précis."
+          title="Ajouter un service"
         />
         <div className="cta-panel">
           <p>
-            L&apos;espace « Souscrire » regroupe les offres recommandées et
-            les services individuels. Chaque service à la carte se prend
-            séparément, sans obligation d&apos;offre.
+            Découvrez les offres recommandées et les services disponibles
+            séparément. Vous pourrez choisir ce qui correspond à votre besoin.
           </p>
           <Link className="button" href="/souscrire">
-            Ouvrir l&apos;espace Souscrire
+            Voir les offres et services
           </Link>
         </div>
       </section>

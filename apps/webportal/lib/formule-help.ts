@@ -1,8 +1,8 @@
 export const FORMULE_HELP_CONTENT = {
   vpn: {
-    title: "Accès sécurisé à distance (VPN)",
+    title: "Accès sécurisé à distance",
     description:
-      "Connexion sécurisée qui permet d’accéder à vos services à distance sans exposer directement votre infrastructure sur Internet.",
+      "Une connexion protégée pour retrouver vos services lorsque vous n’êtes pas sur place.",
   },
   remoteDesktop: {
     title: "Bureau Windows à distance",
@@ -10,9 +10,9 @@ export const FORMULE_HELP_CONTENT = {
       "Un poste de travail Windows accessible à distance, comme si vous étiez devant l’ordinateur, depuis chez vous ou en déplacement.",
   },
   personalStorage: {
-    title: "Stockage personnel",
+    title: "Espace personnel de fichiers",
     description:
-      "Espace privé réservé à un utilisateur pour stocker ses documents et fichiers de travail.",
+      "Un espace privé pour conserver et retrouver vos documents et fichiers de travail.",
   },
   sharedStorage: {
     title: "Espace partagé",
@@ -20,22 +20,22 @@ export const FORMULE_HELP_CONTENT = {
       "Espace commun accessible à plusieurs personnes de votre structure pour centraliser les documents d’équipe.",
   },
   personalBackup: {
-    title: "Sauvegarde du stockage personnel",
+    title: "Copie de sécurité de vos fichiers",
     description:
-      "Copie de sécurité de vos fichiers personnels permettant leur restauration en cas d’erreur, de suppression ou d’incident.",
+      "Une copie de vos fichiers personnels pour préparer leur récupération après une erreur, une suppression ou un incident.",
   },
   sharedBackup: {
-    title: "Sauvegarde de l’espace partagé",
+    title: "Copie de sécurité de l’espace partagé",
     description:
-      "Copie de sécurité des fichiers de l’espace partagé permettant leur restauration en cas d’erreur, de suppression ou d’incident.",
+      "Une copie des fichiers communs pour préparer leur récupération après une erreur, une suppression ou un incident.",
   },
   additionalUser: {
-    title: "Utilisateur supplémentaire",
+    title: "Accès pour une personne supplémentaire",
     description:
-      "Ajoute un compte nominatif supplémentaire. Le stockage personnel, sa sauvegarde, l’accès sécurisé et le bureau à distance du titulaire ne sont pas automatiquement dupliqués.",
+      "Chaque personne ajoutée reçoit son propre accès. L’espace de fichiers, sa copie de sécurité et l’accès à distance de la personne principale ne sont pas ajoutés automatiquement pour elle.",
   },
   supportPlus: {
-    title: "Support Plus",
+    title: "Assistance renforcée",
     description:
       "Niveau d’accompagnement renforcé pour les besoins nécessitant davantage d’assistance.",
   },

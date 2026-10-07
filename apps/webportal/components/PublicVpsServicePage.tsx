@@ -86,7 +86,7 @@ export function PublicVpsServicePage({
 
         <section className="service-hero vps-storefront-hero" aria-labelledby="vps-page-title">
           <div>
-            <span className="card-kicker">Serveurs VPS</span>
+            <span className="card-kicker">Serveurs à distance</span>
             <h1 id="vps-page-title">{content.title}</h1>
             <p>{content.lead}</p>
           </div>
@@ -102,10 +102,10 @@ export function PublicVpsServicePage({
 
         <section className="service-section vps-catalog" aria-labelledby="vps-catalog-title">
           <header className="service-section-heading vps-catalog-intro">
-            <span className="card-kicker">Offres VPS</span>
+            <span className="card-kicker">Offres de serveurs</span>
             <h2 id="vps-catalog-title">Choisissez la gamme adaptée à votre projet</h2>
             <p>
-              Choisissez les ressources adaptées pour héberger votre site, votre
+              Choisissez une solution adaptée pour héberger votre site, votre
               application ou vos outils. Le prix et les éventuels frais de mise en
               service sont indiqués avant la commande.
             </p>
@@ -114,7 +114,7 @@ export function PublicVpsServicePage({
             services.map((service) => <VpsServiceOffers key={service.code} service={service} />)
           ) : (
             <p className="service-empty-state">
-              Les offres VPS publiques sont temporairement indisponibles.
+              Les offres de serveurs sont temporairement indisponibles.
             </p>
           )}
         </section>
@@ -155,7 +155,7 @@ export function PublicVpsServicePage({
         </section>
 
         <section className="service-category-proof storefront-related" aria-labelledby="vps-related-title">
-          <div><h2 id="vps-related-title">Services associés</h2><p>Explorez le service correspondant à votre besoin ou demandez un cadrage.</p></div>
+          <div><h2 id="vps-related-title">Services associés</h2><p>Découvrez le service qui répond à votre besoin ou parlons-en ensemble.</p></div>
           <nav aria-label="Pages associées" className="storefront-link-list">
             {relatedLinks.map((link) => <Link className="service-inline-link" href={link.href} key={link.href}>{link.label}</Link>)}
           </nav>
@@ -163,7 +163,7 @@ export function PublicVpsServicePage({
 
         <section className="service-cta" aria-labelledby="vps-final-cta-title">
           <div>
-            <h2 id="vps-final-cta-title">Prêt à préparer votre VPS ?</h2>
+            <h2 id="vps-final-cta-title">Prêt à choisir votre serveur ?</h2>
             <p>
               Notre équipe peut vous aider à confirmer la configuration adaptée à votre usage.
             </p>

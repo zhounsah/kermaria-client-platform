@@ -1,7 +1,9 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import type { SitePageLayout } from "@kermaria/shared";
 import { ManagedMarkdown } from "@/components/ManagedMarkdown";
 import { ServiceBreadcrumb } from "@/components/PublicServiceComponents";
+import { SitePageFrame } from "@/components/SitePageFrame";
 import {
   contextualizeDiagnosticHref,
   diagnosticContextForServiceSlug,
@@ -30,6 +32,7 @@ type PublicStorefrontPageProps = {
   heroLead?: string;
   heroTitle?: string;
   showHeroActions?: boolean;
+  pageLayout?: SitePageLayout;
 };
 
 export function PublicStorefrontPage({
@@ -43,6 +46,7 @@ export function PublicStorefrontPage({
   serviceSlug = null,
   selfServiceOrderable = null,
   showHeroActions = true,
+  pageLayout,
 }: PublicStorefrontPageProps) {
   const fallbackCta = resolveStorefrontPublicCta(content, selfServiceOrderable);
   const diagnosticContext = serviceSlug
@@ -67,19 +71,8 @@ export function PublicStorefrontPage({
     selfServiceOrderable,
   );
 
-  return (
-    <>
-      <JsonLd data={breadcrumbJsonLd(PUBLIC_SITE_URL, [...breadcrumbItems])} />
-      <JsonLd
-        data={faqPageJsonLd(
-          PUBLIC_SITE_URL,
-          breadcrumbItems[breadcrumbItems.length - 1]?.path ?? "/",
-          content.faq,
-        )}
-      />
-      <div className={`services-page storefront-page${compactHero ? " storefront-page-compact" : ""}`}>
+  const intro = <>
         <ServiceBreadcrumb items={breadcrumbItems} />
-
         <section className={`service-hero${compactHero ? " service-hero-compact storefront-compact-hero" : ""}`}>
           <div>
             <span className="card-kicker">Zachary IT</span>
@@ -97,39 +90,34 @@ export function PublicStorefrontPage({
             </div>
           ) : null}
         </section>
-
-        {beforeSections}
-
-        {content.sections.map((section) => (
+  </>;
+  const explanations = <>{content.sections.map((section) => (
           <section className="service-section storefront-section" key={section.heading}>
             <header className="service-section-heading"><h2>{section.heading}</h2></header>
             <ManagedMarkdown markdown={section.bodyMarkdown} />
           </section>
-        ))}
-
-        <section className="service-section storefront-faq" aria-labelledby="storefront-faq-title">
+        ))}</>;
+  const faq = <section className="service-section storefront-faq" aria-labelledby="storefront-faq-title">
           <header className="service-section-heading"><h2 id="storefront-faq-title">Questions fréquentes</h2></header>
           <div className="storefront-faq-grid">
             {content.faq.map((item) => (
               <details key={item.question}><summary>{item.question}</summary><p>{item.answer}</p></details>
             ))}
           </div>
-        </section>
-
-        <section className="service-category-proof storefront-related" aria-labelledby="storefront-related-title">
-          <div><h2 id="storefront-related-title">Services associés</h2><p>Explorez le service correspondant à votre besoin ou demandez un cadrage.</p></div>
+        </section>;
+  const related = <section className="service-category-proof storefront-related" aria-labelledby="storefront-related-title">
+          <div><h2 id="storefront-related-title">Services associés</h2><p>Découvrez le service qui répond à votre besoin ou parlons-en ensemble.</p></div>
           <nav aria-label="Pages associées" className="storefront-link-list">
             {relatedLinks.map((link) => <Link className="service-inline-link" href={link.href} key={link.href}>{link.label}</Link>)}
           </nav>
-        </section>
-
-        <section className="service-cta">
+        </section>;
+  const contact = <section className="service-cta">
           <div>
             <h2>{hasFormulaPath ? "Choisissez le parcours adapté." : "Parlons de votre besoin."}</h2>
             <p>
               {hasFormulaPath
-                ? "Une offre couvre le besoin standard. Pour un environnement existant ou un périmètre particulier, passez par le diagnostic ou le devis."
-                : "Un devis ou un échange de cadrage permet de confirmer le périmètre, les prérequis et les limites avant mise en service."}
+                ? "Une offre peut répondre à votre besoin. Si votre situation est particulière, le questionnaire ou un devis vous aidera à choisir."
+                : "Expliquez-nous votre situation : nous préciserons les étapes et vous proposerons un devis clair avant de commencer."}
             </p>
           </div>
           <div className="button-row storefront-action-row">
@@ -145,7 +133,27 @@ export function PublicStorefrontPage({
               </Link>
             ) : null}
           </div>
-        </section>
+        </section>;
+  return (
+    <>
+      <JsonLd data={breadcrumbJsonLd(PUBLIC_SITE_URL, [...breadcrumbItems])} />
+      <JsonLd data={!pageLayout || pageLayout.blocks.some((block) => block.widgetKey === "tariffs_faq")
+        ? faqPageJsonLd(
+          PUBLIC_SITE_URL,
+          breadcrumbItems[breadcrumbItems.length - 1]?.path ?? "/",
+          content.faq,
+        ) : null} />
+      <div className={`services-page storefront-page${compactHero ? " storefront-page-compact" : ""}`}>
+        {pageLayout ? <SitePageFrame area="public" pageKey={pageLayout.pageKey}
+          initialLayout={pageLayout} slots={{
+            tariffs_intro: intro,
+            tariffs_catalog: beforeSections,
+            tariffs_explanations: explanations,
+            tariffs_faq: faq,
+            tariffs_related: related,
+            tariffs_contact: contact,
+          }}>{null}</SitePageFrame>
+          : <>{intro}{beforeSections}{explanations}{faq}{related}{contact}</>}
       </div>
     </>
   );

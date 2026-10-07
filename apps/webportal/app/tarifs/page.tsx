@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { ErrorState } from "@/components/ErrorState";
 import { PublicCommercialTariffCatalog } from "@/components/PublicCommercialTariffCatalog";
 import { PublicStorefrontPage } from "@/components/PublicStorefrontPage";
-import { getBillingV2FormulesCatalog, getPublicManagedContent } from "@/lib/internal-api";
+import { getBillingV2FormulesCatalog, getPublicManagedContent, getPublicSitePageLayout } from "@/lib/internal-api";
 import { buildPublicCommercialCatalog } from "@/lib/public-commercial-catalog";
 import {
   buildPublicMetadata,
@@ -11,6 +11,7 @@ import {
 } from "@/lib/public-metadata";
 import {
   parseStorefrontPageContent,
+  presentPublicStorefrontContent,
   resolveStorefrontBreadcrumb,
 } from "@/lib/storefront-content";
 
@@ -18,7 +19,8 @@ export const dynamic = "force-dynamic";
 
 export async function generateMetadata(): Promise<Metadata> {
   const result = await getPublicManagedContent("storefront:tarifs");
-  const content = result.data ? parseStorefrontPageContent(result.data.bodyMarkdown) : null;
+  const parsed = result.data ? parseStorefrontPageContent(result.data.bodyMarkdown) : null;
+  const content = parsed ? presentPublicStorefrontContent(parsed, null) : null;
   return buildPublicMetadata({
     title: content?.seoTitle ?? "Tarifs",
     description: content?.seoDescription ?? "Découvrez les services Zachary IT, leurs tarifs de départ et les prestations proposées sur devis.",
@@ -30,13 +32,15 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function TarifsPage() {
-  const [contentResult, billingCatalogResult] = await Promise.all([
+  const [contentResult, billingCatalogResult, layoutResult] = await Promise.all([
     getPublicManagedContent("storefront:tarifs"),
     getBillingV2FormulesCatalog(),
+    getPublicSitePageLayout("/tarifs"),
   ]);
-  const content = contentResult.data
+  const parsed = contentResult.data
     ? parseStorefrontPageContent(contentResult.data.bodyMarkdown)
     : null;
+  const content = parsed ? presentPublicStorefrontContent(parsed, null) : null;
 
   if (!content) {
     return (
@@ -62,6 +66,7 @@ export default async function TarifsPage() {
         content={content}
         heroLead="Consultez les prix des services, leurs options et leur mode de souscription."
         heroTitle="Tarifs des services Zachary IT"
+        pageLayout={layoutResult.data}
         showHeroActions={false}
       />
     </>

@@ -37,14 +37,14 @@ function commercialGuidance(
 ): { title: string; body: string } {
   if (serviceSlug === "vpn-entreprise") {
     return {
-      title: "Vous savez que le VPN correspond \u00e0 votre besoin ?",
+      title: "Vous souhaitez travailler à distance ?",
       body: "Pour un acc\u00e8s distant classique, vous pouvez partir directement de l'offre. Si votre r\u00e9seau existe d\u00e9j\u00e0, si plusieurs utilisateurs ou sites sont concern\u00e9s, ou si vous h\u00e9sitez avec un bureau Windows distant, demandez conseil avant de commencer.",
     };
   }
   if (serviceSlug === "sauvegarde-externalisee") {
     return {
       title: "Fichiers simples ou environnement plus complexe ?",
-      body: "Pour prot\u00e9ger des fichiers dans un cas standard, l'offre vous guide. Pour un serveur, un NAS, plusieurs postes ou un besoin de restauration particulier, d\u00e9crivez votre environnement afin de cadrer la bonne strat\u00e9gie.",
+      body: "Pour protéger des fichiers dans un cas standard, l'offre vous guide. Pour un serveur, un boîtier de stockage, plusieurs postes ou un besoin de récupération particulier, décrivez votre situation pour choisir la bonne solution.",
     };
   }
   if (mode === "QUOTE") {
@@ -64,10 +64,10 @@ function VpnComparisonDetails() {
       <summary>{"En savoir plus sur la diff\u00e9rence"}</summary>
       <div className="storefront-inline-disclosure-body">
         <p>
-          <strong>VPN :</strong>{" vous gardez votre propre ordinateur et vous rejoignez de fa\u00e7on s\u00e9curis\u00e9e les ressources autoris\u00e9es de votre r\u00e9seau : fichiers, NAS, applications ou \u00e9quipements."}
+          <strong>Accès aux fichiers :</strong>{" vous gardez votre ordinateur et retrouvez seulement les fichiers et outils autorisés, sans les rendre accessibles à tous."}
         </p>
         <p>
-          <strong>{"Bureau Windows distant :"}</strong>{" vous ouvrez un environnement Windows ex\u00e9cut\u00e9 \u00e0 distance, avec ses applications et ses donn\u00e9es centralis\u00e9es. C'est souvent plus adapt\u00e9 lorsque le poste de travail lui-m\u00eame doit rester h\u00e9berg\u00e9."}
+          <strong>{"Bureau Windows à distance :"}</strong>{" vous ouvrez un bureau complet depuis un autre appareil, avec vos applications et vos fichiers au même endroit."}
         </p>
         <Link className="service-inline-link" href="/vpn-ou-bureau-a-distance-que-choisir">
           {"Voir le comparatif d\u00e9taill\u00e9"}
@@ -154,7 +154,7 @@ export function PublicPriorityServicePage({
               <article className="storefront-priority-card" key={section.heading}>
                 <h2>{section.heading}</h2>
                 <ManagedMarkdown markdown={section.bodyMarkdown} />
-                {serviceSlug === "vpn-entreprise" && /^VPN ou bureau Windows distant/i.test(section.heading)
+                {serviceSlug === "vpn-entreprise" && (/^VPN ou bureau Windows distant/i.test(section.heading) || section.heading === "Accéder à ses fichiers ou à un bureau complet ?")
                   ? <VpnComparisonDetails />
                   : null}
               </article>
@@ -196,7 +196,7 @@ export function PublicPriorityServicePage({
           <div>
             <span className="card-kicker">Pour aller plus loin</span>
             <h2 id="storefront-related-title">{"Services associ\u00e9s"}</h2>
-            <p>{"Explorez les briques qui peuvent compl\u00e9ter ce service selon votre environnement."}</p>
+            <p>{"Découvrez les services qui peuvent compléter cette solution selon votre besoin."}</p>
           </div>
           <nav aria-label={"Pages associ\u00e9es"} className="storefront-link-list">
             {relatedLinks.map((link) => (
@@ -211,8 +211,8 @@ export function PublicPriorityServicePage({
             <h2>{hasFormulaPath ? "Choisissez le parcours adapt\u00e9." : "Parlons de votre besoin."}</h2>
             <p>
               {hasFormulaPath
-                ? "Une offre couvre le besoin standard. Pour un environnement existant ou un p\u00e9rim\u00e8tre particulier, demandez-nous conseil avant de continuer."
-                : "Un devis ou un échange de cadrage permet de confirmer le p\u00e9rim\u00e8tre, les pr\u00e9requis et les limites avant mise en service."}
+                ? "Une offre peut répondre à votre besoin. Si votre situation est particulière, demandez-nous conseil avant de continuer."
+                : "Expliquez-nous votre situation : nous préciserons les étapes et vous proposerons un devis clair avant de commencer."}
             </p>
           </div>
           <div className="button-row storefront-action-row">
@@ -233,4 +233,3 @@ export function PublicPriorityServicePage({
     </>
   );
 }
-

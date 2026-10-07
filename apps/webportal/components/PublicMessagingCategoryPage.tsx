@@ -98,14 +98,14 @@ export function PublicMessagingCategoryPage({
           <div className="storefront-priority-section-grid messaging-pillar-grid">
             <article className="storefront-priority-card">
               <h3>{"Nom de domaine"}</h3>
-              <p>{"Nous vérifions qui contrôle le nom de domaine, les accès nécessaires et les services qui y sont reliés. Les réglages DNS sont pris en charge lorsque votre site ou votre messagerie en ont besoin."}</p>
+              <p>{"Nous vérifions qui contrôle le nom de domaine, les accès nécessaires et les services qui y sont reliés. Les réglages utiles à votre site et à votre messagerie sont pris en charge."}</p>
               <Link className="service-inline-link" href="/services/gestion-dns-domaines">
                 {"Voir la gestion du nom de domaine"}
               </Link>
             </article>
             <article className="storefront-priority-card">
               <h3>{"Messagerie & d\u00e9livrabilit\u00e9"}</h3>
-              <p>{"Boîtes, alias, Microsoft 365 et migrations sont organisés autour de vos usages. La protection des messages est configurée en arrière-plan ; les licences fournisseur restent distinguées de l'accompagnement Zachary IT."}</p>
+              <p>{"Adresses e-mail, Microsoft 365 et reprise des anciens messages sont organisés autour de vos usages. La protection des messages est préparée en arrière-plan ; les licences restent indiquées séparément."}</p>
               <Link className="service-inline-link" href="/services/messagerie-professionnelle">
                 {"Voir la messagerie professionnelle"}
               </Link>

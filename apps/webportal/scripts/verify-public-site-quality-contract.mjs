@@ -17,6 +17,7 @@ const [
   demoClientSpace,
   ressourcesPage,
   contactPage,
+  sitePageFrame,
   contactForm,
   notFoundPage,
   layout,
@@ -37,6 +38,7 @@ const [
   read("components/DemoClientSpace.tsx"),
   read("app/ressources/page.tsx"),
   read("app/contact/page.tsx"),
+  read("components/SitePageFrame.tsx"),
   read("components/ContactForm.tsx"),
   read("app/not-found.tsx"),
   read("app/layout.tsx"),
@@ -51,11 +53,15 @@ for (const [label, source] of [
   ["accueil", homePage],
   ["offres", offresPage],
   ["ressources", ressourcesPage],
-  ["contact", contactPage],
 ]) {
   assert.match(source, /buildPublicMetadata\(/, `${label} doit utiliser le helper SEO public.`);
   assert.match(source, /<h1\b/, `${label} doit exposer un H1 explicite.`);
 }
+assert.match(contactPage, /buildPublicMetadata\(/, "contact doit utiliser le helper SEO public.");
+assert.match(contactPage, /pageKey="\/contact"/, "contact doit utiliser sa mise en page publiée.");
+assert.match(sitePageFrame,
+  /block\.type === "contact_intro"[\s\S]{0,300}<h1>\{block\.title\}<\/h1>/,
+  "le titre éditable du contact doit rester un H1 explicite.");
 
 assert.match(publicMetadata, /alternates:\s*\{\s*canonical:\s*path\s*\}/);
 assert.match(publicMetadata, /openGraph:\s*\{/);

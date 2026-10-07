@@ -3,9 +3,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { BillingV2FormuleConfigurator } from "@/components/BillingV2FormuleConfigurator";
+import { SitePageFrame } from "@/components/SitePageFrame";
 import { formatCurrencyFromCents } from "@/lib/formatters";
-import { getBillingV2FormulesCatalog } from "@/lib/internal-api";
-import { buildPublicMetadata } from "@/lib/public-metadata";
+import { getBillingV2FormulesCatalog, getPublicSitePageLayout } from "@/lib/internal-api";
+import { buildPublicMetadata, CONTENT_UNAVAILABLE_ROBOTS } from "@/lib/public-metadata";
 import { resolvePresetTagline } from "@/lib/billing-v2-formules";
 import { readBillingV2SelectionSearchParams } from "@/lib/billing-v2-selection";
 
@@ -25,77 +26,72 @@ export async function generateMetadata({
 
   return buildPublicMetadata({
     title: preset ? `Configurer l'offre ${preset.name}` : "Configurer une offre",
-    description:
-      preset?.description
-      ?? "Ajustez la capacité, la sauvegarde et les accès de votre offre.",
+    description: preset
+      ? resolvePresetTagline(preset)
+      : "Ajustez la capacité, la sauvegarde et les accès de votre offre.",
     path: `/formules/${code}`,
+    ...(preset ? {} : { robots: CONTENT_UNAVAILABLE_ROBOTS }),
   });
 }
 
 export default async function FormuleConfigurationPage({ params, searchParams }: PageProps) {
   const { code } = await params;
   const resumedSelection = readBillingV2SelectionSearchParams(await searchParams);
-  const { data: catalog } = await getBillingV2FormulesCatalog();
+  const [{ data: catalog }, layoutResult] = await Promise.all([
+    getBillingV2FormulesCatalog(),
+    getPublicSitePageLayout("/formules/[code]"),
+  ]);
   const preset = catalog.presets.find((item) => item.code === code);
 
   if (catalog.presets.length > 0 && !preset) {
     notFound();
   }
 
-  return (
-    <div className="formule-page">
-      <nav className="formule-breadcrumb" aria-label="Fil d'Ariane">
-        <Link href="/formules">Offres</Link>
-        <span aria-hidden="true"> / </span>
-        <span>{preset?.name ?? "Configuration"}</span>
-      </nav>
+  if (!preset) return <div className="formule-page">
+    <nav className="formule-breadcrumb" aria-label="Fil d'Ariane">
+      <Link href="/formules">Offres</Link>
+    </nav>
+    <h1>Offres momentanément indisponibles</h1>
+    <p className="formules-empty">Réessayez plus tard ou <Link href="/contact">contactez-nous</Link>.</p>
+  </div>;
 
-      {!preset ? (
-        <p className="formules-empty">
-          Le catalogue des offres n&apos;est pas joignable pour le moment.
-          Les prix sont servis par l&apos;API interne : le site public
-          n&apos;en conserve aucun.
-        </p>
-      ) : (
-        <>
-          <header className="formule-header">
-            <p className="eyebrow">Offre</p>
-            <h1>{preset.name}</h1>
-            <p className="formule-lead">{resolvePresetTagline(preset)}</p>
-            <p className="formule-baseline">
-              Configuration recommandée :{" "}
-              <strong>
-                {formatCurrencyFromCents(preset.baselineMonthlyAmountCents)}
-              </strong>{" "}
-              / mois sans engagement. Ajustez ci-dessous, le prix suit.
-            </p>
-          </header>
+  const breadcrumb = <nav className="formule-breadcrumb" aria-label="Fil d'Ariane">
+    <Link href="/formules">Offres</Link>
+    <span aria-hidden="true"> / </span>
+    <span>{preset.name}</span>
+  </nav>;
+  const introduction = <header className="formule-header">
+    <p className="eyebrow">Offre</p>
+    <h1>{preset.name}</h1>
+    <p className="formule-lead">{resolvePresetTagline(preset)}</p>
+    <p className="formule-baseline">
+      Configuration recommandée :{" "}
+      <strong>{formatCurrencyFromCents(preset.baselineMonthlyAmountCents)}</strong>{" "}
+      / mois sans engagement. Ajustez ci-dessous, le prix suit.
+    </p>
+  </header>;
+  const configurator = <BillingV2FormuleConfigurator
+    catalog={catalog}
+    preset={preset}
+    initialSelection={resumedSelection?.presetCode === preset.code ? resumedSelection : null}
+  />;
+  const fallbackHelp = <section className="formule-footnote">
+    <h2>Comment lire le prix ?</h2>
+    <p>Le récapitulatif affiche le prix de votre sélection. Chaque option ajustée déclenche un nouveau calcul. Vous pourrez relire le montant et les conditions avant le paiement.</p>
+    <p className="formule-footnote-secondary">
+      Un besoin différent ? <Link className="text-link" href="/contact">Écrivez-nous</Link>.
+    </p>
+  </section>;
 
-          <BillingV2FormuleConfigurator
-            catalog={catalog}
-            preset={preset}
-            initialSelection={resumedSelection?.presetCode === preset.code ? resumedSelection : null}
-          />
-
-          <section className="formule-footnote">
-            <h2>Ce que vous payez</h2>
-            <p>
-              Le prix affiché correspond exactement à la configuration retenue
-              ci-dessus : chaque option ajoutée ou retirée met le total à jour
-              immédiatement. Aucun frais de mise en service ne s&apos;ajoute au
-              moment de la souscription, et la remise annoncée est celle qui
-              sera réellement appliquée.
-            </p>
-            <p className="formule-footnote-secondary">
-              Besoin d&apos;une configuration qui sort de ce cadre ?{" "}
-              <Link className="text-link" href="/contact">
-                Écrivez-nous
-              </Link>
-              , nous la mettons en place manuellement.
-            </p>
-          </section>
-        </>
-      )}
-    </div>
-  );
+  return <div className="formule-page">
+    <SitePageFrame area="public" pageKey="/formules/[code]"
+      initialLayout={layoutResult.data}
+      slots={{
+        formule_detail_breadcrumb: breadcrumb,
+        formule_detail_intro: introduction,
+        formule_detail_configurator: configurator,
+      }}>
+      <>{breadcrumb}{introduction}{configurator}{fallbackHelp}</>
+    </SitePageFrame>
+  </div>;
 }

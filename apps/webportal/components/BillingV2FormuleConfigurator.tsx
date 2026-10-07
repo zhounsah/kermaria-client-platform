@@ -19,7 +19,9 @@ import {
   findService,
   formatCommitmentDurationLabel,
   formatDiscountPercent,
+  resolveServicePublicDetail,
   resolveServicePublicLabel,
+  resolveTierLabel,
   selectableTiers,
 } from "@/lib/billing-v2-formules";
 import { BillingV2PricingSummary } from "@/components/BillingV2PricingSummary";
@@ -167,6 +169,7 @@ export function BillingV2FormuleConfigurator({
   const storageTiers = selectableTiers(catalog, SERVICE_CODES.storagePersonal);
   const sharedTiers = selectableTiers(catalog, SERVICE_CODES.storageShared);
   const vpnTiers = selectableTiers(catalog, SERVICE_CODES.vpn);
+  const vpnService = findService(catalog, SERVICE_CODES.vpn);
   const remoteDesktop = findService(catalog, SERVICE_CODES.remoteDesktop);
   const additionalUser = findService(catalog, SERVICE_CODES.additionalUser);
   const supportPlus = findService(catalog, SERVICE_CODES.supportPlus);
@@ -218,14 +221,14 @@ export function BillingV2FormuleConfigurator({
   return (
     <div className="formule-configurator">
       <div className="formule-options">
-        <fieldset className="formule-fieldset" aria-label="Stockage personnel">
+        <fieldset className="formule-fieldset" aria-label="Espace personnel de fichiers">
           <legend>
             <FormuleHelpLabel helpKey="personalStorage">
-              Stockage personnel
+              Espace personnel de fichiers
             </FormuleHelpLabel>
           </legend>
           <p className="formule-hint">
-            L&apos;espace attribué à l&apos;utilisateur principal.
+            L&apos;espace de fichiers de la personne principale.
           </p>
           <div className="formule-choices">
             {storageTiers.map((tier) => (
@@ -249,14 +252,15 @@ export function BillingV2FormuleConfigurator({
           <label className="formule-toggle">
             <input
               type="checkbox"
-              aria-label="Sauvegarde du stockage personnel"
+              aria-label="Copie de sécurité de vos fichiers"
               checked={selection.backupPersonal}
               onChange={(event) =>
                 update({ backupPersonal: event.target.checked })}
             />
             <span>
               <FormuleHelpLabel helpKey="personalBackup">
-                {backupPersonal?.name ?? "Sauvegarde du stockage personnel"}
+                {resolveServicePublicLabel(SERVICE_CODES.backupPersonal,
+                  backupPersonal?.name ?? "Copie de sécurité de vos fichiers")}
               </FormuleHelpLabel>
               <em className="formule-toggle-note">
                 Le volume protégé suit automatiquement la capacité choisie.
@@ -306,7 +310,7 @@ export function BillingV2FormuleConfigurator({
           <label className="formule-toggle">
             <input
               type="checkbox"
-              aria-label={"Sauvegarde du stockage partag\u00e9"}
+              aria-label="Copie de sécurité de l'espace partagé"
               checked={selection.backupShared}
               disabled={selection.storageSharedTierCode === null}
               onChange={(event) =>
@@ -314,7 +318,8 @@ export function BillingV2FormuleConfigurator({
             />
             <span>
               <FormuleHelpLabel helpKey="sharedBackup">
-                {backupShared?.name ?? "Sauvegarde de l'espace partag\u00e9"}
+                {resolveServicePublicLabel(SERVICE_CODES.backupShared,
+                  backupShared?.name ?? "Copie de sécurité de l'espace partagé")}
               </FormuleHelpLabel>
               <em className="formule-toggle-note">
                 Disponible dès qu&apos;un espace partagé est retenu.
@@ -335,7 +340,7 @@ export function BillingV2FormuleConfigurator({
                 checked={selection.vpnTierCode === null}
                 onChange={() => update({ vpnTierCode: null })}
               />
-              <span className="formule-choice-label">Sans accès VPN</span>
+              <span className="formule-choice-label">Sans accès à distance</span>
               <span className="formule-choice-price">Inclus</span>
             </label>
             {vpnTiers.map((tier) => (
@@ -348,7 +353,7 @@ export function BillingV2FormuleConfigurator({
                   onChange={() => update({ vpnTierCode: tier.code })}
                 />
                 <span className="formule-choice-label">
-                  {tier.label}
+                  {resolveTierLabel(vpnService, tier.code) ?? tier.label}
                   {tier.description ? (
                     <em className="formule-choice-note">{tier.description}</em>
                   ) : null}
@@ -393,31 +398,31 @@ export function BillingV2FormuleConfigurator({
         </fieldset>
 
         <fieldset className="formule-fieldset">
-          <legend>Équipe et support</legend>
+          <legend>Équipe et assistance</legend>
           <p className="formule-hint">
-            Une place d&apos;utilisateur suppl&eacute;mentaire ajoute un compte nominatif
-            de plus. Elle ne duplique pas automatiquement le stockage personnel,
-            la sauvegarde personnelle, l&apos;acc&egrave;s s&eacute;curis&eacute; ni le bureau &agrave;
-            distance du titulaire. Le v&ocirc;tre est d&eacute;j&agrave; inclus.
+            Chaque personne ajoutée reçoit son propre accès. L&apos;espace de
+            fichiers, sa copie de sécurité et l&apos;accès à distance de la personne
+            principale ne sont pas ajoutés automatiquement pour elle. Votre
+            propre accès est déjà compris.
           </p>
           <div className="formule-stepper">
             <span className="formule-stepper-label">
               <FormuleHelpLabel helpKey="additionalUser">
-                Utilisateurs suppl&eacute;mentaires
+                Personnes supplémentaires
               </FormuleHelpLabel>
               {additionalUser?.flatMonthlyAmountCents ? (
                 <em className="formule-toggle-note">
                   {formatCurrencyFromCents(
                     additionalUser.flatMonthlyAmountCents,
                   )}{" "}
-                  / mois et par utilisateur
+                  / mois et par personne
                 </em>
               ) : null}
             </span>
             <span className="formule-stepper-controls">
               <button
                 type="button"
-                aria-label="Retirer un utilisateur"
+                aria-label="Retirer une personne"
                 disabled={selection.additionalUsers <= 0}
                 onClick={() =>
                   update({
@@ -429,7 +434,7 @@ export function BillingV2FormuleConfigurator({
               <output aria-live="polite">{selection.additionalUsers}</output>
               <button
                 type="button"
-                aria-label="Ajouter un utilisateur"
+                aria-label="Ajouter une personne"
                 disabled={selection.additionalUsers >= MAX_ADDITIONAL_USERS}
                 onClick={() =>
                   update({
@@ -444,14 +449,15 @@ export function BillingV2FormuleConfigurator({
           <label className="formule-toggle">
             <input
               type="checkbox"
-              aria-label="Support Plus"
+              aria-label="Assistance renforcée"
               checked={selection.supportPlus}
               onChange={(event) =>
                 update({ supportPlus: event.target.checked })}
             />
             <span>
               <FormuleHelpLabel helpKey="supportPlus">
-                {supportPlus?.name ?? "Support Plus"}
+                {resolveServicePublicLabel(SERVICE_CODES.supportPlus,
+                  supportPlus?.name ?? "Assistance renforcée")}
               </FormuleHelpLabel>
               {supportPlus?.flatMonthlyAmountCents ? (
                 <em className="formule-toggle-note">
@@ -582,7 +588,7 @@ export function BillingV2FormuleConfigurator({
               lines={quote.lines.map((line) => ({
                 id: `${line.serviceCode}-${line.tierCode ?? "flat"}`,
                 label: resolveServicePublicLabel(line.serviceCode, line.label),
-                detail: line.detail,
+                detail: resolveServicePublicDetail(line.serviceCode, line.detail),
                 quantity: line.quantity,
                 amountCents: line.amountCents,
               }))}

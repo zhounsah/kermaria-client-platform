@@ -45,6 +45,32 @@ export type PublicPackView = {
   currency: string;
 };
 
+const LEGACY_PUBLIC_PACK_TEXT: Readonly<Record<string, string>> = {
+  "La base du dossier sécurisé, enrichie d'un accès VPN personnel et d'une supervision légère.":
+    "À vos fichiers et à leur copie de sécurité s'ajoutent un accès privé à distance et un suivi régulier.",
+  "La base du dossier de secours numérique, enrichie d'un accès VPN personnel et d'une supervision légère.":
+    "À vos fichiers et à leur copie de sécurité s'ajoutent un accès privé à distance et un suivi régulier.",
+  "Un bureau Windows à distance avec accès VPN, stockage, sauvegarde et suivi du service.":
+    "Un bureau Windows accessible à distance, avec des fichiers protégés et un suivi du service.",
+  "Un bureau Windows à distance avec accès VPN, stockage, sauvegarde et suivi du service pour reprendre plus sereinement.":
+    "Un bureau Windows accessible à distance, avec des fichiers protégés et un suivi du service.",
+  "Accès VPN personnel": "Accès privé à distance",
+  "VPN personnel pour se connecter": "Connexion privée à distance",
+  "VPN personnel inclus": "Connexion privée incluse",
+  "VPN personnel": "Connexion privée à distance",
+  "Supervision du service": "Suivi du service",
+  "Support niveau 1": "Aide de premier niveau",
+  "Supervision et support niveau 1": "Suivi et aide de premier niveau",
+  "Sauvegarde et supervision": "Copie de sécurité et suivi",
+  "Support niveau 1 et documentation simplifiée": "Aide de premier niveau et consignes utiles",
+  "Support niveau 1 et documentation utile à la reprise": "Aide de premier niveau et consignes pour reprendre",
+  "Support niveau 1 et documentation": "Aide de premier niveau et consignes utiles",
+};
+
+export function presentPublicPackText(value: string): string {
+  return LEGACY_PUBLIC_PACK_TEXT[value] ?? value;
+}
+
 export function buildPackPresentationMap(
   content: PublicPackCatalogContent | null = null,
 ) {
@@ -103,6 +129,14 @@ export function findPublicPackView(
  */
 export function presentPublicOfferMarkdown(markdown: string): string {
   return markdown
+    .replaceAll(
+      "La base du dossier sécurisé, enrichie d'un accès VPN personnel et d'une supervision légère.",
+      "À vos fichiers et à leur copie de sécurité s'ajoutent un accès privé à distance et un suivi régulier.",
+    )
+    .replaceAll(
+      "Un bureau Windows à distance avec accès VPN, stockage, sauvegarde et suivi du service.",
+      "Un bureau Windows accessible à distance, avec des fichiers protégés et un suivi du service.",
+    )
     .replace(/^## Composants techniques liés$/gim, "## Services associés")
     .replace(
       /^La composition technique liée à cette offre est calculée automatiquement à partir du catalogue commercial actif\.(?:[^\n]*)$/gim,
@@ -144,9 +178,9 @@ function toView(
     shortLabel: presentation?.shortLabel ?? manifest.shortLabel,
     headline: presentation?.headline ?? manifest.headline,
     audience: presentation?.audience ?? manifest.audience,
-    description: presentation?.description ?? manifest.description,
-    highlights: presentation?.highlights ?? manifest.highlights,
-    included: presentation?.included ?? manifest.included,
+    description: presentPublicPackText(presentation?.description ?? manifest.description),
+    highlights: (presentation?.highlights ?? manifest.highlights).map(presentPublicPackText),
+    included: (presentation?.included ?? manifest.included).map(presentPublicPackText),
     technicalServiceReferences: manifest.technicalServiceReferences,
     highlightLabel: presentation?.highlightLabel ?? null,
     order: presentation?.displayOrder ?? manifest.order,

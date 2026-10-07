@@ -3,6 +3,7 @@ import Link from "next/link";
 import { BillingV2DirectSubscribe } from "@/components/BillingV2DirectSubscribe";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
+import { SitePageFrame } from "@/components/SitePageFrame";
 import { requireClientSession } from "@/lib/auth";
 import {
   describePresetBenefits,
@@ -10,7 +11,7 @@ import {
   resolvePresetTagline,
 } from "@/lib/billing-v2-formules";
 import { formatCurrencyFromCents } from "@/lib/formatters";
-import { getBillingV2FormulesCatalog } from "@/lib/internal-api";
+import { getBillingV2FormulesCatalog, getClientSubscribePageLayout } from "@/lib/internal-api";
 
 export const metadata = {
   title: "Souscrire",
@@ -29,29 +30,30 @@ export const dynamic = "force-dynamic";
  */
 export default async function SubscribePage() {
   await requireClientSession();
-  const catalogResult = await getBillingV2FormulesCatalog();
+  const [catalogResult, layoutResult] = await Promise.all([
+    getBillingV2FormulesCatalog(), getClientSubscribePageLayout(),
+  ]);
   const catalog = catalogResult.data;
   const presets = [...catalog.presets].sort(
     (left, right) => left.displayOrder - right.displayOrder,
   );
 
-  return (
-    <div className="subscribe-page">
-      <PageHeader
-        description="Partez d'une offre recommandée, ou composez votre configuration service par service. Le tarif est calculé par nos serveurs à chaque changement."
+  const slots = {
+    subscribe_intro: <><PageHeader
+        description="Choisissez une offre adaptée à votre besoin et ajustez-la avant de confirmer. Le prix affiché se met à jour à chaque choix."
         eyebrow="Espace client"
         title="Souscrire"
       />
 
       {catalogResult.error ? (
         <ErrorState
-          description="Le catalogue commercial n'est pas joignable pour le moment. Aucun tarif n'est conservé dans le portail : rien ne peut être affiché tant que l'API interne ne répond pas."
+          description="Les offres et leurs prix ne peuvent pas être affichés pour le moment. Réessayez dans quelques instants."
           reference={catalogResult.correlationId}
           title="Catalogue indisponible"
         />
-      ) : null}
+      ) : null}</>,
 
-      <section aria-label="Offres" className="subscribe-presets">
+    subscribe_offers: <section aria-label="Offres" className="subscribe-presets">
         <h2>Offres</h2>
         <p className="subscribe-section-lead">
           Chaque offre part d&apos;une configuration recommandée que vous
@@ -94,16 +96,23 @@ export default async function SubscribePage() {
             })}
           </ul>
         )}
-      </section>
+      </section>,
 
-      <section aria-label="Services à la carte" className="subscribe-a-la-carte">
+    subscribe_direct: <section aria-label="Services à la carte" className="subscribe-a-la-carte">
         <h2>Services à la carte</h2>
         <p className="subscribe-section-lead">
           Ajoutez un service isolé, sans offre ni engagement. Le tarif
           s&apos;actualise à chaque changement.
         </p>
         <BillingV2DirectSubscribe catalog={catalog} />
-      </section>
-    </div>
-  );
+      </section>,
+    subscribe_help: <section className="content-panel subscribe-help">
+      <h2>Besoin d’aide pour choisir ?</h2>
+      <p>Décrivez votre situation avant de commander ; nous vous aiderons à préciser ce dont vous avez besoin.</p>
+      <Link href="/contact">Nous contacter</Link>
+    </section>,
+  };
+  return <div className="subscribe-page">
+    <SitePageFrame area="client" pageKey="/souscrire" initialLayout={layoutResult.data} slots={slots}>{null}</SitePageFrame>
+  </div>;
 }

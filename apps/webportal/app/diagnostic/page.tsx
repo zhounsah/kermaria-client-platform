@@ -3,14 +3,15 @@ import { PublicDiagnosticWizard } from "@/components/PublicDiagnosticWizard";
 import { resolveDiagnosticContext } from "@/lib/diagnostic-context";
 import {
   getBillingV2FormulesCatalog,
+  getPublicSitePageLayout,
 } from "@/lib/internal-api";
 import { buildPublicMetadata } from "@/lib/public-metadata";
 import { resolvePublishedPreDiagnosticConfiguration } from "@/lib/diagnostic-configuration";
 
 export const metadata: Metadata = buildPublicMetadata({
-  title: "Pré-diagnostic informatique",
+  title: "Trouver ma solution",
   description:
-    "Faites le point sur vos équipements, sauvegardes, réseau et sécurité, puis identifiez les priorités à examiner.",
+    "Répondez à quelques questions simples pour mieux comprendre vos besoins et découvrir les prochaines étapes possibles.",
   path: "/diagnostic",
 });
 
@@ -27,9 +28,10 @@ export default async function DiagnosticPage({ searchParams }: DiagnosticPagePro
   const params = await searchParams;
   const rawContext = Array.isArray(params.context) ? params.context[0] : params.context;
   const requestedContext = resolveDiagnosticContext(rawContext);
-  const [catalogResult, preDiagnosticResolution] = await Promise.all([
+  const [catalogResult, preDiagnosticResolution, layoutResult] = await Promise.all([
     getBillingV2FormulesCatalog(),
     resolvePublishedPreDiagnosticConfiguration(),
+    getPublicSitePageLayout("/diagnostic"),
   ]);
   // Une v2 peut désactiver un contexte sans rendre une ancienne URL invalide.
   // Dans ce cas, retournez vers l'orientation générale : ne continuez jamais
@@ -45,6 +47,7 @@ export default async function DiagnosticPage({ searchParams }: DiagnosticPagePro
       context={context}
       preDiagnosticConfiguration={preDiagnosticResolution.configuration}
       diagnosticConfigurationVersion={preDiagnosticResolution.version}
+      pageLayout={layoutResult.data}
     />
   );
 }

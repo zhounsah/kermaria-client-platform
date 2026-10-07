@@ -67,16 +67,23 @@ export default async function SignupVerifyPage({
               <p>
                 {result.selfServiceFlow === "cart"
                   ? "Votre compte est prêt. Vous pouvez maintenant reprendre votre commande."
-                  : "Votre compte est prêt. Vous pouvez maintenant reprendre la configuration de votre VPS."}
+                  : "Votre compte est prêt. Vous pouvez maintenant reprendre le choix de votre serveur à distance."}
               </p>
               {continuation ? (
                 <Link className="button signup-verify-action" href={continuation}>
-                  {result.selfServiceFlow === "cart" ? "Continuer ma souscription" : "Reprendre mon VPS"}
+                  {result.selfServiceFlow === "cart" ? "Continuer ma souscription" : "Reprendre mon serveur"}
                 </Link>
               ) : (
                 <Link className="button button-secondary signup-verify-action" href="/dashboard">Retour à mon espace client</Link>
               )}
             </>
+          ) : result.code === "SIGNUP_AUTO_APPROVED_EMAIL_PENDING" ? (
+            <>
+              <p>Votre compte est créé, mais l&apos;e-mail contenant le lien de mot de passe n&apos;a pas pu être envoyé. Réessayez dans quelques minutes avec ce lien de confirmation.</p>
+              <a className="button button-secondary signup-verify-action" href={`/signup/verify?token=${encodeURIComponent(trimmedToken)}`}>Réessayer l&apos;envoi</a>
+            </>
+          ) : result.code === "SIGNUP_AUTO_APPROVED" ? (
+            <p>Votre adresse e-mail est confirmée. Un lien pour définir votre mot de passe vous a été envoyé.</p>
           ) : (
             <p>
               Merci, votre adresse e-mail est confirmée. Votre demande est
@@ -88,7 +95,7 @@ export default async function SignupVerifyPage({
           <>
             <p>
               {expired
-                ? "Ce lien de vérification a expiré. Vous pouvez soumettre une nouvelle demande d'inscription."
+                ? "Ce lien de vérification a expiré. Contactez-nous si votre compte a déjà été créé, ou recommencez votre demande."
                 : "Ce lien est invalide ou a déjà été utilisé."}
             </p>
             <Link className="button button-secondary signup-verify-action" href="/signup">Retour au formulaire d&apos;inscription</Link>

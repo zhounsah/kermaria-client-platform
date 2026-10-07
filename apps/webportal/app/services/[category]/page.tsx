@@ -33,12 +33,13 @@ export async function generateMetadata({ params }: CategoryPageProps): Promise<M
     return {};
   }
   const result = await getPublicManagedContent(key);
-  const content = result.data
+  const parsed = result.data
     ? parseStorefrontPageContent(result.data.bodyMarkdown)
     : null;
+  const content = parsed ? presentPublicStorefrontContent(parsed, resolveServiceSlug(slug)) : null;
   return buildPublicMetadata({
     title: content?.seoTitle ?? "Services",
-    description: content?.seoDescription ?? "Services IT g\u00e9r\u00e9s, sur devis ou accompagn\u00e9s par Zachary IT.",
+    description: content?.seoDescription ?? "Services informatiques accompagnés par Zachary IT, avec des prix affichés ou un devis selon le besoin.",
     path: `/services/${slug}`,
     // Sans contenu, le corps rend un `ErrorState` : ne pas laisser cet
     // instantane entrer dans l'index a la place de la page.

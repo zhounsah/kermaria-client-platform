@@ -2,9 +2,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { SignupForm } from "@/components/SignupForm";
+import { SitePageFrame } from "@/components/SitePageFrame";
 import { readBillingV2SelectionSearchParams } from "@/lib/billing-v2-selection";
+import { resolveServicePublicDetail, resolveServicePublicLabel } from "@/lib/billing-v2-formules";
 import {
   getBillingV2FormulesCatalog,
+  getPublicSignupMode,
+  getPublicSitePageLayout,
   quoteBillingV2Formule,
 } from "@/lib/internal-api";
 import { formatCurrencyFromCents } from "@/lib/formatters";
@@ -34,7 +38,7 @@ export default async function SignupPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const enabled = isSignupEnabled();
+  const webSignupEnabled = isSignupEnabled();
   const hcaptchaSiteKey = process.env.HCAPTCHA_SITE_KEY?.trim() || null;
   const rawSearchParams = await searchParams;
   const selfServiceVpsContinuation = rawSearchParams.flow === "vps_self_service"
@@ -47,23 +51,26 @@ export default async function SignupPage({
   const billingV2Requested = rawSearchParams.v2 === "1";
   const billingV2Selection =
     readBillingV2SelectionSearchParams(rawSearchParams);
-  const billingV2Quote = billingV2Selection
-    ? await quoteBillingV2Formule(
-        billingV2Selection,
-        resolveCorrelationId(null),
-      ).catch(() => null)
-    : null;
-  const billingV2CatalogResult = billingV2Selection
-    ? await getBillingV2FormulesCatalog().catch(() => null)
-    : null;
+  const [billingV2Quote, billingV2CatalogResult, layoutResult, modeResult] = await Promise.all([
+    billingV2Selection
+      ? quoteBillingV2Formule(billingV2Selection, resolveCorrelationId(null)).catch(() => null)
+      : Promise.resolve(null),
+    billingV2Selection
+      ? getBillingV2FormulesCatalog().catch(() => null)
+      : Promise.resolve(null),
+    getPublicSitePageLayout("/signup"),
+    getPublicSignupMode(),
+  ]);
+  const enabled = webSignupEnabled && modeResult.data.enabled;
+  const autoApprove = modeResult.data.autoApprove;
   const billingV2PresetName = billingV2Selection
     ? billingV2CatalogResult?.data.presets.find(
         (preset) => preset.code === billingV2Selection.presetCode,
       )?.name ?? null
     : null;
 
-  return (
-    <div className={`signup-page ${styles.page}`}>
+  const slots = {
+    signup_intro: <>
       <Link className="back-link" href="/">
         <span aria-hidden="true">{"<-"}</span> Retour à l&apos;accueil
       </Link>
@@ -75,18 +82,21 @@ export default async function SignupPage({
           {selfServiceCartContinuation
             ? "Créez votre espace client pour finaliser votre commande et retrouver vos services."
             : selfServiceVpsContinuation
-            ? "Créez votre accès client pour reprendre immédiatement la configuration et le paiement de votre VPS."
-            : "Renseignez vos informations pour demander l'ouverture de votre accès client. Le parcours reste simple et assumé : confirmation de votre adresse e-mail, validation de votre demande par notre équipe, puis définition du mot de passe avant la finalisation de l'offre choisie."}
+            ? "Créez votre accès client pour reprendre votre serveur à distance et vérifier votre commande avant le paiement."
+            : "Renseignez vos informations, puis confirmez votre adresse e-mail. Vous recevrez ensuite les instructions pour ouvrir votre accès et reprendre votre offre."}
         </p>
       </header>
+    </>,
+
+    signup_continuation: selfServiceContinuation ? <>
 
       {selfServiceVpsContinuation ? (
-        <section className={styles.stepsCard} aria-label="Reprise de votre VPS">
-          <p className="eyebrow">Votre VPS</p>
+        <section className={styles.stepsCard} aria-label="Reprise de votre serveur à distance">
+          <p className="eyebrow">Votre serveur</p>
           <h2>Votre configuration sera conservée</h2>
           <p>
             Après la création du compte, vous reviendrez à votre configurateur
-            VPS pour relire le récapitulatif de votre commande avant le paiement.
+            serveur à distance pour relire le récapitulatif de votre commande avant le paiement.
           </p>
         </section>
       ) : null}
@@ -101,8 +111,9 @@ export default async function SignupPage({
           </p>
         </section>
       ) : null}
+    </> : null,
 
-      {billingV2Selection && billingV2Quote ? (
+    signup_selection: billingV2Selection && billingV2Quote ? (
         <div className={styles.selectionStack}>
           <section className={styles.stepsCard} aria-label="Offre sélectionnée">
             <p className="eyebrow">Offre sélectionnée</p>
@@ -115,7 +126,8 @@ export default async function SignupPage({
             <ul>
               {billingV2Quote.lines.map((line) => (
                 <li key={`${line.serviceCode}-${line.tierCode ?? "base"}`}>
-                  {line.label}{line.detail ? ` - ${line.detail}` : ""}
+                  {resolveServicePublicLabel(line.serviceCode, line.label)}
+                  {line.detail ? ` - ${resolveServicePublicDetail(line.serviceCode, line.detail)}` : ""}
                   {line.quantity > 1 ? ` x${line.quantity}` : ""}
                 </li>
               ))}
@@ -127,18 +139,15 @@ export default async function SignupPage({
             </p>
           </section>
         </div>
-      ) : null}
-
-      {billingV2Requested && (!billingV2Selection || !billingV2Quote) ? (
+      ) : billingV2Requested && (!billingV2Selection || !billingV2Quote) ? (
         <section className={styles.stepsCard} aria-label="Configuration invalide">
           <h2>Configuration à reprendre</h2>
           <p>L&apos;offre transmise ne peut pas être revalidée. Revenez au configurateur avant de créer le compte.</p>
           <Link className="button button-secondary" href="/formules">Reprendre mon offre</Link>
         </section>
-      ) : null}
+      ) : null,
 
-
-      <section className={styles.stepsCard} aria-label="Étapes d'ouverture">
+    signup_steps: <section className={styles.stepsCard} aria-label="Étapes d'ouverture">
         <h2>Ce qui se passe ensuite</h2>
         {selfServiceContinuation ? (
           <ol>
@@ -146,20 +155,23 @@ export default async function SignupPage({
             <li>Votre session client est ouverte immédiatement.</li>
             <li>{selfServiceCartContinuation
               ? "Nous reprenons votre panier et vous vérifiez votre commande avant le paiement."
-              : "Vous reprenez votre configurateur VPS puis le récapitulatif de votre commande."}</li>
+              : "Vous reprenez le choix de votre serveur puis le récapitulatif de votre commande."}</li>
           </ol>
         ) : (
           <ol>
             <li>Vous confirmez votre adresse e-mail.</li>
-            <li>Nous validons l&apos;ouverture de votre accès client.</li>
-            <li>Vous définissez votre mot de passe et activez votre accès client.</li>
+            <li>{autoApprove
+              ? "Votre accès est ouvert après cette confirmation et nous vous envoyons un lien pour choisir votre mot de passe."
+              : "Notre équipe examine votre demande, puis vous envoie un lien pour choisir votre mot de passe après validation."}</li>
+            <li>Vous choisissez votre mot de passe et ouvrez votre espace client.</li>
             <li>Vous finalisez ensuite votre offre depuis l&apos;espace client.</li>
           </ol>
         )}
-      </section>
+      </section>,
 
-      {enabled && (!billingV2Requested || (billingV2Selection && billingV2Quote)) ? (
+    signup_form: enabled && (!billingV2Requested || (billingV2Selection && billingV2Quote)) ? (
         <SignupForm
+          autoApprove={autoApprove}
           hcaptchaSiteKey={hcaptchaSiteKey}
           initialBillingV2Selection={billingV2Selection}
           selfServiceVps={selfServiceVpsContinuation}
@@ -173,9 +185,9 @@ export default async function SignupPage({
             <Link href="/contact">formulaire de contact</Link>.
           </p>
         </section>
-      )}
+      ),
 
-      <p className="login-help">
+    signup_login: <p className="login-help">
         Déjà client ?{" "}
         <Link
           href={selfServiceContinuation
@@ -184,7 +196,9 @@ export default async function SignupPage({
         >
           Se connecter
         </Link>
-      </p>
-    </div>
-  );
+      </p>,
+  };
+  return <div className={`signup-page ${styles.page}`}>
+    <SitePageFrame area="public" pageKey="/signup" initialLayout={layoutResult.data} slots={slots}>{null}</SitePageFrame>
+  </div>;
 }

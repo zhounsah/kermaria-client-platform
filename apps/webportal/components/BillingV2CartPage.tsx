@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import type {
   AuthMeResponse,
@@ -12,6 +12,7 @@ import type {
   BillingV2PublicCatalog,
   BillingV2PublicService,
   BillingV2PublicTier,
+  SitePageLayout,
 } from "@kermaria/shared";
 
 import {
@@ -21,13 +22,17 @@ import {
 } from "@/lib/billing-v2-cart-client";
 import {
   formatCommitmentDurationLabel,
+  resolveServicePublicDetail,
   resolveServicePublicLabel,
+  resolveTierLabel,
 } from "@/lib/billing-v2-formules";
 import { BillingV2PricingSummary } from "@/components/BillingV2PricingSummary";
+import { SitePageFrame } from "@/components/SitePageFrame";
 import { requestBffJson } from "@/lib/client-api";
 
 type Props = {
   catalog: BillingV2PublicCatalog;
+  initialLayout: SitePageLayout;
 };
 
 type PageState = "loading" | "empty" | "ready" | "expired" | "unavailable";
@@ -38,7 +43,7 @@ type PageState = "loading" | "empty" | "ready" | "expired" | "unavailable";
  * décisions de tier, quantité, suppression, engagement et règlement restent
  * réévaluées par API-INTERNAL et reviennent ici sous forme de Cart/Quote.
  */
-export function BillingV2CartPage({ catalog }: Props) {
+export function BillingV2CartPage({ catalog, initialLayout }: Props) {
   const [pageState, setPageState] = useState<PageState>("loading");
   const [cart, setCart] = useState<BillingV2Cart | null>(null);
   const [quote, setQuote] = useState<BillingV2CartQuote | null>(null);
@@ -182,46 +187,45 @@ export function BillingV2CartPage({ catalog }: Props) {
     catalog.services.map((service) => [service.code, service]),
   ), [catalog.services]);
 
+  function renderCartState(title: string, content: ReactNode, loading = false) {
+    const intro = <h1 id="cart-title">{title}</h1>;
+    const items = <div className="cart-storefront-state-content">{content}</div>;
+    return <section className={`cart-storefront ${loading ? "cart-storefront-loading" : "cart-storefront-empty"}`}
+      aria-labelledby="cart-title" aria-live={loading ? "polite" : undefined}>
+      <SitePageFrame area="public" pageKey="/panier" initialLayout={initialLayout}
+        className="cart-storefront-layout" slots={{
+          cart_intro: intro, cart_items: items, cart_summary: null,
+        }}>
+        <>{intro}{items}</>
+      </SitePageFrame>
+    </section>;
+  }
+
   if (pageState === "loading") {
-    return (
-      <section className="cart-storefront cart-storefront-loading" aria-live="polite">
-        <p>Chargement de votre panier…</p>
-      </section>
-    );
+    return renderCartState("Votre panier", <p>Chargement de votre panier…</p>, true);
   }
 
   if (pageState === "unavailable") {
-    return (
-      <section className="cart-storefront cart-storefront-empty" aria-labelledby="cart-title">
-        <h1 id="cart-title">Votre panier</h1>
-        <p>{error ?? "Le panier est momentanément indisponible."}</p>
-        <button className="button button-secondary" onClick={() => void loadCurrent()} type="button">
-          Réessayer
-        </button>
-      </section>
-    );
+    return renderCartState("Votre panier", <>
+      <p>{error ?? "Le panier est momentanément indisponible."}</p>
+      <button className="button button-secondary" onClick={() => void loadCurrent()} type="button">Réessayer</button>
+    </>);
   }
 
   if (pageState === "expired") {
-    return (
-      <section className="cart-storefront cart-storefront-empty" aria-labelledby="cart-title">
-        <h1 id="cart-title">Votre panier a expiré</h1>
-        <p>Votre ancienne sélection n’est plus active. Vous pouvez reprendre votre choix dans les tarifs ou les offres.</p>
-        <CartDiscoveryActions />
-      </section>
-    );
+    return renderCartState("Votre panier a expiré", <>
+      <p>Votre ancienne sélection n’est plus active. Vous pouvez reprendre votre choix dans les tarifs ou les offres.</p>
+      <CartDiscoveryActions />
+    </>);
   }
 
   if (!cart || pageState === "empty") {
-    return (
-      <section className="cart-storefront cart-storefront-empty" aria-labelledby="cart-title">
-        <h1 id="cart-title">Votre panier est vide</h1>
-        {notice ? <p className="cart-storefront-notice" aria-live="polite">{notice}</p> : null}
-        <p>Ajoutez un service à la carte ou personnalisez une offre pour retrouver votre sélection ici.</p>
-        <p>Total : {new Intl.NumberFormat("fr-FR", { style: "currency", currency: catalog.currency }).format(0)}</p>
-        <CartDiscoveryActions />
-      </section>
-    );
+    return renderCartState("Votre panier est vide", <>
+      {notice ? <p className="cart-storefront-notice" aria-live="polite">{notice}</p> : null}
+      <p>Ajoutez un service à la carte ou personnalisez une offre pour retrouver votre sélection ici.</p>
+      <p>Total : {new Intl.NumberFormat("fr-FR", { style: "currency", currency: catalog.currency }).format(0)}</p>
+      <CartDiscoveryActions />
+    </>);
   }
 
   const commercialItems = cart.items.filter((item) => !item.isStructural);
@@ -231,8 +235,7 @@ export function BillingV2CartPage({ catalog }: Props) {
   ) ?? null;
   const paymentOptions = selectedCommitment?.paymentOptions ?? [];
 
-  return (
-    <section className="cart-storefront" aria-labelledby="cart-title">
+  const intro = <>
       <header className="cart-storefront-heading">
         <p className="eyebrow">Votre sélection</p>
         <h1 id="cart-title">Votre panier</h1>
@@ -241,9 +244,8 @@ export function BillingV2CartPage({ catalog }: Props) {
 
       {notice ? <p className="cart-storefront-notice" aria-live="polite">{notice}</p> : null}
       {error ? <p className="cart-storefront-error" aria-live="assertive">{error}</p> : null}
-
-      <div className="cart-storefront-layout">
-        <div className="cart-storefront-items">
+  </>;
+  const items = <div className="cart-storefront-items">
           {commercialItems.map((item) => (
             <CartItemCard
               cart={cart}
@@ -352,10 +354,17 @@ export function BillingV2CartPage({ catalog }: Props) {
               )}
             </fieldset>
           </section>
-        </div>
+  </div>;
+  const summary = <CartQuoteSummary cart={cart} quote={quote} />;
 
-        <CartQuoteSummary cart={cart} quote={quote} />
-      </div>
+  return (
+    <section className="cart-storefront" aria-labelledby="cart-title">
+      <SitePageFrame area="public" pageKey="/panier" initialLayout={initialLayout}
+        className="cart-storefront-layout" slots={{
+          cart_intro: intro, cart_items: items, cart_summary: summary,
+        }}>
+        <>{intro}<div className="cart-storefront-layout">{items}{summary}</div></>
+      </SitePageFrame>
     </section>
   );
 }
@@ -393,7 +402,7 @@ function CartItemCard({
       <div className="cart-storefront-item-main">
         <div>
           <h2>{label}</h2>
-          {tier ? <p className="cart-storefront-item-detail">{tier.label}</p> : null}
+          {tier ? <p className="cart-storefront-item-detail">{resolveTierLabel(service, tier.code) ?? tier.label}</p> : null}
           {item.displayReason === "included_with_offer" ? <p className="cart-storefront-item-linked">Inclus avec cette offre.</p> : null}
           {item.displayReason === "required_for_selection" ? <p className="cart-storefront-item-linked">Requis par votre sélection actuelle.</p> : null}
         </div>
@@ -408,7 +417,7 @@ function CartItemCard({
             value={item.tierCode ?? ""}
           >
             {tiers.map((candidate) => (
-              <option key={candidate.code} value={candidate.code}>{candidate.label}</option>
+              <option key={candidate.code} value={candidate.code}>{resolveTierLabel(service, candidate.code) ?? candidate.label}</option>
             ))}
           </select>
         </label>
@@ -465,7 +474,7 @@ function CartQuoteSummary({ cart, quote }: { cart: BillingV2Cart | null; quote: 
             lines={quote.lines.map((line) => ({
               id: `${line.cartItemId}-${line.servicePriceId}`,
               label: resolveServicePublicLabel(line.serviceCode, line.label || "Service inclus"),
-              detail: line.detail,
+              detail: resolveServicePublicDetail(line.serviceCode, line.detail),
               quantity: line.quantity,
               amountCents: line.amountCents,
             }))}

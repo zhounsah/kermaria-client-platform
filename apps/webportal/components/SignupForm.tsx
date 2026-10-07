@@ -15,6 +15,7 @@ import { requestBffJson } from "@/lib/client-api";
 import styles from "./SignupForm.module.css";
 
 type SignupFormProps = {
+  autoApprove: boolean;
   hcaptchaSiteKey: string | null;
   initialBillingV2Selection?: BillingV2PublicSelection | null;
   selfServiceVps?: SelfServiceVpsSignupContinuation | null;
@@ -44,6 +45,7 @@ const USER_SIZE_OPTIONS = [
 ] as const;
 
 export function SignupForm({
+  autoApprove,
   hcaptchaSiteKey,
   initialBillingV2Selection = null,
   selfServiceVps = null,
@@ -170,9 +172,11 @@ export function SignupForm({
 
       setState({
         status: "success",
-        message: initialBillingV2Selection
-          ? "Demande envoyée. Vérifiez votre boîte mail, activez votre compte puis connectez-vous : votre offre et ses options seront restaurées avant le paiement."
-          : "Demande envoyée. Vérifiez votre boîte mail pour confirmer votre adresse, puis attendez notre validation avant de définir votre mot de passe.",
+        message: `${autoApprove
+          ? "Demande envoyée. Confirmez votre adresse avec le lien reçu par e-mail. Nous vous enverrons ensuite la marche à suivre pour définir votre mot de passe."
+          : "Demande envoyée. Confirmez votre adresse avec le lien reçu par e-mail. Notre équipe examinera ensuite votre demande avant de vous envoyer le lien pour définir votre mot de passe."}${initialBillingV2Selection
+          ? " Votre offre et ses options seront retrouvées dans votre espace avant le paiement."
+          : ""}`,
       });
     } finally {
       isSubmittingRef.current = false;
@@ -210,25 +214,26 @@ export function SignupForm({
 
         <div className={styles.intro}>
           <p className="field-hint">
-            Ces informations alimentent à la fois votre fiche client et le futur
-            compte d&apos;accès rattaché lorsque l&apos;identité est finalisée.
+            Ces informations nous permettent d&apos;ouvrir votre compte et de
+            vous accompagner dans votre demande.
           </p>
         </div>
 
         <div className={styles.layout}>
           <section className={styles.panel} aria-labelledby="signup-structure-heading">
             <div className={styles.panelHeader}>
-              <p className={styles.panelKicker}>Structure</p>
-              <h2 id="signup-structure-heading">Structure et besoin</h2>
+              <p className={styles.panelKicker}>{isIndividual ? "Particulier" : "Organisation"}</p>
+              <h2 id="signup-structure-heading">{isIndividual ? "Vos coordonnées et votre besoin" : "Votre organisation et votre besoin"}</h2>
               <p className="field-hint">
-                Renseignez ici les informations liées à votre structure, à
-                l&apos;adresse postale et au contexte de votre demande.
+                {isIndividual
+                  ? "Indiquez votre adresse et, si vous le souhaitez, ce que vous attendez de votre compte."
+                  : "Indiquez les coordonnées de votre organisation et ce que vous attendez de votre compte."}
               </p>
             </div>
 
             <div className={styles.fields}>
               <label>
-                Type de structure
+                Vous êtes
                 <select
                   name="customerType"
                   onChange={(event) => setCustomerType(event.target.value)}
@@ -258,7 +263,7 @@ export function SignupForm({
 
               {displayUserSizeField ? (
                 <label>
-                  Tranche d&apos;utilisateurs
+                  Taille de votre équipe
                   <select
                     name="userSize"
                     onChange={(event) => setUserSize(event.target.value)}
@@ -355,14 +360,14 @@ export function SignupForm({
 
           <section className={styles.panel} aria-labelledby="signup-contact-heading">
             <div className={styles.panelHeader}>
-              <p className={styles.panelKicker}>Contact principal</p>
-              <h2 id="signup-contact-heading">Informations client</h2>
+              <p className={styles.panelKicker}>{isIndividual ? "Vous" : "Contact principal"}</p>
+              <h2 id="signup-contact-heading">{isIndividual ? "Vos informations" : "Personne à contacter"}</h2>
               <p className="field-hint">
                 {selfServiceContinuation
                   ? selfServiceCart
                     ? "Ce contact créera immédiatement son accès client pour reprendre son panier."
-                    : "Ce contact créera immédiatement son accès client pour reprendre le VPS sélectionné."
-                  : "Ce contact principal recevra les messages d'ouverture et définira le mot de passe initial."}
+                    : "Ce contact créera immédiatement son accès client pour reprendre le serveur à distance sélectionné."
+                  : "Cette personne recevra les messages d'ouverture et définira son mot de passe."}
               </p>
             </div>
 
@@ -511,10 +516,10 @@ export function SignupForm({
           {selfServiceContinuation
             ? selfServiceCart
               ? "En envoyant ce formulaire, vous créez votre accès client pour reprendre immédiatement votre panier."
-              : "En envoyant ce formulaire, vous créez votre accès client pour reprendre immédiatement votre configuration VPS."
+              : "En envoyant ce formulaire, vous créez votre accès client pour reprendre le choix de votre serveur à distance."
             : <>En envoyant ce formulaire, vous demandez l&apos;ouverture d&apos;un accès
-              client. Vous confirmerez d&apos;abord votre adresse e-mail, puis notre
-              équipe validera la demande avant la définition du mot de passe
+              client. Confirmez votre adresse e-mail grâce au lien reçu ; vous
+              recevrez ensuite les instructions pour définir votre mot de passe
               {initialBillingV2Selection
                 ? " et la reprise de votre offre dans l'espace client."
                 : "."}</>}

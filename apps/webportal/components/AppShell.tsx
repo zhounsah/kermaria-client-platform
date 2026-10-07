@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { Menu, X } from "lucide-react";
 import { usePathname } from "next/navigation";
 import {
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -13,6 +15,7 @@ import type { AuthMeResponse, InternalSession } from "@kermaria/shared";
 import { AdminNavigation } from "@/components/AdminNavigation";
 import { PortalNavigation } from "@/components/PortalNavigation";
 import { PublicShell } from "@/components/PublicShell";
+import { SitePageFrame } from "@/components/SitePageFrame";
 import { BrandLogo } from "@/components/BrandLogo";
 import { requestBffJson } from "@/lib/client-api";
 import type { PortalArea } from "@/lib/public-route-config";
@@ -26,6 +29,29 @@ import appPackage from "../../../package.json";
 const APP_VERSION_LABEL = `Version v${appPackage.displayVersion ?? appPackage.version}`;
 const CLIENT_VPS_DETAIL_PATH =
   /^\/services\/vps\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID_PATH_PART = /\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}(?=\/|$)/gi;
+const FORMULA_DETAIL_PATH = /^\/formules\/(?!reprendre$)[a-z0-9-]+$/;
+const OFFER_DETAIL_PATH = /^\/offres\/[a-z0-9-]+$/;
+const COMPOSABLE_WIDGET_PAGE_KEYS = new Set([
+  "/offres",
+  "/offres/[slug]",
+  "/panier",
+  "/souscription",
+  "/formules",
+  "/formules/[code]",
+  "/tarifs",
+  "/diagnostic",
+  "/contact",
+  "/demander-mes-donnees",
+  "/signup",
+  "/souscrire",
+  "/dashboard",
+  "/profile",
+  "/admin",
+  "/admin/catalog",
+  "/profile/donnees", "/profile/donnees/[id]",
+  "/admin/data-requests", "/admin/data-requests/[id]",
+]);
 
 type AppShellProps = {
   children: ReactNode;
@@ -39,7 +65,25 @@ export function AppShell({
   signupEnabled,
 }: AppShellProps) {
   const pathname = usePathname();
+  const pageKey = FORMULA_DETAIL_PATH.test(pathname)
+    ? "/formules/[code]" : OFFER_DETAIL_PATH.test(pathname)
+      ? "/offres/[slug]" : pathname.replace(UUID_PATH_PART, "/[id]");
+  const hasOwnPageLayout = COMPOSABLE_WIDGET_PAGE_KEYS.has(pageKey);
   const [session, setSession] = useState<InternalSession | null>(null);
+  const [sidebarState, setSidebarState] = useState({ path: "", open: false });
+  const sidebarOpen = sidebarState.path === pathname && sidebarState.open;
+  const sidebarToggleRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setSidebarState({ path: pathname, open: false });
+      sidebarToggleRef.current?.focus();
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [pathname, sidebarOpen]);
   const portalArea: PortalArea | null = typeof window === "undefined"
     ? null
     : getPortalArea(window.location.origin, localPortalOrigin);
@@ -134,7 +178,8 @@ export function AppShell({
   ) {
     return (
       <PublicShell signupEnabled={signupEnabled}>
-        {children}
+        {pageKey === "/" || pageKey === "/services" || hasOwnPageLayout ? children :
+          <SitePageFrame area="public" pageKey={pageKey}>{children}</SitePageFrame>}
       </PublicShell>
     );
   }
@@ -156,19 +201,28 @@ export function AppShell({
       </header>
       {hasSidebar ? (
         <div className="app-shell">
+          <button aria-controls="app-sidebar-navigation" aria-expanded={sidebarOpen}
+            className="app-sidebar-toggle" onClick={() => setSidebarState({ path: pathname, open: !sidebarOpen })}
+            ref={sidebarToggleRef}
+            type="button">
+            {sidebarOpen ? <X aria-hidden="true" size={20} /> : <Menu aria-hidden="true" size={20} />}
+            {sidebarOpen ? "Fermer le menu" : "Ouvrir le menu"}
+          </button>
           {effectiveSession?.user.role === "client_user" ? (
-            <PortalNavigation displayName={effectiveSession.user.displayName} />
+            <PortalNavigation displayName={effectiveSession.user.displayName} mobileOpen={sidebarOpen} />
           ) : null}
           {effectiveSession?.user.role === "internal_admin" ? (
-            <AdminNavigation displayName={effectiveSession.user.displayName} />
+            <AdminNavigation displayName={effectiveSession.user.displayName} mobileOpen={sidebarOpen} />
           ) : null}
           <main className="main-content app-content" id="main-content">
-            {children}
+            {hasOwnPageLayout ? children :
+              <SitePageFrame area={effectiveSession?.user.role === "internal_admin" ? "admin" : "client"} pageKey={pageKey}>{children}</SitePageFrame>}
           </main>
         </div>
       ) : (
         <main className="main-content" id="main-content">
-          {children}
+          {hasOwnPageLayout ? children :
+            <SitePageFrame area={pageKey === "/login" || pageKey === "/set-password" ? "public" : null} pageKey={pageKey}>{children}</SitePageFrame>}
         </main>
       )}
       <footer className="site-footer">

@@ -223,7 +223,7 @@ function formatMoney(money: PublicCommercialMoney) {
 
 function priceUnit(service: PublicCommercialService) {
   return service.billingUnitLabel === "par utilisateur et par mois"
-    ? "/ utilisateur / mois"
+    ? "/ personne / mois"
     : "/ mois";
 }
 

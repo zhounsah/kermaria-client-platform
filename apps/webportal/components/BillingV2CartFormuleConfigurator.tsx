@@ -11,7 +11,7 @@ import type {
 } from "@kermaria/shared";
 
 import { formatCurrencyFromCents } from "@/lib/formatters";
-import { findService, resolveServicePublicLabel } from "@/lib/billing-v2-formules";
+import { findService, resolveServicePublicLabel, resolveTierLabel } from "@/lib/billing-v2-formules";
 import { requestBffJson } from "@/lib/client-api";
 
 type Props = { catalog: BillingV2PublicCatalog; preset: BillingV2PublicPreset };
@@ -145,7 +145,7 @@ export function BillingV2CartFormuleConfigurator({ catalog, preset }: Props) {
                   sourcePresetId: cart.sourcePresetId, sourcePresetItemId: item.sourcePresetItemId,
                   configurationKind: item.configurationKind, configurationReference: item.configurationReference, origin: "preset",
                 } })}>
-                {tiers.map((tier) => <option key={tier.code} value={tier.code}>{tier.label}</option>)}
+                {tiers.map((tier) => <option key={tier.code} value={tier.code}>{resolveTierLabel(service, tier.code) ?? tier.label}</option>)}
               </select>
             </label> : null}
             {definition && quantityEditable ? <label>

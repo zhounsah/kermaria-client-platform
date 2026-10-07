@@ -6,6 +6,7 @@ import type {
   BillingV2PublicQuote,
   BillingV2PublicSelection,
   PreDiagnosticConfiguration,
+  SitePageLayout,
 } from "@kermaria/shared";
 import {
   useEffect,
@@ -18,6 +19,7 @@ import {
 } from "react";
 
 import { FormMessage } from "@/components/FormMessage";
+import { SitePageFrame } from "@/components/SitePageFrame";
 import { requestBffJson } from "@/lib/client-api";
 import type { DiagnosticCallbackFieldErrors } from "@/lib/diagnostic-callback";
 import {
@@ -69,6 +71,7 @@ type PublicDiagnosticWizardProps = {
   preDiagnosticConfiguration: PreDiagnosticConfiguration | null;
   /** Snapshot publié effectivement rendu au visiteur. */
   diagnosticConfigurationVersion: number;
+  pageLayout: SitePageLayout;
 };
 
 export function PublicDiagnosticWizard({
@@ -76,6 +79,7 @@ export function PublicDiagnosticWizard({
   context,
   preDiagnosticConfiguration,
   diagnosticConfigurationVersion,
+  pageLayout,
 }: PublicDiagnosticWizardProps) {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [step, setStep] = useState(0);
@@ -122,8 +126,13 @@ export function PublicDiagnosticWizard({
   }
 
   if (completed && result && profile) {
+    const resultLayout = {
+      ...pageLayout,
+      blocks: pageLayout.blocks.filter((block) => block.type !== "diagnostic_intro"),
+    };
     return (
-      <DiagnosticResult
+      <SitePageFrame area="public" pageKey="/diagnostic" initialLayout={resultLayout}
+        slots={{ diagnostic_result: <DiagnosticResult
         answers={scoringAnswersForProfile(answers, profile, preDiagnosticConfiguration ?? undefined)}
         commercialAnswers={answers}
         catalog={catalog}
@@ -145,7 +154,7 @@ export function PublicDiagnosticWizard({
           setCompleted(false);
         }}
         result={result}
-      />
+      /> }}>{null}</SitePageFrame>
     );
   }
 
@@ -161,28 +170,8 @@ export function PublicDiagnosticWizard({
 
   return (
     <div className="diagnostic-page">
-      <header className="diagnostic-header">
-        <div className="diagnostic-header-copy">
-          <span aria-hidden="true" className="diagnostic-header-icon">✓</span>
-          <div>
-            <p className="eyebrow">Pré-diagnostic informatique</p>
-            <h1>Faites le point, simplement.</h1>
-            <p>Quelques questions concrètes pour identifier vos points solides et les priorités à examiner.</p>
-          </div>
-        </div>
-        <div aria-label="Fonctionnement" className="diagnostic-benefits">
-          <article>
-            <span className="diagnostic-benefit-icon">1</span>
-            <div><h2>Adapté à votre situation</h2><p>Particulier, activité professionnelle ou association.</p></div>
-          </article>
-          <article>
-            <span className="diagnostic-benefit-icon">2</span>
-            <div><h2>Résultat immédiat</h2><p>Des priorités lisibles, sans jargon inutile.</p></div>
-          </article>
-        </div>
-      </header>
-
-      <section aria-label="Questionnaire de pré-diagnostic" className="diagnostic-wizard">
+      <SitePageFrame area="public" pageKey="/diagnostic" initialLayout={pageLayout}
+        slots={{ diagnostic_questionnaire: <section aria-label="Questionnaire de pré-diagnostic" className="diagnostic-wizard">
         <div className="diagnostic-wizard-toolbar">
           <div>
             <span className="diagnostic-context-badge">{current.category}</span>
@@ -218,14 +207,14 @@ export function PublicDiagnosticWizard({
         <div className="diagnostic-actions">
           <button className="button button-secondary" disabled={step === 0} onClick={() => setStep((value) => Math.max(0, value - 1))} type="button">Précédent</button>
           <button className="button" disabled={current.required !== false && !answers[current.id]} onClick={() => {
-            if (step === questions.length - 1) {
+            if (hasProfile && step === questions.length - 1) {
               setCompleted(true);
               return;
             }
             setStep((value) => value + 1);
-          }} type="button">{step === questions.length - 1 ? "Voir mon résultat" : "Continuer"}</button>
+          }} type="button">{hasProfile && step === questions.length - 1 ? "Voir mon résultat" : "Continuer"}</button>
         </div>
-      </section>
+      </section> }}>{null}</SitePageFrame>
     </div>
   );
 }
@@ -301,7 +290,7 @@ function DiagnosticResult({
             <div><p className="eyebrow">Votre première estimation</p><h1>{result.level}</h1></div>
           </div>
           <div aria-label={`Score global : ${result.score} sur 100`} className="diagnostic-score"><strong>{result.score}</strong><span>/ 100</span></div>
-          <p className="diagnostic-result-lead">Ce résultat met en évidence les sujets à regarder en premier selon vos réponses. Il ne remplace pas une vérification technique sur place.</p>
+          <p className="diagnostic-result-lead">Ce résultat met en évidence les sujets à regarder en premier selon vos réponses. Un échange ou une visite peut être nécessaire pour confirmer certains points.</p>
           {result.priorities.length ? <section className="diagnostic-priorities"><h2>Vos priorités</h2><ol>{result.priorities.map((priority) => <li key={priority.title}><strong>{priority.title}</strong><span>{priority.body}</span></li>)}</ol></section> : null}
           {result.positives.length ? <section className="diagnostic-positives"><h2>Points positifs</h2><ul className="check-list">{result.positives.map((positive) => <li key={positive}>{positive}</li>)}</ul></section> : null}
           {commercialRecommendation.kind === "standard" && commercialRecommendation.selection ? <DiagnosticOffer
@@ -320,9 +309,9 @@ function DiagnosticResult({
           <button className="button button-secondary diagnostic-restart" onClick={onRestart} type="button">Recommencer le diagnostic</button>
         </div>
         <aside className="diagnostic-result-details">
-          <h2>Analyse par catégorie</h2>
+          <h2>Détail de votre résultat</h2>
           <dl className="diagnostic-category-scores">{result.categories.map((category) => <div key={category.id}><dt>{category.label}</dt><dd><strong>{category.score}</strong><span>/ 100</span></dd></div>)}</dl>
-          <p className="diagnostic-disclaimer">Cette première estimation s&apos;appuie uniquement sur vos réponses. Certaines situations nécessitent une vérification technique.</p>
+          <p className="diagnostic-disclaimer">Cette première estimation s&apos;appuie uniquement sur vos réponses. Certaines situations demandent une vérification plus précise.</p>
         </aside>
       </section>
       {callbackState !== "idle" ? <CallbackFormPanel
@@ -398,16 +387,16 @@ function DiagnosticOffer({
     : null;
 
   return <section className="diagnostic-offer" aria-live="polite">
-    <p className="eyebrow">Orientation commerciale</p>
+    <p className="eyebrow">Offre proposée</p>
     <h2>{recommendation.title}</h2>
     <h3>{recommendation.offerName ?? preset?.name ?? "Offre recommandée"}</h3>
     <p>{recommendation.reason}</p>
-    {selection && recommendation.selectedStorageGb ? <p className="diagnostic-offer-description">Capacité retenue dans le catalogue : {recommendation.selectedStorageGb} Go.</p> : null}
+    {selection && recommendation.selectedStorageGb ? <p className="diagnostic-offer-description">Espace conseillé pour vos fichiers : {recommendation.selectedStorageGb} Go.</p> : null}
     {quote ? <div className="diagnostic-offer-price">
       <span>Tarif calculé</span>
       <strong>{formatCurrencyFromCents(quote.monthlyAfterDiscountCents)} / mois</strong>
       {quote.oneTimeCents > 0 ? <small>{formatCurrencyFromCents(quote.oneTimeCents)} à la mise en service.</small> : null}
-    </div> : quoteError ? <p className="diagnostic-offer-error">Le tarif n&apos;a pas pu être calculé pour le moment. Réessayez dans un instant.</p> : <p className="diagnostic-offer-loading">Calcul du tarif à partir du catalogue actuel…</p>}
+    </div> : quoteError ? <p className="diagnostic-offer-error">Le tarif n&apos;a pas pu être calculé pour le moment. Réessayez dans un instant.</p> : <p className="diagnostic-offer-loading">Nous vérifions le prix actuel…</p>}
     {href && quoteAvailable ? <Link className="button diagnostic-offer-cta" href={href}>Voir cette offre</Link> : null}
     {quote && !quoteAvailable ? <p className="diagnostic-offer-error">Cette offre n&apos;est plus disponible à la souscription en ligne. Recommencez le diagnostic ou contactez-nous pour faire le point.</p> : null}
   </section>;

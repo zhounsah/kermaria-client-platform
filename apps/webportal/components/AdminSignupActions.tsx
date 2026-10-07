@@ -17,7 +17,7 @@ type AdminSignupActionsProps = {
 
 type ActionState =
   | { status: "idle" | "working" }
-  | { status: "success"; message: string }
+  | { status: "success" | "info"; message: string }
   | { status: "error"; message: string };
 
 type ActionResponse = SignupAdminActionResponse;
@@ -72,7 +72,10 @@ export function AdminSignupActions({
       }
 
       onSuccess?.();
-      setState({ status: "success", message: response.data.message });
+      setState({
+        status: response.data.code === "SIGNUP_APPROVED_EMAIL_PENDING" ? "info" : "success",
+        message: response.data.message,
+      });
       router.refresh();
     } finally {
       isWorkingRef.current = false;
@@ -140,6 +143,11 @@ export function AdminSignupActions({
       {state.status === "success" ? (
         <FormMessage title="Action effectuée" tone="success">
           <p>{state.message}</p>
+        </FormMessage>
+      ) : null}
+      {state.status === "info" ? (
+        <FormMessage title="Compte créé, envoi à reprendre" tone="info">
+          <p>{state.message} Utilisez l&apos;action de renvoi sur la fiche du compte.</p>
         </FormMessage>
       ) : null}
       {state.status === "error" ? (

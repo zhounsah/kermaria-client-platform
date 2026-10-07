@@ -132,7 +132,7 @@ assert.match(offerPage, /Les services associés à cette offre/);
 
 const formulesPage = await read("app/formules/page.tsx");
 assert.doesNotMatch(formulesPage, /API interne|API-INTERNAL|Billing V2/);
-assert.match(formulesPage, /catalogue Zachary IT/);
+assert.match(formulesPage, /Réessayez dans quelques instants ou contactez-nous/);
 
 // Les fiches déjà créées et le mode de démonstration utilisent ce gabarit :
 // il ne doit pas réintroduire un vocabulaire interne après la passe publique.
@@ -150,8 +150,8 @@ assert.match(publicPacks, /## Composants techniques liés/);
 assert.match(publicPacks, /## Services associés/);
 
 const storefrontContent = await read("lib/storefront-content.ts");
-assert.match(storefrontContent, /Protection de site web \(Cloudflare WAF\)/);
-assert.match(storefrontContent, /Nom de domaine et DNS/);
+assert.match(storefrontContent, /"\/services\/cloudflare-waf": "Protection de site web"/);
+assert.match(storefrontContent, /"\/services\/gestion-dns-domaines": "Gestion du nom de domaine"/);
 
 const storefrontSeed = await readApi("Services/StorefrontContentSeed.cs");
 assert.doesNotMatch(storefrontSeed, /"CMS, sauvegarde et sécurité"/);

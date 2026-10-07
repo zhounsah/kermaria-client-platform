@@ -51,6 +51,7 @@ const navigationSections: NavSection[] = [
       { href: "/admin/diagnostic", label: "Diagnostic", icon: ClipboardList },
       { href: "/admin/solutions", label: "Portail solutions", icon: MonitorSmartphone },
       { href: "/admin/content", label: "Contenus", icon: FileText },
+      { href: "/admin/page-builder", label: "Mise en page", icon: FileText },
       { href: "/admin/editorial", label: "Editorial", icon: BookOpen },
       { href: "/admin/downloads", label: "Téléchargements", icon: Download },
       { href: "/admin/commercial-documents", label: "Documents", icon: FileText },
@@ -68,6 +69,7 @@ const navigationSections: NavSection[] = [
       { href: "/admin/signups", label: "Demandes d'inscription", icon: UserPlus },
       { href: "/admin/support-requests", label: "Demandes support", icon: LifeBuoy },
       { href: "/admin/service-requests", label: "Demandes service", icon: ClipboardList },
+      { href: "/admin/data-requests", label: "Demandes de données", icon: ShieldCheck },
       { href: "/admin/email-log", label: "Journal e-mails", icon: Mail },
     ],
   },
@@ -79,13 +81,14 @@ const navigationSections: NavSection[] = [
 
 type AdminNavigationProps = {
   displayName: string;
+  mobileOpen?: boolean;
 };
 
-export function AdminNavigation({ displayName }: AdminNavigationProps) {
+export function AdminNavigation({ displayName, mobileOpen = false }: AdminNavigationProps) {
   const pathname = usePathname();
 
   return (
-    <nav aria-label="Navigation administration" className="app-sidebar">
+    <nav aria-label="Navigation administration" className={mobileOpen ? "app-sidebar app-sidebar-open" : "app-sidebar"} id="app-sidebar-navigation">
       <div className="app-sidebar-header">
         <span className="app-sidebar-role">Administration</span>
         <span className="app-sidebar-user" title={displayName}>

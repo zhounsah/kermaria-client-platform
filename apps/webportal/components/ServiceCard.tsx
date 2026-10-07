@@ -3,7 +3,13 @@ import type { ServiceSummary } from "@kermaria/shared";
 
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatDate, serviceStatus } from "@/lib/formatters";
-import { getServiceSymbol } from "@/lib/service-display";
+import {
+  getClientServiceDescription,
+  getClientServiceName,
+  getClientServiceNextStep,
+  getClientServiceScope,
+  getServiceSymbol,
+} from "@/lib/service-display";
 
 type ServiceCardProps = {
   service: ServiceSummary;
@@ -11,15 +17,16 @@ type ServiceCardProps = {
 };
 
 const statusGuidance: Record<ServiceSummary["status"], string> = {
-  active: "Service disponible selon le périmètre actuellement couvert.",
+  active: "Service disponible selon ce qui est prévu dans votre offre.",
   pending:
     "Le service est en attente de paiement, de validation ou d'activation.",
   suspended:
-    "Le service est temporairement indisponible. Contactez le support si besoin.",
+    "Le service est temporairement indisponible. Contactez-nous si besoin.",
 };
 
 export function ServiceCard({ service, vpsLinks = [] }: ServiceCardProps) {
   const status = serviceStatus[service.status];
+  const nextStep = getClientServiceNextStep(service);
 
   return (
     <article className="service-card">
@@ -30,9 +37,8 @@ export function ServiceCard({ service, vpsLinks = [] }: ServiceCardProps) {
         <StatusBadge label={status.label} tone={status.tone} />
       </div>
       <div>
-        <p className="card-kicker">{service.reference}</p>
-        <h2>{service.name}</h2>
-        <p className="card-description multiline-text">{service.description}</p>
+        <h2>{getClientServiceName(service)}</h2>
+        <p className="card-description multiline-text">{getClientServiceDescription(service)}</p>
       </div>
       <dl className="compact-details">
         <div>
@@ -41,14 +47,18 @@ export function ServiceCard({ service, vpsLinks = [] }: ServiceCardProps) {
         </div>
       </dl>
       <div className="service-scope">
-        <strong>Périmètre</strong>
-        <span>{service.scope}</span>
+        <strong>Ce qui est inclus</strong>
+        <span>{getClientServiceScope(service)}</span>
       </div>
       <p className={`service-status-note service-status-${service.status}`}>
         {statusGuidance[service.status]}
       </p>
-      {service.nextStep ? (
-        <p className="service-next-step">{service.nextStep}</p>
+      <details className="service-reference">
+        <summary>Référence de suivi</summary>
+        <span>{service.reference}</span>
+      </details>
+      {nextStep ? (
+        <p className="service-next-step">{nextStep}</p>
       ) : null}
       {vpsLinks.length > 0 ? (
         <div className="service-card-actions">

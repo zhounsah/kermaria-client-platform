@@ -9,9 +9,11 @@ import type {
   BillingV2Cart,
   BillingV2CartCheckoutStatusResponse,
   BillingV2CartQuote,
+  SitePageLayout,
 } from "@kermaria/shared";
 
 import { BillingV2PricingSummary } from "@/components/BillingV2PricingSummary";
+import { SitePageFrame } from "@/components/SitePageFrame";
 import {
   checkoutBillingV2CartClient,
   commandBillingV2CartClient,
@@ -19,14 +21,14 @@ import {
   notifyBillingV2CartChanged,
 } from "@/lib/billing-v2-cart-client";
 import { requestBffJson } from "@/lib/client-api";
-import { resolveServicePublicLabel } from "@/lib/billing-v2-formules";
+import { resolveServicePublicDetail, resolveServicePublicLabel } from "@/lib/billing-v2-formules";
 
 type State = "loading" | "anonymous" | "claiming" | "empty" | "ready" | "complete" | "error";
 /**
  * Revue courte avant que le serveur n'ouvre l'intention financière. Tous les
  * montants restent ceux du quote Cart retourné par API-INTERNAL.
  */
-export function BillingV2CartCheckoutReview() {
+export function BillingV2CartCheckoutReview({ initialLayout }: { initialLayout: SitePageLayout }) {
   const [state, setState] = useState<State>("loading");
   const [cart, setCart] = useState<BillingV2Cart | null>(null);
   const [quote, setQuote] = useState<BillingV2CartQuote | null>(null);
@@ -225,15 +227,12 @@ export function BillingV2CartCheckoutReview() {
   }
   if (!cart || !quote) return <main className="content-section"><h1>Votre souscription</h1><p>{message ?? "La vérification du panier est indisponible."}</p><Link className="button" href="/panier">Retour au panier</Link></main>;
 
-  return <section className="cart-storefront subscription-review" aria-labelledby="subscription-review-title">
-    <header className="cart-storefront-heading subscription-review-heading">
+  const intro = <header className="cart-storefront-heading subscription-review-heading">
       <p className="eyebrow">Dernière vérification</p>
       <h1 id="subscription-review-title">Vérifier votre abonnement</h1>
       <p>Vérifiez votre abonnement avant de poursuivre vers le paiement.</p>
-    </header>
-
-    <div className="cart-storefront-layout subscription-review-layout">
-      <div className="cart-storefront-items subscription-review-details">
+    </header>;
+  const details = <div className="cart-storefront-items subscription-review-details">
         <section className="cart-storefront-item subscription-review-card" aria-labelledby="subscription-services-title">
           <div>
             <h2 id="subscription-services-title">Votre abonnement</h2>
@@ -244,7 +243,7 @@ export function BillingV2CartCheckoutReview() {
               <li key={`${line.cartItemId}-${line.servicePriceId}`}>
                 <span>
                   {resolveServicePublicLabel(line.serviceCode, line.label || "Service inclus")}
-                  {line.detail ? <em>{line.detail}</em> : null}
+                  {line.detail ? <em>{resolveServicePublicDetail(line.serviceCode, line.detail)}</em> : null}
                   {line.quantity > 1 ? <em>Quantité : {line.quantity}</em> : null}
                 </span>
               </li>
@@ -266,16 +265,15 @@ export function BillingV2CartCheckoutReview() {
           </dl>
           <Link className="button button-secondary subscription-review-edit" href="/panier">Modifier le panier</Link>
         </section>
-      </div>
-
-      <aside className="cart-storefront-summary subscription-review-summary" aria-live="polite" aria-labelledby="subscription-summary-title">
+  </div>;
+  const summary = <aside className="cart-storefront-summary subscription-review-summary" aria-live="polite" aria-labelledby="subscription-summary-title">
         <h2 id="subscription-summary-title">Récapitulatif</h2>
         <BillingV2PricingSummary
           currency={quote.currency}
           lines={quote.lines.map((line) => ({
             id: `${line.cartItemId}-${line.servicePriceId}`,
             label: resolveServicePublicLabel(line.serviceCode, line.label || "Service inclus"),
-            detail: line.detail,
+            detail: resolveServicePublicDetail(line.serviceCode, line.detail),
             quantity: line.quantity,
             amountCents: line.amountCents,
           }))}
@@ -319,8 +317,14 @@ export function BillingV2CartCheckoutReview() {
             </div>
           </>
         )}
-      </aside>
-    </div>
+  </aside>;
+  return <section className="cart-storefront subscription-review" aria-labelledby="subscription-review-title">
+    <SitePageFrame area="public" pageKey="/souscription" initialLayout={initialLayout}
+      className="cart-storefront-layout subscription-review-layout" slots={{
+        checkout_intro: intro, checkout_details: details, checkout_summary: summary,
+      }}>
+      <>{intro}<div className="cart-storefront-layout subscription-review-layout">{details}{summary}</div></>
+    </SitePageFrame>
   </section>;
 }
 

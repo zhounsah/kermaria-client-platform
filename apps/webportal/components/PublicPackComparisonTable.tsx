@@ -3,7 +3,7 @@ import Link from "next/link";
 import type { PublicPackCatalogContent } from "@kermaria/shared";
 
 import { formatCurrencyFromCents } from "@/lib/formatters";
-import type { PublicPackView } from "@/lib/public-packs";
+import { presentPublicPackText, type PublicPackView } from "@/lib/public-packs";
 
 /**
  * Comparatif public des formules.
@@ -59,7 +59,8 @@ export function PublicPackComparisonTable({
 }: PublicPackComparisonTableProps) {
   const rows = content.comparisonRows
     .slice()
-    .sort((left, right) => left.sortOrder - right.sortOrder);
+    .sort((left, right) => left.sortOrder - right.sortOrder)
+    .map((row) => ({ ...row, label: presentPublicPackText(row.label) }));
   const orderedPacks = packs
     .slice()
     .sort((left, right) => left.order - right.order);

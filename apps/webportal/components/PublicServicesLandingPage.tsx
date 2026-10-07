@@ -1,6 +1,8 @@
 import Link from "next/link";
+import type { SitePageLayout } from "@kermaria/shared";
 
 import { ManagedMarkdown } from "@/components/ManagedMarkdown";
+import { SitePageFrame } from "@/components/SitePageFrame";
 import {
   ServiceBreadcrumb,
   ServiceCategoryCard,
@@ -20,11 +22,13 @@ import {
 type PublicServicesLandingPageProps = {
   breadcrumbItems: readonly StorefrontBreadcrumbItem[];
   content: StorefrontServicesLandingContent;
+  pageLayout?: SitePageLayout;
 };
 
 export function PublicServicesLandingPage({
   breadcrumbItems,
   content,
+  pageLayout,
 }: PublicServicesLandingPageProps) {
   const primaryAction = resolveStorefrontPublicCta(content, false);
   const categories = content.relatedLinks.map((link) => {
@@ -36,19 +40,8 @@ export function PublicServicesLandingPage({
     };
   });
 
-  return (
-    <>
-      <JsonLd data={breadcrumbJsonLd(PUBLIC_SITE_URL, [...breadcrumbItems])} />
-      <JsonLd
-        data={faqPageJsonLd(
-          PUBLIC_SITE_URL,
-          breadcrumbItems[breadcrumbItems.length - 1]?.path ?? "/",
-          content.faq,
-        )}
-      />
-      <div className="services-page storefront-page services-landing-page">
+  const intro = <>
         <ServiceBreadcrumb items={breadcrumbItems} />
-
         <section className="service-hero">
           <div>
             <span className="card-kicker">Zachary IT</span>
@@ -61,8 +54,8 @@ export function PublicServicesLandingPage({
             </Link>
           </div>
         </section>
-
-        <section
+  </>;
+  const needs = <section
           aria-labelledby="services-problems-title"
           className="service-section service-problem-routing"
         >
@@ -71,7 +64,7 @@ export function PublicServicesLandingPage({
             <h2 id="services-problems-title">Quel problème cherchez-vous à résoudre ?</h2>
             <p>
               Partez de la situation que vous rencontrez. Chaque entrée vous mène
-              vers le service, l&apos;univers ou le guide le plus utile pour avancer.
+              vers le service ou le conseil le plus utile pour avancer.
             </p>
           </header>
           <div className="service-overview-grid services-problem-grid">
@@ -89,9 +82,8 @@ export function PublicServicesLandingPage({
               </article>
             ))}
           </div>
-        </section>
-
-        <section
+        </section>;
+  const categoriesSection = <section
           aria-labelledby="services-categories-title"
           className="service-section service-main-services"
         >
@@ -99,9 +91,9 @@ export function PublicServicesLandingPage({
             <span className="card-kicker">Domaines d&apos;intervention</span>
             <h2 id="services-categories-title">Les services Zachary IT</h2>
             <p>
-              Quatre univers regroupent les services selon leur rôle. Ils viennent
-              après le besoin pour vous éviter de devoir choisir d&apos;abord une
-              technologie.
+              Ces quatre familles regroupent les services selon ce qu&apos;ils
+              apportent. Choisissez d&apos;abord votre besoin, puis découvrez
+              les solutions possibles.
             </p>
           </header>
           <div className="service-category-grid">
@@ -109,18 +101,16 @@ export function PublicServicesLandingPage({
               <ServiceCategoryCard category={category} key={category.slug} />
             ))}
           </div>
-        </section>
-
-        {content.sections.map((section) => (
+        </section>;
+  const explanations = <>{content.sections.map((section) => (
           <section className="service-section storefront-section" key={section.heading}>
             <header className="service-section-heading">
               <h2>{section.heading}</h2>
             </header>
             <ManagedMarkdown markdown={section.bodyMarkdown} />
           </section>
-        ))}
-
-        <section
+        ))}</>;
+  const faq = <section
           aria-labelledby="services-faq-title"
           className="service-section storefront-faq"
         >
@@ -135,22 +125,40 @@ export function PublicServicesLandingPage({
               </details>
             ))}
           </div>
-        </section>
-
-        <section className="service-cta">
+        </section>;
+  const contact = <section className="service-cta">
           <div>
             <h2>Vous ne savez pas quel service choisir ?</h2>
             <p>
-              Le diagnostic vous aide à situer votre besoin et à identifier une
-              première orientation. Pour une demande générale ou un besoin à
-              qualifier, vous pouvez aussi nous contacter directement.
+              Répondez à quelques questions pour trouver un premier point de
+              départ. Vous pouvez aussi nous décrire votre besoin directement.
             </p>
           </div>
           <div className="button-row storefront-action-row">
             <Link className="button" href="/diagnostic">Faire le diagnostic</Link>
             <Link className="button button-secondary" href="/contact">Nous contacter</Link>
           </div>
-        </section>
+        </section>;
+  return (
+    <>
+      <JsonLd data={breadcrumbJsonLd(PUBLIC_SITE_URL, [...breadcrumbItems])} />
+      <JsonLd data={!pageLayout || pageLayout.blocks.some((block) => block.widgetKey === "services_faq")
+        ? faqPageJsonLd(
+          PUBLIC_SITE_URL,
+          breadcrumbItems[breadcrumbItems.length - 1]?.path ?? "/",
+          content.faq,
+        ) : null} />
+      <div className="services-page storefront-page services-landing-page">
+        {pageLayout ? <SitePageFrame area="public" pageKey="/services"
+          initialLayout={pageLayout} slots={{
+            services_intro: intro,
+            services_needs: needs,
+            services_categories: categoriesSection,
+            services_explanations: explanations,
+            services_faq: faq,
+            services_contact: contact,
+          }}>{null}</SitePageFrame>
+          : <>{intro}{needs}{categoriesSection}{explanations}{faq}{contact}</>}
       </div>
     </>
   );

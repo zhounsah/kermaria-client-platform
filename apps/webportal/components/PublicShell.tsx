@@ -7,13 +7,13 @@ import { ChevronDown, Menu, X } from "lucide-react";
 
 import { BrandLogo } from "@/components/BrandLogo";
 import { BillingV2CartHeaderLink } from "@/components/BillingV2CartHeaderLink";
+import { SitePageFrame } from "@/components/SitePageFrame";
 import { SERVICE_CATEGORIES } from "@/lib/public-services";
 
 const publicHref = (pathname: string) => pathname;
 const primaryLinks = [
   { href: publicHref("/offres"), label: "Offres" },
   { href: publicHref("/tarifs"), label: "Tarifs" },
-  { href: publicHref("/diagnostic"), label: "Diagnostic" },
   { href: publicHref("/a-propos"), label: "À propos" },
 ] as const;
 
@@ -33,14 +33,15 @@ const footerServiceLinks: readonly PublicFooterLink[] = [
 const footerDiscoverLinks: readonly PublicFooterLink[] = [
   { href: publicHref("/offres"), label: "Offres" },
   { href: publicHref("/tarifs"), label: "Tarifs" },
-  { href: publicHref("/diagnostic"), label: "Diagnostic" },
+  { href: publicHref("/diagnostic"), label: "Trouver ma solution" },
   { href: publicHref("/a-propos"), label: "À propos" },
-  { href: publicHref("/infrastructure"), label: "Infrastructure" },
+  { href: publicHref("/infrastructure"), label: "Notre fonctionnement" },
 ];
 
 const footerLegalLinks: readonly PublicFooterLink[] = [
   { href: publicHref("/mentions-legales"), label: "Mentions légales" },
   { href: publicHref("/politique-confidentialite"), label: "Politique de confidentialité" },
+  { href: publicHref("/demander-mes-donnees"), label: "Demander mes données" },
   { href: publicHref("/cgv"), label: "CGV" },
 ];
 
@@ -91,9 +92,9 @@ function ServicesMegaMenu({ onNavigate }: { onNavigate?: () => void }) {
           ))}
         </div>
         <div className="public-services-mega-grid public-services-mega-featured">
-          <a href={publicHref("/services/vps")} onClick={close}><strong>VPS & infogérance</strong><span>Serveurs gérés ou repris</span></a>
-          <a href={publicHref("/services/vpn-entreprise")} onClick={close}><strong>VPN / accès sécurisé</strong><span>Travailler à distance en sécurité</span></a>
-          <a href={publicHref("/services/hebergement-web")} onClick={close}><strong>Hébergement web</strong><span>Site ou application suivis</span></a>
+          <a href={publicHref("/services/vps")} onClick={close}><strong>Serveur à distance</strong><span>Une solution suivie pour vos outils</span></a>
+          <a href={publicHref("/services/vpn-entreprise")} onClick={close}><strong>Accès à distance</strong><span>Retrouver vos outils en sécurité</span></a>
+          <a href={publicHref("/services/hebergement-web")} onClick={close}><strong>Site web</strong><span>Mettre votre site en ligne et le suivre</span></a>
         </div>
         <a className="public-services-mega-all" href={publicHref("/services")} onClick={close}>Voir tous les services</a>
       </div>
@@ -123,9 +124,9 @@ function MobileServicesMenu({ onNavigate }: { onNavigate: () => void }) {
             <strong>{category.shortTitle}</strong><span>{category.menuSummary}</span>
           </a>
         ))}
-        <a href={publicHref("/services/vps")} onClick={onNavigate}><strong>VPS & infogérance</strong><span>Serveurs gérés ou repris</span></a>
-        <a href={publicHref("/services/vpn-entreprise")} onClick={onNavigate}><strong>VPN / accès sécurisé</strong><span>Travailler à distance en sécurité</span></a>
-        <a href={publicHref("/services/hebergement-web")} onClick={onNavigate}><strong>Hébergement web</strong><span>Site ou application suivis</span></a>
+        <a href={publicHref("/services/vps")} onClick={onNavigate}><strong>Serveur à distance</strong><span>Une solution suivie pour vos outils</span></a>
+        <a href={publicHref("/services/vpn-entreprise")} onClick={onNavigate}><strong>Accès à distance</strong><span>Retrouver vos outils en sécurité</span></a>
+        <a href={publicHref("/services/hebergement-web")} onClick={onNavigate}><strong>Site web</strong><span>Mettre votre site en ligne et le suivre</span></a>
         <a className="public-mobile-services-all" href={publicHref("/services")} onClick={onNavigate}>Voir tous les services</a>
       </div>
     </details>
@@ -170,7 +171,7 @@ export function PublicShell({
             <div className="public-header-actions">
               <BillingV2CartHeaderLink onNavigate={closeMobileMenu} />
               <Link className="public-header-login" href="/login" onClick={closeMobileMenu}>Espace client</Link>
-              <a className="public-header-primary" href={publicHref("/contact")} onClick={closeMobileMenu}>Nous contacter</a>
+              <a className="public-header-primary" href={publicHref("/contact")} onClick={closeMobileMenu}>Parler de mon besoin</a>
             </div>
           </nav>
         </div>
@@ -178,12 +179,13 @@ export function PublicShell({
       <main className="public-main" id="main-content">{children}</main>
       <footer className="public-footer">
         <div className="public-footer-inner">
+          <SitePageFrame area="public" pageKey="/footer">
           <div className="public-footer-grid">
             <div className="public-footer-brand">
               <BrandLogo className="brand-logo brand-logo-footer" variant="dark" />
-              <p className="public-footer-tagline">Des services informatiques clairs, suivis et adaptés à vos besoins.</p>
+              <p className="public-footer-tagline">Une aide claire pour votre informatique, à la maison comme au travail.</p>
               <p className="public-footer-company">Zachary HOUNSA-HOUNKPA EI</p>
-              <a className="public-footer-contact" href={publicHref("/contact")}>Nous contacter</a>
+              <a className="public-footer-contact" href={publicHref("/contact")}>Parler de mon besoin</a>
             </div>
 
             <section className="public-footer-column" aria-labelledby="public-footer-services-title">
@@ -201,14 +203,14 @@ export function PublicShell({
             </section>
 
             <section className="public-footer-column public-footer-help" aria-labelledby="public-footer-help-title">
-              <h2 id="public-footer-help-title">Aide & espace client</h2>
+              <h2 id="public-footer-help-title">Aide et espace client</h2>
               <nav aria-label="Aide et espace client">
                 <ul className="public-footer-link-list">
                   <li><a href={publicHref("/contact")}>Nous contacter</a></li>
                   <li><Link href="/login">Espace client</Link></li>
                   {signupEnabled ? <li><a href={publicHref("/signup")}>Créer un accès client</a></li> : null}
                   <li><a href={publicHref("/ressources")}>Ressources</a></li>
-                  <li><a href={publicHref("/wiki")}>Wiki</a></li>
+                  <li><a href={publicHref("/wiki")}>Conseils et guides</a></li>
                 </ul>
               </nav>
               <div className="public-footer-legal">
@@ -219,6 +221,7 @@ export function PublicShell({
               </div>
             </section>
           </div>
+          </SitePageFrame>
           <div className="public-footer-bottom">
             <p>© <time dateTime={String(currentYear)}>{currentYear}</time> Zachary HOUNSA-HOUNKPA EI</p>
           </div>

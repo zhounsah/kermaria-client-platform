@@ -38,7 +38,7 @@ export const SERVICE_CATEGORIES: ServiceCategory[] = [
     shortTitle: "Hébergement & services en ligne",
     menuSummary: "Hébergement web · Serveurs · Sauvegarde",
     description:
-      "Des services hébergés, suivis et sauvegardés pour rester disponibles sans transformer votre équipe en administrateurs système.",
+      "Des outils en ligne suivis et protégés, sans vous demander de les surveiller vous-même.",
     audience: "Indépendants, associations et structures qui ont besoin de services fiables sans les gérer au quotidien.",
     icon: "cloud",
     intro:
@@ -46,13 +46,13 @@ export const SERVICE_CATEGORIES: ServiceCategory[] = [
     problems: [
       "Un site ou une application ne doit pas dépendre d’un ordinateur laissé sur place.",
       "Les sauvegardes doivent être vérifiables et séparées de l’infrastructure principale.",
-      "Les alertes techniques doivent être comprises et traitées, pas simplement reçues.",
+      "Une alerte doit conduire à une action claire, pas simplement remplir une boîte e-mail.",
     ],
     services: [
       {
         title: "Serveurs et services en ligne",
-        description: "Un serveur privé virtuel (VPS) ou un hébergement adapté pour faire fonctionner vos sites, applications et outils dans de bonnes conditions.",
-        details: ["Serveur VPS si nécessaire", "Applications métier", "Services web"],
+        description: "Un serveur à distance ou un hébergement adapté pour faire fonctionner vos sites, applications et outils dans de bonnes conditions.",
+        details: ["Serveur selon le besoin", "Applications de travail", "Services en ligne"],
         cta: { href: "/contact", label: "Demander un devis" },
       },
       {
@@ -62,8 +62,8 @@ export const SERVICE_CATEGORIES: ServiceCategory[] = [
         cta: { href: "/contact", label: "Nous contacter" },
       },
       {
-        title: "Sauvegarde et supervision",
-        description: "Des copies séparées et une supervision qui aide à agir avant qu’un incident ne bloque votre activité.",
+        title: "Sauvegarde et suivi",
+        description: "Des copies séparées et un suivi qui aide à agir avant qu’un incident ne bloque votre activité.",
         details: ["Sauvegarde", "Alertes utiles", "Suivi de fonctionnement"],
         cta: { href: "/tarifs", label: "Voir les tarifs" },
       },
@@ -94,8 +94,8 @@ export const SERVICE_CATEGORIES: ServiceCategory[] = [
     services: [
       {
         title: "Nom de domaine et réglages associés",
-        description: "Gestion de votre nom de domaine, de son renouvellement et des réglages techniques nécessaires à votre site ou votre messagerie.",
-        details: ["Renouvellement", "Réglages DNS", "Transfert de domaine"],
+        description: "Gestion de votre nom de domaine, de son renouvellement et des réglages nécessaires à votre site ou votre messagerie.",
+        details: ["Renouvellement", "Réglages du domaine", "Transfert du domaine"],
         cta: { href: "/contact", label: "Nous contacter" },
       },
       {
@@ -107,7 +107,7 @@ export const SERVICE_CATEGORIES: ServiceCategory[] = [
       {
         title: "Délivrabilité et migrations",
         description: "Préparation des migrations et amélioration de la réception de vos e-mails pour préserver une communication fiable.",
-        details: ["Protection des e-mails", "Migration", "Réglages techniques si nécessaire"],
+        details: ["Protection des e-mails", "Reprise des messages", "Réglages utiles"],
         cta: { href: "/contact", label: "Demander un devis" },
       },
     ],
@@ -137,19 +137,19 @@ export const SERVICE_CATEGORIES: ServiceCategory[] = [
     services: [
       {
         title: "Réseau et Wi-Fi",
-        description: "Conception, installation et maintenance d’un réseau adapté à vos locaux et à vos utilisateurs. UniFi peut être retenu lorsque ce matériel convient au besoin.",
+        description: "Conception, installation et entretien d’un réseau adapté à vos locaux et à vos utilisateurs.",
         details: ["Wi-Fi", "Couverture", "Réseau séparé si nécessaire"],
         cta: { href: "/contact", label: "Demander un devis" },
       },
       {
         title: "Accès distant sécurisé",
-        description: "Un accès à distance pratique et protégé pour travailler sans exposer inutilement vos outils. Un VPN ou un pare-feu peut être utilisé lorsque cela est pertinent.",
+        description: "Un accès à distance pratique et protégé pour travailler sans exposer inutilement vos outils.",
         details: ["Accès distant", "Protection des accès", "Utilisateurs autorisés"],
         cta: { href: "/contact", label: "Parler de votre besoin" },
       },
       {
         title: "Protection de vos services en ligne",
-        description: "Protection de votre site ou application contre les accès malveillants, avec suivi des alertes utiles. Les outils techniques sont choisis selon le contexte.",
+        description: "Protection de votre site ou application contre les accès malveillants, avec un suivi des alertes utiles.",
         details: ["Protection du site", "Filtrage des accès", "Suivi"],
         cta: { href: "/contact", label: "Nous contacter" },
       },

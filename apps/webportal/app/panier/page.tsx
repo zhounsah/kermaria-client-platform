@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 import { BillingV2CartPage } from "@/components/BillingV2CartPage";
-import { getBillingV2FormulesCatalog } from "@/lib/internal-api";
+import { getBillingV2FormulesCatalog, getPublicSitePageLayout } from "@/lib/internal-api";
 import { buildPublicMetadata } from "@/lib/public-metadata";
 
 export const dynamic = "force-dynamic";
@@ -14,6 +14,8 @@ export const metadata: Metadata = buildPublicMetadata({
 });
 
 export default async function PanierPage() {
-  const result = await getBillingV2FormulesCatalog();
-  return <BillingV2CartPage catalog={result.data} />;
+  const [result, layout] = await Promise.all([
+    getBillingV2FormulesCatalog(), getPublicSitePageLayout("/panier"),
+  ]);
+  return <BillingV2CartPage catalog={result.data} initialLayout={layout.data} />;
 }

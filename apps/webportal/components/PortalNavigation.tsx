@@ -47,7 +47,7 @@ const navigationSections: NavSection[] = [
   {
     label: "Demandes",
     items: [
-      { href: "/support", label: "Support", icon: LifeBuoy },
+      { href: "/support", label: "Demander de l’aide", icon: LifeBuoy },
       { href: "/request-service", label: "Nouvelle demande", icon: PackagePlus },
     ],
   },
@@ -55,7 +55,7 @@ const navigationSections: NavSection[] = [
     label: "Suivi",
     items: [
       { href: "/notifications", label: "Notifications", icon: Bell },
-      { href: "/wiki", label: "Wiki", icon: BookOpen },
+      { href: "/wiki", label: "Guides", icon: BookOpen },
       {
         href: "/profile",
         label: "Profil",
@@ -63,6 +63,7 @@ const navigationSections: NavSection[] = [
         exact: true,
         activePaths: ["/profile/edit"],
       },
+      { href: "/profile/donnees", label: "Mes données", icon: FileText },
       { href: "/password", label: "Mot de passe", icon: LockKeyhole },
     ],
   },
@@ -70,13 +71,14 @@ const navigationSections: NavSection[] = [
 
 type PortalNavigationProps = {
   displayName: string;
+  mobileOpen?: boolean;
 };
 
-export function PortalNavigation({ displayName }: PortalNavigationProps) {
+export function PortalNavigation({ displayName, mobileOpen = false }: PortalNavigationProps) {
   const pathname = usePathname();
 
   return (
-    <nav aria-label="Navigation principale" className="app-sidebar">
+    <nav aria-label="Navigation principale" className={mobileOpen ? "app-sidebar app-sidebar-open" : "app-sidebar"} id="app-sidebar-navigation">
       <div className="app-sidebar-header">
         <span className="app-sidebar-role">Espace client</span>
         <span className="app-sidebar-user" title={displayName}>

@@ -49,6 +49,10 @@ import type {
   DiagnosticConfigurationSnapshot,
   DownloadCategory,
   DataSource,
+  DataSubjectRequestDetail,
+  DataSubjectRequestSummary,
+  SignupPublicMode,
+  SitePageLayout,
   DownloadResource,
   EditorialContentDetail,
   EditorialContentSummary,
@@ -494,6 +498,78 @@ export function getClientProfile() {
   );
 }
 
+export function getClientDataRequests() {
+  return getPortalData<DataSubjectRequestSummary[]>(
+    "/internal/portal/data-requests", [], []);
+}
+
+function widgetPageFallback(
+  area: SitePageLayout["area"], pageKey: string, keys: string[],
+): SitePageLayout {
+  const widgetBlock = (id: string, widgetKey: string): SitePageLayout["blocks"][number] => ({
+    id, type: "widget", widgetKey, title: null, body: null, href: null,
+    label: null, mediaId: null, action: null, items: null, fields: null,
+  });
+  return {
+    pageKey, area, version: 0,
+    blocks: keys.map((key) => widgetBlock(key, key)),
+    updatedAt: null,
+  };
+}
+
+export function getClientDataRequestPageLayout() {
+  const fallback = widgetPageFallback("client", "/profile/donnees",
+    ["data_request_intro", "data_request_form", "data_request_history"]);
+  return getPortalData<SitePageLayout>(
+    "/internal/page-layout?area=client&pageKey=%2Fprofile%2Fdonnees",
+    fallback, fallback);
+}
+
+export function getClientHomePageLayout() {
+  const pageKey = "/dashboard";
+  const fallback = widgetPageFallback("client", pageKey,
+    ["client_home_intro", "client_home_status", "client_home_metrics",
+      "client_home_services", "client_home_recent", "client_home_activity",
+      "client_home_source"]);
+  return getPortalData<SitePageLayout>(
+    `/internal/page-layout?area=client&pageKey=${encodeURIComponent(pageKey)}`,
+    fallback, fallback);
+}
+
+export function getClientProfilePageLayout() {
+  const pageKey = "/profile";
+  const fallback = widgetPageFallback("client", pageKey,
+    ["profile_intro", "profile_contact", "profile_security", "profile_source"]);
+  return getPortalData<SitePageLayout>(
+    `/internal/page-layout?area=client&pageKey=${encodeURIComponent(pageKey)}`,
+    fallback, fallback);
+}
+
+export function getClientSubscribePageLayout() {
+  const pageKey = "/souscrire";
+  const fallback = widgetPageFallback("client", pageKey,
+    ["subscribe_intro", "subscribe_offers", "subscribe_direct"]);
+  return getPortalData<SitePageLayout>(
+    `/internal/page-layout?area=client&pageKey=${encodeURIComponent(pageKey)}`,
+    fallback, fallback);
+}
+
+export function getClientDataRequestDetailPageLayout() {
+  const pageKey = "/profile/donnees/[id]";
+  const fallback = widgetPageFallback("client", pageKey,
+    ["client_data_detail_intro", "client_data_detail_summary",
+      "client_data_detail_messages", "client_data_detail_file",
+      "client_data_detail_reply"]);
+  return getPortalData<SitePageLayout>(
+    `/internal/page-layout?area=client&pageKey=${encodeURIComponent(pageKey)}`,
+    fallback, fallback);
+}
+
+export function getClientDataRequest(id: string) {
+  return getPortalData<DataSubjectRequestDetail | null>(
+    `/internal/portal/data-requests/${encodeURIComponent(id)}`, null, null);
+}
+
 export function getServices() {
   return getPortalData<ServiceSummary[]>(
     "/internal/portal/services",
@@ -564,6 +640,12 @@ export function getBillingV2FormulesCatalog() {
     EMPTY_BILLING_V2_CATALOG,
     EMPTY_BILLING_V2_CATALOG,
   );
+}
+
+export function getPublicSignupMode() {
+  const unavailable: SignupPublicMode = { enabled: false, autoApprove: false };
+  return getPublicData<SignupPublicMode>(
+    "/internal/signup/mode", unavailable, unavailable);
 }
 
 /**
@@ -747,6 +829,100 @@ export function getPublicManagedContent(key: ManagedContentKey) {
     localFallback,
     null,
   );
+}
+
+export function getPublicSitePageLayout(pageKey: string) {
+  const fallback: SitePageLayout = pageKey === "/offres"
+    ? (() => {
+      const widgets = widgetPageFallback("public", pageKey,
+        ["offers_intro", "offers_configure", "offers_demo",
+          "offers_overview", "offers_comparison"]);
+      widgets.blocks.splice(1, 0, {
+        id: "story", type: "offers_story",
+        title: "Un incident matériel ne devrait pas devenir une perte définitive.",
+        body: "Conservez une copie de vos documents importants dans un lieu séparé. Une copie conservée au même endroit que votre matériel ne couvre pas tous les sinistres ; nous vous aidons à préparer leur récupération.",
+        href: "/contact", label: "Demander un accompagnement",
+        mediaId: null, action: null, fields: null, widgetKey: null,
+        items: [
+          { title: "Dossier de secours numérique", body: "Conservez factures, contrats, garanties et photos utiles difficiles à reconstituer après un sinistre.", href: null, label: null },
+          { title: "Continuer à travailler", body: "Protégez les documents et fichiers nécessaires pour reprendre plus vite après un problème.", href: null, label: null },
+          { title: "Un accompagnement local", body: "À Guichen, Zachary IT explique ce qui est protégé et ce qui reste à prévoir.", href: null, label: null },
+        ],
+      });
+      return widgets;
+    })()
+    : pageKey === "/formules"
+    ? widgetPageFallback("public", pageKey,
+      ["formules_intro", "formules_catalog", "formules_note"])
+    : pageKey === "/tarifs"
+    ? widgetPageFallback("public", pageKey,
+      ["tariffs_intro", "tariffs_catalog", "tariffs_explanations",
+        "tariffs_faq", "tariffs_related", "tariffs_contact"])
+    : pageKey === "/services"
+    ? widgetPageFallback("public", pageKey,
+      ["services_intro", "services_needs", "services_categories",
+        "services_explanations", "services_faq", "services_contact"])
+    : pageKey === "/diagnostic"
+    ? (() => {
+      const widgets = widgetPageFallback("public", pageKey,
+        ["diagnostic_questionnaire", "diagnostic_result"]);
+      widgets.blocks.unshift({
+        id: "intro", type: "diagnostic_intro",
+        title: "Faites le point, simplement.",
+        body: "Quelques questions concrètes pour identifier vos points solides et les priorités à examiner.",
+        href: null, label: null, mediaId: null, action: null, fields: null,
+        widgetKey: null,
+        items: [
+          { title: "Adapté à votre situation", body: "Particulier, activité professionnelle ou association.", href: null, label: null },
+          { title: "Résultat immédiat", body: "Des priorités lisibles, sans jargon inutile.", href: null, label: null },
+        ],
+      });
+      return widgets;
+    })()
+    : pageKey === "/contact"
+    ? (() => {
+      const widgets = widgetPageFallback("public", pageKey,
+        ["contact_back", "contact_offer", "contact_form"]);
+      widgets.blocks.splice(1, 0, {
+        id: "intro", type: "contact_intro", title: "Parlons de votre besoin",
+        body: "Décrivez votre situation en quelques lignes : un problème à résoudre, un projet à lancer ou une question à poser. Nous vous aiderons à trouver la prochaine étape.",
+        href: null, label: null, mediaId: null, action: null, items: null,
+        fields: null, widgetKey: null,
+      });
+      widgets.blocks.push({
+        id: "steps", type: "contact_steps", title: "Ce qui se passe ensuite",
+        body: null, href: null, label: null, mediaId: null, action: null,
+        fields: null, widgetKey: null,
+        items: [
+          { title: "Vous envoyez votre message", body: "Nous recevons votre demande par e-mail.", href: null, label: null },
+          { title: "Nous vous répondons", body: "Nous utilisons l'adresse indiquée pour vous répondre et préciser votre besoin.", href: null, label: null },
+          { title: "Nous convenons de la suite", body: "Si votre demande nécessite une étude, nous vous expliquons les points à vérifier avant de proposer un devis.", href: null, label: null },
+        ],
+      }, {
+        id: "related", type: "cards", title: "Vous préférez commencer autrement ?",
+        body: null, href: null, label: null, mediaId: null, action: null,
+        fields: null, widgetKey: null,
+        items: [
+          { title: "Trouver une première orientation", body: "Quelques questions peuvent vous aider à situer votre besoin.", href: "/diagnostic", label: "Faire le questionnaire" },
+          { title: "Découvrir les services", body: "Parcourez les solutions proposées à la maison ou au travail.", href: "/services", label: "Voir les services" },
+        ],
+      });
+      return widgets;
+    })()
+    : pageKey === "/signup"
+      ? widgetPageFallback("public", pageKey,
+        ["signup_intro", "signup_continuation", "signup_selection",
+          "signup_form", "signup_steps", "signup_login"])
+    : {
+    pageKey, area: "public", version: 0,
+    blocks: [{ id: "main", type: "route_content", title: null, body: null,
+      href: null, label: null, mediaId: null, action: null, items: null, fields: null,
+      widgetKey: null }],
+    updatedAt: null,
+  };
+  return getPublicData<SitePageLayout>(
+    `/internal/page-layout?area=public&pageKey=${encodeURIComponent(pageKey)}`,
+    fallback, fallback);
 }
 
 export function getPublicSystemSnippets() {
@@ -1937,6 +2113,54 @@ export function getAdminManagedContentList() {
     "/internal/admin/content",
     mockManagedContentSummaries,
   );
+}
+
+export function getAdminDataRequests() {
+  return getAdminData<DataSubjectRequestSummary[]>(
+    "/internal/admin/data-requests", []);
+}
+
+export function getAdminDataRequestPageLayout() {
+  const fallback = widgetPageFallback("admin", "/admin/data-requests",
+    ["admin_data_request_intro", "admin_data_request_list"]);
+  return getAdminData<SitePageLayout>(
+    "/internal/admin/page-layout?area=admin&pageKey=%2Fadmin%2Fdata-requests",
+    fallback);
+}
+
+export function getAdminHomePageLayout() {
+  const pageKey = "/admin";
+  const fallback = widgetPageFallback("admin", pageKey,
+    ["admin_home_intro", "admin_home_activity", "admin_home_overview",
+      "admin_home_integrations", "admin_home_shortcuts", "admin_home_source"]);
+  return getAdminData<SitePageLayout>(
+    `/internal/admin/page-layout?area=admin&pageKey=${encodeURIComponent(pageKey)}`,
+    fallback);
+}
+
+export function getAdminCatalogPageLayout() {
+  const pageKey = "/admin/catalog";
+  const fallback = widgetPageFallback("admin", pageKey,
+    ["admin_catalog_intro", "admin_catalog_vitrine", "admin_catalog_editor"]);
+  return getAdminData<SitePageLayout>(
+    `/internal/admin/page-layout?area=admin&pageKey=${encodeURIComponent(pageKey)}`,
+    fallback);
+}
+
+export function getAdminDataRequestDetailPageLayout() {
+  const pageKey = "/admin/data-requests/[id]";
+  const fallback = widgetPageFallback("admin", pageKey,
+    ["admin_data_detail_intro", "admin_data_detail_summary",
+      "admin_data_detail_messages", "admin_data_detail_reply",
+      "admin_data_detail_file"]);
+  return getAdminData<SitePageLayout>(
+    `/internal/admin/page-layout?area=admin&pageKey=${encodeURIComponent(pageKey)}`,
+    fallback);
+}
+
+export function getAdminDataRequest(id: string) {
+  return getAdminData<DataSubjectRequestDetail | null>(
+    `/internal/admin/data-requests/${encodeURIComponent(id)}`, null);
 }
 
 export function getAdminEditorialList(query = "") {

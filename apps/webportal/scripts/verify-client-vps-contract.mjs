@@ -52,14 +52,21 @@ assert.doesNotMatch(buildServiceSummary, /SourceLabel|sourceLabels/);
 
 const servicesPage = await read("app/services/page.tsx");
 assert.match(servicesPage, /getClientVps\(\)/);
-assert.match(servicesPage, /Voir mon VPS/);
+assert.match(servicesPage, /Voir mon serveur/);
 assert.match(servicesPage, /\/services\/vps\/\$\{encodeURIComponent\(item\.id\)\}/);
 assert.doesNotMatch(servicesPage, /mapping technique caché/i);
 
 const serviceCard = await read("components/ServiceCard.tsx");
 assert.doesNotMatch(serviceCard, /commercialTerms/);
 assert.doesNotMatch(serviceCard, /Billing V2|Subscription Billing V2|Souscription Billing V2|Couvert via/i);
-assert.match(serviceCard, /<span>\{service\.scope\}<\/span>/);
+assert.match(serviceCard, /<span>\{getClientServiceScope\(service\)\}<\/span>/);
+const display = await import("../lib/service-display.ts");
+assert.equal(display.getClientServiceName({ name: "Accès VPN privé" }),
+  "Connexion à distance sécurisée");
+assert.equal(display.getClientServiceDescription({ description: "Description personnalisée" }),
+  "Description personnalisée");
+assert.equal(display.getClientServiceScope({ scope: "Couverture personnalisée" }),
+  "Couverture personnalisée");
 
 const detailPage = await read("app/services/vps/[id]/page.tsx");
 assert.match(detailPage, /getClientVpsDetail\(id\)/);

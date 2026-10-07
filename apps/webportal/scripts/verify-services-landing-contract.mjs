@@ -5,6 +5,7 @@ import {
   DEFAULT_STOREFRONT_SERVICES_CATEGORY_LINKS,
   DEFAULT_STOREFRONT_SERVICES_PROBLEM_ENTRIES,
   parseStorefrontServicesLandingContent,
+  presentPublicServicesLandingContent,
   STOREFRONT_SERVICES_CATEGORY_DESTINATIONS,
   STOREFRONT_SERVICES_PROBLEM_DESTINATIONS,
 } from "../lib/storefront-content.ts";
@@ -56,9 +57,23 @@ assert.deepEqual(
   [...STOREFRONT_SERVICES_CATEGORY_DESTINATIONS],
 );
 assert.equal(transitional.sections.length, 1);
-assert.equal(transitional.sections[0].heading, "Des services modulaires, pas un catalogue figé");
+assert.equal(transitional.sections[0].heading, "Une aide adaptée à votre situation");
 assert.match(transitional.lead, /Partez de votre besoin/);
 assert.doesNotMatch(JSON.stringify(transitional.sections), /Ce que Zachary IT prend en charge|Choisir le bon point de départ/);
+
+const oldPublicText = {
+  ...transitional,
+  problemEntries: transitional.problemEntries.map((item) => item.href === "/vpn-ou-bureau-a-distance-que-choisir"
+    ? { ...item, description: "VPN et bureau Windows distant ne répondent pas au même besoin. Comparez les deux approches avant de choisir." }
+    : item),
+};
+const simplified = presentPublicServicesLandingContent(oldPublicText);
+assert.match(simplified.problemEntries[2].description, /Retrouver ses fichiers/);
+assert.equal(
+  presentPublicServicesLandingContent({ ...oldPublicText, problemEntries: oldPublicText.problemEntries.map((item) => item.href === "/vpn-ou-bureau-a-distance-que-choisir"
+    ? { ...item, description: "Texte réécrit par un administrateur." } : item) }).problemEntries[2].description,
+  "Texte réécrit par un administrateur.",
+);
 
 const modern = {
   ...legacy,

@@ -40,7 +40,8 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const localPortalOrigin = getDevelopmentLocalPortalOrigin();
   const area = getPortalAreaForRequest(origin);
   const query = await searchParams;
-  const continuationPath = resolveClientCheckoutContinuationPath(query.next);
+  const continuationPath = resolveClientCheckoutContinuationPath(query.next)
+    ?? (query.next === "/profile/donnees" ? "/profile/donnees" : null);
   const selfServiceVpsContinuation = resolveSelfServiceVpsSignupContinuation(
     query.next,
   );

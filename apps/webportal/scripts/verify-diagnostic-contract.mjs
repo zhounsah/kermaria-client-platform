@@ -798,13 +798,13 @@ const backup128Configuration = billingV2FormulesRuntime.describeSelectionConfigu
 assert.deepEqual(
   backup128Configuration.map(({ label, value }) => [label, value]),
   [
-    ["Stockage personnel", "128 Go"],
-    ["Sauvegarde personnelle", "Incluse"],
+    ["Espace personnel de fichiers", "128 Go"],
+    ["Copie de sécurité de vos fichiers", "Incluse"],
     ["Espace partag\u00e9", "Non"],
-    ["Sauvegarde partag\u00e9e", "Non"],
+    ["Copie de sécurité de l'espace partagé", "Non"],
     ["Acc\u00e8s s\u00e9curis\u00e9 \u00e0 distance", "Non"],
     ["Bureau Windows \u00e0 distance", "Non"],
-    ["Utilisateurs", "1"],
+    ["Personnes", "1"],
     ["Support renforc\u00e9", "Non"],
   ],
   "Le profil Billing doit etre traduit en configuration publique sans codes internes.",

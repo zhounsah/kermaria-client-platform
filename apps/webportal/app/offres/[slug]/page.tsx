@@ -12,11 +12,14 @@ import { ManagedMarkdown } from "@/components/ManagedMarkdown";
 import { MockNotice } from "@/components/MockNotice";
 import { PublicPackCard } from "@/components/PublicPackCard";
 import { SectionCard } from "@/components/SectionCard";
+import { SitePageFrame } from "@/components/SitePageFrame";
+import { resolveServicePublicLabel } from "@/lib/billing-v2-formules";
 import { formatDateTime } from "@/lib/formatters";
 import {
   getBillingV2FormulesCatalog,
   getPublicManagedContent,
   getPublicPackCatalogContent,
+  getPublicSitePageLayout,
 } from "@/lib/internal-api";
 import {
   getPortalPublicUrlFromHeaders,
@@ -55,7 +58,7 @@ export async function generateMetadata({
   });
 }
 
-export const revalidate = 300;
+export const dynamic = "force-dynamic";
 
 export default async function PublicPackSheetPage({ params }: PageProps) {
   const { slug } = await params;
@@ -65,20 +68,17 @@ export default async function PublicPackSheetPage({ params }: PageProps) {
     notFound();
   }
 
-  // Le balisage schema.org exige des URL absolues, donc l'hote reel de la
-  // requete (`zachary-it.fr` en production, `www.home.bzh` en
-  // recette). Cet appel rend la page dynamique et neutralise le
-  // `revalidate` ci-dessus — sans consequence tant que le layout racine
-  // impose deja le rendu dynamique a tout l'arbre (cf. le TODO ISR dans
-  // `app/layout.tsx`), mais a reprendre en meme temps que ce chantier.
+  // Les URL schema.org prennent l'hote de la requete. Le contenu et la mise
+  // en page administrables doivent etre lus au rendu, y compris en production.
   const baseUrl = getPortalPublicUrlFromHeaders(await headers());
 
   const contentKey = buildPackSheetContentKey(manifest.key);
-  const [catalogResult, catalogContentResult, managedContentResult] =
+  const [catalogResult, catalogContentResult, managedContentResult, layoutResult] =
     await Promise.all([
       getBillingV2FormulesCatalog(),
       getPublicPackCatalogContent(),
       getPublicManagedContent(contentKey),
+      getPublicSitePageLayout("/offres/[slug]"),
     ]);
 
   if (managedContentResult.error || !managedContentResult.data) {
@@ -123,103 +123,64 @@ export default async function PublicPackSheetPage({ params }: PageProps) {
         service !== null,
     );
 
-  return (
-    <div className="offres-page managed-pack-sheet-page">
-      <JsonLd
-        data={packServiceJsonLd(baseUrl, {
-          slug: manifest.slug,
-          label: pack.label,
-          description: pack.description,
-        })}
-      />
-      <JsonLd
-        data={breadcrumbJsonLd(baseUrl, [
-          { name: "Offres", path: "/offres" },
-          { name: pack.label, path: `/offres/${manifest.slug}` },
-        ])}
-      />
+  const slots = {
+    offer_sheet_intro: <header className="offres-header managed-pack-sheet-header">
+      <p className="eyebrow">Offre</p>
+      <h1>{pack.label}</h1>
+      <p className="offres-lead">{pack.description}</p>
+      {content.updatedAt ? <p className="managed-content-updated">
+        Mis à jour le {formatDateTime(content.updatedAt)}
+      </p> : null}
+    </header>,
+    offer_sheet_back: <p><Link className="text-link" href="/offres">
+      ← Retour au comparatif des offres
+    </Link></p>,
+    offer_sheet_summary: <section className="managed-pack-sheet-hero">
+      <div className="managed-pack-sheet-summary">
+        <SectionCard ariaLabel={`Synthèse de ${pack.label}`}>
+          <h2>À retenir</h2>
+          <p>{pack.headline}</p>
+          <ul className="check-list managed-pack-sheet-checklist">
+            {pack.highlights.slice(0, 4).map((item) => <li key={item}>{item}</li>)}
+          </ul>
+        </SectionCard>
+      </div>
+      <PublicPackCard pack={pack} signupEnabled={signupEnabled} />
+    </section>,
+    offer_sheet_services: <SectionCard ariaLabel={`Services inclus dans ${pack.label}`}>
+      <div className="page-header-split"><div>
+        <span className="card-kicker">Ce qui est inclus</span>
+        <h2>Les services associés à cette offre</h2>
+        <p>Ces services constituent l&apos;offre choisie. Le détail est adapté à votre besoin lors de la mise en service.</p>
+      </div></div>
+      {componentServices.length === 0 ? <p className="field-hint">
+        Aucun service associé n&apos;est actuellement publié pour cette offre.
+      </p> : <div className="managed-pack-component-grid">
+        {componentServices.map((service) => <article className="managed-pack-component-card" key={service.code}>
+          <p className="card-kicker">{service.category}</p>
+          <h3>{resolveServicePublicLabel(service.code, service.name)}</h3>
+        </article>)}
+      </div>}
+    </SectionCard>,
+    offer_sheet_details: <SectionCard ariaLabel={`Détails de ${pack.label}`}>
+      <div className="page-header-split"><div><span className="card-kicker">En savoir plus</span></div></div>
+      <ManagedMarkdown markdown={presentPublicOfferMarkdown(content.bodyMarkdown)} />
+    </SectionCard>,
+    offer_sheet_source: <MockNotice correlationId={managedContentResult.correlationId}
+      source={managedContentResult.source} />,
+  };
 
-      <header className="offres-header managed-pack-sheet-header">
-        <p className="eyebrow">Offre</p>
-        <h1>{pack.label}</h1>
-        <p className="offres-lead">{pack.description}</p>
-        <div className="managed-content-meta">
-          {content.updatedAt ? (
-            <p className="managed-content-updated">
-              Mis à jour le {formatDateTime(content.updatedAt)}
-            </p>
-          ) : null}
-        </div>
-      </header>
-
-      <p>
-        <Link className="text-link" href="/offres">
-          ← Retour au comparatif des offres
-        </Link>
-      </p>
-
-      <section className="managed-pack-sheet-hero">
-        <div className="managed-pack-sheet-summary">
-          <SectionCard ariaLabel={`Synthèse de ${pack.label}`}>
-            <h2>À retenir</h2>
-            <p>{pack.headline}</p>
-            <ul className="check-list managed-pack-sheet-checklist">
-              {pack.highlights.slice(0, 4).map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </SectionCard>
-        </div>
-
-        <PublicPackCard pack={pack} signupEnabled={signupEnabled} />
-      </section>
-
-      <SectionCard ariaLabel={`Services inclus dans ${pack.label}`}>
-        <div className="page-header-split">
-          <div>
-            <span className="card-kicker">Ce qui est inclus</span>
-            <h2>Les services associés à cette offre</h2>
-            <p>
-              Ces services constituent l&apos;offre choisie. Le détail est adapté à
-              votre besoin lors de la mise en service.
-            </p>
-          </div>
-        </div>
-
-        {componentServices.length === 0 ? (
-          <p className="field-hint">
-            Aucun service associé n&apos;est actuellement publié pour
-            cette offre.
-          </p>
-        ) : (
-          <div className="managed-pack-component-grid">
-            {componentServices.map((service) => (
-              <article
-                className="managed-pack-component-card"
-                key={service.code}
-              >
-                <p className="card-kicker">{service.category}</p>
-                <h3>{service.name}</h3>
-              </article>
-            ))}
-          </div>
-        )}
-      </SectionCard>
-
-      <SectionCard ariaLabel={`Détails de ${pack.label}`}>
-        <div className="page-header-split">
-          <div>
-            <span className="card-kicker">En savoir plus</span>
-          </div>
-        </div>
-
-        <ManagedMarkdown markdown={presentPublicOfferMarkdown(content.bodyMarkdown)} />
-      </SectionCard>
-
-      <MockNotice
-        correlationId={managedContentResult.correlationId}
-        source={managedContentResult.source}
-      />
-    </div>
-  );
+  return <div className="offres-page managed-pack-sheet-page">
+    <JsonLd data={packServiceJsonLd(baseUrl, {
+      slug: manifest.slug, label: pack.label, description: pack.description,
+    })} />
+    <JsonLd data={breadcrumbJsonLd(baseUrl, [
+      { name: "Offres", path: "/offres" },
+      { name: pack.label, path: `/offres/${manifest.slug}` },
+    ])} />
+    <SitePageFrame area="public" pageKey="/offres/[slug]" initialLayout={layoutResult.data} slots={slots}>
+      <>{slots.offer_sheet_intro}{slots.offer_sheet_back}{slots.offer_sheet_summary}
+        {slots.offer_sheet_services}{slots.offer_sheet_details}{slots.offer_sheet_source}</>
+    </SitePageFrame>
+  </div>;
 }

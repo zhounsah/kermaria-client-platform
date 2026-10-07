@@ -63,6 +63,7 @@ const PUBLIC_ROUTE_ENTRIES: PublicRouteEntry[] = [
     contentKey: "page:infrastructure",
   },
   { path: "/contact", changeFrequency: "monthly", priority: 0.7 },
+  { path: "/demander-mes-donnees", changeFrequency: "yearly", priority: 0.4 },
   {
     path: "/mentions-legales",
     changeFrequency: "yearly",

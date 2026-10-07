@@ -22,15 +22,15 @@ const { resolveStorefrontPublicCta } = await import(
   new URL("../lib/storefront-content.ts", import.meta.url),
 );
 
-assert.match(publicShell, /label: "Offres"[\s\S]*label: "Tarifs"[\s\S]*label: "Diagnostic"[\s\S]*label: "À propos"/);
+assert.match(publicShell, /label: "Offres"[\s\S]*label: "Tarifs"[\s\S]*label: "À propos"/);
 assert.match(publicShell, /Services <ChevronDown/);
 assert.match(publicShell, /Nous contacter/);
 assert.match(publicShell, /href=\{publicHref\("\/contact"\)\}/);
 assert.match(publicShell, /href="\/login"/);
 assert.doesNotMatch(publicShell, /Demander un audit/);
 assert.doesNotMatch(publicShell, /services\/support-it#infogerance|Cloud & Hébergement/);
-assert.match(publicShell, /VPN \/ accès sécurisé/);
-assert.match(publicShell, /Hébergement web/);
+assert.match(publicShell, /Accès à distance/);
+assert.match(publicShell, /Site web/);
 assert.match(publicShell, /onNavigate=\{closeMobileMenu\}/);
 assert.match(publicShell, /function closeMobileMenuOnEscape/);
 assert.match(publicShell, /menuToggleRef\.current\?\.focus\(\)/);
@@ -41,13 +41,13 @@ const footerSource = publicShell.slice(publicShell.indexOf("<footer"));
 assert.match(footerSource, /className="public-footer-grid"/);
 assert.match(footerSource, /id="public-footer-services-title">Services/);
 assert.match(footerSource, /id="public-footer-discover-title">Découvrir/);
-assert.match(footerSource, /id="public-footer-help-title">Aide & espace client/);
+assert.match(footerSource, /id="public-footer-help-title">Aide et espace client/);
 assert.match(footerSource, /Informations légales/);
 assert.match(footerSource, /FooterLinkList links=\{footerServiceLinks\}/);
 assert.match(footerSource, /FooterLinkList links=\{footerDiscoverLinks\}/);
 assert.match(footerSource, /FooterLinkList links=\{footerLegalLinks\}/);
 for (const [label, pathname] of [
-  ["Diagnostic", "/diagnostic"],
+  ["Trouver ma solution", "/diagnostic"],
   ["Nous contacter", "/contact"],
   ["Espace client", "/login"],
   ["Mentions légales", "/mentions-legales"],
@@ -67,7 +67,7 @@ assert.doesNotMatch(publicServices, /Demander un audit/);
 assert.match(servicesLanding, /Faire le diagnostic/);
 assert.match(servicesLanding, /href="\/diagnostic"/);
 assert.match(servicesLanding, /Nous contacter/);
-assert.match(homePage, /Découvrir les services/);
+assert.match(homePage, /Trouver une solution/);
 assert.match(homePage, /href="\/diagnostic"/);
 assert.match(offresPage, /Configurer une offre/);
 assert.doesNotMatch(offresPage, /Voir les offres[\s\S]{0,120}href="\/formules"/);
