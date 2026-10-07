@@ -317,9 +317,9 @@ const TIER_ATTRIBUTE_PRESENTERS: ReadonlyArray<{
   code: string;
   present: (value: string) => string;
 }> = [
-  { code: "vcpu_count", present: (value) => `${value} unités de calcul` },
-  { code: "ram_gib", present: (value) => `${value} Go de mémoire` },
-  { code: "disk_gib", present: (value) => `${value} Go d'espace de stockage` },
+  { code: "vcpu_count", present: (value) => `${value} vCPU` },
+  { code: "ram_gib", present: (value) => `${value} Go de RAM` },
+  { code: "disk_gib", present: (value) => `${value} Go SSD` },
 ];
 
 export function describeTierAttributes(

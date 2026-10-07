@@ -134,9 +134,9 @@ Les libellés et descriptions historiques des services Billing V2 affichés sur
 `/tarifs` et `/formules` suivent la même règle : seuls les textes exacts connus
 sont reformulés. Les noms, descriptions et choix de palier administrés gardent
 leur priorité. Les codes, montants, frais et actions commerciales ne changent
-pas. Les capacités d'un serveur sont présentées comme unités de calcul,
-mémoire et espace de stockage, avec les valeurs issues du catalogue.
-La même présentation en langage courant accompagne maintenant la
+pas. Les capacités d'un serveur sont présentées en vCPU, RAM et SSD, avec les
+valeurs issues du catalogue.
+La même présentation, avec ces caractéristiques précises, accompagne la
 configuration d'une offre, son aide, son récapitulatif, le panier, la revue
 avant paiement et le récapitulatif de l'inscription. Le sigle des paliers
 d'accès à distance historiques est retiré à l'affichage seulement ; leurs

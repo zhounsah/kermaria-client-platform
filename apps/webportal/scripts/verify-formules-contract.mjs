@@ -132,7 +132,7 @@ const tierAttributesInDifferentOrder = {
 };
 assert.equal(
   helpersRuntime.describeTierAttributes(tierAttributesInDifferentOrder).join(" · "),
-  "4 unités de calcul · 8 Go de mémoire · 80 Go d'espace de stockage",
+  "4 vCPU · 8 Go de RAM · 80 Go SSD",
   "Les attributs du catalogue sont ordonnes et formates sans valeur de palier codee en dur.",
 );
 assert.equal(
@@ -143,7 +143,7 @@ assert.equal(
         : attribute
     )),
   }).join(" · "),
-  "4 unités de calcul · 12 Go de mémoire · 80 Go d'espace de stockage",
+  "4 vCPU · 12 Go de RAM · 80 Go SSD",
   "Une mise a jour administrative de ram_gib se reflete sans modifier le prix ni le code frontend.",
 );
 assert.deepEqual(
