@@ -48,6 +48,8 @@ public static class PrimaryIdentityBootstrapTests
 
         await VerifyCartBootstrapUnderKoxoAuthorityAsync();
         await VerifyStandardSignupBreaksTheDeadlockAsync();
+        await VerifyAutomaticApprovalAfterEmailAsync();
+        await VerifyAutoApprovalEmailDeliveryRetryAsync();
         await VerifyVpsAccountGetsItsIdentityAsync();
         await VerifyDisabledDirectoryKeepsExplicitPendingStateAsync();
         await VerifyAdoptionFailsClosedAsync();
@@ -478,6 +480,114 @@ public static class PrimaryIdentityBootstrapTests
             record.Status == PrimaryIdentityBootstrapStatuses.Completed
             && await fixture.Links.FindUserLinkByPortalUserIdAsync(userId, CancellationToken.None) is not null,
             "Identite standard liee.");
+    }
+
+    private static async Task VerifyAutomaticApprovalAfterEmailAsync()
+    {
+        var fixture = Fixture.Create(AdIntegrationMode.ControlledWrite);
+        var setting = await fixture.Settings.UpdateAsync(
+            "signup_auto_approve",
+            new ApplicationSettingUpdateRequest(JsonSerializer.Deserialize<JsonElement>("true"), 0),
+            "00000000-0000-0000-0000-0000000000cc",
+            "corr-auto-setting",
+            CancellationToken.None);
+        Assert(setting.Code == "SETTINGS_UPDATED", "Le mode automatique est activable.");
+
+        var email = fixture.NextEmail("auto");
+        await fixture.Service.SubmitAsync(
+            fixture.Payload(email, password: null), "corr-auto", CancellationToken.None);
+        var token = fixture.Email.LastToken(email, EmailKind.Verification);
+        var signupId = fixture.SignupIdFor(email);
+        Assert((await fixture.Repository.GetByIdAsync(signupId, CancellationToken.None))?.Status == "email_pending",
+            "Aucun compte n'est approuve avant la preuve e-mail.");
+
+        var verified = await fixture.Service.VerifyEmailAsync(token, CancellationToken.None, "corr-auto-verify");
+        Assert(verified.Succeeded && verified.Code == "SIGNUP_AUTO_APPROVED",
+            "Le compte standard est approuve apres la preuve e-mail.");
+        Assert((await fixture.Repository.GetByIdAsync(signupId, CancellationToken.None))?.Status == "approved",
+            "L'approbation est durable.");
+        var approvedToken = fixture.Email.LastToken(email, EmailKind.SetPassword);
+        Assert(!string.IsNullOrWhiteSpace(approvedToken), "Le lien de mot de passe est envoye.");
+        var replay = await fixture.Service.VerifyEmailAsync(token, CancellationToken.None, "corr-auto-replay");
+        Assert(replay.Succeeded && fixture.Email.LastToken(email, EmailKind.SetPassword) == approvedToken,
+            "Le rejeu du lien ne cree pas de seconde approbation.");
+
+        var disabled = await fixture.Settings.UpdateAsync(
+            "signup_auto_approve",
+            new ApplicationSettingUpdateRequest(JsonSerializer.Deserialize<JsonElement>("false"), setting.Setting!.Version),
+            "00000000-0000-0000-0000-0000000000cc",
+            "corr-auto-off",
+            CancellationToken.None);
+        Assert(disabled.Code == "SETTINGS_UPDATED", "Retour au mode manuel.");
+        var manualEmail = fixture.NextEmail("manual-after-auto");
+        await fixture.Service.SubmitAsync(
+            fixture.Payload(manualEmail, password: null), "corr-manual", CancellationToken.None);
+        var manual = await fixture.Service.VerifyEmailAsync(
+            fixture.Email.LastToken(manualEmail, EmailKind.Verification), CancellationToken.None);
+        Assert(manual.Code == "EMAIL_VERIFIED"
+            && (await fixture.Repository.GetByIdAsync(fixture.SignupIdFor(manualEmail), CancellationToken.None))?.Status == "email_verified",
+            "Une nouvelle demande attend de nouveau la validation manuelle.");
+        var reenabled = await fixture.Settings.UpdateAsync(
+            "signup_auto_approve",
+            new ApplicationSettingUpdateRequest(JsonSerializer.Deserialize<JsonElement>("true"), disabled.Setting!.Version),
+            "00000000-0000-0000-0000-0000000000cc",
+            "corr-auto-on-again",
+            CancellationToken.None);
+        Assert(reenabled.Code == "SETTINGS_UPDATED", "Le mode automatique peut être réactivé.");
+        var replayManual = await fixture.Service.VerifyEmailAsync(
+            fixture.Email.LastToken(manualEmail, EmailKind.Verification), CancellationToken.None);
+        Assert(replayManual.Code == "EMAIL_VERIFIED"
+            && (await fixture.Repository.GetByIdAsync(fixture.SignupIdFor(manualEmail), CancellationToken.None))?.Status == "email_verified",
+            "Une demande vérifiée sous mode manuel ne devient pas automatiquement approuvée après activation tardive.");
+    }
+
+    private static async Task VerifyAutoApprovalEmailDeliveryRetryAsync()
+    {
+        var fixture = Fixture.Create(AdIntegrationMode.Disabled);
+        var enabled = await fixture.Settings.UpdateAsync(
+            "signup_auto_approve",
+            new ApplicationSettingUpdateRequest(JsonSerializer.Deserialize<JsonElement>("true"), 0),
+            "00000000-0000-0000-0000-0000000000cc", "corr-retry-setting",
+            CancellationToken.None);
+        Assert(enabled.Code == "SETTINGS_UPDATED", "Mode automatique activé pour la reprise e-mail.");
+        var email = fixture.NextEmail("auto-email-retry");
+        await fixture.Service.SubmitAsync(
+            fixture.Payload(email, password: null), "corr-retry-submit", CancellationToken.None);
+        var token = fixture.Email.LastToken(email, EmailKind.Verification);
+        var signupId = fixture.SignupIdFor(email);
+        fixture.Email.FailNextAccountApproval = true;
+
+        var failedDelivery = await fixture.Service.VerifyEmailAsync(
+            token, CancellationToken.None, "corr-retry-first");
+        Assert(failedDelivery.Succeeded && failedDelivery.Code == "SIGNUP_AUTO_APPROVED_EMAIL_PENDING"
+            && fixture.Store.Rows[signupId].Status == "approved"
+            && fixture.Store.Rows[signupId].ApprovalEmailPending,
+            "Le compte créé et l'échec de livraison sont distingués durablement.");
+        var tooEarly = await fixture.Service.VerifyEmailAsync(
+            token, CancellationToken.None, "corr-retry-early");
+        Assert(tooEarly.Code == "SIGNUP_AUTO_APPROVED_EMAIL_PENDING"
+            && fixture.Email.Sent.Count(item => item.Email == email && item.Kind == EmailKind.SetPassword) == 0,
+            "Le rejeu immédiat est borné sans renvoyer de message.");
+
+        fixture.Store.Rows[signupId].VerificationTokenExpiresAtUtc = DateTime.UtcNow.AddSeconds(-1);
+        var expired = await fixture.Service.VerifyEmailAsync(
+            token, CancellationToken.None, "corr-retry-expired");
+        Assert(!expired.Succeeded && expired.Code == "TOKEN_EXPIRED",
+            "Un lien expiré ne peut pas déclencher un nouvel envoi.");
+        fixture.Store.Rows[signupId].VerificationTokenExpiresAtUtc = DateTime.UtcNow.AddHours(1);
+
+        fixture.Store.Rows[signupId].ApprovalEmailRetryAfterUtc = DateTime.UtcNow.AddSeconds(-1);
+        var retried = await fixture.Service.VerifyEmailAsync(
+            token, CancellationToken.None, "corr-retry-second");
+        Assert(retried.Succeeded && retried.Code == "SIGNUP_AUTO_APPROVED"
+            && !fixture.Store.Rows[signupId].ApprovalEmailPending
+            && fixture.Email.Sent.Count(item => item.Email == email && item.Kind == EmailKind.SetPassword) == 1,
+            "Le même lien reprend l'envoi une seule fois après le délai.");
+        var replay = await fixture.Service.VerifyEmailAsync(
+            token, CancellationToken.None, "corr-retry-replay");
+        Assert(replay.Code == "EMAIL_ALREADY_VERIFIED"
+            && fixture.Email.Sent.Count(item => item.Email == email && item.Kind == EmailKind.SetPassword) == 1,
+            "Un succès confirmé ne déclenche pas un nouvel e-mail.");
     }
 
     // ==================================================================
@@ -919,6 +1029,7 @@ public static class PrimaryIdentityBootstrapTests
     {
         private readonly object _sync = new();
         public List<SentEmail> Sent { get; } = [];
+        public bool FailNextAccountApproval { get; set; }
 
         public string LastToken(string email, EmailKind kind)
         {
@@ -964,7 +1075,14 @@ public static class PrimaryIdentityBootstrapTests
             => Record(EmailKind.Verification, email, verificationUrl);
 
         public Task<EmailDispatchResult> SendAccountApprovedAsync(string email, string contactName, string setPasswordUrl, string correlationId, CancellationToken cancellationToken)
-            => Record(EmailKind.SetPassword, email, setPasswordUrl);
+        {
+            if (FailNextAccountApproval)
+            {
+                FailNextAccountApproval = false;
+                return Task.FromResult(new EmailDispatchResult(false, "MOCK_DELIVERY_FAILED", "Envoi simulé en échec."));
+            }
+            return Record(EmailKind.SetPassword, email, setPasswordUrl);
+        }
 
         public Task<EmailDispatchResult> SendAccountRejectedAsync(string email, string contactName, string? reason, string correlationId, CancellationToken cancellationToken)
             => Task.FromResult(new EmailDispatchResult(true, "noop", string.Empty));
@@ -1121,6 +1239,7 @@ public static class PrimaryIdentityBootstrapTests
         public required RecordingKoxoSyncWebhookTriggerService Trigger { get; init; }
         public required RecordingEmailDispatch Email { get; init; }
         public required SignupService Service { get; init; }
+        public required ApplicationSettingsService Settings { get; init; }
 
         public static Fixture Create(AdIntegrationMode mode, bool flakyLinks = false)
         {
@@ -1226,7 +1345,8 @@ public static class PrimaryIdentityBootstrapTests
                 Directory = directory,
                 Trigger = trigger,
                 Email = email,
-                Service = service
+                Service = service,
+                Settings = settings
             };
         }
 

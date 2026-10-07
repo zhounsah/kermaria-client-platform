@@ -13,6 +13,7 @@ public sealed class MariaDbSignupRepository : ISignupRepository
         new(JsonSerializerDefaults.Web);
 
     private readonly SqlRuntimeConfiguration _configuration;
+    private bool _autoApprovalSchemaReady;
 
     public MariaDbSignupRepository(SqlRuntimeConfiguration configuration)
     {
@@ -348,11 +349,13 @@ public sealed class MariaDbSignupRepository : ISignupRepository
         await using var connection = new MySqlConnection(
             _configuration.ConnectionString);
         await connection.OpenAsync(cancellationToken);
+        await EnsureAutoApprovalSchemaAsync(connection, cancellationToken);
 
         await using var command = connection.CreateCommand();
         command.CommandText =
             """
-            SELECT id, status, verification_token_expires_at, approved_user_id, self_service_flow
+            SELECT id, status, verification_token_expires_at, approved_user_id, self_service_flow,
+                   auto_approval_requested, approval_email_pending
             FROM signup_pending
             WHERE verification_token_hash = @hash
             LIMIT 1;
@@ -369,17 +372,21 @@ public sealed class MariaDbSignupRepository : ISignupRepository
             reader.GetString("status"),
             ReadNullableUtc(reader, "verification_token_expires_at"),
             ReadNullableIdentifier(reader, "approved_user_id"),
-            ReadNullableString(reader, "self_service_flow"));
+            ReadNullableString(reader, "self_service_flow"),
+            reader.GetBoolean("auto_approval_requested"),
+            reader.GetBoolean("approval_email_pending"));
     }
 
     public async Task<bool> MarkEmailVerifiedAsync(
         string id,
         CancellationToken cancellationToken,
-        string? expectedVerificationHash = null)
+        string? expectedVerificationHash = null,
+        bool autoApprovalRequested = false)
     {
         await using var connection = new MySqlConnection(
             _configuration.ConnectionString);
         await connection.OpenAsync(cancellationToken);
+        await EnsureAutoApprovalSchemaAsync(connection, cancellationToken);
 
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
@@ -388,13 +395,15 @@ public sealed class MariaDbSignupRepository : ISignupRepository
             """
             UPDATE signup_pending
             SET status = CASE WHEN approved_user_id IS NULL THEN 'email_verified' ELSE 'approved' END,
-                email_verified_at = UTC_TIMESTAMP(6), updated_at = UTC_TIMESTAMP(6)
+                email_verified_at = UTC_TIMESTAMP(6), updated_at = UTC_TIMESTAMP(6),
+                auto_approval_requested = CASE WHEN approved_user_id IS NULL THEN @auto_approve ELSE 0 END
             WHERE id = @id AND status = 'email_pending'
               AND (@expected_hash IS NULL OR
                 (verification_token_hash = @expected_hash AND verification_token_expires_at > UTC_TIMESTAMP(6)));
             """;
         command.Parameters.AddWithValue("@id", id);
         command.Parameters.AddWithValue("@expected_hash", DbValue(expectedVerificationHash));
+        command.Parameters.AddWithValue("@auto_approve", autoApprovalRequested ? 1 : 0);
         if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
         {
             await transaction.RollbackAsync(cancellationToken);
@@ -412,6 +421,24 @@ public sealed class MariaDbSignupRepository : ISignupRepository
         await userCommand.ExecuteNonQueryAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return true;
+    }
+
+    private async Task EnsureAutoApprovalSchemaAsync(
+        MySqlConnection connection, CancellationToken cancellationToken)
+    {
+        if (_autoApprovalSchemaReady) return;
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*) FROM information_schema.columns
+            WHERE table_schema = DATABASE()
+              AND table_name = 'signup_pending'
+              AND column_name IN ('auto_approval_requested', 'approval_email_pending',
+                                  'approval_email_retry_after');
+            """;
+        if (Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken)) != 3)
+            throw new SiteFeatureSchemaUnavailableException(
+                "l'approbation automatique des inscriptions (migration 101)");
+        _autoApprovalSchemaReady = true;
     }
 
     public async Task<bool> RotatePendingVerificationTokenAsync(
@@ -552,6 +579,7 @@ public sealed class MariaDbSignupRepository : ISignupRepository
         await using var connection = new MySqlConnection(
             _configuration.ConnectionString);
         await connection.OpenAsync(cancellationToken);
+        await EnsureAutoApprovalSchemaAsync(connection, cancellationToken);
 
         await using var command = connection.CreateCommand();
         command.CommandText =
@@ -583,6 +611,7 @@ public sealed class MariaDbSignupRepository : ISignupRepository
         await using var connection = new MySqlConnection(
             _configuration.ConnectionString);
         await connection.OpenAsync(cancellationToken);
+        await EnsureAutoApprovalSchemaAsync(connection, cancellationToken);
 
         await using var command = connection.CreateCommand();
         command.CommandText = BuildRecordSelectSql(
@@ -605,6 +634,7 @@ public sealed class MariaDbSignupRepository : ISignupRepository
         await using var connection = new MySqlConnection(
             _configuration.ConnectionString);
         await connection.OpenAsync(cancellationToken);
+        await EnsureAutoApprovalSchemaAsync(connection, cancellationToken);
 
         await using var command = connection.CreateCommand();
         command.CommandText = BuildRecordSelectSql(
@@ -883,6 +913,9 @@ public sealed class MariaDbSignupRepository : ISignupRepository
                     approved_at = UTC_TIMESTAMP(6),
                     password_setup_token_hash = @password_hash,
                     password_setup_expires_at = @password_expires_at,
+                    approval_email_pending = CASE WHEN @email_verified AND auto_approval_requested = 1 THEN 1 ELSE 0 END,
+                    approval_email_retry_after = CASE WHEN @email_verified AND auto_approval_requested = 1
+                        THEN DATE_ADD(UTC_TIMESTAMP(6), INTERVAL 1 MINUTE) ELSE NULL END,
                     updated_at = UTC_TIMESTAMP(6)
                 WHERE id = @id;
                 """;
@@ -1001,6 +1034,40 @@ public sealed class MariaDbSignupRepository : ISignupRepository
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    public async Task<bool> TryClaimApprovalEmailRetryAsync(
+        string signupId, DateTime nowUtc, DateTime nextRetryAtUtc,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(_configuration.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE signup_pending
+            SET approval_email_retry_after = @next_retry
+            WHERE id = @id AND status = 'approved' AND approval_email_pending = 1
+              AND (approval_email_retry_after IS NULL OR approval_email_retry_after <= @now);
+            """;
+        command.Parameters.AddWithValue("@id", signupId);
+        command.Parameters.AddWithValue("@now", nowUtc);
+        command.Parameters.AddWithValue("@next_retry", nextRetryAtUtc);
+        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
+    }
+
+    public async Task ClearApprovalEmailPendingAsync(
+        string signupId, CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(_configuration.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE signup_pending
+            SET approval_email_pending = 0, approval_email_retry_after = NULL
+            WHERE id = @id AND approval_email_pending = 1;
+            """;
+        command.Parameters.AddWithValue("@id", signupId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     public async Task SetPasswordAsync(
         string signupId,
         string portalUserId,
@@ -1038,6 +1105,8 @@ public sealed class MariaDbSignupRepository : ISignupRepository
                 UPDATE signup_pending
                 SET password_setup_token_hash = NULL,
                     password_setup_expires_at = NULL,
+                    approval_email_pending = 0,
+                    approval_email_retry_after = NULL,
                     updated_at = UTC_TIMESTAMP(6)
                 WHERE id = @id;
                 """;
@@ -1345,6 +1414,8 @@ public sealed class MariaDbSignupRepository : ISignupRepository
                 UPDATE signup_pending
                 SET password_setup_token_hash = NULL,
                     password_setup_expires_at = NULL,
+                    approval_email_pending = 0,
+                    approval_email_retry_after = NULL,
                     updated_at = UTC_TIMESTAMP(6)
                 WHERE id = @signup_id;
                 """;
@@ -2048,7 +2119,8 @@ public sealed class MariaDbSignupRepository : ISignupRepository
                 reader,
                 "catalog_configuration_snapshot_json"),
             EmailVerifiedAtUtc: ReadNullableUtc(reader, "email_verified_at"),
-            SelfServiceFlow: ReadNullableString(reader, "self_service_flow"));
+            SelfServiceFlow: ReadNullableString(reader, "self_service_flow"),
+            ApprovalEmailPending: reader.GetBoolean("approval_email_pending"));
 
     private static string BuildRecordSelectSql(
         string? whereClause = null,
@@ -2080,6 +2152,7 @@ public sealed class MariaDbSignupRepository : ISignupRepository
                 signup_pending.verification_token_expires_at AS verification_token_expires_at,
                 signup_pending.email_verified_at AS email_verified_at,
                 signup_pending.self_service_flow AS self_service_flow,
+                signup_pending.approval_email_pending AS approval_email_pending,
                 signup_pending.approved_user_id AS approved_user_id,
                 signup_pending.approved_customer_id AS approved_customer_id,
                 approved_customer.external_reference AS approved_customer_reference,

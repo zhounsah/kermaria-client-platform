@@ -40,10 +40,12 @@ public sealed class MariaDbPortalNotificationRepository
                 created_at
             FROM portal_notifications
             WHERE customer_id = @customer_id
+              AND (user_id IS NULL OR user_id = @user_id)
             ORDER BY created_at DESC, id DESC
             LIMIT 100;
             """;
         command.Parameters.AddWithValue("@customer_id", session.CustomerId);
+        command.Parameters.AddWithValue("@user_id", session.UserId);
 
         await using var reader = await command.ExecuteReaderAsync(
             cancellationToken);
@@ -80,6 +82,7 @@ public sealed class MariaDbPortalNotificationRepository
             SET read_at = @read_at
             WHERE id = @notification_id
               AND customer_id = @customer_id
+              AND (user_id IS NULL OR user_id = @user_id)
               AND read_at IS NULL;
             """;
         command.Parameters.AddWithValue("@read_at", DateTime.UtcNow);
@@ -87,6 +90,7 @@ public sealed class MariaDbPortalNotificationRepository
             "@notification_id",
             notificationId);
         command.Parameters.AddWithValue("@customer_id", session.CustomerId);
+        command.Parameters.AddWithValue("@user_id", session.UserId);
         var updated = await command.ExecuteNonQueryAsync(cancellationToken);
         if (updated > 0)
         {
@@ -99,12 +103,14 @@ public sealed class MariaDbPortalNotificationRepository
             SELECT COUNT(*)
             FROM portal_notifications
             WHERE id = @notification_id
-              AND customer_id = @customer_id;
+              AND customer_id = @customer_id
+              AND (user_id IS NULL OR user_id = @user_id);
             """;
         lookup.Parameters.AddWithValue(
             "@notification_id",
             notificationId);
         lookup.Parameters.AddWithValue("@customer_id", session.CustomerId);
+        lookup.Parameters.AddWithValue("@user_id", session.UserId);
         var exists = Convert.ToInt32(
             await lookup.ExecuteScalarAsync(cancellationToken)) > 0;
         return exists ? 0 : throw new PortalDataNotFoundException();
@@ -122,10 +128,12 @@ public sealed class MariaDbPortalNotificationRepository
             UPDATE portal_notifications
             SET read_at = @read_at
             WHERE customer_id = @customer_id
+              AND (user_id IS NULL OR user_id = @user_id)
               AND read_at IS NULL;
             """;
         command.Parameters.AddWithValue("@read_at", DateTime.UtcNow);
         command.Parameters.AddWithValue("@customer_id", session.CustomerId);
+        command.Parameters.AddWithValue("@user_id", session.UserId);
         return await command.ExecuteNonQueryAsync(cancellationToken);
     }
 

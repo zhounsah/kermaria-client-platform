@@ -191,6 +191,10 @@ builder.Services.AddSingleton<ISessionTokenService, SessionTokenService>();
 builder.Services.AddSingleton<IDownloadStorageService, DownloadStorageService>();
 builder.Services.AddSingleton<MockAuthenticationStore>();
 builder.Services.AddSingleton<MockRequestWorkflowStore>();
+builder.Services.AddSingleton<MockDataSubjectRequestStore>();
+builder.Services.AddSingleton<DataSubjectRequestService>();
+builder.Services.AddSingleton<MockSitePageStore>();
+builder.Services.AddSingleton<SitePageService>();
 builder.Services.AddSingleton<MockPortalNotificationStore>();
 builder.Services.AddSingleton<MockBackupStore>();
 builder.Services.AddSingleton<MockCommercialStore>();
@@ -1116,6 +1120,10 @@ app.UseExceptionHandler(exceptionHandler =>
                 StatusCodes.Status503ServiceUnavailable,
                 "CLIENT_SOLUTIONS_SCHEMA_UNAVAILABLE",
                 "Le portail des solutions n'est pas initialisé en base de données."),
+            SiteFeatureSchemaUnavailableException => (
+                StatusCodes.Status503ServiceUnavailable,
+                "SITE_FEATURE_SCHEMA_UNAVAILABLE",
+                "Cette fonction n'est pas encore initialisée en base de données."),
             MySqlException => (
                 StatusCodes.Status503ServiceUnavailable,
                 "SQL_UNAVAILABLE",
@@ -1720,6 +1728,65 @@ app.MapPost(
                 "Vos coordonnées ont été enregistrées.",
                 profile,
                 context.GetCorrelationId()));
+    });
+app.MapGet(
+    "/internal/portal/data-requests",
+    async (HttpContext context, DataSubjectRequestService service,
+        IAuthenticationService authenticationService, IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(context, authenticationService, auditService);
+        context.Response.Headers["X-Data-Source"] = service.IsPersistent ? "mariadb" : "mock";
+        return Results.Ok(await service.ListClientAsync(session, context.RequestAborted));
+    });
+app.MapPost(
+    "/internal/portal/data-requests",
+    async (HttpContext context, DataSubjectRequestService service,
+        IAuthenticationService authenticationService, IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(context, authenticationService, auditService);
+        var payload = await ReadPayload<DataSubjectRequestCreatePayload>(context);
+        var result = await service.CreateAsync(session, payload, context.RequestAborted);
+        await auditService.RecordAsync(new AuditEvent(context.GetCorrelationId(),
+            "data_request.create", "success", TargetType: "data_request",
+            TargetReference: result.Id, CustomerId: session.CustomerId,
+            ActorUserId: session.UserId), context.RequestAborted);
+        context.Response.Headers["X-Data-Source"] = service.IsPersistent ? "mariadb" : "mock";
+        return Results.Json(result, statusCode: StatusCodes.Status201Created);
+    });
+app.MapGet(
+    "/internal/portal/data-requests/{id}",
+    async (string id, HttpContext context, DataSubjectRequestService service,
+        IAuthenticationService authenticationService, IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(context, authenticationService, auditService);
+        var result = await service.GetClientAsync(session, id, context.RequestAborted);
+        return result is null ? Results.NotFound() : Results.Ok(result);
+    });
+app.MapPost(
+    "/internal/portal/data-requests/{id}/messages",
+    async (string id, HttpContext context, DataSubjectRequestService service,
+        IAuthenticationService authenticationService, IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(context, authenticationService, auditService);
+        var payload = await ReadPayload<DataSubjectRequestMessagePayload>(context);
+        var result = await service.ReplyAsync(id, session, payload, context.RequestAborted);
+        return result is null ? Results.NotFound() : Results.Ok(result);
+    });
+app.MapGet(
+    "/internal/portal/data-requests/{id}/file",
+    async (string id, HttpContext context, DataSubjectRequestService service,
+        IAuthenticationService authenticationService, IAuditService auditService) =>
+    {
+        var session = await ResolveClientSessionAsync(context, authenticationService, auditService);
+        var file = await service.GetResponseFileAsync(session, id, context.RequestAborted);
+        if (file is null) return Results.NotFound();
+        context.Response.Headers["Cache-Control"] = "no-store";
+        context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+        await auditService.RecordAsync(new AuditEvent(context.GetCorrelationId(),
+            "data_request.file_download", "success", TargetType: "data_request",
+            TargetReference: id, CustomerId: session.CustomerId,
+            ActorUserId: session.UserId), context.RequestAborted);
+        return Results.File(file.Value.Data, file.Value.ContentType, file.Value.FileName);
     });
 app.MapGet(
     "/internal/portal/downloads",
@@ -2500,6 +2567,21 @@ app.MapPost(
         return Results.Ok(recommendation);
     });
 
+// Le portail présente les étapes d'inscription selon le réglage effectivement
+// appliqué par l'API. Seuls deux booléens publics sont exposés, sans détail
+// administratif ni cache : la décision finale reste prise à la vérification.
+app.MapGet(
+    "/internal/signup/mode",
+    async (HttpContext context, IApplicationSettingsService settings,
+        SignupRuntimeConfiguration fallback) =>
+    {
+        var runtime = await settings.GetSignupConfigurationAsync(
+            fallback, context.RequestAborted);
+        context.Response.Headers.CacheControl = "no-store";
+        context.Response.Headers["X-Data-Source"] = settings.IsPersistent ? "mariadb" : "mock";
+        return Results.Ok(new { enabled = runtime.Enabled, autoApprove = runtime.AutoApprove });
+    });
+
 // V0.26 : inscription self-service (anonyme, protégé par X-Service-Auth).
 // hCaptcha et honeypot restent assurés côté webportal BFF, qui pose aussi un
 // premier limiteur en mémoire. Le kill switch et les limites de débit
@@ -2676,7 +2758,6 @@ app.MapPost(
                 SourceAddress:
                     context.Connection.RemoteIpAddress?.ToString()),
             context.RequestAborted);
-
         if (!result.Succeeded)
         {
             var statusCode = result.Code switch
@@ -2708,7 +2789,7 @@ app.MapPost(
         var correlationId = context.GetCorrelationId();
         var payload = await ReadPayload<SignupVerifyPayload>(context);
         var result = await signupService.VerifyEmailAsync(
-            payload?.Token, context.RequestAborted);
+            payload?.Token, context.RequestAborted, correlationId);
         await auditService.RecordAsync(
             new AuditEvent(
                 correlationId,
@@ -2721,6 +2802,15 @@ app.MapPost(
                 SourceAddress:
                     context.Connection.RemoteIpAddress?.ToString()),
             context.RequestAborted);
+
+        if (result.Code is "SIGNUP_AUTO_APPROVED" or "SIGNUP_AUTO_APPROVED_EMAIL_PENDING")
+        {
+            await auditService.RecordAsync(
+                new AuditEvent(correlationId, "signup.auto_approved", "success",
+                    TargetType: "signup",
+                    SourceAddress: context.Connection.RemoteIpAddress?.ToString()),
+                context.RequestAborted);
+        }
 
         if (!result.Succeeded)
         {
@@ -3199,6 +3289,125 @@ app.MapGet(
             context,
             service,
             await service.GetPublicAsync(key, context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/page-layout",
+    async (HttpContext context, SitePageService service,
+        IAuthenticationService authenticationService, IAuditService auditService) =>
+    {
+        var area = context.Request.Query["area"].FirstOrDefault() ?? "";
+        var pageKey = context.Request.Query["pageKey"].FirstOrDefault() ?? "";
+        if (area == "client")
+            await ResolveClientSessionAsync(context, authenticationService, auditService);
+        else if (area == "admin")
+            await ResolveAdminSessionAsync(context, authenticationService, auditService, "admin.page_layout.read");
+        else if (area != "public")
+            throw new PortalValidationException();
+        context.Response.Headers["X-Data-Source"] = service.IsPersistent ? "mariadb" : "mock";
+        return Results.Ok(await service.GetAsync(area, pageKey, context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/admin/page-layout",
+    async (HttpContext context, SitePageService service,
+        IAuthenticationService authenticationService, IAuditService auditService,
+        IEditorialRepository editorialRepository) =>
+    {
+        var actor = await ResolveAdminSessionAsync(context, authenticationService, auditService, "admin.page_layout.read");
+        if (!await editorialRepository.HasAdminPermissionAsync(actor.UserId, "content.publish", context.RequestAborted))
+            throw new PortalAccessDeniedException();
+        var area = context.Request.Query["area"].FirstOrDefault() ?? "";
+        var pageKey = context.Request.Query["pageKey"].FirstOrDefault() ?? "";
+        context.Response.Headers["X-Data-Source"] = service.IsPersistent ? "mariadb" : "mock";
+        return Results.Ok(await service.GetAsync(area, pageKey, context.RequestAborted));
+    });
+app.MapPost(
+    "/internal/admin/page-layout",
+    async (HttpContext context, SitePageService service,
+        IAuthenticationService authenticationService, IAuditService auditService,
+        IEditorialRepository editorialRepository) =>
+    {
+        var actor = await ResolveAdminSessionAsync(context, authenticationService, auditService, "admin.page_layout.write");
+        if (!await editorialRepository.HasAdminPermissionAsync(actor.UserId, "content.publish", context.RequestAborted))
+            throw new PortalAccessDeniedException();
+        var payload = await ReadPayload<SitePageMutationPayload>(context) ?? throw new PortalValidationException();
+        var result = await service.SaveAsync(payload, actor.UserId, context.RequestAborted);
+        if (result is null) return Results.Conflict(new ApiError("PAGE_VERSION_CONFLICT", "Cette page a été modifiée ailleurs.", context.GetCorrelationId()));
+        await auditService.RecordAsync(new AuditEvent(context.GetCorrelationId(), "page_layout.publish", "success",
+            TargetType: "page_layout", TargetReference: payload.Area + ":" + payload.PageKey,
+            ActorUserId: actor.UserId), context.RequestAborted);
+        return Results.Ok(result);
+    });
+app.MapGet(
+    "/internal/admin/page-layout/revisions",
+    async (HttpContext context, SitePageService service,
+        IAuthenticationService authenticationService, IAuditService auditService,
+        IEditorialRepository editorialRepository) =>
+    {
+        var actor = await ResolveAdminSessionAsync(context, authenticationService, auditService, "admin.page_layout.revisions.read");
+        if (!await editorialRepository.HasAdminPermissionAsync(actor.UserId, "content.publish", context.RequestAborted))
+            throw new PortalAccessDeniedException();
+        var area = context.Request.Query["area"].FirstOrDefault() ?? "";
+        var pageKey = context.Request.Query["pageKey"].FirstOrDefault() ?? "";
+        return Results.Ok(await service.RevisionsAsync(area, pageKey, context.RequestAborted));
+    });
+app.MapPost(
+    "/internal/admin/page-layout/restore",
+    async (HttpContext context, SitePageService service,
+        IAuthenticationService authenticationService, IAuditService auditService,
+        IEditorialRepository editorialRepository) =>
+    {
+        var actor = await ResolveAdminSessionAsync(context, authenticationService, auditService, "admin.page_layout.restore");
+        if (!await editorialRepository.HasAdminPermissionAsync(actor.UserId, "content.publish", context.RequestAborted))
+            throw new PortalAccessDeniedException();
+        var payload = await ReadPayload<SitePageRestorePayload>(context) ?? throw new PortalValidationException();
+        var result = await service.RestoreAsync(payload.Area, payload.PageKey, payload.Version,
+            payload.ExpectedVersion, actor.UserId, context.RequestAborted);
+        if (result is null) return Results.Conflict(new ApiError("PAGE_RESTORE_CONFLICT", "La version demandée n'est plus disponible ou la page a changé.", context.GetCorrelationId()));
+        await auditService.RecordAsync(new AuditEvent(context.GetCorrelationId(), "page_layout.restore", "success",
+            TargetType: "page_layout", TargetReference: payload.Area + ":" + payload.PageKey,
+            ActorUserId: actor.UserId), context.RequestAborted);
+        return Results.Ok(result);
+    });
+app.MapGet(
+    "/internal/admin/site-media",
+    async (HttpContext context, SitePageService service,
+        IAuthenticationService authenticationService, IAuditService auditService,
+        IEditorialRepository editorialRepository) =>
+    {
+        var actor = await ResolveAdminSessionAsync(context, authenticationService, auditService, "admin.site_media.read");
+        if (!await editorialRepository.HasAdminPermissionAsync(actor.UserId, "content.publish", context.RequestAborted))
+            throw new PortalAccessDeniedException();
+        return Results.Ok(await service.ListMediaAsync(context.RequestAborted));
+    });
+app.MapPost(
+    "/internal/admin/site-media",
+    async (HttpContext context, SitePageService service,
+        IAuthenticationService authenticationService, IAuditService auditService,
+        IEditorialRepository editorialRepository) =>
+    {
+        var actor = await ResolveAdminSessionAsync(context, authenticationService, auditService, "admin.site_media.upload");
+        if (!await editorialRepository.HasAdminPermissionAsync(actor.UserId, "content.publish", context.RequestAborted))
+            throw new PortalAccessDeniedException();
+        var form = await context.Request.ReadFormAsync(context.RequestAborted);
+        var file = form.Files.GetFile("file") ?? throw new PortalValidationException();
+        if (file.Length is < 20 or > 5242880) throw new PortalValidationException();
+        await using var stream = file.OpenReadStream();
+        using var buffer = new MemoryStream();
+        await stream.CopyToAsync(buffer, context.RequestAborted);
+        var result = await service.UploadMediaAsync(file.FileName,
+            form["altText"].FirstOrDefault() ?? "", file.ContentType, buffer.ToArray(),
+            actor.UserId, context.RequestAborted);
+        return Results.Ok(result);
+    });
+app.MapGet(
+    "/internal/public/site-media/{id}",
+    async (string id, HttpContext context, SitePageService service) =>
+    {
+        var result = await service.GetMediaAsync(id, context.RequestAborted);
+        if (result is null) return Results.NotFound();
+        context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+        context.Response.Headers["Cache-Control"] = "public, max-age=31536000, immutable";
+        return Results.File(result.Value.Data, result.Value.Metadata.ContentType);
     });
 app.MapGet(
     "/internal/admin/content",
@@ -5073,6 +5282,7 @@ app.MapGet(
     async (
         HttpContext context,
         IApplicationSettingsService service,
+        SignupRuntimeConfiguration signupRuntime,
         IEditorialRepository editorialRepository,
         IAuthenticationService authenticationService,
         IAuditService auditService) =>
@@ -5080,7 +5290,7 @@ app.MapGet(
         var actor = await ResolveAdminSessionAsync(context, authenticationService, auditService, "admin.settings.read");
         if (!await editorialRepository.HasAdminPermissionAsync(actor.UserId, "settings.read", context.RequestAborted)) throw new PortalAccessDeniedException();
         context.Response.Headers["X-Data-Source"] = service.IsPersistent ? "mariadb" : "mock";
-        return Results.Ok(await service.GetSnapshotAsync(context.RequestAborted));
+        return Results.Ok(await service.GetSnapshotAsync(context.RequestAborted, signupRuntime));
     });
 app.MapPatch(
     "/internal/admin/settings/{key}",
@@ -6003,6 +6213,61 @@ app.MapPost(
                 context.GetCorrelationId(),
                 context.Connection.RemoteIpAddress?.ToString(),
                 context.RequestAborted));
+    });
+
+app.MapGet(
+    "/internal/admin/data-requests",
+    async (HttpContext context, DataSubjectRequestService service,
+        IAuthenticationService authenticationService, IAuditService auditService) =>
+    {
+        await ResolveAdminSessionAsync(context, authenticationService, auditService, "admin.data_requests.read");
+        context.Response.Headers["X-Data-Source"] = service.IsPersistent ? "mariadb" : "mock";
+        return Results.Ok(await service.ListAdminAsync(context.RequestAborted));
+    });
+app.MapGet(
+    "/internal/admin/data-requests/{id}",
+    async (string id, HttpContext context, DataSubjectRequestService service,
+        IAuthenticationService authenticationService, IAuditService auditService) =>
+    {
+        await ResolveAdminSessionAsync(context, authenticationService, auditService, "admin.data_requests.detail.read");
+        var result = await service.GetAdminAsync(id, context.RequestAborted);
+        return result is null ? Results.NotFound() : Results.Ok(result);
+    });
+app.MapPost(
+    "/internal/admin/data-requests/{id}/messages",
+    async (string id, HttpContext context, DataSubjectRequestService service,
+        IAuthenticationService authenticationService, IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(context, authenticationService, auditService, "admin.data_requests.write");
+        var payload = await ReadPayload<DataSubjectRequestMessagePayload>(context);
+        var result = await service.ReplyAsync(id, null, payload, context.RequestAborted);
+        if (result is null) return Results.NotFound();
+        await auditService.RecordAsync(new AuditEvent(context.GetCorrelationId(),
+            "data_request.reply", "success", TargetType: "data_request",
+            TargetReference: result.Id, CustomerId: result.CustomerId,
+            ActorUserId: actor.UserId), context.RequestAborted);
+        return Results.Ok(result);
+    });
+app.MapPost(
+    "/internal/admin/data-requests/{id}/file",
+    async (string id, HttpContext context, DataSubjectRequestService service,
+        IAuthenticationService authenticationService, IAuditService auditService) =>
+    {
+        var actor = await ResolveAdminSessionAsync(context, authenticationService, auditService, "admin.data_requests.file_upload");
+        var form = await context.Request.ReadFormAsync(context.RequestAborted);
+        var file = form.Files.GetFile("file") ?? throw new PortalValidationException();
+        if (file.Length is < 4 or > 10485760) throw new PortalValidationException();
+        await using var stream = file.OpenReadStream();
+        using var buffer = new MemoryStream();
+        await stream.CopyToAsync(buffer, context.RequestAborted);
+        var result = await service.UploadResponseFileAsync(id, file.FileName,
+            file.ContentType, buffer.ToArray(), context.RequestAborted);
+        if (result is null) return Results.NotFound();
+        await auditService.RecordAsync(new AuditEvent(context.GetCorrelationId(),
+            "data_request.file_upload", "success", TargetType: "data_request",
+            TargetReference: id, CustomerId: result.CustomerId,
+            ActorUserId: actor.UserId), context.RequestAborted);
+        return Results.Ok(result);
     });
 
 // V0.26 : gestion admin des demandes d'inscription self-service.

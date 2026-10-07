@@ -9,7 +9,7 @@ namespace Kermaria.ApiInternal.Services;
 public interface IApplicationSettingsService
 {
     bool IsPersistent { get; }
-    Task<ApplicationSettingsSnapshot> GetSnapshotAsync(CancellationToken cancellationToken);
+    Task<ApplicationSettingsSnapshot> GetSnapshotAsync(CancellationToken cancellationToken, SignupRuntimeConfiguration? signupFallback = null);
     Task<SignupRuntimeConfiguration> GetSignupConfigurationAsync(SignupRuntimeConfiguration fallback, CancellationToken cancellationToken);
     Task<AuthRuntimeConfiguration> GetAuthConfigurationAsync(AuthRuntimeConfiguration fallback, CancellationToken cancellationToken);
     Task<PortalBillingConfiguration> GetPortalBillingConfigurationAsync(PortalBillingConfiguration fallback, CancellationToken cancellationToken);
@@ -46,11 +46,7 @@ public sealed class ApplicationSettingsService : IApplicationSettingsService
         new("signup_rate_limit_per_email_per_24h", "signup", "Limite e-mail par 24 h", "Borne fonctionnelle : 1 à 100.", "int", "1", 1, 100),
         new("signup_verification_token_ttl_hours", "signup", "Durée du lien de vérification", "Borne fonctionnelle : 1 à 168 heures.", "int", "24", 1, 168),
         new("signup_password_setup_token_ttl_hours", "signup", "Durée du lien de mot de passe", "Borne fonctionnelle : 1 à 168 heures.", "int", "24", 1, 168),
-        // Fonction critique jamais validee pour la production : une demande
-        // approuvee sans revue humaine provisionnerait un acces client. Elle est
-        // exposee pour etre visible, mais reste non editable et le service force
-        // `false` — une ligne posee directement en base ne la reactive pas.
-        new("signup_auto_approve", "signup", "Approbation automatique", "Fonction critique non validée : toute demande serait approuvée sans revue humaine. Verrouillée à « désactivée » côté API.", "bool", "false", Classification: "code_invariant", Risk: "high", Editable: false),
+        new("signup_auto_approve", "signup", "Approbation automatique après vérification e-mail", "Approuve les nouvelles demandes standard dès que leur adresse e-mail est confirmée. La validation manuelle reste disponible lorsque ce réglage est désactivé.", "bool", "false", Risk: "high"),
         new("session_duration_minutes", "security", "Durée de session", "Borne fonctionnelle : 5 à 10 080 minutes.", "int", "60", 5, 10080, Risk: "medium"),
         new("login_max_failures", "security", "Échecs de connexion autorisés", "Borne fonctionnelle : 2 à 20.", "int", "5", 2, 20, Risk: "medium"),
         new("login_lockout_minutes", "security", "Verrouillage de connexion", "Borne fonctionnelle : 1 à 120 minutes.", "int", "10", 1, 120, Risk: "medium"),
@@ -77,16 +73,35 @@ public sealed class ApplicationSettingsService : IApplicationSettingsService
     }
     public bool IsPersistent => _repository.IsPersistent;
 
-    public async Task<ApplicationSettingsSnapshot> GetSnapshotAsync(CancellationToken cancellationToken)
+    public async Task<ApplicationSettingsSnapshot> GetSnapshotAsync(CancellationToken cancellationToken, SignupRuntimeConfiguration? signupFallback = null)
     {
         var persisted = (await _repository.GetAllAsync(cancellationToken)).ToDictionary(item => item.Key, StringComparer.Ordinal);
-        return new ApplicationSettingsSnapshot(Definitions.Select(definition => ToItem(definition, persisted.GetValueOrDefault(definition.Key))).ToArray(), IsPersistent);
+        return new ApplicationSettingsSnapshot(Definitions.Select(definition =>
+            ToSnapshotItem(definition, persisted.GetValueOrDefault(definition.Key), signupFallback)).ToArray(), IsPersistent);
+    }
+
+    private static ApplicationSettingItem ToSnapshotItem(
+        Definition definition, StoredApplicationSetting? stored,
+        SignupRuntimeConfiguration? signupFallback)
+    {
+        var item = ToItem(definition, stored);
+        if (item.Source != "default" || signupFallback is null) return item;
+        var applied = definition.Key switch
+        {
+            "signup_enabled" => JsonSerializer.SerializeToElement(signupFallback.Enabled),
+            "signup_rate_limit_per_ip_per_hour" => JsonSerializer.SerializeToElement(signupFallback.RateLimitPerIpPerHour),
+            "signup_rate_limit_per_email_per_24h" => JsonSerializer.SerializeToElement(signupFallback.RateLimitPerEmailPer24h),
+            "signup_verification_token_ttl_hours" => JsonSerializer.SerializeToElement(signupFallback.VerificationTokenTtlHours),
+            "signup_password_setup_token_ttl_hours" => JsonSerializer.SerializeToElement(signupFallback.PasswordSetupTokenTtlHours),
+            _ => (JsonElement?)null
+        };
+        return applied is null ? item : item with { Value = applied.Value, Source = "env" };
     }
 
     public async Task<SignupRuntimeConfiguration> GetSignupConfigurationAsync(SignupRuntimeConfiguration fallback, CancellationToken cancellationToken)
     {
         var values = await StoredValuesAsync(cancellationToken);
-        return fallback with { Enabled = Bool(values, "signup_enabled", fallback.Enabled), RateLimitPerIpPerHour = Int(values, "signup_rate_limit_per_ip_per_hour", fallback.RateLimitPerIpPerHour), RateLimitPerEmailPer24h = Int(values, "signup_rate_limit_per_email_per_24h", fallback.RateLimitPerEmailPer24h), VerificationTokenTtlHours = Int(values, "signup_verification_token_ttl_hours", fallback.VerificationTokenTtlHours), PasswordSetupTokenTtlHours = Int(values, "signup_password_setup_token_ttl_hours", fallback.PasswordSetupTokenTtlHours), AutoApprove = false };
+        return fallback with { Enabled = Bool(values, "signup_enabled", fallback.Enabled), RateLimitPerIpPerHour = Int(values, "signup_rate_limit_per_ip_per_hour", fallback.RateLimitPerIpPerHour), RateLimitPerEmailPer24h = Int(values, "signup_rate_limit_per_email_per_24h", fallback.RateLimitPerEmailPer24h), VerificationTokenTtlHours = Int(values, "signup_verification_token_ttl_hours", fallback.VerificationTokenTtlHours), PasswordSetupTokenTtlHours = Int(values, "signup_password_setup_token_ttl_hours", fallback.PasswordSetupTokenTtlHours), AutoApprove = Bool(values, "signup_auto_approve", false) };
     }
 
     public async Task<AuthRuntimeConfiguration> GetAuthConfigurationAsync(AuthRuntimeConfiguration fallback, CancellationToken cancellationToken)

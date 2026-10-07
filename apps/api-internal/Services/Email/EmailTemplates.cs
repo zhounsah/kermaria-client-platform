@@ -56,9 +56,9 @@ public static class EmailTemplates
                 ci-dessous (valable 24 heures) :
                 {{verificationUrl}}
 
-                Une fois votre adresse confirmée, notre équipe examinera votre
-                demande avant d'ouvrir votre accès. Vous recevrez un e-mail
-                dès qu'une décision sera prise.
+                Après confirmation, vous recevrez les instructions pour ouvrir
+                votre accès ou un message vous indiquant que votre demande
+                est en cours d'examen.
 
                 Si vous n'êtes pas à l'origine de cette demande, ignorez
                 simplement ce message.

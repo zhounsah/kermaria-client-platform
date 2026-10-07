@@ -19,6 +19,9 @@ public sealed class MockSignupRow
     public string? VerificationTokenHash { get; set; }
     public DateTime? VerificationTokenExpiresAtUtc { get; set; }
     public DateTime? EmailVerifiedAtUtc { get; set; }
+    public bool AutoApprovalRequested { get; set; }
+    public bool ApprovalEmailPending { get; set; }
+    public DateTime? ApprovalEmailRetryAfterUtc { get; set; }
     public string? SelfServiceFlow { get; set; }
     public string? PasswordSetupTokenHash { get; set; }
     public DateTime? PasswordSetupExpiresAtUtc { get; set; }
@@ -213,13 +216,16 @@ public sealed class MockSignupRepository : ISignupRepository
                 row.Status,
                 row.VerificationTokenExpiresAtUtc,
                 row.ApprovedUserId,
-                row.SelfServiceFlow));
+                row.SelfServiceFlow,
+                row.AutoApprovalRequested,
+                row.ApprovalEmailPending));
     }
 
     public Task<bool> MarkEmailVerifiedAsync(
         string id,
         CancellationToken cancellationToken,
-        string? expectedVerificationHash = null)
+        string? expectedVerificationHash = null,
+        bool autoApprovalRequested = false)
     {
         if (!_rows.TryGetValue(id, out var row)) return Task.FromResult(false);
         lock (row)
@@ -232,6 +238,7 @@ public sealed class MockSignupRepository : ISignupRepository
                 return Task.FromResult(false);
             row.Status = row.ApprovedUserId is null ? "email_verified" : "approved";
             row.EmailVerifiedAtUtc = DateTime.UtcNow;
+            row.AutoApprovalRequested = autoApprovalRequested && row.ApprovedUserId is null;
             row.UpdatedAtUtc = DateTime.UtcNow;
             return Task.FromResult(true);
         }
@@ -396,6 +403,9 @@ public sealed class MockSignupRepository : ISignupRepository
                 null);
 
         row.Status = request.EmailVerified ? "approved" : "email_pending";
+        row.ApprovalEmailPending = request.EmailVerified && row.AutoApprovalRequested;
+        row.ApprovalEmailRetryAfterUtc = row.ApprovalEmailPending
+            ? DateTime.UtcNow.AddMinutes(1) : null;
         row.ApprovedUserId = request.UserId;
         row.ApprovedCustomerId = request.CustomerId;
         row.ApprovedCustomerReference = request.CustomerReference;
@@ -497,6 +507,35 @@ public sealed class MockSignupRepository : ISignupRepository
         return Task.CompletedTask;
     }
 
+    public Task<bool> TryClaimApprovalEmailRetryAsync(
+        string signupId, DateTime nowUtc, DateTime nextRetryAtUtc,
+        CancellationToken cancellationToken)
+    {
+        if (!_rows.TryGetValue(signupId, out var row)) return Task.FromResult(false);
+        lock (row)
+        {
+            if (row.Status != "approved" || !row.ApprovalEmailPending
+                || row.ApprovalEmailRetryAfterUtc > nowUtc)
+                return Task.FromResult(false);
+            row.ApprovalEmailRetryAfterUtc = nextRetryAtUtc;
+            return Task.FromResult(true);
+        }
+    }
+
+    public Task ClearApprovalEmailPendingAsync(
+        string signupId, CancellationToken cancellationToken)
+    {
+        if (_rows.TryGetValue(signupId, out var row))
+        {
+            lock (row)
+            {
+                row.ApprovalEmailPending = false;
+                row.ApprovalEmailRetryAfterUtc = null;
+            }
+        }
+        return Task.CompletedTask;
+    }
+
     /// <summary>
     /// Point d'attache du secret scelle, renseigne apres construction.
     /// </summary>
@@ -553,6 +592,8 @@ public sealed class MockSignupRepository : ISignupRepository
             {
                 row.PasswordSetupTokenHash = null;
                 row.PasswordSetupExpiresAtUtc = null;
+                row.ApprovalEmailPending = false;
+                row.ApprovalEmailRetryAfterUtc = null;
                 row.LastPasswordSyncStatus = koxoSecret is not null
                     ? "pending"
                     : row.LastPasswordSyncStatus;
@@ -715,6 +756,8 @@ public sealed class MockSignupRepository : ISignupRepository
                     credential with { PasswordHash = passwordHash };
                 row.PasswordSetupTokenHash = null;
                 row.PasswordSetupExpiresAtUtc = null;
+                row.ApprovalEmailPending = false;
+                row.ApprovalEmailRetryAfterUtc = null;
                 row.UpdatedAtUtc = DateTime.UtcNow;
 
                 if (existing is null)
@@ -1069,7 +1112,8 @@ public sealed class MockSignupRepository : ISignupRepository
             row.UpdatedAtUtc,
             BillingV2Selection: row.BillingV2Selection,
             EmailVerifiedAtUtc: row.EmailVerifiedAtUtc,
-            SelfServiceFlow: row.SelfServiceFlow);
+            SelfServiceFlow: row.SelfServiceFlow,
+            ApprovalEmailPending: row.ApprovalEmailPending);
 
     private static bool HasDefinedPassword(MockSignupRow row)
         => row.ApprovedUserId is not null

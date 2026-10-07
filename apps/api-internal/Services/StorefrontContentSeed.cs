@@ -41,24 +41,24 @@ internal static class StorefrontContentSeed
         new Dictionary<string, Page>(StringComparer.Ordinal)
         {
             ["storefront:services"] = PageOf(
-                "Services IT gérés pour indépendants, associations et TPE | Zachary IT",
-                "Messagerie, sauvegarde, accès distant, réseau, hébergement et support : partez de votre problème pour identifier le service IT adapté avec Zachary IT.",
-                "L'informatique dont votre activité a besoin. Gérée pour vous.",
+                "Services informatiques pour particuliers et petites structures | Zachary IT",
+                "Messagerie, sauvegarde, accès à distance, réseau et assistance : partez de votre besoin pour trouver une réponse claire avec Zachary IT.",
+                "Des services pour la maison et le travail.",
                 "Un problème de messagerie, des données à protéger, un accès distant à organiser, un Wi-Fi instable ou un serveur à maintenir ? Partez de votre besoin : Zachary IT vous oriente vers la solution adaptée.",
                 "Demander un audit", "/diagnostic",
                 [
-                    S("Des services modulaires, pas un catalogue figé", "Vous pouvez confier une brique précise ou un ensemble cohérent. Le périmètre est défini selon votre besoin, l'existant et les dépendances utiles ; les prestations nécessitant une étude restent traitées sur devis."),
+                    S("Une aide adaptée à votre situation", "Vous pouvez nous confier un besoin précis ou plusieurs sujets liés. Nous définissons ensemble ce qui est utile ; les travaux à étudier font l'objet d'un devis."),
                 ],
-                [F("Puis-je choisir un seul service ?", "Oui. Les services sont modulaires ; les dépendances éventuelles sont expliquées avant la mise en place."), F("Tout est-il commandable en ligne ?", "Non. Les services nécessitant une étude, une migration ou une mise en service restent traités par devis."), F("À qui s'adressent ces services ?", "Aux indépendants, associations, TPE et petites structures qui veulent déléguer une informatique utile et maintenable.")],
+                [F("Puis-je demander une seule prestation ?", "Oui. Nous précisons ce qui est nécessaire avant toute intervention."), F("Tout est-il commandable en ligne ?", "Non. Les demandes qui exigent une étude ou une installation font l'objet d'un devis."), F("À qui s'adressent ces services ?", "Aux particuliers, associations, indépendants et petites entreprises qui souhaitent une aide claire et suivie.")],
                 [L("Cloud & Hébergement", "/services/cloud-hebergement"), L("Domaines & Messagerie", "/services/domaines-messagerie"), L("Réseau & Sécurité", "/services/reseau-securite"), L("Support & IT", "/services/support-it")],
                 problemEntries:
                 [
-                    P("Mes emails posent problème", "Spam, migration, domaine, comptes ou configuration : identifiez le bon point de départ pour remettre la messagerie au propre.", "/services/messagerie-professionnelle"),
-                    P("Je veux protéger mes données", "Sauvegarde, restauration et conservation : protégez les fichiers importants avec une stratégie adaptée à leur usage.", "/services/sauvegarde-externalisee"),
-                    P("Je dois travailler à distance", "VPN et bureau Windows distant ne répondent pas au même besoin. Comparez les deux approches avant de choisir.", "/vpn-ou-bureau-a-distance-que-choisir"),
-                    P("Mon réseau ou mon Wi-Fi fonctionne mal", "Coupures, couverture, lenteurs ou segmentation : partez des usages réels pour fiabiliser le réseau et le Wi-Fi.", "/services/unifi"),
-                    P("J'ai un serveur, un site ou une application à maintenir", "Hébergement, mises à jour, supervision et sauvegarde : identifiez les briques à suivre pour garder le service maintenable.", "/services/cloud-hebergement"),
-                    P("Je veux déléguer mon informatique", "Support, maintenance, supervision et coordination : confiez le quotidien IT avec un périmètre clair et adapté à votre structure.", "/services/support-it"),
+                    P("Mes e-mails posent problème", "Messages non reçus ou classés comme indésirables ? Trouvons la bonne façon de fiabiliser votre messagerie.", "/services/messagerie-professionnelle"),
+                    P("Je veux protéger mes données", "Gardez une copie de vos fichiers importants et préparez leur récupération en cas de problème.", "/services/sauvegarde-externalisee"),
+                    P("Je dois travailler à distance", "Retrouver ses fichiers ou un bureau complet à distance demande des solutions différentes. Comparez-les avant de choisir.", "/vpn-ou-bureau-a-distance-que-choisir"),
+                    P("Mon réseau ou mon Wi-Fi fonctionne mal", "Coupures, mauvaise couverture ou lenteurs : partons de vos usages pour retrouver un réseau et un Wi-Fi fiables.", "/services/unifi"),
+                    P("J'ai un serveur, un site ou une application à maintenir", "Site, serveur ou application : identifiez ce qu'il faut entretenir, protéger et suivre dans le temps.", "/services/cloud-hebergement"),
+                    P("Je veux déléguer mon informatique", "Confiez les problèmes du quotidien à un interlocuteur qui connaît vos outils et vos priorités.", "/services/support-it"),
                 ]),
             ["storefront:tarifs"] = PageOf(
                 "Tarifs des services IT : unités et devis",
@@ -187,6 +187,38 @@ internal static class StorefrontContentSeed
             .Replace("Domaines & Messagerie", "Domaines & messagerie", StringComparison.Ordinal)
             .Replace("Réseau & Sécurité", "Réseau & sécurité", StringComparison.Ordinal)
             .Replace("Support & IT", "Assistance & maintenance", StringComparison.Ordinal)
+            .Replace("Tarifs des services IT : unités et devis", "Tarifs clairs : prix affichés et devis", StringComparison.Ordinal)
+            .Replace("Comprenez les unités de facturation des services Zachary IT : domaine, utilisateur, site, serveur ou instance. Les prestations étudiées restent sur devis.", "Comprenez les prix des services Zachary IT et les situations qui demandent un devis personnalisé.", StringComparison.Ordinal)
+            .Replace("Des tarifs lisibles, sans faire croire qu’un service sur mesure est instantané.", "Des tarifs clairs et une réponse adaptée à votre besoin.", StringComparison.Ordinal)
+            .Replace("Les prix affichés correspondent aux services proposés. Les services de mise en place, migration, réseau ou infogérance restent qualifiés avant devis.", "Les prix affichés décrivent les services proposés. Pour une installation ou une reprise de l'existant, nous vérifions d'abord votre besoin avant de préparer un devis.", StringComparison.Ordinal)
+            .Replace("Comment lire les unités", "Comment lire les prix affichés", StringComparison.Ordinal)
+            .Replace("Selon le service, la facturation peut être exprimée par domaine, utilisateur, site, serveur ou instance et par mois. Le montant affiché correspond au service et à son unité de facturation.", "Chaque prix précise ce qui est facturé et pour quelle période : par personne, par site ou par service. Le montant exact est confirmé avant votre commande.", StringComparison.Ordinal)
+            .Replace("Un domaine géré, une migration de messagerie, un réseau UniFi, une sécurité firewall, une reprise de serveur ou une infogérance nécessitent de confirmer le périmètre, les accès et les frais de fournisseurs éventuels.", "Pour reprendre une messagerie, améliorer un réseau ou gérer un serveur existant, nous vérifions les accès et les travaux nécessaires avant de proposer un devis. Les frais d'autres fournisseurs sont indiqués séparément.", StringComparison.Ordinal)
+            .Replace("VPS géré : hébergement et administration | Zachary IT", "Serveur à distance et accompagnement | Zachary IT", StringComparison.Ordinal)
+            .Replace("Infogérance VPS : maintenance de serveur existant | Zachary IT", "Entretien et suivi de votre serveur | Zachary IT", StringComparison.Ordinal)
+            .Replace("Maintenance Linux : mises à jour et suivi de serveur | Zachary IT", "Entretien et mises à jour de serveur | Zachary IT", StringComparison.Ordinal)
+            .Replace("Maintenance WordPress : mises à jour, sauvegarde et sécurité | Zachary IT", "Entretien de site WordPress | Zachary IT", StringComparison.Ordinal)
+            .Replace("Sauvegarde externalisée : copie séparée et restauration | Zachary IT", "Copie de sécurité de vos fichiers | Zachary IT", StringComparison.Ordinal)
+            .Replace("Supervision informatique : alertes et suivi des services | Zachary IT", "Suivi de vos services informatiques | Zachary IT", StringComparison.Ordinal)
+            .Replace("Supervision NAS : suivi du stockage et des sauvegardes | Zachary IT", "Suivi de votre stockage et de vos sauvegardes | Zachary IT", StringComparison.Ordinal)
+            .Replace("VPN entreprise : accès distant sécurisé | Zachary IT", "Accès sécurisé à distance pour votre équipe | Zachary IT", StringComparison.Ordinal)
+            .Replace("Réseau UniFi : Wi-Fi, switching et supervision | Zachary IT", "Réseau et Wi-Fi fiables | Zachary IT", StringComparison.Ordinal)
+            .Replace("Firewall entreprise : règles réseau et accès maîtrisés | Zachary IT", "Protection de votre réseau | Zachary IT", StringComparison.Ordinal)
+            .Replace("Cloudflare WAF : protection de site web gérée | Zachary IT", "Protection de site web | Zachary IT", StringComparison.Ordinal)
+            .Replace("Gestion DNS et domaines professionnels | Zachary IT", "Gestion de votre nom de domaine | Zachary IT", StringComparison.Ordinal)
+            .Replace("Messagerie professionnelle : boîtes mail, migration et DNS | Zachary IT", "Messagerie professionnelle | Zachary IT", StringComparison.Ordinal)
+            .Replace("VPS géré pour votre activité", "Un serveur à distance suivi pour votre activité", StringComparison.Ordinal)
+            .Replace("Infogérance VPS : qui gère votre serveur au quotidien ?", "Qui s'occupe de votre serveur au quotidien ?", StringComparison.Ordinal)
+            .Replace("Maintenance Linux pour ne pas laisser un serveur s’user en silence", "Entretenir votre serveur pour éviter les mauvaises surprises", StringComparison.Ordinal)
+            .Replace("Maintenance WordPress : garder votre site à jour sans improviser", "Gardez votre site WordPress à jour et protégé", StringComparison.Ordinal)
+            .Replace("Sauvegarde externalisée : une copie séparée, utile le jour où il faut restaurer", "Une copie séparée, utile quand il faut récupérer vos fichiers", StringComparison.Ordinal)
+            .Replace("Supervision informatique : voir les signaux utiles avant qu’ils bloquent l’activité", "Repérer les problèmes avant qu'ils bloquent votre activité", StringComparison.Ordinal)
+            .Replace("Supervision NAS : ne pas découvrir un problème de stockage trop tard", "Ne découvrez pas un problème de stockage trop tard", StringComparison.Ordinal)
+            .Replace("Accès VPN sécurisé pour votre entreprise", "Travaillez à distance avec un accès protégé", StringComparison.Ordinal)
+            .Replace("Réseau UniFi : Wi-Fi, switching et évolution de votre installation", "Un Wi-Fi fiable et adapté à vos locaux", StringComparison.Ordinal)
+            .Replace("Firewall : maîtriser les accès sans bloquer le travail", "Protégez vos accès sans bloquer le travail", StringComparison.Ordinal)
+            .Replace("Cloudflare WAF : protéger un service web exposé sans promettre l’impossible", "Protégez votre site web avec des règles adaptées", StringComparison.Ordinal)
+            .Replace("Gestion DNS et domaines : garder la maîtrise de votre identité en ligne", "Gardez la maîtrise de votre nom de domaine", StringComparison.Ordinal)
             .Replace("lorsquÔÇÖelles sÔÇÖappliquent", "lorsqu’elles s’appliquent", StringComparison.Ordinal)
             .Replace("Demander un audit", "Faire le diagnostic", StringComparison.Ordinal)
             .Replace("Demander un diagnostic", "Faire le diagnostic", StringComparison.Ordinal)

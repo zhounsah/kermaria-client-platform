@@ -51,14 +51,17 @@ public sealed record SignupPendingRecord(
     DateTime UpdatedAtUtc,
     BillingV2PublicSelection? BillingV2Selection = null,
     DateTime? EmailVerifiedAtUtc = null,
-    string? SelfServiceFlow = null);
+    string? SelfServiceFlow = null,
+    bool ApprovalEmailPending = false);
 
 public sealed record SignupVerificationTarget(
     string Id,
     string Status,
     DateTime? VerificationTokenExpiresAtUtc,
     string? ApprovedUserId,
-    string? SelfServiceFlow = null);
+    string? SelfServiceFlow = null,
+    bool AutoApprovalRequested = false,
+    bool ApprovalEmailPending = false);
 
 /// <summary>
 /// Projection minimale, liee a l'identite de session et non au customer.
@@ -329,7 +332,8 @@ public interface ISignupRepository
     Task<bool> MarkEmailVerifiedAsync(
         string id,
         CancellationToken cancellationToken,
-        string? expectedVerificationHash = null);
+        string? expectedVerificationHash = null,
+        bool autoApprovalRequested = false);
 
     Task<bool> RotatePendingVerificationTokenAsync(
         string id,
@@ -394,6 +398,16 @@ public interface ISignupRepository
         string signupId,
         string passwordSetupTokenHash,
         DateTime passwordSetupExpiresAtUtc,
+        CancellationToken cancellationToken);
+
+    Task<bool> TryClaimApprovalEmailRetryAsync(
+        string signupId,
+        DateTime nowUtc,
+        DateTime nextRetryAtUtc,
+        CancellationToken cancellationToken);
+
+    Task ClearApprovalEmailPendingAsync(
+        string signupId,
         CancellationToken cancellationToken);
 
     /// <summary>

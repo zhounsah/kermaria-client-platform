@@ -61,7 +61,8 @@ public interface ISignupService
 
     Task<SignupOperationResult> VerifyEmailAsync(
         string? token,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        string? correlationId = null);
 
     Task<SignupOperationResult> ResendSelfServiceEmailVerificationAsync(
         PortalSessionContext session,
@@ -152,6 +153,7 @@ public sealed class SignupService : ISignupService
     private static readonly TimeSpan SelfServiceVerificationResendCooldown =
         TimeSpan.FromMinutes(15);
     private static readonly TimeSpan AdminVerificationResendCooldown = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan AutoApprovalEmailRetryCooldown = TimeSpan.FromMinutes(5);
     private static readonly HashSet<string> AllowedPersonalTitles =
         new(StringComparer.Ordinal)
         {
@@ -635,7 +637,8 @@ public sealed class SignupService : ISignupService
 
     public async Task<SignupOperationResult> VerifyEmailAsync(
         string? token,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? correlationId = null)
     {
         var normalized = token?.Trim();
         if (string.IsNullOrWhiteSpace(normalized))
@@ -651,14 +654,30 @@ public sealed class SignupService : ISignupService
             return TokenInvalid();
         }
 
-        if (string.Equals(target.Status, "approved", StringComparison.Ordinal)
-            || string.Equals(target.Status, "email_verified", StringComparison.Ordinal))
+        if (string.Equals(target.Status, "approved", StringComparison.Ordinal))
         {
+            if (target.AutoApprovalRequested && target.ApprovalEmailPending)
+            {
+                if (target.VerificationTokenExpiresAtUtc is not { } expiresAt
+                    || expiresAt <= DateTime.UtcNow)
+                    return new SignupOperationResult(false, "TOKEN_EXPIRED",
+                        "Ce lien a expiré. Contactez-nous pour recevoir un nouveau lien d'accès.");
+                return await RetryAutoApprovalEmailAsync(target.Id, correlationId, cancellationToken);
+            }
             return new SignupOperationResult(
                 true,
                 "EMAIL_ALREADY_VERIFIED",
                 "Adresse e-mail déjà confirmée.",
                 target.SelfServiceFlow);
+        }
+
+        // Le même lien permet de reprendre une approbation interrompue après
+        // la validation durable de l'adresse. Le dépôt rend l'approbation
+        // atomique et refuse une seconde création de compte.
+        if (string.Equals(target.Status, "email_verified", StringComparison.Ordinal))
+        {
+            return await CompleteVerifiedSignupAsync(
+                target, target.AutoApprovalRequested, correlationId, cancellationToken);
         }
 
         if (!string.Equals(target.Status, "email_pending", StringComparison.Ordinal)) return TokenInvalid();
@@ -672,8 +691,23 @@ public sealed class SignupService : ISignupService
                 "Ce lien de verification a expire. Renouvelez votre demande.");
         }
 
-        if (!await _repository.MarkEmailVerifiedAsync(target.Id, cancellationToken, HashToken(normalized)))
-            return TokenInvalid();
+        var runtime = await _settings.GetSignupConfigurationAsync(_configuration, cancellationToken);
+        var autoApprovalRequested = runtime.AutoApprove && target.SelfServiceFlow is null;
+        if (!await _repository.MarkEmailVerifiedAsync(target.Id, cancellationToken,
+                HashToken(normalized), autoApprovalRequested))
+        {
+            var latest = await _repository.FindPendingByVerificationHashAsync(
+                HashToken(normalized), cancellationToken);
+            if (latest?.Status == "approved")
+                return latest.AutoApprovalRequested && latest.ApprovalEmailPending
+                    ? await RetryAutoApprovalEmailAsync(latest.Id, correlationId, cancellationToken)
+                    : new SignupOperationResult(true, "EMAIL_ALREADY_VERIFIED",
+                        "Adresse e-mail déjà confirmée.", latest.SelfServiceFlow);
+            return latest?.Status == "email_verified"
+                ? await CompleteVerifiedSignupAsync(latest, latest.AutoApprovalRequested,
+                    correlationId, cancellationToken)
+                : TokenInvalid();
+        }
         if (target.ApprovedUserId is not null)
         {
             // Compte self-service deja cree : la preuve de possession rend son
@@ -684,6 +718,12 @@ public sealed class SignupService : ISignupService
                 cancellationToken);
         }
 
+        if (target.ApprovedUserId is null)
+        {
+            return await CompleteVerifiedSignupAsync(
+                target, autoApprovalRequested, correlationId, cancellationToken);
+        }
+
         return new SignupOperationResult(
             true,
             "EMAIL_VERIFIED",
@@ -691,6 +731,99 @@ public sealed class SignupService : ISignupService
                 ? "Adresse e-mail confirmee. Votre demande est en attente de validation."
                 : "Adresse e-mail confirmée. Vous pouvez reprendre votre souscription.",
             target.SelfServiceFlow);
+    }
+
+    private async Task<SignupOperationResult> CompleteVerifiedSignupAsync(
+        SignupVerificationTarget target,
+        bool autoApprovalRequested,
+        string? correlationId,
+        CancellationToken cancellationToken)
+    {
+        if (!autoApprovalRequested || target.SelfServiceFlow is not null)
+        {
+            return new SignupOperationResult(
+                true,
+                "EMAIL_VERIFIED",
+                "Adresse e-mail confirmée. Votre demande est en attente de validation.",
+                target.SelfServiceFlow);
+        }
+
+        var approval = await ApproveAsync(
+            target.Id,
+            correlationId ?? Guid.NewGuid().ToString("D"),
+            cancellationToken);
+        if (approval.Succeeded)
+        {
+            if (approval.Code == "SIGNUP_APPROVED_EMAIL_PENDING")
+                return AutoApprovalEmailPending();
+            return new SignupOperationResult(
+                true,
+                "SIGNUP_AUTO_APPROVED",
+                "Adresse e-mail confirmée. Un lien de création de mot de passe vous a été envoyé.");
+        }
+
+        // Une requête concurrente peut avoir approuvé la même demande. La
+        // relecture évite de présenter cette course normale comme un échec.
+        var latest = await _repository.GetByIdAsync(target.Id, cancellationToken);
+        if (latest?.Status == "approved")
+        {
+            if (latest.ApprovalEmailPending) return AutoApprovalEmailPending();
+            return new SignupOperationResult(
+                true,
+                "SIGNUP_AUTO_APPROVED",
+                "Adresse e-mail confirmée. Votre compte est prêt.");
+        }
+
+        return new SignupOperationResult(
+            false,
+            "SIGNUP_AUTO_APPROVAL_FAILED",
+            "L'adresse est confirmée, mais l'ouverture du compte n'a pas abouti. Réessayez avec le même lien.");
+    }
+
+    private async Task<SignupOperationResult> RetryAutoApprovalEmailAsync(
+        string signupId, string? correlationId, CancellationToken cancellationToken)
+    {
+        var record = await _repository.GetByIdAsync(signupId, cancellationToken);
+        if (record is null || !record.ApprovalEmailPending)
+            return new SignupOperationResult(true, "EMAIL_ALREADY_VERIFIED", "Adresse e-mail déjà confirmée.");
+        if (!IsAwaitingPasswordSetup(record))
+        {
+            await ClearApprovalEmailPendingSafelyAsync(signupId, cancellationToken);
+            return new SignupOperationResult(true, "EMAIL_ALREADY_VERIFIED", "Adresse e-mail déjà confirmée.");
+        }
+
+        var now = DateTime.UtcNow;
+        if (!await _repository.TryClaimApprovalEmailRetryAsync(
+                signupId, now, now.Add(AutoApprovalEmailRetryCooldown), cancellationToken))
+            return AutoApprovalEmailPending();
+
+        var resend = await ResendPasswordSetupEmailAsync(
+            signupId, correlationId ?? Guid.NewGuid().ToString("D"), cancellationToken);
+        return resend.Succeeded
+            ? new SignupOperationResult(true, "SIGNUP_AUTO_APPROVED",
+                "Adresse e-mail confirmée. Un nouveau lien de création de mot de passe vous a été envoyé.")
+            : AutoApprovalEmailPending();
+    }
+
+    private static SignupOperationResult AutoApprovalEmailPending()
+        => new(true, "SIGNUP_AUTO_APPROVED_EMAIL_PENDING",
+            "Votre compte est créé, mais l'envoi du lien de mot de passe n'a pas abouti. Réessayez avec ce même lien dans quelques minutes.");
+
+    private async Task ClearApprovalEmailPendingSafelyAsync(
+        string signupId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _repository.ClearApprovalEmailPendingAsync(signupId, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // Le message est déjà parti. Ne pas annoncer un échec de création
+            // du compte à cause d'une écriture de suivi indisponible.
+            _logger.LogWarning(exception,
+                "Approval email delivery status could not be stored for signup_id {SignupId}",
+                signupId);
+        }
     }
 
     public async Task<SignupOperationResult> ResendSelfServiceEmailVerificationAsync(
@@ -849,19 +982,29 @@ public sealed class SignupService : ISignupService
             cancellationToken);
 
         var setPasswordUrl = BuildUrl("/set-password", passwordToken);
-        var delivery = await _emailDispatch.SendAccountApprovedAsync(
-            result.Email,
-            result.ContactName,
-            setPasswordUrl,
-            correlationId,
-            cancellationToken);
-        if (!delivery.Succeeded)
+        EmailDispatchResult? delivery = null;
+        try
+        {
+            delivery = await _emailDispatch.SendAccountApprovedAsync(
+                result.Email, result.ContactName, setPasswordUrl,
+                correlationId, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            _logger.LogWarning(exception,
+                "Account approved email dispatch failed correlation_id {CorrelationId}", correlationId);
+        }
+        if (delivery?.Succeeded != true)
         {
             _logger.LogWarning(
                 "Account approved email not delivered ({Code}) correlation_id {CorrelationId}",
-                delivery.Code,
+                delivery?.Code ?? "DISPATCH_ERROR",
                 correlationId);
+            return new SignupOperationResult(true, "SIGNUP_APPROVED_EMAIL_PENDING",
+                "Compte créé. Le lien de mot de passe n'a pas pu être envoyé pour le moment.");
         }
+
+        await ClearApprovalEmailPendingSafelyAsync(result.SignupId, cancellationToken);
 
         return new SignupOperationResult(
             true,
@@ -1018,23 +1161,31 @@ public sealed class SignupService : ISignupService
             cancellationToken);
 
         var setPasswordUrl = BuildUrl("/set-password", passwordToken);
-        var delivery = await _emailDispatch.SendAccountApprovedAsync(
-            record.Email,
-            record.ContactName,
-            setPasswordUrl,
-            correlationId,
-            cancellationToken);
-        if (!delivery.Succeeded)
+        EmailDispatchResult? delivery = null;
+        try
+        {
+            delivery = await _emailDispatch.SendAccountApprovedAsync(
+                record.Email, record.ContactName, setPasswordUrl,
+                correlationId, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            _logger.LogWarning(exception,
+                "Password setup email resend failed correlation_id {CorrelationId}", correlationId);
+        }
+        if (delivery?.Succeeded != true)
         {
             _logger.LogWarning(
                 "Password setup email resend not delivered ({Code}) correlation_id {CorrelationId}",
-                delivery.Code,
+                delivery?.Code ?? "DISPATCH_ERROR",
                 correlationId);
             return new SignupOperationResult(
                 false,
-                delivery.Code,
+                delivery?.Code ?? "EMAIL_DELIVERY_FAILED",
                 "Le nouveau lien a bien ete genere, mais l'e-mail n'a pas pu etre envoye.");
         }
+
+        await ClearApprovalEmailPendingSafelyAsync(record.Id, cancellationToken);
 
         return new SignupOperationResult(
             true,

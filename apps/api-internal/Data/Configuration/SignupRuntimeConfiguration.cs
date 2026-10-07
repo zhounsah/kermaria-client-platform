@@ -39,10 +39,9 @@ public static class SignupConfigurationResolver
                 fallback: 24,
                 minimum: 1,
                 maximum: 168),
-            // Toujours false jusqu'à V1.0 RC. Réservé : aucun code ne
-            // bascule sur cette valeur dans ce lot (validation manuelle
-            // obligatoire). Documenté dans .env.example.
-            AutoApprove: ParseBool(configuration["SIGNUP_AUTO_APPROVE"], false));
+            // Le réglage administrateur est l'unique autorité pour ce mode.
+            // Une ancienne variable d'environnement ne doit pas l'activer.
+            AutoApprove: false);
     }
 
     private static bool ParseBool(string? value, bool fallback)

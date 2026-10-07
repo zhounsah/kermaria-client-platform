@@ -746,6 +746,8 @@ async Task<int> RunAsync(string[] arguments)
         VerifyChildProcessEnvironmentGuardrails();
         await VerifySignupStoresPriceFreeBillingV2SelectionAsync();
         await VerifySignupGuardrailsAsync();
+        await VerifyDataSubjectRequestsAsync();
+        await VerifySitePageBuilderAsync();
         await VerifySignupVerificationResendAsync();
         await VerifyFiscalPolicyAsync();
         await BillingV2VerifiedSettlementProvisioningTests.RunAsync();
@@ -5804,6 +5806,585 @@ static JsonElement ParseJson(string payload)
 /// etre appliques par API-INTERNAL, pas seulement par le portail, et une valeur
 /// venue de MariaDB ne doit jamais assouplir le registre.
 /// </summary>
+static async Task VerifyDataSubjectRequestsAsync()
+{
+    var notificationStore = new MockPortalNotificationStore();
+    var service = new DataSubjectRequestService(
+        new SqlRuntimeConfiguration(PortalPersistenceMode.Mock, "mock", null, "test", true),
+        new MockDataSubjectRequestStore(), notificationStore);
+    var now = DateTime.UtcNow;
+    var owner = new PortalSessionContext("session-a", "00000000-0000-0000-0000-000000000001",
+        "00000000-0000-0000-0000-0000000000aa", "CLI-TEST", "a@example.invalid",
+        "A", "active", "client_user", now, now.AddHours(1));
+    var other = owner with { SessionId = "session-b", UserId = "00000000-0000-0000-0000-000000000002" };
+    var request = await service.CreateAsync(owner,
+        new DataSubjectRequestCreatePayload("access", "Je souhaite connaître les données conservées."),
+        CancellationToken.None);
+    Ensure((await service.ListClientAsync(owner, CancellationToken.None)).Count == 1,
+        "Le titulaire retrouve sa demande.");
+    Ensure((await service.ListClientAsync(other, CancellationToken.None)).Count == 0
+        && await service.GetClientAsync(other, request.Id, CancellationToken.None) is null,
+        "Un autre utilisateur du même client ne voit pas les données personnelles du demandeur.");
+    var extended = await service.ReplyAsync(request.Id, null,
+        new DataSubjectRequestMessagePayload(
+            "La demande couvre plusieurs archives et nécessite un délai supplémentaire.",
+            "in_progress", ExtendDeadline: true), CancellationToken.None);
+    Ensure(extended?.DeadlineExtendedAt is not null
+        && DateTime.Parse(extended.DueAt) > DateTime.Parse(request.DueAt),
+        "Une demande complexe peut être prolongée avec motif visible.");
+    try
+    {
+        await service.ReplyAsync(request.Id, null,
+            new DataSubjectRequestMessagePayload(
+                "Nouvelle prolongation non autorisée.", "in_progress", ExtendDeadline: true),
+            CancellationToken.None);
+        throw new InvalidOperationException("Une seconde prolongation aurait dû être refusée.");
+    }
+    catch (PortalValidationException) { }
+    var answered = await service.ReplyAsync(request.Id, null,
+        new DataSubjectRequestMessagePayload("Voici notre réponse à votre demande.", "response_ready"),
+        CancellationToken.None);
+    Ensure(answered?.Status == "response_ready" && answered.Messages.Count == 2,
+        "La réponse de l'équipe est suivie dans la demande.");
+    Ensure(await service.ReplyAsync(request.Id, other,
+        new DataSubjectRequestMessagePayload("Je tente de répondre.", null),
+        CancellationToken.None) is null,
+        "Un utilisateur tiers ne peut pas écrire sur la demande.");
+    var file = await service.UploadResponseFileAsync(request.Id, "donnees.pdf",
+        "application/pdf", "%PDF-1.4 contenu de test"u8.ToArray(), CancellationToken.None);
+    Ensure(file?.ResponseFileName == "donnees.pdf" && file.Status == "response_ready",
+        "Un document privé peut être remis dans l'espace client.");
+    Ensure(await service.GetResponseFileAsync(owner, request.Id, CancellationToken.None) is not null
+        && await service.GetResponseFileAsync(other, request.Id, CancellationToken.None) is null,
+        "Seul l'auteur de la demande peut télécharger sa réponse.");
+    var notifications = new MockPortalNotificationRepository(notificationStore);
+    Ensure((await notifications.GetNotificationsAsync(owner, CancellationToken.None)).Count == 3
+        && (await notifications.GetNotificationsAsync(other, CancellationToken.None)).Count == 0,
+        "Les notifications de réponse restent personnelles au demandeur.");
+}
+
+static async Task VerifySitePageBuilderAsync()
+{
+    var service = new SitePageService(
+        new SqlRuntimeConfiguration(PortalPersistenceMode.Mock, "mock", null, "test", true),
+        new MockSitePageStore());
+    var original = await service.GetAsync("public", "/a-propos", CancellationToken.None);
+    var rightsLayout = await service.GetAsync("public", "/demander-mes-donnees", CancellationToken.None);
+    Ensure(rightsLayout.Blocks.Count(block => block.Type == "data_rights_intro") == 1
+        && rightsLayout.Blocks.Count(block => block.WidgetKey == "data_rights_actions") == 1,
+        "La page publique de données conserve un titre et les deux chemins de demande.");
+    var editedRights = await service.SaveAsync(new SitePageMutationPayload(
+        "/demander-mes-donnees", "public", 0,
+        rightsLayout.Blocks.Select(block => block.Type == "data_rights_intro"
+            ? block with { Title = "Comprendre mes droits" } : block).Reverse().ToArray()),
+        "actor", CancellationToken.None);
+    Ensure(editedRights?.Blocks.Single(block => block.Type == "data_rights_intro").Title
+        == "Comprendre mes droits",
+        "Le texte de la page de données est publiable et ses blocs peuvent être réordonnés.");
+    foreach (var forbidden in new[] { "data_rights_intro", "data_rights_actions" })
+    {
+        try
+        {
+            await service.SaveAsync(new SitePageMutationPayload(
+                "/demander-mes-donnees", "public", 1,
+                editedRights!.Blocks.Where(block => block.Type != forbidden
+                    && block.WidgetKey != forbidden).ToArray()),
+                "actor", CancellationToken.None);
+            throw new InvalidOperationException("Une action ou le titre obligatoire aurait dû bloquer la publication.");
+        }
+        catch (PortalValidationException) { }
+    }
+    var restoredRights = await service.RestoreAsync(
+        "public", "/demander-mes-donnees", 0, 1, "actor", CancellationToken.None);
+    Ensure(restoredRights?.Version == 2
+        && restoredRights.Blocks.Single(block => block.Type == "data_rights_intro").Title
+            == "Vos données, vos choix",
+        "La restauration de la page de données rétablit la version initiale.");
+    var offersLayout = await service.GetAsync("public", "/offres", CancellationToken.None);
+    Ensure(offersLayout.Blocks.Any(block => block.WidgetKey == "offers_overview")
+        && offersLayout.Blocks.Any(block => block.WidgetKey == "offers_comparison"),
+        "La vitrine d'offres conserve sa vue simple et son comparatif.");
+    var story = offersLayout.Blocks.Single(block => block.Type == "offers_story");
+    Ensure(story.Items?.Count == 3 && story.Href == "/contact",
+        "La présentation des offres est livrée comme contenu modifiable.");
+    var offersWithoutDemo = await service.SaveAsync(new SitePageMutationPayload(
+        "/offres", "public", 0,
+        offersLayout.Blocks.Where(block => block.WidgetKey != "offers_demo")
+            .Select(block => block.Type == "offers_story"
+                ? block with { Title = "Une copie pour repartir plus vite" } : block)
+            .ToArray()),
+        "actor", CancellationToken.None);
+    Ensure(offersWithoutDemo?.Blocks.All(block => block.WidgetKey != "offers_demo") == true,
+        "La démonstration peut être retirée sans toucher aux offres.");
+    Ensure(offersWithoutDemo?.Blocks.Single(block => block.Type == "offers_story").Title
+        == "Une copie pour repartir plus vite",
+        "Le récit de la page d'offres peut être publié sans code.");
+    try
+    {
+        await service.SaveAsync(new SitePageMutationPayload(
+            "/offres", "public", 1,
+            offersWithoutDemo!.Blocks.Select(block => block.Type == "offers_story"
+                ? block with { Body = "" } : block).ToArray()),
+            "actor", CancellationToken.None);
+        throw new InvalidOperationException("Un récit incomplet aurait dû bloquer la publication.");
+    }
+    catch (PortalValidationException) { }
+    try
+    {
+        await service.SaveAsync(new SitePageMutationPayload(
+            "/offres", "public", 1,
+            offersLayout.Blocks.Where(block => block.WidgetKey != "offers_configure").ToArray()),
+            "actor", CancellationToken.None);
+        throw new InvalidOperationException("Le chemin de configuration obligatoire aurait dû bloquer la publication.");
+    }
+    catch (PortalValidationException) { }
+    var tariffsLayout = await service.GetAsync("public", "/tarifs", CancellationToken.None);
+    Ensure(tariffsLayout.Blocks.Any(block => block.WidgetKey == "tariffs_catalog")
+        && tariffsLayout.Blocks.Any(block => block.WidgetKey == "tariffs_contact"),
+        "Les tarifs conservent le catalogue et le chemin vers la demande de devis.");
+    var tariffsWithoutFaq = await service.SaveAsync(new SitePageMutationPayload(
+        "/tarifs", "public", 0,
+        tariffsLayout.Blocks.Where(block => block.WidgetKey != "tariffs_faq").ToArray()),
+        "actor", CancellationToken.None);
+    Ensure(tariffsWithoutFaq?.Blocks.All(block => block.WidgetKey != "tariffs_faq") == true,
+        "Les questions facultatives peuvent être retirées de la page tarifs.");
+    try
+    {
+        await service.SaveAsync(new SitePageMutationPayload(
+            "/tarifs", "public", 1,
+            tariffsWithoutFaq!.Blocks.Where(block => block.WidgetKey != "tariffs_catalog").ToArray()),
+            "actor", CancellationToken.None);
+        throw new InvalidOperationException("Le catalogue tarifaire obligatoire aurait dû bloquer la publication.");
+    }
+    catch (PortalValidationException) { }
+    var servicesLayout = await service.GetAsync("public", "/services", CancellationToken.None);
+    Ensure(servicesLayout.Blocks.Any(block => block.WidgetKey == "services_needs")
+        && servicesLayout.Blocks.Any(block => block.WidgetKey == "services_categories"),
+        "Les services publics séparent les besoins et les domaines d'intervention.");
+    var servicesWithoutFaq = await service.SaveAsync(new SitePageMutationPayload(
+        "/services", "public", 0,
+        servicesLayout.Blocks.Where(block => block.WidgetKey != "services_faq").ToArray()),
+        "actor", CancellationToken.None);
+    Ensure(servicesWithoutFaq?.Blocks.All(block => block.WidgetKey != "services_faq") == true,
+        "La FAQ des services peut être retirée sans toucher à l'orientation.");
+    try
+    {
+        await service.SaveAsync(new SitePageMutationPayload(
+            "/services", "public", 1,
+            servicesWithoutFaq!.Blocks.Where(block => block.WidgetKey != "services_needs").ToArray()),
+            "actor", CancellationToken.None);
+        throw new InvalidOperationException("Le choix par besoin aurait dû bloquer la publication.");
+    }
+    catch (PortalValidationException) { }
+    var clientHome = await service.GetAsync("client", "/dashboard", CancellationToken.None);
+    Ensure(clientHome.Blocks.Any(block => block.WidgetKey == "client_home_services")
+        && clientHome.Blocks.Any(block => block.WidgetKey == "client_home_status"),
+        "L'accueil client sépare les services et l'état du chargement.");
+    var clientHomeWithoutMetrics = await service.SaveAsync(new SitePageMutationPayload(
+        "/dashboard", "client", 0,
+        clientHome.Blocks.Where(block => block.WidgetKey != "client_home_metrics").ToArray()),
+        "actor", CancellationToken.None);
+    Ensure(clientHomeWithoutMetrics?.Blocks.All(block => block.WidgetKey != "client_home_metrics") == true,
+        "Les indicateurs facultatifs peuvent être retirés de l'accueil client.");
+    try
+    {
+        await service.SaveAsync(new SitePageMutationPayload(
+            "/dashboard", "client", 1,
+            clientHomeWithoutMetrics!.Blocks.Where(block => block.WidgetKey != "client_home_services").ToArray()),
+            "actor", CancellationToken.None);
+        throw new InvalidOperationException("Les services et démarches client auraient dû rester obligatoires.");
+    }
+    catch (PortalValidationException) { }
+    var adminHome = await service.GetAsync("admin", "/admin", CancellationToken.None);
+    Ensure(adminHome.Blocks.Count(block => block.Type == "widget") == 6,
+        "L'accueil administrateur expose ses six ensembles distincts.");
+    try
+    {
+        await service.SaveAsync(new SitePageMutationPayload(
+            "/admin", "admin", 0,
+            adminHome.Blocks.Where(block => block.WidgetKey != "admin_home_shortcuts").ToArray()),
+            "actor", CancellationToken.None);
+        throw new InvalidOperationException("Les accès administrateur détaillés auraient dû rester obligatoires.");
+    }
+    catch (PortalValidationException) { }
+    var diagnosticLayout = await service.GetAsync("public", "/diagnostic", CancellationToken.None);
+    Ensure(diagnosticLayout.Blocks.Count(block => block.Type == "diagnostic_intro") == 1
+        && diagnosticLayout.Blocks.Any(block => block.WidgetKey == "diagnostic_questionnaire")
+        && diagnosticLayout.Blocks.Any(block => block.WidgetKey == "diagnostic_result"),
+        "Le diagnostic sépare son introduction éditable du questionnaire et du résultat.");
+    var diagnosticEdited = await service.SaveAsync(new SitePageMutationPayload(
+        "/diagnostic", "public", 0,
+        diagnosticLayout.Blocks.Select(block => block.Type == "diagnostic_intro"
+            ? block with { Title = "Parlons de votre situation" } : block).ToArray()),
+        "actor", CancellationToken.None);
+    Ensure(diagnosticEdited?.Blocks.Single(block => block.Type == "diagnostic_intro").Title
+        == "Parlons de votre situation",
+        "L'introduction du diagnostic peut être publiée sans code.");
+    foreach (var missing in new[] { "diagnostic_intro", "diagnostic_questionnaire", "diagnostic_result" })
+    {
+        try
+        {
+            await service.SaveAsync(new SitePageMutationPayload(
+                "/diagnostic", "public", 1,
+                diagnosticEdited!.Blocks.Where(block => block.Type != missing
+                    && block.WidgetKey != missing).ToArray()),
+                "actor", CancellationToken.None);
+            throw new InvalidOperationException("Une étape indispensable du diagnostic aurait dû bloquer la publication.");
+        }
+        catch (PortalValidationException) { }
+    }
+    var contactLayout = await service.GetAsync("public", "/contact", CancellationToken.None);
+    Ensure(contactLayout.Blocks.Count(block => block.Type == "contact_intro") == 1
+        && contactLayout.Blocks.Any(block => block.WidgetKey == "contact_form"),
+        "Le contact conserve son introduction et son formulaire comme modules distincts.");
+    var editedContact = await service.SaveAsync(new SitePageMutationPayload(
+        "/contact", "public", 0,
+        contactLayout.Blocks.Where(block => block.Type != "contact_steps")
+            .Select(block => block.Type == "contact_intro"
+                ? block with { Title = "Décrivez votre projet" } : block).ToArray()),
+        "actor", CancellationToken.None);
+    Ensure(editedContact?.Blocks.Single(block => block.Type == "contact_intro").Title
+        == "Décrivez votre projet",
+        "L'introduction peut être publiée sans supprimer le formulaire ni imposer les étapes facultatives.");
+    foreach (var missing in new[] { "contact_intro", "contact_form", "contact_offer" })
+    {
+        try
+        {
+            await service.SaveAsync(new SitePageMutationPayload(
+                "/contact", "public", 1,
+                editedContact!.Blocks.Where(block => block.Type != missing
+                    && block.WidgetKey != missing).ToArray()),
+                "actor", CancellationToken.None);
+            throw new InvalidOperationException("Un élément essentiel du contact aurait dû bloquer la publication.");
+        }
+        catch (PortalValidationException) { }
+    }
+    var formulesLayout = await service.GetAsync("public", "/formules", CancellationToken.None);
+    Ensure(formulesLayout.Blocks.Select(block => block.WidgetKey)
+        .SequenceEqual(["formules_intro", "formules_catalog", "formules_note"]),
+        "Le chemin de vente sépare présentation, catalogue et conseil.");
+    var withoutOptionalNote = await service.SaveAsync(new SitePageMutationPayload(
+        "/formules", "public", 0,
+        formulesLayout.Blocks.Where(block => block.WidgetKey != "formules_note").ToArray()),
+        "actor", CancellationToken.None);
+    Ensure(withoutOptionalNote?.Blocks.Count == 2,
+        "Un conseil de présentation peut être retiré sans modifier le catalogue.");
+    try
+    {
+        await service.SaveAsync(new SitePageMutationPayload(
+            "/formules", "public", 1,
+            formulesLayout.Blocks.Where(block => block.WidgetKey != "formules_catalog").ToArray()),
+            "actor", CancellationToken.None);
+        throw new InvalidOperationException("Le catalogue Billing requis aurait dû bloquer la publication.");
+    }
+    catch (PortalValidationException) { }
+    var formulaDetail = await service.GetAsync("public", "/formules/[code]", CancellationToken.None);
+    Ensure(formulaDetail.Blocks.Count(block => block.WidgetKey == "formule_detail_intro") == 1
+        && formulaDetail.Blocks.Count(block => block.WidgetKey == "formule_detail_configurator") == 1
+        && formulaDetail.Blocks.Any(block => block.Type == "text"),
+        "Chaque fiche d'offre garde sa présentation, son configurateur et un conseil éditable.");
+    var reorderedFormulaDetail = await service.SaveAsync(new SitePageMutationPayload(
+        "/formules/[code]", "public", 0,
+        [formulaDetail.Blocks[0], formulaDetail.Blocks[1], formulaDetail.Blocks[2],
+         formulaDetail.Blocks[4], formulaDetail.Blocks[3]]),
+        "actor", CancellationToken.None);
+    Ensure(reorderedFormulaDetail?.Blocks[3].Type == "link",
+        "Les conseils de la fiche d'offre peuvent être réordonnés sans code.");
+    foreach (var required in new[] {
+        "formule_detail_breadcrumb", "formule_detail_intro", "formule_detail_configurator" })
+    {
+        try
+        {
+            await service.SaveAsync(new SitePageMutationPayload(
+                "/formules/[code]", "public", 1,
+                reorderedFormulaDetail!.Blocks.Where(block => block.WidgetKey != required).ToArray()),
+                "actor", CancellationToken.None);
+            throw new InvalidOperationException("Un module d'offre indispensable aurait dû bloquer la publication.");
+        }
+        catch (PortalValidationException) { }
+    }
+    var restoredFormulaDetail = await service.RestoreAsync(
+        "public", "/formules/[code]", 0, 1, "actor", CancellationToken.None);
+    Ensure(restoredFormulaDetail?.Version == 2
+        && restoredFormulaDetail.Blocks[3].Type == "text",
+        "La version initiale de la fiche d'offre peut être restaurée.");
+    foreach (var (area, pageKey, modules) in new[] {
+        ("public", "/offres/[slug]", new[] { "offer_sheet_intro", "offer_sheet_back",
+            "offer_sheet_summary", "offer_sheet_services", "offer_sheet_details", "offer_sheet_source" }),
+        ("public", "/panier", new[] { "cart_intro", "cart_items", "cart_summary" }),
+        ("public", "/souscription", new[] { "checkout_intro", "checkout_details", "checkout_summary" }),
+        ("client", "/profile", new[] { "profile_intro", "profile_contact",
+            "profile_security", "profile_source" }),
+        ("admin", "/admin/catalog", new[] { "admin_catalog_intro",
+            "admin_catalog_vitrine", "admin_catalog_editor" })
+    })
+    {
+        var page = await service.GetAsync(area, pageKey, CancellationToken.None);
+        Ensure(page.Blocks.Select(block => block.WidgetKey).SequenceEqual(modules),
+            $"La page {pageKey} expose ses modules métier séparément.");
+        var reordered = page.Blocks.ToArray();
+        (reordered[0], reordered[1]) = (reordered[1], reordered[0]);
+        var published = await service.SaveAsync(new SitePageMutationPayload(
+            pageKey, area, 0, reordered), "actor", CancellationToken.None);
+        Ensure(published?.Version == 1 && published.Blocks[0].WidgetKey == modules[1],
+            $"Les modules de {pageKey} peuvent être déplacés.");
+        foreach (var required in modules)
+        {
+            try
+            {
+                await service.SaveAsync(new SitePageMutationPayload(
+                    pageKey, area, 1,
+                    published!.Blocks.Where(block => block.WidgetKey != required).ToArray()),
+                    "actor", CancellationToken.None);
+                throw new InvalidOperationException($"Le module {required} aurait dû rester obligatoire.");
+            }
+            catch (PortalValidationException) { }
+        }
+        var restoredBusinessPage = await service.RestoreAsync(area, pageKey, 0, 1,
+            "actor", CancellationToken.None);
+        Ensure(restoredBusinessPage?.Version == 2
+            && restoredBusinessPage.Blocks[0].WidgetKey == modules[0],
+            $"La mise en page initiale de {pageKey} peut être restaurée.");
+    }
+    var signupLayout = await service.GetAsync("public", "/signup", CancellationToken.None);
+    Ensure(signupLayout.Blocks.Any(block => block.WidgetKey == "signup_selection")
+        && signupLayout.Blocks.Any(block => block.WidgetKey == "signup_form"),
+        "L'inscription garde le récapitulatif et le formulaire séparés.");
+    Ensure(Array.FindIndex(signupLayout.Blocks.ToArray(), block => block.WidgetKey == "signup_form")
+        < Array.FindIndex(signupLayout.Blocks.ToArray(), block => block.WidgetKey == "signup_steps"),
+        "Le formulaire est présenté avant les étapes secondaires du parcours.");
+    var signupWithoutSteps = await service.SaveAsync(new SitePageMutationPayload(
+        "/signup", "public", 0,
+        signupLayout.Blocks.Where(block => block.WidgetKey != "signup_steps").ToArray()),
+        "actor", CancellationToken.None);
+    Ensure(signupWithoutSteps?.Blocks.All(block => block.WidgetKey != "signup_steps") == true,
+        "Les explications facultatives peuvent être retirées.");
+    try
+    {
+        await service.SaveAsync(new SitePageMutationPayload(
+            "/signup", "public", 1,
+            signupLayout.Blocks.Where(block => block.WidgetKey != "signup_form").ToArray()),
+            "actor", CancellationToken.None);
+        throw new InvalidOperationException("Le formulaire d'inscription obligatoire aurait dû bloquer la publication.");
+    }
+    catch (PortalValidationException) { }
+    var subscribeLayout = await service.GetAsync("client", "/souscrire", CancellationToken.None);
+    Ensure(subscribeLayout.Blocks.Select(block => block.WidgetKey)
+        .SequenceEqual(["subscribe_intro", "subscribe_offers", "subscribe_direct"]),
+        "La souscription client distingue les offres et le choix direct.");
+    var reorderedSubscribe = await service.SaveAsync(new SitePageMutationPayload(
+        "/souscrire", "client", 0,
+        [subscribeLayout.Blocks[0], subscribeLayout.Blocks[2], subscribeLayout.Blocks[1]]),
+        "actor", CancellationToken.None);
+    Ensure(reorderedSubscribe?.Blocks[1].WidgetKey == "subscribe_direct",
+        "Le client peut voir le choix direct avant les offres.");
+    try
+    {
+        await service.SaveAsync(new SitePageMutationPayload(
+            "/souscrire", "client", 1,
+            subscribeLayout.Blocks.Where(block => block.WidgetKey != "subscribe_direct").ToArray()),
+            "actor", CancellationToken.None);
+        throw new InvalidOperationException("La souscription directe obligatoire aurait dû bloquer la publication.");
+    }
+    catch (PortalValidationException) { }
+    var dataPage = await service.GetAsync("client", "/profile/donnees", CancellationToken.None);
+    Ensure(dataPage.Blocks.Count(block => block.Type == "widget") == 3,
+        "Le suivi des données expose ses modules métier séparément.");
+    var reorderedDataPage = await service.SaveAsync(new SitePageMutationPayload(
+        "/profile/donnees", "client", 0,
+        [dataPage.Blocks[0], dataPage.Blocks[2],
+         new SitePageBlock("help", "widget", WidgetKey: "data_request_help"),
+         dataPage.Blocks[1]]), "actor", CancellationToken.None);
+    Ensure(reorderedDataPage?.Blocks[1].WidgetKey == "data_request_history"
+        && reorderedDataPage.Blocks[^1].WidgetKey == "data_request_form",
+        "Les modules fonctionnels peuvent être réordonnés sans changer leur logique.");
+    try
+    {
+        await service.SaveAsync(new SitePageMutationPayload(
+            "/profile/donnees", "client", 1,
+            [dataPage.Blocks[0], dataPage.Blocks[2]]), "actor", CancellationToken.None);
+        throw new InvalidOperationException("Le formulaire obligatoire aurait dû bloquer la publication.");
+    }
+    catch (PortalValidationException) { }
+    var adminDataPage = await service.GetAsync("admin", "/admin/data-requests", CancellationToken.None);
+    Ensure(adminDataPage.Blocks.Count(block => block.Type == "widget") == 2,
+        "Le traitement administratif expose ses modules séparément.");
+    var reorderedAdminDataPage = await service.SaveAsync(new SitePageMutationPayload(
+        "/admin/data-requests", "admin", 0,
+        [adminDataPage.Blocks[1], adminDataPage.Blocks[0]]), "actor", CancellationToken.None);
+    Ensure(reorderedAdminDataPage?.Blocks[0].WidgetKey == "admin_data_request_list",
+        "La liste administrative peut être repositionnée.");
+    try
+    {
+        await service.SaveAsync(new SitePageMutationPayload(
+            "/admin/data-requests", "admin", 1,
+            [adminDataPage.Blocks[0]]), "actor", CancellationToken.None);
+        throw new InvalidOperationException("La liste administrative obligatoire aurait dû bloquer la publication.");
+    }
+    catch (PortalValidationException) { }
+    var clientDetailLayout = await service.GetAsync("client", "/profile/donnees/[id]", CancellationToken.None);
+    Ensure(clientDetailLayout.Blocks.Count(block => block.Type == "widget") == 5,
+        "La fiche client sépare le résumé, les échanges, le fichier et la réponse.");
+    var clientDetailReordered = await service.SaveAsync(new SitePageMutationPayload(
+        "/profile/donnees/[id]", "client", 0,
+        [clientDetailLayout.Blocks[0], clientDetailLayout.Blocks[2],
+         clientDetailLayout.Blocks[1], clientDetailLayout.Blocks[3],
+         clientDetailLayout.Blocks[4]]), "actor", CancellationToken.None);
+    Ensure(clientDetailReordered?.Blocks[1].WidgetKey == "client_data_detail_messages",
+        "Les échanges client peuvent être repositionnés.");
+    try
+    {
+        await service.SaveAsync(new SitePageMutationPayload(
+            "/profile/donnees/[id]", "client", 1,
+            clientDetailLayout.Blocks.Where(block => block.WidgetKey != "client_data_detail_file").ToArray()),
+            "actor", CancellationToken.None);
+        throw new InvalidOperationException("Le téléchargement client obligatoire aurait dû bloquer la publication.");
+    }
+    catch (PortalValidationException) { }
+    var adminDetailLayout = await service.GetAsync("admin", "/admin/data-requests/[id]", CancellationToken.None);
+    Ensure(adminDetailLayout.Blocks.Count(block => block.Type == "widget") == 5,
+        "La fiche admin sépare la réponse et la remise de fichier.");
+    try
+    {
+        await service.SaveAsync(new SitePageMutationPayload(
+            "/admin/data-requests/[id]", "admin", 0,
+            adminDetailLayout.Blocks.Where(block => block.WidgetKey != "admin_data_detail_reply").ToArray()),
+            "actor", CancellationToken.None);
+        throw new InvalidOperationException("La réponse admin obligatoire aurait dû bloquer la publication.");
+    }
+    catch (PortalValidationException) { }
+    var home = await service.GetAsync("public", "/", CancellationToken.None);
+    Ensure(home.Blocks.Any(block => block.Type == "hero")
+        && home.Blocks.Any(block => block.Href == "/contact"
+            || block.Items?.Any(item => item.Href == "/contact") == true),
+        "L'accueil administrable conserve une entrée claire vers le contact.");
+    await service.GetAsync("admin", "/admin/data-requests/[id]", CancellationToken.None);
+    await service.GetAsync("public", "/login", CancellationToken.None);
+    Ensure(original.Version == 0 && original.Blocks.Single().Type == "route_content",
+        "Une page non modifiée conserve son contenu actuel.");
+    var blocks = new[]
+    {
+        new SitePageBlock("intro", "text", "Notre accompagnement", "Expliquez votre besoin."),
+        new SitePageBlock("main", "route_content")
+    };
+    var saved = await service.SaveAsync(new SitePageMutationPayload(
+        "/a-propos", "public", 0, blocks), "actor", CancellationToken.None);
+    Ensure(saved?.Version == 1 && saved.Blocks.Count == 2, "La mise en page est publiée.");
+    var conflict = await service.SaveAsync(new SitePageMutationPayload(
+        "/a-propos", "public", 0, blocks), "actor", CancellationToken.None);
+    Ensure(conflict is null, "Une version périmée ne remplace pas la page publiée.");
+    try
+    {
+        await service.SaveAsync(new SitePageMutationPayload(
+            "/a-propos", "public", 1, [new SitePageBlock("other", "text", "Vide", "Sans contenu")]),
+            "actor", CancellationToken.None);
+        throw new InvalidOperationException("La suppression du contenu requis aurait dû être refusée.");
+    }
+    catch (PortalValidationException) { }
+    foreach (var freePrice in new[] { "À partir de 25 €", "€ 25 par mois", "25 euros par mois" })
+    {
+        try
+        {
+            await service.SaveAsync(new SitePageMutationPayload("/a-propos", "public", 1,
+                [new SitePageBlock("main", "route_content"),
+                 new SitePageBlock("price", "text", freePrice, "Tarif non issu du catalogue")]),
+                "actor", CancellationToken.None);
+            throw new InvalidOperationException("Un prix libre aurait dû être refusé.");
+        }
+        catch (PortalValidationException) { }
+    }
+    try
+    {
+        await service.SaveAsync(new SitePageMutationPayload("/a-propos", "public", 1,
+            [new SitePageBlock("main", "route_content"),
+             new SitePageBlock("missing-image", "image", Label: "Image de test", MediaId: Guid.NewGuid().ToString("D"))]),
+            "actor", CancellationToken.None);
+        throw new InvalidOperationException("Une image absente aurait dû bloquer la publication.");
+    }
+    catch (PortalValidationException) { }
+    var later = await service.SaveAsync(new SitePageMutationPayload(
+        "/a-propos", "public", 1, [new SitePageBlock("main", "route_content")]),
+        "actor", CancellationToken.None);
+    Ensure(later?.Version == 2, "La nouvelle version est publiée.");
+    var restored = await service.RestoreAsync("public", "/a-propos", 1, 2, "actor", CancellationToken.None);
+    Ensure(restored?.Version == 3 && restored.Blocks.Count == 2,
+        "Une ancienne version est restaurée et republiée.");
+    Ensure((await service.RevisionsAsync("public", "/a-propos", CancellationToken.None)).Count == 4,
+        "L'historique conserve les versions et le rendu initial.");
+    var initial = await service.RestoreAsync("public", "/a-propos", 0, 3, "actor", CancellationToken.None);
+    Ensure(initial?.Blocks.Count == 1 && initial.Blocks[0].Type == "route_content",
+        "Le rendu initial peut être restauré.");
+    var footer = await service.GetAsync("public", "/footer", CancellationToken.None);
+    Ensure(footer.Blocks.Any(block => block.Type == "footer_brand")
+        && footer.Blocks.SelectMany(block => block.Items ?? []).Any(item => item.Href == "/demander-mes-donnees"),
+        "Le pied de page administrable conserve le lien de demande de données.");
+    try
+    {
+        await service.SaveAsync(new SitePageMutationPayload("/footer", "public", 0,
+            [new SitePageBlock("brand", "footer_brand", "Zachary IT")]),
+            "actor", CancellationToken.None);
+        throw new InvalidOperationException("Les liens légaux requis auraient dû être conservés.");
+    }
+    catch (PortalValidationException) { }
+    var customForm = await service.SaveAsync(new SitePageMutationPayload(
+        "/a-propos", "public", 4,
+        [new SitePageBlock("main", "route_content"),
+         new SitePageBlock("form", "form", "Parlez-nous de votre projet",
+             Label: "Envoyer", Action: "contact", Fields:
+             [new SitePageFormField("contexte", "Votre situation", "select", true,
+                 ["Particulier", "Professionnel"])])]),
+        "actor", CancellationToken.None);
+    Ensure(customForm?.Version == 5, "Un formulaire à champs complémentaires peut être publié.");
+    try
+    {
+        await service.SaveAsync(new SitePageMutationPayload(
+            "/a-propos", "public", 5,
+            [new SitePageBlock("main", "route_content"),
+             new SitePageBlock("bad", "form", "Formulaire", Label: "Envoyer",
+                 Action: "contact", Fields:
+                 [new SitePageFormField("email", "Champ réservé", "text", true)])]),
+            "actor", CancellationToken.None);
+        throw new InvalidOperationException("Un champ réservé aurait dû être refusé.");
+    }
+    catch (PortalValidationException) { }
+
+    var legacyStore = new MockSitePageStore();
+    var legacyBlocks = new SitePageBlock[]
+    {
+        new("client_home_intro", "text", "Mon message", "Contenu éditorial conservé."),
+        new("main", "route_content"),
+        new("contact-extra", "link", "Une question ?", "Nous pouvons vous aider.",
+            "/contact", "Nous contacter")
+    };
+    legacyStore.Pages["client:/dashboard"] = new SitePageLayout(
+        "/dashboard", "client", 4, legacyBlocks, null);
+    legacyStore.Snapshots["client:/dashboard"] = new Dictionary<long, IReadOnlyList<SitePageBlock>>
+    {
+        [3] = legacyBlocks
+    };
+    var compatibleService = new SitePageService(
+        new SqlRuntimeConfiguration(PortalPersistenceMode.Mock, "mock", null, "test", true),
+        legacyStore);
+    var projectedLegacy = await compatibleService.GetAsync("client", "/dashboard", CancellationToken.None);
+    Ensure(projectedLegacy.Version == 4
+        && projectedLegacy.Blocks[0].Title == "Mon message"
+        && projectedLegacy.Blocks[^1].Id == "contact-extra"
+        && projectedLegacy.Blocks.Count(block => block.Type == "widget") == 7
+        && projectedLegacy.Blocks.All(block => block.Type != "route_content")
+        && projectedLegacy.Blocks.Select(block => block.Id).Distinct().Count() == projectedLegacy.Blocks.Count,
+        "Une ancienne mise en page reste lisible, conserve ses blocs et ses identifiants distincts.");
+    var migratedLegacy = await compatibleService.SaveAsync(new SitePageMutationPayload(
+        "/dashboard", "client", 4, projectedLegacy.Blocks), "actor", CancellationToken.None);
+    Ensure(migratedLegacy?.Version == 5,
+        "L'ancienne mise en page peut être publiée dans le modèle à modules.");
+    var restoredLegacy = await compatibleService.RestoreAsync(
+        "client", "/dashboard", 3, 5, "actor", CancellationToken.None);
+    Ensure(restoredLegacy?.Version == 6
+        && restoredLegacy.Blocks.All(block => block.Type != "route_content")
+        && restoredLegacy.Blocks[0].Title == "Mon message",
+        "Une ancienne version est restaurée avec ses modules et son contenu éditorial.");
+}
+
 static async Task VerifySignupGuardrailsAsync()
 {
     var settingsRepository = new TestApplicationSettingsRepository();
@@ -5816,29 +6397,40 @@ static async Task VerifySignupGuardrailsAsync()
     // observe ensuite vient donc bien du registre ou de la base.
     var startup = new SignupRuntimeConfiguration(true, 3, 10, 24, 24, false);
 
-    // --- Cle verrouillee par le code -------------------------------------
-    var refused = await settings.UpdateAsync(
+    var initialSnapshot = await settings.GetSnapshotAsync(token, startup);
+    var visibleSignup = initialSnapshot.Settings.Single(item => item.Key == "signup_enabled");
+    var visibleApproval = initialSnapshot.Settings.Single(item => item.Key == "signup_auto_approve");
+    Ensure(visibleSignup.Value.GetBoolean() && visibleSignup.Source == "env"
+        && !visibleApproval.Value.GetBoolean() && visibleApproval.Source == "default",
+        "L'administration affiche le mode d'inscription réellement lu et conserve l'approbation automatique désactivée.");
+
+    // --- Activation explicite, puis retour au mode manuel -----------------
+    var enabled = await settings.UpdateAsync(
         "signup_auto_approve",
         new ApplicationSettingUpdateRequest(ParseJson("true"), 0),
         actor,
         correlation,
         token);
     Ensure(
-        refused.Code == "SETTINGS_READ_ONLY",
-        "L'approbation automatique ne doit pas etre modifiable depuis l'administration.");
-
-    // Meme posee directement en base, elle reste inoperante.
-    settingsRepository.Seed("signup_auto_approve", "signup", "true", "bool");
+        enabled.Code == "SETTINGS_UPDATED",
+        "Un administrateur autorise doit pouvoir activer l'approbation automatique.");
     Ensure(
-        !(await settings.GetSignupConfigurationAsync(startup, token)).AutoApprove,
-        "Une ligne 'true' en base ne doit pas activer l'approbation automatique.");
-    var lockedItem = (await settings.GetSnapshotAsync(token))
+        (await settings.GetSignupConfigurationAsync(startup, token)).AutoApprove,
+        "Le reglage active doit etre applique apres relecture.");
+    var editableItem = (await settings.GetSnapshotAsync(token))
         .Settings.Single(item => item.Key == "signup_auto_approve");
     Ensure(
-        !lockedItem.Editable
-        && lockedItem.Source == "default"
-        && !lockedItem.Value.GetBoolean(),
-        "L'administration doit afficher la valeur reellement appliquee, pas la ligne stockee.");
+        editableItem.Editable && editableItem.Value.GetBoolean(),
+        "L'administration doit afficher la valeur appliquee.");
+    var manualMode = await settings.UpdateAsync(
+        "signup_auto_approve",
+        new ApplicationSettingUpdateRequest(ParseJson("false"), enabled.Setting!.Version),
+        actor,
+        correlation,
+        token);
+    Ensure(manualMode.Code == "SETTINGS_UPDATED"
+        && !(await settings.GetSignupConfigurationAsync(startup, token)).AutoApprove,
+        "Le mode manuel doit pouvoir etre retabli immediatement.");
 
     // --- Bornes preservees a la lecture ----------------------------------
     settingsRepository.Seed("signup_rate_limit_per_ip_per_hour", "signup", "100000", "int");
@@ -9125,7 +9717,7 @@ async Task VerifyManagedContentAsync(
         && publicStorefrontPayload.RootElement.GetProperty("key").GetString() == storefrontKey
         && publicStorefrontPayload.RootElement.GetProperty("contentType").GetString() == "storefront_page"
         && publicStorefrontDocument.RootElement.GetProperty("title").GetString()
-            ?.Contains("Accès VPN sécurisé", StringComparison.Ordinal) == true,
+            ?.Contains("Travaillez à distance avec un accès protégé", StringComparison.Ordinal) == true,
         "La landing storefront SEO doit être seedée et lisible côté public.");
 
     using var clientForbiddenAdminListRequest = CreateSessionRequest(

@@ -678,6 +678,102 @@ export interface ManagedContentMutationResponse {
 
 export type EditorialContentType = "wiki_article" | "seo_page" | "faq";
 
+export type DataSubjectRequestType =
+  | "access" | "rectification" | "erasure"
+  | "portability" | "objection" | "restriction";
+
+export interface SignupPublicMode {
+  enabled: boolean;
+  autoApprove: boolean;
+}
+
+export type DataSubjectRequestStatus =
+  | "received" | "in_progress" | "waiting_for_customer"
+  | "response_ready" | "closed" | "refused";
+
+export interface DataSubjectRequestSummary {
+  id: string;
+  reference: string;
+  requestType: DataSubjectRequestType;
+  status: DataSubjectRequestStatus;
+  createdAt: string;
+  dueAt: string;
+  updatedAt: string;
+  customerId: string | null;
+}
+
+export interface DataSubjectRequestMessage {
+  id: string;
+  authorRole: "team" | "client";
+  body: string;
+  createdAt: string;
+}
+
+export interface DataSubjectRequestDetail extends DataSubjectRequestSummary {
+  details: string;
+  userId: string;
+  messages: DataSubjectRequestMessage[];
+  responseFileName: string | null;
+  deadlineExtendedAt: string | null;
+}
+
+export interface DataSubjectRequestCreatePayload {
+  requestType: DataSubjectRequestType;
+  details: string;
+}
+
+export interface DataSubjectRequestMessagePayload {
+  body: string;
+  status?: DataSubjectRequestStatus;
+  extendDeadline?: boolean;
+}
+
+export type SitePageArea = "public" | "client" | "admin";
+export type SitePageBlockType = "route_content" | "text" | "image" | "cards" | "faq" | "link" | "form" | "footer_brand" | "footer_links"
+  | "hero" | "audiences" | "steps" | "services" | "offer_path" | "final_cta" | "offers_story" | "diagnostic_intro" | "contact_intro" | "contact_steps" | "data_rights_intro" | "widget";
+export interface SitePageBlockItem { title: string; body: string | null; href: string | null; label: string | null }
+export interface SitePageFormField {
+  id: string;
+  label: string;
+  type: "text" | "email" | "number" | "select" | "checkbox";
+  required: boolean;
+  options: string[] | null;
+}
+export interface SitePageBlock {
+  id: string;
+  type: SitePageBlockType;
+  title: string | null;
+  body: string | null;
+  href: string | null;
+  label: string | null;
+  mediaId: string | null;
+  action: "contact" | "data_request" | null;
+  items: SitePageBlockItem[] | null;
+  fields: SitePageFormField[] | null;
+  widgetKey: string | null;
+}
+export interface SitePageLayout {
+  pageKey: string;
+  area: SitePageArea;
+  version: number;
+  blocks: SitePageBlock[];
+  updatedAt: string | null;
+}
+export interface SitePageRevision {
+  pageKey: string;
+  version: number;
+  createdAt: string;
+  createdBy: string;
+}
+export interface SiteMediaAsset {
+  id: string;
+  fileName: string;
+  contentType: string;
+  altText: string;
+  byteLength: number;
+  createdAt: string;
+}
+
 export type EditorialContentStatus =
   | "draft"
   | "published"

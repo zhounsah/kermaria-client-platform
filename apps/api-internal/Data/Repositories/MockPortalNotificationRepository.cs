@@ -12,6 +12,7 @@ public sealed class MockPortalNotification
 {
     public required string Id { get; init; }
     public required string CustomerReference { get; init; }
+    public string? UserId { get; init; }
     public required string NotificationType { get; init; }
     public required string Title { get; init; }
     public required string Message { get; init; }
@@ -42,7 +43,8 @@ public sealed class MockPortalNotificationRepository
             return Task.FromResult<IReadOnlyList<PortalNotificationSummary>>(
                 _store.Notifications
                     .Where(item =>
-                        item.CustomerReference == session.CustomerReference)
+                        item.CustomerReference == session.CustomerReference
+                        && (item.UserId is null || item.UserId == session.UserId))
                     .OrderByDescending(item => item.CreatedAt)
                     .Take(100)
                     .Select(ToSummary)
@@ -59,7 +61,8 @@ public sealed class MockPortalNotificationRepository
         {
             var notification = _store.Notifications.FirstOrDefault(item =>
                 item.Id == notificationId
-                && item.CustomerReference == session.CustomerReference)
+                && item.CustomerReference == session.CustomerReference
+                && (item.UserId is null || item.UserId == session.UserId))
                 ?? throw new PortalDataNotFoundException();
             if (notification.ReadAt is not null)
             {
@@ -80,6 +83,7 @@ public sealed class MockPortalNotificationRepository
             var unread = _store.Notifications
                 .Where(item =>
                     item.CustomerReference == session.CustomerReference
+                    && (item.UserId is null || item.UserId == session.UserId)
                     && item.ReadAt is null)
                 .ToArray();
             var now = DateTime.UtcNow.ToString("O");
